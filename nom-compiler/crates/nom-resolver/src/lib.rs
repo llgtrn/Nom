@@ -828,6 +828,62 @@ const ORDER_CLAUSE: &str = "is_canonical DESC, \
      overall_score DESC, \
      id DESC";
 
+// ── ADOPT-6: Datalog-style dictionary queries (Flix-inspired) ────────
+
+/// A compound dictionary query with multiple attribute constraints.
+/// Supports AND, OR, and NOT operators for .nomtu attribute filtering.
+#[derive(Debug, Clone)]
+pub enum DictQuery {
+    /// Single attribute comparison: security > 0.9
+    Comparison { field: String, op: String, value: String },
+    /// Logical AND of sub-queries
+    And(Vec<DictQuery>),
+    /// Logical OR of sub-queries
+    Or(Vec<DictQuery>),
+    /// Logical NOT
+    Not(Box<DictQuery>),
+}
+
+/// Parse a compound query string into a DictQuery.
+/// Format: "security>0.9 and license=MIT and not deprecated"
+pub fn parse_dict_query(query: &str) -> Result<DictQuery, ResolverError> {
+    let parts: Vec<&str> = query.split(" and ").collect();
+    let mut conditions = Vec::new();
+    for part in parts {
+        let part = part.trim();
+        if let Some(rest) = part.strip_prefix("not ") {
+            conditions.push(DictQuery::Not(Box::new(parse_single_condition(rest.trim())?)));
+        } else {
+            conditions.push(parse_single_condition(part)?);
+        }
+    }
+    if conditions.len() == 1 {
+        Ok(conditions.into_iter().next().unwrap())
+    } else {
+        Ok(DictQuery::And(conditions))
+    }
+}
+
+fn parse_single_condition(s: &str) -> Result<DictQuery, ResolverError> {
+    // Parse: field>value, field<value, field=value, field>=value, field<=value
+    // Also: bare word like "deprecated" -> Comparison { field: "deprecated", op: "=", value: "true" }
+    for op in &[">=", "<=", "!=", ">", "<", "="] {
+        if let Some(idx) = s.find(op) {
+            return Ok(DictQuery::Comparison {
+                field: s[..idx].trim().to_string(),
+                op: op.to_string(),
+                value: s[idx + op.len()..].trim().trim_matches('"').to_string(),
+            });
+        }
+    }
+    // Bare word: "deprecated" -> field=true
+    Ok(DictQuery::Comparison {
+        field: s.trim().to_string(),
+        op: "=".to_string(),
+        value: "true".to_string(),
+    })
+}
+
 // ── ADOPT-7: Bidirectional contract inference via unification ───────
 
 /// A contract shape: input type -> output type.
@@ -913,6 +969,25 @@ pub fn infer_flow_contracts(
             }
         })
         .collect()
+}
+
+// ── ADOPT-10: Structural interface satisfaction (Go-inspired) ───────
+
+/// Check if two contract shapes are structurally compatible.
+/// Compatible means: the output of `producer` can flow into the input of `consumer`.
+/// This is Go-style structural satisfaction — no explicit implements needed.
+pub fn contracts_compatible(producer: &ContractShape, consumer: &ContractShape) -> bool {
+    match (&producer.output_type, &consumer.input_type) {
+        (Some(out), Some(inp)) => {
+            // Exact match
+            out == inp
+            // Or one is a supertype of the other (simplified: check prefix)
+            || out.starts_with(inp)
+            || inp.starts_with(out)
+        }
+        // If either is None (unspecified), assume compatible
+        (None, _) | (_, None) => true,
+    }
 }
 
 #[cfg(test)]
@@ -1391,5 +1466,81 @@ mod tests {
         let result = infer_flow_contracts(&chain, &known);
         assert_eq!(result.len(), 1);
         assert!(!result[0].inferred);
+    }
+
+    // ── DictQuery tests (ADOPT-6) ─────────────────────────────────────
+
+    #[test]
+    fn parses_single_comparison() {
+        let q = parse_dict_query("security>0.9").unwrap();
+        match q {
+            DictQuery::Comparison { field, op, value } => {
+                assert_eq!(field, "security");
+                assert_eq!(op, ">");
+                assert_eq!(value, "0.9");
+            }
+            _ => panic!("expected Comparison"),
+        }
+    }
+
+    #[test]
+    fn parses_compound_and_query() {
+        let q = parse_dict_query("security>0.9 and license=MIT").unwrap();
+        match q {
+            DictQuery::And(parts) => assert_eq!(parts.len(), 2),
+            _ => panic!("expected And"),
+        }
+    }
+
+    #[test]
+    fn parses_not_condition() {
+        let q = parse_dict_query("not deprecated").unwrap();
+        match q {
+            DictQuery::Not(_) => {},
+            _ => panic!("expected Not"),
+        }
+    }
+
+    #[test]
+    fn parses_complex_query() {
+        let q = parse_dict_query("security>0.9 and license=MIT and not deprecated").unwrap();
+        match q {
+            DictQuery::And(parts) => {
+                assert_eq!(parts.len(), 3);
+                assert!(matches!(&parts[2], DictQuery::Not(_)));
+            }
+            _ => panic!("expected And"),
+        }
+    }
+
+    // ── Structural compatibility tests (ADOPT-10) ─────────────────────
+
+    #[test]
+    fn exact_type_match_is_compatible() {
+        let producer = ContractShape { input_type: None, output_type: Some("bytes".into()) };
+        let consumer = ContractShape { input_type: Some("bytes".into()), output_type: None };
+        assert!(contracts_compatible(&producer, &consumer));
+    }
+
+    #[test]
+    fn different_types_incompatible() {
+        let producer = ContractShape { input_type: None, output_type: Some("text".into()) };
+        let consumer = ContractShape { input_type: Some("number".into()), output_type: None };
+        assert!(!contracts_compatible(&producer, &consumer));
+    }
+
+    #[test]
+    fn unspecified_type_is_compatible() {
+        let producer = ContractShape { input_type: None, output_type: None };
+        let consumer = ContractShape { input_type: Some("bytes".into()), output_type: None };
+        assert!(contracts_compatible(&producer, &consumer));
+    }
+
+    #[test]
+    fn prefix_subtype_is_compatible() {
+        // "hash_bytes" starts with "hash" — compatible
+        let producer = ContractShape { input_type: None, output_type: Some("hash_bytes".into()) };
+        let consumer = ContractShape { input_type: Some("hash".into()), output_type: None };
+        assert!(contracts_compatible(&producer, &consumer));
     }
 }

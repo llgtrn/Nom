@@ -496,6 +496,28 @@ impl Default for MemoryHint {
     }
 }
 
+// ── Persistent immutable collections (ADOPT-8: Clojure-inspired) ────────────
+
+/// Marker for persistent (structurally-shared) collection types.
+/// Inspired by Clojure's persistent data structures (HAMTs).
+/// When a .nomtu contract specifies `collection: persistent`, the compiler
+/// guarantees that data passed between flow nodes is never mutated.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum CollectionKind {
+    /// Standard mutable collection (default)
+    Mutable,
+    /// Persistent immutable collection with structural sharing
+    Persistent,
+    /// Frozen: immutable snapshot of a mutable collection
+    Frozen,
+}
+
+impl Default for CollectionKind {
+    fn default() -> Self {
+        Self::Mutable
+    }
+}
+
 // ── Range constraints (ADOPT-9: Ada-inspired range subtypes) ────────────────
 
 /// A range constraint on a value: lower <= value <= upper
@@ -810,6 +832,11 @@ mod tests {
         assert!(Classifier::from_str("unknown").is_none());
         assert!(Classifier::from_str("if").is_none());
         assert!(Classifier::from_str("class").is_none());
+    }
+
+    #[test]
+    fn collection_kind_default_is_mutable() {
+        assert_eq!(CollectionKind::default(), CollectionKind::Mutable);
     }
 
     #[test]
