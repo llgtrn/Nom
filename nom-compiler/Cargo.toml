@@ -20,6 +20,7 @@ members = [
     "crates/nom-graph",
     "crates/nom-search",
     "crates/nom-llvm",
+    "crates/nom-runtime",
 ]
 
 [workspace.package]
