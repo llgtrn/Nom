@@ -59,6 +59,9 @@ enum Commands {
         /// Path to the nomdict database (default: ./nomdict.db)
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
+        /// Compilation target: rust (default), llvm
+        #[arg(long, default_value = "rust")]
+        target: String,
     },
 
     /// Compile a .nom file to a native binary
@@ -302,7 +305,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
-        Commands::Run { file, dict } => cmd_run(&file, &dict),
+        Commands::Run { file, dict, target } => cmd_run(&file, &dict, &target),
         Commands::Build {
             file,
             output,
@@ -391,7 +394,11 @@ fn main() {
 
 // ── Command implementations ───────────────────────────────────────────────────
 
-fn cmd_run(file: &PathBuf, dict: &PathBuf) -> i32 {
+fn cmd_run(file: &PathBuf, dict: &PathBuf, target: &str) -> i32 {
+    if target == "llvm" {
+        return cmd_run_llvm(file, dict);
+    }
+
     // Build first (compile = true, release = false), output next to the .nom file
     let rc = cmd_build(file, None, dict, false, true, false, "rust");
     if rc != 0 {
@@ -410,6 +417,112 @@ fn cmd_run(file: &PathBuf, dict: &PathBuf) -> i32 {
         Ok(status) => status.code().unwrap_or(1),
         Err(e) => {
             eprintln!("nom: failed to run {}: {e}", binary_path.display());
+            1
+        }
+    }
+}
+
+/// Run a .nom file using the LLVM backend via `lli` (LLVM bitcode interpreter).
+fn cmd_run_llvm(file: &PathBuf, dict: &PathBuf) -> i32 {
+    let source = match read_source(file) {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    let parsed = match parse_source(&source) {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("nom: parse error: {e}");
+            return 1;
+        }
+    };
+
+    let resolver = match open_resolver(dict) {
+        Some(r) => r,
+        None => return 1,
+    };
+
+    let planner = Planner::new(&resolver);
+    let mut plan = match planner.plan(&parsed) {
+        Ok(p) => p,
+        Err(nom_planner::PlanError::VerificationFailed(findings)) => {
+            eprintln!("nom: verification failed ({} findings):", findings.len());
+            for (i, finding) in findings.iter().enumerate() {
+                eprintln!("  {}. {}", i + 1, finding);
+            }
+            return 1;
+        }
+        Err(e) => {
+            eprintln!("nom: plan error: {e}");
+            return 1;
+        }
+    };
+
+    planner.enrich_with_implementations(&mut plan);
+
+    // Compile to LLVM IR
+    let llvm_out = match nom_llvm::compile(&plan) {
+        Ok(o) => o,
+        Err(e) => {
+            eprintln!("nom: LLVM compilation error: {e}");
+            return 1;
+        }
+    };
+
+    // Write bitcode to temp directory
+    let temp_dir = std::env::temp_dir().join("nom-run");
+    if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+        eprintln!("nom: could not create temp dir: {e}");
+        return 1;
+    }
+    let bc_path = temp_dir.join("program.bc");
+    if let Err(e) = std::fs::write(&bc_path, &llvm_out.bitcode) {
+        eprintln!("nom: write error: {e}");
+        return 1;
+    }
+
+    // Also write .ll for debugging
+    let ll_path = temp_dir.join("program.ll");
+    let _ = std::fs::write(&ll_path, &llvm_out.ir_text);
+
+    println!("nom: compiled to LLVM IR ({} bytes bitcode)", llvm_out.bitcode.len());
+
+    // Strategy 1: try lli (LLVM bitcode interpreter) - fastest path
+    if let Ok(status) = process::Command::new("lli").arg(&bc_path).status() {
+        return status.code().unwrap_or(1);
+    }
+
+    // Strategy 2: use clang to compile .ll to a temp binary and run it
+    let exe_path = if cfg!(windows) {
+        temp_dir.join("program.exe")
+    } else {
+        temp_dir.join("program")
+    };
+
+    let ll_str = ll_path.to_string_lossy().into_owned();
+    let exe_str = exe_path.to_string_lossy().into_owned();
+    match process::Command::new("clang")
+        .args([ll_str.as_str(), "-o", exe_str.as_str(), "-O0"])
+        .status()
+    {
+        Ok(s) if s.success() => {
+            println!("nom: compiled native binary via clang");
+            match process::Command::new(&exe_path).status() {
+                Ok(status) => status.code().unwrap_or(1),
+                Err(e) => {
+                    eprintln!("nom: failed to run {}: {e}", exe_path.display());
+                    1
+                }
+            }
+        }
+        Ok(s) => {
+            eprintln!("nom: clang exited with {}", s);
+            1
+        }
+        Err(_) => {
+            eprintln!("nom: could not find lli or clang to execute LLVM bitcode");
+            eprintln!("  hint: ensure LLVM is installed and in PATH");
+            eprintln!("  try: set PATH to include C:\\Program Files\\LLVM\\bin");
             1
         }
     }
