@@ -126,7 +126,7 @@ enum Commands {
 
     /// Search the local nomdict database
     Dict {
-        /// Search query (searches describe column)
+        /// Search query (searches describe column, or contract signature with --contract)
         query: String,
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
@@ -134,6 +134,9 @@ enum Commands {
         /// Maximum results to return
         #[arg(long, default_value = "10")]
         limit: usize,
+        /// Search by contract shape instead of keyword (e.g., "bytes -> hash")
+        #[arg(long)]
+        contract: bool,
     },
 
     /// Import atoms from a Novelos database into the nomdict
@@ -320,7 +323,12 @@ fn main() {
             min_security,
             format,
         } => cmd_report(&file, &dict, min_security, &format),
-        Commands::Dict { query, dict, limit } => cmd_dict(&query, &dict, limit),
+        Commands::Dict {
+            query,
+            dict,
+            limit,
+            contract,
+        } => cmd_dict(&query, &dict, limit, contract),
         Commands::Import {
             source,
             dict,
@@ -1518,31 +1526,59 @@ fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -
     if report.passed { 0 } else { 1 }
 }
 
-fn cmd_dict(query: &str, dict: &PathBuf, limit: usize) -> i32 {
+fn cmd_dict(query: &str, dict: &PathBuf, limit: usize, contract: bool) -> i32 {
     let resolver = match open_resolver(dict) {
         Some(r) => r,
         None => return 1,
     };
 
-    match resolver.search_by_describe(query, limit) {
+    let result = if contract {
+        resolver.search_by_contract(query, limit)
+    } else {
+        resolver.search_by_describe(query, limit)
+    };
+
+    match result {
         Ok(entries) => {
             if entries.is_empty() {
-                println!("No results for '{query}'");
+                if contract {
+                    println!("No entries matching contract '{query}'");
+                } else {
+                    println!("No results for '{query}'");
+                }
             } else {
-                println!(
-                    "{:<20} {:<12} {:<8} {:<8} {}",
-                    "WORD", "VARIANT", "SEC", "PERF", "DESCRIPTION"
-                );
-                println!("{}", "-".repeat(70));
-                for e in &entries {
+                if contract {
                     println!(
-                        "{:<20} {:<12} {:<8.2} {:<8.2} {}",
-                        e.word,
-                        e.variant.as_deref().unwrap_or("-"),
-                        e.security,
-                        e.performance,
-                        e.describe.as_deref().unwrap_or(""),
+                        "{:<20} {:<12} {:<20} {:<20} {}",
+                        "WORD", "VARIANT", "INPUT", "OUTPUT", "DESCRIPTION"
                     );
+                    println!("{}", "-".repeat(85));
+                    for e in &entries {
+                        println!(
+                            "{:<20} {:<12} {:<20} {:<20} {}",
+                            e.word,
+                            e.variant.as_deref().unwrap_or("-"),
+                            e.input_type.as_deref().unwrap_or("-"),
+                            e.output_type.as_deref().unwrap_or("-"),
+                            e.describe.as_deref().unwrap_or(""),
+                        );
+                    }
+                } else {
+                    println!(
+                        "{:<20} {:<12} {:<8} {:<8} {}",
+                        "WORD", "VARIANT", "SEC", "PERF", "DESCRIPTION"
+                    );
+                    println!("{}", "-".repeat(70));
+                    for e in &entries {
+                        println!(
+                            "{:<20} {:<12} {:<8.2} {:<8.2} {}",
+                            e.word,
+                            e.variant.as_deref().unwrap_or("-"),
+                            e.security,
+                            e.performance,
+                            e.describe.as_deref().unwrap_or(""),
+                        );
+                    }
                 }
             }
             0
