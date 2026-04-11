@@ -64,6 +64,8 @@ mod tests {
             named_values: std::collections::HashMap::new(),
             struct_types: std::collections::HashMap::new(),
             functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
         }
     }
 

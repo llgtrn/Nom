@@ -14,7 +14,7 @@ pub fn compile_expr<'ctx>(
         Expr::UnaryOp(op, operand) => compile_unary_op(mc, *op, operand),
         Expr::Call(call) => compile_call(mc, call),
         Expr::IfExpr(if_expr) => crate::statements::compile_if_expr_value(mc, if_expr),
-        Expr::MatchExpr(_) => Err(LlvmError::Unsupported("match expression".into())),
+        Expr::MatchExpr(match_expr) => crate::statements::compile_match_value(mc, match_expr),
         Expr::Block(block) => {
             let mut last_val: Option<BasicValueEnum<'ctx>> = None;
             for stmt in &block.stmts {
@@ -22,7 +22,7 @@ pub fn compile_expr<'ctx>(
             }
             last_val.ok_or_else(|| LlvmError::Compilation("empty block expression".into()))
         }
-        Expr::FieldAccess(_, _) => Err(LlvmError::Unsupported("field access".into())),
+        Expr::FieldAccess(obj, field) => compile_field_access(mc, obj, field),
         Expr::Index(_, _) => Err(LlvmError::Unsupported("index expression".into())),
         Expr::MethodCall(_, _, _) => Err(LlvmError::Unsupported("method call".into())),
         Expr::Closure(_, _) => Err(LlvmError::Unsupported("closure".into())),
@@ -253,6 +253,56 @@ fn compile_call<'ctx>(
         .or_else(|_| Ok(mc.context.i8_type().const_zero().into()))
 }
 
+fn compile_field_access<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    obj: &Expr,
+    field: &nom_ast::Identifier,
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // Determine the variable name from the object expression
+    let var_name = match obj {
+        Expr::Ident(ident) => &ident.name,
+        _ => return Err(LlvmError::Unsupported("field access on non-ident expression".into())),
+    };
+
+    // Look up the struct type name for this variable
+    let struct_type_name = mc.value_types.get(var_name.as_str())
+        .ok_or_else(|| LlvmError::Compilation(format!(
+            "unknown struct type for variable '{}'", var_name
+        )))?
+        .clone();
+
+    // Find the field index
+    let field_names = mc.struct_fields.get(&struct_type_name)
+        .ok_or_else(|| LlvmError::Compilation(format!(
+            "no field info for struct '{}'", struct_type_name
+        )))?;
+
+    let field_index = field_names.iter().position(|f| f == &field.name)
+        .ok_or_else(|| LlvmError::Compilation(format!(
+            "struct '{}' has no field '{}'", struct_type_name, field.name
+        )))?;
+
+    // Get the pointer to the struct variable
+    let (struct_ptr, _struct_ty) = mc.named_values.get(var_name.as_str())
+        .ok_or_else(|| LlvmError::Compilation(format!("undefined variable: {}", var_name)))?;
+
+    let struct_llvm_ty = mc.struct_types.get(&struct_type_name)
+        .ok_or_else(|| LlvmError::Compilation(format!("unknown struct type: {}", struct_type_name)))?;
+
+    // GEP to the field
+    let field_ptr = mc.builder
+        .build_struct_gep(*struct_llvm_ty, *struct_ptr, field_index as u32, &format!("{}.{}.ptr", var_name, field.name))
+        .map_err(|e| LlvmError::Compilation(format!("struct GEP failed: {}", e)))?;
+
+    // Determine the field type and load it
+    let field_ty = struct_llvm_ty.get_field_type_at_index(field_index as u32)
+        .ok_or_else(|| LlvmError::Compilation(format!("invalid field index {}", field_index)))?;
+
+    mc.builder
+        .build_load(field_ty, field_ptr, &format!("{}.{}", var_name, field.name))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -276,6 +326,8 @@ mod tests {
             named_values: std::collections::HashMap::new(),
             struct_types: std::collections::HashMap::new(),
             functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
         }
     }
 
@@ -315,5 +367,82 @@ mod tests {
         mc.builder.build_return(Some(&val)).unwrap();
         let ir = mc.module.print_to_string().to_string();
         assert!(ir.contains("fadd"), "IR should contain fadd, got:\n{}", ir);
+    }
+
+    #[test]
+    fn compiles_struct_field_access() {
+        // struct Point { x: number, y: number }
+        // fn get_x(p: Point) -> number {
+        //   return p.x
+        // }
+        let compiler = NomCompiler::new();
+        let module = compiler.context.create_module("test_field_access");
+        let builder = compiler.context.create_builder();
+        let mut mc = crate::context::ModuleCompiler {
+            context: &compiler.context,
+            module,
+            builder,
+            named_values: std::collections::HashMap::new(),
+            struct_types: std::collections::HashMap::new(),
+            functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
+        };
+        crate::runtime::declare_runtime_functions(&mut mc);
+
+        // Define the struct first
+        let struct_def = nom_ast::StructDef {
+            name: nom_ast::Identifier::new("Point", nom_ast::Span::default()),
+            fields: vec![
+                nom_ast::StructField {
+                    name: nom_ast::Identifier::new("x", nom_ast::Span::default()),
+                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default())),
+                    is_pub: false,
+                },
+                nom_ast::StructField {
+                    name: nom_ast::Identifier::new("y", nom_ast::Span::default()),
+                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default())),
+                    is_pub: false,
+                },
+            ],
+            is_pub: false,
+            span: nom_ast::Span::default(),
+        };
+        crate::structs::compile_struct(&mut mc, &struct_def).unwrap();
+
+        // Define fn get_x(p: Point) -> number { return p.x }
+        let fn_def = nom_ast::FnDef {
+            name: nom_ast::Identifier::new("get_x", nom_ast::Span::default()),
+            params: vec![nom_ast::FnParam {
+                name: nom_ast::Identifier::new("p", nom_ast::Span::default()),
+                type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("Point", nom_ast::Span::default())),
+            }],
+            return_type: Some(nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default()))),
+            body: nom_ast::Block {
+                stmts: vec![nom_ast::BlockStmt::Return(Some(
+                    nom_ast::Expr::FieldAccess(
+                        Box::new(nom_ast::Expr::Ident(nom_ast::Identifier::new("p", nom_ast::Span::default()))),
+                        nom_ast::Identifier::new("x", nom_ast::Span::default()),
+                    ),
+                ))],
+                span: nom_ast::Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: nom_ast::Span::default(),
+        };
+        crate::functions::compile_fn(&mut mc, &fn_def).unwrap();
+
+        let ir = mc.module.print_to_string().to_string();
+        assert!(
+            ir.contains("getelementptr") || ir.contains("extractvalue"),
+            "IR should contain getelementptr or extractvalue for field access, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("get_x"),
+            "IR should contain get_x function, got:\n{}",
+            ir
+        );
     }
 }

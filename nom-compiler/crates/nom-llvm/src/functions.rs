@@ -40,8 +40,9 @@ pub fn compile_fn<'ctx>(
     let entry = mc.context.append_basic_block(function, "entry");
     mc.builder.position_at_end(entry);
 
-    // Save old named_values and start fresh for this function scope
+    // Save old named_values and value_types, start fresh for this function scope
     let old_named_values = std::mem::take(&mut mc.named_values);
+    let old_value_types = std::mem::take(&mut mc.value_types);
 
     // Create allocas for params and store argument values
     for (i, param) in fn_def.params.iter().enumerate() {
@@ -61,6 +62,13 @@ pub fn compile_fn<'ctx>(
             .build_store(alloca, arg_val)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         mc.named_values.insert(param_name.clone(), (alloca, param_ty));
+
+        // Track struct type for field access
+        if let nom_ast::TypeExpr::Named(ident) = &param.type_ann {
+            if mc.struct_types.contains_key(&ident.name) {
+                mc.value_types.insert(param_name.clone(), ident.name.clone());
+            }
+        }
     }
 
     // Compile function body
@@ -93,8 +101,9 @@ pub fn compile_fn<'ctx>(
         }
     }
 
-    // Restore old named_values
+    // Restore old named_values and value_types
     mc.named_values = old_named_values;
+    mc.value_types = old_value_types;
 
     // Verify function
     if !function.verify(true) {
@@ -126,6 +135,8 @@ mod tests {
             named_values: std::collections::HashMap::new(),
             struct_types: std::collections::HashMap::new(),
             functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
         };
         declare_runtime_functions(&mut mc);
 

@@ -19,6 +19,10 @@ pub struct ModuleCompiler<'ctx> {
     pub named_values: HashMap<String, (inkwell::values::PointerValue<'ctx>, inkwell::types::BasicTypeEnum<'ctx>)>,
     pub struct_types: HashMap<String, inkwell::types::StructType<'ctx>>,
     pub functions: HashMap<String, FunctionValue<'ctx>>,
+    /// Maps variable name -> struct type name (e.g. "p" -> "Point")
+    pub value_types: HashMap<String, String>,
+    /// Maps struct type name -> ordered field names (e.g. "Point" -> ["x", "y"])
+    pub struct_fields: HashMap<String, Vec<String>>,
 }
 
 impl NomCompiler {
@@ -41,6 +45,8 @@ impl NomCompiler {
             named_values: HashMap::new(),
             struct_types: HashMap::new(),
             functions: HashMap::new(),
+            value_types: HashMap::new(),
+            struct_fields: HashMap::new(),
         };
 
         declare_runtime_functions(&mut mc);

@@ -1,7 +1,7 @@
 use crate::context::ModuleCompiler;
 use crate::LlvmError;
 use inkwell::values::BasicValueEnum;
-use nom_ast::{Block, BlockStmt, IfExpr};
+use nom_ast::{Block, BlockStmt, IfExpr, MatchExpr, Pattern};
 
 /// Compile a single block statement, returning a value (i8 zero for void stmts).
 pub fn compile_block_stmt<'ctx>(
@@ -24,7 +24,7 @@ pub fn compile_block_stmt<'ctx>(
             Ok(mc.context.i8_type().const_zero().into())
         }
         BlockStmt::For(_) => Err(LlvmError::Unsupported("for loop".into())),
-        BlockStmt::Match(_) => Err(LlvmError::Unsupported("match expression".into())),
+        BlockStmt::Match(match_expr) => compile_match_value(mc, match_expr),
         BlockStmt::Return(expr) => {
             if let Some(e) = expr {
                 let val = crate::expressions::compile_expr(mc, e)?;
@@ -64,6 +64,15 @@ fn compile_let<'ctx>(
         .build_store(alloca, val)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.named_values.insert(name.clone(), (alloca, llvm_ty));
+
+    // Track struct type for field access
+    if let Some(type_ann) = &let_stmt.type_ann {
+        if let nom_ast::TypeExpr::Named(ident) = type_ann {
+            if mc.struct_types.contains_key(&ident.name) {
+                mc.value_types.insert(name.clone(), ident.name.clone());
+            }
+        }
+    }
     Ok(())
 }
 
@@ -236,6 +245,128 @@ fn compile_while<'ctx>(
     Ok(())
 }
 
+pub fn compile_match_value<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    match_expr: &MatchExpr,
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    let subject_val = crate::expressions::compile_expr(mc, &match_expr.subject)?;
+
+    let function = mc.builder.get_insert_block()
+        .and_then(|bb| bb.get_parent())
+        .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
+
+    let merge_bb = mc.context.append_basic_block(function, "match_end");
+
+    // We use an alloca to store the result of whichever arm matches.
+    let result_alloca = mc.builder
+        .build_alloca(mc.context.f64_type(), "match_result")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    // Default value
+    mc.builder.build_store(result_alloca, mc.context.f64_type().const_float(0.0))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    let mut arm_blocks = Vec::new();
+    let mut next_blocks = Vec::new();
+
+    // Create basic blocks for each arm test and body
+    for (i, _arm) in match_expr.arms.iter().enumerate() {
+        let test_bb = mc.context.append_basic_block(function, &format!("match_test_{}", i));
+        let body_bb = mc.context.append_basic_block(function, &format!("match_arm_{}", i));
+        arm_blocks.push((test_bb, body_bb));
+        next_blocks.push(test_bb);
+    }
+
+    // Branch to the first test block
+    if let Some((first_test, _)) = arm_blocks.first() {
+        mc.builder.build_unconditional_branch(*first_test)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    } else {
+        // No arms at all — just branch to merge
+        mc.builder.build_unconditional_branch(merge_bb)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
+    for (i, arm) in match_expr.arms.iter().enumerate() {
+        let (test_bb, body_bb) = arm_blocks[i];
+        // The "next" block is either the next arm's test or the merge block
+        let fallthrough_bb = if i + 1 < arm_blocks.len() {
+            arm_blocks[i + 1].0
+        } else {
+            merge_bb
+        };
+
+        // --- Test block ---
+        mc.builder.position_at_end(test_bb);
+
+        match &arm.pattern {
+            Pattern::Wildcard => {
+                // Always matches — branch directly to body
+                mc.builder.build_unconditional_branch(body_bb)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            Pattern::Literal(lit) => {
+                let lit_val = crate::expressions::compile_expr(
+                    mc,
+                    &nom_ast::Expr::Literal(lit.clone()),
+                )?;
+                let matches = if subject_val.is_float_value() && lit_val.is_float_value() {
+                    mc.builder.build_float_compare(
+                        inkwell::FloatPredicate::OEQ,
+                        subject_val.into_float_value(),
+                        lit_val.into_float_value(),
+                        "match_cmp",
+                    ).map_err(|e| LlvmError::Compilation(e.to_string()))?
+                } else if subject_val.is_int_value() && lit_val.is_int_value() {
+                    mc.builder.build_int_compare(
+                        inkwell::IntPredicate::EQ,
+                        subject_val.into_int_value(),
+                        lit_val.into_int_value(),
+                        "match_cmp",
+                    ).map_err(|e| LlvmError::Compilation(e.to_string()))?
+                } else {
+                    return Err(LlvmError::Type("match: incompatible subject and pattern types".into()));
+                };
+                mc.builder.build_conditional_branch(matches, body_bb, fallthrough_bb)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            Pattern::Binding(ident) => {
+                // Bind subject to a name, then unconditionally enter body
+                let ty = subject_val.get_type();
+                let alloca = mc.builder.build_alloca(ty, &ident.name)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                mc.builder.build_store(alloca, subject_val)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                mc.named_values.insert(ident.name.clone(), (alloca, ty));
+                mc.builder.build_unconditional_branch(body_bb)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            Pattern::Variant(_, _) => {
+                return Err(LlvmError::Unsupported("match variant pattern".into()));
+            }
+        }
+
+        // --- Body block ---
+        mc.builder.position_at_end(body_bb);
+        let body_val = compile_block(mc, &arm.body)?;
+
+        // Store result if block didn't terminate (e.g., return)
+        if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            // Try to store the result if it's f64; otherwise just branch
+            if body_val.is_float_value() {
+                mc.builder.build_store(result_alloca, body_val)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            mc.builder.build_unconditional_branch(merge_bb)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        }
+    }
+
+    mc.builder.position_at_end(merge_bb);
+    let result = mc.builder.build_load(mc.context.f64_type(), result_alloca, "match_val")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    Ok(result)
+}
+
 pub fn compile_block<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     block: &Block,
@@ -268,6 +399,8 @@ mod tests {
             named_values: std::collections::HashMap::new(),
             struct_types: std::collections::HashMap::new(),
             functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
         }
     }
 
@@ -295,5 +428,86 @@ mod tests {
         let ir = mc.module.print_to_string().to_string();
         assert!(ir.contains("alloca"), "IR should contain alloca for let, got:\n{}", ir);
         assert!(ir.contains("store"), "IR should contain store for let, got:\n{}", ir);
+    }
+
+    #[test]
+    fn compiles_match_on_number() {
+        // fn classify(x: number) -> number {
+        //   match x {
+        //     1.0 => return 10.0
+        //     2.0 => return 20.0
+        //     _ => return 0.0
+        //   }
+        // }
+        let compiler = NomCompiler::new();
+        let module = compiler.context.create_module("test_match");
+        let builder = compiler.context.create_builder();
+        let mut mc = crate::context::ModuleCompiler {
+            context: &compiler.context,
+            module,
+            builder,
+            named_values: std::collections::HashMap::new(),
+            struct_types: std::collections::HashMap::new(),
+            functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
+        };
+        crate::runtime::declare_runtime_functions(&mut mc);
+
+        let fn_def = FnDef {
+            name: Identifier::new("classify", Span::default()),
+            params: vec![FnParam {
+                name: Identifier::new("x", Span::default()),
+                type_ann: TypeExpr::Named(Identifier::new("number", Span::default())),
+            }],
+            return_type: Some(TypeExpr::Named(Identifier::new("number", Span::default()))),
+            body: Block {
+                stmts: vec![BlockStmt::Match(MatchExpr {
+                    subject: Box::new(Expr::Ident(Identifier::new("x", Span::default()))),
+                    arms: vec![
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(1.0)),
+                            body: Block {
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(10.0))))],
+                                span: Span::default(),
+                            },
+                        },
+                        MatchArm {
+                            pattern: Pattern::Literal(Literal::Number(2.0)),
+                            body: Block {
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(20.0))))],
+                                span: Span::default(),
+                            },
+                        },
+                        MatchArm {
+                            pattern: Pattern::Wildcard,
+                            body: Block {
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(0.0))))],
+                                span: Span::default(),
+                            },
+                        },
+                    ],
+                    span: Span::default(),
+                })],
+                span: Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: Span::default(),
+        };
+
+        crate::functions::compile_fn(&mut mc, &fn_def).unwrap();
+
+        let ir = mc.module.print_to_string().to_string();
+        assert!(
+            ir.contains("match_test_0") || ir.contains("match_cmp"),
+            "IR should contain match comparison blocks, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("ret double"),
+            "IR should contain ret double instructions, got:\n{}",
+            ir
+        );
     }
 }

@@ -4,13 +4,16 @@ use nom_ast::StructDef;
 pub fn compile_struct(mc: &mut ModuleCompiler, struct_def: &StructDef) -> Result<(), crate::LlvmError> {
     let name = &struct_def.name.name;
     let mut field_types = Vec::new();
+    let mut field_names = Vec::new();
     for field in &struct_def.fields {
         let llvm_ty = crate::types::resolve_type(mc, &field.type_ann)?;
         field_types.push(llvm_ty);
+        field_names.push(field.name.name.clone());
     }
     let struct_type = mc.context.opaque_struct_type(name);
     struct_type.set_body(&field_types, false);
     mc.struct_types.insert(name.clone(), struct_type);
+    mc.struct_fields.insert(name.clone(), field_names);
     Ok(())
 }
 
@@ -43,6 +46,8 @@ mod tests {
             named_values: std::collections::HashMap::new(),
             struct_types: std::collections::HashMap::new(),
             functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
         };
 
         let struct_def = StructDef {
