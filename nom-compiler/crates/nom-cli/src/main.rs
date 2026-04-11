@@ -229,13 +229,16 @@ fn cmd_build(
     };
 
     let planner = Planner::new(&resolver);
-    let plan = match planner.plan_unchecked(&parsed) {
+    let mut plan = match planner.plan_unchecked(&parsed) {
         Ok(p) => p,
         Err(e) => {
             eprintln!("nom: plan error: {e}");
             return 1;
         }
     };
+
+    // Enrich plan nodes with real implementation bodies from the dictionary
+    planner.enrich_with_implementations(&mut plan);
 
     // Always write .nomiz
     let nomiz_path = file.with_extension("nomiz");
@@ -690,18 +693,27 @@ fn cmd_import(
         let lang_str = lang.unwrap_or_else(|| "unknown".to_owned());
         let kind_str = kind.unwrap_or_else(|| "function".to_owned());
 
-        // Derive word and variant
-        let (word, variant) = if let Some(ref c) = conc {
-            (name.clone(), Some(c.clone()))
+        // Derive word and variant using smart name mapping.
+        // Goal: .nom files write `need hash::argon2` so we need
+        // word=hash, variant=argon2 — not word=raw_func_name, variant=concept.
+        //
+        // Strategy:
+        // 1. Check if the function name contains a well-known domain word
+        //    (hash, store, cache, http, auth, encrypt, parse, sort, etc.)
+        //    → word = domain, variant = name (the specific implementation)
+        // 2. If concept exists, use concept as word, name as variant
+        // 3. Fallback: name as word, kind as variant
+        let name_lower = name.to_lowercase();
+        let (word, variant, describe) = if let Some(domain) = detect_domain(&name_lower) {
+            let var = name.clone();
+            let desc = format!("{domain} implementation: {name}");
+            (domain.to_owned(), Some(var), desc)
+        } else if let Some(ref c) = conc {
+            let desc = format!("{c} implementation: {name}");
+            (c.clone(), Some(name.clone()), desc)
         } else {
-            (name.clone(), Some(kind_str.clone()))
-        };
-
-        // Build description
-        let describe = if let Some(ref c) = conc {
-            format!("implementation of {c}: {name}")
-        } else {
-            format!("{kind_str} {name}")
+            let desc = format!("{kind_str}: {name}");
+            (name.clone(), Some(kind_str.clone()), desc)
         };
 
         // Extract input_type, output_type, effects from signature JSON
@@ -814,6 +826,186 @@ fn parse_signature(sig: &str) -> (Option<String>, Option<String>, Vec<String>) {
         .unwrap_or_default();
 
     (input_type, output_type, effects)
+}
+
+/// Detect which semantic domain a function name belongs to.
+/// Returns the dictionary word (e.g., "hash", "store", "http") if the name
+/// contains a known pattern. This maps raw function names to semantic words
+/// that .nom files use with `need hash::argon2`.
+fn detect_domain(name_lower: &str) -> Option<&'static str> {
+    // Crypto / hashing
+    if name_lower.contains("argon") || name_lower.contains("bcrypt")
+        || name_lower.contains("sha256") || name_lower.contains("sha512")
+        || name_lower.contains("sha1") || name_lower.contains("blake")
+        || name_lower.contains("pbkdf") || name_lower.contains("scrypt")
+        || (name_lower.contains("hash") && !name_lower.contains("hashmap"))
+    {
+        return Some("hash");
+    }
+    if name_lower.contains("encrypt") || name_lower.contains("decrypt")
+        || name_lower.contains("aes") || name_lower.contains("chacha")
+        || name_lower.contains("cipher")
+    {
+        return Some("encrypt");
+    }
+    if name_lower.contains("sign") && (name_lower.contains("ed25519")
+        || name_lower.contains("rsa") || name_lower.contains("ecdsa")
+        || name_lower.contains("verify_sig") || name_lower.contains("digital"))
+    {
+        return Some("sign");
+    }
+    if name_lower.contains("tls") || name_lower.contains("ssl")
+        || name_lower.contains("certificate") || name_lower.contains("handshake")
+    {
+        return Some("tls");
+    }
+
+    // Data / storage
+    if name_lower.contains("redis") {
+        return Some("store");
+    }
+    if name_lower.contains("postgres") || name_lower.contains("sqlite")
+        || name_lower.contains("mysql") || name_lower.contains("database")
+        || name_lower.contains("db_") || name_lower.contains("_db")
+    {
+        return Some("database");
+    }
+    if name_lower.contains("cache") || name_lower.contains("lru")
+        || name_lower.contains("memoize")
+    {
+        return Some("cache");
+    }
+    if name_lower.contains("queue") || name_lower.contains("kafka")
+        || name_lower.contains("rabbitmq") || name_lower.contains("pubsub")
+    {
+        return Some("queue");
+    }
+
+    // Network
+    if name_lower.contains("http") || name_lower.contains("server")
+        || name_lower.contains("router") || name_lower.contains("endpoint")
+        || name_lower.contains("handler") || name_lower.contains("middleware")
+    {
+        return Some("http");
+    }
+    if name_lower.contains("websocket") || name_lower.contains("ws_") {
+        return Some("websocket");
+    }
+    if name_lower.contains("grpc") || name_lower.contains("protobuf") {
+        return Some("grpc");
+    }
+    if name_lower.contains("dns") || name_lower.contains("resolve_host") {
+        return Some("dns");
+    }
+    if name_lower.contains("rate_limit") || name_lower.contains("throttle")
+        || name_lower.contains("limiter") || name_lower.contains("token_bucket")
+    {
+        return Some("limiter");
+    }
+
+    // Auth
+    if name_lower.contains("jwt") || name_lower.contains("token")
+        || name_lower.contains("oauth") || name_lower.contains("auth")
+        || name_lower.contains("login") || name_lower.contains("session")
+    {
+        return Some("auth");
+    }
+
+    // IO
+    if name_lower.contains("print") || name_lower.contains("stdout")
+        || name_lower.contains("display") || name_lower.contains("write_output")
+    {
+        return Some("print");
+    }
+    if name_lower.contains("log") || name_lower.contains("logger")
+        || name_lower.contains("tracing")
+    {
+        return Some("log");
+    }
+    if name_lower.contains("read_file") || name_lower.contains("write_file")
+        || name_lower.contains("open_file") || name_lower.contains("fs_")
+    {
+        return Some("file");
+    }
+
+    // Compute
+    if name_lower.contains("serialize") || name_lower.contains("json")
+        || name_lower.contains("serde") || name_lower.contains("marshal")
+    {
+        return Some("serialize");
+    }
+    if name_lower.contains("compress") || name_lower.contains("gzip")
+        || name_lower.contains("zstd") || name_lower.contains("deflate")
+    {
+        return Some("compress");
+    }
+    if name_lower.contains("parse") || name_lower.contains("parser")
+        || name_lower.contains("tokenize") || name_lower.contains("lexer")
+    {
+        return Some("parse");
+    }
+    if name_lower.contains("sort") && !name_lower.contains("resort") {
+        return Some("sort");
+    }
+    if name_lower.contains("filter") && !name_lower.contains("_filtered") {
+        return Some("filter");
+    }
+
+    // OS
+    if name_lower.contains("process") || name_lower.contains("spawn")
+        || name_lower.contains("exec")
+    {
+        return Some("process");
+    }
+    if name_lower.contains("thread") || name_lower.contains("mutex")
+        || name_lower.contains("rwlock")
+    {
+        return Some("thread");
+    }
+    if name_lower.contains("socket") || name_lower.contains("tcp_")
+        || name_lower.contains("udp_") || name_lower.contains("bind_addr")
+    {
+        return Some("socket");
+    }
+
+    // AI / ML
+    if name_lower.contains("embed") || name_lower.contains("vector")
+        || name_lower.contains("cosine") || name_lower.contains("similarity")
+    {
+        return Some("embed");
+    }
+    if name_lower.contains("llm") || name_lower.contains("generate_text")
+        || name_lower.contains("completion") || name_lower.contains("inference")
+    {
+        return Some("generate");
+    }
+    if name_lower.contains("classify") || name_lower.contains("predict")
+        || name_lower.contains("detect")
+    {
+        return Some("classify");
+    }
+
+    // Graph
+    if name_lower.contains("traverse") || name_lower.contains("bfs")
+        || name_lower.contains("dfs") || name_lower.contains("shortest_path")
+        || name_lower.contains("dijkstra") || name_lower.contains("topological")
+    {
+        return Some("traverse");
+    }
+
+    // Agent
+    if name_lower.contains("agent") || name_lower.contains("supervisor")
+        || name_lower.contains("worker")
+    {
+        return Some("agent");
+    }
+    if name_lower.contains("schedule") || name_lower.contains("cron")
+        || name_lower.contains("timer")
+    {
+        return Some("schedule");
+    }
+
+    None
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

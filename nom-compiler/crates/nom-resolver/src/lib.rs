@@ -410,19 +410,27 @@ impl Resolver {
     /// Selection: prefer `is_canonical=true`, then `language='rust'`,
     /// then highest `quality`, then newest.
     pub fn get_body(&self, word: &str, variant: Option<&str>) -> Result<Option<NomtuEntry>, ResolverError> {
-        let sql = if variant.is_some() {
-            format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant=?2 AND body IS NOT NULL
-             ORDER BY {ORDER_CLAUSE} LIMIT 1")
-        } else {
-            format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant IS NULL AND body IS NOT NULL
-             ORDER BY {ORDER_CLAUSE} LIMIT 1")
-        };
+        // 1. Try exact (word, variant) match with body
+        if let Some(v) = variant {
+            let sql = format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant=?2 AND body IS NOT NULL AND length(body) > 0
+                 ORDER BY {ORDER_CLAUSE} LIMIT 1");
+            if let Some(entry) = self.conn.query_row(&sql, params![word, v], Self::row_to_entry).optional()? {
+                return Ok(Some(entry));
+            }
+        }
 
-        let result = if let Some(v) = variant {
-            self.conn.query_row(&sql, params![word, v], Self::row_to_entry).optional()?
-        } else {
-            self.conn.query_row(&sql, params![word], Self::row_to_entry).optional()?
-        };
+        // 2. Fallback: ANY entry for this word with a body (pick best by quality)
+        let sql = format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND body IS NOT NULL AND length(body) > 0
+             ORDER BY {ORDER_CLAUSE} LIMIT 1");
+        if let Some(entry) = self.conn.query_row(&sql, params![word], Self::row_to_entry).optional()? {
+            return Ok(Some(entry));
+        }
+
+        // 3. Semantic fallback: search describe for the word
+        let pattern = format!("%{word}%");
+        let sql = format!("{SELECT_COLS} FROM nomtu WHERE describe LIKE ?1 AND body IS NOT NULL AND length(body) > 0
+             ORDER BY {ORDER_CLAUSE} LIMIT 1");
+        let result = self.conn.query_row(&sql, params![pattern], Self::row_to_entry).optional()?;
         Ok(result)
     }
 

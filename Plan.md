@@ -1,157 +1,175 @@
 # Nom Language Development Roadmap
 
-Development plan for the Nom programming language. Focused on the language,
-compiler, and dictionary -- not OS or product concerns.
+Development plan for the Nom programming language.
 
 ---
 
-## Phase A: Core Compiler -- IN PROGRESS
+## Architectural Decision: LLVM Bitcode (.bc) as Universal Artifact
 
-Build the compilation pipeline from `.nom` source to native binary.
+Every .nomtu in the dictionary gets pre-compiled to LLVM bitcode (.bc).
+The compiler generates ONLY glue IR and links against pre-compiled .bc files.
 
-### Compile to Binary -- DONE
+```
+WHY .bc:
+  C code      -> clang    -> .bc
+  Rust code   -> rustc    -> .bc     ALL produce the SAME format
+  Go code     -> gollvm   -> .bc
+  C++ code    -> clang++  -> .bc
+  Python      -> translate to C/Rust first -> .bc
 
-The `nom build` command produces native executables.
+  Then:
+  .nom -> LLVM IR glue -> llvm-link all .bc files -> opt -> llc -> binary
 
-- 10 compiler crates: nom-ast, nom-lexer, nom-parser, nom-resolver,
-  nom-verifier, nom-codegen, nom-planner, nom-security, nom-diagnostics, nom-cli
-- 42 tests passing across all crates
-- `nom build auth.nom` produces an 834KB Windows binary from 9 lines
-- Parser handles all 10 classifiers, 42 keywords, graph and agent primitives
-- Lexer supports all operators, literals, comments, blank-line detection
+  Language-neutral. All 10M nomtu usable, not just Rust.
+  Full LTO across the entire composition.
+  Sub-second builds (only compile glue, link pre-compiled .bc).
+```
 
-### Semantic Resolution -- DONE
+### .nomtu Format Evolution
 
-The resolver maps `.nom` references to nomdict dictionary entries.
+```
+Phase 1 (now):    nomtu = { word, body: "source text", language }
+                  Compiler: paste body into Rust -> cargo build
+                  
+Phase 2 (next):   nomtu = { word, body: "source text", artifact: "hash.bc" }
+                  Compiler: emit LLVM IR glue -> llvm-link with .bc -> binary
+                  Pre-compile: run once per nomtu -> store .bc in registry
 
-- nom-resolver crate connects parsed NomRef nodes to dictionary words
-- 10M+ .nomtu entries in the SQLite nomdict database
-- Word + variant lookup: `hash::argon2` resolves to the argon2 entry
+Phase 3 (mature): nomtu = { word, artifact: "hash.bc" }
+                  nom.dev serves .bc files directly
+                  Source text = provenance only, not needed for compilation
+```
 
-### Import System -- RUNNING
+### Dependency Bundling
 
-Multi-file programs need to reference declarations across `.nom` files.
+Each .nomtu .bc bundles its ENTIRE dependency tree:
 
-- Single-file compilation works end to end
-- Cross-file imports not yet implemented
-- Planned: `need` statements resolve across the project, not just the dictionary
+```
+argon2.nomtu:
+  source: fn argon2_hash(data: &[u8]) -> Vec<u8> { ... }
+  deps: rand_core, password-hash, base64ct
+  artifact: argon2-bundle.bc  (argon2 + all deps, one file)
+  contract: in=bytes, out=hash, effects=[cpu]
+  
+nom build links against argon2-bundle.bc
+  -> no dependency resolution at build time
+  -> no Cargo.toml needed
+  -> no crates.io download
+```
 
-### Remaining Phase A Work
+### .bc vs Alternatives
 
-- [ ] Cross-file import resolution
-- [ ] Contract type checking across flow edges
-- [ ] Score-based selection when multiple dictionary entries match
-- [ ] Glass box composition report generation
-- [ ] Error recovery in parser (currently stops at first error)
-
----
-
-## Phase B: Failure Prevention
-
-Systematically address the 47 failure patterns identified in the world
-language survey (see `research/01-world-language-survey.md`).
-
-These are the mistakes made by 40+ programming languages that Nom must avoid.
-Each is a concrete technical requirement derived from studying real failures.
-
-### Categories
-
-| Category | Count | Key Items |
-|----------|-------|-----------|
-| Type system failures | 8 | No null, no implicit coercion, no type erasure |
-| Memory safety failures | 6 | No manual memory, no GC pauses, graph-inferred ownership |
-| Concurrency failures | 5 | No colored functions, no data races, topology-driven concurrency |
-| Composition failures | 7 | No diamond inheritance, no implicit dependencies, explicit effects |
-| Error handling failures | 4 | No unchecked exceptions, no silent failures, contract-based errors |
-| Ecosystem failures | 6 | No version hell, no trust-by-default, scored dictionary |
-| Syntax failures | 5 | No ambiguous grammar, no semicolon debates, writing-style surface |
-| Tooling failures | 6 | No slow compilers, no missing source maps, integrated diagnostics |
-
-### Phase B Approach
-
-Each failure pattern becomes a compiler or verifier check. The nom-verifier
-and nom-security crates are the enforcement points. The goal: make it
-structurally impossible to introduce these failures, not just discouraged.
+| | .rlib (Rust) | .bc (LLVM) | .wasm | .o (object) |
+|--|-------------|-----------|-------|-------------|
+| Language lock-in | Rust only | Any | Any | Any |
+| Version coupling | rustc version | Stable IR | Stable | None |
+| Cross-language link | No | Yes | Via host | Platform-specific |
+| LTO optimization | Limited | Full | Limited | None |
+| Our 10M nomtu | 992K usable | All 10M | All 10M | All 10M |
 
 ---
 
-## Phase C: Assembly-Smooth Performance
+## Phase A: Core Compiler -- DONE
 
-Make Nom-compiled binaries competitive with hand-written Rust in performance.
-
-### Goals
-
-- Zero-cost composition: the flow graph compiles away to direct function calls
-- Graph-inferred memory: move semantics for linear chains, Arc+Mutex only
-  where the topology requires sharing
-- Topology-driven concurrency: tokio for IO-bound, rayon for CPU-bound,
-  sequential for dependent -- all inferred from the composition graph
-- No runtime overhead: no reflection, no garbage collector, no interpreter
-
-### Prerequisites
-
-- Phase A contract verification (needed to prove optimizations are safe)
-- Phase B failure prevention (needed to guarantee safety invariants)
-
-### Approach
-
-1. Benchmark current codegen output against equivalent hand-written Rust
-2. Identify abstraction overhead in generated code
-3. Implement graph-aware optimization passes in nom-codegen
-4. Target: within 5% of hand-written Rust on standard benchmarks
+- 10 compiler crates, 42 tests passing
+- `nom build auth.nom` produces 834KB native binary from 9 lines
+- Semantic resolution with describe-field fallback
+- Smart domain mapping (26K nomtu with real code bodies)
+- Enrichment pass pulls real code from dictionary into generated output
+- Parser handles all 10 classifiers, 42 keywords, graph/agent primitives
 
 ---
 
-## Phase D: LLVM Backend
+## Phase B: .bc Pre-Compiler -- NEXT
 
-Replace the current Rust codegen (Nom -> Rust source -> rustc -> binary) with
-direct LLVM IR emission (Nom -> LLVM IR -> binary).
+Build the infrastructure to pre-compile .nomtu bodies into LLVM bitcode.
 
-### Why
+### Step 1: Score and filter dictionary (1-2 days)
+- [ ] Score all 26K nomtu with bodies (body length, signature quality, language)
+- [ ] Filter: keep only self-contained functions (< 3 external type refs)
+- [ ] Rank: prefer functions with typed signatures matching composable contracts
 
-- Faster compilation: skip Rust parsing and type checking
-- Better error messages: source maps point directly to .nom lines
-- Smaller binaries: no Rust runtime overhead
-- Foundation for self-hosting
+### Step 2: .bc pre-compilation pipeline (1 week)
+- [ ] For each Rust .nomtu body: wrap in minimal crate with `extern "C"` entry
+- [ ] Compile: `rustc --emit=llvm-bc` -> .bc file
+- [ ] For each C .nomtu body: `clang -emit-llvm -c` -> .bc file
+- [ ] Bundle dependencies: link .bc with dep .bc files -> single bundle.bc
+- [ ] Store artifact path in nomtu table (new column: `artifact_path`)
+- [ ] Add `nom precompile` CLI command
 
-### Prerequisites
+### Step 3: LLVM glue emitter (1 week)
+- [ ] Add inkwell (Rust LLVM bindings) to nom-codegen
+- [ ] Emit LLVM IR for flow glue: call @hash(input) -> call @store(result) -> return
+- [ ] Handle pipeline concurrency in IR (or link against tokio .bc)
+- [ ] Error handling: Result type as {i1, ptr} tagged union in LLVM IR
+- [ ] Add `nom build --backend=llvm` flag (keep Rust backend as fallback)
 
-- Phase C performance baseline (needed to measure improvement)
-- Stable IR format (.nomiz) that captures the full composition graph
+### Step 4: Link and optimize (days)
+- [ ] llvm-link: glue.bc + hash.bc + store.bc -> combined.bc
+- [ ] opt: optimization passes (inlining, dead code, GVN, vectorize)
+- [ ] llc: combined.bc -> native object -> system linker -> binary
+- [ ] Benchmark: compare .bc build vs cargo build (target: 10x faster)
 
-### Approach
+### Expected Result
+```
+nom build auth.nom
+  -> emit LLVM IR glue (microseconds)
+  -> link pre-compiled .bc files (milliseconds)
+  -> optimize + compile to native (seconds)
+  -> binary
 
-1. Define .nomiz as a stable serialization of the verified composition graph
-2. Write LLVM IR emitter that reads .nomiz
-3. Gradually migrate from Rust codegen to LLVM codegen
-4. Keep Rust codegen as fallback for debugging
+Total: ~5 seconds instead of ~2 minutes
+All 10M nomtu usable regardless of source language
+```
 
 ---
 
-## Evidence and Research
+## Phase C: Failure Prevention (47 patterns)
 
-| Document | What It Informs |
-|----------|-----------------|
-| `research/01-world-language-survey.md` | Phase B: 47 failure patterns to prevent |
-| `research/02-vietnamese-grammar-to-novel-syntax.md` | Classifier design, composition operators |
-| `research/03-chu-nom-to-nom-encoding.md` | NomID encoding, dictionary architecture |
-| `research/04-novel-language-spec.md` | Phase A: syntax specification |
-| `research/05-beyond-transformers.md` | Phase D: why direct compilation matters |
-| `research/06-blueprint-for-building.md` | Phase A-D: engineering implementation plan |
-| `research/07-vietnamese-flexibility.md` | Anchored-flexible syntax design |
-| `SYNTAX.md` | Formal syntax reference (matches compiler implementation) |
-| `BLUEPRINT.md` | Full build plan including products and ecosystem |
+See `research/motivation/01-world-language-survey.md` for the full list.
+
+| Category | Count | Enforced By |
+|----------|-------|-------------|
+| Memory safety | 9 | Graph topology -> ownership inference at IR level |
+| Concurrency | 6 | Flow graph -> parallel/sequential at IR level |
+| Type systems | 7 | Contract verification at link time |
+| Error handling | 4 | Contract ok/err -> Result in IR |
+| Composition | 4 | Three operators only (-> :: +) |
+| Effects | 2 | Effect declarations verified at link time |
+| Evolution | 4 | Content-addressed .bc, nom.lock pins hashes |
+| Security | 6 | Score-gated selection, provenance tracking |
+| Build/Tooling | 4 | nom is the entire toolchain |
+| Syntax | 6 | 10 keywords, 3 operators, writing-style |
+
+With .bc: many of these become LLVM-level enforcement (noalias for ownership,
+branch weights for error paths, function attributes for effects).
 
 ---
 
-## File Format Reference
+## Phase D: Assembly-Smooth Performance
 
-| Extension | What | Current Status |
-|-----------|------|----------------|
-| `.nom` | Source file (sentences) | Compiles to binary |
-| `.nomtu` | Dictionary word entry | 10M+ in nomdict |
-| `.nomiz` | Compiled composition graph (IR) | Planned for Phase D |
-| `nomdict` | Dictionary database (SQLite) | Operational |
+With .bc as the artifact format, performance optimization = LLVM optimization:
+
+- Nom fusion: inline adjacent .bc functions (LLVM inlining pass)
+- Arena allocation: LLVM alloca with known sizes from graph topology
+- noalias everywhere: graph topology proves no aliasing
+- Branch hints: contract ok/err -> llvm.expect intrinsic
+- SoA layout: LLVM SLP vectorizer on collection flows
+- Full LTO: all .bc merged, maximum cross-function optimization
+
+Target benchmarks (from research/motivation/10-how-novel-replaces-everything.md):
+- vs GC languages: 2-10x faster
+- vs hand-written Rust: within 5-15%
+- vs expert assembly: within 10-20%
+
+---
+
+## Phase E: nom.dev Registry
+
+- Serve .bc artifacts (not source text)
+- Content-addressed: hash of .bc = identity
+- nom.lock pins exact .bc hashes
+- Reproducible builds: same .nom + same nom.lock = same binary, always
 
 ---
 
@@ -159,16 +177,29 @@ direct LLVM IR emission (Nom -> LLVM IR -> binary).
 
 | Milestone | Status |
 |-----------|--------|
-| Lexer tokenizes all 42 keywords | Done |
-| Parser handles all 10 classifiers | Done |
-| Parser handles graph primitives (node, edge, query, constraint) | Done |
-| Parser handles agent primitives (capability, supervise, receive, state, schedule) | Done |
-| `nom build` produces native binary | Done |
-| auth.nom -> 834KB binary from 9 lines | Done |
-| 42 compiler tests passing | Done |
-| 10M+ dictionary entries in nomdict | Done |
-| Cross-file imports | In progress |
-| Contract type checking across flow edges | Planned |
-| Glass box composition reports | Planned |
-| Assembly-smooth performance | Planned |
-| LLVM backend | Planned |
+| Lexer/parser (42 keywords, 10 classifiers) | Done |
+| nom build -> native binary (Rust backend) | Done |
+| 10M+ nomtu in dictionary with real code bodies | Done |
+| Smart domain mapping (26K semantically named nomtu) | Done |
+| Dictionary enrichment (real code embedded in output) | Done |
+| Score and filter dictionary | Next |
+| .bc pre-compilation pipeline | Planned |
+| LLVM glue emitter (inkwell) | Planned |
+| .bc link + optimize -> binary | Planned |
+| 47 failure prevention at IR level | Planned |
+| Assembly-smooth benchmarks | Planned |
+| nom.dev registry serving .bc | Planned |
+
+---
+
+## Evidence and Research
+
+| Document | What It Informs |
+|----------|-----------------|
+| `research/motivation/01-world-language-survey.md` | 47 failure patterns to prevent |
+| `research/motivation/10-how-novel-replaces-everything.md` | Assembly-smooth compilation architecture |
+| `research/motivation/16-competitive-analysis-and-roadmap.md` | Competitive position and survival strategy |
+| `research/motivation/02-vietnamese-grammar-to-novel-syntax.md` | Classifier design, composition operators |
+| `research/deferred/05-beyond-transformers.md` | Why direct compilation matters |
+| `SYNTAX.md` | Formal syntax reference |
+| `BLUEPRINT.md` | Full build plan |
