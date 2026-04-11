@@ -2634,6 +2634,7 @@ pub fn expr_to_rust(expr: &Expr) -> String {
         }
         Expr::Await(inner) => format!("{}.await", expr_to_rust(inner)),
         Expr::Cast(inner, ty) => format!("({} as {})", expr_to_rust(inner), type_expr_to_rust(ty)),
+        Expr::Try(inner) => format!("{}?", expr_to_rust(inner)),
         Expr::IfExpr(ifexpr) => generate_if_rust(ifexpr, 0),
         Expr::MatchExpr(matchexpr) => generate_match_rust(matchexpr, 0),
         Expr::Block(block) => {

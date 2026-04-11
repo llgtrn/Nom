@@ -110,6 +110,7 @@ pub enum Token {
     Ampersand,  // &
     Pipe,       // |
     Bang,       // !
+    Question,   // ?
     Percent,    // %
     LBrace,     // {
     RBrace,     // }
@@ -727,6 +728,14 @@ impl<'src> Lexer<'src> {
                     ));
                 }
 
+                '?' => {
+                    self.advance();
+                    tokens.push(SpannedToken::new(
+                        Token::Question,
+                        Span::new(start, start + 1, line, col),
+                    ));
+                }
+
                 '%' => {
                     self.advance();
                     tokens.push(SpannedToken::new(
@@ -948,5 +957,18 @@ mod tests {
         );
         assert!(t.iter().any(|token| matches!(token, Token::RawCode(body) if body.contains("fn score(doc: &str) -> f32"))));
         assert!(t.iter().any(|token| matches!(token, Token::RBrace)));
+    }
+
+    #[test]
+    fn lexes_question_mark() {
+        let t = toks("x?");
+        assert_eq!(t[0], Token::Ident("x".to_owned()));
+        assert_eq!(t[1], Token::Question);
+    }
+
+    #[test]
+    fn lexes_question_mark_after_call() {
+        let t = toks("foo()?");
+        assert!(t.contains(&Token::Question));
     }
 }

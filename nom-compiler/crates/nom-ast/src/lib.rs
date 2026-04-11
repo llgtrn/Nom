@@ -774,6 +774,9 @@ pub enum Expr {
     Await(Box<Expr>),
     /// Type cast: expr as Type
     Cast(Box<Expr>, Box<TypeExpr>),
+    /// Try expression: expr? — propagates Err, unwraps Ok
+    /// Similar to Rust's `?` operator
+    Try(Box<Expr>),
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]

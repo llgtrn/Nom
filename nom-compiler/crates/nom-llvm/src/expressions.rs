@@ -31,6 +31,7 @@ pub fn compile_expr<'ctx>(
         Expr::TupleExpr(_) => Err(LlvmError::Unsupported("tuple expression".into())),
         Expr::Await(_) => Err(LlvmError::Unsupported("await expression".into())),
         Expr::Cast(_, _) => Err(LlvmError::Unsupported("cast expression".into())),
+        Expr::Try(_) => Err(LlvmError::Unsupported("try/? expression".into())),
     }
 }
 

@@ -709,6 +709,11 @@ impl Parser {
                         });
                     }
                 }
+                Token::Question => {
+                    // Try/propagate operator: expr?
+                    self.advance();
+                    expr = Expr::Try(Box::new(expr));
+                }
                 _ => break,
             }
         }
@@ -3095,5 +3100,69 @@ mod tests {
         assert!(matches!(&stmts[0], Statement::Mod(_)));
         assert!(matches!(&stmts[1], Statement::Use(_)));
         assert!(matches!(&stmts[2], Statement::Use(_)));
+    }
+
+    #[test]
+    fn parses_try_expression_question_mark() {
+        let src = "nom test\n  fn do_stuff() -> Result {\n    let x = some_call()?\n    return Ok(x)\n  }\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::FnDef(fndef) => {
+                assert_eq!(fndef.name.name, "do_stuff");
+                // The let statement's value should be a Try wrapping a Call
+                match &fndef.body.stmts[0] {
+                    BlockStmt::Let(let_stmt) => {
+                        assert!(matches!(&let_stmt.value, Expr::Try(inner) if matches!(&**inner, Expr::Call(_))));
+                    }
+                    other => panic!("expected Let, got {other:?}"),
+                }
+            }
+            other => panic!("expected FnDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_chained_try_operators() {
+        let src = "nom test\n  fn chain() -> Result {\n    let val = a()?.method()?\n    return val\n  }\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::FnDef(fndef) => {
+                match &fndef.body.stmts[0] {
+                    BlockStmt::Let(let_stmt) => {
+                        // Should be Try(MethodCall(Try(Call(...)), ...))
+                        assert!(matches!(&let_stmt.value, Expr::Try(_)));
+                    }
+                    other => panic!("expected Let, got {other:?}"),
+                }
+            }
+            other => panic!("expected FnDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_prelude_result_and_option_enums() {
+        let src = "nom prelude\n  enum Result {\n    Ok(text),\n    Err(text)\n  }\n  enum Option {\n    Some(text),\n    None\n  }\n";
+        let sf = parse_ok(src);
+        assert_eq!(sf.declarations[0].name.name, "prelude");
+        let stmts = &sf.declarations[0].statements;
+        assert_eq!(stmts.len(), 2);
+        match &stmts[0] {
+            Statement::EnumDef(e) => {
+                assert_eq!(e.name.name, "Result");
+                assert_eq!(e.variants.len(), 2);
+                assert_eq!(e.variants[0].name.name, "Ok");
+                assert_eq!(e.variants[1].name.name, "Err");
+            }
+            other => panic!("expected EnumDef, got {other:?}"),
+        }
+        match &stmts[1] {
+            Statement::EnumDef(e) => {
+                assert_eq!(e.name.name, "Option");
+                assert_eq!(e.variants.len(), 2);
+                assert_eq!(e.variants[0].name.name, "Some");
+                assert_eq!(e.variants[1].name.name, "None");
+            }
+            other => panic!("expected EnumDef, got {other:?}"),
+        }
     }
 }

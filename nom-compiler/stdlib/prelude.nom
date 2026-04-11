@@ -1,0 +1,46 @@
+nom prelude
+  # The Result type for error handling
+  # Similar to Rust's Result<T, E>
+  enum Result {
+    Ok(text),
+    Err(text)
+  }
+
+  # The Option type for nullable values
+  # Similar to Rust's Option<T>
+  enum Option {
+    Some(text),
+    None
+  }
+
+  # Check if a Result is Ok
+  fn is_ok(r: Result) -> bool {
+    match r {
+      Ok(_) => return true
+      Err(_) => return false
+    }
+  }
+
+  # Check if a Result is an error
+  fn is_err(r: Result) -> bool {
+    match r {
+      Ok(_) => return false
+      Err(_) => return true
+    }
+  }
+
+  # Check if an Option has a value
+  fn is_some(o: Option) -> bool {
+    match o {
+      Some(_) => return true
+      None => return false
+    }
+  }
+
+  # Check if an Option is empty
+  fn is_none(o: Option) -> bool {
+    match o {
+      Some(_) => return false
+      None => return true
+    }
+  }

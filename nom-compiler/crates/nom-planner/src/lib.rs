@@ -866,6 +866,7 @@ fn expr_to_string(expr: &Expr) -> String {
         }
         Expr::Await(inner) => format!("{}.await", expr_to_string(inner)),
         Expr::Cast(inner, _ty) => format!("{} as _", expr_to_string(inner)),
+        Expr::Try(inner) => format!("{}?", expr_to_string(inner)),
         _ => "<expr>".to_owned(),
     }
 }

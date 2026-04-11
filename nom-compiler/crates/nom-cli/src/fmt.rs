@@ -498,6 +498,7 @@ fn fmt_expr(e: &Expr) -> String {
         }
         Expr::Await(inner) => format!("{}.await", fmt_expr(inner)),
         Expr::Cast(inner, ty) => format!("{} as {}", fmt_expr(inner), fmt_type_expr(ty)),
+        Expr::Try(inner) => format!("{}?", fmt_expr(inner)),
         Expr::IfExpr(_) => "<if-expr>".to_string(),
         Expr::MatchExpr(_) => "<match-expr>".to_string(),
         Expr::Block(_) => "<block>".to_string(),

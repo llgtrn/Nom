@@ -62,6 +62,9 @@ enum Commands {
         /// Compilation target: rust (default), llvm
         #[arg(long, default_value = "rust")]
         target: String,
+        /// Skip loading the standard prelude (Result, Option types)
+        #[arg(long)]
+        no_prelude: bool,
     },
 
     /// Compile a .nom file to a native binary
@@ -86,6 +89,9 @@ enum Commands {
         /// Compilation target: rust (default), llvm, native
         #[arg(long, default_value = "rust")]
         target: String,
+        /// Skip loading the standard prelude (Result, Option types)
+        #[arg(long)]
+        no_prelude: bool,
     },
 
     /// Type-check and verify contracts without producing output
@@ -305,7 +311,7 @@ enum Commands {
 fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
-        Commands::Run { file, dict, target } => cmd_run(&file, &dict, &target),
+        Commands::Run { file, dict, target, no_prelude } => cmd_run(&file, &dict, &target, no_prelude),
         Commands::Build {
             file,
             output,
@@ -314,7 +320,8 @@ fn main() {
             compile,
             release,
             target,
-        } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target),
+            no_prelude,
+        } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
         Commands::Check { file, dict } => cmd_check(&file, &dict),
         Commands::Test { file, dict, filter, execute, property } => {
             if property {
@@ -394,13 +401,13 @@ fn main() {
 
 // ── Command implementations ───────────────────────────────────────────────────
 
-fn cmd_run(file: &PathBuf, dict: &PathBuf, target: &str) -> i32 {
+fn cmd_run(file: &PathBuf, dict: &PathBuf, target: &str, no_prelude: bool) -> i32 {
     if target == "llvm" {
         return cmd_run_llvm(file, dict);
     }
 
     // Build first (compile = true, release = false), output next to the .nom file
-    let rc = cmd_build(file, None, dict, false, true, false, "rust");
+    let rc = cmd_build(file, None, dict, false, true, false, "rust", no_prelude);
     if rc != 0 {
         return rc;
     }
@@ -543,6 +550,40 @@ fn binary_output_path(file: &Path, output: Option<&Path>) -> PathBuf {
     }
 }
 
+/// Try to load and parse the standard prelude (Result, Option types).
+/// Returns the prelude's declarations, or an empty vec if not found.
+fn load_prelude(file: &Path) -> Vec<nom_ast::Declaration> {
+    // Look for stdlib/prelude.nom relative to the nom-compiler directory,
+    // or relative to the source file's parent, or via the executable path.
+    let candidates = [
+        // Relative to the source file being compiled
+        file.parent().map(|p| p.join("../stdlib/prelude.nom")),
+        file.parent().map(|p| p.join("stdlib/prelude.nom")),
+        // Relative to the current working directory
+        Some(PathBuf::from("stdlib/prelude.nom")),
+        // Relative to the executable
+        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("stdlib/prelude.nom"))),
+    ];
+
+    for candidate in candidates.iter().flatten() {
+        if let Ok(source) = std::fs::read_to_string(candidate) {
+            match parse_source(&source) {
+                Ok(sf) => {
+                    eprintln!("nom: loaded prelude from {}", candidate.display());
+                    return sf.declarations;
+                }
+                Err(e) => {
+                    eprintln!("nom: warning: failed to parse prelude {}: {e}", candidate.display());
+                    return Vec::new();
+                }
+            }
+        }
+    }
+
+    // Prelude not found is not an error — just means no stdlib available
+    Vec::new()
+}
+
 fn cmd_build(
     file: &PathBuf,
     output: Option<&Path>,
@@ -551,19 +592,31 @@ fn cmd_build(
     compile: bool,
     release: bool,
     target: &str,
+    no_prelude: bool,
 ) -> i32 {
     let source = match read_source(file) {
         Some(s) => s,
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
+    let mut parsed = match parse_source(&source) {
         Ok(sf) => sf,
         Err(e) => {
             eprintln!("nom: parse error: {e}");
             return 1;
         }
     };
+
+    // Load the standard prelude unless --no-prelude is specified
+    if !no_prelude {
+        let prelude_decls = load_prelude(file);
+        if !prelude_decls.is_empty() {
+            // Prepend prelude declarations before the user's declarations
+            let mut all_decls = prelude_decls;
+            all_decls.append(&mut parsed.declarations);
+            parsed.declarations = all_decls;
+        }
+    }
 
     let resolver = match open_resolver(dict) {
         Some(r) => r,
