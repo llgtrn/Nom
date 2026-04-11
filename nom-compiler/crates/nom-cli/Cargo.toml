@@ -1,0 +1,23 @@
+[package]
+name = "nom-cli"
+version.workspace = true
+edition.workspace = true
+
+[[bin]]
+name = "nom"
+path = "src/main.rs"
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-lexer = { path = "../nom-lexer" }
+nom-parser = { path = "../nom-parser" }
+nom-diagnostics = { path = "../nom-diagnostics" }
+nom-resolver = { path = "../nom-resolver" }
+nom-verifier = { path = "../nom-verifier" }
+nom-planner = { path = "../nom-planner" }
+nom-codegen = { path = "../nom-codegen" }
+nom-security = { path = "../nom-security" }
+clap = { workspace = true }
+rusqlite = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

@@ -1,0 +1,9 @@
+[package]
+name = "nom-diagnostics"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+ariadne = { workspace = true }
+thiserror = { workspace = true }

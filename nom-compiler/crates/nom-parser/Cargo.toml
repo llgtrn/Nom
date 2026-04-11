@@ -1,0 +1,10 @@
+[package]
+name = "nom-parser"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-lexer = { path = "../nom-lexer" }
+nom-diagnostics = { path = "../nom-diagnostics" }
+thiserror = { workspace = true }

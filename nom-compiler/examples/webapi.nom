@@ -1,0 +1,9 @@
+# Simple web API: serve user profiles from a database
+
+system userapi
+need http::server where port=8080
+need database::postgres
+need auth::jwt
+flow /users/{id}->auth->database->response
+iftrue response 200
+iffalse response 404

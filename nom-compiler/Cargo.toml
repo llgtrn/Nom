@@ -1,0 +1,35 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nom-lexer",
+    "crates/nom-parser",
+    "crates/nom-ast",
+    "crates/nom-resolver",
+    "crates/nom-verifier",
+    "crates/nom-planner",
+    "crates/nom-codegen",
+    "crates/nom-cli",
+    "crates/nom-diagnostics",
+    "crates/nom-security",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+license = "MIT OR Apache-2.0"
+repository = "https://github.com/user/nom-lang"
+
+[workspace.dependencies]
+# Shared dependencies across crates
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+thiserror = "2"
+miette = { version = "7", features = ["fancy"] }
+ariadne = "0.4"
+clap = { version = "4", features = ["derive"] }
+rusqlite = { version = "0.32", features = ["bundled"] }
+reqwest = { version = "0.12", features = ["json", "blocking"] }
+sha2 = "0.10"
+toml = "0.8"
+tracing = "0.1"
+tracing-subscriber = "0.3"

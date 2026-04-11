@@ -1,0 +1,9 @@
+# Authentication service: hash passwords, store sessions, rate limit
+
+system auth
+need hash::argon2 where security>0.9
+need store::redis where reliability>0.8
+need limiter::tokenbucket where performance>0.9
+flow request->limiter->hash->store->response
+require latency<50ms
+effects only [network database cpu]

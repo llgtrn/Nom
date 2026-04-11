@@ -1,0 +1,9 @@
+[package]
+name = "nom-codegen"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-planner = { path = "../nom-planner" }
+thiserror = { workspace = true }

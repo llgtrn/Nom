@@ -1,0 +1,12 @@
+[package]
+name = "nom-planner"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-resolver = { path = "../nom-resolver" }
+nom-verifier = { path = "../nom-verifier" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

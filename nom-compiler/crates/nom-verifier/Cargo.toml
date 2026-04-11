@@ -1,0 +1,9 @@
+[package]
+name = "nom-verifier"
+version.workspace = true
+edition.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-resolver = { path = "../nom-resolver" }
+thiserror = { workspace = true }

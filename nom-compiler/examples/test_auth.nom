@@ -1,0 +1,8 @@
+# Test the auth service with expired token
+
+test authsecurity
+given auth with store::memory
+when request with token expired
+then response.status = 401
+and effects include bad(authfailure)
+and not effects in [filesystem]
