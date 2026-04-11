@@ -471,6 +471,31 @@ pub struct AgentScheduleStmt {
     pub span: Span,
 }
 
+// ── Memory allocation hints (ADOPT-3: Zig-inspired explicit allocator) ──────
+
+/// Memory allocation hint for a .nomtu implementation.
+/// Inspired by Zig's explicit allocator passing.
+/// The compiler uses the flow graph topology to validate and infer optimal strategy.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum MemoryHint {
+    /// Stack allocation — no heap, value-type semantics (default for small types)
+    Stack,
+    /// Arena allocation — bulk alloc, bulk free (optimal for linear flow chains)
+    Arena,
+    /// Pool allocation — pre-allocated fixed-size blocks (optimal for repeated flows)
+    Pool,
+    /// Heap allocation — general purpose, GC or refcounted (fallback)
+    Heap,
+    /// Compiler decides based on flow graph analysis
+    Auto,
+}
+
+impl Default for MemoryHint {
+    fn default() -> Self {
+        Self::Auto
+    }
+}
+
 // ── Range constraints (ADOPT-9: Ada-inspired range subtypes) ────────────────
 
 /// A range constraint on a value: lower <= value <= upper
@@ -785,5 +810,30 @@ mod tests {
         assert!(Classifier::from_str("unknown").is_none());
         assert!(Classifier::from_str("if").is_none());
         assert!(Classifier::from_str("class").is_none());
+    }
+
+    #[test]
+    fn memory_hint_default_is_auto() {
+        assert_eq!(MemoryHint::default(), MemoryHint::Auto);
+    }
+
+    #[test]
+    fn memory_hint_variants_distinct() {
+        let variants = [
+            MemoryHint::Stack,
+            MemoryHint::Arena,
+            MemoryHint::Pool,
+            MemoryHint::Heap,
+            MemoryHint::Auto,
+        ];
+        for (i, a) in variants.iter().enumerate() {
+            for (j, b) in variants.iter().enumerate() {
+                if i == j {
+                    assert_eq!(a, b);
+                } else {
+                    assert_ne!(a, b);
+                }
+            }
+        }
     }
 }

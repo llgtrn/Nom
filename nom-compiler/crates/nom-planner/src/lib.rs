@@ -752,6 +752,41 @@ impl<'r> Planner<'r> {
     }
 }
 
+/// Infer optimal memory strategy from flow graph topology.
+/// - Linear chain (no branches, no cycles) → Arena (bulk alloc/free) — currently maps to Stack
+/// - DAG (branches, no cycles) → Mixed (stack where possible, arena for large values)
+/// - Cyclic graph → Heap (pre-allocated blocks needed)
+/// - Single node or empty → Stack
+pub fn infer_memory_strategy(flow: &FlowPlan) -> MemoryStrategy {
+    if flow.nodes.is_empty() {
+        return MemoryStrategy::Stack;
+    }
+
+    // Check for cycles by detecting back-edges
+    let has_cycle = detect_cycle(&flow.nodes, &flow.edges);
+
+    if has_cycle {
+        return MemoryStrategy::Heap; // Cycles need heap/pool
+    }
+
+    if flow.branches.is_empty() && flow.edges.len() == flow.nodes.len().saturating_sub(1) {
+        // Linear chain — arena is optimal (Stack for now until Arena variant is added)
+        return MemoryStrategy::Stack;
+    }
+
+    MemoryStrategy::Mixed // DAG with branches
+}
+
+fn detect_cycle(_nodes: &[PlanNode], edges: &[PlanEdge]) -> bool {
+    // Simple cycle detection: check if any edge goes backwards
+    for edge in edges {
+        if edge.to <= edge.from {
+            return true;
+        }
+    }
+    false
+}
+
 fn sanitize_plan_name(s: &str) -> String {
     s.chars()
         .map(|c| {
@@ -1072,5 +1107,101 @@ mod tests {
         assert_eq!(plan.flows[1].name, "social__friends_of");
         assert_eq!(plan.flows[1].nodes.len(), 1);
         assert!(plan.flows[1].graph.is_none());
+    }
+
+    // ── ADOPT-3: Memory strategy inference tests ────────────────────────────
+
+    fn make_plan_node(id: usize, word: &str) -> PlanNode {
+        PlanNode {
+            id,
+            word: word.into(),
+            variant: None,
+            input_type: None,
+            output_type: None,
+            effects: vec![],
+            impl_body: None,
+            impl_language: None,
+        }
+    }
+
+    fn make_test_flow(
+        name: &str,
+        nodes: Vec<PlanNode>,
+        edges: Vec<PlanEdge>,
+        branches: Vec<PlanBranch>,
+    ) -> FlowPlan {
+        FlowPlan {
+            name: name.into(),
+            classifier: "flow".into(),
+            agent: None,
+            graph: None,
+            nodes,
+            edges,
+            branches,
+            memory_strategy: MemoryStrategy::Stack,
+            concurrency_strategy: ConcurrencyStrategy::Sequential,
+            effect_summary: vec![],
+            imperative_stmts: vec![],
+            qualifier: "once".into(),
+            on_fail: "abort".into(),
+        }
+    }
+
+    #[test]
+    fn empty_flow_infers_stack() {
+        let flow = make_test_flow("empty", vec![], vec![], vec![]);
+        assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Stack);
+    }
+
+    #[test]
+    fn linear_chain_infers_stack() {
+        let flow = make_test_flow(
+            "linear",
+            vec![make_plan_node(0, "a"), make_plan_node(1, "b")],
+            vec![PlanEdge { from: 0, to: 1 }],
+            vec![],
+        );
+        assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Stack);
+    }
+
+    #[test]
+    fn cyclic_flow_infers_heap() {
+        let flow = make_test_flow(
+            "cyclic",
+            vec![make_plan_node(0, "a"), make_plan_node(1, "b")],
+            vec![PlanEdge { from: 0, to: 1 }, PlanEdge { from: 1, to: 0 }],
+            vec![],
+        );
+        assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Heap);
+    }
+
+    #[test]
+    fn branching_flow_infers_mixed() {
+        let flow = make_test_flow(
+            "branching",
+            vec![
+                make_plan_node(0, "a"),
+                make_plan_node(1, "b"),
+                make_plan_node(2, "c"),
+            ],
+            vec![PlanEdge { from: 0, to: 1 }, PlanEdge { from: 0, to: 2 }],
+            vec![PlanBranch {
+                condition: "IfTrue".into(),
+                nodes: vec![make_plan_node(3, "d")],
+                edges: vec![],
+            }],
+        );
+        assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Mixed);
+    }
+
+    #[test]
+    fn single_node_infers_stack() {
+        let flow = make_test_flow(
+            "single",
+            vec![make_plan_node(0, "a")],
+            vec![],
+            vec![],
+        );
+        assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Stack);
     }
 }
