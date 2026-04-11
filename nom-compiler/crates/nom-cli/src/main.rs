@@ -13,6 +13,7 @@
 //!   nom stats           — show dictionary statistics
 //!   nom coverage <dir>  — show extraction coverage for a directory
 //!   nom translate       — translate .nomtu bodies from other languages to Rust
+//!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 
 use std::collections::HashMap;
 use clap::{Parser, Subcommand};
@@ -26,7 +27,7 @@ use nom_search::BM25Index;
 use nom_parser::parse_source;
 use nom_planner::Planner;
 use nom_resolver::{NomtuEntry, Resolver};
-use nom_security::{SecurityChecker, SecurityConfig};
+use nom_security::{scan_body, security_score, SecurityChecker, SecurityConfig, Severity};
 use nom_verifier::Verifier;
 use rusqlite::OpenFlags;
 use std::path::{Path, PathBuf};
@@ -247,6 +248,22 @@ enum Commands {
         #[arg(long, default_value = "10")]
         limit: usize,
     },
+
+    /// Audit all .nomtu in the dictionary for security issues
+    Audit {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Minimum severity to report (info, low, medium, high, critical)
+        #[arg(long, default_value = "medium")]
+        min_severity: String,
+        /// Maximum entries to scan (0 = all)
+        #[arg(long, default_value = "0")]
+        limit: usize,
+        /// Output format: text or json
+        #[arg(long, default_value = "text")]
+        format: String,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -279,6 +296,9 @@ fn main() {
         }
         Commands::Graph { dict, limit } => cmd_graph(&dict, limit),
         Commands::Search { query, dict, limit } => cmd_search(&query, &dict, limit),
+        Commands::Audit { dict, min_severity, limit, format } => {
+            cmd_audit(&dict, &min_severity, limit, &format)
+        }
     };
     process::exit(exit_code);
 }
@@ -629,13 +649,19 @@ fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -
                 println!("No findings. All checks passed.");
             } else {
                 for f in &report.findings {
+                    let word_label = f.word.as_deref().unwrap_or("?");
+                    let variant_label = f.variant.as_deref().map(|v| format!("::{v}")).unwrap_or_default();
                     println!(
-                        "[{}] {}{}: {}",
+                        "[{}] [{}] {}{}: {}",
                         f.severity,
-                        f.word,
-                        f.variant.as_deref().map(|v| format!("::{v}")).unwrap_or_default(),
+                        f.rule_id,
+                        word_label,
+                        variant_label,
                         f.message
                     );
+                    if let Some(rem) = &f.remediation {
+                        println!("         -> {rem}");
+                    }
                 }
             }
             println!("{}", "=".repeat(50));
@@ -2392,4 +2418,180 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
     }
 
     0
+}
+
+// ── Audit command ───────────────────────────────────────────────────────────
+
+fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> i32 {
+    let min_sev = match Severity::from_str_loose(min_severity) {
+        Some(s) => s,
+        None => {
+            eprintln!("nom: unknown severity level '{min_severity}'. Use: info, low, medium, high, critical");
+            return 1;
+        }
+    };
+
+    // Open the database directly and query all entries with bodies
+    let db_path = dict.to_str().unwrap_or("nomdict.db");
+    let conn = match rusqlite::Connection::open_with_flags(
+        db_path,
+        OpenFlags::SQLITE_OPEN_READ_ONLY | OpenFlags::SQLITE_OPEN_NO_MUTEX,
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", dict.display());
+            return 1;
+        }
+    };
+
+    let limit_clause = if limit > 0 {
+        format!(" LIMIT {limit}")
+    } else {
+        String::new()
+    };
+
+    let sql = format!(
+        "SELECT word, variant, language, body FROM nomtu \
+         WHERE body IS NOT NULL AND length(body) > 0{limit_clause}"
+    );
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom: query error: {e}");
+            return 1;
+        }
+    };
+
+    struct AuditRow {
+        word: String,
+        variant: Option<String>,
+        language: String,
+        body: String,
+    }
+
+    let rows: Vec<AuditRow> = match stmt.query_map([], |row| {
+        Ok(AuditRow {
+            word: row.get(0)?,
+            variant: row.get(1)?,
+            language: row.get::<_, String>(2).unwrap_or_else(|_| "unknown".to_owned()),
+            body: row.get(3)?,
+        })
+    }) {
+        Ok(iter) => iter.filter_map(|r| r.ok()).collect(),
+        Err(e) => {
+            eprintln!("nom: failed to query entries: {e}");
+            return 1;
+        }
+    };
+
+    if rows.is_empty() {
+        println!("nom: no .nomtu entries with bodies found in dictionary");
+        return 0;
+    }
+
+    println!("nom: auditing {} entries...", rows.len());
+
+    let mut total_findings = 0usize;
+    let mut entries_with_findings = 0usize;
+    let mut all_findings: Vec<(String, nom_security::SecurityFinding)> = Vec::new();
+
+    for row in &rows {
+        let findings = scan_body(&row.body, &row.language);
+        let filtered: Vec<_> = findings.into_iter().filter(|f| f.severity >= min_sev).collect();
+        if !filtered.is_empty() {
+            entries_with_findings += 1;
+            let label = match &row.variant {
+                Some(v) => format!("{}::{}", row.word, v),
+                None => row.word.clone(),
+            };
+            for f in filtered {
+                total_findings += 1;
+                all_findings.push((label.clone(), f));
+            }
+        }
+    }
+
+    match format {
+        "json" => {
+            let json_output: Vec<serde_json::Value> = all_findings
+                .iter()
+                .map(|(label, f)| {
+                    serde_json::json!({
+                        "entry": label,
+                        "severity": format!("{}", f.severity),
+                        "category": f.category,
+                        "rule_id": f.rule_id,
+                        "message": f.message,
+                        "evidence": f.evidence,
+                        "line": f.line,
+                        "remediation": f.remediation,
+                    })
+                })
+                .collect();
+            match serde_json::to_string_pretty(&json_output) {
+                Ok(json) => println!("{json}"),
+                Err(e) => eprintln!("nom: json error: {e}"),
+            }
+        }
+        _ => {
+            println!();
+            println!("{}", "=".repeat(70));
+            println!("Security Audit Report");
+            println!("{}", "=".repeat(70));
+
+            if all_findings.is_empty() {
+                println!("No findings at severity >= {min_severity}.");
+            } else {
+                let mut current_entry = String::new();
+                for (label, f) in &all_findings {
+                    if *label != current_entry {
+                        println!("\n  {} [{}]:", label, rows.iter()
+                            .find(|r| {
+                                let l = match &r.variant {
+                                    Some(v) => format!("{}::{}", r.word, v),
+                                    None => r.word.clone(),
+                                };
+                                l == *label
+                            })
+                            .map(|r| r.language.as_str())
+                            .unwrap_or("?"));
+                        current_entry = label.clone();
+                    }
+                    println!(
+                        "    [{:>8}] {} ({}): {}",
+                        format!("{}", f.severity),
+                        f.rule_id,
+                        f.category,
+                        f.message
+                    );
+                    if let Some(evidence) = &f.evidence {
+                        if evidence.len() <= 100 {
+                            println!("             evidence: {evidence}");
+                        }
+                    }
+                    if let Some(rem) = &f.remediation {
+                        println!("             fix: {rem}");
+                    }
+                }
+            }
+
+            println!("\n{}", "=".repeat(70));
+            let score = if !all_findings.is_empty() {
+                let finding_refs: Vec<_> = all_findings.iter().map(|(_, f)| f.clone()).collect();
+                security_score(&finding_refs)
+            } else {
+                1.0
+            };
+            println!(
+                "Scanned: {} entries | Findings: {} | Affected: {} | Score: {:.2}",
+                rows.len(),
+                total_findings,
+                entries_with_findings,
+                score,
+            );
+        }
+    }
+
+    if total_findings > 0 { 1 } else { 0 }
 }
