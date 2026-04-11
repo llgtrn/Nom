@@ -9,3 +9,4 @@ nom-resolver = { path = "../nom-resolver" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
+regex = { workspace = true }

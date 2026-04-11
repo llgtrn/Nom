@@ -20,7 +20,9 @@
 
 use nom_ast::{Declaration, NomRef, SourceFile, Statement};
 use nom_resolver::{Resolver, ResolverError};
+use regex::Regex;
 use serde::{Deserialize, Serialize};
+use std::sync::LazyLock;
 use thiserror::Error;
 
 // ── Errors ───────────────────────────────────────────────────────────────────
@@ -78,7 +80,8 @@ impl std::fmt::Display for Severity {
 pub struct SecurityFinding {
     pub severity: Severity,
     /// Category: "injection", "secrets", "crypto", "payload", "xss", "deserialization",
-    /// "path_traversal", "config", "score", "supply_chain", "cve", "effect_escalation".
+    /// "path_traversal", "config", "score", "supply_chain", "cve", "effect_escalation",
+    /// "web", "credential", "execution", "network", "data_handling", "protocol", "guardrail".
     pub category: String,
     /// Rule identifier, e.g. "SEC-001".
     pub rule_id: String,
@@ -368,6 +371,185 @@ impl<'r> SecurityChecker<'r> {
 // Layer 2 — .nomtu body scanning
 // ══════════════════════════════════════════════════════════════════════════════
 
+// ── TruffleHog-grade secret detection patterns ──────────────────────────────
+
+/// Secret detection patterns from TruffleHog's 883-detector engine.
+/// Each pattern has: provider name, regex pattern, severity, rule_id.
+const SECRET_PATTERNS: &[(&str, &str, Severity, &str)] = &[
+    // Cloud providers
+    ("AWS Access Key", r"AKIA[0-9A-Z]{16}", Severity::Critical, "SEC-S01"),
+    ("AWS Secret Key", r"(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}", Severity::Critical, "SEC-S02"),
+    ("GCP Service Account", r#""type"\s*:\s*"service_account""#, Severity::Critical, "SEC-S03"),
+    ("Azure Connection String", r"(?i)DefaultEndpointsProtocol=https;AccountName=", Severity::High, "SEC-S04"),
+    // AI providers
+    ("OpenAI API Key", r"sk-(?:proj-)?[a-zA-Z0-9]{20,}T3BlbkFJ", Severity::Critical, "SEC-S05"),
+    ("Anthropic API Key", r"sk-ant-(?:admin01|api03)-[\w\-]{20,}", Severity::Critical, "SEC-S06"),
+    ("HuggingFace Token", r"hf_[a-zA-Z0-9]{34}", Severity::High, "SEC-S07"),
+    // Version control
+    ("GitHub Token", r"gh[pousr]_[A-Za-z0-9_]{36,}", Severity::Critical, "SEC-S08"),
+    ("GitHub Fine-Grained PAT", r"github_pat_[A-Za-z0-9_]{22,}", Severity::Critical, "SEC-S09"),
+    ("GitLab Token", r"glpat-[A-Za-z0-9\-]{20,}", Severity::Critical, "SEC-S10"),
+    ("Bitbucket App Password", r"ATBB[A-Za-z0-9]{32}", Severity::High, "SEC-S11"),
+    // Communication
+    ("Slack Bot Token", r"xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}", Severity::High, "SEC-S12"),
+    ("Slack Webhook", r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+", Severity::Medium, "SEC-S13"),
+    ("Discord Webhook", r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]+", Severity::Medium, "SEC-S14"),
+    ("Telegram Bot Token", r"[0-9]+:AA[A-Za-z0-9_\-]{33}", Severity::High, "SEC-S15"),
+    // Payment
+    ("Stripe Secret Key", r"[rs]k_live_[a-zA-Z0-9]{20,}", Severity::Critical, "SEC-S16"),
+    ("Stripe Publishable Key", r"pk_live_[a-zA-Z0-9]{20,}", Severity::Low, "SEC-S17"),
+    ("PayPal Client Secret", r#"(?i)paypal.*secret.*['"][A-Za-z0-9\-]{32,}['"]"#, Severity::High, "SEC-S18"),
+    ("Square Access Token", r"EAAA[a-zA-Z0-9\-\+\=]{60}", Severity::Critical, "SEC-S19"),
+    // Email
+    ("SendGrid API Key", r"SG\.[\w\-]{20,24}\.[\w\-]{39,50}", Severity::High, "SEC-S20"),
+    ("Mailgun API Key", r"key-[a-zA-Z0-9]{32}", Severity::High, "SEC-S21"),
+    ("Mailchimp API Key", r"[0-9a-f]{32}-us[0-9]{1,2}", Severity::Medium, "SEC-S22"),
+    // Infrastructure
+    ("Twilio Account SID", r"AC[0-9a-f]{32}", Severity::High, "SEC-S23"),
+    ("Twilio Auth Token", r#"(?i)twilio.*auth.*token.*['"][0-9a-f]{32}['"]"#, Severity::Critical, "SEC-S24"),
+    ("DigitalOcean Token", r"dop_v1_[a-f0-9]{64}", Severity::Critical, "SEC-S26"),
+    ("Supabase Key", r"(?i)supabase.*key.*eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", Severity::High, "SEC-S29"),
+    // Monitoring
+    ("Sentry DSN", r"https://[a-f0-9]{32}@[a-z0-9]+\.ingest\.sentry\.io/[0-9]+", Severity::Medium, "SEC-S31"),
+    // Database
+    ("MongoDB Connection String", r"mongodb(?:\+srv)?://[^\s]+@[^\s]+", Severity::Critical, "SEC-S34"),
+    ("PostgreSQL Connection String", r"postgres(?:ql)?://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S35"),
+    ("Redis Connection String", r"redis://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S36"),
+    ("MySQL Connection String", r"mysql://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S37"),
+    // Auth
+    ("JWT Token", r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_\+/=]+", Severity::High, "SEC-S38"),
+    ("OAuth Client Secret", r#"(?i)client.?secret\s*[=:]\s*['"][A-Za-z0-9\-_]{20,}['"]"#, Severity::High, "SEC-S39"),
+    ("Bearer Token", r"(?i)bearer\s+[A-Za-z0-9\-_\.]{20,}", Severity::Medium, "SEC-S40"),
+    // Package registries
+    ("NPM Token", r"npm_[A-Za-z0-9]{36}", Severity::High, "SEC-S41"),
+    ("PyPI Token", r"pypi-AgEIcHlwaS5vcmcCJ[a-zA-Z0-9\-_]{50,}", Severity::High, "SEC-S42"),
+    ("Docker Config Auth", r#""auth"\s*:\s*"[A-Za-z0-9+/=]{20,}""#, Severity::High, "SEC-S43"),
+    ("Postman API Key", r"PMAK-[a-zA-Z0-9]{59}", Severity::Medium, "SEC-S44"),
+    // Certificates & private keys
+    ("RSA Private Key", r"-----BEGIN RSA PRIVATE KEY-----", Severity::Critical, "SEC-S45"),
+    ("EC Private Key", r"-----BEGIN EC PRIVATE KEY-----", Severity::Critical, "SEC-S46"),
+    ("PKCS8 Private Key", r"-----BEGIN PRIVATE KEY-----", Severity::Critical, "SEC-S47"),
+    ("SSH Private Key", r"-----BEGIN OPENSSH PRIVATE KEY-----", Severity::Critical, "SEC-S48"),
+    ("PGP Private Key", r"-----BEGIN PGP PRIVATE KEY BLOCK-----", Severity::Critical, "SEC-S49"),
+    ("Certificate", r"-----BEGIN CERTIFICATE-----", Severity::Info, "SEC-S50"),
+];
+
+/// Compiled regex cache for SECRET_PATTERNS.
+struct CompiledSecretPattern {
+    provider: &'static str,
+    regex: Regex,
+    severity: Severity,
+    rule_id: &'static str,
+}
+
+static COMPILED_SECRET_PATTERNS: LazyLock<Vec<CompiledSecretPattern>> = LazyLock::new(|| {
+    SECRET_PATTERNS
+        .iter()
+        .filter_map(|(provider, pattern, severity, rule_id)| {
+            Regex::new(pattern).ok().map(|regex| CompiledSecretPattern {
+                provider,
+                regex,
+                severity: *severity,
+                rule_id,
+            })
+        })
+        .collect()
+});
+
+// ── Guardrails (RedAmon-inspired) ───────────────────────────────────────────
+
+/// Compile-time guardrails for .nom programs (inspired by RedAmon).
+#[derive(Debug, Clone, Default, Serialize, Deserialize)]
+pub struct Guardrails {
+    /// Domains that should never appear in code.
+    pub blocked_domains: Vec<String>,
+    /// IPs that should never be hardcoded.
+    pub blocked_ips: Vec<String>,
+    /// Maximum allowed privilege level.
+    pub max_privilege_level: String,
+    /// Effects that must be declared.
+    pub required_effects: Vec<String>,
+    /// .nomtu words that are blocked by policy.
+    pub banned_words: Vec<String>,
+}
+
+/// Check a .nom program source against guardrails.
+pub fn check_guardrails(source: &str, guardrails: &Guardrails) -> Vec<SecurityFinding> {
+    let mut findings = Vec::new();
+    for (i, line) in source.lines().enumerate() {
+        let trimmed = line.trim();
+
+        for domain in &guardrails.blocked_domains {
+            if trimmed.contains(domain.as_str()) {
+                findings.push(SecurityFinding {
+                    severity: Severity::Critical,
+                    category: "guardrail".to_owned(),
+                    rule_id: "SEC-G01".to_owned(),
+                    message: format!("Blocked domain '{domain}' found in source"),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Remove references to blocked domains".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+            }
+        }
+
+        for ip in &guardrails.blocked_ips {
+            if trimmed.contains(ip.as_str()) {
+                findings.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "guardrail".to_owned(),
+                    rule_id: "SEC-G02".to_owned(),
+                    message: format!("Blocked IP '{ip}' found in source"),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Remove hardcoded blocked IPs".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+            }
+        }
+
+        for word in &guardrails.banned_words {
+            if trimmed.contains(word.as_str()) {
+                findings.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "guardrail".to_owned(),
+                    rule_id: "SEC-G03".to_owned(),
+                    message: format!("Banned word '{word}' found in source"),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Remove or replace the banned word".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+            }
+        }
+    }
+
+    // Check required effects: if required_effects is non-empty, the source must declare them
+    for effect in &guardrails.required_effects {
+        let effect_decl = format!("effect {effect}");
+        let effect_decl2 = format!("effects: [{effect}");
+        if !source.contains(&effect_decl) && !source.contains(&effect_decl2) {
+            findings.push(SecurityFinding {
+                severity: Severity::Medium,
+                category: "guardrail".to_owned(),
+                rule_id: "SEC-G04".to_owned(),
+                message: format!("Required effect '{effect}' not declared"),
+                evidence: None,
+                line: None,
+                remediation: Some(format!("Declare 'effect {effect}' in the program")),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+
+    findings
+}
+
 /// Scan a .nomtu body for security issues. Returns findings sorted by severity (highest first).
 pub fn scan_body(body: &str, language: &str) -> Vec<SecurityFinding> {
     let mut findings = Vec::new();
@@ -379,6 +561,14 @@ pub fn scan_body(body: &str, language: &str) -> Vec<SecurityFinding> {
     scan_xss(body, language, &mut findings);
     scan_path_traversal(body, &mut findings);
     scan_hardcoded_config(body, &mut findings);
+    // Kali-category scanners
+    scan_web_vulns(body, language, &mut findings);
+    scan_credential_vulns(body, &mut findings);
+    scan_execution_vulns(body, language, &mut findings);
+    scan_network_vulns(body, &mut findings);
+    scan_data_handling(body, &mut findings);
+    // Suricata-inspired protocol analysis
+    scan_protocol_vulns(body, &mut findings);
     findings.sort_by(|a, b| b.severity.cmp(&a.severity));
     findings
 }
@@ -608,6 +798,23 @@ fn scan_secrets(body: &str, out: &mut Vec<SecurityFinding>) {
                     });
                     break; // one finding per line
                 }
+            }
+        }
+
+        // TruffleHog-grade regex-based secret detection
+        for cp in COMPILED_SECRET_PATTERNS.iter() {
+            if cp.regex.is_match(trimmed) {
+                out.push(SecurityFinding {
+                    severity: cp.severity,
+                    category: "secrets".to_owned(),
+                    rule_id: cp.rule_id.to_owned(),
+                    message: format!("Possible {} detected", cp.provider),
+                    evidence: Some(redact_secret(trimmed)),
+                    line: Some(i + 1),
+                    remediation: Some("Use environment variables or a secrets manager".to_owned()),
+                    word: None,
+                    variant: None,
+                });
             }
         }
     }
@@ -1366,6 +1573,544 @@ fn scan_hardcoded_config(body: &str, out: &mut Vec<SecurityFinding>) {
     }
 }
 
+// ══════════════════════════════════════════════════════════════════════════════
+// Kali-category vulnerability scanners
+// ══════════════════════════════════════════════════════════════════════════════
+
+// ── kali-tools-web: Web application vulnerabilities ─────────────────────────
+
+/// Detect web vulnerabilities: SSRF, LDAP injection, open redirect, CSRF, header injection.
+/// Patterns derived from sqlmap, Burp Suite, and OWASP testing guides.
+fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
+    static SSRF_PATTERNS: LazyLock<Vec<Regex>> = LazyLock::new(|| {
+        [
+            r"https?://127\.0\.0\.1",
+            r"https?://localhost[:/]",
+            r"https?://10\.\d{1,3}\.\d{1,3}\.\d{1,3}",
+            r"https?://172\.(1[6-9]|2\d|3[01])\.\d{1,3}\.\d{1,3}",
+            r"https?://192\.168\.\d{1,3}\.\d{1,3}",
+            r"https?://169\.254\.\d{1,3}\.\d{1,3}",
+            r"https?://0\.0\.0\.0",
+        ]
+        .iter()
+        .filter_map(|p| Regex::new(p).ok())
+        .collect()
+    });
+
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, language) {
+            continue;
+        }
+
+        // SSRF: requests to internal IPs
+        for re in SSRF_PATTERNS.iter() {
+            if re.is_match(trimmed) {
+                out.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "web".to_owned(),
+                    rule_id: "SEC-W01".to_owned(),
+                    message: "SSRF risk: request to internal/private IP address".to_owned(),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Validate and restrict URLs to public endpoints only".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+                break;
+            }
+        }
+
+        // LDAP injection: unescaped filter construction
+        if (trimmed.contains(")(|") || trimmed.contains(")(cn=") || trimmed.contains("ldap_search"))
+            && (trimmed.contains('+') || trimmed.contains("format") || trimmed.contains('$'))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "web".to_owned(),
+                rule_id: "SEC-W02".to_owned(),
+                message: "LDAP injection: filter constructed with user input".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use parameterized LDAP queries and escape special characters".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // Open redirect
+        let open_redirect_patterns: &[&str] = &[
+            "redirect(req.query",
+            "redirect(req.params",
+            "redirect(req.body",
+            "res.redirect(req.",
+            "Location: \" +",
+            "Location: ' +",
+            "header(\"Location: $",
+            "HttpResponseRedirect(request.",
+            "redirect_to params[",
+        ];
+        for pat in open_redirect_patterns {
+            if trimmed.contains(pat) {
+                out.push(SecurityFinding {
+                    severity: Severity::Medium,
+                    category: "web".to_owned(),
+                    rule_id: "SEC-W03".to_owned(),
+                    message: "Open redirect: redirect URL from user input".to_owned(),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Validate redirect URLs against an allowlist of trusted domains".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+                break;
+            }
+        }
+
+        // Header injection: CRLF in headers
+        if (trimmed.contains("\\r\\n") || trimmed.contains("\\x0d\\x0a"))
+            && (trimmed.contains("header") || trimmed.contains("Header") || trimmed.contains("set_header"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "web".to_owned(),
+                rule_id: "SEC-W04".to_owned(),
+                message: "HTTP header injection: CRLF characters in header value".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Strip \\r\\n from header values; use framework-provided header setters".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // SQL injection: UNION SELECT, blind SQLi, time-based SQLi (beyond basic scan_injection)
+        let lower = trimmed.to_ascii_lowercase();
+        if lower.contains("union select") || lower.contains("union all select") {
+            out.push(SecurityFinding {
+                severity: Severity::Critical,
+                category: "web".to_owned(),
+                rule_id: "SEC-W05".to_owned(),
+                message: "SQL injection: UNION SELECT pattern detected".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use parameterized queries; never concatenate user input into SQL".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+        if lower.contains("sleep(") && (lower.contains("select") || lower.contains("where")) {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "web".to_owned(),
+                rule_id: "SEC-W06".to_owned(),
+                message: "Time-based SQL injection pattern (SLEEP in query)".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use parameterized queries".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+}
+
+// ── kali-tools-passwords: Credential security ───────────────────────────────
+
+/// Detect credential security issues: weak passwords, credentials in logs/URLs.
+fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
+    static PASSWORD_IN_URL: LazyLock<Regex> = LazyLock::new(|| {
+        Regex::new(r"[a-z]+://[^/:]+:[^/@]+@").unwrap()
+    });
+    static DEFAULT_CREDS: &[&str] = &[
+        "admin:admin", "root:root", "admin:password", "admin:123456",
+        "root:password", "root:toor", "test:test", "user:user",
+        "guest:guest", "admin:admin123",
+    ];
+
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, "") {
+            continue;
+        }
+
+        // Password in URL
+        if PASSWORD_IN_URL.is_match(trimmed) {
+            out.push(SecurityFinding {
+                severity: Severity::Critical,
+                category: "credential".to_owned(),
+                rule_id: "SEC-K01".to_owned(),
+                message: "Credentials embedded in URL (user:pass@host)".to_owned(),
+                evidence: Some(redact_secret(trimmed)),
+                line: Some(i + 1),
+                remediation: Some("Use environment variables or a secrets manager for credentials".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // Hardcoded default credentials
+        for cred in DEFAULT_CREDS {
+            if trimmed.contains(cred) {
+                out.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "credential".to_owned(),
+                    rule_id: "SEC-K02".to_owned(),
+                    message: format!("Hardcoded default credentials: {cred}"),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Never hardcode default credentials; require unique credentials at setup".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+                break;
+            }
+        }
+
+        // Credentials in log statements
+        let lower = trimmed.to_ascii_lowercase();
+        if (lower.contains("log.") || lower.contains("logger.") || lower.contains("console.log") || lower.contains("print(") || lower.contains("println!"))
+            && (lower.contains("password") || lower.contains("token") || lower.contains("secret") || lower.contains("api_key"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "credential".to_owned(),
+                rule_id: "SEC-K03".to_owned(),
+                message: "Possible credential value in log output".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Never log sensitive values; mask or omit credentials from log output".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // Plaintext password storage (no hashing)
+        if (lower.contains("password") || lower.contains("passwd"))
+            && (lower.contains("insert") || lower.contains("save") || lower.contains("store"))
+            && !lower.contains("hash") && !lower.contains("bcrypt") && !lower.contains("argon") && !lower.contains("scrypt")
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "credential".to_owned(),
+                rule_id: "SEC-K04".to_owned(),
+                message: "Password stored without hashing".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Hash passwords with bcrypt, argon2, or scrypt before storage".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+}
+
+// ── kali-tools-exploitation: Code execution vulnerabilities ─────────────────
+
+/// Detect code/command injection, template injection, and unsafe file operations.
+fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
+    let lang = language.to_ascii_lowercase();
+
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, language) {
+            continue;
+        }
+
+        // shell=True in subprocess (Python)
+        if trimmed.contains("shell=True") && (lang == "python" || lang == "py") {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "execution".to_owned(),
+                rule_id: "SEC-E01".to_owned(),
+                message: "subprocess with shell=True — command injection risk".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use shell=False and pass arguments as a list".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // JavaScript code injection
+        let js_injection_patterns: &[(&str, &str)] = &[
+            ("new Function(", "new Function() — dynamic code construction"),
+            ("vm.runInNewContext", "vm.runInNewContext — sandboxed code execution may escape"),
+            ("vm.runInThisContext", "vm.runInThisContext — code execution in current context"),
+            ("child_process.exec(", "child_process.exec — command execution with shell"),
+        ];
+        if matches!(lang.as_str(), "javascript" | "js" | "typescript" | "ts") {
+            for (pat, msg) in js_injection_patterns {
+                if trimmed.contains(pat) {
+                    out.push(SecurityFinding {
+                        severity: Severity::High,
+                        category: "execution".to_owned(),
+                        rule_id: "SEC-E02".to_owned(),
+                        message: msg.to_string(),
+                        evidence: Some(trimmed.to_owned()),
+                        line: Some(i + 1),
+                        remediation: Some("Avoid dynamic code execution; use safe alternatives".to_owned()),
+                        word: None,
+                        variant: None,
+                    });
+                }
+            }
+        }
+
+        // Template injection patterns
+        let template_injection_patterns: &[(&str, &str)] = &[
+            ("{{", "Possible server-side template injection (Jinja2/Twig/Handlebars)"),
+            ("${", "Possible expression injection (ES6 template literal / Spring EL)"),
+            ("#{", "Possible expression injection (Ruby/Thymeleaf)"),
+        ];
+        for (pat, msg) in template_injection_patterns {
+            if trimmed.contains(pat) {
+                // Only flag if it looks like user input is being interpolated
+                let lower = trimmed.to_ascii_lowercase();
+                if lower.contains("user") || lower.contains("input") || lower.contains("request")
+                    || lower.contains("params") || lower.contains("query")
+                {
+                    out.push(SecurityFinding {
+                        severity: Severity::High,
+                        category: "execution".to_owned(),
+                        rule_id: "SEC-E03".to_owned(),
+                        message: msg.to_string(),
+                        evidence: Some(trimmed.to_owned()),
+                        line: Some(i + 1),
+                        remediation: Some("Sanitize user input before template rendering; use auto-escaping".to_owned()),
+                        word: None,
+                        variant: None,
+                    });
+                    break;
+                }
+            }
+        }
+
+        // Unrestricted file operations
+        let lower = trimmed.to_ascii_lowercase();
+        if (lower.contains("open(") || lower.contains("readfile(") || lower.contains("file_get_contents("))
+            && (lower.contains("user") || lower.contains("request") || lower.contains("input") || lower.contains("params"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "execution".to_owned(),
+                rule_id: "SEC-E04".to_owned(),
+                message: "Unrestricted file operation with user-controlled path".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Validate file paths against an allowlist; canonicalize before use".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+}
+
+// ── kali-tools-sniffing-spoofing: Network security ──────────────────────────
+
+/// Detect network security issues: plaintext HTTP, weak TLS, disabled cert validation.
+fn scan_network_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
+    static WEAK_TLS: &[(&str, &str)] = &[
+        ("TLSv1.0", "TLS 1.0 is deprecated — known vulnerabilities (BEAST, POODLE)"),
+        ("TLSv1.1", "TLS 1.1 is deprecated — use TLS 1.2+"),
+        ("SSLv3", "SSL 3.0 is broken — POODLE attack"),
+        ("SSLv2", "SSL 2.0 is broken — multiple critical vulnerabilities"),
+        ("TLS_RSA_WITH_", "RSA key exchange without forward secrecy"),
+        ("ssl.PROTOCOL_TLSv1", "Python TLS 1.0 — deprecated"),
+        ("ssl.PROTOCOL_SSLv3", "Python SSLv3 — broken"),
+        ("PROTOCOL_SSLv23", "Python SSLv23 allows downgrade attacks"),
+        ("MinVersion: tls.VersionTLS10", "Go TLS 1.0 minimum — too weak"),
+    ];
+
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, "") {
+            continue;
+        }
+
+        // Weak TLS versions
+        for (pat, msg) in WEAK_TLS {
+            if trimmed.contains(pat) {
+                out.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "network".to_owned(),
+                    rule_id: "SEC-N01".to_owned(),
+                    message: msg.to_string(),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Use TLS 1.2 or TLS 1.3 minimum".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+                break;
+            }
+        }
+
+        // Mixed content: HTTP URLs in what looks like production code (not localhost/test)
+        if trimmed.contains("http://") && !trimmed.contains("http://localhost")
+            && !trimmed.contains("http://127.0.0.1") && !trimmed.contains("http://0.0.0.0")
+            && !is_comment(trimmed, "")
+        {
+            // Only flag if it looks like a production URL (has a domain)
+            if trimmed.contains("http://www.") || trimmed.contains("http://api.")
+                || trimmed.contains("http://cdn.") || trimmed.contains("http://app.")
+            {
+                out.push(SecurityFinding {
+                    severity: Severity::Medium,
+                    category: "network".to_owned(),
+                    rule_id: "SEC-N02".to_owned(),
+                    message: "HTTP without TLS — data transmitted in plaintext".to_owned(),
+                    evidence: Some(trimmed.to_owned()),
+                    line: Some(i + 1),
+                    remediation: Some("Use HTTPS for all production endpoints".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+            }
+        }
+    }
+}
+
+// ── kali-tools-forensics: Data handling security ────────────────────────────
+
+/// Detect data handling issues: PII in logs, sensitive data in error messages.
+fn scan_data_handling(body: &str, out: &mut Vec<SecurityFinding>) {
+    static PII_PATTERNS: LazyLock<Vec<(&str, Regex)>> = LazyLock::new(|| {
+        [
+            ("SSN pattern", r"\b\d{3}-\d{2}-\d{4}\b"),
+            ("Credit card (Visa)", r"\b4\d{3}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
+            ("Credit card (MC)", r"\b5[1-5]\d{2}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
+        ]
+        .iter()
+        .filter_map(|(name, pat)| Regex::new(pat).ok().map(|re| (*name, re)))
+        .collect()
+    });
+
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, "") {
+            continue;
+        }
+
+        // PII in source code
+        for (name, re) in PII_PATTERNS.iter() {
+            if re.is_match(trimmed) {
+                out.push(SecurityFinding {
+                    severity: Severity::High,
+                    category: "data_handling".to_owned(),
+                    rule_id: "SEC-D01".to_owned(),
+                    message: format!("Possible PII in source: {name}"),
+                    evidence: Some(redact_secret(trimmed)),
+                    line: Some(i + 1),
+                    remediation: Some("Remove PII from source code; use test fixtures with synthetic data".to_owned()),
+                    word: None,
+                    variant: None,
+                });
+            }
+        }
+
+        // Stack traces / verbose errors exposed to users
+        let lower = trimmed.to_ascii_lowercase();
+        if (lower.contains("traceback") || lower.contains("stack_trace") || lower.contains("stacktrace"))
+            && (lower.contains("response") || lower.contains("render") || lower.contains("send") || lower.contains("json"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::Medium,
+                category: "data_handling".to_owned(),
+                rule_id: "SEC-D02".to_owned(),
+                message: "Stack trace exposed in response — information disclosure".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Return generic error messages to users; log details server-side only".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+}
+
+// ══════════════════════════════════════════════════════════════════════════════
+// Suricata-inspired protocol analysis
+// ══════════════════════════════════════════════════════════════════════════════
+
+/// Detect protocol-level vulnerabilities: DNS tunneling, HTTP smuggling, buffer/integer overflow.
+fn scan_protocol_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
+    for (i, line) in body.lines().enumerate() {
+        let trimmed = line.trim();
+        if is_comment(trimmed, "") {
+            continue;
+        }
+        let lower = trimmed.to_ascii_lowercase();
+
+        // HTTP request smuggling: Content-Length + Transfer-Encoding together
+        if lower.contains("content-length") && lower.contains("transfer-encoding") {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "protocol".to_owned(),
+                rule_id: "SEC-R01".to_owned(),
+                message: "HTTP request smuggling risk: Content-Length and Transfer-Encoding both present".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use only one of Content-Length or Transfer-Encoding per request".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // Integer overflow in size calculations
+        if (lower.contains("as u32") || lower.contains("as u16") || lower.contains("as u8")
+            || lower.contains("(int)") || lower.contains("(short)") || lower.contains("(byte)"))
+            && (lower.contains("size") || lower.contains("length") || lower.contains("count") || lower.contains("offset"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::Medium,
+                category: "protocol".to_owned(),
+                rule_id: "SEC-R02".to_owned(),
+                message: "Possible integer overflow: narrowing cast on size/length value".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use checked arithmetic or validate range before casting".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // Missing bounds check patterns (C/C++)
+        if lower.contains("memcpy(") || lower.contains("strcpy(") || lower.contains("strcat(")
+            || lower.contains("sprintf(") || lower.contains("gets(")
+        {
+            out.push(SecurityFinding {
+                severity: Severity::High,
+                category: "protocol".to_owned(),
+                rule_id: "SEC-R03".to_owned(),
+                message: "Unsafe buffer operation — no bounds checking".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Use bounded variants: memcpy_s, strncpy, snprintf, fgets".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+
+        // DNS tunneling: very long domain name or TXT record abuse
+        if lower.contains("dns") && lower.contains("txt")
+            && (lower.contains("query") || lower.contains("record") || lower.contains("lookup"))
+        {
+            out.push(SecurityFinding {
+                severity: Severity::Medium,
+                category: "protocol".to_owned(),
+                rule_id: "SEC-R04".to_owned(),
+                message: "DNS TXT record usage — potential data exfiltration channel".to_owned(),
+                evidence: Some(trimmed.to_owned()),
+                line: Some(i + 1),
+                remediation: Some("Monitor and restrict DNS TXT record queries; use DNS filtering".to_owned()),
+                word: None,
+                variant: None,
+            });
+        }
+    }
+}
+
 // ── Helpers ──────────────────────────────────────────────────────────────────
 
 /// Heuristic: is this line a comment?
@@ -1702,6 +2447,120 @@ mod tests {
         assert!(
             findings.iter().any(|f| f.category == "payload" && f.severity == Severity::Critical),
             "Should detect msfvenom payload: {findings:?}"
+        );
+    }
+
+    // ── TruffleHog-grade secret detection tests ────────────────────────
+
+    #[test]
+    fn detect_aws_access_key_regex() {
+        let body = r#"aws_key = "AKIAIOSFODNN7EXAMPLE""#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SEC-S01"),
+            "Should detect AWS Access Key via regex: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_jwt_token() {
+        let body = "token = \"eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.dozjgNryP4J3jVmNHl0w5N_XgL0n3I9PlFUP0THsR8U\"";
+        let findings = scan_body(body, "javascript");
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SEC-S38"),
+            "Should detect JWT token: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_mongodb_connection_string() {
+        let body = r#"uri = "mongodb+srv://admin:secret@cluster0.example.net/db""#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SEC-S34"),
+            "Should detect MongoDB connection string: {findings:?}"
+        );
+    }
+
+    // ── Kali-category scanner tests ────────────────────────────────────
+
+    #[test]
+    fn detect_ssrf_internal_ip() {
+        let body = r#"resp = requests.get("http://169.254.169.254/latest/meta-data/")"#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.category == "web" && f.rule_id == "SEC-W01"),
+            "Should detect SSRF to metadata endpoint: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_credentials_in_url() {
+        let body = r#"db = connect("postgres://admin:p4ssw0rd@db.prod.internal:5432/mydb")"#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.category == "credential" && f.rule_id == "SEC-K01"),
+            "Should detect credentials in URL: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_shell_true_subprocess() {
+        let body = r#"subprocess.run(cmd, shell=True)"#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.category == "execution" && f.rule_id == "SEC-E01"),
+            "Should detect shell=True: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_weak_tls_version() {
+        let body = r#"ctx.minimum_version = ssl.PROTOCOL_TLSv1"#;
+        let findings = scan_body(body, "python");
+        assert!(
+            findings.iter().any(|f| f.category == "network" && f.rule_id == "SEC-N01"),
+            "Should detect weak TLS version: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn detect_unsafe_buffer_ops() {
+        let body = r#"strcpy(dest, src);"#;
+        let findings = scan_body(body, "c");
+        assert!(
+            findings.iter().any(|f| f.category == "protocol" && f.rule_id == "SEC-R03"),
+            "Should detect unsafe buffer operation: {findings:?}"
+        );
+    }
+
+    // ── Guardrails tests ───────────────────────────────────────────────
+
+    #[test]
+    fn guardrails_blocked_domain() {
+        let guardrails = Guardrails {
+            blocked_domains: vec!["evil.example.com".to_owned()],
+            ..Default::default()
+        };
+        let source = "fetch https://evil.example.com/data";
+        let findings = check_guardrails(source, &guardrails);
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SEC-G01"),
+            "Should detect blocked domain: {findings:?}"
+        );
+    }
+
+    #[test]
+    fn guardrails_banned_word() {
+        let guardrails = Guardrails {
+            banned_words: vec!["rm_rf".to_owned()],
+            ..Default::default()
+        };
+        let source = "use rm_rf";
+        let findings = check_guardrails(source, &guardrails);
+        assert!(
+            findings.iter().any(|f| f.rule_id == "SEC-G03"),
+            "Should detect banned word: {findings:?}"
         );
     }
 }

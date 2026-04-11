@@ -2576,6 +2576,36 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
                 }
             }
 
+            // Category breakdown
+            if !all_findings.is_empty() {
+                let mut category_counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+                for (_, f) in &all_findings {
+                    *category_counts.entry(f.category.as_str()).or_insert(0) += 1;
+                }
+                println!("\n  Categories:");
+                for (cat, count) in &category_counts {
+                    let label = match *cat {
+                        "injection" => "Injection (SQLi/CMDi)",
+                        "secrets" => "Secrets & Credentials (TruffleHog)",
+                        "crypto" => "Weak Cryptography",
+                        "payload" => "Attack Payloads (Metasploit)",
+                        "xss" => "Cross-Site Scripting",
+                        "deserialization" => "Insecure Deserialization",
+                        "path_traversal" => "Path Traversal",
+                        "config" => "Insecure Configuration",
+                        "web" => "Web Vulnerabilities (Kali/OWASP)",
+                        "credential" => "Credential Security (Kali)",
+                        "execution" => "Code Execution (Kali)",
+                        "network" => "Network Security (Kali/Suricata)",
+                        "data_handling" => "Data Handling (Forensics)",
+                        "protocol" => "Protocol Analysis (Suricata)",
+                        "guardrail" => "Guardrail Violations (RedAmon)",
+                        other => other,
+                    };
+                    println!("    {label}: {count}");
+                }
+            }
+
             println!("\n{}", "=".repeat(70));
             let score = if !all_findings.is_empty() {
                 let finding_refs: Vec<_> = all_findings.iter().map(|(_, f)| f.clone()).collect();
