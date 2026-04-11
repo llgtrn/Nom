@@ -41,7 +41,12 @@ pub fn translate_python_to_rust(body: &str) -> TranslateResult {
 
         // if x: → if x {
         if trimmed.starts_with("if ") && trimmed.ends_with(':') {
-            let cond = trimmed.strip_prefix("if ").unwrap().strip_suffix(':').unwrap().trim();
+            let cond = trimmed
+                .strip_prefix("if ")
+                .unwrap()
+                .strip_suffix(':')
+                .unwrap()
+                .trim();
             let rust_cond = translate_python_expr(cond);
             output_lines.push(format!("{indent}if {rust_cond} {{"));
             i += 1;
@@ -50,7 +55,12 @@ pub fn translate_python_to_rust(body: &str) -> TranslateResult {
 
         // elif → } else if {
         if trimmed.starts_with("elif ") && trimmed.ends_with(':') {
-            let cond = trimmed.strip_prefix("elif ").unwrap().strip_suffix(':').unwrap().trim();
+            let cond = trimmed
+                .strip_prefix("elif ")
+                .unwrap()
+                .strip_suffix(':')
+                .unwrap()
+                .trim();
             let rust_cond = translate_python_expr(cond);
             output_lines.push(format!("{indent}}} else if {rust_cond} {{"));
             i += 1;
@@ -75,7 +85,12 @@ pub fn translate_python_to_rust(body: &str) -> TranslateResult {
 
         // while x: → while x {
         if trimmed.starts_with("while ") && trimmed.ends_with(':') {
-            let cond = trimmed.strip_prefix("while ").unwrap().strip_suffix(':').unwrap().trim();
+            let cond = trimmed
+                .strip_prefix("while ")
+                .unwrap()
+                .strip_suffix(':')
+                .unwrap()
+                .trim();
             let rust_cond = translate_python_expr(cond);
             output_lines.push(format!("{indent}while {rust_cond} {{"));
             i += 1;
@@ -84,7 +99,12 @@ pub fn translate_python_to_rust(body: &str) -> TranslateResult {
 
         // def func(args): → fn func(args) {
         if trimmed.starts_with("def ") && trimmed.ends_with(':') {
-            let sig = trimmed.strip_prefix("def ").unwrap().strip_suffix(':').unwrap().trim();
+            let sig = trimmed
+                .strip_prefix("def ")
+                .unwrap()
+                .strip_suffix(':')
+                .unwrap()
+                .trim();
             output_lines.push(format!("{indent}fn {sig} {{"));
             i += 1;
             warnings.push("nested def translated — parameter types need annotation".into());
@@ -288,8 +308,11 @@ fn try_translate_python_for(trimmed: &str) -> Option<String> {
             2 => format!("{}..{}", parts[0], parts[1]),
             3 => {
                 // range(start, end, step) — no direct Rust equivalent
-                return Some(format!("for {var} in ({}).step_by({} as usize) {{",
-                    format_args!("{}..{}", parts[0], parts[1]), parts[2]));
+                return Some(format!(
+                    "for {var} in ({}).step_by({} as usize) {{",
+                    format_args!("{}..{}", parts[0], parts[1]),
+                    parts[2]
+                ));
             }
             _ => return None,
         };

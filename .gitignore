@@ -34,3 +34,4 @@ Thumbs.db
 # Additional build artifacts  
 nom-compiler/.nom-out/
 *.nomiz
+.gitnexus

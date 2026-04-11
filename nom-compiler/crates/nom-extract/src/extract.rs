@@ -4,8 +4,8 @@
 //! language-specific node types; this module normalizes them into
 //! language-agnostic UirEntity structs.
 
-use nom_types::{AtomSignature, UirEntity, UirKind};
 use anyhow::Result;
+use nom_types::{AtomSignature, UirEntity, UirKind};
 use tree_sitter::Tree;
 
 /// A fully extracted entity: UIR entity + optional signature + optional source body.

@@ -7,8 +7,8 @@
 
 use std::path::{Path, PathBuf};
 
-use nom_types::{Atom, parse_atom_kind};
 use anyhow::{Context, Result};
+use nom_types::{Atom, parse_atom_kind};
 use rusqlite::{Connection, params};
 
 /// SQLite-backed atom dictionary.
@@ -170,9 +170,7 @@ impl NomDict {
 
     /// Extract output_type from signature.
     fn extract_output_type(atom: &Atom) -> Option<String> {
-        atom.signature
-            .as_ref()
-            .and_then(|sig| sig.returns.clone())
+        atom.signature.as_ref().and_then(|sig| sig.returns.clone())
     }
 
     /// Extract effects from signature (async, method, etc.).
@@ -219,7 +217,7 @@ impl NomDict {
 
                 let rows = stmt.execute(params![
                     atom.name,
-                    atom.concept,
+                    &hash,
                     atom.kind.as_str(),
                     hash,
                     describe,

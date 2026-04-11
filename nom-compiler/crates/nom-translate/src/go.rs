@@ -15,15 +15,24 @@ pub fn translate_go_to_rust(body: &str) -> TranslateResult {
         let indent = &line[..line.len() - trimmed.len()];
 
         // Pass through empty lines and comments
-        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*")
-            || trimmed.starts_with("*") || trimmed.starts_with("*/")
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*")
+            || trimmed.starts_with("*/")
         {
             output_lines.push((*line).to_owned());
             continue;
         }
 
         // import statements
-        if trimmed.starts_with("import ") || trimmed == "import (" || trimmed == ")" && output_lines.last().is_some_and(|l| l.trim().starts_with("//")) {
+        if trimmed.starts_with("import ")
+            || trimmed == "import ("
+            || trimmed == ")"
+                && output_lines
+                    .last()
+                    .is_some_and(|l| l.trim().starts_with("//"))
+        {
             output_lines.push(format!("{indent}// {trimmed}"));
             continue;
         }
@@ -125,7 +134,9 @@ pub fn translate_go_to_rust(body: &str) -> TranslateResult {
         // nil → None
         translated = replace_go_word(&translated, "nil", "None");
 
-        if !did_translate && !trimmed.starts_with("{") && !trimmed.starts_with("}")
+        if !did_translate
+            && !trimmed.starts_with("{")
+            && !trimmed.starts_with("}")
             && !trimmed.starts_with("return")
         {
             untranslated += 1;
@@ -288,7 +299,9 @@ fn try_translate_go_for(trimmed: &str) -> Option<String> {
         return None;
     }
 
-    let rest = trimmed.strip_prefix("for ")?.strip_suffix(" {")
+    let rest = trimmed
+        .strip_prefix("for ")?
+        .strip_suffix(" {")
         .or_else(|| trimmed.strip_prefix("for ")?.strip_suffix('{'))?
         .trim();
 
@@ -357,9 +370,7 @@ fn translate_make_chan(line: &str) -> String {
             let type_name = line[after..after + end].trim();
             let before = &line[..start];
             let after_close = &line[after + end + 1..];
-            return format!(
-                "{before}tokio::sync::mpsc::channel::<{type_name}>(32){after_close}"
-            );
+            return format!("{before}tokio::sync::mpsc::channel::<{type_name}>(32){after_close}");
         }
     }
     line.to_owned()

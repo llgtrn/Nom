@@ -94,6 +94,6 @@ all-grammars = [
     "tree-sitter-racket",
     "tree-sitter-glsl",
     "tree-sitter-graphql",
-    "tree-sitter-latex",
+    # "tree-sitter-latex",  # disabled: external scanner linking issue on Windows
     "tree-sitter-groovy",
 ]

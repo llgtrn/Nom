@@ -1,0 +1,39 @@
+# Best Practice Example — Grade A quality
+# Demonstrates: describe, contract, effects, require, where constraints,
+#               tests, type annotations, and natural language aliases
+
+system user_auth
+  describe "authenticate users with hashed passwords and rate limiting"
+  need hash::argon2 where security > 0.9
+  need store::redis where reliability > 0.8
+  need limiter::tokenbucket where performance > 0.9
+  flow request -> limiter -> hash -> store -> response
+  require latency < 50ms
+  effects only [network database cpu]
+
+nom validate
+  describe "validate and sanitize incoming authentication requests"
+  contract
+  in request(bytes)
+  out validated(bool)
+  effects [cpu]
+  kind AuthRequest {
+    username: text,
+    password: text
+  }
+  define validate(input: AuthRequest) -> bool {
+    if input.username.len() > 0 {
+      if input.password.len() >= 8 {
+        give yes
+      }
+    }
+    give no
+  }
+  define sanitize(raw: text) -> text {
+    take cleaned: text = raw.trim()
+    give cleaned
+  }
+
+test auth_security
+  given user_auth
+  then security > 0.8

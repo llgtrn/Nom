@@ -93,7 +93,11 @@ impl BM25Index {
             .filter(|r| r.score > 0.0)
             .collect();
 
-        scores.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        scores.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         scores.truncate(limit);
         scores
     }
@@ -167,7 +171,11 @@ pub fn reciprocal_rank_fusion(
         })
         .collect();
 
-    results.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results.truncate(limit);
     results
 }
@@ -198,13 +206,22 @@ mod tests {
     #[test]
     fn bm25_search_ranks_relevant_documents() {
         let mut index = BM25Index::new();
-        index.add_document("hash::sha256", "hash sha256 cryptographic hashing function security");
+        index.add_document(
+            "hash::sha256",
+            "hash sha256 cryptographic hashing function security",
+        );
         index.add_document("hash::md5", "hash md5 legacy hashing function deprecated");
-        index.add_document("sort::quicksort", "sort quicksort sorting algorithm performance");
+        index.add_document(
+            "sort::quicksort",
+            "sort quicksort sorting algorithm performance",
+        );
         index.add_document("auth::jwt", "auth jwt token authentication security bearer");
 
         let results = index.search("hashing function", 10);
-        assert!(!results.is_empty(), "expected results for 'hashing function'");
+        assert!(
+            !results.is_empty(),
+            "expected results for 'hashing function'"
+        );
         // hash entries should rank highest
         assert!(
             results[0].doc_id.starts_with("hash"),

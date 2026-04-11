@@ -6,6 +6,12 @@ how Nom's architecture structurally prevents it — with evidence.**
 Research conducted: 2026-04-10, updated 2026-04-11
 Sources: 6 parallel research agents, 160+ web sources, academic papers, creator interviews
 
+Implementation note (2026-04-12): the current compiler now includes first-class
+graph query algebra (`union`, `intersect`, `difference`), recursive traversal
+suffix compilation, and pushed-down multi-root graph constraint guards. The
+research claims about explicit composition and graph-native reasoning now have a
+concrete parser/planner/codegen path behind them.
+
 ---
 
 ## How To Read This Document

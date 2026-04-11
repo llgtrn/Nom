@@ -1,0 +1,21 @@
+# Pure imperative Nom with natural language keywords
+# No dictionary dependencies
+
+nom geometry
+  kind Point {
+    x: number,
+    y: number
+  }
+  choice Color {
+    Red,
+    Green,
+    Blue
+  }
+  define distance(a: Point, b: Point) -> number {
+    take dx = a.x - b.x
+    take dy = a.y - b.y
+    give dx * dx + dy * dy
+  }
+  define greet(name: text) -> text {
+    give "hello"
+  }

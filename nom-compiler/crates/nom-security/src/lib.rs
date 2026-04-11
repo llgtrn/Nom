@@ -131,11 +131,17 @@ impl SecurityReport {
     }
 
     pub fn critical_count(&self) -> usize {
-        self.findings.iter().filter(|f| f.severity == Severity::Critical).count()
+        self.findings
+            .iter()
+            .filter(|f| f.severity == Severity::Critical)
+            .count()
     }
 
     pub fn high_count(&self) -> usize {
-        self.findings.iter().filter(|f| f.severity == Severity::High).count()
+        self.findings
+            .iter()
+            .filter(|f| f.severity == Severity::High)
+            .count()
     }
 
     /// Serialize the report to JSON.
@@ -256,13 +262,21 @@ impl<'r> SecurityChecker<'r> {
         let label = format!(
             "{}{}",
             entry.word,
-            entry.variant.as_deref().map(|v| format!("::{v}")).unwrap_or_default()
+            entry
+                .variant
+                .as_deref()
+                .map(|v| format!("::{v}"))
+                .unwrap_or_default()
         );
 
         // Check minimum security score
         if entry.security < self.config.min_security_score {
             report.push(SecurityFinding {
-                severity: if entry.security < 0.3 { Severity::Critical } else { Severity::High },
+                severity: if entry.security < 0.3 {
+                    Severity::Critical
+                } else {
+                    Severity::High
+                },
                 category: "score".to_owned(),
                 rule_id: "SEC-P01".to_owned(),
                 message: format!(
@@ -271,7 +285,9 @@ impl<'r> SecurityChecker<'r> {
                 ),
                 evidence: None,
                 line: None,
-                remediation: Some("Choose a word with higher security score or audit this word's body".to_owned()),
+                remediation: Some(
+                    "Choose a word with higher security score or audit this word's body".to_owned(),
+                ),
                 word: Some(entry.word.clone()),
                 variant: entry.variant.clone(),
             });
@@ -336,7 +352,9 @@ impl<'r> SecurityChecker<'r> {
                     message: format!("{label} is flagged with known vulnerability: {hash}"),
                     evidence: Some(hash.clone()),
                     line: None,
-                    remediation: Some("Remove or replace this word with a patched version".to_owned()),
+                    remediation: Some(
+                        "Remove or replace this word with a patched version".to_owned(),
+                    ),
                     word: Some(entry.word.clone()),
                     variant: entry.variant.clone(),
                 });
@@ -351,7 +369,9 @@ impl<'r> SecurityChecker<'r> {
                         severity: Severity::Info,
                         category: "effect_escalation".to_owned(),
                         rule_id: "SEC-P06".to_owned(),
-                        message: format!("{label} declares effect '{effect}' — verify this is expected"),
+                        message: format!(
+                            "{label} declares effect '{effect}' — verify this is expected"
+                        ),
                         evidence: Some(effect.clone()),
                         line: None,
                         remediation: None,
@@ -377,61 +397,281 @@ impl<'r> SecurityChecker<'r> {
 /// Each pattern has: provider name, regex pattern, severity, rule_id.
 const SECRET_PATTERNS: &[(&str, &str, Severity, &str)] = &[
     // Cloud providers
-    ("AWS Access Key", r"AKIA[0-9A-Z]{16}", Severity::Critical, "SEC-S01"),
-    ("AWS Secret Key", r"(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}", Severity::Critical, "SEC-S02"),
-    ("GCP Service Account", r#""type"\s*:\s*"service_account""#, Severity::Critical, "SEC-S03"),
-    ("Azure Connection String", r"(?i)DefaultEndpointsProtocol=https;AccountName=", Severity::High, "SEC-S04"),
+    (
+        "AWS Access Key",
+        r"AKIA[0-9A-Z]{16}",
+        Severity::Critical,
+        "SEC-S01",
+    ),
+    (
+        "AWS Secret Key",
+        r"(?i)aws_secret_access_key\s*[=:]\s*[A-Za-z0-9/+=]{40}",
+        Severity::Critical,
+        "SEC-S02",
+    ),
+    (
+        "GCP Service Account",
+        r#""type"\s*:\s*"service_account""#,
+        Severity::Critical,
+        "SEC-S03",
+    ),
+    (
+        "Azure Connection String",
+        r"(?i)DefaultEndpointsProtocol=https;AccountName=",
+        Severity::High,
+        "SEC-S04",
+    ),
     // AI providers
-    ("OpenAI API Key", r"sk-(?:proj-)?[a-zA-Z0-9]{20,}T3BlbkFJ", Severity::Critical, "SEC-S05"),
-    ("Anthropic API Key", r"sk-ant-(?:admin01|api03)-[\w\-]{20,}", Severity::Critical, "SEC-S06"),
-    ("HuggingFace Token", r"hf_[a-zA-Z0-9]{34}", Severity::High, "SEC-S07"),
+    (
+        "OpenAI API Key",
+        r"sk-(?:proj-)?[a-zA-Z0-9]{20,}T3BlbkFJ",
+        Severity::Critical,
+        "SEC-S05",
+    ),
+    (
+        "Anthropic API Key",
+        r"sk-ant-(?:admin01|api03)-[\w\-]{20,}",
+        Severity::Critical,
+        "SEC-S06",
+    ),
+    (
+        "HuggingFace Token",
+        r"hf_[a-zA-Z0-9]{34}",
+        Severity::High,
+        "SEC-S07",
+    ),
     // Version control
-    ("GitHub Token", r"gh[pousr]_[A-Za-z0-9_]{36,}", Severity::Critical, "SEC-S08"),
-    ("GitHub Fine-Grained PAT", r"github_pat_[A-Za-z0-9_]{22,}", Severity::Critical, "SEC-S09"),
-    ("GitLab Token", r"glpat-[A-Za-z0-9\-]{20,}", Severity::Critical, "SEC-S10"),
-    ("Bitbucket App Password", r"ATBB[A-Za-z0-9]{32}", Severity::High, "SEC-S11"),
+    (
+        "GitHub Token",
+        r"gh[pousr]_[A-Za-z0-9_]{36,}",
+        Severity::Critical,
+        "SEC-S08",
+    ),
+    (
+        "GitHub Fine-Grained PAT",
+        r"github_pat_[A-Za-z0-9_]{22,}",
+        Severity::Critical,
+        "SEC-S09",
+    ),
+    (
+        "GitLab Token",
+        r"glpat-[A-Za-z0-9\-]{20,}",
+        Severity::Critical,
+        "SEC-S10",
+    ),
+    (
+        "Bitbucket App Password",
+        r"ATBB[A-Za-z0-9]{32}",
+        Severity::High,
+        "SEC-S11",
+    ),
     // Communication
-    ("Slack Bot Token", r"xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}", Severity::High, "SEC-S12"),
-    ("Slack Webhook", r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+", Severity::Medium, "SEC-S13"),
-    ("Discord Webhook", r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]+", Severity::Medium, "SEC-S14"),
-    ("Telegram Bot Token", r"[0-9]+:AA[A-Za-z0-9_\-]{33}", Severity::High, "SEC-S15"),
+    (
+        "Slack Bot Token",
+        r"xoxb-[0-9]{10,13}-[0-9]{10,13}-[a-zA-Z0-9]{24}",
+        Severity::High,
+        "SEC-S12",
+    ),
+    (
+        "Slack Webhook",
+        r"https://hooks\.slack\.com/services/T[A-Z0-9]+/B[A-Z0-9]+/[A-Za-z0-9]+",
+        Severity::Medium,
+        "SEC-S13",
+    ),
+    (
+        "Discord Webhook",
+        r"https://discord(?:app)?\.com/api/webhooks/[0-9]+/[A-Za-z0-9_\-]+",
+        Severity::Medium,
+        "SEC-S14",
+    ),
+    (
+        "Telegram Bot Token",
+        r"[0-9]+:AA[A-Za-z0-9_\-]{33}",
+        Severity::High,
+        "SEC-S15",
+    ),
     // Payment
-    ("Stripe Secret Key", r"[rs]k_live_[a-zA-Z0-9]{20,}", Severity::Critical, "SEC-S16"),
-    ("Stripe Publishable Key", r"pk_live_[a-zA-Z0-9]{20,}", Severity::Low, "SEC-S17"),
-    ("PayPal Client Secret", r#"(?i)paypal.*secret.*['"][A-Za-z0-9\-]{32,}['"]"#, Severity::High, "SEC-S18"),
-    ("Square Access Token", r"EAAA[a-zA-Z0-9\-\+\=]{60}", Severity::Critical, "SEC-S19"),
+    (
+        "Stripe Secret Key",
+        r"[rs]k_live_[a-zA-Z0-9]{20,}",
+        Severity::Critical,
+        "SEC-S16",
+    ),
+    (
+        "Stripe Publishable Key",
+        r"pk_live_[a-zA-Z0-9]{20,}",
+        Severity::Low,
+        "SEC-S17",
+    ),
+    (
+        "PayPal Client Secret",
+        r#"(?i)paypal.*secret.*['"][A-Za-z0-9\-]{32,}['"]"#,
+        Severity::High,
+        "SEC-S18",
+    ),
+    (
+        "Square Access Token",
+        r"EAAA[a-zA-Z0-9\-\+\=]{60}",
+        Severity::Critical,
+        "SEC-S19",
+    ),
     // Email
-    ("SendGrid API Key", r"SG\.[\w\-]{20,24}\.[\w\-]{39,50}", Severity::High, "SEC-S20"),
-    ("Mailgun API Key", r"key-[a-zA-Z0-9]{32}", Severity::High, "SEC-S21"),
-    ("Mailchimp API Key", r"[0-9a-f]{32}-us[0-9]{1,2}", Severity::Medium, "SEC-S22"),
+    (
+        "SendGrid API Key",
+        r"SG\.[\w\-]{20,24}\.[\w\-]{39,50}",
+        Severity::High,
+        "SEC-S20",
+    ),
+    (
+        "Mailgun API Key",
+        r"key-[a-zA-Z0-9]{32}",
+        Severity::High,
+        "SEC-S21",
+    ),
+    (
+        "Mailchimp API Key",
+        r"[0-9a-f]{32}-us[0-9]{1,2}",
+        Severity::Medium,
+        "SEC-S22",
+    ),
     // Infrastructure
-    ("Twilio Account SID", r"AC[0-9a-f]{32}", Severity::High, "SEC-S23"),
-    ("Twilio Auth Token", r#"(?i)twilio.*auth.*token.*['"][0-9a-f]{32}['"]"#, Severity::Critical, "SEC-S24"),
-    ("DigitalOcean Token", r"dop_v1_[a-f0-9]{64}", Severity::Critical, "SEC-S26"),
-    ("Supabase Key", r"(?i)supabase.*key.*eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+", Severity::High, "SEC-S29"),
+    (
+        "Twilio Account SID",
+        r"AC[0-9a-f]{32}",
+        Severity::High,
+        "SEC-S23",
+    ),
+    (
+        "Twilio Auth Token",
+        r#"(?i)twilio.*auth.*token.*['"][0-9a-f]{32}['"]"#,
+        Severity::Critical,
+        "SEC-S24",
+    ),
+    (
+        "DigitalOcean Token",
+        r"dop_v1_[a-f0-9]{64}",
+        Severity::Critical,
+        "SEC-S26",
+    ),
+    (
+        "Supabase Key",
+        r"(?i)supabase.*key.*eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_]+",
+        Severity::High,
+        "SEC-S29",
+    ),
     // Monitoring
-    ("Sentry DSN", r"https://[a-f0-9]{32}@[a-z0-9]+\.ingest\.sentry\.io/[0-9]+", Severity::Medium, "SEC-S31"),
+    (
+        "Sentry DSN",
+        r"https://[a-f0-9]{32}@[a-z0-9]+\.ingest\.sentry\.io/[0-9]+",
+        Severity::Medium,
+        "SEC-S31",
+    ),
     // Database
-    ("MongoDB Connection String", r"mongodb(?:\+srv)?://[^\s]+@[^\s]+", Severity::Critical, "SEC-S34"),
-    ("PostgreSQL Connection String", r"postgres(?:ql)?://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S35"),
-    ("Redis Connection String", r"redis://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S36"),
-    ("MySQL Connection String", r"mysql://[^\s]+:[^\s]+@[^\s]+", Severity::Critical, "SEC-S37"),
+    (
+        "MongoDB Connection String",
+        r"mongodb(?:\+srv)?://[^\s]+@[^\s]+",
+        Severity::Critical,
+        "SEC-S34",
+    ),
+    (
+        "PostgreSQL Connection String",
+        r"postgres(?:ql)?://[^\s]+:[^\s]+@[^\s]+",
+        Severity::Critical,
+        "SEC-S35",
+    ),
+    (
+        "Redis Connection String",
+        r"redis://[^\s]+:[^\s]+@[^\s]+",
+        Severity::Critical,
+        "SEC-S36",
+    ),
+    (
+        "MySQL Connection String",
+        r"mysql://[^\s]+:[^\s]+@[^\s]+",
+        Severity::Critical,
+        "SEC-S37",
+    ),
     // Auth
-    ("JWT Token", r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_\+/=]+", Severity::High, "SEC-S38"),
-    ("OAuth Client Secret", r#"(?i)client.?secret\s*[=:]\s*['"][A-Za-z0-9\-_]{20,}['"]"#, Severity::High, "SEC-S39"),
-    ("Bearer Token", r"(?i)bearer\s+[A-Za-z0-9\-_\.]{20,}", Severity::Medium, "SEC-S40"),
+    (
+        "JWT Token",
+        r"eyJ[A-Za-z0-9\-_]+\.eyJ[A-Za-z0-9\-_]+\.[A-Za-z0-9\-_\+/=]+",
+        Severity::High,
+        "SEC-S38",
+    ),
+    (
+        "OAuth Client Secret",
+        r#"(?i)client.?secret\s*[=:]\s*['"][A-Za-z0-9\-_]{20,}['"]"#,
+        Severity::High,
+        "SEC-S39",
+    ),
+    (
+        "Bearer Token",
+        r"(?i)bearer\s+[A-Za-z0-9\-_\.]{20,}",
+        Severity::Medium,
+        "SEC-S40",
+    ),
     // Package registries
-    ("NPM Token", r"npm_[A-Za-z0-9]{36}", Severity::High, "SEC-S41"),
-    ("PyPI Token", r"pypi-AgEIcHlwaS5vcmcCJ[a-zA-Z0-9\-_]{50,}", Severity::High, "SEC-S42"),
-    ("Docker Config Auth", r#""auth"\s*:\s*"[A-Za-z0-9+/=]{20,}""#, Severity::High, "SEC-S43"),
-    ("Postman API Key", r"PMAK-[a-zA-Z0-9]{59}", Severity::Medium, "SEC-S44"),
+    (
+        "NPM Token",
+        r"npm_[A-Za-z0-9]{36}",
+        Severity::High,
+        "SEC-S41",
+    ),
+    (
+        "PyPI Token",
+        r"pypi-AgEIcHlwaS5vcmcCJ[a-zA-Z0-9\-_]{50,}",
+        Severity::High,
+        "SEC-S42",
+    ),
+    (
+        "Docker Config Auth",
+        r#""auth"\s*:\s*"[A-Za-z0-9+/=]{20,}""#,
+        Severity::High,
+        "SEC-S43",
+    ),
+    (
+        "Postman API Key",
+        r"PMAK-[a-zA-Z0-9]{59}",
+        Severity::Medium,
+        "SEC-S44",
+    ),
     // Certificates & private keys
-    ("RSA Private Key", r"-----BEGIN RSA PRIVATE KEY-----", Severity::Critical, "SEC-S45"),
-    ("EC Private Key", r"-----BEGIN EC PRIVATE KEY-----", Severity::Critical, "SEC-S46"),
-    ("PKCS8 Private Key", r"-----BEGIN PRIVATE KEY-----", Severity::Critical, "SEC-S47"),
-    ("SSH Private Key", r"-----BEGIN OPENSSH PRIVATE KEY-----", Severity::Critical, "SEC-S48"),
-    ("PGP Private Key", r"-----BEGIN PGP PRIVATE KEY BLOCK-----", Severity::Critical, "SEC-S49"),
-    ("Certificate", r"-----BEGIN CERTIFICATE-----", Severity::Info, "SEC-S50"),
+    (
+        "RSA Private Key",
+        r"-----BEGIN RSA PRIVATE KEY-----",
+        Severity::Critical,
+        "SEC-S45",
+    ),
+    (
+        "EC Private Key",
+        r"-----BEGIN EC PRIVATE KEY-----",
+        Severity::Critical,
+        "SEC-S46",
+    ),
+    (
+        "PKCS8 Private Key",
+        r"-----BEGIN PRIVATE KEY-----",
+        Severity::Critical,
+        "SEC-S47",
+    ),
+    (
+        "SSH Private Key",
+        r"-----BEGIN OPENSSH PRIVATE KEY-----",
+        Severity::Critical,
+        "SEC-S48",
+    ),
+    (
+        "PGP Private Key",
+        r"-----BEGIN PGP PRIVATE KEY BLOCK-----",
+        Severity::Critical,
+        "SEC-S49",
+    ),
+    (
+        "Certificate",
+        r"-----BEGIN CERTIFICATE-----",
+        Severity::Info,
+        "SEC-S50",
+    ),
 ];
 
 /// Compiled regex cache for SECRET_PATTERNS.
@@ -609,15 +849,7 @@ fn scan_injection(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
         "'DROP ",
     ];
     static SQL_INTERP_MARKERS: &[&str] = &[
-        "\" +",
-        "\" .",
-        "' +",
-        "' .",
-        "${",
-        "f\"",
-        "f'",
-        ".format(",
-        "% ",
+        "\" +", "\" .", "' +", "' .", "${", "f\"", "f'", ".format(", "% ",
     ];
 
     for (i, line) in body.lines().enumerate() {
@@ -648,13 +880,25 @@ fn scan_injection(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
         // Command injection: shell exec with variables
         let cmd_injection_patterns: &[(&str, &str)] = &[
             ("os.system(", "os.system() with user input"),
-            ("subprocess.call(", "subprocess.call() — use subprocess.run with shell=False"),
-            ("subprocess.Popen(", "subprocess.Popen() — verify shell=False"),
-            ("Runtime.getRuntime().exec(", "Java Runtime.exec() with concatenation"),
+            (
+                "subprocess.call(",
+                "subprocess.call() — use subprocess.run with shell=False",
+            ),
+            (
+                "subprocess.Popen(",
+                "subprocess.Popen() — verify shell=False",
+            ),
+            (
+                "Runtime.getRuntime().exec(",
+                "Java Runtime.exec() with concatenation",
+            ),
             ("eval(", "eval() — dynamic code execution"),
             ("system(", "system() call — use safer alternatives"),
             ("popen(", "popen() — command execution"),
-            ("Process.Start(", "Process.Start() — verify input sanitization"),
+            (
+                "Process.Start(",
+                "Process.Start() — verify input sanitization",
+            ),
         ];
         for (pat, msg) in cmd_injection_patterns {
             if trimmed.contains(pat) {
@@ -674,7 +918,9 @@ fn scan_injection(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                     message: msg.to_string(),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Avoid dynamic execution; use safe APIs with validated inputs".to_owned()),
+                    remediation: Some(
+                        "Avoid dynamic execution; use safe APIs with validated inputs".to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -754,7 +1000,9 @@ fn scan_secrets(body: &str, out: &mut Vec<SecurityFinding>) {
                         message: format!("Possible hardcoded {desc}"),
                         evidence: Some(redact_secret(trimmed)),
                         line: Some(i + 1),
-                        remediation: Some("Use environment variables or a secrets manager".to_owned()),
+                        remediation: Some(
+                            "Use environment variables or a secrets manager".to_owned(),
+                        ),
                         word: None,
                         variant: None,
                     });
@@ -772,7 +1020,9 @@ fn scan_secrets(body: &str, out: &mut Vec<SecurityFinding>) {
                     message: "Embedded private key".to_owned(),
                     evidence: Some(marker.to_string()),
                     line: Some(i + 1),
-                    remediation: Some("Store private keys in a secure vault, not in source code".to_owned()),
+                    remediation: Some(
+                        "Store private keys in a secure vault, not in source code".to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -792,7 +1042,9 @@ fn scan_secrets(body: &str, out: &mut Vec<SecurityFinding>) {
                         message: format!("Possible hardcoded secret ({pat})"),
                         evidence: Some(redact_secret(trimmed)),
                         line: Some(i + 1),
-                        remediation: Some("Use environment variables or a secrets manager".to_owned()),
+                        remediation: Some(
+                            "Use environment variables or a secrets manager".to_owned(),
+                        ),
                         word: None,
                         variant: None,
                     });
@@ -1296,7 +1548,10 @@ fn scan_deserialization(body: &str, language: &str, out: &mut Vec<SecurityFindin
 /// Detect cross-site scripting patterns.
 fn scan_xss(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
     let lang = language.to_ascii_lowercase();
-    let is_web = matches!(lang.as_str(), "javascript" | "js" | "typescript" | "ts" | "html" | "jsx" | "tsx" | "php");
+    let is_web = matches!(
+        lang.as_str(),
+        "javascript" | "js" | "typescript" | "ts" | "html" | "jsx" | "tsx" | "php"
+    );
 
     if !is_web {
         // Still check for innerHTML in any language (could be embedded HTML)
@@ -1412,7 +1667,10 @@ fn scan_path_traversal(body: &str, out: &mut Vec<SecurityFinding>) {
         // Direct path traversal
         if trimmed.contains("../") || trimmed.contains("..\\") {
             // Avoid false positives from relative imports in common languages
-            if !trimmed.contains("import ") && !trimmed.contains("require(") && !trimmed.contains("#include") {
+            if !trimmed.contains("import ")
+                && !trimmed.contains("require(")
+                && !trimmed.contains("#include")
+            {
                 out.push(SecurityFinding {
                     severity: Severity::Medium,
                     category: "path_traversal".to_owned(),
@@ -1420,7 +1678,10 @@ fn scan_path_traversal(body: &str, out: &mut Vec<SecurityFinding>) {
                     message: "Path traversal pattern (../) — verify input sanitization".to_owned(),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Canonicalize paths and validate they remain within allowed directories".to_owned()),
+                    remediation: Some(
+                        "Canonicalize paths and validate they remain within allowed directories"
+                            .to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -1429,9 +1690,15 @@ fn scan_path_traversal(body: &str, out: &mut Vec<SecurityFinding>) {
 
         // Dangerous path operations with user input
         let path_patterns: &[(&str, &str)] = &[
-            ("/etc/passwd", "Access to /etc/passwd — sensitive system file"),
+            (
+                "/etc/passwd",
+                "Access to /etc/passwd — sensitive system file",
+            ),
             ("/etc/shadow", "Access to /etc/shadow — password hashes"),
-            ("/proc/self", "Access to /proc/self — process information leak"),
+            (
+                "/proc/self",
+                "Access to /proc/self — process information leak",
+            ),
         ];
         for (pat, msg) in path_patterns {
             if trimmed.contains(pat) {
@@ -1442,7 +1709,9 @@ fn scan_path_traversal(body: &str, out: &mut Vec<SecurityFinding>) {
                     message: msg.to_string(),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Validate and sanitize file paths; use allowlists".to_owned()),
+                    remediation: Some(
+                        "Validate and sanitize file paths; use allowlists".to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -1613,7 +1882,9 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                     message: "SSRF risk: request to internal/private IP address".to_owned(),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Validate and restrict URLs to public endpoints only".to_owned()),
+                    remediation: Some(
+                        "Validate and restrict URLs to public endpoints only".to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -1632,7 +1903,9 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                 message: "LDAP injection: filter constructed with user input".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Use parameterized LDAP queries and escape special characters".to_owned()),
+                remediation: Some(
+                    "Use parameterized LDAP queries and escape special characters".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1659,7 +1932,9 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                     message: "Open redirect: redirect URL from user input".to_owned(),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Validate redirect URLs against an allowlist of trusted domains".to_owned()),
+                    remediation: Some(
+                        "Validate redirect URLs against an allowlist of trusted domains".to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -1669,7 +1944,9 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
 
         // Header injection: CRLF in headers
         if (trimmed.contains("\\r\\n") || trimmed.contains("\\x0d\\x0a"))
-            && (trimmed.contains("header") || trimmed.contains("Header") || trimmed.contains("set_header"))
+            && (trimmed.contains("header")
+                || trimmed.contains("Header")
+                || trimmed.contains("set_header"))
         {
             out.push(SecurityFinding {
                 severity: Severity::High,
@@ -1678,7 +1955,10 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                 message: "HTTP header injection: CRLF characters in header value".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Strip \\r\\n from header values; use framework-provided header setters".to_owned()),
+                remediation: Some(
+                    "Strip \\r\\n from header values; use framework-provided header setters"
+                        .to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1694,7 +1974,9 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
                 message: "SQL injection: UNION SELECT pattern detected".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Use parameterized queries; never concatenate user input into SQL".to_owned()),
+                remediation: Some(
+                    "Use parameterized queries; never concatenate user input into SQL".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1719,13 +2001,19 @@ fn scan_web_vulns(body: &str, language: &str, out: &mut Vec<SecurityFinding>) {
 
 /// Detect credential security issues: weak passwords, credentials in logs/URLs.
 fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
-    static PASSWORD_IN_URL: LazyLock<Regex> = LazyLock::new(|| {
-        Regex::new(r"[a-z]+://[^/:]+:[^/@]+@").unwrap()
-    });
+    static PASSWORD_IN_URL: LazyLock<Regex> =
+        LazyLock::new(|| Regex::new(r"[a-z]+://[^/:]+:[^/@]+@").unwrap());
     static DEFAULT_CREDS: &[&str] = &[
-        "admin:admin", "root:root", "admin:password", "admin:123456",
-        "root:password", "root:toor", "test:test", "user:user",
-        "guest:guest", "admin:admin123",
+        "admin:admin",
+        "root:root",
+        "admin:password",
+        "admin:123456",
+        "root:password",
+        "root:toor",
+        "test:test",
+        "user:user",
+        "guest:guest",
+        "admin:admin123",
     ];
 
     for (i, line) in body.lines().enumerate() {
@@ -1743,7 +2031,9 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "Credentials embedded in URL (user:pass@host)".to_owned(),
                 evidence: Some(redact_secret(trimmed)),
                 line: Some(i + 1),
-                remediation: Some("Use environment variables or a secrets manager for credentials".to_owned()),
+                remediation: Some(
+                    "Use environment variables or a secrets manager for credentials".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1759,7 +2049,10 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                     message: format!("Hardcoded default credentials: {cred}"),
                     evidence: Some(trimmed.to_owned()),
                     line: Some(i + 1),
-                    remediation: Some("Never hardcode default credentials; require unique credentials at setup".to_owned()),
+                    remediation: Some(
+                        "Never hardcode default credentials; require unique credentials at setup"
+                            .to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -1769,8 +2062,15 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
 
         // Credentials in log statements
         let lower = trimmed.to_ascii_lowercase();
-        if (lower.contains("log.") || lower.contains("logger.") || lower.contains("console.log") || lower.contains("print(") || lower.contains("println!"))
-            && (lower.contains("password") || lower.contains("token") || lower.contains("secret") || lower.contains("api_key"))
+        if (lower.contains("log.")
+            || lower.contains("logger.")
+            || lower.contains("console.log")
+            || lower.contains("print(")
+            || lower.contains("println!"))
+            && (lower.contains("password")
+                || lower.contains("token")
+                || lower.contains("secret")
+                || lower.contains("api_key"))
         {
             out.push(SecurityFinding {
                 severity: Severity::High,
@@ -1779,7 +2079,10 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "Possible credential value in log output".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Never log sensitive values; mask or omit credentials from log output".to_owned()),
+                remediation: Some(
+                    "Never log sensitive values; mask or omit credentials from log output"
+                        .to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1788,7 +2091,10 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
         // Plaintext password storage (no hashing)
         if (lower.contains("password") || lower.contains("passwd"))
             && (lower.contains("insert") || lower.contains("save") || lower.contains("store"))
-            && !lower.contains("hash") && !lower.contains("bcrypt") && !lower.contains("argon") && !lower.contains("scrypt")
+            && !lower.contains("hash")
+            && !lower.contains("bcrypt")
+            && !lower.contains("argon")
+            && !lower.contains("scrypt")
         {
             out.push(SecurityFinding {
                 severity: Severity::High,
@@ -1797,7 +2103,9 @@ fn scan_credential_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "Password stored without hashing".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Hash passwords with bcrypt, argon2, or scrypt before storage".to_owned()),
+                remediation: Some(
+                    "Hash passwords with bcrypt, argon2, or scrypt before storage".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1834,10 +2142,22 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
 
         // JavaScript code injection
         let js_injection_patterns: &[(&str, &str)] = &[
-            ("new Function(", "new Function() — dynamic code construction"),
-            ("vm.runInNewContext", "vm.runInNewContext — sandboxed code execution may escape"),
-            ("vm.runInThisContext", "vm.runInThisContext — code execution in current context"),
-            ("child_process.exec(", "child_process.exec — command execution with shell"),
+            (
+                "new Function(",
+                "new Function() — dynamic code construction",
+            ),
+            (
+                "vm.runInNewContext",
+                "vm.runInNewContext — sandboxed code execution may escape",
+            ),
+            (
+                "vm.runInThisContext",
+                "vm.runInThisContext — code execution in current context",
+            ),
+            (
+                "child_process.exec(",
+                "child_process.exec — command execution with shell",
+            ),
         ];
         if matches!(lang.as_str(), "javascript" | "js" | "typescript" | "ts") {
             for (pat, msg) in js_injection_patterns {
@@ -1849,7 +2169,9 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
                         message: msg.to_string(),
                         evidence: Some(trimmed.to_owned()),
                         line: Some(i + 1),
-                        remediation: Some("Avoid dynamic code execution; use safe alternatives".to_owned()),
+                        remediation: Some(
+                            "Avoid dynamic code execution; use safe alternatives".to_owned(),
+                        ),
                         word: None,
                         variant: None,
                     });
@@ -1859,16 +2181,25 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
 
         // Template injection patterns
         let template_injection_patterns: &[(&str, &str)] = &[
-            ("{{", "Possible server-side template injection (Jinja2/Twig/Handlebars)"),
-            ("${", "Possible expression injection (ES6 template literal / Spring EL)"),
+            (
+                "{{",
+                "Possible server-side template injection (Jinja2/Twig/Handlebars)",
+            ),
+            (
+                "${",
+                "Possible expression injection (ES6 template literal / Spring EL)",
+            ),
             ("#{", "Possible expression injection (Ruby/Thymeleaf)"),
         ];
         for (pat, msg) in template_injection_patterns {
             if trimmed.contains(pat) {
                 // Only flag if it looks like user input is being interpolated
                 let lower = trimmed.to_ascii_lowercase();
-                if lower.contains("user") || lower.contains("input") || lower.contains("request")
-                    || lower.contains("params") || lower.contains("query")
+                if lower.contains("user")
+                    || lower.contains("input")
+                    || lower.contains("request")
+                    || lower.contains("params")
+                    || lower.contains("query")
                 {
                     out.push(SecurityFinding {
                         severity: Severity::High,
@@ -1877,7 +2208,10 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
                         message: msg.to_string(),
                         evidence: Some(trimmed.to_owned()),
                         line: Some(i + 1),
-                        remediation: Some("Sanitize user input before template rendering; use auto-escaping".to_owned()),
+                        remediation: Some(
+                            "Sanitize user input before template rendering; use auto-escaping"
+                                .to_owned(),
+                        ),
                         word: None,
                         variant: None,
                     });
@@ -1888,8 +2222,13 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
 
         // Unrestricted file operations
         let lower = trimmed.to_ascii_lowercase();
-        if (lower.contains("open(") || lower.contains("readfile(") || lower.contains("file_get_contents("))
-            && (lower.contains("user") || lower.contains("request") || lower.contains("input") || lower.contains("params"))
+        if (lower.contains("open(")
+            || lower.contains("readfile(")
+            || lower.contains("file_get_contents("))
+            && (lower.contains("user")
+                || lower.contains("request")
+                || lower.contains("input")
+                || lower.contains("params"))
         {
             out.push(SecurityFinding {
                 severity: Severity::High,
@@ -1898,7 +2237,9 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
                 message: "Unrestricted file operation with user-controlled path".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Validate file paths against an allowlist; canonicalize before use".to_owned()),
+                remediation: Some(
+                    "Validate file paths against an allowlist; canonicalize before use".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -1911,15 +2252,24 @@ fn scan_execution_vulns(body: &str, language: &str, out: &mut Vec<SecurityFindin
 /// Detect network security issues: plaintext HTTP, weak TLS, disabled cert validation.
 fn scan_network_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
     static WEAK_TLS: &[(&str, &str)] = &[
-        ("TLSv1.0", "TLS 1.0 is deprecated — known vulnerabilities (BEAST, POODLE)"),
+        (
+            "TLSv1.0",
+            "TLS 1.0 is deprecated — known vulnerabilities (BEAST, POODLE)",
+        ),
         ("TLSv1.1", "TLS 1.1 is deprecated — use TLS 1.2+"),
         ("SSLv3", "SSL 3.0 is broken — POODLE attack"),
-        ("SSLv2", "SSL 2.0 is broken — multiple critical vulnerabilities"),
+        (
+            "SSLv2",
+            "SSL 2.0 is broken — multiple critical vulnerabilities",
+        ),
         ("TLS_RSA_WITH_", "RSA key exchange without forward secrecy"),
         ("ssl.PROTOCOL_TLSv1", "Python TLS 1.0 — deprecated"),
         ("ssl.PROTOCOL_SSLv3", "Python SSLv3 — broken"),
         ("PROTOCOL_SSLv23", "Python SSLv23 allows downgrade attacks"),
-        ("MinVersion: tls.VersionTLS10", "Go TLS 1.0 minimum — too weak"),
+        (
+            "MinVersion: tls.VersionTLS10",
+            "Go TLS 1.0 minimum — too weak",
+        ),
     ];
 
     for (i, line) in body.lines().enumerate() {
@@ -1947,13 +2297,17 @@ fn scan_network_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
         }
 
         // Mixed content: HTTP URLs in what looks like production code (not localhost/test)
-        if trimmed.contains("http://") && !trimmed.contains("http://localhost")
-            && !trimmed.contains("http://127.0.0.1") && !trimmed.contains("http://0.0.0.0")
+        if trimmed.contains("http://")
+            && !trimmed.contains("http://localhost")
+            && !trimmed.contains("http://127.0.0.1")
+            && !trimmed.contains("http://0.0.0.0")
             && !is_comment(trimmed, "")
         {
             // Only flag if it looks like a production URL (has a domain)
-            if trimmed.contains("http://www.") || trimmed.contains("http://api.")
-                || trimmed.contains("http://cdn.") || trimmed.contains("http://app.")
+            if trimmed.contains("http://www.")
+                || trimmed.contains("http://api.")
+                || trimmed.contains("http://cdn.")
+                || trimmed.contains("http://app.")
             {
                 out.push(SecurityFinding {
                     severity: Severity::Medium,
@@ -1978,8 +2332,14 @@ fn scan_data_handling(body: &str, out: &mut Vec<SecurityFinding>) {
     static PII_PATTERNS: LazyLock<Vec<(&str, Regex)>> = LazyLock::new(|| {
         [
             ("SSN pattern", r"\b\d{3}-\d{2}-\d{4}\b"),
-            ("Credit card (Visa)", r"\b4\d{3}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
-            ("Credit card (MC)", r"\b5[1-5]\d{2}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b"),
+            (
+                "Credit card (Visa)",
+                r"\b4\d{3}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b",
+            ),
+            (
+                "Credit card (MC)",
+                r"\b5[1-5]\d{2}[\s-]?\d{4}[\s-]?\d{4}[\s-]?\d{4}\b",
+            ),
         ]
         .iter()
         .filter_map(|(name, pat)| Regex::new(pat).ok().map(|re| (*name, re)))
@@ -2002,7 +2362,10 @@ fn scan_data_handling(body: &str, out: &mut Vec<SecurityFinding>) {
                     message: format!("Possible PII in source: {name}"),
                     evidence: Some(redact_secret(trimmed)),
                     line: Some(i + 1),
-                    remediation: Some("Remove PII from source code; use test fixtures with synthetic data".to_owned()),
+                    remediation: Some(
+                        "Remove PII from source code; use test fixtures with synthetic data"
+                            .to_owned(),
+                    ),
                     word: None,
                     variant: None,
                 });
@@ -2011,8 +2374,13 @@ fn scan_data_handling(body: &str, out: &mut Vec<SecurityFinding>) {
 
         // Stack traces / verbose errors exposed to users
         let lower = trimmed.to_ascii_lowercase();
-        if (lower.contains("traceback") || lower.contains("stack_trace") || lower.contains("stacktrace"))
-            && (lower.contains("response") || lower.contains("render") || lower.contains("send") || lower.contains("json"))
+        if (lower.contains("traceback")
+            || lower.contains("stack_trace")
+            || lower.contains("stacktrace"))
+            && (lower.contains("response")
+                || lower.contains("render")
+                || lower.contains("send")
+                || lower.contains("json"))
         {
             out.push(SecurityFinding {
                 severity: Severity::Medium,
@@ -2021,7 +2389,10 @@ fn scan_data_handling(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "Stack trace exposed in response — information disclosure".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Return generic error messages to users; log details server-side only".to_owned()),
+                remediation: Some(
+                    "Return generic error messages to users; log details server-side only"
+                        .to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -2048,36 +2419,53 @@ fn scan_protocol_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 severity: Severity::High,
                 category: "protocol".to_owned(),
                 rule_id: "SEC-R01".to_owned(),
-                message: "HTTP request smuggling risk: Content-Length and Transfer-Encoding both present".to_owned(),
+                message:
+                    "HTTP request smuggling risk: Content-Length and Transfer-Encoding both present"
+                        .to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Use only one of Content-Length or Transfer-Encoding per request".to_owned()),
+                remediation: Some(
+                    "Use only one of Content-Length or Transfer-Encoding per request".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
         }
 
         // Integer overflow in size calculations
-        if (lower.contains("as u32") || lower.contains("as u16") || lower.contains("as u8")
-            || lower.contains("(int)") || lower.contains("(short)") || lower.contains("(byte)"))
-            && (lower.contains("size") || lower.contains("length") || lower.contains("count") || lower.contains("offset"))
+        if (lower.contains("as u32")
+            || lower.contains("as u16")
+            || lower.contains("as u8")
+            || lower.contains("(int)")
+            || lower.contains("(short)")
+            || lower.contains("(byte)"))
+            && (lower.contains("size")
+                || lower.contains("length")
+                || lower.contains("count")
+                || lower.contains("offset"))
         {
             out.push(SecurityFinding {
                 severity: Severity::Medium,
                 category: "protocol".to_owned(),
                 rule_id: "SEC-R02".to_owned(),
-                message: "Possible integer overflow: narrowing cast on size/length value".to_owned(),
+                message: "Possible integer overflow: narrowing cast on size/length value"
+                    .to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Use checked arithmetic or validate range before casting".to_owned()),
+                remediation: Some(
+                    "Use checked arithmetic or validate range before casting".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
         }
 
         // Missing bounds check patterns (C/C++)
-        if lower.contains("memcpy(") || lower.contains("strcpy(") || lower.contains("strcat(")
-            || lower.contains("sprintf(") || lower.contains("gets(")
+        if lower.contains("memcpy(")
+            || lower.contains("strcpy(")
+            || lower.contains("strcat(")
+            || lower.contains("sprintf(")
+            || lower.contains("gets(")
         {
             out.push(SecurityFinding {
                 severity: Severity::High,
@@ -2086,14 +2474,17 @@ fn scan_protocol_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "Unsafe buffer operation — no bounds checking".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Use bounded variants: memcpy_s, strncpy, snprintf, fgets".to_owned()),
+                remediation: Some(
+                    "Use bounded variants: memcpy_s, strncpy, snprintf, fgets".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
         }
 
         // DNS tunneling: very long domain name or TXT record abuse
-        if lower.contains("dns") && lower.contains("txt")
+        if lower.contains("dns")
+            && lower.contains("txt")
             && (lower.contains("query") || lower.contains("record") || lower.contains("lookup"))
         {
             out.push(SecurityFinding {
@@ -2103,7 +2494,9 @@ fn scan_protocol_vulns(body: &str, out: &mut Vec<SecurityFinding>) {
                 message: "DNS TXT record usage — potential data exfiltration channel".to_owned(),
                 evidence: Some(trimmed.to_owned()),
                 line: Some(i + 1),
-                remediation: Some("Monitor and restrict DNS TXT record queries; use DNS filtering".to_owned()),
+                remediation: Some(
+                    "Monitor and restrict DNS TXT record queries; use DNS filtering".to_owned(),
+                ),
                 word: None,
                 variant: None,
             });
@@ -2178,14 +2571,16 @@ mod tests {
             performance: 0.5,
             reliability: 0.9,
             ..WordEntry::default()
-        }).unwrap();
+        })
+        .unwrap();
         r.upsert(&WordEntry {
             word: "good_hash".to_owned(),
             security: 0.95,
             performance: 0.8,
             reliability: 0.99,
             ..WordEntry::default()
-        }).unwrap();
+        })
+        .unwrap();
         r.upsert(&WordEntry {
             word: "cve_hash".to_owned(),
             security: 0.9,
@@ -2193,7 +2588,8 @@ mod tests {
             reliability: 0.99,
             hash: Some("CVE-2024-12345".to_owned()),
             ..WordEntry::default()
-        }).unwrap();
+        })
+        .unwrap();
         r
     }
 
@@ -2247,7 +2643,12 @@ mod tests {
         let checker = SecurityChecker::with_defaults(&r);
         let source = make_source_with_need("cve_hash");
         let report = checker.check(&source).unwrap();
-        assert!(report.findings.iter().any(|f| f.severity == Severity::Critical));
+        assert!(
+            report
+                .findings
+                .iter()
+                .any(|f| f.severity == Severity::Critical)
+        );
     }
 
     // ── Body scanning tests ─────────────────────────────────────────────
@@ -2259,7 +2660,9 @@ mod tests {
         "#;
         let findings = scan_body(body, "javascript");
         assert!(
-            findings.iter().any(|f| f.category == "injection" && f.severity == Severity::Critical),
+            findings
+                .iter()
+                .any(|f| f.category == "injection" && f.severity == Severity::Critical),
             "Should detect SQL injection: {findings:?}"
         );
     }
@@ -2271,7 +2674,9 @@ mod tests {
         "#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "secrets" && f.severity >= Severity::High),
+            findings
+                .iter()
+                .any(|f| f.category == "secrets" && f.severity >= Severity::High),
             "Should detect hardcoded password: {findings:?}"
         );
     }
@@ -2283,7 +2688,9 @@ mod tests {
         "#;
         let findings = scan_body(body, "bash");
         assert!(
-            findings.iter().any(|f| f.category == "payload" && f.severity == Severity::Critical),
+            findings
+                .iter()
+                .any(|f| f.category == "payload" && f.severity == Severity::Critical),
             "Should detect reverse shell: {findings:?}"
         );
     }
@@ -2296,7 +2703,9 @@ mod tests {
         "#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "crypto" && f.severity >= Severity::High),
+            findings
+                .iter()
+                .any(|f| f.category == "crypto" && f.severity >= Severity::High),
             "Should detect MD5 for password hashing: {findings:?}"
         );
     }
@@ -2322,7 +2731,10 @@ mod tests {
         "#;
         let findings = scan_body(body, "rust");
         // Filter out Info-level findings
-        let real_findings: Vec<_> = findings.iter().filter(|f| f.severity > Severity::Info).collect();
+        let real_findings: Vec<_> = findings
+            .iter()
+            .filter(|f| f.severity > Severity::Info)
+            .collect();
         assert!(
             real_findings.is_empty(),
             "Clean code should have no findings above Info: {real_findings:?}"
@@ -2347,7 +2759,10 @@ mod tests {
             variant: None,
         }];
         let score = security_score(&critical);
-        assert!(score < 0.7, "Critical finding should reduce score below 0.7, got {score}");
+        assert!(
+            score < 0.7,
+            "Critical finding should reduce score below 0.7, got {score}"
+        );
         assert!(score > 0.0, "Single critical should not zero out score");
 
         // Multiple findings stack
@@ -2403,7 +2818,9 @@ mod tests {
         let body = "data = pickle.loads(user_input)";
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "deserialization" && f.severity == Severity::Critical),
+            findings
+                .iter()
+                .any(|f| f.category == "deserialization" && f.severity == Severity::Critical),
             "Should detect pickle.loads: {findings:?}"
         );
     }
@@ -2413,7 +2830,9 @@ mod tests {
         let body = r#"element.innerHTML = userInput;"#;
         let findings = scan_body(body, "javascript");
         assert!(
-            findings.iter().any(|f| f.category == "xss" && f.severity == Severity::High),
+            findings
+                .iter()
+                .any(|f| f.category == "xss" && f.severity == Severity::High),
             "Should detect innerHTML XSS: {findings:?}"
         );
     }
@@ -2423,7 +2842,9 @@ mod tests {
         let body = r#"requests.get(url, verify=False)"#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "config" && f.severity == Severity::High),
+            findings
+                .iter()
+                .any(|f| f.category == "config" && f.severity == Severity::High),
             "Should detect disabled TLS verification: {findings:?}"
         );
     }
@@ -2435,7 +2856,9 @@ mod tests {
         "#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "secrets" && f.severity == Severity::Critical),
+            findings
+                .iter()
+                .any(|f| f.category == "secrets" && f.severity == Severity::Critical),
             "Should detect embedded private key: {findings:?}"
         );
     }
@@ -2445,7 +2868,9 @@ mod tests {
         let body = "payload = msfvenom -p windows/meterpreter/reverse_tcp LHOST=10.0.0.1";
         let findings = scan_body(body, "bash");
         assert!(
-            findings.iter().any(|f| f.category == "payload" && f.severity == Severity::Critical),
+            findings
+                .iter()
+                .any(|f| f.category == "payload" && f.severity == Severity::Critical),
             "Should detect msfvenom payload: {findings:?}"
         );
     }
@@ -2489,7 +2914,9 @@ mod tests {
         let body = r#"resp = requests.get("http://169.254.169.254/latest/meta-data/")"#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "web" && f.rule_id == "SEC-W01"),
+            findings
+                .iter()
+                .any(|f| f.category == "web" && f.rule_id == "SEC-W01"),
             "Should detect SSRF to metadata endpoint: {findings:?}"
         );
     }
@@ -2499,7 +2926,9 @@ mod tests {
         let body = r#"db = connect("postgres://admin:p4ssw0rd@db.prod.internal:5432/mydb")"#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "credential" && f.rule_id == "SEC-K01"),
+            findings
+                .iter()
+                .any(|f| f.category == "credential" && f.rule_id == "SEC-K01"),
             "Should detect credentials in URL: {findings:?}"
         );
     }
@@ -2509,7 +2938,9 @@ mod tests {
         let body = r#"subprocess.run(cmd, shell=True)"#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "execution" && f.rule_id == "SEC-E01"),
+            findings
+                .iter()
+                .any(|f| f.category == "execution" && f.rule_id == "SEC-E01"),
             "Should detect shell=True: {findings:?}"
         );
     }
@@ -2519,7 +2950,9 @@ mod tests {
         let body = r#"ctx.minimum_version = ssl.PROTOCOL_TLSv1"#;
         let findings = scan_body(body, "python");
         assert!(
-            findings.iter().any(|f| f.category == "network" && f.rule_id == "SEC-N01"),
+            findings
+                .iter()
+                .any(|f| f.category == "network" && f.rule_id == "SEC-N01"),
             "Should detect weak TLS version: {findings:?}"
         );
     }
@@ -2529,7 +2962,9 @@ mod tests {
         let body = r#"strcpy(dest, src);"#;
         let findings = scan_body(body, "c");
         assert!(
-            findings.iter().any(|f| f.category == "protocol" && f.rule_id == "SEC-R03"),
+            findings
+                .iter()
+                .any(|f| f.category == "protocol" && f.rule_id == "SEC-R03"),
             "Should detect unsafe buffer operation: {findings:?}"
         );
     }

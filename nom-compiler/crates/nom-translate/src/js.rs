@@ -13,8 +13,11 @@ pub fn translate_js_to_rust(body: &str) -> TranslateResult {
         let indent = &line[..line.len() - trimmed.len()];
 
         // Pass through empty lines and comments
-        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*")
-            || trimmed.starts_with("*") || trimmed.starts_with("*/")
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*")
+            || trimmed.starts_with("*/")
         {
             output_lines.push(line.to_owned());
             continue;
@@ -139,8 +142,11 @@ pub fn translate_js_to_rust(body: &str) -> TranslateResult {
             did_translate = true;
         }
 
-        if !did_translate && !trimmed.starts_with("{") && !trimmed.starts_with("}")
-            && !trimmed.starts_with("return") && trimmed != ";"
+        if !did_translate
+            && !trimmed.starts_with("{")
+            && !trimmed.starts_with("}")
+            && !trimmed.starts_with("return")
+            && trimmed != ";"
         {
             untranslated += 1;
         }
@@ -231,8 +237,8 @@ fn translate_dot_length(line: &str) -> String {
             remaining = &remaining[after..];
         } else {
             // Check it's not ".lengthy" or similar
-            let after_ok = after >= remaining.len()
-                || !remaining.as_bytes()[after].is_ascii_alphanumeric();
+            let after_ok =
+                after >= remaining.len() || !remaining.as_bytes()[after].is_ascii_alphanumeric();
             if after_ok {
                 result.push_str(&remaining[..pos]);
                 result.push_str(".len()");
@@ -253,7 +259,9 @@ fn try_translate_for_of(trimmed: &str) -> Option<String> {
         return None;
     }
     let rest = trimmed.strip_prefix("for")?.trim();
-    let inner = rest.strip_prefix('(')?.strip_suffix(") {")
+    let inner = rest
+        .strip_prefix('(')?
+        .strip_suffix(") {")
         .or_else(|| rest.strip_prefix('(')?.strip_suffix(')'))?;
 
     if !inner.contains(" of ") {
@@ -265,8 +273,10 @@ fn try_translate_for_of(trimmed: &str) -> Option<String> {
         return None;
     }
 
-    let var = parts[0].trim()
-        .strip_prefix("const ").or_else(|| parts[0].trim().strip_prefix("let "))
+    let var = parts[0]
+        .trim()
+        .strip_prefix("const ")
+        .or_else(|| parts[0].trim().strip_prefix("let "))
         .or_else(|| parts[0].trim().strip_prefix("var "))
         .unwrap_or(parts[0].trim());
     let iter = parts[1].trim();
@@ -280,7 +290,9 @@ fn try_translate_c_style_for(trimmed: &str) -> Option<String> {
         return None;
     }
     let rest = trimmed.strip_prefix("for")?.trim();
-    let inner = rest.strip_prefix('(')?.strip_suffix(") {")
+    let inner = rest
+        .strip_prefix('(')?
+        .strip_suffix(") {")
         .or_else(|| rest.strip_prefix('(')?.strip_suffix(')'))?;
 
     if inner.contains(" of ") || inner.contains(" in ") {
@@ -298,7 +310,8 @@ fn try_translate_c_style_for(trimmed: &str) -> Option<String> {
 
     // Parse init: "let i = 0" or "var i = 0"
     let init_clean = init
-        .strip_prefix("let ").or_else(|| init.strip_prefix("var "))
+        .strip_prefix("let ")
+        .or_else(|| init.strip_prefix("var "))
         .or_else(|| init.strip_prefix("const "))
         .unwrap_or(init);
     let init_parts: Vec<&str> = init_clean.split('=').collect();
@@ -328,7 +341,11 @@ fn try_translate_c_style_for(trimmed: &str) -> Option<String> {
     }
 
     let range = if start == "0" {
-        if inclusive { format!("0..={end}") } else { format!("0..{end}") }
+        if inclusive {
+            format!("0..={end}")
+        } else {
+            format!("0..{end}")
+        }
     } else if inclusive {
         format!("{start}..={end}")
     } else {

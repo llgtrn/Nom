@@ -124,8 +124,7 @@ impl Diagnostic {
         let kind = self.level.report_kind();
         let offset = self.first_offset();
 
-        let mut builder = Report::build(kind, &self.file, offset)
-            .with_message(&self.message);
+        let mut builder = Report::build(kind, &self.file, offset).with_message(&self.message);
 
         if let Some(code) = &self.code {
             builder = builder.with_code(code);
@@ -159,8 +158,7 @@ impl Diagnostic {
         let kind = self.level.report_kind();
         let offset = self.first_offset();
 
-        let mut builder = Report::build(kind, &self.file, offset)
-            .with_message(&self.message);
+        let mut builder = Report::build(kind, &self.file, offset).with_message(&self.message);
 
         if let Some(code) = &self.code {
             builder = builder.with_code(code);
@@ -214,11 +212,17 @@ impl DiagnosticSink {
     }
 
     pub fn error_count(&self) -> usize {
-        self.diagnostics.iter().filter(|d| d.level == Level::Error).count()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == Level::Error)
+            .count()
     }
 
     pub fn warning_count(&self) -> usize {
-        self.diagnostics.iter().filter(|d| d.level == Level::Warning).count()
+        self.diagnostics
+            .iter()
+            .filter(|d| d.level == Level::Warning)
+            .count()
     }
 
     /// Emit all diagnostics to stderr.

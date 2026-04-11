@@ -12,17 +12,23 @@ pub fn translate_c_to_rust(body: &str) -> TranslateResult {
         let trimmed = line.trim();
 
         // Skip preprocessor directives
-        if trimmed.starts_with("#include") || trimmed.starts_with("#define")
-            || trimmed.starts_with("#ifdef") || trimmed.starts_with("#ifndef")
-            || trimmed.starts_with("#endif") || trimmed.starts_with("#pragma")
+        if trimmed.starts_with("#include")
+            || trimmed.starts_with("#define")
+            || trimmed.starts_with("#ifdef")
+            || trimmed.starts_with("#ifndef")
+            || trimmed.starts_with("#endif")
+            || trimmed.starts_with("#pragma")
         {
             output_lines.push(format!("// {trimmed}"));
             continue;
         }
 
         // Skip empty lines and pass comments through
-        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*")
-            || trimmed.starts_with("*") || trimmed.starts_with("*/")
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*")
+            || trimmed.starts_with("*/")
         {
             output_lines.push(line.to_owned());
             continue;
@@ -99,8 +105,11 @@ pub fn translate_c_to_rust(body: &str) -> TranslateResult {
             }
         }
 
-        if !did_translate && !trimmed.starts_with("{") && !trimmed.starts_with("}")
-            && !trimmed.starts_with("return") && trimmed != ";"
+        if !did_translate
+            && !trimmed.starts_with("{")
+            && !trimmed.starts_with("}")
+            && !trimmed.starts_with("return")
+            && trimmed != ";"
         {
             untranslated += 1;
         }
@@ -207,7 +216,9 @@ fn try_translate_c_for_loop(trimmed: &str) -> Option<String> {
         return None;
     }
     let rest = trimmed.strip_prefix("for")?.trim();
-    let inner = rest.strip_prefix('(')?.strip_suffix(") {")
+    let inner = rest
+        .strip_prefix('(')?
+        .strip_suffix(") {")
         .or_else(|| rest.strip_prefix('(')?.strip_suffix(')'))?;
 
     let parts: Vec<&str> = inner.split(';').collect();
@@ -283,7 +294,12 @@ fn try_replace_sizeof(line: &str) -> Option<String> {
         if let Some(end) = result[after..].find(')') {
             let type_name = result[after..after + end].trim().to_owned();
             let replacement = format!("std::mem::size_of::<{type_name}>()");
-            result = format!("{}{}{}", &result[..start], replacement, &result[after + end + 1..]);
+            result = format!(
+                "{}{}{}",
+                &result[..start],
+                replacement,
+                &result[after + end + 1..]
+            );
         } else {
             break;
         }

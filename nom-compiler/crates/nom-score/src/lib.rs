@@ -101,7 +101,12 @@ pub fn score_reliability(atom: &Atom) -> f32 {
     }
 
     let reliable_signals = [
-        "handle_error", "retry", "fallback", "recover", "result", "safe",
+        "handle_error",
+        "retry",
+        "fallback",
+        "recover",
+        "result",
+        "safe",
     ];
     for sig in &reliable_signals {
         if lower.contains(sig) {
@@ -130,7 +135,15 @@ pub fn score_performance(atom: &Atom) -> f32 {
     let mut score = 0.7_f32;
 
     let fast_signals = [
-        "cache", "pool", "batch", "bulk", "stream", "zero_copy", "simd", "mmap", "prealloc",
+        "cache",
+        "pool",
+        "batch",
+        "bulk",
+        "stream",
+        "zero_copy",
+        "simd",
+        "mmap",
+        "prealloc",
     ];
     for sig in &fast_signals {
         if lower.contains(sig) {

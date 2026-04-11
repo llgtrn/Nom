@@ -1,0 +1,43 @@
+# Nom: Natural language style programming
+# Uses Vietnamese-style grammar with English vocabulary
+# Classifier-first, topic-comment, modifier-follows-head
+
+# "system" is the classifier, "auth" is the topic
+# Statements describe the topic (comment pattern)
+system auth
+  need hash::argon2 where security > 0.9
+  need store::redis where reliability > 0.8
+  flow request -> hash -> store -> response
+  require latency < 50ms
+  effects only [network database cpu]
+
+# "nom" classifier with natural language keywords
+# "define" = fn, "kind" = struct, "choice" = enum
+nom geometry
+  kind Point {
+    x: number,
+    y: number
+  }
+  choice Shape {
+    Circle(number),
+    Rectangle(number, number)
+  }
+  define distance(a: Point, b: Point) -> number {
+    take dx = a.x - b.x
+    take dy = a.y - b.y
+    give dx * dx + dy * dy
+  }
+  define classify(score: number) -> text {
+    if score > 0.9 {
+      give "excellent"
+    } else if score > 0.7 {
+      give "good"
+    } else {
+      give "needs improvement"
+    }
+  }
+
+# Tests read like specifications
+test geometry_works
+  given geometry
+  then security > 0.5

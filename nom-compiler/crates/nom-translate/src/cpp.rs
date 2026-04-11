@@ -15,7 +15,8 @@ pub fn translate_cpp_to_rust(body: &str) -> TranslateResult {
         let trimmed = line.trim();
 
         // Skip preprocessor directives
-        if trimmed.starts_with("#include") || trimmed.starts_with("#define")
+        if trimmed.starts_with("#include")
+            || trimmed.starts_with("#define")
             || trimmed.starts_with("#pragma")
         {
             output_lines.push(format!("// {trimmed}"));
@@ -23,8 +24,11 @@ pub fn translate_cpp_to_rust(body: &str) -> TranslateResult {
         }
 
         // Pass through empty lines and comments
-        if trimmed.is_empty() || trimmed.starts_with("//") || trimmed.starts_with("/*")
-            || trimmed.starts_with("*") || trimmed.starts_with("*/")
+        if trimmed.is_empty()
+            || trimmed.starts_with("//")
+            || trimmed.starts_with("/*")
+            || trimmed.starts_with("*")
+            || trimmed.starts_with("*/")
         {
             output_lines.push(line.to_owned());
             continue;
@@ -81,7 +85,11 @@ pub fn translate_cpp_to_rust(body: &str) -> TranslateResult {
 
         // delete x → drop(x)
         if trimmed.starts_with("delete ") {
-            let var = trimmed.strip_prefix("delete ").unwrap().trim_end_matches(';').trim();
+            let var = trimmed
+                .strip_prefix("delete ")
+                .unwrap()
+                .trim_end_matches(';')
+                .trim();
             let indent = &line[..line.len() - trimmed.len()];
             translated = format!("{indent}drop({var});");
             did_translate = true;
@@ -95,7 +103,11 @@ pub fn translate_cpp_to_rust(body: &str) -> TranslateResult {
 
         // throw X → return Err(X)
         if trimmed.starts_with("throw ") {
-            let expr = trimmed.strip_prefix("throw ").unwrap().trim_end_matches(';').trim();
+            let expr = trimmed
+                .strip_prefix("throw ")
+                .unwrap()
+                .trim_end_matches(';')
+                .trim();
             let indent = &line[..line.len() - trimmed.len()];
             translated = format!("{indent}return Err({expr});");
             did_translate = true;
@@ -125,8 +137,11 @@ pub fn translate_cpp_to_rust(body: &str) -> TranslateResult {
             did_translate = true;
         }
 
-        if !did_translate && !trimmed.starts_with("{") && !trimmed.starts_with("}")
-            && !trimmed.starts_with("return") && trimmed != ";"
+        if !did_translate
+            && !trimmed.starts_with("{")
+            && !trimmed.starts_with("}")
+            && !trimmed.starts_with("return")
+            && trimmed != ";"
         {
             untranslated += 1;
         }
@@ -159,7 +174,8 @@ fn translate_cout(line: &str) -> String {
         .replace("std::endl", "")
         .replace(';', "");
 
-    let parts: Vec<&str> = content.split("<<")
+    let parts: Vec<&str> = content
+        .split("<<")
         .map(|s| s.trim())
         .filter(|s| !s.is_empty())
         .collect();
@@ -208,5 +224,7 @@ fn try_translate_new(line: &str) -> Option<String> {
     let after_close = &rest_from_paren[end + 1..];
     let before = &line[..idx];
 
-    Some(format!("{before}Box::new({type_name}::new({args})){after_close}"))
+    Some(format!(
+        "{before}Box::new({type_name}::new({args})){after_close}"
+    ))
 }

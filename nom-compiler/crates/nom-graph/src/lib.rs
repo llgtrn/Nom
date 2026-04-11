@@ -129,7 +129,11 @@ impl NomtuGraph {
     /// and creates Calls edges to matching .nomtu entries.
     pub fn build_call_edges(&mut self) {
         let known_words: HashSet<&str> = self.word_index.keys().map(|s| s.as_str()).collect();
-        let bodies: Vec<_> = self.bodies.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let bodies: Vec<_> = self
+            .bodies
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
 
         for ((word, variant), body) in &bodies {
             let calls = extract_calls_from_body(body);
@@ -157,7 +161,11 @@ impl NomtuGraph {
     /// Creates Imports edges.
     pub fn build_import_edges(&mut self) {
         let known_words: HashSet<&str> = self.word_index.keys().map(|s| s.as_str()).collect();
-        let bodies: Vec<_> = self.bodies.iter().map(|(k, v)| (k.clone(), v.clone())).collect();
+        let bodies: Vec<_> = self
+            .bodies
+            .iter()
+            .map(|(k, v)| (k.clone(), v.clone()))
+            .collect();
         let languages: HashMap<_, _> = self.languages.clone();
 
         for ((word, variant), body) in &bodies {
@@ -206,7 +214,10 @@ impl NomtuGraph {
                 if from_key != current {
                     continue;
                 }
-                if !matches!(edge.edge_type, EdgeType::Calls | EdgeType::Imports | EdgeType::DependsOn) {
+                if !matches!(
+                    edge.edge_type,
+                    EdgeType::Calls | EdgeType::Imports | EdgeType::DependsOn
+                ) {
                     continue;
                 }
                 let to_key = make_key(&edge.to_word, edge.to_variant.as_deref());
@@ -236,8 +247,16 @@ impl NomtuGraph {
         // Build adjacency list from edges
         let mut adj: HashMap<usize, Vec<usize>> = HashMap::new();
         for edge in &self.edges {
-            let from_indices = self.word_index.get(&edge.from_word).cloned().unwrap_or_default();
-            let to_indices = self.word_index.get(&edge.to_word).cloned().unwrap_or_default();
+            let from_indices = self
+                .word_index
+                .get(&edge.from_word)
+                .cloned()
+                .unwrap_or_default();
+            let to_indices = self
+                .word_index
+                .get(&edge.to_word)
+                .cloned()
+                .unwrap_or_default();
             for &fi in &from_indices {
                 for &ti in &to_indices {
                     if fi != ti {
@@ -390,7 +409,10 @@ impl NomtuGraph {
             .collect();
         self.edges
             .iter()
-            .filter(|e| member_words.contains(e.from_word.as_str()) && member_words.contains(e.to_word.as_str()))
+            .filter(|e| {
+                member_words.contains(e.from_word.as_str())
+                    && member_words.contains(e.to_word.as_str())
+            })
             .count()
     }
 
@@ -468,14 +490,13 @@ fn extract_imports_from_body(body: &str, language: &str) -> Vec<(String, String)
         let trimmed = line.trim();
         match language {
             "rust" => {
-                if let Some(path) = trimmed.strip_prefix("use ").and_then(|s| s.strip_suffix(';'))
+                if let Some(path) = trimmed
+                    .strip_prefix("use ")
+                    .and_then(|s| s.strip_suffix(';'))
                 {
                     let parts: Vec<&str> = path.split("::").collect();
                     if parts.len() >= 2 {
-                        imports.push((
-                            parts[0].to_string(),
-                            parts.last().unwrap().to_string(),
-                        ));
+                        imports.push((parts[0].to_string(), parts.last().unwrap().to_string()));
                     }
                 }
             }
@@ -567,7 +588,11 @@ mod tests {
             .iter()
             .filter(|e| e.edge_type == EdgeType::Calls)
             .collect();
-        assert!(call_edges.len() >= 2, "expected at least 2 call edges, got {}", call_edges.len());
+        assert!(
+            call_edges.len() >= 2,
+            "expected at least 2 call edges, got {}",
+            call_edges.len()
+        );
 
         let targets: Vec<&str> = call_edges.iter().map(|e| e.to_word.as_str()).collect();
         assert!(targets.contains(&"bar"), "expected call to bar");
@@ -577,7 +602,12 @@ mod tests {
     #[test]
     fn build_import_edges_detects_rust_imports() {
         let entries = vec![
-            sample_entry("handler", None, "use std::io;\nuse crate::auth;\nfn handler() { }", "rust"),
+            sample_entry(
+                "handler",
+                None,
+                "use std::io;\nuse crate::auth;\nfn handler() { }",
+                "rust",
+            ),
             sample_entry("auth", None, "fn auth() { }", "rust"),
         ];
         let mut graph = NomtuGraph::from_entries(&entries);
@@ -588,7 +618,10 @@ mod tests {
             .iter()
             .filter(|e| e.edge_type == EdgeType::Imports)
             .collect();
-        assert!(!import_edges.is_empty(), "expected at least one import edge");
+        assert!(
+            !import_edges.is_empty(),
+            "expected at least one import edge"
+        );
         assert_eq!(import_edges[0].to_word, "auth");
     }
 
@@ -605,7 +638,10 @@ mod tests {
         let deps = graph.dependencies("a", None);
         let dep_words: Vec<&str> = deps.iter().map(|n| n.word.as_str()).collect();
         assert!(dep_words.contains(&"b"), "expected b in deps of a");
-        assert!(dep_words.contains(&"c"), "expected c in deps of a (transitive)");
+        assert!(
+            dep_words.contains(&"c"),
+            "expected c in deps of a (transitive)"
+        );
     }
 
     #[test]
@@ -637,14 +673,23 @@ mod tests {
 
         let flow = graph.trace_flow("a", 1);
         // depth 1: a + direct callees (b)
-        assert!(flow.len() <= 2, "expected at most 2 nodes at depth 1, got {}", flow.len());
+        assert!(
+            flow.len() <= 2,
+            "expected at most 2 nodes at depth 1, got {}",
+            flow.len()
+        );
     }
 
     #[test]
     fn entry_points_finds_roots() {
         let entries = vec![
             sample_entry("main", None, "fn main() { handler(1); }", "rust"),
-            sample_entry("handler", None, "fn handler(x: i32) { db_query(x); }", "rust"),
+            sample_entry(
+                "handler",
+                None,
+                "fn handler(x: i32) { db_query(x); }",
+                "rust",
+            ),
             sample_entry("db_query", None, "fn db_query(x: i32) { }", "rust"),
         ];
         let mut graph = NomtuGraph::from_entries(&entries);
