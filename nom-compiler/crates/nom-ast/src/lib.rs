@@ -215,11 +215,34 @@ impl FlowQualifier {
     }
 }
 
+/// Fault handling strategy for a flow (inspired by Erlang/OTP supervision)
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum OnFailStrategy {
+    /// Abort the entire flow on failure (default)
+    Abort,
+    /// Restart from a specific node in the flow
+    RestartFrom(Identifier),
+    /// Retry the failed node N times before aborting
+    Retry(u32),
+    /// Skip the failed node and continue
+    Skip,
+    /// Escalate to parent flow
+    Escalate,
+}
+
+impl Default for OnFailStrategy {
+    fn default() -> Self {
+        Self::Abort
+    }
+}
+
 /// flow request->hash->store->response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowStmt {
     pub qualifier: FlowQualifier,
     pub chain: FlowChain,
+    #[serde(default)]
+    pub on_fail: OnFailStrategy,
     pub span: Span,
 }
 
@@ -445,6 +468,22 @@ pub struct AgentStateStmt {
 pub struct AgentScheduleStmt {
     pub interval: String,
     pub action: FlowChain,
+    pub span: Span,
+}
+
+// ── Range constraints (ADOPT-9: Ada-inspired range subtypes) ────────────────
+
+/// A range constraint on a value: lower <= value <= upper
+/// Used in contract pre/post conditions for compile-time range checking.
+/// Inspired by Ada's range-constrained subtypes.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct RangeConstraint {
+    /// The value being constrained (e.g., "security_score", "latency_ms")
+    pub target: Identifier,
+    /// Lower bound (inclusive), None means no lower bound
+    pub lower: Option<Literal>,
+    /// Upper bound (inclusive), None means no upper bound
+    pub upper: Option<Literal>,
     pub span: Span,
 }
 

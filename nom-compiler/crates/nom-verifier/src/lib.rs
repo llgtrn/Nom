@@ -14,7 +14,8 @@
 use nom_ast::{
     BinOp, BranchArm, BranchBlock, BranchCondition, Classifier, CompareOp, Constraint,
     ContractStmt, Declaration, EffectModifier, Expr, FlowChain, FlowStep, GraphQueryExpr,
-    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, SourceFile, Statement, UnaryOp,
+    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, RangeConstraint,
+    SourceFile, Statement, UnaryOp,
 };
 use nom_resolver::{Resolver, ResolverError, WordEntry};
 use thiserror::Error;
@@ -801,13 +802,135 @@ fn op_str(op: CompareOp) -> &'static str {
     }
 }
 
+// ── Range constraint extraction & validation (ADOPT-9) ──────────────────────
+
+/// Extract the numeric value from a literal, returning it as f64.
+fn literal_to_f64(lit: &Literal) -> Option<f64> {
+    match lit {
+        Literal::Number(n) => Some(*n),
+        Literal::Integer(i) => Some(*i as f64),
+        _ => None,
+    }
+}
+
+/// Extract range constraints from a list of precondition expressions.
+/// Recognizes patterns like:
+///   x > 0          → RangeConstraint { target: x, lower: Some(0), upper: None }
+///   x < 100        → RangeConstraint { target: x, lower: None, upper: Some(100) }
+///   x >= 0.0       → RangeConstraint { target: x, lower: Some(0.0), upper: None }
+///   x <= 1.0       → RangeConstraint { target: x, lower: None, upper: Some(1.0) }
+pub fn extract_range_constraints(preconditions: &[Expr]) -> Vec<RangeConstraint> {
+    let mut constraints = Vec::new();
+
+    for pre in preconditions {
+        if let Expr::BinaryOp(left, op, right) = pre {
+            // Pattern: ident OP literal
+            if let (Expr::Ident(target), Expr::Literal(lit)) = (left.as_ref(), right.as_ref()) {
+                match op {
+                    BinOp::Gt | BinOp::Gte => {
+                        constraints.push(RangeConstraint {
+                            target: target.clone(),
+                            lower: Some(lit.clone()),
+                            upper: None,
+                            span: target.span,
+                        });
+                    }
+                    BinOp::Lt | BinOp::Lte => {
+                        constraints.push(RangeConstraint {
+                            target: target.clone(),
+                            lower: None,
+                            upper: Some(lit.clone()),
+                            span: target.span,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+            // Pattern: literal OP ident (reversed comparison)
+            else if let (Expr::Literal(lit), Expr::Ident(target)) =
+                (left.as_ref(), right.as_ref())
+            {
+                match op {
+                    // 0 < x  →  x has lower bound 0
+                    BinOp::Lt | BinOp::Lte => {
+                        constraints.push(RangeConstraint {
+                            target: target.clone(),
+                            lower: Some(lit.clone()),
+                            upper: None,
+                            span: target.span,
+                        });
+                    }
+                    // 100 > x  →  x has upper bound 100
+                    BinOp::Gt | BinOp::Gte => {
+                        constraints.push(RangeConstraint {
+                            target: target.clone(),
+                            lower: None,
+                            upper: Some(lit.clone()),
+                            span: target.span,
+                        });
+                    }
+                    _ => {}
+                }
+            }
+        }
+    }
+
+    constraints
+}
+
+/// Validate that range constraints are satisfiable (lower < upper when both exist).
+/// Groups constraints by target name and merges bounds. Returns warnings for
+/// unsatisfiable constraints (where lower >= upper).
+pub fn validate_range_constraints(constraints: &[RangeConstraint]) -> Vec<String> {
+    use std::collections::HashMap;
+
+    // Group bounds by target name: (best_lower, best_upper)
+    let mut bounds: HashMap<String, (Option<f64>, Option<f64>)> = HashMap::new();
+
+    for c in constraints {
+        let entry = bounds.entry(c.target.name.clone()).or_insert((None, None));
+        if let Some(ref lit) = c.lower {
+            if let Some(val) = literal_to_f64(lit) {
+                // Keep the tightest (highest) lower bound
+                entry.0 = Some(match entry.0 {
+                    Some(existing) if existing > val => existing,
+                    _ => val,
+                });
+            }
+        }
+        if let Some(ref lit) = c.upper {
+            if let Some(val) = literal_to_f64(lit) {
+                // Keep the tightest (lowest) upper bound
+                entry.1 = Some(match entry.1 {
+                    Some(existing) if existing < val => existing,
+                    _ => val,
+                });
+            }
+        }
+    }
+
+    let mut warnings = Vec::new();
+    for (name, (lower, upper)) in &bounds {
+        if let (Some(lo), Some(hi)) = (lower, upper) {
+            if lo >= hi {
+                warnings.push(format!(
+                    "unsatisfiable range for '{}': lower bound ({}) >= upper bound ({})",
+                    name, lo, hi
+                ));
+            }
+        }
+    }
+
+    warnings
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use nom_ast::{
         AgentReceiveStmt, AgentScheduleStmt, Classifier, Declaration, GraphQueryExpr,
-        GraphQueryStmt, GraphSetExpr, GraphSetOp, Identifier, NomRef, SourceFile, Span, Statement,
-        TypedParam,
+        GraphQueryStmt, GraphSetExpr, GraphSetOp, Identifier, NomRef, RangeConstraint,
+        SourceFile, Span, Statement, TypedParam,
     };
     use nom_resolver::{Resolver, WordEntry};
 
@@ -1156,5 +1279,232 @@ mod tests {
             Box::new(Expr::Literal(Literal::Integer(5))),
         );
         assert_eq!(expr_to_string(&expr), "x > 5");
+    }
+
+    // ── Range constraint tests (ADOPT-9) ──────────────────────────────────────
+
+    #[test]
+    fn extracts_range_from_gt_precondition() {
+        // pre: x > 0 → lower bound 0
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("x", span()))),
+            BinOp::Gt,
+            Box::new(Expr::Literal(Literal::Number(0.0))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "x");
+        assert!(ranges[0].lower.is_some());
+        assert!(ranges[0].upper.is_none());
+    }
+
+    #[test]
+    fn extracts_range_from_lte_precondition() {
+        // pre: score <= 1.0 → upper bound 1.0
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("score", span()))),
+            BinOp::Lte,
+            Box::new(Expr::Literal(Literal::Number(1.0))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "score");
+        assert!(ranges[0].lower.is_none());
+        assert!(ranges[0].upper.is_some());
+    }
+
+    #[test]
+    fn extracts_range_from_gte_precondition() {
+        // pre: score >= 0.0 → lower bound 0.0
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("score", span()))),
+            BinOp::Gte,
+            Box::new(Expr::Literal(Literal::Number(0.0))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "score");
+        assert!(ranges[0].lower.is_some());
+        assert!(ranges[0].upper.is_none());
+    }
+
+    #[test]
+    fn extracts_range_from_lt_precondition() {
+        // pre: x < 100 → upper bound 100
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("x", span()))),
+            BinOp::Lt,
+            Box::new(Expr::Literal(Literal::Number(100.0))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "x");
+        assert!(ranges[0].lower.is_none());
+        assert!(ranges[0].upper.is_some());
+    }
+
+    #[test]
+    fn extracts_reversed_comparison() {
+        // pre: 0 < x → lower bound 0 on x
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Literal(Literal::Number(0.0))),
+            BinOp::Lt,
+            Box::new(Expr::Ident(Identifier::new("x", span()))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "x");
+        assert!(ranges[0].lower.is_some());
+        assert!(ranges[0].upper.is_none());
+    }
+
+    #[test]
+    fn extracts_multiple_constraints_for_same_target() {
+        // pre: score >= 0.0 AND score <= 1.0
+        let preconditions = vec![
+            Expr::BinaryOp(
+                Box::new(Expr::Ident(Identifier::new("score", span()))),
+                BinOp::Gte,
+                Box::new(Expr::Literal(Literal::Number(0.0))),
+            ),
+            Expr::BinaryOp(
+                Box::new(Expr::Ident(Identifier::new("score", span()))),
+                BinOp::Lte,
+                Box::new(Expr::Literal(Literal::Number(1.0))),
+            ),
+        ];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 2);
+        assert!(ranges.iter().all(|r| r.target.name == "score"));
+    }
+
+    #[test]
+    fn validates_satisfiable_range() {
+        // 0.0 <= score <= 1.0 → satisfiable, no warnings
+        let constraints = vec![
+            RangeConstraint {
+                target: Identifier::new("score", Span::default()),
+                lower: Some(Literal::Number(0.0)),
+                upper: None,
+                span: Span::default(),
+            },
+            RangeConstraint {
+                target: Identifier::new("score", Span::default()),
+                lower: None,
+                upper: Some(Literal::Number(1.0)),
+                span: Span::default(),
+            },
+        ];
+        let warnings = validate_range_constraints(&constraints);
+        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+    }
+
+    #[test]
+    fn detects_unsatisfiable_range() {
+        // 10 <= x <= 5 → unsatisfiable, warning
+        let constraints = vec![
+            RangeConstraint {
+                target: Identifier::new("x", Span::default()),
+                lower: Some(Literal::Number(10.0)),
+                upper: None,
+                span: Span::default(),
+            },
+            RangeConstraint {
+                target: Identifier::new("x", Span::default()),
+                lower: None,
+                upper: Some(Literal::Number(5.0)),
+                span: Span::default(),
+            },
+        ];
+        let warnings = validate_range_constraints(&constraints);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("unsatisfiable"));
+        assert!(warnings[0].contains("x"));
+    }
+
+    #[test]
+    fn detects_equal_bounds_as_unsatisfiable() {
+        // lower == upper → unsatisfiable (strict: lower >= upper)
+        let constraints = vec![
+            RangeConstraint {
+                target: Identifier::new("y", Span::default()),
+                lower: Some(Literal::Number(5.0)),
+                upper: None,
+                span: Span::default(),
+            },
+            RangeConstraint {
+                target: Identifier::new("y", Span::default()),
+                lower: None,
+                upper: Some(Literal::Number(5.0)),
+                span: Span::default(),
+            },
+        ];
+        let warnings = validate_range_constraints(&constraints);
+        assert_eq!(warnings.len(), 1);
+        assert!(warnings[0].contains("unsatisfiable"));
+    }
+
+    #[test]
+    fn ignores_non_comparison_exprs() {
+        // pre: x && y → not a range constraint
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("x", span()))),
+            BinOp::And,
+            Box::new(Expr::Ident(Identifier::new("y", span()))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert!(ranges.is_empty());
+    }
+
+    #[test]
+    fn integer_literals_work_in_range_constraints() {
+        // pre: count > 0 (using Integer variant)
+        let preconditions = vec![Expr::BinaryOp(
+            Box::new(Expr::Ident(Identifier::new("count", span()))),
+            BinOp::Gt,
+            Box::new(Expr::Literal(Literal::Integer(0))),
+        )];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 1);
+        assert_eq!(ranges[0].target.name, "count");
+
+        // Validate with integer bounds
+        let constraints = vec![
+            RangeConstraint {
+                target: Identifier::new("count", Span::default()),
+                lower: Some(Literal::Integer(0)),
+                upper: None,
+                span: Span::default(),
+            },
+            RangeConstraint {
+                target: Identifier::new("count", Span::default()),
+                lower: None,
+                upper: Some(Literal::Integer(100)),
+                span: Span::default(),
+            },
+        ];
+        let warnings = validate_range_constraints(&constraints);
+        assert!(warnings.is_empty());
+    }
+
+    #[test]
+    fn end_to_end_extract_then_validate() {
+        // Full pipeline: extract from preconditions, then validate
+        let preconditions = vec![
+            Expr::BinaryOp(
+                Box::new(Expr::Ident(Identifier::new("temp", span()))),
+                BinOp::Gte,
+                Box::new(Expr::Literal(Literal::Number(-40.0))),
+            ),
+            Expr::BinaryOp(
+                Box::new(Expr::Ident(Identifier::new("temp", span()))),
+                BinOp::Lte,
+                Box::new(Expr::Literal(Literal::Number(125.0))),
+            ),
+        ];
+        let ranges = extract_range_constraints(&preconditions);
+        assert_eq!(ranges.len(), 2);
+        let warnings = validate_range_constraints(&ranges);
+        assert!(warnings.is_empty(), "[-40, 125] should be satisfiable");
     }
 }
