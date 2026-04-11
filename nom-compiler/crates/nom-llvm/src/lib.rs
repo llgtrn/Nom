@@ -96,6 +96,7 @@ nom geometry
                 branches: vec![],
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
                 effect_summary: vec![],
                 imperative_stmts,
             }],

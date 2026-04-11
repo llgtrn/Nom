@@ -9,8 +9,60 @@
 //! The generated Rust code is a `mod` per flow, with a single `run()` function
 //! that chains invocations of the planned words.
 
-use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy, PlanNode};
+use nom_ast::{
+    BinOp, Block, BlockStmt, EnumDef, Expr, FnDef, ForStmt, GraphQueryExpr, GraphSetExpr,
+    GraphSetOp, GraphTraverseExpr, IfExpr, Literal, MatchExpr, Pattern, Statement,
+    StructDef, TypeExpr, UnaryOp, WhileStmt,
+};
+use nom_planner::{
+    AgentMetadataPlan, CompositionPlan, ConcurrencyStrategy, FlowPlan, GraphConstraintPlan,
+    GraphEdgePlan, GraphFieldPlan, GraphMetadataPlan, GraphNodePlan, GraphQueryPlan,
+    MemoryStrategy, PlanNode,
+};
 use thiserror::Error;
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+enum GraphConstraintTarget {
+    Node(String),
+    Edge(String),
+    Multi(Vec<GraphConstraintBinding>),
+}
+
+#[derive(Debug, Clone)]
+struct ClassifiedGraphConstraint<'a> {
+    constraint: &'a GraphConstraintPlan,
+    target: GraphConstraintTarget,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct GraphConstraintBinding {
+    root: String,
+    ty_name: String,
+    collection_name: String,
+}
+
+#[derive(Debug, Clone)]
+struct GraphJoinCondition {
+    left_root: String,
+    left_access: String,
+    right_root: String,
+    right_access: String,
+}
+
+#[derive(Debug, Clone)]
+struct SelectedGraphJoin {
+    parent_root: String,
+    child_binding: GraphConstraintBinding,
+    parent_access: String,
+    child_access: String,
+    index_var: String,
+}
+
+#[derive(Debug, Clone)]
+struct GraphPredicatePlan {
+    expr: String,
+    roots: std::collections::BTreeSet<String>,
+}
 
 #[derive(Debug, Error)]
 pub enum CodegenError {
@@ -18,6 +70,10 @@ pub enum CodegenError {
     Plan(#[from] nom_planner::PlanError),
     #[error("invalid nomiz: {0}")]
     InvalidNomiz(String),
+    #[error("unsupported graph constraint: {0}")]
+    UnsupportedGraphConstraint(String),
+    #[error("unsupported graph query: {0}")]
+    UnsupportedGraphQuery(String),
 }
 
 /// Target for code generation.
@@ -53,23 +109,29 @@ pub struct CodegenOutput {
 }
 
 /// Generate Rust source code from a [`CompositionPlan`].
-pub fn generate(plan: &CompositionPlan, opts: &CodegenOptions) -> Result<CodegenOutput, CodegenError> {
+pub fn generate(
+    plan: &CompositionPlan,
+    opts: &CodegenOptions,
+) -> Result<CodegenOutput, CodegenError> {
     match opts.target {
         Target::RustSource => {
-            let src = generate_rust(plan, opts);
+            let src = generate_rust(plan, opts)?;
             Ok(CodegenOutput { rust_source: src })
         }
     }
 }
 
 /// Generate Rust source code from a `.nomiz` string.
-pub fn generate_from_nomiz(nomiz: &str, opts: &CodegenOptions) -> Result<CodegenOutput, CodegenError> {
+pub fn generate_from_nomiz(
+    nomiz: &str,
+    opts: &CodegenOptions,
+) -> Result<CodegenOutput, CodegenError> {
     let plan = CompositionPlan::from_nomiz(nomiz)
         .map_err(|e| CodegenError::InvalidNomiz(e.to_string()))?;
     generate(&plan, opts)
 }
 
-fn generate_rust(plan: &CompositionPlan, opts: &CodegenOptions) -> String {
+fn generate_rust(plan: &CompositionPlan, opts: &CodegenOptions) -> Result<String, CodegenError> {
     let mut out = String::new();
 
     // Crate-level attributes
@@ -83,13 +145,13 @@ fn generate_rust(plan: &CompositionPlan, opts: &CodegenOptions) -> String {
 
     // One module per flow
     for flow in &plan.flows {
-        out.push_str(&generate_flow_mod(flow, opts));
+        out.push_str(&generate_flow_mod(flow, opts)?);
         out.push('\n');
     }
 
     // Top-level dispatcher
-    out.push_str(&generate_dispatcher(plan));
-    out
+    out.push_str(&generate_runtime_dispatcher(plan));
+    Ok(out)
 }
 
 /// A dependency entry for Cargo.toml generation.
@@ -109,43 +171,68 @@ pub fn collect_dependencies(plan: &CompositionPlan) -> Vec<CargoDep> {
 
     for flow in &plan.flows {
         match flow.concurrency_strategy {
-            ConcurrencyStrategy::Parallel => { needs_tokio = true; needs_rayon = true; }
-            ConcurrencyStrategy::Pipeline => { needs_tokio = true; }
+            ConcurrencyStrategy::Parallel => {
+                needs_tokio = true;
+                needs_rayon = true;
+            }
+            ConcurrencyStrategy::Pipeline => {
+                needs_tokio = true;
+            }
             ConcurrencyStrategy::Sequential => {}
         }
         for effect in &flow.effect_summary {
             match effect.as_str() {
-                "database" => { deps.insert("sqlx"); }
-                "network" => { deps.insert("reqwest"); }
+                "database" => {
+                    deps.insert("sqlx");
+                }
+                "network" => {
+                    deps.insert("reqwest");
+                }
                 _ => {}
             }
         }
         for node in &flow.nodes {
             match (node.word.as_str(), node.variant.as_deref()) {
-                ("hash", Some("argon2")) => { deps.insert("argon2"); }
-                ("store", Some("redis")) => { deps.insert("redis"); }
-                ("http", Some("server")) => { deps.insert("axum"); needs_tokio = true; }
+                ("hash", Some("argon2")) => {
+                    deps.insert("argon2");
+                }
+                ("store", Some("redis")) => {
+                    deps.insert("redis");
+                }
+                ("http", Some("server")) => {
+                    deps.insert("axum");
+                    needs_tokio = true;
+                }
                 _ => {}
             }
         }
     }
 
-    if needs_tokio { deps.insert("tokio"); }
-    if needs_rayon { deps.insert("rayon"); }
+    if needs_tokio {
+        deps.insert("tokio");
+    }
+    if needs_rayon {
+        deps.insert("rayon");
+    }
 
-    deps.iter().map(|&name| {
-        let spec = match name {
-            "tokio" => "{ version = \"1\", features = [\"full\"] }".to_owned(),
-            "rayon" => "\"1\"".to_owned(),
-            "sqlx" => "{ version = \"0.7\", features = [\"runtime-tokio\"] }".to_owned(),
-            "argon2" => "\"0.5\"".to_owned(),
-            "redis" => "\"0.25\"".to_owned(),
-            "axum" => "\"0.7\"".to_owned(),
-            "reqwest" => "{ version = \"0.12\", features = [\"json\"] }".to_owned(),
-            _ => "\"*\"".to_owned(),
-        };
-        CargoDep { name: name.to_owned(), spec }
-    }).collect()
+    deps.iter()
+        .map(|&name| {
+            let spec = match name {
+                "tokio" => "{ version = \"1\", features = [\"full\"] }".to_owned(),
+                "rayon" => "\"1\"".to_owned(),
+                "sqlx" => "{ version = \"0.7\", features = [\"runtime-tokio\"] }".to_owned(),
+                "argon2" => "\"0.5\"".to_owned(),
+                "redis" => "\"0.25\"".to_owned(),
+                "axum" => "\"0.7\"".to_owned(),
+                "reqwest" => "{ version = \"0.12\", features = [\"json\"] }".to_owned(),
+                _ => "\"*\"".to_owned(),
+            };
+            CargoDep {
+                name: name.to_owned(),
+                spec,
+            }
+        })
+        .collect()
 }
 
 /// Collect all dependencies needed by the plan and emit a Cargo.toml comment block.
@@ -167,10 +254,12 @@ fn generate_cargo_toml_comment(plan: &CompositionPlan) -> String {
 
 /// Check if any flow in the plan uses async (Parallel or Pipeline concurrency).
 fn plan_needs_async(plan: &CompositionPlan) -> bool {
-    plan.flows.iter().any(|f| matches!(
-        f.concurrency_strategy,
-        ConcurrencyStrategy::Parallel | ConcurrencyStrategy::Pipeline
-    ))
+    plan.flows.iter().any(|f| {
+        matches!(
+            f.concurrency_strategy,
+            ConcurrencyStrategy::Parallel | ConcurrencyStrategy::Pipeline
+        )
+    })
 }
 
 /// Check if a single flow uses async.
@@ -181,12 +270,16 @@ fn flow_is_async(flow: &FlowPlan) -> bool {
     )
 }
 
-fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> String {
+fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> Result<String, CodegenError> {
     let mut out = String::new();
     let mod_name = sanitize_ident(&flow.name);
 
     out.push_str(&format!("pub mod {mod_name} {{\n"));
     out.push_str("    use std::any::Any;\n");
+    out.push_str(&format!(
+        "    pub const DECLARATION_KIND: &str = {:?};\n",
+        flow.classifier
+    ));
 
     // Effect-driven imports
     for effect in &flow.effect_summary {
@@ -210,11 +303,22 @@ fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> String {
 
     out.push('\n');
 
+    if let Some(agent) = &flow.agent {
+        out.push_str(&generate_agent_metadata(agent));
+    }
+    if let Some(graph) = &flow.graph {
+        out.push_str(&generate_graph_metadata(graph)?);
+    }
+
     // Emit a type alias for the flow's input/output based on the first/last node
-    let input_type = flow.nodes.first()
+    let input_type = flow
+        .nodes
+        .first()
         .and_then(|n| n.input_type.as_deref())
         .unwrap_or("Vec<u8>");
-    let output_type = flow.nodes.last()
+    let output_type = flow
+        .nodes
+        .last()
         .and_then(|n| n.output_type.as_deref())
         .unwrap_or("()");
 
@@ -240,7 +344,9 @@ fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> String {
     out.push_str("            write!(f, \"{:?}\", self)\n");
     out.push_str("        }\n");
     out.push_str("    }\n\n");
-    out.push_str(&format!("    impl std::error::Error for {error_name} {{}}\n\n"));
+    out.push_str(&format!(
+        "    impl std::error::Error for {error_name} {{}}\n\n"
+    ));
 
     // Memory strategy comment
     let mem_comment = match flow.memory_strategy {
@@ -273,32 +379,45 @@ fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> String {
         out.push('\n');
     }
 
+    // Emit imperative statements (fn, struct, enum, etc.)
+    if !flow.imperative_stmts.is_empty() {
+        out.push_str("\n    // ── Imperative definitions ──────────────────────────\n\n");
+        for stmt in &flow.imperative_stmts {
+            out.push_str(&generate_statement_rust(stmt, 1));
+            out.push('\n');
+        }
+    }
+
     // Effect-driven cfg gate on the whole module's run function
     let has_network = flow.effect_summary.iter().any(|e| e == "network");
 
-    // Generate run() function
-    if has_network {
-        out.push_str("    // requires: network\n");
-    }
-    match flow.concurrency_strategy {
-        ConcurrencyStrategy::Sequential => {
-            out.push_str("    pub fn run(input: Input) -> Result<Output, Box<dyn std::error::Error>> {\n");
-            generate_sequential_body(&mut out, flow);
+    // Generate run() function (only if there are flow nodes)
+    if !flow.nodes.is_empty() || !flow.branches.is_empty() {
+        if has_network {
+            out.push_str("    // requires: network\n");
         }
-        ConcurrencyStrategy::Parallel => {
-            out.push_str("    pub async fn run(input: Input) -> Result<Output, Box<dyn std::error::Error + Send + Sync>> {\n");
-            generate_parallel_body(&mut out, flow);
+        match flow.concurrency_strategy {
+            ConcurrencyStrategy::Sequential => {
+                out.push_str(
+                    "    pub fn run(input: Input) -> Result<Output, Box<dyn std::error::Error>> {\n",
+                );
+                generate_sequential_body(&mut out, flow);
+            }
+            ConcurrencyStrategy::Parallel => {
+                out.push_str("    pub async fn run(input: Input) -> Result<Output, Box<dyn std::error::Error + Send + Sync>> {\n");
+                generate_parallel_body(&mut out, flow);
+            }
+            ConcurrencyStrategy::Pipeline => {
+                out.push_str("    pub async fn run(input: Input) -> Result<Output, Box<dyn std::error::Error + Send + Sync>> {\n");
+                generate_pipeline_body(&mut out, flow);
+            }
         }
-        ConcurrencyStrategy::Pipeline => {
-            out.push_str("    pub async fn run(input: Input) -> Result<Output, Box<dyn std::error::Error + Send + Sync>> {\n");
-            generate_pipeline_body(&mut out, flow);
-        }
-    }
-    out.push_str("    }\n\n");
+        out.push_str("    }\n\n");
 
-    // Generate a function for each node
-    for node in &flow.nodes {
-        out.push_str(&generate_node_fn(node, flow));
+        // Generate a function for each node
+        for node in &flow.nodes {
+            out.push_str(&generate_node_fn(node, flow));
+        }
     }
 
     // Branch stubs
@@ -311,7 +430,1371 @@ fn generate_flow_mod(flow: &FlowPlan, _opts: &CodegenOptions) -> String {
     }
 
     out.push_str("}\n");
+    Ok(out)
+}
+
+fn generate_agent_metadata(agent: &AgentMetadataPlan) -> String {
+    let mut out = String::new();
+
+    if !agent.capabilities.is_empty() {
+        let caps = agent
+            .capabilities
+            .iter()
+            .map(|capability| format!("{capability:?}"))
+            .collect::<Vec<_>>()
+            .join(", ");
+        out.push_str(&format!(
+            "    pub const AGENT_CAPABILITIES: &[&str] = &[{caps}];\n"
+        ));
+    }
+
+    if let Some(state) = &agent.state {
+        out.push_str(&format!(
+            "    pub const AGENT_INITIAL_STATE: &str = {:?};\n",
+            state
+        ));
+    }
+
+    if let Some(supervision) = &agent.supervision {
+        out.push_str(&format!(
+            "    pub const AGENT_SUPERVISION_STRATEGY: &str = {:?};\n",
+            supervision.strategy
+        ));
+        if !supervision.params.is_empty() {
+            let params = supervision
+                .params
+                .iter()
+                .map(|(key, value)| format!("({key:?}, {value:?})"))
+                .collect::<Vec<_>>()
+                .join(", ");
+            out.push_str(&format!(
+                "    pub const AGENT_SUPERVISION_PARAMS: &[(&str, &str)] = &[{params}];\n"
+            ));
+        }
+    }
+
+    if !out.is_empty() {
+        out.push('\n');
+    }
+
     out
+}
+
+fn generate_graph_metadata(graph: &GraphMetadataPlan) -> Result<String, CodegenError> {
+    let mut out = String::new();
+    let classified_constraints = classify_graph_constraints(graph)?;
+    out.push_str("    #[derive(Debug, Clone, Copy)]\n");
+    out.push_str("    pub struct GraphFieldSchema {\n");
+    out.push_str("        pub name: &'static str,\n");
+    out.push_str("        pub ty: &'static str,\n");
+    out.push_str("    }\n\n");
+    out.push_str("    #[derive(Debug, Clone, Copy)]\n");
+    out.push_str("    pub struct GraphNodeSchema {\n");
+    out.push_str("        pub name: &'static str,\n");
+    out.push_str("        pub fields: &'static [GraphFieldSchema],\n");
+    out.push_str("    }\n\n");
+    out.push_str("    #[derive(Debug, Clone, Copy)]\n");
+    out.push_str("    pub struct GraphEdgeSchema {\n");
+    out.push_str("        pub name: &'static str,\n");
+    out.push_str("        pub from_type: &'static str,\n");
+    out.push_str("        pub to_type: &'static str,\n");
+    out.push_str("        pub fields: &'static [GraphFieldSchema],\n");
+    out.push_str("    }\n\n");
+
+    for node in &graph.nodes {
+        out.push_str(&generate_graph_node_struct(node));
+    }
+    for edge in &graph.edges {
+        out.push_str(&generate_graph_edge_struct(edge));
+    }
+
+    out.push_str("    #[derive(Debug, Default)]\n");
+    out.push_str("    pub struct GraphStore {\n");
+    for node in &graph.nodes {
+        out.push_str(&format!(
+            "        pub {}: Vec<{}>,\n",
+            graph_store_collection_name(&node.name),
+            graph_node_type_name(&node.name)
+        ));
+    }
+    for edge in &graph.edges {
+        out.push_str(&format!(
+            "        pub {}: Vec<{}>,\n",
+            graph_store_collection_name(&edge.name),
+            graph_edge_type_name(&edge.name)
+        ));
+    }
+    out.push_str("    }\n\n");
+
+    out.push_str("    impl GraphStore {\n");
+    out.push_str("        pub fn new() -> Self {\n");
+    out.push_str("            Self::default()\n");
+    out.push_str("        }\n\n");
+    for node in &graph.nodes {
+        let fn_name = sanitize_ident(&node.name);
+        let collection = graph_store_collection_name(&node.name);
+        let ty_name = graph_node_type_name(&node.name);
+        let validation = if has_constraint_target(
+            &classified_constraints,
+            &GraphConstraintTarget::Node(node.name.clone()),
+        ) {
+            format!("            validate_{fn_name}_constraints(&node)?;\n")
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "        pub fn add_{fn_name}(&mut self, node: {ty_name}) -> Result<usize, String> {{\n\
+             {validation}\
+             \x20           self.{collection}.push(node);\n\
+             \x20           Ok(self.{collection}.len() - 1)\n\
+             \x20       }}\n\n"
+        ));
+    }
+    for edge in &graph.edges {
+        let fn_name = sanitize_ident(&edge.name);
+        let collection = graph_store_collection_name(&edge.name);
+        let ty_name = graph_edge_type_name(&edge.name);
+        let validation = if has_constraint_target(
+            &classified_constraints,
+            &GraphConstraintTarget::Edge(edge.name.clone()),
+        ) {
+            format!("            validate_{fn_name}_constraints(&edge)?;\n")
+        } else {
+            String::new()
+        };
+        out.push_str(&format!(
+            "        pub fn add_{fn_name}(&mut self, edge: {ty_name}) -> Result<(), String> {{\n\
+             {validation}\
+             \x20           self.{collection}.push(edge);\n\
+             \x20           Ok(())\n\
+             \x20       }}\n\n"
+        ));
+    }
+    out.push_str("        pub fn neighbors_ids<'a>(&'a self, from: &'a str) -> Vec<&'a str> {\n");
+    out.push_str("            let mut next_ids = Vec::new();\n");
+    for edge in &graph.edges {
+        let collection = graph_store_collection_name(&edge.name);
+        out.push_str(&format!("            for edge in &self.{collection} {{\n"));
+        out.push_str("                if edge.from == from {\n");
+        out.push_str("                    next_ids.push(edge.to.as_str());\n");
+        out.push_str("                }\n");
+        out.push_str("            }\n");
+    }
+    out.push_str("            next_ids.sort_unstable();\n");
+    out.push_str("            next_ids.dedup();\n");
+    out.push_str("            next_ids\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn bfs_ids<'a>(&'a self, starts: &[&'a str], depth: usize) -> Vec<&'a str> {\n",
+    );
+    out.push_str("            let mut visited: std::collections::BTreeSet<&'a str> = starts.iter().copied().collect();\n");
+    out.push_str("            let mut frontier: Vec<&'a str> = starts.to_vec();\n");
+    out.push_str("            for _ in 0..depth {\n");
+    out.push_str("                let mut next_frontier = Vec::new();\n");
+    out.push_str("                for current in &frontier {\n");
+    out.push_str("                    for neighbor in self.neighbors_ids(current) {\n");
+    out.push_str("                        if visited.insert(neighbor) {\n");
+    out.push_str("                            next_frontier.push(neighbor);\n");
+    out.push_str("                        }\n");
+    out.push_str("                    }\n");
+    out.push_str("                }\n");
+    out.push_str("                if next_frontier.is_empty() {\n");
+    out.push_str("                    break;\n");
+    out.push_str("                }\n");
+    out.push_str("                frontier = next_frontier;\n");
+    out.push_str("            }\n");
+    out.push_str("            visited.into_iter().collect()\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn dfs_ids<'a>(&'a self, starts: &[&'a str], depth: usize) -> Vec<&'a str> {\n",
+    );
+    out.push_str("            let mut visited: std::collections::BTreeSet<&'a str> = std::collections::BTreeSet::new();\n");
+    out.push_str("            let mut stack: Vec<(&'a str, usize)> = starts.iter().rev().map(|start| (*start, 0usize)).collect();\n");
+    out.push_str("            while let Some((current, current_depth)) = stack.pop() {\n");
+    out.push_str("                if !visited.insert(current) || current_depth >= depth {\n");
+    out.push_str("                    continue;\n");
+    out.push_str("                }\n");
+    out.push_str("                let mut neighbors = self.neighbors_ids(current);\n");
+    out.push_str("                neighbors.reverse();\n");
+    out.push_str("                for neighbor in neighbors {\n");
+    out.push_str("                    stack.push((neighbor, current_depth + 1));\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            visited.into_iter().collect()\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn shortest_path_ids<'a>(&'a self, source: &'a str, target: &'a str, max_depth: usize) -> Option<Vec<&'a str>> {\n",
+    );
+    out.push_str("            if source == target {\n");
+    out.push_str("                return Some(vec![source]);\n");
+    out.push_str("            }\n");
+    out.push_str("            let mut queue: std::collections::VecDeque<(&'a str, Vec<&'a str>)> = std::collections::VecDeque::new();\n");
+    out.push_str("            let mut seen: std::collections::BTreeSet<&'a str> = std::collections::BTreeSet::new();\n");
+    out.push_str("            queue.push_back((source, vec![source]));\n");
+    out.push_str("            seen.insert(source);\n");
+    out.push_str("            while let Some((current, path)) = queue.pop_front() {\n");
+    out.push_str("                if path.len().saturating_sub(1) > max_depth {\n");
+    out.push_str("                    continue;\n");
+    out.push_str("                }\n");
+    out.push_str("                for neighbor in self.neighbors_ids(current) {\n");
+    out.push_str("                    if !seen.insert(neighbor) {\n");
+    out.push_str("                        continue;\n");
+    out.push_str("                    }\n");
+    out.push_str("                    let mut next_path = path.clone();\n");
+    out.push_str("                    next_path.push(neighbor);\n");
+    out.push_str("                    if neighbor == target {\n");
+    out.push_str("                        return Some(next_path);\n");
+    out.push_str("                    }\n");
+    out.push_str("                    queue.push_back((neighbor, next_path));\n");
+    out.push_str("                }\n");
+    out.push_str("            }\n");
+    out.push_str("            None\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn union_id_sets<'a>(&self, groups: &[Vec<&'a str>]) -> Vec<&'a str> {\n",
+    );
+    out.push_str("            let mut merged = Vec::new();\n");
+    out.push_str("            for group in groups {\n");
+    out.push_str("                merged.extend(group.iter().copied());\n");
+    out.push_str("            }\n");
+    out.push_str("            merged.sort_unstable();\n");
+    out.push_str("            merged.dedup();\n");
+    out.push_str("            merged\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn intersect_id_sets<'a>(&self, groups: &[Vec<&'a str>]) -> Vec<&'a str> {\n",
+    );
+    out.push_str("            let Some((first, rest)) = groups.split_first() else {\n");
+    out.push_str("                return Vec::new();\n");
+    out.push_str("            };\n");
+    out.push_str("            let mut intersection = first.clone();\n");
+    out.push_str("            for group in rest {\n");
+    out.push_str("                intersection.retain(|id| group.contains(id));\n");
+    out.push_str("            }\n");
+    out.push_str("            intersection.sort_unstable();\n");
+    out.push_str("            intersection.dedup();\n");
+    out.push_str("            intersection\n");
+    out.push_str("        }\n\n");
+    out.push_str(
+        "        pub fn difference_id_sets<'a>(&self, left: &[&'a str], right: &[&'a str]) -> Vec<&'a str> {\n",
+    );
+    out.push_str("            let right: std::collections::BTreeSet<&'a str> = right.iter().copied().collect();\n");
+    out.push_str("            let mut difference: Vec<&'a str> = left\n");
+    out.push_str("                .iter()\n");
+    out.push_str("                .copied()\n");
+    out.push_str("                .filter(|id| !right.contains(id))\n");
+    out.push_str("                .collect();\n");
+    out.push_str("            difference.sort_unstable();\n");
+    out.push_str("            difference.dedup();\n");
+    out.push_str("            difference\n");
+    out.push_str("        }\n\n");
+    out.push_str("    }\n\n");
+
+    out.push_str("    pub const GRAPH_NODES: &[GraphNodeSchema] = &[\n");
+    for node in &graph.nodes {
+        out.push_str(&format!(
+            "        GraphNodeSchema {{ name: {:?}, fields: &{} }},\n",
+            node.name,
+            graph_field_schema_literal(&node.fields)
+        ));
+    }
+    out.push_str("    ];\n\n");
+
+    out.push_str("    pub const GRAPH_EDGES: &[GraphEdgeSchema] = &[\n");
+    for edge in &graph.edges {
+        out.push_str(&format!(
+            "        GraphEdgeSchema {{ name: {:?}, from_type: {:?}, to_type: {:?}, fields: &{} }},\n",
+            edge.name,
+            edge.from_type,
+            edge.to_type,
+            graph_field_schema_literal(&edge.fields)
+        ));
+    }
+    out.push_str("    ];\n\n");
+
+    out.push_str("    pub const GRAPH_CONSTRAINTS: &[&str] = &[\n");
+    for constraint in &graph.constraints {
+        out.push_str(&format!("        {:?},\n", constraint.name));
+    }
+    out.push_str("    ];\n\n");
+
+    for constraint in &classified_constraints {
+        out.push_str(&generate_graph_constraint_fn(constraint)?);
+    }
+
+    for query in &graph.queries {
+        out.push_str(&generate_graph_query_fn(graph, query)?);
+    }
+
+    out.push_str(&generate_graph_constraint_group_validators(
+        graph,
+        &classified_constraints,
+    ));
+    out.push_str(&generate_graph_constraint_store_validator(
+        graph,
+        &classified_constraints,
+    ));
+
+    Ok(out)
+}
+
+fn generate_graph_node_struct(node: &GraphNodePlan) -> String {
+    let mut out = String::new();
+    out.push_str("    #[derive(Debug, Clone, Default)]\n");
+    out.push_str(&format!(
+        "    pub struct {} {{\n",
+        graph_node_type_name(&node.name)
+    ));
+    out.push_str("        pub id: String,\n");
+    for field in &node.fields {
+        out.push_str(&format!(
+            "        pub {}: {},\n",
+            sanitize_ident(&field.name),
+            graph_field_rust_type(field.ty.as_deref())
+        ));
+    }
+    out.push_str("    }\n\n");
+    out
+}
+
+fn generate_graph_edge_struct(edge: &GraphEdgePlan) -> String {
+    let mut out = String::new();
+    out.push_str("    #[derive(Debug, Clone, Default)]\n");
+    out.push_str(&format!(
+        "    pub struct {} {{\n",
+        graph_edge_type_name(&edge.name)
+    ));
+    out.push_str("        pub from: String,\n");
+    out.push_str("        pub to: String,\n");
+    for field in &edge.fields {
+        out.push_str(&format!(
+            "        pub {}: {},\n",
+            sanitize_ident(&field.name),
+            graph_field_rust_type(field.ty.as_deref())
+        ));
+    }
+    out.push_str("    }\n\n");
+    out
+}
+
+#[derive(Debug, Clone)]
+struct QueryNodeBinding {
+    node_type: String,
+    binding_name: Option<String>,
+}
+
+#[derive(Debug, Clone)]
+struct CompiledQueryState {
+    code: String,
+    ids_var: String,
+    node_type: String,
+    legacy_bound_params: std::collections::BTreeSet<String>,
+}
+
+fn generate_graph_query_fn(
+    graph: &GraphMetadataPlan,
+    query: &GraphQueryPlan,
+) -> Result<String, CodegenError> {
+    let fn_name = sanitize_ident(&query.name);
+    let signature_args = if query.params.is_empty() {
+        String::new()
+    } else {
+        format!(
+            ", {}",
+            query
+                .params
+                .iter()
+                .map(|param| format!("{}: &'a str", sanitize_ident(&param.name)))
+                .collect::<Vec<_>>()
+                .join(", ")
+        )
+    };
+
+    let mut counter = 0usize;
+    let compiled = compile_graph_query_expr(
+        graph,
+        query,
+        &query.expr,
+        std::collections::BTreeSet::new(),
+        &mut counter,
+    )?;
+    let result_type = graph_node_type_name(&compiled.node_type);
+    let result_collection = graph_store_collection_name(&compiled.node_type);
+
+    let mut out = String::new();
+    out.push_str(&format!(
+        "    pub fn query_{fn_name}<'a>(&'a self{signature_args}) -> Vec<&'a {result_type}> {{\n"
+    ));
+    out.push_str(&compiled.code);
+    out.push_str(&format!(
+        "        self.{result_collection}\n\
+         \x20           .iter()\n\
+         \x20           .filter(|node| {}.iter().any(|id| node.id == *id))\n\
+         \x20           .collect()\n",
+        compiled.ids_var
+    ));
+    out.push_str("    }\n\n");
+    Ok(out)
+}
+
+fn compile_graph_query_expr(
+    graph: &GraphMetadataPlan,
+    query: &GraphQueryPlan,
+    expr: &GraphQueryExpr,
+    legacy_bound_params: std::collections::BTreeSet<String>,
+    counter: &mut usize,
+) -> Result<CompiledQueryState, CodegenError> {
+    match expr {
+        GraphQueryExpr::Ref(reference) => {
+            compile_graph_query_ref(graph, query, reference, legacy_bound_params, counter)
+        }
+        GraphQueryExpr::Traverse(traverse) => {
+            compile_graph_query_traverse(graph, query, traverse, legacy_bound_params, counter)
+        }
+        GraphQueryExpr::SetOp(set) => {
+            compile_graph_query_set_op(graph, query, set, legacy_bound_params, counter)
+        }
+    }
+}
+
+fn compile_graph_query_ref(
+    graph: &GraphMetadataPlan,
+    query: &GraphQueryPlan,
+    reference: &nom_ast::NomRef,
+    mut legacy_bound_params: std::collections::BTreeSet<String>,
+    counter: &mut usize,
+) -> Result<CompiledQueryState, CodegenError> {
+    if reference.variant.is_some() {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+
+    let binding = resolve_query_node_binding(&reference.word.name, query, &mut legacy_bound_params);
+    ensure_graph_node_exists(graph, &binding.node_type, &query.name)?;
+    let init_var = next_query_ids_var(counter);
+    let mut code = String::new();
+    if let Some(binding_name) = &binding.binding_name {
+        code.push_str(&format!(
+            "        let {init_var}: Vec<&'a str> = vec![{}];\n",
+            sanitize_ident(binding_name)
+        ));
+    } else {
+        let start_collection = graph_store_collection_name(&binding.node_type);
+        code.push_str(&format!(
+            "        let {init_var}: Vec<&'a str> = self.{start_collection}\n\
+             \x20           .iter()\n\
+             \x20           .map(|node| node.id.as_str())\n\
+             \x20           .collect();\n"
+        ));
+    }
+
+    Ok(CompiledQueryState {
+        code,
+        ids_var: init_var,
+        node_type: binding.node_type,
+        legacy_bound_params,
+    })
+}
+
+fn compile_graph_query_set_op(
+    graph: &GraphMetadataPlan,
+    query: &GraphQueryPlan,
+    set: &GraphSetExpr,
+    legacy_bound_params: std::collections::BTreeSet<String>,
+    counter: &mut usize,
+) -> Result<CompiledQueryState, CodegenError> {
+    if set.operands.is_empty() {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+
+    let mut compiled_operands = Vec::new();
+    let mut merged_legacy = legacy_bound_params.clone();
+    for operand in &set.operands {
+        let compiled =
+            compile_graph_query_expr(graph, query, operand, legacy_bound_params.clone(), counter)?;
+        merged_legacy.extend(compiled.legacy_bound_params.iter().cloned());
+        compiled_operands.push(compiled);
+    }
+
+    let target_type = compiled_operands[0].node_type.clone();
+    if compiled_operands
+        .iter()
+        .any(|compiled| compiled.node_type != target_type)
+    {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+
+    let result_var = next_query_ids_var(counter);
+    let groups = compiled_operands
+        .iter()
+        .map(|compiled| format!("{}.clone()", compiled.ids_var))
+        .collect::<Vec<_>>()
+        .join(", ");
+
+    let mut code = String::new();
+    for compiled in &compiled_operands {
+        code.push_str(&compiled.code);
+    }
+
+    match set.op {
+        GraphSetOp::Union => {
+            code.push_str(&format!(
+                "        let {result_var} = self.union_id_sets(&[{groups}]);\n"
+            ));
+        }
+        GraphSetOp::Intersection => {
+            code.push_str(&format!(
+                "        let {result_var} = self.intersect_id_sets(&[{groups}]);\n"
+            ));
+        }
+        GraphSetOp::Difference => {
+            if compiled_operands.len() != 2 {
+                return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+            }
+            code.push_str(&format!(
+                "        let {result_var} = self.difference_id_sets(&{}, &{});\n",
+                compiled_operands[0].ids_var, compiled_operands[1].ids_var
+            ));
+        }
+    }
+
+    Ok(CompiledQueryState {
+        code,
+        ids_var: result_var,
+        node_type: target_type,
+        legacy_bound_params: merged_legacy,
+    })
+}
+
+fn compile_graph_query_traverse(
+    graph: &GraphMetadataPlan,
+    query: &GraphQueryPlan,
+    traverse: &GraphTraverseExpr,
+    legacy_bound_params: std::collections::BTreeSet<String>,
+    counter: &mut usize,
+) -> Result<CompiledQueryState, CodegenError> {
+    if traverse.edge.variant.is_some() {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+
+    let source =
+        compile_graph_query_expr(graph, query, &traverse.source, legacy_bound_params, counter)?;
+    let target = compile_graph_query_expr(
+        graph,
+        query,
+        &traverse.target,
+        source.legacy_bound_params.clone(),
+        counter,
+    )?;
+    let edge = graph
+        .edges
+        .iter()
+        .find(|candidate| candidate.name == traverse.edge.word.name)
+        .ok_or_else(|| CodegenError::UnsupportedGraphQuery(query.name.clone()))?;
+    if edge.from_type != source.node_type {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+    if edge.to_type != target.node_type {
+        return Err(CodegenError::UnsupportedGraphQuery(query.name.clone()));
+    }
+
+    let next_var = next_query_ids_var(counter);
+    let candidates_var = next_query_ids_var(counter);
+    let mut code = String::new();
+    let edge_collection = graph_store_collection_name(&edge.name);
+    code.push_str(&source.code);
+    code.push_str(&target.code);
+    code.push_str(&format!(
+        "        let {candidates_var}: std::collections::BTreeSet<&'a str> = {}.iter().copied().collect();\n",
+        target.ids_var
+    ));
+    code.push_str(&format!("        let mut {next_var} = Vec::new();\n"));
+    code.push_str(&format!(
+        "        for current_id in &{} {{\n",
+        source.ids_var
+    ));
+    code.push_str(&format!(
+        "            for edge in &self.{edge_collection} {{\n"
+    ));
+    code.push_str(&format!(
+        "                if edge.from == *current_id && {candidates_var}.contains(edge.to.as_str()) {{\n"
+    ));
+    code.push_str(&format!(
+        "                    {next_var}.push(edge.to.as_str());\n"
+    ));
+    code.push_str("                }\n");
+    code.push_str("            }\n");
+    code.push_str("        }\n");
+    code.push_str(&format!("        {next_var}.sort_unstable();\n"));
+    code.push_str(&format!("        {next_var}.dedup();\n"));
+
+    Ok(CompiledQueryState {
+        code,
+        ids_var: next_var,
+        node_type: target.node_type,
+        legacy_bound_params: target.legacy_bound_params,
+    })
+}
+
+fn graph_field_schema_literal(fields: &[GraphFieldPlan]) -> String {
+    if fields.is_empty() {
+        "[]".to_owned()
+    } else {
+        let parts = fields
+            .iter()
+            .map(|field| {
+                format!(
+                    "GraphFieldSchema {{ name: {:?}, ty: {:?} }}",
+                    field.name,
+                    field.ty.as_deref().unwrap_or("any")
+                )
+            })
+            .collect::<Vec<_>>()
+            .join(", ");
+        format!("[{parts}]")
+    }
+}
+
+fn graph_node_type_name(name: &str) -> String {
+    format!("{}Node", to_pascal_case(name))
+}
+
+fn graph_edge_type_name(name: &str) -> String {
+    format!("{}Edge", to_pascal_case(name))
+}
+
+fn graph_store_collection_name(name: &str) -> String {
+    format!("{}_items", sanitize_ident(name))
+}
+
+fn graph_field_rust_type(ty: Option<&str>) -> &'static str {
+    match ty.unwrap_or("any") {
+        "text" | "string" => "String",
+        "bool" => "bool",
+        "real" | "float" | "f64" => "f64",
+        "int" | "integer" | "i64" | "number" => "i64",
+        "bytes" | "hash" => "Vec<u8>",
+        _ => "String",
+    }
+}
+
+fn resolve_query_node_binding(
+    name: &str,
+    query: &GraphQueryPlan,
+    legacy_bound_params: &mut std::collections::BTreeSet<String>,
+) -> QueryNodeBinding {
+    let mut binding_name = None;
+    let mut node_type = name.to_owned();
+
+    if let Some(param) = query.params.iter().find(|param| param.name == name) {
+        if let Some(ty) = &param.ty {
+            binding_name = Some(param.name.clone());
+            node_type = ty.clone();
+        } else if !legacy_bound_params.contains(&param.name) {
+            binding_name = Some(param.name.clone());
+            node_type = param.name.clone();
+            legacy_bound_params.insert(param.name.clone());
+        }
+    }
+
+    QueryNodeBinding {
+        node_type,
+        binding_name,
+    }
+}
+
+fn ensure_graph_node_exists(
+    graph: &GraphMetadataPlan,
+    node_type: &str,
+    query_name: &str,
+) -> Result<(), CodegenError> {
+    if graph
+        .nodes
+        .iter()
+        .any(|candidate| candidate.name == node_type)
+    {
+        Ok(())
+    } else {
+        Err(CodegenError::UnsupportedGraphQuery(query_name.to_owned()))
+    }
+}
+
+fn next_query_ids_var(counter: &mut usize) -> String {
+    let name = format!("query_ids_{}", *counter);
+    *counter += 1;
+    name
+}
+
+fn generate_graph_constraint_fn(
+    constraint: &ClassifiedGraphConstraint<'_>,
+) -> Result<String, CodegenError> {
+    let bindings = match &constraint.target {
+        GraphConstraintTarget::Node(name) => vec![GraphConstraintBinding {
+            root: name.clone(),
+            ty_name: graph_node_type_name(name),
+            collection_name: graph_store_collection_name(name),
+        }],
+        GraphConstraintTarget::Edge(name) => vec![GraphConstraintBinding {
+            root: name.clone(),
+            ty_name: graph_edge_type_name(name),
+            collection_name: graph_store_collection_name(name),
+        }],
+        GraphConstraintTarget::Multi(bindings) => bindings.clone(),
+    };
+    let fn_name = sanitize_ident(&constraint.constraint.name);
+    let mut out = String::new();
+    let signature = bindings
+        .iter()
+        .map(|binding| format!("{}: &{}", sanitize_ident(&binding.root), binding.ty_name))
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str(&format!(
+        "    fn validate_constraint_{fn_name}({signature}) -> bool {{\n"
+    ));
+    let binding_map = bindings
+        .iter()
+        .map(|binding| (binding.root.clone(), sanitize_ident(&binding.root)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let expr = graph_constraint_expr_to_rust(&constraint.constraint.expr, &binding_map)
+        .ok_or_else(|| {
+            CodegenError::UnsupportedGraphConstraint(constraint.constraint.name.clone())
+        })?;
+    out.push_str(&format!("        {expr}\n"));
+    out.push_str("    }\n\n");
+    Ok(out)
+}
+
+fn graph_constraint_expr_to_rust(
+    expr: &Expr,
+    bindings: &std::collections::BTreeMap<String, String>,
+) -> Option<String> {
+    match expr {
+        Expr::FieldAccess(left, field) => {
+            let left = graph_constraint_expr_to_rust(left, bindings)?;
+            Some(format!("{left}.{}", sanitize_ident(&field.name)))
+        }
+        Expr::Ident(identifier) => bindings
+            .get(&identifier.name)
+            .cloned()
+            .or_else(|| Some(sanitize_ident(&identifier.name))),
+        Expr::Literal(Literal::Integer(value)) => Some(value.to_string()),
+        Expr::Literal(Literal::Number(value)) => Some(value.to_string()),
+        Expr::Literal(Literal::Bool(value)) => Some(value.to_string()),
+        Expr::Literal(Literal::Text(value)) => Some(format!("{value:?}")),
+        Expr::Literal(Literal::None) => Some("None::<&str>".to_owned()),
+        Expr::BinaryOp(left, op, right) => {
+            let left = graph_constraint_expr_to_rust(left, bindings)?;
+            let right = graph_constraint_expr_to_rust(right, bindings)?;
+            let op_text = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => "/",
+                BinOp::And => "&&",
+                BinOp::Or => "||",
+                BinOp::Gt => ">",
+                BinOp::Lt => "<",
+                BinOp::Gte => ">=",
+                BinOp::Lte => "<=",
+                BinOp::Eq => "==",
+                BinOp::Neq => "!=",
+                BinOp::Mod => "%",
+                BinOp::BitAnd => "&",
+                BinOp::BitOr => "|",
+            };
+            Some(format!("{left} {op_text} {right}"))
+        }
+        Expr::Call(call) => {
+            let args = call
+                .args
+                .iter()
+                .map(|arg| graph_constraint_expr_to_rust(arg, bindings))
+                .collect::<Option<Vec<_>>>()?
+                .join(", ");
+            Some(format!("{}({args})", sanitize_ident(&call.callee.name)))
+        }
+        // New expression types — not yet used in graph constraints
+        _ => None,
+    }
+}
+
+fn graph_constraint_roots(expr: &Expr) -> std::collections::BTreeSet<String> {
+    let mut roots = std::collections::BTreeSet::new();
+    collect_graph_constraint_roots(expr, &mut roots);
+    roots
+}
+
+fn flatten_graph_constraint_predicates<'a>(expr: &'a Expr, out: &mut Vec<&'a Expr>) {
+    match expr {
+        Expr::BinaryOp(left, BinOp::And, right) => {
+            flatten_graph_constraint_predicates(left, out);
+            flatten_graph_constraint_predicates(right, out);
+        }
+        _ => out.push(expr),
+    }
+}
+
+fn collect_graph_predicate_plans(
+    expr: &Expr,
+    bindings: &std::collections::BTreeMap<String, String>,
+) -> Option<Vec<GraphPredicatePlan>> {
+    let mut predicates = Vec::new();
+    flatten_graph_constraint_predicates(expr, &mut predicates);
+    predicates
+        .into_iter()
+        .map(|predicate| {
+            Some(GraphPredicatePlan {
+                expr: graph_constraint_expr_to_rust(predicate, bindings)?,
+                roots: graph_constraint_roots(predicate),
+            })
+        })
+        .collect()
+}
+
+fn collect_graph_constraint_roots(expr: &Expr, roots: &mut std::collections::BTreeSet<String>) {
+    match expr {
+        Expr::FieldAccess(left, _) => match &**left {
+            Expr::Ident(identifier) => {
+                roots.insert(identifier.name.clone());
+            }
+            other => collect_graph_constraint_roots(other, roots),
+        },
+        Expr::BinaryOp(left, _, right) => {
+            collect_graph_constraint_roots(left, roots);
+            collect_graph_constraint_roots(right, roots);
+        }
+        Expr::Call(call) => {
+            for arg in &call.args {
+                collect_graph_constraint_roots(arg, roots);
+            }
+        }
+        _ => {}
+    }
+}
+
+fn extract_required_graph_joins(expr: &Expr) -> Vec<GraphJoinCondition> {
+    match expr {
+        Expr::BinaryOp(left, BinOp::And, right) => {
+            let mut joins = extract_required_graph_joins(left);
+            joins.extend(extract_required_graph_joins(right));
+            joins
+        }
+        Expr::BinaryOp(left, BinOp::Eq, right) => {
+            let Some((left_root, left_access)) = binding_field_access(left) else {
+                return Vec::new();
+            };
+            let Some((right_root, right_access)) = binding_field_access(right) else {
+                return Vec::new();
+            };
+            if left_root == right_root {
+                return Vec::new();
+            }
+            vec![GraphJoinCondition {
+                left_root,
+                left_access,
+                right_root,
+                right_access,
+            }]
+        }
+        _ => Vec::new(),
+    }
+}
+
+fn select_graph_join_plan(
+    bindings: &[GraphConstraintBinding],
+    joins: &[GraphJoinCondition],
+) -> Option<Vec<SelectedGraphJoin>> {
+    let first = bindings.first()?;
+    let mut joined = std::collections::BTreeSet::from([first.root.clone()]);
+    let mut remaining = bindings
+        .iter()
+        .skip(1)
+        .cloned()
+        .map(|binding| (binding.root.clone(), binding))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let mut plan = Vec::new();
+
+    while !remaining.is_empty() {
+        let next_root = remaining.keys().find_map(|root| {
+            joins
+                .iter()
+                .find_map(|join| {
+                    if joined.contains(&join.left_root) && join.right_root == *root {
+                        Some((
+                            join.left_root.clone(),
+                            join.left_access.clone(),
+                            join.right_access.clone(),
+                        ))
+                    } else if joined.contains(&join.right_root) && join.left_root == *root {
+                        Some((
+                            join.right_root.clone(),
+                            join.right_access.clone(),
+                            join.left_access.clone(),
+                        ))
+                    } else {
+                        None
+                    }
+                })
+                .map(|(parent_root, parent_access, child_access)| {
+                    (root.clone(), parent_root, parent_access, child_access)
+                })
+        })?;
+
+        let (root, parent_root, parent_access, child_access) = next_root;
+        let child_binding = remaining.remove(&root)?;
+        let index_var = format!(
+            "{}_join_index_{}",
+            sanitize_ident(&child_binding.root),
+            plan.len()
+        );
+        plan.push(SelectedGraphJoin {
+            parent_root: parent_root.clone(),
+            child_binding,
+            parent_access,
+            child_access,
+            index_var,
+        });
+        joined.insert(root);
+    }
+
+    Some(plan)
+}
+
+fn binding_access_expr(access: &str, root: &str) -> String {
+    let binding = sanitize_ident(root);
+    if access == root {
+        binding
+    } else if let Some(suffix) = access.strip_prefix(&format!("{root}.")) {
+        format!("{binding}.{suffix}")
+    } else {
+        access.to_owned()
+    }
+}
+
+fn render_available_predicate_guards(
+    predicates: &[GraphPredicatePlan],
+    bound_roots: &std::collections::BTreeSet<String>,
+    emitted: &mut std::collections::BTreeSet<usize>,
+    indent: &str,
+) -> String {
+    let mut out = String::new();
+    for (index, predicate) in predicates.iter().enumerate() {
+        if emitted.contains(&index) {
+            continue;
+        }
+        if predicate.roots.is_subset(bound_roots) {
+            emitted.insert(index);
+            out.push_str(&format!(
+                "{indent}if !({}) {{\n{indent}    continue;\n{indent}}}\n",
+                predicate.expr
+            ));
+        }
+    }
+    out
+}
+
+fn generate_join_nested_loops(
+    bindings: &[GraphConstraintBinding],
+    plan: &[SelectedGraphJoin],
+    depth: usize,
+    validator: &str,
+    call_args: &str,
+    constraint_name: &str,
+    predicates: &[GraphPredicatePlan],
+    bound_roots: &std::collections::BTreeSet<String>,
+    emitted: &mut std::collections::BTreeSet<usize>,
+) -> String {
+    if depth == 0 {
+        let root = &bindings[0];
+        let root_var = sanitize_ident(&root.root);
+        let mut next_bound_roots = bound_roots.clone();
+        next_bound_roots.insert(root.root.clone());
+        let guards = render_available_predicate_guards(
+            predicates,
+            &next_bound_roots,
+            emitted,
+            "            ",
+        );
+        let inner = generate_join_nested_loops(
+            bindings,
+            plan,
+            depth + 1,
+            validator,
+            call_args,
+            constraint_name,
+            predicates,
+            &next_bound_roots,
+            emitted,
+        );
+        return format!(
+            "        for {root_var} in &self.{} {{\n{guards}{inner}        }}\n",
+            root.collection_name
+        );
+    }
+
+    if depth > plan.len() {
+        return format!(
+            "            if !validate_constraint_{validator}({call_args}) {{\n\
+             \x20               return Err(\"graph constraint '{}' failed\".to_owned());\n\
+             \x20           }}\n",
+            constraint_name
+        );
+    }
+
+    let join = &plan[depth - 1];
+    let parent_var = sanitize_ident(&join.parent_root);
+    let child_var = sanitize_ident(&join.child_binding.root);
+    let key_var = format!("{}_join_key_{}", parent_var, depth);
+    let parent_expr = binding_access_expr(&join.parent_access, &join.parent_root);
+    let mut next_bound_roots = bound_roots.clone();
+    next_bound_roots.insert(join.child_binding.root.clone());
+    let guards = render_available_predicate_guards(
+        predicates,
+        &next_bound_roots,
+        emitted,
+        "                    ",
+    );
+    let inner = generate_join_nested_loops(
+        bindings,
+        plan,
+        depth + 1,
+        validator,
+        call_args,
+        constraint_name,
+        predicates,
+        &next_bound_roots,
+        emitted,
+    );
+
+    format!(
+        "            let {key_var} = format!(\"{{:?}}\", {parent_expr});\n\
+         \x20           if let Some(matches) = {}.get(&{key_var}) {{\n\
+         \x20               for {child_var} in matches {{\n{guards}{inner}                }}\n\
+         \x20           }}\n",
+        join.index_var
+    )
+}
+
+fn binding_field_access(expr: &Expr) -> Option<(String, String)> {
+    match expr {
+        Expr::FieldAccess(left, field) => {
+            let (root, access) = binding_field_access(left).or_else(|| match &**left {
+                Expr::Ident(identifier) => {
+                    Some((identifier.name.clone(), sanitize_ident(&identifier.name)))
+                }
+                _ => None,
+            })?;
+            Some((root, format!("{access}.{}", sanitize_ident(&field.name))))
+        }
+        _ => None,
+    }
+}
+
+fn classify_graph_constraints(
+    graph: &GraphMetadataPlan,
+) -> Result<Vec<ClassifiedGraphConstraint<'_>>, CodegenError> {
+    graph
+        .constraints
+        .iter()
+        .map(|constraint| {
+            let roots = graph_constraint_roots(&constraint.expr);
+            if roots.is_empty() {
+                return Err(CodegenError::UnsupportedGraphConstraint(
+                    constraint.name.clone(),
+                ));
+            }
+
+            let bindings = roots
+                .into_iter()
+                .map(|root| resolve_graph_constraint_binding(graph, &root, &constraint.name))
+                .collect::<Result<Vec<_>, _>>()?;
+
+            let target = if bindings.len() == 1 {
+                let binding = bindings.into_iter().next().ok_or_else(|| {
+                    CodegenError::UnsupportedGraphConstraint(constraint.name.clone())
+                })?;
+                if binding.ty_name.ends_with("Node") {
+                    GraphConstraintTarget::Node(binding.root)
+                } else {
+                    GraphConstraintTarget::Edge(binding.root)
+                }
+            } else {
+                GraphConstraintTarget::Multi(bindings)
+            };
+
+            Ok(ClassifiedGraphConstraint { constraint, target })
+        })
+        .collect()
+}
+
+fn resolve_graph_constraint_binding(
+    graph: &GraphMetadataPlan,
+    root: &str,
+    constraint_name: &str,
+) -> Result<GraphConstraintBinding, CodegenError> {
+    if graph.nodes.iter().any(|node| node.name == root) {
+        Ok(GraphConstraintBinding {
+            root: root.to_owned(),
+            ty_name: graph_node_type_name(root),
+            collection_name: graph_store_collection_name(root),
+        })
+    } else if graph.edges.iter().any(|edge| edge.name == root) {
+        Ok(GraphConstraintBinding {
+            root: root.to_owned(),
+            ty_name: graph_edge_type_name(root),
+            collection_name: graph_store_collection_name(root),
+        })
+    } else {
+        Err(CodegenError::UnsupportedGraphConstraint(
+            constraint_name.to_owned(),
+        ))
+    }
+}
+
+fn has_constraint_target(
+    constraints: &[ClassifiedGraphConstraint<'_>],
+    target: &GraphConstraintTarget,
+) -> bool {
+    constraints
+        .iter()
+        .any(|constraint| &constraint.target == target)
+}
+
+fn generate_graph_constraint_group_validators(
+    graph: &GraphMetadataPlan,
+    constraints: &[ClassifiedGraphConstraint<'_>],
+) -> String {
+    let mut out = String::new();
+
+    for node in &graph.nodes {
+        let target = GraphConstraintTarget::Node(node.name.clone());
+        if !has_constraint_target(constraints, &target) {
+            continue;
+        }
+        let binding = sanitize_ident(&node.name);
+        let fn_name = sanitize_ident(&node.name);
+        let ty_name = graph_node_type_name(&node.name);
+        out.push_str(&format!(
+            "    fn validate_{fn_name}_constraints({binding}: &{ty_name}) -> Result<(), String> {{\n"
+        ));
+        for constraint in constraints
+            .iter()
+            .filter(|constraint| constraint.target == target)
+        {
+            let constraint_fn = sanitize_ident(&constraint.constraint.name);
+            out.push_str(&format!(
+                "        if !validate_constraint_{constraint_fn}({binding}) {{\n\
+                 \x20           return Err(\"graph constraint '{}' failed\".to_owned());\n\
+                 \x20       }}\n",
+                constraint.constraint.name
+            ));
+        }
+        out.push_str("        Ok(())\n");
+        out.push_str("    }\n\n");
+    }
+
+    for edge in &graph.edges {
+        let target = GraphConstraintTarget::Edge(edge.name.clone());
+        if !has_constraint_target(constraints, &target) {
+            continue;
+        }
+        let binding = sanitize_ident(&edge.name);
+        let fn_name = sanitize_ident(&edge.name);
+        let ty_name = graph_edge_type_name(&edge.name);
+        out.push_str(&format!(
+            "    fn validate_{fn_name}_constraints({binding}: &{ty_name}) -> Result<(), String> {{\n"
+        ));
+        for constraint in constraints
+            .iter()
+            .filter(|constraint| constraint.target == target)
+        {
+            let constraint_fn = sanitize_ident(&constraint.constraint.name);
+            out.push_str(&format!(
+                "        if !validate_constraint_{constraint_fn}({binding}) {{\n\
+                 \x20           return Err(\"graph constraint '{}' failed\".to_owned());\n\
+                 \x20       }}\n",
+                constraint.constraint.name
+            ));
+        }
+        out.push_str("        Ok(())\n");
+        out.push_str("    }\n\n");
+    }
+
+    out
+}
+
+fn generate_graph_constraint_store_validator(
+    graph: &GraphMetadataPlan,
+    constraints: &[ClassifiedGraphConstraint<'_>],
+) -> String {
+    let mut out = String::new();
+    out.push_str("    pub fn validate_graph_constraints(&self) -> Result<(), String> {\n");
+
+    for node in &graph.nodes {
+        let target = GraphConstraintTarget::Node(node.name.clone());
+        if has_constraint_target(constraints, &target) {
+            let collection = graph_store_collection_name(&node.name);
+            let validator = sanitize_ident(&node.name);
+            out.push_str(&format!(
+                "        for item in &self.{collection} {{\n\
+                 \x20           validate_{validator}_constraints(item)?;\n\
+                 \x20       }}\n"
+            ));
+        }
+    }
+
+    for edge in &graph.edges {
+        let target = GraphConstraintTarget::Edge(edge.name.clone());
+        if has_constraint_target(constraints, &target) {
+            let collection = graph_store_collection_name(&edge.name);
+            let validator = sanitize_ident(&edge.name);
+            out.push_str(&format!(
+                "        for item in &self.{collection} {{\n\
+                 \x20           validate_{validator}_constraints(item)?;\n\
+                 \x20       }}\n"
+            ));
+        }
+    }
+
+    for constraint in constraints {
+        let GraphConstraintTarget::Multi(bindings) = &constraint.target else {
+            continue;
+        };
+        let validator = sanitize_ident(&constraint.constraint.name);
+        let binding_map = bindings
+            .iter()
+            .map(|binding| (binding.root.clone(), sanitize_ident(&binding.root)))
+            .collect::<std::collections::BTreeMap<_, _>>();
+        let predicates = collect_graph_predicate_plans(&constraint.constraint.expr, &binding_map)
+            .unwrap_or_default();
+        if let Some(join_code) = generate_multi_constraint_join_validator(constraint) {
+            out.push_str(&join_code);
+        } else {
+            out.push_str(&generate_multi_constraint_loops(
+                bindings,
+                0,
+                validator.as_str(),
+                &constraint.constraint.name,
+                &predicates,
+                &std::collections::BTreeSet::new(),
+                &mut std::collections::BTreeSet::new(),
+            ));
+        }
+    }
+
+    out.push_str("        Ok(())\n");
+    out.push_str("    }\n\n");
+    out
+}
+
+fn generate_multi_constraint_loops(
+    bindings: &[GraphConstraintBinding],
+    depth: usize,
+    validator: &str,
+    constraint_name: &str,
+    predicates: &[GraphPredicatePlan],
+    bound_roots: &std::collections::BTreeSet<String>,
+    emitted: &mut std::collections::BTreeSet<usize>,
+) -> String {
+    if depth == bindings.len() {
+        let call_args = bindings
+            .iter()
+            .map(|binding| sanitize_ident(&binding.root))
+            .collect::<Vec<_>>()
+            .join(", ");
+        return format!(
+            "            if !validate_constraint_{validator}({call_args}) {{\n\
+             \x20               return Err(\"graph constraint '{}' failed\".to_owned());\n\
+             \x20           }}\n",
+            constraint_name
+        );
+    }
+
+    let binding = &bindings[depth];
+    let var_name = sanitize_ident(&binding.root);
+    let indent = "    ".repeat(depth + 2);
+    let mut next_bound_roots = bound_roots.clone();
+    next_bound_roots.insert(binding.root.clone());
+    let guards = render_available_predicate_guards(predicates, &next_bound_roots, emitted, &indent);
+    let inner = generate_multi_constraint_loops(
+        bindings,
+        depth + 1,
+        validator,
+        constraint_name,
+        predicates,
+        &next_bound_roots,
+        emitted,
+    );
+    let inner = inner
+        .lines()
+        .map(|line| {
+            if line.is_empty() {
+                String::new()
+            } else {
+                format!("{indent}{line}")
+            }
+        })
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    format!(
+        "        for {var_name} in &self.{} {{\n{guards}{inner}\n        }}\n",
+        binding.collection_name,
+    )
+}
+
+fn generate_multi_constraint_join_validator(
+    constraint: &ClassifiedGraphConstraint<'_>,
+) -> Option<String> {
+    let GraphConstraintTarget::Multi(bindings) = &constraint.target else {
+        return None;
+    };
+    let joins = extract_required_graph_joins(&constraint.constraint.expr);
+    let plan = select_graph_join_plan(bindings, &joins)?;
+    let validator = sanitize_ident(&constraint.constraint.name);
+    let binding_map = bindings
+        .iter()
+        .map(|binding| (binding.root.clone(), sanitize_ident(&binding.root)))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let predicates = collect_graph_predicate_plans(&constraint.constraint.expr, &binding_map)?;
+    let mut out = String::new();
+
+    for join in &plan {
+        let child_var = sanitize_ident(&join.child_binding.root);
+        let child_expr = binding_access_expr(&join.child_access, &join.child_binding.root);
+        out.push_str(&format!(
+            "        let mut {}: std::collections::BTreeMap<String, Vec<&{}>> = std::collections::BTreeMap::new();\n\
+             \x20       for {child_var} in &self.{} {{\n\
+             \x20           {}\n\
+             \x20               .entry(format!(\"{{:?}}\", {}))\n\
+             \x20               .or_default()\n\
+             \x20               .push({child_var});\n\
+             \x20       }}\n",
+            join.index_var,
+            join.child_binding.ty_name,
+            join.child_binding.collection_name,
+            join.index_var,
+            child_expr
+        ));
+    }
+
+    let call_args = bindings
+        .iter()
+        .map(|binding| sanitize_ident(&binding.root))
+        .collect::<Vec<_>>()
+        .join(", ");
+    out.push_str(&generate_join_nested_loops(
+        bindings,
+        &plan,
+        0,
+        &validator,
+        &call_args,
+        &constraint.constraint.name,
+        &predicates,
+        &std::collections::BTreeSet::new(),
+        &mut std::collections::BTreeSet::new(),
+    ));
+
+    Some(out)
 }
 
 fn generate_sequential_body(out: &mut String, flow: &FlowPlan) {
@@ -387,9 +1870,7 @@ fn generate_pipeline_body(out: &mut String, flow: &FlowPlan) {
     // First stage: takes input, sends to tx_0
     if n == 1 {
         let fn_name = node_fn_name(&flow.nodes[0]);
-        out.push_str(&format!(
-            "        let output = {fn_name}(input)?;\n"
-        ));
+        out.push_str(&format!("        let output = {fn_name}(input)?;\n"));
         out.push_str("        Ok(output)\n");
         return;
     }
@@ -436,7 +1917,12 @@ fn generate_pipeline_body(out: &mut String, flow: &FlowPlan) {
 }
 
 /// Wrap a function call with the appropriate memory strategy.
-fn memory_wrap_call(strategy: &MemoryStrategy, node: &PlanNode, prev_var: &str, fn_name: &str) -> String {
+fn memory_wrap_call(
+    strategy: &MemoryStrategy,
+    node: &PlanNode,
+    prev_var: &str,
+    fn_name: &str,
+) -> String {
     match strategy {
         MemoryStrategy::Stack => {
             // Use references — pass by ref, no heap
@@ -501,7 +1987,9 @@ fn generate_node_fn(node: &PlanNode, flow: &FlowPlan) -> String {
         match effect.as_str() {
             "cpu" => out.push_str("        // CPU-intensive: consider rayon\n"),
             "database" => out.push_str("        // Database effect: uses sqlx\n"),
-            "network" => out.push_str("        // Network effect: gated by #[cfg(feature = \"network\")]\n"),
+            "network" => {
+                out.push_str("        // Network effect: gated by #[cfg(feature = \"network\")]\n")
+            }
             other => out.push_str(&format!("        // Effect: {other}\n")),
         }
     }
@@ -512,10 +2000,15 @@ fn generate_node_fn(node: &PlanNode, flow: &FlowPlan) -> String {
         if lang == "rust" {
             // Embed the Rust implementation directly
             let mut b = String::new();
-            let source_label = node.variant.as_ref()
+            let source_label = node
+                .variant
+                .as_ref()
                 .map(|v| format!("{}::{}", node.word, v))
                 .unwrap_or_else(|| node.word.clone());
-            b.push_str(&format!("        // Implementation from: {} (extracted atom)\n", source_label));
+            b.push_str(&format!(
+                "        // Implementation from: {} (extracted atom)\n",
+                source_label
+            ));
             for line in impl_body.lines() {
                 b.push_str(&format!("        {}\n", line));
             }
@@ -538,13 +2031,7 @@ fn generate_node_fn(node: &PlanNode, flow: &FlowPlan) -> String {
             b
         }
     } else {
-        generate_word_body(
-            &node.word,
-            node.variant.as_deref(),
-            in_t,
-            out_t,
-            is_async,
-        )
+        generate_word_body(&node.word, node.variant.as_deref(), in_t, out_t, is_async)
     };
     out.push_str(&body);
 
@@ -553,10 +2040,15 @@ fn generate_node_fn(node: &PlanNode, flow: &FlowPlan) -> String {
 }
 
 /// Generate a meaningful function body based on word::variant.
-fn generate_word_body(word: &str, variant: Option<&str>, in_t: &str, out_t: &str, is_async: bool) -> String {
+fn generate_word_body(
+    word: &str,
+    variant: Option<&str>,
+    in_t: &str,
+    out_t: &str,
+    is_async: bool,
+) -> String {
     match (word, variant) {
-        ("hash", Some("argon2")) => {
-            "        // Argon2 password hashing\n\
+        ("hash", Some("argon2")) => "        // Argon2 password hashing\n\
              \x20       use argon2::{Argon2, PasswordHasher};\n\
              \x20       use argon2::password_hash::SaltString;\n\
              \x20       use argon2::password_hash::rand_core::OsRng;\n\
@@ -565,17 +2057,14 @@ fn generate_word_body(word: &str, variant: Option<&str>, in_t: &str, out_t: &str
              \x20       let hash = argon2.hash_password(&input, &salt)\n\
              \x20           .map_err(|e| format!(\"argon2 hash failed: {}\", e))?;\n\
              \x20       Ok(hash.to_string().into_bytes())\n"
-                .to_owned()
-        }
-        ("hash", _) => {
-            "        // Generic hashing — SHA-256\n\
+            .to_owned(),
+        ("hash", _) => "        // Generic hashing — SHA-256\n\
              \x20       use std::collections::hash_map::DefaultHasher;\n\
              \x20       use std::hash::{Hash, Hasher};\n\
              \x20       let mut hasher = DefaultHasher::new();\n\
              \x20       input.hash(&mut hasher);\n\
              \x20       Ok(hasher.finish().to_le_bytes().to_vec())\n"
-                .to_owned()
-        }
+            .to_owned(),
         ("store", Some("redis")) => {
             let await_suffix = if is_async { ".await" } else { "" };
             format!(
@@ -589,25 +2078,21 @@ fn generate_word_body(word: &str, variant: Option<&str>, in_t: &str, out_t: &str
                  \x20       Ok(Default::default())\n"
             )
         }
-        ("store", _) => {
-            "        // Generic store — write to database\n\
+        ("store", _) => "        // Generic store — write to database\n\
              \x20       // sqlx::query(\"INSERT INTO store (data) VALUES ($1)\")\n\
              \x20       //     .bind(&input[..])\n\
              \x20       //     .execute(&pool).await?;\n\
              \x20       let _ = input; // consume input\n\
              \x20       Ok(Default::default())\n"
-                .to_owned()
-        }
-        ("http", Some("server")) => {
-            "        // Axum HTTP server skeleton\n\
+            .to_owned(),
+        ("http", Some("server")) => "        // Axum HTTP server skeleton\n\
              \x20       use axum::{Router, routing::get};\n\
              \x20       let app = Router::new()\n\
              \x20           .route(\"/\", get(|| async { \"Hello from Nom\" }));\n\
              \x20       let listener = tokio::net::TcpListener::bind(\"0.0.0.0:3000\").await?;\n\
              \x20       axum::serve(listener, app).await?;\n\
              \x20       Ok(Default::default())\n"
-                .to_owned()
-        }
+            .to_owned(),
         _ => {
             // Typed passthrough for unknown words
             if out_t == "()" {
@@ -636,6 +2121,7 @@ fn generate_word_body(word: &str, variant: Option<&str>, in_t: &str, out_t: &str
     }
 }
 
+#[allow(dead_code)]
 fn generate_dispatcher(plan: &CompositionPlan) -> String {
     let mut out = String::new();
     let needs_async = plan_needs_async(plan);
@@ -663,6 +2149,115 @@ fn generate_dispatcher(plan: &CompositionPlan) -> String {
     out
 }
 
+fn generate_runtime_dispatcher(plan: &CompositionPlan) -> String {
+    let mut out = String::new();
+    let needs_async = plan_needs_async(plan);
+
+    out.push_str("/// Run all flows in sequence using default inputs.\n");
+    if needs_async {
+        out.push_str("#[tokio::main]\n");
+        out.push_str("pub async fn run_all() {\n");
+    } else {
+        out.push_str("pub fn run_all() {\n");
+    }
+
+    for flow in &plan.flows {
+        let mod_name = sanitize_ident(&flow.name);
+        let input_expr = default_input_expr(flow);
+        let retry_count = supervision_max_retries(flow);
+
+        if flow_is_async(flow) {
+            if retry_count > 0 {
+                out.push_str(&format!(
+                    "    let mut attempts = 0usize;\n\
+                     \x20   loop {{\n\
+                     \x20       attempts += 1;\n\
+                     \x20       match {mod_name}::run({input_expr}).await {{\n\
+                     \x20           Ok(_) => break,\n\
+                     \x20           Err(err) => {{\n\
+                     \x20               eprintln!(\"nom: flow {mod_name} failed on attempt {{}}: {{}}\", attempts, err);\n\
+                     \x20               if attempts > {retry_count} {{\n\
+                     \x20                   break;\n\
+                     \x20               }}\n\
+                     \x20           }}\n\
+                     \x20       }}\n\
+                     \x20   }}\n"
+                ));
+            } else {
+                out.push_str(&format!(
+                    "    if let Err(err) = {mod_name}::run({input_expr}).await {{\n\
+                     \x20       eprintln!(\"nom: flow {mod_name} failed: {{}}\", err);\n\
+                     \x20   }}\n"
+                ));
+            }
+        } else if retry_count > 0 {
+            out.push_str(&format!(
+                "    let mut attempts = 0usize;\n\
+                 \x20   loop {{\n\
+                 \x20       attempts += 1;\n\
+                 \x20       match {mod_name}::run({input_expr}) {{\n\
+                 \x20           Ok(_) => break,\n\
+                 \x20           Err(err) => {{\n\
+                 \x20               eprintln!(\"nom: flow {mod_name} failed on attempt {{}}: {{}}\", attempts, err);\n\
+                 \x20               if attempts > {retry_count} {{\n\
+                 \x20                   break;\n\
+                 \x20               }}\n\
+                 \x20           }}\n\
+                 \x20       }}\n\
+                 \x20   }}\n"
+            ));
+        } else {
+            out.push_str(&format!(
+                "    if let Err(err) = {mod_name}::run({input_expr}) {{\n\
+                 \x20       eprintln!(\"nom: flow {mod_name} failed: {{}}\", err);\n\
+                 \x20   }}\n"
+            ));
+        }
+    }
+
+    out.push_str("}\n");
+    out
+}
+
+fn supervision_max_retries(flow: &FlowPlan) -> usize {
+    let Some(supervision) = flow
+        .agent
+        .as_ref()
+        .and_then(|agent| agent.supervision.as_ref())
+    else {
+        return 0;
+    };
+
+    if supervision.strategy != "restart_on_failure" {
+        return 0;
+    }
+
+    supervision
+        .params
+        .iter()
+        .find(|(key, _)| key == "max_retries")
+        .and_then(|(_, value)| value.parse::<usize>().ok())
+        .unwrap_or(1)
+}
+
+fn default_input_expr(flow: &FlowPlan) -> &'static str {
+    match flow
+        .nodes
+        .first()
+        .and_then(|node| node.input_type.as_deref())
+        .unwrap_or("unit")
+    {
+        "bytes" | "hash" | "buffer" => "Vec::new()",
+        "string" | "text" => "String::new()",
+        "unit" | "()" => "()",
+        "bool" => "false",
+        "i64" | "int" | "integer" => "0",
+        "f64" | "float" => "0.0",
+        "any" => "Box::new(()) as Box<dyn std::any::Any>",
+        _ => "Vec::new()",
+    }
+}
+
 fn node_fn_name(node: &PlanNode) -> String {
     let base = sanitize_ident(&node.word);
     if let Some(v) = &node.variant {
@@ -674,7 +2269,13 @@ fn node_fn_name(node: &PlanNode) -> String {
 
 fn sanitize_ident(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -705,20 +2306,392 @@ fn nom_type_to_rust(t: &str) -> &str {
         "any" => "Box<dyn std::any::Any>",
         "i64" | "int" | "integer" => "i64",
         "f64" | "float" => "f64",
-        _other => "Vec<u8>",  // safe default
+        _other => "Vec<u8>", // safe default
+    }
+}
+
+// ── Imperative code generation ───────────────────────────────────────────────
+
+/// Generate Rust source for imperative AST statements (fn, struct, enum, etc.)
+pub fn generate_statement_rust(stmt: &Statement, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    match stmt {
+        Statement::FnDef(fndef) => generate_fn_rust(fndef, indent),
+        Statement::StructDef(sdef) => generate_struct_rust(sdef, indent),
+        Statement::EnumDef(edef) => generate_enum_rust(edef, indent),
+        Statement::Let(letstmt) => {
+            let mutk = if letstmt.mutable { "mut " } else { "" };
+            let ty = letstmt
+                .type_ann
+                .as_ref()
+                .map(|t| format!(": {}", type_expr_to_rust(t)))
+                .unwrap_or_default();
+            let val = expr_to_rust(&letstmt.value);
+            format!("{pad}let {mutk}{}{ty} = {val};\n", letstmt.name.name)
+        }
+        Statement::If(ifexpr) => generate_if_rust(ifexpr, indent),
+        Statement::For(forstmt) => generate_for_rust(forstmt, indent),
+        Statement::While(whilestmt) => generate_while_rust(whilestmt, indent),
+        Statement::Match(matchexpr) => generate_match_rust(matchexpr, indent),
+        Statement::Return(Some(expr)) => format!("{pad}return {};\n", expr_to_rust(expr)),
+        Statement::Return(None) => format!("{pad}return;\n"),
+        Statement::ExprStmt(expr) => format!("{pad}{};\n", expr_to_rust(expr)),
+        Statement::Assign(assign) => {
+            format!(
+                "{pad}{} = {};\n",
+                expr_to_rust(&assign.target),
+                expr_to_rust(&assign.value)
+            )
+        }
+        // Declarative statements — not handled here (handled by flow codegen)
+        _ => String::new(),
+    }
+}
+
+fn generate_fn_rust(fndef: &FnDef, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let vis = if fndef.is_pub { "pub " } else { "" };
+    let asynck = if fndef.is_async { "async " } else { "" };
+    let params: Vec<String> = fndef
+        .params
+        .iter()
+        .map(|p| format!("{}: {}", p.name.name, type_expr_to_rust(&p.type_ann)))
+        .collect();
+    let ret = fndef
+        .return_type
+        .as_ref()
+        .map(|t| format!(" -> {}", type_expr_to_rust(t)))
+        .unwrap_or_default();
+
+    let mut out = format!(
+        "{pad}{vis}{asynck}fn {}({}){ret} {{\n",
+        sanitize_ident(&fndef.name.name),
+        params.join(", ")
+    );
+    out.push_str(&generate_block_rust(&fndef.body, indent + 1));
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_struct_rust(sdef: &StructDef, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let vis = if sdef.is_pub { "pub " } else { "" };
+    let mut out = format!(
+        "{pad}#[derive(Debug, Clone)]\n{pad}{vis}struct {} {{\n",
+        sanitize_ident(&sdef.name.name)
+    );
+    for field in &sdef.fields {
+        let fvis = if field.is_pub { "pub " } else { "" };
+        out.push_str(&format!(
+            "{pad}    {fvis}{}: {},\n",
+            sanitize_ident(&field.name.name),
+            type_expr_to_rust(&field.type_ann)
+        ));
+    }
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_enum_rust(edef: &EnumDef, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let vis = if edef.is_pub { "pub " } else { "" };
+    let mut out = format!(
+        "{pad}#[derive(Debug, Clone)]\n{pad}{vis}enum {} {{\n",
+        sanitize_ident(&edef.name.name)
+    );
+    for variant in &edef.variants {
+        if variant.fields.is_empty() {
+            out.push_str(&format!("{pad}    {},\n", sanitize_ident(&variant.name.name)));
+        } else {
+            let fields: Vec<String> = variant.fields.iter().map(type_expr_to_rust).collect();
+            out.push_str(&format!(
+                "{pad}    {}({}),\n",
+                sanitize_ident(&variant.name.name),
+                fields.join(", ")
+            ));
+        }
+    }
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_if_rust(ifexpr: &IfExpr, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let mut out = format!(
+        "{pad}if {} {{\n",
+        expr_to_rust(&ifexpr.condition)
+    );
+    out.push_str(&generate_block_rust(&ifexpr.then_body, indent + 1));
+    out.push_str(&format!("{pad}}}"));
+
+    for (cond, body) in &ifexpr.else_ifs {
+        out.push_str(&format!(" else if {} {{\n", expr_to_rust(cond)));
+        out.push_str(&generate_block_rust(body, indent + 1));
+        out.push_str(&format!("{pad}}}"));
+    }
+
+    if let Some(ref else_body) = ifexpr.else_body {
+        out.push_str(" else {\n");
+        out.push_str(&generate_block_rust(else_body, indent + 1));
+        out.push_str(&format!("{pad}}}"));
+    }
+    out.push('\n');
+    out
+}
+
+fn generate_for_rust(forstmt: &ForStmt, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let mut out = format!(
+        "{pad}for {} in {} {{\n",
+        forstmt.binding.name,
+        expr_to_rust(&forstmt.iterable)
+    );
+    out.push_str(&generate_block_rust(&forstmt.body, indent + 1));
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_while_rust(whilestmt: &WhileStmt, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let mut out = format!(
+        "{pad}while {} {{\n",
+        expr_to_rust(&whilestmt.condition)
+    );
+    out.push_str(&generate_block_rust(&whilestmt.body, indent + 1));
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_match_rust(matchexpr: &MatchExpr, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let mut out = format!(
+        "{pad}match {} {{\n",
+        expr_to_rust(&matchexpr.subject)
+    );
+    for arm in &matchexpr.arms {
+        out.push_str(&format!(
+            "{pad}    {} => {{\n",
+            pattern_to_rust(&arm.pattern)
+        ));
+        out.push_str(&generate_block_rust(&arm.body, indent + 2));
+        out.push_str(&format!("{pad}    }}\n"));
+    }
+    out.push_str(&format!("{pad}}}\n"));
+    out
+}
+
+fn generate_block_rust(block: &Block, indent: usize) -> String {
+    let pad = "    ".repeat(indent);
+    let mut out = String::new();
+    for (i, stmt) in block.stmts.iter().enumerate() {
+        let is_last = i == block.stmts.len() - 1;
+        match stmt {
+            BlockStmt::Let(letstmt) => {
+                let mutk = if letstmt.mutable { "mut " } else { "" };
+                let ty = letstmt
+                    .type_ann
+                    .as_ref()
+                    .map(|t| format!(": {}", type_expr_to_rust(t)))
+                    .unwrap_or_default();
+                let val = expr_to_rust(&letstmt.value);
+                out.push_str(&format!("{pad}let {mutk}{}{ty} = {val};\n", letstmt.name.name));
+            }
+            BlockStmt::Assign(assign) => {
+                out.push_str(&format!(
+                    "{pad}{} = {};\n",
+                    expr_to_rust(&assign.target),
+                    expr_to_rust(&assign.value)
+                ));
+            }
+            BlockStmt::Expr(expr) => {
+                if is_last {
+                    // Last expression in block — implicit return (no semicolon)
+                    out.push_str(&format!("{pad}{}\n", expr_to_rust(expr)));
+                } else {
+                    out.push_str(&format!("{pad}{};\n", expr_to_rust(expr)));
+                }
+            }
+            BlockStmt::If(ifexpr) => out.push_str(&generate_if_rust(ifexpr, indent)),
+            BlockStmt::For(forstmt) => out.push_str(&generate_for_rust(forstmt, indent)),
+            BlockStmt::While(whilestmt) => out.push_str(&generate_while_rust(whilestmt, indent)),
+            BlockStmt::Match(matchexpr) => out.push_str(&generate_match_rust(matchexpr, indent)),
+            BlockStmt::Return(Some(expr)) => {
+                out.push_str(&format!("{pad}return {};\n", expr_to_rust(expr)));
+            }
+            BlockStmt::Return(None) => out.push_str(&format!("{pad}return;\n")),
+            BlockStmt::Break => out.push_str(&format!("{pad}break;\n")),
+            BlockStmt::Continue => out.push_str(&format!("{pad}continue;\n")),
+        }
+    }
+    out
+}
+
+fn type_expr_to_rust(ty: &TypeExpr) -> String {
+    match ty {
+        TypeExpr::Named(id) => match id.name.as_str() {
+            "text" | "string" => "String".to_owned(),
+            "number" | "real" | "float" => "f64".to_owned(),
+            "integer" | "int" => "i64".to_owned(),
+            "bool" | "boolean" => "bool".to_owned(),
+            "bytes" => "Vec<u8>".to_owned(),
+            other => sanitize_ident(other),
+        },
+        TypeExpr::Generic(name, args) => {
+            let args_str: Vec<String> = args.iter().map(type_expr_to_rust).collect();
+            let container = match name.name.as_str() {
+                "list" | "vec" | "array" => "Vec",
+                "map" | "hashmap" => "HashMap",
+                "set" | "hashset" => "HashSet",
+                "option" | "maybe" => "Option",
+                "result" => "Result",
+                other => other,
+            };
+            format!("{container}<{}>", args_str.join(", "))
+        }
+        TypeExpr::Function { params, ret } => {
+            let params_str: Vec<String> = params.iter().map(type_expr_to_rust).collect();
+            format!("fn({}) -> {}", params_str.join(", "), type_expr_to_rust(ret))
+        }
+        TypeExpr::Tuple(types) => {
+            let inner: Vec<String> = types.iter().map(type_expr_to_rust).collect();
+            format!("({})", inner.join(", "))
+        }
+        TypeExpr::Ref { mutable, inner } => {
+            if *mutable {
+                format!("&mut {}", type_expr_to_rust(inner))
+            } else {
+                format!("&{}", type_expr_to_rust(inner))
+            }
+        }
+        TypeExpr::Unit => "()".to_owned(),
+    }
+}
+
+pub fn expr_to_rust(expr: &Expr) -> String {
+    match expr {
+        Expr::Ident(id) => sanitize_ident(&id.name),
+        Expr::Literal(Literal::Integer(n)) => n.to_string(),
+        Expr::Literal(Literal::Number(f)) => {
+            let s = f.to_string();
+            if s.contains('.') { s } else { format!("{s}.0") }
+        }
+        Expr::Literal(Literal::Text(s)) => format!("{s:?}"),
+        Expr::Literal(Literal::Bool(b)) => b.to_string(),
+        Expr::Literal(Literal::None) => "None".to_owned(),
+        Expr::FieldAccess(base, field) => {
+            format!("{}.{}", expr_to_rust(base), sanitize_ident(&field.name))
+        }
+        Expr::BinaryOp(left, op, right) => {
+            let op_str = match op {
+                BinOp::Add => "+",
+                BinOp::Sub => "-",
+                BinOp::Mul => "*",
+                BinOp::Div => "/",
+                BinOp::Mod => "%",
+                BinOp::And => "&&",
+                BinOp::Or => "||",
+                BinOp::Gt => ">",
+                BinOp::Lt => "<",
+                BinOp::Gte => ">=",
+                BinOp::Lte => "<=",
+                BinOp::Eq => "==",
+                BinOp::Neq => "!=",
+                BinOp::BitAnd => "&",
+                BinOp::BitOr => "|",
+            };
+            format!("({} {op_str} {})", expr_to_rust(left), expr_to_rust(right))
+        }
+        Expr::Call(call) => {
+            let args: Vec<String> = call.args.iter().map(expr_to_rust).collect();
+            format!("{}({})", sanitize_ident(&call.callee.name), args.join(", "))
+        }
+        Expr::UnaryOp(op, inner) => {
+            let op_str = match op {
+                UnaryOp::Not => "!",
+                UnaryOp::Neg => "-",
+                UnaryOp::Ref => "&",
+                UnaryOp::RefMut => "&mut ",
+            };
+            format!("{op_str}{}", expr_to_rust(inner))
+        }
+        Expr::Index(base, idx) => format!("{}[{}]", expr_to_rust(base), expr_to_rust(idx)),
+        Expr::MethodCall(obj, method, args) => {
+            let args_str: Vec<String> = args.iter().map(expr_to_rust).collect();
+            format!(
+                "{}.{}({})",
+                expr_to_rust(obj),
+                sanitize_ident(&method.name),
+                args_str.join(", ")
+            )
+        }
+        Expr::Array(items) => {
+            let inner: Vec<String> = items.iter().map(expr_to_rust).collect();
+            format!("vec![{}]", inner.join(", "))
+        }
+        Expr::TupleExpr(items) => {
+            let inner: Vec<String> = items.iter().map(expr_to_rust).collect();
+            format!("({})", inner.join(", "))
+        }
+        Expr::Await(inner) => format!("{}.await", expr_to_rust(inner)),
+        Expr::Cast(inner, ty) => format!("({} as {})", expr_to_rust(inner), type_expr_to_rust(ty)),
+        Expr::IfExpr(ifexpr) => generate_if_rust(ifexpr, 0),
+        Expr::MatchExpr(matchexpr) => generate_match_rust(matchexpr, 0),
+        Expr::Block(block) => {
+            let mut out = "{\n".to_owned();
+            out.push_str(&generate_block_rust(block, 1));
+            out.push('}');
+            out
+        }
+        Expr::Closure(params, body) => {
+            let params_str: Vec<String> = params
+                .iter()
+                .map(|p| format!("{}: {}", p.name.name, type_expr_to_rust(&p.type_ann)))
+                .collect();
+            format!("|{}| {}", params_str.join(", "), expr_to_rust(body))
+        }
+    }
+}
+
+fn pattern_to_rust(pat: &Pattern) -> String {
+    match pat {
+        Pattern::Wildcard => "_".to_owned(),
+        Pattern::Literal(Literal::Integer(n)) => n.to_string(),
+        Pattern::Literal(Literal::Number(f)) => f.to_string(),
+        Pattern::Literal(Literal::Text(s)) => format!("{s:?}"),
+        Pattern::Literal(Literal::Bool(b)) => b.to_string(),
+        Pattern::Literal(Literal::None) => "None".to_owned(),
+        Pattern::Binding(id) => sanitize_ident(&id.name),
+        Pattern::Variant(name, sub) => {
+            if sub.is_empty() {
+                sanitize_ident(&name.name)
+            } else {
+                let inner: Vec<String> = sub.iter().map(pattern_to_rust).collect();
+                format!("{}({})", sanitize_ident(&name.name), inner.join(", "))
+            }
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy, PlanNode};
+    use nom_ast::{
+        GraphQueryExpr, GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, NomRef, Span,
+    };
+    use nom_planner::{
+        AgentMetadataPlan, AgentSupervisionPlan, CompositionPlan, ConcurrencyStrategy, FlowPlan,
+        GraphConstraintPlan, GraphEdgePlan, GraphFieldPlan, GraphMetadataPlan, GraphNodePlan,
+        GraphQueryParamPlan, GraphQueryPlan, MemoryStrategy, PlanNode,
+    };
 
     fn sample_plan() -> CompositionPlan {
         CompositionPlan {
             source_path: None,
             flows: vec![FlowPlan {
                 name: "register".to_owned(),
+                classifier: "flow".to_owned(),
+                agent: None,
+                graph: None,
                 nodes: vec![
                     PlanNode {
                         id: 0,
@@ -745,10 +2718,63 @@ mod tests {
                 branches: vec![],
                 memory_strategy: MemoryStrategy::Heap,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
                 effect_summary: vec!["cpu".to_owned(), "database".to_owned()],
+                imperative_stmts: vec![],
             }],
             nomiz: "{}".to_owned(),
         }
+    }
+
+    fn query_ref(name: &str) -> GraphQueryExpr {
+        GraphQueryExpr::Ref(NomRef {
+            word: Identifier::new(name, Span::default()),
+            variant: None,
+            span: Span::default(),
+        })
+    }
+
+    fn query_variant_ref(name: &str, variant: &str) -> GraphQueryExpr {
+        GraphQueryExpr::Ref(NomRef {
+            word: Identifier::new(name, Span::default()),
+            variant: Some(Identifier::new(variant, Span::default())),
+            span: Span::default(),
+        })
+    }
+
+    fn query_traverse(
+        source: GraphQueryExpr,
+        edge: &str,
+        target: GraphQueryExpr,
+    ) -> GraphQueryExpr {
+        GraphQueryExpr::Traverse(GraphTraverseExpr {
+            source: Box::new(source),
+            edge: NomRef {
+                word: Identifier::new(edge, Span::default()),
+                variant: None,
+                span: Span::default(),
+            },
+            target: Box::new(target),
+            span: Span::default(),
+        })
+    }
+
+    fn query_path(parts: &[&str]) -> GraphQueryExpr {
+        let mut expr = query_ref(parts[0]);
+        let mut index = 1usize;
+        while index + 1 < parts.len() {
+            expr = query_traverse(expr, parts[index], query_ref(parts[index + 1]));
+            index += 2;
+        }
+        expr
+    }
+
+    fn query_set(op: GraphSetOp, operands: Vec<GraphQueryExpr>) -> GraphQueryExpr {
+        GraphQueryExpr::SetOp(GraphSetExpr {
+            op,
+            operands,
+            span: Span::default(),
+        })
     }
 
     #[test]
@@ -767,6 +2793,9 @@ mod tests {
             source_path: None,
             flows: vec![FlowPlan {
                 name: "compute".to_owned(),
+                classifier: "flow".to_owned(),
+                agent: None,
+                graph: None,
                 nodes: vec![PlanNode {
                     id: 0,
                     word: "transform".to_owned(),
@@ -781,14 +2810,22 @@ mod tests {
                 branches: vec![],
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
                 effect_summary: vec![],
+                imperative_stmts: vec![],
             }],
             nomiz: "{}".to_owned(),
         };
         let opts = CodegenOptions::default();
         let out = generate(&plan, &opts).unwrap();
-        assert!(out.rust_source.contains("let x = 42;"), "should contain real impl body");
-        assert!(out.rust_source.contains("Implementation from:"), "should have provenance comment");
+        assert!(
+            out.rust_source.contains("let x = 42;"),
+            "should contain real impl body"
+        );
+        assert!(
+            out.rust_source.contains("Implementation from:"),
+            "should have provenance comment"
+        );
     }
 
     #[test]
@@ -797,6 +2834,9 @@ mod tests {
             source_path: None,
             flows: vec![FlowPlan {
                 name: "pyflow".to_owned(),
+                classifier: "flow".to_owned(),
+                agent: None,
+                graph: None,
                 nodes: vec![PlanNode {
                     id: 0,
                     word: "transform".to_owned(),
@@ -811,14 +2851,22 @@ mod tests {
                 branches: vec![],
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
                 effect_summary: vec![],
+                imperative_stmts: vec![],
             }],
             nomiz: "{}".to_owned(),
         };
         let opts = CodegenOptions::default();
         let out = generate(&plan, &opts).unwrap();
-        assert!(out.rust_source.contains("TODO: translate from python"), "should have translate TODO");
-        assert!(out.rust_source.contains("// return input * 2"), "should have original body as comment");
+        assert!(
+            out.rust_source.contains("TODO: translate from python"),
+            "should have translate TODO"
+        );
+        assert!(
+            out.rust_source.contains("// return input * 2"),
+            "should have original body as comment"
+        );
     }
 
     #[test]
@@ -831,5 +2879,1020 @@ mod tests {
         assert_eq!(nom_type_to_rust("bytes"), "Vec<u8>");
         assert_eq!(nom_type_to_rust("unit"), "()");
         assert_eq!(nom_type_to_rust("bool"), "bool");
+    }
+
+    #[test]
+    fn generates_agent_metadata_and_runtime_dispatcher() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "monitor__receive".to_owned(),
+                classifier: "agent".to_owned(),
+                agent: Some(AgentMetadataPlan {
+                    capabilities: vec!["network".to_owned(), "observe".to_owned()],
+                    state: Some("active".to_owned()),
+                    supervision: Some(AgentSupervisionPlan {
+                        strategy: "restart_on_failure".to_owned(),
+                        params: vec![("max_retries".to_owned(), "3".to_owned())],
+                    }),
+                }),
+                graph: None,
+                nodes: vec![PlanNode {
+                    id: 0,
+                    word: "hash".to_owned(),
+                    variant: Some("argon2".to_owned()),
+                    input_type: Some("bytes".to_owned()),
+                    output_type: Some("hash".to_owned()),
+                    effects: vec!["cpu".to_owned()],
+                    impl_body: None,
+                    impl_language: None,
+                }],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Heap,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec!["cpu".to_owned()],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(
+            out.rust_source
+                .contains("pub const DECLARATION_KIND: &str = \"agent\";")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub const AGENT_CAPABILITIES: &[&str]")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub const AGENT_INITIAL_STATE: &str = \"active\";")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub const AGENT_SUPERVISION_STRATEGY: &str = \"restart_on_failure\";")
+        );
+        assert!(
+            out.rust_source
+                .contains("match monitor__receive::run(Vec::new())")
+        );
+        assert!(out.rust_source.contains("if attempts > 3"));
+    }
+
+    #[test]
+    fn generates_graph_schema_and_constraints() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "social".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![
+                            GraphFieldPlan {
+                                name: "name".to_owned(),
+                                ty: Some("text".to_owned()),
+                            },
+                            GraphFieldPlan {
+                                name: "age".to_owned(),
+                                ty: Some("number".to_owned()),
+                            },
+                        ],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![
+                        GraphConstraintPlan {
+                            name: "no_self_follow".to_owned(),
+                            expr: Expr::BinaryOp(
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "follows",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("from", nom_ast::Span::default()),
+                                )),
+                                nom_ast::BinOp::Neq,
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "follows",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("to", nom_ast::Span::default()),
+                                )),
+                            ),
+                        },
+                        GraphConstraintPlan {
+                            name: "non_negative_age".to_owned(),
+                            expr: Expr::BinaryOp(
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "user",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("age", nom_ast::Span::default()),
+                                )),
+                                nom_ast::BinOp::Gte,
+                                Box::new(Expr::Literal(Literal::Integer(0))),
+                            ),
+                        },
+                    ],
+                    queries: vec![GraphQueryPlan {
+                        name: "friends_of".to_owned(),
+                        params: vec![GraphQueryParamPlan {
+                            name: "user".to_owned(),
+                            ty: None,
+                        }],
+                        expr: query_path(&["user", "follows", "user"]),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(
+            out.rust_source
+                .contains("pub const DECLARATION_KIND: &str = \"graph\";")
+        );
+        assert!(out.rust_source.contains("pub struct GraphNodeSchema"));
+        assert!(
+            out.rust_source
+                .contains("pub const GRAPH_NODES: &[GraphNodeSchema]")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub const GRAPH_EDGES: &[GraphEdgeSchema]")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub const GRAPH_CONSTRAINTS: &[&str]")
+        );
+        assert!(out.rust_source.contains("pub struct UserNode"));
+        assert!(out.rust_source.contains("pub struct FollowsEdge"));
+        assert!(out.rust_source.contains("pub struct GraphStore"));
+        assert!(out.rust_source.contains("pub id: String"));
+        assert!(
+            out.rust_source
+                .contains("pub fn add_user(&mut self, node: UserNode) -> Result<usize, String>")
+        );
+        assert!(
+            out.rust_source
+                .contains("pub fn add_follows(&mut self, edge: FollowsEdge) -> Result<(), String>")
+        );
+        assert!(
+            out.rust_source.contains(
+                "pub fn query_friends_of<'a>(&'a self, user: &'a str) -> Vec<&'a UserNode>"
+            )
+        );
+        assert!(
+            out.rust_source
+                .contains("pub fn neighbors_ids<'a>(&'a self, from: &'a str) -> Vec<&'a str>")
+        );
+        assert!(out.rust_source.contains(
+            "pub fn bfs_ids<'a>(&'a self, starts: &[&'a str], depth: usize) -> Vec<&'a str>"
+        ));
+        assert!(out.rust_source.contains(
+            "pub fn dfs_ids<'a>(&'a self, starts: &[&'a str], depth: usize) -> Vec<&'a str>"
+        ));
+        assert!(
+            out.rust_source
+                .contains("pub fn shortest_path_ids<'a>(&'a self, source: &'a str, target: &'a str, max_depth: usize) -> Option<Vec<&'a str>>")
+        );
+        assert!(out.rust_source.contains("query_ids_"));
+        assert!(out.rust_source.contains("self.follows_items"));
+        assert!(
+            out.rust_source
+                .contains("fn validate_constraint_no_self_follow")
+        );
+        assert!(out.rust_source.contains("follows.from != follows.to"));
+        assert!(
+            out.rust_source
+                .contains("fn validate_constraint_non_negative_age")
+        );
+        assert!(out.rust_source.contains("user.age >= 0"));
+        assert!(
+            out.rust_source
+                .contains("fn validate_user_constraints(user: &UserNode) -> Result<(), String>")
+        );
+        assert!(out.rust_source.contains(
+            "fn validate_follows_constraints(follows: &FollowsEdge) -> Result<(), String>"
+        ));
+    }
+
+    #[test]
+    fn generates_multi_parameter_graph_query() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "path_between".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_path(&["a", "follows", "b"]),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains(
+            "pub fn query_path_between<'a>(&'a self, a: &'a str, b: &'a str) -> Vec<&'a UserNode>"
+        ));
+        assert!(out.rust_source.contains(".contains(edge.to.as_str())"));
+    }
+
+    #[test]
+    fn generates_branch_intersection_graph_query() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "common_friends".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_set(
+                            GraphSetOp::Intersection,
+                            vec![
+                                query_path(&["a", "follows", "user"]),
+                                query_path(&["b", "follows", "user"]),
+                            ],
+                        ),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains(
+            "pub fn query_common_friends<'a>(&'a self, a: &'a str, b: &'a str) -> Vec<&'a UserNode>"
+        ));
+        assert!(out.rust_source.contains("self.intersect_id_sets(&["));
+    }
+
+    #[test]
+    fn generates_branch_union_graph_query() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "combined_friends".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_set(
+                            GraphSetOp::Union,
+                            vec![
+                                query_path(&["a", "follows", "user"]),
+                                query_path(&["b", "follows", "user"]),
+                            ],
+                        ),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(
+            out.rust_source
+                .contains("pub fn query_combined_friends<'a>(&'a self, a: &'a str, b: &'a str) -> Vec<&'a UserNode>")
+        );
+        assert!(out.rust_source.contains("self.union_id_sets(&["));
+    }
+
+    #[test]
+    fn generates_branch_query_with_suffix() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![
+                        GraphNodePlan {
+                            name: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphNodePlan {
+                            name: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    edges: vec![
+                        GraphEdgePlan {
+                            name: "follows".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphEdgePlan {
+                            name: "authored".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "common_posts".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_traverse(
+                            query_set(
+                                GraphSetOp::Intersection,
+                                vec![
+                                    query_path(&["a", "follows", "user"]),
+                                    query_path(&["b", "follows", "user"]),
+                                ],
+                            ),
+                            "authored",
+                            query_ref("post"),
+                        ),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains(
+            "pub fn query_common_posts<'a>(&'a self, a: &'a str, b: &'a str) -> Vec<&'a PostNode>"
+        ));
+        assert!(out.rust_source.contains("self.intersect_id_sets(&["));
+        assert!(out.rust_source.contains("for edge in &self.authored_items"));
+    }
+
+    #[test]
+    fn generates_nested_branch_graph_query() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "nested_common".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "c".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_set(
+                            GraphSetOp::Intersection,
+                            vec![
+                                query_path(&["a", "follows", "user"]),
+                                query_set(
+                                    GraphSetOp::Intersection,
+                                    vec![
+                                        query_path(&["b", "follows", "user"]),
+                                        query_path(&["c", "follows", "user"]),
+                                    ],
+                                ),
+                            ],
+                        ),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(
+            out.rust_source
+                .contains("pub fn query_nested_common<'a>(&'a self, a: &'a str, b: &'a str, c: &'a str) -> Vec<&'a UserNode>")
+        );
+        let intersect_count = out.rust_source.matches("self.intersect_id_sets(&[").count();
+        assert!(intersect_count >= 2);
+    }
+
+    #[test]
+    fn generates_difference_graph_query_with_suffix() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "network".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![
+                        GraphNodePlan {
+                            name: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphNodePlan {
+                            name: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    edges: vec![
+                        GraphEdgePlan {
+                            name: "follows".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphEdgePlan {
+                            name: "authored".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "visible_posts".to_owned(),
+                        params: vec![
+                            GraphQueryParamPlan {
+                                name: "a".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                            GraphQueryParamPlan {
+                                name: "b".to_owned(),
+                                ty: Some("user".to_owned()),
+                            },
+                        ],
+                        expr: query_traverse(
+                            query_set(
+                                GraphSetOp::Difference,
+                                vec![
+                                    query_set(
+                                        GraphSetOp::Union,
+                                        vec![
+                                            query_path(&["a", "follows", "user"]),
+                                            query_path(&["b", "follows", "user"]),
+                                        ],
+                                    ),
+                                    query_ref("a"),
+                                ],
+                            ),
+                            "authored",
+                            query_ref("post"),
+                        ),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains(
+            "pub fn query_visible_posts<'a>(&'a self, a: &'a str, b: &'a str) -> Vec<&'a PostNode>"
+        ));
+        assert!(out.rust_source.contains("self.difference_id_sets(&"));
+        assert!(out.rust_source.contains("for edge in &self.authored_items"));
+    }
+
+    #[test]
+    fn unsupported_graph_constraint_fails_codegen() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "broken_graph".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![GraphConstraintPlan {
+                        name: "bad_constraint".to_owned(),
+                        expr: Expr::FieldAccess(
+                            Box::new(Expr::Literal(Literal::Text("not_a_node".to_owned()))),
+                            nom_ast::Identifier::new("from", nom_ast::Span::default()),
+                        ),
+                    }],
+                    queries: vec![],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let err = generate(&plan, &CodegenOptions::default()).unwrap_err();
+        assert!(
+            matches!(err, CodegenError::UnsupportedGraphConstraint(name) if name == "bad_constraint")
+        );
+    }
+
+    #[test]
+    fn unsupported_graph_query_fails_codegen() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "broken_query_graph".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![],
+                    queries: vec![GraphQueryPlan {
+                        name: "broken_query".to_owned(),
+                        params: vec![GraphQueryParamPlan {
+                            name: "user".to_owned(),
+                            ty: Some("user".to_owned()),
+                        }],
+                        expr: query_variant_ref("user", "legacy"),
+                    }],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let err = generate(&plan, &CodegenOptions::default()).unwrap_err();
+        assert!(matches!(err, CodegenError::UnsupportedGraphQuery(name) if name == "broken_query"));
+    }
+
+    #[test]
+    fn generates_cross_entity_graph_constraint_validator() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "cross_entity_graph".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![],
+                    }],
+                    constraints: vec![GraphConstraintPlan {
+                        name: "edge_references_known_user".to_owned(),
+                        expr: Expr::BinaryOp(
+                            Box::new(Expr::FieldAccess(
+                                Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                    "follows",
+                                    nom_ast::Span::default(),
+                                ))),
+                                nom_ast::Identifier::new("from", nom_ast::Span::default()),
+                            )),
+                            nom_ast::BinOp::Eq,
+                            Box::new(Expr::FieldAccess(
+                                Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                    "user",
+                                    nom_ast::Span::default(),
+                                ))),
+                                nom_ast::Identifier::new("id", nom_ast::Span::default()),
+                            )),
+                        ),
+                    }],
+                    queries: vec![],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains(
+            "fn validate_constraint_edge_references_known_user(follows: &FollowsEdge, user: &UserNode) -> bool"
+        ));
+        assert!(out.rust_source.contains("follows.from == user.id"));
+        assert!(
+            out.rust_source
+                .contains("pub fn validate_graph_constraints(&self) -> Result<(), String>")
+        );
+        assert!(
+            out.rust_source
+                .contains("std::collections::BTreeMap<String, Vec<&UserNode>>")
+        );
+        assert!(out.rust_source.contains("for user in &self.user_items"));
+        assert!(
+            out.rust_source
+                .contains(".entry(format!(\"{:?}\", user.id))")
+        );
+        assert!(
+            out.rust_source
+                .contains("for follows in &self.follows_items")
+        );
+        assert!(out.rust_source.contains("if let Some(matches) = "));
+        assert!(out.rust_source.contains("follows_join_key_"));
+        assert!(
+            out.rust_source
+                .contains("validate_constraint_edge_references_known_user(follows, user)")
+        );
+    }
+
+    #[test]
+    fn pushes_down_complex_cross_entity_constraint_predicates() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "filtered_graph".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![GraphNodePlan {
+                        name: "user".to_owned(),
+                        fields: vec![GraphFieldPlan {
+                            name: "age".to_owned(),
+                            ty: Some("number".to_owned()),
+                        }],
+                    }],
+                    edges: vec![GraphEdgePlan {
+                        name: "follows".to_owned(),
+                        from_type: "user".to_owned(),
+                        to_type: "user".to_owned(),
+                        fields: vec![GraphFieldPlan {
+                            name: "weight".to_owned(),
+                            ty: Some("number".to_owned()),
+                        }],
+                    }],
+                    constraints: vec![GraphConstraintPlan {
+                        name: "eligible_follow".to_owned(),
+                        expr: Expr::BinaryOp(
+                            Box::new(Expr::BinaryOp(
+                                Box::new(Expr::BinaryOp(
+                                    Box::new(Expr::FieldAccess(
+                                        Box::new(Expr::Ident(Identifier::new(
+                                            "follows",
+                                            Span::default(),
+                                        ))),
+                                        Identifier::new("from", Span::default()),
+                                    )),
+                                    BinOp::Eq,
+                                    Box::new(Expr::FieldAccess(
+                                        Box::new(Expr::Ident(Identifier::new(
+                                            "user",
+                                            Span::default(),
+                                        ))),
+                                        Identifier::new("id", Span::default()),
+                                    )),
+                                )),
+                                BinOp::And,
+                                Box::new(Expr::BinaryOp(
+                                    Box::new(Expr::FieldAccess(
+                                        Box::new(Expr::Ident(Identifier::new(
+                                            "user",
+                                            Span::default(),
+                                        ))),
+                                        Identifier::new("age", Span::default()),
+                                    )),
+                                    BinOp::Gte,
+                                    Box::new(Expr::Literal(Literal::Integer(18))),
+                                )),
+                            )),
+                            BinOp::And,
+                            Box::new(Expr::BinaryOp(
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(Identifier::new("user", Span::default()))),
+                                    Identifier::new("age", Span::default()),
+                                )),
+                                BinOp::Gt,
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(Identifier::new(
+                                        "follows",
+                                        Span::default(),
+                                    ))),
+                                    Identifier::new("weight", Span::default()),
+                                )),
+                            )),
+                        ),
+                    }],
+                    queries: vec![],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(out.rust_source.contains("if !(user.age >= 18)"));
+        assert!(out.rust_source.contains("if !(user.age > follows.weight)"));
+        assert!(
+            out.rust_source
+                .contains("validate_constraint_eligible_follow(follows, user)")
+        );
+    }
+
+    #[test]
+    fn generates_multi_hop_cross_entity_graph_constraint_validator() {
+        let plan = CompositionPlan {
+            source_path: None,
+            flows: vec![FlowPlan {
+                name: "multi_join_graph".to_owned(),
+                classifier: "graph".to_owned(),
+                agent: None,
+                graph: Some(GraphMetadataPlan {
+                    nodes: vec![
+                        GraphNodePlan {
+                            name: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphNodePlan {
+                            name: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    edges: vec![
+                        GraphEdgePlan {
+                            name: "follows".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "user".to_owned(),
+                            fields: vec![],
+                        },
+                        GraphEdgePlan {
+                            name: "authored".to_owned(),
+                            from_type: "user".to_owned(),
+                            to_type: "post".to_owned(),
+                            fields: vec![],
+                        },
+                    ],
+                    constraints: vec![GraphConstraintPlan {
+                        name: "followed_user_authored_post".to_owned(),
+                        expr: Expr::BinaryOp(
+                            Box::new(Expr::BinaryOp(
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "follows",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("to", nom_ast::Span::default()),
+                                )),
+                                nom_ast::BinOp::Eq,
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "authored",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("from", nom_ast::Span::default()),
+                                )),
+                            )),
+                            nom_ast::BinOp::And,
+                            Box::new(Expr::BinaryOp(
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "user",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("id", nom_ast::Span::default()),
+                                )),
+                                nom_ast::BinOp::Eq,
+                                Box::new(Expr::FieldAccess(
+                                    Box::new(Expr::Ident(nom_ast::Identifier::new(
+                                        "authored",
+                                        nom_ast::Span::default(),
+                                    ))),
+                                    nom_ast::Identifier::new("from", nom_ast::Span::default()),
+                                )),
+                            )),
+                        ),
+                    }],
+                    queries: vec![],
+                }),
+                nodes: vec![],
+                edges: vec![],
+                branches: vec![],
+                memory_strategy: MemoryStrategy::Stack,
+                concurrency_strategy: ConcurrencyStrategy::Sequential,
+                qualifier: "once".to_owned(),
+                effect_summary: vec![],
+                imperative_stmts: vec![],
+            }],
+            nomiz: "{}".to_owned(),
+        };
+
+        let out = generate(&plan, &CodegenOptions::default()).unwrap();
+        assert!(
+            out.rust_source
+                .contains("fn validate_constraint_followed_user_authored_post(")
+        );
+        assert!(out.rust_source.contains("authored: &AuthoredEdge"));
+        assert!(out.rust_source.contains("follows: &FollowsEdge"));
+        assert!(out.rust_source.contains("user: &UserNode"));
+        assert!(
+            out.rust_source
+                .contains("follows.to == authored.from && user.id == authored.from")
+        );
+        assert!(out.rust_source.contains("join_index_"));
+        assert!(
+            out.rust_source
+                .contains("for follows in &self.follows_items")
+        );
+        assert!(out.rust_source.contains("if let Some(matches) = "));
+        assert!(out.rust_source.contains("for user in &self.user_items"));
+        assert!(
+            out.rust_source
+                .contains("validate_constraint_followed_user_authored_post(")
+        );
+        assert!(out.rust_source.contains("authored"));
+        assert!(out.rust_source.contains("follows"));
+        assert!(out.rust_source.contains("user"));
     }
 }

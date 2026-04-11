@@ -120,6 +120,30 @@ pub enum Statement {
     AgentState(AgentStateStmt),
     /// schedule every 5m check_health
     AgentSchedule(AgentScheduleStmt),
+
+    // ── Imperative statements (general-purpose) ────────────────────────────
+    /// let x: type = value
+    Let(LetStmt),
+    /// x = value  (reassignment)
+    Assign(AssignStmt),
+    /// if/else expression
+    If(IfExpr),
+    /// for loop
+    For(ForStmt),
+    /// while loop
+    While(WhileStmt),
+    /// match expression
+    Match(MatchExpr),
+    /// return [expr]
+    Return(Option<Expr>),
+    /// fn name(params) -> type { body }
+    FnDef(FnDef),
+    /// struct Name { fields }
+    StructDef(StructDef),
+    /// enum Name { variants }
+    EnumDef(EnumDef),
+    /// Bare expression (function call, etc.)
+    ExprStmt(Expr),
 }
 
 /// need hash::argon2 where security>0.9
@@ -164,9 +188,37 @@ pub enum EffectModifier {
     Bad,
 }
 
+/// Flow qualifiers (inspired by Vietnamese aspect markers)
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum FlowQualifier {
+    /// Default: runs once, completes (Vietnamese: đã - completed)
+    Once,
+    /// Streaming: produces values over time (Vietnamese: đang - ongoing)
+    Stream,
+    /// Scheduled: runs at a future time or interval (Vietnamese: sẽ - prospective)
+    Scheduled,
+}
+
+impl Default for FlowQualifier {
+    fn default() -> Self {
+        Self::Once
+    }
+}
+
+impl FlowQualifier {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Once => "once",
+            Self::Stream => "stream",
+            Self::Scheduled => "scheduled",
+        }
+    }
+}
+
 /// flow request->hash->store->response
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct FlowStmt {
+    pub qualifier: FlowQualifier,
     pub chain: FlowChain,
     pub span: Span,
 }
@@ -200,6 +252,7 @@ pub struct BranchBlock {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BranchArm {
     pub condition: BranchCondition,
+    pub label: Option<String>,
     pub chain: FlowChain,
 }
 
@@ -314,8 +367,38 @@ pub struct GraphEdgeStmt {
 pub struct GraphQueryStmt {
     pub name: Identifier,
     pub params: Vec<TypedParam>,
-    pub expr: FlowChain,
+    pub expr: GraphQueryExpr,
     pub span: Span,
+}
+
+/// Graph query expressions form a recursive traversal/set-algebra tree.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum GraphQueryExpr {
+    Ref(NomRef),
+    Traverse(GraphTraverseExpr),
+    SetOp(GraphSetExpr),
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphTraverseExpr {
+    pub source: Box<GraphQueryExpr>,
+    pub edge: NomRef,
+    pub target: Box<GraphQueryExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GraphSetExpr {
+    pub op: GraphSetOp,
+    pub operands: Vec<GraphQueryExpr>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum GraphSetOp {
+    Union,
+    Intersection,
+    Difference,
 }
 
 /// constraint no_self_follow = follows.from != follows.to
@@ -365,6 +448,172 @@ pub struct AgentScheduleStmt {
     pub span: Span,
 }
 
+// ── Type system ─────────────────────────────────────────────────────────────
+
+/// A type annotation: `text`, `number`, `list[text]`, `fn(a: text) -> number`
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum TypeExpr {
+    /// Simple named type: `text`, `number`, `bool`, `bytes`
+    Named(Identifier),
+    /// Generic type: `list[text]`, `map[text, number]`, `option[text]`
+    Generic(Identifier, Vec<TypeExpr>),
+    /// Function type: `fn(text, number) -> bool`
+    Function { params: Vec<TypeExpr>, ret: Box<TypeExpr> },
+    /// Tuple type: `(text, number)`
+    Tuple(Vec<TypeExpr>),
+    /// Reference type: `&text`, `&mut text`
+    Ref { mutable: bool, inner: Box<TypeExpr> },
+    /// The unit type: `()`
+    Unit,
+}
+
+// ── Imperative statements ───────────────────────────────────────────────────
+
+/// let x: text = "hello"
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct LetStmt {
+    pub name: Identifier,
+    pub mutable: bool,
+    pub type_ann: Option<TypeExpr>,
+    pub value: Expr,
+    pub span: Span,
+}
+
+/// x = new_value  (assignment to existing binding)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct AssignStmt {
+    pub target: Expr,
+    pub value: Expr,
+    pub span: Span,
+}
+
+/// if condition { ... } else if ... { ... } else { ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct IfExpr {
+    pub condition: Box<Expr>,
+    pub then_body: Block,
+    pub else_ifs: Vec<(Expr, Block)>,
+    pub else_body: Option<Block>,
+    pub span: Span,
+}
+
+/// for item in iterable { ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ForStmt {
+    pub binding: Identifier,
+    pub iterable: Expr,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// while condition { ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct WhileStmt {
+    pub condition: Expr,
+    pub body: Block,
+    pub span: Span,
+}
+
+/// match expr { pattern => body, ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchExpr {
+    pub subject: Box<Expr>,
+    pub arms: Vec<MatchArm>,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct MatchArm {
+    pub pattern: Pattern,
+    pub body: Block,
+}
+
+/// Pattern matching
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Pattern {
+    /// Wildcard: `_`
+    Wildcard,
+    /// Literal match: `42`, `"hello"`, `true`
+    Literal(Literal),
+    /// Binding: `x`
+    Binding(Identifier),
+    /// Variant: `Some(x)`, `Err(e)`
+    Variant(Identifier, Vec<Pattern>),
+}
+
+/// A block of statements (imperative body)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct Block {
+    pub stmts: Vec<BlockStmt>,
+    pub span: Span,
+}
+
+/// Statements that can appear inside a block
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum BlockStmt {
+    Let(LetStmt),
+    Assign(AssignStmt),
+    Expr(Expr),
+    If(IfExpr),
+    For(ForStmt),
+    While(WhileStmt),
+    Match(MatchExpr),
+    Return(Option<Expr>),
+    Break,
+    Continue,
+}
+
+/// fn name(param: type, ...) -> return_type { body }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FnDef {
+    pub name: Identifier,
+    pub params: Vec<FnParam>,
+    pub return_type: Option<TypeExpr>,
+    pub body: Block,
+    pub is_async: bool,
+    pub is_pub: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FnParam {
+    pub name: Identifier,
+    pub type_ann: TypeExpr,
+}
+
+/// struct Name { field: type, ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructDef {
+    pub name: Identifier,
+    pub fields: Vec<StructField>,
+    pub is_pub: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct StructField {
+    pub name: Identifier,
+    pub type_ann: TypeExpr,
+    pub is_pub: bool,
+}
+
+/// enum Name { Variant1, Variant2(type), ... }
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnumDef {
+    pub name: Identifier,
+    pub variants: Vec<EnumVariant>,
+    pub is_pub: bool,
+    pub span: Span,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EnumVariant {
+    pub name: Identifier,
+    pub fields: Vec<TypeExpr>,
+}
+
+// ── Expressions (extended) ──────────────────────────────────────────────────
+
 /// A function call: query(param1, param2)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CallExpr {
@@ -373,7 +622,7 @@ pub struct CallExpr {
     pub span: Span,
 }
 
-/// An expression (used in constraints, assertions, etc.)
+/// An expression (used in constraints, assertions, and imperative code)
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Expr {
     Ident(Identifier),
@@ -381,6 +630,36 @@ pub enum Expr {
     FieldAccess(Box<Expr>, Identifier),
     BinaryOp(Box<Expr>, BinOp, Box<Expr>),
     Call(CallExpr),
+    /// Unary operators: !expr, -expr
+    UnaryOp(UnaryOp, Box<Expr>),
+    /// Index: expr[index]
+    Index(Box<Expr>, Box<Expr>),
+    /// Method call: expr.method(args)
+    MethodCall(Box<Expr>, Identifier, Vec<Expr>),
+    /// If expression (returns a value)
+    IfExpr(Box<IfExpr>),
+    /// Match expression (returns a value)
+    MatchExpr(Box<MatchExpr>),
+    /// Block expression: { stmts; tail_expr }
+    Block(Box<Block>),
+    /// Closure: |params| body
+    Closure(Vec<FnParam>, Box<Expr>),
+    /// Array literal: [1, 2, 3]
+    Array(Vec<Expr>),
+    /// Tuple: (a, b, c)
+    TupleExpr(Vec<Expr>),
+    /// Await: expr.await
+    Await(Box<Expr>),
+    /// Type cast: expr as Type
+    Cast(Box<Expr>, Box<TypeExpr>),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+pub enum UnaryOp {
+    Not,
+    Neg,
+    Ref,
+    RefMut,
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -389,6 +668,7 @@ pub enum BinOp {
     Sub,
     Mul,
     Div,
+    Mod,
     And,
     Or,
     Gt,
@@ -397,6 +677,8 @@ pub enum BinOp {
     Lte,
     Eq,
     Neq,
+    BitAnd,
+    BitOr,
 }
 
 /// A literal value

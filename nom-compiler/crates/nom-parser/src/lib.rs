@@ -26,11 +26,14 @@
 
 use nom_ast::{
     AgentCapabilityStmt, AgentReceiveStmt, AgentScheduleStmt, AgentStateStmt, AgentSuperviseStmt,
-    BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier, CompareOp, Constraint,
-    ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt, Expr, FlowChain,
-    FlowStep, FlowStmt, GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryStmt,
-    Identifier, ImplementStmt, Literal, NeedStmt, NomRef, RequireStmt, SourceFile, Span,
-    Statement, TestAndStmt, TestGivenStmt, TestThenStmt, TestWhenStmt, TypedParam,
+    AssignStmt, Block, BlockStmt, BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier,
+    CompareOp, Constraint, ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt,
+    EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam, ForStmt,
+    GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
+    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplementStmt, LetStmt,
+    Literal, MatchArm, MatchExpr, NeedStmt, NomRef, Pattern, RequireStmt, SourceFile, Span,
+    Statement, StructDef, StructField, TestAndStmt, TestGivenStmt, TestThenStmt, TestWhenStmt,
+    TypeExpr, TypedParam, WhileStmt,
 };
 use nom_lexer::{SpannedToken, Token};
 use thiserror::Error;
@@ -53,11 +56,24 @@ type ParseResult<T> = Result<T, ParseError>;
 struct Parser {
     tokens: Vec<SpannedToken>,
     pos: usize,
+    source: Option<String>,
 }
 
 impl Parser {
     fn new(tokens: Vec<SpannedToken>) -> Self {
-        Self { tokens, pos: 0 }
+        Self {
+            tokens,
+            pos: 0,
+            source: None,
+        }
+    }
+
+    fn with_source(tokens: Vec<SpannedToken>, source: String) -> Self {
+        Self {
+            tokens,
+            pos: 0,
+            source: Some(source),
+        }
     }
 
     // ── Token navigation ─────────────────────────────────────────────────────
@@ -75,7 +91,10 @@ impl Parser {
     }
 
     fn peek_raw(&self) -> &Token {
-        self.tokens.get(self.pos).map(|t| &t.token).unwrap_or(&Token::Eof)
+        self.tokens
+            .get(self.pos)
+            .map(|t| &t.token)
+            .unwrap_or(&Token::Eof)
     }
 
     fn peek_span(&self) -> Span {
@@ -121,14 +140,22 @@ impl Parser {
                     // skip the Flow token
                     i += 1;
                     // skip whitespace tokens
-                    while i < self.tokens.len() && matches!(self.tokens[i].token, Token::Newline | Token::Comment(_)) {
+                    while i < self.tokens.len()
+                        && matches!(self.tokens[i].token, Token::Newline | Token::Comment(_))
+                    {
                         i += 1;
+                    }
+                    // flow::qualifier is always a flow STATEMENT, not a new declaration
+                    if i < self.tokens.len() && matches!(self.tokens[i].token, Token::ColCol) {
+                        return false;
                     }
                     // skip the identifier
                     if i < self.tokens.len() && matches!(&self.tokens[i].token, Token::Ident(_)) {
                         i += 1;
                         // skip whitespace
-                        while i < self.tokens.len() && matches!(self.tokens[i].token, Token::Newline | Token::Comment(_)) {
+                        while i < self.tokens.len()
+                            && matches!(self.tokens[i].token, Token::Newline | Token::Comment(_))
+                        {
                             i += 1;
                         }
                         // If next is Arrow, it's a flow STATEMENT (not a new declaration)
@@ -146,16 +173,22 @@ impl Parser {
     }
 
     fn consume_blanks(&mut self) {
-        while matches!(self.peek_raw(), Token::BlankLine | Token::Newline | Token::Comment(_)) {
+        while matches!(
+            self.peek_raw(),
+            Token::BlankLine | Token::Newline | Token::Comment(_)
+        ) {
             self.pos += 1;
         }
     }
 
     fn expect_ident(&mut self) -> ParseResult<Identifier> {
         self.skip_whitespace();
-        let st = self.tokens.get(self.pos).ok_or_else(|| ParseError::UnexpectedEof {
-            expected: "identifier".to_owned(),
-        })?;
+        let st = self
+            .tokens
+            .get(self.pos)
+            .ok_or_else(|| ParseError::UnexpectedEof {
+                expected: "identifier".to_owned(),
+            })?;
         let span = st.span;
         match &st.token {
             Token::Ident(s) => {
@@ -188,11 +221,27 @@ impl Parser {
 
     fn parse_source_file(&mut self) -> ParseResult<SourceFile> {
         let mut declarations = Vec::new();
+        let mut errors: Vec<ParseError> = Vec::new();
         self.consume_blanks();
         while !matches!(self.peek(), Token::Eof) {
-            let decl = self.parse_declaration()?;
-            declarations.push(decl);
+            match self.parse_declaration() {
+                Ok(decl) => declarations.push(decl),
+                Err(e) => {
+                    errors.push(e);
+                    // Recovery: skip to next declaration boundary (blank line or classifier)
+                    self.recover_to_next_declaration();
+                }
+            }
             self.consume_blanks();
+        }
+        // If we parsed nothing and had errors, return the first error
+        if declarations.is_empty() && !errors.is_empty() {
+            return Err(errors.remove(0));
+        }
+        // If we parsed some declarations but had errors, report via eprintln
+        // (partial success — return what we could parse)
+        for err in &errors {
+            eprintln!("nom: parse warning (recovered): {err}");
         }
         Ok(SourceFile {
             path: None,
@@ -201,22 +250,82 @@ impl Parser {
         })
     }
 
+    /// Skip tokens until we reach a blank line, a classifier keyword, or EOF.
+    fn recover_to_next_declaration(&mut self) {
+        loop {
+            match self.peek() {
+                Token::Eof => break,
+                Token::BlankLine => {
+                    self.advance();
+                    break;
+                }
+                tok if is_classifier(tok) => break, // Don't consume the classifier
+                _ => { self.advance(); }
+            }
+        }
+    }
+
+    /// Skip tokens until we reach a newline, blank line, statement keyword, classifier, or EOF.
+    fn recover_to_next_statement(&mut self) {
+        loop {
+            match self.peek() {
+                Token::Eof | Token::BlankLine => break,
+                Token::Newline => {
+                    self.advance();
+                    break;
+                }
+                tok if is_classifier(tok) || is_statement_keyword(tok) => break,
+                _ => { self.advance(); }
+            }
+        }
+    }
+
     fn parse_declaration(&mut self) -> ParseResult<Declaration> {
         self.skip_whitespace();
         let start_span = self.peek_span();
 
         // consume classifier
         let classifier = match self.peek().clone() {
-            Token::System => { self.advance(); Classifier::System }
-            Token::Flow => { self.advance(); Classifier::Flow }
-            Token::Store => { self.advance(); Classifier::Store }
-            Token::Graph => { self.advance(); Classifier::Graph }
-            Token::Agent => { self.advance(); Classifier::Agent }
-            Token::Test => { self.advance(); Classifier::Test }
-            Token::Nom => { self.advance(); Classifier::Nom }
-            Token::Gate => { self.advance(); Classifier::Gate }
-            Token::Pool => { self.advance(); Classifier::Pool }
-            Token::View => { self.advance(); Classifier::View }
+            Token::System => {
+                self.advance();
+                Classifier::System
+            }
+            Token::Flow => {
+                self.advance();
+                Classifier::Flow
+            }
+            Token::Store => {
+                self.advance();
+                Classifier::Store
+            }
+            Token::Graph => {
+                self.advance();
+                Classifier::Graph
+            }
+            Token::Agent => {
+                self.advance();
+                Classifier::Agent
+            }
+            Token::Test => {
+                self.advance();
+                Classifier::Test
+            }
+            Token::Nom => {
+                self.advance();
+                Classifier::Nom
+            }
+            Token::Gate => {
+                self.advance();
+                Classifier::Gate
+            }
+            Token::Pool => {
+                self.advance();
+                Classifier::Pool
+            }
+            Token::View => {
+                self.advance();
+                Classifier::View
+            }
             other => {
                 return Err(ParseError::UnexpectedToken {
                     found: format!("{other:?}"),
@@ -242,7 +351,11 @@ impl Parser {
             match self.parse_statement() {
                 Ok(Some(stmt)) => statements.push(stmt),
                 Ok(None) => break,
-                Err(e) => return Err(e),
+                Err(e) => {
+                    // Recovery within declaration: skip to next newline/statement keyword
+                    eprintln!("nom: parse warning (recovered): {e}");
+                    self.recover_to_next_statement();
+                }
             }
         }
 
@@ -251,7 +364,12 @@ impl Parser {
             classifier,
             name,
             statements,
-            span: Span::new(start_span.start, end_span.end, start_span.line, start_span.col),
+            span: Span::new(
+                start_span.start,
+                end_span.end,
+                start_span.line,
+                start_span.col,
+            ),
         })
     }
 
@@ -279,13 +397,45 @@ impl Parser {
             Token::Node => Ok(Some(Statement::GraphNode(self.parse_graph_node()?))),
             Token::Edge => Ok(Some(Statement::GraphEdge(self.parse_graph_edge()?))),
             Token::Query => Ok(Some(Statement::GraphQuery(self.parse_graph_query()?))),
-            Token::Constraint => Ok(Some(Statement::GraphConstraint(self.parse_graph_constraint()?))),
+            Token::Constraint => Ok(Some(Statement::GraphConstraint(
+                self.parse_graph_constraint()?,
+            ))),
             // ── Agent-native statements ─────────────────────────────────────
-            Token::Capability => Ok(Some(Statement::AgentCapability(self.parse_agent_capability()?))),
-            Token::Supervise => Ok(Some(Statement::AgentSupervise(self.parse_agent_supervise()?))),
+            Token::Capability => Ok(Some(Statement::AgentCapability(
+                self.parse_agent_capability()?,
+            ))),
+            Token::Supervise => Ok(Some(Statement::AgentSupervise(
+                self.parse_agent_supervise()?,
+            ))),
             Token::Receive => Ok(Some(Statement::AgentReceive(self.parse_agent_receive()?))),
             Token::State => Ok(Some(Statement::AgentState(self.parse_agent_state()?))),
             Token::Schedule => Ok(Some(Statement::AgentSchedule(self.parse_agent_schedule()?))),
+            // ── Imperative statements ───────────────────────────────────────
+            Token::Let => Ok(Some(Statement::Let(self.parse_let_stmt()?))),
+            Token::If => Ok(Some(Statement::If(self.parse_if_expr()?))),
+            Token::For => Ok(Some(Statement::For(self.parse_for_stmt()?))),
+            Token::While => Ok(Some(Statement::While(self.parse_while_stmt()?))),
+            Token::Match => Ok(Some(Statement::Match(self.parse_match_expr()?))),
+            Token::Return => Ok(Some(self.parse_return_stmt()?)),
+            Token::Fn => Ok(Some(Statement::FnDef(self.parse_fn_def(false)?))),
+            Token::Pub => {
+                // peek ahead: pub fn, pub struct, pub enum
+                let start = self.peek_span();
+                self.advance(); // consume 'pub'
+                match self.peek().clone() {
+                    Token::Fn => Ok(Some(Statement::FnDef(self.parse_fn_def(true)?))),
+                    Token::Struct => Ok(Some(Statement::StructDef(self.parse_struct_def(true)?))),
+                    Token::Enum => Ok(Some(Statement::EnumDef(self.parse_enum_def(true)?))),
+                    other => Err(ParseError::UnexpectedToken {
+                        found: format!("{other:?}"),
+                        expected: "fn, struct, or enum after pub".to_owned(),
+                        line: start.line,
+                        col: start.col,
+                    }),
+                }
+            }
+            Token::Struct => Ok(Some(Statement::StructDef(self.parse_struct_def(false)?))),
+            Token::Enum => Ok(Some(Statement::EnumDef(self.parse_enum_def(false)?))),
             Token::Eof | Token::BlankLine => Ok(None),
             t if is_classifier(&t) => Ok(None),
             Token::Newline => {
@@ -354,14 +504,32 @@ impl Parser {
 
     fn parse_constraint(&mut self) -> ParseResult<Constraint> {
         let start = self.peek_span();
-        let left = self.parse_expr_primary()?;
+        let left = self.parse_additive_expr()?;
         let op = match self.peek().clone() {
-            Token::Gt => { self.advance(); CompareOp::Gt }
-            Token::Lt => { self.advance(); CompareOp::Lt }
-            Token::Gte => { self.advance(); CompareOp::Gte }
-            Token::Lte => { self.advance(); CompareOp::Lte }
-            Token::Eq => { self.advance(); CompareOp::Eq }
-            Token::Neq => { self.advance(); CompareOp::Neq }
+            Token::Gt => {
+                self.advance();
+                CompareOp::Gt
+            }
+            Token::Lt => {
+                self.advance();
+                CompareOp::Lt
+            }
+            Token::Gte => {
+                self.advance();
+                CompareOp::Gte
+            }
+            Token::Lte => {
+                self.advance();
+                CompareOp::Lte
+            }
+            Token::Eq => {
+                self.advance();
+                CompareOp::Eq
+            }
+            Token::Neq => {
+                self.advance();
+                CompareOp::Neq
+            }
             other => {
                 let s = self.peek_span();
                 return Err(ParseError::UnexpectedToken {
@@ -372,7 +540,7 @@ impl Parser {
                 });
             }
         };
-        let right = self.parse_expr_primary()?;
+        let right = self.parse_additive_expr()?;
         let end = self.peek_span();
         Ok(Constraint {
             left,
@@ -380,6 +548,167 @@ impl Parser {
             right,
             span: Span::new(start.start, end.end, start.line, start.col),
         })
+    }
+
+    fn parse_expr(&mut self) -> ParseResult<Expr> {
+        self.parse_logical_or()
+    }
+
+    fn parse_logical_or(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_logical_and()?;
+        while matches!(self.peek(), Token::Or) {
+            self.advance();
+            let right = self.parse_logical_and()?;
+            expr = Expr::BinaryOp(Box::new(expr), nom_ast::BinOp::Or, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn parse_logical_and(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_comparison_expr()?;
+        while matches!(self.peek(), Token::And) {
+            self.advance();
+            let right = self.parse_comparison_expr()?;
+            expr = Expr::BinaryOp(Box::new(expr), nom_ast::BinOp::And, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn parse_comparison_expr(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_additive_expr()?;
+        loop {
+            let op = match self.peek().clone() {
+                Token::Gt => nom_ast::BinOp::Gt,
+                Token::Lt => nom_ast::BinOp::Lt,
+                Token::Gte => nom_ast::BinOp::Gte,
+                Token::Lte => nom_ast::BinOp::Lte,
+                Token::Eq => nom_ast::BinOp::Eq,
+                Token::Neq => nom_ast::BinOp::Neq,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_additive_expr()?;
+            expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn parse_additive_expr(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_multiplicative_expr()?;
+        loop {
+            let op = match self.peek().clone() {
+                Token::Plus => nom_ast::BinOp::Add,
+                Token::Minus => nom_ast::BinOp::Sub,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_multiplicative_expr()?;
+            expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn parse_multiplicative_expr(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_unary_expr()?;
+        loop {
+            let op = match self.peek().clone() {
+                Token::Star => nom_ast::BinOp::Mul,
+                Token::Slash => nom_ast::BinOp::Div,
+                _ => break,
+            };
+            self.advance();
+            let right = self.parse_unary_expr()?;
+            expr = Expr::BinaryOp(Box::new(expr), op, Box::new(right));
+        }
+        Ok(expr)
+    }
+
+    fn parse_unary_expr(&mut self) -> ParseResult<Expr> {
+        // Unary negation: -expr
+        if matches!(self.peek(), Token::Minus) {
+            self.advance();
+            let expr = self.parse_unary_expr()?;
+            return Ok(Expr::UnaryOp(nom_ast::UnaryOp::Neg, Box::new(expr)));
+        }
+        // Unary not: !expr
+        if matches!(self.peek(), Token::Bang) {
+            self.advance();
+            let expr = self.parse_unary_expr()?;
+            return Ok(Expr::UnaryOp(nom_ast::UnaryOp::Not, Box::new(expr)));
+        }
+        // Ref: &expr, &mut expr
+        if matches!(self.peek(), Token::Ampersand) {
+            self.advance();
+            let mutable = matches!(self.peek(), Token::Mut);
+            if mutable { self.advance(); }
+            let expr = self.parse_unary_expr()?;
+            let op = if mutable { nom_ast::UnaryOp::RefMut } else { nom_ast::UnaryOp::Ref };
+            return Ok(Expr::UnaryOp(op, Box::new(expr)));
+        }
+        // Array literal: [expr, expr, ...]
+        if matches!(self.peek(), Token::LBracket) {
+            self.advance();
+            let mut items = Vec::new();
+            while !matches!(self.peek(), Token::RBracket | Token::Eof) {
+                items.push(self.parse_expr()?);
+                if matches!(self.peek(), Token::Comma) { self.advance(); }
+            }
+            if matches!(self.peek(), Token::RBracket) { self.advance(); }
+            return Ok(Expr::Array(items));
+        }
+        self.parse_postfix_expr()
+    }
+
+    fn parse_postfix_expr(&mut self) -> ParseResult<Expr> {
+        let mut expr = self.parse_expr_primary()?;
+
+        // Postfix loop: field access, method calls, index, function calls
+        loop {
+            match self.peek().clone() {
+                Token::Dot => {
+                    self.advance(); // '.'
+                    let field = self.expect_ident()?;
+                    // Check for method call: expr.method(args)
+                    if matches!(self.peek(), Token::LParen) {
+                        self.advance(); // '('
+                        let mut args = Vec::new();
+                        while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                            args.push(self.parse_expr()?);
+                            if matches!(self.peek(), Token::Comma) { self.advance(); }
+                        }
+                        if matches!(self.peek(), Token::RParen) { self.advance(); }
+                        expr = Expr::MethodCall(Box::new(expr), field, args);
+                    } else {
+                        expr = Expr::FieldAccess(Box::new(expr), field);
+                    }
+                }
+                Token::LBracket => {
+                    self.advance(); // '['
+                    let index = self.parse_expr()?;
+                    if matches!(self.peek(), Token::RBracket) { self.advance(); }
+                    expr = Expr::Index(Box::new(expr), Box::new(index));
+                }
+                Token::LParen if matches!(&expr, Expr::Ident(_)) => {
+                    // Function call: name(args)
+                    self.advance(); // '('
+                    let mut args = Vec::new();
+                    while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                        args.push(self.parse_expr()?);
+                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    }
+                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                    if let Expr::Ident(id) = expr {
+                        expr = Expr::Call(CallExpr {
+                            callee: id,
+                            args,
+                            span: Span::default(),
+                        });
+                    }
+                }
+                _ => break,
+            }
+        }
+        Ok(expr)
     }
 
     fn parse_expr_primary(&mut self) -> ParseResult<Expr> {
@@ -397,10 +726,66 @@ impl Parser {
                 self.advance();
                 Ok(Expr::Literal(Literal::Text(s)))
             }
-            Token::Ident(name) => {
-                let span = self.peek_span();
+            Token::Bool(value) => {
                 self.advance();
-                Ok(Expr::Ident(Identifier::new(name, span)))
+                Ok(Expr::Literal(Literal::Bool(value)))
+            }
+            Token::NoneLit => {
+                self.advance();
+                Ok(Expr::Literal(Literal::None))
+            }
+            Token::LParen => {
+                self.advance();
+                let expr = self.parse_expr()?;
+                if matches!(self.peek(), Token::RParen) {
+                    self.advance();
+                    Ok(expr)
+                } else {
+                    let s = self.peek_span();
+                    Err(ParseError::UnexpectedToken {
+                        found: format!("{:?}", self.peek()),
+                        expected: ")".to_owned(),
+                        line: s.line,
+                        col: s.col,
+                    })
+                }
+            }
+            Token::Ident(_)
+            | Token::System
+            | Token::Flow
+            | Token::Store
+            | Token::Graph
+            | Token::Agent
+            | Token::Test
+            | Token::Nom
+            | Token::Gate
+            | Token::Pool
+            | Token::View
+            | Token::Node
+            | Token::Edge
+            | Token::Query
+            | Token::Constraint
+            | Token::Capability
+            | Token::Supervise
+            | Token::Receive
+            | Token::State
+            | Token::Schedule
+            | Token::Every
+            | Token::Need
+            | Token::Require
+            | Token::Effects
+            | Token::Where
+            | Token::Only
+            | Token::Describe
+            | Token::Given
+            | Token::When
+            | Token::Then
+            | Token::And
+            | Token::Contract
+            | Token::Implement
+            | Token::Branch => {
+                let id = self.expect_ident()?;
+                Ok(Expr::Ident(id))
             }
             other => {
                 let s = self.peek_span();
@@ -472,9 +857,41 @@ impl Parser {
     fn parse_flow_stmt(&mut self) -> ParseResult<FlowStmt> {
         let start = self.peek_span();
         self.advance(); // consume 'flow'
+
+        // Check for flow qualifier: flow::once, flow::stream, flow::scheduled
+        let qualifier = if matches!(self.peek(), Token::ColCol) {
+            self.advance(); // consume '::'
+            match self.peek().clone() {
+                Token::Ident(ref s) if s == "once" => {
+                    self.advance();
+                    FlowQualifier::Once
+                }
+                Token::Ident(ref s) if s == "stream" => {
+                    self.advance();
+                    FlowQualifier::Stream
+                }
+                Token::Ident(ref s) if s == "scheduled" => {
+                    self.advance();
+                    FlowQualifier::Scheduled
+                }
+                _ => {
+                    let sp = self.peek_span();
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "once, stream, or scheduled".into(),
+                        found: format!("{:?}", self.peek()),
+                        line: sp.line,
+                        col: sp.col,
+                    });
+                }
+            }
+        } else {
+            FlowQualifier::Once
+        };
+
         let chain = self.parse_flow_chain()?;
         let end = self.peek_span();
         Ok(FlowStmt {
+            qualifier,
             chain,
             span: Span::new(start.start, end.end, start.line, start.col),
         })
@@ -513,9 +930,11 @@ impl Parser {
                     self.advance(); // '('
                     let mut args = Vec::new();
                     while !matches!(self.peek(), Token::RParen | Token::Eof) {
-                        args.push(self.parse_expr_primary()?);
+                        args.push(self.parse_expr()?);
                         if matches!(self.peek(), Token::Comma) {
                             self.advance();
+                        } else {
+                            break;
                         }
                     }
                     let end = self.peek_span();
@@ -547,20 +966,32 @@ impl Parser {
                     self.advance();
                     self.expect_arrow()?;
                     let chain = self.parse_flow_chain()?;
-                    arms.push(BranchArm { condition: BranchCondition::IfTrue, chain });
+                    arms.push(BranchArm {
+                        condition: BranchCondition::IfTrue,
+                        label: Some("iftrue".to_owned()),
+                        chain,
+                    });
                 }
                 Token::IfFalse => {
                     self.advance();
                     self.expect_arrow()?;
                     let chain = self.parse_flow_chain()?;
-                    arms.push(BranchArm { condition: BranchCondition::IfFalse, chain });
+                    arms.push(BranchArm {
+                        condition: BranchCondition::IfFalse,
+                        label: Some("iffalse".to_owned()),
+                        chain,
+                    });
                 }
                 _ => {
                     // named branch label
-                    let _label = self.expect_ident()?;
+                    let label = self.expect_ident()?;
                     self.expect_arrow()?;
                     let chain = self.parse_flow_chain()?;
-                    arms.push(BranchArm { condition: BranchCondition::Named, chain });
+                    arms.push(BranchArm {
+                        condition: BranchCondition::Named,
+                        label: Some(label.name),
+                        chain,
+                    });
                 }
             }
             // optional comma between arms
@@ -622,15 +1053,12 @@ impl Parser {
     fn parse_contract(&mut self) -> ParseResult<ContractStmt> {
         let start = self.peek_span();
         self.advance(); // 'contract'
-        // A contract block contains typed params and conditions
-        // For now parse a simple set of sub-statements until blank or next decl
         let mut inputs = Vec::new();
         let mut outputs = Vec::new();
         let mut effects = Vec::new();
         let mut preconditions = Vec::new();
         let mut postconditions = Vec::new();
 
-        // Simple: read ident pairs until boundary
         loop {
             self.skip_whitespace();
             if self.at_statement_boundary() {
@@ -639,29 +1067,23 @@ impl Parser {
             match self.peek().clone() {
                 Token::Ident(kw) if kw == "input" || kw == "in" => {
                     self.advance();
-                    let name = self.expect_ident()?;
-                    let typ = if matches!(self.peek(), Token::Ident(_)) {
-                        Some(self.expect_ident()?)
-                    } else { None };
-                    let span = name.span;
-                    inputs.push(TypedParam { name, typ, span });
+                    self.parse_contract_params(&mut inputs)?;
+                }
+                Token::In => {
+                    self.advance();
+                    self.parse_contract_params(&mut inputs)?;
                 }
                 Token::Ident(kw) if kw == "output" || kw == "out" => {
                     self.advance();
-                    let name = self.expect_ident()?;
-                    let typ = if matches!(self.peek(), Token::Ident(_)) {
-                        Some(self.expect_ident()?)
-                    } else { None };
-                    let span = name.span;
-                    outputs.push(TypedParam { name, typ, span });
+                    self.parse_contract_params(&mut outputs)?;
                 }
                 Token::Ident(kw) if kw == "pre" => {
                     self.advance();
-                    preconditions.push(self.parse_expr_primary()?);
+                    preconditions.push(self.parse_expr()?);
                 }
                 Token::Ident(kw) if kw == "post" => {
                     self.advance();
-                    postconditions.push(self.parse_expr_primary()?);
+                    postconditions.push(self.parse_expr()?);
                 }
                 Token::Effects => {
                     self.advance();
@@ -669,7 +1091,10 @@ impl Parser {
                         self.advance();
                         loop {
                             match self.peek().clone() {
-                                Token::RBracket | Token::Eof => { self.advance(); break; }
+                                Token::RBracket | Token::Eof => {
+                                    self.advance();
+                                    break;
+                                }
                                 Token::Ident(s) => {
                                     let span = self.peek_span();
                                     self.advance();
@@ -703,29 +1128,20 @@ impl Parser {
         let lang = self.expect_ident()?;
         let language = lang.name.clone();
 
-        // Consume everything inside { ... } as raw code
         let mut code = String::new();
         if matches!(self.peek(), Token::LBrace) {
+            let open_brace = self.peek_span();
             self.advance(); // '{'
-            let mut depth = 1usize;
-            while self.pos < self.tokens.len() {
-                let tok = self.tokens[self.pos].token.clone();
-                self.pos += 1;
-                match tok {
-                    Token::LBrace => { depth += 1; code.push('{'); }
-                    Token::RBrace => {
-                        depth -= 1;
-                        if depth == 0 { break; }
-                        code.push('}');
-                    }
-                    Token::Newline | Token::BlankLine => code.push('\n'),
-                    Token::Ident(s) => { code.push_str(&s); code.push(' '); }
-                    Token::StringLit(s) => { code.push('"'); code.push_str(&s); code.push('"'); }
-                    Token::Integer(n) => { code.push_str(&n.to_string()); }
-                    Token::Float(f) => { code.push_str(&f.to_string()); }
-                    Token::Arrow => code.push_str("->"),
-                    _ => {}
+            if let Token::RawCode(raw) = self.peek().clone() {
+                self.advance();
+                code = raw;
+                if matches!(self.peek(), Token::RBrace) {
+                    self.advance();
                 }
+            } else {
+                code = self
+                    .capture_raw_block(open_brace)
+                    .unwrap_or_else(|| self.reconstruct_block_fallback());
             }
         }
 
@@ -749,7 +1165,7 @@ impl Parser {
             let key = self.expect_ident()?;
             if matches!(self.peek(), Token::Eq) {
                 self.advance();
-                let val = self.parse_expr_primary()?;
+                let val = self.parse_expr()?;
                 config.push((key, val));
             } else {
                 break;
@@ -772,7 +1188,7 @@ impl Parser {
             let key = self.expect_ident()?;
             if matches!(self.peek(), Token::Eq) {
                 self.advance();
-                let val = self.parse_expr_primary()?;
+                let val = self.parse_expr()?;
                 config.push((key, val));
             } else {
                 break;
@@ -789,7 +1205,7 @@ impl Parser {
     fn parse_then(&mut self) -> ParseResult<TestThenStmt> {
         let start = self.peek_span();
         self.advance(); // 'then'
-        let assertion = self.parse_expr_primary()?;
+        let assertion = self.parse_expr()?;
         let end = self.peek_span();
         Ok(TestThenStmt {
             assertion,
@@ -800,7 +1216,7 @@ impl Parser {
     fn parse_and(&mut self) -> ParseResult<TestAndStmt> {
         let start = self.peek_span();
         self.advance(); // 'and'
-        let assertion = self.parse_expr_primary()?;
+        let assertion = self.parse_expr()?;
         let end = self.peek_span();
         Ok(TestAndStmt {
             assertion,
@@ -867,7 +1283,7 @@ impl Parser {
         if matches!(self.peek(), Token::Eq) {
             self.advance();
         }
-        let expr = self.parse_flow_chain()?;
+        let expr = self.parse_graph_query_expr()?;
         let end = self.peek_span();
         Ok(GraphQueryStmt {
             name,
@@ -875,6 +1291,235 @@ impl Parser {
             expr,
             span: Span::new(start.start, end.end, start.line, start.col),
         })
+    }
+
+    fn parse_graph_query_expr(&mut self) -> ParseResult<GraphQueryExpr> {
+        let mut expr = self.parse_graph_query_primary()?;
+        while matches!(self.peek(), Token::Arrow) {
+            self.advance();
+            let edge = self.parse_nom_ref()?;
+            self.expect_arrow()?;
+            let target = self.parse_graph_query_primary()?;
+            let source_span = Self::graph_query_expr_span(&expr);
+            let target_span = Self::graph_query_expr_span(&target);
+            expr = GraphQueryExpr::Traverse(GraphTraverseExpr {
+                source: Box::new(expr),
+                edge,
+                target: Box::new(target),
+                span: Span::new(
+                    source_span.start,
+                    target_span.end,
+                    source_span.line,
+                    source_span.col,
+                ),
+            });
+        }
+        Ok(expr)
+    }
+
+    fn parse_graph_query_primary(&mut self) -> ParseResult<GraphQueryExpr> {
+        match self.peek().clone() {
+            Token::LBrace => {
+                let block = self.parse_branch_block()?;
+                self.graph_query_expr_from_branch_block(block)
+            }
+            Token::LParen => {
+                self.advance();
+                let expr = self.parse_graph_query_expr()?;
+                if matches!(self.peek(), Token::RParen) {
+                    self.advance();
+                    Ok(expr)
+                } else {
+                    let span = self.peek_span();
+                    Err(ParseError::UnexpectedToken {
+                        found: format!("{:?}", self.peek()),
+                        expected: ")".to_owned(),
+                        line: span.line,
+                        col: span.col,
+                    })
+                }
+            }
+            _ => {
+                let nom_ref = self.parse_nom_ref()?;
+                if nom_ref.variant.is_none() && matches!(self.peek(), Token::LParen) {
+                    if let Some(op) = Self::graph_set_op_from_name(&nom_ref.word.name) {
+                        return self.parse_graph_set_expr(op, nom_ref.word.span);
+                    }
+                }
+                Ok(GraphQueryExpr::Ref(nom_ref))
+            }
+        }
+    }
+
+    fn parse_graph_set_expr(&mut self, op: GraphSetOp, start: Span) -> ParseResult<GraphQueryExpr> {
+        self.advance(); // '('
+        let mut operands = Vec::new();
+        while !matches!(self.peek(), Token::RParen | Token::Eof) {
+            operands.push(self.parse_graph_query_expr()?);
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+            } else {
+                break;
+            }
+        }
+        let end = self.peek_span();
+        if matches!(self.peek(), Token::RParen) {
+            self.advance();
+        } else {
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{:?}", self.peek()),
+                expected: ")".to_owned(),
+                line: end.line,
+                col: end.col,
+            });
+        }
+        let min_operands = if op == GraphSetOp::Difference { 2 } else { 2 };
+        if operands.len() < min_operands {
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{} operands", operands.len()),
+                expected: format!("at least {min_operands} operands"),
+                line: end.line,
+                col: end.col,
+            });
+        }
+        if op == GraphSetOp::Difference && operands.len() != 2 {
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{} operands", operands.len()),
+                expected: "exactly 2 operands for difference()".to_owned(),
+                line: end.line,
+                col: end.col,
+            });
+        }
+        Ok(GraphQueryExpr::SetOp(GraphSetExpr {
+            op,
+            operands,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        }))
+    }
+
+    fn graph_query_expr_from_branch_block(
+        &self,
+        block: BranchBlock,
+    ) -> ParseResult<GraphQueryExpr> {
+        let op = Self::legacy_graph_set_op(&block);
+        let mut operands = Vec::new();
+        for arm in block.arms {
+            operands.push(self.graph_query_expr_from_flow_chain(arm.chain)?);
+        }
+        Ok(GraphQueryExpr::SetOp(GraphSetExpr {
+            op,
+            operands,
+            span: block.span,
+        }))
+    }
+
+    fn graph_query_expr_from_flow_chain(&self, chain: FlowChain) -> ParseResult<GraphQueryExpr> {
+        let mut iter = chain.steps.into_iter();
+        let first = iter.next().ok_or_else(|| ParseError::UnexpectedEof {
+            expected: "graph query flow step".to_owned(),
+        })?;
+        let mut expr = self.graph_query_expr_from_flow_step(first)?;
+
+        let remaining = iter.collect::<Vec<_>>();
+        let mut index = 0usize;
+        while index < remaining.len() {
+            let step = remaining[index].clone();
+            match step {
+                FlowStep::Branch(block) => {
+                    let branch_expr = self.graph_query_expr_from_branch_block(block)?;
+                    let source_span = Self::graph_query_expr_span(&expr);
+                    let target_span = Self::graph_query_expr_span(&branch_expr);
+                    expr = GraphQueryExpr::SetOp(GraphSetExpr {
+                        op: GraphSetOp::Union,
+                        operands: vec![expr, branch_expr],
+                        span: Span::new(
+                            source_span.start,
+                            target_span.end,
+                            source_span.line,
+                            source_span.col,
+                        ),
+                    });
+                    index += 1;
+                }
+                FlowStep::Ref(edge) => {
+                    let Some(target_step) = remaining.get(index + 1).cloned() else {
+                        return Err(ParseError::UnexpectedEof {
+                            expected: "graph query target after edge".to_owned(),
+                        });
+                    };
+                    let target = self.graph_query_expr_from_flow_step(target_step)?;
+                    let source_span = Self::graph_query_expr_span(&expr);
+                    let target_span = Self::graph_query_expr_span(&target);
+                    expr = GraphQueryExpr::Traverse(GraphTraverseExpr {
+                        source: Box::new(expr),
+                        edge,
+                        target: Box::new(target),
+                        span: Span::new(
+                            source_span.start,
+                            target_span.end,
+                            source_span.line,
+                            source_span.col,
+                        ),
+                    });
+                    index += 2;
+                }
+                other => {
+                    return Err(ParseError::UnexpectedToken {
+                        found: format!("{other:?}"),
+                        expected: "graph query ref or branch".to_owned(),
+                        line: self.peek_span().line,
+                        col: self.peek_span().col,
+                    });
+                }
+            }
+        }
+
+        Ok(expr)
+    }
+
+    fn graph_query_expr_from_flow_step(&self, step: FlowStep) -> ParseResult<GraphQueryExpr> {
+        match step {
+            FlowStep::Ref(reference) => Ok(GraphQueryExpr::Ref(reference)),
+            FlowStep::Branch(block) => self.graph_query_expr_from_branch_block(block),
+            other => Err(ParseError::UnexpectedToken {
+                found: format!("{other:?}"),
+                expected: "graph query ref or branch".to_owned(),
+                line: self.peek_span().line,
+                col: self.peek_span().col,
+            }),
+        }
+    }
+
+    fn graph_set_op_from_name(name: &str) -> Option<GraphSetOp> {
+        match name.to_ascii_lowercase().as_str() {
+            "union" | "merge" => Some(GraphSetOp::Union),
+            "intersect" | "intersection" | "common" => Some(GraphSetOp::Intersection),
+            "difference" | "except" | "minus" => Some(GraphSetOp::Difference),
+            _ => None,
+        }
+    }
+
+    fn legacy_graph_set_op(block: &BranchBlock) -> GraphSetOp {
+        let intersection_keywords = ["intersect", "intersection", "and", "all", "common"];
+        if !block.arms.is_empty()
+            && block.arms.iter().all(|arm| {
+                arm.label.as_deref().is_some_and(|label| {
+                    intersection_keywords.contains(&label.to_ascii_lowercase().as_str())
+                })
+            })
+        {
+            GraphSetOp::Intersection
+        } else {
+            GraphSetOp::Union
+        }
+    }
+
+    fn graph_query_expr_span(expr: &GraphQueryExpr) -> Span {
+        match expr {
+            GraphQueryExpr::Ref(reference) => reference.span,
+            GraphQueryExpr::Traverse(traverse) => traverse.span,
+            GraphQueryExpr::SetOp(set) => set.span,
+        }
     }
 
     // ── graph constraint statement ────────────────────────────────────────
@@ -900,45 +1545,7 @@ impl Parser {
     /// Parse a constraint expression that may contain field access and comparison.
     /// e.g. follows.from != follows.to
     fn parse_constraint_expr(&mut self) -> ParseResult<Expr> {
-        let left = self.parse_expr_with_field_access()?;
-        // Check for comparison operator
-        match self.peek().clone() {
-            Token::Gt | Token::Lt | Token::Gte | Token::Lte | Token::Eq | Token::Neq => {
-                let op = match self.peek().clone() {
-                    Token::Gt => { self.advance(); nom_ast::BinOp::Gt }
-                    Token::Lt => { self.advance(); nom_ast::BinOp::Lt }
-                    Token::Gte => { self.advance(); nom_ast::BinOp::Gte }
-                    Token::Lte => { self.advance(); nom_ast::BinOp::Lte }
-                    Token::Eq => { self.advance(); nom_ast::BinOp::Eq }
-                    Token::Neq => { self.advance(); nom_ast::BinOp::Neq }
-                    _ => unreachable!(),
-                };
-                let right = self.parse_expr_with_field_access()?;
-                Ok(Expr::BinaryOp(Box::new(left), op, Box::new(right)))
-            }
-            _ => Ok(left),
-        }
-    }
-
-    /// Parse an expression that may have dot-separated field access.
-    /// e.g. follows.from
-    fn parse_expr_with_field_access(&mut self) -> ParseResult<Expr> {
-        let expr = self.parse_expr_primary()?;
-        // Check for dot (represented as Ident(".") or we need to handle it)
-        // The lexer doesn't have a Dot token; field access like `follows.from`
-        // would lex as Ident("follows"), then `.` is part of a number scan or unexpected.
-        // Actually, looking at the lexer, `.` by itself would hit the number scanner or
-        // be an unexpected char. So `follows.from` would lex as Ident("follows.from")
-        // as a single identifier with the dot included... Let's check.
-        // Actually no — the lexer only continues idents with alphanumeric/underscore.
-        // The `.` would be an unexpected character. So for now, field access won't work
-        // with dots in the lexer. We need to handle this differently.
-        // The simplest approach: treat Ident tokens that contain dots as field access.
-        // But the lexer won't produce those. Let's just return the primary for now.
-        // The constraint expression will work with identifiers.
-        // Field access via dots would require lexer Dot token support.
-        // For now, return the primary expression as-is.
-        Ok(expr)
+        self.parse_expr()
     }
 
     // ── agent capability statement ────────────────────────────────────────
@@ -1082,6 +1689,604 @@ impl Parser {
         }
         Ok(params)
     }
+
+    fn parse_contract_params(&mut self, target: &mut Vec<TypedParam>) -> ParseResult<()> {
+        while !self.is_contract_clause_boundary() {
+            target.push(self.parse_contract_param()?);
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+            }
+        }
+        Ok(())
+    }
+
+    fn parse_contract_param(&mut self) -> ParseResult<TypedParam> {
+        let name = self.expect_ident()?;
+        let span = name.span;
+        let typ = if matches!(self.peek(), Token::LParen) {
+            self.advance();
+            self.skip_whitespace();
+            let parsed_type = if matches!(self.peek(), Token::RParen | Token::Eof) {
+                None
+            } else {
+                Some(self.expect_ident()?)
+            };
+
+            let mut depth = 1usize;
+            while self.pos < self.tokens.len() {
+                let token = self.tokens[self.pos].token.clone();
+                self.pos += 1;
+                match token {
+                    Token::LParen => depth += 1,
+                    Token::RParen => {
+                        depth -= 1;
+                        if depth == 0 {
+                            break;
+                        }
+                    }
+                    _ => {}
+                }
+            }
+            parsed_type
+        } else if matches!(self.peek(), Token::Ident(_)) || is_keyword_usable_as_type(self.peek()) {
+            Some(self.expect_ident()?)
+        } else {
+            None
+        };
+
+        Ok(TypedParam { name, typ, span })
+    }
+
+    fn is_contract_clause_boundary(&self) -> bool {
+        if self.at_statement_boundary() {
+            return true;
+        }
+
+        match self.peek() {
+            Token::Effects => true,
+            Token::Ident(kw)
+                if matches!(
+                    kw.as_str(),
+                    "input" | "in" | "output" | "out" | "pre" | "post"
+                ) =>
+            {
+                true
+            }
+            _ => false,
+        }
+    }
+
+    // ── Imperative parsing ────────────────────────────────────────────────────
+
+    /// Parse a type annotation: `text`, `number`, `list[text]`, `fn(text) -> number`
+    fn parse_type_expr(&mut self) -> ParseResult<TypeExpr> {
+        match self.peek().clone() {
+            Token::LParen => {
+                self.advance(); // '('
+                if matches!(self.peek(), Token::RParen) {
+                    self.advance();
+                    return Ok(TypeExpr::Unit);
+                }
+                let mut types = vec![self.parse_type_expr()?];
+                while matches!(self.peek(), Token::Comma) {
+                    self.advance();
+                    types.push(self.parse_type_expr()?);
+                }
+                if matches!(self.peek(), Token::RParen) {
+                    self.advance();
+                }
+                if types.len() == 1 {
+                    Ok(types.remove(0))
+                } else {
+                    Ok(TypeExpr::Tuple(types))
+                }
+            }
+            Token::Ampersand => {
+                self.advance();
+                let mutable = matches!(self.peek(), Token::Mut);
+                if mutable { self.advance(); }
+                let inner = self.parse_type_expr()?;
+                Ok(TypeExpr::Ref { mutable, inner: Box::new(inner) })
+            }
+            Token::Fn => {
+                self.advance(); // 'fn'
+                if matches!(self.peek(), Token::LParen) { self.advance(); }
+                let mut params = Vec::new();
+                while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                    params.push(self.parse_type_expr()?);
+                    if matches!(self.peek(), Token::Comma) { self.advance(); }
+                }
+                if matches!(self.peek(), Token::RParen) { self.advance(); }
+                let ret = if matches!(self.peek(), Token::Arrow) {
+                    self.advance();
+                    Box::new(self.parse_type_expr()?)
+                } else {
+                    Box::new(TypeExpr::Unit)
+                };
+                Ok(TypeExpr::Function { params, ret })
+            }
+            _ => {
+                let name = self.expect_ident()?;
+                if matches!(self.peek(), Token::LBracket) {
+                    self.advance(); // '['
+                    let mut args = vec![self.parse_type_expr()?];
+                    while matches!(self.peek(), Token::Comma) {
+                        self.advance();
+                        args.push(self.parse_type_expr()?);
+                    }
+                    if matches!(self.peek(), Token::RBracket) { self.advance(); }
+                    Ok(TypeExpr::Generic(name, args))
+                } else {
+                    Ok(TypeExpr::Named(name))
+                }
+            }
+        }
+    }
+
+    /// Parse a block: { stmt; stmt; expr }
+    fn parse_block(&mut self) -> ParseResult<Block> {
+        let start = self.peek_span();
+        if !matches!(self.peek(), Token::LBrace) {
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{:?}", self.peek()),
+                expected: "'{'".to_owned(),
+                line: start.line,
+                col: start.col,
+            });
+        }
+        self.advance(); // '{'
+        self.skip_whitespace();
+
+        let mut stmts = Vec::new();
+        while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) { break; }
+
+            let bs = self.parse_block_stmt()?;
+            stmts.push(bs);
+
+            // consume optional semicolons and newlines
+            while matches!(self.peek_raw(), Token::Semicolon | Token::Newline) {
+                self.advance();
+            }
+        }
+
+        let end = self.peek_span();
+        if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        Ok(Block { stmts, span: Span::new(start.start, end.end, start.line, start.col) })
+    }
+
+    fn parse_block_stmt(&mut self) -> ParseResult<BlockStmt> {
+        match self.peek().clone() {
+            Token::Let => Ok(BlockStmt::Let(self.parse_let_stmt()?)),
+            Token::If => Ok(BlockStmt::If(self.parse_if_expr()?)),
+            Token::For => Ok(BlockStmt::For(self.parse_for_stmt()?)),
+            Token::While => Ok(BlockStmt::While(self.parse_while_stmt()?)),
+            Token::Match => Ok(BlockStmt::Match(self.parse_match_expr()?)),
+            Token::Return => {
+                self.advance(); // 'return'
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::Semicolon | Token::RBrace | Token::Newline | Token::Eof) {
+                    Ok(BlockStmt::Return(None))
+                } else {
+                    Ok(BlockStmt::Return(Some(self.parse_expr()?)))
+                }
+            }
+            Token::Break => { self.advance(); Ok(BlockStmt::Break) }
+            Token::Continue => { self.advance(); Ok(BlockStmt::Continue) }
+            _ => {
+                let expr = self.parse_expr()?;
+                // Check for assignment: expr = value
+                if matches!(self.peek(), Token::Eq) {
+                    self.advance();
+                    let value = self.parse_expr()?;
+                    let span = Span::default();
+                    Ok(BlockStmt::Assign(AssignStmt { target: expr, value, span }))
+                } else {
+                    Ok(BlockStmt::Expr(expr))
+                }
+            }
+        }
+    }
+
+    /// let x: type = value
+    fn parse_let_stmt(&mut self) -> ParseResult<LetStmt> {
+        let start = self.peek_span();
+        self.advance(); // 'let'
+        let mutable = matches!(self.peek(), Token::Mut);
+        if mutable { self.advance(); }
+        let name = self.expect_ident()?;
+        let type_ann = if matches!(self.peek(), Token::Colon) {
+            self.advance();
+            Some(self.parse_type_expr()?)
+        } else {
+            None
+        };
+        let value = if matches!(self.peek(), Token::Eq) {
+            self.advance();
+            self.parse_expr()?
+        } else {
+            Expr::Literal(Literal::None)
+        };
+        let end = self.peek_span();
+        Ok(LetStmt {
+            name,
+            mutable,
+            type_ann,
+            value,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// if condition { body } else if ... { ... } else { ... }
+    fn parse_if_expr(&mut self) -> ParseResult<IfExpr> {
+        let start = self.peek_span();
+        self.advance(); // 'if'
+        let condition = Box::new(self.parse_expr()?);
+        let then_body = self.parse_block()?;
+
+        let mut else_ifs = Vec::new();
+        let mut else_body = None;
+
+        while matches!(self.peek(), Token::Else) {
+            self.advance(); // 'else'
+            if matches!(self.peek(), Token::If) {
+                self.advance(); // 'if'
+                let cond = self.parse_expr()?;
+                let body = self.parse_block()?;
+                else_ifs.push((cond, body));
+            } else {
+                else_body = Some(self.parse_block()?);
+                break;
+            }
+        }
+
+        let end = self.peek_span();
+        Ok(IfExpr {
+            condition,
+            then_body,
+            else_ifs,
+            else_body,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// for item in iterable { body }
+    fn parse_for_stmt(&mut self) -> ParseResult<ForStmt> {
+        let start = self.peek_span();
+        self.advance(); // 'for'
+        let binding = self.expect_ident()?;
+        // expect 'in'
+        if matches!(self.peek(), Token::In) {
+            self.advance();
+        }
+        let iterable = self.parse_expr()?;
+        let body = self.parse_block()?;
+        let end = self.peek_span();
+        Ok(ForStmt {
+            binding,
+            iterable,
+            body,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// while condition { body }
+    fn parse_while_stmt(&mut self) -> ParseResult<WhileStmt> {
+        let start = self.peek_span();
+        self.advance(); // 'while'
+        let condition = self.parse_expr()?;
+        let body = self.parse_block()?;
+        let end = self.peek_span();
+        Ok(WhileStmt {
+            condition,
+            body,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// match expr { pattern => body, ... }
+    fn parse_match_expr(&mut self) -> ParseResult<MatchExpr> {
+        let start = self.peek_span();
+        self.advance(); // 'match'
+        let subject = Box::new(self.parse_expr()?);
+
+        if !matches!(self.peek(), Token::LBrace) {
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{:?}", self.peek()),
+                expected: "'{'".to_owned(),
+                line: start.line,
+                col: start.col,
+            });
+        }
+        self.advance(); // '{'
+        self.skip_whitespace();
+
+        let mut arms = Vec::new();
+        while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace) { break; }
+            let pattern = self.parse_pattern()?;
+            if matches!(self.peek(), Token::FatArrow) { self.advance(); }
+            let body = self.parse_block()?;
+            arms.push(MatchArm { pattern, body });
+            // skip commas and whitespace between arms
+            while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                self.advance();
+            }
+        }
+
+        let end = self.peek_span();
+        if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        Ok(MatchExpr { subject, arms, span: Span::new(start.start, end.end, start.line, start.col) })
+    }
+
+    fn parse_pattern(&mut self) -> ParseResult<Pattern> {
+        match self.peek().clone() {
+            Token::Ident(ref s) if s == "_" => {
+                self.advance();
+                Ok(Pattern::Wildcard)
+            }
+            Token::Integer(i) => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::Integer(i)))
+            }
+            Token::Float(f) => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::Number(f)))
+            }
+            Token::StringLit(s) => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::Text(s)))
+            }
+            Token::Bool(b) => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::Bool(b)))
+            }
+            Token::NoneLit => {
+                self.advance();
+                Ok(Pattern::Literal(Literal::None))
+            }
+            _ => {
+                let name = self.expect_ident()?;
+                if matches!(self.peek(), Token::LParen) {
+                    self.advance(); // '('
+                    let mut sub = Vec::new();
+                    while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                        sub.push(self.parse_pattern()?);
+                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    }
+                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                    Ok(Pattern::Variant(name, sub))
+                } else {
+                    Ok(Pattern::Binding(name))
+                }
+            }
+        }
+    }
+
+    /// return [expr]
+    fn parse_return_stmt(&mut self) -> ParseResult<Statement> {
+        self.advance(); // 'return'
+        self.skip_whitespace();
+        if matches!(self.peek(), Token::Semicolon | Token::Newline | Token::BlankLine | Token::Eof | Token::RBrace) {
+            Ok(Statement::Return(None))
+        } else {
+            Ok(Statement::Return(Some(self.parse_expr()?)))
+        }
+    }
+
+    /// fn name(param: type, ...) -> return_type { body }
+    fn parse_fn_def(&mut self, is_pub: bool) -> ParseResult<FnDef> {
+        let start = self.peek_span();
+        let is_async = matches!(self.peek(), Token::Async);
+        if is_async { self.advance(); }
+
+        self.advance(); // 'fn'
+        let name = self.expect_ident()?;
+
+        // Parse params
+        let mut params = Vec::new();
+        if matches!(self.peek(), Token::LParen) {
+            self.advance(); // '('
+            while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                let pname = self.expect_ident()?;
+                if matches!(self.peek(), Token::Colon) { self.advance(); }
+                let ptype = self.parse_type_expr()?;
+                params.push(FnParam { name: pname, type_ann: ptype });
+                if matches!(self.peek(), Token::Comma) { self.advance(); }
+            }
+            if matches!(self.peek(), Token::RParen) { self.advance(); }
+        }
+
+        // Return type
+        let return_type = if matches!(self.peek(), Token::Arrow) {
+            self.advance();
+            Some(self.parse_type_expr()?)
+        } else {
+            None
+        };
+
+        // Body
+        let body = self.parse_block()?;
+
+        let end = self.peek_span();
+        Ok(FnDef {
+            name,
+            params,
+            return_type,
+            body,
+            is_async,
+            is_pub,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// struct Name { field: type, ... }
+    fn parse_struct_def(&mut self, is_pub: bool) -> ParseResult<StructDef> {
+        let start = self.peek_span();
+        self.advance(); // 'struct'
+        let name = self.expect_ident()?;
+
+        let mut fields = Vec::new();
+        if matches!(self.peek(), Token::LBrace) {
+            self.advance(); // '{'
+            self.skip_whitespace();
+            while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBrace) { break; }
+                let field_pub = matches!(self.peek(), Token::Pub);
+                if field_pub { self.advance(); }
+                let fname = self.expect_ident()?;
+                if matches!(self.peek(), Token::Colon) { self.advance(); }
+                let ftype = self.parse_type_expr()?;
+                fields.push(StructField { name: fname, type_ann: ftype, is_pub: field_pub });
+                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                    self.advance();
+                }
+            }
+            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        }
+
+        let end = self.peek_span();
+        Ok(StructDef {
+            name,
+            fields,
+            is_pub,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// enum Name { Variant1, Variant2(type), ... }
+    fn parse_enum_def(&mut self, is_pub: bool) -> ParseResult<EnumDef> {
+        let start = self.peek_span();
+        self.advance(); // 'enum'
+        let name = self.expect_ident()?;
+
+        let mut variants = Vec::new();
+        if matches!(self.peek(), Token::LBrace) {
+            self.advance(); // '{'
+            self.skip_whitespace();
+            while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBrace) { break; }
+                let vname = self.expect_ident()?;
+                let mut vfields = Vec::new();
+                if matches!(self.peek(), Token::LParen) {
+                    self.advance(); // '('
+                    while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                        vfields.push(self.parse_type_expr()?);
+                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    }
+                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                }
+                variants.push(EnumVariant { name: vname, fields: vfields });
+                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                    self.advance();
+                }
+            }
+            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        }
+
+        let end = self.peek_span();
+        Ok(EnumDef {
+            name,
+            variants,
+            is_pub,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    fn capture_raw_block(&mut self, open_brace: Span) -> Option<String> {
+        let source = self.source.as_ref()?;
+        let body_start = open_brace.end;
+        let mut depth = 1usize;
+
+        while self.pos < self.tokens.len() {
+            let token = self.tokens[self.pos].clone();
+            self.pos += 1;
+            match token.token {
+                Token::LBrace => depth += 1,
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        return source
+                            .get(body_start..token.span.start)
+                            .map(ToOwned::to_owned);
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        None
+    }
+
+    fn reconstruct_block_fallback(&mut self) -> String {
+        let mut code = String::new();
+        let mut depth = 1usize;
+        while self.pos < self.tokens.len() {
+            let tok = self.tokens[self.pos].token.clone();
+            self.pos += 1;
+            match tok {
+                Token::LBrace => {
+                    depth += 1;
+                    code.push('{');
+                }
+                Token::RBrace => {
+                    depth -= 1;
+                    if depth == 0 {
+                        break;
+                    }
+                    code.push('}');
+                }
+                Token::Newline | Token::BlankLine => code.push('\n'),
+                Token::Comment(s) => {
+                    code.push('#');
+                    code.push_str(&s);
+                }
+                Token::Ident(s) => {
+                    code.push_str(&s);
+                    code.push(' ');
+                }
+                Token::StringLit(s) => {
+                    code.push('"');
+                    code.push_str(&s);
+                    code.push('"');
+                }
+                Token::Bool(true) => code.push_str("true"),
+                Token::Bool(false) => code.push_str("false"),
+                Token::NoneLit => code.push_str("none"),
+                Token::Or => code.push_str("or"),
+                Token::Integer(n) => code.push_str(&n.to_string()),
+                Token::Float(f) => code.push_str(&f.to_string()),
+                Token::Arrow => code.push_str("->"),
+                Token::ColCol => code.push_str("::"),
+                Token::Plus => code.push('+'),
+                Token::Minus => code.push('-'),
+                Token::Star => code.push('*'),
+                Token::Slash => code.push('/'),
+                Token::Dot => code.push('.'),
+                Token::Eq => code.push('='),
+                Token::Neq => code.push_str("!="),
+                Token::Gt => code.push('>'),
+                Token::Lt => code.push('<'),
+                Token::Gte => code.push_str(">="),
+                Token::Lte => code.push_str("<="),
+                Token::Comma => code.push(','),
+                Token::LParen => code.push('('),
+                Token::RParen => code.push(')'),
+                Token::LBracket => code.push('['),
+                Token::RBracket => code.push(']'),
+                other if is_classifier(&other) || is_statement_keyword(&other) => {
+                    code.push_str(statement_or_classifier_str(&other));
+                    code.push(' ');
+                }
+                _ => {}
+            }
+        }
+        code.trim().to_owned()
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -1138,6 +2343,7 @@ fn statement_keyword_str(t: &Token) -> &'static str {
         Token::When => "when",
         Token::Then => "then",
         Token::And => "and",
+        Token::Or => "or",
         Token::Contract => "contract",
         Token::Implement => "implement",
         Token::Branch => "branch",
@@ -1183,6 +2389,14 @@ fn classifier_str(t: &Token) -> &'static str {
     }
 }
 
+fn statement_or_classifier_str(t: &Token) -> &'static str {
+    if is_classifier(t) {
+        classifier_str(t)
+    } else {
+        statement_keyword_str(t)
+    }
+}
+
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Parse a slice of [`SpannedToken`]s into a [`SourceFile`].
@@ -1194,7 +2408,8 @@ pub fn parse(tokens: Vec<SpannedToken>) -> Result<SourceFile, ParseError> {
 /// Convenience: lex + parse a source string in one step.
 pub fn parse_source(source: &str) -> Result<SourceFile, Box<dyn std::error::Error>> {
     let tokens = nom_lexer::tokenize(source)?;
-    Ok(parse(tokens)?)
+    let mut parser = Parser::with_source(tokens, source.to_owned());
+    Ok(parser.parse_source_file()?)
 }
 
 #[cfg(test)]
@@ -1217,7 +2432,8 @@ mod tests {
 
     #[test]
     fn parse_two_declarations() {
-        let src = "flow register\n  describe \"registration\"\n\nflow login\n  describe \"login\"\n";
+        let src =
+            "flow register\n  describe \"registration\"\n\nflow login\n  describe \"login\"\n";
         let sf = parse_ok(src);
         assert_eq!(sf.declarations.len(), 2);
         assert_eq!(sf.declarations[0].name.name, "register");
@@ -1239,6 +2455,313 @@ mod tests {
         match &sf.declarations[0].statements[0] {
             Statement::Describe(d) => assert_eq!(d.text, "hashing function"),
             _ => panic!("expected describe"),
+        }
+    }
+
+    #[test]
+    fn parse_contract_doc_style_and_rich_preconditions() {
+        let src = "nom scorer\n  contract\n  in document(text) query(text)\n  out score(real range 0.0 to 1.0)\n  effects [cpu]\n  pre document.length > 0 and query.length > 0\n  post deterministic\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Contract(contract) => {
+                assert_eq!(contract.inputs.len(), 2);
+                assert_eq!(contract.inputs[0].name.name, "document");
+                assert_eq!(
+                    contract.inputs[0].typ.as_ref().map(|t| t.name.as_str()),
+                    Some("text")
+                );
+                assert_eq!(contract.inputs[1].name.name, "query");
+                assert_eq!(contract.outputs.len(), 1);
+                assert_eq!(contract.outputs[0].name.name, "score");
+                assert_eq!(
+                    contract.outputs[0].typ.as_ref().map(|t| t.name.as_str()),
+                    Some("real")
+                );
+                assert_eq!(contract.effects.len(), 1);
+                assert_eq!(contract.effects[0].name, "cpu");
+                assert_eq!(contract.preconditions.len(), 1);
+                assert_eq!(contract.postconditions.len(), 1);
+            }
+            _ => panic!("expected contract"),
+        }
+    }
+
+    #[test]
+    fn parse_implement_preserves_raw_code() {
+        let src = "nom scorer\n  implement rust {\n    fn score(doc: &str) -> f32 {\n        if doc.is_empty() {\n            return 0.0;\n        }\n        let total = (1 + 2) * 3;\n        total as f32\n    }\n  }\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Implement(implement) => {
+                assert!(implement.code.contains("fn score(doc: &str) -> f32 {"));
+                assert!(implement.code.contains("if doc.is_empty() {"));
+                assert!(implement.code.contains("return 0.0;"));
+                assert!(implement.code.contains("let total = (1 + 2) * 3;"));
+            }
+            _ => panic!("expected implement"),
+        }
+    }
+
+    #[test]
+    fn parse_graph_constraint_with_field_access() {
+        let src = "graph social\n  constraint no_self_follow = follows.from != follows.to\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::GraphConstraint(graph_constraint) => match &graph_constraint.expr {
+                Expr::BinaryOp(left, nom_ast::BinOp::Neq, right) => {
+                    assert!(matches!(&**left, Expr::FieldAccess(_, field) if field.name == "from"));
+                    assert!(matches!(&**right, Expr::FieldAccess(_, field) if field.name == "to"));
+                }
+                other => panic!("expected != field access expression, got {other:?}"),
+            },
+            _ => panic!("expected graph constraint"),
+        }
+    }
+
+    #[test]
+    fn parse_agent_schedule_with_expression_args() {
+        let src =
+            "agent monitor\n  schedule every 5m check_health(status(code + 1), retries * 2)\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::AgentSchedule(schedule) => {
+                assert_eq!(schedule.interval, "5m");
+                assert_eq!(schedule.action.steps.len(), 1);
+                assert!(matches!(&schedule.action.steps[0], FlowStep::Call(_)));
+            }
+            _ => panic!("expected agent schedule"),
+        }
+    }
+
+    #[test]
+    fn parse_test_assertion_uses_precedence() {
+        let src = "test auth\n  then latency + overhead * 2 < 50 or cached = true\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Then(then_stmt) => {
+                assert!(matches!(
+                    then_stmt.assertion,
+                    Expr::BinaryOp(_, nom_ast::BinOp::Or, _)
+                ));
+            }
+            _ => panic!("expected then"),
+        }
+    }
+
+    #[test]
+    fn parse_graph_query_legacy_branch_becomes_set_expr() {
+        let src = "graph social\n  query common_friends(a user, b user) = { intersect->a->follows->user, intersect->b->follows->user }\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::GraphQuery(query) => match &query.expr {
+                GraphQueryExpr::SetOp(set) => {
+                    assert_eq!(set.op, GraphSetOp::Intersection);
+                    assert_eq!(set.operands.len(), 2);
+                }
+                other => panic!("expected set expr, got {other:?}"),
+            },
+            _ => panic!("expected graph query"),
+        }
+    }
+
+    #[test]
+    fn parse_graph_query_first_class_algebra_with_suffix() {
+        let src = "graph social\n  query visible_posts(a user, b user) = difference(union(a->follows->user, b->follows->user), a)->authored->post\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::GraphQuery(query) => match &query.expr {
+                GraphQueryExpr::Traverse(GraphTraverseExpr {
+                    source,
+                    edge,
+                    target,
+                    ..
+                }) => {
+                    assert_eq!(edge.word.name, "authored");
+                    assert!(
+                        matches!(&**target, GraphQueryExpr::Ref(reference) if reference.word.name == "post")
+                    );
+                    assert!(
+                        matches!(&**source, GraphQueryExpr::SetOp(set) if set.op == GraphSetOp::Difference)
+                    );
+                }
+                other => panic!("expected traverse expr, got {other:?}"),
+            },
+            _ => panic!("expected graph query"),
+        }
+    }
+
+    #[test]
+    fn parse_let_and_fn_in_nom_declaration() {
+        let src = "nom math\n  fn add(a: number, b: number) -> number {\n    let result: number = a + b\n    return result\n  }\n";
+        let sf = parse_ok(src);
+        assert_eq!(sf.declarations.len(), 1);
+        match &sf.declarations[0].statements[0] {
+            Statement::FnDef(fndef) => {
+                assert_eq!(fndef.name.name, "add");
+                assert_eq!(fndef.params.len(), 2);
+                assert_eq!(fndef.params[0].name.name, "a");
+                assert!(fndef.return_type.is_some());
+                assert_eq!(fndef.body.stmts.len(), 2);
+            }
+            other => panic!("expected FnDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_struct_def() {
+        let src = "nom types\n  struct Point {\n    x: number,\n    y: number\n  }\n";
+        let sf = parse_ok(src);
+        assert_eq!(sf.declarations[0].statements.len(), 1);
+        match &sf.declarations[0].statements[0] {
+            Statement::StructDef(s) => {
+                assert_eq!(s.name.name, "Point");
+                assert_eq!(s.fields.len(), 2);
+                assert_eq!(s.fields[0].name.name, "x");
+                assert_eq!(s.fields[1].name.name, "y");
+            }
+            other => panic!("expected StructDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_enum_def() {
+        let src = "nom types\n  enum Color {\n    Red,\n    Green,\n    Blue\n  }\n";
+        let sf = parse_ok(src);
+        assert_eq!(sf.declarations[0].statements.len(), 1);
+        match &sf.declarations[0].statements[0] {
+            Statement::EnumDef(e) => {
+                assert_eq!(e.name.name, "Color");
+                assert_eq!(e.variants.len(), 3);
+            }
+            other => panic!("expected EnumDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_if_simple() {
+        let src = "nom control\n  if x > 0 {\n    let y = x\n  }\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::If(if_expr) => {
+                assert_eq!(if_expr.then_body.stmts.len(), 1);
+            }
+            other => panic!("expected If, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_natural_language_aliases() {
+        // "define" → fn, "kind" → struct, "choice" → enum, "take" → let, "give" → return
+        let src = "nom math\n  kind Point {\n    x: number,\n    y: number\n  }\n  choice Color {\n    Red,\n    Blue\n  }\n  define add(a: number, b: number) -> number {\n    take result = a + b\n    give result\n  }\n";
+        let sf = parse_ok(src);
+        let stmts = &sf.declarations[0].statements;
+        assert_eq!(stmts.len(), 3, "expected 3 statements: kind, choice, define");
+        match &stmts[0] {
+            Statement::StructDef(s) => assert_eq!(s.name.name, "Point"),
+            other => panic!("expected StructDef from 'kind', got {other:?}"),
+        }
+        match &stmts[1] {
+            Statement::EnumDef(e) => {
+                assert_eq!(e.name.name, "Color");
+                assert_eq!(e.variants.len(), 2);
+            }
+            other => panic!("expected EnumDef from 'choice', got {other:?}"),
+        }
+        match &stmts[2] {
+            Statement::FnDef(f) => {
+                assert_eq!(f.name.name, "add");
+                assert_eq!(f.params.len(), 2);
+                // Check the body has "take" (let) and "give" (return)
+                assert_eq!(f.body.stmts.len(), 2);
+                assert!(matches!(f.body.stmts[0], BlockStmt::Let(_)));
+                assert!(matches!(f.body.stmts[1], BlockStmt::Return(Some(_))));
+            }
+            other => panic!("expected FnDef from 'define', got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_method_calls_and_array_access() {
+        let src = "nom expr_test\n  fn test_expr() -> bool {\n    let items = [1, 2, 3]\n    let len = items.len()\n    let first = items[0]\n    let valid = !false\n    give len > 0\n  }\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::FnDef(f) => {
+                assert_eq!(f.name.name, "test_expr");
+                assert_eq!(f.body.stmts.len(), 5);
+                // items = [1, 2, 3] — array literal
+                if let BlockStmt::Let(let_stmt) = &f.body.stmts[0] {
+                    assert!(matches!(&let_stmt.value, Expr::Array(_)));
+                } else {
+                    panic!("expected let with array");
+                }
+                // len = items.len() — method call
+                if let BlockStmt::Let(let_stmt) = &f.body.stmts[1] {
+                    assert!(matches!(&let_stmt.value, Expr::MethodCall(_, _, _)));
+                } else {
+                    panic!("expected let with method call");
+                }
+                // first = items[0] — index access
+                if let BlockStmt::Let(let_stmt) = &f.body.stmts[2] {
+                    assert!(matches!(&let_stmt.value, Expr::Index(_, _)));
+                } else {
+                    panic!("expected let with index");
+                }
+                // valid = !false — unary not
+                if let BlockStmt::Let(let_stmt) = &f.body.stmts[3] {
+                    assert!(matches!(&let_stmt.value, Expr::UnaryOp(nom_ast::UnaryOp::Not, _)));
+                } else {
+                    panic!("expected let with unary not");
+                }
+            }
+            other => panic!("expected FnDef, got {other:?}"),
+        }
+    }
+
+    // ── Flow qualifier tests (ADOPT-5: aspect-qualified flows) ──────────────
+
+    #[test]
+    fn parses_flow_qualifier_once() {
+        let src = "system test\n  flow::once request->response\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.qualifier, FlowQualifier::Once),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_qualifier_stream() {
+        let src = "system test\n  flow::stream events->process->output\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.qualifier, FlowQualifier::Stream),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_qualifier_scheduled() {
+        let src = "system test\n  flow::scheduled daily->cleanup->report\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.qualifier, FlowQualifier::Scheduled),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn default_flow_qualifier_is_once() {
+        let src = "system test\n  flow request->response\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.qualifier, FlowQualifier::Once),
+            other => panic!("expected Flow, got {other:?}"),
         }
     }
 }
