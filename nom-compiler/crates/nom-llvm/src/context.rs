@@ -9,14 +9,14 @@ use nom_planner::{CompositionPlan, FlowPlan};
 use std::collections::HashMap;
 
 pub struct NomCompiler {
-    context: Context,
+    pub(crate) context: Context,
 }
 
 pub struct ModuleCompiler<'ctx> {
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>,
-    pub named_values: HashMap<String, inkwell::values::PointerValue<'ctx>>,
+    pub named_values: HashMap<String, (inkwell::values::PointerValue<'ctx>, inkwell::types::BasicTypeEnum<'ctx>)>,
     pub struct_types: HashMap<String, inkwell::types::StructType<'ctx>>,
     pub functions: HashMap<String, FunctionValue<'ctx>>,
 }
