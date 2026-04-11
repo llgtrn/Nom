@@ -23,32 +23,142 @@ pub fn supported_languages() -> &'static [&'static str] {
         "c",
         "cpp",
         "go",
-        "nix",
-        "yaml",
+        "java",
+        "csharp",
+        "ruby",
+        "php",
+        "swift",
+        "kotlin",
+        "scala",
+        "haskell",
+        "ocaml",
+        "elixir",
+        "lua",
+        "r",
+        "julia",
+        "bash",
+        "html",
+        "css",
         "json",
+        "yaml",
         "toml",
+        "markdown",
+        "zig",
+        "dart",
+        "sql",
+        "dockerfile",
+        "perl",
+        "erlang",
+        "clojure",
+        "elm",
+        "nix",
+        "d",
+        "objc",
+        "fortran",
+        "cmake",
+        "make",
+        "protobuf",
+        "regex",
+        "verilog",
+        "racket",
+        "scss",
+        "glsl",
+        "wgsl",
+        "graphql",
+        "latex",
+        "groovy",
+        "svelte",
+        "vue",
         "shell",
         "powershell",
-        "dockerfile",
     ]
 }
 
 /// Languages with tree-sitter grammars (parsing + extraction works for these).
 pub fn parseable_languages() -> &'static [&'static str] {
-    &[
-        "rust",
-        "typescript",
-        "javascript",
-        "python",
-        "c",
-        "cpp",
-        "go",
-    ]
+    let mut langs = vec!["rust", "typescript", "javascript", "python", "c", "cpp", "go"];
+
+    #[cfg(feature = "tree-sitter-java")]
+    langs.push("java");
+    #[cfg(feature = "tree-sitter-c-sharp")]
+    langs.push("csharp");
+    #[cfg(feature = "tree-sitter-ruby")]
+    langs.push("ruby");
+    #[cfg(feature = "tree-sitter-php")]
+    langs.push("php");
+    #[cfg(feature = "tree-sitter-swift")]
+    langs.push("swift");
+    #[cfg(feature = "tree-sitter-scala")]
+    langs.push("scala");
+    #[cfg(feature = "tree-sitter-haskell")]
+    langs.push("haskell");
+    #[cfg(feature = "tree-sitter-ocaml")]
+    langs.push("ocaml");
+    #[cfg(feature = "tree-sitter-elixir")]
+    langs.push("elixir");
+    #[cfg(feature = "tree-sitter-lua")]
+    langs.push("lua");
+    #[cfg(feature = "tree-sitter-r")]
+    langs.push("r");
+    #[cfg(feature = "tree-sitter-julia")]
+    langs.push("julia");
+    #[cfg(feature = "tree-sitter-bash")]
+    langs.push("bash");
+    #[cfg(feature = "tree-sitter-html")]
+    langs.push("html");
+    #[cfg(feature = "tree-sitter-css")]
+    langs.push("css");
+    #[cfg(feature = "tree-sitter-json")]
+    langs.push("json");
+    #[cfg(feature = "tree-sitter-yaml")]
+    langs.push("yaml");
+    #[cfg(feature = "tree-sitter-toml-ng")]
+    langs.push("toml");
+    #[cfg(feature = "tree-sitter-zig")]
+    langs.push("zig");
+    #[cfg(feature = "tree-sitter-dart")]
+    langs.push("dart");
+    #[cfg(feature = "tree-sitter-erlang")]
+    langs.push("erlang");
+    #[cfg(feature = "tree-sitter-elm")]
+    langs.push("elm");
+    #[cfg(feature = "tree-sitter-nix")]
+    langs.push("nix");
+    #[cfg(feature = "tree-sitter-d")]
+    langs.push("d");
+    #[cfg(feature = "tree-sitter-objc")]
+    langs.push("objc");
+    #[cfg(feature = "tree-sitter-fortran")]
+    langs.push("fortran");
+    #[cfg(feature = "tree-sitter-cmake")]
+    langs.push("cmake");
+    #[cfg(feature = "tree-sitter-make")]
+    langs.push("make");
+    #[cfg(feature = "tree-sitter-proto")]
+    langs.push("protobuf");
+    #[cfg(feature = "tree-sitter-regex")]
+    langs.push("regex");
+    #[cfg(feature = "tree-sitter-verilog")]
+    langs.push("verilog");
+    #[cfg(feature = "tree-sitter-racket")]
+    langs.push("racket");
+    #[cfg(feature = "tree-sitter-glsl")]
+    langs.push("glsl");
+    #[cfg(feature = "tree-sitter-graphql")]
+    langs.push("graphql");
+    #[cfg(feature = "tree-sitter-latex")]
+    langs.push("latex");
+    #[cfg(feature = "tree-sitter-groovy")]
+    langs.push("groovy");
+
+    // Leak to get 'static lifetime — called rarely, acceptable
+    langs.leak()
 }
 
 /// Get the tree-sitter Language for a given language name.
 pub fn language_for(name: &str) -> Result<Language> {
     match name {
+        // Core grammars (always available)
         "rust" => Ok(tree_sitter_rust::LANGUAGE.into()),
         "typescript" => Ok(tree_sitter_typescript::LANGUAGE_TYPESCRIPT.into()),
         "javascript" => Ok(tree_sitter_typescript::LANGUAGE_TSX.into()),
@@ -56,6 +166,88 @@ pub fn language_for(name: &str) -> Result<Language> {
         "c" => Ok(tree_sitter_c::LANGUAGE.into()),
         "cpp" => Ok(tree_sitter_cpp::LANGUAGE.into()),
         "go" => Ok(tree_sitter_go::LANGUAGE.into()),
+
+        // Extended grammars (feature-gated)
+        #[cfg(feature = "tree-sitter-java")]
+        "java" => Ok(tree_sitter_java::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-c-sharp")]
+        "csharp" => Ok(tree_sitter_c_sharp::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-ruby")]
+        "ruby" => Ok(tree_sitter_ruby::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-php")]
+        "php" => Ok(tree_sitter_php::LANGUAGE_PHP.into()),
+        #[cfg(feature = "tree-sitter-swift")]
+        "swift" => Ok(tree_sitter_swift::LANGUAGE.into()),
+        // kotlin: removed, tree-sitter-kotlin 0.3 uses old tree-sitter API
+        #[cfg(feature = "tree-sitter-scala")]
+        "scala" => Ok(tree_sitter_scala::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-haskell")]
+        "haskell" => Ok(tree_sitter_haskell::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-ocaml")]
+        "ocaml" => Ok(tree_sitter_ocaml::LANGUAGE_OCAML.into()),
+        #[cfg(feature = "tree-sitter-elixir")]
+        "elixir" => Ok(tree_sitter_elixir::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-lua")]
+        "lua" => Ok(tree_sitter_lua::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-r")]
+        "r" => Ok(tree_sitter_r::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-julia")]
+        "julia" => Ok(tree_sitter_julia::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-bash")]
+        "bash" => Ok(tree_sitter_bash::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-html")]
+        "html" => Ok(tree_sitter_html::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-css")]
+        "css" => Ok(tree_sitter_css::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-json")]
+        "json" => Ok(tree_sitter_json::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-yaml")]
+        "yaml" => Ok(tree_sitter_yaml::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-toml-ng")]
+        "toml" => Ok(tree_sitter_toml_ng::LANGUAGE.into()),
+        // markdown: removed, tree-sitter-markdown 0.7 uses old tree-sitter API
+        #[cfg(feature = "tree-sitter-zig")]
+        "zig" => Ok(tree_sitter_zig::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-dart")]
+        "dart" => Ok(tree_sitter_dart::LANGUAGE.into()),
+        // sql: removed, tree-sitter-sql 0.0.2 uses old tree-sitter API
+        // dockerfile: removed, tree-sitter-dockerfile 0.2 uses old tree-sitter API
+        #[cfg(feature = "tree-sitter-erlang")]
+        "erlang" => Ok(tree_sitter_erlang::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-elm")]
+        "elm" => Ok(tree_sitter_elm::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-nix")]
+        "nix" => Ok(tree_sitter_nix::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-d")]
+        "d" => Ok(tree_sitter_d::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-objc")]
+        "objc" => Ok(tree_sitter_objc::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-fortran")]
+        "fortran" => Ok(tree_sitter_fortran::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-cmake")]
+        "cmake" => Ok(tree_sitter_cmake::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-make")]
+        "make" => Ok(tree_sitter_make::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-proto")]
+        "protobuf" => Ok(tree_sitter_proto::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-regex")]
+        "regex" => Ok(tree_sitter_regex::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-verilog")]
+        "verilog" => Ok(tree_sitter_verilog::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-racket")]
+        "racket" => Ok(tree_sitter_racket::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-glsl")]
+        "glsl" => Ok(tree_sitter_glsl::LANGUAGE_GLSL.into()),
+        // wgsl: removed, tree-sitter-wgsl 0.0.6 uses old tree-sitter API
+        #[cfg(feature = "tree-sitter-graphql")]
+        "graphql" => Ok(tree_sitter_graphql::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-latex")]
+        "latex" => Ok(tree_sitter_latex::LANGUAGE.into()),
+        #[cfg(feature = "tree-sitter-groovy")]
+        "groovy" => Ok(tree_sitter_groovy::LANGUAGE.into()),
+        // svelte: removed, tree-sitter-svelte 0.10 uses old tree-sitter API
+        // vue: removed, tree-sitter-vue 0.0.3 uses old tree-sitter API
+
         other => bail!("no tree-sitter grammar for language: {other}"),
     }
 }
@@ -128,8 +320,18 @@ pub fn parse_and_summarize(source: &str, language: &str) -> Result<ParseStats> {
 
 /// Detect language from file extension.
 pub fn detect_language(path: &str) -> Option<&'static str> {
+    // Handle special filenames (no extension)
+    let filename = path.rsplit(['/', '\\']).next().unwrap_or(path);
+    match filename.to_lowercase().as_str() {
+        "dockerfile" | "dockerfile.dev" | "dockerfile.prod" => return Some("dockerfile"),
+        "makefile" | "gnumakefile" => return Some("make"),
+        "cmakelists.txt" => return Some("cmake"),
+        _ => {}
+    }
+
     let ext = path.rsplit('.').next()?;
     match ext {
+        // Core languages
         "rs" => Some("rust"),
         "ts" | "tsx" => Some("typescript"),
         "js" | "jsx" | "mjs" | "cjs" => Some("javascript"),
@@ -137,13 +339,54 @@ pub fn detect_language(path: &str) -> Option<&'static str> {
         "c" | "h" => Some("c"),
         "cpp" | "cc" | "cxx" | "hpp" | "hxx" | "hh" => Some("cpp"),
         "go" => Some("go"),
-        "nix" => Some("nix"),
+        // Extended languages
+        "java" => Some("java"),
+        "cs" => Some("csharp"),
+        "rb" | "erb" => Some("ruby"),
+        "php" | "php3" | "php4" | "php5" | "phtml" => Some("php"),
+        "swift" => Some("swift"),
+        "kt" | "kts" => Some("kotlin"),
+        "scala" | "sc" => Some("scala"),
+        "hs" | "lhs" => Some("haskell"),
+        "ml" | "mli" => Some("ocaml"),
+        "ex" | "exs" => Some("elixir"),
+        "lua" => Some("lua"),
+        "r" | "R" => Some("r"),
+        "jl" => Some("julia"),
+        "sh" | "bash" | "zsh" => Some("bash"),
+        "html" | "htm" => Some("html"),
+        "css" => Some("css"),
+        "json" | "jsonc" => Some("json"),
         "yaml" | "yml" => Some("yaml"),
-        "json" => Some("json"),
         "toml" => Some("toml"),
-        "sh" | "bash" | "zsh" => Some("shell"),
+        "md" | "markdown" => Some("markdown"),
+        "zig" => Some("zig"),
+        "dart" => Some("dart"),
+        "sql" | "mysql" | "pgsql" => Some("sql"),
+        "pl" | "pm" => Some("perl"),
+        "erl" | "hrl" => Some("erlang"),
+        "clj" | "cljs" | "cljc" | "edn" => Some("clojure"),
+        "elm" => Some("elm"),
+        "nix" => Some("nix"),
+        "d" | "di" => Some("d"),
+        "m" => Some("objc"),
+        "f" | "f90" | "f95" | "f03" | "f08" | "for" | "fpp" => Some("fortran"),
+        "cmake" => Some("cmake"),
+        "mk" => Some("make"),
+        "proto" | "proto3" => Some("protobuf"),
+        "re" => Some("regex"),
+        "v" | "sv" | "svh" => Some("verilog"),
+        "rkt" => Some("racket"),
+        "scss" => Some("scss"),
+        "glsl" | "vert" | "frag" | "geom" | "comp" => Some("glsl"),
+        "wgsl" => Some("wgsl"),
+        "graphql" | "gql" => Some("graphql"),
+        "tex" | "latex" | "sty" | "cls" => Some("latex"),
+        "groovy" | "gradle" => Some("groovy"),
+        "svelte" => Some("svelte"),
+        "vue" => Some("vue"),
+        // Shell/special
         "ps1" | "psm1" => Some("powershell"),
-        "dockerfile" => Some("dockerfile"),
         _ => None,
     }
 }
@@ -240,39 +483,102 @@ fn infer_concept(name: &str, labels: &[String]) -> Option<String> {
     let lower = name.to_lowercase();
 
     let rules: &[(&[&str], &str)] = &[
-        (&["socket", "tcp", "udp", "listen", "bind", "connect", "accept"], "network"),
+        (
+            &[
+                "socket", "tcp", "udp", "listen", "bind", "connect", "accept",
+            ],
+            "network",
+        ),
         (&["dns", "resolve", "lookup", "nameserver"], "dns"),
-        (&["http", "request", "response", "header", "url", "uri"], "http"),
+        (
+            &["http", "request", "response", "header", "url", "uri"],
+            "http",
+        ),
         (&["tls", "ssl", "handshake", "certificate", "cert"], "tls"),
         (&["vpn", "tunnel", "wireguard"], "vpn"),
-        (&["encrypt", "decrypt", "cipher", "aes", "chacha", "hmac", "hash", "sha", "blake"], "crypto"),
-        (&["sign", "verify", "signature", "ed25519", "rsa"], "signing"),
-        (&["key", "keypair", "pubkey", "privkey", "secret_key"], "key-management"),
-        (&["auth", "login", "logout", "jwt", "token", "session", "credential"], "auth"),
+        (
+            &[
+                "encrypt", "decrypt", "cipher", "aes", "chacha", "hmac", "hash", "sha", "blake",
+            ],
+            "crypto",
+        ),
+        (
+            &["sign", "verify", "signature", "ed25519", "rsa"],
+            "signing",
+        ),
+        (
+            &["key", "keypair", "pubkey", "privkey", "secret_key"],
+            "key-management",
+        ),
+        (
+            &[
+                "auth",
+                "login",
+                "logout",
+                "jwt",
+                "token",
+                "session",
+                "credential",
+            ],
+            "auth",
+        ),
         (&["password", "passwd", "bcrypt", "argon"], "password"),
         (&["read", "write", "open", "close", "flush", "seek"], "io"),
         (&["send", "recv", "transmit", "receive"], "transport"),
         (&["buffer", "buf", "queue", "ring_buf", "channel"], "buffer"),
-        (&["parse", "deserialize", "decode", "from_str", "from_bytes"], "parse"),
-        (&["serialize", "encode", "to_string", "to_bytes", "format"], "serialize"),
+        (
+            &["parse", "deserialize", "decode", "from_str", "from_bytes"],
+            "parse",
+        ),
+        (
+            &["serialize", "encode", "to_string", "to_bytes", "format"],
+            "serialize",
+        ),
         (&["convert", "transform", "map", "into", "from"], "convert"),
-        (&["error", "err", "fail", "panic", "abort", "unwrap"], "error"),
+        (
+            &["error", "err", "fail", "panic", "abort", "unwrap"],
+            "error",
+        ),
         (&["retry", "backoff", "exponential"], "retry"),
         (&["timeout", "deadline", "expire"], "timeout"),
         (&["config", "setting", "option", "preference"], "config"),
         (&["init", "setup", "bootstrap", "start"], "init"),
-        (&["shutdown", "stop", "terminate", "cleanup", "drop"], "cleanup"),
+        (
+            &["shutdown", "stop", "terminate", "cleanup", "drop"],
+            "cleanup",
+        ),
         (&["state", "status", "machine", "transition"], "state"),
         (&["cache", "memoize", "lru"], "cache"),
-        (&["lock", "mutex", "rwlock", "semaphore", "guard"], "concurrency"),
-        (&["async", "await", "future", "poll", "spawn", "task"], "async"),
-        (&["valid", "check", "assert", "ensure", "require"], "validation"),
-        (&["display", "render", "draw", "paint", "show", "print"], "display"),
+        (
+            &["lock", "mutex", "rwlock", "semaphore", "guard"],
+            "concurrency",
+        ),
+        (
+            &["async", "await", "future", "poll", "spawn", "task"],
+            "async",
+        ),
+        (
+            &["valid", "check", "assert", "ensure", "require"],
+            "validation",
+        ),
+        (
+            &["display", "render", "draw", "paint", "show", "print"],
+            "display",
+        ),
         (&["log", "trace", "debug", "info", "warn"], "logging"),
-        (&["iter", "collect", "filter", "fold", "reduce"], "iteration"),
+        (
+            &["iter", "collect", "filter", "fold", "reduce"],
+            "iteration",
+        ),
         (&["sort", "search", "find", "index", "lookup"], "search"),
-        (&["insert", "remove", "delete", "add", "push", "pop"], "collection"),
-        (&["build", "builder", "create", "new", "make", "construct"], "builder"),
+        (
+            &["insert", "remove", "delete", "add", "push", "pop"],
+            "collection",
+        ),
+        (
+            &["build", "builder", "create", "new", "make", "construct"],
+            "builder",
+        ),
     ];
 
     for (keywords, concept) in rules {
