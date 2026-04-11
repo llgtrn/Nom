@@ -1,0 +1,17 @@
+[package]
+name = "nom-llvm"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nom-ast = { path = "../nom-ast" }
+nom-planner = { path = "../nom-planner" }
+inkwell = { version = "0.5", features = ["llvm18-0"] }
+thiserror.workspace = true
+
+[features]
+default = []
+# Use no-llvm-linking when LLVM 18 dev libraries are not installed.
+# Allows `cargo check` without a full LLVM installation.
+no-llvm-linking = ["inkwell/llvm18-0-no-llvm-linking"]
