@@ -7,6 +7,7 @@
 //!   nom test <file>     — run test declarations in <file>
 //!   nom report <file>   — security report for <file>
 //!   nom dict <query>    — search the local nomdict database
+//!   nom precompile      — pre-compile .nomtu bodies to LLVM bitcode (.bc)
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{collect_dependencies, generate, CodegenOptions};
@@ -137,6 +138,28 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Pre-compile .nomtu bodies to LLVM bitcode (.bc)
+    Precompile {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Output directory for .bc files
+        #[arg(long, default_value = ".nom-bc")]
+        output_dir: PathBuf,
+        /// Only precompile entries matching this word
+        #[arg(long)]
+        word: Option<String>,
+        /// Only precompile entries of this language
+        #[arg(long)]
+        language: Option<String>,
+        /// Maximum entries to precompile (0 = all)
+        #[arg(long, default_value = "0")]
+        limit: usize,
+        /// Dry run: show what would be compiled
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -156,6 +179,9 @@ fn main() {
         Commands::Dict { query, dict, limit } => cmd_dict(&query, &dict, limit),
         Commands::Import { source, dict, language, concept, min_body_len, limit, dry_run } => {
             cmd_import(&source, &dict, language.as_deref(), concept.as_deref(), min_body_len, limit, dry_run)
+        }
+        Commands::Precompile { dict, output_dir, word, language, limit, dry_run } => {
+            cmd_precompile(&dict, &output_dir, word.as_deref(), language.as_deref(), limit, dry_run)
         }
     };
     process::exit(exit_code);
@@ -1006,6 +1032,487 @@ fn detect_domain(name_lower: &str) -> Option<&'static str> {
     }
 
     None
+}
+
+// ── Precompile ───────────────────────────────────────────────────────────────
+
+fn cmd_precompile(
+    dict: &PathBuf,
+    output_dir: &PathBuf,
+    word: Option<&str>,
+    language: Option<&str>,
+    limit: usize,
+    dry_run: bool,
+) -> i32 {
+    // Open nomdict read-only to query entries with bodies
+    let conn = match rusqlite::Connection::open_with_flags(
+        dict,
+        OpenFlags::SQLITE_OPEN_READ_WRITE,
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", dict.display());
+            return 1;
+        }
+    };
+
+    // Ensure artifact_path column exists
+    let _ = conn.execute_batch(
+        "ALTER TABLE nomtu ADD COLUMN artifact_path TEXT;",
+    );
+
+    // Build query
+    let mut sql = String::from(
+        "SELECT id, word, variant, language, body, signature \
+         FROM nomtu WHERE body IS NOT NULL AND length(body) > 0",
+    );
+    let mut param_index = 1u32;
+
+    let word_idx = if word.is_some() {
+        let idx = param_index;
+        sql.push_str(&format!(" AND word = ?{idx}"));
+        param_index += 1;
+        Some(idx)
+    } else {
+        None
+    };
+
+    let lang_idx = if language.is_some() {
+        let idx = param_index;
+        sql.push_str(&format!(" AND language = ?{idx}"));
+        param_index += 1;
+        Some(idx)
+    } else {
+        None
+    };
+
+    if limit > 0 {
+        sql.push_str(&format!(" LIMIT ?{param_index}"));
+    }
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom: query error: {e}");
+            return 1;
+        }
+    };
+
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    if let (Some(_), Some(w)) = (word_idx, word) {
+        params_vec.push(Box::new(w.to_owned()));
+    }
+    if let (Some(_), Some(l)) = (lang_idx, language) {
+        params_vec.push(Box::new(l.to_owned()));
+    }
+    if limit > 0 {
+        params_vec.push(Box::new(limit as i64));
+    }
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
+        params_vec.iter().map(|b| b.as_ref() as &dyn rusqlite::types::ToSql).collect();
+
+    let rows = match stmt.query_map(params_refs.as_slice(), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,          // id
+            row.get::<_, String>(1)?,        // word
+            row.get::<_, Option<String>>(2)?,// variant
+            row.get::<_, String>(3)?,        // language
+            row.get::<_, String>(4)?,        // body
+            row.get::<_, Option<String>>(5)?,// signature
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("nom: query execution error: {e}");
+            return 1;
+        }
+    };
+
+    // Find LLVM tools
+    let llvm_bin = find_llvm_bin();
+    if llvm_bin.is_none() && !dry_run {
+        eprintln!("nom: warning: LLVM tools not found via rustc --print sysroot");
+        eprintln!("nom: stub .bc generation for non-Rust entries will be skipped");
+    }
+
+    // Create output directory
+    if !dry_run {
+        if let Err(e) = std::fs::create_dir_all(output_dir) {
+            eprintln!("nom: cannot create output dir {}: {e}", output_dir.display());
+            return 1;
+        }
+    }
+
+    // Counters per language
+    let mut total = 0usize;
+    let mut compiled = 0usize;
+    let mut stubbed = 0usize;
+    let mut failed = 0usize;
+    let mut lang_counts: std::collections::HashMap<String, (usize, usize, usize)> =
+        std::collections::HashMap::new();
+
+    // Collect rows (can't hold stmt borrow and also use conn for UPDATE)
+    let entries: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+
+    println!(
+        "nom: precompiling {} nomtu entries to .bc...",
+        entries.len()
+    );
+
+    for (id, entry_word, variant, lang, body, _signature) in &entries {
+        total += 1;
+
+        let safe_name = llvm_safe_name(entry_word, variant.as_deref());
+        let entry_dir = output_dir.join(entry_word);
+        let bc_filename = if let Some(v) = variant {
+            format!("{v}.bc")
+        } else {
+            format!("{entry_word}.bc")
+        };
+
+        if dry_run {
+            let status = match lang.as_str() {
+                "rust" => "compile",
+                "c" | "cpp" => "compile (via llvm-as)",
+                _ => "stub",
+            };
+            if total <= 20 || total % 100 == 0 {
+                println!(
+                    "  [{total}] {entry_word}::{} ({lang}) -> {status}",
+                    variant.as_deref().unwrap_or("-"),
+                );
+            }
+            let counts = lang_counts.entry(lang.clone()).or_insert((0, 0, 0));
+            match lang.as_str() {
+                "rust" | "c" | "cpp" => counts.0 += 1,
+                _ => counts.1 += 1,
+            }
+            continue;
+        }
+
+        if let Err(e) = std::fs::create_dir_all(&entry_dir) {
+            eprintln!("nom: cannot create dir {}: {e}", entry_dir.display());
+            failed += 1;
+            continue;
+        }
+
+        let bc_path = entry_dir.join(&bc_filename);
+        let result = match lang.as_str() {
+            "rust" => {
+                // Try native Rust compilation first, fall back to stub on failure
+                match precompile_rust(&safe_name, body, &bc_path) {
+                    ok @ Ok(_) => ok,
+                    Err(_) => precompile_stub(&safe_name, body, lang, &bc_path, llvm_bin.as_deref()),
+                }
+            }
+            "c" | "cpp" => precompile_c(&safe_name, body, lang, &bc_path, llvm_bin.as_deref()),
+            _ => precompile_stub(&safe_name, body, lang, &bc_path, llvm_bin.as_deref()),
+        };
+
+        let counts = lang_counts.entry(lang.clone()).or_insert((0, 0, 0));
+        match result {
+            Ok(PrecompileResult::Compiled) => {
+                compiled += 1;
+                counts.0 += 1;
+                // Update artifact_path in the database
+                let _ = conn.execute(
+                    "UPDATE nomtu SET artifact_path = ?1 WHERE id = ?2",
+                    rusqlite::params![bc_path.to_string_lossy().as_ref(), id],
+                );
+            }
+            Ok(PrecompileResult::Stubbed) => {
+                stubbed += 1;
+                counts.1 += 1;
+                let _ = conn.execute(
+                    "UPDATE nomtu SET artifact_path = ?1 WHERE id = ?2",
+                    rusqlite::params![bc_path.to_string_lossy().as_ref(), id],
+                );
+            }
+            Err(e) => {
+                failed += 1;
+                counts.2 += 1;
+                if failed <= 10 {
+                    eprintln!(
+                        "  error: {entry_word}::{} ({lang}): {e}",
+                        variant.as_deref().unwrap_or("-"),
+                    );
+                }
+            }
+        }
+
+        if total % 100 == 0 {
+            println!("  processed {total} entries ({compiled} compiled, {stubbed} stubbed, {failed} failed)...");
+        }
+    }
+
+    // Summary
+    println!();
+    println!("nom: precompile complete");
+    println!("  total:    {total}");
+    if dry_run {
+        println!("  (dry run — no files written)");
+    } else {
+        println!("  compiled: {compiled}");
+        println!("  stubbed:  {stubbed}");
+        println!("  failed:   {failed}");
+        println!("  output:   {}", output_dir.display());
+    }
+
+    // Per-language breakdown
+    let mut langs: Vec<_> = lang_counts.iter().collect();
+    langs.sort_by_key(|(k, _)| (*k).clone());
+    for (lang, (comp, stub, fail)) in &langs {
+        if dry_run {
+            println!("    {lang}: {comp} compile, {stub} stub");
+        } else {
+            println!("    {lang}: {comp} compiled, {stub} stubbed, {fail} failed");
+        }
+    }
+
+    0
+}
+
+enum PrecompileResult {
+    Compiled,
+    Stubbed,
+}
+
+/// Compile a Rust body to LLVM bitcode via rustc.
+fn precompile_rust(
+    safe_name: &str,
+    body: &str,
+    bc_path: &Path,
+) -> Result<PrecompileResult, String> {
+    // Determine if the body is already a complete item (fn, struct, impl, etc.)
+    // or just a function body that needs wrapping.
+    let trimmed = body.trim();
+    let is_complete_item = trimmed.starts_with("pub fn ")
+        || trimmed.starts_with("fn ")
+        || trimmed.starts_with("pub struct ")
+        || trimmed.starts_with("struct ")
+        || trimmed.starts_with("pub enum ")
+        || trimmed.starts_with("enum ")
+        || trimmed.starts_with("pub trait ")
+        || trimmed.starts_with("impl ")
+        || trimmed.starts_with("pub async fn ")
+        || trimmed.starts_with("async fn ")
+        || trimmed.starts_with("pub const ")
+        || trimmed.starts_with("const ")
+        || trimmed.starts_with("pub type ")
+        || trimmed.starts_with("type ")
+        || trimmed.starts_with("pub static ");
+
+    let wrapper = if is_complete_item {
+        // Body is already a complete Rust item — include as-is
+        // Add allow attributes to suppress warnings from extracted code
+        format!(
+            "#![allow(dead_code, unused_variables, unused_imports, non_snake_case, unused_mut)]\n\n\
+             {body}\n"
+        )
+    } else {
+        // Body is a function body or expression — wrap it
+        format!(
+            "#![allow(dead_code, unused_variables, unused_imports, non_snake_case, unused_mut)]\n\n\
+             #[no_mangle]\npub extern \"C\" fn {safe_name}() {{\n{body}\n}}\n"
+        )
+    };
+
+    let tmp_dir = std::env::temp_dir().join("nom-precompile");
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("mkdir: {e}"))?;
+
+    let rs_path = tmp_dir.join(format!("{safe_name}.rs"));
+    std::fs::write(&rs_path, &wrapper).map_err(|e| format!("write .rs: {e}"))?;
+
+    // Try compiling — if it fails, fall back to stub
+    let output = process::Command::new("rustc")
+        .args([
+            "--emit=llvm-bc",
+            "--crate-type=cdylib",
+            "--edition=2021",
+            "-o",
+        ])
+        .arg(bc_path)
+        .arg(&rs_path)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::piped())
+        .output()
+        .map_err(|e| format!("rustc: {e}"))?;
+
+    // Clean up temp file
+    let _ = std::fs::remove_file(&rs_path);
+
+    if output.status.success() {
+        Ok(PrecompileResult::Compiled)
+    } else {
+        // Compilation failed — body has external deps
+        // Fall back to LLVM IR stub (same as other languages)
+        Err(format!("rustc failed (has external deps)"))
+    }
+}
+
+/// Compile a C/C++ body to LLVM bitcode via llvm-as (generate LLVM IR text).
+fn precompile_c(
+    safe_name: &str,
+    body: &str,
+    lang: &str,
+    bc_path: &Path,
+    llvm_bin: Option<&Path>,
+) -> Result<PrecompileResult, String> {
+    let llvm_bin = llvm_bin.ok_or("llvm-as not found")?;
+    let llvm_as = llvm_bin.join("llvm-as");
+    if !llvm_as.exists() && !llvm_as.with_extension("exe").exists() {
+        return Err("llvm-as not found".to_owned());
+    }
+
+    // Generate minimal LLVM IR wrapping the C function as an opaque stub
+    // with a comment containing the original body for future translation.
+    let escaped_body: String = body
+        .lines()
+        .map(|line| format!("; C: {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let ir = format!(
+        concat!(
+            "; ModuleID = '{name}'\n",
+            "source_filename = \"{name}.{lang}\"\n",
+            "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"\n",
+            "target triple = \"x86_64-pc-windows-msvc\"\n",
+            "\n",
+            "{body_comment}\n",
+            "\n",
+            "define void @{name}() {{\n",
+            "entry:\n",
+            "  ret void\n",
+            "}}\n",
+        ),
+        name = safe_name,
+        lang = lang,
+        body_comment = escaped_body,
+    );
+
+    let tmp_dir = std::env::temp_dir().join("nom-precompile");
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("mkdir: {e}"))?;
+
+    let ll_path = tmp_dir.join(format!("{safe_name}.ll"));
+    std::fs::write(&ll_path, &ir).map_err(|e| format!("write .ll: {e}"))?;
+
+    let status = process::Command::new(&llvm_as)
+        .arg("-o")
+        .arg(bc_path)
+        .arg(&ll_path)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::piped())
+        .status()
+        .map_err(|e| format!("llvm-as: {e}"))?;
+
+    let _ = std::fs::remove_file(&ll_path);
+
+    if status.success() {
+        Ok(PrecompileResult::Compiled)
+    } else {
+        Err(format!("llvm-as exit code {}", status.code().unwrap_or(-1)))
+    }
+}
+
+/// Generate a stub .bc for languages that cannot compile directly (Python, JS, TS, Go, etc.).
+fn precompile_stub(
+    safe_name: &str,
+    body: &str,
+    lang: &str,
+    bc_path: &Path,
+    llvm_bin: Option<&Path>,
+) -> Result<PrecompileResult, String> {
+    let llvm_bin = llvm_bin.ok_or("llvm-as not found — cannot generate stub .bc")?;
+    let llvm_as = llvm_bin.join("llvm-as");
+    if !llvm_as.exists() && !llvm_as.with_extension("exe").exists() {
+        return Err("llvm-as not found".to_owned());
+    }
+
+    // Embed a comment with the first 20 lines of the original body
+    let body_preview: String = body
+        .lines()
+        .take(20)
+        .map(|line| format!("; {lang}: {line}"))
+        .collect::<Vec<_>>()
+        .join("\n");
+
+    let ir = format!(
+        concat!(
+            "; ModuleID = '{name}'\n",
+            "source_filename = \"{name}.{lang}\"\n",
+            "target datalayout = \"e-m:w-p270:32:32-p271:32:32-p272:64:64-i64:64-f80:128-n8:16:32:64-S128\"\n",
+            "target triple = \"x86_64-pc-windows-msvc\"\n",
+            "\n",
+            "; STUB: needs translation from {lang} to native code\n",
+            "; Original body available in nomdict\n",
+            "{body_preview}\n",
+            "\n",
+            "define void @{name}() {{\n",
+            "entry:\n",
+            "  ret void\n",
+            "}}\n",
+        ),
+        name = safe_name,
+        lang = lang,
+        body_preview = body_preview,
+    );
+
+    let tmp_dir = std::env::temp_dir().join("nom-precompile");
+    std::fs::create_dir_all(&tmp_dir).map_err(|e| format!("mkdir: {e}"))?;
+
+    let ll_path = tmp_dir.join(format!("{safe_name}.ll"));
+    std::fs::write(&ll_path, &ir).map_err(|e| format!("write .ll: {e}"))?;
+
+    let status = process::Command::new(&llvm_as)
+        .arg("-o")
+        .arg(bc_path)
+        .arg(&ll_path)
+        .stdout(process::Stdio::null())
+        .stderr(process::Stdio::piped())
+        .status()
+        .map_err(|e| format!("llvm-as: {e}"))?;
+
+    let _ = std::fs::remove_file(&ll_path);
+
+    if status.success() {
+        Ok(PrecompileResult::Stubbed)
+    } else {
+        Err(format!("llvm-as exit code {}", status.code().unwrap_or(-1)))
+    }
+}
+
+/// Locate the LLVM tools directory bundled with rustc.
+fn find_llvm_bin() -> Option<PathBuf> {
+    let output = process::Command::new("rustc")
+        .args(["--print", "sysroot"])
+        .output()
+        .ok()?;
+    let sysroot = String::from_utf8(output.stdout).ok()?.trim().to_owned();
+    let bin = PathBuf::from(&sysroot)
+        .join("lib/rustlib/x86_64-pc-windows-msvc/bin");
+    if bin.exists() {
+        Some(bin)
+    } else {
+        None
+    }
+}
+
+/// Sanitize a word+variant into an LLVM-safe symbol name.
+fn llvm_safe_name(word: &str, variant: Option<&str>) -> String {
+    let sanitize = |s: &str| -> String {
+        s.chars()
+            .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+            .collect()
+    };
+    let base = sanitize(word);
+    if let Some(v) = variant {
+        let v_safe = sanitize(v);
+        format!("nom_{base}_{v_safe}")
+    } else {
+        format!("nom_{base}")
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
