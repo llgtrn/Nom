@@ -828,6 +828,93 @@ const ORDER_CLAUSE: &str = "is_canonical DESC, \
      overall_score DESC, \
      id DESC";
 
+// ── ADOPT-7: Bidirectional contract inference via unification ───────
+
+/// A contract shape: input type -> output type.
+///
+/// Inspired by Prolog's bidirectional unification — types propagate
+/// both forward (output of A becomes input of B) and backward
+/// (required input of B constrains output of A).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractShape {
+    pub input_type: Option<String>,
+    pub output_type: Option<String>,
+}
+
+/// Result of contract inference for a single node in a flow chain.
+#[derive(Debug, Clone)]
+pub struct InferredContract {
+    /// Node name in the flow.
+    pub node: String,
+    /// Inferred contract shape.
+    pub contract: ContractShape,
+    /// Whether this was inferred (`true`) or known from the dictionary (`false`).
+    pub inferred: bool,
+}
+
+/// Given a flow chain (list of node names) and the known contracts for some nodes,
+/// infer the contract shapes that intermediate nodes must satisfy.
+///
+/// Uses bidirectional unification:
+/// - **Forward pass**: propagate output types as input types of the next node.
+/// - **Backward pass**: propagate required input types as output types of the previous node.
+///
+/// Returns inferred contracts for all nodes in the chain.
+pub fn infer_flow_contracts(
+    chain: &[String],
+    known_contracts: &std::collections::HashMap<String, ContractShape>,
+) -> Vec<InferredContract> {
+    if chain.is_empty() {
+        return vec![];
+    }
+
+    // 1. Initialize contracts from known_contracts (clone known, default unknown)
+    let mut contracts: Vec<ContractShape> = chain
+        .iter()
+        .map(|name| {
+            known_contracts
+                .get(name)
+                .cloned()
+                .unwrap_or(ContractShape {
+                    input_type: None,
+                    output_type: None,
+                })
+        })
+        .collect();
+
+    // 2. Forward pass: if node[i].output_type is known and node[i+1].input_type is unknown, set it
+    for i in 0..contracts.len() - 1 {
+        if let Some(out) = contracts[i].output_type.clone() {
+            if contracts[i + 1].input_type.is_none() {
+                contracts[i + 1].input_type = Some(out);
+            }
+        }
+    }
+
+    // 3. Backward pass: if node[i+1].input_type is known and node[i].output_type is unknown, set it
+    for i in (0..contracts.len() - 1).rev() {
+        if let Some(inp) = contracts[i + 1].input_type.clone() {
+            if contracts[i].output_type.is_none() {
+                contracts[i].output_type = Some(inp);
+            }
+        }
+    }
+
+    // 4. Build results with inferred flag
+    chain
+        .iter()
+        .enumerate()
+        .map(|(i, name)| {
+            let was_known = known_contracts.get(name).is_some_and(|k| *k == contracts[i]);
+            InferredContract {
+                node: name.clone(),
+                contract: contracts[i].clone(),
+                inferred: !was_known,
+            }
+        })
+        .collect()
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1240,5 +1327,69 @@ mod tests {
             .unwrap();
         let all = resolver.get_all_impls("x", None).unwrap();
         assert_eq!(all.len(), 2);
+    }
+
+    // ── Contract inference tests (ADOPT-7) ─────────────────────────
+
+    #[test]
+    fn infers_intermediate_contract_forward() {
+        // Chain: A -> B -> C
+        // Known: A outputs "bytes", C requires "bytes" input
+        // Infer: B must accept "bytes" and produce "bytes"
+        let chain = vec!["A".into(), "B".into(), "C".into()];
+        let mut known = std::collections::HashMap::new();
+        known.insert("A".into(), ContractShape { input_type: None, output_type: Some("bytes".into()) });
+        known.insert("C".into(), ContractShape { input_type: Some("bytes".into()), output_type: None });
+
+        let result = infer_flow_contracts(&chain, &known);
+        let b = result.iter().find(|r| r.node == "B").unwrap();
+        assert_eq!(b.contract.input_type, Some("bytes".into()));
+        assert_eq!(b.contract.output_type, Some("bytes".into()));
+        assert!(b.inferred);
+    }
+
+    #[test]
+    fn forward_propagation_only() {
+        // Chain: A -> B -> C
+        // Known: A outputs "text"
+        // Infer: B input is "text", but output and C's input remain unknown
+        let chain = vec!["A".into(), "B".into(), "C".into()];
+        let mut known = std::collections::HashMap::new();
+        known.insert("A".into(), ContractShape { input_type: None, output_type: Some("text".into()) });
+
+        let result = infer_flow_contracts(&chain, &known);
+        let b = result.iter().find(|r| r.node == "B").unwrap();
+        assert_eq!(b.contract.input_type, Some("text".into()));
+    }
+
+    #[test]
+    fn backward_propagation() {
+        // Chain: A -> B -> C
+        // Known: C requires "hash" input
+        // Infer: B must output "hash"
+        let chain = vec!["A".into(), "B".into(), "C".into()];
+        let mut known = std::collections::HashMap::new();
+        known.insert("C".into(), ContractShape { input_type: Some("hash".into()), output_type: None });
+
+        let result = infer_flow_contracts(&chain, &known);
+        let b = result.iter().find(|r| r.node == "B").unwrap();
+        assert_eq!(b.contract.output_type, Some("hash".into()));
+    }
+
+    #[test]
+    fn empty_chain_returns_empty() {
+        let result = infer_flow_contracts(&[], &std::collections::HashMap::new());
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn single_node_uses_known_contract() {
+        let chain = vec!["A".into()];
+        let mut known = std::collections::HashMap::new();
+        known.insert("A".into(), ContractShape { input_type: Some("bytes".into()), output_type: Some("hash".into()) });
+
+        let result = infer_flow_contracts(&chain, &known);
+        assert_eq!(result.len(), 1);
+        assert!(!result[0].inferred);
     }
 }
