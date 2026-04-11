@@ -11,6 +11,8 @@
 use nom_ast::NomRef;
 pub use nom_types::NomtuEntry;
 use rusqlite::{Connection, OptionalExtension, params};
+use std::collections::HashMap;
+use std::path::PathBuf;
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -990,6 +992,87 @@ pub fn contracts_compatible(producer: &ContractShape, consumer: &ContractShape) 
     }
 }
 
+// ── Module resolution ────────────────────────────────────────────────────────
+
+/// Resolves module paths to file system paths and caches parsed modules.
+pub struct ModuleResolver {
+    /// Root directory of the project (where the entry .nom file lives)
+    root: PathBuf,
+    /// Parsed modules cache: module path key → SourceFile
+    modules: HashMap<String, nom_ast::SourceFile>,
+}
+
+impl ModuleResolver {
+    /// Create a new module resolver rooted at the given directory.
+    pub fn new(root: PathBuf) -> Self {
+        Self {
+            root,
+            modules: HashMap::new(),
+        }
+    }
+
+    /// Resolve a module path (e.g., `["math"]` or `["math", "trig"]`) to a file path.
+    ///
+    /// Resolution order:
+    /// - `root/math.nom` (for `["math"]`)
+    /// - `root/math/lib.nom` (for `["math"]` if no `math.nom`)
+    /// - `root/math/trig.nom` (for `["math", "trig"]`)
+    pub fn resolve_module_path(&self, path: &[String]) -> Option<PathBuf> {
+        let mut file_path = self.root.clone();
+        for segment in path {
+            file_path.push(segment);
+        }
+        // Try path.nom first
+        let nom_file = file_path.with_extension("nom");
+        if nom_file.exists() {
+            return Some(nom_file);
+        }
+        // Try path/lib.nom (directory module)
+        let lib_file = file_path.join("lib.nom");
+        if lib_file.exists() {
+            return Some(lib_file);
+        }
+        None
+    }
+
+    /// Load and parse a module, caching the result.
+    pub fn load_module(&mut self, path: &[String]) -> Result<&nom_ast::SourceFile, ResolverError> {
+        let key = path.join("::");
+        if !self.modules.contains_key(&key) {
+            let file_path = self.resolve_module_path(path).ok_or_else(|| {
+                ResolverError::NotFound {
+                    word: format!("module {}", key),
+                    variant: None,
+                }
+            })?;
+            let source = std::fs::read_to_string(&file_path).map_err(|e| {
+                ResolverError::NotFound {
+                    word: format!("failed to read {}: {}", file_path.display(), e),
+                    variant: None,
+                }
+            })?;
+            let sf = nom_parser::parse_source(&source).map_err(|e| {
+                ResolverError::NotFound {
+                    word: format!("parse error in {}: {:?}", file_path.display(), e),
+                    variant: None,
+                }
+            })?;
+            self.modules.insert(key.clone(), sf);
+        }
+        Ok(&self.modules[&key])
+    }
+
+    /// Check if a module path can be resolved (without loading it).
+    pub fn module_exists(&self, path: &[String]) -> bool {
+        self.resolve_module_path(path).is_some()
+    }
+
+    /// Get the root directory.
+    pub fn root(&self) -> &PathBuf {
+        &self.root
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1542,5 +1625,101 @@ mod tests {
         let producer = ContractShape { input_type: None, output_type: Some("hash_bytes".into()) };
         let consumer = ContractShape { input_type: Some("hash".into()), output_type: None };
         assert!(contracts_compatible(&producer, &consumer));
+    }
+
+    // ── Module resolver tests ──────────────────────────────────────────────
+
+    #[test]
+    fn resolves_module_file() {
+        // Create a temp dir with a math.nom file
+        let dir = std::env::temp_dir().join("nom_test_resolve_module");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("math.nom"), "system math\n  describe \"math module\"\n").unwrap();
+
+        let resolver = ModuleResolver::new(dir.clone());
+        let result = resolver.resolve_module_path(&["math".to_string()]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dir.join("math.nom"));
+
+        // Clean up
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolves_directory_module() {
+        // Create a temp dir with math/lib.nom
+        let dir = std::env::temp_dir().join("nom_test_resolve_dir_module");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("math")).unwrap();
+        std::fs::write(dir.join("math").join("lib.nom"), "system math\n  describe \"math lib\"\n").unwrap();
+
+        let resolver = ModuleResolver::new(dir.clone());
+        let result = resolver.resolve_module_path(&["math".to_string()]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dir.join("math").join("lib.nom"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn resolves_nested_module_path() {
+        let dir = std::env::temp_dir().join("nom_test_resolve_nested");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("math")).unwrap();
+        std::fs::write(dir.join("math").join("trig.nom"), "system trig\n  describe \"trig\"\n").unwrap();
+
+        let resolver = ModuleResolver::new(dir.clone());
+        let result = resolver.resolve_module_path(&["math".to_string(), "trig".to_string()]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap(), dir.join("math").join("trig.nom"));
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn returns_none_for_missing_module() {
+        let dir = std::env::temp_dir().join("nom_test_missing_module");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+
+        let resolver = ModuleResolver::new(dir.clone());
+        let result = resolver.resolve_module_path(&["nonexistent".to_string()]);
+        assert!(result.is_none());
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn load_module_parses_and_caches() {
+        let dir = std::env::temp_dir().join("nom_test_load_module");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("utils.nom"), "system utils\n  describe \"utilities\"\n").unwrap();
+
+        let mut resolver = ModuleResolver::new(dir.clone());
+        let sf = resolver.load_module(&["utils".to_string()]).unwrap();
+        assert_eq!(sf.declarations.len(), 1);
+        assert_eq!(sf.declarations[0].name.name, "utils");
+
+        // Second load should use cache (same result)
+        let sf2 = resolver.load_module(&["utils".to_string()]).unwrap();
+        assert_eq!(sf2.declarations.len(), 1);
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn module_exists_check() {
+        let dir = std::env::temp_dir().join("nom_test_module_exists");
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(dir.join("present.nom"), "system present\n  describe \"here\"\n").unwrap();
+
+        let resolver = ModuleResolver::new(dir.clone());
+        assert!(resolver.module_exists(&["present".to_string()]));
+        assert!(!resolver.module_exists(&["absent".to_string()]));
+
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

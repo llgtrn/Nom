@@ -267,6 +267,25 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
         Statement::ExprStmt(e) => {
             out.push_str(&format!("{pad}{}\n", fmt_expr(e)));
         }
+        Statement::Use(u) => {
+            let path_str = u.path.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join("::");
+            let import_str = match &u.imports {
+                nom_ast::UseImport::Single(name) => name.name.clone(),
+                nom_ast::UseImport::Multiple(names) => {
+                    let items: Vec<&str> = names.iter().map(|n| n.name.as_str()).collect();
+                    format!("{{{}}}", items.join(", "))
+                }
+                nom_ast::UseImport::Glob => "*".to_string(),
+            };
+            if path_str.is_empty() {
+                out.push_str(&format!("{pad}use {import_str}\n"));
+            } else {
+                out.push_str(&format!("{pad}use {path_str}::{import_str}\n"));
+            }
+        }
+        Statement::Mod(m) => {
+            out.push_str(&format!("{pad}mod {}\n", m.name.name));
+        }
     }
 }
 

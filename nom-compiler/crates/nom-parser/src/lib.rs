@@ -29,12 +29,12 @@ use nom_ast::{
     AssignStmt, Block, BlockStmt, BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier,
     CompareOp, Constraint, ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt,
     EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam, ForStmt,
-    OnFailStrategy,
+    ModStmt, OnFailStrategy,
     GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
     GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplementStmt, LetStmt,
     Literal, MatchArm, MatchExpr, NeedStmt, NomRef, Pattern, RequireStmt, SourceFile, Span,
     Statement, StructDef, StructField, TestAndStmt, TestGivenStmt, TestThenStmt, TestWhenStmt,
-    TypeExpr, TypedParam, WhileStmt,
+    TypeExpr, TypedParam, UseImport, UseStmt, WhileStmt,
 };
 use nom_lexer::{SpannedToken, Token};
 use thiserror::Error;
@@ -437,6 +437,9 @@ impl Parser {
             }
             Token::Struct => Ok(Some(Statement::StructDef(self.parse_struct_def(false)?))),
             Token::Enum => Ok(Some(Statement::EnumDef(self.parse_enum_def(false)?))),
+            // ── Module system ──────────────────────────────────────────────
+            Token::Use => Ok(Some(Statement::Use(self.parse_use_stmt()?))),
+            Token::Mod => Ok(Some(Statement::Mod(self.parse_mod_stmt()?))),
             Token::Eof | Token::BlankLine => Ok(None),
             t if is_classifier(&t) => Ok(None),
             Token::Newline => {
@@ -2343,6 +2346,98 @@ impl Parser {
         }
         code.trim().to_owned()
     }
+
+    // ── Module system ───────────────────────────────────────────────────────
+
+    /// Parse a `use` statement: `use path::item`, `use path::{a, b}`, `use path::*`
+    fn parse_use_stmt(&mut self) -> ParseResult<UseStmt> {
+        let start = self.peek_span();
+        self.advance(); // consume 'use'
+
+        // Parse the first identifier segment
+        let mut path: Vec<Identifier> = vec![self.expect_ident()?];
+
+        // Parse :: separated path segments
+        // We keep consuming ident :: pairs. The last segment determines the import kind.
+        loop {
+            if !matches!(self.peek(), Token::ColCol) {
+                break;
+            }
+            self.advance(); // consume '::'
+
+            // Check for glob: use math::*
+            if matches!(self.peek(), Token::Star) {
+                let end_span = self.peek_span();
+                self.advance(); // consume '*'
+                return Ok(UseStmt {
+                    path,
+                    imports: UseImport::Glob,
+                    span: Span::new(start.start, end_span.end, start.line, start.col),
+                });
+            }
+
+            // Check for multi-import: use math::{sin, cos}
+            if matches!(self.peek(), Token::LBrace) {
+                self.advance(); // consume '{'
+                let mut items = Vec::new();
+                loop {
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::RBrace) {
+                        break;
+                    }
+                    items.push(self.expect_ident()?);
+                    self.skip_whitespace();
+                    if matches!(self.peek(), Token::Comma) {
+                        self.advance(); // consume ','
+                    }
+                }
+                let end_span = self.peek_span();
+                self.advance(); // consume '}'
+                return Ok(UseStmt {
+                    path,
+                    imports: UseImport::Multiple(items),
+                    span: Span::new(start.start, end_span.end, start.line, start.col),
+                });
+            }
+
+            // Regular identifier — could be another path segment or the final import
+            let ident = self.expect_ident()?;
+            path.push(ident);
+        }
+
+        // No :: after last segment, so the last path element is the imported item
+        // e.g., `use math::sin` → path=["math", "sin"], import=Single("sin")
+        if path.len() < 2 {
+            // `use math` with no :: — treat the single ident as both path and import
+            let item = path[0].clone();
+            let end_span = item.span;
+            return Ok(UseStmt {
+                path: vec![],
+                imports: UseImport::Single(item),
+                span: Span::new(start.start, end_span.end, start.line, start.col),
+            });
+        }
+
+        let item = path.pop().unwrap();
+        let end_span = item.span;
+        Ok(UseStmt {
+            path,
+            imports: UseImport::Single(item),
+            span: Span::new(start.start, end_span.end, start.line, start.col),
+        })
+    }
+
+    /// Parse a `mod` statement: `mod utils`
+    fn parse_mod_stmt(&mut self) -> ParseResult<ModStmt> {
+        let start = self.peek_span();
+        self.advance(); // consume 'mod'
+        let name = self.expect_ident()?;
+        let end_span = name.span;
+        Ok(ModStmt {
+            name,
+            span: Span::new(start.start, end_span.end, start.line, start.col),
+        })
+    }
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -2899,5 +2994,106 @@ mod tests {
             }
             other => panic!("expected Flow, got {other:?}"),
         }
+    }
+
+    // ── Module system tests ────────────────────────────────────────────────
+
+    #[test]
+    fn parses_use_single() {
+        let src = "system test\n  use math::sin\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert_eq!(u.path.len(), 1);
+                assert_eq!(u.path[0].name, "math");
+                match &u.imports {
+                    UseImport::Single(name) => assert_eq!(name.name, "sin"),
+                    other => panic!("expected Single import, got {other:?}"),
+                }
+            }
+            other => panic!("expected Use statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_use_nested_path() {
+        let src = "system test\n  use math::trig::sin\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert_eq!(u.path.len(), 2);
+                assert_eq!(u.path[0].name, "math");
+                assert_eq!(u.path[1].name, "trig");
+                match &u.imports {
+                    UseImport::Single(name) => assert_eq!(name.name, "sin"),
+                    other => panic!("expected Single import, got {other:?}"),
+                }
+            }
+            other => panic!("expected Use statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_use_multiple() {
+        let src = "system test\n  use math::{sin, cos, tan}\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert_eq!(u.path.len(), 1);
+                assert_eq!(u.path[0].name, "math");
+                match &u.imports {
+                    UseImport::Multiple(items) => {
+                        assert_eq!(items.len(), 3);
+                        assert_eq!(items[0].name, "sin");
+                        assert_eq!(items[1].name, "cos");
+                        assert_eq!(items[2].name, "tan");
+                    }
+                    other => panic!("expected Multiple import, got {other:?}"),
+                }
+            }
+            other => panic!("expected Use statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_use_glob() {
+        let src = "system test\n  use math::*\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert_eq!(u.path.len(), 1);
+                assert_eq!(u.path[0].name, "math");
+                assert!(matches!(&u.imports, UseImport::Glob));
+            }
+            other => panic!("expected Use statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_mod_declaration() {
+        let src = "system test\n  mod utils\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Mod(m) => {
+                assert_eq!(m.name.name, "utils");
+            }
+            other => panic!("expected Mod statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_multiple_use_and_mod() {
+        let src = "system test\n  mod math\n  use math::sin\n  use math::cos\n";
+        let sf = parse_ok(src);
+        let stmts = &sf.declarations[0].statements;
+        assert_eq!(stmts.len(), 3);
+        assert!(matches!(&stmts[0], Statement::Mod(_)));
+        assert!(matches!(&stmts[1], Statement::Use(_)));
+        assert!(matches!(&stmts[2], Statement::Use(_)));
     }
 }

@@ -144,6 +144,12 @@ pub enum Statement {
     EnumDef(EnumDef),
     /// Bare expression (function call, etc.)
     ExprStmt(Expr),
+
+    // ── Module system ──────────────────────────────────────────────────────
+    /// use math::sin, use math::{sin, cos}, use math::*
+    Use(UseStmt),
+    /// mod utils
+    Mod(ModStmt),
 }
 
 /// need hash::argon2 where security>0.9
@@ -696,6 +702,36 @@ pub struct EnumDef {
 pub struct EnumVariant {
     pub name: Identifier,
     pub fields: Vec<TypeExpr>,
+}
+
+// ── Module system ───────────────────────────────────────────────────────────
+
+/// use path::item or use path::{items} or use path::*
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct UseStmt {
+    /// Module path segments: ["math"] for `use math::sin`, ["math", "trig"] for `use math::trig::sin`
+    pub path: Vec<Identifier>,
+    /// What to import from the final path segment
+    pub imports: UseImport,
+    pub span: Span,
+}
+
+/// What items are imported from a use statement
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum UseImport {
+    /// Single item: use math::sin
+    Single(Identifier),
+    /// Multiple items: use math::{sin, cos}
+    Multiple(Vec<Identifier>),
+    /// Glob import: use math::*
+    Glob,
+}
+
+/// mod declaration: mod utils
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ModStmt {
+    pub name: Identifier,
+    pub span: Span,
 }
 
 // ── Expressions (extended) ──────────────────────────────────────────────────
