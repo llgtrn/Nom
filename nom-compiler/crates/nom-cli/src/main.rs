@@ -14,6 +14,9 @@
 //!   nom coverage <dir>  — show extraction coverage for a directory
 //!   nom translate       — translate .nomtu bodies from other languages to Rust
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
+//!   nom fmt <path>      — format .nom source files with canonical style
+
+mod fmt;
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{CodegenOptions, collect_dependencies, generate};
@@ -284,13 +287,13 @@ enum Commands {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// Format a .nom source file (canonical style)
+    /// Format .nom source files with canonical style
     Fmt {
-        /// Path to the .nom source file
-        file: PathBuf,
-        /// Write changes in place (default: print to stdout)
+        /// Path to the .nom file (or directory to format all .nom files)
+        path: PathBuf,
+        /// Check mode: don't write, just report if file would change
         #[arg(long)]
-        write: bool,
+        check: bool,
     },
 }
 
@@ -381,7 +384,7 @@ fn main() {
             format,
         } => cmd_audit(&dict, &min_severity, limit, &format),
         Commands::Quality { file, dict } => cmd_quality(&file, &dict),
-        Commands::Fmt { file, write } => cmd_fmt(&file, write),
+        Commands::Fmt { path, check } => cmd_fmt(&path, check),
     };
     process::exit(exit_code);
 }
@@ -720,107 +723,44 @@ fn cmd_check(file: &PathBuf, dict: &PathBuf) -> i32 {
     }
 }
 
-fn cmd_fmt(file: &PathBuf, write_in_place: bool) -> i32 {
-    use nom_ast::Statement;
+fn cmd_fmt(path: &Path, check: bool) -> i32 {
+    if path.is_dir() {
+        fmt_directory(path, check)
+    } else {
+        fmt_single_file(path, check)
+    }
+}
 
-    let source = match read_source(file) {
+fn fmt_single_file(file: &Path, check: bool) -> i32 {
+    let source = match read_source(&file.to_path_buf()) {
         Some(s) => s,
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
-        Ok(sf) => sf,
+    let formatted = match fmt::format_source(&source) {
+        Ok(f) => f,
         Err(e) => {
-            eprintln!("nom: parse error: {e}");
+            eprintln!("nom: parse error in {}: {e}", file.display());
             return 1;
         }
     };
 
-    let mut out = String::new();
-
-    for (i, decl) in parsed.declarations.iter().enumerate() {
-        if i > 0 {
-            out.push('\n'); // blank line between declarations
+    if check {
+        if source != formatted {
+            println!("would reformat: {}", file.display());
+            1
+        } else {
+            println!("already formatted: {}", file.display());
+            0
         }
-
-        // Classifier + name
-        out.push_str(&format!("{} {}\n", decl.classifier.as_str(), decl.name.name));
-
-        for stmt in &decl.statements {
-            match stmt {
-                Statement::Need(n) => {
-                    let variant = n.reference.variant.as_ref()
-                        .map(|v| format!("::{}", v.name))
-                        .unwrap_or_default();
-                    let constraint = n.constraint.as_ref()
-                        .map(|c| format!(" where {}", fmt_constraint(c)))
-                        .unwrap_or_default();
-                    out.push_str(&format!("  need {}{}{}\n", n.reference.word.name, variant, constraint));
-                }
-                Statement::Require(r) => {
-                    out.push_str(&format!("  require {}\n", fmt_constraint(&r.constraint)));
-                }
-                Statement::Effects(e) => {
-                    let modifier = match &e.modifier {
-                        Some(nom_ast::EffectModifier::Only) => "only ",
-                        Some(nom_ast::EffectModifier::Good) => "good ",
-                        Some(nom_ast::EffectModifier::Bad) => "bad ",
-                        None => "",
-                    };
-                    let effects: Vec<&str> = e.effects.iter().map(|id| id.name.as_str()).collect();
-                    out.push_str(&format!("  effects {}[{}]\n", modifier, effects.join(" ")));
-                }
-                Statement::Flow(f) => {
-                    let steps: Vec<String> = f.chain.steps.iter().map(|s| fmt_flow_step(s)).collect();
-                    out.push_str(&format!("  flow {}\n", steps.join(" -> ")));
-                }
-                Statement::Describe(d) => {
-                    out.push_str(&format!("  describe {:?}\n", d.text));
-                }
-                Statement::Contract(_) => {
-                    out.push_str("  contract\n");
-                    // Contract sub-fields handled by the contract parser
-                }
-                Statement::Implement(imp) => {
-                    out.push_str(&format!("  implement {} {{\n", imp.language));
-                    for line in imp.code.lines() {
-                        out.push_str(&format!("    {}\n", line));
-                    }
-                    out.push_str("  }\n");
-                }
-                Statement::Given(g) => {
-                    out.push_str(&format!("  given {}\n", g.subject.name));
-                }
-                Statement::When(w) => {
-                    out.push_str(&format!("  when {}\n", w.action.name));
-                }
-                Statement::Then(t) => {
-                    out.push_str(&format!("  then {}\n", fmt_expr(&t.assertion)));
-                }
-                Statement::And(a) => {
-                    out.push_str(&format!("  and {}\n", fmt_expr(&a.assertion)));
-                }
-                Statement::FnDef(_) => {
-                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
-                }
-                Statement::StructDef(_) | Statement::EnumDef(_) => {
-                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
-                }
-                Statement::Let(_) | Statement::If(_) | Statement::For(_) | Statement::While(_)
-                | Statement::Match(_) | Statement::Return(_) | Statement::ExprStmt(_)
-                | Statement::Assign(_) => {
-                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
-                }
-                // Graph and agent statements: preserve as-is for now
-                _ => {}
-            }
+    } else {
+        if source == formatted {
+            println!("unchanged: {}", file.display());
+            return 0;
         }
-    }
-
-    if write_in_place {
-        match std::fs::write(file, &out) {
+        match std::fs::write(file, &formatted) {
             Ok(_) => {
-                println!("nom: formatted {}", file.display());
+                println!("formatted: {}", file.display());
                 0
             }
             Err(e) => {
@@ -828,53 +768,39 @@ fn cmd_fmt(file: &PathBuf, write_in_place: bool) -> i32 {
                 1
             }
         }
-    } else {
-        print!("{out}");
-        0
     }
 }
 
-fn fmt_constraint(c: &nom_ast::Constraint) -> String {
-    format!("{} {} {}", fmt_expr(&c.left), fmt_cmp_op(c.op), fmt_expr(&c.right))
-}
-
-fn fmt_cmp_op(op: nom_ast::CompareOp) -> &'static str {
-    match op {
-        nom_ast::CompareOp::Gt => ">",
-        nom_ast::CompareOp::Lt => "<",
-        nom_ast::CompareOp::Gte => ">=",
-        nom_ast::CompareOp::Lte => "<=",
-        nom_ast::CompareOp::Eq => "=",
-        nom_ast::CompareOp::Neq => "!=",
-    }
-}
-
-fn fmt_expr(e: &nom_ast::Expr) -> String {
-    nom_codegen::expr_to_rust(e)
-}
-
-fn fmt_flow_step(step: &nom_ast::FlowStep) -> String {
-    match step {
-        nom_ast::FlowStep::Ref(r) => {
-            let variant = r.variant.as_ref()
-                .map(|v| format!("::{}", v.name))
-                .unwrap_or_default();
-            format!("{}{}", r.word.name, variant)
+fn fmt_directory(dir: &Path, check: bool) -> i32 {
+    let mut exit_code = 0;
+    let mut count = 0;
+    match std::fs::read_dir(dir) {
+        Ok(entries) => {
+            for entry in entries.flatten() {
+                let path = entry.path();
+                if path.is_file() && path.extension().map_or(false, |e| e == "nom") {
+                    let rc = fmt_single_file(&path, check);
+                    if rc != 0 {
+                        exit_code = 1;
+                    }
+                    count += 1;
+                } else if path.is_dir() {
+                    let rc = fmt_directory(&path, check);
+                    if rc != 0 {
+                        exit_code = 1;
+                    }
+                }
+            }
         }
-        nom_ast::FlowStep::Literal(lit) => format!("{:?}", lit),
-        nom_ast::FlowStep::Branch(block) => {
-            let arms: Vec<String> = block.arms.iter().map(|arm| {
-                let label = arm.label.as_deref().unwrap_or("_");
-                let steps: Vec<String> = arm.chain.steps.iter().map(|s| fmt_flow_step(s)).collect();
-                format!("{} -> {}", label, steps.join(" -> "))
-            }).collect();
-            format!("{{ {} }}", arms.join(", "))
-        }
-        nom_ast::FlowStep::Call(call) => {
-            let args: Vec<String> = call.args.iter().map(fmt_expr).collect();
-            format!("{}({})", call.callee.name, args.join(", "))
+        Err(e) => {
+            eprintln!("nom: cannot read directory {}: {e}", dir.display());
+            return 1;
         }
     }
+    if count == 0 && exit_code == 0 {
+        println!("nom: no .nom files found in {}", dir.display());
+    }
+    exit_code
 }
 
 fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
