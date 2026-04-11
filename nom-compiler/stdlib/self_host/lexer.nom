@@ -1,0 +1,741 @@
+# =============================================================================
+# Nom Self-Hosting Lexer
+# =============================================================================
+#
+# The Nom tokenizer, written in Nom itself. This is the first step toward
+# self-hosting: a language that can express its own compiler.
+#
+# This lexer mirrors the Rust implementation in nom-lexer/src/lib.rs and
+# produces the same token types. It reads a source string character by
+# character and emits a list of tokens.
+#
+# Status:
+#   - Syntax is valid Nom (fn, struct, enum, match, if/else, while, let)
+#   - Some features used here are aspirational and not yet compilable:
+#       * Tuple returns  (fn foo() -> (Token, Lexer))
+#       * String slicing  (source[start..end])
+#       * Generic list type  (list[Token])
+#       * Enum variants with payloads  (Integer(integer))
+#       * Nested function calls in match arms
+#     These are documented as targets for the compiler to grow into.
+#
+# ASCII reference (used for character comparisons):
+#   space=32  tab=9  CR=13  LF=10  #=35  "=34  .=46
+#   0=48  9=57  A=65  Z=90  a=97  z=122  _=95
+#   +=43  -=45  *=42  /=47  >=62  <=60  ==61  !=33
+#   :=58  ;=59  &=38  |=124  ?=63  %=37
+#   {=123  }=125  [=91  ]=93  (=40  )=41  ,=44
+# =============================================================================
+
+nom self_host_lexer
+
+  # ─── Token ──────────────────────────────────────────────────────────────
+  # Every distinct token type produced by the Nom lexer.
+  # Mirrors nom_lexer::Token exactly.
+
+  enum Token {
+    # Classifier keywords (10)
+    System,
+    Flow,
+    Store,
+    Graph,
+    Agent,
+    Test,
+    Nom,
+    Gate,
+    Pool,
+    View,
+
+    # Declaration keywords (6)
+    Need,
+    Require,
+    Effects,
+    Where,
+    Only,
+    Describe,
+
+    # Flow keywords (3)
+    Branch,
+    IfTrue,
+    IfFalse,
+
+    # Test / contract keywords (7)
+    Given,
+    When,
+    Then,
+    And,
+    Or,
+    Contract,
+    Implement,
+
+    # Graph keywords (4)
+    Node,
+    Edge,
+    Query,
+    Constraint,
+
+    # Agent keywords (6)
+    Capability,
+    Supervise,
+    Receive,
+    State,
+    Schedule,
+    Every,
+
+    # Imperative keywords (24)
+    Let,
+    Mut,
+    If,
+    Else,
+    For,
+    While,
+    Loop,
+    Match,
+    Return,
+    Break,
+    Continue,
+    Fn,
+    Type,
+    Struct,
+    Enum,
+    Use,
+    Pub,
+    In,
+    As,
+    Mod,
+    Trait,
+    Impl,
+    Self_,
+    Async,
+    Await,
+
+    # Operators
+    Arrow,
+    FatArrow,
+    ColCol,
+    Plus,
+    Minus,
+    Star,
+    Slash,
+    Dot,
+    Gt,
+    Lt,
+    Gte,
+    Lte,
+    Eq,
+    EqEq,
+    Neq,
+    Colon,
+    Semicolon,
+    Ampersand,
+    Pipe,
+    Bang,
+    Question,
+    Percent,
+
+    # Brackets
+    LBrace,
+    RBrace,
+    LBracket,
+    RBracket,
+    LParen,
+    RParen,
+    Comma,
+
+    # Literals (aspirational: enum payloads)
+    Integer(integer),
+    Float(number),
+    StringLit(text),
+    Bool(bool),
+    NoneLit,
+
+    # Identifiers
+    Ident(text),
+
+    # Whitespace / structure
+    Newline,
+    BlankLine,
+    Comment(text),
+
+    # End of file
+    Eof
+  }
+
+  # ─── Span ──────────────────────────────────────────────────────────────
+  # Source location attached to every token.
+
+  struct Span {
+    start: integer,
+    end: integer,
+    line: integer,
+    col: integer
+  }
+
+  # ─── SpannedToken ──────────────────────────────────────────────────────
+  # A token paired with the source span where it appeared.
+
+  struct SpannedToken {
+    token: Token,
+    span: Span
+  }
+
+  # ─── Lexer state ───────────────────────────────────────────────────────
+  # The lexer is a pure-functional scanner: each function takes the current
+  # state and returns a new state (no mutation of shared data).
+
+  struct Lexer {
+    source: text,
+    pos: integer,
+    line: integer,
+    col: integer
+  }
+
+  # ─── Constructor ───────────────────────────────────────────────────────
+
+  fn new_lexer(source: text) -> Lexer {
+    return Lexer { source: source, pos: 0, line: 1, col: 1 }
+  }
+
+  # ─── Predicates ────────────────────────────────────────────────────────
+
+  fn is_at_end(lex: Lexer) -> bool {
+    return lex.pos >= lex.source.length
+  }
+
+  fn is_alpha(ch: integer) -> bool {
+    # A-Z, a-z, or underscore
+    return (ch >= 65 && ch <= 90) || (ch >= 97 && ch <= 122) || ch == 95
+  }
+
+  fn is_digit(ch: integer) -> bool {
+    # 0-9
+    return ch >= 48 && ch <= 57
+  }
+
+  fn is_alnum(ch: integer) -> bool {
+    return is_alpha(ch) || is_digit(ch)
+  }
+
+  fn is_whitespace(ch: integer) -> bool {
+    # space, tab, carriage return (but NOT newline -- that is structural)
+    return ch == 32 || ch == 9 || ch == 13
+  }
+
+  # ─── Character access ─────────────────────────────────────────────────
+
+  # Get the byte value of the character at the current position.
+  # Aspirational: lex.source[lex.pos] as byte-to-integer indexing.
+  fn current_char(lex: Lexer) -> integer {
+    return lex.source[lex.pos]
+  }
+
+  # Peek one character ahead without advancing.
+  fn peek_next(lex: Lexer) -> integer {
+    if lex.pos + 1 >= lex.source.length {
+      return 0
+    }
+    return lex.source[lex.pos + 1]
+  }
+
+  # ─── Advance ───────────────────────────────────────────────────────────
+  # Move forward one character, updating line/col tracking.
+  # Returns a new Lexer (functional style -- no mutation).
+
+  fn advance(lex: Lexer) -> Lexer {
+    let ch = current_char(lex)
+    let new_line = lex.line
+    let new_col = lex.col + 1
+    if ch == 10 {
+      # newline: increment line, reset column
+      new_line = lex.line + 1
+      new_col = 1
+    }
+    return Lexer {
+      source: lex.source,
+      pos: lex.pos + 1,
+      line: new_line,
+      col: new_col
+    }
+  }
+
+  # ─── Make a span from start position to current position ───────────────
+
+  fn make_span(start_pos: integer, start_line: integer, start_col: integer, lex: Lexer) -> Span {
+    return Span {
+      start: start_pos,
+      end: lex.pos,
+      line: start_line,
+      col: start_col
+    }
+  }
+
+  # ─── Skip horizontal whitespace ────────────────────────────────────────
+  # Skips spaces, tabs, and carriage returns but NOT newlines (which are
+  # significant tokens in Nom for blank-line detection).
+
+  fn skip_horizontal_ws(lex: Lexer) -> Lexer {
+    let l = lex
+    while !is_at_end(l) {
+      let ch = current_char(l)
+      if is_whitespace(ch) {
+        l = advance(l)
+      } else {
+        break
+      }
+    }
+    return l
+  }
+
+  # ─── Read a comment ────────────────────────────────────────────────────
+  # Assumes the '#' has already been consumed. Reads until end of line.
+
+  fn read_comment(lex: Lexer) -> (text, Lexer) {
+    let l = lex
+    let start = l.pos
+    while !is_at_end(l) && current_char(l) != 10 {
+      l = advance(l)
+    }
+    # Aspirational: string slicing
+    let content = l.source[start..l.pos]
+    return (content, l)
+  }
+
+  # ─── Read an identifier / keyword word ─────────────────────────────────
+  # Scans [a-zA-Z_][a-zA-Z0-9_]* and returns the raw text.
+
+  fn read_word(lex: Lexer) -> (text, Lexer) {
+    let start = lex.pos
+    let l = lex
+    while !is_at_end(l) && is_alnum(current_char(l)) {
+      l = advance(l)
+    }
+    let word = l.source[start..l.pos]
+    return (word, l)
+  }
+
+  # ─── Read a number ─────────────────────────────────────────────────────
+  # Scans digits, optionally followed by '.' and more digits.
+  # Returns (Token, Lexer).
+
+  fn read_number(lex: Lexer) -> (Token, Lexer) {
+    let start = lex.pos
+    let l = lex
+    let is_float = false
+
+    # integer part
+    while !is_at_end(l) && is_digit(current_char(l)) {
+      l = advance(l)
+    }
+
+    # optional fractional part
+    if !is_at_end(l) && current_char(l) == 46 {
+      # check that the character after '.' is a digit (not a method call)
+      let after_dot = peek_next(l)
+      if is_digit(after_dot) {
+        is_float = true
+        l = advance(l)
+        while !is_at_end(l) && is_digit(current_char(l)) {
+          l = advance(l)
+        }
+      }
+    }
+
+    let num_str = l.source[start..l.pos]
+    if is_float {
+      return (Token::Float(parse_float(num_str)), l)
+    } else {
+      return (Token::Integer(parse_int(num_str)), l)
+    }
+  }
+
+  # ─── Read a string literal ─────────────────────────────────────────────
+  # Assumes the opening '"' has already been consumed.
+  # Handles escape sequences: \n \t \\ \"
+
+  fn read_string(lex: Lexer) -> (text, Lexer) {
+    let l = lex
+    let buf = ""
+    while !is_at_end(l) && current_char(l) != 34 {
+      let ch = current_char(l)
+      if ch == 92 {
+        # backslash -- escape sequence
+        l = advance(l)
+        if !is_at_end(l) {
+          let esc = current_char(l)
+          if esc == 110 {
+            buf = buf + "\n"
+          } else if esc == 116 {
+            buf = buf + "\t"
+          } else if esc == 34 {
+            buf = buf + "\""
+          } else if esc == 92 {
+            buf = buf + "\\"
+          } else {
+            # unknown escape -- keep literal
+            buf = buf + chr(esc)
+          }
+          l = advance(l)
+        }
+      } else {
+        buf = buf + chr(ch)
+        l = advance(l)
+      }
+    }
+    # skip closing quote
+    if !is_at_end(l) {
+      l = advance(l)
+    }
+    return (buf, l)
+  }
+
+  # ─── Keyword / identifier classification ───────────────────────────────
+  # Given a word, return the appropriate token. This giant match mirrors
+  # Lexer::keyword_or_ident in the Rust implementation.
+
+  fn classify_word(word: text) -> Token {
+    match word {
+      # ── Classifier keywords ──
+      "system"     => return Token::System
+      "flow"       => return Token::Flow
+      "store"      => return Token::Store
+      "graph"      => return Token::Graph
+      "agent"      => return Token::Agent
+      "test"       => return Token::Test
+      "nom"        => return Token::Nom
+      "gate"       => return Token::Gate
+      "pool"       => return Token::Pool
+      "view"       => return Token::View
+
+      # ── Declaration keywords ──
+      "need"       => return Token::Need
+      "require"    => return Token::Require
+      "effects"    => return Token::Effects
+      "where"      => return Token::Where
+      "only"       => return Token::Only
+      "describe"   => return Token::Describe
+
+      # ── Flow keywords ──
+      "branch"     => return Token::Branch
+      "iftrue"     => return Token::IfTrue
+      "iffalse"    => return Token::IfFalse
+
+      # ── Test / contract keywords ──
+      "given"      => return Token::Given
+      "when"       => return Token::When
+      "then"       => return Token::Then
+      "and"        => return Token::And
+      "or"         => return Token::Or
+      "contract"   => return Token::Contract
+      "implement"  => return Token::Implement
+
+      # ── Graph keywords ──
+      "node"       => return Token::Node
+      "edge"       => return Token::Edge
+      "query"      => return Token::Query
+      "constraint" => return Token::Constraint
+
+      # ── Agent keywords ──
+      "capability" => return Token::Capability
+      "supervise"  => return Token::Supervise
+      "receive"    => return Token::Receive
+      "state"      => return Token::State
+      "schedule"   => return Token::Schedule
+      "every"      => return Token::Every
+
+      # ── Imperative keywords ──
+      "let"        => return Token::Let
+      "mut"        => return Token::Mut
+      "if"         => return Token::If
+      "else"       => return Token::Else
+      "for"        => return Token::For
+      "while"      => return Token::While
+      "loop"       => return Token::Loop
+      "match"      => return Token::Match
+      "return"     => return Token::Return
+      "break"      => return Token::Break
+      "continue"   => return Token::Continue
+      "fn"         => return Token::Fn
+      "type"       => return Token::Type
+      "struct"     => return Token::Struct
+      "enum"       => return Token::Enum
+      "use"        => return Token::Use
+      "pub"        => return Token::Pub
+      "in"         => return Token::In
+      "as"         => return Token::As
+      "mod"        => return Token::Mod
+      "trait"      => return Token::Trait
+      "impl"       => return Token::Impl
+      "self"       => return Token::Self_
+      "async"      => return Token::Async
+      "await"      => return Token::Await
+
+      # ── Natural language aliases (Vietnamese-style grammar) ──
+      "define"     => return Token::Fn
+      "kind"       => return Token::Struct
+      "choice"     => return Token::Enum
+      "take"       => return Token::Let
+      "set"        => return Token::Let
+      "changing"   => return Token::Mut
+      "give"       => return Token::Return
+      "produce"    => return Token::Return
+      "each"       => return Token::For
+      "repeat"     => return Token::While
+      "check"      => return Token::Match
+      "share"      => return Token::Pub
+      "group"      => return Token::Mod
+      "behavior"   => return Token::Trait
+      "apply"      => return Token::Impl
+
+      # ── Boolean and none literals ──
+      "true"       => return Token::Bool(true)
+      "false"      => return Token::Bool(false)
+      "yes"        => return Token::Bool(true)
+      "no"         => return Token::Bool(false)
+      "none"       => return Token::NoneLit
+      "nothing"    => return Token::NoneLit
+
+      # ── Default: identifier ──
+      _            => return Token::Ident(word)
+    }
+  }
+
+  # ─── Scan the next token ───────────────────────────────────────────────
+  # The core of the lexer. Reads one token from the current position and
+  # returns it along with the updated lexer state.
+
+  fn next_token(lex: Lexer) -> (SpannedToken, Lexer) {
+    # Skip horizontal whitespace (spaces, tabs)
+    let l = skip_horizontal_ws(lex)
+
+    if is_at_end(l) {
+      let sp = Span { start: l.pos, end: l.pos, line: l.line, col: l.col }
+      return (SpannedToken { token: Token::Eof, span: sp }, l)
+    }
+
+    let start_pos = l.pos
+    let start_line = l.line
+    let start_col = l.col
+    let ch = current_char(l)
+
+    # ── Newline ──
+    if ch == 10 {
+      let l2 = advance(l)
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::Newline, span: sp }, l2)
+    }
+
+    # ── Comment ──
+    if ch == 35 {
+      let l2 = advance(l)
+      let (content, l3) = read_comment(l2)
+      let sp = make_span(start_pos, start_line, start_col, l3)
+      return (SpannedToken { token: Token::Comment(content), span: sp }, l3)
+    }
+
+    # ── String literal ──
+    if ch == 34 {
+      let l2 = advance(l)
+      let (content, l3) = read_string(l2)
+      let sp = make_span(start_pos, start_line, start_col, l3)
+      return (SpannedToken { token: Token::StringLit(content), span: sp }, l3)
+    }
+
+    # ── Number ──
+    if is_digit(ch) {
+      let (tok, l2) = read_number(l)
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: tok, span: sp }, l2)
+    }
+
+    # ── Identifier or keyword ──
+    if is_alpha(ch) {
+      let (word, l2) = read_word(l)
+      let tok = classify_word(word)
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: tok, span: sp }, l2)
+    }
+
+    # ── Two-character operators ──
+    # We peek ahead to decide between single and double operators.
+    let next = peek_next(l)
+
+    if ch == 45 && next == 62 {
+      # ->
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::Arrow, span: sp }, l2)
+    }
+    if ch == 61 && next == 62 {
+      # =>
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::FatArrow, span: sp }, l2)
+    }
+    if ch == 58 && next == 58 {
+      # ::
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::ColCol, span: sp }, l2)
+    }
+    if ch == 62 && next == 61 {
+      # >=
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::Gte, span: sp }, l2)
+    }
+    if ch == 60 && next == 61 {
+      # <=
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::Lte, span: sp }, l2)
+    }
+    if ch == 61 && next == 61 {
+      # ==
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::EqEq, span: sp }, l2)
+    }
+    if ch == 33 && next == 61 {
+      # !=
+      let l2 = advance(advance(l))
+      let sp = make_span(start_pos, start_line, start_col, l2)
+      return (SpannedToken { token: Token::Neq, span: sp }, l2)
+    }
+
+    # ── Single-character operators and brackets ──
+    let l2 = advance(l)
+    let sp = make_span(start_pos, start_line, start_col, l2)
+
+    match ch {
+      43  => return (SpannedToken { token: Token::Plus,      span: sp }, l2)
+      45  => return (SpannedToken { token: Token::Minus,     span: sp }, l2)
+      42  => return (SpannedToken { token: Token::Star,      span: sp }, l2)
+      47  => return (SpannedToken { token: Token::Slash,     span: sp }, l2)
+      46  => return (SpannedToken { token: Token::Dot,       span: sp }, l2)
+      62  => return (SpannedToken { token: Token::Gt,        span: sp }, l2)
+      60  => return (SpannedToken { token: Token::Lt,        span: sp }, l2)
+      61  => return (SpannedToken { token: Token::Eq,        span: sp }, l2)
+      58  => return (SpannedToken { token: Token::Colon,     span: sp }, l2)
+      59  => return (SpannedToken { token: Token::Semicolon, span: sp }, l2)
+      38  => return (SpannedToken { token: Token::Ampersand, span: sp }, l2)
+      124 => return (SpannedToken { token: Token::Pipe,      span: sp }, l2)
+      33  => return (SpannedToken { token: Token::Bang,      span: sp }, l2)
+      63  => return (SpannedToken { token: Token::Question,  span: sp }, l2)
+      37  => return (SpannedToken { token: Token::Percent,   span: sp }, l2)
+      123 => return (SpannedToken { token: Token::LBrace,    span: sp }, l2)
+      125 => return (SpannedToken { token: Token::RBrace,    span: sp }, l2)
+      91  => return (SpannedToken { token: Token::LBracket,  span: sp }, l2)
+      93  => return (SpannedToken { token: Token::RBracket,  span: sp }, l2)
+      40  => return (SpannedToken { token: Token::LParen,    span: sp }, l2)
+      41  => return (SpannedToken { token: Token::RParen,    span: sp }, l2)
+      44  => return (SpannedToken { token: Token::Comma,     span: sp }, l2)
+      _   => return (SpannedToken { token: Token::Ident("unknown"), span: sp }, l2)
+    }
+  }
+
+  # ─── Tokenize ──────────────────────────────────────────────────────────
+  # The main entry point. Scans an entire source string into a list of
+  # SpannedTokens.
+  #
+  # Handles blank-line detection: two consecutive newlines are collapsed
+  # into a single BlankLine token, mirroring the Rust lexer behavior.
+
+  fn tokenize(source: text) -> list[SpannedToken] {
+    let mut tokens: list[SpannedToken] = []
+    let mut lex = new_lexer(source)
+    let mut consecutive_newlines = 0
+
+    while !is_at_end(lex) {
+      let (stok, new_lex) = next_token(lex)
+      lex = new_lex
+
+      match stok.token {
+        Token::Eof => {
+          break
+        }
+        Token::Newline => {
+          consecutive_newlines = consecutive_newlines + 1
+          if consecutive_newlines == 1 {
+            tokens = tokens + [stok]
+          } else if consecutive_newlines == 2 {
+            # Replace previous Newline with BlankLine
+            let last_idx = tokens.length - 1
+            let prev = tokens[last_idx]
+            let blank = SpannedToken {
+              token: Token::BlankLine,
+              span: prev.span
+            }
+            tokens[last_idx] = blank
+          }
+          # 3+ consecutive newlines: already BlankLine, skip
+        }
+        _ => {
+          consecutive_newlines = 0
+          tokens = tokens + [stok]
+        }
+      }
+    }
+
+    # Append Eof
+    let eof_span = Span { start: lex.pos, end: lex.pos, line: lex.line, col: lex.col }
+    tokens = tokens + [SpannedToken { token: Token::Eof, span: eof_span }]
+    return tokens
+  }
+
+  # ─── Convenience: tokenize without spans ───────────────────────────────
+  # Returns just the token types, useful for testing and pattern matching.
+
+  fn tokenize_simple(source: text) -> list[Token] {
+    let spanned = tokenize(source)
+    let mut result: list[Token] = []
+    for stok in spanned {
+      result = result + [stok.token]
+    }
+    return result
+  }
+
+  # ─── Token predicates ──────────────────────────────────────────────────
+  # Utility functions for working with tokens.
+
+  fn is_classifier(tok: Token) -> bool {
+    match tok {
+      Token::System => return true
+      Token::Flow   => return true
+      Token::Store  => return true
+      Token::Graph  => return true
+      Token::Agent  => return true
+      Token::Test   => return true
+      Token::Nom    => return true
+      Token::Gate   => return true
+      Token::Pool   => return true
+      Token::View   => return true
+      _             => return false
+    }
+  }
+
+  fn is_keyword(tok: Token) -> bool {
+    match tok {
+      Token::Ident(_) => return false
+      Token::Integer(_) => return false
+      Token::Float(_) => return false
+      Token::StringLit(_) => return false
+      Token::Bool(_) => return false
+      Token::NoneLit => return false
+      Token::Newline => return false
+      Token::BlankLine => return false
+      Token::Comment(_) => return false
+      Token::Eof => return false
+      _ => return true
+    }
+  }
+
+  fn is_literal(tok: Token) -> bool {
+    match tok {
+      Token::Integer(_)   => return true
+      Token::Float(_)     => return true
+      Token::StringLit(_) => return true
+      Token::Bool(_)      => return true
+      Token::NoneLit      => return true
+      _                   => return false
+    }
+  }
