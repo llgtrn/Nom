@@ -1,7 +1,8 @@
 use crate::context::ModuleCompiler;
 use crate::LlvmError;
+use inkwell::types::BasicType;
 use inkwell::values::BasicValueEnum;
-use nom_ast::{Block, BlockStmt, IfExpr, MatchExpr, Pattern};
+use nom_ast::{Block, BlockStmt, Expr, ForStmt, IfExpr, MatchExpr, Pattern};
 
 /// Compile a single block statement, returning a value (i8 zero for void stmts).
 pub fn compile_block_stmt<'ctx>(
@@ -23,7 +24,10 @@ pub fn compile_block_stmt<'ctx>(
             compile_while(mc, while_stmt)?;
             Ok(mc.context.i8_type().const_zero().into())
         }
-        BlockStmt::For(_) => Err(LlvmError::Unsupported("for loop".into())),
+        BlockStmt::For(for_stmt) => {
+            compile_for(mc, for_stmt)?;
+            Ok(mc.context.i8_type().const_zero().into())
+        }
         BlockStmt::Match(match_expr) => compile_match_value(mc, match_expr),
         BlockStmt::Return(expr) => {
             if let Some(e) = expr {
@@ -38,8 +42,22 @@ pub fn compile_block_stmt<'ctx>(
             }
             Ok(mc.context.i8_type().const_zero().into())
         }
-        BlockStmt::Break => Err(LlvmError::Unsupported("break outside loop context".into())),
-        BlockStmt::Continue => Err(LlvmError::Unsupported("continue outside loop context".into())),
+        BlockStmt::Break => {
+            let (_cond_bb, end_bb) = mc.loop_stack.last()
+                .ok_or_else(|| LlvmError::Compilation("break outside loop".into()))?;
+            mc.builder
+                .build_unconditional_branch(*end_bb)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            Ok(mc.context.i8_type().const_zero().into())
+        }
+        BlockStmt::Continue => {
+            let (cond_bb, _end_bb) = mc.loop_stack.last()
+                .ok_or_else(|| LlvmError::Compilation("continue outside loop".into()))?;
+            mc.builder
+                .build_unconditional_branch(*cond_bb)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            Ok(mc.context.i8_type().const_zero().into())
+        }
     }
 }
 
@@ -233,7 +251,9 @@ fn compile_while<'ctx>(
 
     // Loop body
     mc.builder.position_at_end(body_bb);
+    mc.loop_stack.push((loop_bb, end_bb));
     compile_block(mc, &while_stmt.body)?;
+    mc.loop_stack.pop();
     if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
         mc.builder
             .build_unconditional_branch(loop_bb)
@@ -241,6 +261,221 @@ fn compile_while<'ctx>(
     }
 
     // Continue after loop
+    mc.builder.position_at_end(end_bb);
+    Ok(())
+}
+
+fn compile_for<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    for_stmt: &ForStmt,
+) -> Result<(), LlvmError> {
+    let function = mc.builder.get_insert_block()
+        .and_then(|bb| bb.get_parent())
+        .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
+
+    // Check if iterating over an array literal
+    if let Expr::Array(elements) = &for_stmt.iterable {
+        return compile_for_array(mc, for_stmt, elements);
+    }
+
+    // Numeric range: iterate from 0 to n (exclusive)
+    let n_val = crate::expressions::compile_expr(mc, &for_stmt.iterable)?;
+    let n_int = if n_val.is_int_value() {
+        n_val.into_int_value()
+    } else if n_val.is_float_value() {
+        // Convert f64 to i64
+        mc.builder
+            .build_float_to_signed_int(n_val.into_float_value(), mc.context.i64_type(), "ftoi")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+    } else {
+        return Err(LlvmError::Type("for loop iterable must be numeric".into()));
+    };
+
+    let i64_type = mc.context.i64_type();
+
+    // Allocate loop counter
+    let counter_alloca = mc.builder
+        .build_alloca(i64_type, &for_stmt.binding.name)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(counter_alloca, i64_type.const_int(0, false))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Register the binding variable
+    mc.named_values.insert(
+        for_stmt.binding.name.clone(),
+        (counter_alloca, i64_type.into()),
+    );
+
+    let cond_bb = mc.context.append_basic_block(function, "for_cond");
+    let body_bb = mc.context.append_basic_block(function, "for_body");
+    let end_bb = mc.context.append_basic_block(function, "for_end");
+
+    mc.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Condition block: i < n
+    mc.builder.position_at_end(cond_bb);
+    let cur = mc.builder
+        .build_load(i64_type, counter_alloca, "cur")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    let cmp = mc.builder
+        .build_int_compare(inkwell::IntPredicate::SLT, cur, n_int, "forcmp")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_conditional_branch(cmp, body_bb, end_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Body block
+    mc.builder.position_at_end(body_bb);
+    mc.loop_stack.push((cond_bb, end_bb));
+    compile_block(mc, &for_stmt.body)?;
+    mc.loop_stack.pop();
+
+    // Increment counter
+    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        let cur_after = mc.builder
+            .build_load(i64_type, counter_alloca, "cur_after")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            .into_int_value();
+        let next = mc.builder
+            .build_int_add(cur_after, i64_type.const_int(1, false), "next")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_store(counter_alloca, next)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_unconditional_branch(cond_bb)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
+    // Continue after loop
+    mc.builder.position_at_end(end_bb);
+    Ok(())
+}
+
+fn compile_for_array<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    for_stmt: &ForStmt,
+    elements: &[Expr],
+) -> Result<(), LlvmError> {
+    let function = mc.builder.get_insert_block()
+        .and_then(|bb| bb.get_parent())
+        .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
+
+    let i64_type = mc.context.i64_type();
+    let len = elements.len() as u64;
+
+    // Compile all elements and determine element type
+    let mut compiled_elems = Vec::new();
+    for elem in elements {
+        compiled_elems.push(crate::expressions::compile_expr(mc, elem)?);
+    }
+
+    // Determine the element type from the first element (or default to i64)
+    let elem_ty = if let Some(first) = compiled_elems.first() {
+        first.get_type()
+    } else {
+        i64_type.into()
+    };
+
+    // Allocate array on stack and store elements
+    let array_type = elem_ty.array_type(len as u32);
+    let array_alloca = mc.builder
+        .build_alloca(array_type, "for_arr")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    for (i, val) in compiled_elems.iter().enumerate() {
+        let idx = i64_type.const_int(i as u64, false);
+        let elem_ptr = unsafe {
+            mc.builder
+                .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), idx], &format!("arr_elem_{}", i))
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        };
+        mc.builder
+            .build_store(elem_ptr, *val)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
+    // Allocate index counter
+    let counter_alloca = mc.builder
+        .build_alloca(i64_type, "for_idx")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(counter_alloca, i64_type.const_int(0, false))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Allocate binding variable
+    let binding_alloca = mc.builder
+        .build_alloca(elem_ty, &for_stmt.binding.name)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.named_values.insert(
+        for_stmt.binding.name.clone(),
+        (binding_alloca, elem_ty),
+    );
+
+    let cond_bb = mc.context.append_basic_block(function, "for_arr_cond");
+    let body_bb = mc.context.append_basic_block(function, "for_arr_body");
+    let end_bb = mc.context.append_basic_block(function, "for_arr_end");
+
+    mc.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Condition: idx < len
+    mc.builder.position_at_end(cond_bb);
+    let cur_idx = mc.builder
+        .build_load(i64_type, counter_alloca, "cur_idx")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    let cmp = mc.builder
+        .build_int_compare(inkwell::IntPredicate::SLT, cur_idx, i64_type.const_int(len, false), "arrcmp")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_conditional_branch(cmp, body_bb, end_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Body: load element, bind, execute body
+    mc.builder.position_at_end(body_bb);
+    let cur_idx_body = mc.builder
+        .build_load(i64_type, counter_alloca, "cur_idx_body")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    let elem_ptr = unsafe {
+        mc.builder
+            .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), cur_idx_body], "arr_elem_ptr")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+    };
+    let elem_val = mc.builder
+        .build_load(elem_ty, elem_ptr, "arr_elem_val")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(binding_alloca, elem_val)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    mc.loop_stack.push((cond_bb, end_bb));
+    compile_block(mc, &for_stmt.body)?;
+    mc.loop_stack.pop();
+
+    // Increment index
+    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        let cur_idx_inc = mc.builder
+            .build_load(i64_type, counter_alloca, "cur_idx_inc")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            .into_int_value();
+        let next_idx = mc.builder
+            .build_int_add(cur_idx_inc, i64_type.const_int(1, false), "next_idx")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_store(counter_alloca, next_idx)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_unconditional_branch(cond_bb)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
     mc.builder.position_at_end(end_bb);
     Ok(())
 }
@@ -401,6 +636,7 @@ mod tests {
             functions: std::collections::HashMap::new(),
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -451,6 +687,7 @@ mod tests {
             functions: std::collections::HashMap::new(),
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
@@ -507,6 +744,197 @@ mod tests {
         assert!(
             ir.contains("ret double"),
             "IR should contain ret double instructions, got:\n{}",
+            ir
+        );
+    }
+
+    #[test]
+    fn compiles_for_loop() {
+        // fn count(n: integer) -> integer {
+        //   let mut sum: integer = 0
+        //   for i in n {
+        //     sum = sum + i
+        //   }
+        //   return sum
+        // }
+        let compiler = NomCompiler::new();
+        let module = compiler.context.create_module("test_for");
+        let builder = compiler.context.create_builder();
+        let mut mc = crate::context::ModuleCompiler {
+            context: &compiler.context,
+            module,
+            builder,
+            named_values: std::collections::HashMap::new(),
+            struct_types: std::collections::HashMap::new(),
+            functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
+        };
+        crate::runtime::declare_runtime_functions(&mut mc);
+
+        let fn_def = FnDef {
+            name: Identifier::new("count", Span::default()),
+            params: vec![FnParam {
+                name: Identifier::new("n", Span::default()),
+                type_ann: TypeExpr::Named(Identifier::new("integer", Span::default())),
+            }],
+            return_type: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+            body: Block {
+                stmts: vec![
+                    BlockStmt::Let(LetStmt {
+                        name: Identifier::new("sum", Span::default()),
+                        mutable: true,
+                        type_ann: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+                        value: Expr::Literal(Literal::Integer(0)),
+                        span: Span::default(),
+                    }),
+                    BlockStmt::For(ForStmt {
+                        binding: Identifier::new("i", Span::default()),
+                        iterable: Expr::Ident(Identifier::new("n", Span::default())),
+                        body: Block {
+                            stmts: vec![
+                                BlockStmt::Assign(AssignStmt {
+                                    target: Expr::Ident(Identifier::new("sum", Span::default())),
+                                    value: Expr::BinaryOp(
+                                        Box::new(Expr::Ident(Identifier::new("sum", Span::default()))),
+                                        BinOp::Add,
+                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                    ),
+                                    span: Span::default(),
+                                }),
+                            ],
+                            span: Span::default(),
+                        },
+                        span: Span::default(),
+                    }),
+                    BlockStmt::Return(Some(Expr::Ident(Identifier::new("sum", Span::default())))),
+                ],
+                span: Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: Span::default(),
+        };
+
+        crate::functions::compile_fn(&mut mc, &fn_def).unwrap();
+
+        let ir = mc.module.print_to_string().to_string();
+        assert!(
+            ir.contains("for_cond"),
+            "IR should contain for_cond block, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("for_body"),
+            "IR should contain for_body block, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("icmp slt"),
+            "IR should contain icmp slt for loop condition, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("for_end"),
+            "IR should contain for_end block, got:\n{}",
+            ir
+        );
+    }
+
+    #[test]
+    fn compiles_break_in_while() {
+        // fn find_first() -> integer {
+        //   let mut i: integer = 0
+        //   while true {
+        //     if i > 5 {
+        //       break
+        //     }
+        //     i = i + 1
+        //   }
+        //   return i
+        // }
+        let compiler = NomCompiler::new();
+        let module = compiler.context.create_module("test_break");
+        let builder = compiler.context.create_builder();
+        let mut mc = crate::context::ModuleCompiler {
+            context: &compiler.context,
+            module,
+            builder,
+            named_values: std::collections::HashMap::new(),
+            struct_types: std::collections::HashMap::new(),
+            functions: std::collections::HashMap::new(),
+            value_types: std::collections::HashMap::new(),
+            struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
+        };
+        crate::runtime::declare_runtime_functions(&mut mc);
+
+        let fn_def = FnDef {
+            name: Identifier::new("find_first", Span::default()),
+            params: vec![],
+            return_type: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+            body: Block {
+                stmts: vec![
+                    BlockStmt::Let(LetStmt {
+                        name: Identifier::new("i", Span::default()),
+                        mutable: true,
+                        type_ann: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+                        value: Expr::Literal(Literal::Integer(0)),
+                        span: Span::default(),
+                    }),
+                    BlockStmt::While(WhileStmt {
+                        condition: Expr::Literal(Literal::Bool(true)),
+                        body: Block {
+                            stmts: vec![
+                                BlockStmt::If(IfExpr {
+                                    condition: Box::new(Expr::BinaryOp(
+                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                        BinOp::Gt,
+                                        Box::new(Expr::Literal(Literal::Integer(5))),
+                                    )),
+                                    then_body: Block {
+                                        stmts: vec![BlockStmt::Break],
+                                        span: Span::default(),
+                                    },
+                                    else_ifs: vec![],
+                                    else_body: None,
+                                    span: Span::default(),
+                                }),
+                                BlockStmt::Assign(AssignStmt {
+                                    target: Expr::Ident(Identifier::new("i", Span::default())),
+                                    value: Expr::BinaryOp(
+                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                        BinOp::Add,
+                                        Box::new(Expr::Literal(Literal::Integer(1))),
+                                    ),
+                                    span: Span::default(),
+                                }),
+                            ],
+                            span: Span::default(),
+                        },
+                        span: Span::default(),
+                    }),
+                    BlockStmt::Return(Some(Expr::Ident(Identifier::new("i", Span::default())))),
+                ],
+                span: Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: Span::default(),
+        };
+
+        crate::functions::compile_fn(&mut mc, &fn_def).unwrap();
+
+        let ir = mc.module.print_to_string().to_string();
+        assert!(
+            ir.contains("loopend"),
+            "IR should contain loopend block (break target), got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("loop") && ir.contains("loopbody"),
+            "IR should contain loop structure, got:\n{}",
             ir
         );
     }

@@ -1,5 +1,6 @@
 use crate::context::ModuleCompiler;
 use crate::LlvmError;
+use inkwell::types::BasicType;
 use inkwell::values::BasicValueEnum;
 use nom_ast::{BinOp, Expr, Literal, UnaryOp};
 
@@ -26,7 +27,7 @@ pub fn compile_expr<'ctx>(
         Expr::Index(_, _) => Err(LlvmError::Unsupported("index expression".into())),
         Expr::MethodCall(_, _, _) => Err(LlvmError::Unsupported("method call".into())),
         Expr::Closure(_, _) => Err(LlvmError::Unsupported("closure".into())),
-        Expr::Array(_) => Err(LlvmError::Unsupported("array literal".into())),
+        Expr::Array(elements) => compile_array(mc, elements),
         Expr::TupleExpr(_) => Err(LlvmError::Unsupported("tuple expression".into())),
         Expr::Await(_) => Err(LlvmError::Unsupported("await expression".into())),
         Expr::Cast(_, _) => Err(LlvmError::Unsupported("cast expression".into())),
@@ -303,6 +304,47 @@ fn compile_field_access<'ctx>(
         .map_err(|e| LlvmError::Compilation(e.to_string()))
 }
 
+fn compile_array<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    elements: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    if elements.is_empty() {
+        // Return a null pointer for empty arrays
+        return Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).const_null().into());
+    }
+
+    // Compile all elements
+    let mut compiled = Vec::new();
+    for elem in elements {
+        compiled.push(compile_expr(mc, elem)?);
+    }
+
+    // Determine element type from first element
+    let elem_ty = compiled[0].get_type();
+    let array_type = elem_ty.array_type(compiled.len() as u32);
+
+    // Allocate array on stack
+    let array_alloca = mc.builder
+        .build_alloca(array_type, "arr")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    let i64_type = mc.context.i64_type();
+    for (i, val) in compiled.iter().enumerate() {
+        let idx = i64_type.const_int(i as u64, false);
+        let elem_ptr = unsafe {
+            mc.builder
+                .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), idx], &format!("arr_{}", i))
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        };
+        mc.builder
+            .build_store(elem_ptr, *val)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
+    // Return pointer to the array
+    Ok(array_alloca.into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -328,6 +370,7 @@ mod tests {
             functions: std::collections::HashMap::new(),
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
         }
     }
 
@@ -387,6 +430,7 @@ mod tests {
             functions: std::collections::HashMap::new(),
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 

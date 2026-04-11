@@ -48,6 +48,7 @@ mod tests {
             functions: std::collections::HashMap::new(),
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
+            loop_stack: Vec::new(),
         };
 
         let struct_def = StructDef {

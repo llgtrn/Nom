@@ -23,6 +23,9 @@ pub struct ModuleCompiler<'ctx> {
     pub value_types: HashMap<String, String>,
     /// Maps struct type name -> ordered field names (e.g. "Point" -> ["x", "y"])
     pub struct_fields: HashMap<String, Vec<String>>,
+    /// Stack of loop context for break/continue support.
+    /// Each entry is (condition_block, end_block).
+    pub loop_stack: Vec<(inkwell::basic_block::BasicBlock<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)>,
 }
 
 impl NomCompiler {
@@ -47,6 +50,7 @@ impl NomCompiler {
             functions: HashMap::new(),
             value_types: HashMap::new(),
             struct_fields: HashMap::new(),
+            loop_stack: Vec::new(),
         };
 
         declare_runtime_functions(&mut mc);
