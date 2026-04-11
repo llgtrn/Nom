@@ -8,9 +8,16 @@
 //!   nom report <file>   — security report for <file>
 //!   nom dict <query>    — search the local nomdict database
 //!   nom precompile      — pre-compile .nomtu bodies to LLVM bitcode (.bc)
+//!   nom extract <dir>   — extract .nomtu from source files in a directory
+//!   nom score           — score all .nomtu in the dictionary
+//!   nom stats           — show dictionary statistics
+//!   nom coverage <dir>  — show extraction coverage for a directory
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{collect_dependencies, generate, CodegenOptions};
+use nom_dict::NomDict;
+use nom_extract;
+use nom_score;
 
 use nom_parser::parse_source;
 use nom_planner::Planner;
@@ -160,6 +167,41 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Extract .nomtu from source files in a directory
+    Extract {
+        /// Directory to scan for parseable files
+        dir: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Maximum files to process (0 = unlimited)
+        #[arg(long, default_value = "0")]
+        limit: usize,
+    },
+
+    /// Score all .nomtu in the dictionary
+    Score {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+
+    /// Show dictionary statistics
+    Stats {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+
+    /// Show extraction coverage for a directory
+    Coverage {
+        /// Directory to check coverage for
+        dir: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -183,6 +225,10 @@ fn main() {
         Commands::Precompile { dict, output_dir, word, language, limit, dry_run } => {
             cmd_precompile(&dict, &output_dir, word.as_deref(), language.as_deref(), limit, dry_run)
         }
+        Commands::Extract { dir, dict, limit } => cmd_extract(&dir, &dict, limit),
+        Commands::Score { dict } => cmd_score(&dict),
+        Commands::Stats { dict } => cmd_stats(&dict),
+        Commands::Coverage { dir, dict } => cmd_coverage(&dir, &dict),
     };
     process::exit(exit_code);
 }
@@ -1512,6 +1558,392 @@ fn llvm_safe_name(word: &str, variant: Option<&str>) -> String {
         format!("nom_{base}_{v_safe}")
     } else {
         format!("nom_{base}")
+    }
+}
+
+// ── Extract / Score / Stats / Coverage ────────────────────────────────────────
+
+fn cmd_extract(dir: &PathBuf, dict: &PathBuf, limit: usize) -> i32 {
+    if !dir.is_dir() {
+        eprintln!("nom: {} is not a directory", dir.display());
+        return 1;
+    }
+
+    // Open NomDict — use the dict path's parent as root (NomDict adds data/nomdict.db)
+    // If dict is "nomdict.db" we use the current dir's parent as root.
+    let nomdict = match open_nomdict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let paths = nom_extract::scan::scan_directory(dir);
+    let total_files = if limit > 0 { paths.len().min(limit) } else { paths.len() };
+
+    println!("nom: scanning {} for source files...", dir.display());
+    println!("nom: found {} parseable files", paths.len());
+    if limit > 0 && paths.len() > limit {
+        println!("nom: limiting to {limit} files");
+    }
+
+    let mut files_parsed = 0usize;
+    let mut total_atoms = 0usize;
+    let mut total_new = 0usize;
+
+    let paths_to_process: Vec<_> = if limit > 0 {
+        paths.into_iter().take(limit).collect()
+    } else {
+        paths
+    };
+
+    for path in &paths_to_process {
+        let path_str = path.display().to_string();
+        let language = match nom_extract::detect_language(&path_str) {
+            Some(lang) if nom_extract::parseable_languages().contains(&lang) => lang,
+            _ => continue,
+        };
+
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        // Skip very large files
+        if source.len() > 2 * 1024 * 1024 {
+            continue;
+        }
+
+        let atoms = match nom_extract::parse_file(&source, &path_str, language) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        if atoms.is_empty() {
+            files_parsed += 1;
+            continue;
+        }
+
+        match nomdict.store_atoms(&atoms) {
+            Ok(result) => {
+                total_atoms += atoms.len();
+                total_new += result.stored;
+            }
+            Err(e) => {
+                eprintln!("nom: store error for {}: {e}", path.display());
+            }
+        }
+
+        files_parsed += 1;
+
+        if files_parsed % 100 == 0 {
+            println!("nom: processed {files_parsed}/{total_files} files ({total_atoms} atoms)...");
+        }
+    }
+
+    let dict_total = nomdict.count().unwrap_or(0);
+
+    println!();
+    println!("nom: extraction complete");
+    println!("  files parsed:   {files_parsed}");
+    println!("  atoms extracted: {total_atoms}");
+    println!("  new in dict:    {total_new}");
+    println!("  total in dict:  {dict_total}");
+
+    0
+}
+
+fn cmd_score(dict: &PathBuf) -> i32 {
+    let nomdict = match open_nomdict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let atoms = match nomdict.load_all() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("nom: failed to load atoms: {e}");
+            return 1;
+        }
+    };
+
+    if atoms.is_empty() {
+        println!("nom: dictionary is empty, nothing to score");
+        return 0;
+    }
+
+    println!("nom: scoring {} atoms...", atoms.len());
+
+    let mut total_security = 0.0_f64;
+    let mut total_performance = 0.0_f64;
+    let mut total_quality = 0.0_f64;
+    let mut total_reliability = 0.0_f64;
+    let mut scored = 0usize;
+
+    // Open the raw sqlite connection to update scores
+    let db_path = nomdict.db_path();
+    let conn = match rusqlite::Connection::open(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom: cannot open db for update: {e}");
+            return 1;
+        }
+    };
+
+    for atom in &atoms {
+        let scores = nom_score::score_atom(atom);
+        total_security += scores.security as f64;
+        total_performance += scores.performance as f64;
+        total_quality += scores.readability as f64;
+        total_reliability += scores.reliability as f64;
+
+        // Update scores in the database using the atom's hash/id
+        let _ = conn.execute(
+            "UPDATE nomtu SET security = ?1, performance = ?2, quality = ?3, reliability = ?4 \
+             WHERE atom_id = ?5 OR (word = ?6 AND source_path = ?7)",
+            rusqlite::params![
+                scores.security as f64,
+                scores.performance as f64,
+                scores.readability as f64,
+                scores.reliability as f64,
+                atom.id,
+                atom.name,
+                atom.source_path,
+            ],
+        );
+
+        scored += 1;
+
+        if scored % 1000 == 0 {
+            println!("nom: scored {scored}/{}...", atoms.len());
+        }
+    }
+
+    let n = scored as f64;
+    println!();
+    println!("nom: scoring complete");
+    println!("  total scored:     {scored}");
+    println!("  avg security:     {:.3}", total_security / n);
+    println!("  avg performance:  {:.3}", total_performance / n);
+    println!("  avg quality:      {:.3}", total_quality / n);
+    println!("  avg reliability:  {:.3}", total_reliability / n);
+
+    0
+}
+
+fn cmd_stats(dict: &PathBuf) -> i32 {
+    let nomdict = match open_nomdict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let total = match nomdict.count() {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("nom: count error: {e}");
+            return 1;
+        }
+    };
+
+    println!("nom: dictionary statistics");
+    println!("{}", "=".repeat(50));
+    println!("  total entries:  {total}");
+
+    // Count entries with bodies
+    let atoms = match nomdict.load_all() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("nom: load error: {e}");
+            return 1;
+        }
+    };
+    let with_bodies = atoms.iter().filter(|a| a.body.is_some()).count();
+    let with_concepts = atoms.iter().filter(|a| a.concept.is_some()).count();
+    println!("  with bodies:    {with_bodies}");
+    println!("  with concepts:  {with_concepts}");
+
+    // By kind
+    match nomdict.stats_by_kind() {
+        Ok(stats) => {
+            println!();
+            println!("  by kind:");
+            for (kind, count) in &stats {
+                println!("    {kind:<20} {count}");
+            }
+        }
+        Err(e) => eprintln!("nom: kind stats error: {e}"),
+    }
+
+    // By language
+    match nomdict.stats_by_language() {
+        Ok(stats) => {
+            println!();
+            println!("  by language:");
+            for (lang, count) in &stats {
+                println!("    {lang:<20} {count}");
+            }
+        }
+        Err(e) => eprintln!("nom: language stats error: {e}"),
+    }
+
+    // Top concepts
+    match nomdict.dictionary_summary() {
+        Ok(summary) => {
+            println!();
+            println!("  top concepts:");
+            for (concept, count) in summary.iter().take(15) {
+                println!("    {concept:<20} {count}");
+            }
+        }
+        Err(e) => eprintln!("nom: summary error: {e}"),
+    }
+
+    // Score distribution (if any atom has non-zero scores)
+    let scored_atoms: Vec<_> = atoms.iter().collect();
+    if !scored_atoms.is_empty() {
+        // Get score stats from the database
+        let db_path = nomdict.db_path();
+        if let Ok(conn) = rusqlite::Connection::open_with_flags(
+            &db_path,
+            OpenFlags::SQLITE_OPEN_READ_ONLY,
+        ) {
+            if let Ok(mut stmt) = conn.prepare(
+                "SELECT \
+                   AVG(security), AVG(performance), AVG(quality), AVG(reliability), \
+                   COUNT(CASE WHEN security > 0.0 THEN 1 END) \
+                 FROM nomtu",
+            ) {
+                if let Ok(row) = stmt.query_row([], |row| {
+                    Ok((
+                        row.get::<_, f64>(0).unwrap_or(0.0),
+                        row.get::<_, f64>(1).unwrap_or(0.0),
+                        row.get::<_, f64>(2).unwrap_or(0.0),
+                        row.get::<_, f64>(3).unwrap_or(0.0),
+                        row.get::<_, i64>(4).unwrap_or(0),
+                    ))
+                }) {
+                    if row.4 > 0 {
+                        println!();
+                        println!("  score averages ({} scored):", row.4);
+                        println!("    security:     {:.3}", row.0);
+                        println!("    performance:  {:.3}", row.1);
+                        println!("    quality:      {:.3}", row.2);
+                        println!("    reliability:  {:.3}", row.3);
+                    }
+                }
+            }
+        }
+    }
+
+    println!("{}", "=".repeat(50));
+
+    0
+}
+
+fn cmd_coverage(dir: &PathBuf, dict: &PathBuf) -> i32 {
+    if !dir.is_dir() {
+        eprintln!("nom: {} is not a directory", dir.display());
+        return 1;
+    }
+
+    let nomdict = match open_nomdict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let paths = nom_extract::scan::scan_directory(dir);
+
+    let mut total_files = 0usize;
+    let mut total_functions = 0usize;
+    let mut extracted = 0usize;
+    let mut missing = 0usize;
+
+    // Load all atoms from dict for comparison
+    let dict_atoms = match nomdict.load_all() {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("nom: failed to load dict: {e}");
+            return 1;
+        }
+    };
+
+    // Build a set of (name, source_path) for fast lookup
+    let dict_keys: std::collections::HashSet<(String, String)> = dict_atoms
+        .iter()
+        .map(|a| (a.name.clone(), a.source_path.clone()))
+        .collect();
+
+    for path in &paths {
+        let path_str = path.display().to_string();
+        let language = match nom_extract::detect_language(&path_str) {
+            Some(lang) if nom_extract::parseable_languages().contains(&lang) => lang,
+            _ => continue,
+        };
+
+        let source = match std::fs::read_to_string(path) {
+            Ok(s) => s,
+            Err(_) => continue,
+        };
+
+        if source.len() > 2 * 1024 * 1024 {
+            continue;
+        }
+
+        let atoms = match nom_extract::parse_file(&source, &path_str, language) {
+            Ok(a) => a,
+            Err(_) => continue,
+        };
+
+        total_files += 1;
+
+        for atom in &atoms {
+            total_functions += 1;
+            if dict_keys.contains(&(atom.name.clone(), atom.source_path.clone())) {
+                extracted += 1;
+            } else {
+                missing += 1;
+            }
+        }
+    }
+
+    let coverage_pct = if total_functions > 0 {
+        (extracted as f64 / total_functions as f64) * 100.0
+    } else {
+        0.0
+    };
+
+    println!("nom: coverage report for {}", dir.display());
+    println!("{}", "=".repeat(50));
+    println!("  total files:      {total_files}");
+    println!("  total functions:  {total_functions}");
+    println!("  in dictionary:    {extracted}");
+    println!("  missing:          {missing}");
+    println!("  coverage:         {coverage_pct:.1}%");
+    println!("{}", "=".repeat(50));
+
+    0
+}
+
+/// Open a NomDict from the --dict path.
+/// The NomDict::open expects a root directory and creates data/nomdict.db inside it.
+/// If the --dict points directly to a .db file, we use its parent as the root.
+fn open_nomdict(dict: &PathBuf) -> Option<NomDict> {
+    // If dict path ends with nomdict.db, use the grandparent dir as root
+    // because NomDict stores at <root>/data/nomdict.db
+    let root = if dict.extension().is_some_and(|e| e == "db") {
+        // dict points to a .db file, e.g. "nomdict.db" or "data/nomdict.db"
+        // NomDict::open creates data/nomdict.db so root should be parent of parent
+        // But the existing convention is --dict nomdict.db at the project root,
+        // so we just use current directory as root.
+        PathBuf::from(".")
+    } else {
+        dict.clone()
+    };
+
+    match NomDict::open(&root) {
+        Ok(d) => Some(d),
+        Err(e) => {
+            eprintln!("nom: cannot open nomdict: {e}");
+            None
+        }
     }
 }
 

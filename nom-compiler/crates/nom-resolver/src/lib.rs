@@ -38,8 +38,8 @@
 //! ```
 
 use nom_ast::NomRef;
+pub use nom_types::NomtuEntry;
 use rusqlite::{params, Connection, OptionalExtension};
-use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 #[derive(Debug, Error)]
@@ -52,96 +52,6 @@ pub enum ResolverError {
     Ambiguous { word: String, count: usize },
     #[error("json error: {0}")]
     Json(#[from] serde_json::Error),
-}
-
-/// A unified nomtu entry — identity, meaning, contract, scores,
-/// provenance, and body all in one row. This IS the dictionary.
-/// Everything that was an "atom" or a "word" or an "implementation"
-/// is now a single .nomtu entry.
-#[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct NomtuEntry {
-    pub id: i64,
-    // identity
-    pub word: String,
-    pub variant: Option<String>,
-    pub hash: Option<String>,
-    pub atom_id: Option<String>,       // original qualified path (e.g., "crates/foo/src/lib.rs:function:hash")
-    // meaning
-    pub describe: Option<String>,
-    pub kind: Option<String>,
-    pub labels: Vec<String>,           // classification tags (e.g., ["rust", "public", "async"])
-    pub concept: Option<String>,       // semantic concept for pattern matching
-    // contract
-    pub input_type: Option<String>,
-    pub output_type: Option<String>,
-    pub effects: Vec<String>,
-    pub pre: Option<String>,
-    pub post: Option<String>,
-    // scores
-    pub security: f64,
-    pub performance: f64,
-    pub quality: f64,
-    pub reliability: f64,
-    // provenance
-    pub source: Option<String>,
-    pub source_path: Option<String>,   // file:line in the external repo
-    pub language: String,
-    pub license: Option<String>,
-    // body (the actual code copied from external repos)
-    pub body: Option<String>,
-    pub signature: Option<String>,
-    // meta
-    pub version: Option<String>,
-    pub tests: i64,
-    pub is_canonical: bool,
-}
-
-impl Default for NomtuEntry {
-    fn default() -> Self {
-        Self {
-            id: 0,
-            word: String::new(),
-            variant: None,
-            hash: None,
-            atom_id: None,
-            describe: None,
-            kind: None,
-            labels: vec![],
-            concept: None,
-            input_type: None,
-            output_type: None,
-            effects: vec![],
-            pre: None,
-            post: None,
-            security: 0.0,
-            performance: 0.0,
-            quality: 0.0,
-            reliability: 0.0,
-            source: None,
-            source_path: None,
-            language: "rust".to_owned(),
-            license: None,
-            body: None,
-            signature: None,
-            version: None,
-            tests: 0,
-            is_canonical: false,
-        }
-    }
-}
-
-impl NomtuEntry {
-    /// Returns true if this entry satisfies a named score threshold.
-    pub fn satisfies_score(&self, metric: &str, threshold: f64) -> bool {
-        let value = match metric {
-            "security" => self.security,
-            "performance" => self.performance,
-            "quality" => self.quality,
-            "reliability" => self.reliability,
-            _ => 0.0,
-        };
-        value >= threshold
-    }
 }
 
 /// Backward-compatible alias — all code that used `WordEntry` still compiles.

@@ -6,4 +6,5 @@ edition.workspace = true
 [dependencies]
 nom-ast = { path = "../nom-ast" }
 nom-planner = { path = "../nom-planner" }
+nom-types = { path = "../nom-types" }
 thiserror = { workspace = true }

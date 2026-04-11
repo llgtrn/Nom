@@ -17,6 +17,11 @@ nom-verifier = { path = "../nom-verifier" }
 nom-planner = { path = "../nom-planner" }
 nom-codegen = { path = "../nom-codegen" }
 nom-security = { path = "../nom-security" }
+nom-types = { path = "../nom-types" }
+nom-dict = { path = "../nom-dict" }
+nom-extract = { path = "../nom-extract" }
+nom-score = { path = "../nom-score" }
+nom-config = { path = "../nom-config" }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }
