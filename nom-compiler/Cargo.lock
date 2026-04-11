@@ -357,6 +357,7 @@ dependencies = [
  "nom-resolver",
  "nom-score",
  "nom-security",
+ "nom-translate",
  "nom-types",
  "nom-verifier",
  "rusqlite",
@@ -485,6 +486,13 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror",
+]
+
+[[package]]
+name = "nom-translate"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
 ]
 
 [[package]]

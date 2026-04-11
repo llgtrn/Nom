@@ -12,6 +12,7 @@
 //!   nom score           — score all .nomtu in the dictionary
 //!   nom stats           — show dictionary statistics
 //!   nom coverage <dir>  — show extraction coverage for a directory
+//!   nom translate       — translate .nomtu bodies from other languages to Rust
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{collect_dependencies, generate, CodegenOptions};
@@ -202,6 +203,25 @@ enum Commands {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
+
+    /// Translate .nomtu bodies from other languages to Rust
+    Translate {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Only translate entries of this language
+        #[arg(long)]
+        language: Option<String>,
+        /// Maximum entries to translate (0 = all)
+        #[arg(long, default_value = "0")]
+        limit: usize,
+        /// Minimum confidence to accept (0.0-1.0)
+        #[arg(long, default_value = "0.3")]
+        min_confidence: f64,
+        /// Dry run: show translations without writing
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -229,6 +249,9 @@ fn main() {
         Commands::Score { dict } => cmd_score(&dict),
         Commands::Stats { dict } => cmd_stats(&dict),
         Commands::Coverage { dir, dict } => cmd_coverage(&dir, &dict),
+        Commands::Translate { dict, language, limit, min_confidence, dry_run } => {
+            cmd_translate(&dict, language.as_deref(), limit, min_confidence, dry_run)
+        }
     };
     process::exit(exit_code);
 }
@@ -1945,6 +1968,203 @@ fn open_nomdict(dict: &PathBuf) -> Option<NomDict> {
             None
         }
     }
+}
+
+// ── Translate command ─────────────────────────────────────────────────────────
+
+fn cmd_translate(
+    dict: &PathBuf,
+    language: Option<&str>,
+    limit: usize,
+    min_confidence: f64,
+    dry_run: bool,
+) -> i32 {
+    // Open the nomdict database directly via rusqlite
+    let conn = match rusqlite::Connection::open_with_flags(
+        dict,
+        if dry_run {
+            OpenFlags::SQLITE_OPEN_READ_ONLY
+        } else {
+            OpenFlags::SQLITE_OPEN_READ_WRITE
+        },
+    ) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", dict.display());
+            return 1;
+        }
+    };
+
+    // Query non-Rust entries with bodies
+    let mut sql = String::from(
+        "SELECT id, word, variant, language, body, concept, kind, source_path \
+         FROM nomtu WHERE language != 'rust' AND body IS NOT NULL",
+    );
+    let mut param_idx = 1u32;
+    let lang_idx = if language.is_some() {
+        param_idx += 1;
+        sql.push_str(&format!(" AND language = ?{}", param_idx - 1));
+        Some(param_idx - 1)
+    } else {
+        None
+    };
+
+    sql.push_str(" ORDER BY id");
+
+    if limit > 0 {
+        param_idx += 1;
+        sql.push_str(&format!(" LIMIT ?{}", param_idx - 1));
+    }
+
+    let mut stmt = match conn.prepare(&sql) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom: query error: {e}");
+            return 1;
+        }
+    };
+
+    let mut params_vec: Vec<Box<dyn rusqlite::types::ToSql>> = Vec::new();
+    if let (Some(_), Some(lang)) = (lang_idx, language) {
+        params_vec.push(Box::new(lang.to_owned()));
+    }
+    if limit > 0 {
+        params_vec.push(Box::new(limit as i64));
+    }
+
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec
+        .iter()
+        .map(|b| b.as_ref() as &dyn rusqlite::types::ToSql)
+        .collect();
+
+    let rows = match stmt.query_map(params_refs.as_slice(), |row| {
+        Ok((
+            row.get::<_, i64>(0)?,          // id
+            row.get::<_, String>(1)?,        // word
+            row.get::<_, Option<String>>(2)?, // variant
+            row.get::<_, String>(3)?,        // language
+            row.get::<_, String>(4)?,        // body
+            row.get::<_, Option<String>>(5)?, // concept
+            row.get::<_, Option<String>>(6)?, // kind
+            row.get::<_, Option<String>>(7)?, // source_path
+        ))
+    }) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("nom: query error: {e}");
+            return 1;
+        }
+    };
+
+    let entries: Vec<_> = rows.filter_map(|r| r.ok()).collect();
+    let total = entries.len();
+    println!("nom: found {total} non-Rust entries to translate");
+
+    if total == 0 {
+        return 0;
+    }
+
+    let mut translated_count = 0usize;
+    let mut skipped_low_conf = 0usize;
+    let mut conf_buckets = [0usize; 10]; // 0.0-0.1, 0.1-0.2, ..., 0.9-1.0
+
+    // Prepare insert statement for translated entries
+    let mut insert_stmt = if !dry_run {
+        match conn.prepare(
+            "INSERT OR IGNORE INTO nomtu \
+             (word, variant, language, body, concept, kind, source_path, describe) \
+             VALUES (?1, ?2, 'rust', ?3, ?4, ?5, ?6, ?7)",
+        ) {
+            Ok(s) => Some(s),
+            Err(e) => {
+                eprintln!("nom: prepare insert error: {e}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
+
+    for (i, (_id, word, variant, lang, body, concept, kind, source_path)) in
+        entries.iter().enumerate()
+    {
+        let result = nom_translate::translate(body, lang);
+
+        // Track confidence distribution
+        let bucket = (result.confidence * 10.0).min(9.0) as usize;
+        conf_buckets[bucket] += 1;
+
+        if result.confidence < min_confidence {
+            skipped_low_conf += 1;
+            continue;
+        }
+
+        if dry_run {
+            if i < 5 || (i < 50 && i % 10 == 0) {
+                println!(
+                    "  [{}/{}] {} ({lang}) → confidence {:.2}, {} warnings, {} untranslated lines",
+                    i + 1,
+                    total,
+                    word,
+                    result.confidence,
+                    result.warnings.len(),
+                    result.untranslated_lines,
+                );
+                if i < 3 {
+                    // Show first few translations
+                    for line in result.rust_body.lines().take(5) {
+                        println!("    | {line}");
+                    }
+                    if result.rust_body.lines().count() > 5 {
+                        println!("    | ...");
+                    }
+                }
+            }
+        } else if let Some(ref mut stmt) = insert_stmt {
+            let describe = format!("translated from {lang}: {word}");
+            match stmt.execute(rusqlite::params![
+                word,
+                variant,
+                result.rust_body,
+                concept,
+                kind,
+                source_path,
+                describe,
+            ]) {
+                Ok(_) => {}
+                Err(e) => {
+                    eprintln!("  warn: failed to insert translation for {word}: {e}");
+                }
+            }
+        }
+
+        translated_count += 1;
+
+        if (i + 1) % 10000 == 0 {
+            eprintln!("  progress: {}/{total}...", i + 1);
+        }
+    }
+
+    // Summary
+    println!("\n── Translation Summary ──");
+    println!("  Total entries:    {total}");
+    println!("  Translated:       {translated_count}");
+    println!("  Skipped (low):    {skipped_low_conf}");
+    println!("  Min confidence:   {min_confidence}");
+    if dry_run {
+        println!("  Mode:             DRY RUN (no writes)");
+    }
+
+    println!("\n  Confidence distribution:");
+    for (i, count) in conf_buckets.iter().enumerate() {
+        let lo = i as f64 * 0.1;
+        let hi = lo + 0.1;
+        let bar_len = (*count as f64 / total as f64 * 40.0) as usize;
+        let bar: String = "#".repeat(bar_len);
+        println!("    {lo:.1}-{hi:.1}: {bar} ({count})");
+    }
+
+    0
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

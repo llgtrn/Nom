@@ -4,7 +4,8 @@ nom-compiler/target2/
 *.exe
 *.nomiz
 
-# Database files
+# Database files (10M+ nomtu dictionary, too large for git)
+data/
 *.db
 *.db-shm
 *.db-wal
