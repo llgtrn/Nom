@@ -51,41 +51,70 @@ impl NomDict {
     fn create_tables(&self) -> Result<()> {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS nomtu (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 -- identity
-                word          TEXT NOT NULL,
-                variant       TEXT,
-                hash          TEXT UNIQUE,
-                atom_id       TEXT,
+                word                TEXT NOT NULL,
+                variant             TEXT,
+                kind                TEXT NOT NULL DEFAULT '',
+                hash                TEXT UNIQUE,
+                body_hash           TEXT,
                 -- meaning
-                describe      TEXT,
-                kind          TEXT,
-                labels        TEXT DEFAULT '[]',
-                concept       TEXT,
+                describe            TEXT,
+                concept             TEXT,
+                labels              TEXT DEFAULT '[]',
                 -- contract
-                input_type    TEXT,
-                output_type   TEXT,
-                effects       TEXT DEFAULT '[]',
-                pre           TEXT,
-                post          TEXT,
-                -- scores
-                security      REAL DEFAULT 0.0,
-                performance   REAL DEFAULT 0.0,
-                quality       REAL DEFAULT 0.0,
-                reliability   REAL DEFAULT 0.0,
+                input_type          TEXT,
+                output_type         TEXT,
+                effects             TEXT DEFAULT '[]',
+                pre                 TEXT,
+                post                TEXT,
+                signature           TEXT,
+                depends_on          TEXT DEFAULT '[]',
+                -- scores (8 + overall)
+                security            REAL DEFAULT 0.0,
+                reliability         REAL DEFAULT 0.0,
+                performance         REAL DEFAULT 0.0,
+                readability         REAL DEFAULT 0.0,
+                testability         REAL DEFAULT 0.0,
+                portability         REAL DEFAULT 0.0,
+                composability       REAL DEFAULT 0.0,
+                maturity            REAL DEFAULT 0.0,
+                overall_score       REAL DEFAULT 0.0,
+                -- security audit
+                audit_passed        BOOLEAN DEFAULT 0,
+                audit_max_severity  TEXT,
+                audit_findings      TEXT,
                 -- provenance
-                source        TEXT,
-                source_path   TEXT,
-                language      TEXT DEFAULT 'rust',
-                license       TEXT,
-                -- body (the actual code from external repos)
-                body          TEXT,
-                signature     TEXT,
+                source_repo         TEXT,
+                source_path         TEXT,
+                source_line         INTEGER,
+                source_commit       TEXT,
+                author              TEXT,
+                language            TEXT DEFAULT 'rust',
+                -- body & translation
+                body                TEXT,
+                rust_body           TEXT,
+                translate_confidence REAL,
+                -- graph metadata
+                community_id        TEXT,
+                callers_count       INTEGER DEFAULT 0,
+                callees_count       INTEGER DEFAULT 0,
+                is_entry_point      BOOLEAN DEFAULT 0,
+                -- precompiled artifacts
+                bc_path             TEXT,
+                bc_hash             TEXT,
+                bc_size             INTEGER,
+                -- agent metadata
+                capabilities        TEXT,
+                supervision         TEXT,
+                schedule            TEXT,
                 -- meta
-                version       TEXT,
-                tests         INTEGER DEFAULT 0,
-                is_canonical  BOOLEAN DEFAULT 0,
-                created_at    TEXT DEFAULT (datetime('now')),
+                version             TEXT,
+                tests               INTEGER DEFAULT 0,
+                is_canonical        BOOLEAN DEFAULT 0,
+                deprecated_by       TEXT,
+                created_at          TEXT DEFAULT (datetime('now')),
+                updated_at          TEXT,
                 UNIQUE(word, variant, language)
             );
 
@@ -94,7 +123,10 @@ impl NomDict {
             CREATE INDEX IF NOT EXISTS idx_nomtu_language ON nomtu(language);
             CREATE INDEX IF NOT EXISTS idx_nomtu_word_variant ON nomtu(word, variant);
             CREATE INDEX IF NOT EXISTS idx_nomtu_concept ON nomtu(concept);
-            CREATE INDEX IF NOT EXISTS idx_nomtu_atom_id ON nomtu(atom_id);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_hash ON nomtu(hash);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_source_repo ON nomtu(source_repo);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_overall_score ON nomtu(overall_score);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_community ON nomtu(community_id);
             ",
         )?;
         Ok(())
@@ -166,9 +198,10 @@ impl NomDict {
         {
             let mut stmt = tx.prepare_cached(
                 "INSERT OR IGNORE INTO nomtu
-                 (word, variant, hash, atom_id, describe, kind, labels, concept,
-                  input_type, output_type, effects, source_path, language, body, signature)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15)",
+                 (word, variant, kind, hash, describe, concept, labels,
+                  input_type, output_type, effects, signature,
+                  source_path, language, body)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14)",
             )?;
 
             for atom in atoms {
@@ -187,19 +220,18 @@ impl NomDict {
                 let rows = stmt.execute(params![
                     atom.name,
                     atom.concept,
-                    hash,
-                    atom.id,
-                    describe,
                     atom.kind.as_str(),
-                    labels_json,
+                    hash,
+                    describe,
                     atom.concept,
+                    labels_json,
                     input_type,
                     output_type,
                     effects,
+                    sig_json,
                     atom.source_path,
                     atom.language,
                     atom.body,
-                    sig_json,
                 ])?;
 
                 if rows > 0 {
@@ -417,29 +449,39 @@ impl NomDict {
 
     // ── Row mapping ─────────────────────────────────────────────────
     // Maps nomtu columns back to Atom struct.
-    // nomtu columns by index:
-    //  0: id (PK), 1: word, 2: variant, 3: hash, 4: atom_id,
-    //  5: describe, 6: kind, 7: labels, 8: concept,
+    // nomtu columns by index (48 columns):
+    //  0: id, 1: word, 2: variant, 3: kind, 4: hash, 5: body_hash,
+    //  6: describe, 7: concept, 8: labels,
     //  9: input_type, 10: output_type, 11: effects, 12: pre, 13: post,
-    // 14: security, 15: performance, 16: quality, 17: reliability,
-    // 18: source, 19: source_path, 20: language, 21: license,
-    // 22: body, 23: signature,
-    // 24: version, 25: tests, 26: is_canonical, 27: created_at
+    // 14: signature, 15: depends_on,
+    // 16: security, 17: reliability, 18: performance,
+    // 19: readability, 20: testability, 21: portability,
+    // 22: composability, 23: maturity, 24: overall_score,
+    // 25: audit_passed, 26: audit_max_severity, 27: audit_findings,
+    // 28: source_repo, 29: source_path, 30: source_line,
+    // 31: source_commit, 32: author, 33: language,
+    // 34: body, 35: rust_body, 36: translate_confidence,
+    // 37: community_id, 38: callers_count, 39: callees_count,
+    // 40: is_entry_point,
+    // 41: bc_path, 42: bc_hash, 43: bc_size,
+    // 44: capabilities, 45: supervision, 46: schedule,
+    // 47: version, 48: tests, 49: is_canonical,
+    // 50: deprecated_by, 51: created_at, 52: updated_at
 
     fn row_to_atom(row: &rusqlite::Row) -> Atom {
         let word: String = row.get(1).unwrap_or_default();
-        let atom_id: Option<String> = row.get(4).unwrap_or(None);
-        let kind_str: String = row.get(6).unwrap_or_default();
-        let labels_json: String = row.get(7).unwrap_or_else(|_| "[]".to_string());
-        let concept: Option<String> = row.get(8).unwrap_or(None);
-        let source_path: String = row.get(19).unwrap_or_default();
-        let language: String = row.get(20).unwrap_or_default();
-        let body: Option<String> = row.get(22).unwrap_or(None);
-        let sig_json: Option<String> = row.get(23).unwrap_or(None);
+        let kind_str: String = row.get(3).unwrap_or_default();
+        let hash: Option<String> = row.get(4).unwrap_or(None);
+        let concept: Option<String> = row.get(7).unwrap_or(None);
+        let labels_json: String = row.get(8).unwrap_or_else(|_| "[]".to_string());
+        let sig_json: Option<String> = row.get(14).unwrap_or(None);
+        let source_path: String = row.get(29).unwrap_or_default();
+        let language: String = row.get(33).unwrap_or_default();
+        let body: Option<String> = row.get(34).unwrap_or(None);
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
 
         Atom {
-            id: atom_id.unwrap_or_else(|| format!("{}:{}:{}", source_path, kind_str, word)),
+            id: hash.unwrap_or_else(|| format!("{}:{}:{}", source_path, kind_str, word)),
             kind: parse_atom_kind(&kind_str),
             name: word,
             source_path,

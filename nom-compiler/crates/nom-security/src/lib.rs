@@ -297,7 +297,7 @@ impl<'r> SecurityChecker<'r> {
 
         // Check for untrusted source
         if self.config.require_registry_source {
-            if let Some(source) = &entry.source {
+            if let Some(source) = &entry.source_repo {
                 if !source.starts_with("https://registry.nom-lang.org") {
                     report.push(SecurityFinding {
                         severity: Severity::Low,

@@ -5,37 +5,8 @@
 //! The nomtu table unifies word metadata, contract info, scores,
 //! provenance, and implementation body in a single row.
 //!
-//! Schema (auto-created if missing):
-//! ```sql
-//! CREATE TABLE nomtu (
-//!     id            INTEGER PRIMARY KEY AUTOINCREMENT,
-//!     word          TEXT NOT NULL,
-//!     variant       TEXT,
-//!     hash          TEXT,
-//!     describe      TEXT,
-//!     kind          TEXT,
-//!     input_type    TEXT,
-//!     output_type   TEXT,
-//!     effects       TEXT DEFAULT '[]',
-//!     pre           TEXT,
-//!     post          TEXT,
-//!     security      REAL DEFAULT 0.0,
-//!     performance   REAL DEFAULT 0.0,
-//!     quality       REAL DEFAULT 0.0,
-//!     reliability   REAL DEFAULT 0.0,
-//!     source        TEXT,
-//!     source_path   TEXT,
-//!     language      TEXT DEFAULT 'rust',
-//!     license       TEXT,
-//!     body          TEXT,
-//!     signature     TEXT,
-//!     version       TEXT,
-//!     tests         INTEGER DEFAULT 0,
-//!     is_canonical  BOOLEAN DEFAULT 0,
-//!     created_at    TEXT DEFAULT (datetime('now')),
-//!     UNIQUE(word, variant, language)
-//! );
-//! ```
+//! Schema (auto-created if missing): 48-column .nomtu format.
+//! See `init_schema()` for the full CREATE TABLE statement.
 
 use nom_ast::NomRef;
 pub use nom_types::NomtuEntry;
@@ -85,41 +56,70 @@ impl Resolver {
     fn init_schema(&self) -> Result<(), ResolverError> {
         self.conn.execute_batch(
             "CREATE TABLE IF NOT EXISTS nomtu (
-                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                id                  INTEGER PRIMARY KEY AUTOINCREMENT,
                 -- identity
-                word          TEXT NOT NULL,
-                variant       TEXT,
-                hash          TEXT,
-                atom_id       TEXT,
+                word                TEXT NOT NULL,
+                variant             TEXT,
+                kind                TEXT NOT NULL DEFAULT '',
+                hash                TEXT UNIQUE,
+                body_hash           TEXT,
                 -- meaning
-                describe      TEXT,
-                kind          TEXT,
-                labels        TEXT DEFAULT '[]',
-                concept       TEXT,
+                describe            TEXT,
+                concept             TEXT,
+                labels              TEXT DEFAULT '[]',
                 -- contract
-                input_type    TEXT,
-                output_type   TEXT,
-                effects       TEXT DEFAULT '[]',
-                pre           TEXT,
-                post          TEXT,
-                -- scores
-                security      REAL DEFAULT 0.0,
-                performance   REAL DEFAULT 0.0,
-                quality       REAL DEFAULT 0.0,
-                reliability   REAL DEFAULT 0.0,
+                input_type          TEXT,
+                output_type         TEXT,
+                effects             TEXT DEFAULT '[]',
+                pre                 TEXT,
+                post                TEXT,
+                signature           TEXT,
+                depends_on          TEXT DEFAULT '[]',
+                -- scores (8 + overall)
+                security            REAL DEFAULT 0.0,
+                reliability         REAL DEFAULT 0.0,
+                performance         REAL DEFAULT 0.0,
+                readability         REAL DEFAULT 0.0,
+                testability         REAL DEFAULT 0.0,
+                portability         REAL DEFAULT 0.0,
+                composability       REAL DEFAULT 0.0,
+                maturity            REAL DEFAULT 0.0,
+                overall_score       REAL DEFAULT 0.0,
+                -- security audit
+                audit_passed        BOOLEAN DEFAULT 0,
+                audit_max_severity  TEXT,
+                audit_findings      TEXT,
                 -- provenance
-                source        TEXT,
-                source_path   TEXT,
-                language      TEXT DEFAULT 'rust',
-                license       TEXT,
-                -- body (actual code from external repos)
-                body          TEXT,
-                signature     TEXT,
+                source_repo         TEXT,
+                source_path         TEXT,
+                source_line         INTEGER,
+                source_commit       TEXT,
+                author              TEXT,
+                language            TEXT DEFAULT 'rust',
+                -- body & translation
+                body                TEXT,
+                rust_body           TEXT,
+                translate_confidence REAL,
+                -- graph metadata
+                community_id        TEXT,
+                callers_count       INTEGER DEFAULT 0,
+                callees_count       INTEGER DEFAULT 0,
+                is_entry_point      BOOLEAN DEFAULT 0,
+                -- precompiled artifacts
+                bc_path             TEXT,
+                bc_hash             TEXT,
+                bc_size             INTEGER,
+                -- agent metadata
+                capabilities        TEXT,
+                supervision         TEXT,
+                schedule            TEXT,
                 -- meta
-                version       TEXT,
-                tests         INTEGER DEFAULT 0,
-                is_canonical  BOOLEAN DEFAULT 0,
-                created_at    TEXT DEFAULT (datetime('now')),
+                version             TEXT,
+                tests               INTEGER DEFAULT 0,
+                is_canonical        BOOLEAN DEFAULT 0,
+                deprecated_by       TEXT,
+                created_at          TEXT DEFAULT (datetime('now')),
+                updated_at          TEXT,
                 UNIQUE(word, variant, language)
             );
             CREATE INDEX IF NOT EXISTS idx_nomtu_word ON nomtu(word);
@@ -127,7 +127,10 @@ impl Resolver {
             CREATE INDEX IF NOT EXISTS idx_nomtu_kind ON nomtu(kind);
             CREATE INDEX IF NOT EXISTS idx_nomtu_language ON nomtu(language);
             CREATE INDEX IF NOT EXISTS idx_nomtu_concept ON nomtu(concept);
-            CREATE INDEX IF NOT EXISTS idx_nomtu_atom_id ON nomtu(atom_id);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_hash ON nomtu(hash);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_source_repo ON nomtu(source_repo);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_overall_score ON nomtu(overall_score);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_community ON nomtu(community_id);
             CREATE INDEX IF NOT EXISTS idx_nomtu_canonical ON nomtu(word, variant, is_canonical);",
         )?;
         Ok(())
@@ -135,66 +138,129 @@ impl Resolver {
 
     /// Insert or replace a nomtu entry.
     pub fn upsert(&self, entry: &NomtuEntry) -> Result<(), ResolverError> {
-        let effects_json = serde_json::to_string(&entry.effects)?;
         let labels_json = serde_json::to_string(&entry.labels)?;
+        let effects_json = serde_json::to_string(&entry.effects)?;
+        let depends_on_json = serde_json::to_string(&entry.depends_on)?;
         self.conn.execute(
-            "INSERT INTO nomtu (word, variant, hash, atom_id, describe, kind, labels, concept,
-                input_type, output_type, effects, pre, post,
-                security, performance, quality, reliability,
-                source, source_path, language, license,
-                body, signature, version, tests, is_canonical)
-             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,?21,?22,?23,?24,?25,?26)
+            "INSERT INTO nomtu (
+                word, variant, kind, hash, body_hash,
+                describe, concept, labels,
+                input_type, output_type, effects, pre, post, signature, depends_on,
+                security, reliability, performance,
+                readability, testability, portability, composability, maturity, overall_score,
+                audit_passed, audit_max_severity, audit_findings,
+                source_repo, source_path, source_line, source_commit, author, language,
+                body, rust_body, translate_confidence,
+                community_id, callers_count, callees_count, is_entry_point,
+                bc_path, bc_hash, bc_size,
+                capabilities, supervision, schedule,
+                version, tests, is_canonical, deprecated_by, updated_at)
+             VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,
+                     ?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
+                     ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,
+                     ?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,
+                     ?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51)
              ON CONFLICT(word, variant, language) DO UPDATE SET
-                hash=excluded.hash,
-                atom_id=excluded.atom_id,
-                describe=excluded.describe,
                 kind=excluded.kind,
-                labels=excluded.labels,
+                hash=excluded.hash,
+                body_hash=excluded.body_hash,
+                describe=excluded.describe,
                 concept=excluded.concept,
+                labels=excluded.labels,
                 input_type=excluded.input_type,
                 output_type=excluded.output_type,
                 effects=excluded.effects,
                 pre=excluded.pre,
                 post=excluded.post,
-                security=excluded.security,
-                performance=excluded.performance,
-                quality=excluded.quality,
-                reliability=excluded.reliability,
-                source=excluded.source,
-                source_path=excluded.source_path,
-                license=excluded.license,
-                body=excluded.body,
                 signature=excluded.signature,
+                depends_on=excluded.depends_on,
+                security=excluded.security,
+                reliability=excluded.reliability,
+                performance=excluded.performance,
+                readability=excluded.readability,
+                testability=excluded.testability,
+                portability=excluded.portability,
+                composability=excluded.composability,
+                maturity=excluded.maturity,
+                overall_score=excluded.overall_score,
+                audit_passed=excluded.audit_passed,
+                audit_max_severity=excluded.audit_max_severity,
+                audit_findings=excluded.audit_findings,
+                source_repo=excluded.source_repo,
+                source_path=excluded.source_path,
+                source_line=excluded.source_line,
+                source_commit=excluded.source_commit,
+                author=excluded.author,
+                body=excluded.body,
+                rust_body=excluded.rust_body,
+                translate_confidence=excluded.translate_confidence,
+                community_id=excluded.community_id,
+                callers_count=excluded.callers_count,
+                callees_count=excluded.callees_count,
+                is_entry_point=excluded.is_entry_point,
+                bc_path=excluded.bc_path,
+                bc_hash=excluded.bc_hash,
+                bc_size=excluded.bc_size,
+                capabilities=excluded.capabilities,
+                supervision=excluded.supervision,
+                schedule=excluded.schedule,
                 version=excluded.version,
                 tests=excluded.tests,
-                is_canonical=excluded.is_canonical",
+                is_canonical=excluded.is_canonical,
+                deprecated_by=excluded.deprecated_by,
+                updated_at=excluded.updated_at",
             params![
-                entry.word,
-                entry.variant,
-                entry.hash,
-                entry.atom_id,
-                entry.describe,
-                entry.kind,
-                labels_json,
-                entry.concept,
-                entry.input_type,
-                entry.output_type,
-                effects_json,
-                entry.pre,
-                entry.post,
-                entry.security,
-                entry.performance,
-                entry.quality,
-                entry.reliability,
-                entry.source,
-                entry.source_path,
-                entry.language,
-                entry.license,
-                entry.body,
-                entry.signature,
-                entry.version,
-                entry.tests,
-                entry.is_canonical,
+                entry.word,           // 1
+                entry.variant,        // 2
+                entry.kind,           // 3
+                entry.hash,           // 4
+                entry.body_hash,      // 5
+                entry.describe,       // 6
+                entry.concept,        // 7
+                labels_json,          // 8
+                entry.input_type,     // 9
+                entry.output_type,    // 10
+                effects_json,         // 11
+                entry.pre,            // 12
+                entry.post,           // 13
+                entry.signature,      // 14
+                depends_on_json,      // 15
+                entry.security,       // 16
+                entry.reliability,    // 17
+                entry.performance,    // 18
+                entry.readability,    // 19
+                entry.testability,    // 20
+                entry.portability,    // 21
+                entry.composability,  // 22
+                entry.maturity,       // 23
+                entry.overall_score,  // 24
+                entry.audit_passed,   // 25
+                entry.audit_max_severity,  // 26
+                entry.audit_findings,      // 27
+                entry.source_repo,    // 28
+                entry.source_path,    // 29
+                entry.source_line,    // 30
+                entry.source_commit,  // 31
+                entry.author,         // 32
+                entry.language,       // 33
+                entry.body,           // 34
+                entry.rust_body,      // 35
+                entry.translate_confidence, // 36
+                entry.community_id,   // 37
+                entry.callers_count,  // 38
+                entry.callees_count,  // 39
+                entry.is_entry_point, // 40
+                entry.bc_path,        // 41
+                entry.bc_hash,        // 42
+                entry.bc_size,        // 43
+                entry.capabilities,   // 44
+                entry.supervision,    // 45
+                entry.schedule,       // 46
+                entry.version,        // 47
+                entry.tests,          // 48
+                entry.is_canonical,   // 49
+                entry.deprecated_by,  // 50
+                entry.updated_at,     // 51
             ],
         )?;
         Ok(())
@@ -213,7 +279,7 @@ impl Resolver {
     /// 3. Semantic search by `describe` field (the word as a natural language query)
     ///
     /// Selection priority: `is_canonical` DESC, prefer `language='rust'`,
-    /// then highest `quality`, then newest (highest `id`).
+    /// then highest `overall_score`, then newest (highest `id`).
     pub fn resolve(&self, nom_ref: &NomRef) -> Result<NomtuEntry, ResolverError> {
         let word = &nom_ref.word.name;
         let variant = nom_ref.variant.as_ref().map(|v| v.name.as_str());
@@ -318,7 +384,7 @@ impl Resolver {
     /// Get the best implementation body for a word.
     ///
     /// Selection: prefer `is_canonical=true`, then `language='rust'`,
-    /// then highest `quality`, then newest.
+    /// then highest `overall_score`, then newest.
     pub fn get_body(&self, word: &str, variant: Option<&str>) -> Result<Option<NomtuEntry>, ResolverError> {
         // 1. Try exact (word, variant) match with body
         if let Some(v) = variant {
@@ -329,7 +395,7 @@ impl Resolver {
             }
         }
 
-        // 2. Fallback: ANY entry for this word with a body (pick best by quality)
+        // 2. Fallback: ANY entry for this word with a body (pick best by overall_score)
         let sql = format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND body IS NOT NULL AND length(body) > 0
              ORDER BY {ORDER_CLAUSE} LIMIT 1");
         if let Some(entry) = self.conn.query_row(&sql, params![word], Self::row_to_entry).optional()? {
@@ -353,10 +419,10 @@ impl Resolver {
     pub fn get_all_variants(&self, word: &str, variant: Option<&str>) -> Result<Vec<NomtuEntry>, ResolverError> {
         let sql = if variant.is_some() {
             format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant=?2
-             ORDER BY quality DESC, id DESC")
+             ORDER BY overall_score DESC, id DESC")
         } else {
             format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant IS NULL
-             ORDER BY quality DESC, id DESC")
+             ORDER BY overall_score DESC, id DESC")
         };
 
         let mut stmt = self.conn.prepare(&sql)?;
@@ -403,10 +469,10 @@ impl Resolver {
     pub fn get_impl_by_language(&self, word: &str, variant: Option<&str>, language: &str) -> Result<Option<NomtuEntry>, ResolverError> {
         let sql = if variant.is_some() {
             format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant=?2 AND language=?3
-             ORDER BY quality DESC, id DESC LIMIT 1")
+             ORDER BY overall_score DESC, id DESC LIMIT 1")
         } else {
             format!("{SELECT_COLS} FROM nomtu WHERE word=?1 AND variant IS NULL AND language=?2
-             ORDER BY quality DESC, id DESC LIMIT 1")
+             ORDER BY overall_score DESC, id DESC LIMIT 1")
         };
 
         let result = if let Some(v) = variant {
@@ -428,7 +494,7 @@ impl Resolver {
         signature: Option<&str>,
         source_path: Option<&str>,
         hash: Option<&str>,
-        quality: f64,
+        overall_score: f64,
     ) -> Result<(), ResolverError> {
         let entry = NomtuEntry {
             word: word.to_owned(),
@@ -438,7 +504,7 @@ impl Resolver {
             signature: signature.map(|s| s.to_owned()),
             source_path: source_path.map(|s| s.to_owned()),
             hash: hash.map(|s| s.to_owned()),
-            quality,
+            overall_score,
             ..NomtuEntry::default()
         };
         self.upsert(&entry)
@@ -455,68 +521,114 @@ impl Resolver {
         signature: Option<&str>,
         source_path: Option<&str>,
         hash: Option<&str>,
-        quality: f64,
+        overall_score: f64,
     ) -> Result<(), ResolverError> {
-        self.import_nomtu(word, variant, language, body, signature, source_path, hash, quality)
+        self.import_nomtu(word, variant, language, body, signature, source_path, hash, overall_score)
     }
 
     fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<NomtuEntry> {
-        // Column order matches SELECT_COLS:
-        //  0: id, 1: word, 2: variant, 3: hash, 4: atom_id,
-        //  5: describe, 6: kind, 7: labels, 8: concept,
+        // Column order matches SELECT_COLS (48 columns):
+        //  0: id, 1: word, 2: variant, 3: kind, 4: hash, 5: body_hash,
+        //  6: describe, 7: concept, 8: labels,
         //  9: input_type, 10: output_type, 11: effects, 12: pre, 13: post,
-        // 14: security, 15: performance, 16: quality, 17: reliability,
-        // 18: source, 19: source_path, 20: language, 21: license,
-        // 22: body, 23: signature, 24: version, 25: tests, 26: is_canonical
-        let labels_json: String = row.get(7).unwrap_or_else(|_| "[]".to_owned());
+        // 14: signature, 15: depends_on,
+        // 16: security, 17: reliability, 18: performance,
+        // 19: readability, 20: testability, 21: portability,
+        // 22: composability, 23: maturity, 24: overall_score,
+        // 25: audit_passed, 26: audit_max_severity, 27: audit_findings,
+        // 28: source_repo, 29: source_path, 30: source_line,
+        // 31: source_commit, 32: author, 33: language,
+        // 34: body, 35: rust_body, 36: translate_confidence,
+        // 37: community_id, 38: callers_count, 39: callees_count,
+        // 40: is_entry_point,
+        // 41: bc_path, 42: bc_hash, 43: bc_size,
+        // 44: capabilities, 45: supervision, 46: schedule,
+        // 47: version, 48: tests, 49: is_canonical,
+        // 50: deprecated_by, 51: created_at, 52: updated_at
+        let labels_json: String = row.get(8).unwrap_or_else(|_| "[]".to_owned());
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let effects_json: String = row.get(11).unwrap_or_else(|_| "[]".to_owned());
         let effects: Vec<String> = serde_json::from_str(&effects_json).unwrap_or_default();
+        let depends_on_json: String = row.get(15).unwrap_or_else(|_| "[]".to_owned());
+        let depends_on: Vec<String> = serde_json::from_str(&depends_on_json).unwrap_or_default();
         Ok(NomtuEntry {
             id: row.get(0)?,
             word: row.get(1)?,
             variant: row.get(2)?,
-            hash: row.get(3)?,
-            atom_id: row.get(4)?,
-            describe: row.get(5)?,
-            kind: row.get(6)?,
+            kind: row.get(3)?,
+            hash: row.get(4)?,
+            body_hash: row.get(5)?,
+            describe: row.get(6)?,
+            concept: row.get(7)?,
             labels,
-            concept: row.get(8)?,
             input_type: row.get(9)?,
             output_type: row.get(10)?,
             effects,
             pre: row.get(12)?,
             post: row.get(13)?,
-            security: row.get(14)?,
-            performance: row.get(15)?,
-            quality: row.get(16)?,
+            signature: row.get(14)?,
+            depends_on,
+            security: row.get(16)?,
             reliability: row.get(17)?,
-            source: row.get(18)?,
-            source_path: row.get(19)?,
-            language: row.get(20)?,
-            license: row.get(21)?,
-            body: row.get(22)?,
-            signature: row.get(23)?,
-            version: row.get(24)?,
-            tests: row.get(25)?,
-            is_canonical: row.get(26)?,
+            performance: row.get(18)?,
+            readability: row.get(19)?,
+            testability: row.get(20)?,
+            portability: row.get(21)?,
+            composability: row.get(22)?,
+            maturity: row.get(23)?,
+            overall_score: row.get(24)?,
+            audit_passed: row.get(25)?,
+            audit_max_severity: row.get(26)?,
+            audit_findings: row.get(27)?,
+            source_repo: row.get(28)?,
+            source_path: row.get(29)?,
+            source_line: row.get(30)?,
+            source_commit: row.get(31)?,
+            author: row.get(32)?,
+            language: row.get(33)?,
+            body: row.get(34)?,
+            rust_body: row.get(35)?,
+            translate_confidence: row.get(36)?,
+            community_id: row.get(37)?,
+            callers_count: row.get(38)?,
+            callees_count: row.get(39)?,
+            is_entry_point: row.get(40)?,
+            bc_path: row.get(41)?,
+            bc_hash: row.get(42)?,
+            bc_size: row.get(43)?,
+            capabilities: row.get(44)?,
+            supervision: row.get(45)?,
+            schedule: row.get(46)?,
+            version: row.get(47)?,
+            tests: row.get(48)?,
+            is_canonical: row.get(49)?,
+            deprecated_by: row.get(50)?,
+            created_at: row.get(51)?,
+            updated_at: row.get(52)?,
         })
     }
 }
 
 /// Column list for SELECT queries (must match `row_to_entry` field order).
 const SELECT_COLS: &str =
-    "SELECT id, word, variant, hash, atom_id, describe, kind, labels, concept, \
-     input_type, output_type, effects, pre, post, \
-     security, performance, quality, reliability, \
-     source, source_path, language, license, \
-     body, signature, version, tests, is_canonical";
+    "SELECT id, word, variant, kind, hash, body_hash, \
+     describe, concept, labels, \
+     input_type, output_type, effects, pre, post, signature, depends_on, \
+     security, reliability, performance, \
+     readability, testability, portability, composability, maturity, overall_score, \
+     audit_passed, audit_max_severity, audit_findings, \
+     source_repo, source_path, source_line, source_commit, author, language, \
+     body, rust_body, translate_confidence, \
+     community_id, callers_count, callees_count, is_entry_point, \
+     bc_path, bc_hash, bc_size, \
+     capabilities, supervision, schedule, \
+     version, tests, is_canonical, deprecated_by, created_at, updated_at";
 
-/// Default ORDER BY clause: canonical first, then Rust, then quality, then newest.
+/// Default ORDER BY clause: canonical first, then Rust, then overall_score, then newest.
 const ORDER_CLAUSE: &str =
     "is_canonical DESC, \
      CASE WHEN language='rust' THEN 0 ELSE 1 END, \
-     quality DESC, \
+     overall_score DESC, \
      id DESC";
 
 #[cfg(test)]
@@ -600,7 +712,7 @@ mod tests {
             signature: Some(r#"{"inputs":["bytes"],"outputs":["hash"],"effects":[]}"#.to_owned()),
             source_path: Some("crypto/src/hash.rs".to_owned()),
             hash: Some("abc123".to_owned()),
-            quality: 0.85,
+            overall_score: 0.85,
             ..NomtuEntry::default()
         };
         resolver.upsert(&entry).unwrap();
@@ -610,7 +722,7 @@ mod tests {
         assert_eq!(found.variant.as_deref(), Some("sha256"));
         assert_eq!(found.language, "rust");
         assert!(found.body.as_deref().unwrap().contains("fn hash"));
-        assert!((found.quality - 0.85).abs() < 1e-9);
+        assert!((found.overall_score - 0.85).abs() < 1e-9);
     }
 
     #[test]

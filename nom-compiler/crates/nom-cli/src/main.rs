@@ -902,9 +902,9 @@ fn cmd_import(
             security: lang_quality,
             performance: lang_quality,
             reliability: lang_quality,
-            quality,
+            overall_score: quality,
             hash,
-            source: source_path.clone(),
+            source_repo: source_path.clone(),
             source_path,
             language: lang_str,
             body: Some(body),
@@ -2349,7 +2349,7 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
             entry.word,
             entry.variant.as_deref().unwrap_or(""),
             entry.describe.as_deref().unwrap_or(""),
-            entry.kind.as_deref().unwrap_or(""),
+            entry.kind.as_str(),
         );
         bm25.add_document(&doc_id, &text);
     }

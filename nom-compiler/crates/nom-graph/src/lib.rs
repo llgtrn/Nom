@@ -88,7 +88,7 @@ impl NomtuGraph {
                 word: entry.word.clone(),
                 variant: entry.variant.clone(),
                 language: entry.language.clone(),
-                kind: entry.kind.clone().unwrap_or_default(),
+                kind: entry.kind.clone(),
                 body_hash: entry.hash.clone(),
             };
             graph.add_node(node);
@@ -546,7 +546,7 @@ mod tests {
             word: word.to_string(),
             variant: variant.map(|s| s.to_string()),
             language: language.to_string(),
-            kind: Some("function".to_string()),
+            kind: "function".to_string(),
             body: Some(body.to_string()),
             ..Default::default()
         }
