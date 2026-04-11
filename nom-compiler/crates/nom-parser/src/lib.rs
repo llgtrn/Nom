@@ -29,6 +29,7 @@ use nom_ast::{
     AssignStmt, Block, BlockStmt, BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier,
     CompareOp, Constraint, ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt,
     EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam, ForStmt,
+    OnFailStrategy,
     GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
     GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplementStmt, LetStmt,
     Literal, MatchArm, MatchExpr, NeedStmt, NomRef, Pattern, RequireStmt, SourceFile, Span,
@@ -889,10 +890,65 @@ impl Parser {
         };
 
         let chain = self.parse_flow_chain()?;
+
+        // Check for optional `onfail` clause (soft keyword)
+        let on_fail = if matches!(self.peek(), Token::Ident(s) if s == "onfail") {
+            self.advance(); // consume 'onfail'
+            match self.peek().clone() {
+                Token::Ident(ref s) if s == "abort" => {
+                    self.advance();
+                    OnFailStrategy::Abort
+                }
+                Token::Ident(ref s) if s == "restart_from" => {
+                    self.advance();
+                    let node_ref = self.parse_nom_ref()?;
+                    OnFailStrategy::RestartFrom(node_ref.word)
+                }
+                Token::Ident(ref s) if s == "retry" => {
+                    self.advance();
+                    match self.peek().clone() {
+                        Token::Integer(n) => {
+                            self.advance();
+                            OnFailStrategy::Retry(n as u32)
+                        }
+                        _ => {
+                            let sp = self.peek_span();
+                            return Err(ParseError::UnexpectedToken {
+                                expected: "retry count (integer)".into(),
+                                found: format!("{:?}", self.peek()),
+                                line: sp.line,
+                                col: sp.col,
+                            });
+                        }
+                    }
+                }
+                Token::Ident(ref s) if s == "skip" => {
+                    self.advance();
+                    OnFailStrategy::Skip
+                }
+                Token::Ident(ref s) if s == "escalate" => {
+                    self.advance();
+                    OnFailStrategy::Escalate
+                }
+                _ => {
+                    let sp = self.peek_span();
+                    return Err(ParseError::UnexpectedToken {
+                        expected: "abort, restart_from, retry, skip, or escalate".into(),
+                        found: format!("{:?}", self.peek()),
+                        line: sp.line,
+                        col: sp.col,
+                    });
+                }
+            }
+        } else {
+            OnFailStrategy::default()
+        };
+
         let end = self.peek_span();
         Ok(FlowStmt {
             qualifier,
             chain,
+            on_fail,
             span: Span::new(start.start, end.end, start.line, start.col),
         })
     }
@@ -2761,6 +2817,86 @@ mod tests {
         let sf = parse_ok(src);
         match &sf.declarations[0].statements[0] {
             Statement::Flow(f) => assert_eq!(f.qualifier, FlowQualifier::Once),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    // ── OnFail strategy tests (ADOPT-4: supervision tree for flows) ──────────
+
+    #[test]
+    fn parses_flow_onfail_abort() {
+        let src = "system test\n  flow request->response onfail abort\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.on_fail, OnFailStrategy::Abort),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_onfail_retry() {
+        let src = "system test\n  flow request->hash->store onfail retry 3\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.on_fail, OnFailStrategy::Retry(3)),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_onfail_restart_from() {
+        let src = "system test\n  flow request->hash->store onfail restart_from hash\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => {
+                match &f.on_fail {
+                    OnFailStrategy::RestartFrom(id) => assert_eq!(id.name, "hash"),
+                    other => panic!("expected RestartFrom, got {other:?}"),
+                }
+            }
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_onfail_skip() {
+        let src = "system test\n  flow request->hash->store onfail skip\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.on_fail, OnFailStrategy::Skip),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_flow_onfail_escalate() {
+        let src = "system test\n  flow request->hash->store onfail escalate\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.on_fail, OnFailStrategy::Escalate),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn default_onfail_is_abort() {
+        let src = "system test\n  flow request->response\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => assert_eq!(f.on_fail, OnFailStrategy::Abort),
+            other => panic!("expected Flow, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn flow_qualifier_with_onfail() {
+        let src = "system test\n  flow::stream events->process->output onfail retry 5\n";
+        let sf = parse_ok(src);
+        match &sf.declarations[0].statements[0] {
+            Statement::Flow(f) => {
+                assert_eq!(f.qualifier, FlowQualifier::Stream);
+                assert_eq!(f.on_fail, OnFailStrategy::Retry(5));
+            }
             other => panic!("expected Flow, got {other:?}"),
         }
     }

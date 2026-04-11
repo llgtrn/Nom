@@ -10,13 +10,27 @@
 
 use nom_ast::{
     BranchArm, BranchBlock, BranchCondition, Classifier, Declaration, Expr, FlowChain, FlowStep,
-    GraphQueryExpr, GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, SourceFile,
-    Statement,
+    GraphQueryExpr, GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, OnFailStrategy,
+    SourceFile, Statement,
 };
 use nom_resolver::{Resolver, WordEntry};
 use nom_verifier::Verifier;
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
+
+fn default_on_fail() -> String {
+    "abort".to_owned()
+}
+
+fn on_fail_strategy_to_string(strategy: &OnFailStrategy) -> String {
+    match strategy {
+        OnFailStrategy::Abort => "abort".to_owned(),
+        OnFailStrategy::RestartFrom(id) => format!("restart_from:{}", id.name),
+        OnFailStrategy::Retry(n) => format!("retry:{}", n),
+        OnFailStrategy::Skip => "skip".to_owned(),
+        OnFailStrategy::Escalate => "escalate".to_owned(),
+    }
+}
 
 #[derive(Debug, Error)]
 pub enum PlanError {
@@ -156,6 +170,9 @@ pub struct FlowPlan {
     /// Flow execution qualifier (once/stream/scheduled)
     #[serde(default)]
     pub qualifier: String,
+    /// Fault handling strategy: "abort", "restart_from:<node>", "retry:<n>", "skip", "escalate"
+    #[serde(default = "default_on_fail")]
+    pub on_fail: String,
     /// Union of all effects produced by nodes in this flow.
     pub effect_summary: Vec<String>,
     /// Imperative statements (fn, struct, enum, let, if, etc.) serialized as AST.
@@ -252,6 +269,7 @@ impl<'r> Planner<'r> {
                         &flow_stmt.chain,
                     )?;
                     plan.qualifier = qualifier;
+                    plan.on_fail = on_fail_strategy_to_string(&flow_stmt.on_fail);
                     flow_plans.push(plan);
                     declaration_flow_count += 1;
                 }
@@ -335,6 +353,7 @@ impl<'r> Planner<'r> {
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
                 qualifier: "once".to_owned(),
+                on_fail: "abort".to_owned(),
                 effect_summary: Vec::new(),
                 imperative_stmts: imperative_stmts.clone(),
             });
@@ -399,6 +418,7 @@ impl<'r> Planner<'r> {
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
                 qualifier: "once".to_owned(),
+                on_fail: "abort".to_owned(),
                 effect_summary: Vec::new(),
                 imperative_stmts: Vec::new(),
             });
@@ -439,6 +459,7 @@ impl<'r> Planner<'r> {
             memory_strategy,
             concurrency_strategy,
             qualifier: "once".to_owned(),
+            on_fail: "abort".to_owned(),
             effect_summary,
             imperative_stmts: Vec::new(),
         })
@@ -879,6 +900,7 @@ mod tests {
                         span: span(),
                     })],
                 },
+                on_fail: nom_ast::OnFailStrategy::Abort,
                 span: span(),
             })],
             span: span(),

@@ -97,6 +97,7 @@ nom geometry
                 memory_strategy: MemoryStrategy::Stack,
                 concurrency_strategy: ConcurrencyStrategy::Sequential,
                 qualifier: "once".to_owned(),
+                on_fail: "abort".to_owned(),
                 effect_summary: vec![],
                 imperative_stmts,
             }],
