@@ -15,19 +15,19 @@
 //!   nom translate       — translate .nomtu bodies from other languages to Rust
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 
-use std::collections::HashMap;
 use clap::{Parser, Subcommand};
-use nom_codegen::{collect_dependencies, generate, CodegenOptions};
+use nom_codegen::{CodegenOptions, collect_dependencies, generate};
 use nom_dict::NomDict;
 use nom_extract;
 use nom_graph::NomtuGraph;
 use nom_score;
 use nom_search::BM25Index;
+use std::collections::HashMap;
 
 use nom_parser::parse_source;
 use nom_planner::Planner;
 use nom_resolver::{NomtuEntry, Resolver};
-use nom_security::{scan_body, security_score, SecurityChecker, SecurityConfig, Severity};
+use nom_security::{SecurityChecker, SecurityConfig, Severity, scan_body, security_score};
 use nom_verifier::Verifier;
 use rusqlite::OpenFlags;
 use std::path::{Path, PathBuf};
@@ -77,6 +77,9 @@ enum Commands {
         /// Build in release mode
         #[arg(long)]
         release: bool,
+        /// Compilation target: rust (default), llvm, native
+        #[arg(long, default_value = "rust")]
+        target: String,
     },
 
     /// Type-check and verify contracts without producing output
@@ -98,6 +101,9 @@ enum Commands {
         /// Only run tests matching this pattern
         #[arg(long)]
         filter: Option<String>,
+        /// Execute test flows (compile and run, not just verify)
+        #[arg(long)]
+        execute: bool,
     },
 
     /// Generate a security report for a .nom file
@@ -264,6 +270,22 @@ enum Commands {
         #[arg(long, default_value = "text")]
         format: String,
     },
+    /// Comprehensive quality assessment of a .nom source file
+    Quality {
+        /// Path to the .nom source file
+        file: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// Format a .nom source file (canonical style)
+    Fmt {
+        /// Path to the .nom source file
+        file: PathBuf,
+        /// Write changes in place (default: print to stdout)
+        #[arg(long)]
+        write: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -272,33 +294,77 @@ fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
         Commands::Run { file, dict } => cmd_run(&file, &dict),
-        Commands::Build { file, output, dict, emit_rust, compile, release } => {
-            cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release)
-        }
+        Commands::Build {
+            file,
+            output,
+            dict,
+            emit_rust,
+            compile,
+            release,
+            target,
+        } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target),
         Commands::Check { file, dict } => cmd_check(&file, &dict),
-        Commands::Test { file, dict, filter } => cmd_test(&file, &dict, filter.as_deref()),
-        Commands::Report { file, dict, min_security, format } => {
-            cmd_report(&file, &dict, min_security, &format)
-        }
+        Commands::Test { file, dict, filter, execute } => cmd_test(&file, &dict, filter.as_deref(), execute),
+        Commands::Report {
+            file,
+            dict,
+            min_security,
+            format,
+        } => cmd_report(&file, &dict, min_security, &format),
         Commands::Dict { query, dict, limit } => cmd_dict(&query, &dict, limit),
-        Commands::Import { source, dict, language, concept, min_body_len, limit, dry_run } => {
-            cmd_import(&source, &dict, language.as_deref(), concept.as_deref(), min_body_len, limit, dry_run)
-        }
-        Commands::Precompile { dict, output_dir, word, language, limit, dry_run } => {
-            cmd_precompile(&dict, &output_dir, word.as_deref(), language.as_deref(), limit, dry_run)
-        }
+        Commands::Import {
+            source,
+            dict,
+            language,
+            concept,
+            min_body_len,
+            limit,
+            dry_run,
+        } => cmd_import(
+            &source,
+            &dict,
+            language.as_deref(),
+            concept.as_deref(),
+            min_body_len,
+            limit,
+            dry_run,
+        ),
+        Commands::Precompile {
+            dict,
+            output_dir,
+            word,
+            language,
+            limit,
+            dry_run,
+        } => cmd_precompile(
+            &dict,
+            &output_dir,
+            word.as_deref(),
+            language.as_deref(),
+            limit,
+            dry_run,
+        ),
         Commands::Extract { dir, dict, limit } => cmd_extract(&dir, &dict, limit),
         Commands::Score { dict } => cmd_score(&dict),
         Commands::Stats { dict } => cmd_stats(&dict),
         Commands::Coverage { dir, dict } => cmd_coverage(&dir, &dict),
-        Commands::Translate { dict, language, limit, min_confidence, dry_run } => {
-            cmd_translate(&dict, language.as_deref(), limit, min_confidence, dry_run)
-        }
+        Commands::Translate {
+            dict,
+            language,
+            limit,
+            min_confidence,
+            dry_run,
+        } => cmd_translate(&dict, language.as_deref(), limit, min_confidence, dry_run),
         Commands::Graph { dict, limit } => cmd_graph(&dict, limit),
         Commands::Search { query, dict, limit } => cmd_search(&query, &dict, limit),
-        Commands::Audit { dict, min_severity, limit, format } => {
-            cmd_audit(&dict, &min_severity, limit, &format)
-        }
+        Commands::Audit {
+            dict,
+            min_severity,
+            limit,
+            format,
+        } => cmd_audit(&dict, &min_severity, limit, &format),
+        Commands::Quality { file, dict } => cmd_quality(&file, &dict),
+        Commands::Fmt { file, write } => cmd_fmt(&file, write),
     };
     process::exit(exit_code);
 }
@@ -307,7 +373,7 @@ fn main() {
 
 fn cmd_run(file: &PathBuf, dict: &PathBuf) -> i32 {
     // Build first (compile = true, release = false), output next to the .nom file
-    let rc = cmd_build(file, None, dict, false, true, false);
+    let rc = cmd_build(file, None, dict, false, true, false, "rust");
     if rc != 0 {
         return rc;
     }
@@ -351,6 +417,7 @@ fn cmd_build(
     emit_rust: bool,
     compile: bool,
     release: bool,
+    target: &str,
 ) -> i32 {
     let source = match read_source(file) {
         Some(s) => s,
@@ -371,8 +438,15 @@ fn cmd_build(
     };
 
     let planner = Planner::new(&resolver);
-    let mut plan = match planner.plan_unchecked(&parsed) {
+    let mut plan = match planner.plan(&parsed) {
         Ok(p) => p,
+        Err(nom_planner::PlanError::VerificationFailed(findings)) => {
+            eprintln!("nom: verification failed ({} findings):", findings.len());
+            for (i, finding) in findings.iter().enumerate() {
+                eprintln!("  {}. {}", i + 1, finding);
+            }
+            return 1;
+        }
         Err(e) => {
             eprintln!("nom: plan error: {e}");
             return 1;
@@ -391,6 +465,64 @@ fn cmd_build(
             return 1;
         }
     }
+
+    // ── LLVM / native target path ─────────────────────────────────────────
+    if target == "llvm" || target == "native" {
+        let llvm_out = match nom_llvm::compile(&plan) {
+            Ok(o) => o,
+            Err(e) => {
+                eprintln!("nom: LLVM compilation error: {e}");
+                return 1;
+            }
+        };
+
+        // Write .bc (bitcode)
+        let bc_path = file.with_extension("bc");
+        if let Err(e) = std::fs::write(&bc_path, &llvm_out.bitcode) {
+            eprintln!("nom: write error: {e}");
+            return 1;
+        }
+        println!("nom: wrote {}", bc_path.display());
+
+        // Write .ll (human-readable IR)
+        let ll_path = file.with_extension("ll");
+        if let Err(e) = std::fs::write(&ll_path, &llvm_out.ir_text) {
+            eprintln!("nom: write error: {e}");
+            return 1;
+        }
+        println!("nom: wrote {}", ll_path.display());
+
+        // If native target, try to invoke llc to compile to object file
+        if target == "native" {
+            let obj_path = file.with_extension("o");
+            let status = std::process::Command::new("llc")
+                .args([
+                    "-filetype=obj",
+                    &bc_path.to_string_lossy(),
+                    "-o",
+                    &obj_path.to_string_lossy(),
+                ])
+                .status();
+            match status {
+                Ok(s) if s.success() => {
+                    println!("nom: wrote {}", obj_path.display());
+                }
+                Ok(s) => {
+                    eprintln!("nom: llc exited with {}", s);
+                    return 1;
+                }
+                Err(e) => {
+                    eprintln!("nom: could not invoke llc: {e}");
+                    eprintln!("  hint: ensure LLVM is installed and llc is in PATH");
+                    return 1;
+                }
+            }
+        }
+
+        return 0;
+    }
+
+    // ── Rust target path (default) ──────────────────────────────────────────
 
     // Generate Rust source
     let opts = CodegenOptions::default();
@@ -459,7 +591,7 @@ fn cmd_build(
     // Generate Cargo.toml
     let deps = collect_dependencies(&plan);
     let mut cargo_toml = format!(
-        "[workspace]\n\n[package]\nname = \"{file_stem}\"\nversion = \"0.1.0\"\nedition = \"2024\"\n\n[dependencies]\n"
+        "[workspace]\n\n[package]\nname = \"{file_stem}\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n"
     );
     for dep in &deps {
         cargo_toml.push_str(&format!("{} = {}\n", dep.name, dep.spec));
@@ -541,22 +673,401 @@ fn cmd_check(file: &PathBuf, dict: &PathBuf) -> i32 {
     let verifier = Verifier::new(&resolver);
     let result = verifier.verify(&parsed);
 
+    // Print warnings first
+    for finding in &result.findings {
+        if !finding.error.is_error() {
+            eprintln!("  warning [{}] {}", finding.declaration, finding.error);
+        }
+    }
+
     if result.ok() {
-        println!("nom: check passed — 0 findings");
+        let wc = result.warning_count();
+        if wc > 0 {
+            println!("nom: check passed — 0 errors, {wc} warning(s)");
+        } else {
+            println!("nom: check passed — 0 findings");
+        }
         0
     } else {
         for finding in &result.findings {
-            eprintln!("  [{}] {}", finding.declaration, finding.error);
+            if finding.error.is_error() {
+                eprintln!("  [{}] {}", finding.declaration, finding.error);
+            }
         }
         eprintln!(
-            "nom: check failed — {} finding(s)",
-            result.findings.len()
+            "nom: check failed — {} error(s), {} warning(s)",
+            result.error_count(),
+            result.warning_count()
         );
         1
     }
 }
 
-fn cmd_test(file: &PathBuf, _dict: &PathBuf, filter: Option<&str>) -> i32 {
+fn cmd_fmt(file: &PathBuf, write_in_place: bool) -> i32 {
+    use nom_ast::Statement;
+
+    let source = match read_source(file) {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    let parsed = match parse_source(&source) {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("nom: parse error: {e}");
+            return 1;
+        }
+    };
+
+    let mut out = String::new();
+
+    for (i, decl) in parsed.declarations.iter().enumerate() {
+        if i > 0 {
+            out.push('\n'); // blank line between declarations
+        }
+
+        // Classifier + name
+        out.push_str(&format!("{} {}\n", decl.classifier.as_str(), decl.name.name));
+
+        for stmt in &decl.statements {
+            match stmt {
+                Statement::Need(n) => {
+                    let variant = n.reference.variant.as_ref()
+                        .map(|v| format!("::{}", v.name))
+                        .unwrap_or_default();
+                    let constraint = n.constraint.as_ref()
+                        .map(|c| format!(" where {}", fmt_constraint(c)))
+                        .unwrap_or_default();
+                    out.push_str(&format!("  need {}{}{}\n", n.reference.word.name, variant, constraint));
+                }
+                Statement::Require(r) => {
+                    out.push_str(&format!("  require {}\n", fmt_constraint(&r.constraint)));
+                }
+                Statement::Effects(e) => {
+                    let modifier = match &e.modifier {
+                        Some(nom_ast::EffectModifier::Only) => "only ",
+                        Some(nom_ast::EffectModifier::Good) => "good ",
+                        Some(nom_ast::EffectModifier::Bad) => "bad ",
+                        None => "",
+                    };
+                    let effects: Vec<&str> = e.effects.iter().map(|id| id.name.as_str()).collect();
+                    out.push_str(&format!("  effects {}[{}]\n", modifier, effects.join(" ")));
+                }
+                Statement::Flow(f) => {
+                    let steps: Vec<String> = f.chain.steps.iter().map(|s| fmt_flow_step(s)).collect();
+                    out.push_str(&format!("  flow {}\n", steps.join(" -> ")));
+                }
+                Statement::Describe(d) => {
+                    out.push_str(&format!("  describe {:?}\n", d.text));
+                }
+                Statement::Contract(_) => {
+                    out.push_str("  contract\n");
+                    // Contract sub-fields handled by the contract parser
+                }
+                Statement::Implement(imp) => {
+                    out.push_str(&format!("  implement {} {{\n", imp.language));
+                    for line in imp.code.lines() {
+                        out.push_str(&format!("    {}\n", line));
+                    }
+                    out.push_str("  }\n");
+                }
+                Statement::Given(g) => {
+                    out.push_str(&format!("  given {}\n", g.subject.name));
+                }
+                Statement::When(w) => {
+                    out.push_str(&format!("  when {}\n", w.action.name));
+                }
+                Statement::Then(t) => {
+                    out.push_str(&format!("  then {}\n", fmt_expr(&t.assertion)));
+                }
+                Statement::And(a) => {
+                    out.push_str(&format!("  and {}\n", fmt_expr(&a.assertion)));
+                }
+                Statement::FnDef(_) => {
+                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
+                }
+                Statement::StructDef(_) | Statement::EnumDef(_) => {
+                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
+                }
+                Statement::Let(_) | Statement::If(_) | Statement::For(_) | Statement::While(_)
+                | Statement::Match(_) | Statement::Return(_) | Statement::ExprStmt(_)
+                | Statement::Assign(_) => {
+                    out.push_str(&nom_codegen::generate_statement_rust(stmt, 1));
+                }
+                // Graph and agent statements: preserve as-is for now
+                _ => {}
+            }
+        }
+    }
+
+    if write_in_place {
+        match std::fs::write(file, &out) {
+            Ok(_) => {
+                println!("nom: formatted {}", file.display());
+                0
+            }
+            Err(e) => {
+                eprintln!("nom: write error: {e}");
+                1
+            }
+        }
+    } else {
+        print!("{out}");
+        0
+    }
+}
+
+fn fmt_constraint(c: &nom_ast::Constraint) -> String {
+    format!("{} {} {}", fmt_expr(&c.left), fmt_cmp_op(c.op), fmt_expr(&c.right))
+}
+
+fn fmt_cmp_op(op: nom_ast::CompareOp) -> &'static str {
+    match op {
+        nom_ast::CompareOp::Gt => ">",
+        nom_ast::CompareOp::Lt => "<",
+        nom_ast::CompareOp::Gte => ">=",
+        nom_ast::CompareOp::Lte => "<=",
+        nom_ast::CompareOp::Eq => "=",
+        nom_ast::CompareOp::Neq => "!=",
+    }
+}
+
+fn fmt_expr(e: &nom_ast::Expr) -> String {
+    nom_codegen::expr_to_rust(e)
+}
+
+fn fmt_flow_step(step: &nom_ast::FlowStep) -> String {
+    match step {
+        nom_ast::FlowStep::Ref(r) => {
+            let variant = r.variant.as_ref()
+                .map(|v| format!("::{}", v.name))
+                .unwrap_or_default();
+            format!("{}{}", r.word.name, variant)
+        }
+        nom_ast::FlowStep::Literal(lit) => format!("{:?}", lit),
+        nom_ast::FlowStep::Branch(block) => {
+            let arms: Vec<String> = block.arms.iter().map(|arm| {
+                let label = arm.label.as_deref().unwrap_or("_");
+                let steps: Vec<String> = arm.chain.steps.iter().map(|s| fmt_flow_step(s)).collect();
+                format!("{} -> {}", label, steps.join(" -> "))
+            }).collect();
+            format!("{{ {} }}", arms.join(", "))
+        }
+        nom_ast::FlowStep::Call(call) => {
+            let args: Vec<String> = call.args.iter().map(fmt_expr).collect();
+            format!("{}({})", call.callee.name, args.join(", "))
+        }
+    }
+}
+
+fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
+    use nom_ast::{Classifier, Statement};
+
+    let source = match read_source(file) {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    let parsed = match parse_source(&source) {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("nom: parse error: {e}");
+            return 1;
+        }
+    };
+
+    println!("nom quality report for {}", file.display());
+    println!("========================================\n");
+
+    // 1. Structure analysis
+    let decl_count = parsed.declarations.len();
+    let mut flow_count = 0usize;
+    let mut need_count = 0usize;
+    let mut fn_count = 0usize;
+    let mut struct_count = 0usize;
+    let mut enum_count = 0usize;
+    let mut test_count = 0usize;
+    let mut has_effects = false;
+    let mut has_describe = false;
+    let mut has_contract = false;
+
+    for decl in &parsed.declarations {
+        if decl.classifier == Classifier::Test {
+            test_count += 1;
+        }
+        for stmt in &decl.statements {
+            match stmt {
+                Statement::Flow(_) => flow_count += 1,
+                Statement::Need(_) => need_count += 1,
+                Statement::FnDef(_) => fn_count += 1,
+                Statement::StructDef(_) => struct_count += 1,
+                Statement::EnumDef(_) => enum_count += 1,
+                Statement::Effects(_) => has_effects = true,
+                Statement::Describe(_) => has_describe = true,
+                Statement::Contract(_) => has_contract = true,
+                _ => {}
+            }
+        }
+    }
+
+    println!("  Structure:");
+    println!("    declarations: {decl_count}");
+    println!("    flows:        {flow_count}");
+    println!("    needs:        {need_count}");
+    println!("    functions:    {fn_count}");
+    println!("    structs:      {struct_count}");
+    println!("    enums:        {enum_count}");
+    println!("    tests:        {test_count}");
+    println!();
+
+    // 2. Quality scoring
+    let mut score = 100i32;
+    let mut issues: Vec<String> = Vec::new();
+    let mut strengths: Vec<String> = Vec::new();
+
+    // Effects declared?
+    if has_effects {
+        strengths.push("effects declared (explicit side-effect tracking)".to_owned());
+    } else if flow_count > 0 {
+        score -= 10;
+        issues.push("no effects declared — add 'effects [...]' to track side effects".to_owned());
+    }
+
+    // Describe present?
+    if has_describe {
+        strengths.push("describe present (human-readable documentation)".to_owned());
+    } else {
+        score -= 5;
+        issues.push("no describe — add 'describe \"...\"' for documentation".to_owned());
+    }
+
+    // Contract present?
+    if has_contract {
+        strengths.push("contract defined (typed interface with pre/post conditions)".to_owned());
+    } else if fn_count > 0 {
+        score -= 5;
+        issues.push("functions without contracts — add 'contract' for formal interface".to_owned());
+    }
+
+    // Tests present?
+    if test_count > 0 {
+        strengths.push(format!("{test_count} test(s) defined"));
+    } else {
+        score -= 15;
+        issues.push("no tests — add 'test <name>' declarations".to_owned());
+    }
+
+    // Require constraints?
+    let has_require = parsed.declarations.iter().any(|d| {
+        d.statements.iter().any(|s| matches!(s, Statement::Require(_)))
+    });
+    if has_require {
+        strengths.push("require constraints set (quality thresholds enforced)".to_owned());
+    } else if need_count > 0 {
+        score -= 10;
+        issues.push("no require constraints — add 'require latency<50ms' etc.".to_owned());
+    }
+
+    // Where constraints on needs?
+    let needs_with_where = parsed.declarations.iter().flat_map(|d| &d.statements).filter(|s| {
+        matches!(s, Statement::Need(n) if n.constraint.is_some())
+    }).count();
+    if needs_with_where > 0 {
+        strengths.push(format!("{needs_with_where}/{need_count} needs have 'where' quality constraints"));
+    } else if need_count > 0 {
+        score -= 10;
+        issues.push("needs without 'where' constraints — add 'where security>0.9' etc.".to_owned());
+    }
+
+    // 3. Verification results
+    let resolver = open_resolver(dict);
+    if let Some(ref r) = resolver {
+        let verifier = Verifier::new(r);
+        let vresult = verifier.verify(&parsed);
+        let errors = vresult.error_count();
+        let warnings = vresult.warning_count();
+
+        // Separate resolver errors (missing dictionary) from semantic errors
+        let resolver_errors = vresult.findings.iter().filter(|f| {
+            matches!(&f.error, nom_verifier::VerifyError::Resolver(_))
+        }).count();
+        let semantic_errors = errors.saturating_sub(resolver_errors);
+
+        if semantic_errors == 0 && resolver_errors == 0 {
+            strengths.push("verification passed (0 errors)".to_owned());
+        } else if semantic_errors == 0 && resolver_errors > 0 {
+            strengths.push("verification passed (0 semantic errors)".to_owned());
+            issues.push(format!("{resolver_errors} unresolved word(s) — populate nomdict or run 'nom import'"));
+            // Don't penalize heavily for missing dictionary
+            score -= (resolver_errors as i32).min(5);
+        } else {
+            score -= semantic_errors as i32 * 10;
+            issues.push(format!("{semantic_errors} verification error(s) — run 'nom check' for details"));
+        }
+        if warnings > 0 {
+            issues.push(format!("{warnings} verification warning(s)"));
+        }
+    }
+
+    // 4. Security analysis
+    for decl in &parsed.declarations {
+        for stmt in &decl.statements {
+            if let Statement::Implement(impl_stmt) = stmt {
+                let findings = scan_body(&impl_stmt.code, &impl_stmt.language);
+                if findings.is_empty() {
+                    strengths.push(format!("implement block in '{}' passes security scan", decl.name.name));
+                } else {
+                    let max_sev = findings.iter().map(|f| &f.severity).max();
+                    score -= findings.len() as i32 * 5;
+                    issues.push(format!(
+                        "implement block in '{}': {} security finding(s), max severity: {:?}",
+                        decl.name.name,
+                        findings.len(),
+                        max_sev.unwrap()
+                    ));
+                }
+            }
+        }
+    }
+
+    // Print results
+    score = score.max(0).min(100);
+
+    println!("  Strengths:");
+    for s in &strengths {
+        println!("    + {s}");
+    }
+    println!();
+
+    if !issues.is_empty() {
+        println!("  Issues:");
+        for i in &issues {
+            println!("    - {i}");
+        }
+        println!();
+    }
+
+    let grade = match score {
+        90..=100 => "A",
+        80..=89 => "B",
+        70..=79 => "C",
+        60..=69 => "D",
+        _ => "F",
+    };
+
+    println!("  Quality Score: {score}/100 (grade {grade})");
+    println!();
+
+    if score >= 80 {
+        println!("nom: quality check passed");
+        0
+    } else {
+        println!("nom: quality below threshold (80) — address issues above");
+        1
+    }
+}
+
+fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool) -> i32 {
     let source = match read_source(file) {
         Some(s) => s,
         None => return 1,
@@ -571,16 +1082,13 @@ fn cmd_test(file: &PathBuf, _dict: &PathBuf, filter: Option<&str>) -> i32 {
     };
 
     // Find test declarations
-    use nom_ast::Classifier;
+    use nom_ast::{Classifier, Statement};
+
     let tests: Vec<_> = parsed
         .declarations
         .iter()
         .filter(|d| d.classifier == Classifier::Test)
-        .filter(|d| {
-            filter
-                .map(|f| d.name.name.contains(f))
-                .unwrap_or(true)
-        })
+        .filter(|d| filter.map(|f| d.name.name.contains(f)).unwrap_or(true))
         .collect();
 
     if tests.is_empty() {
@@ -588,18 +1096,279 @@ fn cmd_test(file: &PathBuf, _dict: &PathBuf, filter: Option<&str>) -> i32 {
         return 0;
     }
 
+    // Open resolver for verification-level testing
+    let resolver = open_resolver(dict);
+    let verifier = resolver.as_ref().map(|r| Verifier::new(r));
+
     let mut passed = 0usize;
-    let failed = 0usize;
+    let mut failed = 0usize;
 
     for test in &tests {
-        println!("  test {} ... ", test.name.name);
-        // For now: a test passes if it parses successfully (full execution TBD)
-        println!("    ok (parse-level)");
-        passed += 1;
+        let name = &test.name.name;
+        let mut test_errors: Vec<String> = Vec::new();
+
+        // Level 1: Verify the test declaration (type compatibility, constraints, effects)
+        if let Some(ref v) = verifier {
+            let vresult = v.verify(&nom_ast::SourceFile {
+                path: parsed.path.clone(),
+                locale: parsed.locale.clone(),
+                declarations: vec![(*test).clone()],
+            });
+            for finding in &vresult.findings {
+                test_errors.push(format!("verify: {}", finding.error));
+            }
+        }
+
+        // Level 2: Evaluate then/and assertions
+        // Assertions can reference resolved dictionary scores, e.g. `then security > 0.9`
+        for stmt in &test.statements {
+            match stmt {
+                Statement::Then(then_stmt) => {
+                    if let Err(reason) = eval_assertion(&then_stmt.assertion, resolver.as_ref(), test) {
+                        test_errors.push(format!("then: {reason}"));
+                    }
+                }
+                Statement::And(and_stmt) => {
+                    if let Err(reason) = eval_assertion(&and_stmt.assertion, resolver.as_ref(), test) {
+                        test_errors.push(format!("and: {reason}"));
+                    }
+                }
+                _ => {}
+            }
+        }
+
+        if test_errors.is_empty() {
+            println!("  test {name} ... ok");
+            passed += 1;
+        } else {
+            println!("  test {name} ... FAILED");
+            for err in &test_errors {
+                eprintln!("    {err}");
+            }
+            failed += 1;
+        }
     }
 
-    println!("nom: {} passed, {} failed", passed, failed);
+    // Level 3: Execute test flows (compile and run) when --execute is passed
+    if execute && failed == 0 {
+        println!("\nnom: executing test flows...");
+
+        // Find all non-test declarations (the system/flow definitions that tests reference)
+        let non_tests: Vec<_> = parsed
+            .declarations
+            .iter()
+            .filter(|d| d.classifier != Classifier::Test)
+            .cloned()
+            .collect();
+
+        if non_tests.is_empty() {
+            println!("  (no executable declarations found, skipping execution)");
+        } else if let Some(ref r) = resolver {
+            // Build a source file with only the non-test declarations
+            let exec_source = nom_ast::SourceFile {
+                path: parsed.path.clone(),
+                locale: parsed.locale.clone(),
+                declarations: non_tests,
+            };
+
+            let planner = Planner::new(r);
+            match planner.plan(&exec_source) {
+                Ok(mut plan) => {
+                    planner.enrich_with_implementations(&mut plan);
+                    let opts = CodegenOptions::default();
+                    match generate(&plan, &opts) {
+                        Ok(codegen_out) => {
+                            // Write a test harness that imports and calls run_all
+                            let file_stem = file
+                                .file_stem()
+                                .unwrap_or_default()
+                                .to_string_lossy()
+                                .to_string();
+                            let parent_dir = file
+                                .parent()
+                                .unwrap_or_else(|| Path::new("."))
+                                .canonicalize()
+                                .unwrap_or_else(|_| PathBuf::from("."));
+
+                            let build_dir = parent_dir.join(".nom-out").join(format!("{file_stem}_test"));
+                            let src_dir = build_dir.join("src");
+
+                            if let Err(e) = std::fs::create_dir_all(&src_dir) {
+                                eprintln!("  exec: cannot create build dir: {e}");
+                            } else {
+                                // Generate test main that wraps run_all in a test
+                                let rust_src = &codegen_out.rust_source;
+                                let test_main = if rust_src.contains("fn main()") {
+                                    rust_src.clone()
+                                } else {
+                                    let mut src = rust_src.clone();
+                                    src.push_str("\nfn main() {\n    run_all();\n    println!(\"nom: execution ok\");\n}\n");
+                                    src
+                                };
+
+                                if let Err(e) = std::fs::write(src_dir.join("main.rs"), &test_main) {
+                                    eprintln!("  exec: write error: {e}");
+                                } else {
+                                    // Generate Cargo.toml
+                                    let deps = collect_dependencies(&plan);
+                                    let mut cargo_toml = format!(
+                                        "[workspace]\n\n[package]\nname = \"{file_stem}_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n"
+                                    );
+                                    for dep in &deps {
+                                        cargo_toml.push_str(&format!("{} = {}\n", dep.name, dep.spec));
+                                    }
+
+                                    if let Err(e) = std::fs::write(build_dir.join("Cargo.toml"), &cargo_toml) {
+                                        eprintln!("  exec: write Cargo.toml error: {e}");
+                                    } else {
+                                        // Build and run
+                                        match process::Command::new("cargo")
+                                            .arg("run")
+                                            .current_dir(&build_dir)
+                                            .status()
+                                        {
+                                            Ok(status) if status.success() => {
+                                                println!("  exec: all flows executed successfully");
+                                            }
+                                            Ok(status) => {
+                                                eprintln!("  exec: flow execution failed (exit {})", status.code().unwrap_or(-1));
+                                                failed += 1;
+                                            }
+                                            Err(e) => {
+                                                eprintln!("  exec: cargo failed: {e}");
+                                                failed += 1;
+                                            }
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                        Err(e) => {
+                            eprintln!("  exec: codegen error: {e}");
+                            failed += 1;
+                        }
+                    }
+                }
+                Err(e) => {
+                    eprintln!("  exec: plan error: {e}");
+                    failed += 1;
+                }
+            }
+        }
+    }
+
+    println!("\nnom: {passed} passed, {failed} failed");
     if failed > 0 { 1 } else { 0 }
+}
+
+/// Evaluate a test assertion expression.
+///
+/// Supports:
+/// - Comparison expressions: `security > 0.9`, `performance >= 0.5`
+/// - Identifier checks: resolves the `given` subject and checks its existence
+/// - Literal true/false
+fn eval_assertion(
+    expr: &nom_ast::Expr,
+    resolver: Option<&Resolver>,
+    test: &nom_ast::Declaration,
+) -> Result<(), String> {
+    use nom_ast::{BinOp, Expr, Literal, Statement};
+
+    match expr {
+        Expr::Literal(Literal::Bool(true)) => Ok(()),
+        Expr::Literal(Literal::Bool(false)) => Err("assertion is literal false".into()),
+
+        // Binary comparison: e.g. `security > 0.9`
+        Expr::BinaryOp(left, op, right) => {
+            // Find the test subject from `given` statements
+            let subject = test.statements.iter().find_map(|s| {
+                if let Statement::Given(g) = s { Some(&g.subject) } else { None }
+            });
+
+            // Try to resolve the subject to get its scores
+            let entry = subject.and_then(|subj| {
+                resolver.and_then(|r| {
+                    let nom_ref = nom_ast::NomRef {
+                        word: subj.clone(),
+                        variant: None,
+                        span: subj.span,
+                    };
+                    r.resolve(&nom_ref).ok()
+                })
+            });
+
+            let lval = eval_numeric(left, entry.as_ref());
+            let rval = eval_numeric(right, entry.as_ref());
+
+            match (lval, rval) {
+                (Some(l), Some(r)) => {
+                    let pass = match op {
+                        BinOp::Gt => l > r,
+                        BinOp::Lt => l < r,
+                        BinOp::Gte => l >= r,
+                        BinOp::Lte => l <= r,
+                        BinOp::Eq => (l - r).abs() < 1e-9,
+                        BinOp::Neq => (l - r).abs() >= 1e-9,
+                        _ => return Err(format!("unsupported operator in assertion: {op:?}")),
+                    };
+                    if pass { Ok(()) } else {
+                        Err(format!("{l:.4} {op:?} {r:.4} is false"))
+                    }
+                }
+                _ => {
+                    // Can't evaluate numerically — treat as structural check (pass if well-formed)
+                    Ok(())
+                }
+            }
+        }
+
+        // Identifier: check that the word resolves
+        Expr::Ident(id) => {
+            if let Some(r) = resolver {
+                let nom_ref = nom_ast::NomRef {
+                    word: id.clone(),
+                    variant: None,
+                    span: id.span,
+                };
+                match r.resolve(&nom_ref) {
+                    Ok(_) => Ok(()),
+                    Err(_) => Err(format!("'{}' could not be resolved", id.name)),
+                }
+            } else {
+                Ok(()) // No resolver, skip resolution checks
+            }
+        }
+
+        _ => Ok(()), // Other expression types: pass (not yet evaluable)
+    }
+}
+
+/// Resolve a numeric value from an expression, optionally using a resolved word entry's scores.
+fn eval_numeric(
+    expr: &nom_ast::Expr,
+    entry: Option<&nom_resolver::WordEntry>,
+) -> Option<f64> {
+    use nom_ast::{Expr, Literal};
+    match expr {
+        Expr::Literal(Literal::Number(n)) => Some(*n),
+        Expr::Literal(Literal::Integer(i)) => Some(*i as f64),
+        Expr::Ident(id) => {
+            // Look up score fields from the resolved entry
+            entry.and_then(|e| match id.name.as_str() {
+                "security" => Some(e.security),
+                "performance" => Some(e.performance),
+                "reliability" => Some(e.reliability),
+                "readability" => Some(e.readability),
+                "testability" => Some(e.testability),
+                "portability" => Some(e.portability),
+                "composability" => Some(e.composability),
+                "maturity" => Some(e.maturity),
+                "overall_score" => Some(e.overall_score),
+                _ => None,
+            })
+        }
+        _ => None,
+    }
 }
 
 fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -> i32 {
@@ -650,14 +1419,14 @@ fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -
             } else {
                 for f in &report.findings {
                     let word_label = f.word.as_deref().unwrap_or("?");
-                    let variant_label = f.variant.as_deref().map(|v| format!("::{v}")).unwrap_or_default();
+                    let variant_label = f
+                        .variant
+                        .as_deref()
+                        .map(|v| format!("::{v}"))
+                        .unwrap_or_default();
                     println!(
                         "[{}] [{}] {}{}: {}",
-                        f.severity,
-                        f.rule_id,
-                        word_label,
-                        variant_label,
-                        f.message
+                        f.severity, f.rule_id, word_label, variant_label, f.message
                     );
                     if let Some(rem) = &f.remediation {
                         println!("         -> {rem}");
@@ -687,8 +1456,10 @@ fn cmd_dict(query: &str, dict: &PathBuf, limit: usize) -> i32 {
             if entries.is_empty() {
                 println!("No results for '{query}'");
             } else {
-                println!("{:<20} {:<12} {:<8} {:<8} {}",
-                    "WORD", "VARIANT", "SEC", "PERF", "DESCRIPTION");
+                println!(
+                    "{:<20} {:<12} {:<8} {:<8} {}",
+                    "WORD", "VARIANT", "SEC", "PERF", "DESCRIPTION"
+                );
                 println!("{}", "-".repeat(70));
                 for e in &entries {
                     println!(
@@ -720,16 +1491,14 @@ fn cmd_import(
     dry_run: bool,
 ) -> i32 {
     // Open Novelos database read-only
-    let novelos_conn = match rusqlite::Connection::open_with_flags(
-        source,
-        OpenFlags::SQLITE_OPEN_READ_ONLY,
-    ) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("nom: cannot open novelos db {}: {e}", source.display());
-            return 1;
-        }
-    };
+    let novelos_conn =
+        match rusqlite::Connection::open_with_flags(source, OpenFlags::SQLITE_OPEN_READ_ONLY) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("nom: cannot open novelos db {}: {e}", source.display());
+                return 1;
+            }
+        };
 
     // Open nomdict via resolver
     let resolver = match open_resolver(dict) {
@@ -787,8 +1556,10 @@ fn cmd_import(
         params_vec.push(Box::new(limit as i64));
     }
 
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params_vec.iter().map(|b| b.as_ref() as &dyn rusqlite::types::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec
+        .iter()
+        .map(|b| b.as_ref() as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let rows = match stmt.query_map(params_refs.as_slice(), |row| {
         Ok((
@@ -946,25 +1717,24 @@ fn parse_signature(sig: &str) -> (Option<String>, Option<String>, Vec<String>) {
         Err(_) => return (None, None, Vec::new()),
     };
 
-    let input_type = v.get("inputs")
-        .and_then(|v| {
-            if v.is_array() {
-                Some(v.to_string())
-            } else {
-                v.as_str().map(|s| s.to_owned())
-            }
-        });
+    let input_type = v.get("inputs").and_then(|v| {
+        if v.is_array() {
+            Some(v.to_string())
+        } else {
+            v.as_str().map(|s| s.to_owned())
+        }
+    });
 
-    let output_type = v.get("outputs")
-        .and_then(|v| {
-            if v.is_array() {
-                Some(v.to_string())
-            } else {
-                v.as_str().map(|s| s.to_owned())
-            }
-        });
+    let output_type = v.get("outputs").and_then(|v| {
+        if v.is_array() {
+            Some(v.to_string())
+        } else {
+            v.as_str().map(|s| s.to_owned())
+        }
+    });
 
-    let effects = v.get("effects")
+    let effects = v
+        .get("effects")
         .and_then(|v| v.as_array())
         .map(|arr| {
             arr.iter()
@@ -982,28 +1752,39 @@ fn parse_signature(sig: &str) -> (Option<String>, Option<String>, Vec<String>) {
 /// that .nom files use with `need hash::argon2`.
 fn detect_domain(name_lower: &str) -> Option<&'static str> {
     // Crypto / hashing
-    if name_lower.contains("argon") || name_lower.contains("bcrypt")
-        || name_lower.contains("sha256") || name_lower.contains("sha512")
-        || name_lower.contains("sha1") || name_lower.contains("blake")
-        || name_lower.contains("pbkdf") || name_lower.contains("scrypt")
+    if name_lower.contains("argon")
+        || name_lower.contains("bcrypt")
+        || name_lower.contains("sha256")
+        || name_lower.contains("sha512")
+        || name_lower.contains("sha1")
+        || name_lower.contains("blake")
+        || name_lower.contains("pbkdf")
+        || name_lower.contains("scrypt")
         || (name_lower.contains("hash") && !name_lower.contains("hashmap"))
     {
         return Some("hash");
     }
-    if name_lower.contains("encrypt") || name_lower.contains("decrypt")
-        || name_lower.contains("aes") || name_lower.contains("chacha")
+    if name_lower.contains("encrypt")
+        || name_lower.contains("decrypt")
+        || name_lower.contains("aes")
+        || name_lower.contains("chacha")
         || name_lower.contains("cipher")
     {
         return Some("encrypt");
     }
-    if name_lower.contains("sign") && (name_lower.contains("ed25519")
-        || name_lower.contains("rsa") || name_lower.contains("ecdsa")
-        || name_lower.contains("verify_sig") || name_lower.contains("digital"))
+    if name_lower.contains("sign")
+        && (name_lower.contains("ed25519")
+            || name_lower.contains("rsa")
+            || name_lower.contains("ecdsa")
+            || name_lower.contains("verify_sig")
+            || name_lower.contains("digital"))
     {
         return Some("sign");
     }
-    if name_lower.contains("tls") || name_lower.contains("ssl")
-        || name_lower.contains("certificate") || name_lower.contains("handshake")
+    if name_lower.contains("tls")
+        || name_lower.contains("ssl")
+        || name_lower.contains("certificate")
+        || name_lower.contains("handshake")
     {
         return Some("tls");
     }
@@ -1012,27 +1793,34 @@ fn detect_domain(name_lower: &str) -> Option<&'static str> {
     if name_lower.contains("redis") {
         return Some("store");
     }
-    if name_lower.contains("postgres") || name_lower.contains("sqlite")
-        || name_lower.contains("mysql") || name_lower.contains("database")
-        || name_lower.contains("db_") || name_lower.contains("_db")
+    if name_lower.contains("postgres")
+        || name_lower.contains("sqlite")
+        || name_lower.contains("mysql")
+        || name_lower.contains("database")
+        || name_lower.contains("db_")
+        || name_lower.contains("_db")
     {
         return Some("database");
     }
-    if name_lower.contains("cache") || name_lower.contains("lru")
-        || name_lower.contains("memoize")
+    if name_lower.contains("cache") || name_lower.contains("lru") || name_lower.contains("memoize")
     {
         return Some("cache");
     }
-    if name_lower.contains("queue") || name_lower.contains("kafka")
-        || name_lower.contains("rabbitmq") || name_lower.contains("pubsub")
+    if name_lower.contains("queue")
+        || name_lower.contains("kafka")
+        || name_lower.contains("rabbitmq")
+        || name_lower.contains("pubsub")
     {
         return Some("queue");
     }
 
     // Network
-    if name_lower.contains("http") || name_lower.contains("server")
-        || name_lower.contains("router") || name_lower.contains("endpoint")
-        || name_lower.contains("handler") || name_lower.contains("middleware")
+    if name_lower.contains("http")
+        || name_lower.contains("server")
+        || name_lower.contains("router")
+        || name_lower.contains("endpoint")
+        || name_lower.contains("handler")
+        || name_lower.contains("middleware")
     {
         return Some("http");
     }
@@ -1045,50 +1833,64 @@ fn detect_domain(name_lower: &str) -> Option<&'static str> {
     if name_lower.contains("dns") || name_lower.contains("resolve_host") {
         return Some("dns");
     }
-    if name_lower.contains("rate_limit") || name_lower.contains("throttle")
-        || name_lower.contains("limiter") || name_lower.contains("token_bucket")
+    if name_lower.contains("rate_limit")
+        || name_lower.contains("throttle")
+        || name_lower.contains("limiter")
+        || name_lower.contains("token_bucket")
     {
         return Some("limiter");
     }
 
     // Auth
-    if name_lower.contains("jwt") || name_lower.contains("token")
-        || name_lower.contains("oauth") || name_lower.contains("auth")
-        || name_lower.contains("login") || name_lower.contains("session")
+    if name_lower.contains("jwt")
+        || name_lower.contains("token")
+        || name_lower.contains("oauth")
+        || name_lower.contains("auth")
+        || name_lower.contains("login")
+        || name_lower.contains("session")
     {
         return Some("auth");
     }
 
     // IO
-    if name_lower.contains("print") || name_lower.contains("stdout")
-        || name_lower.contains("display") || name_lower.contains("write_output")
+    if name_lower.contains("print")
+        || name_lower.contains("stdout")
+        || name_lower.contains("display")
+        || name_lower.contains("write_output")
     {
         return Some("print");
     }
-    if name_lower.contains("log") || name_lower.contains("logger")
-        || name_lower.contains("tracing")
+    if name_lower.contains("log") || name_lower.contains("logger") || name_lower.contains("tracing")
     {
         return Some("log");
     }
-    if name_lower.contains("read_file") || name_lower.contains("write_file")
-        || name_lower.contains("open_file") || name_lower.contains("fs_")
+    if name_lower.contains("read_file")
+        || name_lower.contains("write_file")
+        || name_lower.contains("open_file")
+        || name_lower.contains("fs_")
     {
         return Some("file");
     }
 
     // Compute
-    if name_lower.contains("serialize") || name_lower.contains("json")
-        || name_lower.contains("serde") || name_lower.contains("marshal")
+    if name_lower.contains("serialize")
+        || name_lower.contains("json")
+        || name_lower.contains("serde")
+        || name_lower.contains("marshal")
     {
         return Some("serialize");
     }
-    if name_lower.contains("compress") || name_lower.contains("gzip")
-        || name_lower.contains("zstd") || name_lower.contains("deflate")
+    if name_lower.contains("compress")
+        || name_lower.contains("gzip")
+        || name_lower.contains("zstd")
+        || name_lower.contains("deflate")
     {
         return Some("compress");
     }
-    if name_lower.contains("parse") || name_lower.contains("parser")
-        || name_lower.contains("tokenize") || name_lower.contains("lexer")
+    if name_lower.contains("parse")
+        || name_lower.contains("parser")
+        || name_lower.contains("tokenize")
+        || name_lower.contains("lexer")
     {
         return Some("parse");
     }
@@ -1100,54 +1902,66 @@ fn detect_domain(name_lower: &str) -> Option<&'static str> {
     }
 
     // OS
-    if name_lower.contains("process") || name_lower.contains("spawn")
-        || name_lower.contains("exec")
+    if name_lower.contains("process") || name_lower.contains("spawn") || name_lower.contains("exec")
     {
         return Some("process");
     }
-    if name_lower.contains("thread") || name_lower.contains("mutex")
+    if name_lower.contains("thread")
+        || name_lower.contains("mutex")
         || name_lower.contains("rwlock")
     {
         return Some("thread");
     }
-    if name_lower.contains("socket") || name_lower.contains("tcp_")
-        || name_lower.contains("udp_") || name_lower.contains("bind_addr")
+    if name_lower.contains("socket")
+        || name_lower.contains("tcp_")
+        || name_lower.contains("udp_")
+        || name_lower.contains("bind_addr")
     {
         return Some("socket");
     }
 
     // AI / ML
-    if name_lower.contains("embed") || name_lower.contains("vector")
-        || name_lower.contains("cosine") || name_lower.contains("similarity")
+    if name_lower.contains("embed")
+        || name_lower.contains("vector")
+        || name_lower.contains("cosine")
+        || name_lower.contains("similarity")
     {
         return Some("embed");
     }
-    if name_lower.contains("llm") || name_lower.contains("generate_text")
-        || name_lower.contains("completion") || name_lower.contains("inference")
+    if name_lower.contains("llm")
+        || name_lower.contains("generate_text")
+        || name_lower.contains("completion")
+        || name_lower.contains("inference")
     {
         return Some("generate");
     }
-    if name_lower.contains("classify") || name_lower.contains("predict")
+    if name_lower.contains("classify")
+        || name_lower.contains("predict")
         || name_lower.contains("detect")
     {
         return Some("classify");
     }
 
     // Graph
-    if name_lower.contains("traverse") || name_lower.contains("bfs")
-        || name_lower.contains("dfs") || name_lower.contains("shortest_path")
-        || name_lower.contains("dijkstra") || name_lower.contains("topological")
+    if name_lower.contains("traverse")
+        || name_lower.contains("bfs")
+        || name_lower.contains("dfs")
+        || name_lower.contains("shortest_path")
+        || name_lower.contains("dijkstra")
+        || name_lower.contains("topological")
     {
         return Some("traverse");
     }
 
     // Agent
-    if name_lower.contains("agent") || name_lower.contains("supervisor")
+    if name_lower.contains("agent")
+        || name_lower.contains("supervisor")
         || name_lower.contains("worker")
     {
         return Some("agent");
     }
-    if name_lower.contains("schedule") || name_lower.contains("cron")
+    if name_lower.contains("schedule")
+        || name_lower.contains("cron")
         || name_lower.contains("timer")
     {
         return Some("schedule");
@@ -1167,10 +1981,8 @@ fn cmd_precompile(
     dry_run: bool,
 ) -> i32 {
     // Open nomdict read-only to query entries with bodies
-    let conn = match rusqlite::Connection::open_with_flags(
-        dict,
-        OpenFlags::SQLITE_OPEN_READ_WRITE,
-    ) {
+    let conn = match rusqlite::Connection::open_with_flags(dict, OpenFlags::SQLITE_OPEN_READ_WRITE)
+    {
         Ok(c) => c,
         Err(e) => {
             eprintln!("nom: cannot open dict {}: {e}", dict.display());
@@ -1179,9 +1991,7 @@ fn cmd_precompile(
     };
 
     // Ensure artifact_path column exists
-    let _ = conn.execute_batch(
-        "ALTER TABLE nomtu ADD COLUMN artifact_path TEXT;",
-    );
+    let _ = conn.execute_batch("ALTER TABLE nomtu ADD COLUMN artifact_path TEXT;");
 
     // Build query
     let mut sql = String::from(
@@ -1231,17 +2041,19 @@ fn cmd_precompile(
         params_vec.push(Box::new(limit as i64));
     }
 
-    let params_refs: Vec<&dyn rusqlite::types::ToSql> =
-        params_vec.iter().map(|b| b.as_ref() as &dyn rusqlite::types::ToSql).collect();
+    let params_refs: Vec<&dyn rusqlite::types::ToSql> = params_vec
+        .iter()
+        .map(|b| b.as_ref() as &dyn rusqlite::types::ToSql)
+        .collect();
 
     let rows = match stmt.query_map(params_refs.as_slice(), |row| {
         Ok((
-            row.get::<_, i64>(0)?,          // id
-            row.get::<_, String>(1)?,        // word
-            row.get::<_, Option<String>>(2)?,// variant
-            row.get::<_, String>(3)?,        // language
-            row.get::<_, String>(4)?,        // body
-            row.get::<_, Option<String>>(5)?,// signature
+            row.get::<_, i64>(0)?,            // id
+            row.get::<_, String>(1)?,         // word
+            row.get::<_, Option<String>>(2)?, // variant
+            row.get::<_, String>(3)?,         // language
+            row.get::<_, String>(4)?,         // body
+            row.get::<_, Option<String>>(5)?, // signature
         ))
     }) {
         Ok(r) => r,
@@ -1261,7 +2073,10 @@ fn cmd_precompile(
     // Create output directory
     if !dry_run {
         if let Err(e) = std::fs::create_dir_all(output_dir) {
-            eprintln!("nom: cannot create output dir {}: {e}", output_dir.display());
+            eprintln!(
+                "nom: cannot create output dir {}: {e}",
+                output_dir.display()
+            );
             return 1;
         }
     }
@@ -1325,7 +2140,9 @@ fn cmd_precompile(
                 // Try native Rust compilation first, fall back to stub on failure
                 match precompile_rust(&safe_name, body, &bc_path) {
                     ok @ Ok(_) => ok,
-                    Err(_) => precompile_stub(&safe_name, body, lang, &bc_path, llvm_bin.as_deref()),
+                    Err(_) => {
+                        precompile_stub(&safe_name, body, lang, &bc_path, llvm_bin.as_deref())
+                    }
                 }
             }
             "c" | "cpp" => precompile_c(&safe_name, body, lang, &bc_path, llvm_bin.as_deref()),
@@ -1364,7 +2181,9 @@ fn cmd_precompile(
         }
 
         if total % 100 == 0 {
-            println!("  processed {total} entries ({compiled} compiled, {stubbed} stubbed, {failed} failed)...");
+            println!(
+                "  processed {total} entries ({compiled} compiled, {stubbed} stubbed, {failed} failed)..."
+            );
         }
     }
 
@@ -1612,20 +2431,21 @@ fn find_llvm_bin() -> Option<PathBuf> {
         .output()
         .ok()?;
     let sysroot = String::from_utf8(output.stdout).ok()?.trim().to_owned();
-    let bin = PathBuf::from(&sysroot)
-        .join("lib/rustlib/x86_64-pc-windows-msvc/bin");
-    if bin.exists() {
-        Some(bin)
-    } else {
-        None
-    }
+    let bin = PathBuf::from(&sysroot).join("lib/rustlib/x86_64-pc-windows-msvc/bin");
+    if bin.exists() { Some(bin) } else { None }
 }
 
 /// Sanitize a word+variant into an LLVM-safe symbol name.
 fn llvm_safe_name(word: &str, variant: Option<&str>) -> String {
     let sanitize = |s: &str| -> String {
         s.chars()
-            .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+            .map(|c| {
+                if c.is_alphanumeric() || c == '_' {
+                    c
+                } else {
+                    '_'
+                }
+            })
             .collect()
     };
     let base = sanitize(word);
@@ -1653,7 +2473,11 @@ fn cmd_extract(dir: &PathBuf, dict: &PathBuf, limit: usize) -> i32 {
     };
 
     let paths = nom_extract::scan::scan_directory(dir);
-    let total_files = if limit > 0 { paths.len().min(limit) } else { paths.len() };
+    let total_files = if limit > 0 {
+        paths.len().min(limit)
+    } else {
+        paths.len()
+    };
 
     println!("nom: scanning {} for source files...", dir.display());
     println!("nom: found {} parseable files", paths.len());
@@ -1688,9 +2512,29 @@ fn cmd_extract(dir: &PathBuf, dict: &PathBuf, limit: usize) -> i32 {
             continue;
         }
 
-        let atoms = match nom_extract::parse_file(&source, &path_str, language) {
-            Ok(a) => a,
-            Err(_) => continue,
+        // Run parser in a thread with bounded stack to catch stack overflows.
+        // Use catch_unwind inside the thread so panics don't kill the process.
+        let src_clone = source.clone();
+        let path_clone = path_str.clone();
+        let lang_clone = language.to_string();
+        let parse_result = std::thread::Builder::new()
+            .name("parser".to_string())
+            .stack_size(32 * 1024 * 1024) // 32MB stack limit
+            .spawn(move || {
+                std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    nom_extract::parse_file(&src_clone, &path_clone, &lang_clone)
+                }))
+            })
+            .and_then(|h| {
+                h.join()
+                    .map_err(|_| std::io::Error::new(std::io::ErrorKind::Other, "thread panic"))
+            });
+        let atoms = match parse_result {
+            Ok(Ok(Ok(a))) => a,
+            _ => {
+                eprintln!("nom: skipping {} (parser crash)", path.display());
+                continue;
+            }
         };
 
         if atoms.is_empty() {
@@ -1877,10 +2721,9 @@ fn cmd_stats(dict: &PathBuf) -> i32 {
     if !scored_atoms.is_empty() {
         // Get score stats from the database
         let db_path = nomdict.db_path();
-        if let Ok(conn) = rusqlite::Connection::open_with_flags(
-            &db_path,
-            OpenFlags::SQLITE_OPEN_READ_ONLY,
-        ) {
+        if let Ok(conn) =
+            rusqlite::Connection::open_with_flags(&db_path, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        {
             if let Ok(mut stmt) = conn.prepare(
                 "SELECT \
                    AVG(security), AVG(performance), AVG(quality), AVG(reliability), \
@@ -2092,11 +2935,11 @@ fn cmd_translate(
 
     let rows = match stmt.query_map(params_refs.as_slice(), |row| {
         Ok((
-            row.get::<_, i64>(0)?,          // id
-            row.get::<_, String>(1)?,        // word
+            row.get::<_, i64>(0)?,            // id
+            row.get::<_, String>(1)?,         // word
             row.get::<_, Option<String>>(2)?, // variant
-            row.get::<_, String>(3)?,        // language
-            row.get::<_, String>(4)?,        // body
+            row.get::<_, String>(3)?,         // language
+            row.get::<_, String>(4)?,         // body
             row.get::<_, Option<String>>(5)?, // concept
             row.get::<_, Option<String>>(6)?, // kind
             row.get::<_, Option<String>>(7)?, // source_path
@@ -2271,12 +3114,20 @@ fn cmd_graph(dict: &PathBuf, limit: usize) -> i32 {
 
     println!("Detecting call edges...");
     graph.build_call_edges();
-    let call_count = graph.edges().iter().filter(|e| e.edge_type == nom_graph::EdgeType::Calls).count();
+    let call_count = graph
+        .edges()
+        .iter()
+        .filter(|e| e.edge_type == nom_graph::EdgeType::Calls)
+        .count();
     println!("  {} call edges", call_count);
 
     println!("Detecting import edges...");
     graph.build_import_edges();
-    let import_count = graph.edges().iter().filter(|e| e.edge_type == nom_graph::EdgeType::Imports).count();
+    let import_count = graph
+        .edges()
+        .iter()
+        .filter(|e| e.edge_type == nom_graph::EdgeType::Imports)
+        .count();
     println!("  {} import edges", import_count);
 
     println!("\nDetecting communities...");
@@ -2358,7 +3209,9 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
     let bm25_results = bm25.search(query, limit);
 
     // Also get LIKE-based results from resolver for RRF fusion
-    let like_results = resolver.search_by_describe(query, limit).unwrap_or_default();
+    let like_results = resolver
+        .search_by_describe(query, limit)
+        .unwrap_or_default();
     let like_ranked: Vec<(String, f64)> = like_results
         .iter()
         .enumerate()
@@ -2410,10 +3263,7 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
         let sources = result.sources.len();
         println!(
             "{:<30} {:<10.4} {:<10} {}",
-            result.doc_id,
-            result.score,
-            sources,
-            desc,
+            result.doc_id, result.score, sources, desc,
         );
     }
 
@@ -2426,7 +3276,9 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
     let min_sev = match Severity::from_str_loose(min_severity) {
         Some(s) => s,
         None => {
-            eprintln!("nom: unknown severity level '{min_severity}'. Use: info, low, medium, high, critical");
+            eprintln!(
+                "nom: unknown severity level '{min_severity}'. Use: info, low, medium, high, critical"
+            );
             return 1;
         }
     };
@@ -2474,7 +3326,9 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
         Ok(AuditRow {
             word: row.get(0)?,
             variant: row.get(1)?,
-            language: row.get::<_, String>(2).unwrap_or_else(|_| "unknown".to_owned()),
+            language: row
+                .get::<_, String>(2)
+                .unwrap_or_else(|_| "unknown".to_owned()),
             body: row.get(3)?,
         })
     }) {
@@ -2498,7 +3352,10 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
 
     for row in &rows {
         let findings = scan_body(&row.body, &row.language);
-        let filtered: Vec<_> = findings.into_iter().filter(|f| f.severity >= min_sev).collect();
+        let filtered: Vec<_> = findings
+            .into_iter()
+            .filter(|f| f.severity >= min_sev)
+            .collect();
         if !filtered.is_empty() {
             entries_with_findings += 1;
             let label = match &row.variant {
@@ -2546,16 +3403,20 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
                 let mut current_entry = String::new();
                 for (label, f) in &all_findings {
                     if *label != current_entry {
-                        println!("\n  {} [{}]:", label, rows.iter()
-                            .find(|r| {
-                                let l = match &r.variant {
-                                    Some(v) => format!("{}::{}", r.word, v),
-                                    None => r.word.clone(),
-                                };
-                                l == *label
-                            })
-                            .map(|r| r.language.as_str())
-                            .unwrap_or("?"));
+                        println!(
+                            "\n  {} [{}]:",
+                            label,
+                            rows.iter()
+                                .find(|r| {
+                                    let l = match &r.variant {
+                                        Some(v) => format!("{}::{}", r.word, v),
+                                        None => r.word.clone(),
+                                    };
+                                    l == *label
+                                })
+                                .map(|r| r.language.as_str())
+                                .unwrap_or("?")
+                        );
                         current_entry = label.clone();
                     }
                     println!(
@@ -2578,7 +3439,8 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
 
             // Category breakdown
             if !all_findings.is_empty() {
-                let mut category_counts: std::collections::BTreeMap<&str, usize> = std::collections::BTreeMap::new();
+                let mut category_counts: std::collections::BTreeMap<&str, usize> =
+                    std::collections::BTreeMap::new();
                 for (_, f) in &all_findings {
                     *category_counts.entry(f.category.as_str()).or_insert(0) += 1;
                 }
