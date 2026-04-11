@@ -17,6 +17,8 @@ members = [
     "crates/nom-score",
     "crates/nom-config",
     "crates/nom-translate",
+    "crates/nom-graph",
+    "crates/nom-search",
 ]
 
 [workspace.package]

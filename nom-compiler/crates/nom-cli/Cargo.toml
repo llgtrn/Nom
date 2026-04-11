@@ -23,6 +23,8 @@ nom-extract = { path = "../nom-extract" }
 nom-score = { path = "../nom-score" }
 nom-config = { path = "../nom-config" }
 nom-translate = { path = "../nom-translate" }
+nom-graph = { path = "../nom-graph" }
+nom-search = { path = "../nom-search" }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }

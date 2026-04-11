@@ -351,11 +351,13 @@ dependencies = [
  "nom-diagnostics",
  "nom-dict",
  "nom-extract",
+ "nom-graph",
  "nom-lexer",
  "nom-parser",
  "nom-planner",
  "nom-resolver",
  "nom-score",
+ "nom-search",
  "nom-security",
  "nom-translate",
  "nom-types",
@@ -424,6 +426,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-graph"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "nom-lexer"
 version = "0.1.0"
 dependencies = [
@@ -470,6 +481,15 @@ dependencies = [
 
 [[package]]
 name = "nom-score"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "nom-search"
 version = "0.1.0"
 dependencies = [
  "nom-types",

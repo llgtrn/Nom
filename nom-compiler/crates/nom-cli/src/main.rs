@@ -14,11 +14,14 @@
 //!   nom coverage <dir>  — show extraction coverage for a directory
 //!   nom translate       — translate .nomtu bodies from other languages to Rust
 
+use std::collections::HashMap;
 use clap::{Parser, Subcommand};
 use nom_codegen::{collect_dependencies, generate, CodegenOptions};
 use nom_dict::NomDict;
 use nom_extract;
+use nom_graph::NomtuGraph;
 use nom_score;
+use nom_search::BM25Index;
 
 use nom_parser::parse_source;
 use nom_planner::Planner;
@@ -222,6 +225,28 @@ enum Commands {
         #[arg(long)]
         dry_run: bool,
     },
+
+    /// Build .nomtu knowledge graph and detect communities
+    Graph {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Maximum entries to analyze (0 = all)
+        #[arg(long, default_value = "0")]
+        limit: usize,
+    },
+
+    /// Search the dictionary with hybrid BM25 + semantic matching
+    Search {
+        /// Search query
+        query: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Maximum results to return
+        #[arg(long, default_value = "10")]
+        limit: usize,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -252,6 +277,8 @@ fn main() {
         Commands::Translate { dict, language, limit, min_confidence, dry_run } => {
             cmd_translate(&dict, language.as_deref(), limit, min_confidence, dry_run)
         }
+        Commands::Graph { dict, limit } => cmd_graph(&dict, limit),
+        Commands::Search { query, dict, limit } => cmd_search(&query, &dict, limit),
     };
     process::exit(exit_code);
 }
@@ -2188,4 +2215,181 @@ fn open_resolver(dict: &PathBuf) -> Option<Resolver> {
             None
         }
     }
+}
+
+// ── Graph command ────────────────────────────────────────────────────────────
+
+fn cmd_graph(dict: &PathBuf, limit: usize) -> i32 {
+    let resolver = match open_resolver(dict) {
+        Some(r) => r,
+        None => return 1,
+    };
+
+    // Load all entries via describe search with wildcard
+    let entries = match resolver.search_by_describe("%", if limit == 0 { 100_000 } else { limit }) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("nom: failed to load entries: {e}");
+            return 1;
+        }
+    };
+
+    if entries.is_empty() {
+        println!("No .nomtu entries found in dictionary.");
+        return 0;
+    }
+
+    println!("Building knowledge graph from {} entries...", entries.len());
+
+    let mut graph = NomtuGraph::from_entries(&entries);
+
+    println!("Detecting call edges...");
+    graph.build_call_edges();
+    let call_count = graph.edges().iter().filter(|e| e.edge_type == nom_graph::EdgeType::Calls).count();
+    println!("  {} call edges", call_count);
+
+    println!("Detecting import edges...");
+    graph.build_import_edges();
+    let import_count = graph.edges().iter().filter(|e| e.edge_type == nom_graph::EdgeType::Imports).count();
+    println!("  {} import edges", import_count);
+
+    println!("\nDetecting communities...");
+    let communities = graph.detect_communities();
+    println!("  {} communities found", communities.len());
+    for c in communities.iter().take(20) {
+        println!(
+            "  [{:>6}] {} ({} members, cohesion: {:.2})",
+            c.id,
+            c.label,
+            c.members.len(),
+            c.cohesion,
+        );
+        for m in c.members.iter().take(5) {
+            println!("           - {m}");
+        }
+        if c.members.len() > 5 {
+            println!("           ... and {} more", c.members.len() - 5);
+        }
+    }
+
+    println!("\nEntry points:");
+    let eps = graph.entry_points();
+    for ep in eps.iter().take(10) {
+        println!("  {} ({})", ep.word, ep.kind);
+    }
+
+    println!(
+        "\nGraph: {} nodes, {} edges, {} communities",
+        graph.nodes().len(),
+        graph.edges().len(),
+        communities.len(),
+    );
+
+    0
+}
+
+// ── Search command ───────────────────────────────────────────────────────────
+
+fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
+    let resolver = match open_resolver(dict) {
+        Some(r) => r,
+        None => return 1,
+    };
+
+    // Load all entries for BM25 indexing
+    let entries = match resolver.search_by_describe("%", 100_000) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("nom: failed to load entries: {e}");
+            return 1;
+        }
+    };
+
+    if entries.is_empty() {
+        println!("No .nomtu entries found in dictionary.");
+        return 0;
+    }
+
+    // Build BM25 index
+    let mut bm25 = BM25Index::new();
+    for entry in &entries {
+        let doc_id = match &entry.variant {
+            Some(v) => format!("{}::{}", entry.word, v),
+            None => entry.word.clone(),
+        };
+        // Combine searchable fields
+        let text = format!(
+            "{} {} {} {}",
+            entry.word,
+            entry.variant.as_deref().unwrap_or(""),
+            entry.describe.as_deref().unwrap_or(""),
+            entry.kind.as_deref().unwrap_or(""),
+        );
+        bm25.add_document(&doc_id, &text);
+    }
+
+    // BM25 search
+    let bm25_results = bm25.search(query, limit);
+
+    // Also get LIKE-based results from resolver for RRF fusion
+    let like_results = resolver.search_by_describe(query, limit).unwrap_or_default();
+    let like_ranked: Vec<(String, f64)> = like_results
+        .iter()
+        .enumerate()
+        .map(|(rank, e)| {
+            let doc_id = match &e.variant {
+                Some(v) => format!("{}::{}", e.word, v),
+                None => e.word.clone(),
+            };
+            (doc_id, (limit - rank) as f64)
+        })
+        .collect();
+
+    let bm25_ranked: Vec<(String, f64)> = bm25_results
+        .iter()
+        .map(|r| (r.doc_id.clone(), r.score))
+        .collect();
+
+    // Fuse with RRF
+    let fused = nom_search::reciprocal_rank_fusion(&[bm25_ranked, like_ranked], 60.0, limit);
+
+    if fused.is_empty() {
+        println!("No results for '{query}'");
+        return 0;
+    }
+
+    println!(
+        "{:<30} {:<10} {:<10} {}",
+        "WORD", "SCORE", "SOURCES", "DESCRIPTION"
+    );
+    println!("{}", "-".repeat(80));
+
+    // Map doc_ids back to entries for display
+    let entry_map: HashMap<String, &NomtuEntry> = entries
+        .iter()
+        .map(|e| {
+            let doc_id = match &e.variant {
+                Some(v) => format!("{}::{}", e.word, v),
+                None => e.word.clone(),
+            };
+            (doc_id, e)
+        })
+        .collect();
+
+    for result in &fused {
+        let desc = entry_map
+            .get(&result.doc_id)
+            .and_then(|e| e.describe.as_deref())
+            .unwrap_or("");
+        let sources = result.sources.len();
+        println!(
+            "{:<30} {:<10.4} {:<10} {}",
+            result.doc_id,
+            result.score,
+            sources,
+            desc,
+        );
+    }
+
+    0
 }
