@@ -29,12 +29,12 @@ use nom_ast::{
     AssignStmt, Block, BlockStmt, BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier,
     CompareOp, Constraint, ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt,
     EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam, ForStmt,
-    ModStmt, OnFailStrategy,
+    ImplBlock, ModStmt, OnFailStrategy,
     GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
     GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplementStmt, LetStmt,
     Literal, MatchArm, MatchExpr, NeedStmt, NomRef, Pattern, RequireStmt, SourceFile, Span,
     Statement, StructDef, StructField, TestAndStmt, TestGivenStmt, TestThenStmt, TestWhenStmt,
-    TypeExpr, TypedParam, UseImport, UseStmt, WhileStmt,
+    TraitDef, TypeExpr, TypedParam, UseImport, UseStmt, WhileStmt,
 };
 use nom_lexer::{SpannedToken, Token};
 use thiserror::Error;
@@ -420,16 +420,17 @@ impl Parser {
             Token::Return => Ok(Some(self.parse_return_stmt()?)),
             Token::Fn => Ok(Some(Statement::FnDef(self.parse_fn_def(false)?))),
             Token::Pub => {
-                // peek ahead: pub fn, pub struct, pub enum
+                // peek ahead: pub fn, pub struct, pub enum, pub trait
                 let start = self.peek_span();
                 self.advance(); // consume 'pub'
                 match self.peek().clone() {
                     Token::Fn => Ok(Some(Statement::FnDef(self.parse_fn_def(true)?))),
                     Token::Struct => Ok(Some(Statement::StructDef(self.parse_struct_def(true)?))),
                     Token::Enum => Ok(Some(Statement::EnumDef(self.parse_enum_def(true)?))),
+                    Token::Trait => Ok(Some(Statement::TraitDef(self.parse_trait_def(true)?))),
                     other => Err(ParseError::UnexpectedToken {
                         found: format!("{other:?}"),
-                        expected: "fn, struct, or enum after pub".to_owned(),
+                        expected: "fn, struct, enum, or trait after pub".to_owned(),
                         line: start.line,
                         col: start.col,
                     }),
@@ -437,6 +438,9 @@ impl Parser {
             }
             Token::Struct => Ok(Some(Statement::StructDef(self.parse_struct_def(false)?))),
             Token::Enum => Ok(Some(Statement::EnumDef(self.parse_enum_def(false)?))),
+            // ── Trait / impl ──────────────────────────────────────────────
+            Token::Trait => Ok(Some(Statement::TraitDef(self.parse_trait_def(false)?))),
+            Token::Impl => Ok(Some(Statement::ImplBlock(self.parse_impl_block()?))),
             // ── Module system ──────────────────────────────────────────────
             Token::Use => Ok(Some(Statement::Use(self.parse_use_stmt()?))),
             Token::Mod => Ok(Some(Statement::Mod(self.parse_mod_stmt()?))),
@@ -2154,6 +2158,16 @@ impl Parser {
         if matches!(self.peek(), Token::LParen) {
             self.advance(); // '('
             while !matches!(self.peek(), Token::RParen | Token::Eof) {
+                // Handle `self` parameter (no type annotation required)
+                if matches!(self.peek(), Token::Self_) {
+                    let span = self.peek_span();
+                    self.advance(); // consume 'self'
+                    let pname = Identifier::new("self", span);
+                    let ptype = TypeExpr::Named(Identifier::new("Self", span));
+                    params.push(FnParam { name: pname, type_ann: ptype });
+                    if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    continue;
+                }
                 let pname = self.expect_ident()?;
                 if matches!(self.peek(), Token::Colon) { self.advance(); }
                 let ptype = self.parse_type_expr()?;
@@ -2171,8 +2185,12 @@ impl Parser {
             None
         };
 
-        // Body
-        let body = self.parse_block()?;
+        // Body: optional (trait method signatures may have no body)
+        let body = if matches!(self.peek(), Token::LBrace) {
+            self.parse_block()?
+        } else {
+            Block { stmts: vec![], span: Span::default() }
+        };
 
         let end = self.peek_span();
         Ok(FnDef {
@@ -2257,6 +2275,93 @@ impl Parser {
             name,
             variants,
             is_pub,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    // ── Trait / impl ────────────────────────────────────────────────────────
+
+    /// trait Name { fn method(self) -> type ... }
+    fn parse_trait_def(&mut self, is_pub: bool) -> ParseResult<TraitDef> {
+        let start = self.peek_span();
+        self.advance(); // consume 'trait'
+        let name = self.expect_ident()?;
+
+        let mut methods = Vec::new();
+        if matches!(self.peek(), Token::LBrace) {
+            self.advance(); // '{'
+            self.skip_whitespace();
+            while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBrace) { break; }
+                // Parse method signatures: fn name(params) -> type { body }?
+                // Methods may or may not have bodies (abstract vs default)
+                let method_pub = matches!(self.peek(), Token::Pub);
+                if method_pub { self.advance(); }
+                if matches!(self.peek(), Token::Fn) {
+                    methods.push(self.parse_fn_def(method_pub)?);
+                } else {
+                    // Skip unexpected tokens inside trait
+                    self.advance();
+                }
+                // consume optional separators
+                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                    self.advance();
+                }
+            }
+            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        }
+
+        let end = self.peek_span();
+        Ok(TraitDef {
+            name,
+            methods,
+            is_pub,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
+    }
+
+    /// impl TraitName for TypeName { methods } or impl TypeName { methods }
+    fn parse_impl_block(&mut self) -> ParseResult<ImplBlock> {
+        let start = self.peek_span();
+        self.advance(); // consume 'impl'
+        let first_ident = self.expect_ident()?;
+
+        // Check if this is `impl Trait for Type` or `impl Type`
+        let (trait_name, target_type) = if matches!(self.peek(), Token::For) {
+            self.advance(); // consume 'for'
+            let target = self.expect_ident()?;
+            (Some(first_ident), target)
+        } else {
+            (None, first_ident)
+        };
+
+        let mut methods = Vec::new();
+        if matches!(self.peek(), Token::LBrace) {
+            self.advance(); // '{'
+            self.skip_whitespace();
+            while !matches!(self.peek(), Token::RBrace | Token::Eof) {
+                self.skip_whitespace();
+                if matches!(self.peek(), Token::RBrace) { break; }
+                let method_pub = matches!(self.peek(), Token::Pub);
+                if method_pub { self.advance(); }
+                if matches!(self.peek(), Token::Fn) {
+                    methods.push(self.parse_fn_def(method_pub)?);
+                } else {
+                    self.advance();
+                }
+                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                    self.advance();
+                }
+            }
+            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+        }
+
+        let end = self.peek_span();
+        Ok(ImplBlock {
+            trait_name,
+            target_type,
+            methods,
             span: Span::new(start.start, end.end, start.line, start.col),
         })
     }
@@ -3163,6 +3268,122 @@ mod tests {
                 assert_eq!(e.variants[1].name.name, "None");
             }
             other => panic!("expected EnumDef, got {other:?}"),
+        }
+    }
+
+    // ── Trait / impl tests ───────────────────────────���────────────────────
+
+    #[test]
+    fn parses_trait_definition() {
+        let source = "nom test\n  trait Display {\n    fn display(self) -> text\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::TraitDef(t) => {
+                assert_eq!(t.name.name, "Display");
+                assert_eq!(t.methods.len(), 1);
+                assert_eq!(t.methods[0].name.name, "display");
+                assert_eq!(t.methods[0].params.len(), 1);
+                assert_eq!(t.methods[0].params[0].name.name, "self");
+                assert!(t.methods[0].body.stmts.is_empty(), "abstract method should have empty body");
+            }
+            other => panic!("expected TraitDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_impl_block_for_trait() {
+        let source = "nom test\n  impl Display for Point {\n    fn display(self) -> text {\n      return \"Point\"\n    }\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::ImplBlock(i) => {
+                assert_eq!(i.trait_name.as_ref().unwrap().name, "Display");
+                assert_eq!(i.target_type.name, "Point");
+                assert_eq!(i.methods.len(), 1);
+                assert_eq!(i.methods[0].name.name, "display");
+            }
+            other => panic!("expected ImplBlock, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_inherent_impl() {
+        let source = "nom test\n  impl Point {\n    fn new(x: number, y: number) -> Point {\n      return x\n    }\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::ImplBlock(i) => {
+                assert!(i.trait_name.is_none());
+                assert_eq!(i.target_type.name, "Point");
+                assert_eq!(i.methods.len(), 1);
+                assert_eq!(i.methods[0].name.name, "new");
+            }
+            other => panic!("expected ImplBlock, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_vietnamese_trait_alias() {
+        let source = "nom test\n  behavior Printable {\n    fn print(self) -> text\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::TraitDef(t) => {
+                assert_eq!(t.name.name, "Printable");
+                assert_eq!(t.methods.len(), 1);
+            }
+            other => panic!("expected TraitDef from behavior alias, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_vietnamese_impl_alias() {
+        let source = "nom test\n  apply Display for Point {\n    fn display(self) -> text {\n      return \"Point\"\n    }\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::ImplBlock(i) => {
+                assert_eq!(i.trait_name.as_ref().unwrap().name, "Display");
+                assert_eq!(i.target_type.name, "Point");
+            }
+            other => panic!("expected ImplBlock from apply alias, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_pub_trait() {
+        let source = "nom test\n  pub trait Serializable {\n    fn serialize(self) -> text\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::TraitDef(t) => {
+                assert!(t.is_pub);
+                assert_eq!(t.name.name, "Serializable");
+            }
+            other => panic!("expected TraitDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_trait_with_default_method() {
+        let source = "nom test\n  trait Greet {\n    fn greet(self) -> text {\n      return \"hello\"\n    }\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::TraitDef(t) => {
+                assert_eq!(t.name.name, "Greet");
+                assert_eq!(t.methods.len(), 1);
+                assert!(!t.methods[0].body.stmts.is_empty(), "default method should have body");
+            }
+            other => panic!("expected TraitDef, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_impl_with_multiple_methods() {
+        let source = "nom test\n  impl Display for Point {\n    fn display(self) -> text {\n      return \"Point\"\n    }\n    fn debug(self) -> text {\n      return \"Point{}\"\n    }\n  }\n";
+        let sf = parse_ok(source);
+        match &sf.declarations[0].statements[0] {
+            Statement::ImplBlock(i) => {
+                assert_eq!(i.methods.len(), 2);
+                assert_eq!(i.methods[0].name.name, "display");
+                assert_eq!(i.methods[1].name.name, "debug");
+            }
+            other => panic!("expected ImplBlock, got {other:?}"),
         }
     }
 }

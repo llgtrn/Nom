@@ -144,6 +144,10 @@ pub enum Statement {
     EnumDef(EnumDef),
     /// Bare expression (function call, etc.)
     ExprStmt(Expr),
+    /// trait Display { fn display(self) -> text }
+    TraitDef(TraitDef),
+    /// impl Display for Point { fn display(self) -> text { ... } }
+    ImplBlock(ImplBlock),
 
     // ── Module system ──────────────────────────────────────────────────────
     /// use math::sin, use math::{sin, cos}, use math::*
@@ -702,6 +706,30 @@ pub struct EnumDef {
 pub struct EnumVariant {
     pub name: Identifier,
     pub fields: Vec<TypeExpr>,
+}
+
+// ── Trait / impl ────────────────────────────────────────────────────────────
+
+/// A trait definition: a named set of method signatures (possibly with default bodies)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TraitDef {
+    pub name: Identifier,
+    /// Method signatures (FnDef with empty bodies for abstract methods)
+    pub methods: Vec<FnDef>,
+    pub is_pub: bool,
+    pub span: Span,
+}
+
+/// An impl block: implement methods for a type, optionally satisfying a trait
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ImplBlock {
+    /// The trait being implemented (None for inherent impls)
+    pub trait_name: Option<Identifier>,
+    /// The type being implemented for
+    pub target_type: Identifier,
+    /// Method implementations
+    pub methods: Vec<FnDef>,
+    pub span: Span,
 }
 
 // ── Module system ───────────────────────────────────────────────────────────

@@ -286,6 +286,25 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
         Statement::Mod(m) => {
             out.push_str(&format!("{pad}mod {}\n", m.name.name));
         }
+        Statement::TraitDef(t) => {
+            let vis = if t.is_pub { "pub " } else { "" };
+            out.push_str(&format!("{pad}{vis}trait {} {{\n", t.name.name));
+            for method in &t.methods {
+                emit_fn_def(out, method, indent + 1);
+            }
+            out.push_str(&format!("{pad}}}\n"));
+        }
+        Statement::ImplBlock(i) => {
+            if let Some(ref trait_name) = i.trait_name {
+                out.push_str(&format!("{pad}impl {} for {} {{\n", trait_name.name, i.target_type.name));
+            } else {
+                out.push_str(&format!("{pad}impl {} {{\n", i.target_type.name));
+            }
+            for method in &i.methods {
+                emit_fn_def(out, method, indent + 1);
+            }
+            out.push_str(&format!("{pad}}}\n"));
+        }
     }
 }
 
