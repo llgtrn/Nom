@@ -104,6 +104,9 @@ enum Commands {
         /// Execute test flows (compile and run, not just verify)
         #[arg(long)]
         execute: bool,
+        /// Generate property-based tests from contract pre/post conditions
+        #[arg(long)]
+        property: bool,
     },
 
     /// Generate a security report for a .nom file
@@ -304,7 +307,13 @@ fn main() {
             target,
         } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target),
         Commands::Check { file, dict } => cmd_check(&file, &dict),
-        Commands::Test { file, dict, filter, execute } => cmd_test(&file, &dict, filter.as_deref(), execute),
+        Commands::Test { file, dict, filter, execute, property } => {
+            if property {
+                cmd_property_test(&file)
+            } else {
+                cmd_test(&file, &dict, filter.as_deref(), execute)
+            }
+        }
         Commands::Report {
             file,
             dict,
@@ -1065,6 +1074,70 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
         println!("nom: quality below threshold (80) — address issues above");
         1
     }
+}
+
+fn cmd_property_test(file: &PathBuf) -> i32 {
+    let source = match read_source(file) {
+        Some(s) => s,
+        None => return 1,
+    };
+
+    let parsed = match parse_source(&source) {
+        Ok(sf) => sf,
+        Err(e) => {
+            eprintln!("nom: parse error: {e}");
+            return 1;
+        }
+    };
+
+    use nom_ast::Statement;
+    use nom_verifier::generate_contract_tests;
+
+    let mut total = 0usize;
+
+    for decl in &parsed.declarations {
+        for stmt in &decl.statements {
+            if let Statement::Contract(contract) = stmt {
+                let tests = generate_contract_tests(contract);
+                if tests.is_empty() {
+                    continue;
+                }
+                println!(
+                    "\n  contract in '{}' — {} property tests generated:",
+                    decl.name.name,
+                    tests.len()
+                );
+                for test in &tests {
+                    println!("    {} {}", "●", test.name);
+                    println!("      {}", test.description);
+                    if !test.input_constraints.is_empty() {
+                        println!(
+                            "      inputs:  {}",
+                            test.input_constraints.join("; ")
+                        );
+                    }
+                    if !test.expected_postconditions.is_empty() {
+                        println!(
+                            "      expect:  {}",
+                            test.expected_postconditions.join("; ")
+                        );
+                    }
+                }
+                total += tests.len();
+            }
+        }
+    }
+
+    if total == 0 {
+        println!("nom: no contracts found in {}", file.display());
+    } else {
+        println!(
+            "\nnom: {} property test(s) generated from contracts in {}",
+            total,
+            file.display()
+        );
+    }
+    0
 }
 
 fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool) -> i32 {
