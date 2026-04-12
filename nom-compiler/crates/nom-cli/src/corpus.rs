@@ -121,6 +121,81 @@ pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, reset_checkpoint: bool
     0
 }
 
+// ── cmd_corpus_clone_ingest ──────────────────────────────────────────────────
+
+pub fn cmd_corpus_clone_ingest(url: &str, dict: &Path, json: bool) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    let report = match nom_corpus::clone_and_ingest(url, &d) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("nom: clone-and-ingest error: {e}");
+            return 1;
+        }
+    };
+    if json {
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
+    } else {
+        println!("clone-and-ingest: {}", report.url);
+        println!("  clone duration:  {:.1}s", report.clone_duration_secs);
+        println!("  files ingested:  {}", report.ingest.files_ingested);
+        println!("  files skipped:   {}", report.ingest.files_skipped);
+        println!("  duplicates:      {}", report.ingest.duplicates);
+    }
+    0
+}
+
+pub fn cmd_corpus_clone_batch(list_path: &Path, dict: &Path, json: bool) -> i32 {
+    let contents = match std::fs::read_to_string(list_path) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom: read {}: {e}", list_path.display());
+            return 1;
+        }
+    };
+    let urls: Vec<String> = contents
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty() && !l.starts_with('#'))
+        .map(|l| l.to_string())
+        .collect();
+    if urls.is_empty() {
+        eprintln!("nom: no URLs in {} (lines starting with # are ignored)", list_path.display());
+        return 1;
+    }
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    let report = nom_corpus::clone_batch(&urls, &d);
+    if json {
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
+    } else {
+        println!("clone-batch summary:");
+        println!("  total:            {}", report.total);
+        println!("  succeeded:        {}", report.succeeded);
+        println!("  failed:           {}", report.failed);
+        println!("  files ingested:   {}", report.files_ingested);
+        if !report.failures.is_empty() {
+            println!("  failures:");
+            for (url, err) in &report.failures {
+                println!("    {url}: {err}");
+            }
+        }
+    }
+    if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
+}
+
 /// Resolve a `--dict` argument (which may point directly at a `.db` file
 /// or at a directory) to an absolute SQLite file path.
 fn resolve_db_path(dict: &Path) -> std::path::PathBuf {

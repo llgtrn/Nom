@@ -678,6 +678,138 @@ fn secs_to_ymd_hms(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     (y, mo, d, h, mi, s)
 }
 
+// ── Clone-and-ingest (Pivot F) ───────────────────────────────────────────────
+
+/// Report for a single clone-and-ingest run.
+#[derive(Debug, Clone, serde::Serialize)]
+pub struct CloneIngestReport {
+    pub url: String,
+    pub clone_duration_secs: f64,
+    pub ingest: IngestReport,
+}
+
+/// Report for a batch clone-and-ingest over many URLs.
+#[derive(Debug, Clone, Default, serde::Serialize)]
+pub struct CloneBatchReport {
+    pub total: usize,
+    pub succeeded: usize,
+    pub failed: usize,
+    pub files_ingested: u64,
+    pub failures: Vec<(String, String)>,
+}
+
+/// Shallow-clone a git repo to a temp directory, ingest it into
+/// `dict`, then delete the clone. Stream-and-discard disk discipline
+/// per §5.17: peak disk = max(clone size, current dict size).
+///
+/// Uses `git clone --depth 1 --single-branch --no-tags` to minimize
+/// bandwidth + disk. The clone directory is always deleted on exit
+/// (success or failure) via a drop-guard.
+pub fn clone_and_ingest(
+    url: &str,
+    dict: &nom_dict::NomDict,
+) -> Result<CloneIngestReport, CorpusError> {
+    use std::time::Instant;
+
+    let tmp_root = std::env::temp_dir().join("nom-corpus-clones");
+    std::fs::create_dir_all(&tmp_root)?;
+    let slug = sanitize_url_slug(url);
+    let target = tmp_root.join(format!(
+        "{slug}-{pid}-{nanos}",
+        pid = std::process::id(),
+        nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0),
+    ));
+    let _guard = TempDirGuard(target.clone());
+
+    let clone_start = Instant::now();
+    let out = std::process::Command::new("git")
+        .arg("clone")
+        .arg("--depth")
+        .arg("1")
+        .arg("--single-branch")
+        .arg("--no-tags")
+        .arg("--quiet")
+        .arg(url)
+        .arg(&target)
+        .output()
+        .map_err(|e| CorpusError::Skipped {
+            reason: format!("git clone spawn failed: {e}"),
+        })?;
+    if !out.status.success() {
+        let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+        return Err(CorpusError::Skipped {
+            reason: format!("git clone failed: {}", stderr.trim()),
+        });
+    }
+    let clone_duration_secs = clone_start.elapsed().as_secs_f64();
+
+    let ingest = ingest_directory(&target, dict)?;
+    Ok(CloneIngestReport {
+        url: url.to_string(),
+        clone_duration_secs,
+        ingest,
+    })
+}
+
+/// Clone-and-ingest every URL in `urls`, one at a time. Disk stays
+/// bounded: each clone is deleted before the next one starts.
+/// Failures are recorded and the loop continues.
+pub fn clone_batch(
+    urls: &[String],
+    dict: &nom_dict::NomDict,
+) -> CloneBatchReport {
+    let mut report = CloneBatchReport {
+        total: urls.len(),
+        ..Default::default()
+    };
+    for url in urls {
+        match clone_and_ingest(url, dict) {
+            Ok(r) => {
+                report.succeeded += 1;
+                report.files_ingested += r.ingest.files_ingested;
+                eprintln!(
+                    "[clone-batch] ok  {url} ({} entries, clone {:.1}s)",
+                    r.ingest.files_ingested, r.clone_duration_secs
+                );
+            }
+            Err(e) => {
+                report.failed += 1;
+                report.failures.push((url.clone(), e.to_string()));
+                eprintln!("[clone-batch] err {url}: {e}");
+            }
+        }
+    }
+    report
+}
+
+fn sanitize_url_slug(url: &str) -> String {
+    let mut s = String::with_capacity(url.len());
+    for c in url.chars() {
+        if c.is_ascii_alphanumeric() {
+            s.push(c);
+        } else {
+            s.push('_');
+        }
+    }
+    if s.len() > 48 {
+        s.truncate(48);
+    }
+    s
+}
+
+struct TempDirGuard(std::path::PathBuf);
+
+impl Drop for TempDirGuard {
+    fn drop(&mut self) {
+        if self.0.exists() {
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+}
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
@@ -696,6 +828,48 @@ pub enum CorpusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn sanitize_url_slug_replaces_non_alnum_and_truncates() {
+        let s = sanitize_url_slug("https://github.com/org/repo.git");
+        assert!(s.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'));
+        assert!(s.contains("github"));
+        let long = "a".repeat(100);
+        assert_eq!(sanitize_url_slug(&long).len(), 48);
+    }
+
+    #[test]
+    fn temp_dir_guard_removes_on_drop() {
+        let d = std::env::temp_dir().join(format!(
+            "nom-corpus-test-{}",
+            std::process::id()
+        ));
+        std::fs::create_dir_all(&d).unwrap();
+        assert!(d.exists());
+        {
+            let _g = TempDirGuard(d.clone());
+        }
+        assert!(!d.exists());
+    }
+
+    #[test]
+    fn clone_batch_on_empty_list_reports_zero() {
+        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let r = clone_batch(&[], &dict);
+        assert_eq!(r.total, 0);
+        assert_eq!(r.succeeded, 0);
+        assert_eq!(r.failed, 0);
+    }
+
+    #[test]
+    fn clone_batch_records_failure_for_invalid_url() {
+        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let r = clone_batch(&["not-a-real-url".to_string()], &dict);
+        assert_eq!(r.total, 1);
+        assert_eq!(r.succeeded, 0);
+        assert_eq!(r.failed, 1);
+        assert_eq!(r.failures.len(), 1);
+    }
 
     #[test]
     fn ecosystem_round_trips_through_flag_value() {

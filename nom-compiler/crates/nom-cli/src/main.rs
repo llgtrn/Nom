@@ -432,6 +432,33 @@ enum CorpusCmd {
         json: bool,
     },
 
+    /// Shallow-clone a git URL, ingest into the dict, then delete the
+    /// clone. Stream-and-discard disk discipline (§5.17): peak disk =
+    /// max(clone size, current dict).
+    CloneIngest {
+        /// HTTPS or SSH git URL.
+        url: String,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON summary.
+        #[arg(long)]
+        json: bool,
+    },
+
+    /// Read a newline-separated list of git URLs (# comments allowed)
+    /// and clone-and-ingest each in turn. Failures are recorded and the
+    /// loop continues.
+    CloneBatch {
+        /// Path to a text file, one URL per line.
+        list: PathBuf,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON summary.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -754,6 +781,12 @@ fn main() {
             }
             CorpusCmd::IngestParent { path, dict, reset_checkpoint, json } => {
                 corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json)
+            }
+            CorpusCmd::CloneIngest { url, dict, json } => {
+                corpus::cmd_corpus_clone_ingest(&url, &dict, json)
+            }
+            CorpusCmd::CloneBatch { list, dict, json } => {
+                corpus::cmd_corpus_clone_batch(&list, &dict, json)
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
