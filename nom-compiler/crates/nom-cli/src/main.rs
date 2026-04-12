@@ -724,11 +724,16 @@ enum ConceptCmd {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// List all concepts with member counts.
+    /// List all concepts with member counts. Pass `--empty` to show
+    /// only orphan concepts (member_count = 0) — useful as a cleanup
+    /// check after `translate --write` sessions.
     List {
         /// Emit JSON instead of a table
         #[arg(long)]
         json: bool,
+        /// Filter to only show concepts with zero members.
+        #[arg(long)]
+        empty: bool,
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
@@ -914,7 +919,9 @@ fn main() {
                 limit,
                 &dict,
             ),
-            ConceptCmd::List { json, dict } => concept::cmd_concept_list(json, &dict),
+            ConceptCmd::List { json, empty, dict } => {
+                concept::cmd_concept_list_filtered(json, &dict, empty)
+            }
             ConceptCmd::Show { name, limit, json, dict } => {
                 concept::cmd_concept_show(&name, limit, json, &dict)
             }

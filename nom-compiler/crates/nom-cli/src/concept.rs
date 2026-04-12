@@ -194,7 +194,12 @@ pub fn cmd_concept_add_by(
     0
 }
 
-pub fn cmd_concept_list(json: bool, dict: &Path) -> i32 {
+/// `nom concept list [--empty]` — list concepts, optionally filtered
+/// to those with zero members. Catches orphans produced when
+/// `translate --write` creates a concept but its proposals are
+/// later moved to another concept, or when a user runs
+/// `concept delete` on the last entry without pruning the concept.
+pub fn cmd_concept_list_filtered(json: bool, dict: &Path, only_empty: bool) -> i32 {
     let d = match NomDict::open_in_place(dict) {
         Ok(d) => d,
         Err(e) => {
@@ -210,32 +215,41 @@ pub fn cmd_concept_list(json: bool, dict: &Path) -> i32 {
         }
     };
 
+    // Pair each concept with its member count in one pass.
+    let rows: Vec<(&nom_dict::Concept, usize)> = concepts
+        .iter()
+        .map(|c| (c, d.count_concept_members(&c.id).unwrap_or(0)))
+        .filter(|(_, n)| !only_empty || *n == 0)
+        .collect();
+
     if json {
-        let mut rows: Vec<serde_json::Value> = Vec::with_capacity(concepts.len());
-        for c in &concepts {
-            let count = d.count_concept_members(&c.id).unwrap_or(0);
-            rows.push(json!({
-                "id": c.id,
-                "name": c.name,
-                "describe": c.describe,
-                "member_count": count,
-                "created_at": c.created_at,
-            }));
-        }
-        println!("{}", serde_json::to_string_pretty(&rows).unwrap_or_default());
-    } else {
-        if concepts.is_empty() {
+        let json_rows: Vec<serde_json::Value> = rows
+            .iter()
+            .map(|(c, n)| {
+                json!({
+                    "id": c.id,
+                    "name": c.name,
+                    "describe": c.describe,
+                    "member_count": n,
+                    "created_at": c.created_at,
+                })
+            })
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&json_rows).unwrap_or_default());
+    } else if rows.is_empty() {
+        if only_empty {
+            println!("no empty concepts");
+        } else {
             println!("no concepts found");
-            return 0;
         }
+    } else {
         println!("{:<30} {:>8}  {}", "name", "members", "describe");
         println!("{}", "-".repeat(72));
-        for c in &concepts {
-            let count = d.count_concept_members(&c.id).unwrap_or(0);
+        for (c, n) in &rows {
             println!(
                 "{:<30} {:>8}  {}",
                 c.name,
-                count,
+                n,
                 c.describe.as_deref().unwrap_or("")
             );
         }
