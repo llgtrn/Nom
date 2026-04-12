@@ -180,11 +180,10 @@ pub struct Artifact {
 
 /// Compile an app manifest into a fan-out of per-aspect artifacts.
 ///
-/// Scaffold only: returns one empty `Artifact` per aspect at its
-/// default path. Real per-aspect population lands incrementally as
-/// each aspect's querying + serialization is implemented (Core pulls
-/// the bc closure; Security reads concept membership for "security"
-/// + kind=Concept entries; Ux serializes Screen/Page/UserFlow; etc.).
+/// Scaffold form — returns one empty `Artifact` per aspect. Use
+/// [`compile_app_to_artifacts_with_dict`] when a [`nom_dict::NomDict`]
+/// is available; that path populates aspects from real dictionary
+/// state (closure walk, security findings, etc.).
 pub fn compile_app_to_artifacts(manifest: &AppManifest) -> Result<Vec<Artifact>, AppError> {
     let target = manifest.default_target_platform();
     Ok(OutputAspect::ALL
@@ -195,6 +194,121 @@ pub fn compile_app_to_artifacts(manifest: &AppManifest) -> Result<Vec<Artifact>,
             bytes: Vec::new(),
         })
         .collect())
+}
+
+/// The manifest's top-level closure roots: everything directly named
+/// by the manifest that should be included in the app's hash closure.
+/// Matches §5.12: root page + data sources + actions + media assets.
+fn manifest_roots(manifest: &AppManifest) -> Vec<String> {
+    let mut roots = Vec::new();
+    if !manifest.root_page_hash.is_empty() {
+        roots.push(manifest.root_page_hash.clone());
+    }
+    roots.extend(manifest.data_sources.iter().cloned());
+    roots.extend(manifest.actions.iter().cloned());
+    roots.extend(manifest.media_assets.iter().cloned());
+    roots
+}
+
+/// Compile with real dictionary access — populates aspects that have
+/// a query implementation today. Aspects without a populator yet get
+/// the scaffold (empty bytes at their default path).
+///
+/// Populated today:
+/// - **Security**: walks the manifest closure, reads
+///   `entry_security_findings` for each closure member, emits one JSON
+///   object `{app, findings: [{entry_id, severity, category, rule_id,
+///   message, line}]}` ordered by (severity DESC, entry_id ASC).
+pub fn compile_app_to_artifacts_with_dict(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<Artifact>, AppError> {
+    let target = manifest.default_target_platform();
+    let mut out = Vec::with_capacity(OutputAspect::ALL.len());
+    for &aspect in OutputAspect::ALL {
+        let bytes = match aspect {
+            OutputAspect::Security => build_security_aspect(manifest, dict)?,
+            _ => Vec::new(),
+        };
+        out.push(Artifact {
+            aspect,
+            path: aspect.default_path(target),
+            bytes,
+        });
+    }
+    Ok(out)
+}
+
+fn build_security_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    use std::collections::BTreeSet;
+
+    let mut closure: BTreeSet<String> = BTreeSet::new();
+    for root in manifest_roots(manifest) {
+        match dict.closure(&root) {
+            Ok(ids) => closure.extend(ids),
+            Err(_) => {
+                // Treat missing-root as not-in-dict; the app build is
+                // still useful for its other aspects.
+                closure.insert(root);
+            }
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct AspectFinding<'a> {
+        entry_id: &'a str,
+        severity: String,
+        category: &'a str,
+        rule_id: Option<&'a str>,
+        message: Option<&'a str>,
+        line: Option<i64>,
+    }
+
+    let mut all: Vec<nom_types::SecurityFinding> = Vec::new();
+    for id in &closure {
+        match dict.get_findings(id) {
+            Ok(mut fs) => all.append(&mut fs),
+            Err(_) => {}
+        }
+    }
+    all.sort_by(|a, b| {
+        let sa = severity_rank(&a.severity);
+        let sb = severity_rank(&b.severity);
+        sb.cmp(&sa).then_with(|| a.id.cmp(&b.id))
+    });
+
+    let findings: Vec<AspectFinding> = all
+        .iter()
+        .map(|f| AspectFinding {
+            entry_id: &f.id,
+            severity: format!("{:?}", f.severity).to_lowercase(),
+            category: &f.category,
+            rule_id: f.rule_id.as_deref(),
+            message: f.message.as_deref(),
+            line: f.line,
+        })
+        .collect();
+
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "closure_size": closure.len(),
+        "findings": findings,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn severity_rank(s: &nom_types::Severity) -> u8 {
+    match s {
+        nom_types::Severity::Critical => 4,
+        nom_types::Severity::High => 3,
+        nom_types::Severity::Medium => 2,
+        nom_types::Severity::Low => 1,
+        nom_types::Severity::Info => 0,
+    }
 }
 
 /// Errors produced by `nom-app`.
@@ -281,6 +395,90 @@ mod tests {
         assert_eq!(core.path, "app.wasm");
         let sec = artifacts.iter().find(|a| a.aspect == OutputAspect::Security).unwrap();
         assert_eq!(sec.path, "app.security.json");
+    }
+
+    #[test]
+    fn security_aspect_serializes_findings_from_closure() {
+        use nom_dict::NomDict;
+        use nom_types::{
+            Contract, Entry, EntryKind, EntryStatus, SecurityFinding, Severity,
+        };
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let make = |id: &str, word: &str| Entry {
+            id: id.into(),
+            word: word.into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "2026-04-13T00:00:00Z".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&make("root", "root_page")).unwrap();
+        dict.upsert_entry(&make("act1", "act")).unwrap();
+        dict.add_finding(
+            "root",
+            &SecurityFinding {
+                finding_id: 0,
+                id: "root".into(),
+                severity: Severity::Low,
+                category: "info".into(),
+                rule_id: Some("R1".into()),
+                message: Some("low on root".into()),
+                evidence: None,
+                line: Some(1),
+                remediation: None,
+            },
+        )
+        .unwrap();
+        dict.add_finding(
+            "act1",
+            &SecurityFinding {
+                finding_id: 0,
+                id: "act1".into(),
+                severity: Severity::Critical,
+                category: "injection".into(),
+                rule_id: Some("R2".into()),
+                message: Some("critical on action".into()),
+                evidence: None,
+                line: Some(42),
+                remediation: None,
+            },
+        )
+        .unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m1".into(),
+            name: "demo".into(),
+            default_target: "web".into(),
+            root_page_hash: "root".into(),
+            data_sources: vec![],
+            actions: vec!["act1".into()],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let sec = arts.iter().find(|a| a.aspect == OutputAspect::Security).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&sec.bytes).unwrap();
+        assert_eq!(doc["app"], "demo");
+        assert_eq!(doc["closure_size"], 2);
+        let findings = doc["findings"].as_array().unwrap();
+        assert_eq!(findings.len(), 2);
+        // Critical sorted before Low.
+        assert_eq!(findings[0]["severity"], "critical");
+        assert_eq!(findings[0]["entry_id"], "act1");
+        assert_eq!(findings[1]["severity"], "low");
     }
 
     #[test]

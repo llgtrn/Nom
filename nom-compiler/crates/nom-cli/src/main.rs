@@ -357,8 +357,8 @@ enum Commands {
 #[derive(Subcommand)]
 enum AppCmd {
     /// Emit one artifact per OutputAspect at the given output directory.
-    /// Scaffold today (each file is empty); per-aspect population lands
-    /// incrementally per §5.12.
+    /// Security populates real findings from the dict closure; other
+    /// aspects are empty scaffolds today.
     Build {
         /// App manifest hash (root of the closure).
         manifest_hash: String,
@@ -368,6 +368,16 @@ enum AppCmd {
         /// Default target platform (web, desktop, mobile).
         #[arg(long, default_value = "web")]
         target: String,
+        /// Root page entry hash (treated as closure root).
+        #[arg(long, default_value = "")]
+        root: String,
+        /// Extra root hashes (data sources, actions, media assets).
+        /// Pass multiple times: `--include H1 --include H2`.
+        #[arg(long = "include")]
+        includes: Vec<String>,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
         /// Output directory (created if missing).
         #[arg(long, default_value = ".nom-out")]
         out: PathBuf,
@@ -780,26 +790,45 @@ fn main() {
             ConceptCmd::Delete { name, dict } => concept::cmd_concept_delete(&name, &dict),
         },
         Commands::App { action } => match action {
-            AppCmd::Build { manifest_hash, name, target, out } => {
-                cmd_app_build(&manifest_hash, &name, &target, &out)
+            AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
+                cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
             }
         },
     };
     process::exit(exit_code);
 }
 
-fn cmd_app_build(manifest_hash: &str, name: &str, target: &str, out: &Path) -> i32 {
+fn cmd_app_build(
+    manifest_hash: &str,
+    name: &str,
+    target: &str,
+    root: &str,
+    includes: &[String],
+    dict_path: &Path,
+    out: &Path,
+) -> i32 {
     let manifest = nom_app::AppManifest {
         manifest_hash: manifest_hash.to_string(),
         name: name.to_string(),
         default_target: target.to_string(),
-        root_page_hash: String::new(),
-        data_sources: vec![],
+        root_page_hash: root.to_string(),
+        data_sources: includes.to_vec(),
         actions: vec![],
         media_assets: vec![],
         settings: serde_json::Value::Null,
     };
-    let artifacts = match nom_app::compile_app_to_artifacts(&manifest) {
+    let artifacts_result = if dict_path.exists() {
+        match NomDict::open_in_place(dict_path) {
+            Ok(d) => nom_app::compile_app_to_artifacts_with_dict(&manifest, &d),
+            Err(e) => {
+                eprintln!("open dict {} failed: {e}", dict_path.display());
+                return 1;
+            }
+        }
+    } else {
+        nom_app::compile_app_to_artifacts(&manifest)
+    };
+    let artifacts = match artifacts_result {
         Ok(a) => a,
         Err(e) => {
             eprintln!("app build failed: {e}");
