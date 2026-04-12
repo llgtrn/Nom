@@ -108,8 +108,39 @@ fn compile_let<'ctx>(
         if mc.struct_types.contains_key(&sname.name) {
             mc.value_types.insert(name.clone(), sname.name.clone());
         }
+    } else if let nom_ast::Expr::Ident(src_ident) = &let_stmt.value {
+        // `let l = lex` where `lex` is a known struct-typed variable —
+        // inherit the struct name so subsequent `l.field` access works.
+        if let Some(struct_name) = mc.value_types.get(&src_ident.name).cloned() {
+            mc.value_types.insert(name.clone(), struct_name);
+        }
+    } else if let nom_ast::Expr::Call(call_expr) = &let_stmt.value {
+        // `let l = advance(l)` — if the callee is a user function with a
+        // Named return type that matches a registered struct, propagate it.
+        if let Some(fn_def_return_ty) = function_return_struct_name(mc, &call_expr.callee.name) {
+            mc.value_types.insert(name.clone(), fn_def_return_ty);
+        }
     }
     Ok(())
+}
+
+/// Look up the registered return struct name for a user function, if any.
+/// Returns `None` for functions that don't return a Nom-struct-typed value
+/// (including primitives, enums, tuples, and unknowns).
+fn function_return_struct_name(mc: &ModuleCompiler, fn_name: &str) -> Option<String> {
+    // The LLVM backend doesn't currently retain the AST return TypeExpr per
+    // function, but the struct_types map + the LLVM function's return type
+    // is enough: if the return LLVM type is a named struct present in
+    // struct_types, we can recover the Nom name by matching.
+    let func = mc.functions.get(fn_name).copied()?;
+    let ret = func.get_type().get_return_type()?;
+    if let inkwell::types::BasicTypeEnum::StructType(st) = ret {
+        let target_name = st.get_name().and_then(|n| n.to_str().ok())?;
+        if mc.struct_types.contains_key(target_name) {
+            return Some(target_name.to_owned());
+        }
+    }
+    None
 }
 
 /// Lower `let xs: list[T] = <init>`.
@@ -270,50 +301,79 @@ pub fn compile_if_expr_value<'ctx>(
         .build_conditional_branch(cond_bool, then_bb, else_bb)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
-    // Then block
+    // Then block. Track whether this branch flows into merge_bb — `return`,
+    // `break`, and `continue` inside the block all plant a terminator that
+    // diverts elsewhere, in which case the block is NOT a PHI incoming.
     mc.builder.position_at_end(then_bb);
     let then_val = compile_block(mc, &if_expr.then_body)?;
-    // Only branch if no terminator yet (return may have been emitted)
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+    let then_flows_to_merge =
+        mc.builder.get_insert_block().unwrap().get_terminator().is_none();
+    if then_flows_to_merge {
         mc.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     }
     let then_end_bb = mc.builder.get_insert_block().unwrap();
 
-    // Else block
+    // Else block — same story.
     mc.builder.position_at_end(else_bb);
     let else_val = if let Some(else_body) = &if_expr.else_body {
         compile_block(mc, else_body)?
     } else {
         mc.context.f64_type().const_float(0.0).into()
     };
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+    let else_flows_to_merge =
+        mc.builder.get_insert_block().unwrap().get_terminator().is_none();
+    if else_flows_to_merge {
         mc.builder
             .build_unconditional_branch(merge_bb)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     }
     let else_end_bb = mc.builder.get_insert_block().unwrap();
 
-    // Merge block with phi
+    // Merge block. If neither side reaches here the merge is unreachable;
+    // we still position there so the caller gets a consistent insertion
+    // point (dead code, LLVM will strip it after optimization).
     mc.builder.position_at_end(merge_bb);
 
-    // If types match and are basic, build a phi node
-    if then_val.get_type() == else_val.get_type() && then_val.is_float_value() {
-        let phi = mc.builder
-            .build_phi(mc.context.f64_type(), "iftmp")
-            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-        phi.add_incoming(&[(&then_val, then_end_bb), (&else_val, else_end_bb)]);
-        Ok(phi.as_basic_value())
-    } else if then_val.get_type() == else_val.get_type() && then_val.is_int_value() {
-        let phi = mc.builder
-            .build_phi(then_val.into_int_value().get_type(), "iftmp")
-            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-        phi.add_incoming(&[(&then_val, then_end_bb), (&else_val, else_end_bb)]);
-        Ok(phi.as_basic_value())
-    } else {
-        // Fallback: return a zero i8
-        Ok(mc.context.i8_type().const_zero().into())
+    // Only build the PHI from branches that actually fall through to the
+    // merge block. If only one side reaches, use its value directly.
+    let incoming: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = {
+        let mut v = Vec::new();
+        if then_flows_to_merge {
+            v.push((then_val, then_end_bb));
+        }
+        if else_flows_to_merge {
+            v.push((else_val, else_end_bb));
+        }
+        v
+    };
+
+    match incoming.len() {
+        0 => {
+            // Both branches diverge — the merge block is unreachable. Plant
+            // an `unreachable` terminator so LLVM verification passes, and
+            // return a placeholder; any code after will be dead.
+            let _ = mc.builder.build_unreachable();
+            Ok(mc.context.i8_type().const_zero().into())
+        }
+        1 => Ok(incoming[0].0),
+        _ => {
+            // Build a PHI using the first value's type as the PHI type.
+            let ty = incoming[0].0.get_type();
+            if ty != incoming[1].0.get_type() {
+                // Types mismatch — can't build a PHI. Fallback zero.
+                return Ok(mc.context.i8_type().const_zero().into());
+            }
+            let phi = mc
+                .builder
+                .build_phi(ty, "iftmp")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            let incoming_ref: Vec<(&dyn inkwell::values::BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
+                incoming.iter().map(|(v, bb)| (v as &dyn inkwell::values::BasicValue<'ctx>, *bb)).collect();
+            phi.add_incoming(&incoming_ref);
+            Ok(phi.as_basic_value())
+        }
     }
 }
 

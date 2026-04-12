@@ -69,6 +69,16 @@ pub fn compile_fn<'ctx>(
                 mc.value_types.insert(param_name.clone(), ident.name.clone());
             }
         }
+
+        // Track list[T] element type so `param.push(x)`, `param[i]`, and
+        // `for x in param` can recover the stride. `let` bindings already
+        // do this in statements.rs; parameters need the same hook.
+        if let nom_ast::TypeExpr::Generic(gen_ident, args) = &param.type_ann {
+            if gen_ident.name == "list" && args.len() == 1 {
+                mc.list_elem_types
+                    .insert(param_name.clone(), args[0].clone());
+            }
+        }
     }
 
     // Compile function body

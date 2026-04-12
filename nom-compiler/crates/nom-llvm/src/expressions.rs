@@ -233,6 +233,28 @@ fn compile_binary_op<'ctx>(
     let l = compile_expr(mc, lhs)?;
     let r = compile_expr(mc, rhs)?;
 
+    // String concatenation via runtime helper. `a + b` on two NomString
+    // values dispatches to `nom_string_concat`, which allocates a new
+    // buffer holding the concatenation.
+    if is_string_value(mc, &l) && is_string_value(mc, &r) && matches!(op, BinOp::Add) {
+        let a_ptr = materialize_string_ptr(mc, l)?;
+        let b_ptr = materialize_string_ptr(mc, r)?;
+        let concat_fn = mc
+            .functions
+            .get("nom_string_concat")
+            .copied()
+            .or_else(|| mc.module.get_function("nom_string_concat"))
+            .ok_or_else(|| LlvmError::Compilation("nom_string_concat runtime fn missing".into()))?;
+        let call = mc
+            .builder
+            .build_call(concat_fn, &[a_ptr.into(), b_ptr.into()], "str_concat")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return call
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation("nom_string_concat returned void".into()));
+    }
+
     // String equality/inequality via runtime helper.
     if is_string_value(mc, &l) && is_string_value(mc, &r) && matches!(op, BinOp::Eq | BinOp::Neq) {
         let a_ptr = materialize_string_ptr(mc, l)?;
