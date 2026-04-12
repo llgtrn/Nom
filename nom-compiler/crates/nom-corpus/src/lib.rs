@@ -1050,6 +1050,31 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
+    /// Determinism probe for the fixpoint track (Risk #1, §10.3.1).
+    /// The Stage 2 ≡ Stage 3 fixpoint requires that compiling the same
+    /// Nom source under the same pinned toolchain produces byte-identical
+    /// `.bc`. This test is the first canary: one tiny source, compiled
+    /// twice in the same process, expected byte-equal.
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn compile_nom_to_bc_is_deterministic() {
+        let src = "fn id(x: i64) -> i64 { x }";
+        let bc1 = compile_nom_to_bc(src).expect("bc1 compile");
+        let bc2 = compile_nom_to_bc(src).expect("bc2 compile");
+        assert!(!bc1.is_empty(), "bc1 empty");
+        assert_eq!(
+            bc1.len(),
+            bc2.len(),
+            "bc sizes diverged ({} vs {}) — non-determinism in nom-llvm output",
+            bc1.len(),
+            bc2.len()
+        );
+        assert_eq!(
+            bc1, bc2,
+            "bc bytes diverged at same length — non-determinism in iteration order or ids"
+        );
+    }
+
     #[test]
     #[cfg_attr(windows, ignore)]
     fn ingest_directory_populates_dict() {
