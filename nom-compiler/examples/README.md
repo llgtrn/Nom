@@ -32,9 +32,11 @@ Input to `nom author check <file>` — parsed via the experimental
 | `greet_sentence.nomx` | `to X, respond with Y.` sentence form | 3 |
 | `loops.nomx` | `for each` + `while` + nested `when`/`unless` | 4 |
 | `contracts.nomx` | `require` / `ensure` / `throughout` contract verbs | 3 |
+| `mixed_forms.nomx` | `record` + `choice` + block-`define` with contract + 2 `to`-oneliners in one file | 5 |
 
-Parse gates are locked by `nom-parser::src::nomx.rs` tests (23
-assertions including end-to-end parse of every sample).
+Parse gates are locked by `nom-parser::src::nomx.rs` tests (34
+assertions including end-to-end parse of every sample and
+diagnostic span coverage on ten common authoring mistakes).
 
 ## Classic Nom (`.nom`)
 
