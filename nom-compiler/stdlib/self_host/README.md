@@ -39,7 +39,7 @@ Phase numbers below reference [`03-self-hosting-roadmap.md`](../../../research/l
 |-------|-----------|--------|----------|
 | 1 | Lexer | Written + compiles via LLVM | `lexer.nom` (+ `.bc` / `.ll`) |
 | 2 | Parser | Scaffolded (parses; nom_parse + is_empty_source_file + nom_classifier) | `parser.nom` |
-| 3 | AST types | Planned | — |
+| 3 | AST types | Scaffolded (parses; Decl + Param + FnBody + predicates) | `ast.nom` |
 | 4 | Verifier | Scaffolded (parses; nom_verify + is_verified) | `verifier.nom` |
 | 5 | Planner | Scaffolded (parses; default_entry_point + is_empty_plan helpers) | `planner.nom` |
 | 6 | Codegen | Scaffolded (parses; default_entry_symbol + is_empty_source helpers) | `codegen.nom` |

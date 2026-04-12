@@ -1,0 +1,68 @@
+# Nom Self-Host: AST types (Phase 3 per 03-self-hosting-roadmap.md)
+#
+# This file is the Nom-in-Nom mirror of nom-ast. The Rust reference
+# lives at nom-compiler/crates/nom-ast/src/lib.rs.
+#
+# Status: SCAFFOLD. Module header + three core struct shapes (Decl,
+# Param, FnBody) + shape-level predicates. The full AST surface
+# (Expr, Statement, Pattern, TypeRef, …) arrives incrementally as
+# the parser-supported subset widens (notably enum variants with
+# payloads — required for sum-type nodes like Expr).
+#
+# Shared with:
+#   parser.nom (Phase 2): emits these types
+#   verifier.nom (Phase 4): consumes them
+#   planner.nom (Phase 5): reads SourceFile.declarations (list[Decl])
+#   codegen.nom (Phase 6): walks declarations to emit Rust
+
+nom self_host_ast
+
+struct Param {
+  name: text
+  type_name: text
+}
+
+# Minimal function-body placeholder. Real form is a list of Statement,
+# which needs enum-with-payload variants (e.g. `Statement::Let(Pattern,
+# Expr)`). Today we carry only a byte-count for shape-level checks.
+struct FnBody {
+  statement_count: integer
+}
+
+struct Decl {
+  name: text
+  # Tag string for the declaration kind: "fn", "struct", "enum",
+  # "nom", "flow", "store", …. Once enum-with-payload lands this
+  # becomes a typed DeclKind enum.
+  kind: text
+  param_count: integer
+  body: FnBody
+}
+
+# Shape-level predicate: true when the declaration has no parameters.
+# Planning uses this to distinguish nullary entry points from arg-taking
+# helpers.
+fn is_nullary(d: Decl) -> bool {
+  return d.param_count == 0
+}
+
+# Shape-level predicate: true when the body contains no statements
+# (scaffold or pure-signature declaration).
+fn is_empty_body(b: FnBody) -> bool {
+  return b.statement_count == 0
+}
+
+# Canonical kind strings. Mirror nom_ast::DeclKind tag values so when
+# the Rust reference evolves, this file stays in sync via the same
+# constant set.
+fn decl_kind_fn() -> text {
+  return "fn"
+}
+
+fn decl_kind_struct() -> text {
+  return "struct"
+}
+
+fn decl_kind_enum() -> text {
+  return "enum"
+}
