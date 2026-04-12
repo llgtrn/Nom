@@ -1,0 +1,21 @@
+# Mixed-form .nomx sample — exercises every declaration surface
+# in one file: record + choice + block-define (with body) + two
+# sentence-form to-oneliners. Proves the outer-body terminator
+# from 95f9bdc cleanly switches between block bodies and
+# sentence-form decls.
+
+record counter holds:
+    value is number.
+
+choice status is one of:
+    ready.
+    running.
+    done.
+
+define step that takes c and returns next:
+    next is value plus one.
+    ensure next is at_least value.
+
+to reset a counter, respond with zero.
+
+to show a counter, respond with its value as text.

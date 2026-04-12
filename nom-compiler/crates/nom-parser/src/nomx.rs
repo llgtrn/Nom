@@ -1178,6 +1178,25 @@ mod tests {
     }
 
     #[test]
+    fn parses_mixed_forms_nomx_sample() {
+        // Proves the terminator fix (95f9bdc) in a real fixture:
+        // record + choice + block-define + 2 to-oneliners in one file.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/mixed_forms.nomx");
+        let src = std::fs::read_to_string(&path).unwrap();
+        let decls = parse_nomx(&src).unwrap();
+        assert_eq!(decls.len(), 5);
+        let kinds: Vec<&str> = decls.iter().map(|d| d.kind()).collect();
+        let names: Vec<&str> = decls.iter().map(|d| d.name()).collect();
+        assert_eq!(kinds, vec!["record", "choice", "define", "define", "define"]);
+        assert_eq!(names, vec!["counter", "status", "step", "reset", "show"]);
+    }
+
+    #[test]
     fn parses_contracts_nomx_sample() {
         // Each of the 3 defines has ≥1 Contract statement; across
         // the file all 3 ContractKinds appear.
