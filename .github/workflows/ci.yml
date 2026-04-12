@@ -66,6 +66,24 @@ jobs:
             cargo test -p "$p" --quiet 2>&1 | tail -5
           done
 
+      # nom-cli bin tests transitively link nom-llvm, which makes the
+      # test exe fail to start on hosts without LLVM libs resolvable.
+      # Run the subset that exercises the self-host parse gates +
+      # Rust↔Nom parity + parser subset probe as a best-effort — we
+      # don't hard-fail CI if LLVM isn't available, but we do log the
+      # output for visibility.
+      - name: cargo test nom-cli (best-effort, advisory)
+        working-directory: nom-compiler
+        run: |
+          for t in self_host_planner self_host_ast self_host_verifier \
+                   self_host_codegen self_host_parser self_host_smoke \
+                   self_host_meta self_host_rust_parity \
+                   parser_subset_probe; do
+            echo "=== nom-cli::$t ==="
+            cargo test -p nom-cli --test "$t" --quiet 2>&1 | tail -5 || true
+          done
+        continue-on-error: true
+
   fmt:
     name: cargo fmt --check
     runs-on: ubuntu-latest
