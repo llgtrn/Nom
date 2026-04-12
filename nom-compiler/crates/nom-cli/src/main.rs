@@ -375,33 +375,6 @@ enum CorpusCmd {
         json: bool,
     },
 
-    /// §5.2→§5.10: run the equivalence gate on a single Partial entry and
-    /// lift it to Complete (nom_source body_kind) if translation succeeds.
-    LiftPartial {
-        /// Full 64-char id or ≥ 8-char unique prefix of the Partial entry.
-        hash: String,
-        /// Path to the nomdict database (default: nomdict.db).
-        #[arg(long, default_value = "nomdict.db")]
-        dict: PathBuf,
-        /// Emit a JSON record instead of human-readable output.
-        #[arg(long)]
-        json: bool,
-    },
-
-    /// Sweep every Partial entry in the dict through the equivalence gate,
-    /// upsert Complete entries + SupersededBy edges for successes, and
-    /// report counts. Use --max to cap entries per run (0 = unlimited).
-    LiftAll {
-        /// Path to the nomdict database (default: nomdict.db).
-        #[arg(long, default_value = "nomdict.db")]
-        dict: PathBuf,
-        /// Cap entries scanned per run; 0 = unlimited.
-        #[arg(long, default_value_t = 0)]
-        max: usize,
-        /// Emit a JSON summary instead of human-readable output.
-        #[arg(long)]
-        json: bool,
-    },
 }
 
 #[derive(Subcommand)]
@@ -640,12 +613,6 @@ fn main() {
             }
             CorpusCmd::IngestParent { path, dict, reset_checkpoint, json } => {
                 corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json)
-            }
-            CorpusCmd::LiftPartial { hash, dict, json } => {
-                corpus::cmd_corpus_lift_partial(&hash, &dict, json)
-            }
-            CorpusCmd::LiftAll { dict, max, json } => {
-                corpus::cmd_corpus_lift_all(&dict, max, json)
             }
         },
     };

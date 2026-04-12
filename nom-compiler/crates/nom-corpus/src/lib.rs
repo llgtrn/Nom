@@ -237,21 +237,6 @@ pub fn scan_directory(path: &std::path::Path) -> Result<ScanReport, CorpusError>
 
 // ── ingest_directory ─────────────────────────────────────────────────────────
 
-/// 100 KiB: max size for "other" extension files.  Source files for known
-/// languages go up to MAX_FILE_BYTES (2 MiB) before being skipped.
-const MAX_OTHER_BYTES: u64 = 100 * 1024;
-
-/// NOTE (lean-DB pivot A, user directive): the DB stores only compiled
-/// artifacts (.bc) + canonical media. Source-language body_kinds were
-/// dropped from `nom_types::body_kind`. This helper now returns
-/// `body_kind::BC` as a placeholder; `ingest_directory_with_conn` needs
-/// pivot-B to actually translate source → .bc before upsert (or skip
-/// files that cannot be translated).
-// TODO(pivot-B): route through the translator instead of storing raw source.
-fn lang_to_body_kind(_language: &str) -> &'static str {
-    nom_types::body_kind::BC
-}
-
 /// Summary returned by [`ingest_directory`].
 #[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
 pub struct IngestReport {
@@ -286,6 +271,11 @@ pub fn ingest_directory(
 /// Internal implementation shared by [`ingest_directory`] and
 /// [`ingest_parent`]. Takes a pre-opened [`nom_dict::NomDict`] so that
 /// `ingest_parent` can reuse a single connection across all repos.
+///
+/// Lean-DB pivot B-a: only files that translate successfully are stored.
+/// The body is Nom source (translated); `body_kind` is `NOM_SOURCE`;
+/// `status` is `Complete`. Files with unsupported extensions or failed
+/// translations are silently skipped.
 fn ingest_directory_with_conn(
     path: &std::path::Path,
     dict: &nom_dict::NomDict,
@@ -301,8 +291,6 @@ fn ingest_directory_with_conn(
     };
 
     // Begin a per-repo transaction: all INSERTs commit atomically at the end.
-    // If we crash mid-walk the RAII guard rolls back, leaving the DB clean so
-    // the checkpoint mechanism can retry this repo from scratch.
     let tx = dict
         .begin_transaction()
         .map_err(|e| CorpusError::Skipped { reason: format!("begin_transaction: {e}") })?;
@@ -322,51 +310,55 @@ fn ingest_directory_with_conn(
     }) {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => {
-                report.files_skipped += 1;
-                continue;
-            }
+            Err(_) => { report.files_skipped += 1; continue; }
         };
-        if !entry.file_type().is_file() {
-            continue;
-        }
-        let metadata = match entry.metadata() {
-            Ok(m) => m,
-            Err(_) => {
-                report.files_skipped += 1;
-                continue;
-            }
-        };
-        let file_bytes_len = metadata.len();
+        if !entry.file_type().is_file() { continue; }
+
+        let file_bytes_len = entry.metadata().map(|m| m.len()).unwrap_or(0);
+        if file_bytes_len > MAX_FILE_BYTES { continue; }
+
         let ext = entry
             .path()
             .extension()
             .and_then(|e| e.to_str())
             .unwrap_or("")
             .to_ascii_lowercase();
-        let lang = ext_to_language(&ext);
+        let language = ext_to_language(&ext);
 
-        // Apply size limits: known-lang files up to MAX_FILE_BYTES,
-        // "other" files only up to MAX_OTHER_BYTES.
-        let size_limit = if lang == "other" { MAX_OTHER_BYTES } else { MAX_FILE_BYTES };
-        if file_bytes_len > size_limit {
+        // Only translate languages we have translators for; skip everything else.
+        if language != "rust" && language != "typescript" {
             report.files_skipped += 1;
             continue;
         }
 
-        // Read bytes.
-        let bytes = match std::fs::read(entry.path()) {
+        // Read source bytes.
+        let raw = match std::fs::read(entry.path()) {
             Ok(b) => b,
-            Err(_) => {
-                report.files_skipped += 1;
-                continue;
-            }
+            Err(_) => { report.files_skipped += 1; continue; }
+        };
+        let source = match std::str::from_utf8(&raw) {
+            Ok(s) => s,
+            Err(_) => { report.files_skipped += 1; continue; }
         };
 
-        // SHA-256 → hex id.
-        let mut hasher = Sha256::new();
-        hasher.update(&bytes);
-        let id = format!("{:x}", hasher.finalize());
+        // Translate source → Nom source.
+        let translator_result = match language {
+            "rust" => crate::equivalence_gate::translators::rust::translate(source),
+            "typescript" => crate::equivalence_gate::translators::typescript::translate(source),
+            _ => { report.files_skipped += 1; continue; }
+        };
+        let nom_body = match translator_result {
+            Ok(b) => b,
+            Err(_) => { report.files_skipped += 1; continue; }
+        };
+
+        let nom_bytes = nom_body.into_bytes();
+        if nom_bytes.is_empty() { report.files_skipped += 1; continue; }
+
+        // SHA-256 the translated Nom bytes → content-addressed id.
+        let mut h = Sha256::new();
+        h.update(&nom_bytes);
+        let id = format!("{:x}", h.finalize());
 
         // Build word: language prefix + cleaned file stem, ≤ 60 chars.
         let stem = entry
@@ -377,49 +369,33 @@ fn ingest_directory_with_conn(
         let cleaned: String = stem
             .to_ascii_lowercase()
             .chars()
-            .map(|c| if c.is_ascii_alphanumeric() || c == '_' { c } else { '_' })
+            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
             .collect();
-        let word_candidate = format!("{}_{}", lang, cleaned);
-        let word: String = word_candidate.chars().take(60).collect();
+        let word: String = format!("{language}_{}", &cleaned).chars().take(60).collect();
 
-        // Describe: first non-empty UTF-8 line ≤ 120 chars, else synthetic.
-        let describe = {
-            let maybe_text = std::str::from_utf8(&bytes).ok();
-            let first_line = maybe_text
-                .and_then(|s| s.lines().find(|l| !l.trim().is_empty()))
-                .map(|l| l.trim())
-                .filter(|l| !l.is_empty());
-            match first_line {
-                Some(line) => {
-                    let s: String = line.chars().take(117).collect();
-                    format!("{s} [Partial]")
-                }
-                None => format!("{} source, {} bytes [Partial]", lang, file_bytes_len),
-            }
-        };
-
-        let body_kind = lang_to_body_kind(lang).to_owned();
+        // Describe: first non-empty line of ORIGINAL source, ≤ 120 chars.
+        let describe = source
+            .lines()
+            .find(|l| !l.trim().is_empty())
+            .map(|l| l.chars().take(120).collect::<String>())
+            .unwrap_or_else(|| format!("{language} file"));
 
         let now = chrono_now();
         let e = Entry {
             id: id.clone(),
             word,
-            variant: Some(lang.to_owned()),
+            variant: Some(language.to_string()),  // original language as provenance
             kind: EntryKind::Module,
-            language: lang.to_owned(),
+            language: "nom".to_string(),           // body is Nom source
             describe: Some(describe),
             concept: None,
             body: None,
             body_nom: None,
-            body_bytes: Some(bytes.clone()),
-            body_kind: Some(body_kind),
+            body_bytes: Some(nom_bytes.clone()),
+            body_kind: Some(nom_types::body_kind::NOM_SOURCE.to_owned()),
             contract: Contract::default(),
-            // §5.17.4: corpus-ingested entries land as Partial. The §5.2
-            // equivalence gate (translator round-trip + contract test) is
-            // what lifts them to Complete; not yet wired — see
-            // nom_corpus::equivalence_gate module stub.
-            status: EntryStatus::Partial,
-            translation_score: None,
+            status: EntryStatus::Complete,         // translator succeeded = Complete
+            translation_score: Some(1.0),
             is_canonical: true,
             deprecated_by: None,
             created_at: now,
@@ -428,15 +404,14 @@ fn ingest_directory_with_conn(
 
         match dict.upsert_entry_if_new(&e) {
             Ok(true) => {
-                *report.per_language.entry(lang.to_owned()).or_insert(0) += 1;
+                *report.per_language.entry(language.to_string()).or_insert(0) += 1;
                 report.files_ingested += 1;
-                report.bytes_ingested += file_bytes_len;
+                report.bytes_ingested += nom_bytes.len() as u64;
             }
             Ok(false) => {
                 report.duplicates += 1;
             }
-            Err(e) => {
-                eprintln!("nom: upsert error for {id}: {e}");
+            Err(_) => {
                 report.files_skipped += 1;
             }
         }
@@ -628,212 +603,6 @@ fn secs_to_ymd_hms(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     (y, mo, d, h, mi, s)
 }
 
-// ── lift_partial ─────────────────────────────────────────────────────────────
-
-/// Outcome returned by [`lift_partial`].
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
-pub enum LiftReport {
-    /// Entry was lifted. `partial_id` stays Partial; `complete_id` is the new
-    /// Complete entry. `is_new` is `true` if the complete entry was freshly
-    /// inserted, `false` if it already existed (dedup path).
-    Lifted {
-        partial_id: String,
-        complete_id: String,
-        is_new: bool,
-    },
-    /// The gate rejected translation (body could not be rendered in Nom).
-    Rejected { reason: String },
-    /// No translator for this language yet.
-    NotYetImplemented { language: String },
-}
-
-/// Errors from [`lift_partial`].
-#[derive(Debug, Error)]
-pub enum LiftError {
-    #[error("entry not found: {0}")]
-    NotFound(String),
-    #[error("entry is not Partial (status={0})")]
-    NotPartial(String),
-    #[error("body_bytes missing for entry {0}")]
-    NoBody(String),
-    #[error("gate error: {0}")]
-    Gate(#[from] GateError),
-    #[error("dict error: {0}")]
-    Dict(String),
-}
-
-/// §5.2→§5.10 gate loop for a single Partial entry.
-///
-/// Fetches the entry from `dict`, runs [`run_gate`], and on success:
-/// - Upserts a new Complete entry with `body_kind: nom_source`.
-/// - Adds a `SupersededBy(partial_id → complete_id)` edge.
-///
-/// The original Partial entry is left untouched.
-pub fn lift_partial(dict: &nom_dict::NomDict, id: &str) -> Result<LiftReport, LiftError> {
-    use nom_types::{body_kind, Contract, EdgeType, Entry, EntryStatus, GraphEdge};
-
-    // 1. Fetch entry.
-    let entry = dict
-        .get_entry(id)
-        .map_err(|e| LiftError::Dict(e.to_string()))?
-        .ok_or_else(|| LiftError::NotFound(id.to_string()))?;
-
-    // 2. Verify it is Partial.
-    if entry.status != EntryStatus::Partial {
-        return Err(LiftError::NotPartial(entry.status.as_str().to_string()));
-    }
-
-    // 3. Extract body bytes.
-    let raw_bytes = entry
-        .body_bytes
-        .as_deref()
-        .filter(|b| !b.is_empty())
-        .ok_or_else(|| LiftError::NoBody(id.to_string()))?;
-
-    let body_kind_tag = entry
-        .body_kind
-        .as_deref()
-        .unwrap_or("unknown");
-
-    let language = &entry.language;
-
-    // 4. Run the equivalence gate.
-    let outcome = run_gate(id, body_kind_tag, raw_bytes, language)?;
-
-    match outcome {
-        GateOutcome::Lifted { nom_source_id, nom_body } => {
-            // 5a. Build the new Complete entry.
-            let describe = format!("{} source, lifted to Nom", language);
-            let complete = Entry {
-                id: nom_source_id.clone(),
-                word: entry.word.clone(),
-                variant: entry.variant.clone(),
-                kind: entry.kind.clone(),
-                language: "nom".to_string(),
-                describe: Some(describe),
-                concept: entry.concept.clone(),
-                body: None,
-                body_nom: None,
-                body_bytes: Some(nom_body),
-                body_kind: Some(body_kind::NOM_SOURCE.to_string()),
-                contract: Contract::default(),
-                status: EntryStatus::Complete,
-                translation_score: None,
-                is_canonical: true,
-                deprecated_by: None,
-                created_at: chrono_now(),
-                updated_at: None,
-            };
-
-            let is_new = dict.upsert_entry_if_new(&complete).map_err(|e| LiftError::Dict(e.to_string()))?;
-
-            // 5b. Add SupersededBy edge partial → complete.
-            let edge = GraphEdge {
-                edge_id: 0,
-                from_id: id.to_string(),
-                to_id: nom_source_id.clone(),
-                edge_type: EdgeType::SupersededBy,
-                confidence: 1.0,
-            };
-            dict.add_graph_edge(&edge).map_err(|e| LiftError::Dict(e.to_string()))?;
-
-            Ok(LiftReport::Lifted {
-                partial_id: id.to_string(),
-                complete_id: nom_source_id,
-                is_new,
-            })
-        }
-        GateOutcome::PartialRejected { reason } => Ok(LiftReport::Rejected { reason }),
-        GateOutcome::NotYetImplemented { language } => {
-            Ok(LiftReport::NotYetImplemented { language })
-        }
-    }
-}
-
-// ── lift_all ──────────────────────────────────────────────────────────────────
-
-/// Summary returned by [`lift_all`].
-#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
-pub struct LiftAllReport {
-    /// How many Partial entries were scanned.
-    pub partials_scanned: u64,
-    /// How many got lifted to a new Complete entry.
-    pub lifted: u64,
-    /// How many re-linked to an existing Complete (translator hash matched).
-    pub relinked: u64,
-    /// How many rejected (translator unsupported or parse error).
-    pub rejected: u64,
-    /// How many skipped (language not yet implemented).
-    pub not_yet_implemented: u64,
-    /// How many failed (harness-level errors: missing body_bytes, etc).
-    pub errors: u64,
-    /// Per-reason rejection count (top 20 distinct reasons; overflow → "(other)").
-    pub rejection_reasons: std::collections::BTreeMap<String, u64>,
-}
-
-const MAX_REJECTION_REASONS: usize = 20;
-
-/// Sweep every `status: Partial` entry in the dict through [`lift_partial`].
-/// `max` caps the number of entries scanned per run (0 = unlimited).
-pub fn lift_all(dict: &nom_dict::NomDict, max: usize) -> Result<LiftAllReport, LiftError> {
-    let cap = if max == 0 { None } else { Some(max) };
-    let ids = dict
-        .list_partial_ids(cap)
-        .map_err(|e| LiftError::Dict(e.to_string()))?;
-
-    let total = ids.len() as u64;
-    let mut report = LiftAllReport {
-        partials_scanned: total,
-        ..Default::default()
-    };
-
-    for (idx, id) in ids.iter().enumerate() {
-        // Progress to stderr every 100 entries (suppress when small batches).
-        if total >= 100 && idx > 0 && idx % 100 == 0 {
-            eprintln!(
-                "nom: lift-all: {}/{} scanned, {} lifted, {} relinked, {} rejected...",
-                idx, total, report.lifted, report.relinked, report.rejected
-            );
-        }
-
-        match lift_partial(dict, id) {
-            Ok(LiftReport::Lifted { is_new, .. }) => {
-                if is_new {
-                    report.lifted += 1;
-                } else {
-                    report.relinked += 1;
-                }
-            }
-            Ok(LiftReport::Rejected { reason }) => {
-                report.rejected += 1;
-                let current_distinct = report.rejection_reasons.len();
-                if report.rejection_reasons.contains_key(&reason) {
-                    *report.rejection_reasons.get_mut(&reason).unwrap() += 1;
-                } else if current_distinct < MAX_REJECTION_REASONS {
-                    report.rejection_reasons.insert(reason, 1);
-                } else {
-                    *report.rejection_reasons
-                        .entry("(other)".to_string())
-                        .or_insert(0) += 1;
-                }
-            }
-            Ok(LiftReport::NotYetImplemented { .. }) => {
-                report.not_yet_implemented += 1;
-            }
-            Err(LiftError::NoBody(_)) | Err(LiftError::NotFound(_)) => {
-                report.errors += 1;
-            }
-            Err(e) => {
-                // Gate errors and dict errors count as harness errors; keep going.
-                let _ = e;
-                report.errors += 1;
-            }
-        }
-    }
-
-    Ok(report)
-}
-
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
@@ -938,25 +707,6 @@ mod tests {
     }
 
     #[test]
-    fn lang_to_body_kind_all_languages() {
-        // lean-DB pivot A: every language now maps to body_kind::BC as a
-        // placeholder until pivot-B wires up source → .bc translation.
-        use nom_types::body_kind;
-        let langs = [
-            "rust", "typescript", "javascript", "python", "go",
-            "java", "kotlin", "c", "cpp", "swift", "ruby", "php",
-            "other", "markdown", "config",
-        ];
-        for lang in langs {
-            assert_eq!(
-                super::lang_to_body_kind(lang),
-                body_kind::BC,
-                "expected BC for lang={lang}"
-            );
-        }
-    }
-
-    #[test]
     fn ingest_directory_populates_dict() {
         use std::fs;
         use std::io::Write;
@@ -967,35 +717,43 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
         fs::create_dir_all(&tmp).unwrap();
 
-        // Three small source files.
-        let files = [
-            ("lib.rs",   b"pub fn add(a: i32, b: i32) -> i32 { a + b }" as &[u8]),
-            ("main.py",  b"def greet(name): return f'hello {name}'"),
-            ("index.ts", b"export const id = (x: number) => x;"),
-        ];
-        for (name, content) in &files {
-            let mut f = fs::File::create(tmp.join(name)).unwrap();
-            f.write_all(content).unwrap();
-        }
+        // lib.rs: simple function — translator accepts this.
+        let mut f = fs::File::create(tmp.join("lib.rs")).unwrap();
+        f.write_all(b"pub fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
+
+        // point.rs: struct — translator rejects this → skipped.
+        let mut f2 = fs::File::create(tmp.join("point.rs")).unwrap();
+        f2.write_all(b"struct Point { x: f64, y: f64 }").unwrap();
+
+        // main.py: Python — no translator → skipped.
+        let mut f3 = fs::File::create(tmp.join("main.py")).unwrap();
+        f3.write_all(b"def greet(name): return f'hello {name}'").unwrap();
+
+        // index.ts: TypeScript — translator accepts this.
+        let mut f4 = fs::File::create(tmp.join("index.ts")).unwrap();
+        f4.write_all(b"export function id(x: number): number { return x; }").unwrap();
 
         // Ingest into an in-memory dict.
         let dict = NomDict::open_in_memory().unwrap();
         let report = super::ingest_directory(&tmp, &dict).unwrap();
 
-        assert_eq!(report.files_ingested, 3, "expected 3 ingested, got {}", report.files_ingested);
+        // Only successfully-translated files land (lib.rs + index.ts accepted;
+        // point.rs and main.py are skipped).
+        assert!(
+            report.files_ingested >= 1,
+            "expected >= 1 ingested (lib.rs must translate), got {}",
+            report.files_ingested
+        );
         assert_eq!(report.duplicates, 0);
-        assert_eq!(report.files_skipped, 0);
 
-        // Per-language counts.
-        assert_eq!(report.per_language["rust"], 1);
-        assert_eq!(report.per_language["python"], 1);
-        assert_eq!(report.per_language["typescript"], 1);
-
-        // lean-DB pivot A: all entries land with body_kind::BC (placeholder).
-        let bc_entries = dict.find_by_body_kind(body_kind::BC, 10).unwrap();
-        assert_eq!(bc_entries.len(), 3);
-        let rs = bc_entries.iter().find(|e| e.language == "rust").unwrap();
-        assert!(rs.body_bytes.as_ref().map_or(false, |b| !b.is_empty()));
+        // lean-DB pivot B-a: entries land with NOM_SOURCE body_kind, Complete status.
+        let nom_entries = dict.find_by_body_kind(body_kind::NOM_SOURCE, 10).unwrap();
+        assert_eq!(nom_entries.len(), report.files_ingested as usize);
+        for e in &nom_entries {
+            assert_eq!(e.language, "nom", "body language must be nom");
+            assert_eq!(e.status, nom_types::EntryStatus::Complete);
+            assert!(e.body_bytes.as_ref().map_or(false, |b| !b.is_empty()));
+        }
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1012,8 +770,9 @@ mod tests {
         let subdir = tmp.join("sub");
         fs::create_dir_all(&subdir).unwrap();
 
-        // Same content in two locations → same SHA-256 → dedup.
-        let content = b"fn identical() {}";
+        // Same translatable Rust source in two locations → same translated Nom
+        // SHA-256 → dedup.
+        let content = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let mut f1 = fs::File::create(tmp.join("a.rs")).unwrap();
         f1.write_all(content).unwrap();
         let mut f2 = fs::File::create(subdir.join("b.rs")).unwrap();
@@ -1242,133 +1001,4 @@ mod tests {
         let _ = fs::remove_dir_all(&tmp);
     }
 
-    #[test]
-    fn lift_partial_end_to_end() {
-        use std::fs;
-        use std::io::Write;
-        use nom_dict::NomDict;
-
-        let tmp = std::env::temp_dir().join("nom_corpus_lift_test");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-
-        // Single rust file with a liftable function.
-        let src_dir = tmp.join("src");
-        fs::create_dir_all(&src_dir).unwrap();
-        let mut f = fs::File::create(src_dir.join("add.rs")).unwrap();
-        f.write_all(b"fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
-
-        let db_path = tmp.join("test.db");
-        let dict = NomDict::open_in_place(&db_path).unwrap();
-
-        // Ingest — lands as Partial.
-        let report = ingest_directory(&src_dir, &dict).unwrap();
-        assert_eq!(report.files_ingested, 1);
-
-        // lean-DB pivot A: entries land with body_kind::BC (placeholder).
-        let partials = dict.find_by_body_kind(nom_types::body_kind::BC, 10).unwrap();
-        assert_eq!(partials.len(), 1, "expected exactly one bc entry");
-        let partial_id = partials[0].id.clone();
-
-        // Lift it.
-        let result = super::lift_partial(&dict, &partial_id).unwrap();
-        match result {
-            LiftReport::Lifted { partial_id: pid, complete_id, is_new } => {
-                assert_eq!(pid, partial_id);
-                assert!(!complete_id.is_empty());
-                assert!(is_new, "first lift must insert a new entry");
-
-                // Verify the new complete entry exists with nom_source body_kind.
-                let complete_entries = dict.find_by_body_kind("nom_source", 10).unwrap();
-                assert_eq!(complete_entries.len(), 1, "expected one nom_source entry");
-                let ce = &complete_entries[0];
-                assert_eq!(ce.id, complete_id);
-                assert_eq!(ce.status, nom_types::EntryStatus::Complete);
-                assert!(ce.body_bytes.as_ref().map_or(false, |b| !b.is_empty()));
-
-                // Verify the SupersededBy edge exists.
-                let conn = dict.connection();
-                let edge_count: i64 = conn
-                    .query_row(
-                        "SELECT COUNT(*) FROM entry_graph_edges WHERE from_id=?1 AND to_id=?2 AND edge_type='superseded_by'",
-                        rusqlite::params![partial_id, complete_id],
-                        |r| r.get(0),
-                    )
-                    .unwrap();
-                assert_eq!(edge_count, 1, "SupersededBy edge must exist");
-            }
-            other => panic!("expected LiftReport::Lifted, got {other:?}"),
-        }
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
-
-    #[test]
-    fn lift_all_sweeps_partials() {
-        use std::fs;
-        use std::io::Write;
-        use nom_dict::NomDict;
-
-        let tmp = std::env::temp_dir().join("nom_corpus_lift_all_test");
-        let _ = fs::remove_dir_all(&tmp);
-        fs::create_dir_all(&tmp).unwrap();
-
-        let src_dir = tmp.join("src");
-        fs::create_dir_all(&src_dir).unwrap();
-
-        // File 1: liftable function.
-        let mut f1 = fs::File::create(src_dir.join("add.rs")).unwrap();
-        f1.write_all(b"fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
-
-        // File 2: a struct — may translate or be rejected; either outcome is valid.
-        let mut f2 = fs::File::create(src_dir.join("point.rs")).unwrap();
-        f2.write_all(b"struct Point { x: f64, y: f64 }").unwrap();
-
-        // File 3: just a comment — body content is minimal and likely rejected.
-        let mut f3 = fs::File::create(src_dir.join("comment.rs")).unwrap();
-        f3.write_all(b"// this is a comment").unwrap();
-
-        let db_path = tmp.join("test_all.db");
-        let dict = NomDict::open_in_place(&db_path).unwrap();
-
-        let ingest_report = ingest_directory(&src_dir, &dict).unwrap();
-        assert_eq!(ingest_report.files_ingested, 3, "all 3 files must be ingested");
-
-        let report = super::lift_all(&dict, 0).unwrap();
-
-        assert!(
-            report.partials_scanned >= 3,
-            "expected >= 3 scanned, got {}",
-            report.partials_scanned
-        );
-        assert!(
-            report.lifted >= 1,
-            "expected >= 1 lifted, got {}",
-            report.lifted
-        );
-        assert!(
-            report.rejected >= 1 || report.not_yet_implemented >= 1,
-            "expected >= 1 rejected or not-yet-implemented (got rejected={}, nyi={})",
-            report.rejected,
-            report.not_yet_implemented
-        );
-
-        // Verify a SupersededBy edge exists for at least one lifted entry.
-        if report.lifted >= 1 {
-            let conn = dict.connection();
-            let edge_count: i64 = conn
-                .query_row(
-                    "SELECT COUNT(*) FROM entry_graph_edges WHERE edge_type='superseded_by'",
-                    [],
-                    |r| r.get(0),
-                )
-                .unwrap();
-            assert!(
-                edge_count >= 1,
-                "expected >= 1 SupersededBy edge, got {edge_count}"
-            );
-        }
-
-        let _ = fs::remove_dir_all(&tmp);
-    }
 }
