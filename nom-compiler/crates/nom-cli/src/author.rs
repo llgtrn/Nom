@@ -652,6 +652,42 @@ fn already_nom() -> integer { return 0 }
     }
 
     #[test]
+    fn author_check_handles_full_todo_app_nomx() {
+        // Stronger gate: the full-grammar sample (5 decls across
+        // record + choice + 3 defines with when/otherwise bodies)
+        // parses clean via the same CLI surface users hit. Any
+        // regression in lexer, parser, or CLI wiring fails here.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/todo_app.nomx");
+        let rc = cmd_author_check(&path, true);
+        assert_eq!(rc, 0, "todo_app.nomx should parse clean");
+    }
+
+    #[test]
+    fn author_check_reports_nomx_parse_error() {
+        // Invalid .nomx → exit code 1 (not 0, not 2). Writes a file
+        // missing the required `:` after the define head.
+        let dir = std::env::temp_dir().join(format!(
+            "nom-authcheck-err-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let file = dir.join("bad.nomx");
+        std::fs::write(&file, "define foo").unwrap();
+        let rc = cmd_author_check(&file, true);
+        assert_eq!(rc, 1, "missing colon should exit 1");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn translate_target_from_str_and_back() {
         assert_eq!(TranslateTarget::from_str("app"), Some(TranslateTarget::App));
         assert_eq!(TranslateTarget::from_str("video"), Some(TranslateTarget::Video));
