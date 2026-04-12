@@ -194,6 +194,100 @@ one read, within 30 seconds, with <5% misinterpretation.
   should they be canonicalized from a wider phrase space (`let`,
   `make`, `name`, …)?
 
+## 9. Side-by-side examples
+
+Current Nom (C-like) on the left; proposed `.nomx` (natural) on the right.
+Each pair produces the same AST after parsing.
+
+### 9.1 A pure function with a contract
+
+```nom                                      .nomx
+fn absolute(n: integer) -> integer {        define absolute of a number n:
+  require n != 0                              when given a negative n,
+  if n < 0 {                                    the result is the positive of n.
+    return 0 - n                              otherwise, the result is n.
+  }                                           ensure the result is never negative.
+  return n
+  ensures result >= 0
+}
+```
+
+### 9.2 A conditional render
+
+```nom                                      .nomx
+fn render(user: User) -> Page {             define render for a user:
+  if user.logged_in {                         when the user is logged in,
+    return dashboard(user)                      show the dashboard for the user.
+  } else {                                    otherwise, show the landing page.
+    return landing_page()
+  }
+}
+```
+
+### 9.3 A record + choice (struct + enum)
+
+```nom                                      .nomx
+struct User {                               record a user holds:
+  name: text,                                 a piece of text called name.
+  age: integer,                               a number called age.
+  email: maybe<text>                          a maybe-text called email.
+}
+
+enum Status {                               choice a status is one of:
+  Active,                                     active.
+  Suspended(reason: text),                    suspended with a reason.
+  Deleted                                     deleted.
+}
+```
+
+### 9.4 A list operation
+
+```nom                                      .nomx
+fn sum(ns: list<integer>) -> integer {      define sum of a list of numbers ns:
+  let mut total = 0                           the total starts at zero.
+  for n in ns {                               for each n in ns, add n to the total.
+    total = total + n                         the total.
+  }
+  return total
+}
+```
+
+### 9.5 A concept + its nomtu
+
+```nom                                      .nomx
+concept authentication {                    The Authentication concept groups:
+  use login_user@a1b2                         use login_user@a1b2.
+  use logout_user@c3d4                        use logout_user@c3d4.
+  use verify_token@e5f6                       use verify_token@e5f6.
+}
+```
+
+### 9.6 An actor (parallel-by-default, per §5.2)
+
+```nom                                      .nomx
+actor counter {                             an actor called counter holds a number n,
+  state: integer = 0                          starting at zero.
+  on_message(add, v: integer) {               when it receives "add" with a value v,
+    state = state + v                           n becomes n plus v.
+  }                                           when it receives "current",
+  on_message(current) -> integer {              respond with n.
+    return state
+  }
+}
+```
+
+## 10. Readability gate — the 30-second test
+
+Before any milestone ships, five non-programmers read three code
+samples. Each must answer, within 30 seconds, the question "what
+does this do, and what does it return?" The pass bar is: ≥4/5 give
+a correct answer with <5% material misinterpretation (wrong branch,
+wrong direction of comparison, wrong value flow).
+
+If the current surface fails and the `.nomx` form passes the same
+test, the milestone ships. If both fail, the sample program is too
+clever for the language — simplify the program, not the grammar.
+
 ---
 
 This proposal is the minimum scope for the rethink. Landing it is a
