@@ -86,9 +86,9 @@ pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
 
 // ── cmd_corpus_ingest_parent ─────────────────────────────────────────────────
 
-pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, json: bool) -> i32 {
+pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, reset_checkpoint: bool, json: bool) -> i32 {
     let db_path = resolve_db_path(dict);
-    let report = match nom_corpus::ingest_parent(path, &db_path) {
+    let report = match nom_corpus::ingest_parent(path, &db_path, reset_checkpoint) {
         Ok(r) => r,
         Err(e) => {
             eprintln!("nom: ingest-parent error: {e}");
@@ -105,6 +105,7 @@ pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, json: bool) -> i32 {
         println!("corpus ingest-parent: {}", report.parent);
         println!("  repos ingested:  {}", report.repos.len());
         println!("  repos skipped:   {}", report.skipped_repos);
+        println!("  repos resumed:   {}", report.resumed_repos);
         println!("  total files:     {}", report.aggregate.files_ingested);
         println!("  total bytes:     {}", report.aggregate.bytes_ingested);
         println!("  duplicates:      {}", report.aggregate.duplicates);

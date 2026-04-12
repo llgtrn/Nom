@@ -14,6 +14,9 @@
 
 use thiserror::Error;
 
+pub mod checkpoint;
+pub use checkpoint::IngestCheckpoint;
+
 /// Source ecosystem for `nom corpus ingest`. Each variant maps to a
 /// concrete driver in `src/drivers/` (pypi.rs, github.rs, …) once
 /// those land. The enum is closed to prevent silent drift.
@@ -473,6 +476,9 @@ pub struct ParentIngestReport {
     /// Count of immediate-child directories that were skipped
     /// (hidden, or produced zero ingestible files).
     pub skipped_repos: u64,
+    /// Count of repos skipped because they were already recorded in
+    /// the checkpoint (completed in a prior interrupted run).
+    pub resumed_repos: u64,
 }
 
 /// Walks `parent_dir`'s immediate children; for each child that is a
@@ -480,14 +486,29 @@ pub struct ParentIngestReport {
 /// Aggregates all results. Reuses the same [`nom_dict::NomDict`]
 /// connection across repos for performance.
 ///
+/// A checkpoint file is maintained next to `dict_path` (see
+/// [`IngestCheckpoint`]). Repos already present in the checkpoint are
+/// skipped, enabling seamless resume after a crash. Pass
+/// `reset_checkpoint = true` to delete the checkpoint before starting
+/// (effectively a fresh run).
+///
 /// Progress is printed to stderr every 10 repos so operators see
 /// activity during large runs (e.g. 231-repo corpus).
 pub fn ingest_parent(
     parent: &std::path::Path,
     dict_path: &std::path::Path,
+    reset_checkpoint: bool,
 ) -> Result<ParentIngestReport, CorpusError> {
+    // Optionally wipe the checkpoint for a clean restart.
+    if reset_checkpoint {
+        let cp_path = IngestCheckpoint::path_for(dict_path);
+        let _ = std::fs::remove_file(&cp_path); // best-effort; ignore error
+    }
+
     let dict_db = nom_dict::NomDict::open_in_place(dict_path)
         .map_err(|e| CorpusError::Io(std::io::Error::other(e.to_string())))?;
+
+    let mut checkpoint = IngestCheckpoint::load(dict_path, parent);
 
     let mut report = ParentIngestReport {
         parent: parent.to_string_lossy().into_owned(),
@@ -517,12 +538,26 @@ pub fn ingest_parent(
     }
     children.sort();
 
+    let total_children = children.len() as u64;
     let mut processed: u64 = 0;
     for child in &children {
         let repo_name = child
             .file_name()
             .map(|n| n.to_string_lossy().into_owned())
             .unwrap_or_default();
+
+        // Skip repos already committed in a prior run.
+        if checkpoint.is_completed(&repo_name) {
+            report.resumed_repos += 1;
+            processed += 1;
+            if processed % 10 == 0 {
+                eprintln!(
+                    "nom: processed {}/{} repos ({} resumed from checkpoint), {} files ingested so far...",
+                    processed, total_children, report.resumed_repos, report.aggregate.files_ingested
+                );
+            }
+            continue;
+        }
 
         let repo_report = match ingest_directory_with_conn(child, &dict_db) {
             Ok(r) => r,
@@ -531,13 +566,18 @@ pub fn ingest_parent(
                 processed += 1;
                 if processed % 10 == 0 {
                     eprintln!(
-                        "nom: processed {} repos, {} files ingested so far...",
-                        processed, report.aggregate.files_ingested
+                        "nom: processed {}/{} repos ({} resumed from checkpoint), {} files ingested so far...",
+                        processed, total_children, report.resumed_repos, report.aggregate.files_ingested
                     );
                 }
                 continue;
             }
         };
+
+        // Mark this repo done in the checkpoint regardless of whether it
+        // produced files (no point re-scanning an empty repo).
+        checkpoint.mark_completed(repo_name.clone());
+        checkpoint.save(dict_path);
 
         if repo_report.files_ingested == 0 {
             report.skipped_repos += 1;
@@ -556,8 +596,8 @@ pub fn ingest_parent(
         processed += 1;
         if processed % 10 == 0 {
             eprintln!(
-                "nom: processed {} repos, {} files ingested so far...",
-                processed, report.aggregate.files_ingested
+                "nom: processed {}/{} repos ({} resumed from checkpoint), {} files ingested so far...",
+                processed, total_children, report.resumed_repos, report.aggregate.files_ingested
             );
         }
     }
@@ -838,7 +878,7 @@ mod tests {
             let _dict = NomDict::open_in_place(&db_path).unwrap();
         }
 
-        let report = super::ingest_parent(&tmp, &db_path).unwrap();
+        let report = super::ingest_parent(&tmp, &db_path, false).unwrap();
 
         assert_eq!(report.aggregate.files_ingested, 6, "3 repos × 2 files = 6");
         assert_eq!(report.repos.len(), 3, "all 3 repos produced files");
@@ -942,6 +982,70 @@ mod tests {
         // Roll back: the 2 pending entries must disappear.
         tx.rollback().unwrap();
         assert_eq!(dict.count().unwrap(), 3, "rollback must discard the 2 pending rows");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// Second run with the same dict + parent must skip all three repos
+    /// (checkpoint records them as completed) and report resumed_repos == 3
+    /// with zero new files ingested.
+    #[test]
+    fn ingest_parent_resumes_from_checkpoint() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_checkpoint_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Three child repos, each with 2 distinct .rs files.
+        for repo in &["alpha", "beta", "gamma"] {
+            let repo_dir = tmp.join(repo);
+            fs::create_dir_all(&repo_dir).unwrap();
+            for (i, name) in ["lib.rs", "main.rs"].iter().enumerate() {
+                let mut f = fs::File::create(repo_dir.join(name)).unwrap();
+                f.write_all(
+                    format!("// {repo} file {i}\npub fn chk_{repo}_{i}() {{}}")
+                        .as_bytes(),
+                )
+                .unwrap();
+            }
+        }
+
+        let db_path = tmp.join("chk_test.db");
+        {
+            let _dict = NomDict::open_in_place(&db_path).unwrap();
+        }
+
+        // ── First run: ingest all 3 repos, checkpoint written after each ──
+        let r1 = super::ingest_parent(&tmp, &db_path, false).unwrap();
+        assert_eq!(r1.aggregate.files_ingested, 6, "first run: 3 repos × 2 files = 6");
+        assert_eq!(r1.resumed_repos, 0, "first run: nothing resumed yet");
+
+        // Verify checkpoint file exists and lists all 3 repos.
+        let cp_path = IngestCheckpoint::path_for(&db_path);
+        assert!(cp_path.exists(), "checkpoint file must be written after first run");
+        let cp = IngestCheckpoint::load(&db_path, &tmp);
+        assert!(cp.is_completed("alpha"));
+        assert!(cp.is_completed("beta"));
+        assert!(cp.is_completed("gamma"));
+
+        // Tamper with a file inside one repo — to prove it isn't re-read.
+        fs::write(tmp.join("beta").join("lib.rs"), b"fn tampered() {}").unwrap();
+
+        // ── Second run: all repos already in checkpoint, nothing re-ingested ──
+        let r2 = super::ingest_parent(&tmp, &db_path, false).unwrap();
+        assert_eq!(r2.resumed_repos, 3, "second run: all 3 repos resumed");
+        assert_eq!(
+            r2.aggregate.files_ingested, 0,
+            "second run: no new files (checkpoint skipped all repos)"
+        );
+
+        // The tampered file was NOT re-ingested (repo was skipped entirely).
+        // Dict still holds only 6 entries from run 1.
+        let dict_check = NomDict::open_in_place(&db_path).unwrap();
+        assert_eq!(dict_check.count().unwrap(), 6, "dict must still hold exactly 6 entries");
 
         let _ = fs::remove_dir_all(&tmp);
     }

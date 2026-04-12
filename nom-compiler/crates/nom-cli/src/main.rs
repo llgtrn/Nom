@@ -356,12 +356,20 @@ enum CorpusCmd {
     /// each one into the nomdict, and aggregate the results. Reuses a
     /// single dict connection across all repos for performance.
     /// Designed for pre-staged corpus directories (e.g. 231 upstream repos).
+    ///
+    /// A checkpoint file is maintained next to the dict DB so a crash
+    /// mid-run can be resumed without re-processing already-committed repos.
+    /// Use `--reset-checkpoint` to discard the checkpoint and start fresh.
     IngestParent {
         /// Path to the parent directory whose immediate children are repos.
         path: PathBuf,
         /// Path to the nomdict database (default: nomdict.db).
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
+        /// Delete the checkpoint file before ingesting, forcing a full
+        /// re-scan of all repos even if some were already committed.
+        #[arg(long)]
+        reset_checkpoint: bool,
         /// Emit a JSON summary instead of a human-readable table.
         #[arg(long)]
         json: bool,
@@ -585,8 +593,8 @@ fn main() {
             CorpusCmd::Ingest { path, dict, json } => {
                 corpus::cmd_corpus_ingest(&path, &dict, json)
             }
-            CorpusCmd::IngestParent { path, dict, json } => {
-                corpus::cmd_corpus_ingest_parent(&path, &dict, json)
+            CorpusCmd::IngestParent { path, dict, reset_checkpoint, json } => {
+                corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json)
             }
         },
     };
