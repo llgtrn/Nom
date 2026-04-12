@@ -792,8 +792,14 @@ mod tests {
 
     #[test]
     fn missing_name_errors() {
-        let err = parse_nomx("define :").unwrap_err();
+        let src = "define :";
+        let err = parse_nomx(src).unwrap_err();
         assert!(err.message.contains("name after `define`"));
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, ":",
+            "error span should point at the `:` where the name was missing, got {at:?}"
+        );
     }
 
     #[test]
