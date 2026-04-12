@@ -23,23 +23,26 @@ fn try_parse(src: &str) -> Result<(), String> {
 }
 
 fn expect_accepts(src: &str, label: &str) {
+    // Parser is lenient: `parse_source` returns Ok even when it had
+    // to recover. "Accepts" here means "doesn't fail outright" — a
+    // weaker but honest guarantee. Strict "no-warnings" mode would
+    // require either parser tightening or redesigning the classifier-
+    // header grammar so top-level decls after `nom <name>` don't warn.
     if let Err(e) = try_parse(src) {
         panic!("parser-subset regression: {label} no longer parses — {e}\nsrc:\n{src}");
     }
 }
 
-/// True iff the parser recovered from the snippet (the produced
-/// SourceFile has no declarations, indicating a recovery path was
-/// taken rather than the intended structure being built). Probes
-/// "soft rejection": the parser Ok's but yields nothing usable.
+/// Probes "soft rejection": parser Ok's but emits recovered-from
+/// warnings. Uses the new `parse_source_with_warnings` API so we
+/// inspect the warning list programmatically instead of stderr-scraping.
 fn expect_parses_but_loses_shape(src: &str, label: &str) {
-    match nom_parser::parse_source(src) {
-        Ok(sf) => {
+    match nom_parser::parse_source_with_warnings(src) {
+        Ok((_sf, warnings)) => {
             assert!(
-                sf.declarations.is_empty() || sf.declarations.len() == 1,
-                "{label}: parser produced {} top-level decls; expected 0 or 1 (module only) — \
-                 if real structure is now retained, promote the feature",
-                sf.declarations.len()
+                !warnings.is_empty(),
+                "{label}: expected recovery warnings but got a clean parse — \
+                 promote the feature from aspirational to supported"
             );
         }
         Err(e) => panic!("{label}: parser returned Err — tighter than before ({e})"),

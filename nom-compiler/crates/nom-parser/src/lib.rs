@@ -221,6 +221,24 @@ impl Parser {
     // ── Top-level ────────────────────────────────────────────────────────────
 
     fn parse_source_file(&mut self) -> ParseResult<SourceFile> {
+        let (sf, errors) = self.parse_source_file_with_warnings()?;
+        // Legacy behavior: print recovered warnings to stderr. Callers
+        // who want programmatic access should use the `_with_warnings`
+        // variant directly.
+        for err in &errors {
+            eprintln!("nom: parse warning (recovered): {err}");
+        }
+        Ok(sf)
+    }
+
+    /// Parse the source file and return any recovered-from errors
+    /// alongside the `SourceFile`. Unlike [`parse_source_file`], this
+    /// does not print to stderr — callers get the full list of
+    /// recovered-from errors for programmatic inspection (CI probes,
+    /// LSP diagnostic streams).
+    fn parse_source_file_with_warnings(
+        &mut self,
+    ) -> ParseResult<(SourceFile, Vec<ParseError>)> {
         let mut declarations = Vec::new();
         let mut errors: Vec<ParseError> = Vec::new();
         self.consume_blanks();
@@ -229,26 +247,22 @@ impl Parser {
                 Ok(decl) => declarations.push(decl),
                 Err(e) => {
                     errors.push(e);
-                    // Recovery: skip to next declaration boundary (blank line or classifier)
                     self.recover_to_next_declaration();
                 }
             }
             self.consume_blanks();
         }
-        // If we parsed nothing and had errors, return the first error
         if declarations.is_empty() && !errors.is_empty() {
             return Err(errors.remove(0));
         }
-        // If we parsed some declarations but had errors, report via eprintln
-        // (partial success — return what we could parse)
-        for err in &errors {
-            eprintln!("nom: parse warning (recovered): {err}");
-        }
-        Ok(SourceFile {
-            path: None,
-            locale: None,
-            declarations,
-        })
+        Ok((
+            SourceFile {
+                path: None,
+                locale: None,
+                declarations,
+            },
+            errors,
+        ))
     }
 
     /// Skip tokens until we reach a blank line, a classifier keyword, or EOF.
@@ -2902,6 +2916,21 @@ pub fn parse_source(source: &str) -> Result<SourceFile, Box<dyn std::error::Erro
     let tokens = nom_lexer::tokenize(source)?;
     let mut parser = Parser::with_source(tokens, source.to_owned());
     Ok(parser.parse_source_file()?)
+}
+
+/// Lex + parse + return (SourceFile, Vec<ParseError>). The error
+/// list contains all recovered-from parse errors — identical to what
+/// [`parse_source`] prints to stderr, but programmatically inspectable.
+/// Returns `Err` only on unrecoverable failure (lex error or an empty
+/// file with errors); otherwise always returns Ok, even if the warning
+/// list is non-empty. Lets CI probes and LSP consumers distinguish
+/// "clean parse" from "recovered parse".
+pub fn parse_source_with_warnings(
+    source: &str,
+) -> Result<(SourceFile, Vec<ParseError>), Box<dyn std::error::Error>> {
+    let tokens = nom_lexer::tokenize(source)?;
+    let mut parser = Parser::with_source(tokens, source.to_owned());
+    Ok(parser.parse_source_file_with_warnings()?)
 }
 
 #[cfg(test)]
