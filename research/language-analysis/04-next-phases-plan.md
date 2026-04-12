@@ -1935,6 +1935,8 @@ Each ships as a separate PR.
 
 **Reframed from v1 ("gated, optional"):** the LSP is now the AI-mediated authoring surface that makes the Tier-2 vocabulary usable at 100M-entry scale. Without it, the language is effectively write-only. Phase 9 is core infrastructure, not opt-in polish.
 
+**Dependency ordering (adversarial review item 6, 2026-04-13):** Phase 9 LSP should **precede or overlap §5.17** mass ingestion — `nom check --audit` during ingestion (which surfaces diagnostic-grade issues on translated bodies) depends on the same diagnostic infrastructure the LSP consumes. Shipping §5.17 first means ingestion runs without any authoring-loop feedback; shipping Phase 9 first lets the dict grow under the LSP's quality gate from day one. Similarly, §5.10 lifecycle (merge/eliminate/evolve) should defer to after Phase 7 — the canonicalizer is owned by the Rust parser until Phase 7 ships the Nom parser, and lifecycle ops must invalidate + recompute source hashes through the canonicalizer, which is more brittle when two implementations exist in parallel.
+
 ### 9.1 LSP server (the substrate)
 
 `nom lsp --stdio` subcommand; new `nom-lsp` crate. Standard LSP methods (diagnostics, hover, definition, references, completion, rename) backed by the same nom-parser / nom-verifier / nom-dict stack.
@@ -2201,9 +2203,14 @@ There is no special treatment. `nom app build <compiler_hash>` materializes the 
 
 ### 10.3 The bootstrap + retirement protocol
 
-**The Rust compiler, at maturity, is used to build the Nom compiler — and the act of a Nom compiler successfully rebuilding itself to a fixpoint is the proof that Nom is a complete language.** This is the classical self-hosting rite; we're not inventing it, we're honoring it. A language that can describe its own compiler is a language that can describe anything that's been described in any language.
+**The Rust compiler, at maturity, is used to build the Nom compiler — and the act of a Nom compiler successfully rebuilding itself to semantic parity plus a fixpoint is the proof that Nom is a complete language.** This is the classical self-hosting rite; we're not inventing it, we're honoring it. A language that can describe its own compiler is a language that can describe anything that's been described in any language.
 
-The protocol has two parallel tracks — a **fixpoint track** (self-hosting proof) and a **parity track** (regression guard on arbitrary Nom programs). Both must be green before retirement.
+The protocol has two parallel tracks, both of which are **real proof**, not one real plus one housekeeping:
+
+- **Parity track** (§10.3.2) — semantic equivalence on arbitrary Nom programs. **This is the primary correctness proof.** If every reachable program compiles to the same behavior under the Nom-built compiler as it does under the Rust-built one, the Nom compiler is correct by the only definition that matters to users.
+- **Fixpoint track** (§10.3.1) — byte-identical self-build across stages. This is the **aesthetic-plus-pinned-toolchain** proof: the language plus its canonicalizer plus its codegen, running on a pinned toolchain, close back on themselves to a bit-level fixed point. It's a strictly stronger statement than parity but only meaningful in conjunction with the `rust_toolchain_channel` + `llvm_major_version` + `canonicalizer_version` pin discipline in the proof tuple. Drop any of those pins and fixpoint becomes a different, weaker claim.
+
+Both tracks must be green before retirement. If forced to choose one, parity is the floor; fixpoint is the ceiling.
 
 #### 10.3.1 The fixpoint track — self-hosting proof via N-stage equality
 
