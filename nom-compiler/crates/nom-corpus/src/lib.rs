@@ -17,6 +17,9 @@ use thiserror::Error;
 pub mod checkpoint;
 pub use checkpoint::IngestCheckpoint;
 
+pub mod equivalence_gate;
+pub use equivalence_gate::{GateError, GateOutcome, run_gate};
+
 /// Source ecosystem for `nom corpus ingest`. Each variant maps to a
 /// concrete driver in `src/drivers/` (pypi.rs, github.rs, …) once
 /// those land. The enum is closed to prevent silent drift.
@@ -399,10 +402,10 @@ fn ingest_directory_with_conn(
                 .filter(|l| !l.is_empty());
             match first_line {
                 Some(line) => {
-                    let s: String = line.chars().take(120).collect();
-                    s
+                    let s: String = line.chars().take(117).collect();
+                    format!("{s} [Partial]")
                 }
-                None => format!("{} source, {} bytes", lang, file_bytes_len),
+                None => format!("{} source, {} bytes [Partial]", lang, file_bytes_len),
             }
         };
 
@@ -422,7 +425,11 @@ fn ingest_directory_with_conn(
             body_bytes: Some(bytes.clone()),
             body_kind: Some(body_kind),
             contract: Contract::default(),
-            status: EntryStatus::Complete,
+            // §5.17.4: corpus-ingested entries land as Partial. The §5.2
+            // equivalence gate (translator round-trip + contract test) is
+            // what lifts them to Complete; not yet wired — see
+            // nom_corpus::equivalence_gate module stub.
+            status: EntryStatus::Partial,
             translation_score: None,
             is_canonical: true,
             deprecated_by: None,
