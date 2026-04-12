@@ -69,9 +69,33 @@ fn graph_classifier() -> text {
   return "graph"
 }
 
+# Full 10-classifier set per the Rust lexer's Token::System…Token::View.
+fn system_classifier() -> text {
+  return "system"
+}
+
+fn agent_classifier() -> text {
+  return "agent"
+}
+
+fn test_classifier() -> text {
+  return "test"
+}
+
+fn gate_classifier() -> text {
+  return "gate"
+}
+
+fn pool_classifier() -> text {
+  return "pool"
+}
+
+fn view_classifier() -> text {
+  return "view"
+}
+
 # Classifier validator: true iff `s` names one of the 10 top-level
-# classifiers the parser recognizes. Scaffold form covers the four
-# most common; extend as the real parser wires each branch.
+# classifiers the parser recognizes. Covers the full set now.
 fn is_known_classifier(s: text) -> bool {
   if s == nom_classifier() {
     return true
@@ -83,6 +107,24 @@ fn is_known_classifier(s: text) -> bool {
     return true
   }
   if s == graph_classifier() {
+    return true
+  }
+  if s == system_classifier() {
+    return true
+  }
+  if s == agent_classifier() {
+    return true
+  }
+  if s == test_classifier() {
+    return true
+  }
+  if s == gate_classifier() {
+    return true
+  }
+  if s == pool_classifier() {
+    return true
+  }
+  if s == view_classifier() {
     return true
   }
   return false

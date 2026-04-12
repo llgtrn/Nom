@@ -74,6 +74,37 @@ fn parser_classifier_tags_match_rust_consts() {
     assert_returns_literal(&src, tags::CLASSIFIER_FLOW, "parser.nom::flow_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_STORE, "parser.nom::store_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_GRAPH, "parser.nom::graph_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_SYSTEM, "parser.nom::system_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_AGENT, "parser.nom::agent_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_TEST, "parser.nom::test_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_GATE, "parser.nom::gate_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_POOL, "parser.nom::pool_classifier");
+    assert_returns_literal(&src, tags::CLASSIFIER_VIEW, "parser.nom::view_classifier");
+}
+
+/// CLASSIFIERS_ALL in the Rust module must contain every individual
+/// constant. Guards against adding one without the other.
+#[test]
+fn classifiers_all_covers_each_individual_const() {
+    use tags::CLASSIFIERS_ALL;
+    for c in &[
+        tags::CLASSIFIER_NOM,
+        tags::CLASSIFIER_FLOW,
+        tags::CLASSIFIER_STORE,
+        tags::CLASSIFIER_GRAPH,
+        tags::CLASSIFIER_SYSTEM,
+        tags::CLASSIFIER_AGENT,
+        tags::CLASSIFIER_TEST,
+        tags::CLASSIFIER_GATE,
+        tags::CLASSIFIER_POOL,
+        tags::CLASSIFIER_VIEW,
+    ] {
+        assert!(
+            CLASSIFIERS_ALL.contains(c),
+            "CLASSIFIERS_ALL missing {c}"
+        );
+    }
+    assert_eq!(CLASSIFIERS_ALL.len(), 10);
 }
 
 #[test]

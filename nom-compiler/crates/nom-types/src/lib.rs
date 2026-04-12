@@ -980,11 +980,35 @@ pub mod self_host_tags {
     pub const EFFECT_WRITES: &str = "writes";
     pub const EFFECT_PANICS: &str = "panics";
 
-    // parser.nom
+    // parser.nom — the 10 top-level classifier keywords the Rust
+    // lexer's Token::System…Token::View emits. Full set so the parser
+    // scaffold can iterate over them as it grows.
     pub const CLASSIFIER_NOM: &str = "nom";
     pub const CLASSIFIER_FLOW: &str = "flow";
     pub const CLASSIFIER_STORE: &str = "store";
     pub const CLASSIFIER_GRAPH: &str = "graph";
+    pub const CLASSIFIER_SYSTEM: &str = "system";
+    pub const CLASSIFIER_AGENT: &str = "agent";
+    pub const CLASSIFIER_TEST: &str = "test";
+    pub const CLASSIFIER_GATE: &str = "gate";
+    pub const CLASSIFIER_POOL: &str = "pool";
+    pub const CLASSIFIER_VIEW: &str = "view";
+
+    /// All 10 classifier keywords in stable declaration order. Matches
+    /// nom_lexer::Token::System…Token::View exactly. Use this for
+    /// property tests or completion-candidate generation.
+    pub const CLASSIFIERS_ALL: &[&str] = &[
+        CLASSIFIER_SYSTEM,
+        CLASSIFIER_FLOW,
+        CLASSIFIER_STORE,
+        CLASSIFIER_GRAPH,
+        CLASSIFIER_AGENT,
+        CLASSIFIER_TEST,
+        CLASSIFIER_NOM,
+        CLASSIFIER_GATE,
+        CLASSIFIER_POOL,
+        CLASSIFIER_VIEW,
+    ];
 
     // ast.nom
     pub const DECL_KIND_FN: &str = "fn";
