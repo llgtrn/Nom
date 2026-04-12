@@ -31,7 +31,7 @@ pub fn compile_expr<'ctx>(
         Expr::MethodCall(_, _, _) => Err(LlvmError::Unsupported("method call".into())),
         Expr::Closure(_, _) => Err(LlvmError::Unsupported("closure".into())),
         Expr::Array(elements) => compile_array(mc, elements),
-        Expr::TupleExpr(_) => Err(LlvmError::Unsupported("tuple expression".into())),
+        Expr::TupleExpr(elts) => compile_tuple(mc, elts),
         Expr::Await(_) => Err(LlvmError::Unsupported("await expression".into())),
         Expr::Cast(_, _) => Err(LlvmError::Unsupported("cast expression".into())),
         Expr::Try(_) => Err(LlvmError::Unsupported("try/? expression".into())),
@@ -505,6 +505,50 @@ fn compile_field_access<'ctx>(
     obj: &Expr,
     field: &nom_ast::Identifier,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // Tuple field access: `pair.0`, `pair.1`, ... — the parser emits a
+    // numeric identifier when the source uses a `.<integer>` suffix.
+    // We look up the target as a struct-typed value (either an ident
+    // whose alloca stores a struct, or any expression yielding a struct)
+    // and emit `extractvalue`.
+    if let Ok(idx) = field.name.parse::<u32>() {
+        // Shortcut path: when the target is an ident whose stored type
+        // is a struct type that is NOT a known named struct (i.e. a
+        // tuple/anonymous struct), load it and extract.
+        if let Expr::Ident(ident) = obj {
+            if !mc.value_types.contains_key(&ident.name) {
+                if let Some((ptr, ty)) = mc.named_values.get(&ident.name) {
+                    if ty.is_struct_type() {
+                        let loaded = mc
+                            .builder
+                            .build_load(*ty, *ptr, &ident.name)
+                            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                        let sv = loaded.into_struct_value();
+                        let extracted = mc
+                            .builder
+                            .build_extract_value(sv, idx, &format!("{}.{}", ident.name, idx))
+                            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                        return Ok(extracted);
+                    }
+                }
+            }
+        }
+        // Generic path: compile the sub-expression; if it's a struct value,
+        // extract by index.
+        let val = compile_expr(mc, obj)?;
+        if val.is_struct_value() {
+            let sv = val.into_struct_value();
+            let extracted = mc
+                .builder
+                .build_extract_value(sv, idx, &format!("tup.{}", idx))
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            return Ok(extracted);
+        }
+        return Err(LlvmError::Type(format!(
+            "numeric field access `.{}` requires a tuple/struct value",
+            idx
+        )));
+    }
+
     // String .length — works on any expression that evaluates to a NomString.
     if field.name == "length" {
         // Attempt to compile the object as a string first.
@@ -571,6 +615,44 @@ fn compile_field_access<'ctx>(
     mc.builder
         .build_load(field_ty, field_ptr, &format!("{}.{}", var_name, field.name))
         .map_err(|e| LlvmError::Compilation(e.to_string()))
+}
+
+/// Lower `(a, b, c)` to an anonymous LLVM struct value `{ T0, T1, T2 }`
+/// built up via a chain of `insertvalue` instructions starting from `undef`.
+/// Returns the struct **value** (not a pointer); callers store into an
+/// alloca when a pointer is required.
+fn compile_tuple<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    elements: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    if elements.is_empty() {
+        return Err(LlvmError::Unsupported("empty tuple".into()));
+    }
+
+    let mut compiled = Vec::with_capacity(elements.len());
+    for elem in elements {
+        compiled.push(compile_expr(mc, elem)?);
+    }
+
+    // Build the anonymous tuple struct type from the compiled element types.
+    let elem_tys: Vec<inkwell::types::BasicTypeEnum<'ctx>> =
+        compiled.iter().map(|v| v.get_type()).collect();
+    let tuple_ty = mc.context.struct_type(&elem_tys, false);
+
+    // Start from `undef` and insert each field.
+    let mut agg: inkwell::values::BasicValueEnum<'ctx> = tuple_ty.get_undef().into();
+    for (i, val) in compiled.iter().enumerate() {
+        let next = mc
+            .builder
+            .build_insert_value(agg.into_struct_value(), *val, i as u32, &format!("tup{}", i))
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        // build_insert_value returns an AggregateValueEnum; convert back.
+        agg = match next {
+            inkwell::values::AggregateValueEnum::StructValue(sv) => sv.into(),
+            inkwell::values::AggregateValueEnum::ArrayValue(av) => av.into(),
+        };
+    }
+    Ok(agg)
 }
 
 fn compile_array<'ctx>(

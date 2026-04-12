@@ -12,7 +12,17 @@ pub fn resolve_type<'ctx>(
             Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into())
         }
         TypeExpr::Unit => Ok(mc.context.i8_type().into()),
-        TypeExpr::Tuple(_) => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
+        TypeExpr::Tuple(elts) => {
+            // Resolve each element type and build an anonymous LLVM struct
+            // `{ T0, T1, ... }`. Matches Rust's tuple ABI shape — by-value
+            // struct return works on every target LLVM supports; the
+            // backend's ABI pass handles sret lowering when required.
+            let mut fields = Vec::with_capacity(elts.len());
+            for elt in elts {
+                fields.push(resolve_type(mc, elt)?);
+            }
+            Ok(mc.context.struct_type(&fields, false).into())
+        }
         TypeExpr::Ref { .. } => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
         TypeExpr::Function { .. } => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
     }

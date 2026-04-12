@@ -675,6 +675,25 @@ impl Parser {
             match self.peek().clone() {
                 Token::Dot => {
                     self.advance(); // '.'
+                    // Tuple field access: `pair.0`, `pair.1`, ... — accept
+                    // an integer token after `.` and turn the digits into the
+                    // field name. Keeps the AST unchanged; the codegen path
+                    // detects numeric field names and emits `extractvalue`.
+                    if let Token::Integer(n) = self.peek().clone() {
+                        let span = self.peek_span();
+                        self.advance();
+                        if n < 0 {
+                            return Err(ParseError::UnexpectedToken {
+                                found: format!("{}", n),
+                                expected: "non-negative tuple index".to_owned(),
+                                line: span.line,
+                                col: span.col,
+                            });
+                        }
+                        let field = Identifier::new(format!("{}", n), span);
+                        expr = Expr::FieldAccess(Box::new(expr), field);
+                        continue;
+                    }
                     let field = self.expect_ident()?;
                     // Check for method call: expr.method(args)
                     if matches!(self.peek(), Token::LParen) {
@@ -757,10 +776,35 @@ impl Parser {
             }
             Token::LParen => {
                 self.advance();
-                let expr = self.parse_expr()?;
+                let first = self.parse_expr()?;
+                // Tuple literal: `(a, b, ...)`. A single `(expr)` is still
+                // treated as parenthesized-expr; only when we see a comma do
+                // we commit to a tuple.
+                if matches!(self.peek(), Token::Comma) {
+                    let mut items = vec![first];
+                    while matches!(self.peek(), Token::Comma) {
+                        self.advance();
+                        // Trailing comma tolerated: `(a, b,)`.
+                        if matches!(self.peek(), Token::RParen) {
+                            break;
+                        }
+                        items.push(self.parse_expr()?);
+                    }
+                    if matches!(self.peek(), Token::RParen) {
+                        self.advance();
+                        return Ok(Expr::TupleExpr(items));
+                    }
+                    let s = self.peek_span();
+                    return Err(ParseError::UnexpectedToken {
+                        found: format!("{:?}", self.peek()),
+                        expected: ")".to_owned(),
+                        line: s.line,
+                        col: s.col,
+                    });
+                }
                 if matches!(self.peek(), Token::RParen) {
                     self.advance();
-                    Ok(expr)
+                    Ok(first)
                 } else {
                     let s = self.peek_span();
                     Err(ParseError::UnexpectedToken {
