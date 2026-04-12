@@ -837,6 +837,27 @@ mod tests {
     }
 
     #[test]
+    fn to_oneliner_without_comma_errors() {
+        // `to <verb> <phrase>, respond with <expr>.` — dropping the
+        // comma between phrase and body is a very common authoring
+        // mistake, so the diagnostic needs to name the missing token.
+        let src = "to greet someone respond with hello";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`,` after `to <verb>` phrase"),
+            "expected to-oneliner comma diag, got: {}",
+            err.message
+        );
+        // Phrase scan runs to EOF when no comma is present; span
+        // collapses to src.len().
+        assert_eq!(
+            err.span.start, src.len(),
+            "EOF error span should start at src end, got {}",
+            err.span.start
+        );
+    }
+
+    #[test]
     fn binding_missing_is_errors() {
         let src = "define f:\n  total zero.";
         let err = parse_nomx(src).unwrap_err();
