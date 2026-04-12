@@ -61,6 +61,9 @@ examples/draft_todo_app.md      — the canonical brainstorm
 examples/hello.nomx             — block define with 1 binding
 examples/todo_app.nomx          — record + choice + 3 defines
 examples/greet_sentence.nomx    — 3 `to ... respond with ...` one-liners
+examples/loops.nomx             — for-each + while + nested when/unless
+examples/contracts.nomx         — require / ensure / throughout clauses
+examples/mixed_forms.nomx       — record + choice + block-define + 2 `to`-oneliners in one file
 ```
 
 ## Running a single test
