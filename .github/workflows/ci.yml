@@ -22,6 +22,18 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
+      - name: Verify toolchain pin is honored (plan §10.3.1 Risk #1)
+        working-directory: nom-compiler
+        shell: bash
+        run: |
+          set -e
+          expected="1.94.1"
+          got=$(rustc --version)
+          echo "rustc --version -> $got"
+          echo "$got" | grep -q "rustc $expected " || {
+            echo "::error::rust-toolchain.toml pins '$expected' but rustc is '$got' — §10.3.1 fixpoint prerequisite violated"
+            exit 1
+          }
       - name: Cache cargo registry + target
         uses: actions/cache@v4
         with:
