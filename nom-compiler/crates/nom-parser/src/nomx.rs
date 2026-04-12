@@ -837,6 +837,26 @@ mod tests {
     }
 
     #[test]
+    fn record_field_missing_is_errors() {
+        // `record counter: value number.` — field binding without
+        // the `is` connector. The field-name loop consumes `value`
+        // via consume_identifier, then expect(Is) fires pointing at
+        // `number`.
+        let src = "record counter:\n    value number.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`is` after field name"),
+            "expected field-`is` diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, "number",
+            "error span should point at the token that should have been `is`, got {at:?}"
+        );
+    }
+
+    #[test]
     fn to_oneliner_without_comma_errors() {
         // `to <verb> <phrase>, respond with <expr>.` — dropping the
         // comma between phrase and body is a very common authoring
