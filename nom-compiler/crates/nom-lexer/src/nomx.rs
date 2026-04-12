@@ -284,6 +284,37 @@ mod tests {
     }
 
     #[test]
+    fn hello_nomx_sample_tokenizes_expected_shape() {
+        // Loads examples/hello.nomx and asserts the token stream
+        // contains the canonical declaration-form shape:
+        //   Define Identifier That Takes Identifier And Returns
+        //   Identifier Colon ... StringLit ...
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/hello.nomx");
+        let src = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+        let toks = tokenize_nomx(&src);
+        use NomxToken::*;
+        // Declaration prefix: Define <name> That Takes <param> And Returns <ret>
+        let idx_define = toks.iter().position(|t| *t == Define).unwrap();
+        assert!(matches!(&toks[idx_define + 1], Identifier(n) if n == "greet"));
+        assert_eq!(toks[idx_define + 2], That);
+        assert_eq!(toks[idx_define + 3], Takes);
+        assert!(matches!(&toks[idx_define + 4], Identifier(n) if n == "name"));
+        assert_eq!(toks[idx_define + 5], And);
+        assert_eq!(toks[idx_define + 6], Returns);
+        assert!(matches!(&toks[idx_define + 7], Identifier(n) if n == "greeting"));
+        assert_eq!(toks[idx_define + 8], Colon);
+        // Body contains the string literal and the `is` linking verb.
+        assert!(toks.iter().any(|t| matches!(t, StringLit(s) if s == "hello ")));
+        assert!(toks.contains(&Is));
+    }
+
+    #[test]
     fn comment_line_is_skipped() {
         let toks = tokenize_nomx("# a comment\ndefine x");
         use NomxToken::*;

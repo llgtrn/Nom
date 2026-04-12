@@ -1,0 +1,6 @@
+# First .nomx sample — the natural-language form of hello.nom.
+# See research/language-analysis/05-natural-language-syntax.md
+# for the full grammar proposal.
+
+define greet that takes a name and returns a greeting:
+    the greeting is "hello " followed by the name
