@@ -206,6 +206,14 @@ fn tools_list_response(id: Value) -> String {
                             }
                         }
                     }
+                },
+                {
+                    "name": "dict_stats",
+                    "description": "Return total entry count + body_kind histogram + status histogram. Use to poll dict-health during authoring — e.g. after `nom author translate --write`, check how many Partial entries remain to lift to Complete. No arguments.",
+                    "inputSchema": {
+                        "type": "object",
+                        "properties": {}
+                    }
                 }
             ]
         }),
@@ -228,6 +236,7 @@ fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> Str
         "list_concepts" => call_list_concepts(dict, id),
         "get_concept" => call_get_concept(dict, id, &args),
         "criteria_proposals" => call_criteria_proposals(dict, id, &args),
+        "dict_stats" => call_dict_stats(dict, id),
         _ => err_response(id, -32602, &format!("unknown tool: {name}")),
     }
 }
@@ -525,6 +534,55 @@ fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
                 {
                     "type": "text",
                     "text": serde_json::to_string_pretty(&report).unwrap_or_default()
+                }
+            ]
+        }),
+    )
+}
+
+fn call_dict_stats(dict: &NomDict, id: Value) -> String {
+    let total = dict.count().unwrap_or(0);
+    let body_hist = dict.body_kind_histogram().unwrap_or_default();
+    let status_hist = dict.status_histogram().unwrap_or_default();
+
+    let partial_count = status_hist
+        .iter()
+        .find(|(s, _)| s == "partial")
+        .map(|(_, n)| *n)
+        .unwrap_or(0);
+    let complete_count = status_hist
+        .iter()
+        .find(|(s, _)| s == "complete")
+        .map(|(_, n)| *n)
+        .unwrap_or(0);
+    let summary = if total == 0 {
+        "Dict is empty.".to_string()
+    } else {
+        format!(
+            "{total} entries ({complete_count} complete, {partial_count} partial). \
+             Authoring loop: lift Partial entries to Complete via body authoring \
+             + re-score via `criteria_proposals`."
+        )
+    };
+
+    ok_response(
+        id,
+        json!({
+            "content": [
+                {"type": "text", "text": summary},
+                {
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&json!({
+                        "total": total,
+                        "body_kind_histogram": body_hist
+                            .iter()
+                            .map(|(k, n)| json!({"body_kind": k, "count": n}))
+                            .collect::<Vec<_>>(),
+                        "status_histogram": status_hist
+                            .iter()
+                            .map(|(s, n)| json!({"status": s, "count": n}))
+                            .collect::<Vec<_>>(),
+                    })).unwrap_or_default()
                 }
             ]
         }),
