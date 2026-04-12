@@ -735,12 +735,21 @@ pub struct ImplBlock {
 // ── Module system ───────────────────────────────────────────────────────────
 
 /// use path::item or use path::{items} or use path::*
+///
+/// Phase 4 B1: `use` may optionally be hash-pinned to a specific entry id,
+/// e.g. `use #a3f2ef01@greet`. When present, `hash` carries the raw hex
+/// string (no `#` prefix, no `@` suffix). Short prefixes (>=8 hex) are
+/// accepted at parse time; the resolver disambiguates against the
+/// dictionary.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct UseStmt {
     /// Module path segments: ["math"] for `use math::sin`, ["math", "trig"] for `use math::trig::sin`
     pub path: Vec<Identifier>,
     /// What to import from the final path segment
     pub imports: UseImport,
+    /// Optional hex-string hash pin. `None` for plain `use greet`.
+    #[serde(default)]
+    pub hash: Option<String>,
     pub span: Span,
 }
 

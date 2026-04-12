@@ -145,6 +145,11 @@ pub enum Token {
     BlankLine,
     /// A comment starting with `#`.
     Comment(String),
+    /// A hash pin prefix: `#<hex>@` consumed as one token, leaving the
+    /// following identifier in the stream. The carried string is the raw
+    /// hex digits between `#` and `@` (no prefix, no `@`). Short hashes
+    /// (>=8 hex) are accepted; the resolver disambiguates.
+    HashPin(String),
 
     // ── End of file ──────────────────────────────────────────────────────────
     Eof,
@@ -420,6 +425,41 @@ impl<'src> Lexer<'src> {
         Ok(SpannedToken::new(Token::StringLit(s), span))
     }
 
+    /// Try to scan `#<hex>+@` into a `HashPin(hex)` token. Does not
+    /// consume anything if the lookahead does not match. Called when the
+    /// next char is `#`; on success consumes `#`, the hex digits and the
+    /// trailing `@`.
+    fn try_scan_hash_pin(&mut self, start: usize, line: usize, col: usize) -> Option<SpannedToken> {
+        // Cheap reject: need at least one hex digit right after `#`.
+        let mut look = self.chars.clone();
+        look.next()?; // skip '#'
+        let mut hex = String::new();
+        while let Some(&(_, c)) = look.peek() {
+            if c.is_ascii_hexdigit() {
+                hex.push(c);
+                look.next();
+            } else {
+                break;
+            }
+        }
+        if hex.is_empty() {
+            return None;
+        }
+        // Next non-hex char must be `@`.
+        match look.peek() {
+            Some(&(_, '@')) => {}
+            _ => return None,
+        }
+        // Commit: consume `#`, hex digits, and `@`.
+        self.advance(); // '#'
+        for _ in 0..hex.len() {
+            self.advance();
+        }
+        self.advance(); // '@'
+        let span = self.span_at(start, line, col);
+        Some(SpannedToken::new(Token::HashPin(hex), span))
+    }
+
     fn scan_comment(&mut self, start: usize, line: usize, col: usize) -> SpannedToken {
         let mut s = String::new();
         loop {
@@ -561,8 +601,14 @@ impl<'src> Lexer<'src> {
                 }
 
                 '#' => {
-                    self.advance();
-                    tokens.push(self.scan_comment(start, line, col));
+                    // Peek ahead: `#<hex+>@` is a hash-pin prefix (Phase 4 B1).
+                    // Otherwise fall back to line comment.
+                    if let Some(tok) = self.try_scan_hash_pin(start, line, col) {
+                        tokens.push(tok);
+                    } else {
+                        self.advance();
+                        tokens.push(self.scan_comment(start, line, col));
+                    }
                 }
 
                 '"' => {
@@ -999,5 +1045,22 @@ mod tests {
     fn lexes_question_mark_after_call() {
         let t = toks("foo()?");
         assert!(t.contains(&Token::Question));
+    }
+
+    #[test]
+    fn hash_pin_token_is_extracted() {
+        // `#<hex>@<ident>` is a hash-pin prefix followed by an ident.
+        let t = toks("#a3f2ef01@greet");
+        assert_eq!(t[0], Token::HashPin("a3f2ef01".to_owned()));
+        assert_eq!(t[1], Token::Ident("greet".to_owned()));
+    }
+
+    #[test]
+    fn bare_hash_is_still_a_comment() {
+        // `#` followed by non-hex (or hex not ending in @) remains a line comment.
+        let t = toks("# this is a comment");
+        assert!(matches!(t[0], Token::Comment(_)));
+        let t = toks("#abc some words");
+        assert!(matches!(t[0], Token::Comment(_)));
     }
 }

@@ -2676,10 +2676,20 @@ impl Parser {
 
     // ── Module system ───────────────────────────────────────────────────────
 
-    /// Parse a `use` statement: `use path::item`, `use path::{a, b}`, `use path::*`
+    /// Parse a `use` statement: `use path::item`, `use path::{a, b}`, `use path::*`,
+    /// or the Phase 4 hash-pinned form `use #<hex>@<name>`.
     fn parse_use_stmt(&mut self) -> ParseResult<UseStmt> {
         let start = self.peek_span();
         self.advance(); // consume 'use'
+
+        // Optional hash pin: `use #<hex>@ident`. The lexer emits `HashPin(hex)`
+        // followed by `Ident(name)`; the `@` is consumed by the lexer.
+        let hash = if let Token::HashPin(h) = self.peek().clone() {
+            self.advance();
+            Some(h)
+        } else {
+            None
+        };
 
         // Parse the first identifier segment
         let mut path: Vec<Identifier> = vec![self.expect_ident()?];
@@ -2699,6 +2709,7 @@ impl Parser {
                 return Ok(UseStmt {
                     path,
                     imports: UseImport::Glob,
+                    hash,
                     span: Span::new(start.start, end_span.end, start.line, start.col),
                 });
             }
@@ -2723,6 +2734,7 @@ impl Parser {
                 return Ok(UseStmt {
                     path,
                     imports: UseImport::Multiple(items),
+                    hash,
                     span: Span::new(start.start, end_span.end, start.line, start.col),
                 });
             }
@@ -2741,6 +2753,7 @@ impl Parser {
             return Ok(UseStmt {
                 path: vec![],
                 imports: UseImport::Single(item),
+                hash,
                 span: Span::new(start.start, end_span.end, start.line, start.col),
             });
         }
@@ -2750,6 +2763,7 @@ impl Parser {
         Ok(UseStmt {
             path,
             imports: UseImport::Single(item),
+            hash,
             span: Span::new(start.start, end_span.end, start.line, start.col),
         })
     }
@@ -3410,6 +3424,44 @@ mod tests {
                 assert_eq!(m.name.name, "utils");
             }
             other => panic!("expected Mod statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_use_bare_has_no_hash() {
+        // Phase 4 B1: a plain `use greet` has hash=None. Only the ident itself is
+        // stored (no `::` path).
+        let src = "system test\n  use greet\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert!(u.hash.is_none(), "expected no hash on bare use");
+                assert!(u.path.is_empty(), "expected empty path for bare `use greet`");
+                match &u.imports {
+                    UseImport::Single(name) => assert_eq!(name.name, "greet"),
+                    other => panic!("expected Single import, got {other:?}"),
+                }
+            }
+            other => panic!("expected Use statement, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn parses_use_with_hash_pin() {
+        // Phase 4 B1: `use #<hex>@<name>` carries the hex hash in UseStmt.hash.
+        let src = "system test\n  use #a3f2ef01@greet\n";
+        let sf = parse_ok(src);
+        let stmt = &sf.declarations[0].statements[0];
+        match stmt {
+            Statement::Use(u) => {
+                assert_eq!(u.hash.as_deref(), Some("a3f2ef01"));
+                match &u.imports {
+                    UseImport::Single(name) => assert_eq!(name.name, "greet"),
+                    other => panic!("expected Single import, got {other:?}"),
+                }
+            }
+            other => panic!("expected Use statement, got {other:?}"),
         }
     }
 
