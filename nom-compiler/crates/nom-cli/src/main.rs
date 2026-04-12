@@ -16,6 +16,7 @@
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 //!   nom fmt <path>      — format .nom source files with canonical style
 
+mod author;
 mod concept;
 mod corpus;
 mod fmt;
@@ -351,6 +352,35 @@ enum Commands {
     App {
         #[command(subcommand)]
         action: AppCmd,
+    },
+
+    /// Author a Nom program by starting from a brainstorm `.md` file
+    /// and gradually replacing prose with Nom syntax. Per user
+    /// directive: "nom is kinda naturally coding language".
+    Author {
+        #[command(subcommand)]
+        action: AuthorCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum AuthorCmd {
+    /// Create a scratch `<name>.md` file with a brainstorm template.
+    Start {
+        /// Program name (ascii alnum + underscore).
+        name: String,
+        /// Output directory (default: current dir).
+        #[arg(long)]
+        out: Option<PathBuf>,
+    },
+    /// Report how much of a `.md` brainstorm is already Nom syntax
+    /// (classifies each line as comment / nom-ish / prose). For a
+    /// `.nom` file, verifies it contains no residual prose.
+    Check {
+        file: PathBuf,
+        /// Emit JSON summary.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -848,6 +878,10 @@ fn main() {
                 concept::cmd_concept_show(&name, limit, json, &dict)
             }
             ConceptCmd::Delete { name, dict } => concept::cmd_concept_delete(&name, &dict),
+        },
+        Commands::Author { action } => match action {
+            AuthorCmd::Start { name, out } => author::cmd_author_start(&name, out.as_deref()),
+            AuthorCmd::Check { file, json } => author::cmd_author_check(&file, json),
         },
         Commands::App { action } => match action {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
