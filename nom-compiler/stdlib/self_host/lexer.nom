@@ -527,7 +527,9 @@ nom self_host_lexer
     # ── Comment ──
     if ch == 35 {
       let l2 = advance(l)
-      let (content, l3) = read_comment(l2)
+      let pair1 = read_comment(l2)
+      let content = pair1.0
+      let l3 = pair1.1
       let sp = make_span(start_pos, start_line, start_col, l3)
       return (SpannedToken { token: Token::Comment(content), span: sp }, l3)
     }
@@ -535,21 +537,27 @@ nom self_host_lexer
     # ── String literal ──
     if ch == 34 {
       let l2 = advance(l)
-      let (content, l3) = read_string(l2)
+      let pair2 = read_string(l2)
+      let content = pair2.0
+      let l3 = pair2.1
       let sp = make_span(start_pos, start_line, start_col, l3)
       return (SpannedToken { token: Token::StringLit(content), span: sp }, l3)
     }
 
     # ── Number ──
     if is_digit(ch) {
-      let (tok, l2) = read_number(l)
+      let pair3 = read_number(l)
+      let tok = pair3.0
+      let l2 = pair3.1
       let sp = make_span(start_pos, start_line, start_col, l2)
       return (SpannedToken { token: tok, span: sp }, l2)
     }
 
     # ── Identifier or keyword ──
     if is_alpha(ch) {
-      let (word, l2) = read_word(l)
+      let pair4 = read_word(l)
+      let word = pair4.0
+      let l2 = pair4.1
       let tok = classify_word(word)
       let sp = make_span(start_pos, start_line, start_col, l2)
       return (SpannedToken { token: tok, span: sp }, l2)
@@ -646,7 +654,9 @@ nom self_host_lexer
     let mut consecutive_newlines = 0
 
     while !is_at_end(lex) {
-      let (stok, new_lex) = next_token(lex)
+      let pair5 = next_token(lex)
+      let stok = pair5.0
+      let new_lex = pair5.1
       lex = new_lex
 
       match stok.token {
