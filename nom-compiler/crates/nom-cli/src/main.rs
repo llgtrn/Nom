@@ -344,6 +344,34 @@ enum Commands {
         #[command(subcommand)]
         action: ConceptCmd,
     },
+
+    /// App-composition commands. Compiling an app fans out into one
+    /// file per aspect (core / security / ux / env / bizlogic / bench /
+    /// response / flow / optimize / criteria) — never a god file.
+    App {
+        #[command(subcommand)]
+        action: AppCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum AppCmd {
+    /// Emit one artifact per OutputAspect at the given output directory.
+    /// Scaffold today (each file is empty); per-aspect population lands
+    /// incrementally per §5.12.
+    Build {
+        /// App manifest hash (root of the closure).
+        manifest_hash: String,
+        /// Human-readable name for the manifest; identity stays the hash.
+        #[arg(long, default_value = "app")]
+        name: String,
+        /// Default target platform (web, desktop, mobile).
+        #[arg(long, default_value = "web")]
+        target: String,
+        /// Output directory (created if missing).
+        #[arg(long, default_value = ".nom-out")]
+        out: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -751,8 +779,47 @@ fn main() {
             }
             ConceptCmd::Delete { name, dict } => concept::cmd_concept_delete(&name, &dict),
         },
+        Commands::App { action } => match action {
+            AppCmd::Build { manifest_hash, name, target, out } => {
+                cmd_app_build(&manifest_hash, &name, &target, &out)
+            }
+        },
     };
     process::exit(exit_code);
+}
+
+fn cmd_app_build(manifest_hash: &str, name: &str, target: &str, out: &Path) -> i32 {
+    let manifest = nom_app::AppManifest {
+        manifest_hash: manifest_hash.to_string(),
+        name: name.to_string(),
+        default_target: target.to_string(),
+        root_page_hash: String::new(),
+        data_sources: vec![],
+        actions: vec![],
+        media_assets: vec![],
+        settings: serde_json::Value::Null,
+    };
+    let artifacts = match nom_app::compile_app_to_artifacts(&manifest) {
+        Ok(a) => a,
+        Err(e) => {
+            eprintln!("app build failed: {e}");
+            return 1;
+        }
+    };
+    if let Err(e) = std::fs::create_dir_all(out) {
+        eprintln!("cannot create {}: {e}", out.display());
+        return 1;
+    }
+    for art in &artifacts {
+        let path = out.join(&art.path);
+        if let Err(e) = std::fs::write(&path, &art.bytes) {
+            eprintln!("write {} failed: {e}", path.display());
+            return 1;
+        }
+        println!("{:?} → {}", art.aspect, path.display());
+    }
+    println!("emitted {} aspect file(s) under {}", artifacts.len(), out.display());
+    0
 }
 
 // ── Command implementations ───────────────────────────────────────────────────

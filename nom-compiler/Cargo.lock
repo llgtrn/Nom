@@ -845,6 +845,7 @@ name = "nom-cli"
 version = "0.1.0"
 dependencies = [
  "clap",
+ "nom-app",
  "nom-ast",
  "nom-codegen",
  "nom-config",
@@ -931,6 +932,7 @@ dependencies = [
  "rusqlite",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]
