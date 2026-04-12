@@ -228,6 +228,7 @@ pub fn compile_app_to_artifacts_with_dict(
     for &aspect in OutputAspect::ALL {
         let bytes = match aspect {
             OutputAspect::Security => build_security_aspect(manifest, dict)?,
+            OutputAspect::Ux => build_ux_aspect(manifest, dict)?,
             _ => Vec::new(),
         };
         out.push(Artifact {
@@ -297,6 +298,68 @@ fn build_security_aspect(
         "manifest_hash": manifest.manifest_hash,
         "closure_size": closure.len(),
         "findings": findings,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_ux_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    use std::collections::BTreeSet;
+
+    let mut closure: BTreeSet<String> = BTreeSet::new();
+    for root in manifest_roots(manifest) {
+        if let Ok(ids) = dict.closure(&root) {
+            closure.extend(ids);
+        }
+    }
+
+    #[derive(serde::Serialize)]
+    struct UxEntry<'a> {
+        entry_id: &'a str,
+        kind: &'a str,
+        word: &'a str,
+        describe: Option<&'a str>,
+    }
+
+    let mut screens: Vec<UxEntry> = Vec::new();
+    let mut pages: Vec<UxEntry> = Vec::new();
+    let mut flows: Vec<UxEntry> = Vec::new();
+    let mut patterns: Vec<UxEntry> = Vec::new();
+
+    let mut entries: Vec<nom_types::Entry> = Vec::new();
+    for id in &closure {
+        if let Ok(Some(e)) = dict.get_entry(id) {
+            entries.push(e);
+        }
+    }
+
+    for e in &entries {
+        let row = UxEntry {
+            entry_id: &e.id,
+            kind: e.kind.as_str(),
+            word: &e.word,
+            describe: e.describe.as_deref(),
+        };
+        match e.kind {
+            nom_types::EntryKind::Screen => screens.push(row),
+            nom_types::EntryKind::Page => pages.push(row),
+            nom_types::EntryKind::UserFlow => flows.push(row),
+            nom_types::EntryKind::UxPattern => patterns.push(row),
+            _ => {}
+        }
+    }
+
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "target": manifest.default_target,
+        "root_page": manifest.root_page_hash,
+        "screens": screens,
+        "pages": pages,
+        "user_flows": flows,
+        "ux_patterns": patterns,
     });
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
@@ -479,6 +542,59 @@ mod tests {
         assert_eq!(findings[0]["severity"], "critical");
         assert_eq!(findings[0]["entry_id"], "act1");
         assert_eq!(findings[1]["severity"], "low");
+    }
+
+    #[test]
+    fn ux_aspect_serializes_screens_and_pages_from_closure() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let make = |id: &str, word: &str, kind: EntryKind| Entry {
+            id: id.into(),
+            word: word.into(),
+            variant: None,
+            kind,
+            language: "nom".into(),
+            describe: Some(format!("desc for {word}")),
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "2026-04-13T00:00:00Z".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&make("home", "home", EntryKind::Page)).unwrap();
+        dict.upsert_entry(&make("login", "login", EntryKind::Screen)).unwrap();
+        dict.upsert_entry(&make("signup", "signup_flow", EntryKind::UserFlow)).unwrap();
+        dict.upsert_entry(&make("btn_pat", "primary_btn", EntryKind::UxPattern)).unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "ux_demo".into(),
+            default_target: "web".into(),
+            root_page_hash: "home".into(),
+            data_sources: vec!["login".into()],
+            actions: vec!["signup".into()],
+            media_assets: vec!["btn_pat".into()],
+            settings: serde_json::Value::Null,
+        };
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let ux = arts.iter().find(|a| a.aspect == OutputAspect::Ux).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&ux.bytes).unwrap();
+        assert_eq!(doc["app"], "ux_demo");
+        assert_eq!(doc["pages"].as_array().unwrap().len(), 1);
+        assert_eq!(doc["screens"].as_array().unwrap().len(), 1);
+        assert_eq!(doc["user_flows"].as_array().unwrap().len(), 1);
+        assert_eq!(doc["ux_patterns"].as_array().unwrap().len(), 1);
+        assert_eq!(doc["pages"][0]["entry_id"], "home");
+        assert_eq!(doc["screens"][0]["entry_id"], "login");
     }
 
     #[test]
