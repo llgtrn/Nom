@@ -55,3 +55,41 @@ fn nom_verify(ast: SourceFile) -> VerifiedAST {
 fn is_verified(v: VerifiedAST) -> bool {
   return v.is_valid
 }
+
+# Canonical effect-tag strings. The verifier annotates each function
+# with one of these (Rust side: nom_verifier::Effect). Mirrors the
+# four variants so codegen sees the same strings from Rust or Nom.
+fn effect_pure() -> text {
+  return "pure"
+}
+
+fn effect_reads() -> text {
+  return "reads"
+}
+
+fn effect_writes() -> text {
+  return "writes"
+}
+
+fn effect_panics() -> text {
+  return "panics"
+}
+
+# True iff an effect tag is pure-or-reads — the set that can run
+# inside a read-only context (query handlers, const-eval, etc.).
+# Real verifier uses this to gate where a function can be called.
+fn is_readonly_effect(tag: text) -> bool {
+  if tag == effect_pure() {
+    return true
+  }
+  if tag == effect_reads() {
+    return true
+  }
+  return false
+}
+
+# Default effect for an unannotated function. Mirrors the Rust
+# verifier's conservative fallback: no annotation = assume it writes.
+fn default_effect() -> text {
+  return effect_writes()
+}

@@ -66,3 +66,51 @@ fn decl_kind_struct() -> text {
 fn decl_kind_enum() -> text {
   return "enum"
 }
+
+# Classifier: true iff a kind string names a type-level declaration
+# (struct or enum). Planner + verifier both use this to skip type
+# decls during call-graph construction.
+fn is_type_decl(kind: text) -> bool {
+  if kind == decl_kind_struct() {
+    return true
+  }
+  if kind == decl_kind_enum() {
+    return true
+  }
+  return false
+}
+
+# Classifier: true iff a kind string names a callable declaration.
+# Callables are the nodes the planner builds edges between.
+fn is_callable_decl(kind: text) -> bool {
+  return kind == decl_kind_fn()
+}
+
+# Canonical primitive type names. Matches the strings codegen's
+# lower_type() maps to Rust primitives. Keeps the ast + codegen
+# vocabularies in lockstep.
+fn prim_type_integer() -> text {
+  return "integer"
+}
+
+fn prim_type_text() -> text {
+  return "text"
+}
+
+fn prim_type_bool() -> text {
+  return "bool"
+}
+
+# True iff `name` is one of the three Nom primitive types.
+fn is_primitive_type(name: text) -> bool {
+  if name == prim_type_integer() {
+    return true
+  }
+  if name == prim_type_text() {
+    return true
+  }
+  if name == prim_type_bool() {
+    return true
+  }
+  return false
+}

@@ -54,3 +54,42 @@ fn is_empty_source_file(sf: SourceFile) -> bool {
 fn nom_classifier() -> text {
   return "nom"
 }
+
+# Other classifier strings the parser must accept. Mirrors the 10
+# classifier keywords in the Rust lexer's Token::System…Token::View.
+fn flow_classifier() -> text {
+  return "flow"
+}
+
+fn store_classifier() -> text {
+  return "store"
+}
+
+fn graph_classifier() -> text {
+  return "graph"
+}
+
+# Classifier validator: true iff `s` names one of the 10 top-level
+# classifiers the parser recognizes. Scaffold form covers the four
+# most common; extend as the real parser wires each branch.
+fn is_known_classifier(s: text) -> bool {
+  if s == nom_classifier() {
+    return true
+  }
+  if s == flow_classifier() {
+    return true
+  }
+  if s == store_classifier() {
+    return true
+  }
+  if s == graph_classifier() {
+    return true
+  }
+  return false
+}
+
+# Start-of-stream marker. Real parser state begins at position 0 and
+# bumps via consume(); this constant lets tests assert freshness.
+fn start_position() -> integer {
+  return 0
+}
