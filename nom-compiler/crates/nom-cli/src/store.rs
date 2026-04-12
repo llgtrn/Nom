@@ -16,7 +16,7 @@
 use std::path::{Path, PathBuf};
 
 use nom_ast::{Classifier, Declaration, SourceFile, Statement};
-use nom_dict::NomDict;
+use nom_dict::{EntryFilter, NomDict};
 use nom_parser::parse_source;
 use nom_resolver::v2::{ResolutionTable, resolve_use_statements};
 use nom_types::{
@@ -371,15 +371,17 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
     0
 }
 
-/// `nom store list [--body-kind <k>] [--limit N] [--json]`
+/// `nom store list [--body-kind <k>] [--language <l>] [--status <s>] [--kind <k>] [--limit N] [--json]`
 ///
-/// Surfaces iteration-6's `NomDict::find_by_body_kind` to the CLI.
-/// Without a filter, lists recent entries. With `--body-kind bc`,
-/// shows all entries with cached bitcode artifacts. With
-/// `--body-kind avif`, shows ingested still-image media. Etc.
+/// Multi-axis filter query over the v2 DIDS store. All filters are AND-composed;
+/// omitting all filters returns the first `limit` entries ordered by id, which
+/// is a useful operator overview of what's in the dict.
 pub fn cmd_store_list(
     dict: &Path,
     body_kind: Option<&str>,
+    language: Option<&str>,
+    status: Option<&str>,
+    kind: Option<&str>,
     limit: usize,
     json: bool,
 ) -> i32 {
@@ -388,68 +390,104 @@ pub fn cmd_store_list(
         None => return 1,
     };
 
-    let entries = match body_kind {
-        Some(kind) => {
-            if !nom_types::body_kind::is_known(kind) {
-                eprintln!(
-                    "nom: unknown body_kind: {kind}. Known: {}",
-                    nom_types::body_kind::ALL.join(", ")
-                );
-                return 1;
-            }
-            match dict_db.find_by_body_kind(kind, limit) {
-                Ok(e) => e,
-                Err(e) => {
-                    eprintln!("nom: dict error: {e}");
-                    return 1;
-                }
-            }
-        }
-        None => {
+    // Validate body_kind against the §4.4.6 known-tag list.
+    if let Some(bk) = body_kind {
+        if !nom_types::body_kind::is_known(bk) {
             eprintln!(
-                "nom: list without --body-kind not yet supported (pass one of: {})",
+                "nom: unknown body_kind: {bk}. Known: {}",
                 nom_types::body_kind::ALL.join(", ")
             );
+            return 1;
+        }
+    }
+
+    // Parse status string into enum (unknown values → error with hint).
+    let status_enum = if let Some(s) = status {
+        let parsed = EntryStatus::from_str(s);
+        // from_str falls back to Partial for unknown input; detect mismatch.
+        if parsed.as_str() != s {
+            eprintln!(
+                "nom: unknown status: {s}. Known: complete, partial, opaque"
+            );
+            return 1;
+        }
+        Some(parsed)
+    } else {
+        None
+    };
+
+    // Parse kind string into enum (unknown values → Other, which is valid;
+    // but warn if the string doesn't round-trip, indicating a typo).
+    let kind_enum = if let Some(k) = kind {
+        let parsed = EntryKind::from_str(k);
+        if parsed.as_str() != k {
+            eprintln!(
+                "nom: unknown kind: {k}. Known: {}",
+                EntryKind::ALL
+                    .iter()
+                    .map(|e| e.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            return 1;
+        }
+        Some(parsed)
+    } else {
+        None
+    };
+
+    let filter = EntryFilter {
+        body_kind: body_kind.map(String::from),
+        language: language.map(String::from),
+        status: status_enum,
+        kind: kind_enum,
+        limit,
+    };
+
+    let entries = match dict_db.find_entries(&filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("nom: dict error: {e}");
             return 1;
         }
     };
 
     if entries.is_empty() {
-        eprintln!(
-            "nom: no entries match body_kind={}",
-            body_kind.unwrap_or("(any)")
-        );
+        eprintln!("nom: no entries match (check --language/--status/--kind values)");
         return 0;
     }
 
     if json {
         for e in &entries {
-            let word = escape_json(&e.word);
-            let kind = e.kind.as_str();
-            let lang = escape_json(&e.language);
             let bk = e
                 .body_kind
                 .as_deref()
                 .map(|k| format!("\"{}\"", escape_json(k)))
-                .unwrap_or_else(|| "null".to_string());
+                .unwrap_or_else(|| "null".into());
             println!(
-                "{{\"id\":\"{}\",\"word\":\"{word}\",\"kind\":\"{kind}\",\"language\":\"{lang}\",\"body_kind\":{bk}}}",
+                "{{\"id\":\"{}\",\"word\":\"{}\",\"kind\":\"{}\",\"language\":\"{}\",\"status\":\"{}\",\"body_kind\":{}}}",
                 e.id,
+                escape_json(&e.word),
+                e.kind.as_str(),
+                escape_json(&e.language),
+                e.status.as_str(),
+                bk,
             );
         }
     } else {
         println!(
-            "{:<20} {:<14} {:<10} {:<14} {}",
-            "id (prefix)", "word", "kind", "body_kind", "language"
+            "{:<18} {:<20} {:<12} {:<12} {:<10} {}",
+            "id (prefix)", "word", "kind", "language", "status", "body_kind"
         );
         for e in &entries {
             let id_pref = &e.id[..e.id.len().min(16)];
-            let bk = e.body_kind.as_deref().unwrap_or("-");
             println!(
-                "{id_pref:<20} {:<14} {:<10} {bk:<14} {}",
-                truncate(&e.word, 14),
+                "{id_pref:<18} {:<20} {:<12} {:<12} {:<10} {}",
+                truncate(&e.word, 20),
                 e.kind.as_str(),
-                e.language,
+                truncate(&e.language, 12),
+                e.status.as_str(),
+                e.body_kind.as_deref().unwrap_or("-"),
             );
         }
         println!("{} entries", entries.len());

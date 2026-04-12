@@ -468,18 +468,27 @@ enum StoreCmd {
         #[arg(long)]
         json: bool,
     },
-    /// List stored entries, optionally filtered by §4.4.6 body_kind tag.
+    /// List stored entries with optional filters.
     List {
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
-        /// Filter to entries with this body_kind (e.g. `bc`, `avif`, `nom_source`)
+        /// Filter: canonical §4.4.6 body_kind tag.
         #[arg(long)]
         body_kind: Option<String>,
-        /// Maximum number of rows to print
+        /// Filter: source language (rust, typescript, python, …).
+        #[arg(long)]
+        language: Option<String>,
+        /// Filter: entry status (complete, partial, opaque).
+        #[arg(long)]
+        status: Option<String>,
+        /// Filter: entry kind (function, module, media_unit, …).
+        #[arg(long)]
+        kind: Option<String>,
+        /// Max entries to return.
         #[arg(long, default_value_t = 50)]
         limit: usize,
-        /// Emit one JSON record per line
+        /// Emit one JSON record per line.
         #[arg(long)]
         json: bool,
     },
@@ -608,8 +617,16 @@ fn main() {
             StoreCmd::Verify { hash, dict, strict } => store::cmd_store_verify(&hash, &dict, strict),
             StoreCmd::Gc { dict, dry_run } => store::cmd_store_gc(&dict, dry_run),
             StoreCmd::Stats { dict, json } => store::cmd_store_stats(&dict, json),
-            StoreCmd::List { dict, body_kind, limit, json } => {
-                store::cmd_store_list(&dict, body_kind.as_deref(), limit, json)
+            StoreCmd::List { dict, body_kind, language, status, kind, limit, json } => {
+                store::cmd_store_list(
+                    &dict,
+                    body_kind.as_deref(),
+                    language.as_deref(),
+                    status.as_deref(),
+                    kind.as_deref(),
+                    limit,
+                    json,
+                )
             }
             StoreCmd::AddMedia { path, dict, json } => store::cmd_store_add_media(&path, &dict, json),
         },

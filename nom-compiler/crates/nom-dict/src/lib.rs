@@ -133,6 +133,19 @@ CREATE INDEX IF NOT EXISTS idx_trans_entry ON entry_translations(id);
 CREATE INDEX IF NOT EXISTS idx_trans_target ON entry_translations(target_language);
 "#;
 
+// ── EntryFilter ──────────────────────────────────────────────────────
+
+/// Filter options for [`NomDict::find_entries`]. All fields are optional;
+/// unset fields do not restrict the query. `limit` defaults to 50.
+#[derive(Debug, Clone, Default)]
+pub struct EntryFilter {
+    pub body_kind: Option<String>,
+    pub language: Option<String>,
+    pub status: Option<EntryStatus>,
+    pub kind: Option<EntryKind>,
+    pub limit: usize,
+}
+
 // ── NomDict ─────────────────────────────────────────────────────────
 
 /// SQLite-backed v2 dictionary.
@@ -561,6 +574,43 @@ impl NomDict {
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
             .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Unified filter query. Each present field adds an AND clause.
+    /// Results ordered by id for determinism. An empty `EntryFilter`
+    /// returns the first `limit` entries (default 50).
+    pub fn find_entries(&self, f: &EntryFilter) -> Result<Vec<Entry>> {
+        let mut sql = String::from(
+            "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                    input_type, output_type, pre, post, status, translation_score,
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes
+             FROM entries WHERE 1=1",
+        );
+        let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+        if let Some(k) = &f.body_kind {
+            sql.push_str(" AND body_kind = ?");
+            params_vec.push(Box::new(k.clone()));
+        }
+        if let Some(l) = &f.language {
+            sql.push_str(" AND language = ?");
+            params_vec.push(Box::new(l.clone()));
+        }
+        if let Some(s) = f.status {
+            sql.push_str(" AND status = ?");
+            params_vec.push(Box::new(s.as_str().to_string()));
+        }
+        if let Some(k) = f.kind {
+            sql.push_str(" AND kind = ?");
+            params_vec.push(Box::new(k.as_str().to_string()));
+        }
+        sql.push_str(&format!(" ORDER BY id LIMIT {}", f.limit.max(1)));
+        let param_refs: Vec<&dyn rusqlite::ToSql> =
+            params_vec.iter().map(|b| b.as_ref()).collect();
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entry)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -1112,6 +1162,123 @@ mod tests {
         assert_eq!(as_map.get("(untagged)"), Some(&1));
         assert_eq!(hist[0].0, body_kind::BC); // highest count first
         assert_eq!(hist[0].1, 2);
+    }
+
+    /// `find_entries` filters correctly across language, status, body_kind,
+    /// kind, and combinations thereof.
+    #[test]
+    fn find_entries_filters_correctly() {
+        use nom_types::body_kind;
+        let d = NomDict::open_in_memory().unwrap();
+
+        // Entry 1: rust function, complete, body_kind=nom_source
+        let mut e1 = make_entry("aaa", "parse_input");
+        e1.language = "rust".into();
+        e1.status = EntryStatus::Complete;
+        e1.kind = EntryKind::Function;
+        e1.body_kind = Some(body_kind::NOM_SOURCE.to_owned());
+        d.upsert_entry(&e1).unwrap();
+
+        // Entry 2: typescript module, partial, body_kind=bc
+        let mut e2 = make_entry("bbb", "ui_module");
+        e2.language = "typescript".into();
+        e2.status = EntryStatus::Partial;
+        e2.kind = EntryKind::Module;
+        e2.body_kind = Some(body_kind::BC.to_owned());
+        d.upsert_entry(&e2).unwrap();
+
+        // Entry 3: python function, opaque, no body_kind
+        let mut e3 = make_entry("ccc", "helper_fn");
+        e3.language = "python".into();
+        e3.status = EntryStatus::Opaque;
+        e3.kind = EntryKind::Function;
+        d.upsert_entry(&e3).unwrap();
+
+        // --- filter by language ---
+        let rust_entries = d.find_entries(&EntryFilter {
+            language: Some("rust".into()),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(rust_entries.len(), 1);
+        assert_eq!(rust_entries[0].word, "parse_input");
+
+        let ts_entries = d.find_entries(&EntryFilter {
+            language: Some("typescript".into()),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(ts_entries.len(), 1);
+        assert_eq!(ts_entries[0].word, "ui_module");
+
+        // --- filter by status ---
+        let partial_entries = d.find_entries(&EntryFilter {
+            status: Some(EntryStatus::Partial),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(partial_entries.len(), 1);
+        assert_eq!(partial_entries[0].word, "ui_module");
+
+        let opaque_entries = d.find_entries(&EntryFilter {
+            status: Some(EntryStatus::Opaque),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(opaque_entries.len(), 1);
+        assert_eq!(opaque_entries[0].word, "helper_fn");
+
+        // --- filter by kind ---
+        let fn_entries = d.find_entries(&EntryFilter {
+            kind: Some(EntryKind::Function),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(fn_entries.len(), 2);
+
+        let mod_entries = d.find_entries(&EntryFilter {
+            kind: Some(EntryKind::Module),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(mod_entries.len(), 1);
+        assert_eq!(mod_entries[0].word, "ui_module");
+
+        // --- filter by body_kind ---
+        let bc_entries = d.find_entries(&EntryFilter {
+            body_kind: Some(body_kind::BC.to_owned()),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(bc_entries.len(), 1);
+        assert_eq!(bc_entries[0].word, "ui_module");
+
+        // --- combined: language + status ---
+        let rust_complete = d.find_entries(&EntryFilter {
+            language: Some("rust".into()),
+            status: Some(EntryStatus::Complete),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert_eq!(rust_complete.len(), 1);
+        assert_eq!(rust_complete[0].word, "parse_input");
+
+        // Combined: language + status that matches nothing
+        let rust_partial = d.find_entries(&EntryFilter {
+            language: Some("rust".into()),
+            status: Some(EntryStatus::Partial),
+            limit: 50,
+            ..EntryFilter::default()
+        }).unwrap();
+        assert!(rust_partial.is_empty());
+
+        // --- no filter = all 3 entries ---
+        let all = d.find_entries(&EntryFilter { limit: 50, ..EntryFilter::default() }).unwrap();
+        assert_eq!(all.len(), 3);
+
+        // --- limit is respected ---
+        let capped = d.find_entries(&EntryFilter { limit: 2, ..EntryFilter::default() }).unwrap();
+        assert_eq!(capped.len(), 2);
     }
 
     #[test]
