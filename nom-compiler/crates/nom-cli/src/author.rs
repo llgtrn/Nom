@@ -627,6 +627,45 @@ fn already_nom() -> integer { return 0 }
     }
 
     #[test]
+    fn draft_todo_app_fixture_extracts_expected_proposals() {
+        // Sanity: the shipped sample in examples/draft_todo_app.md
+        // produces ≥7 proposals, grouped by the two sections
+        // `## Intent` and `## Sketch`. Guards the UX demo fixture —
+        // if someone edits the fixture without noticing it breaks
+        // the translate pipeline, CI catches it.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/draft_todo_app.md");
+        let text = std::fs::read_to_string(&path)
+            .unwrap_or_else(|e| panic!("read {}: {e}", path.display()));
+
+        let proposals = extract_prose_proposals(&text);
+        assert!(
+            proposals.len() >= 7,
+            "expected ≥7 proposals (one per Sketch bullet + Intent), got {}",
+            proposals.len()
+        );
+        let concepts: std::collections::HashSet<&str> =
+            proposals.iter().map(|p| p.concept.as_str()).collect();
+        assert!(concepts.contains("sketch"), "expected `sketch` concept: {concepts:?}");
+        assert!(concepts.contains("intent"), "expected `intent` concept: {concepts:?}");
+
+        // Words should be clean [a-z0-9_] identifiers — verifies the
+        // prose_to_word sanitizer ran against every phrase.
+        for p in &proposals {
+            assert!(
+                p.word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                "word `{}` has non-identifier chars",
+                p.word
+            );
+            assert!(!p.word.is_empty(), "empty word from phrase `{}`", p.source_phrase);
+        }
+    }
+
+    #[test]
     fn write_proposals_to_dict_is_idempotent_and_lockstep() {
         // Prove the §4.4.6 lockstep invariant: --write creates ONE
         // concept + ONE entry + ONE membership per proposal, and
