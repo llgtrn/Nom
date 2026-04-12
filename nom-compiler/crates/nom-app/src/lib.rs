@@ -235,7 +235,8 @@ pub fn compile_app_to_artifacts_with_dict(
             OutputAspect::Response => build_response_aspect(manifest, dict)?,
             OutputAspect::Flow => build_flow_aspect(manifest, dict)?,
             OutputAspect::Criteria => build_criteria_aspect(manifest, dict)?,
-            OutputAspect::Core | OutputAspect::Optimize => Vec::new(),
+            OutputAspect::Optimize => build_optimize_aspect(manifest, dict)?,
+            OutputAspect::Core => Vec::new(),
         };
         out.push(Artifact {
             aspect,
@@ -838,6 +839,83 @@ fn compute_app_score(
     (breadth + completeness + tests + cleanliness).round() as u32
 }
 
+fn build_optimize_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+
+    // Per-entry payload size (bc bytes if present, else source body length).
+    #[derive(serde::Serialize)]
+    struct SizedEntry<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        kind: &'a str,
+        language: &'a str,
+        body_kind: Option<&'a str>,
+        body_bytes: usize,
+        translation_score: Option<f32>,
+    }
+
+    let sized: Vec<SizedEntry> = entries
+        .iter()
+        .map(|e| SizedEntry {
+            entry_id: &e.id,
+            word: &e.word,
+            kind: e.kind.as_str(),
+            language: &e.language,
+            body_kind: e.body_kind.as_deref(),
+            body_bytes: e.body_bytes.as_ref().map(|b| b.len()).unwrap_or(0),
+            translation_score: e.translation_score,
+        })
+        .collect();
+
+    // Per-language byte totals for platform specialization planning.
+    let mut per_language: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut per_body_kind: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut total_bytes: u64 = 0;
+    for s in &sized {
+        *per_language.entry(s.language.to_string()).or_insert(0) += s.body_bytes as u64;
+        if let Some(bk) = s.body_kind {
+            *per_body_kind.entry(bk.to_string()).or_insert(0) += s.body_bytes as u64;
+        }
+        total_bytes += s.body_bytes as u64;
+    }
+
+    // Top-10 largest — specialization candidates.
+    let mut top: Vec<&SizedEntry> = sized.iter().collect();
+    top.sort_by(|a, b| b.body_bytes.cmp(&a.body_bytes).then(a.entry_id.cmp(b.entry_id)));
+    top.truncate(10);
+
+    // Score summary — which entries are gold-standard vs need translator work.
+    let scored: Vec<&SizedEntry> = sized
+        .iter()
+        .filter(|s| s.translation_score.is_some())
+        .collect();
+    let avg_score = if scored.is_empty() {
+        None
+    } else {
+        let sum: f32 = scored
+            .iter()
+            .map(|s| s.translation_score.unwrap_or(0.0))
+            .sum();
+        Some(sum / scored.len() as f32)
+    };
+
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "closure_size": sized.len(),
+        "total_bytes": total_bytes,
+        "per_language_bytes": per_language,
+        "per_body_kind_bytes": per_body_kind,
+        "avg_translation_score": avg_score,
+        "scored_count": scored.len(),
+        "top_specialization_candidates": top,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
 fn severity_rank(s: &nom_types::Severity) -> u8 {
     match s {
         nom_types::Severity::Critical => 4,
@@ -1309,6 +1387,61 @@ mod tests {
         assert!(r1.app_score >= EPIC_SCORE_THRESHOLD, "got {}", r1.app_score);
         assert!(r1.is_epic);
         assert_eq!(r1.next_instruction, "");
+    }
+
+    #[test]
+    fn optimize_aspect_reports_sizes_and_top_candidates() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let mk = |id: &str, lang: &str, bc_size: usize, score: Option<f32>| Entry {
+            id: id.into(),
+            word: id.into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: lang.into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: Some(vec![0u8; bc_size]),
+            body_kind: Some("bc".into()),
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: score,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&mk("a", "rust", 1000, Some(0.9))).unwrap();
+        dict.upsert_entry(&mk("b", "rust", 500, Some(0.7))).unwrap();
+        dict.upsert_entry(&mk("c", "typescript", 200, None)).unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "opt".into(),
+            default_target: "web".into(),
+            root_page_hash: "a".into(),
+            data_sources: vec!["b".into(), "c".into()],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let opt = arts.iter().find(|x| x.aspect == OutputAspect::Optimize).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&opt.bytes).unwrap();
+        assert_eq!(doc["closure_size"], 3);
+        assert_eq!(doc["total_bytes"], 1700);
+        assert_eq!(doc["per_language_bytes"]["rust"], 1500);
+        assert_eq!(doc["per_language_bytes"]["typescript"], 200);
+        assert_eq!(doc["per_body_kind_bytes"]["bc"], 1700);
+        assert_eq!(doc["scored_count"], 2);
+        // Top candidate is the largest.
+        let top = doc["top_specialization_candidates"].as_array().unwrap();
+        assert_eq!(top[0]["entry_id"], "a");
+        assert_eq!(top[0]["body_bytes"], 1000);
     }
 
     #[test]
