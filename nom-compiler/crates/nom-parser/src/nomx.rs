@@ -168,6 +168,7 @@ impl<'a> NomxParser<'a> {
                 NomxToken::Define => decls.push(self.parse_define()?),
                 NomxToken::Record => decls.push(self.parse_record()?),
                 NomxToken::Choice => decls.push(self.parse_choice()?),
+                NomxToken::To => decls.push(self.parse_to_oneliner()?),
                 _ => {
                     self.advance();
                 }
@@ -211,6 +212,51 @@ impl<'a> NomxParser<'a> {
         Ok(NomxDecl::Record {
             name,
             fields,
+            span: NomxSpan::new(start, end),
+        })
+    }
+
+    /// `to <name>, respond with <expr>.` — one-liner imperative
+    /// declaration form per proposal 05 §3. Lowered to a Define
+    /// with a single binding body. `respond with <expr>` becomes
+    /// the binding with subject = "respond" and rhs = expr tokens.
+    fn parse_to_oneliner(&mut self) -> NomxParseResult<NomxDecl> {
+        let start = self.peek_span().start;
+        self.expect(&NomxToken::To, "`to`")?;
+        // The verb / function name is the first identifier.
+        let name = self.consume_identifier("name after `to`")?;
+
+        // Skip the phrase "<noun-phrase>" up to the comma — it
+        // describes the operand but doesn't yet bind a parameter.
+        while !self.peek_is_body_terminator()
+            && self.peek() != &NomxToken::Comma
+            && self.peek() != &NomxToken::Period
+        {
+            self.advance();
+        }
+        self.expect(&NomxToken::Comma, "`,` after `to <verb>` phrase")?;
+
+        // Body statement captured verbatim; parse_body handles the rest.
+        let body_start = self.peek_span();
+        let mut rhs_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            rhs_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+        let binding = NomxStatement::Binding {
+            subject: "respond".to_string(),
+            rhs_tokens,
+            span: NomxSpan::new(body_start.start, self.peek_span().start),
+        };
+
+        let end = self.peek_span().start.max(start);
+        Ok(NomxDecl::Define {
+            name,
+            param: None,
+            returns: None,
+            body: vec![binding],
             span: NomxSpan::new(start, end),
         })
     }
@@ -570,6 +616,29 @@ mod tests {
             panic!("expected When");
         };
         assert!(else_tokens.is_none(), "no otherwise means else_tokens=None");
+    }
+
+    #[test]
+    fn parses_to_oneliner_sentence_form() {
+        // `to greet someone by name, respond with "hello" joined to name.`
+        let src = "to greet someone by name, respond with \"hello\" joined to name.";
+        let decls = parse_nomx(src).unwrap();
+        assert_eq!(decls.len(), 1);
+        // Lowered to a Define with a single binding body.
+        let NomxDecl::Define { name, body, .. } = &decls[0] else {
+            panic!("expected Define, got {:?}", decls[0]);
+        };
+        assert_eq!(name, "greet");
+        assert_eq!(body.len(), 1);
+        let NomxStatement::Binding { subject, rhs_tokens, .. } = &body[0] else {
+            panic!("expected Binding");
+        };
+        assert_eq!(subject, "respond");
+        assert!(
+            rhs_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::StringLit(s) if s == "hello"))
+        );
     }
 
     #[test]
