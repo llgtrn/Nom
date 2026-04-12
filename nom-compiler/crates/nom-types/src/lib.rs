@@ -426,6 +426,10 @@ pub enum EntryKind {
     MediaUnit,
     Codec,
     Container,
+    /// A named domain that groups related nomtu entries.
+    /// Concept names are first-class Nom syntax tokens: `use <name>@<hash>`.
+    /// TODO: concept-name-without-hash resolution in nom-parser/nom-resolver.
+    Concept,
     Other,
 }
 
@@ -462,6 +466,7 @@ impl EntryKind {
         EntryKind::MediaUnit,
         EntryKind::Codec,
         EntryKind::Container,
+        EntryKind::Concept,
         EntryKind::Other,
     ];
 
@@ -494,6 +499,7 @@ impl EntryKind {
             Self::MediaUnit => "media_unit",
             Self::Codec => "codec",
             Self::Container => "container",
+            Self::Concept => "concept",
             Self::Other => "other",
         }
     }
@@ -527,6 +533,7 @@ impl EntryKind {
             "media_unit" => Self::MediaUnit,
             "codec" => Self::Codec,
             "container" => Self::Container,
+            "concept" => Self::Concept,
             _ => Self::Other,
         }
     }
@@ -1085,7 +1092,7 @@ mod v2_tests {
             assert_eq!(EntryKind::from_str(kind.as_str()), *kind);
         }
         // Drift check: update this when growing the enum.
-        assert_eq!(EntryKind::ALL.len(), 28);
+        assert_eq!(EntryKind::ALL.len(), 29);
     }
 
     #[test]

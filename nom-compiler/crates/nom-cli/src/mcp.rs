@@ -13,7 +13,7 @@
 //!   get_nomtu     — fetch one entry by id or ≥8-char hex prefix
 //!   search_nomtu  — substring search on the `describe` field
 
-use nom_dict::{Draft, EntryFilter, NomDict};
+use nom_dict::{Concept, EntryFilter, NomDict};
 use nom_types::{EntryKind, EntryStatus};
 use serde_json::{json, Value};
 use std::io::{BufRead, Write};
@@ -155,23 +155,23 @@ fn tools_list_response(id: Value) -> String {
                     }
                 },
                 {
-                    "name": "list_drafts",
-                    "description": "List all drafts (named domain collections of nomtu entries) with their member counts. Use this to discover available domains before calling get_draft for details.",
+                    "name": "list_concepts",
+                    "description": "Enumerate concepts — named domains grouping related nomtu (e.g. 'cryptography', 'image-codecs'). Each concept name is itself a valid Nom syntax token, addressable via `use <concept>@<hash>` in .nom source.",
                     "inputSchema": {
                         "type": "object",
                         "properties": {}
                     }
                 },
                 {
-                    "name": "get_draft",
-                    "description": "Get details and up to 50 member summaries for a named draft. Useful for understanding what nomtu entries belong to a given domain (e.g. 'cryptography').",
+                    "name": "get_concept",
+                    "description": "Get details and up to 50 member summaries for a named concept. Useful for understanding what nomtu entries belong to a given domain (e.g. 'cryptography'). The concept name is a first-class Nom syntax token.",
                     "inputSchema": {
                         "type": "object",
                         "required": ["name"],
                         "properties": {
                             "name": {
                                 "type": "string",
-                                "description": "Draft name exactly as returned by list_drafts"
+                                "description": "Concept name exactly as returned by list_concepts"
                             }
                         }
                     }
@@ -194,8 +194,8 @@ fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> Str
         "list_nomtu" => call_list_nomtu(dict, id, &args),
         "get_nomtu" => call_get_nomtu(dict, id, &args),
         "search_nomtu" => call_search_nomtu(dict, id, &args),
-        "list_drafts" => call_list_drafts(dict, id),
-        "get_draft" => call_get_draft(dict, id, &args),
+        "list_concepts" => call_list_concepts(dict, id),
+        "get_concept" => call_get_concept(dict, id, &args),
         _ => err_response(id, -32602, &format!("unknown tool: {name}")),
     }
 }
@@ -340,24 +340,24 @@ fn call_search_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_list_drafts(dict: &NomDict, id: Value) -> String {
-    let drafts = match dict.list_drafts() {
+fn call_list_concepts(dict: &NomDict, id: Value) -> String {
+    let concepts = match dict.list_concepts() {
         Ok(v) => v,
         Err(e) => return err_response(id, -32000, &format!("query failed: {e}")),
     };
-    let items: Vec<Value> = drafts
+    let items: Vec<Value> = concepts
         .iter()
-        .map(|dr| {
-            let count = dict.count_draft_members(&dr.id).unwrap_or(0);
+        .map(|c| {
+            let count = dict.count_concept_members(&c.id).unwrap_or(0);
             json!({
-                "id": dr.id,
-                "name": dr.name,
-                "describe": dr.describe,
+                "id": c.id,
+                "name": c.name,
+                "describe": c.describe,
                 "member_count": count,
             })
         })
         .collect();
-    let summary = format!("{} draft(s) found.", items.len());
+    let summary = format!("{} concept(s) found.", items.len());
     ok_response(
         id,
         json!({
@@ -369,17 +369,17 @@ fn call_list_drafts(dict: &NomDict, id: Value) -> String {
     )
 }
 
-fn call_get_draft(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_get_concept(dict: &NomDict, id: Value, args: &Value) -> String {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) => n,
         None => return err_response(id, -32602, "missing required argument: name"),
     };
-    let draft: Draft = match dict.get_draft_by_name(name) {
-        Ok(Some(d)) => d,
-        Ok(None) => return err_response(id, -32000, &format!("draft not found: {name}")),
+    let concept: Concept = match dict.get_concept_by_name(name) {
+        Ok(Some(c)) => c,
+        Ok(None) => return err_response(id, -32000, &format!("concept not found: {name}")),
         Err(e) => return err_response(id, -32000, &format!("lookup failed: {e}")),
     };
-    let mut members = match dict.get_draft_members(&draft.id) {
+    let mut members = match dict.get_concept_members(&concept.id) {
         Ok(m) => m,
         Err(e) => return err_response(id, -32000, &format!("member query failed: {e}")),
     };
@@ -398,9 +398,9 @@ fn call_get_draft(dict: &NomDict, id: Value, args: &Value) -> String {
         })
         .collect();
     let summary = format!(
-        "Draft '{}': {} (showing {} member(s)).",
-        draft.name,
-        draft.describe.as_deref().unwrap_or("no description"),
+        "Concept '{}': {} (showing {} member(s)).",
+        concept.name,
+        concept.describe.as_deref().unwrap_or("no description"),
         member_items.len()
     );
     ok_response(
@@ -411,10 +411,10 @@ fn call_get_draft(dict: &NomDict, id: Value, args: &Value) -> String {
                 {
                     "type": "text",
                     "text": serde_json::to_string_pretty(&json!({
-                        "draft": {
-                            "id": draft.id,
-                            "name": draft.name,
-                            "describe": draft.describe,
+                        "concept": {
+                            "id": concept.id,
+                            "name": concept.name,
+                            "describe": concept.describe,
                         },
                         "members": member_items,
                     })).unwrap_or_default()

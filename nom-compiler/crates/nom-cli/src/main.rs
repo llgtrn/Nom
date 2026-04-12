@@ -16,8 +16,8 @@
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 //!   nom fmt <path>      — format .nom source files with canonical style
 
+mod concept;
 mod corpus;
-mod draft;
 mod fmt;
 mod mcp;
 mod media;
@@ -337,11 +337,12 @@ enum Commands {
         dict: PathBuf,
     },
 
-    /// Manage drafts — named domain collections of nomtu entries for
-    /// faster querying and understanding.
-    Draft {
+    /// Manage concepts — named domain groupings of nomtu entries. Each
+    /// concept name is a first-class Nom syntax token, addressable via
+    /// `use <concept>@<hash>` in .nom source.
+    Concept {
         #[command(subcommand)]
-        action: DraftCmd,
+        action: ConceptCmd,
     },
 }
 
@@ -513,33 +514,34 @@ enum MediaCmd {
 }
 
 #[derive(Subcommand)]
-enum DraftCmd {
-    /// Create a new empty draft.
+enum ConceptCmd {
+    /// Create a new empty concept and register it as an Entry (kind=concept)
+    /// so it is addressable via `use <name>@<hash>` in .nom source.
     New {
-        /// Human-readable domain name (e.g. "cryptography")
+        /// Human-readable concept name (e.g. "cryptography")
         name: String,
-        /// Optional description for this draft
+        /// Optional description for this concept
         #[arg(long)]
         describe: Option<String>,
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// Add one entry (by full id or ≥8-char hex prefix) to a draft.
+    /// Add one entry (by full id or ≥8-char hex prefix) to a concept.
     Add {
-        /// Draft name
-        draft: String,
+        /// Concept name
+        concept: String,
         /// Entry id (full 64-hex or ≥8-char prefix)
         entry: String,
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// Bulk-add entries matching filter flags to a draft.
+    /// Bulk-add entries matching filter flags to a concept.
     /// Note: --describe-like is exclusive with structural filters.
     AddBy {
-        /// Draft name
-        draft: String,
+        /// Concept name
+        concept: String,
         /// Filter by source language (rust, typescript, …)
         #[arg(long)]
         language: Option<String>,
@@ -562,7 +564,7 @@ enum DraftCmd {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// List all drafts with member counts.
+    /// List all concepts with member counts.
     List {
         /// Emit JSON instead of a table
         #[arg(long)]
@@ -571,9 +573,9 @@ enum DraftCmd {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// Show members of a draft.
+    /// Show members of a concept.
     Show {
-        /// Draft name
+        /// Concept name
         name: String,
         /// Maximum members to display
         #[arg(long, default_value_t = 50)]
@@ -585,9 +587,9 @@ enum DraftCmd {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
-    /// Remove a draft entirely (entries are preserved; only the grouping is dropped).
+    /// Remove a concept entirely (entries are preserved; only the grouping is dropped).
     Delete {
-        /// Draft name
+        /// Concept name
         name: String,
         /// Path to the nomdict database
         #[arg(long, default_value = "nomdict.db")]
@@ -717,15 +719,15 @@ fn main() {
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
-        Commands::Draft { action } => match action {
-            DraftCmd::New { name, describe, dict } => {
-                draft::cmd_draft_new(&name, describe.as_deref(), &dict)
+        Commands::Concept { action } => match action {
+            ConceptCmd::New { name, describe, dict } => {
+                concept::cmd_concept_new(&name, describe.as_deref(), &dict)
             }
-            DraftCmd::Add { draft, entry, dict } => {
-                draft::cmd_draft_add(&draft, &entry, &dict)
+            ConceptCmd::Add { concept, entry, dict } => {
+                concept::cmd_concept_add(&concept, &entry, &dict)
             }
-            DraftCmd::AddBy {
-                draft,
+            ConceptCmd::AddBy {
+                concept,
                 language,
                 kind,
                 body_kind,
@@ -733,8 +735,8 @@ fn main() {
                 describe_like,
                 limit,
                 dict,
-            } => draft::cmd_draft_add_by(
-                &draft,
+            } => concept::cmd_concept_add_by(
+                &concept,
                 language.as_deref(),
                 kind.as_deref(),
                 body_kind.as_deref(),
@@ -743,11 +745,11 @@ fn main() {
                 limit,
                 &dict,
             ),
-            DraftCmd::List { json, dict } => draft::cmd_draft_list(json, &dict),
-            DraftCmd::Show { name, limit, json, dict } => {
-                draft::cmd_draft_show(&name, limit, json, &dict)
+            ConceptCmd::List { json, dict } => concept::cmd_concept_list(json, &dict),
+            ConceptCmd::Show { name, limit, json, dict } => {
+                concept::cmd_concept_show(&name, limit, json, &dict)
             }
-            DraftCmd::Delete { name, dict } => draft::cmd_draft_delete(&name, &dict),
+            ConceptCmd::Delete { name, dict } => concept::cmd_concept_delete(&name, &dict),
         },
     };
     process::exit(exit_code);

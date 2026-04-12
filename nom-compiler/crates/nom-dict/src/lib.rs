@@ -133,31 +133,33 @@ CREATE TABLE IF NOT EXISTS entry_translations (
 CREATE INDEX IF NOT EXISTS idx_trans_entry ON entry_translations(id);
 CREATE INDEX IF NOT EXISTS idx_trans_target ON entry_translations(target_language);
 
-CREATE TABLE IF NOT EXISTS drafts (
+CREATE TABLE IF NOT EXISTS concepts (
     id          TEXT PRIMARY KEY,
     name        TEXT NOT NULL UNIQUE,
     describe    TEXT,
     created_at  TEXT DEFAULT (datetime('now')),
     updated_at  TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_drafts_name ON drafts(name);
+CREATE INDEX IF NOT EXISTS idx_concepts_name ON concepts(name);
 
-CREATE TABLE IF NOT EXISTS draft_members (
-    draft_id    TEXT NOT NULL REFERENCES drafts(id) ON DELETE CASCADE,
+CREATE TABLE IF NOT EXISTS concept_members (
+    concept_id  TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
     entry_id    TEXT NOT NULL REFERENCES entries(id),
     added_at    TEXT DEFAULT (datetime('now')),
-    PRIMARY KEY (draft_id, entry_id)
+    PRIMARY KEY (concept_id, entry_id)
 );
-CREATE INDEX IF NOT EXISTS idx_draft_members_entry ON draft_members(entry_id);
+CREATE INDEX IF NOT EXISTS idx_concept_members_entry ON concept_members(entry_id);
 "#;
 
-// ── Draft ────────────────────────────────────────────────────────────
+// ── Concept ──────────────────────────────────────────────────────────
 
-/// A named collection of nomtu entries grouping them by domain
+/// A named concept grouping related nomtu entries by domain
 /// (e.g. "cryptography", "web-server-handlers", "image-codecs").
+/// Concept names are first-class Nom syntax tokens — a .nom file can
+/// write `use cryptography@<hash>` to import an entire concept domain.
 /// The `id` is the hex SHA-256 of the name (trimmed, as-is casing).
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
-pub struct Draft {
+pub struct Concept {
     pub id: String,
     pub name: String,
     pub describe: Option<String>,
@@ -165,8 +167,8 @@ pub struct Draft {
     pub updated_at: Option<String>,
 }
 
-impl Draft {
-    /// Derive the canonical id for a draft name: `sha256(name.trim())`.
+impl Concept {
+    /// Derive the canonical id for a concept name: `sha256(name.trim())`.
     pub fn id_for(name: &str) -> String {
         let hash = Sha256::digest(name.trim().as_bytes());
         format!("{hash:x}")
@@ -258,6 +260,15 @@ impl NomDict {
     }
 
     fn init_schema(&self) -> Result<()> {
+        // Best-effort migration: rename old `drafts`/`draft_members` tables
+        // (landed in commit 500eac7) to the new canonical names. SQLite's
+        // ALTER TABLE RENAME TO is safe since 3.25. If the old tables don't
+        // exist these are harmless no-ops (CREATE IF NOT EXISTS below handles
+        // fresh DBs).
+        let _ = self.conn
+            .execute_batch("ALTER TABLE drafts RENAME TO concepts");
+        let _ = self.conn
+            .execute_batch("ALTER TABLE draft_members RENAME TO concept_members");
         self.conn.execute_batch(V2_SCHEMA_SQL)?;
         // Best-effort migration: add body_bytes to pre-existing DBs that were
         // created before this column was part of V2_SCHEMA_SQL. SQLite returns
@@ -874,118 +885,118 @@ impl NomDict {
         Ok(inserted)
     }
 
-    // ── Draft CRUD ─────────────────────────────────────────────────
+    // ── Concept CRUD ───────────────────────────────────────────────
 
-    /// Insert or replace a draft. The `id` is expected to be
-    /// `Draft::id_for(&draft.name)`. Idempotent on repeated calls.
-    pub fn upsert_draft(&self, draft: &Draft) -> Result<()> {
+    /// Insert or replace a concept. The `id` is expected to be
+    /// `Concept::id_for(&concept.name)`. Idempotent on repeated calls.
+    pub fn upsert_concept(&self, concept: &Concept) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO drafts (id, name, describe, created_at, updated_at)
+            "INSERT INTO concepts (id, name, describe, created_at, updated_at)
              VALUES (?1, ?2, ?3, ?4, ?5)
              ON CONFLICT(id) DO UPDATE SET
                  name       = excluded.name,
-                 describe   = COALESCE(excluded.describe, drafts.describe),
+                 describe   = COALESCE(excluded.describe, concepts.describe),
                  updated_at = datetime('now')",
             params![
-                draft.id,
-                draft.name,
-                draft.describe,
-                draft.created_at,
-                draft.updated_at,
+                concept.id,
+                concept.name,
+                concept.describe,
+                concept.created_at,
+                concept.updated_at,
             ],
         )?;
         Ok(())
     }
 
-    /// Look up a draft by its human-readable name. Returns `None` if not found.
-    pub fn get_draft_by_name(&self, name: &str) -> Result<Option<Draft>> {
+    /// Look up a concept by its human-readable name. Returns `None` if not found.
+    pub fn get_concept_by_name(&self, name: &str) -> Result<Option<Concept>> {
         let row = self
             .conn
             .query_row(
                 "SELECT id, name, describe, created_at, updated_at
-                 FROM drafts WHERE name = ?1",
+                 FROM concepts WHERE name = ?1",
                 params![name.trim()],
-                row_to_draft,
+                row_to_concept,
             )
             .optional()?;
         Ok(row)
     }
 
-    /// Return all drafts ordered alphabetically by name.
-    pub fn list_drafts(&self) -> Result<Vec<Draft>> {
+    /// Return all concepts ordered alphabetically by name.
+    pub fn list_concepts(&self) -> Result<Vec<Concept>> {
         let mut stmt = self.conn.prepare_cached(
-            "SELECT id, name, describe, created_at, updated_at FROM drafts ORDER BY name",
+            "SELECT id, name, describe, created_at, updated_at FROM concepts ORDER BY name",
         )?;
         let rows = stmt
-            .query_map([], row_to_draft)?
+            .query_map([], row_to_concept)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Delete a draft (and cascade-delete its membership rows).
+    /// Delete a concept (and cascade-delete its membership rows).
     /// The referenced entries are NOT deleted — only the grouping is removed.
-    pub fn delete_draft(&self, name: &str) -> Result<()> {
+    pub fn delete_concept(&self, name: &str) -> Result<()> {
         self.conn.execute(
-            "DELETE FROM drafts WHERE name = ?1",
+            "DELETE FROM concepts WHERE name = ?1",
             params![name.trim()],
         )?;
         Ok(())
     }
 
-    /// Add one entry to a draft. Uses `INSERT OR IGNORE` so it is safe
+    /// Add one entry to a concept. Uses `INSERT OR IGNORE` so it is safe
     /// to call on already-existing members. Returns `true` if the row
     /// was newly inserted, `false` if it was already present.
-    pub fn add_draft_member(&self, draft_id: &str, entry_id: &str) -> Result<bool> {
+    pub fn add_concept_member(&self, concept_id: &str, entry_id: &str) -> Result<bool> {
         let changed = self.conn.execute(
-            "INSERT OR IGNORE INTO draft_members (draft_id, entry_id) VALUES (?1, ?2)",
-            params![draft_id, entry_id],
+            "INSERT OR IGNORE INTO concept_members (concept_id, entry_id) VALUES (?1, ?2)",
+            params![concept_id, entry_id],
         )?;
         Ok(changed == 1)
     }
 
-    /// Remove one entry from a draft (no-op if not a member).
-    pub fn remove_draft_member(&self, draft_id: &str, entry_id: &str) -> Result<()> {
+    /// Remove one entry from a concept (no-op if not a member).
+    pub fn remove_concept_member(&self, concept_id: &str, entry_id: &str) -> Result<()> {
         self.conn.execute(
-            "DELETE FROM draft_members WHERE draft_id = ?1 AND entry_id = ?2",
-            params![draft_id, entry_id],
+            "DELETE FROM concept_members WHERE concept_id = ?1 AND entry_id = ?2",
+            params![concept_id, entry_id],
         )?;
         Ok(())
     }
 
-    /// Fetch all entries belonging to a draft, ordered by entry id.
-    pub fn get_draft_members(&self, draft_id: &str) -> Result<Vec<Entry>> {
+    /// Fetch all entries belonging to a concept, ordered by entry id.
+    pub fn get_concept_members(&self, concept_id: &str) -> Result<Vec<Entry>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT e.id, e.word, e.variant, e.kind, e.language, e.describe, e.concept,
                     e.body, e.body_nom, e.input_type, e.output_type, e.pre, e.post,
                     e.status, e.translation_score, e.is_canonical, e.deprecated_by,
                     e.created_at, e.updated_at, e.body_kind, e.body_bytes
              FROM entries e
-             JOIN draft_members dm ON dm.entry_id = e.id
-             WHERE dm.draft_id = ?1
+             JOIN concept_members cm ON cm.entry_id = e.id
+             WHERE cm.concept_id = ?1
              ORDER BY e.id",
         )?;
         let rows = stmt
-            .query_map(params![draft_id], row_to_entry)?
+            .query_map(params![concept_id], row_to_entry)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Return the count of members in a draft.
-    pub fn count_draft_members(&self, draft_id: &str) -> Result<usize> {
+    /// Return the count of members in a concept.
+    pub fn count_concept_members(&self, concept_id: &str) -> Result<usize> {
         let n: i64 = self.conn.query_row(
-            "SELECT COUNT(*) FROM draft_members WHERE draft_id = ?1",
-            params![draft_id],
+            "SELECT COUNT(*) FROM concept_members WHERE concept_id = ?1",
+            params![concept_id],
             |row| row.get(0),
         )?;
         Ok(n as usize)
     }
 
-    /// Bulk-add every entry matching `filter` to the draft identified by
-    /// `draft_id`. Returns the count of rows newly inserted (entries
-    /// already in the draft are silently skipped).
-    pub fn add_draft_members_by_filter(
+    /// Bulk-add every entry matching `filter` to the concept identified by
+    /// `concept_id`. Returns the count of rows newly inserted (entries
+    /// already in the concept are silently skipped).
+    pub fn add_concept_members_by_filter(
         &self,
-        draft_id: &str,
+        concept_id: &str,
         filter: &EntryFilter,
     ) -> Result<usize> {
         let entries = self.find_entries(filter)?;
@@ -993,10 +1004,10 @@ impl NomDict {
         let mut added = 0usize;
         {
             let mut stmt = tx.prepare_cached(
-                "INSERT OR IGNORE INTO draft_members (draft_id, entry_id) VALUES (?1, ?2)",
+                "INSERT OR IGNORE INTO concept_members (concept_id, entry_id) VALUES (?1, ?2)",
             )?;
             for e in &entries {
-                let changed = stmt.execute(params![draft_id, e.id])?;
+                let changed = stmt.execute(params![concept_id, e.id])?;
                 if changed == 1 {
                     added += 1;
                 }
@@ -1068,8 +1079,8 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     })
 }
 
-fn row_to_draft(row: &rusqlite::Row) -> rusqlite::Result<Draft> {
-    Ok(Draft {
+fn row_to_concept(row: &rusqlite::Row) -> rusqlite::Result<Concept> {
+    Ok(Concept {
         id: row.get(0)?,
         name: row.get(1)?,
         describe: row.get(2)?,
@@ -1537,11 +1548,11 @@ mod tests {
         assert_eq!(capped[0], "partial-aaa");
     }
 
-    // ── Draft tests ───────────────────────────────────────────────────
+    // ── Concept tests ─────────────────────────────────────────────────
 
-    fn make_draft(name: &str) -> Draft {
-        Draft {
-            id: Draft::id_for(name),
+    fn make_concept(name: &str) -> Concept {
+        Concept {
+            id: Concept::id_for(name),
             name: name.to_string(),
             describe: None,
             created_at: "2026-04-12T00:00:00Z".to_string(),
@@ -1550,85 +1561,85 @@ mod tests {
     }
 
     #[test]
-    fn upsert_draft_roundtrips() {
+    fn upsert_concept_roundtrips() {
         let d = NomDict::open_in_memory().unwrap();
-        let draft = Draft {
-            id: Draft::id_for("cryptography"),
+        let concept = Concept {
+            id: Concept::id_for("cryptography"),
             name: "cryptography".to_string(),
             describe: Some("Hashing, signing, and encryption entries".to_string()),
             created_at: "2026-04-12T00:00:00Z".to_string(),
             updated_at: None,
         };
-        d.upsert_draft(&draft).unwrap();
+        d.upsert_concept(&concept).unwrap();
 
-        let fetched = d.get_draft_by_name("cryptography").unwrap().unwrap();
-        assert_eq!(fetched.id, draft.id);
+        let fetched = d.get_concept_by_name("cryptography").unwrap().unwrap();
+        assert_eq!(fetched.id, concept.id);
         assert_eq!(fetched.name, "cryptography");
         assert_eq!(fetched.describe.as_deref(), Some("Hashing, signing, and encryption entries"));
 
-        let all = d.list_drafts().unwrap();
+        let all = d.list_concepts().unwrap();
         assert_eq!(all.len(), 1);
 
         // Upsert again — idempotent, still only one row.
-        d.upsert_draft(&draft).unwrap();
-        let all2 = d.list_drafts().unwrap();
+        d.upsert_concept(&concept).unwrap();
+        let all2 = d.list_concepts().unwrap();
         assert_eq!(all2.len(), 1);
     }
 
     #[test]
-    fn add_draft_member_and_list() {
+    fn add_concept_member_and_list() {
         let d = NomDict::open_in_memory().unwrap();
 
         let entry = make_entry("entry-aaa", "sha256_hash");
         d.upsert_entry(&entry).unwrap();
 
-        let draft = make_draft("crypto");
-        d.upsert_draft(&draft).unwrap();
+        let concept = make_concept("crypto");
+        d.upsert_concept(&concept).unwrap();
 
         // First add returns true (newly inserted).
-        let added = d.add_draft_member(&draft.id, "entry-aaa").unwrap();
+        let added = d.add_concept_member(&concept.id, "entry-aaa").unwrap();
         assert!(added, "first add must return true");
 
         // Second add is a no-op.
-        let added2 = d.add_draft_member(&draft.id, "entry-aaa").unwrap();
+        let added2 = d.add_concept_member(&concept.id, "entry-aaa").unwrap();
         assert!(!added2, "duplicate add must return false");
 
         // Count reflects exactly 1.
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 1);
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 1);
 
-        // get_draft_members returns the entry.
-        let members = d.get_draft_members(&draft.id).unwrap();
+        // get_concept_members returns the entry.
+        let members = d.get_concept_members(&concept.id).unwrap();
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].word, "sha256_hash");
 
         // Remove and verify gone.
-        d.remove_draft_member(&draft.id, "entry-aaa").unwrap();
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 0);
+        d.remove_concept_member(&concept.id, "entry-aaa").unwrap();
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 0);
     }
 
     #[test]
-    fn delete_draft_cascades_members() {
+    fn delete_concept_cascades_members() {
         let d = NomDict::open_in_memory().unwrap();
 
         let entry = make_entry("e-x", "some_fn");
         d.upsert_entry(&entry).unwrap();
 
-        let draft = make_draft("image-codecs");
-        d.upsert_draft(&draft).unwrap();
-        d.add_draft_member(&draft.id, "e-x").unwrap();
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 1);
+        let concept = make_concept("image-codecs");
+        d.upsert_concept(&concept).unwrap();
+        d.add_concept_member(&concept.id, "e-x").unwrap();
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 1);
 
-        // Deleting the draft must cascade-delete member rows.
-        d.delete_draft("image-codecs").unwrap();
-        assert!(d.get_draft_by_name("image-codecs").unwrap().is_none());
+        // Deleting the concept must cascade-delete member rows.
+        d.delete_concept("image-codecs").unwrap();
+        assert!(d.get_concept_by_name("image-codecs").unwrap().is_none());
         // Entry itself must still exist.
         assert!(d.get_entry("e-x").unwrap().is_some());
-        // Membership count query for the (now-deleted) draft id returns 0.
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 0);
+        // Membership count query for the (now-deleted) concept id returns 0.
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 0);
     }
 
     #[test]
-    fn add_draft_members_by_filter_dedupes() {
+    fn add_concept_members_by_filter_dedupes() {
         let d = NomDict::open_in_memory().unwrap();
 
         for (id, lang) in [("r1", "rust"), ("r2", "rust"), ("py1", "python")] {
@@ -1637,21 +1648,21 @@ mod tests {
             d.upsert_entry(&e).unwrap();
         }
 
-        let draft = make_draft("rust-domain");
-        d.upsert_draft(&draft).unwrap();
+        let concept = make_concept("rust-domain");
+        d.upsert_concept(&concept).unwrap();
 
         let filter = EntryFilter {
             language: Some("rust".to_string()),
             limit: 50,
             ..EntryFilter::default()
         };
-        let added = d.add_draft_members_by_filter(&draft.id, &filter).unwrap();
+        let added = d.add_concept_members_by_filter(&concept.id, &filter).unwrap();
         assert_eq!(added, 2, "two rust entries should be added");
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 2);
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 2);
 
         // Running again must not double-count.
-        let added2 = d.add_draft_members_by_filter(&draft.id, &filter).unwrap();
+        let added2 = d.add_concept_members_by_filter(&concept.id, &filter).unwrap();
         assert_eq!(added2, 0, "re-run must add 0 (all already members)");
-        assert_eq!(d.count_draft_members(&draft.id).unwrap(), 2);
+        assert_eq!(d.count_concept_members(&concept.id).unwrap(), 2);
     }
 }
