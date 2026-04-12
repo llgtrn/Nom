@@ -323,6 +323,49 @@ impl NomDict {
         Ok(entry.id.clone())
     }
 
+    /// §5.17.2 bulk-ingestion path: try-insert without a prior
+    /// existence check. Returns `true` if the row was newly inserted,
+    /// `false` if the `id` already existed and the INSERT was a
+    /// no-op.
+    ///
+    /// Unlike `upsert_entry`, this does NOT replace on conflict — the
+    /// existing row is preserved. Designed for the corpus-ingest path
+    /// where duplicates are expected (dedup is the point) and we
+    /// don't want the overhead of a SELECT-then-INSERT.
+    pub fn upsert_entry_if_new(&self, entry: &Entry) -> Result<bool> {
+        let changed = self.conn.execute(
+            "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe, concept,
+                                            body, body_nom, input_type, output_type, pre, post,
+                                            status, translation_score, is_canonical, deprecated_by,
+                                            created_at, updated_at, body_kind, body_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+            params![
+                entry.id,
+                entry.word,
+                entry.variant,
+                entry.kind.as_str(),
+                entry.language,
+                entry.describe,
+                entry.concept,
+                entry.body,
+                entry.body_nom,
+                entry.contract.input_type,
+                entry.contract.output_type,
+                entry.contract.pre,
+                entry.contract.post,
+                entry.status.as_str(),
+                entry.translation_score,
+                entry.is_canonical,
+                entry.deprecated_by,
+                entry.created_at,
+                entry.updated_at,
+                entry.body_kind,
+                entry.body_bytes,
+            ],
+        )?;
+        Ok(changed == 1)
+    }
+
     /// Insert or replace the `entry_scores` row for an entry.
     pub fn set_scores(&self, id: &str, scores: &EntryScores) -> Result<()> {
         self.conn.execute(
@@ -962,6 +1005,26 @@ mod tests {
             plan_text.contains("USING INDEX") || plan_text.contains("USING COVERING INDEX"),
             "query plan did not use any index: {plan_text}"
         );
+    }
+
+    /// §5.17.2: upsert_entry_if_new returns true on first insert, false on
+    /// duplicate id, and true again for a distinct id.
+    #[test]
+    fn upsert_entry_if_new_deduplicates() {
+        let d = NomDict::open_in_memory().unwrap();
+
+        let a = make_entry("id-a", "alpha");
+        assert!(d.upsert_entry_if_new(&a).unwrap(), "first insert must return true");
+        assert_eq!(d.count().unwrap(), 1);
+
+        // Same id again — INSERT OR IGNORE is a no-op.
+        assert!(!d.upsert_entry_if_new(&a).unwrap(), "duplicate id must return false");
+        assert_eq!(d.count().unwrap(), 1, "row count unchanged after duplicate");
+
+        // Different id — fresh insert.
+        let b = make_entry("id-b", "beta");
+        assert!(d.upsert_entry_if_new(&b).unwrap(), "distinct id must return true");
+        assert_eq!(d.count().unwrap(), 2);
     }
 
     /// §4.4.6: NomDict::find_by_body_kind filters to entries with the

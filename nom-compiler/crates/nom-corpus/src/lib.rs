@@ -281,9 +281,9 @@ pub struct IngestReport {
 /// KiB it is skipped (likely a binary asset).  All other files ≤ 2 MiB
 /// are ingested.
 ///
-/// Duplicate detection: if `dict.get_entry(sha256_hex)` already returns
-/// `Some(_)`, the file is counted as a duplicate and skipped (no
-/// re-upsert). This is cheap because the row already exists.
+/// Duplicate detection: uses `INSERT OR IGNORE` — if a row with the same
+/// SHA-256 id already exists, the insert is a no-op and the file is counted
+/// as a duplicate. No prior SELECT is issued.
 pub fn ingest_directory(
     path: &std::path::Path,
     dict: &nom_dict::NomDict,
@@ -376,19 +376,6 @@ fn ingest_directory_with_conn(
         hasher.update(&bytes);
         let id = format!("{:x}", hasher.finalize());
 
-        // Dedup: skip if already present.
-        match dict.get_entry(&id) {
-            Ok(Some(_)) => {
-                report.duplicates += 1;
-                continue;
-            }
-            Ok(None) => {}
-            Err(_) => {
-                report.files_skipped += 1;
-                continue;
-            }
-        }
-
         // Build word: language prefix + cleaned file stem, ≤ 60 chars.
         let stem = entry
             .path()
@@ -443,13 +430,17 @@ fn ingest_directory_with_conn(
             updated_at: None,
         };
 
-        match dict.upsert_entry(&e) {
-            Ok(_) => {
+        match dict.upsert_entry_if_new(&e) {
+            Ok(true) => {
                 *report.per_language.entry(lang.to_owned()).or_insert(0) += 1;
                 report.files_ingested += 1;
                 report.bytes_ingested += file_bytes_len;
             }
-            Err(_) => {
+            Ok(false) => {
+                report.duplicates += 1;
+            }
+            Err(e) => {
+                eprintln!("nom: upsert error for {id}: {e}");
                 report.files_skipped += 1;
             }
         }
