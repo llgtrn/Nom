@@ -26,6 +26,7 @@ nom-translate = { path = "../nom-translate" }
 nom-graph = { path = "../nom-graph" }
 nom-search = { path = "../nom-search" }
 nom-llvm = { path = "../nom-llvm" }
+nom-media = { path = "../nom-media" }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde_json = { workspace = true }

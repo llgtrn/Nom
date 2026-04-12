@@ -17,6 +17,7 @@
 //!   nom fmt <path>      — format .nom source files with canonical style
 
 mod fmt;
+mod media;
 mod store;
 
 use clap::{Parser, Subcommand};
@@ -311,6 +312,12 @@ enum Commands {
         #[command(subcommand)]
         action: StoreCmd,
     },
+
+    /// Ingest media files via the §5.16 codec landings.
+    Media {
+        #[command(subcommand)]
+        action: MediaCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -389,6 +396,20 @@ enum StoreCmd {
         #[arg(long, default_value_t = 50)]
         limit: usize,
         /// Emit one JSON record per line
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
+enum MediaCmd {
+    /// Ingest a single file. Detects format from extension; dispatches
+    /// to the matching nom-media codec ingester. Prints metadata + the
+    /// canonical-bytes size. Does NOT yet persist to the dict.
+    Import {
+        /// Path to the media file
+        path: PathBuf,
+        /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
     },
@@ -493,6 +514,9 @@ fn main() {
             StoreCmd::List { dict, body_kind, limit, json } => {
                 store::cmd_store_list(&dict, body_kind.as_deref(), limit, json)
             }
+        },
+        Commands::Media { action } => match action {
+            MediaCmd::Import { path, json } => media::cmd_media_import(&path, json),
         },
     };
     process::exit(exit_code);
