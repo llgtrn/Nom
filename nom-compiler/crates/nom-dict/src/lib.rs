@@ -615,6 +615,54 @@ impl NomDict {
         Ok(rows)
     }
 
+    /// Case-insensitive substring search on the `describe` column.
+    /// Used by the MCP `search_nomtu` tool so an LLM can find entries
+    /// by what they do (e.g. `query = "sha256"` returns anything whose
+    /// describe mentions SHA-256 hashing).
+    pub fn search_describe(&self, query: &str, limit: usize) -> Result<Vec<Entry>> {
+        let pattern = format!("%{}%", query);
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                    input_type, output_type, pre, post, status, translation_score,
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes
+             FROM entries
+             WHERE describe LIKE ?1 COLLATE NOCASE
+             ORDER BY id
+             LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![pattern, limit as i64], row_to_entry)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Resolve a hash prefix (≥ 8 hex chars) to a full 64-char id.
+    /// Returns `Ok(id)` on unique match, `Err(msg)` on not-found or ambiguous.
+    pub fn resolve_prefix(&self, hash: &str) -> Result<String> {
+        use anyhow::bail;
+        if hash.len() < 8 {
+            bail!("hash prefix too short (need ≥ 8 hex chars): {hash}");
+        }
+        if !hash.chars().all(|c| c.is_ascii_hexdigit()) {
+            bail!("not a valid hex prefix: {hash}");
+        }
+        let pattern = format!("{hash}%");
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id",
+        )?;
+        let ids: Vec<String> = stmt
+            .query_map([pattern], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        match ids.len() {
+            0 => bail!("no entry matching prefix {hash}"),
+            1 => Ok(ids.into_iter().next().unwrap()),
+            _ => {
+                let candidates = ids.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
+                bail!("hash prefix {hash} is ambiguous ({} candidates): {candidates}", ids.len())
+            }
+        }
+    }
+
     /// Parallel to [`nom_resolver::Resolver::find_by_body_kind`] but on
     /// the v2 DIDS store — used by `nom build <hash>` closure walks to
     /// filter to entries with the right canonical format (e.g. only

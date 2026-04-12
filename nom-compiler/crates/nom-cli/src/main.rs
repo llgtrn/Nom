@@ -18,6 +18,7 @@
 
 mod corpus;
 mod fmt;
+mod mcp;
 mod media;
 mod store;
 
@@ -325,6 +326,15 @@ enum Commands {
         #[command(subcommand)]
         action: CorpusCmd,
     },
+
+    /// Start the Model Context Protocol server on stdio. LLMs connect
+    /// to query the dict and discover nomtu words for use in .nom source.
+    /// Speaks line-delimited JSON-RPC 2.0 (MCP 2024-11-05).
+    Mcp {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -615,6 +625,7 @@ fn main() {
                 corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json)
             }
         },
+        Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
     };
     process::exit(exit_code);
 }
