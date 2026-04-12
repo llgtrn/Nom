@@ -414,11 +414,11 @@ Plus a refactor of the existing `nom build`:
 
 #### 5.0a Scaffolding status (2026-04-12 late, this-session)
 
-Phase-5 introduces six new workspace crates. All six are now **scaffolded** (skeleton types + mapping helpers + drift-prevention tests; not yet functionally wired). Status:
+Phase-5 introduces six new workspace crates. All six are **scaffolded**; `nom-media` additionally has the full **§5.16.13 codec roadmap landed** (10 of 10 entries). Status:
 
-| Crate | § | Scaffolded | Functional work still pending |
+| Crate | § | Scaffolded | Functional work |
 |---|---|---|---|
-| `nom-media` | §5.16 | ✅ | codec ingestion, codec PRs (§5.16.13 order #1 = PNG) |
+| `nom-media` | §5.16 | ✅ | ✅ All 10 §5.16.13 codecs landed (PNG/FLAC/JPEG real re-encode; Opus/AVIF/AV1/AAC identity-mapped; WebM/MP4 muxers; HEVC decode-only). 56 tests. Pending: real encoders for the 4 identity-mapped codecs, `nom media render` CLI, §5.16.11 FFI tier if/when needed. |
 | `nom-ux` | §5.11 | ✅ | platform extractors (react/vue/etc.), Dioxus specialization edges |
 | `nom-corpus` | §5.17 | ✅ | per-ecosystem drivers, checkpointing, bandwidth throttling |
 | `nom-bench` | §5.13 | ✅ | runner + typed side-table storage |
