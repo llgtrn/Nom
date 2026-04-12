@@ -236,7 +236,7 @@ pub fn compile_app_to_artifacts_with_dict(
             OutputAspect::Flow => build_flow_aspect(manifest, dict)?,
             OutputAspect::Criteria => build_criteria_aspect(manifest, dict)?,
             OutputAspect::Optimize => build_optimize_aspect(manifest, dict)?,
-            OutputAspect::Core => Vec::new(),
+            OutputAspect::Core => build_core_aspect(manifest, dict)?,
         };
         out.push(Artifact {
             aspect,
@@ -942,6 +942,64 @@ fn compute_app_score(
     (breadth + completeness + tests + cleanliness).round() as u32
 }
 
+/// Core aspect populator — v0 "linker input bundle" format.
+///
+/// Until the LLVM linker wires through, `app.bin` / `app.wasm` /
+/// `app.apk` is a JSON bill-of-materials (BOM) the future linker
+/// will consume. Format:
+/// ```json
+/// {
+///   "format": "nom-bom-v0",
+///   "app": "<name>",
+///   "manifest_hash": "<hex>",
+///   "target": "web|desktop|mobile",
+///   "entries": [
+///     {"entry_id": "<hex>", "word": "...", "body_kind": "bc", "body_bytes_len": N}
+///   ],
+///   "total_bc_bytes": N
+/// }
+/// ```
+/// The BOM fixes what would be linked + in what order. The `body_bytes`
+/// themselves stay in the dict (content-addressed) rather than being
+/// copied into the BOM — keeps output small even for big apps.
+fn build_core_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+
+    #[derive(serde::Serialize)]
+    struct BomEntry<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        body_kind: Option<&'a str>,
+        body_bytes_len: usize,
+    }
+
+    let bom: Vec<BomEntry> = entries
+        .iter()
+        .filter(|e| e.body_kind.as_deref() == Some(nom_types::body_kind::BC))
+        .map(|e| BomEntry {
+            entry_id: &e.id,
+            word: &e.word,
+            body_kind: e.body_kind.as_deref(),
+            body_bytes_len: e.body_bytes.as_ref().map(|b| b.len()).unwrap_or(0),
+        })
+        .collect();
+    let total_bc_bytes: usize = bom.iter().map(|e| e.body_bytes_len).sum();
+
+    let doc = serde_json::json!({
+        "format": "nom-bom-v0",
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "target": manifest.default_target,
+        "entries": bom,
+        "total_bc_bytes": total_bc_bytes,
+        "note": "JSON BOM until LLVM linker lands; downstream consumes body_bytes from dict by entry_id",
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
 fn build_optimize_aspect(
     manifest: &AppManifest,
     dict: &nom_dict::NomDict,
@@ -1625,6 +1683,60 @@ mod tests {
         // exact word match should be top-scored (3)
         assert_eq!(first.dict_hints[0].match_score, 3);
         assert_eq!(first.dict_hints[0].word, "needs_post");
+    }
+
+    #[test]
+    fn core_aspect_emits_bom_v0_with_bc_entries_only() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let mk = |id: &str, kind_tag: Option<&str>, size: usize| Entry {
+            id: id.into(),
+            word: id.into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: Some(vec![0u8; size]),
+            body_kind: kind_tag.map(str::to_string),
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&mk("a", Some("bc"), 1000)).unwrap();
+        dict.upsert_entry(&mk("b", Some("bc"), 500)).unwrap();
+        // Non-BC entry (png) should NOT appear in Core BOM.
+        dict.upsert_entry(&mk("img", Some("png"), 2048)).unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "core_demo".into(),
+            default_target: "desktop".into(),
+            root_page_hash: "a".into(),
+            data_sources: vec!["b".into(), "img".into()],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let core = arts.iter().find(|x| x.aspect == OutputAspect::Core).unwrap();
+        assert_eq!(core.path, "app.bin");
+        let doc: serde_json::Value = serde_json::from_slice(&core.bytes).unwrap();
+        assert_eq!(doc["format"], "nom-bom-v0");
+        assert_eq!(doc["app"], "core_demo");
+        assert_eq!(doc["target"], "desktop");
+        assert_eq!(doc["total_bc_bytes"], 1500);
+        let entries = doc["entries"].as_array().unwrap();
+        assert_eq!(entries.len(), 2, "PNG entry should be filtered out");
+        assert_eq!(entries[0]["body_kind"], "bc");
     }
 
     #[test]
