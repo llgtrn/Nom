@@ -2235,7 +2235,7 @@ If they differ, something in Stage 2's output was non-deterministic or Stage 2 h
 
 Secondary check: `nomc-s1` vs `nomc-s2` should differ only in metadata that the two compilers produce differently (timestamps, optimizer heuristics the Rust compiler made vs. the Nom compiler made). **Semantic equivalence** of `s1` and `s2` is required — bit-for-bit equality is not, because the two compilers are genuinely different programs. Only `s2 == s3` is the fixpoint requirement.
 
-Record all three binary hashes as a signed tuple in the dict: `(s1_hash, s2_hash, s3_hash, fixpoint_at_date, compiler_manifest_hash)`. This tuple is the proof-of-bootstrap record, never deleted, permanently referenced in `.archive/migration-notes/` and in the compiler's own `entry_meta`.
+Record all binary hashes + toolchain state as a signed tuple in the dict: `(s1_hash, s2_hash, s3_hash, fixpoint_at_date, compiler_manifest_hash, canonicalizer_version, rust_toolchain_channel, llvm_major_version)`. This tuple is the proof-of-bootstrap record, never deleted, permanently referenced in `.archive/migration-notes/` and in the compiler's own `entry_meta`. `canonicalizer_version` is required because the canonicalizer is part of the compilation function (see §5.10.1); changing it changes source-hash identity, so re-running the fixpoint on a different canonicalizer yields a logically different bootstrap. `rust_toolchain_channel` + `llvm_major_version` pin the Stage-0 frontends, both of which the fixpoint depends on per §10.3.1's prerequisite list.
 
 #### 10.3.2 The parity track — regression guard on arbitrary programs
 
