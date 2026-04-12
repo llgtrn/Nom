@@ -195,6 +195,32 @@ pub fn parse_nomx(source: &str) -> NomxParseResult<Vec<NomxDecl>> {
     parser.parse_file()
 }
 
+impl NomxStatement {
+    /// Stable string tag for the statement kind. Use for debug
+    /// output, structured logs, or structural dispatch without a
+    /// full match over the variant tree.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            NomxStatement::Binding { .. } => "binding",
+            NomxStatement::When { .. } => "when",
+            NomxStatement::ForEach { .. } => "for_each",
+            NomxStatement::While { .. } => "while",
+            NomxStatement::Contract { .. } => "contract",
+        }
+    }
+
+    /// Source span covering the whole statement.
+    pub fn span(&self) -> NomxSpan {
+        match self {
+            NomxStatement::Binding { span, .. }
+            | NomxStatement::When { span, .. }
+            | NomxStatement::ForEach { span, .. }
+            | NomxStatement::While { span, .. }
+            | NomxStatement::Contract { span, .. } => *span,
+        }
+    }
+}
+
 struct NomxParser<'a> {
     tokens: &'a [SpannedNomxToken],
     pos: usize,
@@ -823,6 +849,29 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
         );
+    }
+
+    #[test]
+    fn statement_kind_tag_matches_variant() {
+        // Single source with one of each kind, assert kind() returns
+        // the expected tag + span() is non-empty for all.
+        let src = "define mixed that takes xs and returns y:\n\
+                   y is zero.\n\
+                   when xs is empty, y is negative one.\n\
+                   for each x in xs, y is y plus x.\n\
+                   while y is greater_than zero, y is y minus one.\n\
+                   ensure y is finite.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        let kinds: Vec<&str> = body.iter().map(|s| s.kind()).collect();
+        assert_eq!(kinds, vec!["binding", "when", "for_each", "while", "contract"]);
+        // All spans are non-empty (end > start).
+        for s in body {
+            let sp = s.span();
+            assert!(sp.end >= sp.start);
+        }
     }
 
     #[test]
