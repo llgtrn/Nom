@@ -627,6 +627,59 @@ fn already_nom() -> integer { return 0 }
     }
 
     #[test]
+    fn write_proposals_to_dict_is_idempotent_and_lockstep() {
+        // Prove the §4.4.6 lockstep invariant: --write creates ONE
+        // concept + ONE entry + ONE membership per proposal, and
+        // re-running the same input doesn't duplicate rows.
+        use nom_dict::NomDict;
+
+        let dir = std::env::temp_dir().join(format!(
+            "nom-translate-write-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&dir).unwrap();
+        let dict_path = dir.join("nomdict.db");
+
+        // Minimal prose: one bullet under ## Sketch — yields exactly
+        // one TranslateProposal.
+        let text = "\
+# Smoke
+
+## Sketch
+
+- fetch recent activity
+";
+        let proposals = extract_prose_proposals(text);
+        assert_eq!(proposals.len(), 1);
+
+        // First write: one new entry.
+        let n1 = write_proposals_to_dict(&proposals, &dict_path).unwrap();
+        assert_eq!(n1, 1, "first write should insert 1 new entry");
+
+        // Verify: dict has the expected row structure.
+        let d = NomDict::open_in_place(&dict_path).unwrap();
+        let concepts = d.list_concepts().unwrap();
+        assert!(
+            concepts.iter().any(|c| c.name == "sketch"),
+            "expected `sketch` concept: {:?}",
+            concepts.iter().map(|c| &c.name).collect::<Vec<_>>()
+        );
+        let entries = d.find_by_word("fetch_recent_activity").unwrap();
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].status, nom_types::EntryStatus::Partial);
+
+        // Idempotent: re-running gives zero new inserts.
+        let n2 = write_proposals_to_dict(&proposals, &dict_path).unwrap();
+        assert_eq!(n2, 0, "second write should be a no-op");
+
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
     fn author_start_refuses_overwrite() {
         let dir = std::env::temp_dir().join(format!("nom-author-test-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
