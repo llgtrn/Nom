@@ -296,29 +296,36 @@ coexists with the C-like grammar — no existing code paths touched.
 - Tests: 12/12 green including hello.nomx round-trip + role
   classification of all 34 variants.
 
-### Parser (`nom_parser::nomx`, ~400 LOC)
+### Parser (`nom_parser::nomx`, ~600 LOC)
 
-Three declaration forms:
+Four declaration forms (3 block + 1 sentence):
 
-- `define <name> that takes <param> and returns <ret>:` + body
+- `define <name> that takes <param> and returns <ret>:` + body (block)
 - `record <name> holds:` + `<field> is <type_tokens>.` fields
 - `choice <name> is one of:` + variant list
+- `to <verb>, respond with <expr>.` sentence-form (lowered to Define)
 
-Two body-statement forms:
+Four body-statement forms:
 
 - `<subject> is <rhs_tokens>.` binding
 - `when <cond>, <then>. otherwise, <else>.` conditional
+- `unless <cond>, <then>.` (sugar for `when not`; Not prepended to
+  cond_tokens so downstream AST is uniform)
+- `for each <var> in|of <coll>, <body>.` iteration
+- `while <cond>, <body>.` loop
 
-AST types: `NomxDecl` (3 variants) + `NomxStatement` (2 variants) +
+AST types: `NomxDecl` (3 variants — to-oneliner lowers to Define) +
+`NomxStatement` (4 variants: Binding, When, ForEach, While) +
 `NomxRecordField` + `NomxChoiceVariant`, all carrying spans.
 
 Expression parsing within `rhs_tokens` / `cond_tokens` etc. captures
 the raw token sequence. Typed expression tree lands with the type
 system — this keeps the AST shape stable while grammar bells grow.
 
-Tests: 14/14 green. Covers every decl form + error paths (missing
-name, missing colon). Includes end-to-end parse of
-`examples/todo_app.nomx` (5 decls: 1 record + 1 choice + 3 defines).
+Tests: 19/19 green. Covers every decl form + every statement form +
+error paths (missing name, missing colon, etc.). Includes end-to-end
+parse of three shipped samples (hello.nomx, todo_app.nomx,
+greet_sentence.nomx).
 
 ### Samples
 
@@ -329,8 +336,12 @@ name, missing colon). Includes end-to-end parse of
 
 ### What's still missing
 
-- Expression parsing inside rhs_tokens (requires type system).
-- `for each / while` iteration (deferred; typed ranges).
+- Expression parsing inside rhs_tokens (requires type system —
+  today the RHS captures raw tokens verbatim).
+- Inline contract phrases (`when given ..., ensure ...`) per §4.4
+  contract block.
+- Canonical type phrases per §4.5 (`a number`, `a piece of text`,
+  `a maybe-<T>`) — parser tokens already exist, lowering doesn't.
 - Vietnamese aliases (milestone 3 per §8).
 - Type inference / checker (phase after expression tree lands).
 - Lowering to LLVM bitcode via the existing planner+codegen.
