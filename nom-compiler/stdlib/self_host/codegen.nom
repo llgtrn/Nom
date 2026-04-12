@@ -62,3 +62,36 @@ fn is_empty_source(gs: GeneratedSource) -> bool {
 fn default_entry_symbol() -> text {
   return "nom_main"
 }
+
+# Canonical Rust-target strings emitted by codegen lowering. The Nom
+# reference emits only these three primitive types today; the real
+# lowering maps Nom `integer` / `text` / `bool` to these. Matches the
+# Rust codegen's `TypeRef::Primitive` arm.
+fn rust_ty_i64() -> text {
+  return "i64"
+}
+
+fn rust_ty_string() -> text {
+  return "String"
+}
+
+fn rust_ty_bool() -> text {
+  return "bool"
+}
+
+# Lowering helper: map a Nom type name to its Rust representation.
+# Scaffold form covers the three primitives; struct + enum mapping
+# arrives with the real lowering pass. Callers pass one of "integer",
+# "text", "bool"; anything else returns "()" (unit) as a safe default.
+fn lower_type(nom_ty: text) -> text {
+  if nom_ty == "integer" {
+    return rust_ty_i64()
+  }
+  if nom_ty == "text" {
+    return rust_ty_string()
+  }
+  if nom_ty == "bool" {
+    return rust_ty_bool()
+  }
+  return "()"
+}

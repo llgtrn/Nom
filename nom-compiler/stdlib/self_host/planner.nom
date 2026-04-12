@@ -71,6 +71,34 @@ fn is_empty_plan(plan: CompositionPlan) -> bool {
   return plan.entry_point_id == default_entry_point()
 }
 
+# Canonical edge-kind strings. Mirror what the Rust planner emits so
+# downstream consumers (verifier, codegen) see the same tag set.
+fn edge_kind_calls() -> text {
+  return "calls"
+}
+
+fn edge_kind_depends_on() -> text {
+  return "depends_on"
+}
+
+fn edge_kind_constrains() -> text {
+  return "constrains"
+}
+
+# Default on-fail strategy for a planned flow. Mirrors the Rust
+# reference's `default_on_fail() -> "abort"` — what a plan does when
+# a step raises without an explicit recovery clause.
+fn default_on_fail() -> text {
+  return "abort"
+}
+
+# Edge classifier: true iff `kind` is a call-graph edge the planner
+# topologically sorts on. `depends_on` and `constrains` are
+# informational and don't drive ordering.
+fn is_ordering_edge(kind: text) -> bool {
+  return kind == edge_kind_calls()
+}
+
 # Sketch of the graph-building helper the real planner needs. Not yet
 # callable; parser may not accept all of this. Marked aspirational.
 #
