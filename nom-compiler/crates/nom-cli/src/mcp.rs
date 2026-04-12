@@ -214,6 +214,20 @@ fn tools_list_response(id: Value) -> String {
                         "type": "object",
                         "properties": {}
                     }
+                },
+                {
+                    "name": "parse_nomx",
+                    "description": "Parse a .nomx (natural-language Nom) source string and return the declaration shape — decl count + per-decl {kind, name, field_count/variant_count/body_statement_count}. On error, returns a span-carrying diagnostic. Use to validate LLM-generated .nomx before writing it to disk.",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["source"],
+                        "properties": {
+                            "source": {
+                                "type": "string",
+                                "description": "Raw .nomx source text"
+                            }
+                        }
+                    }
                 }
             ]
         }),
@@ -237,6 +251,7 @@ fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> Str
         "get_concept" => call_get_concept(dict, id, &args),
         "criteria_proposals" => call_criteria_proposals(dict, id, &args),
         "dict_stats" => call_dict_stats(dict, id),
+        "parse_nomx" => call_parse_nomx(id, &args),
         _ => err_response(id, -32602, &format!("unknown tool: {name}")),
     }
 }
@@ -587,6 +602,101 @@ fn call_dict_stats(dict: &NomDict, id: Value) -> String {
             ]
         }),
     )
+}
+
+fn call_parse_nomx(id: Value, args: &Value) -> String {
+    use nom_parser::nomx::{NomxDecl, NomxStatement, parse_nomx};
+
+    let source = args
+        .get("source")
+        .and_then(|v| v.as_str())
+        .unwrap_or("");
+    if source.is_empty() {
+        return err_response(id, -32602, "missing required argument: source");
+    }
+
+    match parse_nomx(source) {
+        Ok(decls) => {
+            let summaries: Vec<Value> = decls
+                .iter()
+                .map(|d| match d {
+                    NomxDecl::Define { name, body, .. } => {
+                        let when_count = body
+                            .iter()
+                            .filter(|s| matches!(s, NomxStatement::When { .. }))
+                            .count();
+                        let binding_count = body.len() - when_count;
+                        json!({
+                            "kind": "define",
+                            "name": name,
+                            "body_binding_count": binding_count,
+                            "body_when_count": when_count,
+                        })
+                    }
+                    NomxDecl::Record { name, fields, .. } => json!({
+                        "kind": "record",
+                        "name": name,
+                        "field_count": fields.len(),
+                    }),
+                    NomxDecl::Choice { name, variants, .. } => json!({
+                        "kind": "choice",
+                        "name": name,
+                        "variant_count": variants.len(),
+                    }),
+                })
+                .collect();
+            let summary = format!(
+                "Parsed {} declaration(s): {}",
+                decls.len(),
+                decls
+                    .iter()
+                    .map(|d| match d {
+                        NomxDecl::Define { name, .. } => format!("define {name}"),
+                        NomxDecl::Record { name, .. } => format!("record {name}"),
+                        NomxDecl::Choice { name, .. } => format!("choice {name}"),
+                    })
+                    .collect::<Vec<_>>()
+                    .join(", ")
+            );
+            ok_response(
+                id,
+                json!({
+                    "content": [
+                        {"type": "text", "text": summary},
+                        {
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&json!({
+                                "decls": summaries,
+                                "decl_count": decls.len(),
+                            })).unwrap_or_default()
+                        }
+                    ]
+                }),
+            )
+        }
+        Err(e) => {
+            let msg = format!(
+                "Parse error at {}..{}: {}",
+                e.span.start, e.span.end, e.message
+            );
+            ok_response(
+                id,
+                json!({
+                    "content": [
+                        {"type": "text", "text": msg},
+                        {
+                            "type": "text",
+                            "text": serde_json::to_string_pretty(&json!({
+                                "error": e.message,
+                                "span": {"start": e.span.start, "end": e.span.end},
+                            })).unwrap_or_default()
+                        }
+                    ],
+                    "isError": true
+                }),
+            )
+        }
+    }
 }
 
 // ── JSON-RPC helpers ──────────────────────────────────────────────────
