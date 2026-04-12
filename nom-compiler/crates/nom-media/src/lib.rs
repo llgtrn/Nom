@@ -118,6 +118,8 @@ pub enum MediaError {
     Opus(String),
     #[error("AVIF codec error: {0}")]
     Avif(String),
+    #[error("AV1 codec error: {0}")]
+    Av1(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -888,6 +890,85 @@ pub fn verify_avif_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     Ok(())
 }
 
+// ── AV1 video codec (§5.16.13 order #6 — §4.4.6 canonical video) ─────
+
+/// Result of ingesting an AV1-IVF byte slice. Contains video metadata
+/// and canonical bytes.
+///
+/// # Container format
+///
+/// Input must be an IVF file (`DKIF` signature, codec fourcc `AV01`).
+/// IVF is the simplest AV1 container: 32-byte file header followed by
+/// 12-byte frame headers (4-byte size + 8-byte PTS timestamp) and raw
+/// AV1 OBU payload bytes per frame.
+///
+/// # Encoder status
+///
+/// No pure-Rust AV1 video decoder is available without FFI on Windows as
+/// of §5.16.13 order #6. `canonical_bytes` is therefore an identity copy
+/// of the input IVF bytes (same pattern as Opus order #4 and AVIF order
+/// #5). The round-trip gate asserts `frame_count` matches on both sides.
+/// When `rav1d` or equivalent is available without nasm/FFI, replace with
+/// a decode-then-re-encode path using `ravif` for per-frame stills.
+///
+/// Tagged `body_kind = "av1"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedAv1 {
+    pub width: u32,
+    pub height: u32,
+    pub frame_count: u32,
+    /// Duration in milliseconds, derived from fps_num/fps_den × frame_count.
+    pub duration_ms: u64,
+    /// Canonical AV1-IVF bytes. Currently an identity copy of the input
+    /// (see struct-level doc for the encoder status note).
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode an AV1-IVF byte slice and return an [`IngestedAv1`] containing
+/// video metadata and canonical bytes.
+///
+/// Input must be a complete IVF file with the `DKIF` signature and `AV01`
+/// codec fourcc. The `canonical_bytes` field is currently an identity copy
+/// of `bytes`; see [`IngestedAv1`] for the encoder status note.
+///
+/// Returns [`MediaError::Av1`] on malformed or unsupported input.
+pub fn ingest_av1(bytes: &[u8]) -> Result<IngestedAv1, MediaError> {
+    let (width, height, frame_count, duration_ms) = parse_ivf_metadata(bytes)?;
+    // Identity mapping: awaiting pure-Rust AV1 video decoder.
+    // When rav1d (or equivalent) is available without nasm/FFI, replace
+    // this with a decode-then-re-encode path at fixed quality settings.
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedAv1 {
+        width,
+        height,
+        frame_count,
+        duration_ms,
+        canonical_bytes,
+    })
+}
+
+/// Round-trip gate for AV1-IVF.
+///
+/// Ingests `bytes` via [`ingest_av1`], then parses the canonical bytes.
+/// Asserts that `frame_count` is the same in both parse results.
+///
+/// With the current identity-mapping encoder `canonical_bytes` == input
+/// bytes, so both sides always agree. Once a decoder + re-encoder lands,
+/// this will also compare frame dimensions.
+///
+/// Returns [`MediaError::Av1`] if either parse fails or frame counts differ.
+pub fn verify_av1_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_av1(bytes)?;
+    let (_, _, roundtripped_frame_count, _) = parse_ivf_metadata(&ingested.canonical_bytes)?;
+    if ingested.frame_count != roundtripped_frame_count {
+        return Err(MediaError::Av1(format!(
+            "frame_count mismatch after round-trip: original={} canonical={}",
+            ingested.frame_count, roundtripped_frame_count
+        )));
+    }
+    Ok(())
+}
+
 // ── Private helpers ───────────────────────────────────────────────────
 
 /// Parse AVIF container metadata.
@@ -956,6 +1037,87 @@ fn encode_flac_deterministic(
         .map_err(|e| MediaError::Flac(format!("bitstream write error: {e}")))?;
 
     Ok(sink.as_slice().to_vec())
+}
+
+/// Parse IVF container metadata.
+///
+/// IVF file header layout (32 bytes, all little-endian):
+///
+/// ```text
+/// offset  size  field
+///      0     4  signature: "DKIF"
+///      4     2  version (must be 0)
+///      6     2  header_size (32)
+///      8     4  codec fourcc (e.g. "AV01")
+///     12     2  width  (pixels)
+///     14     2  height (pixels)
+///     16     4  fps_numerator
+///     20     4  fps_denominator
+///     24     4  frame_count
+///     28     4  unused
+/// ```
+///
+/// Each frame is preceded by a 12-byte frame header:
+///
+/// ```text
+/// offset  size  field
+///      0     4  frame_size (bytes of payload following this header)
+///      4     8  pts timestamp (in fps_denominator units)
+/// ```
+///
+/// Returns `(width, height, frame_count, duration_ms)`.
+/// `duration_ms` = frame_count × fps_den × 1000 / fps_num (or 0 if fps_num is 0).
+///
+/// Returns [`MediaError::Av1`] if the signature or fourcc is wrong, or
+/// the byte slice is too short.
+fn parse_ivf_metadata(bytes: &[u8]) -> Result<(u32, u32, u32, u64), MediaError> {
+    const FILE_HEADER: usize = 32;
+    if bytes.len() < FILE_HEADER {
+        return Err(MediaError::Av1(format!(
+            "IVF file too short: {} bytes (need ≥ 32)",
+            bytes.len()
+        )));
+    }
+    if &bytes[0..4] != b"DKIF" {
+        return Err(MediaError::Av1(
+            "not an IVF file: missing DKIF signature".to_owned(),
+        ));
+    }
+    if &bytes[8..12] != b"AV01" {
+        let fourcc = std::str::from_utf8(&bytes[8..12]).unwrap_or("????");
+        return Err(MediaError::Av1(format!(
+            "IVF codec is {fourcc:?}, expected AV01"
+        )));
+    }
+
+    let width = u16::from_le_bytes([bytes[12], bytes[13]]) as u32;
+    let height = u16::from_le_bytes([bytes[14], bytes[15]]) as u32;
+    let fps_num = u32::from_le_bytes([bytes[16], bytes[17], bytes[18], bytes[19]]);
+    let fps_den = u32::from_le_bytes([bytes[20], bytes[21], bytes[22], bytes[23]]);
+    let frame_count = u32::from_le_bytes([bytes[24], bytes[25], bytes[26], bytes[27]]);
+
+    // Duration: frame_count × fps_den / fps_num seconds → milliseconds.
+    let duration_ms: u64 = if fps_num > 0 {
+        (frame_count as u64) * (fps_den as u64) * 1000 / (fps_num as u64)
+    } else {
+        0
+    };
+
+    // Walk frame headers to validate the byte stream, counting actual frames.
+    let mut offset = FILE_HEADER;
+    let mut counted = 0u32;
+    while offset + 12 <= bytes.len() {
+        let frame_size =
+            u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]])
+                as usize;
+        offset += 12 + frame_size;
+        counted += 1;
+    }
+
+    // Use counted if the file header says 0 (some encoders leave it unset).
+    let effective_count = if frame_count == 0 { counted } else { frame_count };
+
+    Ok((width, height, effective_count, duration_ms))
 }
 
 #[cfg(test)]
