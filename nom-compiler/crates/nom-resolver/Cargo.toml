@@ -5,6 +5,7 @@ edition.workspace = true
 
 [dependencies]
 nom-ast = { path = "../nom-ast" }
+nom-dict = { path = "../nom-dict" }
 nom-parser = { path = "../nom-parser" }
 nom-types = { path = "../nom-types" }
 rusqlite = { workspace = true }

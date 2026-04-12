@@ -403,6 +403,22 @@ impl NomDict {
         Ok(row)
     }
 
+    /// Look up every entry whose `word` column equals `word`. Returns an empty
+    /// vec when nothing matches (caller distinguishes NotFound from Ambiguous
+    /// based on the result length). Uses the `idx_entries_word` index.
+    pub fn find_by_word(&self, word: &str) -> Result<Vec<Entry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                    input_type, output_type, pre, post, status, translation_score,
+                    is_canonical, deprecated_by, created_at, updated_at
+             FROM entries WHERE word = ?1 ORDER BY id",
+        )?;
+        let rows = stmt
+            .query_map(params![word], row_to_entry)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Fetch all (key, value) metadata rows for an entry.
     pub fn get_meta(&self, id: &str) -> Result<Vec<(String, String)>> {
         let mut stmt = self

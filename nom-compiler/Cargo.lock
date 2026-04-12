@@ -571,6 +571,7 @@ name = "nom-resolver"
 version = "0.1.0"
 dependencies = [
  "nom-ast",
+ "nom-dict",
  "nom-parser",
  "nom-types",
  "rusqlite",
@@ -625,8 +626,10 @@ dependencies = [
 name = "nom-types"
 version = "0.1.0"
 dependencies = [
+ "nom-ast",
  "serde",
  "serde_json",
+ "sha2",
 ]
 
 [[package]]

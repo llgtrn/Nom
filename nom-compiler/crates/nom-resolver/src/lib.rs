@@ -7,6 +7,12 @@
 //!
 //! Schema (auto-created if missing): 48-column .nomtu format.
 //! See `init_schema()` for the full CREATE TABLE statement.
+//!
+//! Phase 4 B2 adds the [`v2`] module: a hash-identity resolver that
+//! operates against [`nom_dict::NomDict`] instead of the legacy schema.
+//! The two resolvers coexist; Task C will route new CLI commands to v2.
+
+pub mod v2;
 
 use nom_ast::NomRef;
 pub use nom_types::NomtuEntry;
