@@ -887,13 +887,18 @@ pub mod body_kind {
     /// Opus audio in the Matroska-flavoured container format. Distinct
     /// from raw AV1 IVF (`body_kind::AV1`) or Ogg-Opus (`body_kind::OPUS`).
     pub const WEBM: &str = "webm";
+    /// MP4/ISOBMFF container (§5.16.13 order #9). Carries AV1+AAC (or
+    /// legacy H.264+AAC) in the ISO Base Media File Format box structure.
+    /// Distinct from raw AV1 IVF (`body_kind::AV1`) or bare AAC
+    /// (`body_kind::AAC`).
+    pub const MP4: &str = "mp4";
 
     /// Every recognized body_kind tag, in a stable order. Use when
     /// enumerating kinds in help output, stats displays, or tests.
     /// MUST stay in sync with [`is_known`] — the test
     /// `body_kind_all_matches_is_known` locks the invariant.
     pub const ALL: &[&str] = &[
-        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM,
+        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4,
     ];
 
     /// Returns true if the string is a recognized body_kind tag.
@@ -926,6 +931,7 @@ pub mod body_kind {
             || eq(b, GLTF.as_bytes())
             || eq(b, PDF.as_bytes())
             || eq(b, WEBM.as_bytes())
+            || eq(b, MP4.as_bytes())
     }
 }
 
@@ -1114,7 +1120,7 @@ mod v2_tests {
                 "body_kind::ALL contains {tag} but is_known rejects it"
             );
         }
-        assert_eq!(body_kind::ALL.len(), 13); // update when growing the list
+        assert_eq!(body_kind::ALL.len(), 14); // update when growing the list
     }
 
     #[test]

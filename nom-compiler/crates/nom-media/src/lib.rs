@@ -124,6 +124,8 @@ pub enum MediaError {
     Aac(String),
     #[error("WebM codec error: {0}")]
     Webm(String),
+    #[error("MP4 codec error: {0}")]
+    Mp4(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -1766,6 +1768,346 @@ fn parse_webm_metadata(bytes: &[u8]) -> Result<(u64, Vec<WebmTrack>), MediaError
         // was found, the file is likely truncated or invalid.
         // We allow duration_ms == 0 (Duration element absent) but require
         // a valid EBML signature (checked above). Return what we have.
+    }
+
+    Ok((duration_ms, tracks))
+}
+
+// ── MP4/ISOBMFF container (§5.16.13 order #9) ────────────────────────
+
+/// A single track inside an MP4/ISOBMFF container.
+#[derive(Debug, Clone)]
+pub struct Mp4Track {
+    pub track_id: u32,
+    /// ISOBMFF `hdlr` handler_type fourcc, e.g. `"vide"`, `"soun"`, `"text"`.
+    pub handler_type: String,
+    /// Codec fourcc from the `stsd` sample-description box,
+    /// e.g. `"av01"`, `"mp4a"`, `"avc1"`, `"hvc1"`.
+    pub codec: String,
+}
+
+/// Result of ingesting an MP4/ISOBMFF byte slice.
+///
+/// `canonical_bytes` is currently an identity copy of `bytes`.
+/// No pure-Rust MP4 muxer with deterministic output is used yet;
+/// the identity mapping preserves round-trip correctness until one
+/// lands (same discipline as [`IngestedWebm`]).
+///
+/// Tagged `body_kind = "mp4"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedMp4 {
+    /// Duration in milliseconds derived from `moov/mvhd`
+    /// (`duration / timescale * 1000`). Zero if `mvhd` is absent.
+    pub duration_ms: u64,
+    pub tracks: Vec<Mp4Track>,
+    /// Identity copy of the input bytes; see struct-level doc.
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Parse an MP4/ISOBMFF byte slice and return an [`IngestedMp4`]
+/// containing duration, track list, and canonical bytes.
+///
+/// Uses a hand-rolled ISOBMFF box walker (no external crate) that
+/// recognises the minimal box set needed for track metadata:
+/// `ftyp`, `moov` → `mvhd` (duration+timescale), `trak`×N →
+/// `tkhd` (track_id) + `mdia` → `hdlr` (handler_type) +
+/// `minf` → `stbl` → `stsd` (codec fourcc).
+///
+/// Unknown boxes are skipped by their declared size. Both standard
+/// 32-bit and extended 64-bit (`size==1`) box sizes are handled.
+/// FullBox prefix (version + 24-bit flags) is consumed before the
+/// payload for all known FullBox types.
+///
+/// Returns [`MediaError::Mp4`] on malformed or truncated input.
+pub fn ingest_mp4(bytes: &[u8]) -> Result<IngestedMp4, MediaError> {
+    let (duration_ms, tracks) = parse_mp4_metadata(bytes)?;
+    // Identity mapping: awaiting pure-Rust ISOBMFF muxer.
+    // Future: replace with re-mux at fixed settings once available.
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedMp4 {
+        duration_ms,
+        tracks,
+        canonical_bytes,
+    })
+}
+
+/// Round-trip gate for MP4/ISOBMFF.
+///
+/// Ingests `bytes` via [`ingest_mp4`], then re-parses the canonical
+/// bytes. Asserts that `duration_ms`, track count, handler_types list,
+/// and codec list all match.
+///
+/// With the current identity-mapping encoder `canonical_bytes` == input
+/// bytes, so both sides always agree. Once a real muxer lands this will
+/// catch regressions where re-muxing changes container metadata.
+///
+/// Returns [`MediaError::Mp4`] if either parse fails or metadata
+/// does not match.
+pub fn verify_mp4_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_mp4(bytes)?;
+    let (rt_duration_ms, rt_tracks) = parse_mp4_metadata(&ingested.canonical_bytes)?;
+    if ingested.duration_ms != rt_duration_ms {
+        return Err(MediaError::Mp4(format!(
+            "duration_ms mismatch after round-trip: original={}ms canonical={}ms",
+            ingested.duration_ms, rt_duration_ms,
+        )));
+    }
+    if ingested.tracks.len() != rt_tracks.len() {
+        return Err(MediaError::Mp4(format!(
+            "track count mismatch after round-trip: original={} canonical={}",
+            ingested.tracks.len(),
+            rt_tracks.len(),
+        )));
+    }
+    let orig_handlers: Vec<&str> = ingested.tracks.iter().map(|t| t.handler_type.as_str()).collect();
+    let rt_handlers: Vec<&str> = rt_tracks.iter().map(|t| t.handler_type.as_str()).collect();
+    if orig_handlers != rt_handlers {
+        return Err(MediaError::Mp4(format!(
+            "handler_type list mismatch after round-trip: original={orig_handlers:?} canonical={rt_handlers:?}",
+        )));
+    }
+    let orig_codecs: Vec<&str> = ingested.tracks.iter().map(|t| t.codec.as_str()).collect();
+    let rt_codecs: Vec<&str> = rt_tracks.iter().map(|t| t.codec.as_str()).collect();
+    if orig_codecs != rt_codecs {
+        return Err(MediaError::Mp4(format!(
+            "codec list mismatch after round-trip: original={orig_codecs:?} canonical={rt_codecs:?}",
+        )));
+    }
+    Ok(())
+}
+
+/// Hand-rolled ISOBMFF box walker.
+///
+/// Box layout (ISO 14496-12 §4.2):
+/// ```text
+/// ┌──────────────┬────────────────────────────────────────────────────┐
+/// │ size (u32)   │  If == 0: box extends to EOF.                      │
+/// │              │  If == 1: extended size follows as u64.            │
+/// │              │  Otherwise: total box size in bytes.               │
+/// ├──────────────┤                                                    │
+/// │ type (4 bytes)│ ASCII fourcc.                                     │
+/// ├──────────────┴────────────────────────────────────────────────────┤
+/// │ [largesize (u64)]  — present only when size == 1                  │
+/// ├───────────────────────────────────────────────────────────────────┤
+/// │ payload                                                           │
+/// └───────────────────────────────────────────────────────────────────┘
+/// ```
+/// FullBox prepends `version (u8) + flags (u24)` to the payload.
+///
+/// Boxes parsed: `moov`, `mvhd`, `trak`, `tkhd`, `mdia`, `hdlr`,
+/// `minf`, `stbl`, `stsd`.
+///
+/// Returns `(duration_ms, tracks)`.
+fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> {
+    // ── helpers ──────────────────────────────────────────────────────
+
+    /// Read a big-endian u32 from `data[pos..]`.
+    fn read_u32(data: &[u8], pos: usize) -> Result<u32, &'static str> {
+        if pos + 4 > data.len() {
+            return Err("truncated u32");
+        }
+        Ok(u32::from_be_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]))
+    }
+
+    /// Read a big-endian u64 from `data[pos..]`.
+    fn read_u64(data: &[u8], pos: usize) -> Result<u64, &'static str> {
+        if pos + 8 > data.len() {
+            return Err("truncated u64");
+        }
+        Ok(u64::from_be_bytes([
+            data[pos], data[pos+1], data[pos+2], data[pos+3],
+            data[pos+4], data[pos+5], data[pos+6], data[pos+7],
+        ]))
+    }
+
+    /// Read the 4-byte ASCII fourcc at `data[pos..]`.
+    fn read_fourcc(data: &[u8], pos: usize) -> Result<[u8; 4], &'static str> {
+        if pos + 4 > data.len() {
+            return Err("truncated fourcc");
+        }
+        Ok([data[pos], data[pos+1], data[pos+2], data[pos+3]])
+    }
+
+    /// Decode a fourcc to a lossy ASCII string (non-ASCII → '?').
+    fn fourcc_str(cc: [u8; 4]) -> String {
+        cc.iter().map(|&b| if b.is_ascii() { b as char } else { '?' }).collect()
+    }
+
+    /// Read one box header from `data[pos..]`.
+    /// Returns `(fourcc, payload_start, box_end)`.
+    /// `payload_start` is the offset of the first payload byte
+    /// (after any largesize field).
+    fn read_box_header(
+        data: &[u8],
+        pos: usize,
+    ) -> Result<([u8; 4], usize, usize), &'static str> {
+        if pos + 8 > data.len() {
+            return Err("truncated box header");
+        }
+        let size32 = read_u32(data, pos)?;
+        let fourcc = read_fourcc(data, pos + 4)?;
+        let (payload_start, box_end) = if size32 == 1 {
+            // Extended 64-bit size follows the 8-byte standard header.
+            let size64 = read_u64(data, pos + 8)? as usize;
+            if size64 < 16 || pos + size64 > data.len() {
+                return Err("invalid extended box size");
+            }
+            (pos + 16, pos + size64)
+        } else if size32 == 0 {
+            // Box extends to EOF.
+            (pos + 8, data.len())
+        } else {
+            let size = size32 as usize;
+            if size < 8 || pos + size > data.len() {
+                return Err("invalid box size");
+            }
+            (pos + 8, pos + size)
+        };
+        Ok((fourcc, payload_start, box_end))
+    }
+
+    // ── Validate that the first box is recognizable MP4 ──────────────
+    // We accept files that start with 'ftyp' or directly with 'moov'
+    // (some muxers omit ftyp for streaming).
+    if bytes.len() < 8 {
+        return Err(MediaError::Mp4("file too short to be MP4".to_owned()));
+    }
+    let first_fourcc = read_fourcc(bytes, 4)
+        .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+    if first_fourcc != *b"ftyp" && first_fourcc != *b"moov" {
+        return Err(MediaError::Mp4(format!(
+            "not an MP4: first box is '{}', expected 'ftyp' or 'moov'",
+            fourcc_str(first_fourcc)
+        )));
+    }
+
+    // ── Top-level walk — find 'moov' ──────────────────────────────────
+    let mut duration_ms: u64 = 0;
+    let mut tracks: Vec<Mp4Track> = Vec::new();
+
+    let mut pos = 0usize;
+    while pos + 8 <= bytes.len() {
+        let (fourcc, payload_start, box_end) =
+            read_box_header(bytes, pos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+        if fourcc == *b"moov" {
+            // ── Walk moov children ────────────────────────────────────
+            let mut mpos = payload_start;
+            while mpos + 8 <= box_end {
+                let (mfcc, mp_start, m_end) =
+                    read_box_header(bytes, mpos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+                if mfcc == *b"mvhd" {
+                    // FullBox: skip version(1) + flags(3) = 4 bytes.
+                    let p = mp_start + 4;
+                    let version = bytes[mp_start];
+                    // version 0: creation(4)+modification(4)+timescale(4)+duration(4)
+                    // version 1: creation(8)+modification(8)+timescale(4)+duration(8)
+                    let (timescale, dur_raw) = if version == 0 {
+                        let ts = read_u32(bytes, p + 8)
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
+                        let dr = read_u32(bytes, p + 12)
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
+                        (ts, dr)
+                    } else {
+                        let ts = read_u32(bytes, p + 16)
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
+                        let dr = read_u64(bytes, p + 20)
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                        (ts, dr)
+                    };
+                    if timescale > 0 {
+                        duration_ms = dur_raw * 1000 / timescale;
+                    }
+                } else if mfcc == *b"trak" {
+                    // ── Walk trak children ────────────────────────────
+                    let mut track_id: u32 = 0;
+                    let mut handler_type = String::new();
+                    let mut codec = String::new();
+
+                    let mut tpos = mp_start;
+                    while tpos + 8 <= m_end {
+                        let (tfcc, tp_start, t_end) =
+                            read_box_header(bytes, tpos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+                        if tfcc == *b"tkhd" {
+                            // FullBox: version(1)+flags(3)
+                            let p = tp_start + 4;
+                            let version = bytes[tp_start];
+                            // version 0: creation(4)+modification(4)+track_id(4)
+                            // version 1: creation(8)+modification(8)+track_id(4)
+                            let id_offset = if version == 0 { p + 8 } else { p + 16 };
+                            track_id = read_u32(bytes, id_offset)
+                                .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                        } else if tfcc == *b"mdia" {
+                            // ── Walk mdia children ────────────────────
+                            let mut dpos = tp_start;
+                            while dpos + 8 <= t_end {
+                                let (dfcc, dp_start, d_end) =
+                                    read_box_header(bytes, dpos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+                                if dfcc == *b"hdlr" {
+                                    // FullBox: version(1)+flags(3)+pre_defined(4)+handler_type(4)
+                                    let p = dp_start + 4 + 4; // skip fullbox prefix + pre_defined
+                                    if p + 4 <= d_end {
+                                        let cc = read_fourcc(bytes, p)
+                                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                        handler_type = fourcc_str(cc);
+                                    }
+                                } else if dfcc == *b"minf" {
+                                    // ── Walk minf → stbl ─────────────
+                                    let mut ipos = dp_start;
+                                    while ipos + 8 <= d_end {
+                                        let (ifcc, ip_start, i_end) =
+                                            read_box_header(bytes, ipos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+                                        if ifcc == *b"stbl" {
+                                            // ── Walk stbl → stsd ─────
+                                            let mut spos = ip_start;
+                                            while spos + 8 <= i_end {
+                                                let (sfcc, sp_start, s_end) =
+                                                    read_box_header(bytes, spos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+
+                                                if sfcc == *b"stsd" {
+                                                    // FullBox: version(1)+flags(3)+entry_count(4)
+                                                    let ep = sp_start + 4 + 4;
+                                                    // First sample entry: size(4)+fourcc(4)+...
+                                                    if ep + 8 <= s_end {
+                                                        let cc = read_fourcc(bytes, ep + 4)
+                                                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                                        codec = fourcc_str(cc);
+                                                    }
+                                                }
+                                                if spos == s_end { break; }
+                                                spos = s_end;
+                                            }
+                                        }
+                                        if ipos == i_end { break; }
+                                        ipos = i_end;
+                                    }
+                                }
+                                if dpos == d_end { break; }
+                                dpos = d_end;
+                            }
+                        }
+                        if tpos == t_end { break; }
+                        tpos = t_end;
+                    }
+
+                    tracks.push(Mp4Track { track_id, handler_type, codec });
+                }
+                if mpos == m_end { break; }
+                mpos = m_end;
+            }
+        }
+
+        if pos == box_end { break; }
+        pos = box_end;
+    }
+
+    if tracks.is_empty() && duration_ms == 0 {
+        // Allow a file that has ftyp but an empty moov — return what we have.
+        // The caller decides if empty tracks is an error.
     }
 
     Ok((duration_ms, tracks))
