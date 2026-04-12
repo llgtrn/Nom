@@ -17,11 +17,28 @@ use nom_lexer::nomx::{NomxSpan, NomxToken, SpannedNomxToken, tokenize_nomx_with_
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum NomxDecl {
     /// `define <name> that takes <param> and returns <ret>:`
-    /// Body parsing deferred; head only for now.
+    /// followed by zero or more body statements, terminated at the
+    /// next `define` / `record` / `choice` keyword or EOF.
     Define {
         name: String,
         param: Option<String>,
         returns: Option<String>,
+        body: Vec<NomxStatement>,
+        span: NomxSpan,
+    },
+}
+
+/// One statement inside a declaration body. Scaffold-level AST —
+/// richer expression tree lands once the type system wires in.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum NomxStatement {
+    /// `<subject> is <rhs...>` — a binding. `subject` is a single
+    /// identifier; `rhs_tokens` captures the raw token sequence
+    /// until `.` or the next declaration. Lets us lock the parse
+    /// shape now; expression parsing arrives with the type system.
+    Binding {
+        subject: String,
+        rhs_tokens: Vec<NomxToken>,
         span: NomxSpan,
     },
 }
@@ -143,12 +160,75 @@ impl<'a> NomxParser<'a> {
 
         self.expect(&NomxToken::Colon, "`:` ending the declaration head")?;
 
+        let body = self.parse_body()?;
+
         let end = self.peek_span().start.max(start);
         Ok(NomxDecl::Define {
             name,
             param,
             returns,
+            body,
             span: NomxSpan::new(start, end),
+        })
+    }
+
+    /// Body of a declaration: zero or more statements until the next
+    /// top-level declaration keyword or EOF.
+    fn parse_body(&mut self) -> NomxParseResult<Vec<NomxStatement>> {
+        let mut out = Vec::new();
+        while !self.peek_is_body_terminator() {
+            let stmt = self.parse_statement()?;
+            out.push(stmt);
+        }
+        Ok(out)
+    }
+
+    fn peek_is_body_terminator(&self) -> bool {
+        matches!(
+            self.peek(),
+            NomxToken::Eof
+                | NomxToken::Define
+                | NomxToken::Record
+                | NomxToken::Choice
+        )
+    }
+
+    fn parse_statement(&mut self) -> NomxParseResult<NomxStatement> {
+        let start_span = self.peek_span();
+        // Scaffold: accept only `<subject> is <rhs...>`. Other forms
+        // (when/otherwise branches, return expressions, etc.) arrive
+        // with the type system. Unknown-shape = skip the token and
+        // continue; lets the parse gate accept real-world bodies even
+        // before every form is recognized.
+        let subject = match self.peek().clone() {
+            NomxToken::Identifier(n) => {
+                self.advance();
+                n
+            }
+            _ => {
+                return Err(NomxParseError {
+                    message: format!(
+                        "expected binding subject (identifier), found {:?}",
+                        self.peek()
+                    ),
+                    span: self.peek_span(),
+                });
+            }
+        };
+        self.expect(&NomxToken::Is, "`is` after binding subject")?;
+
+        let mut rhs_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            rhs_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+
+        Ok(NomxStatement::Binding {
+            subject,
+            rhs_tokens,
+            span: NomxSpan::new(start_span.start, self.peek_span().start),
         })
     }
 }
@@ -167,7 +247,10 @@ mod tests {
             param,
             returns,
             ..
-        } = &decls[0];
+        } = &decls[0]
+        else {
+            panic!("expected Define");
+        };
         assert_eq!(name, "greet");
         assert_eq!(param.as_deref(), Some("name"));
         assert_eq!(returns.as_deref(), Some("greeting"));
@@ -183,7 +266,10 @@ mod tests {
             param,
             returns,
             ..
-        } = &decls[0];
+        } = &decls[0]
+        else {
+            panic!("expected Define");
+        };
         assert_eq!(name, "noop");
         assert_eq!(*param, None);
         assert_eq!(*returns, None);
@@ -215,6 +301,47 @@ mod tests {
         let src = "define foo: define bar:";
         let decls = parse_nomx(src).unwrap();
         assert_eq!(decls.len(), 2);
+    }
+
+    #[test]
+    fn parses_binding_body() {
+        let src = "define greet:\n  greeting is \"hi\"";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        assert_eq!(body.len(), 1);
+        let NomxStatement::Binding { subject, rhs_tokens, .. } = &body[0];
+        assert_eq!(subject, "greeting");
+        assert!(
+            rhs_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::StringLit(s) if s == "hi")),
+            "expected StringLit in rhs, got: {rhs_tokens:?}"
+        );
+    }
+
+    #[test]
+    fn parses_multiple_bindings_separated_by_period() {
+        let src = "define foo:\n  x is \"a\".\n  y is \"b\".";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        assert_eq!(body.len(), 2);
+    }
+
+    #[test]
+    fn body_ends_at_next_declaration() {
+        let src = "define a_fn:\n  x is \"left\"\ndefine b_fn:\n  y is \"right\"";
+        let decls = parse_nomx(src).unwrap();
+        assert_eq!(decls.len(), 2);
+        for d in &decls {
+            let NomxDecl::Define { body, .. } = d else {
+                panic!("expected Define");
+            };
+            assert_eq!(body.len(), 1);
+        }
     }
 
     #[test]
