@@ -837,6 +837,24 @@ mod tests {
     }
 
     #[test]
+    fn while_without_comma_errors() {
+        // `while <cond>, <body>.` — dropped comma stops cond scan
+        // at `.`, then expect(Comma) fires pointing at the period.
+        let src = "define f:\n  while running. step.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`,` after `while` condition"),
+            "expected while-comma diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, ".",
+            "error span should point at the `.` that replaced the expected comma, got {at:?}"
+        );
+    }
+
+    #[test]
     fn when_without_comma_errors() {
         // `when <cond>, <then>` — dropping the comma (writing
         // `when flag. go.`) stops the cond scan at `.`, then the
