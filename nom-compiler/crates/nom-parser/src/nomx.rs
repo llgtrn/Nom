@@ -123,6 +123,16 @@ pub enum NomxStatement {
         else_tokens: Option<Vec<NomxToken>>,
         span: NomxSpan,
     },
+    /// `for each <var> in <collection>, <body>.` — iteration
+    /// statement. `var` is the loop-bound identifier; `in` and
+    /// `of` prepositions both accepted (`for each x of xs` OK).
+    /// Collection + body tokens captured verbatim.
+    ForEach {
+        var: String,
+        collection_tokens: Vec<NomxToken>,
+        body_tokens: Vec<NomxToken>,
+        span: NomxSpan,
+    },
 }
 
 /// Parse error for the `.nomx` parser. Carries the span of the
@@ -406,8 +416,62 @@ impl<'a> NomxParser<'a> {
         match self.peek() {
             NomxToken::When => self.parse_when_statement(false),
             NomxToken::Unless => self.parse_when_statement(true),
+            NomxToken::For => self.parse_for_each_statement(),
             _ => self.parse_binding_statement(),
         }
+    }
+
+    /// `for each <var> in <collection>, <body>.`
+    /// `in` and `of` prepositions are both accepted at the var/
+    /// collection boundary. The "each" identifier is consumed but
+    /// doesn't bind anything — it's English filler.
+    fn parse_for_each_statement(&mut self) -> NomxParseResult<NomxStatement> {
+        let start_span = self.peek_span();
+        self.expect(&NomxToken::For, "`for`")?;
+        // Optional `each` (identifier) — English filler.
+        if matches!(self.peek(), NomxToken::Identifier(n) if n == "each") {
+            self.advance();
+        }
+        let var = self.consume_identifier("loop variable after `for each`")?;
+        // Accept `in` (Identifier) or `of` (PrepositionalOperator).
+        match self.peek().clone() {
+            NomxToken::Of => {
+                self.advance();
+            }
+            NomxToken::Identifier(n) if n == "in" => {
+                self.advance();
+            }
+            _ => {
+                return Err(NomxParseError {
+                    message: format!(
+                        "expected `in` or `of` after loop variable, found {:?}",
+                        self.peek()
+                    ),
+                    span: self.peek_span(),
+                });
+            }
+        }
+        let mut collection_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator()
+            && self.peek() != &NomxToken::Comma
+            && self.peek() != &NomxToken::Period
+        {
+            collection_tokens.push(self.advance().token.clone());
+        }
+        self.expect(&NomxToken::Comma, "`,` after `for each` collection")?;
+        let mut body_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            body_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+        Ok(NomxStatement::ForEach {
+            var,
+            collection_tokens,
+            body_tokens,
+            span: NomxSpan::new(start_span.start, self.peek_span().start),
+        })
     }
 
     /// `<subject> is <rhs...>` optionally terminated by `.`.
@@ -660,6 +724,36 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
         );
+    }
+
+    #[test]
+    fn parses_for_each_iteration() {
+        // Two accepted forms: `in` and `of` at the boundary.
+        let a = parse_nomx("define sum:\n  for each x in xs, total is total plus x.").unwrap();
+        let NomxDecl::Define { body, .. } = &a[0] else {
+            panic!("expected Define");
+        };
+        let NomxStatement::ForEach { var, collection_tokens, body_tokens, .. } = &body[0] else {
+            panic!("expected ForEach, got {:?}", body[0]);
+        };
+        assert_eq!(var, "x");
+        assert!(
+            collection_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "xs"))
+        );
+        assert!(
+            body_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "total"))
+        );
+
+        // Same thing with `of`.
+        let b = parse_nomx("define sum:\n  for each x of xs, total is total plus x.").unwrap();
+        let NomxDecl::Define { body, .. } = &b[0] else {
+            panic!("expected Define");
+        };
+        assert!(matches!(body[0], NomxStatement::ForEach { .. }));
     }
 
     #[test]
