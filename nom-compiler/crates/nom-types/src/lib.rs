@@ -875,6 +875,7 @@ pub mod body_kind {
     pub const BC: &str = "bc";
     pub const AVIF: &str = "avif";
     pub const PNG: &str = "png";
+    pub const JPEG: &str = "jpeg";
     pub const AV1: &str = "av1";
     pub const AAC: &str = "aac";
     pub const FLAC: &str = "flac";
@@ -887,7 +888,7 @@ pub mod body_kind {
     /// MUST stay in sync with [`is_known`] — the test
     /// `body_kind_all_matches_is_known` locks the invariant.
     pub const ALL: &[&str] = &[
-        NOM_SOURCE, BC, AVIF, PNG, AV1, AAC, FLAC, WOFF2, GLTF, PDF,
+        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, WOFF2, GLTF, PDF,
     ];
 
     /// Returns true if the string is a recognized body_kind tag.
@@ -911,6 +912,7 @@ pub mod body_kind {
             || eq(b, BC.as_bytes())
             || eq(b, AVIF.as_bytes())
             || eq(b, PNG.as_bytes())
+            || eq(b, JPEG.as_bytes())
             || eq(b, AV1.as_bytes())
             || eq(b, AAC.as_bytes())
             || eq(b, FLAC.as_bytes())
@@ -1105,7 +1107,7 @@ mod v2_tests {
                 "body_kind::ALL contains {tag} but is_known rejects it"
             );
         }
-        assert_eq!(body_kind::ALL.len(), 10); // update when growing the list
+        assert_eq!(body_kind::ALL.len(), 11); // update when growing the list
     }
 
     #[test]

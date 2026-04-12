@@ -112,6 +112,8 @@ pub enum MediaError {
     Png(String),
     #[error("FLAC codec error: {0}")]
     Flac(String),
+    #[error("JPEG codec error: {0}")]
+    Jpeg(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -305,6 +307,101 @@ pub fn verify_flac_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     Ok(())
 }
 
+// ── JPEG codec (§5.16.13 order #3) ────────────────────────────────────
+
+/// Result of ingesting a JPEG byte slice. Contains decoded image
+/// dimensions, colour type, and canonical re-encoded bytes.
+///
+/// `canonical_bytes` are re-encoded at a fixed quality of **85** for
+/// determinism. Quality 85 was chosen as the standard "excellent" JPEG
+/// floor: it preserves perceptual fidelity (typical PSNR 35–45 dB on
+/// photographic content), keeps file sizes compact, and is the widely
+/// adopted default in tools such as Pillow, Lightroom, and ImageMagick.
+/// Lossless round-trip is intentionally not required; the
+/// [`verify_jpeg_roundtrip`] gate uses a PSNR threshold of ≥ 30 dB
+/// instead of pixel equality.
+#[derive(Debug, Clone)]
+pub struct IngestedJpeg {
+    pub width: u32,
+    pub height: u32,
+    /// Human-readable colour type label, e.g. `"rgb8"`, `"rgba8"`.
+    pub color_type: String,
+    /// Canonical re-encoded JPEG bytes at fixed quality 85.
+    /// Tagged `body_kind = "jpeg"` in the dict.
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode a JPEG byte slice and return an [`IngestedJpeg`] containing
+/// decoded dimensions, colour type, and deterministically re-encoded
+/// canonical bytes.
+///
+/// # Deterministic re-encode settings
+///
+/// Re-encoding uses quality **85** (fixed). The `image` crate JPEG
+/// encoder produces deterministic output for the same pixel data at a
+/// fixed quality level. Quality 85 is the canonical setting per
+/// §5.16.13 order #3: it reaches PSNR ≥ 35 dB on typical photographic
+/// input while keeping file sizes to ≈ 50 % of the lossless equivalent.
+///
+/// Returns [`MediaError::Jpeg`] on malformed or unsupported input.
+pub fn ingest_jpeg(bytes: &[u8]) -> Result<IngestedJpeg, MediaError> {
+    let reader = ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Jpeg);
+    let dyn_img = reader
+        .decode()
+        .map_err(|e| MediaError::Jpeg(e.to_string()))?;
+
+    let width = dyn_img.width();
+    let height = dyn_img.height();
+    let color_type_label = color_type_label(dyn_img.color());
+
+    let canonical_bytes = encode_jpeg_deterministic(&dyn_img)?;
+
+    Ok(IngestedJpeg {
+        width,
+        height,
+        color_type: color_type_label,
+        canonical_bytes,
+    })
+}
+
+/// Lossy round-trip gate for JPEG.
+///
+/// Decodes `bytes`, re-encodes via [`ingest_jpeg`], decodes the
+/// canonical bytes back to pixels, then computes the PSNR between the
+/// original and re-encoded pixel buffers. Returns `Ok(())` if
+/// PSNR ≥ 30 dB, which is the accepted floor for "acceptable JPEG"
+/// quality. At quality 85, typical photographic content scores
+/// 35–45 dB, well above the threshold.
+///
+/// Returns [`MediaError::Jpeg`] on decode/encode failure or if PSNR
+/// falls below the 30 dB threshold.
+pub fn verify_jpeg_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_jpeg(bytes)?;
+
+    // Decode original to RGBA8.
+    let original = ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Jpeg)
+        .decode()
+        .map_err(|e| MediaError::Jpeg(format!("original decode failed: {e}")))?;
+    let original_pixels = image_to_rgba8(&original);
+
+    // Decode canonical bytes back to RGBA8.
+    let roundtripped =
+        ImageReader::with_format(Cursor::new(&ingested.canonical_bytes), image::ImageFormat::Jpeg)
+            .decode()
+            .map_err(|e| MediaError::Jpeg(format!("round-trip decode failed: {e}")))?;
+    let roundtripped_pixels = image_to_rgba8(&roundtripped);
+
+    let score = psnr(&original_pixels, &roundtripped_pixels);
+    const THRESHOLD_DB: f64 = 30.0;
+    if score < THRESHOLD_DB {
+        return Err(MediaError::Jpeg(format!(
+            "PSNR {score:.2} dB is below {THRESHOLD_DB} dB threshold"
+        )));
+    }
+
+    Ok(())
+}
+
 // ── Private helpers ───────────────────────────────────────────────────
 
 fn color_type_label(ct: ColorType) -> String {
@@ -350,6 +447,56 @@ fn encode_png_deterministic(img: &image::DynamicImage) -> Result<Vec<u8>, MediaE
 /// Flatten any colour type to RGBA8 for pixel-equality comparison.
 fn image_to_rgba8(img: &image::DynamicImage) -> Vec<u8> {
     img.to_rgba8().into_raw()
+}
+
+/// Re-encode a `DynamicImage` to JPEG bytes at fixed quality 85.
+///
+/// The `image` crate JPEG encoder produces deterministic output for
+/// fixed quality and pixel input. Quality 85 is the canonical setting
+/// per §5.16.13 order #3.
+fn encode_jpeg_deterministic(img: &image::DynamicImage) -> Result<Vec<u8>, MediaError> {
+    use image::codecs::jpeg::JpegEncoder;
+    let mut out = Vec::new();
+    let encoder = JpegEncoder::new_with_quality(Cursor::new(&mut out), 85);
+    let width = img.width();
+    let height = img.height();
+    let color = img.color();
+    let raw = img.as_bytes();
+    encoder
+        .write_image(raw, width, height, ExtendedColorType::from(color))
+        .map_err(|e| MediaError::Jpeg(e.to_string()))?;
+    Ok(out)
+}
+
+/// Compute the Peak Signal-to-Noise Ratio between two RGBA8 pixel buffers.
+///
+/// Both slices must have the same length (asserted). The MSE is computed
+/// over all byte values (R, G, B, A channels flat). PSNR is defined as:
+///
+/// ```text
+/// PSNR = 10 × log₁₀(255² / MSE)
+/// ```
+///
+/// Returns `f64::INFINITY` if the inputs are identical (MSE = 0).
+fn psnr(a: &[u8], b: &[u8]) -> f64 {
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "psnr: buffers must have equal length"
+    );
+    if a == b {
+        return f64::INFINITY;
+    }
+    let mse: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(&x, &y)| {
+            let diff = (x as f64) - (y as f64);
+            diff * diff
+        })
+        .sum::<f64>()
+        / a.len() as f64;
+    10.0 * (255.0_f64 * 255.0 / mse).log10()
 }
 
 /// Decode a FLAC byte slice using `claxon` (pure-Rust decoder).
