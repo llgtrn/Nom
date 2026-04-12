@@ -968,17 +968,30 @@ pub mod self_host_tags {
     pub const EDGE_KIND_DEPENDS_ON: &str = "depends_on";
     pub const EDGE_KIND_CONSTRAINS: &str = "constrains";
 
+    /// All three edge-kind tags the planner emits.
+    pub const EDGE_KINDS_ALL: &[&str] = &[
+        EDGE_KIND_CALLS,
+        EDGE_KIND_DEPENDS_ON,
+        EDGE_KIND_CONSTRAINS,
+    ];
+
     // codegen.nom
     pub const RUST_TY_I64: &str = "i64";
     pub const RUST_TY_STRING: &str = "String";
     pub const RUST_TY_BOOL: &str = "bool";
     pub const DEFAULT_ENTRY_SYMBOL: &str = "nom_main";
 
+    /// All three Rust primitive-target strings codegen lowers to.
+    pub const RUST_TYS_ALL: &[&str] = &[RUST_TY_I64, RUST_TY_STRING, RUST_TY_BOOL];
+
     // verifier.nom
     pub const EFFECT_PURE: &str = "pure";
     pub const EFFECT_READS: &str = "reads";
     pub const EFFECT_WRITES: &str = "writes";
     pub const EFFECT_PANICS: &str = "panics";
+
+    /// All four effect tags the verifier annotates functions with.
+    pub const EFFECTS_ALL: &[&str] = &[EFFECT_PURE, EFFECT_READS, EFFECT_WRITES, EFFECT_PANICS];
 
     // parser.nom — the 10 top-level classifier keywords the Rust
     // lexer's Token::System…Token::View emits. Full set so the parser
@@ -1017,6 +1030,13 @@ pub mod self_host_tags {
     pub const PRIM_TYPE_INTEGER: &str = "integer";
     pub const PRIM_TYPE_TEXT: &str = "text";
     pub const PRIM_TYPE_BOOL: &str = "bool";
+
+    /// All three decl-kind tags the ast scaffold classifies.
+    pub const DECL_KINDS_ALL: &[&str] = &[DECL_KIND_FN, DECL_KIND_STRUCT, DECL_KIND_ENUM];
+
+    /// All three Nom primitive type names. Matches codegen's
+    /// lower_type() input domain one-for-one.
+    pub const PRIM_TYPES_ALL: &[&str] = &[PRIM_TYPE_INTEGER, PRIM_TYPE_TEXT, PRIM_TYPE_BOOL];
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]

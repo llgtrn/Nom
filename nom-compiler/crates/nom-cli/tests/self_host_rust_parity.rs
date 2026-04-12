@@ -108,6 +108,76 @@ fn classifiers_all_covers_each_individual_const() {
 }
 
 #[test]
+fn edge_kinds_all_covers_each_individual_const() {
+    for c in &[
+        tags::EDGE_KIND_CALLS,
+        tags::EDGE_KIND_DEPENDS_ON,
+        tags::EDGE_KIND_CONSTRAINS,
+    ] {
+        assert!(tags::EDGE_KINDS_ALL.contains(c), "EDGE_KINDS_ALL missing {c}");
+    }
+    assert_eq!(tags::EDGE_KINDS_ALL.len(), 3);
+}
+
+#[test]
+fn effects_all_covers_each_individual_const() {
+    for c in &[
+        tags::EFFECT_PURE,
+        tags::EFFECT_READS,
+        tags::EFFECT_WRITES,
+        tags::EFFECT_PANICS,
+    ] {
+        assert!(tags::EFFECTS_ALL.contains(c), "EFFECTS_ALL missing {c}");
+    }
+    assert_eq!(tags::EFFECTS_ALL.len(), 4);
+}
+
+#[test]
+fn rust_tys_all_covers_each_individual_const() {
+    for c in &[tags::RUST_TY_I64, tags::RUST_TY_STRING, tags::RUST_TY_BOOL] {
+        assert!(tags::RUST_TYS_ALL.contains(c), "RUST_TYS_ALL missing {c}");
+    }
+    assert_eq!(tags::RUST_TYS_ALL.len(), 3);
+}
+
+#[test]
+fn decl_kinds_all_covers_each_individual_const() {
+    for c in &[
+        tags::DECL_KIND_FN,
+        tags::DECL_KIND_STRUCT,
+        tags::DECL_KIND_ENUM,
+    ] {
+        assert!(tags::DECL_KINDS_ALL.contains(c), "DECL_KINDS_ALL missing {c}");
+    }
+    assert_eq!(tags::DECL_KINDS_ALL.len(), 3);
+}
+
+#[test]
+fn prim_types_all_covers_each_individual_const() {
+    for c in &[
+        tags::PRIM_TYPE_INTEGER,
+        tags::PRIM_TYPE_TEXT,
+        tags::PRIM_TYPE_BOOL,
+    ] {
+        assert!(tags::PRIM_TYPES_ALL.contains(c), "PRIM_TYPES_ALL missing {c}");
+    }
+    assert_eq!(tags::PRIM_TYPES_ALL.len(), 3);
+}
+
+/// Cross-check: codegen's RUST_TYS_ALL must be the same length as
+/// PRIM_TYPES_ALL — each Nom primitive must lower to exactly one
+/// Rust primitive. A mismatch means lower_type() has a gap or an
+/// extra arm.
+#[test]
+fn prim_types_and_rust_tys_are_same_cardinality() {
+    assert_eq!(
+        tags::PRIM_TYPES_ALL.len(),
+        tags::RUST_TYS_ALL.len(),
+        "Nom primitive count must match Rust-target primitive count — lower_type() bijection broken"
+    );
+}
+
+#[test]
 fn ast_decl_kind_tags_match_rust_consts() {
     let src = self_host_file("ast.nom");
     assert_returns_literal(&src, tags::DECL_KIND_FN, "ast.nom::decl_kind_fn");
