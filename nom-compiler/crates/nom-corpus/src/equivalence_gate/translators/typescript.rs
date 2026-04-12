@@ -1,4 +1,4 @@
-use super::TranslationError;
+use super::{TranslatedItem, TranslationError};
 use swc_common::{FileName, SourceMap, sync::Lrc};
 use swc_ecma_ast::{
     BinaryOp, Decl, Expr, Lit, ModuleItem, Pat, Stmt, TsKeywordTypeKind, TsType, TsTypeAnn,
@@ -6,9 +6,14 @@ use swc_ecma_ast::{
 };
 use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
 
-/// Translate a TypeScript source string to a Nom source string.
-/// Narrow subset only — top-level functions and arrow functions with scalar types.
-pub fn translate(source: &str) -> Result<String, TranslationError> {
+/// Translate a TypeScript source string to a list of `TranslatedItem`s, one
+/// per translatable top-level function or arrow-function declaration.
+/// Unsupported items (class, interface, generics, async, …) are silently
+/// skipped — a file with 3 fns and 1 class returns 3 items.
+///
+/// Returns `Err(TranslationError::Parse(_))` only if the whole module fails
+/// to parse at the SWC level.
+pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> {
     let cm: Lrc<SourceMap> = Default::default();
     let fm = cm.new_source_file(
         Lrc::new(FileName::Custom("input.ts".into())),
@@ -26,26 +31,18 @@ pub fn translate(source: &str) -> Result<String, TranslationError> {
         .parse_module()
         .map_err(|e| TranslationError::Parse(format!("{e:?}")))?;
 
-    let mut out = String::new();
+    let mut items: Vec<TranslatedItem> = Vec::new();
 
     for item in &module.body {
-        // Unwrap ExportDecl wrappers transparently.
+        // Unwrap ExportDecl wrappers transparently; skip unsupported module-level decls.
         let decl_item: Option<&Decl> = match item {
             ModuleItem::ModuleDecl(md) => match md {
                 swc_ecma_ast::ModuleDecl::ExportDecl(ed) => Some(&ed.decl),
-                _ => {
-                    return Err(TranslationError::Unsupported(
-                        "module declaration (import/export)".into(),
-                    ))
-                }
+                _ => continue, // import/re-export/etc — skip at item level
             },
             ModuleItem::Stmt(stmt) => match stmt {
                 Stmt::Decl(d) => Some(d),
-                _ => {
-                    return Err(TranslationError::Unsupported(
-                        "top-level statement (not a declaration)".into(),
-                    ))
-                }
+                _ => continue, // non-declaration statement — skip at item level
             },
         };
 
@@ -53,67 +50,72 @@ pub fn translate(source: &str) -> Result<String, TranslationError> {
             Some(Decl::Fn(fn_decl)) => {
                 let func = &fn_decl.function;
                 let name = fn_decl.ident.sym.as_str().to_string();
-                out.push_str(&translate_function(&name, func)?);
+                if let Ok(body) = translate_function(&name, func) {
+                    let sig_line = fn_signature_line(&name, func);
+                    items.push(TranslatedItem { name, summary: sig_line, nom_body: body });
+                }
+                // else: skip at item level
             }
             Some(Decl::Var(var_decl)) => {
-                // Accept `const foo = (x: T): R => expr` at top level.
+                // Accept `const/let foo = (x: T): R => expr` at top level.
                 if var_decl.kind != VarDeclKind::Const && var_decl.kind != VarDeclKind::Let {
-                    return Err(TranslationError::Unsupported(
-                        "var declaration (only const/let allowed)".into(),
-                    ));
+                    continue;
                 }
                 if var_decl.decls.len() != 1 {
-                    return Err(TranslationError::Unsupported(
-                        "multiple declarators in var decl".into(),
-                    ));
+                    continue;
                 }
                 let decl = &var_decl.decls[0];
                 let name = match &decl.name {
                     Pat::Ident(bi) => bi.id.sym.as_str().to_string(),
-                    _ => {
-                        return Err(TranslationError::Unsupported(
-                            "destructuring in var decl".into(),
-                        ))
-                    }
+                    _ => continue,
                 };
-                let init = decl.init.as_deref().ok_or_else(|| {
-                    TranslationError::Unsupported("uninitialized const/let".into())
-                })?;
-                match init {
-                    Expr::Arrow(arrow) => {
-                        // Build a synthetic function-like translation.
-                        out.push_str(&translate_arrow(&name, arrow)?);
+                let init = match decl.init.as_deref() {
+                    Some(e) => e,
+                    None => continue,
+                };
+                if let Expr::Arrow(arrow) = init {
+                    if let Ok(body) = translate_arrow(&name, arrow) {
+                        let sig_line = arrow_signature_line(&name, arrow);
+                        items.push(TranslatedItem { name, summary: sig_line, nom_body: body });
                     }
-                    _ => {
-                        return Err(TranslationError::Unsupported(
-                            "const/let initializer is not an arrow function".into(),
-                        ))
-                    }
+                    // else: skip at item level
                 }
+                // non-arrow const/let: skip at item level
             }
-            Some(Decl::Class(_)) => {
-                return Err(TranslationError::Unsupported("class declaration".into()))
-            }
-            Some(Decl::TsInterface(_)) => {
-                return Err(TranslationError::Unsupported("interface declaration".into()))
-            }
-            Some(Decl::TsTypeAlias(_)) => {
-                return Err(TranslationError::Unsupported("type alias".into()))
-            }
-            Some(Decl::TsEnum(_)) => {
-                return Err(TranslationError::Unsupported("enum declaration".into()))
-            }
-            Some(Decl::TsModule(_)) => {
-                return Err(TranslationError::Unsupported("namespace/module declaration".into()))
-            }
-            None => {}
-            Some(Decl::Using(_)) => {
-                return Err(TranslationError::Unsupported("using declaration".into()))
-            }
+            // All other decl kinds (class, interface, type alias, enum, …): skip.
+            _ => continue,
         }
     }
 
-    Ok(out)
+    Ok(items)
+}
+
+/// Build a human-readable signature line for a `function` decl.
+fn fn_signature_line(name: &str, func: &swc_ecma_ast::Function) -> String {
+    let params: Vec<String> = func.params.iter()
+        .filter_map(|p| {
+            if let Ok((pname, ty)) = extract_param(&p.pat) { Some(format!("{pname}: {ty}")) }
+            else { None }
+        })
+        .collect();
+    let ret = func.return_type.as_ref()
+        .and_then(|a| ts_type_to_nom(a).ok())
+        .unwrap_or_else(|| "unit".to_string());
+    format!("fn {name}({}) -> {ret}", params.join(", "))
+}
+
+/// Build a human-readable signature line for an arrow-function decl.
+fn arrow_signature_line(name: &str, arrow: &swc_ecma_ast::ArrowExpr) -> String {
+    let params: Vec<String> = arrow.params.iter()
+        .filter_map(|p| {
+            if let Ok((pname, ty)) = extract_param(p) { Some(format!("{pname}: {ty}")) }
+            else { None }
+        })
+        .collect();
+    let ret = arrow.return_type.as_ref()
+        .and_then(|a| ts_type_to_nom(a).ok())
+        .unwrap_or_else(|| "unit".to_string());
+    format!("fn {name}({}) -> {ret}", params.join(", "))
 }
 
 fn translate_function(
@@ -329,35 +331,50 @@ mod tests {
     #[test]
     fn simple_add_fn_translates() {
         let src = "function add(a: number, b: number): number { return a + b; }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("fn add(a: integer, b: integer) -> integer"));
-        assert!(out.contains("return (a + b)"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "add");
+        assert!(items[0].summary.contains("fn add(a: integer, b: integer) -> integer"));
+        assert!(items[0].nom_body.contains("return (a + b)"));
     }
 
     #[test]
     fn arrow_fn_translates() {
         let src = "const double = (x: number): number => x * 2;";
-        let out = translate(src).unwrap();
-        assert!(out.contains("fn double(x: integer) -> integer"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "double");
+        assert!(items[0].summary.contains("fn double(x: integer) -> integer"));
     }
 
     #[test]
-    fn class_rejected() {
+    fn class_skipped_not_error() {
+        // Class declarations are now silently skipped (item-level reject).
         let src = "class Foo { x: number; }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(r) => assert!(r.contains("class")),
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "class should be skipped, got {items:?}");
     }
 
     #[test]
-    fn generic_fn_rejected() {
+    fn generic_fn_skipped_not_error() {
+        // Generic fns are silently skipped.
         let src = "function foo<T>(x: T): T { return x; }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(r) => assert!(r.contains("generic")),
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "generic fn should be skipped");
+    }
+
+    #[test]
+    fn multi_item_ts_translate() {
+        // Two translatable fns + one class (skipped) → 2 items.
+        let src = r#"
+            function add(a: number, b: number): number { return a + b; }
+            class Ignored {}
+            function sub(a: number, b: number): number { return a - b; }
+        "#;
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 2, "expected 2 items (class skipped), got {items:?}");
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"add"), "missing 'add'");
+        assert!(names.contains(&"sub"), "missing 'sub'");
     }
 }

@@ -3,7 +3,7 @@
 //! Per plan §5.2: "the translation is the contract". Fresh corpus-
 //! ingested entries land with `status: Partial`; the gate lifts
 //! them to `Complete` by:
-//!   1. Translating source → Nom body.
+//!   1. Translating source → Nom body (one item per top-level decl).
 //!   2. Running a property/contract test: original vs. Nom.
 //!   3. On byte/effect equivalence: upsert a NEW Entry with
 //!      `status: Complete` + `body_kind: NOM_SOURCE` and add a
@@ -15,18 +15,26 @@
 use thiserror::Error;
 
 pub mod translators;
+pub use translators::TranslatedItem;
 
-/// Result of running the equivalence gate on one entry.
+/// Result of running the equivalence gate on one source entry.
 #[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
 pub enum GateOutcome {
-    /// Translator produced a Nom body that passed the contract test.
-    /// Caller upserts a new Complete entry with `nom_source` body_kind.
+    /// Translator produced one or more items.  Each item carries its own
+    /// name (→ `word`), summary (→ `describe`), and Nom body bytes.
+    /// Caller upserts one Complete Entry per item.
     Lifted {
+        /// SHA-256 hex of the concatenated nom bodies (file-level id for
+        /// backwards-compat callers that only need one hash).
         nom_source_id: String,
-        /// UTF-8 bytes of the translated Nom body.
+        /// UTF-8 bytes of the first item's Nom body (backwards-compat field).
         nom_body: Vec<u8>,
+        /// All translated items from this source file.
+        #[serde(skip)]
+        items: Vec<TranslatedItem>,
     },
-    /// Translator produced output but the contract test failed.
+    /// Translator produced output but the contract test failed (or all items
+    /// were rejected at item level, leaving an empty list).
     PartialRejected { reason: String },
     /// No translator for this language yet.
     NotYetImplemented { language: String },
@@ -43,24 +51,22 @@ pub enum GateError {
     Serde(#[from] serde_json::Error),
 }
 
-/// Shared post-translation step: compute sha256, return Lifted or PartialRejected.
-fn lift_from_translator(result: Result<String, translators::TranslationError>) -> GateOutcome {
+/// Shared post-translation step: compute sha256 from items, return Lifted or PartialRejected.
+fn lift_from_translator(result: Result<Vec<TranslatedItem>, translators::TranslationError>) -> GateOutcome {
     match result {
-        Ok(nom_body) => {
-            if nom_body.trim().is_empty() {
-                GateOutcome::PartialRejected {
-                    reason: "translator produced empty body".into(),
-                }
-            } else {
-                use sha2::{Digest, Sha256};
-                let mut h = Sha256::new();
-                h.update(nom_body.as_bytes());
-                let nom_source_id = format!("{:x}", h.finalize());
-                GateOutcome::Lifted {
-                    nom_source_id,
-                    nom_body: nom_body.into_bytes(),
-                }
+        Ok(items) if items.is_empty() => GateOutcome::PartialRejected {
+            reason: "translator produced no translatable items".into(),
+        },
+        Ok(items) => {
+            use sha2::{Digest, Sha256};
+            // Combine all nom bodies for a file-level hash.
+            let mut h = Sha256::new();
+            for item in &items {
+                h.update(item.nom_body.as_bytes());
             }
+            let nom_source_id = format!("{:x}", h.finalize());
+            let nom_body = items[0].nom_body.as_bytes().to_vec();
+            GateOutcome::Lifted { nom_source_id, nom_body, items }
         }
         Err(translators::TranslationError::Parse(r))
         | Err(translators::TranslationError::Unsupported(r)) => {
@@ -116,9 +122,11 @@ mod tests {
         let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
         match out {
-            GateOutcome::Lifted { nom_source_id, nom_body } => {
+            GateOutcome::Lifted { nom_source_id, nom_body, items } => {
                 assert_eq!(nom_source_id.len(), 64); // sha256 hex
                 assert!(!nom_body.is_empty());
+                assert_eq!(items.len(), 1);
+                assert_eq!(items[0].name, "add");
             }
             other => panic!("expected Lifted, got {other:?}"),
         }
@@ -126,9 +134,12 @@ mod tests {
 
     #[test]
     fn gate_rejects_rust_struct() {
+        // struct-only file → translator returns empty items → PartialRejected
         let out = run_gate("h", "rust_source", b"struct Foo;", "rust").unwrap();
         match out {
-            GateOutcome::PartialRejected { reason } => assert!(reason.contains("struct")),
+            GateOutcome::PartialRejected { reason } => {
+                assert!(!reason.is_empty(), "expected non-empty reject reason, got empty")
+            }
             other => panic!("expected PartialRejected, got {other:?}"),
         }
     }
@@ -149,10 +160,11 @@ mod tests {
         let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
         match out {
-            GateOutcome::Lifted { nom_source_id, nom_body } => {
+            GateOutcome::Lifted { nom_source_id, nom_body, items } => {
                 assert_eq!(nom_source_id.len(), 64);
                 let body_str = std::str::from_utf8(&nom_body).expect("nom_body must be valid UTF-8");
                 assert!(!body_str.trim().is_empty(), "nom_body must be non-empty");
+                assert!(!items.is_empty());
             }
             other => panic!("expected Lifted, got {other:?}"),
         }

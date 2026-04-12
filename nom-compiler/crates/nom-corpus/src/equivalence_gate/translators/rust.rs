@@ -1,84 +1,72 @@
-use super::TranslationError;
+use super::{TranslatedItem, TranslationError};
 use syn::{
     parse_file, Block, BinOp, Expr, FnArg, Item, ItemFn, Lit, Pat, PathSegment, ReturnType, Stmt,
     Type, UnOp,
 };
 
-/// Translate a Rust source string to a Nom source string.
-/// Narrow subset only — returns Unsupported for anything outside the
-/// supported set of free-standing fns with scalar params and simple bodies.
-pub fn translate(source: &str) -> Result<String, TranslationError> {
+/// Translate a Rust source string to a list of `TranslatedItem`s, one per
+/// translatable top-level fn.  Items that cannot be translated (generics,
+/// async, unsupported types, …) are silently skipped — a file with 5 fns
+/// where 4 translate cleanly and 1 has generics returns 4 items.
+///
+/// Returns `Err(TranslationError::Parse(_))` only if the whole file fails
+/// to parse at the syn level.
+pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> {
     let file = parse_file(source).map_err(|e| TranslationError::Parse(e.to_string()))?;
-    let mut out = String::new();
+    let mut items: Vec<TranslatedItem> = Vec::new();
     for item in file.items {
-        match item {
-            Item::Fn(ItemFn {
-                sig,
-                block,
-                vis: _,
-                attrs: _,
-                ..
-            }) => {
-                if !sig.generics.params.is_empty() {
-                    return Err(TranslationError::Unsupported("generics".into()));
-                }
-                if sig.asyncness.is_some() {
-                    return Err(TranslationError::Unsupported("async fn".into()));
-                }
-                let name = sig.ident.to_string();
-                let mut params: Vec<String> = Vec::new();
-                for arg in &sig.inputs {
-                    match arg {
-                        FnArg::Receiver(_) => {
-                            return Err(TranslationError::Unsupported(
-                                "method (self arg)".into(),
-                            ))
-                        }
-                        FnArg::Typed(pt) => {
-                            let arg_name = match &*pt.pat {
-                                Pat::Ident(pi) => pi.ident.to_string(),
-                                _ => {
-                                    return Err(TranslationError::Unsupported(
-                                        "non-ident pattern in fn arg".into(),
-                                    ))
-                                }
-                            };
-                            let ty = type_to_nom(&pt.ty)?;
-                            params.push(format!("{arg_name}: {ty}"));
+        if let Item::Fn(ItemFn { sig, block, .. }) = item {
+            // Item-level reject: skip (don't Err) unsupported fns.
+            if !sig.generics.params.is_empty() { continue; }
+            if sig.asyncness.is_some() { continue; }
+
+            let name = sig.ident.to_string();
+
+            // Collect params; skip fn if any param type is unsupported.
+            let mut params: Vec<String> = Vec::new();
+            let mut ok = true;
+            for arg in &sig.inputs {
+                match arg {
+                    FnArg::Receiver(_) => { ok = false; break; }
+                    FnArg::Typed(pt) => {
+                        let arg_name = match &*pt.pat {
+                            Pat::Ident(pi) => pi.ident.to_string(),
+                            _ => { ok = false; break; }
+                        };
+                        match type_to_nom(&pt.ty) {
+                            Ok(ty) => params.push(format!("{arg_name}: {ty}")),
+                            Err(_) => { ok = false; break; }
                         }
                     }
                 }
-                let ret = match &sig.output {
-                    ReturnType::Default => "unit".to_string(),
-                    ReturnType::Type(_, ty) => type_to_nom(ty)?,
-                };
-                out.push_str(&format!(
-                    "fn {name}({}) -> {ret} {{\n",
-                    params.join(", ")
-                ));
-                out.push_str(&block_to_nom(&block, 1)?);
-                out.push_str("}\n\n");
             }
-            other => {
-                return Err(TranslationError::Unsupported(format!(
-                    "top-level item: {}",
-                    match other {
-                        Item::Struct(_) => "struct",
-                        Item::Enum(_) => "enum",
-                        Item::Impl(_) => "impl block",
-                        Item::Trait(_) => "trait",
-                        Item::Use(_) => "use statement",
-                        Item::Mod(_) => "mod",
-                        Item::Static(_) => "static",
-                        Item::Const(_) => "const",
-                        Item::Type(_) => "type alias",
-                        _ => "other",
-                    }
-                )));
-            }
+            if !ok { continue; }
+
+            let ret = match &sig.output {
+                ReturnType::Default => "unit".to_string(),
+                ReturnType::Type(_, ty) => match type_to_nom(ty) {
+                    Ok(t) => t,
+                    Err(_) => continue,
+                },
+            };
+
+            let nom_body_stmts = match block_to_nom(&block, 1) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+
+            let sig_line = format!("fn {name}({}) -> {ret}", params.join(", "));
+            let nom_body = format!("{sig_line} {{\n{nom_body_stmts}}}\n\n");
+
+            items.push(TranslatedItem {
+                name,
+                summary: sig_line,
+                nom_body,
+            });
         }
+        // Non-fn items (struct, enum, impl, …) are silently skipped at item level.
     }
-    Ok(out)
+    Ok(items)
 }
 
 fn type_to_nom(ty: &Type) -> Result<String, TranslationError> {
@@ -210,78 +198,91 @@ mod tests {
     #[test]
     fn simple_add_fn_translates() {
         let src = "fn add(a: i64, b: i64) -> i64 { a + b }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("fn add(a: integer, b: integer) -> integer"));
-        assert!(out.contains("return (a + b)"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].name, "add");
+        assert!(items[0].summary.contains("fn add(a: integer, b: integer) -> integer"));
+        assert!(items[0].nom_body.contains("return (a + b)"));
     }
 
     #[test]
     fn fn_with_let_translates() {
         let src = "fn double(x: i64) -> i64 { let y = x * 2; return y; }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("let y = (x * 2)"));
-        assert!(out.contains("return y"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].nom_body.contains("let y = (x * 2)"));
+        assert!(items[0].nom_body.contains("return y"));
     }
 
     #[test]
-    fn struct_top_level_rejected() {
+    fn struct_top_level_skipped_not_error() {
+        // struct at top level is now silently skipped (item-level reject).
         let src = "struct Foo { a: i64 }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(r) => assert!(r.contains("struct")),
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "struct should be skipped, got {items:?}");
     }
 
     #[test]
-    fn generic_fn_rejected() {
+    fn generic_fn_skipped_not_error() {
+        // Generic fn is now silently skipped (item-level reject).
         let src = "fn foo<T>(x: T) -> T { x }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(r) => assert!(r.contains("generics")),
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "generic fn should be skipped");
     }
 
     #[test]
     fn no_params_fn_translates() {
         let src = "fn answer() -> i64 { 42 }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("fn answer() -> integer"));
-        assert!(out.contains("return 42"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].summary.contains("fn answer() -> integer"));
+        assert!(items[0].nom_body.contains("return 42"));
     }
 
     #[test]
     fn bool_param_translates() {
         let src = "fn identity(v: bool) -> bool { v }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("v: boolean") && out.contains("-> boolean"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].summary.contains("v: boolean") && items[0].summary.contains("-> boolean"));
     }
 
     #[test]
     fn str_ref_param_translates() {
         let src = "fn len_hint(s: &str) -> i64 { 0 }";
-        let out = translate(src).unwrap();
-        assert!(out.contains("s: text"));
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 1);
+        assert!(items[0].summary.contains("s: text"));
     }
 
     #[test]
-    fn async_fn_rejected() {
+    fn async_fn_skipped_not_error() {
+        // Async fns are now silently skipped (item-level reject).
         let src = "async fn foo() -> i64 { 1 }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(r) => assert!(r.contains("async fn")),
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "async fn should be skipped");
     }
 
     #[test]
-    fn unknown_type_rejected() {
+    fn unknown_type_skipped_not_error() {
+        // Fns with unsupported types are silently skipped.
         let src = "fn foo(x: Vec<i64>) -> Vec<i64> { x }";
-        let err = translate(src).unwrap_err();
-        match err {
-            TranslationError::Unsupported(_) => {}
-            _ => panic!("expected Unsupported"),
-        }
+        let items = translate(src).unwrap();
+        assert!(items.is_empty(), "fn with Vec param should be skipped");
+    }
+
+    #[test]
+    fn multi_item_translate() {
+        // File with 2 translatable fns + 1 struct (item-level skipped) → 2 items.
+        let src = r#"
+            fn add(a: i64, b: i64) -> i64 { a + b }
+            struct Point { x: f64 }
+            fn sub(a: i64, b: i64) -> i64 { a - b }
+        "#;
+        let items = translate(src).unwrap();
+        assert_eq!(items.len(), 2, "expected 2 items (struct skipped), got {items:?}");
+        let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
+        assert!(names.contains(&"add"), "missing 'add'");
+        assert!(names.contains(&"sub"), "missing 'sub'");
     }
 }

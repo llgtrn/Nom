@@ -262,6 +262,56 @@ fn compile_nom_to_bc(nom_source: &str) -> Result<Vec<u8>, String> {
     Ok(output.bitcode)
 }
 
+// ── word helpers ─────────────────────────────────────────────────────────────
+
+/// Strip to `[a-z0-9_]`, lowercase, truncate to 60 chars, ensure non-empty.
+/// Does NOT add a language prefix — the `variant` column carries provenance.
+pub fn sanitize_word(raw: &str) -> String {
+    let cleaned: String = raw
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
+        .take(60)
+        .collect();
+    if cleaned.is_empty() { "unnamed".to_string() } else { cleaned }
+}
+
+/// Build a `describe` string for a corpus entry (≤ 1024 chars).
+///
+/// Format:
+/// ```text
+/// fn add(a: integer, b: integer) -> integer
+/// /// Add two i64s.
+/// pub fn add(a: i64, b: i64) -> i64 {
+///     a + b
+/// } (translated from rust)
+/// ```
+pub fn build_describe(item: &equivalence_gate::TranslatedItem, original_source: &str, language: &str) -> String {
+    let mut out = String::new();
+    out.push_str(&item.summary);
+    out.push('\n');
+    // Find the fn definition in the original source and grab up to 4 following lines.
+    let needle = format!("fn {}(", item.name);
+    let mut found = false;
+    let mut count = 0;
+    for line in original_source.lines() {
+        if !found {
+            if line.contains(&needle) { found = true; }
+        }
+        if found {
+            let trimmed = line.trim();
+            if !trimmed.is_empty() {
+                out.push_str(trimmed);
+                out.push('\n');
+                count += 1;
+                if count >= 5 { break; }
+            }
+        }
+    }
+    out.push_str(&format!("(translated from {language})"));
+    out.chars().take(1024).collect()
+}
+
 // ── ingest_directory ─────────────────────────────────────────────────────────
 
 /// Summary returned by [`ingest_directory`].
@@ -369,87 +419,75 @@ fn ingest_directory_with_conn(
             Err(_) => { report.files_skipped += 1; continue; }
         };
 
-        // Translate source → Nom source.
-        let translator_result = match language {
-            "rust" => crate::equivalence_gate::translators::rust::translate(source),
-            "typescript" => crate::equivalence_gate::translators::typescript::translate(source),
+        // Translate source → list of TranslatedItems (one per top-level fn).
+        let translated_items = match language {
+            "rust" => match crate::equivalence_gate::translators::rust::translate(source) {
+                Ok(v) => v,
+                Err(_) => { report.files_skipped += 1; continue; }
+            },
+            "typescript" => match crate::equivalence_gate::translators::typescript::translate(source) {
+                Ok(v) => v,
+                Err(_) => { report.files_skipped += 1; continue; }
+            },
             _ => { report.files_skipped += 1; continue; }
         };
-        let nom_body = match translator_result {
-            Ok(b) => b,
-            Err(_) => { report.files_skipped += 1; continue; }
-        };
 
-        if nom_body.is_empty() { report.files_skipped += 1; continue; }
+        if translated_items.is_empty() { report.files_skipped += 1; continue; }
 
-        // Compile translator output → LLVM bitcode.
-        let bc_bytes = match compile_nom_to_bc(&nom_body) {
-            Ok(b) => b,
-            Err(reason) => {
-                eprintln!("nom: skipping {} — compile: {reason}", entry.path().display());
-                report.files_skipped += 1;
-                continue;
-            }
-        };
+        // One Entry per translated item.
+        for item in &translated_items {
+            // Compile this item's Nom body → LLVM bitcode.
+            let bc_bytes = match compile_nom_to_bc(&item.nom_body) {
+                Ok(b) => b,
+                Err(reason) => {
+                    eprintln!("nom: skipping {} ({}) — compile: {reason}", entry.path().display(), item.name);
+                    continue;
+                }
+            };
 
-        // SHA-256 the compiled bitcode → content-addressed id.
-        let mut h = Sha256::new();
-        h.update(&bc_bytes);
-        let id = format!("{:x}", h.finalize());
+            // SHA-256 the compiled bitcode → content-addressed id.
+            let mut h = Sha256::new();
+            h.update(&bc_bytes);
+            let id = format!("{:x}", h.finalize());
 
-        // Build word: language prefix + cleaned file stem, ≤ 60 chars.
-        let stem = entry
-            .path()
-            .file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("file");
-        let cleaned: String = stem
-            .to_ascii_lowercase()
-            .chars()
-            .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
-            .collect();
-        let word: String = format!("{language}_{}", &cleaned).chars().take(60).collect();
+            // word = sanitized fn name (not a filename slug).
+            let word = sanitize_word(&item.name);
+            let describe = build_describe(item, source, language);
 
-        // Describe: first non-empty line of ORIGINAL source, ≤ 120 chars.
-        let describe = source
-            .lines()
-            .find(|l| !l.trim().is_empty())
-            .map(|l| l.chars().take(120).collect::<String>())
-            .unwrap_or_else(|| format!("{language} file"));
+            let now = chrono_now();
+            let e = Entry {
+                id: id.clone(),
+                word,
+                variant: Some(language.to_string()),  // original language as provenance
+                kind: EntryKind::Function,
+                language: "nom".to_string(),           // compiled Nom bitcode
+                describe: Some(describe),
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: Some(bc_bytes.clone()),
+                body_kind: Some(nom_types::body_kind::BC.to_owned()),
+                contract: Contract::default(),
+                status: EntryStatus::Complete,         // translate + compile succeeded
+                translation_score: Some(1.0),
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: now,
+                updated_at: None,
+            };
 
-        let now = chrono_now();
-        let e = Entry {
-            id: id.clone(),
-            word,
-            variant: Some(language.to_string()),  // original language as provenance
-            kind: EntryKind::Module,
-            language: "nom".to_string(),           // compiled Nom bitcode
-            describe: Some(describe),
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: Some(bc_bytes.clone()),
-            body_kind: Some(nom_types::body_kind::BC.to_owned()),
-            contract: Contract::default(),
-            status: EntryStatus::Complete,         // translate + compile succeeded
-            translation_score: Some(1.0),
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: now,
-            updated_at: None,
-        };
-
-        match dict.upsert_entry_if_new(&e) {
-            Ok(true) => {
-                *report.per_language.entry(language.to_string()).or_insert(0) += 1;
-                report.files_ingested += 1;
-                report.bytes_ingested += bc_bytes.len() as u64;
-            }
-            Ok(false) => {
-                report.duplicates += 1;
-            }
-            Err(_) => {
-                report.files_skipped += 1;
+            match dict.upsert_entry_if_new(&e) {
+                Ok(true) => {
+                    *report.per_language.entry(language.to_string()).or_insert(0) += 1;
+                    report.files_ingested += 1;
+                    report.bytes_ingested += bc_bytes.len() as u64;
+                }
+                Ok(false) => {
+                    report.duplicates += 1;
+                }
+                Err(_) => {
+                    report.files_skipped += 1;
+                }
             }
         }
     }
@@ -1068,6 +1106,64 @@ mod tests {
         // Dict still holds only 6 entries from run 1.
         let dict_check = NomDict::open_in_place(&db_path).unwrap();
         assert_eq!(dict_check.count().unwrap(), 6, "dict must still hold exactly 6 entries");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    // ── Pivot B-c tests ───────────────────────────────────────────────────────
+
+    #[test]
+    fn sanitize_word_produces_valid_syntax_tokens() {
+        assert_eq!(super::sanitize_word("add"), "add");
+        assert_eq!(super::sanitize_word("my_function"), "my_function");
+        assert_eq!(super::sanitize_word("MyStruct"), "mystruct");
+        assert_eq!(super::sanitize_word("foo-bar"), "foobar");
+        assert_eq!(super::sanitize_word("123abc"), "123abc");
+        assert_eq!(super::sanitize_word(""), "unnamed");
+        assert_eq!(super::sanitize_word("!@#$%"), "unnamed");
+        // No language prefix — variant column carries that.
+        assert!(!super::sanitize_word("add").contains('_') || super::sanitize_word("my_fn") == "my_fn");
+        // Max 60 chars.
+        let long = "a".repeat(100);
+        assert_eq!(super::sanitize_word(&long).len(), 60);
+    }
+
+    #[test]
+    #[cfg_attr(windows, ignore)]
+    fn ingest_directory_lands_items_not_files() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_items_not_files_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // One .rs file with 3 distinct fns.
+        let mut f = fs::File::create(tmp.join("math.rs")).unwrap();
+        f.write_all(
+            b"fn foo(x: i64) -> i64 { x }\nfn bar(x: i64) -> i64 { x + 1 }\nfn baz(x: i64) -> i64 { x * 2 }"
+        ).unwrap();
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let report = super::ingest_directory(&tmp, &dict).unwrap();
+
+        // 3 fns → 3 entries with meaningful word values.
+        assert_eq!(
+            report.files_ingested, 3,
+            "expected 3 items (one per fn), got {}", report.files_ingested
+        );
+
+        let entries = dict.find_by_body_kind(nom_types::body_kind::BC, 10).unwrap_or_default();
+        let words: Vec<&str> = entries.iter().map(|e| e.word.as_str()).collect();
+        assert!(words.contains(&"foo"), "missing 'foo' in words: {words:?}");
+        assert!(words.contains(&"bar"), "missing 'bar' in words: {words:?}");
+        assert!(words.contains(&"baz"), "missing 'baz' in words: {words:?}");
+
+        // words must NOT be filename slugs like "rust_math".
+        for w in &words {
+            assert!(!w.starts_with("rust_"), "word should not have language prefix: {w}");
+        }
 
         let _ = fs::remove_dir_all(&tmp);
     }
