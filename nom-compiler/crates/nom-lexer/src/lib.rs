@@ -723,18 +723,38 @@ impl<'src> Lexer<'src> {
 
                 '&' => {
                     self.advance();
-                    tokens.push(SpannedToken::new(
-                        Token::Ampersand,
-                        Span::new(start, start + 1, line, col),
-                    ));
+                    // `&&` — lower as logical-and keyword token so the
+                    // precedence parser already set up for `and`/`or`
+                    // handles it without any extra grammar rules.
+                    if self.peek() == Some('&') {
+                        self.advance();
+                        tokens.push(SpannedToken::new(
+                            Token::And,
+                            Span::new(start, start + 2, line, col),
+                        ));
+                    } else {
+                        tokens.push(SpannedToken::new(
+                            Token::Ampersand,
+                            Span::new(start, start + 1, line, col),
+                        ));
+                    }
                 }
 
                 '|' => {
                     self.advance();
-                    tokens.push(SpannedToken::new(
-                        Token::Pipe,
-                        Span::new(start, start + 1, line, col),
-                    ));
+                    // `||` — see comment above; emits the logical-or keyword.
+                    if self.peek() == Some('|') {
+                        self.advance();
+                        tokens.push(SpannedToken::new(
+                            Token::Or,
+                            Span::new(start, start + 2, line, col),
+                        ));
+                    } else {
+                        tokens.push(SpannedToken::new(
+                            Token::Pipe,
+                            Span::new(start, start + 1, line, col),
+                        ));
+                    }
                 }
 
                 '?' => {

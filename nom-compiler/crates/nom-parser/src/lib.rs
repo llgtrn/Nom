@@ -590,7 +590,10 @@ impl Parser {
                 Token::Lt => nom_ast::BinOp::Lt,
                 Token::Gte => nom_ast::BinOp::Gte,
                 Token::Lte => nom_ast::BinOp::Lte,
-                Token::Eq => nom_ast::BinOp::Eq,
+                // `==` is Token::EqEq; `Token::Eq` (single `=`) is assignment
+                // and is NOT a valid equality operator. This matches the
+                // Nom lexer's two-token split — see crates/nom-lexer.
+                Token::EqEq => nom_ast::BinOp::Eq,
                 Token::Neq => nom_ast::BinOp::Neq,
                 _ => break,
             };
@@ -812,9 +815,12 @@ impl Parser {
     /// already been consumed. Caller must have validated via
     /// `looks_like_struct_literal_body` that the upcoming token is `LBrace`.
     fn parse_struct_literal(&mut self, name: Identifier) -> ParseResult<Expr> {
+        // Consume '{'. Use skip_whitespace first so the following advance()
+        // actually lands on the `{` (advance() is raw and does not skip
+        // whitespace/newlines/comments itself). Same pattern applies at every
+        // explicit token consumption in this method.
         self.skip_whitespace();
-        // consume '{'
-        if !matches!(self.peek(), Token::LBrace) {
+        if !matches!(self.peek_raw(), Token::LBrace) {
             let s = self.peek_span();
             return Err(ParseError::UnexpectedToken {
                 found: format!("{:?}", self.peek()),
@@ -827,12 +833,12 @@ impl Parser {
         let mut fields: Vec<(Identifier, Expr)> = Vec::new();
         loop {
             self.skip_whitespace();
-            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+            if matches!(self.peek_raw(), Token::RBrace | Token::Eof) {
                 break;
             }
             let field_name = self.expect_ident()?;
             self.skip_whitespace();
-            if !matches!(self.peek(), Token::Colon) {
+            if !matches!(self.peek_raw(), Token::Colon) {
                 let s = self.peek_span();
                 return Err(ParseError::UnexpectedToken {
                     found: format!("{:?}", self.peek()),
@@ -845,11 +851,12 @@ impl Parser {
             let value = self.parse_expr()?;
             fields.push((field_name, value));
             self.skip_whitespace();
-            if matches!(self.peek(), Token::Comma) {
+            if matches!(self.peek_raw(), Token::Comma) {
                 self.advance();
             }
         }
-        if matches!(self.peek(), Token::RBrace) {
+        self.skip_whitespace();
+        if matches!(self.peek_raw(), Token::RBrace) {
             self.advance();
         }
         Ok(Expr::StructInit { name, fields })
