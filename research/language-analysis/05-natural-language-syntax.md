@@ -326,10 +326,13 @@ Expression parsing within `rhs_tokens` / `cond_tokens` etc. captures
 the raw token sequence. Typed expression tree lands with the type
 system — this keeps the AST shape stable while grammar bells grow.
 
-Tests: 22/22 green. Covers every decl form + every statement form +
-error paths (missing name, missing colon, etc.) + recovery discipline
-for unknown top-level forms. Includes end-to-end parse of four shipped
-samples (hello.nomx, todo_app.nomx, greet_sentence.nomx, loops.nomx).
+Tests: 34/34 green. Covers every decl form + every statement form +
+ten error-path tests that pin both diagnostic message and span
+accuracy (missing name, missing colon, missing `is`, missing `,`
+after when/unless/while/for-each, missing `,` after `to <verb>`
+phrase, record field missing `is`). Includes end-to-end parse of
+six shipped samples (hello.nomx, todo_app.nomx, greet_sentence.nomx,
+loops.nomx, contracts.nomx, mixed_forms.nomx).
 
 ### Samples
 
@@ -337,6 +340,16 @@ samples (hello.nomx, todo_app.nomx, greet_sentence.nomx, loops.nomx).
   and returns a greeting:` demo.
 - `examples/todo_app.nomx`: full grammar exercise (record + choice
   + 3 defines with when/otherwise bodies).
+- `examples/greet_sentence.nomx`: three `to <verb>, respond with`
+  sentence-form decls (proposal 05 §3).
+- `examples/loops.nomx`: `for each` + `while` + nested
+  `when`/`unless` body statements (§4.4).
+- `examples/contracts.nomx`: `require` / `ensure` / `throughout`
+  contract phrases across three `define` bodies (§4.4).
+- `examples/mixed_forms.nomx`: record + choice + block-define +
+  two `to`-oneliners in one file, proving the outer-body
+  terminator from commit 95f9bdc cleanly switches between block
+  bodies and sentence-form decls.
 
 ### What's still missing
 
