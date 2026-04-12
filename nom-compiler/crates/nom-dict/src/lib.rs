@@ -332,6 +332,23 @@ impl NomDict {
         Ok(rows)
     }
 
+    /// Histogram of `status` values across the dict — Partial entries
+    /// are the ones the LLM authoring loop needs to lift to Complete;
+    /// the total-vs-Complete ratio is a dict-health metric. Sorted
+    /// count desc with status-name tiebreaker for determinism.
+    pub fn status_histogram(&self) -> Result<Vec<(String, usize)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT status AS s, COUNT(*) AS n
+             FROM entries
+             GROUP BY status
+             ORDER BY n DESC, s ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     // ── Upsert / setters ──────────────────────────────────────────
 
     /// Insert or replace the main `entries` row. Returns the entry id.
@@ -1403,6 +1420,36 @@ mod tests {
         assert_eq!(as_map.get("(untagged)"), Some(&1));
         assert_eq!(hist[0].0, body_kind::BC); // highest count first
         assert_eq!(hist[0].1, 2);
+    }
+
+    /// `status_histogram` aggregates counts per status with deterministic
+    /// sort (count desc, status-name asc tiebreaker).
+    #[test]
+    fn status_histogram_counts() {
+        use nom_types::EntryStatus;
+        let d = NomDict::open_in_memory().unwrap();
+
+        // 2 Complete, 3 Partial, 1 Opaque.
+        let mk = |id: &str, s: EntryStatus| {
+            let mut e = make_entry(id, id);
+            e.status = s;
+            e
+        };
+        d.upsert_entry(&mk("c1", EntryStatus::Complete)).unwrap();
+        d.upsert_entry(&mk("c2", EntryStatus::Complete)).unwrap();
+        d.upsert_entry(&mk("p1", EntryStatus::Partial)).unwrap();
+        d.upsert_entry(&mk("p2", EntryStatus::Partial)).unwrap();
+        d.upsert_entry(&mk("p3", EntryStatus::Partial)).unwrap();
+        d.upsert_entry(&mk("o1", EntryStatus::Opaque)).unwrap();
+
+        let hist = d.status_histogram().unwrap();
+        let as_map: std::collections::HashMap<String, usize> = hist.iter().cloned().collect();
+        assert_eq!(as_map.get("partial"), Some(&3));
+        assert_eq!(as_map.get("complete"), Some(&2));
+        assert_eq!(as_map.get("opaque"), Some(&1));
+        // Partial is highest; tiebreak kicks in only on equal counts.
+        assert_eq!(hist[0].0, "partial");
+        assert_eq!(hist[0].1, 3);
     }
 
     /// `find_entries` filters correctly across language, status, body_kind,

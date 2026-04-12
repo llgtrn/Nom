@@ -356,7 +356,14 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
         None => return 1,
     };
     let total = dict_db.count().unwrap_or(0);
-    let hist = match dict_db.body_kind_histogram() {
+    let body_hist = match dict_db.body_kind_histogram() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("nom: dict error: {e}");
+            return 1;
+        }
+    };
+    let status_hist = match dict_db.status_histogram() {
         Ok(h) => h,
         Err(e) => {
             eprintln!("nom: dict error: {e}");
@@ -364,27 +371,47 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
         }
     };
     if json {
-        let pairs: Vec<String> = hist
+        let body_pairs: Vec<String> = body_hist
             .iter()
             .map(|(k, n)| format!("{{\"body_kind\":\"{}\",\"count\":{n}}}", escape_json(k)))
             .collect();
+        let status_pairs: Vec<String> = status_hist
+            .iter()
+            .map(|(s, n)| format!("{{\"status\":\"{}\",\"count\":{n}}}", escape_json(s)))
+            .collect();
         println!(
-            "{{\"total\":{total},\"body_kind_histogram\":[{}]}}",
-            pairs.join(",")
+            "{{\"total\":{total},\"body_kind_histogram\":[{}],\"status_histogram\":[{}]}}",
+            body_pairs.join(","),
+            status_pairs.join(","),
         );
     } else {
         println!("total entries: {total}");
+        println!();
         println!("body_kind histogram:");
-        if hist.is_empty() {
+        if body_hist.is_empty() {
             println!("  (empty)");
         } else {
-            for (kind, count) in &hist {
+            for (kind, count) in &body_hist {
                 let pct = if total == 0 {
                     0.0
                 } else {
                     100.0 * (*count as f64) / (total as f64)
                 };
                 println!("  {kind:<14} {count:>8}  ({pct:.1}%)");
+            }
+        }
+        println!();
+        println!("status histogram:");
+        if status_hist.is_empty() {
+            println!("  (empty)");
+        } else {
+            for (status, count) in &status_hist {
+                let pct = if total == 0 {
+                    0.0
+                } else {
+                    100.0 * (*count as f64) / (total as f64)
+                };
+                println!("  {status:<14} {count:>8}  ({pct:.1}%)");
             }
         }
     }
