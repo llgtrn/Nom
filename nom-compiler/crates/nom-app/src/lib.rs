@@ -636,6 +636,26 @@ pub struct Proposal {
     pub suggested_word: Option<String>,
     /// Suggested concept membership for the new nomtu.
     pub suggested_concept: Option<String>,
+    /// Pre-computed dict hints the LLM can use without further
+    /// queries: nomtu whose `word` or `describe` matches the
+    /// suggested_word. Empty when no hint was derivable. Populated
+    /// only via `dream_report_with_hints`; `criteria_proposals`
+    /// leaves it empty to keep the hot path cheap.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub dict_hints: Vec<DictHint>,
+}
+
+/// One pre-computed hint: an existing dict entry the LLM should
+/// consider either using directly (`use <word>@<id>`) or cloning as
+/// a starting point for the new nomtu. Scored by match quality
+/// (word prefix > word substring > describe substring).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DictHint {
+    pub entry_id: String,
+    pub word: String,
+    pub kind: String,
+    pub describe: Option<String>,
+    pub match_score: u8,
 }
 
 /// Collect proposals in a deterministic order. Sort is:
@@ -656,6 +676,7 @@ fn collect_proposals(
             suggested_entry_kind: Some("page".into()),
             suggested_word: Some(format!("{}_home", manifest.name)),
             suggested_concept: Some(manifest.name.clone()),
+            dict_hints: Vec::new(),
         });
     }
 
@@ -671,6 +692,7 @@ fn collect_proposals(
                 suggested_entry_kind: Some("function".into()),
                 suggested_word: None,
                 suggested_concept: Some(manifest.name.clone()),
+                dict_hints: Vec::new(),
             });
         }
     }
@@ -689,6 +711,7 @@ fn collect_proposals(
                 suggested_entry_kind: Some(e.kind.as_str().to_string()),
                 suggested_word: Some(e.word.clone()),
                 suggested_concept: e.concept.clone(),
+                dict_hints: Vec::new(),
             });
         }
     }
@@ -710,6 +733,7 @@ fn collect_proposals(
                 suggested_entry_kind: Some(e.kind.as_str().to_string()),
                 suggested_word: Some(e.word.clone()),
                 suggested_concept: e.concept.clone(),
+                dict_hints: Vec::new(),
             });
         }
     }
@@ -726,6 +750,7 @@ fn collect_proposals(
             suggested_entry_kind: Some("test_case".into()),
             suggested_word: Some(format!("test_{}_smoke", manifest.name)),
             suggested_concept: Some(manifest.name.clone()),
+            dict_hints: Vec::new(),
         });
     }
 
@@ -744,7 +769,84 @@ pub fn criteria_proposals(
     dict: &nom_dict::NomDict,
 ) -> Vec<Proposal> {
     let entries = closure_entries(manifest, dict);
-    collect_proposals(manifest, &entries, dict)
+    let mut proposals = collect_proposals(manifest, &entries, dict);
+    attach_dict_hints(&mut proposals, dict);
+    proposals
+}
+
+/// For each proposal with a `suggested_word`, run two quick dict
+/// queries — prefix match on `word`, substring on `describe` — and
+/// attach the top 3 matches as hints. Scored:
+///   - 3: word == suggested_word exactly
+///   - 2: word starts with suggested_word
+///   - 1: describe contains suggested_word
+/// Sorted desc by score, ties broken by entry_id asc. Silently keeps
+/// hints empty on query failure; dreaming mode must tolerate a
+/// partially-populated dict.
+fn attach_dict_hints(proposals: &mut [Proposal], dict: &nom_dict::NomDict) {
+    use std::collections::HashMap;
+
+    for p in proposals.iter_mut() {
+        let Some(word) = p.suggested_word.clone() else { continue };
+        if word.is_empty() {
+            continue;
+        }
+
+        let mut scored: HashMap<String, (u8, DictHint)> = HashMap::new();
+        if let Ok(rows) = dict.find_by_word(&word) {
+            for e in rows {
+                let score = if e.word == word { 3 } else { 2 };
+                scored
+                    .entry(e.id.clone())
+                    .and_modify(|cur| {
+                        if score > cur.0 {
+                            *cur = (
+                                score,
+                                DictHint {
+                                    entry_id: e.id.clone(),
+                                    word: e.word.clone(),
+                                    kind: e.kind.as_str().to_string(),
+                                    describe: e.describe.clone(),
+                                    match_score: score,
+                                },
+                            );
+                        }
+                    })
+                    .or_insert((
+                        score,
+                        DictHint {
+                            entry_id: e.id.clone(),
+                            word: e.word.clone(),
+                            kind: e.kind.as_str().to_string(),
+                            describe: e.describe.clone(),
+                            match_score: score,
+                        },
+                    ));
+            }
+        }
+        if let Ok(rows) = dict.search_describe(&word, 10) {
+            for e in rows {
+                scored.entry(e.id.clone()).or_insert((
+                    1,
+                    DictHint {
+                        entry_id: e.id.clone(),
+                        word: e.word.clone(),
+                        kind: e.kind.as_str().to_string(),
+                        describe: e.describe.clone(),
+                        match_score: 1,
+                    },
+                ));
+            }
+        }
+        let mut hints: Vec<DictHint> = scored.into_values().map(|(_, h)| h).collect();
+        hints.sort_by(|a, b| {
+            b.match_score
+                .cmp(&a.match_score)
+                .then_with(|| a.entry_id.cmp(&b.entry_id))
+        });
+        hints.truncate(3);
+        p.dict_hints = hints;
+    }
 }
 
 /// Epic threshold in 0..=100 points. Dreaming mode stops when the
@@ -775,7 +877,8 @@ pub struct DreamReport {
 /// truth for both Criteria-aspect scoring and the dream CLI.
 pub fn dream_report(manifest: &AppManifest, dict: &nom_dict::NomDict) -> DreamReport {
     let entries = closure_entries(manifest, dict);
-    let proposals = collect_proposals(manifest, &entries, dict);
+    let mut proposals = collect_proposals(manifest, &entries, dict);
+    attach_dict_hints(&mut proposals, dict);
     let closure_size = entries.len();
     let complete = entries
         .iter()
@@ -1442,6 +1545,86 @@ mod tests {
         let top = doc["top_specialization_candidates"].as_array().unwrap();
         assert_eq!(top[0]["entry_id"], "a");
         assert_eq!(top[0]["body_bytes"], 1000);
+    }
+
+    #[test]
+    fn dict_hints_surface_exact_word_match() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        // Seed dict with entries matching a word we'll suggest.
+        let mk = |id: &str, word: &str, describe: Option<&str>| Entry {
+            id: id.into(),
+            word: word.into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: describe.map(str::to_string),
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&mk("e1", "needs_post", Some("exact word match"))).unwrap();
+        dict.upsert_entry(&mk("e2", "something_else", Some("contains needs_post here"))).unwrap();
+
+        // Trigger unbalanced_contract proposal via an entry with pre-only.
+        dict.upsert_entry(&Entry {
+            id: "lopsided".into(),
+            word: "needs_post".into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract {
+                input_type: None,
+                output_type: None,
+                pre: Some("x>0".into()),
+                post: None,
+            },
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        }).unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "app".into(),
+            default_target: "web".into(),
+            root_page_hash: "lopsided".into(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+
+        let proposals = criteria_proposals(&manifest, &dict);
+        let hinted: Vec<_> = proposals
+            .iter()
+            .filter(|p| !p.dict_hints.is_empty())
+            .collect();
+        assert!(!hinted.is_empty(), "expected at least one proposal with hints");
+        let first = &hinted[0];
+        // exact word match should be top-scored (3)
+        assert_eq!(first.dict_hints[0].match_score, 3);
+        assert_eq!(first.dict_hints[0].word, "needs_post");
     }
 
     #[test]
