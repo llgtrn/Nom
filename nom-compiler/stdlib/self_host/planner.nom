@@ -14,6 +14,8 @@
 # a verified AST and produces a CompositionPlan that nom-codegen (also
 # a Phase-6 self-host target) emits as LLVM IR from.
 
+nom self_host_planner
+
 struct Node {
   id: integer
   kind: text
