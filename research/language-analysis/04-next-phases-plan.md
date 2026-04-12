@@ -351,6 +351,8 @@ This supersedes earlier framings in §5.11 and §5.16 that spoke of `body_nom` a
 
 **No migration.** As with §4.4.5, the dict is wipe-and-rebuild under this shift. Ingestion pipelines are rewritten; §5.11 and §5.16 subsections are superseded on body-representation but retained for their kind/edge/metadata models (see callouts at §5.11 and §5.16 headers).
 
+**Current implementation state (audit 2026-04-13) — invariant 15 is tagged, not yet migrated.** The dict schema has a `body_bytes` column ([nom-dict/src/lib.rs:47](../../nom-compiler/crates/nom-dict/src/lib.rs#L47)) and compile paths tag successful precompiles with `body_kind = "bc"` ([nom-cli/src/main.rs:3067-3074](../../nom-compiler/crates/nom-cli/src/main.rs#L3067-L3074)), but the `.bc` bytes still live on disk at `artifact_path`; nothing currently writes the file contents into `body_bytes`. Invariant 15 ("body is bytes, never Nom source, never an AST") therefore holds symbolically (the tag says it) but not physically (the bytes are off-row). The bitcode-into-body migration is the next concrete step to make §4.4.6 observably true: on successful precompile, read the `.bc` bytes, write them into `body_bytes`, and switch the build-by-hash load path from disk-via-`artifact_path` to in-row-via-`body_bytes`. A post-migration CI invariant check `SELECT COUNT(*) FROM nomtu WHERE body_kind = 'bc' AND (body_bytes IS NULL OR LENGTH(body_bytes) = 0) == 0` is the forcing function.
+
 ### 4.5 Verification against the schema principles
 
 Mandatory property tests that must pass before v2 ships:
