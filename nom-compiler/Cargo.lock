@@ -673,9 +673,11 @@ version = "0.1.0"
 dependencies = [
  "nom-dict",
  "nom-types",
+ "proc-macro2",
  "serde",
  "serde_json",
  "sha2",
+ "syn",
  "thiserror 2.0.18",
  "walkdir",
 ]
