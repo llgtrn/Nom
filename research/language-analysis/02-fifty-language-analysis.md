@@ -387,3 +387,57 @@ Nom's flow graph is strictly evaluated. Lazy flows must be explicitly declared a
 **Patterns Nom already implements:** 31 (49%)
 **High-priority adoption targets:** 10
 **Anti-patterns to structurally prevent:** 10
+
+---
+
+## Language-specific ingestion priorities for media + UX (added 2026-04-12)
+
+The 50-language survey above informs which ecosystems are first targets for §5.17 mass corpus ingestion and §5.16's codec roadmap (see [`04-next-phases-plan.md`](./04-next-phases-plan.md) §5.16.11-13 and §5.11.6). The following are the load-bearing pre-translated libraries the Nom dictionary must hold — ingested first.
+
+### For media (§5.16 codec landings)
+
+| Codec / Format | Primary library | Language of origin (survey #) | Notes |
+|---|---|---|---|
+| PNG, JPEG, GIF, BMP, TIFF | `image` crate | Rust (#1) | Pure-Rust, Shape-B-ready |
+| PNG, JPEG, TIFF legacy fallback | `libpng`, `libjpeg-turbo`, `libtiff` | C (#2) | FFI-only ingestion; fallback when Rust lib lacks a format |
+| AV1 encode | `rav1e` | Rust (#1) | Pure-Rust; lands Phase 5 ahead of the C path |
+| AV1 decode | `dav1d` | C (#2) | Fastest AV1 decoder; FFI wrapper |
+| AVIF (still + animated) | `libavif` | C (#2) | Wraps `libaom` or `rav1e`; FFI |
+| FLAC | `libFLAC` | C (#2) | Mature, stable; FFI |
+| Opus | `opus` Rust bindings | Rust (#1) over C | FFI; well-maintained |
+| AAC | `fdk-aac` (opt-in patent) | C (#2) | FFI; `faac` as patent-free fallback |
+| Audio generic | `symphonia` | Rust (#1) | Pure-Rust multi-codec; Shape-B ingested as a library first |
+| MP4 mux | `mp4` crate | Rust (#1) | Pure-Rust; Shape-B |
+| WebM/MKV mux | `matroska` crate | Rust (#1) | Pure-Rust; Shape-B |
+| PDF read | `lopdf` | Rust (#1) | Pure-Rust; Shape-B |
+| Font rendering | `font-kit`, `harfbuzz`, `freetype` | Rust #1 / C #2 | Mix; `font-kit` is the Rust entry point |
+| 3D mesh | `gltf-rs` | Rust (#1) | Pure-Rust; Shape-B |
+
+**Translation implication:** Rust (#1) and C (#2) are the dominant media-codec source languages. The Phase 5 translator must reach `Complete` status on both before §5.16's 10-codec roadmap can land its full matrix. TypeScript, Python, Go, and others contribute codec libraries rarely; they are not ingestion-critical for media.
+
+### For UX (§5.11 platform-specialization)
+
+| Target platform | UI framework | Host language (survey #) | Notes |
+|---|---|---|---|
+| Web | Dioxus-web, React, Vue | Rust (Dioxus), TypeScript (#33), JavaScript (#34) | Dioxus is the Nom-native bridge; React/Vue ingested as UX-pattern corpus |
+| Desktop | Dioxus-desktop, Tauri, egui | Rust (#1) | Webview-wrapped; Tauri is the closest existing pattern |
+| Mobile | Dioxus-mobile, Flutter | Rust (Dioxus), Dart (#18) | Flutter ingestion optional but valuable for cross-platform patterns |
+| Native cross-platform | Qt, GTK | C++ (#3), C (#2) | Secondary; mostly for legacy desktop UX pattern harvesting |
+
+**Translation implication:** TypeScript/JavaScript (#33, #34) ingestion is the critical path for UX-pattern extraction (React, Vue, Svelte component libraries, hooks patterns, animation libraries like Motion/Framer). Rust ingestion for Dioxus covers the runtime side. Dart is nice-to-have for Flutter patterns but not blocking.
+
+### Combined priority
+
+**The top 3 languages to reach `Complete` translator status for media + UX work are Rust (#1), C (#2), and TypeScript (#33).** Phase 5 translator effort should concentrate there until §5.16 + §5.11.6 can land their full codec + platform matrix. Python (#19) and the functional languages (Part IV) are lower priority for media/UX — they're ingestion targets for general scientific/algorithmic vocabulary, not codec/UI surfaces.
+
+### Revision under the body-as-compiled-artifact shift (§4.4.6, 2026-04-12)
+
+After the architectural shift captured in [`04-next-phases-plan.md`](./04-next-phases-plan.md) §4.4.6, the dict stores `.bc` (LLVM bitcode) compiled directly from upstream source — **not Nom-translated source**. This reshapes the "translator completeness" criterion:
+
+- **"Complete translator" for a language now means: the language's upstream compiler reliably emits `.bc` for the packages we want to ingest.** That's trivially true for Rust (`rustc --emit=llvm-bc`), C/C++ (`clang -emit-llvm`), and the LLVM-frontended languages (Swift, Zig, Rust, C, C++, Objective-C, Fortran). It is NOT trivially true for languages that target a different IR (JVM bytecode: Java, Kotlin, Scala, Clojure; CLR IL: C#, F#; V8 or JavaScriptCore: JavaScript, TypeScript; Python bytecode; Erlang BEAM).
+- **Ingestion priority reshuffles.** LLVM-frontended languages become first-class ingestion targets because they already produce `.bc`. Non-LLVM languages require either (a) an additional backend translator (JVM→LLVM via GraalVM LLVM, WASM-bytecode→LLVM via wasm2c+clang, or JS→LLVM via QuickJS-to-WASM-to-LLVM) or (b) transpilation to one of the LLVM-frontend languages first (TS→JS→WASM→`.bc` is one path; TS→Rust via Dioxus tooling is another).
+- **Reprioritized top-3**: **Rust (#1), C (#2), C++ (#3)** — all direct LLVM frontends. TypeScript (#33) drops from the top 3 for code ingestion and becomes a UX-pattern source only (React/Vue extraction as metadata, not bodies). Swift (#15), Zig (#4), and Fortran become viable ingestion targets they weren't before, because their `.bc` output is directly consumable.
+- **JVM / CLR / Dart / Ruby / Python / BEAM ecosystems** require an extra hop to reach `.bc`. For Phase 5, skip them for code bodies. Ingest them only for surface metadata (UX patterns for Flutter/Dart; algorithm ideas for Clojure/Erlang) as edges + side-tables attached to `.bc` bodies produced some other way.
+- **Codec libraries are unaffected** — they were already all C/C++/Rust. All three compile natively to `.bc`.
+
+**Combined revised priority (for body ingestion):** Rust (#1) → C (#2) → C++ (#3) → Zig (#4) → Swift (#15). Everything else is either (a) UX/metadata source only, (b) translated via the 2-hop path if and when demand justifies the engineering cost, or (c) skipped.

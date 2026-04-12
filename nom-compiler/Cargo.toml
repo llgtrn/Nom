@@ -21,6 +21,12 @@ members = [
     "crates/nom-search",
     "crates/nom-llvm",
     "crates/nom-runtime",
+    "crates/nom-media",
+    "crates/nom-ux",
+    "crates/nom-corpus",
+    "crates/nom-bench",
+    "crates/nom-app",
+    "crates/nom-flow",
 ]
 
 [workspace.package]

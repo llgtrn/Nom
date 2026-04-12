@@ -405,11 +405,67 @@ pub enum EntryKind {
     Struct,
     Enum,
     TestCase,
+    // §5.11.5 deliverable (2026-04-12): UX kinds promoted into
+    // the shared EntryKind enum so v2 entries can carry them.
+    UxPattern,
+    DesignRule,
+    Screen,
+    UserFlow,
+    Skill,
+    // §5.12 app-composition kinds (2026-04-12).
+    AppManifest,
+    DataSource,
+    Query,
+    AppAction,
+    AppVariable,
+    Page,
+    // §5.13 / §5.14 side-table-bound kinds.
+    BenchmarkRun,
+    FlowArtifact,
+    // §5.16 media kinds.
+    MediaUnit,
+    Codec,
+    Container,
     Other,
 }
 
 impl EntryKind {
-    pub fn as_str(&self) -> &'static str {
+    /// Every EntryKind in a stable order. Matches the `as_str`/
+    /// `from_str` tables below — `entry_kind_roundtrip` locks the
+    /// drift. Iteration 22 established the `ALL` pattern on
+    /// `body_kind`; this mirrors it for the top-level EntryKind.
+    pub const ALL: &'static [EntryKind] = &[
+        EntryKind::Function,
+        EntryKind::Method,
+        EntryKind::Schema,
+        EntryKind::ApiEndpoint,
+        EntryKind::Ffi,
+        EntryKind::ExternalOpaque,
+        EntryKind::Module,
+        EntryKind::Trait,
+        EntryKind::Struct,
+        EntryKind::Enum,
+        EntryKind::TestCase,
+        EntryKind::UxPattern,
+        EntryKind::DesignRule,
+        EntryKind::Screen,
+        EntryKind::UserFlow,
+        EntryKind::Skill,
+        EntryKind::AppManifest,
+        EntryKind::DataSource,
+        EntryKind::Query,
+        EntryKind::AppAction,
+        EntryKind::AppVariable,
+        EntryKind::Page,
+        EntryKind::BenchmarkRun,
+        EntryKind::FlowArtifact,
+        EntryKind::MediaUnit,
+        EntryKind::Codec,
+        EntryKind::Container,
+        EntryKind::Other,
+    ];
+
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Function => "function",
             Self::Method => "method",
@@ -422,6 +478,22 @@ impl EntryKind {
             Self::Struct => "struct",
             Self::Enum => "enum",
             Self::TestCase => "test_case",
+            Self::UxPattern => "ux_pattern",
+            Self::DesignRule => "design_rule",
+            Self::Screen => "screen",
+            Self::UserFlow => "user_flow",
+            Self::Skill => "skill",
+            Self::AppManifest => "app_manifest",
+            Self::DataSource => "data_source",
+            Self::Query => "query",
+            Self::AppAction => "app_action",
+            Self::AppVariable => "app_variable",
+            Self::Page => "page",
+            Self::BenchmarkRun => "benchmark_run",
+            Self::FlowArtifact => "flow_artifact",
+            Self::MediaUnit => "media_unit",
+            Self::Codec => "codec",
+            Self::Container => "container",
             Self::Other => "other",
         }
     }
@@ -439,6 +511,22 @@ impl EntryKind {
             "struct" => Self::Struct,
             "enum" => Self::Enum,
             "test_case" => Self::TestCase,
+            "ux_pattern" => Self::UxPattern,
+            "design_rule" => Self::DesignRule,
+            "screen" => Self::Screen,
+            "user_flow" => Self::UserFlow,
+            "skill" => Self::Skill,
+            "app_manifest" => Self::AppManifest,
+            "data_source" => Self::DataSource,
+            "query" => Self::Query,
+            "app_action" => Self::AppAction,
+            "app_variable" => Self::AppVariable,
+            "page" => Self::Page,
+            "benchmark_run" => Self::BenchmarkRun,
+            "flow_artifact" => Self::FlowArtifact,
+            "media_unit" => Self::MediaUnit,
+            "codec" => Self::Codec,
+            "container" => Self::Container,
             _ => Self::Other,
         }
     }
@@ -498,6 +586,10 @@ pub struct Entry {
     pub concept: Option<String>,
     pub body: Option<String>,
     pub body_nom: Option<String>,
+    /// §4.4.6: canonical format tag for `body`. Values from
+    /// [`body_kind`] module (`NOM_SOURCE`, `BC`, `AVIF`, `AV1`, `AAC`,
+    /// `FLAC`, …). `None` means untagged (legacy rows).
+    pub body_kind: Option<String>,
     pub contract: Contract,
     pub status: EntryStatus,
     pub translation_score: Option<f32>,
@@ -608,16 +700,104 @@ pub enum EdgeType {
     Implements,
     DependsOn,
     SimilarTo,
+    // §5.11.5 deliverable (2026-04-12): UX edges.
+    Styles,
+    Constrains,
+    Recommends,
+    InteractsWith,
+    TransitionsTo,
+    // §5.11.2 cross-platform + §5.12 app-composition.
+    Specializes,
+    BindsTo,
+    Triggers,
+    Reads,
+    Writes,
+    NavigatesTo,
+    RunsOn,
+    // §5.14 flow.
+    HasFlowArtifact,
+    FlowsTo,
+    // §5.16 media graph.
+    Encodes,
+    ContainedIn,
+    UsesColor,
+    UsesPalette,
+    Derives,
+    EmbeddedGlyph,
+    Frame,
+    RendersOn,
+    // §4.3 supersession + §5.10 lifecycle.
+    SupersededBy,
+    ContractMatches,
 }
 
 impl EdgeType {
-    pub fn as_str(&self) -> &'static str {
+    /// Every EdgeType in a stable order. `edge_type_roundtrip` locks
+    /// the drift against `as_str`/`from_str`. Mirrors `EntryKind::ALL`
+    /// (iter 27) and the scaffold-crate `ALL` arrays.
+    pub const ALL: &'static [EdgeType] = &[
+        EdgeType::Calls,
+        EdgeType::Imports,
+        EdgeType::Implements,
+        EdgeType::DependsOn,
+        EdgeType::SimilarTo,
+        EdgeType::Styles,
+        EdgeType::Constrains,
+        EdgeType::Recommends,
+        EdgeType::InteractsWith,
+        EdgeType::TransitionsTo,
+        EdgeType::Specializes,
+        EdgeType::BindsTo,
+        EdgeType::Triggers,
+        EdgeType::Reads,
+        EdgeType::Writes,
+        EdgeType::NavigatesTo,
+        EdgeType::RunsOn,
+        EdgeType::HasFlowArtifact,
+        EdgeType::FlowsTo,
+        EdgeType::Encodes,
+        EdgeType::ContainedIn,
+        EdgeType::UsesColor,
+        EdgeType::UsesPalette,
+        EdgeType::Derives,
+        EdgeType::EmbeddedGlyph,
+        EdgeType::Frame,
+        EdgeType::RendersOn,
+        EdgeType::SupersededBy,
+        EdgeType::ContractMatches,
+    ];
+
+    pub const fn as_str(&self) -> &'static str {
         match self {
             Self::Calls => "calls",
             Self::Imports => "imports",
             Self::Implements => "implements",
             Self::DependsOn => "depends_on",
             Self::SimilarTo => "similar_to",
+            Self::Styles => "styles",
+            Self::Constrains => "constrains",
+            Self::Recommends => "recommends",
+            Self::InteractsWith => "interacts_with",
+            Self::TransitionsTo => "transitions_to",
+            Self::Specializes => "specializes",
+            Self::BindsTo => "binds_to",
+            Self::Triggers => "triggers",
+            Self::Reads => "reads",
+            Self::Writes => "writes",
+            Self::NavigatesTo => "navigates_to",
+            Self::RunsOn => "runs_on",
+            Self::HasFlowArtifact => "has_flow_artifact",
+            Self::FlowsTo => "flows_to",
+            Self::Encodes => "encodes",
+            Self::ContainedIn => "contained_in",
+            Self::UsesColor => "uses_color",
+            Self::UsesPalette => "uses_palette",
+            Self::Derives => "derives",
+            Self::EmbeddedGlyph => "embedded_glyph",
+            Self::Frame => "frame",
+            Self::RendersOn => "renders_on",
+            Self::SupersededBy => "superseded_by",
+            Self::ContractMatches => "contract_matches",
         }
     }
 
@@ -628,6 +808,30 @@ impl EdgeType {
             "implements" => Self::Implements,
             "depends_on" => Self::DependsOn,
             "similar_to" => Self::SimilarTo,
+            "styles" => Self::Styles,
+            "constrains" => Self::Constrains,
+            "recommends" => Self::Recommends,
+            "interacts_with" => Self::InteractsWith,
+            "transitions_to" => Self::TransitionsTo,
+            "specializes" => Self::Specializes,
+            "binds_to" => Self::BindsTo,
+            "triggers" => Self::Triggers,
+            "reads" => Self::Reads,
+            "writes" => Self::Writes,
+            "navigates_to" => Self::NavigatesTo,
+            "runs_on" => Self::RunsOn,
+            "has_flow_artifact" => Self::HasFlowArtifact,
+            "flows_to" => Self::FlowsTo,
+            "encodes" => Self::Encodes,
+            "contained_in" => Self::ContainedIn,
+            "uses_color" => Self::UsesColor,
+            "uses_palette" => Self::UsesPalette,
+            "derives" => Self::Derives,
+            "embedded_glyph" => Self::EmbeddedGlyph,
+            "frame" => Self::Frame,
+            "renders_on" => Self::RendersOn,
+            "superseded_by" => Self::SupersededBy,
+            "contract_matches" => Self::ContractMatches,
             _ => return None,
         })
     }
@@ -660,6 +864,60 @@ pub struct Translation {
 // nom-graph keep compiling until Task B migrates them off. New code
 // MUST use `Entry` + typed side tables.
 
+/// Canonical body-content-kind tags per §4.4.6 (plan doc 2026-04-12).
+/// A body's kind identifies what format the `body` bytes/string are in.
+/// Current ingestion paths produce `"nom_source"`; future paths produce
+/// `"bc"` (LLVM bitcode), `"avif"` (still image), `"av1"` (video),
+/// `"aac"` (lossy audio), `"flac"` (lossless audio), or another
+/// canonical-format tag from §4.4.6 invariant 17.
+pub mod body_kind {
+    pub const NOM_SOURCE: &str = "nom_source";
+    pub const BC: &str = "bc";
+    pub const AVIF: &str = "avif";
+    pub const AV1: &str = "av1";
+    pub const AAC: &str = "aac";
+    pub const FLAC: &str = "flac";
+    pub const WOFF2: &str = "woff2";
+    pub const GLTF: &str = "gltf";
+    pub const PDF: &str = "pdf";
+
+    /// Every recognized body_kind tag, in a stable order. Use when
+    /// enumerating kinds in help output, stats displays, or tests.
+    /// MUST stay in sync with [`is_known`] — the test
+    /// `body_kind_all_matches_is_known` locks the invariant.
+    pub const ALL: &[&str] = &[
+        NOM_SOURCE, BC, AVIF, AV1, AAC, FLAC, WOFF2, GLTF, PDF,
+    ];
+
+    /// Returns true if the string is a recognized body_kind tag.
+    pub const fn is_known(s: &str) -> bool {
+        // `const fn` can't use `matches!` on &str directly, so compare by bytes.
+        let b = s.as_bytes();
+        const fn eq(a: &[u8], b: &[u8]) -> bool {
+            if a.len() != b.len() {
+                return false;
+            }
+            let mut i = 0;
+            while i < a.len() {
+                if a[i] != b[i] {
+                    return false;
+                }
+                i += 1;
+            }
+            true
+        }
+        eq(b, NOM_SOURCE.as_bytes())
+            || eq(b, BC.as_bytes())
+            || eq(b, AVIF.as_bytes())
+            || eq(b, AV1.as_bytes())
+            || eq(b, AAC.as_bytes())
+            || eq(b, FLAC.as_bytes())
+            || eq(b, WOFF2.as_bytes())
+            || eq(b, GLTF.as_bytes())
+            || eq(b, PDF.as_bytes())
+    }
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NomtuEntry {
     pub id: i64,
@@ -690,13 +948,9 @@ pub struct NomtuEntry {
     pub audit_passed: bool,
     pub audit_max_severity: Option<String>,
     pub audit_findings: Option<String>,
-    pub source_repo: Option<String>,
-    pub source_path: Option<String>,
-    pub source_line: Option<i64>,
-    pub source_commit: Option<String>,
-    pub author: Option<String>,
     pub language: String,
     pub body: Option<String>,
+    pub body_kind: Option<String>,
     pub rust_body: Option<String>,
     pub translate_confidence: Option<f64>,
     pub community_id: Option<String>,
@@ -715,6 +969,27 @@ pub struct NomtuEntry {
     pub deprecated_by: Option<String>,
     pub created_at: Option<String>,
     pub updated_at: Option<String>,
+}
+
+impl NomtuEntry {
+    /// Legacy: check whether a score dimension meets a threshold.
+    /// Preserved so nom-resolver tests keep passing; new code uses
+    /// `EntryScores` queries directly.
+    pub fn satisfies_score(&self, dimension: &str, threshold: f64) -> bool {
+        let value = match dimension {
+            "security" => self.security,
+            "reliability" => self.reliability,
+            "performance" => self.performance,
+            "readability" => self.readability,
+            "testability" => self.testability,
+            "portability" => self.portability,
+            "composability" => self.composability,
+            "maturity" => self.maturity,
+            "overall_score" | "overall" => self.overall_score,
+            _ => return false,
+        };
+        value >= threshold
+    }
 }
 
 impl Default for NomtuEntry {
@@ -748,13 +1023,9 @@ impl Default for NomtuEntry {
             audit_passed: false,
             audit_max_severity: None,
             audit_findings: None,
-            source_repo: None,
-            source_path: None,
-            source_line: None,
-            source_commit: None,
-            author: None,
             language: "rust".to_owned(),
             body: None,
+            body_kind: None,
             rust_body: None,
             translate_confidence: None,
             community_id: None,
@@ -783,22 +1054,11 @@ mod v2_tests {
 
     #[test]
     fn entry_kind_roundtrip() {
-        for kind in [
-            EntryKind::Function,
-            EntryKind::Method,
-            EntryKind::Schema,
-            EntryKind::ApiEndpoint,
-            EntryKind::Ffi,
-            EntryKind::ExternalOpaque,
-            EntryKind::Module,
-            EntryKind::Trait,
-            EntryKind::Struct,
-            EntryKind::Enum,
-            EntryKind::TestCase,
-            EntryKind::Other,
-        ] {
-            assert_eq!(EntryKind::from_str(kind.as_str()), kind);
+        for kind in EntryKind::ALL {
+            assert_eq!(EntryKind::from_str(kind.as_str()), *kind);
         }
+        // Drift check: update this when growing the enum.
+        assert_eq!(EntryKind::ALL.len(), 28);
     }
 
     #[test]
@@ -823,16 +1083,27 @@ mod v2_tests {
 
     #[test]
     fn edge_type_roundtrip() {
-        for e in [
-            EdgeType::Calls,
-            EdgeType::Imports,
-            EdgeType::Implements,
-            EdgeType::DependsOn,
-            EdgeType::SimilarTo,
-        ] {
-            assert_eq!(EdgeType::from_str(e.as_str()), Some(e));
+        for e in EdgeType::ALL {
+            assert_eq!(EdgeType::from_str(e.as_str()), Some(*e));
         }
         assert_eq!(EdgeType::from_str("nope"), None);
+        // Drift check: update this when growing the enum.
+        assert_eq!(EdgeType::ALL.len(), 29);
+    }
+
+    #[test]
+    fn body_kind_all_matches_is_known() {
+        // Every tag in ALL must be recognized by is_known, and
+        // is_known must reject nothing in ALL. This catches drift
+        // when someone adds a constant to body_kind but forgets to
+        // update either ALL or the is_known match.
+        for tag in body_kind::ALL {
+            assert!(
+                body_kind::is_known(tag),
+                "body_kind::ALL contains {tag} but is_known rejects it"
+            );
+        }
+        assert_eq!(body_kind::ALL.len(), 9); // update when growing the list
     }
 
     #[test]

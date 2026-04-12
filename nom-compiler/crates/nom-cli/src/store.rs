@@ -14,7 +14,6 @@
 //! CLI works unchanged on Windows and POSIX.
 
 use std::path::{Path, PathBuf};
-use std::process;
 
 use nom_ast::{Classifier, Declaration, SourceFile, Statement};
 use nom_dict::NomDict;
@@ -56,9 +55,6 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
         EntryStatus::Partial
     };
 
-    let source_path = file.to_string_lossy().to_string();
-    let commit_sha = detect_commit_sha(file);
-
     let mut ids: Vec<String> = Vec::new();
     let mut refs: Vec<String> = Vec::new();
 
@@ -93,6 +89,7 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
             concept: None,
             body: None,
             body_nom,
+            body_kind: Some(nom_types::body_kind::NOM_SOURCE.to_owned()),
             contract,
             status,
             translation_score: None,
@@ -105,13 +102,6 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
         if let Err(e) = dict_db.upsert_entry(&entry) {
             eprintln!("nom: upsert error for {id}: {e}");
             return 1;
-        }
-
-        // Populate entry_meta (metadata merges via OR IGNORE).
-        let _ = dict_db.add_meta(&id, "source_path", &source_path);
-        let _ = dict_db.add_meta(&id, "origin_ecosystem", "nom");
-        if let Some(sha) = &commit_sha {
-            let _ = dict_db.add_meta(&id, "commit_sha", sha);
         }
 
         // Populate entry_refs from the resolution table. Only refs whose
@@ -209,6 +199,9 @@ pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
         println!("kind:     {}", entry.kind.as_str());
         println!("language: {}", entry.language);
         println!("status:   {}", entry.status.as_str());
+        if let Some(bk) = &entry.body_kind {
+            println!("body_kind: {bk}");
+        }
         if let Some(d) = &entry.describe {
             println!("describe: {d}");
         }
@@ -326,6 +319,147 @@ pub fn cmd_store_verify(hash: &str, dict: &Path, strict: bool) -> i32 {
     0
 }
 
+/// `nom store stats [--json]`
+///
+/// Prints total entry count + §4.4.6 body_kind histogram. Quick
+/// operator overview of the dict — how many entries, how many have
+/// cached bitcode, how many are untagged (legacy pre-§4.4.6 rows),
+/// how many are media.
+pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
+    let dict_db = match open_dict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+    let total = dict_db.count().unwrap_or(0);
+    let hist = match dict_db.body_kind_histogram() {
+        Ok(h) => h,
+        Err(e) => {
+            eprintln!("nom: dict error: {e}");
+            return 1;
+        }
+    };
+    if json {
+        let pairs: Vec<String> = hist
+            .iter()
+            .map(|(k, n)| format!("{{\"body_kind\":\"{}\",\"count\":{n}}}", escape_json(k)))
+            .collect();
+        println!(
+            "{{\"total\":{total},\"body_kind_histogram\":[{}]}}",
+            pairs.join(",")
+        );
+    } else {
+        println!("total entries: {total}");
+        println!("body_kind histogram:");
+        if hist.is_empty() {
+            println!("  (empty)");
+        } else {
+            for (kind, count) in &hist {
+                let pct = if total == 0 {
+                    0.0
+                } else {
+                    100.0 * (*count as f64) / (total as f64)
+                };
+                println!("  {kind:<14} {count:>8}  ({pct:.1}%)");
+            }
+        }
+    }
+    0
+}
+
+/// `nom store list [--body-kind <k>] [--limit N] [--json]`
+///
+/// Surfaces iteration-6's `NomDict::find_by_body_kind` to the CLI.
+/// Without a filter, lists recent entries. With `--body-kind bc`,
+/// shows all entries with cached bitcode artifacts. With
+/// `--body-kind avif`, shows ingested still-image media. Etc.
+pub fn cmd_store_list(
+    dict: &Path,
+    body_kind: Option<&str>,
+    limit: usize,
+    json: bool,
+) -> i32 {
+    let dict_db = match open_dict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let entries = match body_kind {
+        Some(kind) => {
+            if !nom_types::body_kind::is_known(kind) {
+                eprintln!(
+                    "nom: unknown body_kind: {kind}. Known: {}",
+                    nom_types::body_kind::ALL.join(", ")
+                );
+                return 1;
+            }
+            match dict_db.find_by_body_kind(kind, limit) {
+                Ok(e) => e,
+                Err(e) => {
+                    eprintln!("nom: dict error: {e}");
+                    return 1;
+                }
+            }
+        }
+        None => {
+            eprintln!(
+                "nom: list without --body-kind not yet supported (pass one of: {})",
+                nom_types::body_kind::ALL.join(", ")
+            );
+            return 1;
+        }
+    };
+
+    if entries.is_empty() {
+        eprintln!(
+            "nom: no entries match body_kind={}",
+            body_kind.unwrap_or("(any)")
+        );
+        return 0;
+    }
+
+    if json {
+        for e in &entries {
+            let word = escape_json(&e.word);
+            let kind = e.kind.as_str();
+            let lang = escape_json(&e.language);
+            let bk = e
+                .body_kind
+                .as_deref()
+                .map(|k| format!("\"{}\"", escape_json(k)))
+                .unwrap_or_else(|| "null".to_string());
+            println!(
+                "{{\"id\":\"{}\",\"word\":\"{word}\",\"kind\":\"{kind}\",\"language\":\"{lang}\",\"body_kind\":{bk}}}",
+                e.id,
+            );
+        }
+    } else {
+        println!(
+            "{:<20} {:<14} {:<10} {:<14} {}",
+            "id (prefix)", "word", "kind", "body_kind", "language"
+        );
+        for e in &entries {
+            let id_pref = &e.id[..e.id.len().min(16)];
+            let bk = e.body_kind.as_deref().unwrap_or("-");
+            println!(
+                "{id_pref:<20} {:<14} {:<10} {bk:<14} {}",
+                truncate(&e.word, 14),
+                e.kind.as_str(),
+                e.language,
+            );
+        }
+        println!("{} entries", entries.len());
+    }
+    0
+}
+
+fn truncate(s: &str, n: usize) -> String {
+    if s.len() <= n {
+        s.to_owned()
+    } else {
+        format!("{}…", &s[..n.saturating_sub(1)])
+    }
+}
+
 pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
     let dict_db = match open_dict(dict) {
         Some(d) => d,
@@ -432,14 +566,33 @@ pub fn try_build_by_hash(arg: &str, dict: &Path) -> Option<Vec<String>> {
 
 /// Concatenate closure bodies in reverse BFS order so each entry's deps
 /// appear above it. Missing bodies are skipped with a warning.
+///
+/// §4.4.6: each materialized chunk carries its `body_kind` tag in the
+/// comment header so downstream tooling (and humans reading the
+/// intermediate `.nom` artifact) can tell which entries are compiled
+/// canonical artifacts vs. raw Nom source. A future build pass will
+/// short-circuit `body_kind = "bc"` entries to link their cached
+/// bitcode instead of re-transpiling; today this is informational only.
 pub fn materialize_closure_body(dict: &Path, closure: &[String]) -> Option<String> {
     let dict_db = open_dict(dict)?;
     let mut parts: Vec<String> = Vec::new();
+    let mut bc_cached = 0usize;
     for id in closure.iter().rev() {
         match dict_db.get_entry(id) {
             Ok(Some(e)) => {
                 if let Some(body) = e.body_nom {
-                    parts.push(format!("# --- entry {id} ({}) ---\n{body}", e.word));
+                    let kind_tag = e
+                        .body_kind
+                        .as_deref()
+                        .map(|k| format!(", body_kind={k}"))
+                        .unwrap_or_default();
+                    if e.body_kind.as_deref() == Some(nom_types::body_kind::BC) {
+                        bc_cached += 1;
+                    }
+                    parts.push(format!(
+                        "# --- entry {id} ({}{kind_tag}) ---\n{body}",
+                        e.word
+                    ));
                 } else {
                     eprintln!("nom: warning: no body_nom for {id}");
                 }
@@ -448,6 +601,12 @@ pub fn materialize_closure_body(dict: &Path, closure: &[String]) -> Option<Strin
                 eprintln!("nom: warning: entry missing: {id}");
             }
         }
+    }
+    if bc_cached > 0 {
+        eprintln!(
+            "nom: closure has {bc_cached} entries with cached bitcode (body_kind=bc) \
+             — relinking path not yet wired; recompiling from source for now"
+        );
     }
     Some(parts.join("\n\n"))
 }
@@ -641,22 +800,6 @@ fn resolve_uses_best_effort(sf: &SourceFile, dict: &NomDict) -> (ResolutionTable
             (table, missing)
         }
     }
-}
-
-/// Best-effort commit SHA detection. Only runs if `git` is on PATH and
-/// the file lives inside a git repo. Absence is not an error.
-fn detect_commit_sha(file: &Path) -> Option<String> {
-    let dir = file.parent()?;
-    let out = process::Command::new("git")
-        .args(["rev-parse", "HEAD"])
-        .current_dir(dir)
-        .output()
-        .ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() { None } else { Some(s) }
 }
 
 fn chrono_like_now() -> String {

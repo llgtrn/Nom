@@ -1,0 +1,11 @@
+[package]
+name = "nom-bench"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+nom-types = { path = "../nom-types" }
+serde = { workspace = true }
+serde_json = { workspace = true }
+thiserror = { workspace = true }

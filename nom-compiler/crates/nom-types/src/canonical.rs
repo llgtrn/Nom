@@ -26,9 +26,12 @@ use crate::Contract;
 use nom_ast::*;
 
 // ── Tag enumeration ─────────────────────────────────────────────────
-// One byte per AST shape. Adding new variants appends — never
-// reorder, never recycle; doing so would invalidate every id ever
-// computed.
+// One byte per AST shape. Within a canonicalizer version, adding new
+// variants appends — never reorder, never recycle; doing so would
+// invalidate every id ever computed for that version. Cross-version
+// changes (desugaring, associativity fixes) DO rehash existing bodies
+// and are reconciled via mandatory SupersededBy edges emitted by
+// `nom store recanonicalize` (see roadmap §5.10.1).
 const TAG_DECL: u8 = 0x01;
 const TAG_IDENT: u8 = 0x02;
 const TAG_CONTRACT: u8 = 0x03;

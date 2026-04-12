@@ -368,6 +368,30 @@ enum StoreCmd {
         #[arg(long)]
         dry_run: bool,
     },
+    /// Summarize dict state: total entries, body_kind histogram.
+    Stats {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON instead of a table
+        #[arg(long)]
+        json: bool,
+    },
+    /// List stored entries, optionally filtered by §4.4.6 body_kind tag.
+    List {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Filter to entries with this body_kind (e.g. `bc`, `avif`, `nom_source`)
+        #[arg(long)]
+        body_kind: Option<String>,
+        /// Maximum number of rows to print
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Emit one JSON record per line
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -465,6 +489,10 @@ fn main() {
             StoreCmd::Closure { hash, dict, json } => store::cmd_store_closure(&hash, &dict, json),
             StoreCmd::Verify { hash, dict, strict } => store::cmd_store_verify(&hash, &dict, strict),
             StoreCmd::Gc { dict, dry_run } => store::cmd_store_gc(&dict, dry_run),
+            StoreCmd::Stats { dict, json } => store::cmd_store_stats(&dict, json),
+            StoreCmd::List { dict, body_kind, limit, json } => {
+                store::cmd_store_list(&dict, body_kind.as_deref(), limit, json)
+            }
         },
     };
     process::exit(exit_code);
@@ -1895,7 +1923,7 @@ fn cmd_import(
     let mut skipped_dup = 0usize;
 
     for row_result in rows {
-        let (hash, name, kind, lang, conc, signature, body, source_path) = match row_result {
+        let (hash, name, kind, lang, conc, signature, body, _source_path) = match row_result {
             Ok(r) => r,
             Err(e) => {
                 eprintln!("nom: row error: {e}");
@@ -1984,10 +2012,9 @@ fn cmd_import(
             reliability: lang_quality,
             overall_score: quality,
             hash,
-            source_repo: source_path.clone(),
-            source_path,
             language: lang_str,
             body: Some(body),
+            body_kind: Some("nom_source".to_owned()),
             signature,
             ..NomtuEntry::default()
         };
@@ -2463,15 +2490,26 @@ fn cmd_precompile(
             Ok(PrecompileResult::Compiled) => {
                 compiled += 1;
                 counts.0 += 1;
-                // Update artifact_path in the database
+                // §4.4.6: a successful precompile means this entry has a
+                // canonical `.bc` artifact. Tag body_kind = "bc" so later
+                // resolution + build passes can pick the bitcode path
+                // instead of recompiling from source.
                 let _ = conn.execute(
-                    "UPDATE nomtu SET artifact_path = ?1 WHERE id = ?2",
-                    rusqlite::params![bc_path.to_string_lossy().as_ref(), id],
+                    "UPDATE nomtu SET artifact_path = ?1, body_kind = ?2 WHERE id = ?3",
+                    rusqlite::params![
+                        bc_path.to_string_lossy().as_ref(),
+                        nom_types::body_kind::BC,
+                        id,
+                    ],
                 );
             }
             Ok(PrecompileResult::Stubbed) => {
                 stubbed += 1;
                 counts.1 += 1;
+                // Stubbed entries have an empty-shell .bc — not a real
+                // compiled artifact. artifact_path is still set so
+                // downstream tooling can find the placeholder, but
+                // body_kind stays NULL to mark this as incomplete.
                 let _ = conn.execute(
                     "UPDATE nomtu SET artifact_path = ?1 WHERE id = ?2",
                     rusqlite::params![bc_path.to_string_lossy().as_ref(), id],
@@ -2927,7 +2965,7 @@ fn cmd_score(dict: &PathBuf) -> i32 {
         // Update scores in the database using the atom's hash/id
         let _ = conn.execute(
             "UPDATE nomtu SET security = ?1, performance = ?2, quality = ?3, reliability = ?4 \
-             WHERE atom_id = ?5 OR (word = ?6 AND source_path = ?7)",
+             WHERE atom_id = ?5 OR word = ?6",
             rusqlite::params![
                 scores.security as f64,
                 scores.performance as f64,
@@ -2935,7 +2973,6 @@ fn cmd_score(dict: &PathBuf) -> i32 {
                 scores.reliability as f64,
                 atom.id,
                 atom.name,
-                atom.source_path,
             ],
         );
 
@@ -3202,7 +3239,7 @@ fn cmd_translate(
 
     // Query non-Rust entries with bodies
     let mut sql = String::from(
-        "SELECT id, word, variant, language, body, concept, kind, source_path \
+        "SELECT id, word, variant, language, body, concept, kind \
          FROM nomtu WHERE language != 'rust' AND body IS NOT NULL",
     );
     let mut param_idx = 1u32;
@@ -3251,7 +3288,6 @@ fn cmd_translate(
             row.get::<_, String>(4)?,         // body
             row.get::<_, Option<String>>(5)?, // concept
             row.get::<_, Option<String>>(6)?, // kind
-            row.get::<_, Option<String>>(7)?, // source_path
         ))
     }) {
         Ok(r) => r,
@@ -3277,8 +3313,8 @@ fn cmd_translate(
     let mut insert_stmt = if !dry_run {
         match conn.prepare(
             "INSERT OR IGNORE INTO nomtu \
-             (word, variant, language, body, concept, kind, source_path, describe) \
-             VALUES (?1, ?2, 'rust', ?3, ?4, ?5, ?6, ?7)",
+             (word, variant, language, body, concept, kind, describe) \
+             VALUES (?1, ?2, 'rust', ?3, ?4, ?5, ?6)",
         ) {
             Ok(s) => Some(s),
             Err(e) => {
@@ -3290,7 +3326,7 @@ fn cmd_translate(
         None
     };
 
-    for (i, (_id, word, variant, lang, body, concept, kind, source_path)) in
+    for (i, (_id, word, variant, lang, body, concept, kind)) in
         entries.iter().enumerate()
     {
         let result = nom_translate::translate(body, lang);
@@ -3333,7 +3369,6 @@ fn cmd_translate(
                 result.rust_body,
                 concept,
                 kind,
-                source_path,
                 describe,
             ]) {
                 Ok(_) => {}

@@ -101,15 +101,10 @@ impl Resolver {
                 audit_passed        BOOLEAN DEFAULT 0,
                 audit_max_severity  TEXT,
                 audit_findings      TEXT,
-                -- provenance
-                source_repo         TEXT,
-                source_path         TEXT,
-                source_line         INTEGER,
-                source_commit       TEXT,
-                author              TEXT,
                 language            TEXT DEFAULT 'rust',
                 -- body & translation
                 body                TEXT,
+                body_kind           TEXT,
                 rust_body           TEXT,
                 translate_confidence REAL,
                 -- graph metadata
@@ -140,10 +135,10 @@ impl Resolver {
             CREATE INDEX IF NOT EXISTS idx_nomtu_language ON nomtu(language);
             CREATE INDEX IF NOT EXISTS idx_nomtu_concept ON nomtu(concept);
             CREATE INDEX IF NOT EXISTS idx_nomtu_hash ON nomtu(hash);
-            CREATE INDEX IF NOT EXISTS idx_nomtu_source_repo ON nomtu(source_repo);
             CREATE INDEX IF NOT EXISTS idx_nomtu_overall_score ON nomtu(overall_score);
             CREATE INDEX IF NOT EXISTS idx_nomtu_community ON nomtu(community_id);
-            CREATE INDEX IF NOT EXISTS idx_nomtu_canonical ON nomtu(word, variant, is_canonical);",
+            CREATE INDEX IF NOT EXISTS idx_nomtu_canonical ON nomtu(word, variant, is_canonical);
+            CREATE INDEX IF NOT EXISTS idx_nomtu_body_kind ON nomtu(body_kind);",
         )?;
         Ok(())
     }
@@ -161,8 +156,8 @@ impl Resolver {
                 security, reliability, performance,
                 readability, testability, portability, composability, maturity, overall_score,
                 audit_passed, audit_max_severity, audit_findings,
-                source_repo, source_path, source_line, source_commit, author, language,
-                body, rust_body, translate_confidence,
+                language,
+                body, body_kind, rust_body, translate_confidence,
                 community_id, callers_count, callees_count, is_entry_point,
                 bc_path, bc_hash, bc_size,
                 capabilities, supervision, schedule,
@@ -171,7 +166,7 @@ impl Resolver {
                      ?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
                      ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,
                      ?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,
-                     ?41,?42,?43,?44,?45,?46,?47,?48,?49,?50,?51)
+                     ?41,?42,?43,?44,?45,?46,?47)
              ON CONFLICT(word, variant, language) DO UPDATE SET
                 kind=excluded.kind,
                 hash=excluded.hash,
@@ -198,12 +193,8 @@ impl Resolver {
                 audit_passed=excluded.audit_passed,
                 audit_max_severity=excluded.audit_max_severity,
                 audit_findings=excluded.audit_findings,
-                source_repo=excluded.source_repo,
-                source_path=excluded.source_path,
-                source_line=excluded.source_line,
-                source_commit=excluded.source_commit,
-                author=excluded.author,
                 body=excluded.body,
+                body_kind=excluded.body_kind,
                 rust_body=excluded.rust_body,
                 translate_confidence=excluded.translate_confidence,
                 community_id=excluded.community_id,
@@ -249,30 +240,26 @@ impl Resolver {
                 entry.audit_passed,         // 25
                 entry.audit_max_severity,   // 26
                 entry.audit_findings,       // 27
-                entry.source_repo,          // 28
-                entry.source_path,          // 29
-                entry.source_line,          // 30
-                entry.source_commit,        // 31
-                entry.author,               // 32
-                entry.language,             // 33
-                entry.body,                 // 34
-                entry.rust_body,            // 35
-                entry.translate_confidence, // 36
-                entry.community_id,         // 37
-                entry.callers_count,        // 38
-                entry.callees_count,        // 39
-                entry.is_entry_point,       // 40
-                entry.bc_path,              // 41
-                entry.bc_hash,              // 42
-                entry.bc_size,              // 43
-                entry.capabilities,         // 44
-                entry.supervision,          // 45
-                entry.schedule,             // 46
-                entry.version,              // 47
-                entry.tests,                // 48
-                entry.is_canonical,         // 49
-                entry.deprecated_by,        // 50
-                entry.updated_at,           // 51
+                entry.language,             // 28
+                entry.body,                 // 29
+                entry.body_kind,            // 30
+                entry.rust_body,            // 31
+                entry.translate_confidence, // 32
+                entry.community_id,         // 33
+                entry.callers_count,        // 34
+                entry.callees_count,        // 35
+                entry.is_entry_point,       // 36
+                entry.bc_path,              // 37
+                entry.bc_hash,              // 38
+                entry.bc_size,              // 39
+                entry.capabilities,         // 40
+                entry.supervision,          // 41
+                entry.schedule,             // 42
+                entry.version,              // 43
+                entry.tests,                // 44
+                entry.is_canonical,         // 45
+                entry.deprecated_by,        // 46
+                entry.updated_at,           // 47
             ],
         )?;
         Ok(())
@@ -584,6 +571,28 @@ impl Resolver {
         self.get_body(word, variant)
     }
 
+    /// §4.4.6: return entries whose `body_kind` matches the given canonical
+    /// format tag. Use `nom_types::body_kind::BC` to select all entries that
+    /// have a compiled LLVM bitcode artifact, `body_kind::AVIF` for still
+    /// images, and so on. Results ranked by `overall_score DESC, id DESC`.
+    pub fn find_by_body_kind(
+        &self,
+        kind: &str,
+        limit: usize,
+    ) -> Result<Vec<NomtuEntry>, ResolverError> {
+        let sql = format!(
+            "{SELECT_COLS} FROM nomtu WHERE body_kind = ?1
+             ORDER BY overall_score DESC, id DESC LIMIT ?2"
+        );
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt.query_map(params![kind, limit as i64], Self::row_to_entry)?;
+        let mut out = Vec::new();
+        for row in rows {
+            out.push(row?);
+        }
+        Ok(out)
+    }
+
     /// Get all language variants for a word.
     pub fn get_all_variants(
         &self,
@@ -691,7 +700,6 @@ impl Resolver {
         language: &str,
         body: &str,
         signature: Option<&str>,
-        source_path: Option<&str>,
         hash: Option<&str>,
         overall_score: f64,
     ) -> Result<(), ResolverError> {
@@ -701,7 +709,6 @@ impl Resolver {
             language: language.to_owned(),
             body: Some(body.to_owned()),
             signature: signature.map(|s| s.to_owned()),
-            source_path: source_path.map(|s| s.to_owned()),
             hash: hash.map(|s| s.to_owned()),
             overall_score,
             ..NomtuEntry::default()
@@ -718,7 +725,6 @@ impl Resolver {
         language: &str,
         body: &str,
         signature: Option<&str>,
-        source_path: Option<&str>,
         hash: Option<&str>,
         overall_score: f64,
     ) -> Result<(), ResolverError> {
@@ -728,14 +734,13 @@ impl Resolver {
             language,
             body,
             signature,
-            source_path,
             hash,
             overall_score,
         )
     }
 
     fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<NomtuEntry> {
-        // Column order matches SELECT_COLS (48 columns):
+        // Column order matches SELECT_COLS (43 columns):
         //  0: id, 1: word, 2: variant, 3: kind, 4: hash, 5: body_hash,
         //  6: describe, 7: concept, 8: labels,
         //  9: input_type, 10: output_type, 11: effects, 12: pre, 13: post,
@@ -744,15 +749,14 @@ impl Resolver {
         // 19: readability, 20: testability, 21: portability,
         // 22: composability, 23: maturity, 24: overall_score,
         // 25: audit_passed, 26: audit_max_severity, 27: audit_findings,
-        // 28: source_repo, 29: source_path, 30: source_line,
-        // 31: source_commit, 32: author, 33: language,
-        // 34: body, 35: rust_body, 36: translate_confidence,
-        // 37: community_id, 38: callers_count, 39: callees_count,
-        // 40: is_entry_point,
-        // 41: bc_path, 42: bc_hash, 43: bc_size,
-        // 44: capabilities, 45: supervision, 46: schedule,
-        // 47: version, 48: tests, 49: is_canonical,
-        // 50: deprecated_by, 51: created_at, 52: updated_at
+        // 28: language,
+        // 29: body, 30: rust_body, 31: translate_confidence,
+        // 32: community_id, 33: callers_count, 34: callees_count,
+        // 35: is_entry_point,
+        // 36: bc_path, 37: bc_hash, 38: bc_size,
+        // 39: capabilities, 40: supervision, 41: schedule,
+        // 42: version, 43: tests, 44: is_canonical,
+        // 45: deprecated_by, 46: created_at, 47: updated_at
         let labels_json: String = row.get(8).unwrap_or_else(|_| "[]".to_owned());
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let effects_json: String = row.get(11).unwrap_or_else(|_| "[]".to_owned());
@@ -788,31 +792,27 @@ impl Resolver {
             audit_passed: row.get(25)?,
             audit_max_severity: row.get(26)?,
             audit_findings: row.get(27)?,
-            source_repo: row.get(28)?,
-            source_path: row.get(29)?,
-            source_line: row.get(30)?,
-            source_commit: row.get(31)?,
-            author: row.get(32)?,
-            language: row.get(33)?,
-            body: row.get(34)?,
-            rust_body: row.get(35)?,
-            translate_confidence: row.get(36)?,
-            community_id: row.get(37)?,
-            callers_count: row.get(38)?,
-            callees_count: row.get(39)?,
-            is_entry_point: row.get(40)?,
-            bc_path: row.get(41)?,
-            bc_hash: row.get(42)?,
-            bc_size: row.get(43)?,
-            capabilities: row.get(44)?,
-            supervision: row.get(45)?,
-            schedule: row.get(46)?,
-            version: row.get(47)?,
-            tests: row.get(48)?,
-            is_canonical: row.get(49)?,
-            deprecated_by: row.get(50)?,
-            created_at: row.get(51)?,
-            updated_at: row.get(52)?,
+            language: row.get(28)?,
+            body: row.get(29)?,
+            body_kind: row.get(30)?,
+            rust_body: row.get(31)?,
+            translate_confidence: row.get(32)?,
+            community_id: row.get(33)?,
+            callers_count: row.get(34)?,
+            callees_count: row.get(35)?,
+            is_entry_point: row.get(36)?,
+            bc_path: row.get(37)?,
+            bc_hash: row.get(38)?,
+            bc_size: row.get(39)?,
+            capabilities: row.get(40)?,
+            supervision: row.get(41)?,
+            schedule: row.get(42)?,
+            version: row.get(43)?,
+            tests: row.get(44)?,
+            is_canonical: row.get(45)?,
+            deprecated_by: row.get(46)?,
+            created_at: row.get(47)?,
+            updated_at: row.get(48)?,
         })
     }
 }
@@ -824,8 +824,8 @@ const SELECT_COLS: &str = "SELECT id, word, variant, kind, hash, body_hash, \
      security, reliability, performance, \
      readability, testability, portability, composability, maturity, overall_score, \
      audit_passed, audit_max_severity, audit_findings, \
-     source_repo, source_path, source_line, source_commit, author, language, \
-     body, rust_body, translate_confidence, \
+     language, \
+     body, body_kind, rust_body, translate_confidence, \
      community_id, callers_count, callees_count, is_entry_point, \
      bc_path, bc_hash, bc_size, \
      capabilities, supervision, schedule, \
@@ -854,7 +854,7 @@ pub enum DictQuery {
 }
 
 /// Parse a compound query string into a DictQuery.
-/// Format: "security>0.9 and license=MIT and not deprecated"
+/// Format: "security>0.9 and source=stdlib and not deprecated"
 pub fn parse_dict_query(query: &str) -> Result<DictQuery, ResolverError> {
     let parts: Vec<&str> = query.split(" and ").collect();
     let mut conditions = Vec::new();
@@ -1164,7 +1164,6 @@ mod tests {
             language: "rust".to_owned(),
             body: Some("fn hash(data: &[u8]) -> [u8; 32] { todo!() }".to_owned()),
             signature: Some(r#"{"inputs":["bytes"],"outputs":["hash"],"effects":[]}"#.to_owned()),
-            source_path: Some("crypto/src/hash.rs".to_owned()),
             hash: Some("abc123".to_owned()),
             overall_score: 0.85,
             ..NomtuEntry::default()
@@ -1179,6 +1178,107 @@ mod tests {
         assert!((found.overall_score - 0.85).abs() < 1e-9);
     }
 
+    /// §4.4.6: body_kind tag must survive the upsert/select round-trip.
+    /// Pins iteration-1 plumbing ahead of the .bc-into-body migration.
+    #[test]
+    fn body_kind_round_trips() {
+        use nom_types::body_kind;
+        let resolver = Resolver::open_in_memory().unwrap();
+
+        // Entry tagged as compiled bitcode.
+        let entry = NomtuEntry {
+            word: "encode_avif".to_owned(),
+            variant: Some("libavif".to_owned()),
+            language: "c".to_owned(),
+            body: Some("<bitcode-placeholder>".to_owned()),
+            body_kind: Some(body_kind::BC.to_owned()),
+            hash: Some("bc_abc".to_owned()),
+            ..NomtuEntry::default()
+        };
+        resolver.upsert(&entry).unwrap();
+
+        let found = resolver
+            .get_body("encode_avif", Some("libavif"))
+            .unwrap()
+            .unwrap();
+        assert_eq!(found.body_kind.as_deref(), Some(body_kind::BC));
+        assert!(body_kind::is_known(found.body_kind.as_deref().unwrap()));
+
+        // Entry with no body_kind stays None (back-compat with pre-§4.4.6 rows).
+        let legacy = NomtuEntry {
+            word: "legacy_fn".to_owned(),
+            variant: None,
+            language: "rust".to_owned(),
+            body: Some("fn legacy() {}".to_owned()),
+            body_kind: None,
+            hash: Some("legacy_hash".to_owned()),
+            ..NomtuEntry::default()
+        };
+        resolver.upsert(&legacy).unwrap();
+        let got = resolver.get_body("legacy_fn", None).unwrap().unwrap();
+        assert_eq!(got.body_kind, None);
+    }
+
+    /// §4.4.6: find_by_body_kind filters to entries carrying the given tag,
+    /// respects overall_score ranking, and caps at the limit.
+    #[test]
+    fn find_by_body_kind_filters_and_ranks() {
+        use nom_types::body_kind;
+        let resolver = Resolver::open_in_memory().unwrap();
+
+        // Two compiled entries with different scores; one untagged entry.
+        resolver
+            .upsert(&NomtuEntry {
+                word: "encode_av1".to_owned(),
+                variant: Some("rav1e".to_owned()),
+                language: "rust".to_owned(),
+                body: Some("<bc>".to_owned()),
+                body_kind: Some(body_kind::BC.to_owned()),
+                overall_score: 0.7,
+                hash: Some("h_rav1e".to_owned()),
+                ..NomtuEntry::default()
+            })
+            .unwrap();
+        resolver
+            .upsert(&NomtuEntry {
+                word: "decode_av1".to_owned(),
+                variant: Some("dav1d".to_owned()),
+                language: "c".to_owned(),
+                body: Some("<bc>".to_owned()),
+                body_kind: Some(body_kind::BC.to_owned()),
+                overall_score: 0.9,
+                hash: Some("h_dav1d".to_owned()),
+                ..NomtuEntry::default()
+            })
+            .unwrap();
+        resolver
+            .upsert(&NomtuEntry {
+                word: "source_only".to_owned(),
+                variant: None,
+                language: "rust".to_owned(),
+                body: Some("fn foo() {}".to_owned()),
+                body_kind: None,
+                hash: Some("h_src".to_owned()),
+                ..NomtuEntry::default()
+            })
+            .unwrap();
+
+        let bcs = resolver.find_by_body_kind(body_kind::BC, 10).unwrap();
+        assert_eq!(bcs.len(), 2);
+        // Higher-score dav1d ranks first.
+        assert_eq!(bcs[0].word, "decode_av1");
+        assert_eq!(bcs[1].word, "encode_av1");
+
+        // Limit respected.
+        let one = resolver.find_by_body_kind(body_kind::BC, 1).unwrap();
+        assert_eq!(one.len(), 1);
+        assert_eq!(one[0].word, "decode_av1");
+
+        // Unknown kind returns empty.
+        let avifs = resolver.find_by_body_kind(body_kind::AVIF, 10).unwrap();
+        assert!(avifs.is_empty());
+    }
+
     #[test]
     fn canonical_prefers_rust() {
         let resolver = Resolver::open_in_memory().unwrap();
@@ -1191,7 +1291,6 @@ mod tests {
                 "python",
                 "def sort(lst): return sorted(lst)",
                 None,
-                None,
                 Some("py1"),
                 0.95,
             )
@@ -1203,7 +1302,6 @@ mod tests {
                 None,
                 "rust",
                 "fn sort(v: &mut Vec<i32>) { v.sort(); }",
-                None,
                 None,
                 Some("rs1"),
                 0.70,
@@ -1226,7 +1324,6 @@ mod tests {
                 "rust",
                 "fn sort() {}",
                 None,
-                None,
                 Some("rs1"),
                 0.70,
             )
@@ -1237,7 +1334,6 @@ mod tests {
                 None,
                 "python",
                 "def sort(): pass",
-                None,
                 None,
                 Some("py1"),
                 0.95,
@@ -1262,7 +1358,6 @@ mod tests {
                 "rust",
                 "fn encrypt(key: &[u8], data: &[u8]) -> Vec<u8> { todo!() }",
                 Some(r#"{"inputs":["key","data"],"outputs":["ciphertext"],"effects":["crypto"]}"#),
-                Some("crypto/src/aes.rs"),
                 Some("hash456"),
                 0.90,
             )
@@ -1271,7 +1366,6 @@ mod tests {
         let found = resolver.get_body("encrypt", Some("aes")).unwrap().unwrap();
         assert_eq!(found.language, "rust");
         assert!(found.body.as_deref().unwrap().contains("encrypt"));
-        assert_eq!(found.source_path.as_deref(), Some("crypto/src/aes.rs"));
         assert_eq!(found.hash.as_deref(), Some("hash456"));
     }
 
@@ -1286,7 +1380,6 @@ mod tests {
                 "rust",
                 "fn parse() {}",
                 None,
-                None,
                 Some("rs1"),
                 0.80,
             )
@@ -1298,7 +1391,6 @@ mod tests {
                 "python",
                 "def parse(): pass",
                 None,
-                None,
                 Some("py1"),
                 0.75,
             )
@@ -1309,7 +1401,6 @@ mod tests {
                 None,
                 "go",
                 "func parse() {}",
-                None,
                 None,
                 Some("go1"),
                 0.70,
@@ -1335,7 +1426,6 @@ mod tests {
                 "rust",
                 "fn fmt() {}",
                 None,
-                None,
                 Some("rs1"),
                 0.80,
             )
@@ -1346,7 +1436,6 @@ mod tests {
                 None,
                 "go",
                 "func fmt() {}",
-                None,
                 None,
                 Some("go1"),
                 0.90,
@@ -1472,7 +1561,6 @@ mod tests {
                 "rust",
                 "fn sort() {}",
                 None,
-                None,
                 Some("rs1"),
                 0.80,
             )
@@ -1485,10 +1573,10 @@ mod tests {
     fn backward_compat_get_all_impls() {
         let resolver = Resolver::open_in_memory().unwrap();
         resolver
-            .import_atom("x", None, "rust", "fn x() {}", None, None, Some("r1"), 0.8)
+            .import_atom("x", None, "rust", "fn x() {}", None, Some("r1"), 0.8)
             .unwrap();
         resolver
-            .import_atom("x", None, "go", "func x() {}", None, None, Some("g1"), 0.7)
+            .import_atom("x", None, "go", "func x() {}", None, Some("g1"), 0.7)
             .unwrap();
         let all = resolver.get_all_impls("x", None).unwrap();
         assert_eq!(all.len(), 2);
@@ -1575,7 +1663,7 @@ mod tests {
 
     #[test]
     fn parses_compound_and_query() {
-        let q = parse_dict_query("security>0.9 and license=MIT").unwrap();
+        let q = parse_dict_query("security>0.9 and source=stdlib").unwrap();
         match q {
             DictQuery::And(parts) => assert_eq!(parts.len(), 2),
             _ => panic!("expected And"),
@@ -1593,7 +1681,7 @@ mod tests {
 
     #[test]
     fn parses_complex_query() {
-        let q = parse_dict_query("security>0.9 and license=MIT and not deprecated").unwrap();
+        let q = parse_dict_query("security>0.9 and source=stdlib and not deprecated").unwrap();
         match q {
             DictQuery::And(parts) => {
                 assert_eq!(parts.len(), 3);

@@ -42,7 +42,8 @@ CREATE TABLE IF NOT EXISTS entries (
     is_canonical         BOOLEAN DEFAULT 1,
     deprecated_by        TEXT,
     created_at           TEXT DEFAULT (datetime('now')),
-    updated_at           TEXT
+    updated_at           TEXT,
+    body_kind            TEXT
 );
 CREATE INDEX IF NOT EXISTS idx_entries_word ON entries(word);
 CREATE INDEX IF NOT EXISTS idx_entries_word_variant ON entries(word, variant);
@@ -205,6 +206,23 @@ impl NomDict {
         Ok(n as usize)
     }
 
+    /// §4.4.6: histogram of `body_kind` values across the dict.
+    /// Returns `(kind_or_null, count)` pairs sorted by count desc.
+    /// The NULL-bucket is returned as `"(untagged)"` so all rows are one
+    /// consistent `(String, usize)` shape. Used by `nom store stats`.
+    pub fn body_kind_histogram(&self) -> Result<Vec<(String, usize)>> {
+        let mut stmt = self.conn.prepare(
+            "SELECT COALESCE(body_kind, '(untagged)') AS k, COUNT(*) AS n
+             FROM entries
+             GROUP BY body_kind
+             ORDER BY n DESC, k ASC",
+        )?;
+        let rows = stmt
+            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     // ── Upsert / setters ──────────────────────────────────────────
 
     /// Insert or replace the main `entries` row. Returns the entry id.
@@ -215,8 +233,8 @@ impl NomDict {
             "INSERT INTO entries (id, word, variant, kind, language, describe, concept,
                                   body, body_nom, input_type, output_type, pre, post,
                                   status, translation_score, is_canonical, deprecated_by,
-                                  created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)
+                                  created_at, updated_at, body_kind)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
              ON CONFLICT(id) DO UPDATE SET
                  word              = excluded.word,
                  variant           = excluded.variant,
@@ -226,6 +244,7 @@ impl NomDict {
                  concept           = COALESCE(excluded.concept, entries.concept),
                  body              = COALESCE(excluded.body, entries.body),
                  body_nom          = COALESCE(excluded.body_nom, entries.body_nom),
+                 body_kind         = COALESCE(excluded.body_kind, entries.body_kind),
                  status            = excluded.status,
                  translation_score = COALESCE(excluded.translation_score, entries.translation_score),
                  is_canonical      = excluded.is_canonical,
@@ -251,6 +270,7 @@ impl NomDict {
                 entry.deprecated_by,
                 entry.created_at,
                 entry.updated_at,
+                entry.body_kind,
             ],
         )?;
         Ok(entry.id.clone())
@@ -290,7 +310,7 @@ impl NomDict {
     }
 
     /// Add a (key, value) metadata row. `(id, key, value)` is the PK so
-    /// the same key can have many values (e.g. multiple `source_repo`
+    /// the same key can have many values (e.g. multiple `tag`
     /// values for a dedup'd entry).
     pub fn add_meta(&self, id: &str, key: &str, value: &str) -> Result<()> {
         self.conn.execute(
@@ -394,7 +414,7 @@ impl NomDict {
             .query_row(
                 "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
                         input_type, output_type, pre, post, status, translation_score,
-                        is_canonical, deprecated_by, created_at, updated_at
+                        is_canonical, deprecated_by, created_at, updated_at, body_kind
                  FROM entries WHERE id = ?1",
                 params![id],
                 row_to_entry,
@@ -410,11 +430,29 @@ impl NomDict {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
                     input_type, output_type, pre, post, status, translation_score,
-                    is_canonical, deprecated_by, created_at, updated_at
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind
              FROM entries WHERE word = ?1 ORDER BY id",
         )?;
         let rows = stmt
             .query_map(params![word], row_to_entry)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// §4.4.6: return entries whose `body_kind` equals the given tag.
+    /// Parallel to [`nom_resolver::Resolver::find_by_body_kind`] but on
+    /// the v2 DIDS store — used by `nom build <hash>` closure walks to
+    /// filter to entries with the right canonical format (e.g. only
+    /// bitcode-ready entries when linking an app).
+    pub fn find_by_body_kind(&self, kind: &str, limit: usize) -> Result<Vec<Entry>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                    input_type, output_type, pre, post, status, translation_score,
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind
+             FROM entries WHERE body_kind = ?1 ORDER BY id LIMIT ?2",
+        )?;
+        let rows = stmt
+            .query_map(params![kind, limit as i64], row_to_entry)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -535,8 +573,8 @@ impl NomDict {
                 "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe,
                                                 concept, body, body_nom, input_type, output_type,
                                                 pre, post, status, translation_score, is_canonical,
-                                                deprecated_by, created_at, updated_at)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19)",
+                                                deprecated_by, created_at, updated_at, body_kind)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
             )?;
             for e in entries {
                 let rows = stmt.execute(params![
@@ -559,6 +597,7 @@ impl NomDict {
                     e.deprecated_by,
                     e.created_at,
                     e.updated_at,
+                    e.body_kind,
                 ])?;
                 if rows > 0 {
                     inserted += 1;
@@ -626,6 +665,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
         deprecated_by: row.get(16)?,
         created_at: row.get(17)?,
         updated_at: row.get(18)?,
+        body_kind: row.get(19)?,
     })
 }
 
@@ -697,6 +737,7 @@ mod tests {
             concept: None,
             body: None,
             body_nom: None,
+            body_kind: None,
             contract: Contract::default(),
             status: EntryStatus::Complete,
             translation_score: None,
@@ -729,8 +770,8 @@ mod tests {
     fn meta_multi_value() {
         let d = NomDict::open_in_memory().unwrap();
         d.upsert_entry(&make_entry("x", "w")).unwrap();
-        d.add_meta("x", "source_repo", "a").unwrap();
-        d.add_meta("x", "source_repo", "b").unwrap();
+        d.add_meta("x", "tag", "a").unwrap();
+        d.add_meta("x", "tag", "b").unwrap();
         let m = d.get_meta("x").unwrap();
         assert_eq!(m.len(), 2);
     }
@@ -852,5 +893,74 @@ mod tests {
             plan_text.contains("USING INDEX") || plan_text.contains("USING COVERING INDEX"),
             "query plan did not use any index: {plan_text}"
         );
+    }
+
+    /// §4.4.6: NomDict::find_by_body_kind filters to entries with the
+    /// given canonical-format tag. Mirrors the resolver-side query.
+    #[test]
+    fn v2_find_by_body_kind() {
+        use nom_types::body_kind;
+        let d = NomDict::open_in_memory().unwrap();
+
+        let mut bc_entry = make_entry("bc_abc", "encode_av1");
+        bc_entry.body_kind = Some(body_kind::BC.to_owned());
+        d.upsert_entry(&bc_entry).unwrap();
+
+        let mut avif_entry = make_entry("av_def", "photo");
+        avif_entry.body_kind = Some(body_kind::AVIF.to_owned());
+        d.upsert_entry(&avif_entry).unwrap();
+
+        let legacy = make_entry("leg_ghi", "untagged");
+        d.upsert_entry(&legacy).unwrap();
+
+        let bcs = d.find_by_body_kind(body_kind::BC, 10).unwrap();
+        assert_eq!(bcs.len(), 1);
+        assert_eq!(bcs[0].word, "encode_av1");
+
+        let avifs = d.find_by_body_kind(body_kind::AVIF, 10).unwrap();
+        assert_eq!(avifs.len(), 1);
+        assert_eq!(avifs[0].word, "photo");
+
+        let flacs = d.find_by_body_kind(body_kind::FLAC, 10).unwrap();
+        assert!(flacs.is_empty());
+
+        // Also confirms find_by_word works after the SELECT column-list fix.
+        let by_word = d.find_by_word("encode_av1").unwrap();
+        assert_eq!(by_word.len(), 1);
+        assert_eq!(by_word[0].body_kind.as_deref(), Some(body_kind::BC));
+    }
+
+    /// §4.4.6: body_kind_histogram aggregates counts per tag, including
+    /// the `(untagged)` bucket for NULL body_kind rows.
+    #[test]
+    fn body_kind_histogram_counts() {
+        use nom_types::body_kind;
+        let d = NomDict::open_in_memory().unwrap();
+
+        let mut a = make_entry("a", "w1");
+        a.body_kind = Some(body_kind::BC.to_owned());
+        d.upsert_entry(&a).unwrap();
+
+        let mut b = make_entry("b", "w2");
+        b.body_kind = Some(body_kind::BC.to_owned());
+        d.upsert_entry(&b).unwrap();
+
+        let mut c = make_entry("c", "w3");
+        c.body_kind = Some(body_kind::AVIF.to_owned());
+        d.upsert_entry(&c).unwrap();
+
+        // One legacy entry with NULL body_kind.
+        d.upsert_entry(&make_entry("d", "w4")).unwrap();
+
+        let hist = d.body_kind_histogram().unwrap();
+        // Sorted by count desc: bc (2), avif (1), (untagged) (1).
+        // Tiebreak: (untagged) before avif alphabetically.
+        let as_map: std::collections::HashMap<String, usize> =
+            hist.iter().cloned().collect();
+        assert_eq!(as_map.get(body_kind::BC), Some(&2));
+        assert_eq!(as_map.get(body_kind::AVIF), Some(&1));
+        assert_eq!(as_map.get("(untagged)"), Some(&1));
+        assert_eq!(hist[0].0, body_kind::BC); // highest count first
+        assert_eq!(hist[0].1, 2);
     }
 }

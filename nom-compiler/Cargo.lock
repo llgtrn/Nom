@@ -385,10 +385,31 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "f8ca58f447f06ed17d5fc4043ce1b10dd205e060fb3ce5b979b8ed8e59ff3f79"
 
 [[package]]
+name = "nom-app"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "nom-ux",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "nom-ast"
 version = "0.1.0"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "nom-bench"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -436,6 +457,15 @@ dependencies = [
  "anyhow",
  "serde",
  "toml",
+]
+
+[[package]]
+name = "nom-corpus"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]
@@ -514,6 +544,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-flow"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "nom-graph"
 version = "0.1.0"
 dependencies = [
@@ -539,6 +579,15 @@ dependencies = [
  "nom-ast",
  "nom-parser",
  "nom-planner",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "nom-media"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
  "thiserror 2.0.18",
 ]
 
@@ -630,6 +679,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "nom-ux"
+version = "0.1.0"
+dependencies = [
+ "nom-types",
+ "serde",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

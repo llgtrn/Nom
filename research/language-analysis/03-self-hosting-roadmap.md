@@ -265,6 +265,28 @@
 
 ---
 
+## Relationship to Phase 5 media/UX work — parallel tracks, not blockers (added 2026-04-12)
+
+Self-hosting phases 0–7 (above) target the core compiler pipeline: lexer → parser → AST → verifier → planner → codegen → bootstrap. These do NOT block media/UX work and are not blocked by it.
+
+- **§5.11 (UX as nomtu) and §5.16 (media as nomtu + codec compilation) live atop the compiled output of Phase 0's runtime library.** They add new crates (`nom-ux`, `nom-media`) and new kinds of dict entries — they do NOT change the compiler's grammar, lexer, or codegen.
+- **A user running `nom app build <hash> --target web` or `nom media render <hash> --target av1` uses the self-hosted compiler as the build driver.** The compiler doesn't need to understand UX or media semantics — just to compile the FFI-wrapper nomtu bodies that the codec/UI-runtime closures contain.
+- **The self-hosting fixpoint proof** (§10.3.1 in [`04-next-phases-plan.md`](./04-next-phases-plan.md)) compiles the compiler against the core language only; media/UX nomtu are not part of the compiler's own manifest closure. They can evolve independently of the fixpoint track.
+- **Team-scaling implication:** two engineers can work in parallel — one on self-hosting Phase N, one on §5.16 codec landings — with minimal coordination beyond the shared `nom-types` / `nom-dict` crates.
+
+The only coupling is a Phase 3 requirement (already met): the AST supports `Ffi` binding nodes. All codec nomtu and `ui_runtime_launch` nomtu use this to call into native libraries. If the self-hosted AST crate ever drops FFI support, media/UX work stops. It must not.
+
+### Note on the body-as-compiled-artifact shift (§4.4.6, 2026-04-12)
+
+After the architectural shift captured in [`04-next-phases-plan.md`](./04-next-phases-plan.md) §4.4.6, the dict stores `.bc` (compiled LLVM bitcode), not Nom source. This affects self-hosting as follows:
+
+- **The compiler's own source stays in `.nom` files** (the user-authored surface form). Stages 0–7 above all target the compilation of those `.nom` files.
+- **The fixpoint test at §10.3.1** compares Stage 2's output `.bc` hash to Stage 3's — exactly the byte-comparison these phases already target, now explicit about the artifact being `.bc`.
+- **Phase 5 "Planner in Nom" and Phase 6 "Codegen in Nom"** still write Nom source in `.nom` files. The output of running them (and every subsequent pass) is `.bc` in the dict. Nothing in the self-hosting pipeline authors or reads Nom source from the dict.
+- **Phase 0 runtime library** now ships as `.bc` (from compiling its Rust/Nom source), not as a source-in-dict artifact. The runtime's hash is the hash of its `.bc`.
+
+The self-hosting path is *simpler* under this shift: there's no "canonicalize Nom source in dict" step, because there's no Nom source in the dict to canonicalize.
+
 ## Success Metrics
 
 - [ ] Nom lexer compiles and lexes itself

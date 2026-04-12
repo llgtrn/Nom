@@ -4,7 +4,7 @@
 //!
 //! **Layer 1 — .nom program security (compile-time):**
 //!   - Minimum security/reliability scores for resolved words
-//!   - License compatibility and supply-chain provenance
+//!   - Supply-chain provenance
 //!   - CVE flags, untrusted sources
 //!   - Effect escalation detection
 //!
@@ -165,10 +165,6 @@ pub struct SecurityConfig {
     pub min_security_score: f64,
     /// Minimum acceptable reliability score.
     pub min_reliability_score: f64,
-    /// If true, flag words from non-registry sources.
-    pub require_registry_source: bool,
-    /// Allowed license identifiers (SPDX). Empty = allow all.
-    pub allowed_licenses: Vec<String>,
 }
 
 impl Default for SecurityConfig {
@@ -176,8 +172,6 @@ impl Default for SecurityConfig {
         Self {
             min_security_score: 0.7,
             min_reliability_score: 0.5,
-            require_registry_source: false,
-            allowed_licenses: Vec::new(),
         }
     }
 }
@@ -309,37 +303,6 @@ impl<'r> SecurityChecker<'r> {
                 word: Some(entry.word.clone()),
                 variant: entry.variant.clone(),
             });
-        }
-
-        // Check for untrusted source
-        if self.config.require_registry_source {
-            if let Some(source) = &entry.source_repo {
-                if !source.starts_with("https://registry.nom-lang.org") {
-                    report.push(SecurityFinding {
-                        severity: Severity::Low,
-                        category: "supply_chain".to_owned(),
-                        rule_id: "SEC-P03".to_owned(),
-                        message: format!("{label} comes from untrusted source: {source}"),
-                        evidence: Some(source.clone()),
-                        line: None,
-                        remediation: Some("Use words from the official registry".to_owned()),
-                        word: Some(entry.word.clone()),
-                        variant: entry.variant.clone(),
-                    });
-                }
-            } else {
-                report.push(SecurityFinding {
-                    severity: Severity::Low,
-                    category: "supply_chain".to_owned(),
-                    rule_id: "SEC-P04".to_owned(),
-                    message: format!("{label} has no source URL (local or unverified)"),
-                    evidence: None,
-                    line: None,
-                    remediation: Some("Register the word with a verified source".to_owned()),
-                    word: Some(entry.word.clone()),
-                    variant: entry.variant.clone(),
-                });
-            }
         }
 
         // Check for CVE flags
