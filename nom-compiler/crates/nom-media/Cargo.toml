@@ -8,3 +8,4 @@ license.workspace = true
 nom-types = { path = "../nom-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
+image = { version = "0.25", default-features = false, features = ["png"] }

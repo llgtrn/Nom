@@ -19,6 +19,12 @@
 //! arrives incrementally per the §5.16.13 codec roadmap (PNG → FLAC →
 //! JPEG → Opus → AVIF → AV1 → AAC → WebM → MP4 → HEVC).
 
+use std::io::Cursor;
+
+use image::{
+    codecs::png::{CompressionType, FilterType, PngEncoder},
+    ColorType, ExtendedColorType, ImageEncoder, ImageReader,
+};
 use thiserror::Error;
 
 /// Canonical media modality. Maps to exactly one storage format per
@@ -100,6 +106,156 @@ pub enum MediaError {
     NotYetImplemented { codec: String, order: usize },
     #[error("io error: {0}")]
     Io(#[from] std::io::Error),
+    #[error("PNG codec error: {0}")]
+    Png(String),
+}
+
+// ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
+
+/// Result of ingesting a PNG byte slice. Contains decoded image
+/// dimensions, colour type, and canonical re-encoded bytes.
+///
+/// The `canonical_bytes` are re-encoded at fixed deterministic settings
+/// (see [`ingest_png`]) so two calls with identical pixel content
+/// produce byte-identical output.
+#[derive(Debug, Clone)]
+pub struct IngestedPng {
+    pub width: u32,
+    pub height: u32,
+    /// Human-readable colour type label, e.g. `"rgb8"`, `"rgba8"`,
+    /// `"l8"`, `"la8"`.
+    pub color_type: String,
+    /// Canonical PNG bytes re-encoded at fixed settings for
+    /// determinism. Tagged `body_kind = "png"` in the dict.
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode a PNG byte slice and return an [`IngestedPng`] containing
+/// the decoded dimensions, colour type, and deterministically
+/// re-encoded canonical bytes.
+///
+/// # Deterministic re-encode settings
+///
+/// Re-encoding uses:
+/// - `CompressionType::Default` — zlib level 6, the standard default
+///   used by virtually every PNG encoder. Level 6 balances compression
+///   ratio and speed without relying on encoder-specific fast/best
+///   flags that differ between libpng versions.
+/// - `FilterType::Sub` — byte-level delta filter on rows. Sub is
+///   deterministic across encoder versions and works well for natural
+///   images without the variable output of the Paeth heuristic.
+///
+/// Together these produce byte-identical output for the same pixel
+/// data across `image` crate versions that maintain this API.
+///
+/// Returns [`MediaError::Png`] on malformed or unsupported PNG input.
+pub fn ingest_png(bytes: &[u8]) -> Result<IngestedPng, MediaError> {
+    // Decode via `image` crate reader.
+    let reader = ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png);
+    let dyn_img = reader
+        .decode()
+        .map_err(|e| MediaError::Png(e.to_string()))?;
+
+    let width = dyn_img.width();
+    let height = dyn_img.height();
+
+    // Determine colour type label from the decoded image.
+    let color_type_label = color_type_label(dyn_img.color());
+
+    // Re-encode to canonical bytes.
+    let canonical_bytes = encode_png_deterministic(&dyn_img)?;
+
+    Ok(IngestedPng {
+        width,
+        height,
+        color_type: color_type_label,
+        canonical_bytes,
+    })
+}
+
+/// Verify that decoding `bytes` and re-encoding produces pixel-identical
+/// output to decoding the re-encoded bytes. The round-trip proves that
+/// `ingest_png` preserves all pixel information.
+///
+/// Returns `Ok(())` if pixels match, or [`MediaError::Png`] on any
+/// decode/encode failure or pixel mismatch.
+pub fn verify_png_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_png(bytes)?;
+
+    // Decode the canonical bytes back to pixels.
+    let reader2 = ImageReader::with_format(
+        Cursor::new(&ingested.canonical_bytes),
+        image::ImageFormat::Png,
+    );
+    let roundtripped = reader2
+        .decode()
+        .map_err(|e| MediaError::Png(format!("round-trip decode failed: {e}")))?;
+
+    // Compare raw pixel bytes — pixel-equality, not byte-equality of
+    // the compressed stream.
+    let original_pixels = image_to_rgba8(&image::ImageReader::with_format(
+        Cursor::new(bytes),
+        image::ImageFormat::Png,
+    )
+    .decode()
+    .map_err(|e| MediaError::Png(e.to_string()))?);
+
+    let roundtripped_pixels = image_to_rgba8(&roundtripped);
+
+    if original_pixels != roundtripped_pixels {
+        return Err(MediaError::Png(
+            "pixel mismatch after round-trip re-encode".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
+// ── Private helpers ───────────────────────────────────────────────────
+
+fn color_type_label(ct: ColorType) -> String {
+    match ct {
+        ColorType::L8 => "l8",
+        ColorType::La8 => "la8",
+        ColorType::Rgb8 => "rgb8",
+        ColorType::Rgba8 => "rgba8",
+        ColorType::L16 => "l16",
+        ColorType::La16 => "la16",
+        ColorType::Rgb16 => "rgb16",
+        ColorType::Rgba16 => "rgba16",
+        ColorType::Rgb32F => "rgb32f",
+        ColorType::Rgba32F => "rgba32f",
+        _ => "unknown",
+    }
+    .to_owned()
+}
+
+/// Re-encode a `DynamicImage` to PNG bytes at fixed deterministic settings.
+fn encode_png_deterministic(img: &image::DynamicImage) -> Result<Vec<u8>, MediaError> {
+    let mut out = Vec::new();
+    // Fixed settings for deterministic output — see `ingest_png` doc comment.
+    let encoder = PngEncoder::new_with_quality(
+        Cursor::new(&mut out),
+        CompressionType::Default,
+        FilterType::Sub,
+    );
+
+    let width = img.width();
+    let height = img.height();
+    // Encode via the raw pixel bytes at the image's native colour type.
+    let color = img.color();
+    let raw = img.as_bytes();
+
+    encoder
+        .write_image(raw, width, height, ExtendedColorType::from(color))
+        .map_err(|e| MediaError::Png(e.to_string()))?;
+
+    Ok(out)
+}
+
+/// Flatten any colour type to RGBA8 for pixel-equality comparison.
+fn image_to_rgba8(img: &image::DynamicImage) -> Vec<u8> {
+    img.to_rgba8().into_raw()
 }
 
 #[cfg(test)]
