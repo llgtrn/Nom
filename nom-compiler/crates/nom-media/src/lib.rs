@@ -126,6 +126,8 @@ pub enum MediaError {
     Webm(String),
     #[error("MP4 codec error: {0}")]
     Mp4(String),
+    #[error("HEVC codec error: {0}")]
+    Hevc(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -2111,6 +2113,360 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
     }
 
     Ok((duration_ms, tracks))
+}
+
+// ── HEVC codec (§5.16.13 order #10, decode-only) ──────────────────────
+
+/// Result of ingesting an HEVC Annex-B bitstream. Contains NAL unit count
+/// and, when an SPS NAL is present, the video dimensions and profile.
+///
+/// # Decode-only design
+///
+/// HEVC is decode-only per §5.16.13: intended for reading legacy iPhone
+/// videos. No re-encode is planned. `canonical_bytes` is always an identity
+/// copy of the input — not a placeholder pending a future encoder, but the
+/// correct and final design for this codec entry.
+///
+/// # SPS parsing
+///
+/// When a NAL of type 33 (SPS) is found, the parser decodes:
+/// - `profile_idc` from `profile_tier_level` (general_profile_idc, u5)
+/// - `pic_width_in_luma_samples` and `pic_height_in_luma_samples` via ue(v)
+///
+/// If no parseable SPS is found, width/height/profile_idc are 0.
+///
+/// Tagged `body_kind = "hevc"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedHevc {
+    pub width: u32,
+    pub height: u32,
+    pub profile_idc: u8,
+    /// Total NAL units counted in the Annex-B stream.
+    pub nal_unit_count: u32,
+    /// Canonical HEVC bytes. Always an identity copy of the input per the
+    /// decode-only design (§5.16.13 order #10).
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Ingest an HEVC Annex-B bitstream.
+///
+/// Walks NAL unit start codes, counts all NAL units, and attempts to decode
+/// the first SPS (type 33) to extract width, height, and profile_idc.
+/// If SPS parsing fails or no SPS is found, those fields are 0.
+///
+/// Returns [`MediaError::Hevc`] if the input contains no valid Annex-B
+/// start codes.
+pub fn ingest_hevc(bytes: &[u8]) -> Result<IngestedHevc, MediaError> {
+    let (nal_unit_count, width, height, profile_idc) = parse_hevc_annexb(bytes)?;
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedHevc {
+        width,
+        height,
+        profile_idc,
+        nal_unit_count,
+        canonical_bytes,
+    })
+}
+
+/// Decode-only round-trip: parse → identity copy → parse; `nal_unit_count`
+/// and any decoded SPS fields must match.
+///
+/// No re-encode is ever planned per §5.16.13.
+///
+/// Returns [`MediaError::Hevc`] if either parse fails or metadata differs.
+pub fn verify_hevc_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_hevc(bytes)?;
+    // Re-parse canonical bytes (which are the identity copy).
+    let (rt_count, rt_w, rt_h, rt_p) = parse_hevc_annexb(&ingested.canonical_bytes)?;
+    if ingested.nal_unit_count != rt_count {
+        return Err(MediaError::Hevc(format!(
+            "nal_unit_count mismatch after round-trip: original={} canonical={}",
+            ingested.nal_unit_count, rt_count
+        )));
+    }
+    if ingested.width != rt_w || ingested.height != rt_h || ingested.profile_idc != rt_p {
+        return Err(MediaError::Hevc(format!(
+            "SPS metadata mismatch after round-trip: \
+             original=({},{},p{}) canonical=({},{},p{})",
+            ingested.width, ingested.height, ingested.profile_idc,
+            rt_w, rt_h, rt_p
+        )));
+    }
+    Ok(())
+}
+
+/// Walk an HEVC Annex-B bitstream, counting NAL units and parsing the first
+/// SPS (type 33) for profile_idc, width, and height.
+///
+/// Returns `(nal_unit_count, width, height, profile_idc)`.
+/// Returns `MediaError::Hevc` if no start codes are found (not an Annex-B
+/// stream).
+fn parse_hevc_annexb(bytes: &[u8]) -> Result<(u32, u32, u32, u8), MediaError> {
+    // ── NAL unit walker ───────────────────────────────────────────────
+    // Collect byte offsets of every start code (3-byte or 4-byte variant).
+    // We record the offset of the first byte AFTER the start code (i.e.,
+    // the first byte of the NAL header).
+    let nal_starts = collect_nal_starts(bytes);
+    if nal_starts.is_empty() {
+        return Err(MediaError::Hevc(
+            "no Annex-B start codes found — not an HEVC stream".to_owned(),
+        ));
+    }
+
+    let nal_unit_count = nal_starts.len() as u32;
+    let mut width: u32 = 0;
+    let mut height: u32 = 0;
+    let mut profile_idc: u8 = 0;
+
+    // ── SPS parser ────────────────────────────────────────────────────
+    // Iterate NAL units; stop as soon as we successfully parse one SPS.
+    for (idx, &start) in nal_starts.iter().enumerate() {
+        if start >= bytes.len() {
+            continue;
+        }
+        // HEVC NAL header is 2 bytes.
+        // Byte 0: bit15=forbidden_zero_bit, bits14..9=nal_unit_type(6), bits8..3=nuh_layer_id(6hi)
+        // Byte 1: bits2..0=nuh_layer_id(6lo) and nuh_temporal_id_plus1(3)
+        // nal_unit_type = (bytes[start] >> 1) & 0x3F
+        let nal_type = (bytes[start] >> 1) & 0x3F;
+        if nal_type != 33 {
+            // Not SPS; skip.
+            continue;
+        }
+        // NAL body starts after the 2-byte header.
+        let body_start = start + 2;
+        // NAL body end: up to the next start code (exclusive), or end of stream.
+        let body_end = if idx + 1 < nal_starts.len() {
+            // Walk back from nal_starts[idx+1] past the preceding start code bytes.
+            // nal_starts[idx+1] already points past the start code; subtract start-code length.
+            // We don't know if it was 3- or 4-byte; scan backwards.
+            let next = nal_starts[idx + 1];
+            // Determine start code length preceding next NAL.
+            if next >= 4 && bytes[next - 4] == 0x00 && bytes[next - 3] == 0x00
+                && bytes[next - 2] == 0x00 && bytes[next - 1] == 0x01
+            {
+                next - 4
+            } else if next >= 3 && bytes[next - 3] == 0x00 && bytes[next - 2] == 0x00
+                && bytes[next - 1] == 0x01
+            {
+                next - 3
+            } else {
+                next
+            }
+        } else {
+            bytes.len()
+        };
+        if body_start >= body_end {
+            continue;
+        }
+        let nal_body = &bytes[body_start..body_end];
+        // Remove emulation prevention bytes before bit-parsing.
+        let rbsp = remove_emulation_prevention(nal_body);
+        // Attempt SPS field extraction.
+        if let Ok((p, w, h)) = decode_sps_fields(&rbsp) {
+            profile_idc = p;
+            width = w;
+            height = h;
+        }
+        // Stop after first SPS regardless of parse success.
+        break;
+    }
+
+    Ok((nal_unit_count, width, height, profile_idc))
+}
+
+/// Find all Annex-B start code positions and return the offset of the first
+/// byte of each NAL header (i.e., start-code-end + 1).
+/// Recognises both 4-byte (`0x00 0x00 0x00 0x01`) and 3-byte
+/// (`0x00 0x00 0x01`) start codes; always records the byte immediately
+/// after the start code.
+fn collect_nal_starts(bytes: &[u8]) -> Vec<usize> {
+    let mut out = Vec::new();
+    let mut i = 0usize;
+    while i + 3 <= bytes.len() {
+        if bytes[i] == 0x00 && bytes[i + 1] == 0x00 {
+            if i + 4 <= bytes.len() && bytes[i + 2] == 0x00 && bytes[i + 3] == 0x01 {
+                out.push(i + 4);
+                i += 4;
+                continue;
+            }
+            if bytes[i + 2] == 0x01 {
+                out.push(i + 3);
+                i += 3;
+                continue;
+            }
+        }
+        i += 1;
+    }
+    out
+}
+
+/// Remove HEVC emulation prevention bytes (`0x00 0x00 0x03` → `0x00 0x00`)
+/// from a raw NAL body to produce the RBSP byte sequence.
+fn remove_emulation_prevention(nal_body: &[u8]) -> Vec<u8> {
+    let mut out = Vec::with_capacity(nal_body.len());
+    let mut i = 0usize;
+    while i < nal_body.len() {
+        // Emulation prevention: 0x00 0x00 0x03 xx where xx ∈ {0x00,0x01,0x02,0x03}
+        if i + 2 < nal_body.len()
+            && nal_body[i] == 0x00
+            && nal_body[i + 1] == 0x00
+            && nal_body[i + 2] == 0x03
+        {
+            out.push(0x00);
+            out.push(0x00);
+            i += 3; // skip the 0x03
+        } else {
+            out.push(nal_body[i]);
+            i += 1;
+        }
+    }
+    out
+}
+
+/// Bit-reader helper over a `&[u8]` slice.
+struct BitReader<'a> {
+    data: &'a [u8],
+    byte_pos: usize,
+    bit_pos: u8, // 0 = MSB, 7 = LSB
+}
+
+impl<'a> BitReader<'a> {
+    fn new(data: &'a [u8]) -> Self {
+        BitReader { data, byte_pos: 0, bit_pos: 0 }
+    }
+
+    /// Read `n` bits as a u32. Returns `None` if insufficient data.
+    fn read_bits(&mut self, n: u8) -> Option<u32> {
+        let mut val: u32 = 0;
+        for _ in 0..n {
+            if self.byte_pos >= self.data.len() {
+                return None;
+            }
+            let bit = (self.data[self.byte_pos] >> (7 - self.bit_pos)) & 1;
+            val = (val << 1) | (bit as u32);
+            self.bit_pos += 1;
+            if self.bit_pos == 8 {
+                self.bit_pos = 0;
+                self.byte_pos += 1;
+            }
+        }
+        Some(val)
+    }
+
+    /// Decode one ue(v) Exp-Golomb value. Returns `None` if insufficient data.
+    fn read_ue(&mut self) -> Option<u32> {
+        let mut leading_zeros: u8 = 0;
+        loop {
+            let bit = self.read_bits(1)?;
+            if bit == 1 {
+                break;
+            }
+            leading_zeros += 1;
+            if leading_zeros > 31 {
+                return None; // guard against malformed input
+            }
+        }
+        if leading_zeros == 0 {
+            return Some(0);
+        }
+        let suffix = self.read_bits(leading_zeros)?;
+        Some((1u32 << leading_zeros) - 1 + suffix)
+    }
+}
+
+/// Decode the minimum SPS RBSP fields needed to extract profile_idc, width,
+/// and height. Returns `(profile_idc, width, height)` or an error string.
+///
+/// SPS RBSP layout (H.265 §7.3.2.2.1):
+///   sps_video_parameter_set_id           u(4)
+///   sps_max_sub_layers_minus1            u(3)  ← controls sub-layer loop below
+///   sps_temporal_id_nesting_flag         u(1)
+///   profile_tier_level(maxNumSubLayersMinus1):
+///     general_profile_space              u(2)
+///     general_tier_flag                  u(1)
+///     general_profile_idc                u(5)  ← we want this
+///     general_profile_compatibility_flag u(32)
+///     general_progressive_source_flag    u(1)
+///     general_interlaced_source_flag     u(1)
+///     general_non_packed_constraint_flag u(1)
+///     general_frame_only_constraint_flag u(1)
+///     general_reserved_zero_43bits       u(43)
+///     general_inbld_flag                 u(1)
+///     general_level_idc                  u(8)
+///     [sub-layer flags loop if maxNumSubLayersMinus1 > 0 — not needed here]
+///   sps_seq_parameter_set_id             ue(v)
+///   chroma_format_idc                    ue(v)
+///   [separate_colour_plane_flag          u(1)  if chroma_format_idc == 3]
+///   pic_width_in_luma_samples            ue(v) ← we want this
+///   pic_height_in_luma_samples           ue(v) ← we want this
+fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
+    let mut r = BitReader::new(rbsp);
+
+    // sps_video_parameter_set_id (u4)
+    r.read_bits(4).ok_or("truncated: sps_video_parameter_set_id")?;
+    // sps_max_sub_layers_minus1 (u3)
+    let max_sub_layers_minus1 = r.read_bits(3).ok_or("truncated: sps_max_sub_layers_minus1")?;
+    // sps_temporal_id_nesting_flag (u1)
+    r.read_bits(1).ok_or("truncated: sps_temporal_id_nesting_flag")?;
+
+    // profile_tier_level(maxNumSubLayersMinus1)
+    // general_profile_space (u2), general_tier_flag (u1)
+    r.read_bits(3).ok_or("truncated: profile_space+tier")?;
+    // general_profile_idc (u5)
+    let profile_idc = r.read_bits(5).ok_or("truncated: general_profile_idc")? as u8;
+    // general_profile_compatibility_flag[32] (u32)
+    r.read_bits(32).ok_or("truncated: profile_compatibility_flag")?;
+    // progressive(1) + interlaced(1) + non_packed(1) + frame_only(1) (u4)
+    r.read_bits(4).ok_or("truncated: source flags")?;
+    // general_reserved_zero_43bits (u43) + general_inbld_flag (u1) = 44 bits total
+    r.read_bits(32).ok_or("truncated: constraint bits [0..31]")?;
+    r.read_bits(12).ok_or("truncated: constraint bits [32..43] + inbld")?;
+    // general_level_idc (u8)
+    r.read_bits(8).ok_or("truncated: general_level_idc")?;
+
+    // Sub-layer profile/level present flags — only needed if maxNumSubLayersMinus1 > 0.
+    // For each i in 0..maxNumSubLayersMinus1: sub_layer_profile_present_flag[i] u(1),
+    //                                         sub_layer_level_present_flag[i] u(1).
+    let mut sub_profile_present = [false; 8];
+    let mut sub_level_present = [false; 8];
+    for i in 0..max_sub_layers_minus1 as usize {
+        sub_profile_present[i] = r.read_bits(1).ok_or("truncated: sub_layer_profile_present")? != 0;
+        sub_level_present[i] = r.read_bits(1).ok_or("truncated: sub_layer_level_present")? != 0;
+    }
+    // If maxNumSubLayersMinus1 > 0, read reserved_zero_2bits padding for each i from
+    // maxNumSubLayersMinus1 up to 7 (spec Table 7-1 note — 8 slots total, filled with u(2)).
+    if max_sub_layers_minus1 > 0 {
+        for _ in max_sub_layers_minus1 as usize..8 {
+            r.read_bits(2).ok_or("truncated: reserved_zero_2bits")?;
+        }
+        // Then sub-layer profile/level bodies for present layers.
+        for i in 0..max_sub_layers_minus1 as usize {
+            if sub_profile_present[i] {
+                // profile_space(2)+tier(1)+idc(5)+compat(32)+4 source flags+44 constraint = 88 bits
+                r.read_bits(32).ok_or("truncated: sub_layer profile body [0]")?;
+                r.read_bits(32).ok_or("truncated: sub_layer profile body [1]")?;
+                r.read_bits(24).ok_or("truncated: sub_layer profile body [2]")?;
+            }
+            if sub_level_present[i] {
+                r.read_bits(8).ok_or("truncated: sub_layer_level_idc")?;
+            }
+        }
+    }
+
+    // sps_seq_parameter_set_id ue(v)
+    r.read_ue().ok_or("truncated: sps_seq_parameter_set_id")?;
+    // chroma_format_idc ue(v)
+    let chroma_format_idc = r.read_ue().ok_or("truncated: chroma_format_idc")?;
+    if chroma_format_idc == 3 {
+        r.read_bits(1).ok_or("truncated: separate_colour_plane_flag")?;
+    }
+    // pic_width_in_luma_samples ue(v)
+    let width = r.read_ue().ok_or("truncated: pic_width_in_luma_samples")?;
+    // pic_height_in_luma_samples ue(v)
+    let height = r.read_ue().ok_or("truncated: pic_height_in_luma_samples")?;
+
+    Ok((profile_idc, width, height))
 }
 
 #[cfg(test)]

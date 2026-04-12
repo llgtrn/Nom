@@ -892,13 +892,18 @@ pub mod body_kind {
     /// Distinct from raw AV1 IVF (`body_kind::AV1`) or bare AAC
     /// (`body_kind::AAC`).
     pub const MP4: &str = "mp4";
+    /// HEVC/H.265 Annex-B bitstream (§5.16.13 order #10). Decode-only:
+    /// read legacy iPhone videos and extract metadata. No re-encode is
+    /// planned per §5.16.13. `canonical_bytes` is always the identity
+    /// copy of the input bitstream.
+    pub const HEVC: &str = "hevc";
 
     /// Every recognized body_kind tag, in a stable order. Use when
     /// enumerating kinds in help output, stats displays, or tests.
     /// MUST stay in sync with [`is_known`] — the test
     /// `body_kind_all_matches_is_known` locks the invariant.
     pub const ALL: &[&str] = &[
-        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4,
+        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4, HEVC,
     ];
 
     /// Returns true if the string is a recognized body_kind tag.
@@ -932,6 +937,7 @@ pub mod body_kind {
             || eq(b, PDF.as_bytes())
             || eq(b, WEBM.as_bytes())
             || eq(b, MP4.as_bytes())
+            || eq(b, HEVC.as_bytes())
     }
 }
 
@@ -1120,7 +1126,7 @@ mod v2_tests {
                 "body_kind::ALL contains {tag} but is_known rejects it"
             );
         }
-        assert_eq!(body_kind::ALL.len(), 14); // update when growing the list
+        assert_eq!(body_kind::ALL.len(), 15); // update when growing the list
     }
 
     #[test]
