@@ -666,6 +666,31 @@ fn already_nom() -> integer { return 0 }
     }
 
     #[test]
+    fn draft_fixtures_scale_with_complexity() {
+        // Sentence < Paragraph < Essay — each fixture should produce
+        // strictly more proposals than the previous one. Catches
+        // regressions where the extractor silently drops bullets or
+        // mis-handles multi-section layouts.
+        let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
+        let root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let counts: Vec<usize> = ["draft_sentence.md", "draft_paragraph.md", "draft_essay.md"]
+            .iter()
+            .map(|name| {
+                let text = std::fs::read_to_string(root.join("examples").join(name))
+                    .unwrap_or_else(|e| panic!("read {name}: {e}"));
+                extract_prose_proposals(&text).len()
+            })
+            .collect();
+        assert!(
+            counts[0] < counts[1] && counts[1] < counts[2],
+            "proposal counts not monotonic across sentence/paragraph/essay: {counts:?}"
+        );
+        // Sentence fixture is the floor: exactly 1 proposal (the one
+        // intent line). Guards the minimal-input case.
+        assert_eq!(counts[0], 1, "sentence fixture should yield 1 proposal");
+    }
+
+    #[test]
     fn write_proposals_to_dict_is_idempotent_and_lockstep() {
         // Prove the §4.4.6 lockstep invariant: --write creates ONE
         // concept + ONE entry + ONE membership per proposal, and
