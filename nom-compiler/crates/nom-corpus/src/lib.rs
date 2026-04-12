@@ -241,26 +241,15 @@ pub fn scan_directory(path: &std::path::Path) -> Result<ScanReport, CorpusError>
 /// languages go up to MAX_FILE_BYTES (2 MiB) before being skipped.
 const MAX_OTHER_BYTES: u64 = 100 * 1024;
 
-/// Map a language tag (from `ext_to_language`) to the corresponding
-/// `body_kind` constant. Returns `body_kind::OTHER_SOURCE` for
-/// unmapped tags (`"other"`, `"scala"`, `"shell"`, `"markdown"`, `"config"`).
-fn lang_to_body_kind(lang: &str) -> &'static str {
-    use nom_types::body_kind;
-    match lang {
-        "rust"       => body_kind::RUST_SOURCE,
-        "typescript" => body_kind::TYPESCRIPT_SOURCE,
-        "javascript" => body_kind::JAVASCRIPT_SOURCE,
-        "python"     => body_kind::PYTHON_SOURCE,
-        "go"         => body_kind::GO_SOURCE,
-        "java"       => body_kind::JAVA_SOURCE,
-        "kotlin"     => body_kind::KOTLIN_SOURCE,
-        "c"          => body_kind::C_SOURCE,
-        "cpp"        => body_kind::CPP_SOURCE,
-        "swift"      => body_kind::SWIFT_SOURCE,
-        "ruby"       => body_kind::RUBY_SOURCE,
-        "php"        => body_kind::PHP_SOURCE,
-        _            => body_kind::OTHER_SOURCE,
-    }
+/// NOTE (lean-DB pivot A, user directive): the DB stores only compiled
+/// artifacts (.bc) + canonical media. Source-language body_kinds were
+/// dropped from `nom_types::body_kind`. This helper now returns
+/// `body_kind::BC` as a placeholder; `ingest_directory_with_conn` needs
+/// pivot-B to actually translate source → .bc before upsert (or skip
+/// files that cannot be translated).
+// TODO(pivot-B): route through the translator instead of storing raw source.
+fn lang_to_body_kind(_language: &str) -> &'static str {
+    nom_types::body_kind::BC
 }
 
 /// Summary returned by [`ingest_directory`].
@@ -950,22 +939,21 @@ mod tests {
 
     #[test]
     fn lang_to_body_kind_all_languages() {
+        // lean-DB pivot A: every language now maps to body_kind::BC as a
+        // placeholder until pivot-B wires up source → .bc translation.
         use nom_types::body_kind;
-        assert_eq!(super::lang_to_body_kind("rust"),       body_kind::RUST_SOURCE);
-        assert_eq!(super::lang_to_body_kind("typescript"), body_kind::TYPESCRIPT_SOURCE);
-        assert_eq!(super::lang_to_body_kind("javascript"), body_kind::JAVASCRIPT_SOURCE);
-        assert_eq!(super::lang_to_body_kind("python"),     body_kind::PYTHON_SOURCE);
-        assert_eq!(super::lang_to_body_kind("go"),         body_kind::GO_SOURCE);
-        assert_eq!(super::lang_to_body_kind("java"),       body_kind::JAVA_SOURCE);
-        assert_eq!(super::lang_to_body_kind("kotlin"),     body_kind::KOTLIN_SOURCE);
-        assert_eq!(super::lang_to_body_kind("c"),          body_kind::C_SOURCE);
-        assert_eq!(super::lang_to_body_kind("cpp"),        body_kind::CPP_SOURCE);
-        assert_eq!(super::lang_to_body_kind("swift"),      body_kind::SWIFT_SOURCE);
-        assert_eq!(super::lang_to_body_kind("ruby"),       body_kind::RUBY_SOURCE);
-        assert_eq!(super::lang_to_body_kind("php"),        body_kind::PHP_SOURCE);
-        assert_eq!(super::lang_to_body_kind("other"),      body_kind::OTHER_SOURCE);
-        assert_eq!(super::lang_to_body_kind("markdown"),   body_kind::OTHER_SOURCE);
-        assert_eq!(super::lang_to_body_kind("config"),     body_kind::OTHER_SOURCE);
+        let langs = [
+            "rust", "typescript", "javascript", "python", "go",
+            "java", "kotlin", "c", "cpp", "swift", "ruby", "php",
+            "other", "markdown", "config",
+        ];
+        for lang in langs {
+            assert_eq!(
+                super::lang_to_body_kind(lang),
+                body_kind::BC,
+                "expected BC for lang={lang}"
+            );
+        }
     }
 
     #[test]
@@ -1003,10 +991,10 @@ mod tests {
         assert_eq!(report.per_language["python"], 1);
         assert_eq!(report.per_language["typescript"], 1);
 
-        // Body kind filtering works via find_by_body_kind.
-        let rust_entries = dict.find_by_body_kind(body_kind::RUST_SOURCE, 10).unwrap();
-        assert_eq!(rust_entries.len(), 1);
-        let rs = &rust_entries[0];
+        // lean-DB pivot A: all entries land with body_kind::BC (placeholder).
+        let bc_entries = dict.find_by_body_kind(body_kind::BC, 10).unwrap();
+        assert_eq!(bc_entries.len(), 3);
+        let rs = bc_entries.iter().find(|e| e.language == "rust").unwrap();
         assert!(rs.body_bytes.as_ref().map_or(false, |b| !b.is_empty()));
 
         let _ = fs::remove_dir_all(&tmp);
@@ -1277,9 +1265,9 @@ mod tests {
         let report = ingest_directory(&src_dir, &dict).unwrap();
         assert_eq!(report.files_ingested, 1);
 
-        // Find the partial entry (body_kind = "rust_source").
-        let partials = dict.find_by_body_kind("rust_source", 10).unwrap();
-        assert_eq!(partials.len(), 1, "expected exactly one rust_source entry");
+        // lean-DB pivot A: entries land with body_kind::BC (placeholder).
+        let partials = dict.find_by_body_kind(nom_types::body_kind::BC, 10).unwrap();
+        assert_eq!(partials.len(), 1, "expected exactly one bc entry");
         let partial_id = partials[0].id.clone();
 
         // Lift it.

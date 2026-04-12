@@ -873,10 +873,9 @@ pub struct Translation {
 
 /// Canonical body-content-kind tags per §4.4.6 (plan doc 2026-04-12).
 /// A body's kind identifies what format the `body` bytes/string are in.
-/// Current ingestion paths produce `"nom_source"`; future paths produce
-/// `"bc"` (LLVM bitcode), `"avif"` (still image), `"av1"` (video),
-/// `"aac"` (lossy audio), `"flac"` (lossless audio), or another
-/// canonical-format tag from §4.4.6 invariant 17.
+/// Per the lean-DB directive (pivot A): the DB stores only compiled
+/// artifacts and canonical media. `NOM_SOURCE` is retained for
+/// user-authored `.nom` entries. Source-language tags were removed.
 pub mod body_kind {
     pub const NOM_SOURCE: &str = "nom_source";
     pub const BC: &str = "bc";
@@ -905,44 +904,12 @@ pub mod body_kind {
     /// copy of the input bitstream.
     pub const HEVC: &str = "hevc";
 
-    // ── Source-language tags (§5.17: corpus ingestion, Partial state) ───────
-    /// Raw Rust source bytes. Partial state; lifted to BC after rustc pass.
-    pub const RUST_SOURCE: &str = "rust_source";
-    /// Raw TypeScript source bytes.
-    pub const TYPESCRIPT_SOURCE: &str = "typescript_source";
-    /// Raw JavaScript source bytes.
-    pub const JAVASCRIPT_SOURCE: &str = "javascript_source";
-    /// Raw Python source bytes.
-    pub const PYTHON_SOURCE: &str = "python_source";
-    /// Raw Go source bytes.
-    pub const GO_SOURCE: &str = "go_source";
-    /// Raw Java source bytes.
-    pub const JAVA_SOURCE: &str = "java_source";
-    /// Raw Kotlin source bytes.
-    pub const KOTLIN_SOURCE: &str = "kotlin_source";
-    /// Raw C source bytes.
-    pub const C_SOURCE: &str = "c_source";
-    /// Raw C++ source bytes.
-    pub const CPP_SOURCE: &str = "cpp_source";
-    /// Raw Swift source bytes.
-    pub const SWIFT_SOURCE: &str = "swift_source";
-    /// Raw Ruby source bytes.
-    pub const RUBY_SOURCE: &str = "ruby_source";
-    /// Raw PHP source bytes.
-    pub const PHP_SOURCE: &str = "php_source";
-    /// Raw source bytes for languages not listed above (markdown, shell,
-    /// config, etc.). Also used for small unknown-extension files.
-    pub const OTHER_SOURCE: &str = "other_source";
-
     /// Every recognized body_kind tag, in a stable order. Use when
     /// enumerating kinds in help output, stats displays, or tests.
     /// MUST stay in sync with [`is_known`] — the test
     /// `body_kind_all_matches_is_known` locks the invariant.
     pub const ALL: &[&str] = &[
         NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4, HEVC,
-        RUST_SOURCE, TYPESCRIPT_SOURCE, JAVASCRIPT_SOURCE, PYTHON_SOURCE, GO_SOURCE,
-        JAVA_SOURCE, KOTLIN_SOURCE, C_SOURCE, CPP_SOURCE, SWIFT_SOURCE, RUBY_SOURCE,
-        PHP_SOURCE, OTHER_SOURCE,
     ];
 
     /// Returns true if the string is a recognized body_kind tag.
@@ -977,19 +944,6 @@ pub mod body_kind {
             || eq(b, WEBM.as_bytes())
             || eq(b, MP4.as_bytes())
             || eq(b, HEVC.as_bytes())
-            || eq(b, RUST_SOURCE.as_bytes())
-            || eq(b, TYPESCRIPT_SOURCE.as_bytes())
-            || eq(b, JAVASCRIPT_SOURCE.as_bytes())
-            || eq(b, PYTHON_SOURCE.as_bytes())
-            || eq(b, GO_SOURCE.as_bytes())
-            || eq(b, JAVA_SOURCE.as_bytes())
-            || eq(b, KOTLIN_SOURCE.as_bytes())
-            || eq(b, C_SOURCE.as_bytes())
-            || eq(b, CPP_SOURCE.as_bytes())
-            || eq(b, SWIFT_SOURCE.as_bytes())
-            || eq(b, RUBY_SOURCE.as_bytes())
-            || eq(b, PHP_SOURCE.as_bytes())
-            || eq(b, OTHER_SOURCE.as_bytes())
     }
 }
 
@@ -1178,7 +1132,7 @@ mod v2_tests {
                 "body_kind::ALL contains {tag} but is_known rejects it"
             );
         }
-        assert_eq!(body_kind::ALL.len(), 28); // update when growing the list
+        assert_eq!(body_kind::ALL.len(), 15); // update when growing the list
     }
 
     #[test]
