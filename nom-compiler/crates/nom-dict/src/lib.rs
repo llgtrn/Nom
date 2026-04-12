@@ -166,6 +166,32 @@ impl NomDict {
         Ok(dict)
     }
 
+    /// Open or create the v2 dictionary at an explicit `.db` file path.
+    /// Unlike [`open`] (which expects a root dir and appends `data/nomdict.db`),
+    /// this accepts the exact path to the SQLite file. Parent directories are
+    /// created if missing. Used by `nom corpus ingest` which takes `--dict
+    /// nomdict.db` pointing directly at the DB file.
+    pub fn open_in_place(db_path: &Path) -> Result<Self> {
+        if let Some(parent) = db_path.parent() {
+            if !parent.as_os_str().is_empty() {
+                std::fs::create_dir_all(parent)?;
+            }
+        }
+        let conn = Connection::open(db_path)
+            .with_context(|| format!("failed to open NomDict at {}", db_path.display()))?;
+        conn.pragma_update(None, "journal_mode", "WAL")?;
+        conn.pragma_update(None, "synchronous", "NORMAL")?;
+        conn.pragma_update(None, "cache_size", "-64000")?;
+        conn.pragma_update(None, "foreign_keys", "ON")?;
+        conn.busy_timeout(std::time::Duration::from_secs(30))?;
+        let dict = Self {
+            conn,
+            root: db_path.parent().unwrap_or(Path::new(".")).to_path_buf(),
+        };
+        dict.init_schema()?;
+        Ok(dict)
+    }
+
     /// Open an in-memory v2 dictionary (for tests).
     pub fn open_in_memory() -> Result<Self> {
         let conn = Connection::open_in_memory()?;

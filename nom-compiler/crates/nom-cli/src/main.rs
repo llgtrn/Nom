@@ -338,6 +338,19 @@ enum CorpusCmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Walk a directory, hash each source file, and upsert one v2 Entry
+    /// per file into the nomdict (§5.17 source ingestion).
+    Ingest {
+        /// Path to the directory to ingest.
+        path: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit a JSON summary instead of a human-readable table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -554,6 +567,9 @@ fn main() {
         },
         Commands::Corpus { action } => match action {
             CorpusCmd::Scan { path, json } => corpus::cmd_corpus_scan(&path, json),
+            CorpusCmd::Ingest { path, dict, json } => {
+                corpus::cmd_corpus_ingest(&path, &dict, json)
+            }
         },
     };
     process::exit(exit_code);

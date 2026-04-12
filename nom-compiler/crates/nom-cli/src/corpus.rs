@@ -1,8 +1,9 @@
 //! `nom corpus` CLI dispatch per plan §5.17.
 //!
-//! Today: `scan` walks a local directory and reports per-language
-//! file/byte counts. No dict writes; purely read-only file-system
-//! introspection — the "what's here" phase before Phase-5 ingestion.
+//! `scan`  — walks a local directory and reports per-language file/byte
+//!            counts (read-only, no dict writes).
+//! `ingest` — walks a local directory, hashes each file, and upserts one
+//!            v2 Entry per file into the nomdict (§5.17 source ingestion).
 
 use std::path::Path;
 
@@ -36,4 +37,63 @@ pub fn cmd_corpus_scan(path: &Path, json: bool) -> i32 {
         }
     }
     0
+}
+
+// ── cmd_corpus_ingest ────────────────────────────────────────────────────────
+
+pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
+    // Open (or create) the dict at the given path.
+    // Follow the same .db-file convention as store::open_dict.
+    let db_path = resolve_db_path(dict);
+    let dict_db = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+
+    let report = match nom_corpus::ingest_directory(path, &dict_db) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("nom: ingest error: {e}");
+            return 1;
+        }
+    };
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&report).unwrap_or_default()
+        );
+    } else {
+        println!("corpus ingest: {}", report.root);
+        println!("  files ingested:  {}", report.files_ingested);
+        println!("  files skipped:   {}", report.files_skipped);
+        println!("  duplicates:      {}", report.duplicates);
+        println!("  bytes ingested:  {}", report.bytes_ingested);
+        if !report.per_language.is_empty() {
+            println!();
+            println!("  {:<15}  {:>6}", "language", "files");
+            println!("  {:<15}  {:>6}", "--------", "-----");
+            for (lang, count) in &report.per_language {
+                println!("  {:<15}  {:>6}", lang, count);
+            }
+        }
+    }
+    0
+}
+
+/// Resolve a `--dict` argument (which may point directly at a `.db` file
+/// or at a directory) to an absolute SQLite file path.
+fn resolve_db_path(dict: &Path) -> std::path::PathBuf {
+    // If it already has a `.db` extension (the common CLI convention
+    // `--dict nomdict.db`), treat it as the literal file path.
+    if dict.extension().map_or(false, |e| e == "db") {
+        dict.to_path_buf()
+    } else {
+        // Treat as a root dir and append `data/nomdict.db` (NomDict::open
+        // convention).
+        dict.join("data/nomdict.db")
+    }
 }

@@ -6,7 +6,9 @@ license.workspace = true
 
 [dependencies]
 nom-types = { path = "../nom-types" }
+nom-dict = { path = "../nom-dict" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 walkdir = { workspace = true }
+sha2 = { workspace = true }
