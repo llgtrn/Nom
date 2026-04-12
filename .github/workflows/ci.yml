@@ -42,6 +42,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - run: rustup show
+      # inkwell/llvm-sys needs LLVM 18 at link + runtime for the
+      # nom-llvm test exe (and nom-cli's integration-test binaries,
+      # which transitively link nom-llvm). ubuntu-24.04 has llvm-18
+      # in universe — one apt install is enough.
+      - name: Install LLVM 18
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y llvm-18 llvm-18-dev libpolly-18-dev
+          echo "LLVM_SYS_180_PREFIX=/usr/lib/llvm-18" >> $GITHUB_ENV
+          echo "/usr/lib/llvm-18/bin" >> $GITHUB_PATH
       - uses: actions/cache@v4
         with:
           path: |
@@ -66,23 +76,23 @@ jobs:
             cargo test -p "$p" --quiet 2>&1 | tail -5
           done
 
-      # nom-cli bin tests transitively link nom-llvm, which makes the
-      # test exe fail to start on hosts without LLVM libs resolvable.
-      # Run the subset that exercises the self-host parse gates +
-      # Rust↔Nom parity + parser subset probe as a best-effort — we
-      # don't hard-fail CI if LLVM isn't available, but we do log the
-      # output for visibility.
-      - name: cargo test nom-cli (best-effort, advisory)
+      # nom-cli integration tests: self-host parse gates, Rust↔Nom
+      # parity matrix, parser subset probe, meta test. Hard-fail on
+      # failure now that LLVM 18 is installed above; these tests use
+      # only nom-parser / nom-types / nom-dict but the bin-crate
+      # dep graph pulls nom-llvm, so the test exe needs LLVM libs
+      # to even start.
+      - name: cargo test nom-cli self-host + parity tests
         working-directory: nom-compiler
         run: |
+          set -e
           for t in self_host_planner self_host_ast self_host_verifier \
                    self_host_codegen self_host_parser self_host_smoke \
                    self_host_meta self_host_rust_parity \
-                   parser_subset_probe; do
+                   parser_subset_probe self_host_pipeline; do
             echo "=== nom-cli::$t ==="
-            cargo test -p nom-cli --test "$t" --quiet 2>&1 | tail -5 || true
+            cargo test -p nom-cli --test "$t" --quiet 2>&1 | tail -5
           done
-        continue-on-error: true
 
   fmt:
     name: cargo fmt --check
