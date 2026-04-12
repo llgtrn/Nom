@@ -35,19 +35,32 @@ These represent concrete targets for the compiler to grow into.
 
 Phase numbers below reference [`03-self-hosting-roadmap.md`](../../../research/language-analysis/03-self-hosting-roadmap.md).
 
-| Phase | Component | Status | Artifact |
-|-------|-----------|--------|----------|
-| 1 | Lexer | Written + compiles via LLVM | `lexer.nom` (+ `.bc` / `.ll`) |
-| 2 | Parser | Scaffolded (parses; nom_parse + is_empty_source_file + nom_classifier) | `parser.nom` |
-| 3 | AST types | Scaffolded (parses; Decl + Param + FnBody + predicates) | `ast.nom` |
-| 4 | Verifier | Scaffolded (parses; nom_verify + is_verified) | `verifier.nom` |
-| 5 | Planner | Scaffolded (parses; default_entry_point + is_empty_plan helpers) | `planner.nom` |
-| 6 | Codegen | Scaffolded (parses; default_entry_symbol + is_empty_source helpers) | `codegen.nom` |
-| 7 | Bootstrap | Planned | — |
+| Phase | Component | Status | Artifact | Helpers |
+|-------|-----------|--------|----------|---------|
+| 1 | Lexer | Written + compiles via LLVM | `lexer.nom` (+ `.bc` / `.ll`) | — |
+| 2 | Parser | Scaffolded, parses, compiles | `parser.nom` | 9 fns |
+| 3 | AST types | Scaffolded, parses, compiles | `ast.nom` | 9 fns |
+| 4 | Verifier | Scaffolded, parses, compiles | `verifier.nom` | 6 fns |
+| 5 | Planner | Scaffolded, parses, compiles | `planner.nom` | 7 fns |
+| 6 | Codegen | Scaffolded, parses, compiles | `codegen.nom` | 6 fns |
+| 7 | Bootstrap | Planned | — | — |
 
-### `planner.nom` — scaffold (Phase 5)
+Each scaffold is gated by an acceptance test under `crates/nom-cli/
+tests/self_host_<phase>.rs` plus the roll-up `self_host_smoke.rs`
+(parse gate) and `self_host_pipeline.rs` (full parse → plan → codegen
+pipeline). A meta test (`self_host_meta.rs`) asserts every `.nom`
+file has its acceptance test. CI enforces all of them per commit.
 
-Landed 2026-04-12 as a skeleton: the `Node` / `Edge` / `CompositionPlan` / `VerifiedAST` struct shapes + `nom_plan(ast) -> CompositionPlan` entry-point signature returning an empty plan. Real construction (graph building + topological sort + cycle detection + constraint propagation) arrives incrementally per the 10-12 week roadmap estimate. The Rust reference lives in [`nom-planner/src/lib.rs`](../../crates/nom-planner/src/lib.rs) (~700 LOC); the Nom target is 1100-1500 LOC once complete.
+### Rust ↔ Nom parity
+
+Canonical tag strings that both sides emit — `"abort"`, `"calls"`,
+`"pure"`, `"nom_main"`, `"fn"`, `"integer"`, etc. — live as
+`pub const` in [`nom_types::self_host_tags`](../../crates/nom-types/
+src/lib.rs). 22 consts + 6 `*_ALL` slices (CLASSIFIERS, EDGE_KINDS,
+RUST_TYS, EFFECTS, DECL_KINDS, PRIM_TYPES). The parity test
+(`self_host_rust_parity.rs`) asserts each `.nom` scaffold contains
+`return "<const_value>"` for its matching helper — drift on either
+side fails CI at commit time.
 
 ## Design decisions
 
