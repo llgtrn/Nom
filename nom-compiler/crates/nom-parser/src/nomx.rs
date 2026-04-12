@@ -73,6 +73,16 @@ pub enum NomxStatement {
         rhs_tokens: Vec<NomxToken>,
         span: NomxSpan,
     },
+    /// `when <cond_tokens>, <then_tokens>.` — true-branch statement.
+    /// If followed by an `otherwise, <else_tokens>.` the else branch
+    /// is captured; else None. Condition and branch token sequences
+    /// mirror the Binding rhs_tokens discipline.
+    When {
+        cond_tokens: Vec<NomxToken>,
+        then_tokens: Vec<NomxToken>,
+        else_tokens: Option<Vec<NomxToken>>,
+        span: NomxSpan,
+    },
 }
 
 /// Parse error for the `.nomx` parser. Carries the span of the
@@ -307,12 +317,15 @@ impl<'a> NomxParser<'a> {
     }
 
     fn parse_statement(&mut self) -> NomxParseResult<NomxStatement> {
+        match self.peek() {
+            NomxToken::When => self.parse_when_statement(),
+            _ => self.parse_binding_statement(),
+        }
+    }
+
+    /// `<subject> is <rhs...>` optionally terminated by `.`.
+    fn parse_binding_statement(&mut self) -> NomxParseResult<NomxStatement> {
         let start_span = self.peek_span();
-        // Scaffold: accept only `<subject> is <rhs...>`. Other forms
-        // (when/otherwise branches, return expressions, etc.) arrive
-        // with the type system. Unknown-shape = skip the token and
-        // continue; lets the parse gate accept real-world bodies even
-        // before every form is recognized.
         let subject = match self.peek().clone() {
             NomxToken::Identifier(n) => {
                 self.advance();
@@ -341,6 +354,55 @@ impl<'a> NomxParser<'a> {
         Ok(NomxStatement::Binding {
             subject,
             rhs_tokens,
+            span: NomxSpan::new(start_span.start, self.peek_span().start),
+        })
+    }
+
+    /// `when <cond>, <then>.` with optional `otherwise, <else>.`
+    /// following. Condition ends at comma; branch ends at period or
+    /// body terminator.
+    fn parse_when_statement(&mut self) -> NomxParseResult<NomxStatement> {
+        let start_span = self.peek_span();
+        self.expect(&NomxToken::When, "`when`")?;
+
+        let mut cond_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator()
+            && self.peek() != &NomxToken::Comma
+            && self.peek() != &NomxToken::Period
+        {
+            cond_tokens.push(self.advance().token.clone());
+        }
+        self.expect(&NomxToken::Comma, "`,` after `when` condition")?;
+
+        let mut then_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            then_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+
+        let mut else_tokens = None;
+        if self.peek() == &NomxToken::Otherwise {
+            self.advance();
+            // Optional comma after `otherwise`.
+            if self.peek() == &NomxToken::Comma {
+                self.advance();
+            }
+            let mut etoks: Vec<NomxToken> = Vec::new();
+            while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+                etoks.push(self.advance().token.clone());
+            }
+            if self.peek() == &NomxToken::Period {
+                self.advance();
+            }
+            else_tokens = Some(etoks);
+        }
+
+        Ok(NomxStatement::When {
+            cond_tokens,
+            then_tokens,
+            else_tokens,
             span: NomxSpan::new(start_span.start, self.peek_span().start),
         })
     }
@@ -424,7 +486,9 @@ mod tests {
             panic!("expected Define");
         };
         assert_eq!(body.len(), 1);
-        let NomxStatement::Binding { subject, rhs_tokens, .. } = &body[0];
+        let NomxStatement::Binding { subject, rhs_tokens, .. } = &body[0] else {
+            panic!("expected Binding");
+        };
         assert_eq!(subject, "greeting");
         assert!(
             rhs_tokens
@@ -455,6 +519,57 @@ mod tests {
             };
             assert_eq!(body.len(), 1);
         }
+    }
+
+    #[test]
+    fn parses_when_otherwise_branch() {
+        let src = "define handle:\n  when user is logged_in, show dashboard.\n  otherwise, show landing.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        assert_eq!(body.len(), 1);
+        let NomxStatement::When {
+            cond_tokens,
+            then_tokens,
+            else_tokens,
+            ..
+        } = &body[0]
+        else {
+            panic!("expected When, got {:?}", body[0]);
+        };
+        assert!(!cond_tokens.is_empty(), "cond empty");
+        assert!(!then_tokens.is_empty(), "then empty");
+        assert!(else_tokens.is_some(), "else missing");
+        // cond contains the subject `user` + linking verb `is`.
+        assert!(
+            cond_tokens.iter().any(|t| matches!(t, NomxToken::Identifier(n) if n == "user"))
+        );
+        assert!(cond_tokens.iter().any(|t| *t == NomxToken::Is));
+        // then/else contain the identifier `dashboard`/`landing`.
+        assert!(
+            then_tokens.iter().any(|t| matches!(t, NomxToken::Identifier(n) if n == "dashboard"))
+        );
+        assert!(
+            else_tokens
+                .as_ref()
+                .unwrap()
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
+        );
+    }
+
+    #[test]
+    fn parses_when_without_otherwise() {
+        let src = "define bare:\n  when foo is bar, do something.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        let NomxStatement::When { else_tokens, .. } = &body[0] else {
+            panic!("expected When");
+        };
+        assert!(else_tokens.is_none(), "no otherwise means else_tokens=None");
     }
 
     #[test]
