@@ -438,6 +438,60 @@ fn compile_call<'ctx>(
         }
     }
 
+    // Builtins that take a *const NomString argument: parse_int, parse_float.
+    if matches!(fn_name, "parse_int" | "parse_float") && call.args.len() == 1 {
+        let rt_name = if fn_name == "parse_int" { "nom_parse_int" } else { "nom_parse_float" };
+        let rt_fn = mc
+            .functions
+            .get(rt_name)
+            .copied()
+            .or_else(|| mc.module.get_function(rt_name))
+            .ok_or_else(|| LlvmError::Compilation(format!("{} runtime fn missing", rt_name)))?;
+        let arg_val = compile_expr(mc, &call.args[0])?;
+        let str_ptr = materialize_string_ptr(mc, arg_val)?;
+        let call_val = mc
+            .builder
+            .build_call(rt_fn, &[str_ptr.into()], &format!("{}_call", fn_name))
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return call_val
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation(format!("{} returned void", rt_name)));
+    }
+
+    // Builtin chr(byte: integer) -> text.
+    if fn_name == "chr" && call.args.len() == 1 {
+        let rt_fn = mc
+            .functions
+            .get("nom_chr")
+            .copied()
+            .or_else(|| mc.module.get_function("nom_chr"))
+            .ok_or_else(|| LlvmError::Compilation("nom_chr runtime fn missing".into()))?;
+        let arg_val = compile_expr(mc, &call.args[0])?;
+        // Ensure i64 width for the byte argument.
+        let i64_ty = mc.context.i64_type();
+        let byte_val = if arg_val.is_int_value() {
+            let iv = arg_val.into_int_value();
+            if iv.get_type().get_bit_width() < 64 {
+                mc.builder
+                    .build_int_s_extend(iv, i64_ty, "chr_ext")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            } else {
+                iv
+            }
+        } else {
+            return Err(LlvmError::Type("chr argument must be integer".into()));
+        };
+        let call_val = mc
+            .builder
+            .build_call(rt_fn, &[byte_val.into()], "chr_call")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return call_val
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation("nom_chr returned void".into()));
+    }
+
     let function = mc.functions.get(fn_name).copied()
         .or_else(|| mc.module.get_function(fn_name))
         .ok_or_else(|| LlvmError::Compilation(format!("undefined function: {}", fn_name)))?;

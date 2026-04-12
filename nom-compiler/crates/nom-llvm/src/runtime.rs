@@ -80,6 +80,21 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
     let panic_fn = mc.module.add_function("nom_panic", panic_type, None);
     mc.functions.insert("nom_panic".into(), panic_fn);
 
+    // nom_parse_int(s: *const NomString) -> i64
+    let parse_int_type = i64_type.fn_type(&[i8_ptr_type.into()], false);
+    let parse_int_fn = mc.module.add_function("nom_parse_int", parse_int_type, None);
+    mc.functions.insert("nom_parse_int".into(), parse_int_fn);
+
+    // nom_parse_float(s: *const NomString) -> f64
+    let parse_float_type = f64_type.fn_type(&[i8_ptr_type.into()], false);
+    let parse_float_fn = mc.module.add_function("nom_parse_float", parse_float_type, None);
+    mc.functions.insert("nom_parse_float".into(), parse_float_fn);
+
+    // nom_chr(byte: i64) -> NomString (struct by value)
+    let chr_type = nom_str_ty.fn_type(&[i64_type.into()], false);
+    let chr_fn = mc.module.add_function("nom_chr", chr_type, None);
+    mc.functions.insert("nom_chr".into(), chr_fn);
+
     // ── List (generic) runtime helpers ──────────────────────────────────────
     // All entry points take an explicit elem_size so a single monomorphic
     // runtime supports every `list[T]` instantiation.

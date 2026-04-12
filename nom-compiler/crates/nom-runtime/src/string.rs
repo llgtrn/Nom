@@ -1,4 +1,5 @@
 use std::slice;
+use std::str;
 
 /// A Nom string: pointer + length (no null terminator).
 #[repr(C)]
@@ -67,6 +68,45 @@ pub extern "C" fn nom_string_slice(s: *const NomString, lo: i64, hi: i64) -> Nom
     }
 }
 
+/// Parse a NomString as a signed integer (i64). Returns 0 on failure.
+/// The caller (lexer) guarantees valid digit strings, so a silent zero is acceptable.
+#[unsafe(no_mangle)]
+pub extern "C" fn nom_parse_int(s: *const NomString) -> i64 {
+    unsafe {
+        let bytes = slice::from_raw_parts((*s).data, (*s).len as usize);
+        match str::from_utf8(bytes).ok().and_then(|t| t.parse::<i64>().ok()) {
+            Some(v) => v,
+            None => 0,
+        }
+    }
+}
+
+/// Parse a NomString as a floating-point number (f64). Returns NaN on failure.
+#[unsafe(no_mangle)]
+pub extern "C" fn nom_parse_float(s: *const NomString) -> f64 {
+    unsafe {
+        let bytes = slice::from_raw_parts((*s).data, (*s).len as usize);
+        match str::from_utf8(bytes).ok().and_then(|t| t.parse::<f64>().ok()) {
+            Some(v) => v,
+            None => f64::NAN,
+        }
+    }
+}
+
+/// Create a single-byte NomString from an integer byte value.
+/// Only the low 8 bits of `byte` are used; higher bits are truncated.
+/// The returned NomString owns heap memory; caller must free if long-lived.
+#[unsafe(no_mangle)]
+pub extern "C" fn nom_chr(byte: i64) -> NomString {
+    let b = (byte & 0xff) as u8;
+    let mut buf = Vec::with_capacity(1);
+    buf.push(b);
+    let ptr = buf.as_ptr();
+    let len = buf.len() as i64;
+    std::mem::forget(buf);
+    NomString { data: ptr, len }
+}
+
 /// Free a heap-allocated NomString.
 #[unsafe(no_mangle)]
 pub extern "C" fn nom_string_free(s: NomString) {
@@ -131,5 +171,55 @@ mod tests {
         let c = NomString { data: b"xyz".as_ptr(), len: 3 };
         assert_eq!(nom_string_eq(&a as *const _, &b as *const _), 1);
         assert_eq!(nom_string_eq(&a as *const _, &c as *const _), 0);
+    }
+
+    #[test]
+    fn parse_int_positive() {
+        let s = NomString { data: b"42".as_ptr(), len: 2 };
+        assert_eq!(nom_parse_int(&s as *const _), 42);
+    }
+
+    #[test]
+    fn parse_int_negative() {
+        let s = NomString { data: b"-17".as_ptr(), len: 3 };
+        assert_eq!(nom_parse_int(&s as *const _), -17);
+    }
+
+    #[test]
+    fn parse_int_invalid_returns_zero() {
+        let s = NomString { data: b"abc".as_ptr(), len: 3 };
+        assert_eq!(nom_parse_int(&s as *const _), 0);
+    }
+
+    #[test]
+    fn parse_float_valid() {
+        let s = NomString { data: b"3.14".as_ptr(), len: 4 };
+        let v = nom_parse_float(&s as *const _);
+        assert!((v - 3.14_f64).abs() < 1e-9, "expected ~3.14, got {}", v);
+    }
+
+    #[test]
+    fn parse_float_invalid_returns_nan() {
+        let s = NomString { data: b"bad".as_ptr(), len: 3 };
+        let v = nom_parse_float(&s as *const _);
+        assert!(v.is_nan(), "expected NaN for invalid float, got {}", v);
+    }
+
+    #[test]
+    fn chr_produces_single_byte_string() {
+        let result = nom_chr(65); // 'A'
+        assert_eq!(result.len, 1);
+        let byte = unsafe { *result.data };
+        assert_eq!(byte, b'A');
+        nom_string_free(result);
+    }
+
+    #[test]
+    fn chr_truncates_high_bits() {
+        let result = nom_chr(65 + 256); // same as 65 after truncation
+        assert_eq!(result.len, 1);
+        let byte = unsafe { *result.data };
+        assert_eq!(byte, b'A');
+        nom_string_free(result);
     }
 }
