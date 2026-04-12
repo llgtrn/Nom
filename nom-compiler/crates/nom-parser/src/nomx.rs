@@ -33,12 +33,22 @@
 //!
 //! body          ::= statement* (body_terminator)
 //! body_terminator ::= EOF | "define" | "record" | "choice"
-//! statement     ::= binding_stmt | when_stmt
+//! statement     ::= binding_stmt | when_stmt | for_each_stmt
+//!                 | while_stmt
 //!
 //! binding_stmt  ::= IDENT "is" <rhs_tokens>* "."?
-//! when_stmt     ::= "when" <cond_tokens>* ","
+//!
+//! when_stmt     ::= ( "when" | "unless" ) <cond_tokens>* ","
 //!                   <then_tokens>* "."?
 //!                   ( "otherwise" ","? <else_tokens>* "."? )?
+//!                   (* `unless` prepends Not to cond_tokens *)
+//!
+//! for_each_stmt ::= "for" ("each")? IDENT ("in" | "of")
+//!                   <collection_tokens>* ","
+//!                   <body_tokens>* "."?
+//!
+//! while_stmt    ::= "while" <cond_tokens>* ","
+//!                   <body_tokens>* "."?
 //! ```
 //!
 //! `<rhs_tokens>`, `<cond_tokens>`, `<then_tokens>`, `<else_tokens>`,
