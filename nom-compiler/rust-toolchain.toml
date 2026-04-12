@@ -1,0 +1,14 @@
+# Pinned per plan §10.3.1 "Prerequisites for the fixpoint test to
+# be mechanically achievable" — Risk #1 mitigation from the
+# 2026-04-12 adversarial review.
+#
+# The Nom compiler pins rustc to a specific version so the
+# differential-compile step of the fixpoint track (Stage 2 vs
+# Stage 3) runs on the same toolchain regardless of the caller's
+# default. Cross-version upgrades require a coordinated workspace
+# bump + test run.
+
+[toolchain]
+channel = "1.94.1"
+components = ["rustc", "cargo", "rust-std", "clippy", "rustfmt"]
+profile = "minimal"

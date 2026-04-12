@@ -15,7 +15,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 
 | Risk | Initial severity | Post-evidence verdict | Fix size |
 |------|------------------|----------------------|----------|
-| #1 LLVM fixpoint unachievable | CRITICAL | **Refined**: LLVM 18 pinned via `inkwell` ✅. Rust toolchain pin attempted via `rust-toolchain.toml` and reverted — rustup did not resolve `1.94.1` on this Windows host (error: rustc component not applicable to the resolved triple). Real pin needs rustup-side investigation (explicit download? nightly channel? rustup-toolchain-install-master?). `-g` (debug info) determinism still untested. | Days (blocked) |
+| #1 LLVM fixpoint unachievable | CRITICAL | **Refined**: LLVM 18 pinned via `inkwell` ✅. Rust toolchain pinned via `rust-toolchain.toml = "1.94.1"` ✅ (landed 2026-04-12). `-g` (debug info) determinism still untested; `SOURCE_DATE_EPOCH` + `llvm.ident` stripping + PDB/COFF timestamp-zero still to be wired in the build driver. | Remaining: debug-info determinism probe |
 | #2 Canonicalizer evolution breaks hash-as-syntax-token | CRITICAL | **Internal plan/code contradiction identified and resolved** in this commit: canonical.rs comment and §5.10.1 now align on version-scoped pins + mandatory `SupersededBy` sweep. | Plan edit only |
 | #3 License propagation unhandled at mass-corpus scale | CRITICAL | **Fully descoped by user 2026-04-12.** License column removed from `dictionary/seed.sql`, `SecurityConfig.allowed_licenses` field removed, resolver examples updated. License tracking is not part of the language. | — (done) |
 | #4 §5 is six subsystems, not one phase | MAJOR | **Confirmed**: six new workspace crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) from zero, ~12–18 kLOC scaffolding buried inside "§5.0 10 weeks." | +~3 weeks hidden scaffolding |
@@ -26,7 +26,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 ### Risk #1 — LLVM fixpoint
 
 - [nom-llvm/Cargo.toml:11](../../nom-compiler/crates/nom-llvm/Cargo.toml#L11) pins `inkwell = { version = "0.5", features = ["llvm18-0"] }` — LLVM major-version is already pinned.
-- Prior to this review: no `rust-toolchain.toml`. Adding one pinning `rustc 1.94.1` was attempted and reverted — rustup could not install that exact toolchain on this Windows host. The pin remains an open action item; the underlying Risk #1b is not fixed.
+- 2026-04-12: `rust-toolchain.toml` with `channel = "1.94.1"` landed and verified — `cargo --version` / `rustc --version` both resolve to 1.94.1 and `cargo check --workspace` passes under the pinned toolchain. Risk #1b is now closed on the Rust-toolchain side; remaining Risk #1 prerequisites (build-driver-level debug-info determinism flags) are separate.
 - Two back-to-back builds of [examples/run_lexer.nom](../../nom-compiler/examples/run_lexer.nom) produce byte-identical IR today (md5 `bf5efa8dbe6cc3982d3fd9f0e65cada7`, 335 lines). This is necessary but not sufficient for `s2==s3`: different compiler binaries producing the same output is the real test.
 - `-g` (debug info) determinism is untested. Debug info is where most non-determinism hides (paths, timestamps, compilation-unit ordering).
 - Plan text at §10.3.1 line 2052 now carries an explicit prerequisites block: LLVM pinned, Rust toolchain pinned, `SOURCE_DATE_EPOCH` set, `llvm.ident` stripped, PDB/COFF timestamps zeroed. These are ABI-level facts, not aspirations.

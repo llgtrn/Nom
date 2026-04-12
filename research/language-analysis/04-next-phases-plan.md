@@ -2223,7 +2223,7 @@ Three stages, each a binary:
 
 **Prerequisites for the fixpoint test to be mechanically achievable** (adversarial-review follow-up, 2026-04-12):
 - **LLVM pinned.** The fixpoint toolchain pins LLVM to a specific point release (currently 18.x via `inkwell`'s `llvm18-0` feature). Cross-LLVM-major-version fixpoint attempts are explicitly out of scope.
-- **Rust toolchain pinned.** A `rust-toolchain.toml` at repo root must fix `rustc`/`cargo` version so differential-compile tests run on the pinned toolchain, not the caller's default. (As of 2026-04-12 the actual pin is an open action item — attempted pin to `1.94.1` did not resolve via rustup on Windows; investigation needed.)
+- **Rust toolchain pinned.** `rust-toolchain.toml` at repo root fixes `rustc`/`cargo` version so differential-compile tests run on the pinned toolchain, not the caller's default. Landed 2026-04-12 as `channel = "1.94.1"` with `components = ["rustc", "cargo", "rust-std", "clippy", "rustfmt"]`.
 - **`SOURCE_DATE_EPOCH` set, `llvm.ident` stripped, debug-info paths remapped.** The LLVM IR and final object emitter must have deterministic metadata — no embedded build timestamps, no absolute paths, no toolchain version strings differing between Stage 2 and Stage 3.
 - **PDB/COFF timestamps zeroed** (Windows) or equivalent stripping on other OSes.
 
