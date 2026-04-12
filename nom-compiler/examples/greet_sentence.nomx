@@ -1,0 +1,9 @@
+# Sentence-form .nomx demo per proposal 05 §3.
+# Alternative to the block form `define greet that takes … returns …:`,
+# each fn is a single sentence that reads as prose.
+
+to greet someone by name, respond with "hello" joined to the name.
+
+to square a number, respond with the number times itself.
+
+to absolute a number n, respond with n times itself divided by n.

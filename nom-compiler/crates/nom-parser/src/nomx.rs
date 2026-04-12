@@ -716,6 +716,39 @@ mod tests {
     }
 
     #[test]
+    fn parses_greet_sentence_nomx_sample() {
+        // Three sentence-form functions in one file. Each lowers to
+        // a Define with a single Binding body (subject="respond").
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/greet_sentence.nomx");
+        let src = std::fs::read_to_string(&path).unwrap();
+        let decls = parse_nomx(&src).unwrap();
+        assert_eq!(decls.len(), 3);
+        for d in &decls {
+            let NomxDecl::Define { body, .. } = d else {
+                panic!("expected Define, got {d:?}");
+            };
+            assert_eq!(body.len(), 1);
+            let NomxStatement::Binding { subject, .. } = &body[0] else {
+                panic!("expected Binding");
+            };
+            assert_eq!(subject, "respond");
+        }
+        let names: Vec<&str> = decls
+            .iter()
+            .map(|d| match d {
+                NomxDecl::Define { name, .. } => name.as_str(),
+                _ => unreachable!(),
+            })
+            .collect();
+        assert_eq!(names, vec!["greet", "square", "absolute"]);
+    }
+
+    #[test]
     fn parses_hello_nomx_sample() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
