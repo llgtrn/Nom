@@ -1,15 +1,55 @@
 //! `.nomx` parser prototype (proposal 05).
 //!
-//! First real parser code for the natural-language grammar track.
-//! Consumes `NomxToken`s from [`nom_lexer::nomx`] and produces a
-//! tiny AST of `NomxDecl`s. Today recognizes only the declaration
-//! head:
+//! Real parser for the natural-language grammar track. Consumes
+//! `NomxToken`s from [`nom_lexer::nomx`] and produces an AST of
+//! `NomxDecl`s + `NomxStatement`s. Not yet wired into `parse_source`
+//! — callers invoke `parse_nomx` explicitly.
 //!
-//!   define <name> that takes <param> and returns <ret>:
+//! # Grammar (EBNF, accepted today)
 //!
-//! Body parsing + control flow + contracts + record/choice arrive
-//! incrementally as the grammar stabilizes. Not yet wired into
-//! `parse_source` — callers invoke `parse_nomx` explicitly.
+//! ```text
+//! source_file   ::= declaration* EOF
+//!
+//! declaration   ::= define_decl
+//!                 | record_decl
+//!                 | choice_decl
+//!                 | to_oneliner
+//!
+//! define_decl   ::= "define" IDENT ( "that" "takes" IDENT
+//!                                    ( "and" "returns" IDENT )? )? ":"
+//!                   body
+//!
+//! to_oneliner   ::= "to" IDENT <noun_phrase>* "," <expr>* "."?
+//!                   (* Lowered to define_decl with a single binding,
+//!                      subject = "respond". *)
+//!
+//! record_decl   ::= "record" IDENT "holds"? ":"
+//!                   ( field_stmt )*
+//! field_stmt    ::= IDENT "is" <type_tokens>* "."?
+//!
+//! choice_decl   ::= "choice" IDENT ( "is" ("one" | "of")* )? ":"
+//!                   ( variant_stmt )*
+//! variant_stmt  ::= IDENT <payload_tokens>* "."?
+//!
+//! body          ::= statement* (body_terminator)
+//! body_terminator ::= EOF | "define" | "record" | "choice"
+//! statement     ::= binding_stmt | when_stmt
+//!
+//! binding_stmt  ::= IDENT "is" <rhs_tokens>* "."?
+//! when_stmt     ::= "when" <cond_tokens>* ","
+//!                   <then_tokens>* "."?
+//!                   ( "otherwise" ","? <else_tokens>* "."? )?
+//! ```
+//!
+//! `<rhs_tokens>`, `<cond_tokens>`, `<then_tokens>`, `<else_tokens>`,
+//! `<type_tokens>`, `<payload_tokens>`, and `<expr>` currently
+//! capture their token runs verbatim (Vec<NomxToken>). Real
+//! expression parsing lands with the type system; the shape above
+//! is stable — downstream consumers only need to track the token
+//! lists' contents, not their tree structure, until then.
+//!
+//! Article words (a/an/the/which/who/whose) are stripped at lex
+//! time per proposal 05 §4.8 and never appear in any token list.
 
 use nom_lexer::nomx::{NomxSpan, NomxToken, SpannedNomxToken, tokenize_nomx_with_spans};
 
