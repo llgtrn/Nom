@@ -1,0 +1,64 @@
+# Nom Self-Host: Codegen (Phase 6 per 03-self-hosting-roadmap.md)
+#
+# This file is the Nom-in-Nom implementation of nom-codegen. The Rust
+# reference is at nom-compiler/crates/nom-codegen/src/lib.rs.
+# Target: ~1500 LOC Nom once functional.
+#
+# Status: SCAFFOLD. Module + result shape + entry-point signature only.
+# Real lowering (CompositionPlan → Rust source string) arrives
+# incrementally once the parser-supported subset widens far enough to
+# express string-building patterns cleanly.
+#
+# Entry point per the roadmap:
+#   nom_codegen(plan: CompositionPlan) -> GeneratedSource
+#
+# Once real, this function is the compiler's codegen stage — it
+# consumes the CompositionPlan produced by nom_plan (see planner.nom)
+# and emits Rust source that the downstream Rust-cargo pipeline
+# compiles to a native binary. In Phase 11 (bootstrap) this stage is
+# what makes `.bc` bytes the only compiled artifact format the dict
+# ever stores as a body.
+
+nom self_host_codegen
+
+struct GeneratedSource {
+  rust_source: text
+  entry_symbol: text
+}
+
+# Placeholder CompositionPlan mirror — the real type lives in
+# planner.nom. Filled in as Phase 5 + 6 progress.
+struct CompositionPlan {
+  entry_point_id: integer
+}
+
+# Entry point. Real implementation does:
+#   1. Walk plan.nodes in topological order.
+#   2. For each node, emit its rust-source fragment:
+#      - function → `fn name(args) -> ret { body }`
+#      - call site → `name(args)` inside the caller's body
+#   3. Emit a `main()` that invokes the entry-point node.
+#   4. Return GeneratedSource with rust_source + entry_symbol.
+fn nom_codegen(plan: CompositionPlan) -> GeneratedSource {
+  # Scaffold: return an empty source so Phase 11 bootstrap tooling
+  # can exercise the calling convention end-to-end.
+  return GeneratedSource {
+    rust_source: "",
+    entry_symbol: "nom_main",
+  }
+}
+
+# Shape-level predicate mirroring is_empty_plan from planner.nom.
+# A generated source is "empty" when rust_source is the empty string.
+# Real code paths compare against the length once list/string-len
+# primitives land.
+fn is_empty_source(gs: GeneratedSource) -> bool {
+  return gs.entry_symbol == "nom_main"
+}
+
+# Canonical symbol name used by the runtime to invoke the generated
+# program. Must match the `mangle` convention the Rust codegen uses
+# today (nom-codegen/src/lib.rs keeps the same string literal).
+fn default_entry_symbol() -> text {
+  return "nom_main"
+}

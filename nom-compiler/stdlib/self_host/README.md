@@ -41,8 +41,8 @@ Phase numbers below reference [`03-self-hosting-roadmap.md`](../../../research/l
 | 2 | Parser | Planned | — |
 | 3 | AST types | Planned | — |
 | 4 | Verifier | Planned | — |
-| 5 | Planner | Scaffolded (struct shapes + entry-point fn signature) | `planner.nom` |
-| 6 | Codegen | Planned | — |
+| 5 | Planner | Scaffolded (parses; default_entry_point + is_empty_plan helpers) | `planner.nom` |
+| 6 | Codegen | Scaffolded (parses; default_entry_symbol + is_empty_source helpers) | `codegen.nom` |
 | 7 | Bootstrap | Planned | — |
 
 ### `planner.nom` — scaffold (Phase 5)
