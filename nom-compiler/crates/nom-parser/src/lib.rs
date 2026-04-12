@@ -3,6 +3,11 @@
 //! Consumes a flat `Vec<SpannedToken>` from the lexer and produces a
 //! [`nom_ast::SourceFile`] containing typed [`Declaration`]s.
 //!
+//! See also [`nomx`] — the experimental parser for the ≥95%-prose
+//! grammar track (research/language-analysis/05-natural-language-syntax.md).
+//! The two live side-by-side; `parse_source` uses only the C-like
+//! grammar for now.
+//!
 //! # Grammar sketch
 //!
 //! ```text
@@ -23,6 +28,8 @@
 //! contract_stmt ::= "contract" (statement)*
 //! implement_stmt::= "implement" IDENT "{" ... "}"
 //! ```
+
+pub mod nomx;
 
 use nom_ast::{
     AgentCapabilityStmt, AgentReceiveStmt, AgentScheduleStmt, AgentStateStmt, AgentSuperviseStmt,
