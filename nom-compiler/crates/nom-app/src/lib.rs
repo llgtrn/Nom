@@ -229,7 +229,13 @@ pub fn compile_app_to_artifacts_with_dict(
         let bytes = match aspect {
             OutputAspect::Security => build_security_aspect(manifest, dict)?,
             OutputAspect::Ux => build_ux_aspect(manifest, dict)?,
-            _ => Vec::new(),
+            OutputAspect::Env => build_env_aspect(manifest, dict)?,
+            OutputAspect::BizLogic => build_bizlogic_aspect(manifest, dict)?,
+            OutputAspect::Bench => build_bench_aspect(manifest, dict)?,
+            OutputAspect::Response => build_response_aspect(manifest, dict)?,
+            OutputAspect::Flow => build_flow_aspect(manifest, dict)?,
+            OutputAspect::Criteria => build_criteria_aspect(manifest, dict)?,
+            OutputAspect::Core | OutputAspect::Optimize => Vec::new(),
         };
         out.push(Artifact {
             aspect,
@@ -360,6 +366,246 @@ fn build_ux_aspect(
         "pages": pages,
         "user_flows": flows,
         "ux_patterns": patterns,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+/// Collect the full closure + fetch every entry. Shared helper for
+/// aspect populators that need more than just ids.
+fn closure_entries(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Vec<nom_types::Entry> {
+    use std::collections::BTreeSet;
+    let mut ids: BTreeSet<String> = BTreeSet::new();
+    for root in manifest_roots(manifest) {
+        if let Ok(c) = dict.closure(&root) {
+            ids.extend(c);
+        }
+    }
+    let mut out = Vec::with_capacity(ids.len());
+    for id in &ids {
+        if let Ok(Some(e)) = dict.get_entry(id) {
+            out.push(e);
+        }
+    }
+    out
+}
+
+fn build_env_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    let data_sources: Vec<&nom_types::Entry> = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::DataSource)
+        .collect();
+    let app_vars: Vec<&nom_types::Entry> = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::AppVariable)
+        .collect();
+    #[derive(serde::Serialize)]
+    struct Row<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        describe: Option<&'a str>,
+    }
+    let ds: Vec<Row> = data_sources
+        .iter()
+        .map(|e| Row {
+            entry_id: &e.id,
+            word: &e.word,
+            describe: e.describe.as_deref(),
+        })
+        .collect();
+    let vars: Vec<Row> = app_vars
+        .iter()
+        .map(|e| Row {
+            entry_id: &e.id,
+            word: &e.word,
+            describe: e.describe.as_deref(),
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "target_platform": manifest.default_target,
+        "data_sources": ds,
+        "app_variables": vars,
+        "settings": manifest.settings,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_bizlogic_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    #[derive(serde::Serialize)]
+    struct Rule<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        kind: &'a str,
+        input_type: Option<&'a str>,
+        output_type: Option<&'a str>,
+        pre: Option<&'a str>,
+        post: Option<&'a str>,
+    }
+    let rules: Vec<Rule> = entries
+        .iter()
+        .filter(|e| {
+            e.contract.pre.is_some()
+                || e.contract.post.is_some()
+                || e.contract.input_type.is_some()
+                || e.contract.output_type.is_some()
+        })
+        .map(|e| Rule {
+            entry_id: &e.id,
+            word: &e.word,
+            kind: e.kind.as_str(),
+            input_type: e.contract.input_type.as_deref(),
+            output_type: e.contract.output_type.as_deref(),
+            pre: e.contract.pre.as_deref(),
+            post: e.contract.post.as_deref(),
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "rules": rules,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_bench_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    #[derive(serde::Serialize)]
+    struct Row<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        describe: Option<&'a str>,
+    }
+    let runs: Vec<Row> = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::BenchmarkRun)
+        .map(|e| Row {
+            entry_id: &e.id,
+            word: &e.word,
+            describe: e.describe.as_deref(),
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "benchmark_runs": runs,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_response_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    #[derive(serde::Serialize)]
+    struct Row<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        kind: &'a str,
+        input_type: Option<&'a str>,
+        output_type: Option<&'a str>,
+    }
+    let endpoints: Vec<Row> = entries
+        .iter()
+        .filter(|e| {
+            matches!(
+                e.kind,
+                nom_types::EntryKind::ApiEndpoint | nom_types::EntryKind::Schema
+            )
+        })
+        .map(|e| Row {
+            entry_id: &e.id,
+            word: &e.word,
+            kind: e.kind.as_str(),
+            input_type: e.contract.input_type.as_deref(),
+            output_type: e.contract.output_type.as_deref(),
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "endpoints": endpoints,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_flow_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    #[derive(serde::Serialize)]
+    struct Row<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+        describe: Option<&'a str>,
+    }
+    let flows: Vec<Row> = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::FlowArtifact)
+        .map(|e| Row {
+            entry_id: &e.id,
+            word: &e.word,
+            describe: e.describe.as_deref(),
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "flow_artifacts": flows,
+    });
+    Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+fn build_criteria_aspect(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Result<Vec<u8>, AppError> {
+    let entries = closure_entries(manifest, dict);
+    let total = entries.len();
+    let complete = entries
+        .iter()
+        .filter(|e| e.status == nom_types::EntryStatus::Complete)
+        .count();
+    let partial = entries
+        .iter()
+        .filter(|e| e.status == nom_types::EntryStatus::Partial)
+        .count();
+    #[derive(serde::Serialize)]
+    struct TestRow<'a> {
+        entry_id: &'a str,
+        word: &'a str,
+    }
+    let tests: Vec<TestRow> = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::TestCase)
+        .map(|e| TestRow {
+            entry_id: &e.id,
+            word: &e.word,
+        })
+        .collect();
+    let doc = serde_json::json!({
+        "app": manifest.name,
+        "manifest_hash": manifest.manifest_hash,
+        "closure_size": total,
+        "complete": complete,
+        "partial": partial,
+        "test_cases": tests,
     });
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
@@ -595,6 +841,73 @@ mod tests {
         assert_eq!(doc["ux_patterns"].as_array().unwrap().len(), 1);
         assert_eq!(doc["pages"][0]["entry_id"], "home");
         assert_eq!(doc["screens"][0]["entry_id"], "login");
+    }
+
+    #[test]
+    fn all_populators_emit_valid_json_for_populated_aspects() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let mk_kind = |id: &str, kind: EntryKind| Entry {
+            id: id.into(),
+            word: id.into(),
+            variant: None,
+            kind,
+            language: "nom".into(),
+            describe: Some("d".into()),
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract {
+                input_type: Some("In".into()),
+                output_type: Some("Out".into()),
+                pre: Some("x>0".into()),
+                post: Some("y>0".into()),
+            },
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "2026-04-13T00:00:00Z".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&mk_kind("root", EntryKind::Page)).unwrap();
+        dict.upsert_entry(&mk_kind("ds", EntryKind::DataSource)).unwrap();
+        dict.upsert_entry(&mk_kind("av", EntryKind::AppVariable)).unwrap();
+        dict.upsert_entry(&mk_kind("bench", EntryKind::BenchmarkRun)).unwrap();
+        dict.upsert_entry(&mk_kind("api", EntryKind::ApiEndpoint)).unwrap();
+        dict.upsert_entry(&mk_kind("flow", EntryKind::FlowArtifact)).unwrap();
+        dict.upsert_entry(&mk_kind("test", EntryKind::TestCase)).unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "big".into(),
+            default_target: "desktop".into(),
+            root_page_hash: "root".into(),
+            data_sources: vec!["ds".into(), "av".into(), "api".into()],
+            actions: vec!["bench".into(), "flow".into(), "test".into()],
+            media_assets: vec![],
+            settings: serde_json::json!({"theme": "dark"}),
+        };
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+
+        let parse = |aspect: OutputAspect| -> serde_json::Value {
+            let a = arts.iter().find(|x| x.aspect == aspect).unwrap();
+            serde_json::from_slice(&a.bytes).unwrap()
+        };
+
+        assert_eq!(parse(OutputAspect::Env)["target_platform"], "desktop");
+        assert_eq!(parse(OutputAspect::Env)["data_sources"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::Env)["app_variables"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::BizLogic)["rules"].as_array().unwrap().len(), 7);
+        assert_eq!(parse(OutputAspect::Bench)["benchmark_runs"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::Response)["endpoints"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::Flow)["flow_artifacts"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::Criteria)["test_cases"].as_array().unwrap().len(), 1);
+        assert_eq!(parse(OutputAspect::Criteria)["closure_size"], 7);
     }
 
     #[test]
