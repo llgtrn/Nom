@@ -302,4 +302,36 @@ mod tests {
         let err = resolve_use_statements(&sf, &dict).unwrap_err();
         assert!(matches!(err, ResolveError::UnknownHash { ref hash, .. } if hash == hex));
     }
+
+    // ── B4: closure walker integration ─────────────────────────────────────
+
+    #[test]
+    fn closure_visits_three_entries_in_bfs_order() {
+        // Seed a tiny dict: A -> B -> C. The closure of A must contain all
+        // three in BFS-from-root order. This is an end-to-end smoke test
+        // that `nom-dict::closure` works with the v2 schema as the resolver
+        // consumes it.
+        let a = format!("{}{}", "a", "0".repeat(63));
+        let b = format!("{}{}", "b", "0".repeat(63));
+        let c = format!("{}{}", "c", "0".repeat(63));
+        let dict = NomDict::open_in_memory().unwrap();
+        for (id, word) in [(&a, "a"), (&b, "b"), (&c, "c")] {
+            dict.upsert_entry(&make_entry(id, word)).unwrap();
+        }
+        dict.add_ref(&a, &b).unwrap();
+        dict.add_ref(&b, &c).unwrap();
+
+        let closure = dict.closure(&a).unwrap();
+        // Set semantics: every node reachable from A, once.
+        let set: std::collections::HashSet<_> = closure.iter().cloned().collect();
+        assert_eq!(set.len(), 3);
+        assert!(set.contains(&a));
+        assert!(set.contains(&b));
+        assert!(set.contains(&c));
+
+        // BFS order: root first, then direct children, then grandchildren.
+        assert_eq!(closure[0], a, "root must be first");
+        assert_eq!(closure[1], b, "direct child next");
+        assert_eq!(closure[2], c, "grandchild last");
+    }
 }
