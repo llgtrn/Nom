@@ -13,6 +13,7 @@
 //! The two resolvers coexist; Task C will route new CLI commands to v2.
 
 pub mod v2;
+pub mod v2_rewrite;
 
 use nom_ast::NomRef;
 pub use nom_types::NomtuEntry;
