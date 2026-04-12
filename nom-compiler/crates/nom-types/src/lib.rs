@@ -7,6 +7,9 @@
 
 use serde::{Deserialize, Serialize};
 
+pub mod canonical;
+pub use canonical::{canonical_bytes, entry_id};
+
 // ── UIR (Unified Intermediate Representation) ────────────────────────
 
 pub const UIR_SCHEMA_VERSION: &str = "0.2.0";
