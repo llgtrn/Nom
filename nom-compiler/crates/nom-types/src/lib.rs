@@ -575,6 +575,10 @@ pub struct Contract {
 /// The primary identity row. `id` is the hex-encoded SHA-256 of
 /// `canonicalize(ast, contract)`, so identity survives whitespace and
 /// comment changes but reacts to any semantic edit.
+///
+/// `body_bytes` stores the canonical-format binary payload per §4.4.6
+/// invariant 15 (PNG, AVIF, FLAC, .bc, etc.). Legacy / source-only
+/// entries leave it `None`.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct Entry {
     pub id: String,
@@ -586,6 +590,9 @@ pub struct Entry {
     pub concept: Option<String>,
     pub body: Option<String>,
     pub body_nom: Option<String>,
+    /// Canonical-format bytes per §4.4.6 invariant 15 (PNG, AVIF, FLAC,
+    /// .bc, etc.). `None` for legacy/source-only entries.
+    pub body_bytes: Option<Vec<u8>>,
     /// §4.4.6: canonical format tag for `body`. Values from
     /// [`body_kind`] module (`NOM_SOURCE`, `BC`, `AVIF`, `AV1`, `AAC`,
     /// `FLAC`, …). `None` means untagged (legacy rows).

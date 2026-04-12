@@ -125,7 +125,58 @@ fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str) {
     assert_eq!(kind, "media_unit", "kind must be media_unit, got {kind}");
 }
 
+// ── §4.4.6 body_bytes round-trip helper ──────────────────────────────
+
+/// Verify that after `add-media`, `NomDict::get_entry_bytes(id)` returns
+/// `Some(bytes)` where `sha256(bytes) == id`. This is §4.4.6 invariant 15:
+/// the BLOB stored in `body_bytes` is the canonical representation, and
+/// the entry `id` is exactly the SHA-256 hex of those bytes.
+#[cfg(not(windows))]
+fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str) {
+    use nom_dict::NomDict;
+    use sha2::{Digest, Sha256};
+
+    let root = make_tmpdir(&format!("body-bytes-{expected_body_kind}"));
+    let dict = dict_flag(&root);
+
+    // Step 1: add-media via binary
+    let (code, stdout, stderr) = run_nom(&[
+        "store",
+        "add-media",
+        fixture.to_str().unwrap(),
+        "--dict",
+        &dict,
+    ]);
+    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+
+    // Step 2: parse id
+    let id = parse_id_line(&stdout)
+        .unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
+
+    // Step 3: open dict directly, call get_entry_bytes
+    // NomDict::open expects a root dir that contains data/nomdict.db.
+    // The CLI --dict flag points to the .db file directly, so open root.
+    let dict = NomDict::open(&root).unwrap();
+    let bytes = dict
+        .get_entry_bytes(&id)
+        .unwrap_or_else(|e| panic!("get_entry_bytes error: {e}"))
+        .unwrap_or_else(|| panic!("get_entry_bytes returned None for id={id}"));
+
+    // Step 4: verify sha256(bytes) == id
+    let actual_hex = format!("{:x}", Sha256::digest(&bytes));
+    assert_eq!(
+        actual_hex, id,
+        "body_bytes sha256 mismatch for {expected_body_kind}: sha256(bytes)={actual_hex} != id={id}"
+    );
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────
+
+#[test]
+#[cfg(not(windows))]
+fn body_bytes_stored_png() {
+    assert_body_bytes_stored(&fixtures_dir().join("tiny.png"), "png");
+}
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]

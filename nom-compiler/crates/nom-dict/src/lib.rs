@@ -43,7 +43,8 @@ CREATE TABLE IF NOT EXISTS entries (
     deprecated_by        TEXT,
     created_at           TEXT DEFAULT (datetime('now')),
     updated_at           TEXT,
-    body_kind            TEXT
+    body_kind            TEXT,
+    body_bytes           BLOB
 );
 CREATE INDEX IF NOT EXISTS idx_entries_word ON entries(word);
 CREATE INDEX IF NOT EXISTS idx_entries_word_variant ON entries(word, variant);
@@ -179,6 +180,11 @@ impl NomDict {
 
     fn init_schema(&self) -> Result<()> {
         self.conn.execute_batch(V2_SCHEMA_SQL)?;
+        // Best-effort migration: add body_bytes to pre-existing DBs that were
+        // created before this column was part of V2_SCHEMA_SQL. SQLite returns
+        // "duplicate column name" when it already exists — ignore that error.
+        let _ = self.conn
+            .execute_batch("ALTER TABLE entries ADD COLUMN body_bytes BLOB");
         Ok(())
     }
 
@@ -233,8 +239,8 @@ impl NomDict {
             "INSERT INTO entries (id, word, variant, kind, language, describe, concept,
                                   body, body_nom, input_type, output_type, pre, post,
                                   status, translation_score, is_canonical, deprecated_by,
-                                  created_at, updated_at, body_kind)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)
+                                  created_at, updated_at, body_kind, body_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
              ON CONFLICT(id) DO UPDATE SET
                  word              = excluded.word,
                  variant           = excluded.variant,
@@ -245,6 +251,7 @@ impl NomDict {
                  body              = COALESCE(excluded.body, entries.body),
                  body_nom          = COALESCE(excluded.body_nom, entries.body_nom),
                  body_kind         = COALESCE(excluded.body_kind, entries.body_kind),
+                 body_bytes        = COALESCE(excluded.body_bytes, entries.body_bytes),
                  status            = excluded.status,
                  translation_score = COALESCE(excluded.translation_score, entries.translation_score),
                  is_canonical      = excluded.is_canonical,
@@ -271,6 +278,7 @@ impl NomDict {
                 entry.created_at,
                 entry.updated_at,
                 entry.body_kind,
+                entry.body_bytes,
             ],
         )?;
         Ok(entry.id.clone())
@@ -414,13 +422,29 @@ impl NomDict {
             .query_row(
                 "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
                         input_type, output_type, pre, post, status, translation_score,
-                        is_canonical, deprecated_by, created_at, updated_at, body_kind
+                        is_canonical, deprecated_by, created_at, updated_at, body_kind,
+                        body_bytes
                  FROM entries WHERE id = ?1",
                 params![id],
                 row_to_entry,
             )
             .optional()?;
         Ok(row)
+    }
+
+    /// §4.4.6: fetch just the canonical-format bytes for an entry.
+    /// Returns None if either the entry doesn't exist or has no
+    /// body_bytes (legacy row).
+    pub fn get_entry_bytes(&self, id: &str) -> Result<Option<Vec<u8>>> {
+        let result: Option<Option<Vec<u8>>> = self
+            .conn
+            .query_row(
+                "SELECT body_bytes FROM entries WHERE id = ?1",
+                params![id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        Ok(result.flatten())
     }
 
     /// Look up every entry whose `word` column equals `word`. Returns an empty
@@ -430,7 +454,8 @@ impl NomDict {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
                     input_type, output_type, pre, post, status, translation_score,
-                    is_canonical, deprecated_by, created_at, updated_at, body_kind
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind,
+                    body_bytes
              FROM entries WHERE word = ?1 ORDER BY id",
         )?;
         let rows = stmt
@@ -448,7 +473,8 @@ impl NomDict {
         let mut stmt = self.conn.prepare_cached(
             "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
                     input_type, output_type, pre, post, status, translation_score,
-                    is_canonical, deprecated_by, created_at, updated_at, body_kind
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind,
+                    body_bytes
              FROM entries WHERE body_kind = ?1 ORDER BY id LIMIT ?2",
         )?;
         let rows = stmt
@@ -573,8 +599,9 @@ impl NomDict {
                 "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe,
                                                 concept, body, body_nom, input_type, output_type,
                                                 pre, post, status, translation_score, is_canonical,
-                                                deprecated_by, created_at, updated_at, body_kind)
-                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20)",
+                                                deprecated_by, created_at, updated_at, body_kind,
+                                                body_bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
             )?;
             for e in entries {
                 let rows = stmt.execute(params![
@@ -598,6 +625,7 @@ impl NomDict {
                     e.created_at,
                     e.updated_at,
                     e.body_kind,
+                    e.body_bytes,
                 ])?;
                 if rows > 0 {
                     inserted += 1;
@@ -666,6 +694,7 @@ fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
         created_at: row.get(17)?,
         updated_at: row.get(18)?,
         body_kind: row.get(19)?,
+        body_bytes: row.get::<_, Option<Vec<u8>>>(20)?,
     })
 }
 
@@ -737,6 +766,7 @@ mod tests {
             concept: None,
             body: None,
             body_nom: None,
+            body_bytes: None,
             body_kind: None,
             contract: Contract::default(),
             status: EntryStatus::Complete,

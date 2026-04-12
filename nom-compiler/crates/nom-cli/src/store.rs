@@ -90,6 +90,7 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
             concept: None,
             body: None,
             body_nom,
+            body_bytes: None,
             body_kind: Some(nom_types::body_kind::NOM_SOURCE.to_owned()),
             contract,
             status,
@@ -202,6 +203,9 @@ pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
         println!("status:   {}", entry.status.as_str());
         if let Some(bk) = &entry.body_kind {
             println!("body_kind: {bk}");
+        }
+        if let Some(bb) = &entry.body_bytes {
+            println!("body_bytes: {} bytes", bb.len());
         }
         if let Some(d) = &entry.describe {
             println!("describe: {d}");
@@ -508,6 +512,8 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
     // variant = the extension (lets multiple encodings of same word coexist).
     let variant = Some(ext.clone());
 
+    let canonical_bytes_len = summary.canonical_bytes.len();
+
     let entry = Entry {
         id: id.clone(),
         word: word.clone(),
@@ -518,6 +524,7 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
         concept: None,
         body: None,
         body_nom: None,
+        body_bytes: Some(summary.canonical_bytes),
         body_kind: Some(summary.body_kind_tag.to_owned()),
         contract: Contract::default(),
         status: EntryStatus::Complete,
@@ -537,8 +544,6 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
         eprintln!("nom: upsert error for {id}: {e}");
         return 1;
     }
-
-    let canonical_bytes_len = summary.canonical_bytes.len();
 
     if json {
         println!(

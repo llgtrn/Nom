@@ -216,6 +216,7 @@ mod tests {
             concept: None,
             body: None,
             body_nom: None,
+            body_bytes: None,
             body_kind: None,
             contract: Contract::default(),
             status: EntryStatus::Complete,
