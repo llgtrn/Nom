@@ -96,6 +96,7 @@ pub fn cmd_author_translate(
     };
     let stats = classify_lines(&text);
     let ready = stats.prose == 0 && stats.nom_ish > 0;
+    let proposals = extract_prose_proposals(&text);
 
     if json {
         let doc = serde_json::json!({
@@ -109,6 +110,7 @@ pub fn cmd_author_translate(
             "progression_pct": stats.progression_pct(),
             "ready_to_compile": ready,
             "next_step": translate_next_step(&stats, target),
+            "proposals": proposals,
         });
         println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
     } else {
@@ -117,9 +119,93 @@ pub fn cmd_author_translate(
         println!("  nom-ish lines:  {}", stats.nom_ish);
         println!("  progression:    {}%", stats.progression_pct());
         println!();
+        if !proposals.is_empty() {
+            println!("  proposals ({} nomtu candidate(s)):", proposals.len());
+            for p in &proposals {
+                println!("    - word={} kind={} concept={}", p.word, p.kind, p.concept);
+                println!("      from: {}", p.source_phrase);
+            }
+            println!();
+        }
         println!("  next: {}", translate_next_step(&stats, target));
     }
     if ready { 0 } else { 2 }
+}
+
+/// One nomtu candidate extracted from a prose phrase. The translate
+/// LLM loop uses these to drive `nom store add` + `nom concept add`
+/// calls in lockstep — every nomtu gets a concept, every concept gets
+/// nomtu, per the 2026-04-13 prose→artifact directive.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct TranslateProposal {
+    /// Suggested nomtu word, sanitized to [a-z0-9_].
+    pub word: String,
+    /// Suggested EntryKind tag (function / page / user_flow / …).
+    pub kind: String,
+    /// Suggested concept membership; inferred from the markdown
+    /// section the phrase appeared in (Intent → "intent", Sketch →
+    /// "sketch", other → "misc").
+    pub concept: String,
+    /// The original prose phrase, trimmed.
+    pub source_phrase: String,
+}
+
+/// Walk the input as markdown-ish text and extract one proposal per
+/// prose bullet or intent-line. Current heuristics:
+///   - `## Intent` section lines with text → concept "intent"
+///   - `## Sketch` section `- bullets` → concept "sketch"
+///   - Fallback: any line outside a comment that has ≥3 words
+///     → concept "misc"
+/// Word is the first 3 words sanitized + joined by underscore.
+fn extract_prose_proposals(text: &str) -> Vec<TranslateProposal> {
+    let mut out: Vec<TranslateProposal> = Vec::new();
+    let mut section = "misc".to_string();
+    for raw in text.lines() {
+        let line = raw.trim();
+        if line.is_empty() {
+            continue;
+        }
+        if let Some(rest) = line.strip_prefix("## ") {
+            section = rest.to_ascii_lowercase();
+            continue;
+        }
+        if line.starts_with('#') || line.starts_with("<!--") || line.starts_with("-->") {
+            continue;
+        }
+        if looks_nom_ish(line) {
+            continue;
+        }
+        let phrase = line.trim_start_matches("- ").trim_start_matches("* ").trim();
+        if phrase.split_whitespace().count() < 2 {
+            continue;
+        }
+        let word = prose_to_word(phrase);
+        if word.is_empty() {
+            continue;
+        }
+        out.push(TranslateProposal {
+            word,
+            kind: "function".to_string(),
+            concept: section.clone(),
+            source_phrase: phrase.to_string(),
+        });
+    }
+    out
+}
+
+fn prose_to_word(phrase: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    for w in phrase.split_whitespace().take(3) {
+        let sanitized: String = w
+            .chars()
+            .filter(|c| c.is_ascii_alphanumeric())
+            .map(|c| c.to_ascii_lowercase())
+            .collect();
+        if !sanitized.is_empty() {
+            words.push(sanitized);
+        }
+    }
+    words.join("_")
 }
 
 /// Describe the next step in the prose→artifact loop given current
@@ -346,6 +432,52 @@ random words without syntax
         let s = classify_lines(text);
         assert_eq!(s.prose, 0);
         assert_eq!(s.progression_pct(), 100);
+    }
+
+    #[test]
+    fn prose_to_word_sanitizes_and_joins() {
+        assert_eq!(prose_to_word("Hello World Foo Bar"), "hello_world_foo");
+        assert_eq!(prose_to_word("Render the user's dashboard"), "render_the_users");
+        assert_eq!(prose_to_word("..."), "");
+    }
+
+    #[test]
+    fn extract_prose_proposals_tracks_sections() {
+        let text = "\
+# Title
+
+## Intent
+
+Render a dashboard for logged-in users.
+
+## Sketch
+
+- fetch user profile
+- render greeting
+- show recent activity
+- hi
+";
+        let ps = extract_prose_proposals(text);
+        assert_eq!(ps.len(), 4, "got: {ps:?}");
+        assert_eq!(ps[0].concept, "intent");
+        assert_eq!(ps[0].word, "render_a_dashboard");
+        assert_eq!(ps[1].concept, "sketch");
+        assert_eq!(ps[1].word, "fetch_user_profile");
+        // "hi" is < 2 words → skipped.
+    }
+
+    #[test]
+    fn extract_prose_proposals_skips_nom_ish_lines() {
+        let text = "\
+## Sketch
+
+- use greeting@abc123
+- fetch user data
+fn already_nom() -> integer { return 0 }
+";
+        let ps = extract_prose_proposals(text);
+        assert_eq!(ps.len(), 1);
+        assert_eq!(ps[0].word, "fetch_user_data");
     }
 
     #[test]
