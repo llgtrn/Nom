@@ -7,6 +7,13 @@
 //!     flow request->validate->hash->store->response
 //!
 //! Tokens are scanned left-to-right, preserving span information.
+//!
+//! See also the [`nomx`] module for the experimental ≥95%-prose
+//! grammar track (research/language-analysis/05-natural-language-syntax.md).
+//! The two tokenizers coexist; the parser selects one via file
+//! extension / pragma once the `.nomx` grammar stabilizes.
+
+pub mod nomx;
 
 use nom_ast::Span;
 use thiserror::Error;
