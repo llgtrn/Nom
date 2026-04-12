@@ -603,6 +603,50 @@ mod tests {
     }
 
     #[test]
+    fn parses_todo_app_nomx_end_to_end() {
+        // Real program exercising every grammar form: Record +
+        // Choice + three Defines with Binding + When bodies.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/todo_app.nomx");
+        let src = std::fs::read_to_string(&path).unwrap();
+        let decls = parse_nomx(&src).unwrap();
+        // Expected: 1 record + 1 choice + 3 defines = 5 decls.
+        assert_eq!(decls.len(), 5, "expected 5 decls, got {}: {decls:#?}", decls.len());
+
+        // Shape check: first is Record, second is Choice, rest are
+        // Defines. Each decl has its expected name.
+        assert!(matches!(&decls[0], NomxDecl::Record { name, .. } if name == "task"));
+        assert!(matches!(&decls[1], NomxDecl::Choice { name, .. } if name == "task_status"));
+        assert!(matches!(&decls[2], NomxDecl::Define { name, .. } if name == "add_task"));
+        assert!(matches!(&decls[3], NomxDecl::Define { name, .. } if name == "mark_done"));
+        assert!(matches!(&decls[4], NomxDecl::Define { name, .. } if name == "count_remaining"));
+
+        // The record has 3 fields and the choice has 3 variants.
+        let NomxDecl::Record { fields, .. } = &decls[0] else {
+            panic!("expected Record");
+        };
+        assert_eq!(fields.len(), 3);
+        let NomxDecl::Choice { variants, .. } = &decls[1] else {
+            panic!("expected Choice");
+        };
+        assert_eq!(variants.len(), 3);
+
+        // add_task contains a `when` statement.
+        let NomxDecl::Define { body, .. } = &decls[2] else {
+            panic!("expected Define");
+        };
+        assert!(
+            body.iter()
+                .any(|s| matches!(s, NomxStatement::When { .. })),
+            "expected When in add_task body"
+        );
+    }
+
+    #[test]
     fn parses_hello_nomx_sample() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()

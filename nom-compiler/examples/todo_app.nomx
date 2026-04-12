@@ -1,0 +1,28 @@
+# Todo App (.nomx) — exercises every grammar form the parser
+# recognizes today: Define + Record + Choice + Binding + When.
+# See research/language-analysis/05-natural-language-syntax.md
+# and examples/draft_todo_app.md for the prose form this
+# natural-syntax Nom was translated from.
+
+record task holds:
+    body is text.
+    status is task_status.
+    created_at is date.
+
+choice task_status is one of:
+    active.
+    completed.
+    archived.
+
+define add_task that takes body and returns task:
+    new_task is task.
+    when body is empty, raise validation_error.
+    otherwise, return new_task.
+
+define mark_done that takes the_task and returns task:
+    updated is the_task.
+    when the_task is already_completed, return the_task.
+    otherwise, return updated.
+
+define count_remaining that takes list_of_tasks and returns count:
+    total is zero.
