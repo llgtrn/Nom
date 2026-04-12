@@ -17,6 +17,7 @@
 //!   nom fmt <path>      — format .nom source files with canonical style
 
 mod fmt;
+mod store;
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{CodegenOptions, collect_dependencies, generate};
@@ -304,6 +305,69 @@ enum Commands {
         #[arg(long)]
         check: bool,
     },
+
+    /// v2 content-addressed store operations (add / get / closure / verify / gc)
+    Store {
+        #[command(subcommand)]
+        action: StoreCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum StoreCmd {
+    /// Parse, canonicalize, and upsert a .nom file into the v2 store.
+    Add {
+        /// Path to the .nom source file
+        path: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit a JSON record instead of the bare id
+        #[arg(long)]
+        json: bool,
+    },
+    /// Fetch a stored entry by id (or hash prefix ≥ 8 hex chars).
+    Get {
+        /// Full 64-char id or ≥ 8-char unique prefix
+        hash: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit structured JSON
+        #[arg(long)]
+        json: bool,
+    },
+    /// Walk the transitive closure of `entry_refs` from the given root.
+    Closure {
+        /// Root hash (full id or ≥ 8-char unique prefix)
+        hash: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit a JSON array of ids
+        #[arg(long)]
+        json: bool,
+    },
+    /// Verify reachability and report partial/opaque/broken entries.
+    Verify {
+        /// Root hash (full id or ≥ 8-char unique prefix)
+        hash: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Treat partial/opaque leaves as failures (exit code 2)
+        #[arg(long)]
+        strict: bool,
+    },
+    /// Garbage-collect entries not reachable from any root in ~/.nom/roots.txt.
+    Gc {
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Print candidates without deleting
+        #[arg(long)]
+        dry_run: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -395,6 +459,13 @@ fn main() {
         } => cmd_audit(&dict, &min_severity, limit, &format),
         Commands::Quality { file, dict } => cmd_quality(&file, &dict),
         Commands::Fmt { path, check } => cmd_fmt(&path, check),
+        Commands::Store { action } => match action {
+            StoreCmd::Add { path, dict, json } => store::cmd_store_add(&path, &dict, json),
+            StoreCmd::Get { hash, dict, json } => store::cmd_store_get(&hash, &dict, json),
+            StoreCmd::Closure { hash, dict, json } => store::cmd_store_closure(&hash, &dict, json),
+            StoreCmd::Verify { hash, dict, strict } => store::cmd_store_verify(&hash, &dict, strict),
+            StoreCmd::Gc { dict, dry_run } => store::cmd_store_gc(&dict, dry_run),
+        },
     };
     process::exit(exit_code);
 }
@@ -594,6 +665,40 @@ fn cmd_build(
     target: &str,
     no_prelude: bool,
 ) -> i32 {
+    // Hash-prefix shortcut: if the positional arg uniquely resolves to
+    // a stored entry, materialize the closure bodies to a tempfile and
+    // build as usual. If the resolution fails we fall through to the
+    // regular path so a genuine file named e.g. "deadbeef" still works.
+    if !file.exists() {
+        if let Some(arg) = file.to_str() {
+            if let Some(closure) = store::try_build_by_hash(arg, dict) {
+                if let Some(body) = store::materialize_closure_body(dict, &closure) {
+                    let tmp_dir = std::env::temp_dir().join("nom-build-hash");
+                    if let Err(e) = std::fs::create_dir_all(&tmp_dir) {
+                        eprintln!("nom: temp dir error: {e}");
+                        return 1;
+                    }
+                    let tmp_file = tmp_dir.join(format!("{}.nom", &arg[..8]));
+                    if let Err(e) = std::fs::write(&tmp_file, &body) {
+                        eprintln!("nom: write temp file error: {e}");
+                        return 1;
+                    }
+                    println!("nom: materialized {} closure entries to {}", closure.len(), tmp_file.display());
+                    return cmd_build(
+                        &tmp_file,
+                        output,
+                        dict,
+                        emit_rust,
+                        compile,
+                        release,
+                        target,
+                        no_prelude,
+                    );
+                }
+            }
+        }
+    }
+
     let source = match read_source(file) {
         Some(s) => s,
         None => return 1,
