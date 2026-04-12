@@ -396,6 +396,12 @@ enum AuthorCmd {
         /// Emit JSON plan instead of a human summary.
         #[arg(long)]
         json: bool,
+        /// If set, materialize every extracted proposal into the dict
+        /// (concept + Partial entry + membership link) idempotently.
+        /// Runs the prose→artifact lockstep: concept layer and nomtu
+        /// layer land together, one row each per proposal.
+        #[arg(long)]
+        write: Option<PathBuf>,
     },
 }
 
@@ -917,9 +923,9 @@ fn main() {
         Commands::Author { action } => match action {
             AuthorCmd::Start { name, out } => author::cmd_author_start(&name, out.as_deref()),
             AuthorCmd::Check { file, json } => author::cmd_author_check(&file, json),
-            AuthorCmd::Translate { input, target, json } => {
+            AuthorCmd::Translate { input, target, json, write } => {
                 match author::TranslateTarget::from_str(&target) {
-                    Some(t) => author::cmd_author_translate(&input, t, json),
+                    Some(t) => author::cmd_author_translate(&input, t, json, write.as_deref()),
                     None => {
                         eprintln!(
                             "nom author translate: unknown target `{target}` (expected app|video|image)"

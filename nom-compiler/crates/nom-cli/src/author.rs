@@ -86,6 +86,7 @@ pub fn cmd_author_translate(
     input: &Path,
     target: TranslateTarget,
     json: bool,
+    write_to_dict: Option<&Path>,
 ) -> i32 {
     let text = match std::fs::read_to_string(input) {
         Ok(s) => s,
@@ -97,6 +98,21 @@ pub fn cmd_author_translate(
     let stats = classify_lines(&text);
     let ready = stats.prose == 0 && stats.nom_ish > 0;
     let proposals = extract_prose_proposals(&text);
+
+    // Optional: materialize proposals into the dict. Concept + nomtu
+    // land in lockstep per the 2026-04-13 directive. Idempotent: same
+    // input + same dict produces the same (concept, entry) rows.
+    let written = if let Some(dict_path) = write_to_dict {
+        match write_proposals_to_dict(&proposals, dict_path) {
+            Ok(n) => Some(n),
+            Err(e) => {
+                eprintln!("nom author translate: write-to-dict failed: {e}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
 
     if json {
         let doc = serde_json::json!({
@@ -111,6 +127,7 @@ pub fn cmd_author_translate(
             "ready_to_compile": ready,
             "next_step": translate_next_step(&stats, target),
             "proposals": proposals,
+            "written": written,
         });
         println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
     } else {
@@ -126,6 +143,9 @@ pub fn cmd_author_translate(
                 println!("      from: {}", p.source_phrase);
             }
             println!();
+        }
+        if let Some(n) = written {
+            println!("  wrote {n} proposal(s) to dict");
         }
         println!("  next: {}", translate_next_step(&stats, target));
     }
@@ -191,6 +211,108 @@ fn extract_prose_proposals(text: &str) -> Vec<TranslateProposal> {
         });
     }
     out
+}
+
+/// Materialize TranslateProposals into a dict. For each proposal:
+///   1. Upsert a Concept with name = proposal.concept (idempotent on id).
+///   2. Upsert an Entry with word = proposal.word, kind = Function,
+///      status = Partial (the LLM will lift to Complete once it
+///      authors the body).
+///   3. Add the entry to the concept via add_concept_member.
+/// Returns the number of new entries inserted (concepts already
+/// present + entries already present are no-ops; only fresh inserts
+/// are counted).
+fn write_proposals_to_dict(
+    proposals: &[TranslateProposal],
+    dict_path: &Path,
+) -> Result<usize, String> {
+    use nom_dict::{Concept, NomDict};
+    use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+    // Mirror corpus.rs resolve_db_path: treat .db path as file, else
+    // treat as root dir with data/nomdict.db. Open-or-create.
+    let resolved = if dict_path.extension().map_or(false, |e| e == "db") {
+        dict_path.to_path_buf()
+    } else {
+        dict_path.join("data/nomdict.db")
+    };
+    if let Some(parent) = resolved.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let dict = NomDict::open_in_place(&resolved)
+        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
+
+    let now = chrono_like_now();
+    let mut written = 0usize;
+
+    for p in proposals {
+        // Concept — id deterministic from name; idempotent.
+        let concept_id = Concept::id_for(&p.concept);
+        dict.upsert_concept(&Concept {
+            id: concept_id.clone(),
+            name: p.concept.clone(),
+            describe: Some(format!("auto-created from prose translation")),
+            created_at: now.clone(),
+            updated_at: None,
+        })
+        .map_err(|e| format!("upsert concept {}: {e}", p.concept))?;
+
+        // Entry — id = sha256(word + concept). Partial status; LLM
+        // lifts to Complete by authoring the body.
+        use sha2::{Digest, Sha256};
+        let id = {
+            let mut h = Sha256::new();
+            h.update(p.word.as_bytes());
+            h.update(b"|");
+            h.update(p.concept.as_bytes());
+            format!("{:x}", h.finalize())
+        };
+
+        let entry = Entry {
+            id: id.clone(),
+            word: p.word.clone(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".to_string(),
+            describe: Some(format!("TODO: {}", p.source_phrase)),
+            concept: Some(p.concept.clone()),
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Partial,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: now.clone(),
+            updated_at: None,
+        };
+
+        // upsert_entry_if_new: true iff a new row was inserted.
+        if dict
+            .upsert_entry_if_new(&entry)
+            .map_err(|e| format!("upsert entry {}: {e}", p.word))?
+        {
+            written += 1;
+        }
+
+        // Link entry → concept.
+        dict.add_concept_member(&concept_id, &id)
+            .map_err(|e| format!("add_concept_member: {e}"))?;
+    }
+    Ok(written)
+}
+
+fn chrono_like_now() -> String {
+    // Reuse store.rs's approach: hand-rolled UTC timestamp.
+    let now = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs();
+    // Very rough formatter — good enough for timestamps in Partial
+    // rows that will get rewritten by real upserts. Deterministic.
+    format!("{now}")
 }
 
 fn prose_to_word(phrase: &str) -> String {
