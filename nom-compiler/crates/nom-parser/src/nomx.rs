@@ -837,6 +837,42 @@ mod tests {
     }
 
     #[test]
+    fn for_each_missing_comma_errors() {
+        // `for each <v> in <coll>, <body>.` — dropped comma after
+        // collection; scan stops at `.`, expect(Comma) fires.
+        let src = "define f:\n  for each x in xs. go.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`,` after `for each` collection"),
+            "expected for-each-comma diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, ".",
+            "error span should point at the `.` that replaced the expected comma, got {at:?}"
+        );
+    }
+
+    #[test]
+    fn unless_without_comma_errors() {
+        // `unless <cond>, <then>.` — dropped comma. Same shape as
+        // when-without-comma (Unless lowers to `when not ...`).
+        let src = "define f:\n  unless flag. go.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`,` after `unless` condition"),
+            "expected unless-comma diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, ".",
+            "error span should point at the `.` that replaced the expected comma, got {at:?}"
+        );
+    }
+
+    #[test]
     fn while_without_comma_errors() {
         // `while <cond>, <body>.` — dropped comma stops cond scan
         // at `.`, then expect(Comma) fires pointing at the period.
