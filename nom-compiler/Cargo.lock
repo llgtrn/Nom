@@ -674,6 +674,7 @@ dependencies = [
  "nom-dict",
  "nom-types",
  "proc-macro2",
+ "rusqlite",
  "serde",
  "serde_json",
  "sha2",

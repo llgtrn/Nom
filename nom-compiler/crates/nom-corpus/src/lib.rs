@@ -639,6 +639,128 @@ fn secs_to_ymd_hms(secs: u64) -> (u64, u64, u64, u64, u64, u64) {
     (y, mo, d, h, mi, s)
 }
 
+// ── lift_partial ─────────────────────────────────────────────────────────────
+
+/// Outcome returned by [`lift_partial`].
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+pub enum LiftReport {
+    /// Entry was lifted. `partial_id` stays Partial; `complete_id` is the new
+    /// Complete entry. `is_new` is `true` if the complete entry was freshly
+    /// inserted, `false` if it already existed (dedup path).
+    Lifted {
+        partial_id: String,
+        complete_id: String,
+        is_new: bool,
+    },
+    /// The gate rejected translation (body could not be rendered in Nom).
+    Rejected { reason: String },
+    /// No translator for this language yet.
+    NotYetImplemented { language: String },
+}
+
+/// Errors from [`lift_partial`].
+#[derive(Debug, Error)]
+pub enum LiftError {
+    #[error("entry not found: {0}")]
+    NotFound(String),
+    #[error("entry is not Partial (status={0})")]
+    NotPartial(String),
+    #[error("body_bytes missing for entry {0}")]
+    NoBody(String),
+    #[error("gate error: {0}")]
+    Gate(#[from] GateError),
+    #[error("dict error: {0}")]
+    Dict(String),
+}
+
+/// §5.2→§5.10 gate loop for a single Partial entry.
+///
+/// Fetches the entry from `dict`, runs [`run_gate`], and on success:
+/// - Upserts a new Complete entry with `body_kind: nom_source`.
+/// - Adds a `SupersededBy(partial_id → complete_id)` edge.
+///
+/// The original Partial entry is left untouched.
+pub fn lift_partial(dict: &nom_dict::NomDict, id: &str) -> Result<LiftReport, LiftError> {
+    use nom_types::{body_kind, Contract, EdgeType, Entry, EntryStatus, GraphEdge};
+
+    // 1. Fetch entry.
+    let entry = dict
+        .get_entry(id)
+        .map_err(|e| LiftError::Dict(e.to_string()))?
+        .ok_or_else(|| LiftError::NotFound(id.to_string()))?;
+
+    // 2. Verify it is Partial.
+    if entry.status != EntryStatus::Partial {
+        return Err(LiftError::NotPartial(entry.status.as_str().to_string()));
+    }
+
+    // 3. Extract body bytes.
+    let raw_bytes = entry
+        .body_bytes
+        .as_deref()
+        .filter(|b| !b.is_empty())
+        .ok_or_else(|| LiftError::NoBody(id.to_string()))?;
+
+    let body_kind_tag = entry
+        .body_kind
+        .as_deref()
+        .unwrap_or("unknown");
+
+    let language = &entry.language;
+
+    // 4. Run the equivalence gate.
+    let outcome = run_gate(id, body_kind_tag, raw_bytes, language)?;
+
+    match outcome {
+        GateOutcome::Lifted { nom_source_id, nom_body } => {
+            // 5a. Build the new Complete entry.
+            let describe = format!("{} source, lifted to Nom", language);
+            let complete = Entry {
+                id: nom_source_id.clone(),
+                word: entry.word.clone(),
+                variant: entry.variant.clone(),
+                kind: entry.kind.clone(),
+                language: "nom".to_string(),
+                describe: Some(describe),
+                concept: entry.concept.clone(),
+                body: None,
+                body_nom: None,
+                body_bytes: Some(nom_body),
+                body_kind: Some(body_kind::NOM_SOURCE.to_string()),
+                contract: Contract::default(),
+                status: EntryStatus::Complete,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: chrono_now(),
+                updated_at: None,
+            };
+
+            let is_new = dict.upsert_entry_if_new(&complete).map_err(|e| LiftError::Dict(e.to_string()))?;
+
+            // 5b. Add SupersededBy edge partial → complete.
+            let edge = GraphEdge {
+                edge_id: 0,
+                from_id: id.to_string(),
+                to_id: nom_source_id.clone(),
+                edge_type: EdgeType::SupersededBy,
+                confidence: 1.0,
+            };
+            dict.add_graph_edge(&edge).map_err(|e| LiftError::Dict(e.to_string()))?;
+
+            Ok(LiftReport::Lifted {
+                partial_id: id.to_string(),
+                complete_id: nom_source_id,
+                is_new,
+            })
+        }
+        GateOutcome::PartialRejected { reason } => Ok(LiftReport::Rejected { reason }),
+        GateOutcome::NotYetImplemented { language } => {
+            Ok(LiftReport::NotYetImplemented { language })
+        }
+    }
+}
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
@@ -1044,6 +1166,67 @@ mod tests {
         // Dict still holds only 6 entries from run 1.
         let dict_check = NomDict::open_in_place(&db_path).unwrap();
         assert_eq!(dict_check.count().unwrap(), 6, "dict must still hold exactly 6 entries");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn lift_partial_end_to_end() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_lift_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Single rust file with a liftable function.
+        let src_dir = tmp.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+        let mut f = fs::File::create(src_dir.join("add.rs")).unwrap();
+        f.write_all(b"fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
+
+        let db_path = tmp.join("test.db");
+        let dict = NomDict::open_in_place(&db_path).unwrap();
+
+        // Ingest — lands as Partial.
+        let report = ingest_directory(&src_dir, &dict).unwrap();
+        assert_eq!(report.files_ingested, 1);
+
+        // Find the partial entry (body_kind = "rust_source").
+        let partials = dict.find_by_body_kind("rust_source", 10).unwrap();
+        assert_eq!(partials.len(), 1, "expected exactly one rust_source entry");
+        let partial_id = partials[0].id.clone();
+
+        // Lift it.
+        let result = super::lift_partial(&dict, &partial_id).unwrap();
+        match result {
+            LiftReport::Lifted { partial_id: pid, complete_id, is_new } => {
+                assert_eq!(pid, partial_id);
+                assert!(!complete_id.is_empty());
+                assert!(is_new, "first lift must insert a new entry");
+
+                // Verify the new complete entry exists with nom_source body_kind.
+                let complete_entries = dict.find_by_body_kind("nom_source", 10).unwrap();
+                assert_eq!(complete_entries.len(), 1, "expected one nom_source entry");
+                let ce = &complete_entries[0];
+                assert_eq!(ce.id, complete_id);
+                assert_eq!(ce.status, nom_types::EntryStatus::Complete);
+                assert!(ce.body_bytes.as_ref().map_or(false, |b| !b.is_empty()));
+
+                // Verify the SupersededBy edge exists.
+                let conn = dict.connection();
+                let edge_count: i64 = conn
+                    .query_row(
+                        "SELECT COUNT(*) FROM entry_graph_edges WHERE from_id=?1 AND to_id=?2 AND edge_type='superseded_by'",
+                        rusqlite::params![partial_id, complete_id],
+                        |r| r.get(0),
+                    )
+                    .unwrap();
+                assert_eq!(edge_count, 1, "SupersededBy edge must exist");
+            }
+            other => panic!("expected LiftReport::Lifted, got {other:?}"),
+        }
 
         let _ = fs::remove_dir_all(&tmp);
     }

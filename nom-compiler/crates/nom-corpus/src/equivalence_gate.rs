@@ -21,7 +21,11 @@ pub mod translators;
 pub enum GateOutcome {
     /// Translator produced a Nom body that passed the contract test.
     /// Caller upserts a new Complete entry with `nom_source` body_kind.
-    Lifted { nom_source_id: String },
+    Lifted {
+        nom_source_id: String,
+        /// UTF-8 bytes of the translated Nom body.
+        nom_body: Vec<u8>,
+    },
     /// Translator produced output but the contract test failed.
     PartialRejected { reason: String },
     /// No translator for this language yet.
@@ -73,7 +77,8 @@ pub fn run_gate(
                         h.update(nom_body.as_bytes());
                         let nom_source_id = format!("{:x}", h.finalize());
                         let _ = body_kind; // caller provides for future use
-                        Ok(GateOutcome::Lifted { nom_source_id })
+                        let nom_body_bytes = nom_body.into_bytes();
+                        Ok(GateOutcome::Lifted { nom_source_id, nom_body: nom_body_bytes })
                     }
                 }
                 Err(translators::TranslationError::Parse(r))
@@ -106,8 +111,9 @@ mod tests {
         let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
         match out {
-            GateOutcome::Lifted { nom_source_id } => {
+            GateOutcome::Lifted { nom_source_id, nom_body } => {
                 assert_eq!(nom_source_id.len(), 64); // sha256 hex
+                assert!(!nom_body.is_empty());
             }
             other => panic!("expected Lifted, got {other:?}"),
         }
@@ -130,6 +136,20 @@ mod tests {
                 assert!(reason.contains("UTF-8"), "got: {reason}")
             }
             other => panic!("expected PartialRejected, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn run_gate_returns_nom_body_for_lifted() {
+        let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
+        let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
+        match out {
+            GateOutcome::Lifted { nom_source_id, nom_body } => {
+                assert_eq!(nom_source_id.len(), 64);
+                let body_str = std::str::from_utf8(&nom_body).expect("nom_body must be valid UTF-8");
+                assert!(!body_str.trim().is_empty(), "nom_body must be non-empty");
+            }
+            other => panic!("expected Lifted, got {other:?}"),
         }
     }
 }
