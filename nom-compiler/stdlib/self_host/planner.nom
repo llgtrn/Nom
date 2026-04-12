@@ -57,6 +57,20 @@ fn nom_plan(ast: VerifiedAST) -> CompositionPlan {
   }
 }
 
+# First concrete helper: the canonical "no entry point" id. Returned
+# by nom_plan today while the scaffold is empty; callers compare
+# against this to detect the placeholder state.
+fn default_entry_point() -> integer {
+  return 0
+}
+
+# Shape-level predicate. A plan is "empty" when its entry_point_id
+# equals default_entry_point(). As real planning lands, both the
+# predicate and the default will evolve in lockstep.
+fn is_empty_plan(plan: CompositionPlan) -> bool {
+  return plan.entry_point_id == default_entry_point()
+}
+
 # Sketch of the graph-building helper the real planner needs. Not yet
 # callable; parser may not accept all of this. Marked aspirational.
 #
