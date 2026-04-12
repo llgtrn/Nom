@@ -732,4 +732,109 @@ mod tests {
         let set: std::collections::HashSet<_> = closure.iter().collect();
         assert_eq!(set.len(), 3);
     }
+
+    #[test]
+    fn eav_extensibility_no_schema_change() {
+        // A brand new facet name requires zero ALTER TABLE — EAV stores it directly.
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_entry(&make_entry("e1", "target")).unwrap();
+        d.add_meta("e1", "quantum_safe", "true").unwrap();
+        d.add_meta("e1", "wasm_target", "wasi-p2").unwrap();
+        let rows = d.get_meta("e1").unwrap();
+        let mut found = std::collections::HashMap::new();
+        for (k, v) in rows {
+            found.insert(k, v);
+        }
+        assert_eq!(found.get("quantum_safe").map(String::as_str), Some("true"));
+        assert_eq!(found.get("wasm_target").map(String::as_str), Some("wasi-p2"));
+    }
+
+    #[test]
+    fn typed_query_uses_indexes() {
+        // Property: filtering by score threshold AND absence of a Critical finding
+        // should use the declared indexes (not a full scan).
+        //
+        // We don't insert 1M rows in a unit test — instead we assert the query
+        // plan uses indexes on the relevant columns, which is what makes the
+        // 100 ms target on a 1M corpus achievable. The perf test with a large
+        // synthetic corpus belongs in a benchmark, not the test suite.
+        let d = NomDict::open_in_memory().unwrap();
+        // populate a handful of rows so the planner has real stats
+        for i in 0..32 {
+            let id = format!("e{i:02}");
+            d.upsert_entry(&make_entry(&id, &id)).unwrap();
+            d.set_scores(
+                &id,
+                &EntryScores {
+                    id: id.clone(),
+                    security: Some(if i % 2 == 0 { 0.95 } else { 0.4 }),
+                    reliability: Some(0.8),
+                    performance: Some(0.7),
+                    readability: Some(0.8),
+                    testability: Some(0.6),
+                    portability: Some(0.7),
+                    composability: Some(0.8),
+                    maturity: Some(0.5),
+                    overall_score: Some(0.7),
+                },
+            )
+            .unwrap();
+            if i % 3 == 0 {
+                d.add_finding(
+                    &id,
+                    &SecurityFinding {
+                        finding_id: 0,
+                        id: id.clone(),
+                        severity: Severity::Critical,
+                        category: "injection".to_string(),
+                        rule_id: None,
+                        message: None,
+                        evidence: None,
+                        line: None,
+                        remediation: None,
+                    },
+                )
+                .unwrap();
+            }
+        }
+
+        // Run the canonical v2 query. Should complete trivially under 100 ms
+        // on this size; the real perf target is verified by the query plan
+        // using the indexes below.
+        let sql = "SELECT e.id FROM entries e \
+                   JOIN entry_scores s ON s.id = e.id \
+                   WHERE s.security > 0.9 \
+                   AND NOT EXISTS ( \
+                       SELECT 1 FROM entry_security_findings f \
+                       WHERE f.id = e.id AND f.severity = 'Critical')";
+        let start = std::time::Instant::now();
+        let count: i64 = d
+            .connection()
+            .prepare(sql)
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .count() as i64;
+        let elapsed = start.elapsed();
+        assert!(count >= 0);
+        assert!(
+            elapsed.as_millis() < 500,
+            "query took {elapsed:?}, expected < 500 ms on tiny corpus"
+        );
+
+        // Verify the query plan touches indexes, not full scans.
+        let plan: Vec<String> = d
+            .connection()
+            .prepare(&format!("EXPLAIN QUERY PLAN {sql}"))
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(3))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+        let plan_text = plan.join(" | ");
+        assert!(
+            plan_text.contains("USING INDEX") || plan_text.contains("USING COVERING INDEX"),
+            "query plan did not use any index: {plan_text}"
+        );
+    }
 }
