@@ -46,6 +46,12 @@ pub enum NomxToken {
     Holds,
     Means,
 
+    // Contract verbs (proposal 05 §4.4)
+    Require,
+    Ensure,
+    Throughout,
+    Given,
+
     // Prepositional operators
     Of,
     From,
@@ -87,6 +93,8 @@ pub enum NomxRole {
     LinkingVerb,
     /// of / from / with / then / by / and / or / not — infix-prose ops.
     PrepositionalOperator,
+    /// require / ensure / throughout / given — contract phrases (§4.4).
+    ContractVerb,
     /// User-defined names + numeric + string literals.
     Value,
     /// `:` `,` `.` `(` `)` `{` `}`.
@@ -108,6 +116,7 @@ impl NomxToken {
             Of | From | With | ToPrep | Then | By | And | Or | Not => {
                 NomxRole::PrepositionalOperator
             }
+            Require | Ensure | Throughout | Given => NomxRole::ContractVerb,
             Identifier(_) | Number(_) | StringLit(_) => NomxRole::Value,
             Colon | Comma | Period | LParen | RParen | LBrace | RBrace => NomxRole::Punctuation,
             Eof => NomxRole::Eof,
@@ -287,6 +296,10 @@ fn keyword_token(word: &str) -> Option<NomxToken> {
         "returns" => Some(NomxToken::Returns),
         "holds" => Some(NomxToken::Holds),
         "means" => Some(NomxToken::Means),
+        "require" => Some(NomxToken::Require),
+        "ensure" => Some(NomxToken::Ensure),
+        "throughout" => Some(NomxToken::Throughout),
+        "given" => Some(NomxToken::Given),
         "of" => Some(NomxToken::Of),
         "from" => Some(NomxToken::From),
         "with" => Some(NomxToken::With),
@@ -453,6 +466,10 @@ mod tests {
             (Returns, LinkingVerb),
             (Holds, LinkingVerb),
             (Means, LinkingVerb),
+            (Require, ContractVerb),
+            (Ensure, ContractVerb),
+            (Throughout, ContractVerb),
+            (Given, ContractVerb),
             (Of, PrepositionalOperator),
             (From, PrepositionalOperator),
             (With, PrepositionalOperator),
@@ -501,6 +518,16 @@ mod tests {
         assert!(Period.ends_sentence());
         assert!(!Colon.ends_sentence());
         assert!(!Comma.ends_sentence());
+    }
+
+    #[test]
+    fn contract_verbs_tokenize() {
+        let src = "require x is positive. ensure result is at_least zero. throughout, count is nonneg. given valid input";
+        let toks = tokenize_nomx(src);
+        assert!(toks.contains(&NomxToken::Require));
+        assert!(toks.contains(&NomxToken::Ensure));
+        assert!(toks.contains(&NomxToken::Throughout));
+        assert!(toks.contains(&NomxToken::Given));
     }
 
     #[test]
