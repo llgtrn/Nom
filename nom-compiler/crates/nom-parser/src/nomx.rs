@@ -133,6 +133,14 @@ pub enum NomxStatement {
         body_tokens: Vec<NomxToken>,
         span: NomxSpan,
     },
+    /// `while <cond>, <body>.` — loop statement. Same shape as
+    /// ForEach minus the loop variable + collection; condition +
+    /// body captured verbatim.
+    While {
+        cond_tokens: Vec<NomxToken>,
+        body_tokens: Vec<NomxToken>,
+        span: NomxSpan,
+    },
 }
 
 /// Parse error for the `.nomx` parser. Carries the span of the
@@ -417,8 +425,35 @@ impl<'a> NomxParser<'a> {
             NomxToken::When => self.parse_when_statement(false),
             NomxToken::Unless => self.parse_when_statement(true),
             NomxToken::For => self.parse_for_each_statement(),
+            NomxToken::While => self.parse_while_statement(),
             _ => self.parse_binding_statement(),
         }
+    }
+
+    /// `while <cond>, <body>.`
+    fn parse_while_statement(&mut self) -> NomxParseResult<NomxStatement> {
+        let start_span = self.peek_span();
+        self.expect(&NomxToken::While, "`while`")?;
+        let mut cond_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator()
+            && self.peek() != &NomxToken::Comma
+            && self.peek() != &NomxToken::Period
+        {
+            cond_tokens.push(self.advance().token.clone());
+        }
+        self.expect(&NomxToken::Comma, "`,` after `while` condition")?;
+        let mut body_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            body_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+        Ok(NomxStatement::While {
+            cond_tokens,
+            body_tokens,
+            span: NomxSpan::new(start_span.start, self.peek_span().start),
+        })
     }
 
     /// `for each <var> in <collection>, <body>.`
@@ -723,6 +758,30 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
+        );
+    }
+
+    #[test]
+    fn parses_while_loop() {
+        let src = "define countdown:\n  while n is greater_than_zero, n is n minus one.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        let NomxStatement::While { cond_tokens, body_tokens, .. } = &body[0] else {
+            panic!("expected While, got {:?}", body[0]);
+        };
+        assert!(
+            cond_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "n")),
+            "cond should reference n"
+        );
+        assert!(
+            body_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "minus" || n == "one")),
+            "body should reference the decrement"
         );
     }
 
