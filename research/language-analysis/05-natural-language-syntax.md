@@ -281,11 +281,12 @@ actor counter {                             an actor called counter holds a numb
 Prototype code has landed alongside this proposal. The `.nomx` track
 coexists with the C-like grammar — no existing code paths touched.
 
-### Lexer (`nom_lexer::nomx`, ~300 LOC)
+### Lexer (`nom_lexer::nomx`, ~330 LOC)
 
-- `NomxToken` enum: 34 variants grouped by role (DeclarationVerb /
-  ControlFlow / LinkingVerb / PrepositionalOperator / Value /
-  Punctuation / Eof).
+- `NomxToken` enum: 38 variants grouped by role (DeclarationVerb /
+  ControlFlow / LinkingVerb / PrepositionalOperator / ContractVerb /
+  Value / Punctuation / Eof). Contract verbs
+  (require/ensure/throughout/given) per §4.4.
 - `tokenize_nomx_with_spans(src) -> Vec<SpannedNomxToken>` —
   primary API. Each token carries a `NomxSpan { start, end }` byte
   range for parser diagnostics.
@@ -305,7 +306,7 @@ Four declaration forms (3 block + 1 sentence):
 - `choice <name> is one of:` + variant list
 - `to <verb>, respond with <expr>.` sentence-form (lowered to Define)
 
-Four body-statement forms:
+Five body-statement forms:
 
 - `<subject> is <rhs_tokens>.` binding
 - `when <cond>, <then>. otherwise, <else>.` conditional
@@ -313,19 +314,22 @@ Four body-statement forms:
   cond_tokens so downstream AST is uniform)
 - `for each <var> in|of <coll>, <body>.` iteration
 - `while <cond>, <body>.` loop
+- `require <pred>.` / `ensure <pred>.` / `throughout, <pred>.`
+  contract clauses (ContractKind discriminant)
 
 AST types: `NomxDecl` (3 variants — to-oneliner lowers to Define) +
-`NomxStatement` (4 variants: Binding, When, ForEach, While) +
-`NomxRecordField` + `NomxChoiceVariant`, all carrying spans.
+`NomxStatement` (5 variants: Binding, When, ForEach, While,
+Contract) + `NomxRecordField` + `NomxChoiceVariant` + `ContractKind`,
+all carrying spans.
 
 Expression parsing within `rhs_tokens` / `cond_tokens` etc. captures
 the raw token sequence. Typed expression tree lands with the type
 system — this keeps the AST shape stable while grammar bells grow.
 
-Tests: 19/19 green. Covers every decl form + every statement form +
-error paths (missing name, missing colon, etc.). Includes end-to-end
-parse of three shipped samples (hello.nomx, todo_app.nomx,
-greet_sentence.nomx).
+Tests: 22/22 green. Covers every decl form + every statement form +
+error paths (missing name, missing colon, etc.) + recovery discipline
+for unknown top-level forms. Includes end-to-end parse of four shipped
+samples (hello.nomx, todo_app.nomx, greet_sentence.nomx, loops.nomx).
 
 ### Samples
 
@@ -338,10 +342,10 @@ greet_sentence.nomx).
 
 - Expression parsing inside rhs_tokens (requires type system —
   today the RHS captures raw tokens verbatim).
-- Inline contract phrases (`when given ..., ensure ...`) per §4.4
-  contract block.
 - Canonical type phrases per §4.5 (`a number`, `a piece of text`,
-  `a maybe-<T>`) — parser tokens already exist, lowering doesn't.
+  `a maybe-<T>`) — tokens already exist in cond/rhs streams, but
+  the parser doesn't canonicalize them to types yet.
+- Actor form (`actor ... holds ...`) per §4.6.
 - Vietnamese aliases (milestone 3 per §8).
 - Type inference / checker (phase after expression tree lands).
 - Lowering to LLVM bitcode via the existing planner+codegen.

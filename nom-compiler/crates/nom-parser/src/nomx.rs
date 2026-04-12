@@ -34,7 +34,7 @@
 //! body          ::= statement* (body_terminator)
 //! body_terminator ::= EOF | "define" | "record" | "choice"
 //! statement     ::= binding_stmt | when_stmt | for_each_stmt
-//!                 | while_stmt
+//!                 | while_stmt | contract_stmt
 //!
 //! binding_stmt  ::= IDENT "is" <rhs_tokens>* "."?
 //!
@@ -49,6 +49,10 @@
 //!
 //! while_stmt    ::= "while" <cond_tokens>* ","
 //!                   <body_tokens>* "."?
+//!
+//! contract_stmt ::= ( "require" | "ensure" | "throughout" ","? )
+//!                   <pred_tokens>* "."?
+//!                   (* ContractKind {Require, Ensure, Throughout} *)
 //! ```
 //!
 //! `<rhs_tokens>`, `<cond_tokens>`, `<then_tokens>`, `<else_tokens>`,
