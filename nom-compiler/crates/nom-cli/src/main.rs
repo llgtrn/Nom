@@ -382,6 +382,21 @@ enum AuthorCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Translate any natural input (draft / essay / sentence) into a
+    /// production-ready artifact (app / video / image). Scaffold form
+    /// inspects input + emits the next LLM step; full LLM loop via
+    /// MCP arrives as downstream consumers wire in. Per the
+    /// 2026-04-13 prose→artifact directive.
+    Translate {
+        /// Input file (treated as prose — markdown / plain text).
+        input: PathBuf,
+        /// Target artifact form.
+        #[arg(long, default_value = "app")]
+        target: String,
+        /// Emit JSON plan instead of a human summary.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -902,6 +917,17 @@ fn main() {
         Commands::Author { action } => match action {
             AuthorCmd::Start { name, out } => author::cmd_author_start(&name, out.as_deref()),
             AuthorCmd::Check { file, json } => author::cmd_author_check(&file, json),
+            AuthorCmd::Translate { input, target, json } => {
+                match author::TranslateTarget::from_str(&target) {
+                    Some(t) => author::cmd_author_translate(&input, t, json),
+                    None => {
+                        eprintln!(
+                            "nom author translate: unknown target `{target}` (expected app|video|image)"
+                        );
+                        1
+                    }
+                }
+            }
         },
         Commands::App { action } => match action {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
