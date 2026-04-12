@@ -151,6 +151,25 @@ pub enum NomxStatement {
         body_tokens: Vec<NomxToken>,
         span: NomxSpan,
     },
+    /// Contract clause per proposal 05 §4.4:
+    ///   `require <pred>.` precondition statement
+    ///   `ensure <pred>.`  postcondition
+    ///   `throughout, <pred>.` invariant
+    /// `kind` carries the verb; pred_tokens captures the predicate
+    /// verbatim until `.`.
+    Contract {
+        kind: ContractKind,
+        pred_tokens: Vec<NomxToken>,
+        span: NomxSpan,
+    },
+}
+
+/// Which contract verb produced a Contract statement.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ContractKind {
+    Require,
+    Ensure,
+    Throughout,
 }
 
 /// Parse error for the `.nomx` parser. Carries the span of the
@@ -436,8 +455,39 @@ impl<'a> NomxParser<'a> {
             NomxToken::Unless => self.parse_when_statement(true),
             NomxToken::For => self.parse_for_each_statement(),
             NomxToken::While => self.parse_while_statement(),
+            NomxToken::Require => self.parse_contract_statement(ContractKind::Require),
+            NomxToken::Ensure => self.parse_contract_statement(ContractKind::Ensure),
+            NomxToken::Throughout => self.parse_contract_statement(ContractKind::Throughout),
             _ => self.parse_binding_statement(),
         }
+    }
+
+    /// `require <pred>.` / `ensure <pred>.` / `throughout [,] <pred>.`
+    /// The leading verb has already been peeked; consume it and
+    /// collect tokens until `.` or body terminator.
+    fn parse_contract_statement(
+        &mut self,
+        kind: ContractKind,
+    ) -> NomxParseResult<NomxStatement> {
+        let start_span = self.peek_span();
+        self.advance(); // consume the verb
+        // Throughout accepts an optional leading comma per prose idiom
+        // ("throughout, x is nonneg.").
+        if kind == ContractKind::Throughout && self.peek() == &NomxToken::Comma {
+            self.advance();
+        }
+        let mut pred_tokens: Vec<NomxToken> = Vec::new();
+        while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+            pred_tokens.push(self.advance().token.clone());
+        }
+        if self.peek() == &NomxToken::Period {
+            self.advance();
+        }
+        Ok(NomxStatement::Contract {
+            kind,
+            pred_tokens,
+            span: NomxSpan::new(start_span.start, self.peek_span().start),
+        })
     }
 
     /// `while <cond>, <body>.`
@@ -769,6 +819,31 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
         );
+    }
+
+    #[test]
+    fn parses_contract_statements() {
+        // All three contract verbs inside one define body.
+        let src = "define safe_divide that takes n and returns result:\n\
+                   require denominator is nonzero.\n\
+                   ensure result is nonnull.\n\
+                   throughout, invariant is preserved.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        assert_eq!(body.len(), 3);
+        for (stmt, expected_kind) in body.iter().zip([
+            ContractKind::Require,
+            ContractKind::Ensure,
+            ContractKind::Throughout,
+        ]) {
+            let NomxStatement::Contract { kind, pred_tokens, .. } = stmt else {
+                panic!("expected Contract, got {stmt:?}");
+            };
+            assert_eq!(*kind, expected_kind);
+            assert!(!pred_tokens.is_empty());
+        }
     }
 
     #[test]
