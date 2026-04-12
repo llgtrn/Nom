@@ -404,7 +404,8 @@ impl<'a> NomxParser<'a> {
 
     fn parse_statement(&mut self) -> NomxParseResult<NomxStatement> {
         match self.peek() {
-            NomxToken::When => self.parse_when_statement(),
+            NomxToken::When => self.parse_when_statement(false),
+            NomxToken::Unless => self.parse_when_statement(true),
             _ => self.parse_binding_statement(),
         }
     }
@@ -444,21 +445,37 @@ impl<'a> NomxParser<'a> {
         })
     }
 
-    /// `when <cond>, <then>.` with optional `otherwise, <else>.`
-    /// following. Condition ends at comma; branch ends at period or
-    /// body terminator.
-    fn parse_when_statement(&mut self) -> NomxParseResult<NomxStatement> {
+    /// `when <cond>, <then>.` or `unless <cond>, <then>.` with
+    /// optional `otherwise, <else>.` following. Condition ends at
+    /// comma; branch ends at period or body terminator.
+    ///
+    /// When `negate=true` (`unless` form), a leading `Not` token is
+    /// prepended to `cond_tokens` so downstream consumers see a
+    /// unified AST: `unless x` is identical to `when not x`.
+    fn parse_when_statement(&mut self, negate: bool) -> NomxParseResult<NomxStatement> {
         let start_span = self.peek_span();
-        self.expect(&NomxToken::When, "`when`")?;
+        let keyword = if negate { NomxToken::Unless } else { NomxToken::When };
+        let label = if negate { "`unless`" } else { "`when`" };
+        self.expect(&keyword, label)?;
 
         let mut cond_tokens: Vec<NomxToken> = Vec::new();
+        if negate {
+            cond_tokens.push(NomxToken::Not);
+        }
         while !self.peek_is_body_terminator()
             && self.peek() != &NomxToken::Comma
             && self.peek() != &NomxToken::Period
         {
             cond_tokens.push(self.advance().token.clone());
         }
-        self.expect(&NomxToken::Comma, "`,` after `when` condition")?;
+        self.expect(
+            &NomxToken::Comma,
+            if negate {
+                "`,` after `unless` condition"
+            } else {
+                "`,` after `when` condition"
+            },
+        )?;
 
         let mut then_tokens: Vec<NomxToken> = Vec::new();
         while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
@@ -642,6 +659,32 @@ mod tests {
                 .unwrap()
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
+        );
+    }
+
+    #[test]
+    fn parses_unless_as_negated_when() {
+        // `unless <cond>, <then>.` is sugar for `when not <cond>, ...`.
+        // The parser prepends a Not token to cond_tokens so downstream
+        // consumers see a unified shape.
+        let src = "define guard:\n  unless authorized is true, deny.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        let NomxStatement::When { cond_tokens, .. } = &body[0] else {
+            panic!("expected When");
+        };
+        assert_eq!(
+            cond_tokens.first(),
+            Some(&NomxToken::Not),
+            "unless should prepend Not to cond_tokens: {cond_tokens:?}"
+        );
+        // The rest of the condition: `authorized is true`.
+        assert!(
+            cond_tokens
+                .iter()
+                .any(|t| matches!(t, NomxToken::Identifier(n) if n == "authorized"))
         );
     }
 
