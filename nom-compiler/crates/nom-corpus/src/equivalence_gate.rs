@@ -43,6 +43,32 @@ pub enum GateError {
     Serde(#[from] serde_json::Error),
 }
 
+/// Shared post-translation step: compute sha256, return Lifted or PartialRejected.
+fn lift_from_translator(result: Result<String, translators::TranslationError>) -> GateOutcome {
+    match result {
+        Ok(nom_body) => {
+            if nom_body.trim().is_empty() {
+                GateOutcome::PartialRejected {
+                    reason: "translator produced empty body".into(),
+                }
+            } else {
+                use sha2::{Digest, Sha256};
+                let mut h = Sha256::new();
+                h.update(nom_body.as_bytes());
+                let nom_source_id = format!("{:x}", h.finalize());
+                GateOutcome::Lifted {
+                    nom_source_id,
+                    nom_body: nom_body.into_bytes(),
+                }
+            }
+        }
+        Err(translators::TranslationError::Parse(r))
+        | Err(translators::TranslationError::Unsupported(r)) => {
+            GateOutcome::PartialRejected { reason: r }
+        }
+    }
+}
+
 /// Run the equivalence gate for one Partial entry.
 /// Dispatches to a per-language translator based on `language`.
 pub fn run_gate(
@@ -60,32 +86,11 @@ pub fn run_gate(
             });
         }
     };
+    let _ = body_kind; // caller provides for future use
     match language {
-        "rust" => {
-            match translators::rust::translate(source) {
-                Ok(nom_body) => {
-                    // A future PR runs the nom-parser + verifier against the
-                    // output and only lifts to Complete if it parses +
-                    // type-checks. For now: non-empty body = Lifted.
-                    if nom_body.trim().is_empty() {
-                        Ok(GateOutcome::PartialRejected {
-                            reason: "translator produced empty body".into(),
-                        })
-                    } else {
-                        use sha2::{Digest, Sha256};
-                        let mut h = Sha256::new();
-                        h.update(nom_body.as_bytes());
-                        let nom_source_id = format!("{:x}", h.finalize());
-                        let _ = body_kind; // caller provides for future use
-                        let nom_body_bytes = nom_body.into_bytes();
-                        Ok(GateOutcome::Lifted { nom_source_id, nom_body: nom_body_bytes })
-                    }
-                }
-                Err(translators::TranslationError::Parse(r))
-                | Err(translators::TranslationError::Unsupported(r)) => {
-                    Ok(GateOutcome::PartialRejected { reason: r })
-                }
-            }
+        "rust" => Ok(lift_from_translator(translators::rust::translate(source))),
+        "typescript" => {
+            Ok(lift_from_translator(translators::typescript::translate(source)))
         }
         _ => Ok(GateOutcome::NotYetImplemented {
             language: language.to_string(),

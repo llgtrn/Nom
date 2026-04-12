@@ -7,6 +7,7 @@
 //! based on language.
 
 pub mod rust;
+pub mod typescript;
 
 #[derive(Debug, thiserror::Error)]
 pub enum TranslationError {
