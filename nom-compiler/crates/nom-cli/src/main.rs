@@ -678,7 +678,10 @@ fn cmd_build(
                         eprintln!("nom: temp dir error: {e}");
                         return 1;
                     }
-                    let tmp_file = tmp_dir.join(format!("{}.nom", &arg[..8]));
+                    // Prefix with "nom_" so the Rust package name derived
+                    // from the file stem is a valid identifier (Cargo
+                    // rejects names that start with a digit).
+                    let tmp_file = tmp_dir.join(format!("nom_{}.nom", &arg[..8]));
                     if let Err(e) = std::fs::write(&tmp_file, &body) {
                         eprintln!("nom: write temp file error: {e}");
                         return 1;

@@ -439,7 +439,7 @@ pub fn materialize_closure_body(dict: &Path, closure: &[String]) -> Option<Strin
         match dict_db.get_entry(id) {
             Ok(Some(e)) => {
                 if let Some(body) = e.body_nom {
-                    parts.push(format!("// --- entry {id} ({}) ---\n{body}", e.word));
+                    parts.push(format!("# --- entry {id} ({}) ---\n{body}", e.word));
                 } else {
                     eprintln!("nom: warning: no body_nom for {id}");
                 }
