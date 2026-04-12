@@ -122,6 +122,8 @@ pub enum MediaError {
     Av1(String),
     #[error("AAC codec error: {0}")]
     Aac(String),
+    #[error("WebM codec error: {0}")]
+    Webm(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -1068,6 +1070,100 @@ pub fn verify_aac_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     Ok(())
 }
 
+// ── WebM/MKV container (§5.16.13 order #8) ────────────────────────────
+
+/// A single track inside a WebM/Matroska container.
+#[derive(Debug, Clone)]
+pub struct WebmTrack {
+    pub track_number: u64,
+    /// `"video"`, `"audio"`, `"subtitle"`, etc.
+    pub track_type: String,
+    /// E.g. `"V_AV1"`, `"A_OPUS"`, `"A_VORBIS"`.
+    pub codec_id: String,
+}
+
+/// Result of ingesting a WebM/Matroska container.
+///
+/// `canonical_bytes` are an identity copy of the input. Awaiting a
+/// pure-Rust Matroska muxer for deterministic re-muxing; the same
+/// passthrough discipline as Opus/AVIF/AV1/AAC until one lands.
+///
+/// Tagged `body_kind = "webm"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedWebm {
+    /// Duration derived from the Segment/Info/Duration EBML element
+    /// (milliseconds). Zero if the element is absent.
+    pub duration_ms: u64,
+    pub tracks: Vec<WebmTrack>,
+    /// Identity copy of the input bytes. See struct-level doc for the
+    /// encoder status note.
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Parse a WebM/Matroska byte slice and return an [`IngestedWebm`]
+/// containing the duration, track list, and canonical bytes.
+///
+/// Uses a hand-rolled EBML element walker (no external crate) that
+/// recognises the minimal element set needed for track metadata:
+/// EBML header, Segment, SegmentInfo (Duration), Tracks, TrackEntry
+/// (TrackNumber, TrackType, CodecID). Unknown elements are skipped by
+/// their declared DataSize.
+///
+/// `canonical_bytes` is currently an identity copy of `bytes` because
+/// no pure-Rust Matroska muxer is available; see [`IngestedWebm`].
+///
+/// Returns [`MediaError::Webm`] on malformed input.
+pub fn ingest_webm(bytes: &[u8]) -> Result<IngestedWebm, MediaError> {
+    let (duration_ms, tracks) = parse_webm_metadata(bytes)?;
+    // Identity mapping: awaiting pure-Rust Matroska muxer.
+    // Future: replace with re-mux at fixed settings for deterministic
+    // canonical bytes once a suitable pure-Rust muxer is available.
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedWebm {
+        duration_ms,
+        tracks,
+        canonical_bytes,
+    })
+}
+
+/// Round-trip gate for WebM/Matroska.
+///
+/// Ingests `bytes` via [`ingest_webm`], then re-parses the canonical
+/// bytes. Asserts that `duration_ms`, track count, and track type list
+/// all match.
+///
+/// With the current identity-mapping encoder `canonical_bytes` == input
+/// bytes, so both sides always agree. Once a real muxer lands this will
+/// catch regressions where re-muxing changes container metadata.
+///
+/// Returns [`MediaError::Webm`] if either parse fails or metadata
+/// does not match.
+pub fn verify_webm_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_webm(bytes)?;
+    let (rt_duration_ms, rt_tracks) = parse_webm_metadata(&ingested.canonical_bytes)?;
+    if ingested.duration_ms != rt_duration_ms {
+        return Err(MediaError::Webm(format!(
+            "duration_ms mismatch after round-trip: original={}ms canonical={}ms",
+            ingested.duration_ms, rt_duration_ms,
+        )));
+    }
+    if ingested.tracks.len() != rt_tracks.len() {
+        return Err(MediaError::Webm(format!(
+            "track count mismatch after round-trip: original={} canonical={}",
+            ingested.tracks.len(),
+            rt_tracks.len(),
+        )));
+    }
+    let orig_types: Vec<&str> = ingested.tracks.iter().map(|t| t.track_type.as_str()).collect();
+    let rt_types: Vec<&str> = rt_tracks.iter().map(|t| t.track_type.as_str()).collect();
+    if orig_types != rt_types {
+        return Err(MediaError::Webm(format!(
+            "track_type list mismatch after round-trip: original={orig_types:?} canonical={rt_types:?}",
+        )));
+    }
+    Ok(())
+}
+
 // ── Private helpers ───────────────────────────────────────────────────
 
 /// Parse AVIF container metadata.
@@ -1351,6 +1447,328 @@ fn parse_adts_metadata(bytes: &[u8]) -> Result<(u32, u8, u64), MediaError> {
     let duration_ms = frame_count * 1024 * 1000 / first_sample_rate as u64;
 
     Ok((first_sample_rate, first_channels, duration_ms))
+}
+
+/// Parse WebM/Matroska container metadata using a hand-rolled EBML walker.
+///
+/// # EBML wire format
+///
+/// Every element = VInt(ElementID) + VInt(DataSize) + payload.
+///
+/// Variable-length integers (VInt): the number of leading zero bits in
+/// the first byte determines the total byte-width; the width marker bit
+/// is cleared when reading the value.
+///
+/// ```text
+/// first-byte pattern  total bytes  max value
+/// 1xxx xxxx            1             2^7  − 2  (127)
+/// 01xx xxxx  ...       2             2^14 − 2
+/// 001x xxxx  ...       3             2^21 − 2
+/// ...                  up to 8
+/// ```
+///
+/// Known EBML IDs used in this parser (all in the Matroska/WebM spec):
+///
+/// ```text
+/// 0x1A45DFA3  EBML (root)
+/// 0x18538067  Segment
+/// 0x1549A966  SegmentInfo
+/// 0x4489      Duration  (float, seconds × timecode scale)
+/// 0x2AD7B1    TimecodeScale (default 1_000_000 ns = 1ms per timecode unit)
+/// 0x1654AE6B  Tracks
+/// 0xAE        TrackEntry
+/// 0xD7        TrackNumber (uint)
+/// 0x83        TrackType   (uint: 1=video 2=audio 17=subtitle 33=buttons)
+/// 0x86        CodecID     (UTF-8 string)
+/// ```
+///
+/// Returns `(duration_ms, tracks)`.
+fn parse_webm_metadata(bytes: &[u8]) -> Result<(u64, Vec<WebmTrack>), MediaError> {
+    // ── VInt readers ──────────────────────────────────────────────────
+
+    /// Read a variable-length integer from `data[pos..]`.
+    /// Returns `(value, bytes_consumed)`.
+    fn read_vint(data: &[u8], pos: usize) -> Result<(u64, usize), &'static str> {
+        if pos >= data.len() {
+            return Err("EBML: unexpected end of data reading vint");
+        }
+        let first = data[pos];
+        let width = first.leading_zeros() as usize + 1; // 1..=8
+        if width > 8 || pos + width > data.len() {
+            return Err("EBML: vint width overflows buffer");
+        }
+        // Clear the width-marker bit and accumulate remaining bytes.
+        let mask = 0xFF >> width; // clears the top `width` bits
+        let mut val = (first & mask) as u64;
+        for i in 1..width {
+            val = (val << 8) | (data[pos + i] as u64);
+        }
+        Ok((val, width))
+    }
+
+    /// Read an EBML element ID from `data[pos..]`.
+    /// IDs keep the width-marker bit, unlike data-size VInts.
+    fn read_element_id(data: &[u8], pos: usize) -> Result<(u32, usize), &'static str> {
+        if pos >= data.len() {
+            return Err("EBML: unexpected end of data reading element id");
+        }
+        let first = data[pos];
+        let width = first.leading_zeros() as usize + 1;
+        if width > 4 || pos + width > data.len() {
+            return Err("EBML: element id width overflows buffer");
+        }
+        let mut id = first as u32;
+        for i in 1..width {
+            id = (id << 8) | (data[pos + i] as u32);
+        }
+        Ok((id, width))
+    }
+
+    // ── Scalar payload readers ─────────────────────────────────────────
+
+    fn read_uint(data: &[u8], pos: usize, size: usize) -> u64 {
+        let end = (pos + size).min(data.len());
+        let mut v = 0u64;
+        for &b in &data[pos..end] {
+            v = (v << 8) | b as u64;
+        }
+        v
+    }
+
+    fn read_float(data: &[u8], pos: usize, size: usize) -> f64 {
+        match size {
+            4 => {
+                let mut arr = [0u8; 4];
+                arr.copy_from_slice(&data[pos..pos + 4]);
+                f32::from_be_bytes(arr) as f64
+            }
+            8 => {
+                let mut arr = [0u8; 8];
+                arr.copy_from_slice(&data[pos..pos + 8]);
+                f64::from_be_bytes(arr)
+            }
+            _ => 0.0,
+        }
+    }
+
+    fn read_utf8(data: &[u8], pos: usize, size: usize) -> String {
+        let end = (pos + size).min(data.len());
+        String::from_utf8_lossy(&data[pos..end])
+            .trim_end_matches('\0')
+            .to_owned()
+    }
+
+    // ── EBML element IDs (Matroska/WebM spec) ─────────────────────────
+    const ID_EBML: u32 = 0x1A45DFA3;
+    const ID_SEGMENT: u32 = 0x18538067;
+    const ID_SEGMENT_INFO: u32 = 0x1549A966;
+    const ID_TRACKS: u32 = 0x1654AE6B;
+    const ID_TIMECODE_SCALE: u32 = 0x2AD7B1;
+    const ID_DURATION: u32 = 0x4489;
+    const ID_TRACK_ENTRY: u32 = 0xAE;
+    const ID_TRACK_NUMBER: u32 = 0xD7;
+    const ID_TRACK_TYPE: u32 = 0x83;
+    const ID_CODEC_ID: u32 = 0x86;
+
+    // Validate EBML magic.
+    if bytes.len() < 4 {
+        return Err(MediaError::Webm("file too short to be WebM".to_owned()));
+    }
+    // First element ID must be 0x1A45DFA3 (EBML root).
+    if bytes[0] != 0x1A || bytes[1] != 0x45 || bytes[2] != 0xDF || bytes[3] != 0xA3 {
+        return Err(MediaError::Webm(
+            "not a WebM/Matroska file: missing EBML signature".to_owned(),
+        ));
+    }
+
+    // ── Top-level element walker ────────────────────────────────────────
+    let mut pos = 0usize;
+    let total = bytes.len();
+
+    let mut duration_ms: u64 = 0;
+    let mut timecode_scale_ns: u64 = 1_000_000; // default: 1 ms per timecode unit
+    let mut tracks: Vec<WebmTrack> = Vec::new();
+
+    while pos < total {
+        let (id, id_len) = read_element_id(bytes, pos)
+            .map_err(|e| MediaError::Webm(e.to_owned()))?;
+        pos += id_len;
+        if pos >= total {
+            break;
+        }
+        let (data_size, ds_len) = read_vint(bytes, pos)
+            .map_err(|e| MediaError::Webm(e.to_owned()))?;
+        pos += ds_len;
+
+        // 0xFF...FF sizes = "unknown size" (master elements that run to
+        // the next top-level element). We handle this for Segment.
+        let is_unknown_size = data_size == (1u64 << (7 * ds_len)) - 1;
+
+        match id {
+            ID_EBML => {
+                // Skip EBML header payload — just advance past it.
+                if !is_unknown_size {
+                    pos += data_size as usize;
+                }
+            }
+            ID_SEGMENT => {
+                // Segment: master element, may have unknown size.
+                // Walk its children in place (they are all at `pos`..end).
+                let seg_end = if is_unknown_size {
+                    total
+                } else {
+                    (pos + data_size as usize).min(total)
+                };
+
+                while pos < seg_end {
+                    let (child_id, cid_len) = match read_element_id(bytes, pos) {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    };
+                    pos += cid_len;
+                    let (child_size, cds_len) = match read_vint(bytes, pos) {
+                        Ok(v) => v,
+                        Err(_) => break,
+                    };
+                    pos += cds_len;
+                    let child_is_unknown = child_size == (1u64 << (7 * cds_len)) - 1;
+                    let child_payload_start = pos;
+                    let child_end = if child_is_unknown {
+                        seg_end
+                    } else {
+                        (pos + child_size as usize).min(seg_end)
+                    };
+
+                    match child_id {
+                        ID_SEGMENT_INFO => {
+                            // Walk SegmentInfo children for Duration + TimecodeScale.
+                            let mut ipos = child_payload_start;
+                            while ipos < child_end {
+                                let (iid, iid_len) = match read_element_id(bytes, ipos) {
+                                    Ok(v) => v,
+                                    Err(_) => break,
+                                };
+                                ipos += iid_len;
+                                let (isz, isz_len) = match read_vint(bytes, ipos) {
+                                    Ok(v) => v,
+                                    Err(_) => break,
+                                };
+                                ipos += isz_len;
+                                let iend = (ipos + isz as usize).min(child_end);
+                                match iid {
+                                    ID_TIMECODE_SCALE => {
+                                        if iend - ipos <= 8 {
+                                            timecode_scale_ns = read_uint(bytes, ipos, iend - ipos);
+                                        }
+                                    }
+                                    ID_DURATION => {
+                                        let sz = iend - ipos;
+                                        if sz == 4 || sz == 8 {
+                                            let secs = read_float(bytes, ipos, sz);
+                                            // Duration in Matroska is in timecode-scale units.
+                                            // duration_s = duration_value × timecode_scale_ns / 1e9
+                                            let scale_s = timecode_scale_ns as f64 / 1_000_000_000.0;
+                                            duration_ms = (secs * scale_s * 1000.0) as u64;
+                                        }
+                                    }
+                                    _ => {}
+                                }
+                                ipos = iend;
+                            }
+                            pos = child_end;
+                        }
+                        ID_TRACKS => {
+                            // Walk Tracks children for TrackEntry elements.
+                            let mut tpos = child_payload_start;
+                            while tpos < child_end {
+                                let (tid, tid_len) = match read_element_id(bytes, tpos) {
+                                    Ok(v) => v,
+                                    Err(_) => break,
+                                };
+                                tpos += tid_len;
+                                let (tsz, tsz_len) = match read_vint(bytes, tpos) {
+                                    Ok(v) => v,
+                                    Err(_) => break,
+                                };
+                                tpos += tsz_len;
+                                let tend = (tpos + tsz as usize).min(child_end);
+
+                                if tid == ID_TRACK_ENTRY {
+                                    let mut track_num: u64 = 0;
+                                    let mut track_type_code: u64 = 0;
+                                    let mut codec_id = String::new();
+                                    let mut epos = tpos;
+                                    while epos < tend {
+                                        let (eid, eid_len) = match read_element_id(bytes, epos) {
+                                            Ok(v) => v,
+                                            Err(_) => break,
+                                        };
+                                        epos += eid_len;
+                                        let (esz, esz_len) = match read_vint(bytes, epos) {
+                                            Ok(v) => v,
+                                            Err(_) => break,
+                                        };
+                                        epos += esz_len;
+                                        let eend = (epos + esz as usize).min(tend);
+                                        match eid {
+                                            ID_TRACK_NUMBER => {
+                                                track_num = read_uint(bytes, epos, eend - epos);
+                                            }
+                                            ID_TRACK_TYPE => {
+                                                track_type_code = read_uint(bytes, epos, eend - epos);
+                                            }
+                                            ID_CODEC_ID => {
+                                                codec_id = read_utf8(bytes, epos, eend - epos);
+                                            }
+                                            _ => {}
+                                        }
+                                        epos = eend;
+                                    }
+                                    let track_type = match track_type_code {
+                                        1 => "video".to_owned(),
+                                        2 => "audio".to_owned(),
+                                        3 => "complex".to_owned(),
+                                        16 => "logo".to_owned(),
+                                        17 => "subtitle".to_owned(),
+                                        18 => "buttons".to_owned(),
+                                        20 => "control".to_owned(),
+                                        _ => format!("type{track_type_code}"),
+                                    };
+                                    tracks.push(WebmTrack {
+                                        track_number: track_num,
+                                        track_type,
+                                        codec_id,
+                                    });
+                                }
+                                tpos = tend;
+                            }
+                            pos = child_end;
+                        }
+                        _ => {
+                            pos = child_end;
+                        }
+                    }
+                }
+            }
+            _ => {
+                if !is_unknown_size {
+                    pos += data_size as usize;
+                } else {
+                    break; // Unknown element with unknown size — stop.
+                }
+            }
+        }
+    }
+
+    if tracks.is_empty() && duration_ms == 0 {
+        // Minimal check: at least the EBML signature was valid; we may
+        // have a file with no tracks (unusual but not fatal). If neither
+        // was found, the file is likely truncated or invalid.
+        // We allow duration_ms == 0 (Duration element absent) but require
+        // a valid EBML signature (checked above). Return what we have.
+    }
+
+    Ok((duration_ms, tracks))
 }
 
 #[cfg(test)]
