@@ -20,9 +20,26 @@ use nom_dict::{EntryFilter, NomDict};
 use nom_parser::parse_source;
 use nom_resolver::v2::{ResolutionTable, resolve_use_statements};
 use nom_types::{
-    Contract, Entry, EntryKind, EntryStatus, canonical::entry_id,
+    Contract, Entry, EntryKind, EntryStatus,
 };
 use sha2::{Digest, Sha256};
+
+// ── Internal helpers ─────────────────────────────────────────────────
+
+/// Compile an already-parsed Nom `SourceFile` to LLVM bitcode bytes.
+/// Uses an empty in-memory resolver; missing word-refs produce a degraded
+/// plan (same as `plan_unchecked`) but never block compilation.
+fn compile_source_to_bc(sf: &SourceFile, _raw_source: &str) -> Result<Vec<u8>, String> {
+    let resolver = nom_resolver::Resolver::open_in_memory()
+        .map_err(|e| format!("resolver: {e}"))?;
+    let planner = nom_planner::Planner::new(&resolver);
+    let plan = planner
+        .plan_unchecked(sf)
+        .map_err(|e| format!("plan: {e}"))?;
+    let output = nom_llvm::compile(&plan)
+        .map_err(|e| format!("codegen: {e}"))?;
+    Ok(output.bitcode)
+}
 
 // ── Public CLI entry points ──────────────────────────────────────────
 
@@ -41,6 +58,17 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
             return 1;
         }
     };
+
+    // Compile the .nom source to LLVM bitcode.  The plan is built from the
+    // parsed SourceFile so we don't parse twice.
+    let bc_bytes = match compile_source_to_bc(&sf, &source) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("nom: compile error: {e}");
+            return 1;
+        }
+    };
+
     let dict_db = match open_dict(dict) {
         Some(d) => d,
         None => return 1,
@@ -56,29 +84,21 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
         EntryStatus::Partial
     };
 
+    // Content-addressed id from the compiled bitcode.
     let mut ids: Vec<String> = Vec::new();
     let mut refs: Vec<String> = Vec::new();
 
     for decl in &sf.declarations {
         let contract = contract_from_decl(decl);
-        let id = entry_id(decl, &contract);
         let word = decl.name.name.clone();
         let kind = kind_from_classifier(decl.classifier);
         let describe = describe_from_decl(decl);
 
-        // Re-upsert is idempotent; side tables get the latest merge-union.
-        let already_present = dict_db
-            .get_entry(&id)
-            .ok()
-            .flatten()
-            .is_some();
-
-        let body_nom = if already_present {
-            // Body is immutable once stored — preserve existing bytes.
-            None
-        } else {
-            Some(source.clone())
-        };
+        // Use sha256 of bc_bytes as the canonical id.
+        let mut h = Sha256::new();
+        h.update(&bc_bytes);
+        h.update(word.as_bytes()); // per-decl disambiguation
+        let id = format!("{:x}", h.finalize());
 
         let entry = Entry {
             id: id.clone(),
@@ -89,9 +109,9 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
             describe,
             concept: None,
             body: None,
-            body_nom,
-            body_bytes: None,
-            body_kind: Some(nom_types::body_kind::NOM_SOURCE.to_owned()),
+            body_nom: None,
+            body_bytes: Some(bc_bytes.clone()),
+            body_kind: Some(nom_types::body_kind::BC.to_owned()),
             contract,
             status,
             translation_score: None,

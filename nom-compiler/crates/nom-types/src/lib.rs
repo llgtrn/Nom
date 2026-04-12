@@ -594,7 +594,7 @@ pub struct Entry {
     /// .bc, etc.). `None` for legacy/source-only entries.
     pub body_bytes: Option<Vec<u8>>,
     /// §4.4.6: canonical format tag for `body`. Values from
-    /// [`body_kind`] module (`NOM_SOURCE`, `BC`, `AVIF`, `AV1`, `AAC`,
+    /// [`body_kind`] module (`BC`, `AVIF`, `AV1`, `AAC`,
     /// `FLAC`, …). `None` means untagged (legacy rows).
     pub body_kind: Option<String>,
     pub contract: Contract,
@@ -874,10 +874,9 @@ pub struct Translation {
 /// Canonical body-content-kind tags per §4.4.6 (plan doc 2026-04-12).
 /// A body's kind identifies what format the `body` bytes/string are in.
 /// Per the lean-DB directive (pivot A): the DB stores only compiled
-/// artifacts and canonical media. `NOM_SOURCE` is retained for
-/// user-authored `.nom` entries. Source-language tags were removed.
+/// Canonical compiled artifacts and canonical media. All 14 tags hold
+/// real artifact bytes — no source text. Source-language tags were removed.
 pub mod body_kind {
-    pub const NOM_SOURCE: &str = "nom_source";
     pub const BC: &str = "bc";
     pub const AVIF: &str = "avif";
     pub const PNG: &str = "png";
@@ -909,7 +908,7 @@ pub mod body_kind {
     /// MUST stay in sync with [`is_known`] — the test
     /// `body_kind_all_matches_is_known` locks the invariant.
     pub const ALL: &[&str] = &[
-        NOM_SOURCE, BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4, HEVC,
+        BC, AVIF, PNG, JPEG, AV1, AAC, FLAC, OPUS, WOFF2, GLTF, PDF, WEBM, MP4, HEVC,
     ];
 
     /// Returns true if the string is a recognized body_kind tag.
@@ -929,8 +928,7 @@ pub mod body_kind {
             }
             true
         }
-        eq(b, NOM_SOURCE.as_bytes())
-            || eq(b, BC.as_bytes())
+        eq(b, BC.as_bytes())
             || eq(b, AVIF.as_bytes())
             || eq(b, PNG.as_bytes())
             || eq(b, JPEG.as_bytes())
@@ -1132,7 +1130,7 @@ mod v2_tests {
                 "body_kind::ALL contains {tag} but is_known rejects it"
             );
         }
-        assert_eq!(body_kind::ALL.len(), 15); // update when growing the list
+        assert_eq!(body_kind::ALL.len(), 14); // update when growing the list
     }
 
     #[test]

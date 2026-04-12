@@ -1171,12 +1171,12 @@ mod tests {
         use nom_types::body_kind;
         let d = NomDict::open_in_memory().unwrap();
 
-        // Entry 1: rust function, complete, body_kind=nom_source
+        // Entry 1: rust function, complete, body_kind=bc (compiled bitcode)
         let mut e1 = make_entry("aaa", "parse_input");
         e1.language = "rust".into();
         e1.status = EntryStatus::Complete;
         e1.kind = EntryKind::Function;
-        e1.body_kind = Some(body_kind::NOM_SOURCE.to_owned());
+        e1.body_kind = Some(body_kind::BC.to_owned());
         d.upsert_entry(&e1).unwrap();
 
         // Entry 2: typescript module, partial, body_kind=bc
@@ -1250,8 +1250,7 @@ mod tests {
             limit: 50,
             ..EntryFilter::default()
         }).unwrap();
-        assert_eq!(bc_entries.len(), 1);
-        assert_eq!(bc_entries[0].word, "ui_module");
+        assert_eq!(bc_entries.len(), 2); // e1 (parse_input) + e2 (ui_module) both BC
 
         // --- combined: language + status ---
         let rust_complete = d.find_entries(&EntryFilter {
