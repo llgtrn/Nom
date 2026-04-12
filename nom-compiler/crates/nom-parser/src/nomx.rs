@@ -811,6 +811,13 @@ mod tests {
             "expected colon-diag, got: {}",
             err.message
         );
+        // Colon was expected after `foo` but the stream ended;
+        // the span collapses onto EOF (src.len() .. src.len()).
+        assert_eq!(
+            err.span.start, src.len(),
+            "EOF error span should start at src end, got {}",
+            err.span.start
+        );
     }
 
     #[test]
