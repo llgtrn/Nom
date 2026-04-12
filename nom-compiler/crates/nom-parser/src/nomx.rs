@@ -962,6 +962,26 @@ mod tests {
     }
 
     #[test]
+    fn unrecognized_top_level_forms_recover_to_zero_decls() {
+        // `actor ... holds:` is proposal-05 §4.6 but not yet parsed
+        // (lexer emits Identifier("actor"), parse_file's fallback
+        // advances past it). Same for any other unknown keyword.
+        // Parser recovers silently; decl list is empty.
+        //
+        // This test locks the recovery contract so if we ever add an
+        // error-on-unknown policy, it'll fail here — forcing an
+        // explicit decision rather than a silent behavior change.
+        let src = "actor counter holds n starting at zero.\n\
+                   on receives add v, n becomes n plus v.";
+        let decls = parse_nomx(src).unwrap();
+        assert_eq!(
+            decls.len(),
+            0,
+            "actor form not yet parsed; expected 0 decls, got {decls:#?}"
+        );
+    }
+
+    #[test]
     fn parses_loops_nomx_sample() {
         // 4 defines exercising ForEach (in + of), When, Unless,
         // While in combination.
