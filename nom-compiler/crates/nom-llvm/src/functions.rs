@@ -138,6 +138,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
         declare_runtime_functions(&mut mc);
 

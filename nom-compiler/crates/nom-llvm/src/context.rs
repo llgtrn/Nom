@@ -26,6 +26,16 @@ pub struct ModuleCompiler<'ctx> {
     /// Stack of loop context for break/continue support.
     /// Each entry is (condition_block, end_block).
     pub loop_stack: Vec<(inkwell::basic_block::BasicBlock<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)>,
+    /// Maps enum type name -> ordered variant info:
+    /// (variant_name, field_type_annotations). The variant's position in the
+    /// vector is its runtime discriminant index (stored as the i8 tag field
+    /// of the enum's tagged-union struct).
+    pub enum_variants: HashMap<String, Vec<(String, Vec<nom_ast::TypeExpr>)>>,
+    /// Reverse lookup: variant_name (unqualified or qualified) -> enum_name.
+    /// Enables `Token::Integer(42)` to find the owning enum without repeated
+    /// scans; stored both as `"Token::Integer"` and `"Integer"` when the
+    /// latter is unambiguous across all registered enums.
+    pub variant_to_enum: HashMap<String, String>,
 }
 
 impl NomCompiler {
@@ -51,6 +61,8 @@ impl NomCompiler {
             value_types: HashMap::new(),
             struct_fields: HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: HashMap::new(),
+            variant_to_enum: HashMap::new(),
         };
 
         declare_runtime_functions(&mut mc);

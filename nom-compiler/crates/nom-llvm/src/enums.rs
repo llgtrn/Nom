@@ -30,6 +30,22 @@ pub fn compile_enum(mc: &mut ModuleCompiler, enum_def: &EnumDef) -> Result<(), c
     let enum_type = mc.context.opaque_struct_type(name);
     enum_type.set_body(&[i8_type.into(), payload_type.into()], false);
     mc.struct_types.insert(name.clone(), enum_type);
+
+    // Register each variant's discriminant index (= position) and its payload
+    // type expressions. We keep the AST `TypeExpr` values here so codegen can
+    // re-resolve them to LLVM types lazily; this avoids carrying LLVM types
+    // inside the compiler-state maps (which are not `Copy`).
+    let variants: Vec<(String, Vec<nom_ast::TypeExpr>)> = enum_def
+        .variants
+        .iter()
+        .map(|v| (v.name.name.clone(), v.fields.clone()))
+        .collect();
+    for (v_name, _) in &variants {
+        // Qualified form always recorded: `Token::Integer`.
+        let qualified = format!("{}::{}", name, v_name);
+        mc.variant_to_enum.insert(qualified, name.clone());
+    }
+    mc.enum_variants.insert(name.clone(), variants);
     Ok(())
 }
 
@@ -54,6 +70,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
 
         let enum_def = EnumDef {

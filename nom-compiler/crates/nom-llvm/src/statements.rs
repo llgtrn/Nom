@@ -486,29 +486,51 @@ pub fn compile_match_value<'ctx>(
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
     let subject_val = crate::expressions::compile_expr(mc, &match_expr.subject)?;
 
+    // If the subject is an enum (registered struct type whose name is in
+    // `enum_variants`), stash it in an alloca so arms can GEP to the tag
+    // and payload fields. Non-enum subjects remain value-only.
+    let subject_enum: Option<(String, inkwell::types::StructType<'ctx>, inkwell::values::PointerValue<'ctx>)> =
+        if subject_val.is_struct_value() {
+            let sv = subject_val.into_struct_value();
+            let sty = sv.get_type();
+            let enum_name = sty.get_name().and_then(|n| n.to_str().ok()).map(|s| s.to_owned());
+            match enum_name {
+                Some(nm) if mc.enum_variants.contains_key(&nm) => {
+                    let slot = mc
+                        .builder
+                        .build_alloca(sty, "subj_slot")
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                    mc.builder
+                        .build_store(slot, sv)
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                    Some((nm, sty, slot))
+                }
+                _ => None,
+            }
+        } else {
+            None
+        };
+
     let function = mc.builder.get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
     let merge_bb = mc.context.append_basic_block(function, "match_end");
 
-    // We use an alloca to store the result of whichever arm matches.
-    let result_alloca = mc.builder
-        .build_alloca(mc.context.f64_type(), "match_result")
-        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-    // Default value
-    mc.builder.build_store(result_alloca, mc.context.f64_type().const_float(0.0))
-        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    // Result alloca is materialized lazily on the first non-terminating arm
+    // body — we need to see a concrete body value to pick the right LLVM
+    // type (integer, float, or struct). Variant patterns may produce int or
+    // float results, so hard-coding f64 (as the legacy code did) was a bug
+    // for integer-returning matches.
+    let mut result_slot: Option<(inkwell::values::PointerValue<'ctx>, inkwell::types::BasicTypeEnum<'ctx>)> = None;
 
     let mut arm_blocks = Vec::new();
-    let mut next_blocks = Vec::new();
 
     // Create basic blocks for each arm test and body
     for (i, _arm) in match_expr.arms.iter().enumerate() {
         let test_bb = mc.context.append_basic_block(function, &format!("match_test_{}", i));
         let body_bb = mc.context.append_basic_block(function, &format!("match_arm_{}", i));
         arm_blocks.push((test_bb, body_bb));
-        next_blocks.push(test_bb);
     }
 
     // Branch to the first test block
@@ -532,6 +554,11 @@ pub fn compile_match_value<'ctx>(
 
         // --- Test block ---
         mc.builder.position_at_end(test_bb);
+
+        // Payload bindings created in the test block need to be undone when
+        // we leave the arm body so they don't leak into sibling arms. We
+        // snapshot the keys we add per-arm.
+        let mut arm_bound_names: Vec<String> = Vec::new();
 
         match &arm.pattern {
             Pattern::Wildcard => {
@@ -572,11 +599,178 @@ pub fn compile_match_value<'ctx>(
                 mc.builder.build_store(alloca, subject_val)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 mc.named_values.insert(ident.name.clone(), (alloca, ty));
+                arm_bound_names.push(ident.name.clone());
                 mc.builder.build_unconditional_branch(body_bb)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
-            Pattern::Variant(_, _) => {
-                return Err(LlvmError::Unsupported("match variant pattern".into()));
+            Pattern::Variant(qualified_ident, sub_patterns) => {
+                // Resolve variant → discriminant index + payload types.
+                let qualified = qualified_ident.name.as_str();
+                let (enum_name, enum_ty, subj_slot) = match &subject_enum {
+                    Some(triple) => triple.clone(),
+                    None => return Err(LlvmError::Type(
+                        "variant pattern requires enum-typed subject".into(),
+                    )),
+                };
+                let (disc, payload_tys) = {
+                    let variants = mc
+                        .enum_variants
+                        .get(&enum_name)
+                        .ok_or_else(|| LlvmError::Compilation(format!(
+                            "unknown enum in match: {}", enum_name,
+                        )))?;
+                    // Accept both `Enum::Variant` and bare `Variant` spellings.
+                    let short = qualified.rsplit("::").next().unwrap_or(qualified);
+                    variants
+                        .iter()
+                        .enumerate()
+                        .find(|(_, (n, _))| n == short)
+                        .map(|(i, (_, tys))| (i, tys.clone()))
+                        .ok_or_else(|| LlvmError::Compilation(format!(
+                            "unknown variant in match: {}", qualified,
+                        )))?
+                };
+
+                // Tag GEP + compare.
+                let tag_ptr = mc
+                    .builder
+                    .build_struct_gep(enum_ty, subj_slot, 0, "match_tag_ptr")
+                    .map_err(|e| LlvmError::Compilation(format!("tag GEP: {}", e)))?;
+                let tag_val = mc
+                    .builder
+                    .build_load(mc.context.i8_type(), tag_ptr, "match_tag")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?
+                    .into_int_value();
+                let disc_const = mc.context.i8_type().const_int(disc as u64, false);
+                let matches = mc
+                    .builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::EQ,
+                        tag_val,
+                        disc_const,
+                        "variant_cmp",
+                    )
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+                // Create a payload-binding block that runs only if the tag
+                // matches — otherwise the binding GEP/loads would produce
+                // garbage for mismatched arms (and complicate verification).
+                let bind_bb = mc
+                    .context
+                    .append_basic_block(function, &format!("match_bind_{}", i));
+                mc.builder
+                    .build_conditional_branch(matches, bind_bb, fallthrough_bb)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+                mc.builder.position_at_end(bind_bb);
+
+                if sub_patterns.len() != payload_tys.len() {
+                    return Err(LlvmError::Compilation(format!(
+                        "variant {} expects {} payload fields in pattern, got {}",
+                        qualified,
+                        payload_tys.len(),
+                        sub_patterns.len(),
+                    )));
+                }
+
+                // Bind each sub-pattern. Wildcard skips; Binding loads the
+                // payload value and registers a fresh alloca. Literal sub-
+                // patterns are not supported here (the lexer pipeline does
+                // not need them; leaving them out keeps the surface small).
+                if !payload_tys.is_empty() {
+                    let payload_ptr = mc
+                        .builder
+                        .build_struct_gep(enum_ty, subj_slot, 1, "match_payload_ptr")
+                        .map_err(|e| LlvmError::Compilation(format!("payload GEP: {}", e)))?;
+
+                    if payload_tys.len() == 1 {
+                        // Single-field payload: reinterpret the byte slot as
+                        // the field's LLVM type and load directly.
+                        let field_llvm_ty =
+                            crate::types::resolve_type(mc, &payload_tys[0])?;
+                        if let Pattern::Binding(ident) = &sub_patterns[0] {
+                            let loaded = mc
+                                .builder
+                                .build_load(field_llvm_ty, payload_ptr, &ident.name)
+                                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                            let alloca = mc
+                                .builder
+                                .build_alloca(field_llvm_ty, &ident.name)
+                                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                            mc.builder
+                                .build_store(alloca, loaded)
+                                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                            mc.named_values
+                                .insert(ident.name.clone(), (alloca, field_llvm_ty));
+                            arm_bound_names.push(ident.name.clone());
+                            // If this is a struct type (e.g. NomString), also
+                            // tag its struct-type name for `.field` access.
+                            if let nom_ast::TypeExpr::Named(id) = &payload_tys[0] {
+                                let n = id.name.as_str();
+                                if matches!(n, "text" | "string" | "String") {
+                                    // string access goes through the `.length`
+                                    // special case; no type tag needed.
+                                } else if mc.struct_types.contains_key(n) {
+                                    mc.value_types.insert(ident.name.clone(), n.to_owned());
+                                }
+                            }
+                        } else if matches!(&sub_patterns[0], Pattern::Wildcard) {
+                            // nothing to bind
+                        } else {
+                            return Err(LlvmError::Unsupported(
+                                "non-binding sub-pattern in variant".into(),
+                            ));
+                        }
+                    } else {
+                        // Multi-field payload: load the anonymous tuple
+                        // struct through the payload pointer, then extract
+                        // each bound field by index.
+                        let elem_tys: Vec<inkwell::types::BasicTypeEnum<'ctx>> = payload_tys
+                            .iter()
+                            .map(|t| crate::types::resolve_type(mc, t))
+                            .collect::<Result<_, _>>()?;
+                        let tuple_ty = mc.context.struct_type(&elem_tys, false);
+                        let tup_val = mc
+                            .builder
+                            .build_load(tuple_ty, payload_ptr, "variant_tuple")
+                            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+                            .into_struct_value();
+                        for (idx, sub) in sub_patterns.iter().enumerate() {
+                            match sub {
+                                Pattern::Wildcard => {}
+                                Pattern::Binding(ident) => {
+                                    let field_val = mc
+                                        .builder
+                                        .build_extract_value(
+                                            tup_val,
+                                            idx as u32,
+                                            &ident.name,
+                                        )
+                                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                                    let field_ty = field_val.get_type();
+                                    let alloca = mc
+                                        .builder
+                                        .build_alloca(field_ty, &ident.name)
+                                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                                    mc.builder
+                                        .build_store(alloca, field_val)
+                                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                                    mc.named_values
+                                        .insert(ident.name.clone(), (alloca, field_ty));
+                                    arm_bound_names.push(ident.name.clone());
+                                }
+                                _ => {
+                                    return Err(LlvmError::Unsupported(
+                                        "non-binding sub-pattern in variant".into(),
+                                    ));
+                                }
+                            }
+                        }
+                    }
+                }
+
+                mc.builder.build_unconditional_branch(body_bb)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
         }
 
@@ -586,20 +780,62 @@ pub fn compile_match_value<'ctx>(
 
         // Store result if block didn't terminate (e.g., return)
         if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
-            // Try to store the result if it's f64; otherwise just branch
-            if body_val.is_float_value() {
-                mc.builder.build_store(result_alloca, body_val)
+            // Lazy-initialize the result slot to the body value's LLVM type.
+            let (slot, slot_ty) = match result_slot {
+                Some(pair) => pair,
+                None => {
+                    let ty = body_val.get_type();
+                    // Allocate in the function's entry block so the alloca
+                    // dominates all arm exits. Inserting in a preceding
+                    // basic block keeps the IR well-formed even when arms
+                    // contain control flow; we simply place it at the entry
+                    // block's terminator position.
+                    let entry_bb = function.get_first_basic_block().unwrap();
+                    let current_bb = mc.builder.get_insert_block().unwrap();
+                    // Position before the entry terminator (the branch we
+                    // emitted earlier to the first test block).
+                    if let Some(first_instr) = entry_bb.get_first_instruction() {
+                        mc.builder.position_before(&first_instr);
+                    } else {
+                        mc.builder.position_at_end(entry_bb);
+                    }
+                    let alloca = mc
+                        .builder
+                        .build_alloca(ty, "match_result")
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                    mc.builder.position_at_end(current_bb);
+                    result_slot = Some((alloca, ty));
+                    (alloca, ty)
+                }
+            };
+            // Only store if the body value matches the slot type — skip
+            // heterogeneous arms (caller shouldn't mix types, but stay safe).
+            if body_val.get_type() == slot_ty {
+                mc.builder.build_store(slot, body_val)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             mc.builder.build_unconditional_branch(merge_bb)
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         }
+
+        // Remove arm-scoped bindings so they don't leak into sibling arms.
+        for n in &arm_bound_names {
+            mc.named_values.remove(n);
+            mc.value_types.remove(n);
+        }
     }
 
     mc.builder.position_at_end(merge_bb);
-    let result = mc.builder.build_load(mc.context.f64_type(), result_alloca, "match_val")
-        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-    Ok(result)
+    if let Some((slot, ty)) = result_slot {
+        let result = mc.builder.build_load(ty, slot, "match_val")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        Ok(result)
+    } else {
+        // Every arm terminated (e.g. each `return`s). Return a dummy; the
+        // merge block is unreachable in that case. Use i8 zero to match the
+        // void-placeholder convention used elsewhere.
+        Ok(mc.context.i8_type().const_zero().into())
+    }
 }
 
 pub fn compile_block<'ctx>(
@@ -637,6 +873,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         }
     }
 
@@ -688,6 +926,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
@@ -770,6 +1010,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
@@ -867,6 +1109,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 

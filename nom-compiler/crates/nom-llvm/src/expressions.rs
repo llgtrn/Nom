@@ -66,13 +66,20 @@ fn compile_literal<'ctx>(
 }
 
 fn compile_ident<'ctx>(
-    mc: &ModuleCompiler<'ctx>,
+    mc: &mut ModuleCompiler<'ctx>,
     name: &str,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
     if let Some((ptr, ty)) = mc.named_values.get(name) {
         mc.builder
             .build_load(*ty, *ptr, name)
             .map_err(|e| LlvmError::Compilation(e.to_string()))
+    } else if name.contains("::") {
+        // Zero-arg enum variant referenced as `E::B` with no parens — e.g.
+        // `let e = E::B`. Construct with an empty argument list.
+        if let Some(enum_name) = mc.variant_to_enum.get(name).cloned() {
+            return compile_enum_variant_ctor(mc, &enum_name, name, &[]);
+        }
+        Err(LlvmError::Compilation(format!("undefined variable: {}", name)))
     } else {
         Err(LlvmError::Compilation(format!("undefined variable: {}", name)))
     }
@@ -282,6 +289,15 @@ fn compile_call<'ctx>(
     call: &nom_ast::CallExpr,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
     let fn_name = call.callee.name.as_str();
+
+    // Enum variant construction: `Token::Integer(42)` has a `::`-qualified
+    // callee that resolves to a registered enum variant. The postfix parser
+    // merged `Enum::Variant` into a single Ident name; we look it up here.
+    if fn_name.contains("::") {
+        if let Some(enum_name) = mc.variant_to_enum.get(fn_name).cloned() {
+            return compile_enum_variant_ctor(mc, &enum_name, fn_name, &call.args);
+        }
+    }
 
     // Builtin: `print(s)` / `println(s)` — when the single argument is a
     // string, decompose NomString into (data, len) and call the matching
@@ -617,6 +633,146 @@ fn compile_field_access<'ctx>(
         .map_err(|e| LlvmError::Compilation(e.to_string()))
 }
 
+/// Lower `Enum::Variant(args)` to a tagged-union struct value.
+///
+/// Layout (see `enums.rs`): `%Enum = type { i8, [N x i8] }` where N is the
+/// max byte size across all variant payloads. Construction:
+///
+/// 1. `alloca %Enum`
+/// 2. `store i8 <disc>, ptr <tag_gep>` — write discriminant.
+/// 3. For non-empty payloads: GEP to field 1 (payload byte array), reinterpret
+///    as the actual payload type, store the compiled argument values.
+/// 4. `load %Enum` — return the complete struct by value so it can be stored
+///    into a `let` binding or passed as a function argument.
+///
+/// Payload shape conventions:
+/// - 0 args: nothing to store.
+/// - 1 arg: the payload byte array is bitcast to the argument's LLVM type.
+/// - N args: the payload is treated as an anonymous tuple struct
+///   `{ T0, ..., Tn }`, written one field at a time via `insertvalue` and then
+///   stored to the payload GEP.
+fn compile_enum_variant_ctor<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    enum_name: &str,
+    qualified: &str,
+    args: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // Discriminant index = position of the variant in the enum definition.
+    let variant_name = qualified
+        .rsplit("::")
+        .next()
+        .ok_or_else(|| LlvmError::Compilation(format!("malformed variant path: {}", qualified)))?;
+    let variants = mc
+        .enum_variants
+        .get(enum_name)
+        .ok_or_else(|| LlvmError::Compilation(format!("unknown enum: {}", enum_name)))?;
+    let (disc, payload_tys) = variants
+        .iter()
+        .enumerate()
+        .find(|(_, (n, _))| n == variant_name)
+        .map(|(i, (_, tys))| (i, tys.clone()))
+        .ok_or_else(|| {
+            LlvmError::Compilation(format!("unknown variant: {}", qualified))
+        })?;
+
+    // Arg count check: error out on mismatch; helps catch parser/codegen
+    // bugs early rather than silently miscompiling.
+    if args.len() != payload_tys.len() {
+        return Err(LlvmError::Compilation(format!(
+            "variant {} expects {} args, got {}",
+            qualified,
+            payload_tys.len(),
+            args.len()
+        )));
+    }
+
+    // Compile arguments first so the builder stays positioned correctly.
+    let mut compiled_args = Vec::with_capacity(args.len());
+    for arg in args {
+        compiled_args.push(compile_expr(mc, arg)?);
+    }
+
+    let enum_ty = *mc
+        .struct_types
+        .get(enum_name)
+        .ok_or_else(|| LlvmError::Compilation(format!("enum type not defined: {}", enum_name)))?;
+    let i8_ty = mc.context.i8_type();
+
+    let enum_alloca = mc
+        .builder
+        .build_alloca(enum_ty, &format!("{}_ctor", enum_name))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Zero the alloca so uninitialized payload bytes are deterministic. The
+    // store-discriminant path only writes the tag, and stray bytes in the
+    // `[N x i8]` payload would otherwise show up in reads for variants with
+    // smaller payloads.
+    mc.builder
+        .build_store(enum_alloca, enum_ty.const_zero())
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Store the tag (field 0).
+    let tag_ptr = mc
+        .builder
+        .build_struct_gep(enum_ty, enum_alloca, 0, "tag_ptr")
+        .map_err(|e| LlvmError::Compilation(format!("tag GEP: {}", e)))?;
+    mc.builder
+        .build_store(tag_ptr, i8_ty.const_int(disc as u64, false))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Store the payload (field 1, reinterpreted to the actual payload type).
+    if !compiled_args.is_empty() {
+        let payload_ptr = mc
+            .builder
+            .build_struct_gep(enum_ty, enum_alloca, 1, "payload_ptr")
+            .map_err(|e| LlvmError::Compilation(format!("payload GEP: {}", e)))?;
+
+        if compiled_args.len() == 1 {
+            // Single payload value: bitcast the payload byte slot to the
+            // value's type and store directly. In LLVM 15+ opaque pointers,
+            // the "bitcast" is a no-op — the pointer carries no element
+            // type — so we just reuse `payload_ptr` for the store.
+            let v = compiled_args[0];
+            mc.builder
+                .build_store(payload_ptr, v)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        } else {
+            // Multi-field payload: build an anonymous struct value
+            // `{ T0, T1, ... }` via insertvalue and store it through the
+            // payload pointer.
+            let elem_tys: Vec<inkwell::types::BasicTypeEnum<'ctx>> =
+                compiled_args.iter().map(|v| v.get_type()).collect();
+            let tuple_ty = mc.context.struct_type(&elem_tys, false);
+            let mut agg: inkwell::values::BasicValueEnum<'ctx> = tuple_ty.get_undef().into();
+            for (i, val) in compiled_args.iter().enumerate() {
+                let next = mc
+                    .builder
+                    .build_insert_value(
+                        agg.into_struct_value(),
+                        *val,
+                        i as u32,
+                        &format!("variant_fld{}", i),
+                    )
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                agg = match next {
+                    inkwell::values::AggregateValueEnum::StructValue(sv) => sv.into(),
+                    inkwell::values::AggregateValueEnum::ArrayValue(av) => av.into(),
+                };
+            }
+            mc.builder
+                .build_store(payload_ptr, agg)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        }
+    }
+
+    // Load the finished enum struct and return it by value.
+    let loaded = mc
+        .builder
+        .build_load(enum_ty, enum_alloca, "enum_val")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    Ok(loaded)
+}
+
 /// Lower `(a, b, c)` to an anonymous LLVM struct value `{ T0, T1, T2 }`
 /// built up via a chain of `insertvalue` instructions starting from `undef`.
 /// Returns the struct **value** (not a pointer); callers store into an
@@ -722,6 +878,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         }
     }
 
@@ -782,6 +940,8 @@ mod tests {
             value_types: std::collections::HashMap::new(),
             struct_fields: std::collections::HashMap::new(),
             loop_stack: Vec::new(),
+            enum_variants: std::collections::HashMap::new(),
+            variant_to_enum: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
