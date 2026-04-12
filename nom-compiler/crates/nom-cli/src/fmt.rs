@@ -529,6 +529,13 @@ fn fmt_expr(e: &Expr) -> String {
                 .collect();
             format!("|{}| {}", params_str.join(", "), fmt_expr(body))
         }
+        Expr::StructInit { name, fields } => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(fname, val)| format!("{}: {}", fname.name, fmt_expr(val)))
+                .collect();
+            format!("{} {{ {} }}", name.name, parts.join(", "))
+        }
     }
 }
 

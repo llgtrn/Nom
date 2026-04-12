@@ -2651,6 +2651,15 @@ pub fn expr_to_rust(expr: &Expr) -> String {
                 .collect();
             format!("|{}| {}", params_str.join(", "), expr_to_rust(body))
         }
+        Expr::StructInit { name, fields } => {
+            let parts: Vec<String> = fields
+                .iter()
+                .map(|(fname, val)| {
+                    format!("{}: {}", sanitize_ident(&fname.name), expr_to_rust(val))
+                })
+                .collect();
+            format!("{} {{ {} }}", sanitize_ident(&name.name), parts.join(", "))
+        }
     }
 }
 

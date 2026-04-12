@@ -103,6 +103,11 @@ fn compile_let<'ctx>(
                 mc.value_types.insert(name.clone(), ident.name.clone());
             }
         }
+    } else if let nom_ast::Expr::StructInit { name: sname, .. } = &let_stmt.value {
+        // Untyped let — infer the struct name from the literal itself.
+        if mc.struct_types.contains_key(&sname.name) {
+            mc.value_types.insert(name.clone(), sname.name.clone());
+        }
     }
     Ok(())
 }

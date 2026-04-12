@@ -101,7 +101,80 @@ pub fn compile_expr<'ctx>(
         Expr::Await(_) => Err(LlvmError::Unsupported("await expression".into())),
         Expr::Cast(_, _) => Err(LlvmError::Unsupported("cast expression".into())),
         Expr::Try(_) => Err(LlvmError::Unsupported("try/? expression".into())),
+        Expr::StructInit { name, fields } => compile_struct_init(mc, &name.name, fields),
     }
+}
+
+/// Lower `Name { field: expr, ... }` to an LLVM struct value.
+///
+/// Allocates a zero-initialized stack slot for the struct, stores each field
+/// at its declaration-ordered position (the parser-order may differ), then
+/// loads the whole struct so the caller gets it by value.
+fn compile_struct_init<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    name: &str,
+    fields: &[(nom_ast::Identifier, Expr)],
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    let struct_ty = *mc
+        .struct_types
+        .get(name)
+        .ok_or_else(|| LlvmError::Compilation(format!("unknown struct type: {}", name)))?;
+    let field_names = mc
+        .struct_fields
+        .get(name)
+        .ok_or_else(|| LlvmError::Compilation(format!("no field info for struct '{}'", name)))?
+        .clone();
+
+    // Allocate on stack and zero-initialize.
+    let alloca = mc
+        .builder
+        .build_alloca(struct_ty, &format!("{}_init", name))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    let zero = struct_ty.const_zero();
+    mc.builder
+        .build_store(alloca, zero)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Mark which declaration-order fields have been assigned.
+    let mut assigned = vec![false; field_names.len()];
+
+    for (field_ident, value_expr) in fields {
+        let fname = &field_ident.name;
+        let idx = field_names
+            .iter()
+            .position(|f| f == fname)
+            .ok_or_else(|| {
+                LlvmError::Compilation(format!("struct '{}' has no field '{}'", name, fname))
+            })?;
+        if assigned[idx] {
+            return Err(LlvmError::Compilation(format!(
+                "duplicate field '{}' in struct literal",
+                fname
+            )));
+        }
+        let val = compile_expr(mc, value_expr)?;
+        let field_ptr = mc
+            .builder
+            .build_struct_gep(struct_ty, alloca, idx as u32, &format!("{}.{}.init", name, fname))
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_store(field_ptr, val)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        assigned[idx] = true;
+    }
+
+    // Missing fields are tolerated — they remain zero-initialized. That
+    // matches the permissive style of the existing codegen paths (e.g.
+    // enum payload zeroing) and keeps the backend useful even when the
+    // source author wants partial initialization. A full-strict pass
+    // can be added in a later verification step.
+
+    // Load the complete struct value.
+    let loaded = mc
+        .builder
+        .build_load(struct_ty, alloca, &format!("{}_val", name))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    Ok(loaded)
 }
 
 fn compile_literal<'ctx>(

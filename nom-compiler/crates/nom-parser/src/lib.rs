@@ -766,6 +766,95 @@ impl Parser {
         Ok(expr)
     }
 
+    /// Lookahead: assuming `self.peek()` is `LBrace`, decide whether the
+    /// contents look like a struct-literal body (`ident : ...`) as opposed
+    /// to a block. Does not mutate parser state.
+    fn looks_like_struct_literal_body(&self) -> bool {
+        // Find the index of the LBrace after any whitespace/comments/newlines
+        // that `peek()` already skips. We need to scan the raw token stream
+        // because `peek()` only returns the token, not its index.
+        let mut i = self.pos;
+        while i < self.tokens.len() {
+            match &self.tokens[i].token {
+                Token::Comment(_) | Token::Newline => i += 1,
+                _ => break,
+            }
+        }
+        if !matches!(self.tokens.get(i).map(|t| &t.token), Some(Token::LBrace)) {
+            return false;
+        }
+        i += 1;
+        while i < self.tokens.len() {
+            match &self.tokens[i].token {
+                Token::Comment(_) | Token::Newline => i += 1,
+                _ => break,
+            }
+        }
+        // Empty `{}` is allowed as a zero-field struct literal.
+        if matches!(self.tokens.get(i).map(|t| &t.token), Some(Token::RBrace)) {
+            return true;
+        }
+        // `ident :` => struct literal body.
+        if !matches!(self.tokens.get(i).map(|t| &t.token), Some(Token::Ident(_))) {
+            return false;
+        }
+        i += 1;
+        while i < self.tokens.len() {
+            match &self.tokens[i].token {
+                Token::Comment(_) | Token::Newline => i += 1,
+                _ => break,
+            }
+        }
+        matches!(self.tokens.get(i).map(|t| &t.token), Some(Token::Colon))
+    }
+
+    /// Parse `Name { field: expr, field: expr, ... }` given that `Name` has
+    /// already been consumed. Caller must have validated via
+    /// `looks_like_struct_literal_body` that the upcoming token is `LBrace`.
+    fn parse_struct_literal(&mut self, name: Identifier) -> ParseResult<Expr> {
+        self.skip_whitespace();
+        // consume '{'
+        if !matches!(self.peek(), Token::LBrace) {
+            let s = self.peek_span();
+            return Err(ParseError::UnexpectedToken {
+                found: format!("{:?}", self.peek()),
+                expected: "'{' in struct literal".to_owned(),
+                line: s.line,
+                col: s.col,
+            });
+        }
+        self.advance(); // '{'
+        let mut fields: Vec<(Identifier, Expr)> = Vec::new();
+        loop {
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                break;
+            }
+            let field_name = self.expect_ident()?;
+            self.skip_whitespace();
+            if !matches!(self.peek(), Token::Colon) {
+                let s = self.peek_span();
+                return Err(ParseError::UnexpectedToken {
+                    found: format!("{:?}", self.peek()),
+                    expected: "':' after struct field name".to_owned(),
+                    line: s.line,
+                    col: s.col,
+                });
+            }
+            self.advance(); // ':'
+            let value = self.parse_expr()?;
+            fields.push((field_name, value));
+            self.skip_whitespace();
+            if matches!(self.peek(), Token::Comma) {
+                self.advance();
+            }
+        }
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+        Ok(Expr::StructInit { name, fields })
+    }
+
     fn parse_expr_primary(&mut self) -> ParseResult<Expr> {
         self.skip_whitespace();
         match self.peek().clone() {
@@ -865,6 +954,17 @@ impl Parser {
             | Token::Implement
             | Token::Branch => {
                 let id = self.expect_ident()?;
+                // Struct literal: `Name { field: expr, ... }`. We only commit
+                // to this when the character after `{` (skipping whitespace /
+                // comments / newlines) looks like `ident :`. This avoids
+                // false positives in contexts where `Ident { ... }` happens
+                // to precede a block (not common in Nom's grammar but kept
+                // conservative for safety).
+                if matches!(self.peek(), Token::LBrace)
+                    && self.looks_like_struct_literal_body()
+                {
+                    return self.parse_struct_literal(id);
+                }
                 Ok(Expr::Ident(id))
             }
             other => {

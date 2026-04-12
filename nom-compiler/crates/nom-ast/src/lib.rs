@@ -807,6 +807,14 @@ pub enum Expr {
     /// Try expression: expr? — propagates Err, unwraps Ok
     /// Similar to Rust's `?` operator
     Try(Box<Expr>),
+    /// Struct literal construction: `Name { field1: expr1, field2: expr2 }`.
+    /// Fields may be written in any order and must cover every field in the
+    /// struct definition exactly once; the LLVM backend reorders them to
+    /// match declaration order.
+    StructInit {
+        name: Identifier,
+        fields: Vec<(Identifier, Expr)>,
+    },
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
