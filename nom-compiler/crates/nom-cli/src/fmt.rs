@@ -503,6 +503,7 @@ fn fmt_expr(e: &Expr) -> String {
             format!("{op_str}{}", fmt_expr(inner))
         }
         Expr::Index(base, idx) => format!("{}[{}]", fmt_expr(base), fmt_expr(idx)),
+        Expr::Range(lo, hi) => format!("{}..{}", fmt_expr(lo), fmt_expr(hi)),
         Expr::MethodCall(obj, method, args) => {
             let args_str: Vec<String> = args.iter().map(fmt_expr).collect();
             format!("{}.{}({})", fmt_expr(obj), method.name, args_str.join(", "))

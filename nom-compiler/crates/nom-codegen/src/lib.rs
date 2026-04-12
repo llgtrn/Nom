@@ -2615,6 +2615,7 @@ pub fn expr_to_rust(expr: &Expr) -> String {
             format!("{op_str}{}", expr_to_rust(inner))
         }
         Expr::Index(base, idx) => format!("{}[{}]", expr_to_rust(base), expr_to_rust(idx)),
+        Expr::Range(lo, hi) => format!("{}..{}", expr_to_rust(lo), expr_to_rust(hi)),
         Expr::MethodCall(obj, method, args) => {
             let args_str: Vec<String> = args.iter().map(expr_to_rust).collect();
             format!(

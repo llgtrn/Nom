@@ -117,7 +117,12 @@ impl NomCompiler {
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?
             } else if ret_val.is_int_value() {
                 let int_val = ret_val.into_int_value();
-                if int_val.get_type().get_bit_width() != 32 {
+                let bw = int_val.get_type().get_bit_width();
+                if bw < 32 {
+                    mc.builder
+                        .build_int_z_extend(int_val, i32_type, "to_i32")
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+                } else if bw > 32 {
                     mc.builder
                         .build_int_truncate(int_val, i32_type, "to_i32")
                         .map_err(|e| LlvmError::Compilation(e.to_string()))?
@@ -141,6 +146,22 @@ impl NomCompiler {
 }
 
 impl<'ctx> ModuleCompiler<'ctx> {
+    /// Return (creating if necessary) the opaque-named LLVM struct for Nom
+    /// strings: `%NomString = type { i8*, i64 }`.
+    ///
+    /// The struct layout matches `#[repr(C)] struct NomString` in
+    /// `nom-runtime` exactly: a data pointer followed by an i64 length.
+    pub fn nom_string_type(&self) -> inkwell::types::StructType<'ctx> {
+        if let Some(existing) = self.context.get_struct_type("NomString") {
+            return existing;
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let st = self.context.opaque_struct_type("NomString");
+        st.set_body(&[ptr_ty.into(), i64_ty.into()], false);
+        st
+    }
+
     pub fn compile_flow(&mut self, flow: &FlowPlan) -> Result<(), LlvmError> {
         for stmt in &flow.imperative_stmts {
             self.compile_top_level_statement(stmt)?;

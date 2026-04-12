@@ -45,8 +45,9 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
     mc.functions.insert("nom_free".into(), free_fn);
 
     // nom_string_concat(a: *const NomString, b: *const NomString) -> NomString
-    // NomString is opaque at the LLVM level — we use ptr for both args and return
-    let string_concat_type = i8_ptr_type.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], false);
+    // Returns the NomString struct by value.
+    let nom_str_ty = mc.nom_string_type();
+    let string_concat_type = nom_str_ty.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], false);
     let string_concat_fn = mc.module.add_function("nom_string_concat", string_concat_type, None);
     mc.functions.insert("nom_string_concat".into(), string_concat_fn);
 
@@ -54,6 +55,12 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
     let string_eq_type = i32_type.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], false);
     let string_eq_fn = mc.module.add_function("nom_string_eq", string_eq_type, None);
     mc.functions.insert("nom_string_eq".into(), string_eq_fn);
+
+    // nom_string_slice(s: *const NomString, lo: i64, hi: i64) -> NomString
+    let string_slice_type =
+        nom_str_ty.fn_type(&[i8_ptr_type.into(), i64_type.into(), i64_type.into()], false);
+    let string_slice_fn = mc.module.add_function("nom_string_slice", string_slice_type, None);
+    mc.functions.insert("nom_string_slice".into(), string_slice_fn);
 
     // nom_read_file(path: *const i8, path_len: i64) -> NomString (ptr)
     let read_file_type = i8_ptr_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);

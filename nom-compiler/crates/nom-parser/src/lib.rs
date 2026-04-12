@@ -692,7 +692,15 @@ impl Parser {
                 }
                 Token::LBracket => {
                     self.advance(); // '['
-                    let index = self.parse_expr()?;
+                    let lo = self.parse_expr()?;
+                    // Range slice: `[lo..hi]`.
+                    let index = if matches!(self.peek(), Token::DotDot) {
+                        self.advance(); // '..'
+                        let hi = self.parse_expr()?;
+                        Expr::Range(Box::new(lo), Box::new(hi))
+                    } else {
+                        lo
+                    };
                     if matches!(self.peek(), Token::RBracket) { self.advance(); }
                     expr = Expr::Index(Box::new(expr), Box::new(index));
                 }
@@ -2436,6 +2444,7 @@ impl Parser {
                 Token::Star => code.push('*'),
                 Token::Slash => code.push('/'),
                 Token::Dot => code.push('.'),
+                Token::DotDot => code.push_str(".."),
                 Token::Eq => code.push('='),
                 Token::Neq => code.push_str("!="),
                 Token::Gt => code.push('>'),

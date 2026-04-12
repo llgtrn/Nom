@@ -24,7 +24,10 @@ pub fn compile_expr<'ctx>(
             last_val.ok_or_else(|| LlvmError::Compilation("empty block expression".into()))
         }
         Expr::FieldAccess(obj, field) => compile_field_access(mc, obj, field),
-        Expr::Index(_, _) => Err(LlvmError::Unsupported("index expression".into())),
+        Expr::Index(target, index) => compile_index(mc, target, index),
+        Expr::Range(_, _) => Err(LlvmError::Unsupported(
+            "range expression outside of indexing context".into(),
+        )),
         Expr::MethodCall(_, _, _) => Err(LlvmError::Unsupported("method call".into())),
         Expr::Closure(_, _) => Err(LlvmError::Unsupported("closure".into())),
         Expr::Array(elements) => compile_array(mc, elements),
@@ -46,9 +49,17 @@ fn compile_literal<'ctx>(
             Ok(mc.context.bool_type().const_int(*b as u64, false).into())
         }
         Literal::Text(s) => {
+            // Emit the bytes as a private global constant (with trailing NUL,
+            // but length tracked separately) and materialize a NomString
+            // struct value: { data: &bytes, len: <literal len> }.
             let global = mc.builder.build_global_string_ptr(s, "str")
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-            Ok(global.as_pointer_value().into())
+            let data_ptr = global.as_pointer_value();
+            let len = mc.context.i64_type().const_int(s.len() as u64, false);
+            let nom_str_ty = mc.nom_string_type();
+            // Build a constant struct { ptr, i64 }
+            let struct_val = nom_str_ty.const_named_struct(&[data_ptr.into(), len.into()]);
+            Ok(struct_val.into())
         }
         Literal::None => Ok(mc.context.i8_type().const_zero().into()),
     }
@@ -75,6 +86,43 @@ fn compile_binary_op<'ctx>(
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
     let l = compile_expr(mc, lhs)?;
     let r = compile_expr(mc, rhs)?;
+
+    // String equality/inequality via runtime helper.
+    if is_string_value(mc, &l) && is_string_value(mc, &r) && matches!(op, BinOp::Eq | BinOp::Neq) {
+        let a_ptr = materialize_string_ptr(mc, l)?;
+        let b_ptr = materialize_string_ptr(mc, r)?;
+        let eq_fn = mc
+            .functions
+            .get("nom_string_eq")
+            .copied()
+            .or_else(|| mc.module.get_function("nom_string_eq"))
+            .ok_or_else(|| LlvmError::Compilation("nom_string_eq runtime fn missing".into()))?;
+        let call = mc
+            .builder
+            .build_call(eq_fn, &[a_ptr.into(), b_ptr.into()], "str_eq")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        let result = call
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation("nom_string_eq returned void".into()))?
+            .into_int_value();
+        // Result is i32: 1 == equal, 0 == not equal.
+        let zero = result.get_type().const_zero();
+        let cmp = mc
+            .builder
+            .build_int_compare(
+                if matches!(op, BinOp::Eq) {
+                    inkwell::IntPredicate::NE // eq path: nom_string_eq != 0 means equal
+                } else {
+                    inkwell::IntPredicate::EQ // neq path: nom_string_eq == 0 means not equal
+                },
+                result,
+                zero,
+                "str_eq_bool",
+            )
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return Ok(cmp.into());
+    }
 
     // Float operations
     if l.is_float_value() && r.is_float_value() {
@@ -233,7 +281,81 @@ fn compile_call<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     call: &nom_ast::CallExpr,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
-    let fn_name = &call.callee.name;
+    let fn_name = call.callee.name.as_str();
+
+    // Builtin: `print(s)` / `println(s)` — when the single argument is a
+    // string, decompose NomString into (data, len) and call the matching
+    // runtime function. Falls through to normal lookup otherwise so users
+    // can still define their own `print`/`println` functions.
+    if matches!(fn_name, "print" | "println") && call.args.len() == 1 {
+        let arg_val = compile_expr(mc, &call.args[0])?;
+        if is_string_value(mc, &arg_val) {
+            let rt_name = if fn_name == "print" { "nom_print" } else { "nom_println" };
+            let rt_fn = mc
+                .functions
+                .get(rt_name)
+                .copied()
+                .or_else(|| mc.module.get_function(rt_name))
+                .ok_or_else(|| LlvmError::Compilation(format!("{} runtime fn missing", rt_name)))?;
+            let (data, len) = extract_string_parts(mc, arg_val)?;
+            mc.builder
+                .build_call(rt_fn, &[data.into(), len.into()], "print_call")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            return Ok(mc.context.i8_type().const_zero().into());
+        }
+        // Integer/float/bool shortcuts.
+        if arg_val.is_int_value() {
+            let iv = arg_val.into_int_value();
+            let bw = iv.get_type().get_bit_width();
+            if bw == 1 {
+                let rt_fn = mc
+                    .functions
+                    .get("nom_print_bool")
+                    .copied()
+                    .ok_or_else(|| LlvmError::Compilation("nom_print_bool missing".into()))?;
+                // Extend i1 to i8 for the runtime.
+                let i8_ty = mc.context.i8_type();
+                let ext = mc
+                    .builder
+                    .build_int_z_extend(iv, i8_ty, "bool_ext")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                mc.builder
+                    .build_call(rt_fn, &[ext.into()], "print_bool")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            } else {
+                let rt_fn = mc
+                    .functions
+                    .get("nom_print_int")
+                    .copied()
+                    .ok_or_else(|| LlvmError::Compilation("nom_print_int missing".into()))?;
+                // Ensure i64 width.
+                let i64_ty = mc.context.i64_type();
+                let as_i64 = if bw < 64 {
+                    mc.builder
+                        .build_int_s_extend(iv, i64_ty, "int_ext")
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+                } else {
+                    iv
+                };
+                mc.builder
+                    .build_call(rt_fn, &[as_i64.into()], "print_int")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            return Ok(mc.context.i8_type().const_zero().into());
+        }
+        if arg_val.is_float_value() {
+            let rt_fn = mc
+                .functions
+                .get("nom_print_float")
+                .copied()
+                .ok_or_else(|| LlvmError::Compilation("nom_print_float missing".into()))?;
+            mc.builder
+                .build_call(rt_fn, &[arg_val.into_float_value().into()], "print_float")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            return Ok(mc.context.i8_type().const_zero().into());
+        }
+    }
+
     let function = mc.functions.get(fn_name).copied()
         .or_else(|| mc.module.get_function(fn_name))
         .ok_or_else(|| LlvmError::Compilation(format!("undefined function: {}", fn_name)))?;
@@ -255,11 +377,157 @@ fn compile_call<'ctx>(
         .or_else(|_| Ok(mc.context.i8_type().const_zero().into()))
 }
 
+/// True if this BasicValueEnum is a NomString struct value (`{ i8*, i64 }`).
+fn is_string_value<'ctx>(mc: &ModuleCompiler<'ctx>, val: &BasicValueEnum<'ctx>) -> bool {
+    if !val.is_struct_value() {
+        return false;
+    }
+    let st = val.into_struct_value().get_type();
+    st == mc.nom_string_type()
+}
+
+/// Extract the (data_ptr, length_i64) pair from a NomString struct value.
+fn extract_string_parts<'ctx>(
+    mc: &ModuleCompiler<'ctx>,
+    val: BasicValueEnum<'ctx>,
+) -> Result<(inkwell::values::PointerValue<'ctx>, inkwell::values::IntValue<'ctx>), LlvmError> {
+    let sv = val.into_struct_value();
+    let data = mc
+        .builder
+        .build_extract_value(sv, 0, "str_data")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_pointer_value();
+    let len = mc
+        .builder
+        .build_extract_value(sv, 1, "str_len")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    Ok((data, len))
+}
+
+/// Alloca a NomString slot, store the value into it, and return the pointer.
+/// Used when calling runtime helpers that accept `*const NomString`.
+fn materialize_string_ptr<'ctx>(
+    mc: &ModuleCompiler<'ctx>,
+    val: BasicValueEnum<'ctx>,
+) -> Result<inkwell::values::PointerValue<'ctx>, LlvmError> {
+    let nom_str_ty = mc.nom_string_type();
+    let slot = mc
+        .builder
+        .build_alloca(nom_str_ty, "str_slot")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(slot, val)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    Ok(slot)
+}
+
+fn compile_index<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    target: &Expr,
+    index: &Expr,
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // First: string slicing — Index(target, Range(lo, hi))
+    if let Expr::Range(lo, hi) = index {
+        let target_val = compile_expr(mc, target)?;
+        if !is_string_value(mc, &target_val) {
+            return Err(LlvmError::Unsupported(
+                "range indexing only supported on strings".into(),
+            ));
+        }
+        let lo_val = compile_expr(mc, lo)?;
+        let hi_val = compile_expr(mc, hi)?;
+        let lo_i = if lo_val.is_int_value() {
+            lo_val.into_int_value()
+        } else {
+            return Err(LlvmError::Type("slice bound must be integer".into()));
+        };
+        let hi_i = if hi_val.is_int_value() {
+            hi_val.into_int_value()
+        } else {
+            return Err(LlvmError::Type("slice bound must be integer".into()));
+        };
+        let str_ptr = materialize_string_ptr(mc, target_val)?;
+        // Call nom_string_slice(str_ptr, lo, hi) -> NomString (struct by value).
+        let slice_fn = mc
+            .functions
+            .get("nom_string_slice")
+            .copied()
+            .or_else(|| mc.module.get_function("nom_string_slice"))
+            .ok_or_else(|| {
+                LlvmError::Compilation("nom_string_slice runtime fn missing".into())
+            })?;
+        let call = mc
+            .builder
+            .build_call(slice_fn, &[str_ptr.into(), lo_i.into(), hi_i.into()], "str_slice")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return call
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation("nom_string_slice returned void".into()));
+    }
+
+    let target_val = compile_expr(mc, target)?;
+    // String single-byte indexing: returns an i64 (zero-extended byte).
+    if is_string_value(mc, &target_val) {
+        let idx_val = compile_expr(mc, index)?;
+        let idx_i = if idx_val.is_int_value() {
+            idx_val.into_int_value()
+        } else {
+            return Err(LlvmError::Type("string index must be integer".into()));
+        };
+        let (data_ptr, _len) = extract_string_parts(mc, target_val)?;
+        let i8_ty = mc.context.i8_type();
+        let byte_ptr = unsafe {
+            mc.builder
+                .build_in_bounds_gep(i8_ty, data_ptr, &[idx_i], "str_idx_ptr")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        };
+        let byte = mc
+            .builder
+            .build_load(i8_ty, byte_ptr, "str_byte")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            .into_int_value();
+        let ext = mc
+            .builder
+            .build_int_z_extend(byte, mc.context.i64_type(), "str_byte_ext")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return Ok(ext.into());
+    }
+
+    Err(LlvmError::Unsupported(
+        "index expression on non-string target".into(),
+    ))
+}
+
 fn compile_field_access<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     obj: &Expr,
     field: &nom_ast::Identifier,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // String .length — works on any expression that evaluates to a NomString.
+    if field.name == "length" {
+        // Attempt to compile the object as a string first.
+        // If it's an Ident whose type is known to be a struct, fall through
+        // to the named-struct field-access path below.
+        let is_struct_ident = if let Expr::Ident(ident) = obj {
+            mc.value_types.contains_key(&ident.name)
+        } else {
+            false
+        };
+        if !is_struct_ident {
+            let val = compile_expr(mc, obj)?;
+            if is_string_value(mc, &val) {
+                let (_data, len) = extract_string_parts(mc, val)?;
+                return Ok(len.into());
+            }
+            // Not a string — fall through to struct field access if possible.
+            return Err(LlvmError::Unsupported(
+                "field access on non-string non-struct value".into(),
+            ));
+        }
+    }
+
     // Determine the variable name from the object expression
     let var_name = match obj {
         Expr::Ident(ident) => &ident.name,

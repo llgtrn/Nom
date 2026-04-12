@@ -98,6 +98,7 @@ pub enum Token {
     Star,       // *
     Slash,      // /
     Dot,        // .
+    DotDot,     // ..
     Gt,         // >
     Lt,         // <
     Gte,        // >=
@@ -682,10 +683,18 @@ impl<'src> Lexer<'src> {
 
                 '.' => {
                     self.advance();
-                    tokens.push(SpannedToken::new(
-                        Token::Dot,
-                        Span::new(start, start + 1, line, col),
-                    ));
+                    if self.peek() == Some('.') {
+                        self.advance();
+                        tokens.push(SpannedToken::new(
+                            Token::DotDot,
+                            Span::new(start, start + 2, line, col),
+                        ));
+                    } else {
+                        tokens.push(SpannedToken::new(
+                            Token::Dot,
+                            Span::new(start, start + 1, line, col),
+                        ));
+                    }
                 }
 
                 ':' => {

@@ -784,6 +784,8 @@ pub enum Expr {
     UnaryOp(UnaryOp, Box<Expr>),
     /// Index: expr[index]
     Index(Box<Expr>, Box<Expr>),
+    /// Range: lo..hi (half-open). Used inside Index for slicing: expr[lo..hi]
+    Range(Box<Expr>, Box<Expr>),
     /// Method call: expr.method(args)
     MethodCall(Box<Expr>, Identifier, Vec<Expr>),
     /// If expression (returns a value)

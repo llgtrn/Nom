@@ -27,9 +27,7 @@ pub fn resolve_type_name<'ctx>(
         "integer" | "i64" | "int" => Ok(mc.context.i64_type().into()),
         "i32" => Ok(mc.context.i32_type().into()),
         "bool" | "yes" | "no" => Ok(mc.context.bool_type().into()),
-        "text" | "string" | "String" => {
-            Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into())
-        }
+        "text" | "string" | "String" => Ok(mc.nom_string_type().into()),
         "bytes" => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
         _ => {
             if let Some(struct_ty) = mc.struct_types.get(name) {

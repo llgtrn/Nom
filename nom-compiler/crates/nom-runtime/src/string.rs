@@ -45,6 +45,28 @@ pub extern "C" fn nom_string_eq(a: *const NomString, b: *const NomString) -> i32
     }
 }
 
+/// Slice a NomString: returns a new heap-allocated NomString containing bytes
+/// `s[lo..hi]` (half-open). Bounds are clamped to `[0, s.len]`; if `lo >= hi`
+/// after clamping, returns an empty NomString with a null data pointer.
+#[unsafe(no_mangle)]
+pub extern "C" fn nom_string_slice(s: *const NomString, lo: i64, hi: i64) -> NomString {
+    unsafe {
+        let len = (*s).len;
+        let lo_c = lo.max(0).min(len);
+        let hi_c = hi.max(lo_c).min(len);
+        let new_len = hi_c - lo_c;
+        if new_len <= 0 {
+            return NomString { data: std::ptr::null(), len: 0 };
+        }
+        let src = slice::from_raw_parts((*s).data.add(lo_c as usize), new_len as usize);
+        let mut buf = Vec::with_capacity(new_len as usize);
+        buf.extend_from_slice(src);
+        let ptr = buf.as_ptr();
+        std::mem::forget(buf);
+        NomString { data: ptr, len: new_len }
+    }
+}
+
 /// Free a heap-allocated NomString.
 #[unsafe(no_mangle)]
 pub extern "C" fn nom_string_free(s: NomString) {
@@ -78,6 +100,28 @@ mod tests {
         let result_slice = unsafe { std::slice::from_raw_parts(result.data, result.len as usize) };
         assert_eq!(result_slice, b"hello world");
         nom_string_free(result);
+    }
+
+    #[test]
+    fn string_slice_basic() {
+        let data = b"hello world";
+        let s = NomString { data: data.as_ptr(), len: 11 };
+        let sub = nom_string_slice(&s as *const _, 6, 11);
+        assert_eq!(sub.len, 5);
+        let bytes = unsafe { std::slice::from_raw_parts(sub.data, sub.len as usize) };
+        assert_eq!(bytes, b"world");
+        nom_string_free(sub);
+    }
+
+    #[test]
+    fn string_slice_clamps_out_of_range() {
+        let data = b"abc";
+        let s = NomString { data: data.as_ptr(), len: 3 };
+        let sub = nom_string_slice(&s as *const _, -2, 100);
+        assert_eq!(sub.len, 3);
+        let bytes = unsafe { std::slice::from_raw_parts(sub.data, sub.len as usize) };
+        assert_eq!(bytes, b"abc");
+        nom_string_free(sub);
     }
 
     #[test]
