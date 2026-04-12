@@ -1,0 +1,189 @@
+//! Round-trip integration tests for `nom store add-media`.
+//!
+//! Each test calls the store functions directly (not via process spawn) to
+//! avoid STATUS_DLL_NOT_FOUND issues on Windows with the LLVM binary. Tests
+//! are skipped on Windows via `#[cfg_attr(windows, ignore)]` per convention.
+//!
+//! The pattern is:
+//!   1. `cmd_store_add_media(fixture, dict, json=false)` → expect exit 0.
+//!   2. Parse the `id:` line from stdout (captured via a tempfile workaround).
+//!   3. `cmd_store_get(id, dict, json=false)` → check body_kind + kind fields.
+//!
+//! Since the CLI functions print to stdout we test them via the `nom` binary
+//! (using `CARGO_BIN_EXE_nom`) to capture output, same pattern as store_cli.rs.
+
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
+// ── Helpers ───────────────────────────────────────────────────────────
+
+fn fixtures_dir() -> PathBuf {
+    let manifest = env!("CARGO_MANIFEST_DIR");
+    PathBuf::from(manifest)
+        .join("..")
+        .join("nom-media")
+        .join("tests")
+        .join("fixtures")
+}
+
+fn make_tmpdir(tag: &str) -> PathBuf {
+    let nanos = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos())
+        .unwrap_or(0);
+    let pid = std::process::id();
+    let dir = std::env::temp_dir().join(format!("nom-store-add-media-{tag}-{pid}-{nanos}"));
+    std::fs::create_dir_all(&dir).expect("create tmp");
+    dir
+}
+
+fn dict_flag(root: &Path) -> String {
+    root.join("nomdict.db").to_string_lossy().into_owned()
+}
+
+fn nom_bin() -> PathBuf {
+    PathBuf::from(env!("CARGO_BIN_EXE_nom"))
+}
+
+fn run_nom(args: &[&str]) -> (i32, String, String) {
+    let out = Command::new(nom_bin())
+        .args(args)
+        .output()
+        .expect("spawn nom");
+    let code = out.status.code().unwrap_or(-1);
+    let stdout = String::from_utf8_lossy(&out.stdout).into_owned();
+    let stderr = String::from_utf8_lossy(&out.stderr).into_owned();
+    (code, stdout, stderr)
+}
+
+/// Parse `id: <hash>` from the human-readable add-media output.
+fn parse_id_line(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("id:") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Parse `body_kind: <tag>` from `nom store get` output.
+fn parse_body_kind_line(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("body_kind:") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
+/// Parse `kind: <tag>` from `nom store get` output.
+fn parse_kind_line(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        if let Some(rest) = line.strip_prefix("kind:") {
+            return Some(rest.trim().to_string());
+        }
+    }
+    None
+}
+
+// ── Round-trip test helper ────────────────────────────────────────────
+
+/// Core assertion: add-media the fixture, get it back, verify fields.
+fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str) {
+    let root = make_tmpdir(expected_body_kind);
+    let dict = dict_flag(&root);
+
+    // Step 1: add-media
+    let (code, stdout, stderr) = run_nom(&[
+        "store",
+        "add-media",
+        fixture.to_str().unwrap(),
+        "--dict",
+        &dict,
+    ]);
+    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+
+    // Step 2: parse id
+    let id = parse_id_line(&stdout)
+        .unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
+    assert_eq!(id.len(), 64, "id must be 64 hex chars, got {id:?}");
+    assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "id not hex: {id}");
+
+    // Step 3: get-entry and verify fields
+    let (gcode, gout, gerr) = run_nom(&["store", "get", &id, "--dict", &dict]);
+    assert_eq!(gcode, 0, "get exit={gcode}\nstdout={gout}\nstderr={gerr}");
+
+    let body_kind = parse_body_kind_line(&gout)
+        .unwrap_or_else(|| panic!("no body_kind: line in get output:\n{gout}"));
+    assert_eq!(
+        body_kind, expected_body_kind,
+        "body_kind mismatch: expected {expected_body_kind}, got {body_kind}"
+    );
+
+    let kind = parse_kind_line(&gout)
+        .unwrap_or_else(|| panic!("no kind: line in get output:\n{gout}"));
+    assert_eq!(kind, "media_unit", "kind must be media_unit, got {kind}");
+}
+
+// ── Tests ─────────────────────────────────────────────────────────────
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_png_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "png");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_jpeg_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "jpeg");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_avif_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.avif"), "avif");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_flac_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.flac"), "flac");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_opus_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.opus"), "opus");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_aac_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.aac"), "aac");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_av1_roundtrip() {
+    // The fixture uses the .av1.ivf double-extension; extract just the "ivf" ext.
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.av1.ivf"), "av1");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_webm_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.webm"), "webm");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_mp4_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.mp4"), "mp4");
+}
+
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_hevc_roundtrip() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.hevc"), "hevc");
+}

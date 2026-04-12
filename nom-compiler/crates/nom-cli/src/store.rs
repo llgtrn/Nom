@@ -22,6 +22,7 @@ use nom_resolver::v2::{ResolutionTable, resolve_use_statements};
 use nom_types::{
     Contract, Entry, EntryKind, EntryStatus, canonical::entry_id,
 };
+use sha2::{Digest, Sha256};
 
 // ── Public CLI entry points ──────────────────────────────────────────
 
@@ -448,6 +449,109 @@ pub fn cmd_store_list(
             );
         }
         println!("{} entries", entries.len());
+    }
+    0
+}
+
+/// `nom store add-media <file> [--dict <path>] [--json]`
+///
+/// Ingest a media file, persist its canonical bytes' SHA-256 hash as a
+/// v2 `entries` row tagged with the matching §4.4.6 `body_kind`, and
+/// print the resulting id.
+///
+/// The canonical bytes themselves are NOT stored in `Entry.body` (which
+/// is `Option<String>`, a legacy text column). A future schema migration
+/// will add a BLOB column; for now `body = None` and the hash (= `id`)
+/// is the persistent record.
+pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
+    let bytes = match std::fs::read(path) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("nom: cannot read {}: {e}", path.display());
+            return 1;
+        }
+    };
+
+    let ext = path
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("")
+        .to_ascii_lowercase();
+
+    // Dispatch to the shared ingest helper (same table as `nom media import`).
+    let summary = match crate::media::ingest_by_extension(&bytes, &ext) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom: {e}");
+            return 1;
+        }
+    };
+
+    // SHA-256 the canonical bytes → hex id (same shape as Phase-4 hashes).
+    let id = {
+        let mut hasher = Sha256::new();
+        hasher.update(&summary.canonical_bytes);
+        format!("{:x}", hasher.finalize())
+    };
+
+    // Derive word = file stem, stripped to [a-z0-9].
+    let word = path
+        .file_stem()
+        .and_then(|s| s.to_str())
+        .unwrap_or("media")
+        .to_ascii_lowercase()
+        .chars()
+        .filter(|c| c.is_ascii_alphanumeric())
+        .collect::<String>();
+    let word = if word.is_empty() { "media".to_string() } else { word };
+
+    // variant = the extension (lets multiple encodings of same word coexist).
+    let variant = Some(ext.clone());
+
+    let entry = Entry {
+        id: id.clone(),
+        word: word.clone(),
+        variant,
+        kind: EntryKind::MediaUnit,
+        language: "media".to_string(),
+        describe: Some(summary.describe.clone()),
+        concept: None,
+        body: None,
+        body_nom: None,
+        body_kind: Some(summary.body_kind_tag.to_owned()),
+        contract: Contract::default(),
+        status: EntryStatus::Complete,
+        translation_score: None,
+        is_canonical: true,
+        deprecated_by: None,
+        created_at: chrono_like_now(),
+        updated_at: None,
+    };
+
+    let dict_db = match open_dict(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    if let Err(e) = dict_db.upsert_entry(&entry) {
+        eprintln!("nom: upsert error for {id}: {e}");
+        return 1;
+    }
+
+    let canonical_bytes_len = summary.canonical_bytes.len();
+
+    if json {
+        println!(
+            "{{\"id\":\"{id}\",\"body_kind\":\"{}\",\"canonical_bytes\":{canonical_bytes_len},\"word\":\"{word}\",\"variant\":\"{ext}\"}}",
+            summary.body_kind_tag
+        );
+    } else {
+        println!("id:              {id}");
+        println!("body_kind:       {}", summary.body_kind_tag);
+        println!("canonical_bytes: {canonical_bytes_len}");
+        println!("word:            {word}");
+        println!("variant:         {ext}");
+        println!("describe:        {}", summary.describe);
     }
     0
 }

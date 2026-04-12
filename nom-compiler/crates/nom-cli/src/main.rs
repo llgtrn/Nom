@@ -399,6 +399,19 @@ enum StoreCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Ingest a media file (PNG/JPEG/AVIF/FLAC/Opus/AAC/AV1/WebM/MP4/HEVC)
+    /// and persist its canonical bytes to the DIDS store with the
+    /// matching body_kind tag per §4.4.6 invariant 17.
+    AddMedia {
+        /// Path to the media file
+        path: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON instead of human-readable output
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -514,6 +527,7 @@ fn main() {
             StoreCmd::List { dict, body_kind, limit, json } => {
                 store::cmd_store_list(&dict, body_kind.as_deref(), limit, json)
             }
+            StoreCmd::AddMedia { path, dict, json } => store::cmd_store_add_media(&path, &dict, json),
         },
         Commands::Media { action } => match action {
             MediaCmd::Import { path, json } => media::cmd_media_import(&path, json),
