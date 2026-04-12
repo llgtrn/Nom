@@ -26,6 +26,38 @@ pub enum NomxDecl {
         body: Vec<NomxStatement>,
         span: NomxSpan,
     },
+    /// `record <name> holds:` followed by one-field-per-statement
+    /// body. Fields captured by raw tokens today; real field typing
+    /// lands with the type system.
+    Record {
+        name: String,
+        fields: Vec<NomxRecordField>,
+        span: NomxSpan,
+    },
+    /// `choice <name> is one of:` followed by one-variant-per-statement
+    /// body. Variant payload captured by raw tokens.
+    Choice {
+        name: String,
+        variants: Vec<NomxChoiceVariant>,
+        span: NomxSpan,
+    },
+}
+
+/// One field in a `record` declaration. Raw tokens until the field
+/// terminator (`.` or the next `record`/`choice`/`define`/EOF).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NomxRecordField {
+    pub name: String,
+    pub type_tokens: Vec<NomxToken>,
+    pub span: NomxSpan,
+}
+
+/// One variant in a `choice` declaration.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct NomxChoiceVariant {
+    pub name: String,
+    pub payload_tokens: Vec<NomxToken>,
+    pub span: NomxSpan,
 }
 
 /// One statement inside a declaration body. Scaffold-level AST —
@@ -124,13 +156,94 @@ impl<'a> NomxParser<'a> {
         while self.peek() != &NomxToken::Eof {
             match self.peek() {
                 NomxToken::Define => decls.push(self.parse_define()?),
+                NomxToken::Record => decls.push(self.parse_record()?),
+                NomxToken::Choice => decls.push(self.parse_choice()?),
                 _ => {
-                    // Skip unrecognized tokens. Real recovery comes later.
                     self.advance();
                 }
             }
         }
         Ok(decls)
+    }
+
+    /// `record <name> holds: <fields>`
+    /// Each field: `<name> is <type-tokens>` terminated by `.` or
+    /// the next top-level keyword / EOF.
+    fn parse_record(&mut self) -> NomxParseResult<NomxDecl> {
+        let start = self.peek_span().start;
+        self.expect(&NomxToken::Record, "`record`")?;
+        let name = self.consume_identifier("name after `record`")?;
+        if self.peek() == &NomxToken::Holds {
+            self.advance();
+        }
+        self.expect(&NomxToken::Colon, "`:` ending the record head")?;
+
+        let mut fields = Vec::new();
+        while !self.peek_is_body_terminator() {
+            let field_start = self.peek_span();
+            let fname = self.consume_identifier("field name")?;
+            self.expect(&NomxToken::Is, "`is` after field name")?;
+            let mut type_tokens = Vec::new();
+            while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+                type_tokens.push(self.advance().token.clone());
+            }
+            if self.peek() == &NomxToken::Period {
+                self.advance();
+            }
+            fields.push(NomxRecordField {
+                name: fname,
+                type_tokens,
+                span: NomxSpan::new(field_start.start, self.peek_span().start),
+            });
+        }
+
+        let end = self.peek_span().start.max(start);
+        Ok(NomxDecl::Record {
+            name,
+            fields,
+            span: NomxSpan::new(start, end),
+        })
+    }
+
+    /// `choice <name> is one of: <variants>`
+    fn parse_choice(&mut self) -> NomxParseResult<NomxDecl> {
+        let start = self.peek_span().start;
+        self.expect(&NomxToken::Choice, "`choice`")?;
+        let name = self.consume_identifier("name after `choice`")?;
+        // Optional `is one of` prefix; grammar accepts shorter forms too.
+        if self.peek() == &NomxToken::Is {
+            self.advance();
+            // skip `one of` identifiers if present
+            while matches!(self.peek(), NomxToken::Identifier(_) | NomxToken::Of) {
+                self.advance();
+            }
+        }
+        self.expect(&NomxToken::Colon, "`:` ending the choice head")?;
+
+        let mut variants = Vec::new();
+        while !self.peek_is_body_terminator() {
+            let var_start = self.peek_span();
+            let vname = self.consume_identifier("variant name")?;
+            let mut payload_tokens = Vec::new();
+            while !self.peek_is_body_terminator() && self.peek() != &NomxToken::Period {
+                payload_tokens.push(self.advance().token.clone());
+            }
+            if self.peek() == &NomxToken::Period {
+                self.advance();
+            }
+            variants.push(NomxChoiceVariant {
+                name: vname,
+                payload_tokens,
+                span: NomxSpan::new(var_start.start, self.peek_span().start),
+            });
+        }
+
+        let end = self.peek_span().start.max(start);
+        Ok(NomxDecl::Choice {
+            name,
+            variants,
+            span: NomxSpan::new(start, end),
+        })
     }
 
     /// `define <name> that takes <param> and returns <ret>:`
@@ -345,6 +458,36 @@ mod tests {
     }
 
     #[test]
+    fn parses_record_with_fields() {
+        let src = "record user holds:\n  name is text.\n  age is number.";
+        let decls = parse_nomx(src).unwrap();
+        assert_eq!(decls.len(), 1);
+        let NomxDecl::Record { name, fields, .. } = &decls[0] else {
+            panic!("expected Record, got {:?}", decls[0]);
+        };
+        assert_eq!(name, "user");
+        assert_eq!(fields.len(), 2);
+        assert_eq!(fields[0].name, "name");
+        assert_eq!(fields[1].name, "age");
+    }
+
+    #[test]
+    fn parses_choice_with_variants() {
+        // `choice` followed by optional `is one of:`; `is` and `of`
+        // are tokens, `one` is an identifier. All skipped per parser.
+        let src = "choice status is one of:\n  active.\n  suspended.\n  deleted.";
+        let decls = parse_nomx(src).unwrap();
+        let NomxDecl::Choice { name, variants, .. } = &decls[0] else {
+            panic!("expected Choice, got {:?}", decls[0]);
+        };
+        assert_eq!(name, "status");
+        assert_eq!(variants.len(), 3);
+        assert_eq!(variants[0].name, "active");
+        assert_eq!(variants[1].name, "suspended");
+        assert_eq!(variants[2].name, "deleted");
+    }
+
+    #[test]
     fn parses_hello_nomx_sample() {
         let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
             .parent()
@@ -355,7 +498,9 @@ mod tests {
         let src = std::fs::read_to_string(&path).unwrap();
         let decls = parse_nomx(&src).unwrap();
         assert_eq!(decls.len(), 1);
-        let NomxDecl::Define { name, param, returns, .. } = &decls[0];
+        let NomxDecl::Define { name, param, returns, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
         assert_eq!(name, "greet");
         assert_eq!(param.as_deref(), Some("name"));
         assert_eq!(returns.as_deref(), Some("greeting"));
