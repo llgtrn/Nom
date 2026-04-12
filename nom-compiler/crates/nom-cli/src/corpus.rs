@@ -196,6 +196,39 @@ pub fn cmd_corpus_clone_batch(list_path: &Path, dict: &Path, json: bool) -> i32 
     if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
 }
 
+pub fn cmd_corpus_ingest_pypi(top: usize, dict: &Path, json: bool) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    eprintln!(
+        "[ingest-pypi] {} of {} curated PyPI top URLs (baked list)",
+        top.min(nom_corpus::PYPI_TOP_URLS.len()),
+        nom_corpus::PYPI_TOP_URLS.len()
+    );
+    let report = nom_corpus::ingest_pypi_top(top, &d);
+    if json {
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
+    } else {
+        println!("ingest-pypi summary:");
+        println!("  total:           {}", report.total);
+        println!("  succeeded:       {}", report.succeeded);
+        println!("  failed:          {}", report.failed);
+        println!("  files ingested:  {}", report.files_ingested);
+        if !report.failures.is_empty() {
+            println!("  failures:");
+            for (url, err) in &report.failures {
+                println!("    {url}: {err}");
+            }
+        }
+    }
+    if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
+}
+
 /// Resolve a `--dict` argument (which may point directly at a `.db` file
 /// or at a directory) to an absolute SQLite file path.
 fn resolve_db_path(dict: &Path) -> std::path::PathBuf {

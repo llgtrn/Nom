@@ -516,6 +516,23 @@ enum CorpusCmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Clone-and-ingest the first N entries of the curated PyPI top
+    /// list. Uses the same stream-and-discard discipline as
+    /// `clone-batch`. The list is baked into nom-corpus so the command
+    /// works offline and is deterministic across runs; refresh the list
+    /// by editing `PYPI_TOP_URLS` in nom-corpus.
+    IngestPypi {
+        /// How many top-list entries to ingest (clamped to list length).
+        #[arg(long, default_value = "10")]
+        top: usize,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON summary.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -844,6 +861,9 @@ fn main() {
             }
             CorpusCmd::CloneBatch { list, dict, json } => {
                 corpus::cmd_corpus_clone_batch(&list, &dict, json)
+            }
+            CorpusCmd::IngestPypi { top, dict, json } => {
+                corpus::cmd_corpus_ingest_pypi(top, &dict, json)
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),

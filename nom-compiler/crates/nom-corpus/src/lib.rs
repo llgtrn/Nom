@@ -810,6 +810,83 @@ impl Drop for TempDirGuard {
     }
 }
 
+// ── Pivot G: curated PyPI top-N ──────────────────────────────────────────────
+
+/// Curated list of highly-used PyPI packages with public git repos.
+/// Order is rank-ish (roughly by download count at the time this list
+/// was seeded). Used by `nom corpus ingest-pypi --top N` which takes
+/// the first N entries and clone-and-ingests each.
+///
+/// Rationale: resolving PyPI names → git URLs at runtime needs an HTTP
+/// client (reqwest / ureq), which adds a heavy dep for a list that
+/// changes slowly. A baked-in list keeps the workspace lean and the
+/// command deterministic across runs. Curated list can be refreshed
+/// by updating this const; downstream `clone_batch` does the work.
+pub const PYPI_TOP_URLS: &[&str] = &[
+    "https://github.com/psf/requests.git",
+    "https://github.com/numpy/numpy.git",
+    "https://github.com/pandas-dev/pandas.git",
+    "https://github.com/urllib3/urllib3.git",
+    "https://github.com/python/typing.git",
+    "https://github.com/boto/botocore.git",
+    "https://github.com/boto/boto3.git",
+    "https://github.com/python-poetry/poetry.git",
+    "https://github.com/pallets/flask.git",
+    "https://github.com/django/django.git",
+    "https://github.com/tiangolo/fastapi.git",
+    "https://github.com/encode/starlette.git",
+    "https://github.com/pydantic/pydantic.git",
+    "https://github.com/certifi/python-certifi.git",
+    "https://github.com/chardet/chardet.git",
+    "https://github.com/python-pillow/Pillow.git",
+    "https://github.com/pytest-dev/pytest.git",
+    "https://github.com/python-attrs/attrs.git",
+    "https://github.com/psf/black.git",
+    "https://github.com/astral-sh/ruff.git",
+    "https://github.com/sqlalchemy/sqlalchemy.git",
+    "https://github.com/celery/celery.git",
+    "https://github.com/scrapy/scrapy.git",
+    "https://github.com/benoitc/gunicorn.git",
+    "https://github.com/encode/httpx.git",
+    "https://github.com/aio-libs/aiohttp.git",
+    "https://github.com/pytest-dev/pluggy.git",
+    "https://github.com/yaml/pyyaml.git",
+    "https://github.com/dateutil/dateutil.git",
+    "https://github.com/python-jsonschema/jsonschema.git",
+    "https://github.com/Delgan/loguru.git",
+    "https://github.com/MagicStack/asyncpg.git",
+    "https://github.com/redis/redis-py.git",
+    "https://github.com/psycopg/psycopg2.git",
+    "https://github.com/python-openxml/python-docx.git",
+    "https://github.com/matplotlib/matplotlib.git",
+    "https://github.com/scikit-learn/scikit-learn.git",
+    "https://github.com/scipy/scipy.git",
+    "https://github.com/huggingface/transformers.git",
+    "https://github.com/openai/openai-python.git",
+    "https://github.com/langchain-ai/langchain.git",
+    "https://github.com/streamlit/streamlit.git",
+    "https://github.com/gradio-app/gradio.git",
+    "https://github.com/jupyter/notebook.git",
+    "https://github.com/ipython/ipython.git",
+    "https://github.com/tqdm/tqdm.git",
+    "https://github.com/pypa/pip.git",
+    "https://github.com/pypa/setuptools.git",
+    "https://github.com/python-attrs/cattrs.git",
+    "https://github.com/lxml/lxml.git",
+];
+
+/// Clone-and-ingest the first `n` entries of [`PYPI_TOP_URLS`].
+/// `n` is clamped to the list length. Reuses [`clone_batch`] so the
+/// disk discipline (clone → ingest → discard per URL) is the same.
+pub fn ingest_pypi_top(
+    n: usize,
+    dict: &nom_dict::NomDict,
+) -> CloneBatchReport {
+    let n = n.min(PYPI_TOP_URLS.len());
+    let urls: Vec<String> = PYPI_TOP_URLS[..n].iter().map(|s| s.to_string()).collect();
+    clone_batch(&urls, dict)
+}
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
@@ -856,6 +933,24 @@ mod tests {
     fn clone_batch_on_empty_list_reports_zero() {
         let dict = nom_dict::NomDict::open_in_memory().unwrap();
         let r = clone_batch(&[], &dict);
+        assert_eq!(r.total, 0);
+        assert_eq!(r.succeeded, 0);
+        assert_eq!(r.failed, 0);
+    }
+
+    #[test]
+    fn pypi_top_urls_are_https_git() {
+        assert!(PYPI_TOP_URLS.len() >= 25);
+        for u in PYPI_TOP_URLS {
+            assert!(u.starts_with("https://"), "bad scheme: {u}");
+            assert!(u.ends_with(".git"), "missing .git: {u}");
+        }
+    }
+
+    #[test]
+    fn ingest_pypi_top_zero_does_nothing() {
+        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let r = ingest_pypi_top(0, &dict);
         assert_eq!(r.total, 0);
         assert_eq!(r.succeeded, 0);
         assert_eq!(r.failed, 0);
