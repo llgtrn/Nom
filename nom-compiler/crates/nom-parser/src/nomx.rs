@@ -195,6 +195,37 @@ pub fn parse_nomx(source: &str) -> NomxParseResult<Vec<NomxDecl>> {
     parser.parse_file()
 }
 
+impl NomxDecl {
+    /// Stable string tag for the declaration kind: "define" /
+    /// "record" / "choice". to-oneliner lowers to Define, so this
+    /// returns "define" for the sentence form too.
+    pub fn kind(&self) -> &'static str {
+        match self {
+            NomxDecl::Define { .. } => "define",
+            NomxDecl::Record { .. } => "record",
+            NomxDecl::Choice { .. } => "choice",
+        }
+    }
+
+    /// Declared name (same field across variants).
+    pub fn name(&self) -> &str {
+        match self {
+            NomxDecl::Define { name, .. }
+            | NomxDecl::Record { name, .. }
+            | NomxDecl::Choice { name, .. } => name,
+        }
+    }
+
+    /// Source span covering the declaration head + body.
+    pub fn span(&self) -> NomxSpan {
+        match self {
+            NomxDecl::Define { span, .. }
+            | NomxDecl::Record { span, .. }
+            | NomxDecl::Choice { span, .. } => *span,
+        }
+    }
+}
+
 impl NomxStatement {
     /// Stable string tag for the statement kind. Use for debug
     /// output, structured logs, or structural dispatch without a
@@ -470,6 +501,12 @@ impl<'a> NomxParser<'a> {
     }
 
     fn peek_is_body_terminator(&self) -> bool {
+        // `to` is intentionally NOT a terminator: it doubles as the
+        // ToPrep preposition mid-phrase ("joined to name") and the
+        // lexer can't tell which — parser-side disambiguation on
+        // statement boundaries would need a sentence-boundary
+        // detector. Today: put a period between top-level decls
+        // when mixing block and sentence forms.
         matches!(
             self.peek(),
             NomxToken::Eof
@@ -849,6 +886,26 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, NomxToken::Identifier(n) if n == "landing"))
         );
+    }
+
+    #[test]
+    fn decl_kind_name_span_accessors() {
+        // One of each decl form + the to-oneliner at the top (to
+        // avoid a mixed-form parse ambiguity: `to` has no sentence-
+        // boundary context inside a preceding define's body).
+        let src = "to square a number, respond with the number times itself.\n\
+                   record user holds: name is text.\n\
+                   choice status is one of: active. deleted.\n\
+                   define greet that takes name and returns reply: reply is name.";
+        let decls = parse_nomx(src).unwrap();
+        let kinds: Vec<&str> = decls.iter().map(|d| d.kind()).collect();
+        let names: Vec<&str> = decls.iter().map(|d| d.name()).collect();
+        assert_eq!(kinds, vec!["define", "record", "choice", "define"]);
+        assert_eq!(names, vec!["square", "user", "status", "greet"]);
+        for d in &decls {
+            let sp = d.span();
+            assert!(sp.end >= sp.start);
+        }
     }
 
     #[test]
