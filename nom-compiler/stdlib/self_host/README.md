@@ -2,6 +2,14 @@
 
 This directory contains Nom components written in Nom itself -- the path toward a self-hosting compiler.
 
+> **See also:** the experimental `.nomx` natural-language grammar
+> track — an alternative surface syntax (`define X that takes Y
+> and returns Z:` style) proposed in
+> [`05-natural-language-syntax.md`](../../../research/language-analysis/05-natural-language-syntax.md).
+> Lexer + parser prototypes live; self-host scaffolds migrate to
+> `.nomx` once the grammar stabilizes enough to express them.
+> Current `.nomx` status: [`proposal §10`](../../../research/language-analysis/05-natural-language-syntax.md#10-implementation-status-updated-2026-04-13).
+
 ## What is self-hosting?
 
 A self-hosting compiler is one that can compile its own source code. Achieving self-hosting is a major milestone for any programming language because it proves the language is expressive enough to implement complex systems software.
