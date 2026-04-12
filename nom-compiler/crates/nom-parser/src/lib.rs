@@ -670,6 +670,21 @@ impl Parser {
     fn parse_postfix_expr(&mut self) -> ParseResult<Expr> {
         let mut expr = self.parse_expr_primary()?;
 
+        // Qualified path `Enum::Variant`: while the current expr is a plain
+        // Ident and the next token is `::`, consume the `::` and next ident,
+        // merging both names into a single dotted identifier
+        // (`"Enum::Variant"`). The subsequent LParen branch of the postfix
+        // loop then produces `Expr::Call` with the qualified callee, which is
+        // how enum variant construction is represented for the LLVM backend.
+        while matches!(&expr, Expr::Ident(_)) && matches!(self.peek(), Token::ColCol) {
+            self.advance(); // consume '::'
+            let next = self.expect_ident()?;
+            if let Expr::Ident(prev) = expr {
+                let merged = format!("{}::{}", prev.name, next.name);
+                expr = Expr::Ident(Identifier::new(merged, prev.span));
+            }
+        }
+
         // Postfix loop: field access, method calls, index, function calls
         loop {
             match self.peek().clone() {
@@ -2128,7 +2143,21 @@ impl Parser {
             if matches!(self.peek(), Token::RBrace) { break; }
             let pattern = self.parse_pattern()?;
             if matches!(self.peek(), Token::FatArrow) { self.advance(); }
-            let body = self.parse_block()?;
+            self.skip_whitespace();
+            // Arm body: either a `{ ... }` block (statement list) or a single
+            // expression (the common `pat => expr,` ergonomic form used in
+            // the self-hosting lexer). Single-expression arms are wrapped in
+            // a one-statement synthetic block.
+            let body = if matches!(self.peek(), Token::LBrace) {
+                self.parse_block()?
+            } else {
+                let expr_start = self.peek_span();
+                let expr = self.parse_expr()?;
+                Block {
+                    stmts: vec![BlockStmt::Expr(expr)],
+                    span: expr_start,
+                }
+            };
             arms.push(MatchArm { pattern, body });
             // skip commas and whitespace between arms
             while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
@@ -2168,7 +2197,16 @@ impl Parser {
                 Ok(Pattern::Literal(Literal::None))
             }
             _ => {
-                let name = self.expect_ident()?;
+                let mut name = self.expect_ident()?;
+                // Qualified variant pattern: `Enum::Variant` — merge the two
+                // idents into one (`"Enum::Variant"`) before continuing so
+                // the downstream match-compiler sees the owning enum.
+                while matches!(self.peek(), Token::ColCol) {
+                    self.advance(); // consume '::'
+                    let next = self.expect_ident()?;
+                    let merged = format!("{}::{}", name.name, next.name);
+                    name = Identifier::new(merged, name.span);
+                }
                 if matches!(self.peek(), Token::LParen) {
                     self.advance(); // '('
                     let mut sub = Vec::new();
@@ -2178,6 +2216,9 @@ impl Parser {
                     }
                     if matches!(self.peek(), Token::RParen) { self.advance(); }
                     Ok(Pattern::Variant(name, sub))
+                } else if name.name.contains("::") {
+                    // `E::B` with no parens — still a variant (unit variant).
+                    Ok(Pattern::Variant(name, Vec::new()))
                 } else {
                     Ok(Pattern::Binding(name))
                 }
