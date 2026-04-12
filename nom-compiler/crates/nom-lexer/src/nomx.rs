@@ -74,6 +74,61 @@ pub enum NomxToken {
     Eof,
 }
 
+/// Token role — grouping used by the future parser + by syntax
+/// highlighters / LSP semantic-tokens. Closed set; any new NomxToken
+/// variant must map to exactly one role.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NomxRole {
+    /// define / to / record / choice — start of a top-level decl.
+    DeclarationVerb,
+    /// when / unless / otherwise / for / while — branches + loops.
+    ControlFlow,
+    /// that / is / takes / returns / holds / means — noun-verb glue.
+    LinkingVerb,
+    /// of / from / with / then / by / and / or / not — infix-prose ops.
+    PrepositionalOperator,
+    /// User-defined names + numeric + string literals.
+    Value,
+    /// `:` `,` `.` `(` `)` `{` `}`.
+    Punctuation,
+    /// End of input.
+    Eof,
+}
+
+impl NomxToken {
+    /// Classify this token. Every variant has a stable role;
+    /// panicking here means a new variant landed without being
+    /// classified — the compiler forces the match to stay exhaustive.
+    pub fn role(&self) -> NomxRole {
+        use NomxToken::*;
+        match self {
+            Define | To | Record | Choice => NomxRole::DeclarationVerb,
+            When | Unless | Otherwise | For | While => NomxRole::ControlFlow,
+            That | Is | Takes | Returns | Holds | Means => NomxRole::LinkingVerb,
+            Of | From | With | ToPrep | Then | By | And | Or | Not => {
+                NomxRole::PrepositionalOperator
+            }
+            Identifier(_) | Number(_) | StringLit(_) => NomxRole::Value,
+            Colon | Comma | Period | LParen | RParen | LBrace | RBrace => NomxRole::Punctuation,
+            Eof => NomxRole::Eof,
+        }
+    }
+
+    /// True iff the token starts a declaration (define / to / record /
+    /// choice). The parser looks for this at statement boundaries.
+    pub fn starts_declaration(&self) -> bool {
+        matches!(self.role(), NomxRole::DeclarationVerb)
+    }
+
+    /// True iff the token ends a sentence / statement. `.` closes a
+    /// top-level sentence; `:` opens a block (so ends the declaration
+    /// head but not the whole sentence). Parser uses this for
+    /// recovery.
+    pub fn ends_sentence(&self) -> bool {
+        matches!(self, NomxToken::Period)
+    }
+}
+
 /// A half-open byte range `[start, end)` into the source string.
 /// Mirrors `nom_ast::Span` but kept local — the nomx grammar tracks
 /// its own spans until the two lexers merge.
@@ -374,6 +429,78 @@ mod tests {
         assert_eq!(eof.token, NomxToken::Eof);
         assert_eq!(eof.span.start, src.len());
         assert_eq!(eof.span.end, src.len());
+    }
+
+    #[test]
+    fn every_token_variant_classifies_to_a_role() {
+        // Every variant must have a stable role; no variant routes
+        // to Value+Punctuation simultaneously, etc.
+        use NomxRole::*;
+        use NomxToken::*;
+        let cases: Vec<(NomxToken, NomxRole)> = vec![
+            (Define, DeclarationVerb),
+            (To, DeclarationVerb),
+            (Record, DeclarationVerb),
+            (Choice, DeclarationVerb),
+            (When, ControlFlow),
+            (Unless, ControlFlow),
+            (Otherwise, ControlFlow),
+            (For, ControlFlow),
+            (While, ControlFlow),
+            (That, LinkingVerb),
+            (Is, LinkingVerb),
+            (Takes, LinkingVerb),
+            (Returns, LinkingVerb),
+            (Holds, LinkingVerb),
+            (Means, LinkingVerb),
+            (Of, PrepositionalOperator),
+            (From, PrepositionalOperator),
+            (With, PrepositionalOperator),
+            (ToPrep, PrepositionalOperator),
+            (Then, PrepositionalOperator),
+            (By, PrepositionalOperator),
+            (And, PrepositionalOperator),
+            (Or, PrepositionalOperator),
+            (Not, PrepositionalOperator),
+            (Identifier("x".into()), Value),
+            (Number("1".into()), Value),
+            (StringLit("s".into()), Value),
+            (Colon, Punctuation),
+            (Comma, Punctuation),
+            (Period, Punctuation),
+            (LParen, Punctuation),
+            (RParen, Punctuation),
+            (LBrace, Punctuation),
+            (RBrace, Punctuation),
+            (NomxToken::Eof, NomxRole::Eof),
+        ];
+        for (tok, expected) in &cases {
+            assert_eq!(
+                tok.role(),
+                *expected,
+                "role mismatch for {:?}",
+                tok
+            );
+        }
+    }
+
+    #[test]
+    fn starts_declaration_matches_verb_set() {
+        use NomxToken::*;
+        assert!(Define.starts_declaration());
+        assert!(To.starts_declaration());
+        assert!(Record.starts_declaration());
+        assert!(Choice.starts_declaration());
+        assert!(!When.starts_declaration());
+        assert!(!Identifier("foo".into()).starts_declaration());
+    }
+
+    #[test]
+    fn ends_sentence_is_period_only() {
+        use NomxToken::*;
+        assert!(Period.ends_sentence());
+        assert!(!Colon.ends_sentence());
+        assert!(!Comma.ends_sentence());
     }
 
     #[test]
