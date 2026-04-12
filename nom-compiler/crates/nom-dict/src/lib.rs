@@ -547,6 +547,24 @@ impl NomDict {
     }
 
     /// §4.4.6: return entries whose `body_kind` equals the given tag.
+    /// Return ids of entries with `status = 'partial'`, ordered by id for
+    /// deterministic batch-resumption semantics. `max = None` returns all;
+    /// `max = Some(n)` caps at `n` rows.
+    pub fn list_partial_ids(&self, max: Option<usize>) -> Result<Vec<String>> {
+        let sql = match max {
+            Some(n) => format!(
+                "SELECT id FROM entries WHERE status = 'partial' ORDER BY id LIMIT {}",
+                n
+            ),
+            None => "SELECT id FROM entries WHERE status = 'partial' ORDER BY id".to_string(),
+        };
+        let mut stmt = self.conn.prepare(&sql)?;
+        let rows = stmt
+            .query_map([], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Parallel to [`nom_resolver::Resolver::find_by_body_kind`] but on
     /// the v2 DIDS store — used by `nom build <hash>` closure walks to
     /// filter to entries with the right canonical format (e.g. only
@@ -1094,5 +1112,32 @@ mod tests {
         assert_eq!(as_map.get("(untagged)"), Some(&1));
         assert_eq!(hist[0].0, body_kind::BC); // highest count first
         assert_eq!(hist[0].1, 2);
+    }
+
+    #[test]
+    fn list_partial_ids_returns_only_partials() {
+        let d = NomDict::open_in_memory().unwrap();
+
+        let mut p1 = make_entry("partial-aaa", "p1");
+        p1.status = EntryStatus::Partial;
+        d.upsert_entry(&p1).unwrap();
+
+        let mut p2 = make_entry("partial-bbb", "p2");
+        p2.status = EntryStatus::Partial;
+        d.upsert_entry(&p2).unwrap();
+
+        // Complete entry should not appear.
+        let complete = make_entry("complete-ccc", "c1");
+        d.upsert_entry(&complete).unwrap();
+
+        let ids = d.list_partial_ids(None).unwrap();
+        assert_eq!(ids.len(), 2);
+        assert_eq!(ids[0], "partial-aaa");
+        assert_eq!(ids[1], "partial-bbb");
+
+        // Test max cap.
+        let capped = d.list_partial_ids(Some(1)).unwrap();
+        assert_eq!(capped.len(), 1);
+        assert_eq!(capped[0], "partial-aaa");
     }
 }

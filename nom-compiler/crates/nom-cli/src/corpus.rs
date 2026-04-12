@@ -172,6 +172,47 @@ pub fn cmd_corpus_lift_partial(hash: &str, dict: &Path, json: bool) -> i32 {
     }
 }
 
+// ── cmd_corpus_lift_all ──────────────────────────────────────────────────────
+
+pub fn cmd_corpus_lift_all(dict_path: &Path, max: usize, json: bool) -> i32 {
+    let db_path = resolve_db_path(dict_path);
+    let dict = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: open dict: {e}");
+            return 1;
+        }
+    };
+    match nom_corpus::lift_all(&dict, max) {
+        Ok(report) => {
+            if json {
+                println!("{}", serde_json::to_string(&report).unwrap_or_default());
+            } else {
+                println!("corpus lift-all:");
+                println!("  partials scanned:       {}", report.partials_scanned);
+                println!("  lifted (new complete):  {}", report.lifted);
+                println!("  relinked (existing):    {}", report.relinked);
+                println!("  rejected:               {}", report.rejected);
+                println!("  not yet implemented:    {}", report.not_yet_implemented);
+                println!("  harness errors:         {}", report.errors);
+                if !report.rejection_reasons.is_empty() {
+                    println!("  top rejection reasons:");
+                    let mut v: Vec<_> = report.rejection_reasons.iter().collect();
+                    v.sort_by(|a, b| b.1.cmp(a.1));
+                    for (reason, count) in v.iter().take(10) {
+                        println!("    {:>6}  {}", count, reason);
+                    }
+                }
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("nom: lift-all error: {e}");
+            1
+        }
+    }
+}
+
 /// Resolve a hash prefix (≥ 8 hex chars) to a full 64-char entry id.
 fn resolve_id_prefix(dict: &nom_dict::NomDict, hash: &str) -> Result<String, String> {
     if hash.len() < 8 {

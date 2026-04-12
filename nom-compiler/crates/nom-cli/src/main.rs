@@ -387,6 +387,21 @@ enum CorpusCmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Sweep every Partial entry in the dict through the equivalence gate,
+    /// upsert Complete entries + SupersededBy edges for successes, and
+    /// report counts. Use --max to cap entries per run (0 = unlimited).
+    LiftAll {
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Cap entries scanned per run; 0 = unlimited.
+        #[arg(long, default_value_t = 0)]
+        max: usize,
+        /// Emit a JSON summary instead of human-readable output.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -611,6 +626,9 @@ fn main() {
             }
             CorpusCmd::LiftPartial { hash, dict, json } => {
                 corpus::cmd_corpus_lift_partial(&hash, &dict, json)
+            }
+            CorpusCmd::LiftAll { dict, max, json } => {
+                corpus::cmd_corpus_lift_all(&dict, max, json)
             }
         },
     };

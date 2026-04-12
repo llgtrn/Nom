@@ -761,6 +761,90 @@ pub fn lift_partial(dict: &nom_dict::NomDict, id: &str) -> Result<LiftReport, Li
     }
 }
 
+// ── lift_all ──────────────────────────────────────────────────────────────────
+
+/// Summary returned by [`lift_all`].
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct LiftAllReport {
+    /// How many Partial entries were scanned.
+    pub partials_scanned: u64,
+    /// How many got lifted to a new Complete entry.
+    pub lifted: u64,
+    /// How many re-linked to an existing Complete (translator hash matched).
+    pub relinked: u64,
+    /// How many rejected (translator unsupported or parse error).
+    pub rejected: u64,
+    /// How many skipped (language not yet implemented).
+    pub not_yet_implemented: u64,
+    /// How many failed (harness-level errors: missing body_bytes, etc).
+    pub errors: u64,
+    /// Per-reason rejection count (top 20 distinct reasons; overflow → "(other)").
+    pub rejection_reasons: std::collections::BTreeMap<String, u64>,
+}
+
+const MAX_REJECTION_REASONS: usize = 20;
+
+/// Sweep every `status: Partial` entry in the dict through [`lift_partial`].
+/// `max` caps the number of entries scanned per run (0 = unlimited).
+pub fn lift_all(dict: &nom_dict::NomDict, max: usize) -> Result<LiftAllReport, LiftError> {
+    let cap = if max == 0 { None } else { Some(max) };
+    let ids = dict
+        .list_partial_ids(cap)
+        .map_err(|e| LiftError::Dict(e.to_string()))?;
+
+    let total = ids.len() as u64;
+    let mut report = LiftAllReport {
+        partials_scanned: total,
+        ..Default::default()
+    };
+
+    for (idx, id) in ids.iter().enumerate() {
+        // Progress to stderr every 100 entries (suppress when small batches).
+        if total >= 100 && idx > 0 && idx % 100 == 0 {
+            eprintln!(
+                "nom: lift-all: {}/{} scanned, {} lifted, {} relinked, {} rejected...",
+                idx, total, report.lifted, report.relinked, report.rejected
+            );
+        }
+
+        match lift_partial(dict, id) {
+            Ok(LiftReport::Lifted { is_new, .. }) => {
+                if is_new {
+                    report.lifted += 1;
+                } else {
+                    report.relinked += 1;
+                }
+            }
+            Ok(LiftReport::Rejected { reason }) => {
+                report.rejected += 1;
+                let current_distinct = report.rejection_reasons.len();
+                if report.rejection_reasons.contains_key(&reason) {
+                    *report.rejection_reasons.get_mut(&reason).unwrap() += 1;
+                } else if current_distinct < MAX_REJECTION_REASONS {
+                    report.rejection_reasons.insert(reason, 1);
+                } else {
+                    *report.rejection_reasons
+                        .entry("(other)".to_string())
+                        .or_insert(0) += 1;
+                }
+            }
+            Ok(LiftReport::NotYetImplemented { .. }) => {
+                report.not_yet_implemented += 1;
+            }
+            Err(LiftError::NoBody(_)) | Err(LiftError::NotFound(_)) => {
+                report.errors += 1;
+            }
+            Err(e) => {
+                // Gate errors and dict errors count as harness errors; keep going.
+                let _ = e;
+                report.errors += 1;
+            }
+        }
+    }
+
+    Ok(report)
+}
+
 // ── Errors ───────────────────────────────────────────────────────────────────
 
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
@@ -1226,6 +1310,75 @@ mod tests {
                 assert_eq!(edge_count, 1, "SupersededBy edge must exist");
             }
             other => panic!("expected LiftReport::Lifted, got {other:?}"),
+        }
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn lift_all_sweeps_partials() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_lift_all_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let src_dir = tmp.join("src");
+        fs::create_dir_all(&src_dir).unwrap();
+
+        // File 1: liftable function.
+        let mut f1 = fs::File::create(src_dir.join("add.rs")).unwrap();
+        f1.write_all(b"fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
+
+        // File 2: a struct — may translate or be rejected; either outcome is valid.
+        let mut f2 = fs::File::create(src_dir.join("point.rs")).unwrap();
+        f2.write_all(b"struct Point { x: f64, y: f64 }").unwrap();
+
+        // File 3: just a comment — body content is minimal and likely rejected.
+        let mut f3 = fs::File::create(src_dir.join("comment.rs")).unwrap();
+        f3.write_all(b"// this is a comment").unwrap();
+
+        let db_path = tmp.join("test_all.db");
+        let dict = NomDict::open_in_place(&db_path).unwrap();
+
+        let ingest_report = ingest_directory(&src_dir, &dict).unwrap();
+        assert_eq!(ingest_report.files_ingested, 3, "all 3 files must be ingested");
+
+        let report = super::lift_all(&dict, 0).unwrap();
+
+        assert!(
+            report.partials_scanned >= 3,
+            "expected >= 3 scanned, got {}",
+            report.partials_scanned
+        );
+        assert!(
+            report.lifted >= 1,
+            "expected >= 1 lifted, got {}",
+            report.lifted
+        );
+        assert!(
+            report.rejected >= 1 || report.not_yet_implemented >= 1,
+            "expected >= 1 rejected or not-yet-implemented (got rejected={}, nyi={})",
+            report.rejected,
+            report.not_yet_implemented
+        );
+
+        // Verify a SupersededBy edge exists for at least one lifted entry.
+        if report.lifted >= 1 {
+            let conn = dict.connection();
+            let edge_count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM entry_graph_edges WHERE edge_type='superseded_by'",
+                    [],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(
+                edge_count >= 1,
+                "expected >= 1 SupersededBy edge, got {edge_count}"
+            );
         }
 
         let _ = fs::remove_dir_all(&tmp);
