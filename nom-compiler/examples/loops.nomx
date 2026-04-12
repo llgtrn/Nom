@@ -1,0 +1,19 @@
+# Iteration demo (.nomx) — exercises `for each` and `while` per
+# proposal 05 §4.4. Pairs with examples/todo_app.nomx (record +
+# choice + conditional) and examples/greet_sentence.nomx (sentence
+# form) to cover the complete accepted grammar across three files.
+
+define sum_of that takes xs and returns total:
+    total is zero.
+    for each x in xs, total is total plus x.
+
+define count_positive that takes xs and returns count:
+    count is zero.
+    for each x of xs, when x is positive, count is count plus one.
+
+define countdown_from that takes n and returns nothing:
+    while n is greater_than_zero, n is n minus one.
+
+define greatest_of that takes xs and returns best:
+    best is zero.
+    for each x in xs, unless x is at_most best, best is x.

@@ -962,6 +962,42 @@ mod tests {
     }
 
     #[test]
+    fn parses_loops_nomx_sample() {
+        // 4 defines exercising ForEach (in + of), When, Unless,
+        // While in combination.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/loops.nomx");
+        let src = std::fs::read_to_string(&path).unwrap();
+        let decls = parse_nomx(&src).unwrap();
+        assert_eq!(decls.len(), 4);
+
+        // sum_of: body has a ForEach
+        let NomxDecl::Define { body, .. } = &decls[0] else {
+            panic!("expected Define");
+        };
+        assert!(body.iter().any(|s| matches!(s, NomxStatement::ForEach { .. })));
+
+        // countdown_from: body has a While
+        let NomxDecl::Define { body, .. } = &decls[2] else {
+            panic!("expected Define");
+        };
+        assert!(body.iter().any(|s| matches!(s, NomxStatement::While { .. })));
+
+        // greatest_of: body has ForEach containing Unless-style
+        // nested tokens in body_tokens (we don't parse nested
+        // statements yet — Unless is captured raw inside the
+        // ForEach body_tokens). Just verify the outer ForEach parses.
+        let NomxDecl::Define { body, .. } = &decls[3] else {
+            panic!("expected Define");
+        };
+        assert!(body.iter().any(|s| matches!(s, NomxStatement::ForEach { .. })));
+    }
+
+    #[test]
     fn parses_greet_sentence_nomx_sample() {
         // Three sentence-form functions in one file. Each lowers to
         // a Define with a single Binding body (subject="respond").
