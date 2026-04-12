@@ -1740,6 +1740,90 @@ mod tests {
     }
 
     #[test]
+    fn compile_app_to_artifacts_is_deterministic() {
+        // Aspect-level determinism probe: building the same manifest
+        // against the same dict twice must produce byte-identical
+        // artifacts at every aspect. This is a prerequisite for the
+        // §10.3.1 fixpoint track — if `nom app build` has hidden
+        // non-determinism (HashMap iteration order, timestamps, etc.)
+        // the whole-compiler fixpoint can't possibly hold.
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus, SecurityFinding, Severity};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        // Seed a non-trivial closure: mixed kinds, varying sizes,
+        // findings, partial + complete status.
+        let mk = |id: &str, kind: EntryKind, status: EntryStatus, bc_size: usize| Entry {
+            id: id.into(),
+            word: id.into(),
+            variant: None,
+            kind,
+            language: "nom".into(),
+            describe: Some("d".into()),
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: Some(vec![0u8; bc_size]),
+            body_kind: Some("bc".into()),
+            contract: Contract {
+                input_type: Some("In".into()),
+                output_type: Some("Out".into()),
+                pre: Some("x>0".into()),
+                post: Some("y>0".into()),
+            },
+            status,
+            translation_score: Some(0.9),
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&mk("a", EntryKind::Page, EntryStatus::Complete, 1000)).unwrap();
+        dict.upsert_entry(&mk("b", EntryKind::DataSource, EntryStatus::Complete, 500)).unwrap();
+        dict.upsert_entry(&mk("c", EntryKind::Function, EntryStatus::Partial, 200)).unwrap();
+        dict.upsert_entry(&mk("t1", EntryKind::TestCase, EntryStatus::Complete, 100)).unwrap();
+        dict.add_finding(
+            "a",
+            &SecurityFinding {
+                finding_id: 0,
+                id: "a".into(),
+                severity: Severity::High,
+                category: "io".into(),
+                rule_id: Some("R1".into()),
+                message: Some("msg".into()),
+                evidence: None,
+                line: Some(1),
+                remediation: None,
+            },
+        )
+        .unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m".into(),
+            name: "det".into(),
+            default_target: "web".into(),
+            root_page_hash: "a".into(),
+            data_sources: vec!["b".into(), "c".into()],
+            actions: vec!["t1".into()],
+            media_assets: vec![],
+            settings: serde_json::json!({"flag": true}),
+        };
+
+        let run1 = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let run2 = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        assert_eq!(run1.len(), run2.len());
+        for (a, b) in run1.iter().zip(run2.iter()) {
+            assert_eq!(a.aspect, b.aspect);
+            assert_eq!(a.path, b.path);
+            assert_eq!(
+                a.bytes, b.bytes,
+                "aspect {:?} diverged between runs — non-determinism in populator",
+                a.aspect
+            );
+        }
+    }
+
+    #[test]
     fn default_target_parses_to_platform() {
         let mut m = AppManifest {
             manifest_hash: "h".into(),
