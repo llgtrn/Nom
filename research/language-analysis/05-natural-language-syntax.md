@@ -276,7 +276,66 @@ actor counter {                             an actor called counter holds a numb
 }
 ```
 
-## 10. Readability gate — the 30-second test
+## 10. Implementation status (updated 2026-04-13)
+
+Prototype code has landed alongside this proposal. The `.nomx` track
+coexists with the C-like grammar — no existing code paths touched.
+
+### Lexer (`nom_lexer::nomx`, ~300 LOC)
+
+- `NomxToken` enum: 34 variants grouped by role (DeclarationVerb /
+  ControlFlow / LinkingVerb / PrepositionalOperator / Value /
+  Punctuation / Eof).
+- `tokenize_nomx_with_spans(src) -> Vec<SpannedNomxToken>` —
+  primary API. Each token carries a `NomxSpan { start, end }` byte
+  range for parser diagnostics.
+- `tokenize_nomx(src) -> Vec<NomxToken>` — span-free convenience.
+- Articles (`a/an/the/which/who/whose`) stripped at lex time per §4.8.
+- `NomxToken::role()` + `starts_declaration()` + `ends_sentence()`
+  helpers for the parser and future LSP semantic tokens.
+- Tests: 12/12 green including hello.nomx round-trip + role
+  classification of all 34 variants.
+
+### Parser (`nom_parser::nomx`, ~400 LOC)
+
+Three declaration forms:
+
+- `define <name> that takes <param> and returns <ret>:` + body
+- `record <name> holds:` + `<field> is <type_tokens>.` fields
+- `choice <name> is one of:` + variant list
+
+Two body-statement forms:
+
+- `<subject> is <rhs_tokens>.` binding
+- `when <cond>, <then>. otherwise, <else>.` conditional
+
+AST types: `NomxDecl` (3 variants) + `NomxStatement` (2 variants) +
+`NomxRecordField` + `NomxChoiceVariant`, all carrying spans.
+
+Expression parsing within `rhs_tokens` / `cond_tokens` etc. captures
+the raw token sequence. Typed expression tree lands with the type
+system — this keeps the AST shape stable while grammar bells grow.
+
+Tests: 14/14 green. Covers every decl form + error paths (missing
+name, missing colon). Includes end-to-end parse of
+`examples/todo_app.nomx` (5 decls: 1 record + 1 choice + 3 defines).
+
+### Samples
+
+- `examples/hello.nomx`: one-line `define greet that takes a name
+  and returns a greeting:` demo.
+- `examples/todo_app.nomx`: full grammar exercise (record + choice
+  + 3 defines with when/otherwise bodies).
+
+### What's still missing
+
+- Expression parsing inside rhs_tokens (requires type system).
+- `for each / while` iteration (deferred; typed ranges).
+- Vietnamese aliases (milestone 3 per §8).
+- Type inference / checker (phase after expression tree lands).
+- Lowering to LLVM bitcode via the existing planner+codegen.
+
+## 11. Readability gate — the 30-second test
 
 Before any milestone ships, five non-programmers read three code
 samples. Each must answer, within 30 seconds, the question "what
