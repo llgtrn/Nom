@@ -599,6 +599,7 @@ fn build_criteria_aspect(
             word: &e.word,
         })
         .collect();
+    let proposals = collect_proposals(manifest, &entries, dict);
     let doc = serde_json::json!({
         "app": manifest.name,
         "manifest_hash": manifest.manifest_hash,
@@ -606,8 +607,140 @@ fn build_criteria_aspect(
         "complete": complete,
         "partial": partial,
         "test_cases": tests,
+        "proposals": proposals,
+        "is_epic": proposals.is_empty(),
     });
     Ok(serde_json::to_vec_pretty(&doc)?)
+}
+
+/// A machine-authorable gap the LLM should fill. Each proposal is
+/// deterministic from the current dict state — rerunning with the
+/// same inputs yields the same proposals in the same order. Consumed
+/// by `nom app dream` and the MCP `criteria_proposals` tool.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct Proposal {
+    /// Stable tag for grouping (`partial_entry`, `missing_root`,
+    /// `unbalanced_contract`, `empty_closure`, `no_tests`).
+    pub kind: String,
+    /// One-line why-it-matters; gets shown to the LLM.
+    pub rationale: String,
+    /// Entry id or manifest-reference the proposal relates to, if any.
+    pub target: Option<String>,
+    /// Suggested EntryKind for any new nomtu the LLM should author.
+    pub suggested_entry_kind: Option<String>,
+    /// Suggested `word` (syntax token) for the new nomtu.
+    pub suggested_word: Option<String>,
+    /// Suggested concept membership for the new nomtu.
+    pub suggested_concept: Option<String>,
+}
+
+/// Collect proposals in a deterministic order. Sort is:
+/// (kind ASC, target ASC, suggested_word ASC).
+fn collect_proposals(
+    manifest: &AppManifest,
+    entries: &[nom_types::Entry],
+    dict: &nom_dict::NomDict,
+) -> Vec<Proposal> {
+    let mut out: Vec<Proposal> = Vec::new();
+
+    // Empty closure — app is a shell.
+    if entries.is_empty() {
+        out.push(Proposal {
+            kind: "empty_closure".into(),
+            rationale: "manifest closure is empty — no code will be linked".into(),
+            target: Some(manifest.manifest_hash.clone()),
+            suggested_entry_kind: Some("page".into()),
+            suggested_word: Some(format!("{}_home", manifest.name)),
+            suggested_concept: Some(manifest.name.clone()),
+        });
+    }
+
+    // Manifest roots that don't resolve in the dict.
+    for root in manifest_roots(manifest) {
+        if dict.get_entry(&root).ok().flatten().is_none() {
+            out.push(Proposal {
+                kind: "missing_root".into(),
+                rationale: format!(
+                    "manifest names entry `{root}` but no such entry exists in the dict"
+                ),
+                target: Some(root.clone()),
+                suggested_entry_kind: Some("function".into()),
+                suggested_word: None,
+                suggested_concept: Some(manifest.name.clone()),
+            });
+        }
+    }
+
+    // Partial entries — body may be incomplete or unverified.
+    for e in entries {
+        if e.status == nom_types::EntryStatus::Partial {
+            out.push(Proposal {
+                kind: "partial_entry".into(),
+                rationale: format!(
+                    "`{}` ({}) is Partial — contract or body incomplete; lift to Complete",
+                    e.word,
+                    e.kind.as_str()
+                ),
+                target: Some(e.id.clone()),
+                suggested_entry_kind: Some(e.kind.as_str().to_string()),
+                suggested_word: Some(e.word.clone()),
+                suggested_concept: e.concept.clone(),
+            });
+        }
+    }
+
+    // Contracts with pre but no post (or vice-versa) — suspicious shape.
+    for e in entries {
+        let has_pre = e.contract.pre.is_some();
+        let has_post = e.contract.post.is_some();
+        if has_pre ^ has_post {
+            out.push(Proposal {
+                kind: "unbalanced_contract".into(),
+                rationale: format!(
+                    "`{}` has {} without {}; add the missing clause or both",
+                    e.word,
+                    if has_pre { "pre" } else { "post" },
+                    if has_pre { "post" } else { "pre" },
+                ),
+                target: Some(e.id.clone()),
+                suggested_entry_kind: Some(e.kind.as_str().to_string()),
+                suggested_word: Some(e.word.clone()),
+                suggested_concept: e.concept.clone(),
+            });
+        }
+    }
+
+    // No test-cases in closure — criteria can't verify.
+    let has_tests = entries
+        .iter()
+        .any(|e| e.kind == nom_types::EntryKind::TestCase);
+    if !has_tests && !entries.is_empty() {
+        out.push(Proposal {
+            kind: "no_tests".into(),
+            rationale: "closure has no TestCase entries — criteria cannot verify".into(),
+            target: Some(manifest.manifest_hash.clone()),
+            suggested_entry_kind: Some("test_case".into()),
+            suggested_word: Some(format!("test_{}_smoke", manifest.name)),
+            suggested_concept: Some(manifest.name.clone()),
+        });
+    }
+
+    out.sort_by(|a, b| {
+        a.kind
+            .cmp(&b.kind)
+            .then_with(|| a.target.cmp(&b.target))
+            .then_with(|| a.suggested_word.cmp(&b.suggested_word))
+    });
+    out
+}
+
+/// Public entry point for the MCP `criteria_proposals` tool.
+pub fn criteria_proposals(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> Vec<Proposal> {
+    let entries = closure_entries(manifest, dict);
+    collect_proposals(manifest, &entries, dict)
 }
 
 fn severity_rank(s: &nom_types::Severity) -> u8 {
@@ -908,6 +1041,114 @@ mod tests {
         assert_eq!(parse(OutputAspect::Flow)["flow_artifacts"].as_array().unwrap().len(), 1);
         assert_eq!(parse(OutputAspect::Criteria)["test_cases"].as_array().unwrap().len(), 1);
         assert_eq!(parse(OutputAspect::Criteria)["closure_size"], 7);
+    }
+
+    #[test]
+    fn criteria_proposals_surface_weird_gaps() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        // Complete entry — no proposal.
+        dict.upsert_entry(&Entry {
+            id: "good".into(),
+            word: "fine".into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        })
+        .unwrap();
+        // Partial entry — should produce a partial_entry proposal.
+        dict.upsert_entry(&Entry {
+            id: "half".into(),
+            word: "rough".into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Partial,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        })
+        .unwrap();
+        // Entry with pre but no post — unbalanced contract.
+        dict.upsert_entry(&Entry {
+            id: "lopsided".into(),
+            word: "needs_post".into(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract {
+                input_type: None,
+                output_type: None,
+                pre: Some("x > 0".into()),
+                post: None,
+            },
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        })
+        .unwrap();
+
+        let manifest = AppManifest {
+            manifest_hash: "m1".into(),
+            name: "demo".into(),
+            default_target: "web".into(),
+            root_page_hash: "good".into(),
+            data_sources: vec!["half".into(), "lopsided".into(), "ghost".into()],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+
+        let proposals = criteria_proposals(&manifest, &dict);
+        let kinds: Vec<&str> = proposals.iter().map(|p| p.kind.as_str()).collect();
+        assert!(kinds.contains(&"missing_root"), "expected missing_root for ghost: {kinds:?}");
+        assert!(kinds.contains(&"partial_entry"), "expected partial_entry for half: {kinds:?}");
+        assert!(kinds.contains(&"unbalanced_contract"), "expected unbalanced: {kinds:?}");
+        assert!(kinds.contains(&"no_tests"), "expected no_tests: {kinds:?}");
+
+        // Also exercised via Criteria aspect.
+        let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
+        let crit = arts.iter().find(|a| a.aspect == OutputAspect::Criteria).unwrap();
+        let doc: serde_json::Value = serde_json::from_slice(&crit.bytes).unwrap();
+        assert_eq!(doc["is_epic"], false);
+        assert!(doc["proposals"].as_array().unwrap().len() >= 4);
+
+        // Deterministic: run again, same order.
+        let again = criteria_proposals(&manifest, &dict);
+        assert_eq!(proposals, again);
     }
 
     #[test]

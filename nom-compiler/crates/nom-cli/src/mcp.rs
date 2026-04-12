@@ -175,6 +175,37 @@ fn tools_list_response(id: Value) -> String {
                             }
                         }
                     }
+                },
+                {
+                    "name": "criteria_proposals",
+                    "description": "Given an app manifest (root page + optional extra root hashes), walk the dict closure and return a list of Proposals — gaps the LLM should fill by authoring new nomtu or lifting Partial ones to Complete. Each proposal carries a `kind` (missing_root, partial_entry, unbalanced_contract, no_tests, empty_closure), rationale, and suggested {entry_kind, word, concept}. This is the engine behind Dreaming mode: compile → proposals → LLM authors → recompile until `is_epic`.",
+                    "inputSchema": {
+                        "type": "object",
+                        "required": ["manifest_hash"],
+                        "properties": {
+                            "manifest_hash": {
+                                "type": "string",
+                                "description": "Stable identity of the manifest being examined. May be any string; proposals relate to it via `target`."
+                            },
+                            "name": {
+                                "type": "string",
+                                "description": "Human-readable app name used in suggested_word templates."
+                            },
+                            "target": {
+                                "type": "string",
+                                "description": "Default target platform: web | desktop | mobile."
+                            },
+                            "root_page_hash": {
+                                "type": "string",
+                                "description": "Closure root; usually a Page entry id."
+                            },
+                            "includes": {
+                                "type": "array",
+                                "items": {"type": "string"},
+                                "description": "Additional closure roots (data sources, actions, media)."
+                            }
+                        }
+                    }
                 }
             ]
         }),
@@ -196,6 +227,7 @@ fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> Str
         "search_nomtu" => call_search_nomtu(dict, id, &args),
         "list_concepts" => call_list_concepts(dict, id),
         "get_concept" => call_get_concept(dict, id, &args),
+        "criteria_proposals" => call_criteria_proposals(dict, id, &args),
         _ => err_response(id, -32602, &format!("unknown tool: {name}")),
     }
 }
@@ -417,6 +449,76 @@ fn call_get_concept(dict: &NomDict, id: Value, args: &Value) -> String {
                             "describe": concept.describe,
                         },
                         "members": member_items,
+                    })).unwrap_or_default()
+                }
+            ]
+        }),
+    )
+}
+
+fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
+    let manifest_hash = args
+        .get("manifest_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    if manifest_hash.is_empty() {
+        return err_response(id, -32602, "missing required argument: manifest_hash");
+    }
+    let name = args
+        .get("name")
+        .and_then(|v| v.as_str())
+        .unwrap_or("app")
+        .to_string();
+    let target = args
+        .get("target")
+        .and_then(|v| v.as_str())
+        .unwrap_or("web")
+        .to_string();
+    let root_page_hash = args
+        .get("root_page_hash")
+        .and_then(|v| v.as_str())
+        .unwrap_or("")
+        .to_string();
+    let includes: Vec<String> = args
+        .get("includes")
+        .and_then(|v| v.as_array())
+        .map(|a| {
+            a.iter()
+                .filter_map(|v| v.as_str().map(|s| s.to_string()))
+                .collect()
+        })
+        .unwrap_or_default();
+    let manifest = nom_app::AppManifest {
+        manifest_hash,
+        name,
+        default_target: target,
+        root_page_hash,
+        data_sources: includes,
+        actions: vec![],
+        media_assets: vec![],
+        settings: Value::Null,
+    };
+    let proposals = nom_app::criteria_proposals(&manifest, dict);
+    let summary = if proposals.is_empty() {
+        "App is epic — no criteria proposals (closure fully satisfies criteria).".to_string()
+    } else {
+        format!(
+            "{} criteria proposal(s). Address each by authoring the suggested nomtu \
+             or lifting the target entry.",
+            proposals.len()
+        )
+    };
+    ok_response(
+        id,
+        json!({
+            "content": [
+                {"type": "text", "text": summary},
+                {
+                    "type": "text",
+                    "text": serde_json::to_string_pretty(&json!({
+                        "is_epic": proposals.is_empty(),
+                        "proposals": proposals,
                     })).unwrap_or_default()
                 }
             ]

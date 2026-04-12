@@ -356,6 +356,33 @@ enum Commands {
 
 #[derive(Subcommand)]
 enum AppCmd {
+    /// Dreaming mode: compile the manifest, enumerate criteria
+    /// proposals, print them as a to-do list for the LLM, and exit.
+    /// The outer agent author the suggested nomtu then re-invokes
+    /// `dream` until `is_epic == true`. Per §5.12 + user directive.
+    Dream {
+        /// App manifest hash (root of the closure).
+        manifest_hash: String,
+        /// Human-readable app name.
+        #[arg(long, default_value = "app")]
+        name: String,
+        /// Default target (web, desktop, mobile).
+        #[arg(long, default_value = "web")]
+        target: String,
+        /// Root page entry hash.
+        #[arg(long, default_value = "")]
+        root: String,
+        /// Extra closure roots.
+        #[arg(long = "include")]
+        includes: Vec<String>,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON instead of text.
+        #[arg(long)]
+        json: bool,
+    },
+
     /// Emit one artifact per OutputAspect at the given output directory.
     /// Security populates real findings from the dict closure; other
     /// aspects are empty scaffolds today.
@@ -826,9 +853,67 @@ fn main() {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
                 cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
             }
+            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json } => {
+                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json)
+            }
         },
     };
     process::exit(exit_code);
+}
+
+fn cmd_app_dream(
+    manifest_hash: &str,
+    name: &str,
+    target: &str,
+    root: &str,
+    includes: &[String],
+    dict_path: &Path,
+    json: bool,
+) -> i32 {
+    let manifest = nom_app::AppManifest {
+        manifest_hash: manifest_hash.to_string(),
+        name: name.to_string(),
+        default_target: target.to_string(),
+        root_page_hash: root.to_string(),
+        data_sources: includes.to_vec(),
+        actions: vec![],
+        media_assets: vec![],
+        settings: serde_json::Value::Null,
+    };
+    let proposals = if dict_path.exists() {
+        match NomDict::open_in_place(dict_path) {
+            Ok(d) => nom_app::criteria_proposals(&manifest, &d),
+            Err(e) => {
+                eprintln!("open dict {}: {e}", dict_path.display());
+                return 1;
+            }
+        }
+    } else {
+        Vec::new()
+    };
+    let is_epic = proposals.is_empty();
+    if json {
+        let doc = serde_json::json!({
+            "is_epic": is_epic,
+            "proposals": proposals,
+        });
+        println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
+    } else if is_epic {
+        println!("✨ dream: {name} is epic — no criteria proposals remain.");
+    } else {
+        println!("dream: {} proposal(s) for {name}:", proposals.len());
+        for (i, p) in proposals.iter().enumerate() {
+            println!("  {}. [{}] {}", i + 1, p.kind, p.rationale);
+            if let Some(sw) = &p.suggested_word {
+                let kind = p.suggested_entry_kind.as_deref().unwrap_or("?");
+                let concept = p.suggested_concept.as_deref().unwrap_or("-");
+                println!("     → author nomtu `{sw}` (kind={kind}, concept={concept})");
+            }
+        }
+        println!();
+        println!("Author the suggested nomtu, then re-run `nom app dream` until epic.");
+    }
+    if is_epic { 0 } else { 2 }
 }
 
 fn cmd_app_build(
