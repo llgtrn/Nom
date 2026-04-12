@@ -120,6 +120,8 @@ pub enum MediaError {
     Avif(String),
     #[error("AV1 codec error: {0}")]
     Av1(String),
+    #[error("AAC codec error: {0}")]
+    Aac(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -969,6 +971,103 @@ pub fn verify_av1_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     Ok(())
 }
 
+// ── AAC codec (§5.16.13 order #7) ─────────────────────────────────────
+
+/// Result of ingesting an ADTS-wrapped AAC byte slice. Contains decoded
+/// stream metadata and canonical bytes.
+///
+/// # Container format
+///
+/// Input must be ADTS-wrapped AAC (Audio Data Transport Stream): raw AAC
+/// payloads each preceded by a 7-byte ADTS header (or 9 bytes when CRC is
+/// present). Each frame starts with the 12-bit syncword `0xFFF`. This is
+/// the simplest AAC container and what `ffmpeg -f adts` produces. AAC
+/// inside MP4/ISOBMFF is order #9's concern, not this one.
+///
+/// # Encoder status
+///
+/// No mature pure-Rust AAC encoder exists on crates.io as of §5.16.13
+/// order #7. The §5.16.11 plan names `fdk-aac` (patent FFI, opt-in) and
+/// `faac` (C lib fallback) as future integration points. Both require C
+/// FFI and are deliberately deferred to avoid build complexity. For now,
+/// `canonical_bytes` is an identity copy of the input bytes (the same
+/// pattern used by Opus order #4, AVIF order #5, and AV1 order #6). The
+/// round-trip test re-parses the canonical bytes and asserts that
+/// `sample_rate`, `channels`, and `duration_ms` are identical. Once a
+/// pure-Rust encoder lands, the field will be replaced with re-encoded
+/// bytes at a fixed bitrate and complexity setting.
+///
+/// Tagged `body_kind = "aac"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedAac {
+    pub sample_rate: u32,
+    pub channels: u8,
+    /// Duration in milliseconds. Derived from the ADTS frame count:
+    /// `frame_count × 1024 × 1000 / sample_rate`. Each AAC frame decodes
+    /// to exactly 1024 PCM samples regardless of bitrate or profile.
+    pub duration_ms: u64,
+    /// Canonical ADTS-AAC bytes. Currently an identity copy of the input
+    /// (see struct-level doc for the encoder status note).
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode an ADTS-wrapped AAC byte slice and return an [`IngestedAac`]
+/// containing stream metadata and canonical bytes.
+///
+/// Input must be a sequence of ADTS frames (each beginning with syncword
+/// `0xFFF`). The `canonical_bytes` field is currently an identity copy of
+/// `bytes` because no pure-Rust AAC encoder is available; see
+/// [`IngestedAac`].
+///
+/// Returns [`MediaError::Aac`] on malformed or unsupported input.
+pub fn ingest_aac(bytes: &[u8]) -> Result<IngestedAac, MediaError> {
+    let (sample_rate, channels, duration_ms) = parse_adts_metadata(bytes)?;
+    // Identity mapping: awaiting pure-Rust AAC encoder.
+    // Future: replace with fdk-aac or faac FFI re-encode at a fixed
+    // bitrate (e.g. 128 kbps) for deterministic canonical bytes.
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedAac {
+        sample_rate,
+        channels,
+        duration_ms,
+        canonical_bytes,
+    })
+}
+
+/// Round-trip gate for ADTS-AAC.
+///
+/// Ingests `bytes` via [`ingest_aac`], then re-parses the canonical bytes.
+/// Asserts that `sample_rate`, `channels`, and `duration_ms` are identical
+/// on both sides.
+///
+/// With the current identity-mapping encoder `canonical_bytes` == input
+/// bytes, so both sides always agree. Once a real encoder lands this will
+/// catch regressions where the encoder changes stream parameters.
+///
+/// Returns [`MediaError::Aac`] if either parse fails or the metadata does
+/// not match.
+pub fn verify_aac_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_aac(bytes)?;
+    let (rt_sample_rate, rt_channels, rt_duration_ms) =
+        parse_adts_metadata(&ingested.canonical_bytes)?;
+    if ingested.sample_rate != rt_sample_rate
+        || ingested.channels != rt_channels
+        || ingested.duration_ms != rt_duration_ms
+    {
+        return Err(MediaError::Aac(format!(
+            "metadata mismatch after round-trip: \
+             original=({},{},{}ms) canonical=({},{},{}ms)",
+            ingested.sample_rate,
+            ingested.channels,
+            ingested.duration_ms,
+            rt_sample_rate,
+            rt_channels,
+            rt_duration_ms,
+        )));
+    }
+    Ok(())
+}
+
 // ── Private helpers ───────────────────────────────────────────────────
 
 /// Parse AVIF container metadata.
@@ -1118,6 +1217,140 @@ fn parse_ivf_metadata(bytes: &[u8]) -> Result<(u32, u32, u32, u64), MediaError> 
     let effective_count = if frame_count == 0 { counted } else { frame_count };
 
     Ok((width, height, effective_count, duration_ms))
+}
+
+/// Parse ADTS-wrapped AAC stream metadata by walking the frame headers.
+///
+/// ADTS header layout (7 bytes, `protection_absent = 1`; 9 bytes when
+/// `protection_absent = 0` and a 2-byte CRC follows):
+///
+/// ```text
+/// bits  field
+///   12  syncword                       (must be 0xFFF)
+///    1  ID                             (0 = MPEG-4, 1 = MPEG-2)
+///    2  layer                          (must be 00)
+///    1  protection_absent              (1 = no CRC, header is 7 bytes;
+///                                       0 = CRC present, header is 9 bytes)
+///    2  profile_ObjectType             (actual AAC profile = value + 1)
+///    4  sampling_frequency_index       (index into ADTS_FREQ_TABLE)
+///    1  private_bit                    (ignored)
+///    3  channel_configuration          (0 = inband; 1–7 = direct count)
+///    1  originality/copy
+///    1  home
+///    1  copyright_id_bit
+///    1  copyright_id_start
+///   13  aac_frame_length               (header + CRC + payload, in bytes)
+///   11  adts_buffer_fullness           (0x7FF = VBR)
+///    2  number_of_raw_data_blocks + 1
+/// ```
+///
+/// `sample_rate` and `channels` are read from the **first** valid frame.
+/// `duration_ms` = `frame_count × 1024 × 1000 / sample_rate`
+/// (each AAC frame always decodes to exactly 1024 PCM samples).
+///
+/// Returns [`MediaError::Aac`] if no valid ADTS frames are found or the
+/// byte slice is malformed.
+fn parse_adts_metadata(bytes: &[u8]) -> Result<(u32, u8, u64), MediaError> {
+    /// ADTS sampling-frequency index table (ISO 14496-3 Table 1.13).
+    const ADTS_FREQ_TABLE: [u32; 13] = [
+        96000, 88200, 64000, 48000, 44100, 32000, 24000, 22050, 16000, 12000, 11025, 8000, 7350,
+    ];
+
+    if bytes.len() < 7 {
+        return Err(MediaError::Aac(format!(
+            "byte slice too short for ADTS: {} bytes",
+            bytes.len()
+        )));
+    }
+
+    let mut offset: usize = 0;
+    let mut frame_count: u64 = 0;
+    let mut first_sample_rate: u32 = 0;
+    let mut first_channels: u8 = 0;
+
+    while offset + 7 <= bytes.len() {
+        let b0 = bytes[offset];
+        let b1 = bytes[offset + 1];
+
+        // Verify 12-bit syncword (top 8 bits of b0, top 4 bits of b1).
+        let sync = ((b0 as u16) << 4) | ((b1 as u16) >> 4);
+        if sync != 0xFFF {
+            // Not a syncword at this offset — stream is malformed or
+            // we hit padding. Stop walking.
+            break;
+        }
+
+        let protection_absent = b1 & 0x01; // 1 = no CRC (7-byte header)
+        let header_len: usize = if protection_absent == 1 { 7 } else { 9 };
+
+        if offset + header_len > bytes.len() {
+            break;
+        }
+
+        let b2 = bytes[offset + 2];
+        let b3 = bytes[offset + 3];
+        let b4 = bytes[offset + 4];
+        let b5 = bytes[offset + 5];
+        let b6 = bytes[offset + 6];
+
+        // sampling_frequency_index: bits [3:0] of b2 shifted right by 2
+        // (bits 18..15 of the 28-bit header word, zero-indexed from MSB).
+        let freq_idx = (b2 >> 2) & 0x0F;
+        if freq_idx as usize >= ADTS_FREQ_TABLE.len() {
+            return Err(MediaError::Aac(format!(
+                "invalid sampling_frequency_index {freq_idx} at frame {frame_count}"
+            )));
+        }
+        let sample_rate = ADTS_FREQ_TABLE[freq_idx as usize];
+
+        // channel_configuration: bit 0 of b2 (high bit) | bits [7:6] of b3
+        // (bits 14..12 of the 28-bit header word).
+        let chan_cfg = ((b2 & 0x01) << 2) | ((b3 >> 6) & 0x03);
+
+        // aac_frame_length: bits [1:0] of b3 | b4 | bits [7:5] of b5
+        // (bits 12..0 of a 13-bit field across b3..b5).
+        let frame_length = (((b3 & 0x03) as usize) << 11)
+            | ((b4 as usize) << 3)
+            | (((b5 >> 5) & 0x07) as usize);
+
+        if frame_length < header_len {
+            return Err(MediaError::Aac(format!(
+                "aac_frame_length {frame_length} < header_len {header_len} at frame {frame_count}"
+            )));
+        }
+        if offset + frame_length > bytes.len() {
+            // Truncated last frame — count what we have and stop.
+            break;
+        }
+
+        // Discard b5/b6 fields (buffer_fullness, raw_data_blocks) — not
+        // needed for metadata extraction.
+        let _ = b5;
+        let _ = b6;
+
+        // Record metadata from the first valid frame.
+        if frame_count == 0 {
+            first_sample_rate = sample_rate;
+            // channel_configuration 0 means channel count is signalled
+            // in-band (inside the raw_data_block). Treat as mono (1)
+            // for metadata purposes; real decoders handle inband config.
+            first_channels = if chan_cfg == 0 { 1 } else { chan_cfg };
+        }
+
+        frame_count += 1;
+        offset += frame_length;
+    }
+
+    if frame_count == 0 {
+        return Err(MediaError::Aac(
+            "no valid ADTS frames found (bad syncword or empty input)".to_owned(),
+        ));
+    }
+
+    // Each AAC frame always decodes to exactly 1024 PCM samples.
+    let duration_ms = frame_count * 1024 * 1000 / first_sample_rate as u64;
+
+    Ok((first_sample_rate, first_channels, duration_ms))
 }
 
 #[cfg(test)]
