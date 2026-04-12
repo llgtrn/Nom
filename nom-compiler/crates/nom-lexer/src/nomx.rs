@@ -74,20 +74,62 @@ pub enum NomxToken {
     Eof,
 }
 
+/// A half-open byte range `[start, end)` into the source string.
+/// Mirrors `nom_ast::Span` but kept local — the nomx grammar tracks
+/// its own spans until the two lexers merge.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct NomxSpan {
+    pub start: usize,
+    pub end: usize,
+}
+
+impl NomxSpan {
+    pub fn new(start: usize, end: usize) -> Self {
+        Self { start, end }
+    }
+}
+
+/// Token paired with its source span. Preferred by downstream parser
+/// work; `tokenize_nomx` wraps this for callers that only need the
+/// bare token stream.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SpannedNomxToken {
+    pub token: NomxToken,
+    pub span: NomxSpan,
+}
+
 /// Tokenize `source` into `NomxToken`s. Articles (`a`, `an`, `the`)
 /// are stripped — they carry no semantic weight in the target grammar
-/// (see proposal 05 §4.8).
+/// (see proposal 05 §4.8). Thin wrapper over
+/// [`tokenize_nomx_with_spans`]; drops the span info.
+pub fn tokenize_nomx(source: &str) -> Vec<NomxToken> {
+    tokenize_nomx_with_spans(source)
+        .into_iter()
+        .map(|s| s.token)
+        .collect()
+}
+
+/// Same as [`tokenize_nomx`] but each token carries its source span.
+/// Parser diagnostics + LSP hover/goto-def will consume this form.
 ///
 /// Whitespace separates tokens; newlines and indentation are not
 /// meaningful at this layer. Sentence boundary (`.`) and comma (`,`)
 /// are preserved as structural punctuation.
-pub fn tokenize_nomx(source: &str) -> Vec<NomxToken> {
-    let mut out: Vec<NomxToken> = Vec::new();
+pub fn tokenize_nomx_with_spans(source: &str) -> Vec<SpannedNomxToken> {
+    let mut out: Vec<SpannedNomxToken> = Vec::new();
     let bytes = source.as_bytes();
     let mut i = 0usize;
 
+    let push = |out: &mut Vec<SpannedNomxToken>, tok: NomxToken, start: usize, end: usize| {
+        out.push(SpannedNomxToken {
+            token: tok,
+            span: NomxSpan::new(start, end),
+        });
+    };
+
     while i < bytes.len() {
         let c = bytes[i];
+        let tok_start = i;
         match c {
             b' ' | b'\t' | b'\r' | b'\n' => {
                 i += 1;
@@ -98,77 +140,77 @@ pub fn tokenize_nomx(source: &str) -> Vec<NomxToken> {
                 }
             }
             b':' => {
-                out.push(NomxToken::Colon);
                 i += 1;
+                push(&mut out, NomxToken::Colon, tok_start, i);
             }
             b',' => {
-                out.push(NomxToken::Comma);
                 i += 1;
+                push(&mut out, NomxToken::Comma, tok_start, i);
             }
             b'.' => {
-                out.push(NomxToken::Period);
                 i += 1;
+                push(&mut out, NomxToken::Period, tok_start, i);
             }
             b'(' => {
-                out.push(NomxToken::LParen);
                 i += 1;
+                push(&mut out, NomxToken::LParen, tok_start, i);
             }
             b')' => {
-                out.push(NomxToken::RParen);
                 i += 1;
+                push(&mut out, NomxToken::RParen, tok_start, i);
             }
             b'{' => {
-                out.push(NomxToken::LBrace);
                 i += 1;
+                push(&mut out, NomxToken::LBrace, tok_start, i);
             }
             b'}' => {
-                out.push(NomxToken::RBrace);
                 i += 1;
+                push(&mut out, NomxToken::RBrace, tok_start, i);
             }
             b'"' => {
-                // Plain string literal; no escapes yet.
                 i += 1;
-                let start = i;
+                let content_start = i;
                 while i < bytes.len() && bytes[i] != b'"' {
                     i += 1;
                 }
-                let lit = std::str::from_utf8(&bytes[start..i]).unwrap_or("").to_string();
+                let lit = std::str::from_utf8(&bytes[content_start..i])
+                    .unwrap_or("")
+                    .to_string();
                 if i < bytes.len() {
                     i += 1;
                 }
-                out.push(NomxToken::StringLit(lit));
+                push(&mut out, NomxToken::StringLit(lit), tok_start, i);
             }
             c if c.is_ascii_digit() => {
-                let start = i;
                 while i < bytes.len() && (bytes[i].is_ascii_digit() || bytes[i] == b'.') {
                     i += 1;
                 }
-                let s = std::str::from_utf8(&bytes[start..i]).unwrap_or("").to_string();
-                out.push(NomxToken::Number(s));
+                let s = std::str::from_utf8(&bytes[tok_start..i])
+                    .unwrap_or("")
+                    .to_string();
+                push(&mut out, NomxToken::Number(s), tok_start, i);
             }
             c if c.is_ascii_alphabetic() || c == b'_' => {
-                let start = i;
                 while i < bytes.len()
                     && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_' || bytes[i] == b'-')
                 {
                     i += 1;
                 }
-                let word = std::str::from_utf8(&bytes[start..i]).unwrap_or("");
+                let word = std::str::from_utf8(&bytes[tok_start..i]).unwrap_or("");
                 if let Some(tok) = keyword_token(word) {
-                    out.push(tok);
+                    push(&mut out, tok, tok_start, i);
                 } else if is_article(word) {
                     // Stripped per §4.8.
                 } else {
-                    out.push(NomxToken::Identifier(word.to_string()));
+                    push(&mut out, NomxToken::Identifier(word.to_string()), tok_start, i);
                 }
             }
             _ => {
-                // Unknown byte — skip. Real lexer will recover + diagnose.
                 i += 1;
             }
         }
     }
-    out.push(NomxToken::Eof);
+    push(&mut out, NomxToken::Eof, i, i);
     out
 }
 
@@ -312,6 +354,26 @@ mod tests {
         // Body contains the string literal and the `is` linking verb.
         assert!(toks.iter().any(|t| matches!(t, StringLit(s) if s == "hello ")));
         assert!(toks.contains(&Is));
+    }
+
+    #[test]
+    fn spans_point_at_source_bytes() {
+        let src = "define greet";
+        let spanned = tokenize_nomx_with_spans(src);
+        // Find Define + Identifier; their spans must slice to the
+        // matching substrings in the original source.
+        let define_tok = spanned.iter().find(|s| s.token == NomxToken::Define).unwrap();
+        assert_eq!(&src[define_tok.span.start..define_tok.span.end], "define");
+        let ident = spanned
+            .iter()
+            .find(|s| matches!(&s.token, NomxToken::Identifier(n) if n == "greet"))
+            .unwrap();
+        assert_eq!(&src[ident.span.start..ident.span.end], "greet");
+        // Eof span points at source length.
+        let eof = spanned.last().unwrap();
+        assert_eq!(eof.token, NomxToken::Eof);
+        assert_eq!(eof.span.start, src.len());
+        assert_eq!(eof.span.end, src.len());
     }
 
     #[test]
