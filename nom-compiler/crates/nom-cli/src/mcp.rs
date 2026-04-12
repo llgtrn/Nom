@@ -499,14 +499,22 @@ fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
         media_assets: vec![],
         settings: Value::Null,
     };
-    let proposals = nom_app::criteria_proposals(&manifest, dict);
-    let summary = if proposals.is_empty() {
-        "App is epic — no criteria proposals (closure fully satisfies criteria).".to_string()
+    let report = nom_app::dream_report(&manifest, dict);
+    let summary = if report.is_epic {
+        format!(
+            "App is epic — score {}/{}. No further authoring needed.",
+            report.app_score, report.score_threshold
+        )
     } else {
         format!(
-            "{} criteria proposal(s). Address each by authoring the suggested nomtu \
-             or lifting the target entry.",
-            proposals.len()
+            "Score {}/{} with {} proposal(s). Query the dict (list_nomtu, \
+             search_nomtu, get_concept) then author nomtu via `nom store add` \
+             and re-run `criteria_proposals` until score ≥ {}. If the dict is \
+             exhausted, ask the user whether to skip.",
+            report.app_score,
+            report.score_threshold,
+            report.proposals.len(),
+            report.score_threshold,
         )
     };
     ok_response(
@@ -516,10 +524,7 @@ fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
                 {"type": "text", "text": summary},
                 {
                     "type": "text",
-                    "text": serde_json::to_string_pretty(&json!({
-                        "is_epic": proposals.is_empty(),
-                        "proposals": proposals,
-                    })).unwrap_or_default()
+                    "text": serde_json::to_string_pretty(&report).unwrap_or_default()
                 }
             ]
         }),

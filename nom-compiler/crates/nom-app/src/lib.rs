@@ -599,7 +599,7 @@ fn build_criteria_aspect(
             word: &e.word,
         })
         .collect();
-    let proposals = collect_proposals(manifest, &entries, dict);
+    let report = dream_report(manifest, dict);
     let doc = serde_json::json!({
         "app": manifest.name,
         "manifest_hash": manifest.manifest_hash,
@@ -607,8 +607,11 @@ fn build_criteria_aspect(
         "complete": complete,
         "partial": partial,
         "test_cases": tests,
-        "proposals": proposals,
-        "is_epic": proposals.is_empty(),
+        "app_score": report.app_score,
+        "score_threshold": report.score_threshold,
+        "is_epic": report.is_epic,
+        "proposals": report.proposals,
+        "next_instruction": report.next_instruction,
     });
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
@@ -741,6 +744,98 @@ pub fn criteria_proposals(
 ) -> Vec<Proposal> {
     let entries = closure_entries(manifest, dict);
     collect_proposals(manifest, &entries, dict)
+}
+
+/// Epic threshold in 0..=100 points. Dreaming mode stops when the
+/// computed app_score exceeds this value, per user directive:
+/// "recompose the .nom in loop until scoring match higher 95".
+pub const EPIC_SCORE_THRESHOLD: u32 = 95;
+
+/// Dreaming-mode report surfaced both by `nom app dream` and the
+/// Criteria aspect. The LLM consumes this across iterations to decide
+/// whether to keep authoring, ask the user to skip, or stop (epic).
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct DreamReport {
+    /// 0..=100 blended fitness score. `is_epic` iff score ≥ threshold.
+    pub app_score: u32,
+    pub score_threshold: u32,
+    pub is_epic: bool,
+    pub closure_size: usize,
+    pub complete: usize,
+    pub partial: usize,
+    pub test_cases: usize,
+    pub proposals: Vec<Proposal>,
+    /// Directive surfaced to the LLM each iteration: "query more,
+    /// then recompose". Empty when epic.
+    pub next_instruction: String,
+}
+
+/// Compute a DreamReport for the manifest — the single source of
+/// truth for both Criteria-aspect scoring and the dream CLI.
+pub fn dream_report(manifest: &AppManifest, dict: &nom_dict::NomDict) -> DreamReport {
+    let entries = closure_entries(manifest, dict);
+    let proposals = collect_proposals(manifest, &entries, dict);
+    let closure_size = entries.len();
+    let complete = entries
+        .iter()
+        .filter(|e| e.status == nom_types::EntryStatus::Complete)
+        .count();
+    let partial = entries
+        .iter()
+        .filter(|e| e.status == nom_types::EntryStatus::Partial)
+        .count();
+    let test_cases = entries
+        .iter()
+        .filter(|e| e.kind == nom_types::EntryKind::TestCase)
+        .count();
+
+    let app_score = compute_app_score(closure_size, complete, test_cases, proposals.len());
+    let is_epic = app_score >= EPIC_SCORE_THRESHOLD;
+    let next_instruction = if is_epic {
+        String::new()
+    } else {
+        format!(
+            "Query the dict (list_nomtu / search_nomtu / get_concept) for the \
+             suggested_word + suggested_concept of each proposal, then author \
+             matching nomtu (`nom store add`) or lift Partial entries to \
+             Complete. Re-run `nom app dream` after each batch. Target score: \
+             ≥{EPIC_SCORE_THRESHOLD}. If you have exhausted the dict without \
+             reaching epic, ask the user whether to skip this manifest."
+        )
+    };
+    DreamReport {
+        app_score,
+        score_threshold: EPIC_SCORE_THRESHOLD,
+        is_epic,
+        closure_size,
+        complete,
+        partial,
+        test_cases,
+        proposals,
+        next_instruction,
+    }
+}
+
+/// Blended 0..=100 fitness score. Four 25-point axes:
+///   - closure breadth: min(closure_size / 8, 1) × 25
+///   - completeness:    (complete / closure_size) × 25
+///   - test coverage:   min(test_cases / 2, 1) × 25
+///   - gap cleanliness: max(0, 1 − proposal_count / 8) × 25
+/// Empty closures score 0 (no breadth, no completeness).
+fn compute_app_score(
+    closure_size: usize,
+    complete: usize,
+    test_cases: usize,
+    proposal_count: usize,
+) -> u32 {
+    if closure_size == 0 {
+        return 0;
+    }
+    let breadth = (closure_size as f64 / 8.0).min(1.0) * 25.0;
+    let completeness = (complete as f64 / closure_size as f64) * 25.0;
+    let tests = (test_cases as f64 / 2.0).min(1.0) * 25.0;
+    let cleanliness = (1.0 - (proposal_count as f64 / 8.0)).max(0.0) * 25.0;
+    (breadth + completeness + tests + cleanliness).round() as u32
 }
 
 fn severity_rank(s: &nom_types::Severity) -> u8 {
@@ -1149,6 +1244,71 @@ mod tests {
         // Deterministic: run again, same order.
         let again = criteria_proposals(&manifest, &dict);
         assert_eq!(proposals, again);
+    }
+
+    #[test]
+    fn dream_report_scores_zero_for_empty_and_high_for_clean() {
+        use nom_dict::NomDict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let manifest_empty = AppManifest {
+            manifest_hash: "m".into(),
+            name: "e".into(),
+            default_target: "web".into(),
+            root_page_hash: String::new(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let r0 = dream_report(&manifest_empty, &dict);
+        assert_eq!(r0.app_score, 0);
+        assert!(!r0.is_epic);
+        assert!(!r0.next_instruction.is_empty());
+
+        // Build a broad, complete, well-tested closure.
+        let mk = |id: &str, kind: EntryKind, status: EntryStatus| Entry {
+            id: id.into(),
+            word: id.into(),
+            variant: None,
+            kind,
+            language: "nom".into(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        for i in 0..8 {
+            let id = format!("ok{i}");
+            dict.upsert_entry(&mk(&id, EntryKind::Function, EntryStatus::Complete))
+                .unwrap();
+        }
+        dict.upsert_entry(&mk("t1", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
+        dict.upsert_entry(&mk("t2", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
+        let manifest_epic = AppManifest {
+            manifest_hash: "m2".into(),
+            name: "epic".into(),
+            default_target: "web".into(),
+            root_page_hash: "ok0".into(),
+            data_sources: (1..8).map(|i| format!("ok{i}")).collect(),
+            actions: vec!["t1".into(), "t2".into()],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let r1 = dream_report(&manifest_epic, &dict);
+        assert!(r1.app_score >= EPIC_SCORE_THRESHOLD, "got {}", r1.app_score);
+        assert!(r1.is_epic);
+        assert_eq!(r1.next_instruction, "");
     }
 
     #[test]

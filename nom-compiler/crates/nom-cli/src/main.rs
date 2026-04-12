@@ -880,29 +880,35 @@ fn cmd_app_dream(
         media_assets: vec![],
         settings: serde_json::Value::Null,
     };
-    let proposals = if dict_path.exists() {
+    let report = if dict_path.exists() {
         match NomDict::open_in_place(dict_path) {
-            Ok(d) => nom_app::criteria_proposals(&manifest, &d),
+            Ok(d) => nom_app::dream_report(&manifest, &d),
             Err(e) => {
                 eprintln!("open dict {}: {e}", dict_path.display());
                 return 1;
             }
         }
     } else {
-        Vec::new()
+        nom_app::dream_report(&manifest, &NomDict::open_in_memory().unwrap())
     };
-    let is_epic = proposals.is_empty();
     if json {
-        let doc = serde_json::json!({
-            "is_epic": is_epic,
-            "proposals": proposals,
-        });
-        println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
-    } else if is_epic {
-        println!("✨ dream: {name} is epic — no criteria proposals remain.");
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&report).unwrap_or_default()
+        );
+    } else if report.is_epic {
+        println!(
+            "✨ dream: {name} is epic — score {} ≥ {} threshold.",
+            report.app_score, report.score_threshold
+        );
     } else {
-        println!("dream: {} proposal(s) for {name}:", proposals.len());
-        for (i, p) in proposals.iter().enumerate() {
+        println!(
+            "dream: {name} score {}/{} — {} proposal(s):",
+            report.app_score,
+            report.score_threshold,
+            report.proposals.len()
+        );
+        for (i, p) in report.proposals.iter().enumerate() {
             println!("  {}. [{}] {}", i + 1, p.kind, p.rationale);
             if let Some(sw) = &p.suggested_word {
                 let kind = p.suggested_entry_kind.as_deref().unwrap_or("?");
@@ -911,9 +917,9 @@ fn cmd_app_dream(
             }
         }
         println!();
-        println!("Author the suggested nomtu, then re-run `nom app dream` until epic.");
+        println!("{}", report.next_instruction);
     }
-    if is_epic { 0 } else { 2 }
+    if report.is_epic { 0 } else { 2 }
 }
 
 fn cmd_app_build(
