@@ -21,6 +21,8 @@
 
 use std::io::Cursor;
 
+use flacenc::component::BitRepr;
+use flacenc::error::Verify;
 use image::{
     codecs::png::{CompressionType, FilterType, PngEncoder},
     ColorType, ExtendedColorType, ImageEncoder, ImageReader,
@@ -108,6 +110,8 @@ pub enum MediaError {
     Io(#[from] std::io::Error),
     #[error("PNG codec error: {0}")]
     Png(String),
+    #[error("FLAC codec error: {0}")]
+    Flac(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -211,6 +215,96 @@ pub fn verify_png_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     Ok(())
 }
 
+// ── FLAC codec (§5.16.13 order #2) ───────────────────────────────────
+
+/// Result of ingesting a FLAC byte slice. Contains decoded stream
+/// metadata and canonical re-encoded bytes.
+///
+/// `canonical_bytes` are re-encoded at fixed deterministic settings
+/// (see [`ingest_flac`]) using `flacenc` (pure-Rust encoder).
+#[derive(Debug, Clone)]
+pub struct IngestedFlac {
+    pub sample_rate: u32,
+    pub channels: u8,
+    pub bits_per_sample: u8,
+    /// Total PCM samples across all channels (frames × channels).
+    pub total_samples: u64,
+    /// Canonical re-encoded FLAC bytes at fixed deterministic settings.
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode a FLAC byte slice and return an [`IngestedFlac`] containing
+/// stream metadata and deterministically re-encoded canonical bytes.
+///
+/// # Deterministic re-encode settings
+///
+/// Re-encoding uses `flacenc::config::Encoder::default()` which
+/// selects a fixed compression level. The default encoder config is
+/// stable across patch releases, producing byte-identical output for
+/// the same PCM input. The encoder is pure-Rust (`flacenc` crate) with
+/// no FFI dependency.
+///
+/// # Known limitation
+///
+/// `total_samples` is reported as `frames × channels` (all-channel
+/// sample count). The FLAC streaminfo `samples` field stores per-channel
+/// frame count; we multiply by channels to match the documented field
+/// semantics.
+///
+/// Returns [`MediaError::Flac`] on malformed or unsupported FLAC input.
+pub fn ingest_flac(bytes: &[u8]) -> Result<IngestedFlac, MediaError> {
+    let (sample_rate, channels, bits_per_sample, pcm_samples) = decode_flac_pcm(bytes)?;
+
+    // Total samples = per-channel frame count × channel count.
+    let total_samples = pcm_samples.len() as u64;
+
+    // Re-encode to canonical bytes using flacenc (pure-Rust).
+    let canonical_bytes =
+        encode_flac_deterministic(&pcm_samples, channels, bits_per_sample, sample_rate)?;
+
+    Ok(IngestedFlac {
+        sample_rate,
+        channels,
+        bits_per_sample,
+        total_samples,
+        canonical_bytes,
+    })
+}
+
+/// Verify that decoding `bytes` and re-encoding produces sample-identical
+/// output to decoding the re-encoded bytes.
+///
+/// Asserts **sample-equality**, not byte-equality — FLAC frame packing
+/// is not bit-stable across encoder versions even at fixed settings.
+///
+/// Returns `Ok(())` if PCM samples match, or [`MediaError::Flac`] on
+/// any decode/encode failure or sample mismatch.
+pub fn verify_flac_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_flac(bytes)?;
+
+    // Decode the canonical bytes back to PCM.
+    let (_, _, _, roundtrip_samples) = decode_flac_pcm(&ingested.canonical_bytes)?;
+
+    if ingested.total_samples != roundtrip_samples.len() as u64 {
+        return Err(MediaError::Flac(format!(
+            "sample count mismatch after round-trip: original={} canonical={}",
+            ingested.total_samples,
+            roundtrip_samples.len()
+        )));
+    }
+
+    // Decode original PCM for comparison.
+    let (_, _, _, original_samples) = decode_flac_pcm(bytes)?;
+
+    if original_samples != roundtrip_samples {
+        return Err(MediaError::Flac(
+            "sample mismatch after FLAC round-trip re-encode".to_owned(),
+        ));
+    }
+
+    Ok(())
+}
+
 // ── Private helpers ───────────────────────────────────────────────────
 
 fn color_type_label(ct: ColorType) -> String {
@@ -256,6 +350,69 @@ fn encode_png_deterministic(img: &image::DynamicImage) -> Result<Vec<u8>, MediaE
 /// Flatten any colour type to RGBA8 for pixel-equality comparison.
 fn image_to_rgba8(img: &image::DynamicImage) -> Vec<u8> {
     img.to_rgba8().into_raw()
+}
+
+/// Decode a FLAC byte slice using `claxon` (pure-Rust decoder).
+///
+/// Returns `(sample_rate, channels, bits_per_sample, pcm_samples)` where
+/// `pcm_samples` is interleaved across all channels in sample order.
+fn decode_flac_pcm(
+    bytes: &[u8],
+) -> Result<(u32, u8, u8, Vec<i32>), MediaError> {
+    let cursor = Cursor::new(bytes);
+    let mut reader =
+        claxon::FlacReader::new(cursor).map_err(|e| MediaError::Flac(e.to_string()))?;
+
+    let info = reader.streaminfo();
+    let sample_rate = info.sample_rate;
+    let channels = info
+        .channels
+        .try_into()
+        .map_err(|_| MediaError::Flac(format!("channel count {} overflows u8", info.channels)))?;
+    let bits_per_sample = info.bits_per_sample.try_into().map_err(|_| {
+        MediaError::Flac(format!(
+            "bits_per_sample {} overflows u8",
+            info.bits_per_sample
+        ))
+    })?;
+
+    let pcm_samples: Result<Vec<i32>, _> = reader.samples().collect();
+    let pcm_samples = pcm_samples.map_err(|e| MediaError::Flac(e.to_string()))?;
+
+    Ok((sample_rate, channels, bits_per_sample, pcm_samples))
+}
+
+/// Re-encode PCM samples to FLAC bytes using `flacenc` (pure-Rust encoder).
+///
+/// Uses the default encoder config for determinism. The `flacenc` default
+/// is stable within a crate version, producing byte-identical output for
+/// the same interleaved `i32` PCM input.
+fn encode_flac_deterministic(
+    pcm_samples: &[i32],
+    channels: u8,
+    bits_per_sample: u8,
+    sample_rate: u32,
+) -> Result<Vec<u8>, MediaError> {
+    let config = flacenc::config::Encoder::default()
+        .into_verified()
+        .map_err(|(_, e)| MediaError::Flac(format!("encoder config error: {e:?}")))?;
+
+    let source = flacenc::source::MemSource::from_samples(
+        pcm_samples,
+        channels as usize,
+        bits_per_sample as usize,
+        sample_rate as usize,
+    );
+
+    let flac_stream = flacenc::encode_with_fixed_block_size(&config, source, config.block_size)
+        .map_err(|e| MediaError::Flac(format!("encode error: {e}")))?;
+
+    let mut sink = flacenc::bitsink::ByteSink::new();
+    flac_stream
+        .write(&mut sink)
+        .map_err(|e| MediaError::Flac(format!("bitstream write error: {e}")))?;
+
+    Ok(sink.as_slice().to_vec())
 }
 
 #[cfg(test)]
