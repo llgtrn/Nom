@@ -13,3 +13,8 @@ claxon = "0.4"
 flacenc = { version = "0.5", default-features = false }
 ogg = "0.9"
 opus-decoder = "0.1"
+# AVIF codec (§5.16.13 order #5) — pure-Rust path
+# avif-parse: ISOBMFF container parse for validation + AV1 metadata extraction
+# ravif + avif-serialize: pure-Rust AV1 encoder (pending decode path)
+# rav1d: pure-Rust AV1 decoder (pending integration, requires nasm-less build)
+avif-parse = { version = "2", default-features = false }

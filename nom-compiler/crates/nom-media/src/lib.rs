@@ -116,6 +116,8 @@ pub enum MediaError {
     Jpeg(String),
     #[error("Opus codec error: {0}")]
     Opus(String),
+    #[error("AVIF codec error: {0}")]
+    Avif(String),
 }
 
 // ── PNG codec (§5.16.13 order #1) ────────────────────────────────────
@@ -805,6 +807,122 @@ fn decode_flac_pcm(
     let pcm_samples = pcm_samples.map_err(|e| MediaError::Flac(e.to_string()))?;
 
     Ok((sample_rate, channels, bits_per_sample, pcm_samples))
+}
+
+// ── AVIF codec (§5.16.13 order #5 — §4.4.6 canonical still-image format) ─
+
+/// Result of ingesting an AVIF byte slice. Contains image dimensions,
+/// colour type, and canonical bytes.
+///
+/// # Encoder status
+///
+/// No pure-Rust AVIF decoder is available as of §5.16.13 order #5 that
+/// integrates cleanly on Windows without FFI or nasm. `canonical_bytes`
+/// is therefore set to a copy of the input bytes (identity mapping).
+/// `ravif` (pure-Rust AV1 encoder) is available and will be used once a
+/// pure-Rust decoder lands so that pixels can be extracted, processed,
+/// and re-encoded at fixed deterministic settings.
+///
+/// The round-trip gate (`verify_avif_roundtrip`) validates that both the
+/// original and canonical bytes parse as well-formed AVIF containers.
+/// With identity mapping the containers are the same bytes, so PSNR is
+/// implicitly infinite.
+///
+/// Tagged `body_kind = "avif"` in the dict.
+#[derive(Debug, Clone)]
+pub struct IngestedAvif {
+    pub width: u32,
+    pub height: u32,
+    /// Human-readable colour type label derived from the AV1 sequence
+    /// header, e.g. `"yuv420_8bit"`, `"yuv444_8bit"`, `"mono_8bit"`.
+    pub color_type: String,
+    /// Canonical AVIF bytes. Currently an identity copy of the input
+    /// (see struct-level doc for the encoder status note).
+    pub canonical_bytes: Vec<u8>,
+}
+
+/// Decode an AVIF byte slice and return an [`IngestedAvif`] containing
+/// image dimensions, colour type, and canonical bytes.
+///
+/// Input must be a complete AVIF file (ISO-BMFF container with AV1
+/// still-picture payload). The `canonical_bytes` field is currently an
+/// identity copy of `bytes` because no pure-Rust AVIF decoder is
+/// available for Windows without nasm or FFI; see [`IngestedAvif`].
+///
+/// Returns [`MediaError::Avif`] on malformed or unsupported input.
+pub fn ingest_avif(bytes: &[u8]) -> Result<IngestedAvif, MediaError> {
+    let (width, height, color_type) = parse_avif_metadata(bytes)?;
+    // Identity mapping: awaiting pure-Rust AVIF decoder.
+    // When a decoder is available, replace this with ravif re-encode at
+    // fixed quality and speed settings for deterministic output.
+    let canonical_bytes = bytes.to_vec();
+    Ok(IngestedAvif {
+        width,
+        height,
+        color_type,
+        canonical_bytes,
+    })
+}
+
+/// Lossy round-trip gate for AVIF.
+///
+/// Validates that `bytes` is a well-formed AVIF container, ingests it
+/// via [`ingest_avif`], then validates the canonical bytes as well.
+/// Returns `Ok(())` if both containers parse successfully.
+///
+/// # PSNR note
+///
+/// With the current identity-mapping encoder, `canonical_bytes` == input
+/// bytes, so both represent the same image data and PSNR is implicitly
+/// infinite (well above the 30 dB gate). Once a pure-Rust decoder lands,
+/// this function will decode both sides and compute explicit PSNR ≥ 30 dB
+/// (the same threshold as JPEG), rejecting encodes that degrade quality
+/// excessively.
+///
+/// Returns [`MediaError::Avif`] if either parse fails.
+pub fn verify_avif_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
+    let ingested = ingest_avif(bytes)?;
+    // Validate the canonical bytes also parse (with identity mapping they
+    // are the same as the input, so this always succeeds if ingest did).
+    let _ = parse_avif_metadata(&ingested.canonical_bytes)?;
+    Ok(())
+}
+
+// ── Private helpers ───────────────────────────────────────────────────
+
+/// Parse AVIF container metadata.
+///
+/// Returns `(width, height, color_type_label)` where dimensions are in
+/// pixels and colour type is derived from the AV1 sequence header.
+fn parse_avif_metadata(bytes: &[u8]) -> Result<(u32, u32, String), MediaError> {
+    use avif_parse::AvifData;
+    let mut cursor = Cursor::new(bytes);
+    let avif = AvifData::from_reader(&mut cursor)
+        .map_err(|e| MediaError::Avif(format!("AVIF container parse failed: {e}")))?;
+    let meta = avif
+        .primary_item_metadata()
+        .map_err(|e| MediaError::Avif(format!("AV1 sequence header parse failed: {e}")))?;
+    let width = meta.max_frame_width.get();
+    let height = meta.max_frame_height.get();
+    let color_type = avif_color_type_label(&meta);
+    Ok((width, height, color_type))
+}
+
+/// Derive a human-readable colour type label from AV1 sequence metadata.
+///
+/// The label encodes chroma subsampling + bit depth, matching AV1
+/// native storage rather than decoded-output formats such as `"rgba8"`.
+fn avif_color_type_label(meta: &avif_parse::AV1Metadata) -> String {
+    if meta.monochrome {
+        return format!("mono_{}bit", meta.bit_depth);
+    }
+    let subsampling = match meta.chroma_subsampling {
+        (true, true) => "yuv420",
+        (true, false) => "yuv422",
+        (false, false) => "yuv444",
+        _ => "yuv420", // fallback for non-standard combinations
+    };
+    format!("{subsampling}_{}bit", meta.bit_depth)
 }
 
 /// Re-encode PCM samples to FLAC bytes using `flacenc` (pure-Rust encoder).
