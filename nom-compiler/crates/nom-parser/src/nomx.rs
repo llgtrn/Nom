@@ -837,6 +837,25 @@ mod tests {
     }
 
     #[test]
+    fn when_without_comma_errors() {
+        // `when <cond>, <then>` — dropping the comma (writing
+        // `when flag. go.`) stops the cond scan at `.`, then the
+        // expect(Comma) fires pointing at the period.
+        let src = "define f:\n  when flag. go.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`,` after `when` condition"),
+            "expected when-comma diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, ".",
+            "error span should point at the `.` that replaced the expected comma, got {at:?}"
+        );
+    }
+
+    #[test]
     fn record_field_missing_is_errors() {
         // `record counter: value number.` — field binding without
         // the `is` connector. The field-name loop consumes `value`
