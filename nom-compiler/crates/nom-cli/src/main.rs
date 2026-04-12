@@ -16,6 +16,7 @@
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 //!   nom fmt <path>      — format .nom source files with canonical style
 
+mod corpus;
 mod fmt;
 mod media;
 mod store;
@@ -318,6 +319,25 @@ enum Commands {
         #[command(subcommand)]
         action: MediaCmd,
     },
+
+    /// Corpus ingestion per §5.17.
+    Corpus {
+        #[command(subcommand)]
+        action: CorpusCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum CorpusCmd {
+    /// Walk a directory and report per-language file/byte counts.
+    /// Read-only; no dict writes.
+    Scan {
+        /// Path to the directory (e.g. a cloned upstream repo).
+        path: PathBuf,
+        /// Emit JSON instead of a table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -531,6 +551,9 @@ fn main() {
         },
         Commands::Media { action } => match action {
             MediaCmd::Import { path, json } => media::cmd_media_import(&path, json),
+        },
+        Commands::Corpus { action } => match action {
+            CorpusCmd::Scan { path, json } => corpus::cmd_corpus_scan(&path, json),
         },
     };
     process::exit(exit_code);

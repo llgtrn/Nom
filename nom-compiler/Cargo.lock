@@ -625,6 +625,7 @@ dependencies = [
  "nom-ast",
  "nom-codegen",
  "nom-config",
+ "nom-corpus",
  "nom-diagnostics",
  "nom-dict",
  "nom-extract",
@@ -672,7 +673,9 @@ version = "0.1.0"
 dependencies = [
  "nom-types",
  "serde",
+ "serde_json",
  "thiserror 2.0.18",
+ "walkdir",
 ]
 
 [[package]]

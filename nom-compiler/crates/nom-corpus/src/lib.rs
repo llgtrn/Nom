@@ -111,6 +111,126 @@ impl Default for CorpusConfig {
     }
 }
 
+// ── Scan types ───────────────────────────────────────────────────────────────
+
+/// Per-language count + bytes.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct LanguageStats {
+    pub file_count: u64,
+    pub total_bytes: u64,
+}
+
+/// Result of `scan_directory`. Maps language tag (e.g. `"rust"`,
+/// `"typescript"`, `"python"`) to its `LanguageStats`. Extension →
+/// language mapping is hardcoded; unknown extensions land in `"other"`.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ScanReport {
+    pub root: String,
+    pub total_files: u64,
+    pub total_bytes: u64,
+    pub languages: std::collections::BTreeMap<String, LanguageStats>,
+}
+
+// ── scan_directory ───────────────────────────────────────────────────────────
+
+/// Directory names that will be pruned during the walk (case-sensitive).
+const SKIP_DIRS: &[&str] = &[
+    "target",
+    "node_modules",
+    ".git",
+    "dist",
+    "build",
+    "__pycache__",
+    ".idea",
+    ".vscode",
+];
+
+/// Maximum file size included in counts (2 MiB). §5.17.2 big-file skip.
+const MAX_FILE_BYTES: u64 = 2 * 1024 * 1024;
+
+/// Map a lowercase file extension to a language tag.
+fn ext_to_language(ext: &str) -> &'static str {
+    match ext {
+        "rs" => "rust",
+        "ts" | "tsx" => "typescript",
+        "js" | "mjs" | "jsx" => "javascript",
+        "py" => "python",
+        "go" => "go",
+        "java" => "java",
+        "kt" | "kts" => "kotlin",
+        "c" | "h" => "c",
+        "cpp" | "cc" | "cxx" | "hpp" | "hh" => "cpp",
+        "swift" => "swift",
+        "rb" => "ruby",
+        "php" => "php",
+        "scala" => "scala",
+        "sh" | "bash" => "shell",
+        "md" => "markdown",
+        "toml" | "yaml" | "yml" | "json" => "config",
+        _ => "other",
+    }
+}
+
+/// Walk `path` recursively, classify files by extension, and return a
+/// [`ScanReport`]. Skips hidden directories, common vendored dirs, and
+/// files > 2 MiB.
+pub fn scan_directory(path: &std::path::Path) -> Result<ScanReport, CorpusError> {
+    use walkdir::WalkDir;
+
+    let root = path.to_string_lossy().into_owned();
+    let mut report = ScanReport {
+        root,
+        ..Default::default()
+    };
+
+    let walker = WalkDir::new(path).into_iter();
+    for entry in walker.filter_entry(|e| {
+        // Prune skip-dirs and hidden dirs at the directory level.
+        if e.file_type().is_dir() {
+            let name = e.file_name().to_string_lossy();
+            if name.starts_with('.') {
+                return false;
+            }
+            if SKIP_DIRS.contains(&name.as_ref()) {
+                return false;
+            }
+        }
+        true
+    }) {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue, // permission errors: skip silently
+        };
+        if !entry.file_type().is_file() {
+            continue;
+        }
+        let metadata = match entry.metadata() {
+            Ok(m) => m,
+            Err(_) => continue,
+        };
+        let file_bytes = metadata.len();
+        if file_bytes > MAX_FILE_BYTES {
+            continue;
+        }
+        let ext = entry
+            .path()
+            .extension()
+            .and_then(|e| e.to_str())
+            .unwrap_or("")
+            .to_ascii_lowercase();
+        let lang = ext_to_language(&ext);
+        let stats = report.languages.entry(lang.to_string()).or_default();
+        stats.file_count += 1;
+        stats.total_bytes += file_bytes;
+        report.total_files += 1;
+        report.total_bytes += file_bytes;
+    }
+
+    Ok(report)
+}
+
+// ── Errors ───────────────────────────────────────────────────────────────────
+
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
 #[derive(Debug, Error)]
 pub enum CorpusError {
@@ -171,5 +291,72 @@ mod tests {
         assert_eq!(c.max_clone_bytes, 2 * 1024 * 1024 * 1024);
         assert_eq!(c.bandwidth_limit_bytes_per_sec, 20 * 1024 * 1024);
         assert!(c.include_pattern.is_none());
+    }
+
+    #[test]
+    fn scan_directory_counts_files_by_extension() {
+        use std::fs;
+        use std::io::Write;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_scan_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Create a few source files of different languages.
+        let files = [
+            ("main.rs", b"fn main() {}" as &[u8]),
+            ("lib.rs", b"pub fn foo() {}"),
+            ("index.ts", b"export const x = 1;"),
+            ("script.py", b"print('hi')"),
+            ("README.md", b"# Hello"),
+        ];
+        for (name, content) in &files {
+            let mut f = fs::File::create(tmp.join(name)).unwrap();
+            f.write_all(content).unwrap();
+        }
+
+        // Create a skipped dir that should not be counted.
+        let skip = tmp.join("node_modules");
+        fs::create_dir_all(&skip).unwrap();
+        let mut f = fs::File::create(skip.join("big.js")).unwrap();
+        f.write_all(b"ignored").unwrap();
+
+        let report = scan_directory(&tmp).unwrap();
+        assert_eq!(report.total_files, 5, "expected 5 files, got {}", report.total_files);
+        assert_eq!(report.languages["rust"].file_count, 2);
+        assert_eq!(report.languages["typescript"].file_count, 1);
+        assert_eq!(report.languages["python"].file_count, 1);
+        assert_eq!(report.languages["markdown"].file_count, 1);
+        assert!(!report.languages.contains_key("javascript"), "node_modules should be skipped");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn scan_directory_skips_large_files() {
+        use std::fs;
+        use std::io::Write;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_scan_large_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Small file: should be counted.
+        let mut f = fs::File::create(tmp.join("small.rs")).unwrap();
+        f.write_all(b"fn small() {}").unwrap();
+
+        // Large file: > 2 MiB, should be skipped.
+        {
+            let mut f = fs::File::create(tmp.join("large.rs")).unwrap();
+            let big = vec![b'x'; 3 * 1024 * 1024];
+            f.write_all(&big).unwrap();
+            // Drop flushes and closes the file so metadata is up-to-date.
+        }
+
+        let report = scan_directory(&tmp).unwrap();
+        assert_eq!(report.total_files, 1);
+        assert_eq!(report.languages["rust"].file_count, 1);
+
+        let _ = fs::remove_dir_all(&tmp);
     }
 }
