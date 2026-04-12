@@ -33,13 +33,21 @@ These represent concrete targets for the compiler to grow into.
 
 ## Roadmap
 
-| Phase | Component | Status |
-|-------|-----------|--------|
-| 1 | Lexer | Written |
-| 2 | Parser | Planned |
-| 3 | AST types | Planned |
-| 4 | Code generator | Planned |
-| 5 | Full self-host | Planned |
+Phase numbers below reference [`03-self-hosting-roadmap.md`](../../../research/language-analysis/03-self-hosting-roadmap.md).
+
+| Phase | Component | Status | Artifact |
+|-------|-----------|--------|----------|
+| 1 | Lexer | Written + compiles via LLVM | `lexer.nom` (+ `.bc` / `.ll`) |
+| 2 | Parser | Planned | — |
+| 3 | AST types | Planned | — |
+| 4 | Verifier | Planned | — |
+| 5 | Planner | Scaffolded (struct shapes + entry-point fn signature) | `planner.nom` |
+| 6 | Codegen | Planned | — |
+| 7 | Bootstrap | Planned | — |
+
+### `planner.nom` — scaffold (Phase 5)
+
+Landed 2026-04-12 as a skeleton: the `Node` / `Edge` / `CompositionPlan` / `VerifiedAST` struct shapes + `nom_plan(ast) -> CompositionPlan` entry-point signature returning an empty plan. Real construction (graph building + topological sort + cycle detection + constraint propagation) arrives incrementally per the 10-12 week roadmap estimate. The Rust reference lives in [`nom-planner/src/lib.rs`](../../crates/nom-planner/src/lib.rs) (~700 LOC); the Nom target is 1100-1500 LOC once complete.
 
 ## Design decisions
 

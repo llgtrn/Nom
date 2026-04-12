@@ -1,0 +1,74 @@
+# Nom Self-Host: Planner (Phase 5 per 03-self-hosting-roadmap.md)
+#
+# This file is the Nom-in-Nom implementation of nom-planner. The Rust
+# reference is at nom-compiler/crates/nom-planner/src/lib.rs (~700 LOC).
+# Target: 1100-1500 LOC Nom.
+#
+# Status: SCAFFOLD. Struct shapes + entry fn signature only. Real
+# construction + traversal + constraint checking arrives incrementally.
+#
+# Entry point per the roadmap:
+#   nom_plan(ast: VerifiedAST) -> CompositionPlan
+#
+# Once real, this function is the compiler's planning stage — it takes
+# a verified AST and produces a CompositionPlan that nom-codegen (also
+# a Phase-6 self-host target) emits as LLVM IR from.
+
+struct Node {
+  id: integer
+  kind: text
+  # payload fields (contract input/output, function body hash) arrive
+  # as concrete implementation lands.
+}
+
+struct Edge {
+  from_id: integer
+  to_id: integer
+  kind: text       # "calls", "depends_on", "constrains", …
+}
+
+struct CompositionPlan {
+  nodes: list[Node]
+  edges: list[Edge]
+  entry_point_id: integer
+}
+
+# Placeholder VerifiedAST stub — the real type lives in nom-ast; this
+# Nom-in-Nom mirror gets filled in as §5 progresses.
+struct VerifiedAST {
+  module_name: text
+}
+
+# Entry point. Real implementation does:
+#   1. Walk ast's declarations, create a Node per callable.
+#   2. For each call site, create an Edge(from=caller_node, to=callee_node).
+#   3. Run topological sort; detect cycles (error if found).
+#   4. Resolve need/require constraints across edges.
+#   5. Return the ordered CompositionPlan.
+fn nom_plan(ast: VerifiedAST) -> CompositionPlan {
+  # Scaffold: return an empty plan so downstream phases can pattern-match
+  # without a null crash. Real implementation replaces this.
+  return CompositionPlan {
+    nodes: [],
+    edges: [],
+    entry_point_id: 0,
+  }
+}
+
+# Sketch of the graph-building helper the real planner needs. Not yet
+# callable; parser may not accept all of this. Marked aspirational.
+#
+# fn build_call_graph(decls: list[Declaration]) -> (list[Node], list[Edge]) {
+#   let nodes: list[Node] = []
+#   let edges: list[Edge] = []
+#   for decl in decls {
+#     let n = Node { id: node_count(nodes), kind: decl_kind_label(decl) }
+#     nodes = nodes + [n]
+#   }
+#   for decl in decls {
+#     for call in calls_in_body(decl) {
+#       edges = edges + [Edge { from_id: find_node(nodes, decl.name), to_id: find_node(nodes, call.target), kind: "calls" }]
+#     }
+#   }
+#   return (nodes, edges)
+# }
