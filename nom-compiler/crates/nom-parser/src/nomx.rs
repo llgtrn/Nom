@@ -808,6 +808,38 @@ mod tests {
     }
 
     #[test]
+    fn for_each_without_in_or_of_errors() {
+        let src = "define f:\n  for each x xs, total is x.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("expected `in` or `of`"),
+            "expected for-each connector diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, "xs",
+            "error span should point at the offending token `xs`, got {at:?}"
+        );
+    }
+
+    #[test]
+    fn binding_missing_is_errors() {
+        let src = "define f:\n  total zero.";
+        let err = parse_nomx(src).unwrap_err();
+        assert!(
+            err.message.contains("`is` after binding subject"),
+            "expected binding-`is` diag, got: {}",
+            err.message
+        );
+        let at = &src[err.span.start..err.span.end];
+        assert_eq!(
+            at, "zero",
+            "error span should point at the token that should have been `is`, got {at:?}"
+        );
+    }
+
+    #[test]
     fn parses_multiple_definitions() {
         // Names must not collide with the article-stripping rule
         // (a/an/the/which/who/whose are consumed at lex time per
