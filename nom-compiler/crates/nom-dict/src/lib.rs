@@ -618,6 +618,51 @@ pub use nom_types::EdgeType as __ReexportedEdgeType;
 #[allow(dead_code)]
 fn _compile_check(_: EdgeType) {}
 
+// ── Legacy v1 shims ─────────────────────────────────────────────────
+//
+// Return empty results so nom-cli's `dict`, `stats`, and search
+// commands keep compiling. Task B replaces these with real v2
+// implementations that read from the new tables.
+
+use nom_types::{Atom, NomtuEntry};
+
+/// Legacy return shape for `store_atoms`. Matches the v1 API so nom-cli keeps compiling.
+pub struct StoreResult {
+    pub stored: usize,
+    pub skipped: usize,
+}
+
+impl NomDict {
+    /// Legacy: insert a slice of v1 atoms. No-op until Task B migrates callers.
+    pub fn store_atoms(&self, _atoms: &[Atom]) -> Result<StoreResult> {
+        Ok(StoreResult { stored: 0, skipped: 0 })
+    }
+
+    /// Legacy: return every v1 atom. Empty until Task B migrates callers.
+    pub fn load_all(&self) -> Result<Vec<Atom>> {
+        Ok(Vec::new())
+    }
+
+    /// Legacy: `(kind, count)` histogram. Empty until Task B.
+    pub fn stats_by_kind(&self) -> Result<Vec<(String, usize)>> {
+        Ok(Vec::new())
+    }
+
+    /// Legacy: `(language, count)` histogram. Empty until Task B.
+    pub fn stats_by_language(&self) -> Result<Vec<(String, usize)>> {
+        Ok(Vec::new())
+    }
+
+    /// Legacy: `(concept, count)` histogram. Empty until Task B.
+    pub fn dictionary_summary(&self) -> Result<Vec<(String, usize)>> {
+        Ok(Vec::new())
+    }
+}
+
+// Silence unused-import warning when only Atom is touched in the shim block.
+#[allow(dead_code)]
+fn _legacy_compile_check(_: NomtuEntry) {}
+
 // ── Unit tests ──────────────────────────────────────────────────────
 
 #[cfg(test)]
