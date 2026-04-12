@@ -1,0 +1,21 @@
+# Contract-phrase demo (.nomx) — exercises `require`, `ensure`, and
+# `throughout` statements per proposal 05 §4.4. Pairs with
+# loops.nomx (for-each + while) and todo_app.nomx (record + choice)
+# to complete fixture coverage of the statement grammar.
+
+define safe_divide that takes n and returns quotient:
+    require denominator is nonzero.
+    quotient is n divided by denominator.
+    ensure quotient is finite.
+
+define abs_value that takes n and returns result:
+    require n is a number.
+    when n is negative, result is zero minus n.
+    otherwise, result is n.
+    ensure result is never negative.
+
+define sum_invariant that takes xs and returns total:
+    total is zero.
+    throughout, total is at_least zero.
+    for each x in xs, total is total plus x.
+    ensure total equals sum_of xs.

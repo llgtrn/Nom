@@ -169,7 +169,7 @@ pub enum NomxStatement {
 }
 
 /// Which contract verb produced a Contract statement.
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub enum ContractKind {
     Require,
     Ensure,
@@ -1058,6 +1058,36 @@ mod tests {
             0,
             "actor form not yet parsed; expected 0 decls, got {decls:#?}"
         );
+    }
+
+    #[test]
+    fn parses_contracts_nomx_sample() {
+        // Each of the 3 defines has ≥1 Contract statement; across
+        // the file all 3 ContractKinds appear.
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/contracts.nomx");
+        let src = std::fs::read_to_string(&path).unwrap();
+        let decls = parse_nomx(&src).unwrap();
+        assert_eq!(decls.len(), 3);
+
+        let mut seen_kinds = std::collections::HashSet::new();
+        for d in &decls {
+            let NomxDecl::Define { body, .. } = d else {
+                panic!("expected Define");
+            };
+            for s in body {
+                if let NomxStatement::Contract { kind, .. } = s {
+                    seen_kinds.insert(*kind);
+                }
+            }
+        }
+        assert!(seen_kinds.contains(&ContractKind::Require));
+        assert!(seen_kinds.contains(&ContractKind::Ensure));
+        assert!(seen_kinds.contains(&ContractKind::Throughout));
     }
 
     #[test]
