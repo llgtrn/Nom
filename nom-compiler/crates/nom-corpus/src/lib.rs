@@ -285,6 +285,16 @@ pub fn ingest_directory(
     path: &std::path::Path,
     dict: &nom_dict::NomDict,
 ) -> Result<IngestReport, CorpusError> {
+    ingest_directory_with_conn(path, dict)
+}
+
+/// Internal implementation shared by [`ingest_directory`] and
+/// [`ingest_parent`]. Takes a pre-opened [`nom_dict::NomDict`] so that
+/// `ingest_parent` can reuse a single connection across all repos.
+fn ingest_directory_with_conn(
+    path: &std::path::Path,
+    dict: &nom_dict::NomDict,
+) -> Result<IngestReport, CorpusError> {
     use sha2::{Digest, Sha256};
     use walkdir::WalkDir;
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
@@ -432,6 +442,113 @@ pub fn ingest_directory(
             Err(_) => {
                 report.files_skipped += 1;
             }
+        }
+    }
+
+    Ok(report)
+}
+
+// ── ingest_parent ─────────────────────────────────────────────────────────────
+
+/// Result of [`ingest_parent`]: per-repo breakdown + aggregate.
+#[derive(Debug, Clone, Default, serde::Serialize, serde::Deserialize)]
+pub struct ParentIngestReport {
+    pub parent: String,
+    /// Map from repo name (child-directory basename) to that repo's
+    /// [`IngestReport`]. Only subdirectories that produced at least one
+    /// ingested file are included.
+    pub repos: std::collections::BTreeMap<String, IngestReport>,
+    /// Aggregate across all repos.
+    pub aggregate: IngestReport,
+    /// Count of immediate-child directories that were skipped
+    /// (hidden, or produced zero ingestible files).
+    pub skipped_repos: u64,
+}
+
+/// Walks `parent_dir`'s immediate children; for each child that is a
+/// directory (not hidden), calls [`ingest_directory_with_conn`].
+/// Aggregates all results. Reuses the same [`nom_dict::NomDict`]
+/// connection across repos for performance.
+///
+/// Progress is printed to stderr every 10 repos so operators see
+/// activity during large runs (e.g. 231-repo corpus).
+pub fn ingest_parent(
+    parent: &std::path::Path,
+    dict_path: &std::path::Path,
+) -> Result<ParentIngestReport, CorpusError> {
+    let dict_db = nom_dict::NomDict::open_in_place(dict_path)
+        .map_err(|e| CorpusError::Io(std::io::Error::other(e.to_string())))?;
+
+    let mut report = ParentIngestReport {
+        parent: parent.to_string_lossy().into_owned(),
+        ..Default::default()
+    };
+
+    // Collect and sort child dirs for deterministic ordering.
+    let mut children: Vec<std::path::PathBuf> = Vec::new();
+    for entry in std::fs::read_dir(parent)? {
+        let entry = match entry {
+            Ok(e) => e,
+            Err(_) => continue,
+        };
+        let ft = match entry.file_type() {
+            Ok(t) => t,
+            Err(_) => continue,
+        };
+        if !ft.is_dir() {
+            continue;
+        }
+        let name = entry.file_name();
+        let name_str = name.to_string_lossy();
+        if name_str.starts_with('.') {
+            continue;
+        }
+        children.push(entry.path());
+    }
+    children.sort();
+
+    let mut processed: u64 = 0;
+    for child in &children {
+        let repo_name = child
+            .file_name()
+            .map(|n| n.to_string_lossy().into_owned())
+            .unwrap_or_default();
+
+        let repo_report = match ingest_directory_with_conn(child, &dict_db) {
+            Ok(r) => r,
+            Err(_) => {
+                report.skipped_repos += 1;
+                processed += 1;
+                if processed % 10 == 0 {
+                    eprintln!(
+                        "nom: processed {} repos, {} files ingested so far...",
+                        processed, report.aggregate.files_ingested
+                    );
+                }
+                continue;
+            }
+        };
+
+        if repo_report.files_ingested == 0 {
+            report.skipped_repos += 1;
+        } else {
+            // Merge per_language counts into aggregate.
+            for (lang, count) in &repo_report.per_language {
+                *report.aggregate.per_language.entry(lang.clone()).or_insert(0) += count;
+            }
+            report.aggregate.files_ingested += repo_report.files_ingested;
+            report.aggregate.bytes_ingested += repo_report.bytes_ingested;
+            report.aggregate.duplicates += repo_report.duplicates;
+            report.aggregate.files_skipped += repo_report.files_skipped;
+            report.repos.insert(repo_name, repo_report);
+        }
+
+        processed += 1;
+        if processed % 10 == 0 {
+            eprintln!(
+                "nom: processed {} repos, {} files ingested so far...",
+                processed, report.aggregate.files_ingested
+            );
         }
     }
 
@@ -665,6 +782,63 @@ mod tests {
 
         assert_eq!(report.files_ingested, 1, "first copy must be ingested");
         assert_eq!(report.duplicates, 1, "second copy must be detected as dup");
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    #[test]
+    fn ingest_parent_aggregates_across_repos() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        let tmp = std::env::temp_dir().join("nom_corpus_ingest_parent_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        // Three child repos, each with 2 .rs files.
+        for repo in &["repo_a", "repo_b", "repo_c"] {
+            let repo_dir = tmp.join(repo);
+            fs::create_dir_all(&repo_dir).unwrap();
+            for (i, name) in ["lib.rs", "main.rs"].iter().enumerate() {
+                let mut f = fs::File::create(repo_dir.join(name)).unwrap();
+                // Unique content per file to avoid cross-repo dedup.
+                f.write_all(
+                    format!("// {repo} file {i}\npub fn f_{repo}_{i}() {{}}")
+                        .as_bytes(),
+                )
+                .unwrap();
+            }
+        }
+
+        // A hidden dir should be skipped.
+        let hidden = tmp.join(".hidden");
+        fs::create_dir_all(&hidden).unwrap();
+        let mut f = fs::File::create(hidden.join("skip.rs")).unwrap();
+        f.write_all(b"fn hidden() {}").unwrap();
+
+        // A plain file at the parent level should be skipped (not a dir).
+        let mut f = fs::File::create(tmp.join("README.md")).unwrap();
+        f.write_all(b"# top level").unwrap();
+
+        // Use an in-memory dict via a temp file path.
+        let db_path = tmp.join("test_parent.db");
+        // NomDict::open_in_place creates the file; test uses that path.
+        {
+            let _dict = NomDict::open_in_place(&db_path).unwrap();
+        }
+
+        let report = super::ingest_parent(&tmp, &db_path).unwrap();
+
+        assert_eq!(report.aggregate.files_ingested, 6, "3 repos × 2 files = 6");
+        assert_eq!(report.repos.len(), 3, "all 3 repos produced files");
+        assert_eq!(report.skipped_repos, 0, "no repos skipped");
+        // Each repo has 2 rust files.
+        for (_, repo_report) in &report.repos {
+            assert_eq!(repo_report.files_ingested, 2);
+            assert_eq!(repo_report.per_language["rust"], 2);
+        }
+        assert_eq!(report.aggregate.per_language["rust"], 6);
 
         let _ = fs::remove_dir_all(&tmp);
     }

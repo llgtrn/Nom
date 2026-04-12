@@ -84,6 +84,42 @@ pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
     0
 }
 
+// ── cmd_corpus_ingest_parent ─────────────────────────────────────────────────
+
+pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, json: bool) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let report = match nom_corpus::ingest_parent(path, &db_path) {
+        Ok(r) => r,
+        Err(e) => {
+            eprintln!("nom: ingest-parent error: {e}");
+            return 1;
+        }
+    };
+
+    if json {
+        println!(
+            "{}",
+            serde_json::to_string(&report).unwrap_or_default()
+        );
+    } else {
+        println!("corpus ingest-parent: {}", report.parent);
+        println!("  repos ingested:  {}", report.repos.len());
+        println!("  repos skipped:   {}", report.skipped_repos);
+        println!("  total files:     {}", report.aggregate.files_ingested);
+        println!("  total bytes:     {}", report.aggregate.bytes_ingested);
+        println!("  duplicates:      {}", report.aggregate.duplicates);
+        if !report.aggregate.per_language.is_empty() {
+            println!("  languages:");
+            println!("    {:<15}  {:>6}", "language", "files");
+            println!("    {:<15}  {:>6}", "--------", "-----");
+            for (lang, count) in &report.aggregate.per_language {
+                println!("    {:<15}  {:>6}", lang, count);
+            }
+        }
+    }
+    0
+}
+
 /// Resolve a `--dict` argument (which may point directly at a `.db` file
 /// or at a directory) to an absolute SQLite file path.
 fn resolve_db_path(dict: &Path) -> std::path::PathBuf {

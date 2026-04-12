@@ -351,6 +351,21 @@ enum CorpusCmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Walk every immediate child directory of the given parent, ingest
+    /// each one into the nomdict, and aggregate the results. Reuses a
+    /// single dict connection across all repos for performance.
+    /// Designed for pre-staged corpus directories (e.g. 231 upstream repos).
+    IngestParent {
+        /// Path to the parent directory whose immediate children are repos.
+        path: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit a JSON summary instead of a human-readable table.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -569,6 +584,9 @@ fn main() {
             CorpusCmd::Scan { path, json } => corpus::cmd_corpus_scan(&path, json),
             CorpusCmd::Ingest { path, dict, json } => {
                 corpus::cmd_corpus_ingest(&path, &dict, json)
+            }
+            CorpusCmd::IngestParent { path, dict, json } => {
+                corpus::cmd_corpus_ingest_parent(&path, &dict, json)
             }
         },
     };
