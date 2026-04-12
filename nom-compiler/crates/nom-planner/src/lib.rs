@@ -19,12 +19,14 @@ use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
 fn default_on_fail() -> String {
-    "abort".to_owned()
+    // Shared with self-host planner.nom::default_on_fail() via the
+    // parity test in nom-cli/tests/self_host_rust_parity.rs.
+    nom_types::self_host_tags::DEFAULT_ON_FAIL.to_owned()
 }
 
 fn on_fail_strategy_to_string(strategy: &OnFailStrategy) -> String {
     match strategy {
-        OnFailStrategy::Abort => "abort".to_owned(),
+        OnFailStrategy::Abort => nom_types::self_host_tags::DEFAULT_ON_FAIL.to_owned(),
         OnFailStrategy::RestartFrom(id) => format!("restart_from:{}", id.name),
         OnFailStrategy::Retry(n) => format!("retry:{}", n),
         OnFailStrategy::Skip => "skip".to_owned(),

@@ -952,6 +952,49 @@ pub mod body_kind {
     }
 }
 
+/// Canonical tag strings shared between the Rust implementation and
+/// the Nom-in-Nom self-host scaffolds under `stdlib/self_host/`.
+///
+/// Both sides must emit these exact literals. The parity test
+/// [`nom-cli/tests/self_host_rust_parity.rs`] asserts every .nom
+/// scaffold contains each constant as a `return "<value>"` literal.
+/// Changing any constant here without updating the matching .nom
+/// helper fails CI — the mirror claim becomes structurally enforced,
+/// not convention-plus-comment.
+pub mod self_host_tags {
+    // planner.nom
+    pub const DEFAULT_ON_FAIL: &str = "abort";
+    pub const EDGE_KIND_CALLS: &str = "calls";
+    pub const EDGE_KIND_DEPENDS_ON: &str = "depends_on";
+    pub const EDGE_KIND_CONSTRAINS: &str = "constrains";
+
+    // codegen.nom
+    pub const RUST_TY_I64: &str = "i64";
+    pub const RUST_TY_STRING: &str = "String";
+    pub const RUST_TY_BOOL: &str = "bool";
+    pub const DEFAULT_ENTRY_SYMBOL: &str = "nom_main";
+
+    // verifier.nom
+    pub const EFFECT_PURE: &str = "pure";
+    pub const EFFECT_READS: &str = "reads";
+    pub const EFFECT_WRITES: &str = "writes";
+    pub const EFFECT_PANICS: &str = "panics";
+
+    // parser.nom
+    pub const CLASSIFIER_NOM: &str = "nom";
+    pub const CLASSIFIER_FLOW: &str = "flow";
+    pub const CLASSIFIER_STORE: &str = "store";
+    pub const CLASSIFIER_GRAPH: &str = "graph";
+
+    // ast.nom
+    pub const DECL_KIND_FN: &str = "fn";
+    pub const DECL_KIND_STRUCT: &str = "struct";
+    pub const DECL_KIND_ENUM: &str = "enum";
+    pub const PRIM_TYPE_INTEGER: &str = "integer";
+    pub const PRIM_TYPE_TEXT: &str = "text";
+    pub const PRIM_TYPE_BOOL: &str = "bool";
+}
+
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NomtuEntry {
     pub id: i64,
