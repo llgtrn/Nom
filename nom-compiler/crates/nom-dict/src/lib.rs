@@ -219,6 +219,19 @@ impl NomDict {
         &self.conn
     }
 
+    /// Begin a SQLite transaction on this connection.
+    ///
+    /// Returns a RAII guard; call [`rusqlite::Transaction::commit`] on the
+    /// guard to persist, or let it drop to roll back. Uses
+    /// `unchecked_transaction` (same as [`Self::bulk_upsert`]) so `&self`
+    /// suffices — no `&mut self` needed.
+    ///
+    /// All `upsert_entry` / `get_entry` calls made while the guard is live
+    /// operate inside the same transaction, giving per-repo atomic commits.
+    pub fn begin_transaction(&self) -> rusqlite::Result<rusqlite::Transaction<'_>> {
+        self.conn.unchecked_transaction()
+    }
+
     /// Database file path (empty `PathBuf` for in-memory).
     pub fn db_path(&self) -> PathBuf {
         if self.root.as_os_str().is_empty() {

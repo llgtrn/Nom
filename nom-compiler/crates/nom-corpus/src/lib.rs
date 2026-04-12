@@ -305,6 +305,13 @@ fn ingest_directory_with_conn(
         ..Default::default()
     };
 
+    // Begin a per-repo transaction: all INSERTs commit atomically at the end.
+    // If we crash mid-walk the RAII guard rolls back, leaving the DB clean so
+    // the checkpoint mechanism can retry this repo from scratch.
+    let tx = dict
+        .begin_transaction()
+        .map_err(|e| CorpusError::Skipped { reason: format!("begin_transaction: {e}") })?;
+
     let walker = WalkDir::new(path).into_iter();
     for entry in walker.filter_entry(|e| {
         if e.file_type().is_dir() {
@@ -444,6 +451,9 @@ fn ingest_directory_with_conn(
             }
         }
     }
+
+    tx.commit()
+        .map_err(|e| CorpusError::Skipped { reason: format!("commit: {e}") })?;
 
     Ok(report)
 }
@@ -867,6 +877,71 @@ mod tests {
         let report = scan_directory(&tmp).unwrap();
         assert_eq!(report.total_files, 1);
         assert_eq!(report.languages["rust"].file_count, 1);
+
+        let _ = fs::remove_dir_all(&tmp);
+    }
+
+    /// `ingest_directory_with_conn` wraps the walk in a transaction: all files
+    /// must be visible after the call (committed), and an explicit rollback must
+    /// leave the dict empty.
+    #[test]
+    fn ingest_directory_uses_transaction() {
+        use std::fs;
+        use std::io::Write;
+        use nom_dict::NomDict;
+
+        // ── Part 1: normal commit path ──────────────────────────────────────
+        let tmp = std::env::temp_dir().join("nom_corpus_tx_test");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(&tmp).unwrap();
+
+        let files = [
+            ("a.rs", b"fn a() {}" as &[u8]),
+            ("b.rs", b"fn b() {}"),
+            ("c.rs", b"fn c() {}"),
+        ];
+        for (name, content) in &files {
+            let mut f = fs::File::create(tmp.join(name)).unwrap();
+            f.write_all(content).unwrap();
+        }
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let report = super::ingest_directory(&tmp, &dict).unwrap();
+        assert_eq!(report.files_ingested, 3, "all 3 files should be committed");
+        assert_eq!(dict.count().unwrap(), 3, "transaction must have committed");
+
+        // ── Part 2: explicit rollback leaves the dict clean ─────────────────
+        // Begin a new transaction, manually insert 2 entries, then roll back.
+        let tx = dict.begin_transaction().unwrap();
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+        for i in 0..2u8 {
+            let e = Entry {
+                id: format!("rollback_test_{i:02x}"),
+                word: format!("rollback_{i}"),
+                variant: None,
+                kind: EntryKind::Module,
+                language: "rust".into(),
+                describe: None,
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract::default(),
+                status: EntryStatus::Complete,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: "2025-01-01T00:00:00Z".into(),
+                updated_at: None,
+            };
+            dict.upsert_entry(&e).unwrap();
+        }
+        // Row count inside the transaction should be 5 (3 committed + 2 pending).
+        assert_eq!(dict.count().unwrap(), 5);
+        // Roll back: the 2 pending entries must disappear.
+        tx.rollback().unwrap();
+        assert_eq!(dict.count().unwrap(), 3, "rollback must discard the 2 pending rows");
 
         let _ = fs::remove_dir_all(&tmp);
     }
