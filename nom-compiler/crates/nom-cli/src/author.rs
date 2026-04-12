@@ -408,8 +408,43 @@ pub fn cmd_author_check(file: &Path, json: bool) -> i32 {
             return 1;
         }
     };
-    let stats = classify_lines(&text);
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
+
+    // .nomx branch: parse via the natural-language prototype per
+    // proposal 05. Reports declaration count on success, span-carrying
+    // diagnostic on failure.
+    if ext == "nomx" {
+        match nom_parser::nomx::parse_nomx(&text) {
+            Ok(decls) => {
+                if json {
+                    println!(
+                        "{{\"file\":\"{}\",\"extension\":\"nomx\",\"declarations\":{}}}",
+                        file.display(),
+                        decls.len()
+                    );
+                } else {
+                    println!(
+                        "{}: {} .nomx declaration(s) parsed",
+                        file.display(),
+                        decls.len()
+                    );
+                }
+                return 0;
+            }
+            Err(e) => {
+                eprintln!(
+                    "{}: parse error at {}..{}: {}",
+                    file.display(),
+                    e.span.start,
+                    e.span.end,
+                    e.message
+                );
+                return 1;
+            }
+        }
+    }
+
+    let stats = classify_lines(&text);
     if ext == "nom" {
         if stats.prose == 0 {
             println!("{}: pure Nom ({} non-comment line(s))", file.display(), stats.nom_ish);
@@ -600,6 +635,20 @@ fn already_nom() -> integer { return 0 }
         let ps = extract_prose_proposals(text);
         assert_eq!(ps.len(), 1);
         assert_eq!(ps[0].word, "fetch_user_data");
+    }
+
+    #[test]
+    fn author_check_handles_nomx_extension() {
+        // The shipped examples/hello.nomx should parse clean and
+        // return exit code 0 (one successful declaration).
+        let path = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .join("examples/hello.nomx");
+        let rc = cmd_author_check(&path, true);
+        assert_eq!(rc, 0, "hello.nomx should parse clean");
     }
 
     #[test]
