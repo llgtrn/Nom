@@ -17,6 +17,7 @@
 //!   nom fmt <path>      — format .nom source files with canonical style
 
 mod corpus;
+mod draft;
 mod fmt;
 mod mcp;
 mod media;
@@ -335,6 +336,13 @@ enum Commands {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
+
+    /// Manage drafts — named domain collections of nomtu entries for
+    /// faster querying and understanding.
+    Draft {
+        #[command(subcommand)]
+        action: DraftCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -504,6 +512,89 @@ enum MediaCmd {
     },
 }
 
+#[derive(Subcommand)]
+enum DraftCmd {
+    /// Create a new empty draft.
+    New {
+        /// Human-readable domain name (e.g. "cryptography")
+        name: String,
+        /// Optional description for this draft
+        #[arg(long)]
+        describe: Option<String>,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// Add one entry (by full id or ≥8-char hex prefix) to a draft.
+    Add {
+        /// Draft name
+        draft: String,
+        /// Entry id (full 64-hex or ≥8-char prefix)
+        entry: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// Bulk-add entries matching filter flags to a draft.
+    /// Note: --describe-like is exclusive with structural filters.
+    AddBy {
+        /// Draft name
+        draft: String,
+        /// Filter by source language (rust, typescript, …)
+        #[arg(long)]
+        language: Option<String>,
+        /// Filter by entry kind (function, module, …)
+        #[arg(long)]
+        kind: Option<String>,
+        /// Filter by body_kind tag (bc, avif, …)
+        #[arg(long)]
+        body_kind: Option<String>,
+        /// Filter by status (complete, partial, opaque)
+        #[arg(long)]
+        status: Option<String>,
+        /// Substring match on the describe field (exclusive with structural filters)
+        #[arg(long)]
+        describe_like: Option<String>,
+        /// Maximum entries to consider
+        #[arg(long, default_value_t = 10000)]
+        limit: usize,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// List all drafts with member counts.
+    List {
+        /// Emit JSON instead of a table
+        #[arg(long)]
+        json: bool,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// Show members of a draft.
+    Show {
+        /// Draft name
+        name: String,
+        /// Maximum members to display
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Emit JSON
+        #[arg(long)]
+        json: bool,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+    /// Remove a draft entirely (entries are preserved; only the grouping is dropped).
+    Delete {
+        /// Draft name
+        name: String,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
@@ -626,6 +717,38 @@ fn main() {
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
+        Commands::Draft { action } => match action {
+            DraftCmd::New { name, describe, dict } => {
+                draft::cmd_draft_new(&name, describe.as_deref(), &dict)
+            }
+            DraftCmd::Add { draft, entry, dict } => {
+                draft::cmd_draft_add(&draft, &entry, &dict)
+            }
+            DraftCmd::AddBy {
+                draft,
+                language,
+                kind,
+                body_kind,
+                status,
+                describe_like,
+                limit,
+                dict,
+            } => draft::cmd_draft_add_by(
+                &draft,
+                language.as_deref(),
+                kind.as_deref(),
+                body_kind.as_deref(),
+                status.as_deref(),
+                describe_like.as_deref(),
+                limit,
+                &dict,
+            ),
+            DraftCmd::List { json, dict } => draft::cmd_draft_list(json, &dict),
+            DraftCmd::Show { name, limit, json, dict } => {
+                draft::cmd_draft_show(&name, limit, json, &dict)
+            }
+            DraftCmd::Delete { name, dict } => draft::cmd_draft_delete(&name, &dict),
+        },
     };
     process::exit(exit_code);
 }
