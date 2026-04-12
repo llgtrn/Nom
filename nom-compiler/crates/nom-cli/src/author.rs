@@ -340,14 +340,19 @@ fn translate_next_step(stats: &LineStats, target: TranslateTarget) -> String {
         return format!(
             "query dict (list_nomtu, search_nomtu, list_concepts) for nomtu \
              matching the {} prose lines; author missing nomtu + concepts in \
-             lockstep; re-run `nom author translate` until progression is 100%",
+             lockstep; re-run `nom author translate` until progression is 100%. \
+             (Alternative surface: save as .nomx and author in the natural-language \
+             grammar per research/language-analysis/05-natural-language-syntax.md)",
             stats.prose
         );
     }
     match target {
         TranslateTarget::App => {
             "rename to .nom; run `nom check`; then `nom app dream <manifest> \
-             --target web` until app_score ≥ 95 (EPIC threshold)"
+             --target web` until app_score ≥ 95 (EPIC threshold). \
+             Natural-language alternative: save as .nomx, parse with \
+             `nom author check foo.nomx`, translate with the type system once \
+             it lands."
                 .to_string()
         }
         TranslateTarget::Video => {
