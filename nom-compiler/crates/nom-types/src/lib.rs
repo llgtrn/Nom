@@ -375,10 +375,292 @@ pub fn all_relationships() -> Vec<&'static str> {
     ]
 }
 
-// ── NomtuEntry ───────────────────────────────────────────────────────
+// ── v2 Entry types (hash-identity schema) ────────────────────────────
+//
+// The v2 dictionary schema keys every entry on
+// `id = sha256(canonicalize(ast, contract))`, so two symbols that parse
+// to the same AST collapse into one row, and two symbols that differ by
+// a single literal produce different rows even if they share a name.
+//
+// Structured data (scores, findings, signatures, translations, graph
+// edges) lives in typed side tables — no more JSON-in-TEXT.
+
+/// Semantic kind of a v2 `Entry`. This categorises what the entry IS,
+/// independent of the source language it was extracted from.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntryKind {
+    Function,
+    Method,
+    Schema,
+    ApiEndpoint,
+    Ffi,
+    ExternalOpaque,
+    Module,
+    Trait,
+    Struct,
+    Enum,
+    TestCase,
+    Other,
+}
+
+impl EntryKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Function => "function",
+            Self::Method => "method",
+            Self::Schema => "schema",
+            Self::ApiEndpoint => "api_endpoint",
+            Self::Ffi => "ffi",
+            Self::ExternalOpaque => "external_opaque",
+            Self::Module => "module",
+            Self::Trait => "trait",
+            Self::Struct => "struct",
+            Self::Enum => "enum",
+            Self::TestCase => "test_case",
+            Self::Other => "other",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "function" => Self::Function,
+            "method" => Self::Method,
+            "schema" => Self::Schema,
+            "api_endpoint" => Self::ApiEndpoint,
+            "ffi" => Self::Ffi,
+            "external_opaque" => Self::ExternalOpaque,
+            "module" => Self::Module,
+            "trait" => Self::Trait,
+            "struct" => Self::Struct,
+            "enum" => Self::Enum,
+            "test_case" => Self::TestCase,
+            _ => Self::Other,
+        }
+    }
+}
+
+/// Translation / analysis completeness of an entry.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EntryStatus {
+    /// Fully analysed, body_nom is canonical.
+    Complete,
+    /// Partially analysed — body may exist but contract/scores may be absent.
+    Partial,
+    /// Only the signature is known; body is unavailable (FFI, external opaque).
+    Opaque,
+}
+
+impl EntryStatus {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Complete => "complete",
+            Self::Partial => "partial",
+            Self::Opaque => "opaque",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "complete" => Self::Complete,
+            "opaque" => Self::Opaque,
+            _ => Self::Partial,
+        }
+    }
+}
+
+/// The contract (pre/post + I/O types) attached to an `Entry`. Contracts
+/// participate in hash identity: two entries with the same AST but
+/// different contracts are distinct.
+#[derive(Debug, Clone, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub struct Contract {
+    pub input_type: Option<String>,
+    pub output_type: Option<String>,
+    pub pre: Option<String>,
+    pub post: Option<String>,
+}
+
+/// The primary identity row. `id` is the hex-encoded SHA-256 of
+/// `canonicalize(ast, contract)`, so identity survives whitespace and
+/// comment changes but reacts to any semantic edit.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Entry {
+    pub id: String,
+    pub word: String,
+    pub variant: Option<String>,
+    pub kind: EntryKind,
+    pub language: String,
+    pub describe: Option<String>,
+    pub concept: Option<String>,
+    pub body: Option<String>,
+    pub body_nom: Option<String>,
+    pub contract: Contract,
+    pub status: EntryStatus,
+    pub translation_score: Option<f32>,
+    pub is_canonical: bool,
+    pub deprecated_by: Option<String>,
+    pub created_at: String,
+    pub updated_at: Option<String>,
+}
+
+/// Per-axis quality scores for an entry.
+#[derive(Debug, Clone, Default, PartialEq, Serialize, Deserialize)]
+pub struct EntryScores {
+    pub id: String,
+    pub security: Option<f32>,
+    pub reliability: Option<f32>,
+    pub performance: Option<f32>,
+    pub readability: Option<f32>,
+    pub testability: Option<f32>,
+    pub portability: Option<f32>,
+    pub composability: Option<f32>,
+    pub maturity: Option<f32>,
+    pub overall_score: Option<f32>,
+}
+
+/// Entity-attribute-value metadata. Keyed by `(id, key, value)` so an
+/// entry can carry multiple values for the same key (e.g. an entry
+/// sourced from several repos gets one row per repo).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryMeta {
+    pub id: String,
+    pub key: String,
+    pub value: String,
+}
+
+/// Structured signature (1:1 with Entry).
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntrySignature {
+    pub id: String,
+    pub visibility: Option<String>,
+    pub is_async: bool,
+    pub is_method: bool,
+    pub return_type: Option<String>,
+    /// JSON-encoded `[{"name":"x","type":"i32"}, ...]`. The column stays
+    /// JSON because parameter lists are variable-length and we want to
+    /// preserve ordering exactly.
+    pub params_json: String,
+}
+
+/// Severity of a security finding.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum Severity {
+    Info,
+    Low,
+    Medium,
+    High,
+    Critical,
+}
+
+impl Severity {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Info => "Info",
+            Self::Low => "Low",
+            Self::Medium => "Medium",
+            Self::High => "High",
+            Self::Critical => "Critical",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "Info" => Self::Info,
+            "Low" => Self::Low,
+            "Medium" => Self::Medium,
+            "High" => Self::High,
+            "Critical" => Self::Critical,
+            _ => Self::Info,
+        }
+    }
+}
+
+/// A security-audit finding attached to an entry. 0..N per entry.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct SecurityFinding {
+    pub finding_id: i64,
+    pub id: String,
+    pub severity: Severity,
+    pub category: String,
+    pub rule_id: Option<String>,
+    pub message: Option<String>,
+    pub evidence: Option<String>,
+    pub line: Option<i64>,
+    pub remediation: Option<String>,
+}
+
+/// A simple reference edge (entry -> entry). Used by closure walkers.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EntryRef {
+    pub from_id: String,
+    pub to_id: String,
+}
+
+/// Typed graph edge between entries.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
+pub enum EdgeType {
+    Calls,
+    Imports,
+    Implements,
+    DependsOn,
+    SimilarTo,
+}
+
+impl EdgeType {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Calls => "calls",
+            Self::Imports => "imports",
+            Self::Implements => "implements",
+            Self::DependsOn => "depends_on",
+            Self::SimilarTo => "similar_to",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        Some(match s {
+            "calls" => Self::Calls,
+            "imports" => Self::Imports,
+            "implements" => Self::Implements,
+            "depends_on" => Self::DependsOn,
+            "similar_to" => Self::SimilarTo,
+            _ => return None,
+        })
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct GraphEdge {
+    pub edge_id: i64,
+    pub from_id: String,
+    pub to_id: String,
+    pub edge_type: EdgeType,
+    pub confidence: f32,
+}
+
+/// A translation of an entry body into a target language.
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct Translation {
+    pub translation_id: i64,
+    pub id: String,
+    pub target_language: String,
+    pub body: String,
+    pub confidence: Option<f32>,
+    pub translator_version: Option<String>,
+    pub created_at: String,
+}
+
+// ── NomtuEntry (v1, legacy) ──────────────────────────────────────────
+//
+// NOTE: superseded by v2 `Entry` above. Retained temporarily so
+// consumers (nom-resolver, nom-graph, nom-cli) keep compiling while
+// Task B migrates them. New code MUST use `Entry` + side tables.
 
 /// A unified nomtu entry -- identity, meaning, contract, scores,
 /// provenance, and body all in one row. This IS the dictionary.
+///
+/// LEGACY (v1): superseded by `Entry` + typed side tables. Retained so
+/// nom-resolver / nom-graph / nom-cli keep compiling; Task B will
+/// migrate them off this type and delete it.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NomtuEntry {
     pub id: i64,
@@ -544,5 +826,70 @@ impl NomtuEntry {
         } else {
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod v2_tests {
+    use super::*;
+
+    #[test]
+    fn entry_kind_roundtrip() {
+        for kind in [
+            EntryKind::Function,
+            EntryKind::Method,
+            EntryKind::Schema,
+            EntryKind::ApiEndpoint,
+            EntryKind::Ffi,
+            EntryKind::ExternalOpaque,
+            EntryKind::Module,
+            EntryKind::Trait,
+            EntryKind::Struct,
+            EntryKind::Enum,
+            EntryKind::TestCase,
+            EntryKind::Other,
+        ] {
+            assert_eq!(EntryKind::from_str(kind.as_str()), kind);
+        }
+    }
+
+    #[test]
+    fn entry_status_roundtrip() {
+        for s in [EntryStatus::Complete, EntryStatus::Partial, EntryStatus::Opaque] {
+            assert_eq!(EntryStatus::from_str(s.as_str()), s);
+        }
+    }
+
+    #[test]
+    fn severity_roundtrip() {
+        for s in [
+            Severity::Info,
+            Severity::Low,
+            Severity::Medium,
+            Severity::High,
+            Severity::Critical,
+        ] {
+            assert_eq!(Severity::from_str(s.as_str()), s);
+        }
+    }
+
+    #[test]
+    fn edge_type_roundtrip() {
+        for e in [
+            EdgeType::Calls,
+            EdgeType::Imports,
+            EdgeType::Implements,
+            EdgeType::DependsOn,
+            EdgeType::SimilarTo,
+        ] {
+            assert_eq!(EdgeType::from_str(e.as_str()), Some(e));
+        }
+        assert_eq!(EdgeType::from_str("nope"), None);
+    }
+
+    #[test]
+    fn contract_default_is_empty() {
+        let c = Contract::default();
+        assert!(c.input_type.is_none() && c.output_type.is_none() && c.pre.is_none() && c.post.is_none());
     }
 }
