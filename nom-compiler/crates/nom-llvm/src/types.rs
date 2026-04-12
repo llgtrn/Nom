@@ -8,7 +8,15 @@ pub fn resolve_type<'ctx>(
 ) -> Result<BasicTypeEnum<'ctx>, crate::LlvmError> {
     match type_expr {
         TypeExpr::Named(ident) => resolve_type_name(mc, &ident.name),
-        TypeExpr::Generic(_ident, _args) => {
+        TypeExpr::Generic(ident, _args) => {
+            // `list[T]` is a first-class heap-backed growable sequence.
+            // The struct representation is the same monomorphic `%NomList`
+            // for every element type; the element type is tracked
+            // out-of-band in `list_elem_types` so index/push/for-in can
+            // compute the right stride.
+            if ident.name == "list" {
+                return Ok(mc.nom_list_type().into());
+            }
             Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into())
         }
         TypeExpr::Unit => Ok(mc.context.i8_type().into()),
@@ -77,6 +85,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         }
     }
 

@@ -79,4 +79,45 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
     let panic_type = void_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
     let panic_fn = mc.module.add_function("nom_panic", panic_type, None);
     mc.functions.insert("nom_panic".into(), panic_fn);
+
+    // ── List (generic) runtime helpers ──────────────────────────────────────
+    // All entry points take an explicit elem_size so a single monomorphic
+    // runtime supports every `list[T]` instantiation.
+    let nom_list_ty = mc.nom_list_type();
+
+    // nom_list_new(elem_size: i64) -> NomList
+    let list_new_type = nom_list_ty.fn_type(&[i64_type.into()], false);
+    let list_new_fn = mc.module.add_function("nom_list_new", list_new_type, None);
+    mc.functions.insert("nom_list_new".into(), list_new_fn);
+
+    // nom_list_with_capacity(elem_size: i64, cap: i64) -> NomList
+    let list_wc_type = nom_list_ty.fn_type(&[i64_type.into(), i64_type.into()], false);
+    let list_wc_fn = mc.module.add_function("nom_list_with_capacity", list_wc_type, None);
+    mc.functions.insert("nom_list_with_capacity".into(), list_wc_fn);
+
+    // nom_list_push(list: *mut NomList, elem: *const i8, elem_size: i64) -> void
+    let list_push_type = void_type.fn_type(
+        &[i8_ptr_type.into(), i8_ptr_type.into(), i64_type.into()],
+        false,
+    );
+    let list_push_fn = mc.module.add_function("nom_list_push", list_push_type, None);
+    mc.functions.insert("nom_list_push".into(), list_push_fn);
+
+    // nom_list_get(list: *const NomList, idx: i64, elem_size: i64) -> *mut i8
+    let list_get_type = i8_ptr_type.fn_type(
+        &[i8_ptr_type.into(), i64_type.into(), i64_type.into()],
+        false,
+    );
+    let list_get_fn = mc.module.add_function("nom_list_get", list_get_type, None);
+    mc.functions.insert("nom_list_get".into(), list_get_fn);
+
+    // nom_list_len(list: *const NomList) -> i64
+    let list_len_type = i64_type.fn_type(&[i8_ptr_type.into()], false);
+    let list_len_fn = mc.module.add_function("nom_list_len", list_len_type, None);
+    mc.functions.insert("nom_list_len".into(), list_len_fn);
+
+    // nom_list_free_sized(list: *mut NomList, elem_size: i64) -> void
+    let list_free_type = void_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
+    let list_free_fn = mc.module.add_function("nom_list_free_sized", list_free_type, None);
+    mc.functions.insert("nom_list_free_sized".into(), list_free_fn);
 }

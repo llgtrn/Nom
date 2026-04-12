@@ -36,6 +36,11 @@ pub struct ModuleCompiler<'ctx> {
     /// scans; stored both as `"Token::Integer"` and `"Integer"` when the
     /// latter is unambiguous across all registered enums.
     pub variant_to_enum: HashMap<String, String>,
+    /// Maps variable name -> declared element TypeExpr for `list[T]` bindings.
+    /// Needed at index/push/for-in sites so the backend can compute the
+    /// element LLVM type (and hence stride) — the `%NomList` struct itself
+    /// is monomorphic and carries only raw bytes.
+    pub list_elem_types: HashMap<String, nom_ast::TypeExpr>,
 }
 
 impl NomCompiler {
@@ -63,6 +68,7 @@ impl NomCompiler {
             loop_stack: Vec::new(),
             enum_variants: HashMap::new(),
             variant_to_enum: HashMap::new(),
+            list_elem_types: HashMap::new(),
         };
 
         declare_runtime_functions(&mut mc);
@@ -171,6 +177,24 @@ impl<'ctx> ModuleCompiler<'ctx> {
         let i64_ty = self.context.i64_type();
         let st = self.context.opaque_struct_type("NomString");
         st.set_body(&[ptr_ty.into(), i64_ty.into()], false);
+        st
+    }
+
+    /// Return (creating if necessary) the named LLVM struct for Nom lists:
+    /// `%NomList = type { ptr, i64, i64 }` — data buffer, element count,
+    /// and capacity. Matches `#[repr(C)] struct NomList` in `nom-runtime`.
+    ///
+    /// Element type is NOT encoded in the struct — the compiler tracks it
+    /// out-of-band in `list_elem_types` and passes explicit `elem_size`
+    /// arguments to every runtime entry point.
+    pub fn nom_list_type(&self) -> inkwell::types::StructType<'ctx> {
+        if let Some(existing) = self.context.get_struct_type("NomList") {
+            return existing;
+        }
+        let ptr_ty = self.context.ptr_type(inkwell::AddressSpace::default());
+        let i64_ty = self.context.i64_type();
+        let st = self.context.opaque_struct_type("NomList");
+        st.set_body(&[ptr_ty.into(), i64_ty.into(), i64_ty.into()], false);
         st
     }
 

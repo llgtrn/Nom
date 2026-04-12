@@ -143,6 +143,7 @@ nom geometry
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
         for flow in &plan.flows {
             mc.compile_flow(flow).unwrap();

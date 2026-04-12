@@ -65,8 +65,21 @@ fn compile_let<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     let_stmt: &nom_ast::LetStmt,
 ) -> Result<(), LlvmError> {
-    let val = crate::expressions::compile_expr(mc, &let_stmt.value)?;
     let name = &let_stmt.name.name;
+
+    // Special-case `let xs: list[T] = [...]`: an array literal in a
+    // list-typed context is lowered to a `nom_list_new(sizeof T)` call
+    // followed by one `nom_list_push` per initializer element. Non-literal
+    // RHSes (including `list` values returned from functions) fall through
+    // to the normal value-compilation path.
+    if let Some(nom_ast::TypeExpr::Generic(generic_ident, args)) = &let_stmt.type_ann {
+        if generic_ident.name == "list" && args.len() == 1 {
+            let elem_ty_expr = &args[0];
+            return compile_list_let(mc, name, elem_ty_expr, &let_stmt.value);
+        }
+    }
+
+    let val = crate::expressions::compile_expr(mc, &let_stmt.value)?;
 
     // Determine the LLVM type from the value or type annotation
     let llvm_ty = if let Some(type_ann) = &let_stmt.type_ann {
@@ -91,6 +104,97 @@ fn compile_let<'ctx>(
             }
         }
     }
+    Ok(())
+}
+
+/// Lower `let xs: list[T] = <init>`.
+///
+/// For array literals we emit `nom_list_new(stride)` and then a push per
+/// initializer element, storing the final `%NomList` struct into the
+/// variable's alloca. The element type is recorded in
+/// `mc.list_elem_types` so subsequent index/push/for-in sites can
+/// recover the stride.
+fn compile_list_let<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    name: &str,
+    elem_ty_expr: &nom_ast::TypeExpr,
+    value: &Expr,
+) -> Result<(), LlvmError> {
+    let nom_list_ty = mc.nom_list_type();
+    let elem_llvm_ty = crate::types::resolve_type(mc, elem_ty_expr)?;
+    let stride = crate::expressions::type_store_size(mc, elem_llvm_ty);
+    let i64_ty = mc.context.i64_type();
+    let stride_val = i64_ty.const_int(stride as u64, false);
+
+    // Alloca the list slot up-front so push calls can take &mut NomList.
+    let alloca = mc
+        .builder
+        .build_alloca(nom_list_ty, name)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Decide the initial list source: array literal → nom_list_new + pushes;
+    // otherwise evaluate the expression (must yield a %NomList value) and
+    // store it directly.
+    match value {
+        Expr::Array(elements) => {
+            let new_fn = mc
+                .functions
+                .get("nom_list_new")
+                .copied()
+                .ok_or_else(|| LlvmError::Compilation("nom_list_new missing".into()))?;
+            let call = mc
+                .builder
+                .build_call(new_fn, &[stride_val.into()], "list_init")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            let list_val = call
+                .try_as_basic_value()
+                .left()
+                .ok_or_else(|| LlvmError::Compilation("nom_list_new returned void".into()))?;
+            mc.builder
+                .build_store(alloca, list_val)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+            // Push each initializer element. The element's stack slot is
+            // reused across pushes because `nom_list_push` does an internal
+            // memcpy and does not capture the pointer.
+            if !elements.is_empty() {
+                let push_fn = mc
+                    .functions
+                    .get("nom_list_push")
+                    .copied()
+                    .ok_or_else(|| LlvmError::Compilation("nom_list_push missing".into()))?;
+                let elem_slot = mc
+                    .builder
+                    .build_alloca(elem_llvm_ty, "list_push_slot")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                for elem in elements {
+                    let v = crate::expressions::compile_expr(mc, elem)?;
+                    mc.builder
+                        .build_store(elem_slot, v)
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                    mc.builder
+                        .build_call(
+                            push_fn,
+                            &[alloca.into(), elem_slot.into(), stride_val.into()],
+                            "list_push",
+                        )
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                }
+            }
+        }
+        _ => {
+            // Non-literal RHS — compile and assume it's a %NomList value.
+            let v = crate::expressions::compile_expr(mc, value)?;
+            mc.builder
+                .build_store(alloca, v)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        }
+    }
+
+    mc.named_values
+        .insert(name.to_owned(), (alloca, nom_list_ty.into()));
+    mc.list_elem_types
+        .insert(name.to_owned(), elem_ty_expr.clone());
     Ok(())
 }
 
@@ -278,6 +382,19 @@ fn compile_for<'ctx>(
         return compile_for_array(mc, for_stmt, elements);
     }
 
+    // Check if iterating over a `list[T]` binding — emit a length-bounded
+    // index loop that calls `nom_list_get` each iteration.
+    if let Expr::Ident(id) = &for_stmt.iterable {
+        if let Some(elem_ty_expr) = mc.list_elem_types.get(&id.name).cloned() {
+            let (list_ptr, _) = mc
+                .named_values
+                .get(&id.name)
+                .copied()
+                .ok_or_else(|| LlvmError::Compilation(format!("undefined list: {}", id.name)))?;
+            return compile_for_list(mc, for_stmt, list_ptr, &elem_ty_expr);
+        }
+    }
+
     // Numeric range: iterate from 0 to n (exclusive)
     let n_val = crate::expressions::compile_expr(mc, &for_stmt.iterable)?;
     let n_int = if n_val.is_int_value() {
@@ -352,6 +469,137 @@ fn compile_for<'ctx>(
     }
 
     // Continue after loop
+    mc.builder.position_at_end(end_bb);
+    Ok(())
+}
+
+fn compile_for_list<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    for_stmt: &ForStmt,
+    list_ptr: inkwell::values::PointerValue<'ctx>,
+    elem_ty_expr: &nom_ast::TypeExpr,
+) -> Result<(), LlvmError> {
+    let function = mc
+        .builder
+        .get_insert_block()
+        .and_then(|bb| bb.get_parent())
+        .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
+
+    let i64_ty = mc.context.i64_type();
+    let elem_llvm_ty = crate::types::resolve_type(mc, elem_ty_expr)?;
+    let stride = crate::expressions::type_store_size(mc, elem_llvm_ty);
+    let stride_val = i64_ty.const_int(stride, false);
+
+    // Counter and binding allocas.
+    let counter_alloca = mc
+        .builder
+        .build_alloca(i64_ty, "for_list_idx")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(counter_alloca, i64_ty.const_int(0, false))
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    let binding_alloca = mc
+        .builder
+        .build_alloca(elem_llvm_ty, &for_stmt.binding.name)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.named_values
+        .insert(for_stmt.binding.name.clone(), (binding_alloca, elem_llvm_ty));
+
+    let cond_bb = mc.context.append_basic_block(function, "for_list_cond");
+    let body_bb = mc.context.append_basic_block(function, "for_list_body");
+    let end_bb = mc.context.append_basic_block(function, "for_list_end");
+
+    mc.builder
+        .build_unconditional_branch(cond_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Condition: idx < list_len. Call nom_list_len each iteration so the
+    // loop observes pushes that might occur inside the body (matches the
+    // "read current length" semantics users expect from a mutable list).
+    mc.builder.position_at_end(cond_bb);
+    let cur_idx = mc
+        .builder
+        .build_load(i64_ty, counter_alloca, "cur_idx")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    let len_fn = mc
+        .functions
+        .get("nom_list_len")
+        .copied()
+        .ok_or_else(|| LlvmError::Compilation("nom_list_len missing".into()))?;
+    let len_call = mc
+        .builder
+        .build_call(len_fn, &[list_ptr.into()], "list_len")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    let len_val = len_call
+        .try_as_basic_value()
+        .left()
+        .ok_or_else(|| LlvmError::Compilation("nom_list_len returned void".into()))?
+        .into_int_value();
+    let cmp = mc
+        .builder
+        .build_int_compare(inkwell::IntPredicate::SLT, cur_idx, len_val, "list_cmp")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_conditional_branch(cmp, body_bb, end_bb)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    // Body: load element via nom_list_get, bind, execute.
+    mc.builder.position_at_end(body_bb);
+    let cur_idx_body = mc
+        .builder
+        .build_load(i64_ty, counter_alloca, "cur_idx_body")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?
+        .into_int_value();
+    let get_fn = mc
+        .functions
+        .get("nom_list_get")
+        .copied()
+        .ok_or_else(|| LlvmError::Compilation("nom_list_get missing".into()))?;
+    let get_call = mc
+        .builder
+        .build_call(
+            get_fn,
+            &[list_ptr.into(), cur_idx_body.into(), stride_val.into()],
+            "list_get",
+        )
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    let elem_ptr = get_call
+        .try_as_basic_value()
+        .left()
+        .ok_or_else(|| LlvmError::Compilation("nom_list_get returned void".into()))?
+        .into_pointer_value();
+    let elem_val = mc
+        .builder
+        .build_load(elem_llvm_ty, elem_ptr, "list_elem_val")
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    mc.builder
+        .build_store(binding_alloca, elem_val)
+        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+
+    mc.loop_stack.push((cond_bb, end_bb));
+    compile_block(mc, &for_stmt.body)?;
+    mc.loop_stack.pop();
+
+    // Increment index.
+    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        let cur_idx_inc = mc
+            .builder
+            .build_load(i64_ty, counter_alloca, "cur_idx_inc")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            .into_int_value();
+        let next_idx = mc
+            .builder
+            .build_int_add(cur_idx_inc, i64_ty.const_int(1, false), "next_idx")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_store(counter_alloca, next_idx)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        mc.builder
+            .build_unconditional_branch(cond_bb)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+    }
+
     mc.builder.position_at_end(end_bb);
     Ok(())
 }
@@ -875,6 +1123,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         }
     }
 
@@ -928,6 +1177,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
@@ -1012,6 +1262,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
@@ -1111,6 +1362,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 

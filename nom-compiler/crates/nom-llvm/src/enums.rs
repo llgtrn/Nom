@@ -72,6 +72,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
 
         let enum_def = EnumDef {

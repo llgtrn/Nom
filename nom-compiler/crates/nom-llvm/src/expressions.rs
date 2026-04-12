@@ -1,8 +1,74 @@
 use crate::context::ModuleCompiler;
 use crate::LlvmError;
-use inkwell::types::BasicType;
+use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::BasicValueEnum;
 use nom_ast::{BinOp, Expr, Literal, UnaryOp};
+
+/// Compile-time byte size for an LLVM element type. Used by `list[T]`
+/// codegen to derive the `elem_size` argument passed to every runtime
+/// entry point.
+///
+/// Inkwell does not expose a portable `size_of` that returns a Rust
+/// integer at compile time (the `size_of` method on BasicType yields an
+/// IntValue that only materializes at IR level). For the small set of
+/// element types currently supported in Nom's surface language, a simple
+/// static table is sufficient and avoids pulling TargetData plumbing in.
+///
+/// Layout assumptions baked in here MUST match the 8-byte alignment used
+/// by `nom_runtime::list::layout_for`. If a new scalar is added with
+/// larger alignment, both sides need updating together.
+pub fn type_store_size<'ctx>(_mc: &ModuleCompiler<'ctx>, ty: BasicTypeEnum<'ctx>) -> u64 {
+    match ty {
+        BasicTypeEnum::IntType(it) => ((it.get_bit_width() as u64) + 7) / 8,
+        BasicTypeEnum::FloatType(_) => 8, // f64
+        BasicTypeEnum::PointerType(_) => 8,
+        BasicTypeEnum::StructType(st) => {
+            // Approximate: sum the store sizes of each field, rounding up
+            // to 8-byte alignment at the struct boundary. Matches what the
+            // tagged-union enum lowering does (see enums.rs). For Nom
+            // structs whose fields are all {i64, f64, ptr, bool, struct},
+            // this is accurate; packed/sub-word layouts would require the
+            // DataLayout path.
+            let mut total: u64 = 0;
+            for i in 0..st.count_fields() {
+                if let Some(fty) = st.get_field_type_at_index(i) {
+                    let s = match fty {
+                        BasicTypeEnum::IntType(it) => {
+                            let bytes = ((it.get_bit_width() as u64) + 7) / 8;
+                            bytes.max(1)
+                        }
+                        BasicTypeEnum::FloatType(_) => 8,
+                        BasicTypeEnum::PointerType(_) => 8,
+                        BasicTypeEnum::StructType(_) => 16,
+                        BasicTypeEnum::ArrayType(at) => {
+                            let n = at.len() as u64;
+                            let elem = match at.get_element_type() {
+                                BasicTypeEnum::IntType(eit) => {
+                                    (((eit.get_bit_width() as u64) + 7) / 8).max(1)
+                                }
+                                _ => 8,
+                            };
+                            n * elem
+                        }
+                        _ => 8,
+                    };
+                    total += s;
+                }
+            }
+            // Round to 8-byte alignment.
+            ((total + 7) / 8) * 8
+        }
+        BasicTypeEnum::ArrayType(at) => {
+            let n = at.len() as u64;
+            let elem = match at.get_element_type() {
+                BasicTypeEnum::IntType(eit) => (((eit.get_bit_width() as u64) + 7) / 8).max(1),
+                _ => 8,
+            };
+            n * elem
+        }
+        BasicTypeEnum::VectorType(_) => 16,
+    }
+}
 
 pub fn compile_expr<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
@@ -28,7 +94,7 @@ pub fn compile_expr<'ctx>(
         Expr::Range(_, _) => Err(LlvmError::Unsupported(
             "range expression outside of indexing context".into(),
         )),
-        Expr::MethodCall(_, _, _) => Err(LlvmError::Unsupported("method call".into())),
+        Expr::MethodCall(receiver, method, args) => compile_method_call(mc, receiver, method, args),
         Expr::Closure(_, _) => Err(LlvmError::Unsupported("closure".into())),
         Expr::Array(elements) => compile_array(mc, elements),
         Expr::TupleExpr(elts) => compile_tuple(mc, elts),
@@ -438,11 +504,131 @@ fn materialize_string_ptr<'ctx>(
     Ok(slot)
 }
 
+/// If `expr` is an `Expr::Ident` referring to a `list[T]` binding,
+/// return (alloca_ptr, element TypeExpr). Used by push/index/for-in to
+/// locate the list value without re-loading and by-value shenanigans.
+fn resolve_list_ident<'ctx>(
+    mc: &ModuleCompiler<'ctx>,
+    expr: &Expr,
+) -> Option<(inkwell::values::PointerValue<'ctx>, nom_ast::TypeExpr)> {
+    let name = if let Expr::Ident(id) = expr { &id.name } else { return None };
+    let elem_ty = mc.list_elem_types.get(name)?.clone();
+    let (ptr, _ty) = mc.named_values.get(name)?;
+    Some((*ptr, elem_ty))
+}
+
+fn compile_method_call<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    receiver: &Expr,
+    method: &nom_ast::Identifier,
+    args: &[Expr],
+) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // `xs.push(v)` / `xs.length()` / `xs.len()` on a list[T] binding.
+    if let Some((list_ptr, elem_ty_expr)) = resolve_list_ident(mc, receiver) {
+        let elem_llvm_ty = crate::types::resolve_type(mc, &elem_ty_expr)?;
+        let i64_ty = mc.context.i64_type();
+        let stride = type_store_size(mc, elem_llvm_ty);
+        let stride_val = i64_ty.const_int(stride, false);
+
+        match method.name.as_str() {
+            "push" => {
+                if args.len() != 1 {
+                    return Err(LlvmError::Compilation(
+                        "list.push expects exactly one argument".into(),
+                    ));
+                }
+                let v = compile_expr(mc, &args[0])?;
+                let slot = mc
+                    .builder
+                    .build_alloca(elem_llvm_ty, "push_arg")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                mc.builder
+                    .build_store(slot, v)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let push_fn = mc
+                    .functions
+                    .get("nom_list_push")
+                    .copied()
+                    .ok_or_else(|| LlvmError::Compilation("nom_list_push missing".into()))?;
+                mc.builder
+                    .build_call(
+                        push_fn,
+                        &[list_ptr.into(), slot.into(), stride_val.into()],
+                        "list_push",
+                    )
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                return Ok(mc.context.i8_type().const_zero().into());
+            }
+            "length" | "len" => {
+                let len_fn = mc
+                    .functions
+                    .get("nom_list_len")
+                    .copied()
+                    .ok_or_else(|| LlvmError::Compilation("nom_list_len missing".into()))?;
+                let call = mc
+                    .builder
+                    .build_call(len_fn, &[list_ptr.into()], "list_len")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                return call
+                    .try_as_basic_value()
+                    .left()
+                    .ok_or_else(|| LlvmError::Compilation("nom_list_len returned void".into()));
+            }
+            _ => {}
+        }
+    }
+
+    Err(LlvmError::Unsupported(format!(
+        "method call: .{}(..) on receiver",
+        method.name
+    )))
+}
+
 fn compile_index<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     target: &Expr,
     index: &Expr,
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
+    // List indexing: `xs[i]` on a `list[T]` binding → nom_list_get + load T.
+    if let Some((list_ptr, elem_ty_expr)) = resolve_list_ident(mc, target) {
+        // Can't also be a range (`xs[a..b]`) for lists; reject explicitly.
+        if matches!(index, Expr::Range(_, _)) {
+            return Err(LlvmError::Unsupported("list range slicing".into()));
+        }
+        let elem_llvm_ty = crate::types::resolve_type(mc, &elem_ty_expr)?;
+        let i64_ty = mc.context.i64_type();
+        let stride = type_store_size(mc, elem_llvm_ty);
+        let stride_val = i64_ty.const_int(stride, false);
+        let idx_val = compile_expr(mc, index)?;
+        let idx_i = if idx_val.is_int_value() {
+            idx_val.into_int_value()
+        } else {
+            return Err(LlvmError::Type("list index must be integer".into()));
+        };
+        let get_fn = mc
+            .functions
+            .get("nom_list_get")
+            .copied()
+            .ok_or_else(|| LlvmError::Compilation("nom_list_get missing".into()))?;
+        let call = mc
+            .builder
+            .build_call(
+                get_fn,
+                &[list_ptr.into(), idx_i.into(), stride_val.into()],
+                "list_get",
+            )
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        let elem_ptr = call
+            .try_as_basic_value()
+            .left()
+            .ok_or_else(|| LlvmError::Compilation("nom_list_get returned void".into()))?
+            .into_pointer_value();
+        let loaded = mc
+            .builder
+            .build_load(elem_llvm_ty, elem_ptr, "list_elem")
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        return Ok(loaded);
+    }
     // First: string slicing — Index(target, Range(lo, hi))
     if let Expr::Range(lo, hi) = index {
         let target_val = compile_expr(mc, target)?;
@@ -567,6 +753,22 @@ fn compile_field_access<'ctx>(
 
     // String .length — works on any expression that evaluates to a NomString.
     if field.name == "length" {
+        // List-typed binding: call nom_list_len.
+        if let Some((list_ptr, _elem_ty)) = resolve_list_ident(mc, obj) {
+            let len_fn = mc
+                .functions
+                .get("nom_list_len")
+                .copied()
+                .ok_or_else(|| LlvmError::Compilation("nom_list_len missing".into()))?;
+            let call = mc
+                .builder
+                .build_call(len_fn, &[list_ptr.into()], "list_len")
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            return call
+                .try_as_basic_value()
+                .left()
+                .ok_or_else(|| LlvmError::Compilation("nom_list_len returned void".into()));
+        }
         // Attempt to compile the object as a string first.
         // If it's an Ident whose type is known to be a struct, fall through
         // to the named-struct field-access path below.
@@ -880,6 +1082,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         }
     }
 
@@ -942,6 +1145,7 @@ mod tests {
             loop_stack: Vec::new(),
             enum_variants: std::collections::HashMap::new(),
             variant_to_enum: std::collections::HashMap::new(),
+            list_elem_types: std::collections::HashMap::new(),
         };
         crate::runtime::declare_runtime_functions(&mut mc);
 
