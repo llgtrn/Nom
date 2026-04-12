@@ -3,6 +3,10 @@ nom-compiler/target/
 nom-compiler/target2/
 *.exe
 *.nomiz
+# LLVM build outputs produced by `nom build --target llvm` — never
+# checked in; deterministic from the corresponding .nom source.
+*.bc
+*.ll
 
 # Database files (10M+ nomtu dictionary, too large for git)
 data/
