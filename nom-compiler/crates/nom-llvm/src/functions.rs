@@ -84,7 +84,12 @@ pub fn compile_fn<'ctx>(
     // Compile function body
     crate::statements::compile_block(mc, &fn_def.body)?;
 
-    // Add default return if no terminator on current block
+    // Add default return if no terminator on current block. For functions
+    // whose body terminates via a match/if whose arms all `return`, the
+    // current block is dead but LLVM still requires a terminator — emit a
+    // type-appropriate zero so verification passes. Any non-unit return
+    // type needs a matching zero; plain `ret void` on a value-returning
+    // function is an IR error.
     let current_bb = mc.builder.get_insert_block().unwrap();
     if current_bb.get_terminator().is_none() {
         match ret_type {
@@ -98,6 +103,16 @@ pub fn compile_fn<'ctx>(
             }
             Some(inkwell::types::BasicTypeEnum::PointerType(pt)) => {
                 mc.builder.build_return(Some(&pt.const_null()))
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            Some(inkwell::types::BasicTypeEnum::StructType(st)) => {
+                let zero = st.const_zero();
+                mc.builder.build_return(Some(&zero))
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            }
+            Some(inkwell::types::BasicTypeEnum::ArrayType(at)) => {
+                let zero = at.const_zero();
+                mc.builder.build_return(Some(&zero))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(_) => {

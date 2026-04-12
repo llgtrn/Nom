@@ -2257,6 +2257,22 @@ impl Parser {
             // a one-statement synthetic block.
             let body = if matches!(self.peek(), Token::LBrace) {
                 self.parse_block()?
+            } else if matches!(self.peek(), Token::Return) {
+                // Match arm bodies commonly look like `pat => return x`. Parse
+                // the return as a statement and wrap it in a one-item block so
+                // downstream codegen sees a normal arm body. The parse_expr
+                // fallback below cannot handle this because `return` is a
+                // statement keyword, not an expression.
+                let ret_start = self.peek_span();
+                let ret = self.parse_return_stmt()?;
+                let stmt = match ret {
+                    Statement::Return(v) => BlockStmt::Return(v),
+                    _ => unreachable!(),
+                };
+                Block {
+                    stmts: vec![stmt],
+                    span: ret_start,
+                }
             } else {
                 let expr_start = self.peek_span();
                 let expr = self.parse_expr()?;

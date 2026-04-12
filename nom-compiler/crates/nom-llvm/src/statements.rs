@@ -315,9 +315,66 @@ pub fn compile_if_expr_value<'ctx>(
     }
     let then_end_bb = mc.builder.get_insert_block().unwrap();
 
-    // Else block — same story.
+    // Else block. If the AST carries `else if` chains, lower them in
+    // cascade: each additional condition lives in its own pair of blocks
+    // inside the current else_bb, with the tail falling through to the
+    // final else body (or an empty default). Without this pass every
+    // `else if` branch was silently skipped and control jumped straight
+    // into the final `else`, which is why the token-counting driver
+    // matched every char to its fallthrough branch.
     mc.builder.position_at_end(else_bb);
-    let else_val = if let Some(else_body) = &if_expr.else_body {
+
+    // Collect the incoming (value, basic_block) pairs from every branch
+    // (then, each else-if, and the final else) that actually reaches the
+    // merge block. We build them as we go.
+    let mut incoming: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+    if then_flows_to_merge {
+        incoming.push((then_val, then_end_bb));
+    }
+
+    for (cond_expr, body) in &if_expr.else_ifs {
+        let ei_cond_val = crate::expressions::compile_expr(mc, cond_expr)?;
+        let ei_cond_bool = if ei_cond_val.is_int_value() {
+            let iv = ei_cond_val.into_int_value();
+            if iv.get_type().get_bit_width() == 1 {
+                iv
+            } else {
+                mc.builder
+                    .build_int_compare(
+                        inkwell::IntPredicate::NE,
+                        iv,
+                        iv.get_type().const_zero(),
+                        "elseifcond",
+                    )
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?
+            }
+        } else {
+            return Err(LlvmError::Type(
+                "else-if condition must be numeric or bool".into(),
+            ));
+        };
+        let ei_then_bb = mc.context.append_basic_block(function, "elifthen");
+        let ei_else_bb = mc.context.append_basic_block(function, "elifelse");
+        mc.builder
+            .build_conditional_branch(ei_cond_bool, ei_then_bb, ei_else_bb)
+            .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+        // Then half of the else-if.
+        mc.builder.position_at_end(ei_then_bb);
+        let ei_val = compile_block(mc, body)?;
+        if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+            let ei_end = mc.builder.get_insert_block().unwrap();
+            mc.builder
+                .build_unconditional_branch(merge_bb)
+                .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+            incoming.push((ei_val, ei_end));
+        }
+        // Fall through to the next condition (or final else).
+        mc.builder.position_at_end(ei_else_bb);
+    }
+
+    // Final else body (or nothing). We're positioned at either the
+    // original else_bb (no else-ifs) or the last ei_else_bb.
+    let else_val: BasicValueEnum<'ctx> = if let Some(else_body) = &if_expr.else_body {
         compile_block(mc, else_body)?
     } else {
         mc.context.f64_type().const_float(0.0).into()
@@ -330,24 +387,18 @@ pub fn compile_if_expr_value<'ctx>(
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     }
     let else_end_bb = mc.builder.get_insert_block().unwrap();
+    if else_flows_to_merge {
+        incoming.push((else_val, else_end_bb));
+    }
 
     // Merge block. If neither side reaches here the merge is unreachable;
     // we still position there so the caller gets a consistent insertion
     // point (dead code, LLVM will strip it after optimization).
     mc.builder.position_at_end(merge_bb);
 
-    // Only build the PHI from branches that actually fall through to the
-    // merge block. If only one side reaches, use its value directly.
-    let incoming: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = {
-        let mut v = Vec::new();
-        if then_flows_to_merge {
-            v.push((then_val, then_end_bb));
-        }
-        if else_flows_to_merge {
-            v.push((else_val, else_end_bb));
-        }
-        v
-    };
+    // `incoming` has already been populated above as we compiled each
+    // reachable branch. Build a PHI only when we actually have more than
+    // one edge into the merge block.
 
     match incoming.len() {
         0 => {
@@ -884,6 +935,8 @@ pub fn compile_match_value<'ctx>(
                     mc,
                     &nom_ast::Expr::Literal(lit.clone()),
                 )?;
+                let is_str_subject = crate::expressions::is_string_value_pub(mc, &subject_val);
+                let is_str_pat = crate::expressions::is_string_value_pub(mc, &lit_val);
                 let matches = if subject_val.is_float_value() && lit_val.is_float_value() {
                     mc.builder.build_float_compare(
                         inkwell::FloatPredicate::OEQ,
@@ -898,6 +951,34 @@ pub fn compile_match_value<'ctx>(
                         lit_val.into_int_value(),
                         "match_cmp",
                     ).map_err(|e| LlvmError::Compilation(e.to_string()))?
+                } else if is_str_subject && is_str_pat {
+                    // String match arm: dispatch to `nom_string_eq` and
+                    // coerce the i32 (0 / non-zero) result to i1.
+                    let a_ptr = crate::expressions::materialize_string_ptr_pub(mc, subject_val)?;
+                    let b_ptr = crate::expressions::materialize_string_ptr_pub(mc, lit_val)?;
+                    let eq_fn = mc
+                        .functions
+                        .get("nom_string_eq")
+                        .copied()
+                        .or_else(|| mc.module.get_function("nom_string_eq"))
+                        .ok_or_else(|| LlvmError::Compilation("nom_string_eq missing".into()))?;
+                    let call = mc
+                        .builder
+                        .build_call(eq_fn, &[a_ptr.into(), b_ptr.into()], "match_str_eq")
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                    let result = call
+                        .try_as_basic_value()
+                        .left()
+                        .ok_or_else(|| LlvmError::Compilation("nom_string_eq returned void".into()))?
+                        .into_int_value();
+                    mc.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::NE,
+                            result,
+                            result.get_type().const_zero(),
+                            "match_str_bool",
+                        )
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?
                 } else {
                     return Err(LlvmError::Type("match: incompatible subject and pattern types".into()));
                 };

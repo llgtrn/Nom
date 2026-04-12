@@ -617,6 +617,25 @@ fn is_string_value<'ctx>(mc: &ModuleCompiler<'ctx>, val: &BasicValueEnum<'ctx>) 
     st == mc.nom_string_type()
 }
 
+/// Public wrapper used by `statements::compile_match_*` so match arms can
+/// detect string subjects without re-implementing the layout check.
+pub fn is_string_value_pub<'ctx>(
+    mc: &ModuleCompiler<'ctx>,
+    val: &BasicValueEnum<'ctx>,
+) -> bool {
+    is_string_value(mc, val)
+}
+
+/// Public wrapper for the string-pointer materialization used by string
+/// equality matches. Keeps the underlying helper private while letting
+/// the statement compiler reuse it.
+pub fn materialize_string_ptr_pub<'ctx>(
+    mc: &mut ModuleCompiler<'ctx>,
+    val: BasicValueEnum<'ctx>,
+) -> Result<inkwell::values::PointerValue<'ctx>, LlvmError> {
+    materialize_string_ptr(mc, val)
+}
+
 /// Extract the (data_ptr, length_i64) pair from a NomString struct value.
 fn extract_string_parts<'ctx>(
     mc: &ModuleCompiler<'ctx>,
