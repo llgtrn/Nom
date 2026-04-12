@@ -60,10 +60,10 @@ jobs:
             nom-compiler/target
           key: ubuntu-latest-cargo-${{ hashFiles('nom-compiler/Cargo.lock') }}
           restore-keys: ubuntu-latest-cargo-
-      # Per-crate tests — the whole-workspace `cargo test` is known
-      # to hit pre-existing STATUS_DLL_NOT_FOUND on Windows in
-      # nom-cli integration tests, so we iterate per-crate on Linux
-      # where LLVM lib resolution works.
+      # Per-crate tests — with LLVM 18 installed above, nom-cli's
+      # bin-crate tests can now run alongside the rest of the
+      # workspace. Iterating per-crate keeps one bad crate from
+      # poisoning the whole log and lets us see progress in CI output.
       - name: cargo test per crate
         working-directory: nom-compiler
         run: |
@@ -71,27 +71,10 @@ jobs:
           for p in nom-types nom-dict nom-resolver nom-security nom-codegen \
                    nom-lexer nom-parser nom-ast nom-graph nom-search \
                    nom-translate nom-verifier nom-planner nom-diagnostics \
-                   nom-media nom-ux nom-corpus nom-bench nom-app nom-flow; do
+                   nom-media nom-ux nom-corpus nom-bench nom-app nom-flow \
+                   nom-cli; do
             echo "=== $p ==="
             cargo test -p "$p" --quiet 2>&1 | tail -5
-          done
-
-      # nom-cli integration tests: self-host parse gates, Rust↔Nom
-      # parity matrix, parser subset probe, meta test. Hard-fail on
-      # failure now that LLVM 18 is installed above; these tests use
-      # only nom-parser / nom-types / nom-dict but the bin-crate
-      # dep graph pulls nom-llvm, so the test exe needs LLVM libs
-      # to even start.
-      - name: cargo test nom-cli self-host + parity tests
-        working-directory: nom-compiler
-        run: |
-          set -e
-          for t in self_host_planner self_host_ast self_host_verifier \
-                   self_host_codegen self_host_parser self_host_smoke \
-                   self_host_meta self_host_rust_parity \
-                   parser_subset_probe self_host_pipeline; do
-            echo "=== nom-cli::$t ==="
-            cargo test -p nom-cli --test "$t" --quiet 2>&1 | tail -5
           done
 
   fmt:
