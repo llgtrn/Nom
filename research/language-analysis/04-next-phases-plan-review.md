@@ -70,7 +70,7 @@ Nine of sixteen evaluated sub-phases had weak or absent falsifiable done-conditi
 
 1. §5.17 should name the output license of translated `body_nom` explicitly. *Descoped by user.*
 2. §5 split into §5a-§5f with per-subsystem horizons. Needs user authoring.
-3. Phase 10 prerequisite list should add "DIBuilder wiring" and "panic-unwinding-or-abort decision."
+3. ~~Phase 10 prerequisite list should add "DIBuilder wiring" and "panic-unwinding-or-abort decision."~~ **Applied 2026-04-13**: both prerequisites now listed in §10.3.1 with near-term defaults (`-C debuginfo=0` + `panic = "abort"`) and the longer-term DIBuilder + unwinding paths documented.
 4. §10.3.2 parity track should be elevated in plan narrative from "housekeeping" to "real proof"; byte-fixpoint framed as aesthetic + pinned-toolchain-dependent.
 5. ~~Proof-of-bootstrap tuple (§10.3.1 last paragraph) should include `canonicalizer_version`.~~ **Applied 2026-04-13**: tuple now carries `canonicalizer_version`, `rust_toolchain_channel`, and `llvm_major_version` alongside the original five fields.
 6. Dependency-ordering fixes: Phase 9 LSP should precede or overlap §5.17 (since `nom check --audit` depends on it). §5.10 lifecycle should defer to after Phase 7 (canonicalizer is owned by Rust parser until Phase 7 ships Nom parser).
