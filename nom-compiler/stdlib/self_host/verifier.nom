@@ -1,0 +1,57 @@
+# Nom Self-Host: Verifier (Phase 4 per 03-self-hosting-roadmap.md)
+#
+# This file is the Nom-in-Nom implementation of nom-verifier. The Rust
+# reference lives at nom-compiler/crates/nom-verifier/src/lib.rs.
+#
+# Status: SCAFFOLD. Module header + VerifiedAST shape + entry-point fn
+# signature. Real type-checking + contract-pre/post validation +
+# effect-tracking arrives incrementally.
+#
+# Entry point per the roadmap:
+#   nom_verify(ast: SourceFile) -> VerifiedAST
+#
+# Pairs with parser.nom (Phase 2) → this file → planner.nom (Phase 5).
+# Only VerifiedAST (not raw SourceFile) is allowed into planning —
+# every invariant in the type system is checked at this gate.
+
+nom self_host_verifier
+
+struct SourceFile {
+  classifier: text
+  name: text
+  declaration_count: integer
+}
+
+struct VerifiedAST {
+  module_name: text
+  declaration_count: integer
+  # Set to true iff every declaration passed type-check + contract
+  # verification. Scaffold emits false; real verifier flips it on
+  # clean runs.
+  is_valid: bool
+}
+
+# Entry point. Real implementation does:
+#   1. For each declaration, resolve type references against the dict
+#      closure (use statements).
+#   2. Type-check each function body against its declared signature.
+#   3. Validate contract pre/post clauses: syntax OK, referenced vars
+#      in scope, well-formed predicates.
+#   4. Track effects (pure, reads, writes, panics).
+#   5. Return VerifiedAST if every check passes; otherwise emit
+#      diagnostics and return is_valid = false.
+fn nom_verify(ast: SourceFile) -> VerifiedAST {
+  # Scaffold: mirror the SourceFile's counts + mark invalid. Real
+  # implementation flips is_valid to true on clean run.
+  return VerifiedAST {
+    module_name: ast.name,
+    declaration_count: ast.declaration_count,
+    is_valid: false,
+  }
+}
+
+# Shape-level predicate: has the verifier stamped approval? Callers
+# (planner.nom) gate on this before running planning.
+fn is_verified(v: VerifiedAST) -> bool {
+  return v.is_valid
+}

@@ -1,0 +1,56 @@
+# Nom Self-Host: Parser (Phase 2 per 03-self-hosting-roadmap.md)
+#
+# This file is the Nom-in-Nom implementation of nom-parser. The Rust
+# reference lives at nom-compiler/crates/nom-parser/src/lib.rs.
+#
+# Status: SCAFFOLD. Module header + SourceFile shape + entry-point fn
+# signature. Real token-stream consumption + AST construction arrives
+# incrementally as the parser-supported subset widens (tuple returns +
+# generic lists are the big ones for real parsing).
+#
+# Entry point per the roadmap:
+#   nom_parse(tokens: TokenStream) -> SourceFile
+#
+# Pairs with lexer.nom (Phase 1, compiles) — together they form the
+# `source text → AST` half of the compiler. The AST then feeds the
+# verifier (Phase 4), planner (Phase 5), and codegen (Phase 6).
+
+nom self_host_parser
+
+struct TokenStream {
+  position: integer
+}
+
+struct SourceFile {
+  classifier: text
+  name: text
+  declaration_count: integer
+}
+
+# Entry point. Real implementation does:
+#   1. Consume the `<classifier> <name>` prefix (nom, flow, store, …).
+#   2. Loop: parse one top-level declaration (fn / struct / enum / …)
+#      until EOF.
+#   3. Return a SourceFile with the parsed declarations.
+fn nom_parse(tokens: TokenStream) -> SourceFile {
+  # Scaffold: return an empty SourceFile so callers can exercise the
+  # shape without a null crash. Real implementation replaces this.
+  return SourceFile {
+    classifier: "",
+    name: "",
+    declaration_count: 0,
+  }
+}
+
+# Shape-level predicate: true when the SourceFile has no declarations.
+# Callers use this to detect the scaffold / empty-file case.
+fn is_empty_source_file(sf: SourceFile) -> bool {
+  return sf.declaration_count == 0
+}
+
+# Canonical classifier string for a Nom module. Mirrors the tag the
+# lexer emits for the `nom` keyword; when real parsing lands, this is
+# what consume_classifier() must compare against.
+fn nom_classifier() -> text {
+  return "nom"
+}
