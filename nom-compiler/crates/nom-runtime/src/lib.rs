@@ -10,9 +10,11 @@ mod string;
 mod print;
 mod alloc;
 mod io;
+mod list;
 
 // Re-export all extern "C" functions
 pub use string::*;
 pub use print::*;
 pub use alloc::*;
 pub use io::*;
+pub use list::*;
