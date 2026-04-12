@@ -491,13 +491,24 @@ impl<'a> NomxParser<'a> {
 
     /// Body of a declaration: zero or more statements until the next
     /// top-level declaration keyword or EOF.
+    ///
+    /// Uses a wider terminator set than `peek_is_body_terminator` —
+    /// `To` ends a body at statement-start (new top-level decl) but
+    /// is a preposition inside rhs/cond/body token runs. This
+    /// split is the sentence-boundary approximation: a token run's
+    /// inner loop uses the narrow set; the outer body loop uses
+    /// this wider set.
     fn parse_body(&mut self) -> NomxParseResult<Vec<NomxStatement>> {
         let mut out = Vec::new();
-        while !self.peek_is_body_terminator() {
+        while !self.peek_is_body_terminator_outer() {
             let stmt = self.parse_statement()?;
             out.push(stmt);
         }
         Ok(out)
+    }
+
+    fn peek_is_body_terminator_outer(&self) -> bool {
+        self.peek_is_body_terminator() || matches!(self.peek(), NomxToken::To)
     }
 
     fn peek_is_body_terminator(&self) -> bool {
@@ -890,18 +901,18 @@ mod tests {
 
     #[test]
     fn decl_kind_name_span_accessors() {
-        // One of each decl form + the to-oneliner at the top (to
-        // avoid a mixed-form parse ambiguity: `to` has no sentence-
-        // boundary context inside a preceding define's body).
-        let src = "to square a number, respond with the number times itself.\n\
-                   record user holds: name is text.\n\
+        // One of each decl form, mixed-form ordering: to-oneliners
+        // can now appear anywhere thanks to the wider outer-body
+        // terminator that recognizes `To` at statement start.
+        let src = "record user holds: name is text.\n\
                    choice status is one of: active. deleted.\n\
-                   define greet that takes name and returns reply: reply is name.";
+                   define greet that takes name and returns reply: reply is name.\n\
+                   to square a number, respond with the number times itself.";
         let decls = parse_nomx(src).unwrap();
         let kinds: Vec<&str> = decls.iter().map(|d| d.kind()).collect();
         let names: Vec<&str> = decls.iter().map(|d| d.name()).collect();
-        assert_eq!(kinds, vec!["define", "record", "choice", "define"]);
-        assert_eq!(names, vec!["square", "user", "status", "greet"]);
+        assert_eq!(kinds, vec!["record", "choice", "define", "define"]);
+        assert_eq!(names, vec!["user", "status", "greet", "square"]);
         for d in &decls {
             let sp = d.span();
             assert!(sp.end >= sp.start);
