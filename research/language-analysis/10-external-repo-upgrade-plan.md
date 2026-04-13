@@ -7,7 +7,7 @@ Ref | Repo | Indexed (nodes / edges / flows) | Nom target
 A | `benchmark-main` (google/benchmark) | 2264 / 5146 / 190 | `nom-bench`
 B | `graphify-master` | 238 / 364 / 2 — **SKIP** | — (pivoted to petgraph + GitNexus-core + rust-analyzer)
 C | `wrenai` (Canner) | 5692 / 15373 / 276 | `nom-intent` (M8) + `nom-cli/src/store/resolve.rs` re-rank (M9)
-D | `zed-main` | (user-driven analyze) | `nom-lsp` (M16) — see §D
+D | `zed-main` | 78594 / 219709 / 300 | `nom-lsp` (M16)
 
 Previously live in our own index: `Nom` (251 / 5947 / 300). Refs A–C map to concrete remaining-work items in doc 09. Ref B was speculatively included; the indexing itself proves it irrelevant (a React/D3 chart app, zero graph-theoretic code) — the pivot to petgraph + gitnexus-core below is the actionable outcome.
 
@@ -126,17 +126,49 @@ Realistic M8 MVP is **~Q1 2026-Q3** from today; hardened **+1 quarter**. Depends
 
 ---
 
-## D. `nom-lsp` (M16) — from zed-main (placeholder — user-driven analyze)
+## D. `nom-lsp` (M16) — from zed-main (78,594 nodes / 219,709 edges, indexed 2026-04-14) — 3-5 days wedge, 4-5 months full
 
-*This section is intentionally empty pending user's zed-main analysis. Expected mining targets per doc 09 M16 deliverable:*
+### Zed's LSP architecture in 3 primitives
 
-- LSP server scaffolding (`crates/lsp/`)
-- Hover + completion + go-to-def implementations
-- Authoring Protocol reference client
-- "why this Nom?" drill-through from editor to glass-box report
-- Incremental typecheck wiring (salsa-style)
+1. **Transport + dispatch** — `LanguageServer` at [crates/lsp/src/lsp.rs](../../APP/zed-main/crates/lsp/src/lsp.rs) (2256 LOC) owns stdio pipes, JSON-RPC multiplexing (`handle_incoming_messages` L614), `initialize` (L1051), `on_request` / `on_notification` (L1145, L1157), `request` / `notify` (L1380, L1581).
+2. **Language plug-in contract** — `trait LspAdapter` at [crates/language/src/language.rs:400](../../APP/zed-main/crates/language/src/language.rs) supplies `initialization_options` (L476), `workspace_configuration` (L506), `language_ids` (L546), `process_diagnostics` (L403), `label_for_completion` (L443). Registry via `LanguageRegistry::new` ([language_registry.rs:141](../../APP/zed-main/crates/language/src/language_registry.rs)), `register_native_grammars` (L425), `language_for_name` (L519).
+3. **Workspace orchestrator** — `LspStore` at [crates/project/src/lsp_store.rs](../../APP/zed-main/crates/project/src/lsp_store.rs) (14,656 LOC) fans requests across buffers; request types modeled as `LspCommand` impls — `GetDefinitions` ([lsp_command.rs:650](../../APP/zed-main/crates/project/src/lsp_command.rs)), `GetHover` (L1986), `GetCompletions` (L2226).
 
-When the indexing completes, queries like `npx gitnexus query "lsp hover completion" --repo zed-main` + `cypher "MATCH (fn:Function) WHERE fn.filePath CONTAINS 'lsp' RETURN fn.name LIMIT 50"` should surface the concrete patterns.
+### Patterns stealable for nom-lsp
+
+- **Typed-request trait** — `LspCommand` with `type LspRequest` + `check_capabilities` ([lsp_command.rs:1995](../../APP/zed-main/crates/project/src/lsp_command.rs)) gives uniform cancellation / proto-serialization per request kind.
+- **`on_request` closure registry** (lsp.rs:1157) — register handlers dynamically without match-mega-switches.
+- **`default_initialize_params`** (lsp.rs:746) — one place to declare server capabilities; mirror in `nom-lsp` so hover/goto toggle from Authoring Protocol.
+- **`AdapterServerCapabilities`** (lsp.rs:1344) — cache server-advertised caps so clients skip disabled requests.
+- **`Subscription`-based notification teardown** (`on_notification` L1145) — drop-guard cleanup, no leaked handlers when buffers close.
+- **Semantic-tokens delta apply** at [lsp_store/semantic_tokens.rs](../../APP/zed-main/crates/project/src/lsp_store/semantic_tokens.rs) (`apply`, `from_full`) — precedent for incremental pushes from Nom's salsa layer.
+- **`LspAdapterDelegate`** (language.rs:379) — thin FS/HTTP seam lets tests inject fakes; critical for Nom's dict-resolver mocks.
+
+### Zed's "why this?" editor-to-explainer pattern
+
+- **`InfoPopover`** in [crates/editor/src/hover_popover.rs:214,816](../../APP/zed-main/crates/editor/src/hover_popover.rs) chains `GetHover` result → markdown blocks → popover; `hover_popover_delay` (L184) debounces. Nom can replace markdown with a glass-box JSON fetcher — hover calls `cmd_build_report` against the symbol's entry.
+- **`DiagnosticPopover`** (hover_popover.rs:817,840) renders diagnostic + code-action affordance inline — direct analog for the **"why this Nom?"** drill-through button surfacing the `LayeredDreamReport`.
+
+### Concrete week-1 slice
+
+1. `cargo new --lib nom-compiler/crates/nom-lsp`; add `tower-lsp` (or `lsp-server`) dep.
+2. Implement `initialize` returning `ServerCapabilities { hover_provider: Some(true), .. }`.
+3. Wire one `textDocument/hover` handler returning constant `"nom-lsp alive"`.
+4. Integration test: spawn server over pipes, send `initialize` + `hover`, assert reply.
+5. `nom lsp serve` CLI subcommand shelling into the binary.
+
+### Estimated effort
+
+- **Week-1 slice**: 3-5 days (scaffold + smoke test).
+- **MVP** (hover + goto + completion + diagnostics against real dict): 6-8 weeks.
+- **Full M16** incl. Authoring-Protocol drill-through + salsa incremental wiring: 4-5 months — consistent with doc-09's "quarters," leaning to the short end **if `tower-lsp` is adopted instead of hand-rolling transport like Zed does**. Zed's 2256-LOC `lsp.rs` is explicitly the "we own transport" path; `tower-lsp` gives the same feature set in ~100 LOC of glue. Save the hand-roll for post-M17 if Zed-level extensibility is needed.
+
+### Key files to study
+
+- `crates/lsp/src/lsp.rs` (transport)
+- `crates/language/src/{language.rs, language_registry.rs}` (plug-in contract)
+- `crates/project/src/{lsp_command.rs, lsp_store.rs, lsp_store/semantic_tokens.rs}` (orchestrator)
+- `crates/editor/src/hover_popover.rs` (UX surface for glass-box drill-through)
 
 ---
 
