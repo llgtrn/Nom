@@ -28,6 +28,7 @@ members = [
     "crates/nom-app",
     "crates/nom-flow",
     "crates/nom-concept",
+    "crates/nom-locale",
 ]
 
 [workspace.package]

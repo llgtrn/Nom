@@ -21,6 +21,7 @@ mod build;
 mod concept;
 mod corpus;
 mod fmt;
+mod locale;
 mod manifest;
 mod mcp;
 mod media;
@@ -343,6 +344,12 @@ enum Commands {
     Author {
         #[command(subcommand)]
         action: AuthorCmd,
+    },
+
+    /// Locale pack management (M3 scaffold).
+    Locale {
+        #[command(subcommand)]
+        action: LocaleCmd,
     },
 }
 
@@ -924,6 +931,17 @@ enum ConceptCmd {
     },
 }
 
+#[derive(Subcommand)]
+enum LocaleCmd {
+    /// List all registered locale packs.
+    List,
+    /// Parse and validate a BCP 47 locale tag.
+    Validate {
+        /// BCP 47 locale tag to validate (e.g. "vi-VN", "zh-Hant-TW").
+        tag: String,
+    },
+}
+
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
@@ -1149,6 +1167,10 @@ fn main() {
             AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id, repo_id, pareto_front } => {
                 cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref(), repo_id.as_deref(), pareto_front)
             }
+        },
+        Commands::Locale { action } => match action {
+            LocaleCmd::List => locale::cmd_locale_list(),
+            LocaleCmd::Validate { tag } => locale::cmd_locale_validate(&tag),
         },
     };
     process::exit(exit_code);

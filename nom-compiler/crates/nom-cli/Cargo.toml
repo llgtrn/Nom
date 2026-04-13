@@ -30,6 +30,7 @@ nom-media = { path = "../nom-media" }
 nom-corpus = { path = "../nom-corpus" }
 nom-app = { path = "../nom-app" }
 nom-concept = { path = "../nom-concept" }
+nom-locale = { path = "../nom-locale" }
 walkdir = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true }

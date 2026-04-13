@@ -1,0 +1,11 @@
+[package]
+name = "nom-locale"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+serde = { workspace = true }
+thiserror = { workspace = true }
+unicode-normalization = "0.1"
