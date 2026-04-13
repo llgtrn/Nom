@@ -1,4 +1,4 @@
-//! `nom-locale` — BCP47 tag parsing + UAX #15 NFC + M3a scaffold for M3 locale packs (doc 09).
+//! `nom-locale` — BCP47 tag parsing + UAX #15 NFC + M3 locale packs (doc 09).
 
 use std::collections::BTreeMap;
 use unicode_normalization::UnicodeNormalization;
@@ -206,14 +206,12 @@ pub struct RegisterMetadata {
 
 /// A registered locale pack: maps a BCP 47 locale to alias tables used by the
 /// Nom parser/resolver for locale-aware keyword and identifier lookup.
-///
-/// M3a: both alias maps are empty; they are populated in M3c.
 #[derive(Debug, Clone)]
 pub struct LocalePack {
     /// The BCP 47 locale this pack covers.
     pub id: LocaleTag,
-    /// Localized keyword → canonical Nom keyword (e.g. `"xác định"` → `"define"`).
-    /// Empty in M3a; populated in M3c.
+    /// Localized keyword → canonical Nom keyword (e.g. `"là"` → `"is"`).
+    /// Populated in M3c from the shipped lexer alias set.
     pub keyword_aliases: BTreeMap<String, String>,
     /// Localized identifier → canonical hash suffix.
     /// Empty in M3a; intended for M3c+ corpus-derived aliases.
@@ -222,21 +220,88 @@ pub struct LocalePack {
     pub register_metadata: RegisterMetadata,
 }
 
+// ── vi-VN keyword alias table (M3c) ──────────────────────────────────────────
+
+/// Vietnamese keyword aliases mirroring the shipped nom-concept lexer set.
+///
+/// Source: commits 4b04b1d (ASCII transliterations) + 5b59f82 (diacritic forms).
+/// Both forms lex to the same canonical English keyword.  The table lists
+/// diacritic forms first, ASCII transliterations second — same order as the
+/// lexer match arms.
+///
+/// `FromCanonical` direction picks the diacritic form when both exist.
+const VI_VN_KEYWORD_ALIASES: &[(&str, &str)] = &[
+    // ── Diacritic keyword aliases ─────────────────────────────────────────
+    ("là",         "is"),
+    ("cái",        "the"),
+    ("cần",        "requires"),
+    ("bảo_đảm",    "ensures"),
+    ("kết_hợp",    "composes"),
+    ("rồi",        "then"),
+    ("với",        "with"),
+    ("khớp",       "matching"),
+    ("dùng",       "uses"),
+    ("mở_rộng",    "extends"),
+    ("thêm",       "adds"),
+    ("bớt",        "removes"),
+    ("bày_ra",     "exposes"),
+    ("ưu_tiên",    "favor"),
+    ("mục_đích",   "intended to"),
+    // Kind nouns — diacritic
+    ("hàm",         "function"),
+    ("mô_đun",      "module"),
+    ("khái_niệm",   "concept"),
+    ("màn_hình",    "screen"),
+    ("dữ_liệu",     "data"),
+    ("sự_kiện",     "event"),
+    ("phương_tiện", "media"),
+    // ── ASCII transliteration aliases ─────────────────────────────────────
+    ("la",          "is"),
+    ("cai",         "the"),
+    ("can",         "requires"),
+    ("bao_dam",     "ensures"),
+    ("ket_hop",     "composes"),
+    ("roi",         "then"),
+    ("voi",         "with"),
+    ("khop",        "matching"),
+    ("dung",        "uses"),
+    ("mo_rong",     "extends"),
+    ("them",        "adds"),
+    ("bot",         "removes"),
+    ("bay_ra",      "exposes"),
+    ("uu_tien",     "favor"),
+    ("muc_dich",    "intended to"),
+    // Kind nouns — ASCII
+    ("ham",         "function"),
+    ("mo_dun",      "module"),
+    ("khai_niem",   "concept"),
+    ("man_hinh",    "screen"),
+    ("du_lieu",     "data"),
+    ("su_kien",     "event"),
+    ("phuong_tien", "media"),
+];
+
 // ── Built-in pack registry ────────────────────────────────────────────────────
 
-/// Return all baked-in locale packs for M3a.
+/// Return all baked-in locale packs.
 ///
-/// Currently contains two stubs: `vi-VN` (Vietnamese, Vietnam) and `en-US`
-/// (English, United States).  Alias tables are empty until M3c populates them.
+/// Contains two packs: `vi-VN` (Vietnamese, Vietnam) with the shipped lexer
+/// alias set populated in M3c, and `en-US` (English, United States) with empty
+/// alias maps (no translation needed for the canonical locale).
 pub fn builtin_packs() -> Vec<LocalePack> {
+    let vi_vn_aliases: BTreeMap<String, String> = VI_VN_KEYWORD_ALIASES
+        .iter()
+        .map(|&(loc, canon)| (loc.to_string(), canon.to_string()))
+        .collect();
+
     vec![
         LocalePack {
             id: LocaleTag::parse("vi-VN").expect("vi-VN is valid"),
-            keyword_aliases: BTreeMap::new(),
+            keyword_aliases: vi_vn_aliases,
             nom_aliases: BTreeMap::new(),
             register_metadata: RegisterMetadata {
                 display_name: "Vietnamese (Vietnam)".to_string(),
-                source: "baked:vi-v1-stub".to_string(),
+                source: "baked:vi-v1-lexer-mirror".to_string(),
                 license: "CC0-1.0".to_string(),
                 registered_at: "epoch-0".to_string(),
             },
@@ -288,6 +353,270 @@ pub fn is_confusable(a: &str, b: &str) -> ConfusableResult {
     } else {
         ConfusableResult::Deferred
     }
+}
+
+// ── apply_locale — lexical keyword substitution (M3c) ────────────────────────
+
+/// Direction of the apply_locale transformation.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ApplyDirection {
+    /// Replace localized aliases with their canonical English keywords.
+    /// e.g. `"cái hàm là"` → `"the function is"`.
+    ToCanonical,
+    /// Replace canonical English keywords with their localized aliases.
+    /// Uses the diacritic form when both diacritic and ASCII forms map to the
+    /// same canonical (diacritic form is listed first in `VI_VN_KEYWORD_ALIASES`).
+    FromCanonical,
+}
+
+/// A single token substitution made during [`apply_locale`].
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Replacement {
+    /// 1-based line number.
+    pub line: usize,
+    /// 1-based byte column.
+    pub column: usize,
+    /// The exact text that was replaced.
+    pub from: String,
+    /// The text it was replaced with.
+    pub to: String,
+}
+
+/// Result of [`apply_locale`].
+#[derive(Debug, Clone)]
+pub struct ApplyReport {
+    /// The transformed source text.
+    pub output: String,
+    /// One entry per substitution made.
+    pub replacements: Vec<Replacement>,
+    /// Count of alias occurrences found inside string literals (not substituted).
+    pub skipped_in_literals: usize,
+}
+
+/// Apply a locale pack to source text: replace each localized keyword
+/// occurrence with its canonical English keyword (or vice versa).
+///
+/// This is a **lexical pass** — it tokenizes the input stream using the same
+/// word-character classifier as the nom-concept lexer and applies the alias
+/// map.  String literals (`"..."` and `'...'`) and line comments (`#...`,
+/// `//...`) are skipped.
+///
+/// For `ToCanonical`: the `keyword_aliases` map (localized → canonical) is used.
+/// For `FromCanonical`: an inverted map (canonical → diacritic localized) is
+/// built on the fly; only unambiguous 1-to-1 mappings are applied.  If
+/// multiple localized aliases share a canonical (e.g. `"là"` and `"la"` both
+/// map to `"is"`), `FromCanonical` picks whichever appears **first** in the
+/// pack's alias table (diacritic form, for vi-VN).
+pub fn apply_locale(source: &str, pack: &LocalePack, direction: ApplyDirection) -> ApplyReport {
+    // Build the lookup map for the requested direction.
+    let lookup: BTreeMap<&str, &str> = match direction {
+        ApplyDirection::ToCanonical => {
+            pack.keyword_aliases
+                .iter()
+                .map(|(k, v)| (k.as_str(), v.as_str()))
+                .collect()
+        }
+        ApplyDirection::FromCanonical => {
+            // Invert: canonical → first (diacritic-preferred) localized alias.
+            // We use the original const order which puts diacritics first.
+            // For packs other than vi-VN, fall back to iterating keyword_aliases
+            // in BTreeMap order (alphabetical) — acceptable for non-vi packs.
+            let mut inv: BTreeMap<&str, &str> = BTreeMap::new();
+            // Walk the original const table to preserve diacritic-first order for vi-VN.
+            for &(loc, canon) in VI_VN_KEYWORD_ALIASES {
+                inv.entry(canon).or_insert(loc);
+            }
+            // Also cover any pack aliases not in the const (e.g. custom packs).
+            for (loc, canon) in &pack.keyword_aliases {
+                inv.entry(canon.as_str()).or_insert(loc.as_str());
+            }
+            inv
+        }
+    };
+
+    let mut output = String::with_capacity(source.len() + 64);
+    let mut replacements = Vec::new();
+    let mut skipped_in_literals: usize = 0;
+
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut pos = 0usize;
+    let mut line = 1usize;
+    let mut line_start = 0usize; // byte offset of current line start
+
+    while pos < len {
+        // ── Line comments: # or // ────────────────────────────────────────────
+        if bytes[pos] == b'#'
+            || (bytes[pos] == b'/' && pos + 1 < len && bytes[pos + 1] == b'/')
+        {
+            // Copy everything to end of line unchanged.
+            let comment_start = pos;
+            while pos < len && bytes[pos] != b'\n' {
+                pos += 1;
+            }
+            output.push_str(&source[comment_start..pos]);
+            continue;
+        }
+
+        // ── String literals: "..." or '...' ──────────────────────────────────
+        if bytes[pos] == b'"' || bytes[pos] == b'\'' {
+            let quote = bytes[pos];
+            let lit_start = pos;
+            pos += 1; // consume opening quote
+            while pos < len {
+                if bytes[pos] == b'\\' {
+                    pos += 2; // skip escape sequence
+                    continue;
+                }
+                if bytes[pos] == quote {
+                    pos += 1; // consume closing quote
+                    break;
+                }
+                // Check if this character starts a word that is an alias.
+                // We count it as skipped_in_literals if we detect an alias token here.
+                // We do this at the end (post-scan) rather than inline.
+                pos += 1;
+            }
+            let lit_text = &source[lit_start..pos];
+            // Count aliases inside the literal (for the skipped_in_literals counter).
+            skipped_in_literals += count_aliases_in_literal(lit_text, &lookup);
+            output.push_str(lit_text);
+            continue;
+        }
+
+        // ── Newline ───────────────────────────────────────────────────────────
+        if bytes[pos] == b'\n' {
+            output.push('\n');
+            pos += 1;
+            line += 1;
+            line_start = pos;
+            continue;
+        }
+
+        // ── Word token ────────────────────────────────────────────────────────
+        let ch = source[pos..].chars().next().unwrap_or('\0');
+        if is_word_start(ch) {
+            let word_start = pos;
+            let col = pos - line_start + 1; // 1-based byte column
+            // Advance past the full word (including underscores and diacritics).
+            while pos < len {
+                let c = source[pos..].chars().next().unwrap_or('\0');
+                if is_word_continue(c) {
+                    pos += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let word = &source[word_start..pos];
+            if let Some(&replacement) = lookup.get(word) {
+                replacements.push(Replacement {
+                    line,
+                    column: col,
+                    from: word.to_string(),
+                    to: replacement.to_string(),
+                });
+                output.push_str(replacement);
+            } else {
+                output.push_str(word);
+            }
+            continue;
+        }
+
+        // ── Any other character ───────────────────────────────────────────────
+        output.push(ch);
+        pos += ch.len_utf8();
+    }
+
+    ApplyReport {
+        output,
+        replacements,
+        skipped_in_literals,
+    }
+}
+
+/// Count how many top-level word tokens inside a string literal match an alias.
+///
+/// The literal text includes its surrounding quote characters.  We skip the
+/// opening and closing quote, then scan word tokens against the lookup map.
+fn count_aliases_in_literal<'a>(lit: &'a str, lookup: &BTreeMap<&str, &str>) -> usize {
+    let mut count = 0;
+    let bytes = lit.as_bytes();
+    let len = bytes.len();
+    // Skip opening quote (first byte) and closing quote (last byte).
+    let mut pos = 1usize;
+    let end = if len > 0 { len - 1 } else { 0 };
+    while pos < end {
+        let ch = lit[pos..].chars().next().unwrap_or('\0');
+        if is_word_start(ch) {
+            let word_start = pos;
+            while pos < end {
+                let c = lit[pos..].chars().next().unwrap_or('\0');
+                if is_word_continue(c) {
+                    pos += c.len_utf8();
+                } else {
+                    break;
+                }
+            }
+            let word = &lit[word_start..pos];
+            if lookup.contains_key(word) {
+                count += 1;
+            }
+        } else {
+            pos += ch.len_utf8();
+        }
+    }
+    count
+}
+
+// ── Word character classifier (mirrors nom-concept lexer helpers) ─────────────
+//
+// Duplicated here deliberately to avoid a dependency on nom-concept.
+// Must stay in sync with `is_word_start_char` / `is_word_continue_char`
+// from commit 5b59f82.
+
+/// Returns `true` if `c` may start a keyword/identifier token.
+#[inline]
+fn is_word_start(c: char) -> bool {
+    c.is_ascii_lowercase() || c == '_' || is_vn_diacritic(c)
+}
+
+/// Returns `true` if `c` may continue a keyword/identifier token.
+#[inline]
+fn is_word_continue(c: char) -> bool {
+    c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit() || is_vn_diacritic(c)
+}
+
+/// Closed whitelist of Vietnamese lowercase diacritic characters that appear
+/// in the keyword alias table.  Explicit set — no `unicode-xid` dependency.
+///
+/// Mirrors `is_vietnamese_diacritic_lower` from nom-concept commit 5b59f82.
+#[inline]
+fn is_vn_diacritic(c: char) -> bool {
+    matches!(
+        c,
+        // à á â ã ä å
+        'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' |
+        // ả ạ ặ ấ ầ ẩ ẫ ậ ắ ằ ẳ ẵ
+        'ả' | 'ạ' | 'ặ' | 'ấ' | 'ầ' | 'ẩ' | 'ẫ' | 'ậ' | 'ắ' | 'ằ' | 'ẳ' | 'ẵ' |
+        // è é ê
+        'è' | 'é' | 'ê' |
+        'ẻ' | 'ẽ' | 'ẹ' | 'ế' | 'ề' | 'ể' | 'ễ' | 'ệ' |
+        // ì í
+        'ì' | 'í' | 'ỉ' | 'ĩ' | 'ị' |
+        // ò ó ô õ
+        'ò' | 'ó' | 'ô' | 'õ' |
+        'ỏ' | 'ọ' | 'ố' | 'ồ' | 'ổ' | 'ỗ' | 'ộ' | 'ớ' | 'ờ' | 'ở' | 'ỡ' | 'ợ' |
+        // ơ (U+01A1)
+        'ơ' |
+        // ù ú
+        'ù' | 'ú' | 'ủ' | 'ũ' | 'ụ' | 'ứ' | 'ừ' | 'ử' | 'ữ' | 'ự' |
+        // ư (U+01B0)
+        'ư' |
+        // ỳ ý
+        'ỳ' | 'ý' | 'ỷ' | 'ỹ' | 'ỵ' |
+        // đ (U+0111)
+        'đ'
+    )
 }
 
 // ── Unit tests ────────────────────────────────────────────────────────────────
@@ -380,12 +709,6 @@ mod tests {
         let tags: Vec<String> = packs.iter().map(|p| p.id.canonical()).collect();
         assert!(tags.contains(&"vi-VN".to_string()), "vi-VN must be present");
         assert!(tags.contains(&"en-US".to_string()), "en-US must be present");
-        for pack in &packs {
-            assert!(
-                pack.keyword_aliases.is_empty(),
-                "keyword_aliases must be empty in M3a"
-            );
-        }
     }
 
     #[test]
@@ -404,5 +727,118 @@ mod tests {
             is_confusable("hello", "he1lo"),
             ConfusableResult::Deferred
         );
+    }
+
+    // ── M3c tests ─────────────────────────────────────────────────────────────
+
+    #[test]
+    fn vi_vn_pack_has_populated_aliases() {
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        assert!(
+            vi.keyword_aliases.len() >= 44,
+            "expected >= 44 aliases, got {}",
+            vi.keyword_aliases.len()
+        );
+        assert_eq!(
+            vi.keyword_aliases.get("là").map(String::as_str),
+            Some("is"),
+            "`là` must map to `is`"
+        );
+        assert_eq!(vi.register_metadata.source, "baked:vi-v1-lexer-mirror");
+    }
+
+    #[test]
+    fn apply_to_canonical_basic() {
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        let report = apply_locale("cái hàm là", vi, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "the function is");
+        assert_eq!(report.replacements.len(), 3);
+        // First replacement: cái → the at line 1, col 1.
+        assert_eq!(report.replacements[0].from, "cái");
+        assert_eq!(report.replacements[0].to, "the");
+        assert_eq!(report.replacements[0].line, 1);
+        assert_eq!(report.replacements[0].column, 1);
+        // Second replacement: hàm → function.
+        assert_eq!(report.replacements[1].from, "hàm");
+        assert_eq!(report.replacements[1].to, "function");
+        // Third replacement: là → is.
+        assert_eq!(report.replacements[2].from, "là");
+        assert_eq!(report.replacements[2].to, "is");
+    }
+
+    #[test]
+    fn apply_to_canonical_ignores_string_literals() {
+        // Only the first `cái` (outside the string) should be replaced.
+        // The `cái` inside the string literal is counted as skipped.
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        let src = r#"cái x = "cái không đổi""#;
+        let report = apply_locale(src, vi, ApplyDirection::ToCanonical);
+        // Only one replacement (the leading `cái`).
+        assert_eq!(report.replacements.len(), 1);
+        assert_eq!(report.replacements[0].from, "cái");
+        // skipped_in_literals counts the `cái` inside the quotes.
+        assert_eq!(report.skipped_in_literals, 1);
+        // Output should start with "the".
+        assert!(report.output.starts_with("the"));
+    }
+
+    #[test]
+    fn apply_to_canonical_ignores_line_comments() {
+        // The `cái` on the comment line must not be replaced.
+        // The `cái` on the second line must be replaced.
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        let src = "# cái\ncái";
+        let report = apply_locale(src, vi, ApplyDirection::ToCanonical);
+        assert_eq!(
+            report.replacements.len(),
+            1,
+            "only the non-comment cái should be replaced"
+        );
+        assert_eq!(report.replacements[0].line, 2);
+        assert_eq!(report.output, "# cái\nthe");
+    }
+
+    #[test]
+    fn apply_roundtrip_through_both_directions() {
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        // Start canonical → apply FromCanonical → should get diacritic forms.
+        let canonical = "the function is";
+        let to_vn = apply_locale(canonical, vi, ApplyDirection::FromCanonical);
+        assert_eq!(
+            to_vn.output, "cái hàm là",
+            "FromCanonical should produce diacritic vi-VN forms"
+        );
+        // Round-trip back to canonical.
+        let back = apply_locale(&to_vn.output, vi, ApplyDirection::ToCanonical);
+        assert_eq!(
+            back.output, canonical,
+            "ToCanonical(FromCanonical(canonical)) must equal canonical"
+        );
+    }
+
+    #[test]
+    fn apply_multiword_phrase_expands() {
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        // `mục_đích` is a single underscore-joined token → "intended to".
+        let report = apply_locale("mục_đích", vi, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "intended to");
+        assert_eq!(report.replacements.len(), 1);
+        assert_eq!(report.replacements[0].from, "mục_đích");
+        assert_eq!(report.replacements[0].to, "intended to");
+    }
+
+    #[test]
+    fn apply_unknown_token_unchanged() {
+        let packs = builtin_packs();
+        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
+        let report = apply_locale("xyzzy", vi, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "xyzzy");
+        assert!(report.replacements.is_empty());
     }
 }

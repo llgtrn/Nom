@@ -47,4 +47,29 @@ mod tests {
         let (code, _stdout, _stderr) = run(&["locale", "validate", "not_a_tag"]);
         assert_eq!(code, 1, "expected exit 1 for invalid tag");
     }
+
+    #[test]
+    fn locale_apply_vi_vn_to_canonical() {
+        use std::io::Write as _;
+        // Write a 1-line fixture to a temp file.
+        let pid = std::process::id();
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.subsec_nanos())
+            .unwrap_or(0);
+        let tmp_path = std::env::temp_dir()
+            .join(format!("nom-locale-apply-{pid}-{nanos}.nom"));
+        {
+            let mut f = std::fs::File::create(&tmp_path).expect("create temp file");
+            write!(f, "cái hàm là").expect("write fixture");
+        }
+        let path = tmp_path.to_str().expect("temp path to str").to_string();
+        let (code, stdout, stderr) = run(&["locale", "apply", "vi-VN", &path]);
+        let _ = std::fs::remove_file(&tmp_path);
+        assert_eq!(code, 0, "expected exit 0, stderr={stderr}");
+        assert!(
+            stdout.contains("the function is"),
+            "expected 'the function is' in output: {stdout:?}"
+        );
+    }
 }

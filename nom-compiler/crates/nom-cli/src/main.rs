@@ -940,6 +940,22 @@ enum LocaleCmd {
         /// BCP 47 locale tag to validate (e.g. "vi-VN", "zh-Hant-TW").
         tag: String,
     },
+    /// Apply a locale pack to a source file (replace localized keywords with canonical).
+    Apply {
+        /// BCP 47 tag of the pack to use (e.g. "vi-VN").
+        tag: String,
+        /// Source file to transform.
+        file: std::path::PathBuf,
+        /// Replace canonical English keywords with localized aliases (inverse direction).
+        #[arg(long)]
+        from_canonical: bool,
+        /// Write transformed text back to the file in place.
+        #[arg(long)]
+        write: bool,
+        /// Emit JSON report instead of transformed source.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 // ── Entry point ───────────────────────────────────────────────────────────────
@@ -1171,6 +1187,9 @@ fn main() {
         Commands::Locale { action } => match action {
             LocaleCmd::List => locale::cmd_locale_list(),
             LocaleCmd::Validate { tag } => locale::cmd_locale_validate(&tag),
+            LocaleCmd::Apply { tag, file, from_canonical, write, json } => {
+                locale::cmd_locale_apply(&tag, &file, from_canonical, write, json)
+            }
         },
     };
     process::exit(exit_code);
