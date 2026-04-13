@@ -307,6 +307,9 @@
 - Nom-compiled nom-compiler can compile other Nom programs
 - Output is byte-identical or semantically equivalent to Rust version (the "fixpoint" per §10.3.1)
 
+**Byte-determinism precedent already landed (2026-04-13, M10b):**
+`compile_nom_to_bc` at [nom-corpus/src/lib.rs:245](../../nom-compiler/crates/nom-corpus/src/lib.rs) wires `parse_source → plan_unchecked → nom-llvm::compile` into a single `Vec<u8>` bc producer, and `compile_nom_to_bc_is_deterministic` at [nom-corpus/src/lib.rs:1059](../../nom-compiler/crates/nom-corpus/src/lib.rs) locks byte-identical re-compilation. M10b (commit `cef8425`) additionally pins `examples/run_lexer.bc` by SHA-256 as a cross-build reproducibility gate. This **de-risks Phase 7** — the byte-identical property is already observable on the single-file level; the remaining work is extending the same discipline across the whole compiler manifest.
+
 ---
 
 ## Timeline Summary

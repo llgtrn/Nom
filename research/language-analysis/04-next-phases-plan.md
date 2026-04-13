@@ -2846,3 +2846,15 @@ Full phase order with realistic horizons:
 Critical-path-aware total post-Phase-3 through Phase 10: **~120–160 weeks** (with Phase 8 partially overlapping Phase 7, and Phase 5c long-tail overlapping 7 + 8). Previous 70–90 week claim was for a narrower scope that did not include §5.11–§5.19; the expansion honestly doubles the horizon. Still less than the original self-hosting roadmap's 66–88 weeks for a much narrower scope — content-addressed reuse across sub-phases and eliminating the need for a separate package manager / lockfile / build system is what keeps the number tractable.
 
 Phase 11 no longer exists as a separate phase (absorbed into Phase 5 per §5.2 equivalence-gated translation). Phase 12 remains open-ended.
+
+## Doc/reality alignment (2026-04-14, GitNexus-verified)
+
+Doc 09's "Doc/reality gaps" section enumerates three crates this plan does not fully reflect:
+
+1. **`nom-graph`** is zero-mentioned here despite `cmd_graph` ([nom-cli/src/main.rs:4562](../../nom-compiler/crates/nom-cli/src/main.rs)) + `NomtuGraph::{from_entries, build_call_edges, build_import_edges, detect_communities}` ([nom-graph/src/lib.rs](../../nom-compiler/crates/nom-graph/src/lib.rs)) being live surfaces. The graph surface is what makes §§5.17–5.19 queryable at scale (who-calls-what, community detection for closure-level specialization). Treat as peer to nom-concept / nom-extract for all §5.17+ discussions.
+
+2. **`nom-translate`** is a real 5-language dispatcher (C/C++/Python/JS/Go) at [nom-translate/src/lib.rs:31](../../nom-compiler/crates/nom-translate/src/lib.rs) — the §5.17 ingestion path already routes foreign function bodies through it. Any reference to translators as "not yet written" needs updating.
+
+3. **`nom-corpus`** is beyond skeleton: `compile_nom_to_bc` + `compile_nom_to_bc_is_deterministic` at [nom-corpus/src/lib.rs:245,1059](../../nom-compiler/crates/nom-corpus/src/lib.rs) give Phase 7 a free head-start on byte-determinism — the single-file property is already locked by test.
+
+See doc 09 "Remaining work" for the GitNexus-sourced shipped/remaining table that consolidates what's really done across all 28 workspace crates.
