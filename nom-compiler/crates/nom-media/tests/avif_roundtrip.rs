@@ -59,10 +59,13 @@ fn ingest_avif_canonical_bytes_start_with_ftyp_box() {
 }
 
 #[test]
+// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
+// decoder). The PSNR gate is only meaningful on platforms with avif-native.
+#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
 fn verify_avif_roundtrip_passes_on_valid_fixture() {
     // Use TINY_PNG as the "original" source (decodable by image crate) and
     // TINY_AVIF as the "stored" canonical container (valid AVIF for parse).
-    // This exercises the container-validation path of verify_avif_roundtrip.
+    // This exercises the pixel-PSNR path of verify_avif_roundtrip.
     let psnr = verify_avif_roundtrip(TINY_PNG, TINY_AVIF)
         .expect("round-trip gate should pass on a valid AVIF fixture");
     assert!(
@@ -130,6 +133,9 @@ fn ingest_image_still_to_avif_body_kind_is_avif() {
 }
 
 #[test]
+// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
+// decoder). The PSNR gate is only meaningful on platforms with avif-native.
+#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
 fn verify_avif_roundtrip_passes_after_ingest_from_png() {
     let result = ingest_image_still_to_avif(TINY_PNG, Modality::ImageStill)
         .expect("ingest should succeed");
@@ -157,6 +163,9 @@ fn ingest_image_still_to_avif_is_deterministic() {
 }
 
 #[test]
+// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
+// decoder). The PSNR gate is only meaningful on platforms with avif-native.
+#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
 fn ingest_image_still_to_avif_gradient_64x64() {
     // Generate a 64×64 deterministic gradient programmatically (no binary fixture).
     // The gradient exercises real DCT blocks rather than trivial 4×4 pixels.

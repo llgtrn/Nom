@@ -1012,43 +1012,99 @@ pub fn ingest_image_still_to_avif(
 
 /// Lossy round-trip gate for modality-canonical AVIF.
 ///
-/// Decodes the `original_bytes` (any still-image format) to RGBA8 pixels
-/// and validates that `stored_avif` is a well-formed AVIF container.
-/// Returns `Ok(psnr)` where `psnr ≥ 30.0 dB`.
+/// Decodes both `original_bytes` (any still-image format) and `stored_avif`
+/// to RGBA8 pixels, then returns the pixel-domain PSNR in dB.
 ///
-/// # PSNR note
+/// # Platform note — Path C (§5.16.13 order #5 review fix)
 ///
-/// Pixel-accurate PSNR computation from the stored AVIF requires an AVIF
-/// decoder. No pure-Rust AVIF decoder is available on Windows without C
-/// dependencies or nasm as of §5.16.13 order #5. The function therefore
-/// validates the container structure via `avif-parse` and returns
-/// `f64::INFINITY` (lossless identity in terms of the round-trip gate)
-/// — which is always ≥ 30 dB. When a pure-Rust decoder lands, this will
-/// decode both sides and compute explicit PSNR.
+/// Pixel-accurate AVIF decode requires `dav1d` (C bindings) or `rav1d`
+/// (also requires nasm + cc), neither of which is available without a C
+/// toolchain on Windows. On Windows this function returns
+/// `Err(MediaError::Avif(...))` so that missing decode capability fails
+/// loudly rather than silently passing with a vacuous `Ok(INFINITY)`.
 ///
-/// Returns [`MediaError::Avif`] if either:
-/// - `original_bytes` cannot be decoded by the `image` crate, or
-/// - `stored_avif` is not a valid AVIF container.
+/// On non-Windows the `image` crate's `avif-native` feature (backed by
+/// `dav1d`) decodes the stored AVIF and computes real pixel PSNR.
+/// Add `avif-native` to the image features in Cargo.toml and remove the
+/// `cfg(not(windows))` gate when that path is enabled.
+///
+/// Returns [`MediaError::Avif`] if:
+/// - `original_bytes` cannot be decoded by the `image` crate,
+/// - `stored_avif` is not a valid AVIF container,
+/// - the platform has no AVIF pixel decoder (Windows without C toolchain), or
+/// - PSNR computation encounters mismatched image dimensions.
 pub fn verify_avif_roundtrip(
     original_bytes: &[u8],
     stored_avif: &[u8],
 ) -> Result<f64, MediaError> {
-    // Decode original source to confirm it is decodable.
+    // Decode original source to RGBA8 pixels.
     let reader = ImageReader::new(Cursor::new(original_bytes))
         .with_guessed_format()
         .map_err(|e| MediaError::Avif(format!("original format detection failed: {e}")))?;
-    let _ = reader
+    let orig_img = reader
         .decode()
         .map_err(|e| MediaError::Avif(format!("original image decode failed: {e}")))?;
+    let orig_rgba = orig_img.into_rgba8();
+    #[cfg_attr(windows, allow(unused_variables))]
+    let orig_pixels: &[u8] = orig_rgba.as_raw();
 
-    // Validate stored AVIF container structure.
+    // Validate stored AVIF container structure (works on all platforms).
     parse_avif_metadata(stored_avif)?;
 
-    // No pure-Rust AVIF pixel decoder available on Windows without C deps.
-    // Return ∞ PSNR: the container validated → encoding succeeded; the
-    // fixed encoder params (quality=80) guarantee ≥ 35 dB on typical
-    // natural images, well above the 30 dB gate.
-    Ok(f64::INFINITY)
+    // Decode stored AVIF to RGBA8 and compute pixel PSNR.
+    // This block requires a C toolchain (dav1d) and is therefore unavailable
+    // on Windows without additional build infrastructure.
+    #[cfg(not(windows))]
+    {
+        // image 0.25 avif-native feature: AvifDecoder backed by dav1d.
+        use image::ImageDecoder;
+        let decoder = image::codecs::avif::AvifDecoder::new(Cursor::new(stored_avif))
+            .map_err(|e| MediaError::Avif(format!("AVIF decode failed: {e}")))?;
+        let (dec_w, dec_h) = decoder.dimensions();
+        let orig_w = orig_rgba.width();
+        let orig_h = orig_rgba.height();
+        if dec_w != orig_w || dec_h != orig_h {
+            return Err(MediaError::Avif(format!(
+                "AVIF dimension mismatch: original {orig_w}×{orig_h}, stored {dec_w}×{dec_h}"
+            )));
+        }
+        let mut stored_pixels = vec![0u8; (dec_w * dec_h * 4) as usize];
+        decoder
+            .read_image(&mut stored_pixels)
+            .map_err(|e| MediaError::Avif(format!("AVIF pixel read failed: {e}")))?;
+        return Ok(psnr_rgba8(orig_pixels, &stored_pixels));
+    }
+
+    // Windows fallback: no AVIF pixel decoder available without C toolchain.
+    // Return Err rather than Ok(INFINITY) so the gate fails loudly.
+    #[cfg(windows)]
+    Err(MediaError::Avif(
+        "pixel PSNR not available on Windows: AVIF decode requires dav1d (C toolchain); \
+         run verify_avif_roundtrip on Linux/macOS or install a C toolchain with nasm"
+            .to_owned(),
+    ))
+}
+
+#[cfg(not(windows))]
+/// Compute PSNR (dB) between two equal-length RGBA8 pixel buffers.
+///
+/// Returns `f64::INFINITY` when MSE is zero (identical images), which is a
+/// legitimate result — not the placeholder that `Ok(INFINITY)` was before.
+fn psnr_rgba8(a: &[u8], b: &[u8]) -> f64 {
+    assert_eq!(a.len(), b.len(), "psnr_rgba8: buffers must have equal length");
+    let mse: f64 = a
+        .iter()
+        .zip(b.iter())
+        .map(|(x, y)| {
+            let d = *x as f64 - *y as f64;
+            d * d
+        })
+        .sum::<f64>()
+        / (a.len() as f64);
+    if mse == 0.0 {
+        return f64::INFINITY; // identical pixels — legitimate infinity
+    }
+    20.0 * (255.0_f64).log10() - 10.0 * mse.log10()
 }
 
 // ── AV1 video codec (§5.16.13 order #6 — §4.4.6 canonical video) ─────
