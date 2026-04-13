@@ -4,6 +4,8 @@
 into fewer syllables than almost any language, and what this teaches Novel about
 building the most efficient programming language possible.**
 
+> **Status (2026-04-14)**: Vietnamese examples below are LINGUISTIC ANALOGY ONLY. Per commit `ecd0609`, Nom vocabulary is fully English; Vietnamese inspires GRAMMAR STYLE (anchored-flexible order, classifiers, effect valence) — never tokens in code. M8 intent transformer (Section A "Hybrid") shipped as `nom-intent` scaffold in commit `800baea` with bounded `NomIntent::{Kind, Symbol, Flow, Reject(Reason)}` enum + 4 passing tests.
+
 ---
 
 ## Section A: The 9 Fundamental Problems in the Transformer Architecture
@@ -205,7 +207,9 @@ NOVEL (Semantic composition pipeline):
 | Transparency | Black box (attention weights) | Glass box (composition report) |
 | Energy | Massive GPU clusters | Dictionary lookup + graph verification |
 
-### The Hybrid: Where Transformers Still Help
+### The Hybrid: Where Transformers Still Help [PARTIALLY SHIPPED 2026-04-14]
+
+**Week-1 slice landed** as `nom-intent` crate (commit `800baea`): bounded `NomIntent::{Kind, Symbol, Flow, Reject(Reason)}` enum + 4 passing tests locking the reject-on-not-in-candidates discipline. Real LLM adapter + DB2 ANN retrieval still TODO (blocked on M6 corpus pilot). LLM-in-build-path remains FORBIDDEN per fixpoint discipline (doc 04 §10.3.1) — M8 is pre-build author-aid only.
 
 Novel needs a Transformer for ONE specific step — intent resolution:
 
@@ -313,9 +317,9 @@ Context (semantic)       → resolves remaining ambiguity
 
 Each layer is fast, deterministic, and requires zero conscious effort.
 
-### B2: Novel's 4-Layer Disambiguation (Inspired by Vietnamese)
+### B2: Novel's 4-Layer Disambiguation (Inspired by Vietnamese) [ASPIRATIONAL]
 
-Novel should resolve Nom ambiguity the same way:
+Layer 1 (Kind prefix) is partially real via DB1 typed slots and `find_words_v2_by_kind`. Layers 2-4 + tone-mark modifier syntax (`x!`, `x^`) are design targets, not shipped. Novel should resolve Nom ambiguity the same way:
 
 ```
 Layer 1: Kind prefix (like Vietnamese tone)
