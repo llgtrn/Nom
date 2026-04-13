@@ -53,17 +53,22 @@
 | 36 | Async-marker clause (`async def` / async functions) | **W19** grammar rule | ⏳ queued (doc 14 #13) |
 | 37 | Default parameter values (`callbacks = None`) | authoring-guide rule | 📘 doc-todo |
 | 38 | Iterator vs. materialized sequences (lazy by default) | authoring-guide rule | 📘 doc-todo |
+| 39 | Relational-algebra keywords (`project … from …`) | **W20** grammar rule | ⏳ queued (doc 14 #15) |
+| 40 | Selector-predicate clause on data instances | **W21** grammar rule | ⏳ queued (doc 14 #16) |
+| 41 | Typed dimension literals (`8px`, `4px`) | **W22** grammar rule | ⏳ queued (doc 14 #16) |
+| 42 | Color literal grammar (`#0366d6`) | **W23** grammar rule | ⏳ queued (doc 14 #16) |
+| 43 | `within the last N days` time-range idiom | authoring-corpus seed | 📘 doc-todo |
 
-Totals by destination (after a4c24 early-return smoke shipped):
+Totals by destination (after doc 14 #15-#16 SQL/CSS translations surfaced 5 new rows):
 
-- ⏳ Wedge queued: **13** (W19 async-marker remains the newest addition)
-- 🧪 Smoke-test todo: **1** (down from 2; early-return guards closed)
-- 📘 Authoring-guide doc-todo: **2** (default params + lazy sequences)
+- ⏳ Wedge queued: **17** (+4 W20/W21/W22/W23 new)
+- 🧪 Smoke-test todo: **1**
+- 📘 Authoring-guide doc-todo: **3** (+1 time-range idiom)
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 38 rows. Nearing 53% closure (20/38); remaining is all actionable grammar/feature work plus one minor smoke test.
+Backlog size: 43 rows (was 38). Closure rate 47% (20/43); new rows concentrate around typed literals (W22 dimensions / W23 colors) + relational algebra (W20 project/filter) + selector predicates (W21).
 
 ## Wedge master index (for cross-ref with doc 13)
 

@@ -759,6 +759,109 @@ the function flat_map is
 
 ---
 
+## 15. SQL view — declarative query
+
+Representing a declarative SQL view (pattern sampled from typical `CREATE VIEW`):
+
+```sql
+CREATE VIEW active_users AS
+SELECT u.id, u.name, u.email
+FROM users u
+WHERE u.deleted_at IS NULL
+  AND u.last_login_at > NOW() - INTERVAL '30 days';
+```
+
+### `.nomx v1` translation
+
+```nomx
+record active_users that holds the id, name, and email
+  of every user whose deleted_at is nothing
+  and whose last_login_at is within the last 30 days.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data active_users is
+  intended to project the users table down to id + name + email
+  filtered to those who haven't been soft-deleted and have logged in recently.
+
+  uses the @Function matching "project table columns" with at-least 0.85 confidence.
+  uses the @Function matching "filter rows by predicate" with at-least 0.85 confidence.
+
+  exposes id as integer.
+  exposes name as text.
+  exposes email as text.
+
+  requires the users table is available.
+  ensures every row has non-null deleted_at absent and last_login_at within 30 days.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Relational operators** — projection (`SELECT columns`) and selection (`WHERE predicate`) are first-class SQL concepts. Nom describes them via `uses the @Function matching "..."` prose, which works but loses the algebraic shape. Candidate: **W20 relational-algebra keywords** (`project X from Y`, `where predicate holds`).
+2. **Time predicates (`NOW() - INTERVAL '30 days'`)** — no Nom primitive for relative-time ranges. Authoring-corpus seed: `within the last N days` idiom.
+3. **NULL-as-sentinel vs. `nothing`** — SQL's `IS NULL` maps to doc 17 §I1's `is nothing` predicate. Confirmed: the existing idiom handles this cleanly.
+4. **View-as-data vs. view-as-query** — A SQL view is both a data shape AND a query. Nom's `data` kind is data-only per doc 17 §I13. Suggestion: translate as `data` + separate internal query function; doc 17 rule preserved.
+
+---
+
+## 16. CSS rule — stylesheet selector + properties
+
+```css
+.button--primary {
+  background-color: #0366d6;
+  color: white;
+  padding: 8px 16px;
+  border-radius: 4px;
+  cursor: pointer;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+record button_primary_style that holds
+  a background_color of "#0366d6",
+  a color of "white",
+  a padding of "8px 16px",
+  a border_radius of "4px",
+  a cursor of "pointer".
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data button_primary_style is
+  intended to carry the visual styling for primary-action buttons.
+
+  exposes background_color as text.
+  exposes color as text.
+  exposes padding as text.
+  exposes border_radius as text.
+  exposes cursor as text.
+
+  favor documentation.
+
+the button_primary_style for the default_theme is
+  background_color is "#0366d6",
+  color is "white",
+  padding is "8px 16px",
+  border_radius is "4px",
+  cursor is "pointer".
+```
+
+### Gaps surfaced
+
+1. **Selector vs. payload split** — CSS conflates "which elements does this apply to" (selector) and "what styling" (payload). Nom's `data` kind captures the payload cleanly; the selector (`.button--primary`) needs a separate concept expressing **when this style applies**. Candidate: **W21 selector-predicate clause** on `data` instances (e.g., `applies when element has class primary-button`).
+2. **Kebab-case identifiers (`background-color`)** — doc 17 §I5's underscore-mapping rule handles the translation mechanically (`background_color`). Confirmed.
+3. **Typed dimensions (`8px`, `4px`)** — Nom stores these as `text` today; a future `@Dimension` kind would catch unit errors. Candidate: **W22 typed dimension literals.**
+4. **Hex color literals (`#0366d6`)** — stored as `text`; a `@Color` kind or colour-literal grammar would validate at parse time. Candidate: **W23 color literal grammar.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
