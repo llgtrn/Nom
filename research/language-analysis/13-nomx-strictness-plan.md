@@ -52,31 +52,39 @@ Interpretation: current strictness is already high. The wedges below tighten the
 
 ## 5. Strictness wedges (ordered)
 
-### A1 — Mandatory kind marker on every entity
+### A1 — Mandatory kind marker on every entity ✅
 
 Every block-level entity MUST start with `@Kind` or be inside a container whose kind is statically inferred. Bare prose without a kind marker = `ParseError::MissingKindMarker`. Affects: `nom-parser/src/nomx.rs` block dispatcher. Estimated 1d.
 
-### A2 — Closed keyword set audit
+**Shipped 2026-04-14 commit `792bc0d`:** 4 ct10* tests in nom-concept lock that `the matching "x"` / `the @Banana …` / `the login_user …` all reject; `the function X …` and `the @Function …` both pass.
+
+### A2 — Closed keyword set audit ✅
 
 Verify lexer rejects synonyms and case-variant spellings for `matching`, `with`, `at-least`, `confidence`, `the`, `a`, `an`, `that`. Add failing-unit tests for each forbidden variant (e.g., `Matching`, `match`, `matches`). Estimated 0.5d.
 
-### A3 — Confidence threshold requirement on agentic resolvers
+**Shipped 2026-04-14 commit `65f1198`:** 5 ct09* tests in nom-concept lock case-sensitive exact-match for all reserved tokens; synonyms like `match`/`matches` stay `Tok::Word`; lowercase `function` etc. canonicalize to `Tok::Kind`.
+
+### A3 — Confidence threshold requirement on agentic resolvers ✅
 
 `@Kind matching "..."` without `with at-least N confidence` should emit a strict-mode warning and in `--strict-mode` fail the parse. Opt-in today; default-on once downstream code is audited. Estimated 1d.
 
-### A4 — Annotator-style staged parser
+**Shipped 2026-04-14 commit `d12a8b0`:** purely-additive `nom_concept::strict` module. `validate_nom_strict(&file)` / `validate_nomtu_strict(&file)` walk the AST post-parse and emit `StrictWarning { code: "NOMX-A3", message, location }` for every typed-slot ref missing a confidence threshold. 4 tests (s01-s04); default parser unchanged.
+
+### A4 — Annotator-style staged parser ⏳
 
 Refactor `parse_nomx_source` into explicit stages: `tokenize → kind_classify → signature_extract → contract_attach → resolve_references`. Each stage takes and returns a typed AST (`TokenStream → ClassifiedAst → SignedAst → ContractedAst → ResolvedAst`). Every stage MUST classify every node or reject. Estimated 3d (biggest wedge; largest refactor risk).
 
-### A5 — No lossy `Option` fields on typed AST
+### A5 — No lossy `Option` fields on typed AST ⏳
 
 Every `pub struct` in the nomx AST audited for `Option<T>` fields that represent "we could not determine this"; replace with required `T` or with explicit `Unresolved` variants. Estimated 1d.
 
-### A6 — Reject-on-ambiguous in the dict resolver
+### A6 — Reject-on-ambiguous in the dict resolver ✅ (already locked)
 
 `find_words_v2_by_kind` already uses alphabetical tiebreak on equal confidence. Audit the callers to ensure a genuine ambiguity (multiple candidates above threshold with identical score) surfaces as `ResolverError::Ambiguous` rather than silently picking. Estimated 0.5d.
 
-Total: ~7 engineer-days, shippable as six independent commits.
+**Audited 2026-04-14 (no commit needed):** the existing tests `typed_slot_two_candidates_picks_smallest_hash` and `typed_slot_three_candidates_propagates_matching_and_alternatives` in [nom-cli/src/store/resolve.rs](../../nom-compiler/crates/nom-cli/src/store/resolve.rs) already pin the intended behavior — N candidates yield the alphabetically-smallest hash, `stats.ambiguous += 1`, and the `alternatives` field carries the rejected candidates. **The design decision is NOT "reject hard on ambiguity"** (that would break the §10.3.1 fixpoint discipline — the compiler must be deterministic over dict state) but "surface ambiguity via structured report fields". The current `ResolveStats { resolved, still_unresolved, ambiguous }` + per-ref `alternatives` + planned `nom build status` diagnostic (doc 07 §3.3) is the canonical reporting path. No new code needed.
+
+Total: ~7 engineer-days planned; **4 of 6 wedges now closed** (A1, A2, A3, A6). Remaining: A4 (~3d, largest refactor) and A5 (~1d).
 
 ## 6. Vocabulary invariant (unchanged)
 
