@@ -128,20 +128,26 @@ typed_slot, confidence_threshold), EntityDecl.signature, EntityDecl.effects,
 CompositionDecl.composes. The delegate-to-run_pipeline migration has no
 known gap that would break on real repo sources.
 
-Doc 14 translation corpus expanded to **25** across 12+ paradigm
-families — major paradigm coverage complete: imperative (Rust/
+Doc 14 translation corpus expanded to **27** across 14+ paradigm
+families — every major paradigm family from doc 02's 50-language
+survey now has at least one representative: imperative (Rust/
 Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) +
 concurrency (Go goroutines) + pure functional (Haskell) +
 algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/
 CSS/YAML) + shell (Bash) + build (Make) + container (Docker) +
-TS editor-event + CI/CD (GitHub Actions).
+TS editor-event + CI/CD (GitHub Actions) + **math-as-language
+(Lean theorem)** + **actor-model message-passing (Elixir
+GenServer)**.
 
-Doc 16 backlog at **58 rows**: **27 closed** (+7 over earlier count
-from doc 17 §I14-§I20 authoring-guide expansion), 27 wedges queued
-(W5-W34), 1 smoke-test, **0 authoring-guide doc-todo**, 0
+Doc 16 backlog at **61 rows**: **27 closed**, 30 wedges queued
+(W5-W37), 1 smoke-test, 0 authoring-guide doc-todo, 0
 design-Q-open, 2 blocked (#11 lifetime annotations + #58
 typeclass constraints — both unlock together when the
-borrow-model lane starts). **Closure rate 47%.**
+borrow-model lane starts). **Closure rate 44%** (27/61). The
+three most-recent wedges (W35 proof-kind, W36 proof-tactic
+DSL, W37 actor-spawn) all surface from the math + actor-model
+translations and are design-level questions rather than
+syntactic additions.
 
 **Milestone: Doc 17 authoring-guide chapter COMPLETE at I1-I20.**
 Every authoring-guide destination in doc 16 now has a canonical
