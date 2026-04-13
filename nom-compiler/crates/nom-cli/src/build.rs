@@ -9,6 +9,10 @@
 //! `.nom` source file that still has prose-matching refs (no `@hash`) to
 //! insert the resolved `@<hash>` after the word name.  This is idempotent:
 //! if the `@hash` is already present the file is not modified.
+//!
+//! `nom build manifest <repo>` emits a JSON build manifest derived from
+//! the closure walker + stub resolver + MECE pipeline.  All manifest logic
+//! lives in `manifest.rs`; this function is the thin CLI adapter.
 
 use std::collections::HashMap;
 use std::path::Path;
@@ -386,6 +390,66 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
     }
 
     (result, count)
+}
+
+/// CLI entry point: `nom build manifest <repo> [--dict <p>] [--concept <n>] [--out <f>] [--pretty]`.
+///
+/// Exit codes:
+///   0 — all concepts resolved cleanly and no MECE violations.
+///   1 — at least one concept has unresolved refs, a MECE violation, or an error.
+pub fn cmd_build_manifest(
+    repo: &Path,
+    dict: &Path,
+    concept_filter: Option<&str>,
+    out: Option<&Path>,
+    pretty: bool,
+) -> i32 {
+    let dict_db = match open_dict_in_place(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let manifest = match crate::manifest::build_manifest(repo, &dict_db, concept_filter) {
+        Ok(m) => m,
+        Err(e) => {
+            eprintln!("nom build manifest: {e}");
+            return 1;
+        }
+    };
+
+    let json = if pretty {
+        match serde_json::to_string_pretty(&manifest) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("nom build manifest: serialise error: {e}");
+                return 1;
+            }
+        }
+    } else {
+        match serde_json::to_string(&manifest) {
+            Ok(s) => s,
+            Err(e) => {
+                eprintln!("nom build manifest: serialise error: {e}");
+                return 1;
+            }
+        }
+    };
+
+    if let Some(path) = out {
+        if let Err(e) = std::fs::write(path, &json) {
+            eprintln!("nom build manifest: cannot write {}: {e}", path.display());
+            return 1;
+        }
+    } else {
+        println!("{json}");
+    }
+
+    // Exit 1 if any concept has unresolved refs or MECE violations (mirrors `status`).
+    let any_issue = manifest.concepts.iter().any(|c| {
+        !c.unresolved.is_empty() || !c.mece_violations.is_empty()
+    });
+
+    if any_issue { 1 } else { 0 }
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────

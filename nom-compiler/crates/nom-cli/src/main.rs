@@ -21,6 +21,7 @@ mod build;
 mod concept;
 mod corpus;
 mod fmt;
+mod manifest;
 mod mcp;
 mod media;
 mod store;
@@ -388,6 +389,27 @@ enum BuildCmd {
         /// their content-addressed hash (idempotent; per doc 08 §8.2).
         #[arg(long = "write-locks")]
         write_locks: bool,
+    },
+
+    /// Emit a JSON build manifest for the given repo, derived from the
+    /// closure walker + stub resolver + MECE pipeline.  The manifest is
+    /// the Phase-5 planner input: build_order is post-order (leaves
+    /// first) so a downstream compiler can build bottom-up.
+    Manifest {
+        /// Path to the repo (its basename is used as repo_id).
+        repo: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Restrict to one concept (default: all concepts in repo).
+        #[arg(long)]
+        concept: Option<String>,
+        /// Write JSON to this file instead of stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Pretty-print JSON (default: compact).
+        #[arg(long)]
+        pretty: bool,
     },
 }
 
@@ -828,6 +850,15 @@ fn main() {
             } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
             BuildCmd::Status { repo, dict, concept, write_locks } => {
                 build::cmd_build_status(&repo, &dict, concept.as_deref(), write_locks)
+            }
+            BuildCmd::Manifest { repo, dict, concept, out, pretty } => {
+                build::cmd_build_manifest(
+                    &repo,
+                    &dict,
+                    concept.as_deref(),
+                    out.as_deref(),
+                    pretty,
+                )
             }
         },
         Commands::Check { file, dict } => cmd_check(&file, &dict),
