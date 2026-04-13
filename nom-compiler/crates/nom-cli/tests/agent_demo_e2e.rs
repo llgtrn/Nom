@@ -189,7 +189,11 @@ mod tests {
             wo.contains("Wrote") && wo.contains("hash lock"),
             "expected 'Wrote N hash lock' in output: {wo}"
         );
-        // At minimum 7 locks: 6 tool refs in agent.nom + 1 read_file ref in safety.nom.
+        // agent.nom has 6 tool refs: 5 are v1 (word-based) and 1 is a v2 typed-slot
+        // (`the @Function matching "fetch the body of an https url"`).
+        // The typed-slot ref stays unresolved until Phase 8/9 per-kind retrieval lands;
+        // the resolver picks up the 5 v1 refs plus 1 ref in safety.nom → at least 5 locks.
+        // If the stub resolver happens to match the typed-slot by kind alone, wrote_n may be 6.
         let wrote_n = wo
             .lines()
             .find(|l| l.contains("Wrote") && l.contains("hash lock"))
@@ -197,8 +201,9 @@ mod tests {
             .and_then(|s| s.parse::<usize>().ok())
             .unwrap_or(0);
         assert!(
-            wrote_n >= 6,
-            "expected at least 6 hash locks written, got {wrote_n}: {wo}"
+            wrote_n >= 5,
+            "expected at least 5 hash locks written (5 v1 refs + safety.nom ref; \
+             typed-slot ref for fetch_url may or may not resolve), got {wrote_n}: {wo}"
         );
 
         // ── Step 5: agent.nom MUST have read_file@<64-hex> ───────────────────

@@ -61,6 +61,26 @@ pub struct ChangeSet {
     pub removing: Vec<EntityRef>,
 }
 
+/// Effect valence per motivation 02 §9 + motivation 10 §E #4.
+/// Genuinely novel: no existing language distinguishes positive/negative effects structurally.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub enum EffectValence {
+    /// Positive effect (cache_hit, load_balanced, auto_scaled).
+    /// Drives success metrics and dashboards.
+    /// Keywords: `benefit` (canonical) + `boon` (synonym).
+    Benefit,
+    /// Negative effect (timeout, rate_limited, memory_pressure).
+    /// Drives alerts, escalation, incident response.
+    /// Keywords: `hazard` (canonical) + `bane` (synonym).
+    Hazard,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct EffectClause {
+    pub valence: EffectValence,
+    pub effects: Vec<String>,
+}
+
 /// One DB2 entity declared inline in a `.nomtu`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityDecl {
@@ -68,6 +88,7 @@ pub struct EntityDecl {
     pub word: String,
     pub signature: String,
     pub contracts: Vec<ContractClause>,
+    pub effects: Vec<EffectClause>,
 }
 
 /// A composition emitted by a `.nomtu` (one extra DB2 row).
@@ -77,15 +98,25 @@ pub struct CompositionDecl {
     pub composes: Vec<EntityRef>,
     pub glue: Option<String>,
     pub contracts: Vec<ContractClause>,
+    pub effects: Vec<EffectClause>,
 }
 
 /// Reference to an entity. After first build the resolver writes back `hash`.
+///
+/// Two surface forms (doc 07 §3):
+///   v1 (bare word): `the function login_user matching "..."` — `typed_slot = false`
+///   v2 (typed slot): `the @Function matching "..."` — `typed_slot = true`, `word = ""`
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityRef {
     pub kind: Option<String>,
+    /// Entity name. Empty string when `typed_slot = true`.
     pub word: String,
     pub hash: Option<String>,
     pub matching: Option<String>,
+    /// True when source used the `.nomx v2` typed-slot form `the @Kind matching "..."`.
+    /// When true, `word` is "" and the resolver picks a hash from the dict by kind + matching.
+    #[serde(default)]
+    pub typed_slot: bool,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -121,6 +152,8 @@ mod lex {
         Requires,
         Ensures,
         Matching,
+        Benefit,
+        Hazard,
         At,
         Dot,
         Comma,
@@ -142,6 +175,11 @@ mod lex {
         Word(String),
         /// A double-quoted string (content without the quotes).
         Quoted(String),
+        /// `@<CapitalizedIdent>` — typed-slot kind marker (doc 07 §3).
+        /// The captured string is the kind name WITHOUT the leading `@`.
+        /// Example: `@Function` → `AtKind("Function")`.
+        /// Distinct from `At` (used for bare `@` before a hash hex-word).
+        AtKind(String),
     }
 
     /// Byte position in the source.
@@ -196,6 +234,24 @@ mod lex {
             }
             if b == b'@' {
                 self.pos += 1;
+                // Peek at the next character to decide between:
+                //   `@<UppercaseLetter>…` → AtKind (typed-slot, doc 07 §3)
+                //   `@<anything else>`    → At     (hash separator, existing)
+                let next_ch = self.src[self.pos..].chars().next().unwrap_or('\0');
+                if next_ch.is_ascii_uppercase() {
+                    // Consume the identifier (UppercaseLetter followed by [A-Za-z0-9_]*)
+                    let kind_start = self.pos;
+                    while self.pos < self.src.len() {
+                        let c = self.src[self.pos..].chars().next().unwrap();
+                        if c.is_ascii_alphanumeric() || c == '_' {
+                            self.pos += c.len_utf8();
+                        } else {
+                            break;
+                        }
+                    }
+                    let kind_name = self.src[kind_start..self.pos].to_string();
+                    return Some(Spanned { tok: Tok::AtKind(kind_name), pos: start });
+                }
                 return Some(Spanned { tok: Tok::At, pos: start });
             }
 
@@ -287,6 +343,11 @@ mod lex {
                     "works"    => Tok::Works,
                     "when"     => Tok::When,
                     "favor"    => Tok::Favor,
+                    // ── Effect valence keywords (English only) ───────────────
+                    "benefit"  => Tok::Benefit,   // canonical positive
+                    "boon"     => Tok::Benefit,   // English synonym
+                    "hazard"   => Tok::Hazard,    // canonical negative
+                    "bane"     => Tok::Hazard,    // English synonym
                     // ── Vietnamese ASCII-transliteration aliases ──────────────
                     "cai"      => Tok::The,       // cái  → the  (classifier article)
                     "la"       => Tok::Is,        // là   → is
@@ -482,6 +543,8 @@ mod parse {
             Tok::Requires => "`requires`".into(),
             Tok::Ensures  => "`ensures`".into(),
             Tok::Matching => "`matching`".into(),
+            Tok::Benefit  => "`benefit`".into(),
+            Tok::Hazard   => "`hazard`".into(),
             Tok::Intended => "`intended`".into(),
             Tok::To       => "`to`".into(),
             Tok::Uses     => "`uses`".into(),
@@ -499,6 +562,7 @@ mod parse {
             Tok::Kind(k)  => format!("`{k}`"),
             Tok::Word(w)  => format!("`{w}`"),
             Tok::Quoted(q) => format!("`\"{q}\"`"),
+            Tok::AtKind(k) => format!("`@{k}`"),
         }
     }
 
@@ -592,8 +656,9 @@ mod parse {
 
     // ── prose collector ──────────────────────────────────────────────────────
 
-    /// Collect tokens as prose until we hit `.` or a contract-clause keyword
-    /// (`requires` / `ensures`). Does NOT consume the terminator.
+    /// Collect tokens as prose until we hit `.`, a contract-clause keyword
+    /// (`requires` / `ensures`), or an effect keyword (`benefit` / `hazard`).
+    /// Does NOT consume the terminator.
     ///
     /// Returns the collected text with normalized spacing (words joined by " ").
     fn collect_prose(lex: &mut Lexer<'_>) -> String {
@@ -603,6 +668,7 @@ mod parse {
                 None => break,
                 Some(Tok::Dot) => break,
                 Some(Tok::Requires) | Some(Tok::Ensures) => break,
+                Some(Tok::Benefit) | Some(Tok::Hazard) => break,
                 // For EntityRef scanning inside compositions we also stop at
                 // `then` and `with` – but those are not reached from here.
                 _ => {}
@@ -625,6 +691,7 @@ mod parse {
                 None => break,
                 Some(Tok::Dot) => break,
                 Some(Tok::Requires) | Some(Tok::Ensures) => break,
+                Some(Tok::Benefit) | Some(Tok::Hazard) => break,
                 Some(Tok::Then) | Some(Tok::With) => break,
                 Some(Tok::The) => break,
                 _ => {}
@@ -647,6 +714,8 @@ mod parse {
             Tok::Requires => "requires".to_string(),
             Tok::Ensures  => "ensures".to_string(),
             Tok::Matching => "matching".to_string(),
+            Tok::Benefit  => "benefit".to_string(),
+            Tok::Hazard   => "hazard".to_string(),
             Tok::Intended => "intended".to_string(),
             Tok::To       => "to".to_string(),
             Tok::Uses     => "uses".to_string(),
@@ -664,38 +733,125 @@ mod parse {
             Tok::Word(w)  => w.clone(),
             Tok::Quoted(q) => format!("\"{}\"", q),
             Tok::Dot      => ".".to_string(),
+            Tok::AtKind(k) => format!("@{k}"),
         }
     }
 
-    // ── contract clauses ─────────────────────────────────────────────────────
+    // ── contract + effect clauses ─────────────────────────────────────────────
 
-    fn parse_contract_clauses(lex: &mut Lexer<'_>) -> Result<Vec<ContractClause>, ConceptError> {
-        let mut clauses = Vec::new();
+    /// Parse zero or more interleaved `requires`/`ensures` contract clauses
+    /// and `benefit`/`hazard` effect clauses (in any order).
+    ///
+    /// Each clause is self-terminating with its own `.`.
+    /// Returns `(contracts, effects)` preserving source order within each vec.
+    fn parse_contract_or_effect_clauses(
+        lex: &mut Lexer<'_>,
+    ) -> Result<(Vec<ContractClause>, Vec<EffectClause>), ConceptError> {
+        let mut contracts = Vec::new();
+        let mut effects   = Vec::new();
         loop {
             match lex.peek() {
                 Some(Tok::Requires) => {
                     lex.next(); // consume `requires`
                     let pred = collect_prose(lex);
                     expect_dot(lex)?;
-                    clauses.push(ContractClause::Requires(pred.trim().to_string()));
+                    contracts.push(ContractClause::Requires(pred.trim().to_string()));
                 }
                 Some(Tok::Ensures) => {
                     lex.next(); // consume `ensures`
                     let pred = collect_prose(lex);
                     expect_dot(lex)?;
-                    clauses.push(ContractClause::Ensures(pred.trim().to_string()));
+                    contracts.push(ContractClause::Ensures(pred.trim().to_string()));
+                }
+                Some(Tok::Benefit) | Some(Tok::Hazard) => {
+                    let valence = if lex.peek() == Some(Tok::Benefit) {
+                        lex.next(); // consume `benefit`
+                        EffectValence::Benefit
+                    } else {
+                        lex.next(); // consume `hazard`
+                        EffectValence::Hazard
+                    };
+                    // Parse comma-separated effect names until `.`
+                    let mut effect_names: Vec<String> = Vec::new();
+                    effect_names.push(expect_word(lex)?);
+                    while lex.peek() == Some(Tok::Comma) {
+                        lex.next(); // consume `,`
+                        match lex.peek() {
+                            Some(Tok::Dot) | None => break,
+                            _ => effect_names.push(expect_word(lex)?),
+                        }
+                    }
+                    expect_dot(lex)?;
+                    effects.push(EffectClause { valence, effects: effect_names });
                 }
                 _ => break,
             }
         }
-        Ok(clauses)
+        Ok((contracts, effects))
     }
 
     // ── entity ref ───────────────────────────────────────────────────────────
 
-    /// Parse `"the" Kind Word ("@" Hash)? ("matching" Phrase)?`
-    fn parse_entity_ref(lex: &mut Lexer<'_>) -> Result<EntityRef, ConceptError> {
-        expect_the(lex)?;
+    /// Parse an entity reference after consuming `the`.
+    ///
+    /// Two forms (doc 07 §3):
+    ///   v1: `the Kind Word ("@" Hash)? ("matching" "Phrase")?`
+    ///   v2: `the @Kind ("matching" "Phrase")?`
+    ///
+    /// The `the` token must already have been consumed by the caller.
+    fn parse_entity_ref_after_the(lex: &mut Lexer<'_>) -> Result<EntityRef, ConceptError> {
+        let pos = lex.position();
+        // Check for typed-slot form: `@CapitalizedKind`
+        match lex.peek() {
+            Some(Tok::AtKind(_)) => {
+                // v2 typed-slot form
+                let (kind_name, at_pos) = match lex.next() {
+                    Some(s) => match s.tok {
+                        Tok::AtKind(k) => (k, s.pos),
+                        _ => unreachable!(),
+                    },
+                    None => return Err(err_expected("an @Kind token", "end of input", pos)),
+                };
+                // Validate against closed kind set
+                let kind_lower = kind_name.to_lowercase();
+                if !super::KINDS.contains(&kind_lower.as_str()) {
+                    return Err(ConceptError::UnknownKind(format!("@{kind_name}")));
+                }
+                // Optional `matching "..."` clause
+                let matching = if lex.peek() == Some(Tok::Matching) {
+                    lex.next(); // consume `matching`
+                    let pos2 = lex.position();
+                    match lex.next() {
+                        Some(s) => match s.tok {
+                            Tok::Quoted(q) => Some(q),
+                            other => return Err(err_expected(
+                                "a quoted string after `matching`",
+                                &tok_display(&other),
+                                s.pos,
+                            )),
+                        },
+                        None => return Err(err_expected(
+                            "a quoted string after `matching`",
+                            "end of input",
+                            pos2,
+                        )),
+                    }
+                } else {
+                    None
+                };
+                let _ = at_pos; // silence unused warning
+                return Ok(EntityRef {
+                    kind: Some(kind_lower),
+                    word: String::new(),
+                    hash: None,
+                    matching,
+                    typed_slot: true,
+                });
+            }
+            _ => {}
+        }
+
+        // v1 bare-word form: `Kind Word (@hash)? (matching "...")?`
         let kind = expect_kind(lex)?;
         let word = expect_word(lex)?;
 
@@ -710,37 +866,44 @@ mod parse {
         // Optional matching "..."
         let matching = if lex.peek() == Some(Tok::Matching) {
             lex.next(); // consume `matching`
-            let pos = lex.position();
+            let pos2 = lex.position();
             match lex.next() {
                 Some(s) => match s.tok {
                     Tok::Quoted(q) => Some(q),
                     other => return Err(err_expected("a quoted string after `matching`", &tok_display(&other), s.pos)),
                 },
-                None => return Err(err_expected("a quoted string after `matching`", "end of input", pos)),
+                None => return Err(err_expected("a quoted string after `matching`", "end of input", pos2)),
             }
         } else {
             None
         };
 
-        Ok(EntityRef { kind: Some(kind), word, hash, matching })
+        Ok(EntityRef { kind: Some(kind), word, hash, matching, typed_slot: false })
+    }
+
+    /// Parse `"the" Kind Word ("@" Hash)? ("matching" Phrase)?`
+    /// Convenience wrapper that first consumes `the`.
+    fn parse_entity_ref(lex: &mut Lexer<'_>) -> Result<EntityRef, ConceptError> {
+        expect_the(lex)?;
+        parse_entity_ref_after_the(lex)
     }
 
     // ── entity decl ──────────────────────────────────────────────────────────
 
-    /// Parse `"the" Kind Word "is" SignatureBody ContractClause* "."`
+    /// Parse `"the" Kind Word "is" SignatureBody ContractClause* EffectClause* "."`
     /// (the leading `the` has already been consumed by the dispatch in
     ///  `parse_entity_or_composition`).
     fn parse_entity_decl(lex: &mut Lexer<'_>, kind: String, word: String) -> Result<EntityDecl, ConceptError> {
         expect_is(lex)?;
-        // Collect signature prose; stops before `.` or a contract keyword.
+        // Collect signature prose; stops before `.` or a contract/effect keyword.
         let signature = collect_prose(lex).trim().to_string();
         // Consume the `.` that terminates the signature line.
         expect_dot(lex)?;
-        // Collect zero or more contract clauses (each consumes its own `.`).
-        let contracts = parse_contract_clauses(lex)?;
+        // Collect zero or more contract/effect clauses (each consumes its own `.`).
+        let (contracts, effects) = parse_contract_or_effect_clauses(lex)?;
         // No additional closing `.` — the last clause's `.` (or the signature's
         // `.` when there are no clauses) already terminated the declaration.
-        Ok(EntityDecl { kind, word, signature, contracts })
+        Ok(EntityDecl { kind, word, signature, contracts, effects })
     }
 
     // ── composition decl ─────────────────────────────────────────────────────
@@ -782,14 +945,14 @@ mod parse {
             None
         };
 
-        let contracts = parse_contract_clauses(lex)?;
-        // When there are no contracts, a `.` terminates the composition.
-        // When contracts are present, the last clause's `.` already terminated it.
-        if contracts.is_empty() {
+        let (contracts, effects) = parse_contract_or_effect_clauses(lex)?;
+        // When there are no contracts or effects, a `.` terminates the composition.
+        // When clauses are present, the last clause's `.` already terminated it.
+        if contracts.is_empty() && effects.is_empty() {
             expect_dot(lex)?;
         }
 
-        Ok(CompositionDecl { word, composes, glue, contracts })
+        Ok(CompositionDecl { word, composes, glue, contracts, effects })
     }
 
     // ── top-level dispatch ───────────────────────────────────────────────────
@@ -1180,6 +1343,7 @@ mod tests {
                 ContractClause::Requires("the token is non-empty".to_string()),
                 ContractClause::Ensures("the result reflects whether the signature verifies".to_string()),
             ],
+            effects: vec![],
         };
         let nomtu = NomtuFile { items: vec![NomtuItem::Entity(entity.clone())] };
         let json = serde_json::to_string(&nomtu).unwrap();
@@ -1197,6 +1361,7 @@ mod tests {
                 word: "auth_jwt_session_compose".to_string(),
                 hash: Some("a1b2c3d4".to_string()),
                 matching: None,
+                typed_slot: false,
             }])],
             exposes: vec!["auth_jwt_session_compose".to_string()],
             acceptance: vec![
@@ -1979,7 +2144,7 @@ the concept minimal_safe_agent is
        the function read_file matching "read text from a workspace path",
        the function write_file matching "write text to a workspace path",
        the function list_dir matching "list files in a workspace directory",
-       the function fetch_url matching "fetch the body of an https url",
+       the @Function matching "fetch the body of an https url",
        the function search_web matching "search the web and return result links",
        the function run_command matching "run an allowed shell command".
 
@@ -2004,5 +2169,427 @@ the concept minimal_safe_agent is
         assert_eq!(c.acceptance.len(), 2);
         // Spot-check: exposes list has 6 entries.
         assert_eq!(c.exposes.len(), 6);
+    }
+
+    // ── Effect valence tests ─────────────────────────────────────────────────
+
+    /// e01: entity with one benefit clause.
+    #[test]
+    fn e01_entity_with_one_benefit_clause() {
+        let src = "the function fetch_url is given a url, returns text.\n  benefit cache_hit.";
+        let f = parse_nomtu(src).expect("should parse");
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 1);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit"]);
+                assert!(e.contracts.is_empty());
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e02: entity with one hazard clause.
+    #[test]
+    fn e02_entity_with_one_hazard_clause() {
+        let src = "the function fetch_url is given a url, returns text.\n  hazard timeout.";
+        let f = parse_nomtu(src).expect("should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 1);
+                assert_eq!(e.effects[0].valence, EffectValence::Hazard);
+                assert_eq!(e.effects[0].effects, vec!["timeout"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e03: entity with both benefit and hazard clauses.
+    #[test]
+    fn e03_entity_with_both_valences() {
+        let src = r#"the function fetch_url is given a url, returns text.
+  benefit cache_hit.
+  hazard timeout."#;
+        let f = parse_nomtu(src).expect("should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 2);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit"]);
+                assert_eq!(e.effects[1].valence, EffectValence::Hazard);
+                assert_eq!(e.effects[1].effects, vec!["timeout"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e04: effect clause with multiple effect names.
+    #[test]
+    fn e04_entity_with_multi_effect_clause() {
+        let src = "the function fetch_url is given a url, returns text.\n  benefit cache_hit, load_balanced, auto_scaled.";
+        let f = parse_nomtu(src).expect("should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 1);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit", "load_balanced", "auto_scaled"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e05: English synonym `boon` lexes as Benefit.
+    #[test]
+    fn e05_boon_synonym_lexes_as_benefit() {
+        use super::lex::{Lexer, Tok};
+        let src = "boon cache_hit.";
+        let mut l = Lexer::new(src);
+        let first = l.next().expect("should have first token");
+        assert_eq!(first.tok, Tok::Benefit, "boon must lex as Benefit");
+
+        // Also verify full parse
+        let full = "the function fetch_url is given a url, returns text.\n  boon cache_hit.";
+        let f = parse_nomtu(full).expect("boon should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 1);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e06: English synonym `bane` lexes as Hazard.
+    #[test]
+    fn e06_bane_synonym_lexes_as_hazard() {
+        use super::lex::{Lexer, Tok};
+        let src = "bane timeout.";
+        let mut l = Lexer::new(src);
+        let first = l.next().expect("should have first token");
+        assert_eq!(first.tok, Tok::Hazard, "bane must lex as Hazard");
+
+        // Also verify full parse
+        let full = "the function fetch_url is given a url, returns text.\n  bane timeout.";
+        let f = parse_nomtu(full).expect("bane should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 1);
+                assert_eq!(e.effects[0].valence, EffectValence::Hazard);
+                assert_eq!(e.effects[0].effects, vec!["timeout"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e07: both canonical keywords `benefit` and `hazard` in sequence.
+    #[test]
+    fn e07_canonical_keywords_benefit_and_hazard() {
+        let src = r#"the function fetch_url is given a url, returns text.
+  benefit cache_hit.
+  hazard timeout."#;
+        let f = parse_nomtu(src).expect("canonical keywords should parse");
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.effects.len(), 2);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit"]);
+                assert_eq!(e.effects[1].valence, EffectValence::Hazard);
+                assert_eq!(e.effects[1].effects, vec!["timeout"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e08: entity with effects round-trips through serde JSON.
+    #[test]
+    fn e08_effects_round_trip_through_serde() {
+        let src = r#"the function fetch_url is given a url, returns text.
+  requires the url scheme is https.
+  benefit cache_hit, fast_path.
+  hazard timeout, dns_failure."#;
+        let f = parse_nomtu(src).expect("should parse");
+        let json = serde_json::to_string(&f).expect("should serialize");
+        let back: NomtuFile = serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(f, back);
+        // Spot-check field values survive the round-trip.
+        match &back.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.contracts.len(), 1);
+                assert_eq!(e.effects.len(), 2);
+                assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(e.effects[0].effects, vec!["cache_hit", "fast_path"]);
+                assert_eq!(e.effects[1].valence, EffectValence::Hazard);
+                assert_eq!(e.effects[1].effects, vec!["timeout", "dns_failure"]);
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// e09: composition declares aggregated effects (benefit + hazard).
+    #[test]
+    fn e09_composition_with_effects() {
+        let src = r#"the module web_pipeline composes
+  the function fetch_url then
+  the function parse_html
+  benefit cache_hit.
+  hazard timeout, rate_limited."#;
+        let f = parse_nomtu(src).expect("should parse");
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            NomtuItem::Composition(c) => {
+                assert_eq!(c.word, "web_pipeline");
+                assert_eq!(c.composes.len(), 2);
+                assert!(c.contracts.is_empty());
+                assert_eq!(c.effects.len(), 2);
+                assert_eq!(c.effects[0].valence, EffectValence::Benefit);
+                assert_eq!(c.effects[0].effects, vec!["cache_hit"]);
+                assert_eq!(c.effects[1].valence, EffectValence::Hazard);
+                assert_eq!(c.effects[1].effects, vec!["timeout", "rate_limited"]);
+            }
+            _ => panic!("expected Composition"),
+        }
+    }
+
+    /// e10 (negative): `effects timeout.` without a valence prefix → parse error.
+    /// The word `effects` is not a keyword — it lexes as a Tok::Word and the
+    /// parser will see it where a new item or end-of-input is expected, producing
+    /// a parse error.
+    #[test]
+    fn e10_effect_clause_with_unknown_valence_fails() {
+        let src = r#"the function fetch_url is given a url, returns text.
+  effects timeout."#;
+        match parse_nomtu(src) {
+            Err(ConceptError::ParseError { .. }) => {
+                // Expected: unknown valence keyword rejected
+            }
+            Err(other) => panic!("expected ParseError, got {:?}", other),
+            Ok(_) => panic!("expected parse failure for bare `effects` keyword"),
+        }
+    }
+
+    // ── .nomx v2 (keyed) typed-slot tests ────────────────────────────────────
+
+    /// ak01: `the @Function matching "verifies tokens"` parses to a typed-slot EntityRef.
+    #[test]
+    fn ak01_parse_at_function_with_matching() {
+        let src = r#"
+the concept tokenize_test is
+  intended to test the typed-slot reference form.
+
+  uses the @Function matching "verifies tokens".
+
+  favor correctness.
+"#;
+        let f = parse_nom(src).expect("typed-slot concept should parse");
+        let c = &f.concepts[0];
+        assert_eq!(c.index.len(), 1);
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                let r = &refs[0];
+                assert_eq!(r.kind.as_deref(), Some("function"));
+                assert_eq!(r.word, "");
+                assert!(r.typed_slot, "typed_slot must be true");
+                assert_eq!(r.matching.as_deref(), Some("verifies tokens"));
+                assert!(r.hash.is_none());
+            }
+            _ => panic!("expected Uses clause"),
+        }
+    }
+
+    /// ak02: `the @Screen matching "home page"` in a full concept's uses clause.
+    #[test]
+    fn ak02_parse_at_screen_in_concept_uses() {
+        let src = r#"
+the concept x is
+  intended to demonstrate at-screen.
+
+  uses the @Screen matching "home page".
+
+  this works when the screen resolves.
+"#;
+        let f = parse_nom(src).expect("at-screen concept should parse");
+        let c = &f.concepts[0];
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                let r = &refs[0];
+                assert_eq!(r.kind.as_deref(), Some("screen"));
+                assert!(r.typed_slot);
+                assert_eq!(r.matching.as_deref(), Some("home page"));
+            }
+            _ => panic!("expected Uses"),
+        }
+        assert_eq!(c.acceptance.len(), 1);
+    }
+
+    /// ak03: `the @Banana matching "..."` → lex-time error (unknown kind).
+    #[test]
+    fn ak03_parse_at_kind_unknown_fails() {
+        let src = r#"
+the concept bad_ref is
+  intended to test unknown at-kind.
+
+  uses the @Banana matching "something".
+
+  favor correctness.
+"#;
+        match parse_nom(src) {
+            Err(ConceptError::UnknownKind(k)) => {
+                assert!(k.contains("Banana"), "error should mention `Banana`, got: {k}");
+            }
+            other => panic!("expected UnknownKind for @Banana, got {:?}", other),
+        }
+    }
+
+    /// ak04: `@a1b2c3d4` (lowercase hex after @) is NOT AtKind — it's At + Word.
+    #[test]
+    fn ak04_at_lowercase_is_hash_not_at_kind() {
+        use super::lex::{Lexer, Tok};
+
+        let src = "foo@a1b2c3d4";
+        let mut l = Lexer::new(src);
+        let toks: Vec<Tok> = {
+            let mut out = Vec::new();
+            while let Some(s) = l.next() {
+                out.push(s.tok);
+            }
+            out
+        };
+        // Should be: Word("foo"), At, Word("a1b2c3d4")
+        assert!(toks.len() >= 3, "expected at least 3 tokens: {:?}", toks);
+        assert!(matches!(&toks[0], Tok::Word(w) if w == "foo"));
+        assert_eq!(toks[1], Tok::At, "@ before lowercase must be Tok::At");
+        assert!(matches!(&toks[2], Tok::Word(w) if w == "a1b2c3d4"));
+    }
+
+    /// ak05: `the @Function` (no matching clause) → typed_slot=true, matching=None.
+    #[test]
+    fn ak05_at_kind_no_matching_clause() {
+        let src = r#"
+the concept no_match is
+  intended to test at-kind without matching clause.
+
+  uses the @Function.
+
+  favor correctness.
+"#;
+        let f = parse_nom(src).expect("at-kind without matching should parse");
+        let c = &f.concepts[0];
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                let r = &refs[0];
+                assert!(r.typed_slot);
+                assert_eq!(r.kind.as_deref(), Some("function"));
+                assert!(r.matching.is_none(), "matching should be None when absent");
+            }
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// ak06: concept uses BOTH `the function login` (v1) AND `the @Function matching "..."` (v2).
+    #[test]
+    fn ak06_mixed_v1_and_v2_in_one_concept() {
+        let src = r#"
+the concept mixed_ref is
+  intended to demonstrate both v1 and v2 references.
+
+  uses the function login_user,
+       the @Function matching "validates credentials".
+
+  favor security.
+"#;
+        let f = parse_nom(src).expect("mixed v1+v2 concept should parse");
+        let c = &f.concepts[0];
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 2);
+                // v1 ref
+                assert!(!refs[0].typed_slot);
+                assert_eq!(refs[0].word, "login_user");
+                assert_eq!(refs[0].kind.as_deref(), Some("function"));
+                // v2 ref
+                assert!(refs[1].typed_slot);
+                assert_eq!(refs[1].word, "");
+                assert_eq!(refs[1].kind.as_deref(), Some("function"));
+                assert_eq!(refs[1].matching.as_deref(), Some("validates credentials"));
+            }
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// ak07: EntityRef with typed_slot=true round-trips through serde JSON.
+    #[test]
+    fn ak07_at_kind_round_trips_through_serde() {
+        let src = r#"
+the concept serde_slot is
+  intended to verify JSON round-trip of typed-slot refs.
+
+  uses the @Module matching "authentication pipeline".
+
+  favor correctness.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        let json = serde_json::to_string(&f).expect("should serialize");
+        let back: NomFile = serde_json::from_str(&json).expect("should deserialize");
+        assert_eq!(f, back);
+        // Spot-check typed_slot survived.
+        match &back.concepts[0].index[0] {
+            IndexClause::Uses(refs) => {
+                assert!(refs[0].typed_slot, "typed_slot must survive JSON round-trip");
+                assert_eq!(refs[0].kind.as_deref(), Some("module"));
+                assert_eq!(refs[0].matching.as_deref(), Some("authentication pipeline"));
+            }
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// ak08: every kind in the closed set has a working `@Kind` form.
+    #[test]
+    fn ak08_all_closed_set_kinds_lex_as_at_kind() {
+        use super::lex::{Lexer, Tok};
+
+        // Build source that uses every closed-set kind.
+        // We just lex the @Kind tokens directly.
+        let kind_tokens = [
+            ("@Function", "Function"),
+            ("@Module",   "Module"),
+            ("@Concept",  "Concept"),
+            ("@Screen",   "Screen"),
+            ("@Data",     "Data"),
+            ("@Event",    "Event"),
+            ("@Media",    "Media"),
+        ];
+
+        for (input, expected_name) in &kind_tokens {
+            let mut l = Lexer::new(input);
+            let tok = l.next().expect("should produce a token");
+            match &tok.tok {
+                Tok::AtKind(k) => {
+                    assert_eq!(k, expected_name, "AtKind name mismatch for {input}");
+                }
+                other => panic!("expected AtKind for {input}, got {:?}", other),
+            }
+        }
+
+        // Also verify that each validates against KINDS (no UnknownKind error).
+        let concept_template = |kind_str: &str| -> String {
+            format!(r#"
+the concept ck_{lc} is
+  intended to test at-kind {lc}.
+
+  uses the @{k}.
+
+  favor correctness.
+"#, lc = kind_str.to_lowercase(), k = kind_str)
+        };
+
+        for kind in &["Function", "Module", "Concept", "Screen", "Data", "Event", "Media"] {
+            let src = concept_template(kind);
+            parse_nom(&src).unwrap_or_else(|e| panic!("@{kind} should parse, got: {:?}", e));
+        }
     }
 }

@@ -2,8 +2,12 @@ the function fetch_url is
   given a url of text, returns the response body as text.
   requires the url scheme is https.
   ensures the result is the response body without modification or yes-no failure.
+  benefit cache_hit, fast_path.
+  hazard timeout, dns_failure, tls_handshake_error.
 
 the function search_web is
   given a query of text, returns a list of result links as text.
   requires the query is non-empty.
   ensures the results are ordered by the underlying engine relevance.
+  benefit index_hit.
+  hazard rate_limited, upstream_error.

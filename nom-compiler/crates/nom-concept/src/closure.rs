@@ -381,6 +381,7 @@ mod tests {
             word: word.to_string(),
             hash: Some(hash.to_string()),
             matching: None,
+            typed_slot: false,
         }
     }
 
@@ -390,6 +391,7 @@ mod tests {
             word: word.to_string(),
             hash: None,
             matching: matching.map(|s| s.to_string()),
+            typed_slot: false,
         }
     }
 
@@ -400,6 +402,7 @@ mod tests {
                 composes,
                 glue: None,
                 contracts: vec![],
+                effects: vec![],
             })],
         }
     }

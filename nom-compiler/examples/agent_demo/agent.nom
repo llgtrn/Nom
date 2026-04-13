@@ -5,7 +5,7 @@ the concept minimal_safe_agent is
        the function read_file matching "read text from a workspace path",
        the function write_file matching "write text to a workspace path",
        the function list_dir matching "list files in a workspace directory",
-       the function fetch_url matching "fetch the body of an https url",
+       the @Function matching "fetch the body of an https url",
        the function search_web matching "search the web and return result links",
        the function run_command matching "run an allowed shell command".
 

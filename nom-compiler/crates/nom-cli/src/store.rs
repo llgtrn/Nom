@@ -1523,6 +1523,7 @@ pub fn materialize_concept_graph_from_db(
                             word: s.clone(), // word unknown from hash alone; use hash as word
                             hash: Some(s.clone()),
                             matching: None,
+                            typed_slot: false,
                         }
                     } else {
                         // It's a word name from an unresolved composition.
@@ -1531,6 +1532,7 @@ pub fn materialize_concept_graph_from_db(
                             word: s.clone(),
                             hash: None,
                             matching: None,
+                            typed_slot: false,
                         }
                     }
                 })
@@ -1542,6 +1544,7 @@ pub fn materialize_concept_graph_from_db(
                     composes,
                     glue: None,
                     contracts: vec![],
+                    effects: vec![],
                 })],
             });
         }
