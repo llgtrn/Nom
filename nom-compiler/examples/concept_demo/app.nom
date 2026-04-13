@@ -1,0 +1,8 @@
+the concept app_concept_demo is
+  intended to demo the layered concept architecture from doc 08.
+
+  uses the concept authentication_demo.
+
+  this works when the demo concept resolves to a non-empty closure.
+
+  favor readability then security.

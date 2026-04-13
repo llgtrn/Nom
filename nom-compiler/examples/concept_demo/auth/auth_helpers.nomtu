@@ -1,0 +1,14 @@
+the function validate_token_demo is
+  given a token of text, returns yes or no.
+  requires the token is non-empty.
+  ensures the result reflects whether the signature verifies.
+
+the function issue_session_demo is
+  given a user identity, returns a session token of text.
+  ensures the token expires within fifteen minutes.
+
+the module auth_session_compose_demo composes
+  the function validate_token_demo then
+  the function issue_session_demo
+  with "validate first; only issue when the token verifies."
+  ensures no session is issued for an invalid token.

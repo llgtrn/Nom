@@ -1,0 +1,11 @@
+the concept authentication_demo is
+  intended to let users with valid tokens reach the dashboard.
+
+  uses the module auth_session_compose_demo matching "validate then issue session".
+
+  exposes auth_session_compose_demo.
+
+  this works when users with valid tokens reach the dashboard
+                within two hundred milliseconds.
+
+  favor security then speed.

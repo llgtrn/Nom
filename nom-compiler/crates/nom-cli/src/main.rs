@@ -384,6 +384,10 @@ enum BuildCmd {
         /// Only report on this concept name (error if not found)
         #[arg(long)]
         concept: Option<String>,
+        /// Rewrite source .nom files to pin resolved prose-matching refs to
+        /// their content-addressed hash (idempotent; per doc 08 §8.2).
+        #[arg(long = "write-locks")]
+        write_locks: bool,
     },
 }
 
@@ -822,8 +826,8 @@ fn main() {
                 target,
                 no_prelude,
             } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
-            BuildCmd::Status { repo, dict, concept } => {
-                build::cmd_build_status(&repo, &dict, concept.as_deref())
+            BuildCmd::Status { repo, dict, concept, write_locks } => {
+                build::cmd_build_status(&repo, &dict, concept.as_deref(), write_locks)
             }
         },
         Commands::Check { file, dict } => cmd_check(&file, &dict),

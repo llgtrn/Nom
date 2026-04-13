@@ -4,14 +4,20 @@
 //! attempts to resolve unresolved refs via the stub resolver, and reports
 //! build-readiness per concept.  It is read-only — no compilation or
 //! codegen is performed.
+//!
+//! `nom build status <repo> --write-locks` additionally rewrites every
+//! `.nom` source file that still has prose-matching refs (no `@hash`) to
+//! insert the resolved `@<hash>` after the word name.  This is idempotent:
+//! if the `@hash` is already present the file is not modified.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use nom_dict::NomDict;
 
-use crate::store::{materialize_concept_graph_from_db, resolve_closure};
+use crate::store::{ResolvedRef, materialize_concept_graph_from_db, resolve_closure};
 
-/// CLI entry point: `nom build status <repo> [--dict <path>] [--concept <name>]`.
+/// CLI entry point: `nom build status <repo> [--dict <path>] [--concept <name>] [--write-locks]`.
 ///
 /// Exit codes:
 ///   0 — all concepts in scope resolved cleanly (zero still-unresolved refs).
@@ -21,6 +27,7 @@ pub fn cmd_build_status(
     repo: &Path,
     dict: &Path,
     concept_filter: Option<&str>,
+    write_locks: bool,
 ) -> i32 {
     // ── open dict ────────────────────────────────────────────────────────────
     let dict_db = match open_dict_in_place(dict) {
@@ -74,6 +81,10 @@ pub fn cmd_build_status(
 
     // ── walk closure + resolve for each concept ───────────────────────────────
     let mut any_unresolved = false;
+
+    // Track resolved refs per source file for write-lock pass.
+    // Map: source_file_path → Vec<ResolvedRef>
+    let mut file_resolved: HashMap<String, Vec<ResolvedRef>> = HashMap::new();
 
     for concept in concepts_in_scope {
         // Walk the closure.  Cycle errors are printed but don't fail other concepts.
@@ -145,9 +156,151 @@ pub fn cmd_build_status(
             }
         }
         println!();
+
+        // Collect resolved refs for write-lock pass, keyed by `referenced_from` source file.
+        if write_locks {
+            for rref in resolved {
+                // `referenced_from` is the source file path (relative or absolute).
+                // We need the unresolved ref's `referenced_from` to know which file to patch.
+                // The resolved ref doesn't carry `referenced_from`; look it up via the closure
+                // unresolved list which was consumed by resolve_closure.  Re-derive it by
+                // re-scanning the original `closure.unresolved` that produced this ref.
+                // Since resolve_closure consumed the vector, we reconstruct the mapping:
+                // this word in `rref.word` → the unresolved ref in closure.unresolved.
+                // We already walked the closure above, so we can match by word name.
+                // The source file that declared this ref is in `uref.referenced_from`.
+                let source_file = closure
+                    .unresolved
+                    .iter()
+                    .find(|u| u.word == rref.word)
+                    .map(|u| u.referenced_from.clone())
+                    .unwrap_or_default();
+
+                if !source_file.is_empty() {
+                    file_resolved
+                        .entry(source_file)
+                        .or_default()
+                        .push(rref);
+                }
+            }
+        }
+    }
+
+    // ── write-lock pass ───────────────────────────────────────────────────────
+    if write_locks {
+        let mut total_locks_written = 0usize;
+        let mut files_patched = 0usize;
+
+        for (rel_source, refs) in &file_resolved {
+            // Build absolute path: if rel_source is already absolute, use as-is;
+            // otherwise join with repo.
+            let source_path = {
+                let p = Path::new(rel_source);
+                if p.is_absolute() {
+                    p.to_path_buf()
+                } else {
+                    repo.join(p)
+                }
+            };
+
+            let original = match std::fs::read_to_string(&source_path) {
+                Ok(s) => s,
+                Err(e) => {
+                    eprintln!(
+                        "nom build status: cannot read {} for lock writeback: {e}",
+                        source_path.display()
+                    );
+                    continue;
+                }
+            };
+
+            let (patched, n) = apply_hash_locks(&original, refs);
+            if n > 0 {
+                if let Err(e) = std::fs::write(&source_path, &patched) {
+                    eprintln!(
+                        "nom build status: cannot write lock to {}: {e}",
+                        source_path.display()
+                    );
+                } else {
+                    total_locks_written += n;
+                    files_patched += 1;
+                }
+            }
+        }
+
+        println!("Wrote {total_locks_written} hash lock(s) to {files_patched} file(s).");
     }
 
     if any_unresolved { 1 } else { 0 }
+}
+
+/// Rewrite `source` text by inserting `@<hash>` after each resolved word name
+/// that does not already have `@` pinned.
+///
+/// For each `ResolvedRef { word, hash, .. }`, scans the source line-by-line
+/// for lines that contain `the <kind> <word>` (no `@` immediately after
+/// `<word>`) and splices `@<hash>` in.
+///
+/// Returns `(patched_source, count_of_insertions)`.
+///
+/// This is idempotent: if the line already contains `<word>@` it is skipped.
+pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
+    if refs.is_empty() {
+        return (source.to_owned(), 0);
+    }
+
+    let mut result = String::with_capacity(source.len() + refs.len() * 70);
+    let mut count = 0usize;
+
+    for line in source.lines() {
+        let mut patched_line = line.to_owned();
+
+        for rref in refs {
+            let word = &rref.word;
+            let hash = &rref.hash;
+
+            // Skip if the word already has @<hash> pinned anywhere on this line.
+            if patched_line.contains(&format!("{word}@")) {
+                continue;
+            }
+
+            // Look for `the <kind> <word>` pattern.  The word must be followed
+            // by whitespace, punctuation, end-of-line, or `matching`.
+            // We scan for the token boundary manually to avoid a regex dep on
+            // the single caller site (regex is available via workspace but we
+            // keep the rewrite pure for testability).
+            let kinds = ["function", "module", "concept", "screen", "data", "event", "media"];
+            for kind in kinds {
+                let needle = format!("the {kind} {word}");
+                if let Some(pos) = patched_line.find(&needle) {
+                    let after_pos = pos + needle.len();
+                    // Confirm what follows is not `@` (already pinned) or an
+                    // alnum/underscore char that would mean a longer word.
+                    let next_char = patched_line[after_pos..].chars().next();
+                    let already_pinned = next_char == Some('@');
+                    let word_continues = next_char
+                        .map(|c| c.is_alphanumeric() || c == '_')
+                        .unwrap_or(false);
+
+                    if !already_pinned && !word_continues {
+                        patched_line.insert_str(after_pos, &format!("@{hash}"));
+                        count += 1;
+                        break; // one insertion per ref per line is enough
+                    }
+                }
+            }
+        }
+
+        result.push_str(&patched_line);
+        result.push('\n');
+    }
+
+    // Preserve whether the original ended with a newline or not.
+    if !source.ends_with('\n') && result.ends_with('\n') {
+        result.pop();
+    }
+
+    (result, count)
 }
 
 // ── helpers ──────────────────────────────────────────────────────────────────
@@ -166,5 +319,65 @@ fn open_dict_in_place(dict: &Path) -> Option<NomDict> {
             eprintln!("nom: cannot open dict at {}: {e}", dict.display());
             None
         }
+    }
+}
+
+// ── unit tests for apply_hash_locks ──────────────────────────────────────────
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn make_ref(word: &str, hash: &str) -> ResolvedRef {
+        ResolvedRef {
+            word: word.to_owned(),
+            kind: Some("module".to_owned()),
+            hash: hash.to_owned(),
+            alternatives: vec![],
+        }
+    }
+
+    #[test]
+    fn apply_hash_locks_inserts_hash_after_word() {
+        let source = r#"the concept authentication_demo is
+  uses the module auth_session_compose_demo matching "validate then issue session".
+"#;
+        let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let refs = vec![make_ref("auth_session_compose_demo", hash)];
+        let (patched, count) = apply_hash_locks(source, &refs);
+        assert_eq!(count, 1);
+        assert!(
+            patched.contains(&format!("auth_session_compose_demo@{hash}")),
+            "expected @hash in patched: {patched}"
+        );
+        // The rest of the line should be preserved.
+        assert!(
+            patched.contains("matching \"validate then issue session\""),
+            "matching clause must be preserved: {patched}"
+        );
+    }
+
+    #[test]
+    fn apply_hash_locks_is_idempotent() {
+        let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
+        let source = format!(
+            "  uses the module auth_session_compose_demo@{hash} matching \"x\".\n"
+        );
+        let refs = vec![make_ref("auth_session_compose_demo", hash)];
+        let (patched, count) = apply_hash_locks(&source, &refs);
+        assert_eq!(count, 0, "already-pinned ref must not be modified");
+        assert_eq!(patched, source, "source must be unchanged");
+    }
+
+    #[test]
+    fn apply_hash_locks_preserves_other_lines() {
+        let source = "the concept foo is\n  intended to do bar.\n  uses the function baz.\n";
+        let hash = "deadbeef00000000deadbeef00000000deadbeef00000000deadbeef00000000";
+        let refs = vec![make_ref("baz", hash)];
+        let (patched, count) = apply_hash_locks(source, &refs);
+        assert_eq!(count, 1);
+        assert!(patched.contains("the concept foo is"), "other lines preserved");
+        assert!(patched.contains("intended to do bar"), "other lines preserved");
+        assert!(patched.contains(&format!("the function baz@{hash}")));
     }
 }
