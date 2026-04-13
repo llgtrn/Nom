@@ -175,7 +175,15 @@ Split the accumulator state: each stage takes the previous stage's typed output 
 
 **Step 1 landed 2026-04-14:** `stage2_kind_classify` wired as a real read-only scan over `TokenStream`. Produces `ClassifiedStream { toks, blocks, source_len }` where each `BlockBoundary { kind, name, start_tok, end_tok, start_byte }` records a top-level block. Rejects with `NOMX-S2-kindless-block` / `NOMX-S2-unknown-kind` / `NOMX-S2-truncated-block-header` / `NOMX-S2-expected-block-name`. `end_tok` is approximate (next block start or EOF) — later steps tighten it to the body terminator.
 
-5 tests (a4c01-a4c05): single entity, two entities, concept-with-intent, bare prose rejects kindless-block, unknown kind rejects with structured error. Existing 94 nom-concept parser tests untouched — stage2 runs alongside `parse_nomtu`/`parse_nom`. Steps 2-5 (S4 contracts, S5 effects, S6 refs, S3 shape) land in subsequent cycles.
+5 tests (a4c01-a4c05): single entity, two entities, concept-with-intent, bare prose rejects kindless-block, unknown kind rejects with structured error.
+
+**Step 2 landed 2026-04-14:** `stage3_shape_extract` wired to pull the `intended to …` phrase from each classified block. Produces `ShapedStream { toks, blocks, source_len }` with per-block `ShapedBlock { kind, name, start_tok, end_tok, start_byte, intent }`. Rejects with `NOMX-S3-missing-intent` / `NOMX-S3-intended-not-followed-by-to` / `NOMX-S3-unterminated-intent`.
+
+Strict policy choice: S3 currently requires an `intended to …` on **every** block (entity, module, concept, data). Entity translations like `the function fetch_url is given a url, returns text.` fail today with `NOMX-S3-missing-intent` — a later A4c step adds a signature-shape field so entities can carry their meaning without an intent sentence, and S3 relaxes its policy accordingly. This pins the authoring-guide I6 rule at stage granularity.
+
+3 tests (a4c06-a4c08): concept intent extracted cleanly, entity-without-intent rejects with `NOMX-S3-missing-intent`, two concepts each keep their own scoped intent phrase (no cross-contamination).
+
+Existing 94 nom-concept parser tests untouched — S2 + S3 run alongside `parse_nomtu`/`parse_nom`. Steps 3-5 (S4 contracts, S5 effects, S6 refs, + entity-signature shape) land in subsequent cycles.
 
 Total: ~3 engineer-days as originally estimated.
 

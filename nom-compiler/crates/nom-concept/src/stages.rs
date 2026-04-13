@@ -345,14 +345,168 @@ fn tok_shortname(t: &Tok) -> String {
     }
 }
 
-/// S3 stub — signature + intent + body span extraction.
-pub fn stage3_shape_extract(_stream: &TokenStream) -> Result<(), StageFailure> {
-    Err(StageFailure::new(
-        StageId::ShapeExtract,
-        0,
-        "not-yet-wired",
-        "stage3_shape_extract body lands in A4c",
-    ))
+/// Output of S3 — each block gains an extracted `intended to …`
+/// phrase. This is the first shape field the pipeline fills in;
+/// later A4c increments add signature + body span details.
+#[derive(Debug, Clone)]
+pub struct ShapedStream {
+    pub toks: Vec<Spanned>,
+    pub blocks: Vec<ShapedBlock>,
+    pub source_len: usize,
+}
+
+/// A classified block with its intent phrase extracted (doc 17 §I6).
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ShapedBlock {
+    pub kind: String,
+    pub name: String,
+    pub start_tok: usize,
+    pub end_tok: usize,
+    pub start_byte: usize,
+    /// The `intended to …` sentence, with leading/trailing whitespace
+    /// trimmed. Every block MUST have exactly one — S3 rejects blocks
+    /// that omit it with `NOMX-S3-missing-intent`.
+    pub intent: String,
+}
+
+/// S3 — Extract the `intended to …` phrase from each classified block.
+///
+/// Walks `classified.toks[block.start_tok..block.end_tok]` for every
+/// block and finds the first `Tok::Intended → Tok::To → … → Tok::Dot`
+/// sentence. The prose between `to` and the terminator becomes the
+/// block's `intent` slot.
+///
+/// Rejects:
+///
+/// - `NOMX-S3-missing-intent` — block body has no `intended to …`
+///   sentence at all (strictness invariant ct14).
+/// - `NOMX-S3-intended-not-followed-by-to` — `intended` appeared but
+///   wasn't immediately followed by `to`. The strict two-word opener
+///   keeps the intent lane unambiguous.
+/// - `NOMX-S3-unterminated-intent` — source ends before a `.` closes
+///   the intent sentence.
+///
+/// Note: this S3 increment extracts ONLY the intent phrase. Signature
+/// (`given X, returns Y` for entities) and body span extraction come
+/// in a later A4c step.
+pub fn stage3_shape_extract(classified: &ClassifiedStream) -> Result<ShapedStream, StageFailure> {
+    let toks = &classified.toks;
+    let mut blocks = Vec::with_capacity(classified.blocks.len());
+
+    for b in &classified.blocks {
+        let body_slice = &toks[b.start_tok..b.end_tok];
+        // Find `Intended` token index (relative to body_slice).
+        let intended_idx = body_slice.iter().position(|s| matches!(s.tok, Tok::Intended));
+        let intended_rel = match intended_idx {
+            Some(i) => i,
+            None => {
+                return Err(StageFailure::new(
+                    StageId::ShapeExtract,
+                    b.start_byte,
+                    "missing-intent",
+                    format!(
+                        "block `the {} {}` has no `intended to …` sentence",
+                        b.kind, b.name
+                    ),
+                ));
+            }
+        };
+        // Next token must be `To`.
+        let after_intended = intended_rel + 1;
+        match body_slice.get(after_intended) {
+            Some(Spanned { tok: Tok::To, .. }) => {}
+            Some(other) => {
+                return Err(StageFailure::new(
+                    StageId::ShapeExtract,
+                    other.pos,
+                    "intended-not-followed-by-to",
+                    format!(
+                        "`intended` must be immediately followed by `to` (block `{}`)",
+                        b.name
+                    ),
+                ));
+            }
+            None => {
+                return Err(StageFailure::new(
+                    StageId::ShapeExtract,
+                    body_slice.last().map(|s| s.pos).unwrap_or(b.start_byte),
+                    "unterminated-intent",
+                    format!("`intended` at end of block `{}` with no following `to`", b.name),
+                ));
+            }
+        }
+
+        // Collect tokens after `to` until we hit a terminator.
+        // Terminator: Tok::Dot at top-level within the block.
+        let prose_start = after_intended + 1;
+        let dot_rel = body_slice[prose_start..]
+            .iter()
+            .position(|s| matches!(s.tok, Tok::Dot));
+        let dot_idx = match dot_rel {
+            Some(n) => prose_start + n,
+            None => {
+                return Err(StageFailure::new(
+                    StageId::ShapeExtract,
+                    body_slice
+                        .last()
+                        .map(|s| s.pos)
+                        .unwrap_or(b.start_byte),
+                    "unterminated-intent",
+                    format!("`intended to …` has no closing `.` in block `{}`", b.name),
+                ));
+            }
+        };
+
+        let intent = body_slice[prose_start..dot_idx]
+            .iter()
+            .map(|s| tok_prose_repr(&s.tok))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string();
+
+        blocks.push(ShapedBlock {
+            kind: b.kind.clone(),
+            name: b.name.clone(),
+            start_tok: b.start_tok,
+            end_tok: b.end_tok,
+            start_byte: b.start_byte,
+            intent,
+        });
+    }
+
+    Ok(ShapedStream {
+        toks: toks.clone(),
+        blocks,
+        source_len: classified.source_len,
+    })
+}
+
+/// Render a token back into its source-level prose word. Best-effort —
+/// preserves the content of Word/Quoted/Kind/NumberLit and collapses
+/// other tokens to their lowercase keyword spelling.
+fn tok_prose_repr(t: &Tok) -> String {
+    match t {
+        Tok::Word(w) => w.clone(),
+        Tok::Quoted(q) => format!("\"{q}\""),
+        Tok::Kind(k) => k.clone(),
+        Tok::NumberLit(n) => format!("{n}"),
+        Tok::The => "the".into(),
+        Tok::Is => "is".into(),
+        Tok::Matching => "matching".into(),
+        Tok::With => "with".into(),
+        Tok::AtLeast => "at-least".into(),
+        Tok::Composes => "composes".into(),
+        Tok::Then => "then".into(),
+        Tok::To => "to".into(),
+        Tok::Intended => "intended".into(),
+        Tok::This => "this".into(),
+        Tok::Uses => "uses".into(),
+        Tok::Extends => "extends".into(),
+        Tok::Favor => "favor".into(),
+        Tok::Comma => ",".into(),
+        _ => String::new(),
+    }
 }
 
 /// S4 stub — contract clause extraction.
@@ -447,10 +601,10 @@ mod tests {
         assert_eq!(f.position, 42);
     }
 
-    /// a4b05: A4b stubs S3-S6 return structured not-yet-wired failures
+    /// a4b05: A4b stubs S4-S6 return structured not-yet-wired failures
     /// carrying the correct StageId. Locks the scaffold is callable
     /// and surfaces the right stage tag until later sub-wedges wire
-    /// real bodies. (S2 was wired in A4c-step1, see a4c01-a4c05.)
+    /// real bodies. (S2 wired in A4c-step1, S3 wired in A4c-step2.)
     #[test]
     fn a4b05_stubs_return_not_yet_wired_per_stage() {
         let src = r#"the function f is given x, returns y.
@@ -458,7 +612,6 @@ mod tests {
         let stream = stage1_tokenize(src).expect("S1");
 
         let cases: &[(fn(&TokenStream) -> Result<(), StageFailure>, StageId, &str)] = &[
-            (stage3_shape_extract, StageId::ShapeExtract, "S3"),
             (stage4_contract_bind, StageId::ContractBind, "S4"),
             (stage5_effect_bind,   StageId::EffectBind,   "S5"),
             (stage6_ref_resolve,   StageId::RefResolve,   "S6"),
@@ -538,5 +691,68 @@ the function f is given x, returns y.
         let err = stage2_kind_classify(&stream).expect_err("S2 must reject");
         assert_eq!(err.stage, StageId::KindClassify);
         assert_eq!(err.reason, "unknown-kind");
+    }
+
+    // ── A4c-step2: S3 shape_extract (intent phrase) ───────────────────────
+
+    /// a4c06: a concept with `intended to …` yields one ShapedBlock
+    /// whose `intent` field carries the prose.
+    #[test]
+    fn a4c06_concept_intent_extracted() {
+        let src = r#"the concept auth_system is
+  intended to authenticate users via jwt.
+  uses the @Function matching "token verify" with at-least 0.85 confidence.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        assert_eq!(shaped.blocks.len(), 1);
+        let b = &shaped.blocks[0];
+        assert_eq!(b.kind, "concept");
+        assert_eq!(b.name, "auth_system");
+        assert!(
+            b.intent.contains("authenticate users via jwt"),
+            "intent should contain the authored prose; got {:?}",
+            b.intent
+        );
+    }
+
+    /// a4c07: two-block `.nomtu` source — neither uses `intended to`
+    /// in the entity form — the shape_extract must reject the first
+    /// block with `missing-intent` (entities don't carry intent yet;
+    /// S3 in this increment is strict about every block needing one,
+    /// matching the concept-style authoring idiom). This test locks
+    /// the strict policy; later A4c work may relax it for entities
+    /// once a separate signature-shape field carries their meaning.
+    #[test]
+    fn a4c07_entity_without_intent_rejected() {
+        let src = r#"the function fetch_url is given a url, returns text.
+  benefit cache_hit."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let err = stage3_shape_extract(&classified).expect_err("S3 must reject");
+        assert_eq!(err.stage, StageId::ShapeExtract);
+        assert_eq!(err.reason, "missing-intent");
+    }
+
+    /// a4c08: two concepts, each with its own intent, yield two
+    /// ShapedBlocks with correctly-scoped intent slots.
+    #[test]
+    fn a4c08_two_concepts_intents_scoped_per_block() {
+        let src = r#"the concept c_one is
+  intended to do the first thing.
+  favor correctness.
+
+the concept c_two is
+  intended to do the second thing.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        assert_eq!(shaped.blocks.len(), 2);
+        assert!(shaped.blocks[0].intent.contains("first thing"));
+        assert!(shaped.blocks[1].intent.contains("second thing"));
+        assert!(!shaped.blocks[0].intent.contains("second thing"));
+        assert!(!shaped.blocks[1].intent.contains("first thing"));
     }
 }
