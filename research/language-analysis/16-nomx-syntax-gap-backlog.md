@@ -28,7 +28,7 @@
 | 11 | Lifetime annotations | design deferred (borrow-model) | 🧠 blocked on §borrow-model |
 | 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | ✅ doc 17 §I7 |
 | 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | ✅ doc 17 §I10 |
-| 14 | Early-return guards (works) | smoke-test | 🧪 test-todo |
+| 14 | Early-return guards (works) | smoke-test | ✅ a4c24 (stages tests) |
 | 15 | Callback closures | design deferred (§closures) | ✅ doc 19 §D2 (lift to named entities) |
 | 16 | `fail with "..."` expression grammar | **W9** grammar rule | ⏳ queued |
 | 17 | Multi-predicate short-circuit fail | subsumed by W9 | — |
@@ -54,16 +54,16 @@
 | 37 | Default parameter values (`callbacks = None`) | authoring-guide rule | 📘 doc-todo |
 | 38 | Iterator vs. materialized sequences (lazy by default) | authoring-guide rule | 📘 doc-todo |
 
-Totals by destination (after doc 14 #13-#14 translations surfaced 3 new rows):
+Totals by destination (after a4c24 early-return smoke shipped):
 
-- ⏳ Wedge queued: **13** (+1 W19 async-marker)
-- 🧪 Smoke-test todo: **2**
-- 📘 Authoring-guide doc-todo: **2** (+2 from doc 14: default params + lazy sequences)
-- ✅ Closed: **19**
+- ⏳ Wedge queued: **13** (W19 async-marker remains the newest addition)
+- 🧪 Smoke-test todo: **1** (down from 2; early-return guards closed)
+- 📘 Authoring-guide doc-todo: **2** (default params + lazy sequences)
+- ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 38 rows total (was 35). Design-Q-closed state preserved; new rows are all actionable or follow-up doc-todo work.
+Backlog size: 38 rows. Nearing 53% closure (20/38); remaining is all actionable grammar/feature work plus one minor smoke test.
 
 ## Wedge master index (for cross-ref with doc 13)
 

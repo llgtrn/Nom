@@ -1383,6 +1383,26 @@ the function write_file is
         );
     }
 
+    /// a4c24: doc 16 row #14 smoke — early-return guards (v1 `when X,
+    /// function_name returns Y.`) parse cleanly through `parse_nomtu`
+    /// and don't break the pipeline either. Translations #6 (indentMore)
+    /// and #7 (Cipher_RC4_set_key) rely on this shape; this test pins it.
+    #[test]
+    fn a4c24_early_return_guards_in_entity_signature_parse() {
+        use crate::parse_nomtu;
+        // Entity with v1 prose that embeds an early-return guard phrase.
+        // The guard itself lives inside the signature prose — the parser
+        // treats it as part of the "given … returns …" description.
+        let src = r#"the function indent_more is
+  intended to insert one indent unit at every selected line,
+  but returns false immediately when the editor is read-only.
+
+  benefit editor_dispatch."#;
+
+        parse_nomtu(src).expect("legacy parser must accept early-return prose");
+        run_pipeline(src).expect("pipeline must accept early-return prose");
+    }
+
     /// a4c23: pipeline's concept index-length matches parse_nom's.
     /// This is the cardinality-only parity — full ref payload equality
     /// comes in a later step.
