@@ -288,9 +288,11 @@ pub fn build_manifest(
         // ── run stub resolver ─────────────────────────────────────────────────
         let (resolved_refs, still_unresolved, _stats) = resolve_closure(&closure, dict);
 
-        // Build a word→hash lookup from resolved refs.
+        // Build a word→hash lookup from resolved refs (v1 word-based only).
+        // Typed-slot refs (word="") are handled separately in build_order below.
         let resolved_map: std::collections::HashMap<String, String> = resolved_refs
             .iter()
+            .filter(|r| !r.word.is_empty())
             .map(|r| (r.word.clone(), r.hash.clone()))
             .collect();
 
@@ -359,10 +361,26 @@ pub fn build_manifest(
             });
         }
 
-        // Then: unresolved refs (no hash yet — resolver didn't pin them).
-        // Typed-slot refs (`@Kind matching "..."`) appear here with typed_slot=true,
-        // word="" and hash=None.  The Phase-9 resolver will back-fill the hash later.
-        for uref in &closure.unresolved {
+        // Then: resolved typed-slot refs (`@Kind matching "..."`).
+        // These were resolved by find_words_v2_by_kind (kind-only lookup).
+        // word stays empty — the source line has no word token for @hash splicing
+        // (doc 07 §3.5: typed-slot hash lives in manifest/DB only, not rewritten).
+        for rref in resolved_refs.iter().filter(|r| r.word.is_empty()) {
+            build_order.push(BuildItem {
+                kind: rref.kind.clone().unwrap_or_else(|| "unknown".to_string()),
+                word: String::new(),
+                hash: Some(rref.hash.clone()),
+                body_kind: None,
+                body_size: None,
+                composed_of: vec![],
+                typed_slot: true,
+                effects: vec![],
+            });
+        }
+
+        // Then: still-unresolved refs (resolver found no candidate).
+        // Typed-slot refs that couldn't be resolved appear here with hash=None.
+        for uref in &still_unresolved {
             build_order.push(BuildItem {
                 kind: uref.kind.clone().unwrap_or_else(|| "unknown".to_string()),
                 word: uref.word.clone(),

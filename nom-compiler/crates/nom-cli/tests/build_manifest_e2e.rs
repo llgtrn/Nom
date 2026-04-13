@@ -353,6 +353,11 @@ mod tests {
         );
 
         // ── typed-slot item in build_order ────────────────────────────────────
+        // Since the stub resolver now handles typed-slot refs via
+        // find_words_v2_by_kind, the @Function item must resolve to a hash
+        // (alphabetically-smallest among the 6 function entities synced from
+        // agent_demo's tools/).  The source file is NOT rewritten (per doc 07
+        // §3.5 typed-slot lines have no word anchor for @hash splicing).
         let typed_slot_item = build_order
             .iter()
             .find(|b| b["typed_slot"].as_bool() == Some(true))
@@ -363,9 +368,12 @@ mod tests {
             "",
             "typed-slot item must have empty word"
         );
+        let ts_hash = typed_slot_item["hash"].as_str().unwrap_or("");
         assert!(
-            typed_slot_item["hash"].is_null(),
-            "typed-slot item must have null hash until Phase-9 resolver"
+            !ts_hash.is_empty(),
+            "typed-slot item must now have a resolved hash (stub resolver picks by kind); \
+             got hash={}",
+            typed_slot_item["hash"]
         );
 
         // ── regression: build_order still has >= 6 function items ─────────────

@@ -191,9 +191,10 @@ mod tests {
         );
         // agent.nom has 6 tool refs: 5 are v1 (word-based) and 1 is a v2 typed-slot
         // (`the @Function matching "fetch the body of an https url"`).
-        // The typed-slot ref stays unresolved until Phase 8/9 per-kind retrieval lands;
-        // the resolver picks up the 5 v1 refs plus 1 ref in safety.nom → at least 5 locks.
-        // If the stub resolver happens to match the typed-slot by kind alone, wrote_n may be 6.
+        // The typed-slot ref resolves via find_words_v2_by_kind but is NOT written back
+        // to source (doc 07 §3.5: no bare word to anchor the @hash splice).
+        // So write-locks patches: 5 v1 refs in agent.nom + 1 ref in safety.nom = 6 total.
+        // assert wrote_n >= 5 to keep the guard conservative.
         let wrote_n = wo
             .lines()
             .find(|l| l.contains("Wrote") && l.contains("hash lock"))

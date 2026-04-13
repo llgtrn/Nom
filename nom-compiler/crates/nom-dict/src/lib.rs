@@ -1173,6 +1173,20 @@ impl NomDict {
         Ok(rows)
     }
 
+    /// Return all `words_v2` rows whose `kind` column equals `kind`,
+    /// ordered by hash for determinism (§10.3.1 alphabetical-smallest tiebreak).
+    pub fn find_words_v2_by_kind(&self, kind: &str) -> Result<Vec<WordV2Row>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                    origin_ref, bench_ids, authored_in, composed_of
+             FROM words_v2 WHERE kind = ?1 ORDER BY hash",
+        )?;
+        let rows = stmt
+            .query_map(params![kind], row_to_word_v2)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
     /// Total count of rows in `words_v2`.
     pub fn count_words_v2(&self) -> Result<i64> {
         let n: i64 =
@@ -2145,6 +2159,35 @@ mod tests {
 
         let missing = d.find_words_v2_by_word("nonexistent").unwrap();
         assert!(missing.is_empty());
+
+        assert_eq!(d.count_words_v2().unwrap(), 3);
+    }
+
+    /// Test 6b: find_words_v2_by_kind returns only rows matching the kind.
+    #[test]
+    fn find_words_v2_by_kind_filters_correctly() {
+        let d = NomDict::open_in_memory().unwrap();
+
+        // Two rows with kind="function" (default from make_word_v2_row), one with kind="screen".
+        d.upsert_word_v2(&make_word_v2_row("hash-fn-a", "auth_user")).unwrap();
+        d.upsert_word_v2(&make_word_v2_row("hash-fn-b", "validate_token")).unwrap();
+        let mut screen_row = make_word_v2_row("hash-sc-1", "login_screen");
+        screen_row.kind = "screen".to_string();
+        d.upsert_word_v2(&screen_row).unwrap();
+
+        let fn_rows = d.find_words_v2_by_kind("Function").unwrap();
+        assert_eq!(fn_rows.len(), 2, "expected 2 rows for kind=Function, got {}", fn_rows.len());
+        assert!(fn_rows.iter().all(|r| r.kind == "Function"));
+
+        let sc_rows = d.find_words_v2_by_kind("screen").unwrap();
+        assert_eq!(sc_rows.len(), 1, "expected 1 row for kind=screen");
+
+        let missing = d.find_words_v2_by_kind("nonexistent_kind").unwrap();
+        assert!(missing.is_empty());
+
+        // Rows are ordered by hash for determinism.
+        assert_eq!(fn_rows[0].hash, "hash-fn-a");
+        assert_eq!(fn_rows[1].hash, "hash-fn-b");
 
         assert_eq!(d.count_words_v2().unwrap(), 3);
     }

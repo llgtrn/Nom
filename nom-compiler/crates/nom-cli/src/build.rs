@@ -299,6 +299,11 @@ pub fn cmd_build_status(
 /// Returns `(patched_source, count_of_insertions)`.
 ///
 /// This is idempotent: if the line already contains `<word>@` it is skipped.
+///
+/// **Typed-slot refs** (`word=""`, `typed_slot=true`) are intentionally skipped:
+/// the source line `the @Function matching "..."` has no bare word token to
+/// anchor the `@<hash>` splice.  Per doc 07 §3.5 the resolved hash lives only
+/// in the manifest/DB and is never written back into the source file.
 pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
     if refs.is_empty() {
         return (source.to_owned(), 0);
@@ -313,6 +318,11 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
         for rref in refs {
             let word = &rref.word;
             let hash = &rref.hash;
+
+            // Typed-slot refs have no bare word — cannot splice @hash into source.
+            if word.is_empty() {
+                continue;
+            }
 
             // Skip if the word already has @<hash> pinned anywhere on this line.
             if patched_line.contains(&format!("{word}@")) {
