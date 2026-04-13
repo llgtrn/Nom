@@ -19,7 +19,44 @@
 //!   default 50) per CRAG's "narrow before LLM" rule — without this the
 //!   `Candidates` list could swamp the LLM's context.
 
+use nom_dict::WordV2Row;
+
 use crate::react::{AgentTools, Observation};
+
+/// Build a compact human-readable summary of a dict entry. Depth 0 = one
+/// line with word+kind+body_kind+body_size; depth ≥ 1 adds signature +
+/// whether contracts exist + authoring origin. Glass-box-report level
+/// detail (LayeredDreamReport etc.) is out of scope until slice-3c-full
+/// wires nom-app's report module.
+fn format_entry_summary(row: &WordV2Row, depth: usize) -> String {
+    let uid_short = &row.hash[..12.min(row.hash.len())];
+    let body = row
+        .body_kind
+        .as_deref()
+        .map(|k| format!(" body={k}"))
+        .unwrap_or_default();
+    let size = row
+        .body_size
+        .map(|n| format!(" size={n}"))
+        .unwrap_or_default();
+    let base = format!("{}@{}: kind={}{}{}", row.word, uid_short, row.kind, body, size);
+    if depth == 0 {
+        return base;
+    }
+    let sig = match &row.signature {
+        Some(s) if !s.is_empty() => format!("\n  signature: {s}"),
+        _ => "\n  signature: <none>".into(),
+    };
+    let contracts = match &row.contracts {
+        Some(c) if !c.is_empty() && c != "[]" => format!("\n  contracts: present ({} bytes)", c.len()),
+        _ => "\n  contracts: <none>".into(),
+    };
+    let origin = match &row.authored_in {
+        Some(p) => format!("\n  authored_in: {p}"),
+        None => "\n  authored_in: <corpus>".into(),
+    };
+    format!("{base}{sig}{contracts}{origin}")
+}
 
 /// Production impl of `AgentTools` backed by a live `nom-dict` connection.
 /// Slice-3a ships `query` only; other methods are explicit stubs.
@@ -95,8 +132,25 @@ impl<'a> AgentTools for DictTools<'a> {
         Observation::Error("DictTools::render not yet wired (slice-3c)".into())
     }
 
-    fn explain(&self, _uid: &str, _depth: usize) -> Observation {
-        Observation::Error("DictTools::explain not yet wired (slice-3c)".into())
+    fn explain(&self, uid: &str, depth: usize) -> Observation {
+        // Slice-3c partial: wire explain against nom-dict. Looks up the entry
+        // and emits a short one-line summary. Deeper depths (e.g. full
+        // LayeredDreamReport + glass-box JSON) land in slice-3c-full.
+        if uid.len() != 64 || !uid.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Observation::Error(format!(
+                "DictTools::explain: uid {uid:?} is not a 64-char hex hash"
+            ));
+        }
+        match self.dict.find_word_v2(uid) {
+            Ok(Some(row)) => {
+                let summary = format_entry_summary(&row, depth);
+                Observation::Explanation { summary }
+            }
+            Ok(None) => {
+                Observation::Error(format!("DictTools::explain: uid {uid} not found in dict"))
+            }
+            Err(e) => Observation::Error(format!("DictTools::explain: dict error: {e}")),
+        }
     }
 }
 
@@ -178,14 +232,13 @@ mod tests {
     }
 
     #[test]
-    fn compose_verify_render_explain_are_explicit_stubs() {
+    fn compose_verify_render_are_explicit_stubs() {
         let d = NomDict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         for obs in [
             tools.compose("anything", &[]),
             tools.verify("anything"),
             tools.render("anything", "llvm-bc"),
-            tools.explain("anything", 1),
         ] {
             match obs {
                 Observation::Error(msg) => {
@@ -193,6 +246,60 @@ mod tests {
                 }
                 other => panic!("expected Error stub, got {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn explain_by_hash_emits_summary() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let obs = tools.explain(HASH_ADD, 0);
+        match obs {
+            Observation::Explanation { summary } => {
+                assert!(summary.starts_with("add@"));
+                assert!(summary.contains("kind=function"));
+            }
+            other => panic!("expected Explanation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_depth_1_adds_signature_contracts_origin() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let obs = tools.explain(HASH_ADD, 1);
+        match obs {
+            Observation::Explanation { summary } => {
+                assert!(summary.contains("signature:"));
+                assert!(summary.contains("contracts:"));
+                assert!(summary.contains("authored_in:"));
+            }
+            other => panic!("expected Explanation, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_rejects_bad_uid() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        let obs = tools.explain("not-a-hash", 0);
+        match obs {
+            Observation::Error(msg) => assert!(msg.contains("not a 64-char hex hash")),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn explain_missing_uid_reports_not_found() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        // Valid hex, but no row seeded.
+        let obs = tools.explain(HASH_ADD, 0);
+        match obs {
+            Observation::Error(msg) => assert!(msg.contains("not found in dict")),
+            other => panic!("expected Error, got {other:?}"),
         }
     }
 
