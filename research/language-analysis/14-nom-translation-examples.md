@@ -396,6 +396,130 @@ the function get_python_source is
 
 ---
 
+## 9. `OS.String` — Go stringer method + iota enum
+
+**Source:** [gvisor/pkg/abi/abi.go:26-41](../../../APP/Accelworld/upstreams/gvisor/pkg/abi/abi.go#L26)
+
+```go
+type OS int
+const (
+    Linux OS = iota
+)
+func (o OS) String() string {
+    switch o {
+    case Linux:
+        return "linux"
+    default:
+        return fmt.Sprintf("OS(%d)", o)
+    }
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+record OS that is one of Linux.
+define os_string
+  that takes an os_value, returns text.
+  when os_value is Linux, os_string returns "linux".
+  otherwise, os_string returns "OS(" followed by os_value as text followed by ")".
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data OS is
+  intended to enumerate target operating systems for an ABI.
+  exposes Linux as a variant.
+
+the function os_string is
+  intended to render an OS value as human-readable text.
+
+  uses the @Function matching "format numeric fallback" with at-least 0.85 confidence.
+
+  requires input is a known or unknown OS variant.
+  ensures output is a stable string representation.
+
+  favor correctness.
+  favor documentation.
+```
+
+### Gaps surfaced
+
+1. **Enum / sum-type (`record X that is one of A, B, C`)** — `.nomx v1` has a tentative `choice` keyword; `v2` has no dedicated sum-type expression. Enum is a strict subset of the union-type gap (translations #2 / #4 / #8). Candidate: **W11 enum / variant declarations.**
+2. **Method-on-type (`func (o OS) String()`)** — Nom currently thinks of functions as free-standing. No receiver syntax exists. Candidate: **W12 receiver-form methods** or a resolver convention (`os_string` namespaced by first-arg type).
+3. **String concatenation (`followed by`)** — `v1` spelling is verbose. Authoring guide candidate: dedicated `text-sprintf` idiom.
+
+---
+
+## 10. `main` — C++ deprecation-warning CLI
+
+**Source:** [llama-cpp/examples/deprecation-warning/deprecation-warning.cpp:9-38](../../../APP/Accelworld/upstreams/llama-cpp/examples/deprecation-warning/deprecation-warning.cpp#L9)
+
+```cpp
+int main(int argc, char** argv) {
+    std::setlocale(LC_NUMERIC, "C");
+    std::string filename = "main";
+    if (argc >= 1) {
+        filename = argv[0];
+    }
+    auto pos = filename.find_last_of("/\\");
+    if (pos != std::string::npos) {
+        filename = filename.substr(pos+1);
+    }
+    auto replacement_filename = "llama-" + filename;
+    if (filename == "main") {
+        replacement_filename = "llama-cli";
+    }
+    fprintf(stdout, "WARNING: The binary '%s' is deprecated.\n", filename.c_str());
+    fprintf(stdout, " Please use '%s' instead.\n", replacement_filename.c_str());
+    return EXIT_FAILURE;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define main
+  that takes argc and argv, returns an exit_code.
+  set locale numeric to "C".
+  the filename is "main".
+  when argc is at least 1, the filename is argv's first entry.
+  when filename contains "/" or "\\",
+    the filename is filename after its last separator.
+  the replacement_filename is "llama-" followed by filename.
+  when filename is "main", the replacement_filename is "llama-cli".
+  print "WARNING: The binary '", filename, "' is deprecated.".
+  print " Please use '", replacement_filename, "' instead.".
+  main returns failure.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function main is
+  intended to print a deprecation warning pointing users at the llama-cli binary replacement.
+
+  uses the @Function matching "split path basename" with at-least 0.85 confidence.
+  uses the @Function matching "print formatted line" with at-least 0.85 confidence.
+
+  requires argv has at least one entry.
+  ensures the program exits with failure.
+
+  favor correctness.
+  favor documentation.
+  hazard deprecated binary invocation, avoid in new scripts.
+```
+
+### Gaps surfaced
+
+1. **Entry-point `main`** — Nom hasn't pinned whether `main` is grammatical special-case or just another function. Candidate: **W13 entry-point convention.**
+2. **Side-effect-heavy function (`setlocale`, `fprintf`)** — both translations list effects inline. The v1 form uses imperative verbs (`set`, `print`), the v2 form uses `uses` references. Consistency check: **authoring-guide rule on which form is preferred for side-effecting code.**
+3. **`argv's first entry`** / `at least 1` / `after its last separator` — a small cluster of list/text accessor idioms. Pin as authoring-corpus primitives: `argv.at(0)` / `text.find_last("/")` / `text.after(index)` in Nom-style prose.
+4. **Exit codes** — `returns failure` is prose for `EXIT_FAILURE`. Need a standard exit-code vocabulary: `success`, `failure`, `code <N>`. Candidate: **W14 exit-code vocabulary.**
+
+---
+
 ## Running gap list (for next doc 13 refresh + doc 15)
 
 1. Iteration destructuring (`for each K and V in M`) — lexer test missing. **Add in W4-A2b.**
@@ -418,11 +542,19 @@ the function get_python_source is
 18. `hazard` effect rendering — good smoke (translation #7).
 19. `is-a` runtime type probes — **new wedge W10.**
 20. `perhaps...nothing` idiom confirmed natural — **authoring-guide anchor.**
+21. Enum / sum-type declarations — **new wedge W11.**
+22. Receiver-form methods (`func (o OS) String()`) — **new wedge W12.**
+23. Entry-point `main` special-case — **new wedge W13.**
+24. Exit-code vocabulary (`success`/`failure`/`code N`) — **new wedge W14.**
+25. `text-sprintf` idiom — **authoring-guide note.**
+26. List/text accessor primitives (`at(0)`, `find_last`, `after`) — **authoring-corpus seeds.**
+27. Preferred form (`uses` vs imperative verbs) for side-effecting code — **authoring-guide decision needed.**
 
 Each gap becomes either (a) a new wedge in doc 13 §5, (b) an authoring-guide entry, or (c) a deferred design question for doc 15 (to be drafted on next cycle).
 
 ## Next cycle plan
 
-- **This cycle added translations #6-8**: `indentMore` (TS, bolt.new-main), `Cipher_RC4_set_key` (C, aircrack-ng), `get_python_source` (Python, airflow). 20 total gaps now; crossing the 20-item threshold means doc 15 has landed as the 100-repo-ingestion plan (the gap-corpus doc is deferred — promote only when gaps exceed 40+).
-- Next cycle: add C++ (llama-cpp) + Go (gvisor) translations to broaden coverage.
+- **This cycle added translations #9-10**: `OS.String` (Go, gvisor/pkg/abi) and `main` deprecation-warning (C++, llama-cpp). 27 total gaps now; 4 new wedges queued (W11/W12/W13/W14); 3 new authoring-guide items.
+- Next cycle: add Java + Ruby translations (airflow has no Java; need to scan upstreams list for `langchain-java` or similar JVM ecosystem). Alternative: pick a shell script or a Makefile as the most-divergent syntax stress.
 - Feed each translation into a nom-parser smoke test that asserts the canonical lexing + parse tree shape. First smoke-test candidate: example 3's `is_even` at both v1 and v2.
+- Promote gap list to doc 15b if it exceeds 40 items (currently 27 — approaching the threshold).
