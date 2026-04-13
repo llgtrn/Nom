@@ -520,6 +520,137 @@ the function main is
 
 ---
 
+## 11. `build-dex.sh` — Bash build pipeline
+
+**Source:** [accesskit/platforms/android/build-dex.sh](../../../APP/Accelworld/upstreams/accesskit/platforms/android/build-dex.sh)
+
+```bash
+#!/usr/bin/env bash
+set -e -u -o pipefail
+cd `dirname $0`
+ANDROID_JAR=$ANDROID_HOME/platforms/android-30/android.jar
+find java -name '*.class' -delete
+javac --source 8 --target 8 --boot-class-path $ANDROID_JAR -Xlint:deprecation `find java -name '*.java'`
+$ANDROID_HOME/build-tools/33.0.2/d8 --classpath $ANDROID_JAR --output . `find java -name '*.class'`
+```
+
+### `.nomx v1` translation
+
+```nomx
+define build_dex
+  that takes nothing, returns nothing.
+  require halt on any error, unset variable, or pipeline failure.
+  change directory to this script's folder.
+  the android_jar is path android_home / "platforms/android-30/android.jar".
+  delete every class file under java.
+  compile every java file under java,
+    targeting java 8,
+    with boot class path android_jar,
+    warning on deprecated use.
+  package every class file under java into a dex,
+    with class path android_jar, into this folder.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function build_dex is
+  intended to compile Android Java sources to classes then pack them into a dex file.
+
+  uses the @Function matching "run javac" with at-least 0.9 confidence.
+  uses the @Function matching "run d8 dex packer" with at-least 0.9 confidence.
+  uses the @Function matching "strict shell" with at-least 0.8 confidence.
+
+  requires ANDROID_HOME is set.
+  ensures a fresh dex is produced; intermediate .class files are rewritten.
+
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Shebang / interpreter directive** — `#!/usr/bin/env bash` has no Nom analog. Nom's compilation model makes this largely irrelevant (Nom emits native binaries), but scripts translated INTO Nom may need a `run with shell` metadata clause. Candidate: **W15 interpreter-metadata clause.**
+2. **Strict-mode flags (`set -e -u -o pipefail`)** — pins authoring-corpus entry `strict shell` to mean "halt on any error / unset var / pipeline fail". Good example of a composed invariant.
+3. **Environment-variable interpolation (`$ANDROID_HOME/...`)** — Nom has no first-class env vocabulary. Candidate: **W16 env-var access**.
+4. **Globbing / file-tree queries (`find java -name '*.class'`)** — needs a Nom primitive like `every class file under java`. Authoring-corpus seed.
+5. **Process pipelines and command substitution** — `` `dirname $0` `` and `javac ... \`find ...\`` are syntactic shell gymnastics. Nom should force these into named intermediate values (`the java_sources are every .java under java`). Authoring-guide rule.
+
+---
+
+## 12. `book.toml` — Helix mdBook config
+
+**Source:** [helix/book/book.toml](../../../APP/Accelworld/upstreams/helix/book/book.toml)
+
+```toml
+[book]
+authors = ["Blaž Hrastnik"]
+language = "en"
+src = "src"
+
+[output.html]
+cname = "docs.helix-editor.com"
+default-theme = "colibri"
+preferred-dark-theme = "colibri"
+git-repository-url = "https://github.com/helix-editor/helix"
+edit-url-template = "https://github.com/helix-editor/helix/edit/master/book/{path}"
+additional-css = ["custom.css"]
+
+[output.html.search]
+use-boolean-and = true
+```
+
+### `.nomx v1` translation
+
+```nomx
+record book_config that holds
+  a book section with authors, language, src,
+  an output section with html sub-section,
+  the html sub-section holds cname, default_theme, preferred_dark_theme,
+    git_repository_url, edit_url_template, additional_css, and a search sub-section,
+  the search sub-section holds use_boolean_and.
+
+the book_config for helix is
+  book: authors = ["Blaž Hrastnik"], language = "en", src = "src",
+  output.html: cname = "docs.helix-editor.com",
+    default_theme = "colibri",
+    preferred_dark_theme = "colibri",
+    git_repository_url = "https://github.com/helix-editor/helix",
+    edit_url_template = "https://github.com/helix-editor/helix/edit/master/book/{path}",
+    additional_css = ["custom.css"],
+  output.html.search: use_boolean_and = true.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data book_config is
+  intended to hold the mdBook build configuration for the helix manual.
+
+  exposes book_authors as text list.
+  exposes book_language as text.
+  exposes book_src as path.
+  exposes html_cname as text.
+  exposes html_default_theme as text.
+  exposes html_preferred_dark_theme as text.
+  exposes html_git_repository_url as text.
+  exposes html_edit_url_template as text.
+  exposes html_additional_css as text list.
+  exposes search_use_boolean_and as boolean.
+
+  favor correctness.
+  favor documentation.
+```
+
+### Gaps surfaced
+
+1. **Nested sections (`[output.html.search]`)** — TOML's dot-path sections have no v1/v2 analog. Flat-flattening (as v2 does) is lossy. Candidate: **W17 nested-record-path syntax** or a convention "dot-path becomes underscore-joined identifier".
+2. **Config-as-data vs. config-as-code** — a `.toml` is pure data; v1 attempts to wrap it inside a `record`+assignment block. Distinguishing "declare a schema" from "assign values" is under-specified in Nom. Candidate: **authoring-guide — config literals get a dedicated `the data <name> for <repo> is { ... }` form.**
+3. **Non-ASCII author names (`Blaž Hrastnik`)** — string content is UTF-8, but the lexer has the ASCII-identifier restriction for tokens. Confirm string literals keep their UTF-8 verbatim. Smoke-test candidate.
+4. **Keys with hyphens (`default-theme`, `edit-url-template`)** — Nom identifiers use underscores. Mapping rule: TOML hyphen-keys become Nom underscore-exposes. Authoring-guide rule.
+
+---
+
 ## Running gap list (for next doc 13 refresh + doc 15)
 
 1. Iteration destructuring (`for each K and V in M`) — lexer test missing. **Add in W4-A2b.**
@@ -549,12 +680,20 @@ the function main is
 25. `text-sprintf` idiom — **authoring-guide note.**
 26. List/text accessor primitives (`at(0)`, `find_last`, `after`) — **authoring-corpus seeds.**
 27. Preferred form (`uses` vs imperative verbs) for side-effecting code — **authoring-guide decision needed.**
+28. Interpreter/shebang metadata clause — **new wedge W15.**
+29. Environment-variable access vocabulary — **new wedge W16.**
+30. Globbing / file-tree query primitives — **authoring-corpus seeds.**
+31. Process pipelines → named intermediate values — **authoring-guide rule.**
+32. Nested-section path syntax (TOML dot-paths) — **new wedge W17.**
+33. Config-as-data vs. config-as-code split — **authoring-guide clarification.**
+34. Non-ASCII string literals verbatim — **smoke-test candidate.**
+35. Hyphen-keys → underscore-identifiers mapping — **authoring-guide rule.**
 
 Each gap becomes either (a) a new wedge in doc 13 §5, (b) an authoring-guide entry, or (c) a deferred design question for doc 15 (to be drafted on next cycle).
 
 ## Next cycle plan
 
-- **This cycle added translations #9-10**: `OS.String` (Go, gvisor/pkg/abi) and `main` deprecation-warning (C++, llama-cpp). 27 total gaps now; 4 new wedges queued (W11/W12/W13/W14); 3 new authoring-guide items.
-- Next cycle: add Java + Ruby translations (airflow has no Java; need to scan upstreams list for `langchain-java` or similar JVM ecosystem). Alternative: pick a shell script or a Makefile as the most-divergent syntax stress.
+- **This cycle added translations #11-12**: `build-dex.sh` (Bash, accesskit) and `book.toml` (TOML, helix). 35 total gaps now; 3 new wedges queued (W15/W16/W17); 5 new authoring-guide items.
+- Next cycle: promote gap list to a dedicated **doc 15b** now that 35 gaps crossed the 20+ threshold. (doc 15 stays focused on the 100-repo ingestion harness.)
+- Alternative next-cycle targets: more translations (Lua, Makefile, JSON schema) or ship the first authoring-guide wedge (format-strings, exit-codes, list-accessors).
 - Feed each translation into a nom-parser smoke test that asserts the canonical lexing + parse tree shape. First smoke-test candidate: example 3's `is_even` at both v1 and v2.
-- Promote gap list to doc 15b if it exceeds 40 items (currently 27 — approaching the threshold).
