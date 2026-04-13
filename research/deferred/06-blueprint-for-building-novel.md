@@ -5,6 +5,8 @@
 Research conducted: 2026-04-11
 Primary references: official language docs, implementation tutorials, and language-workbench sources
 
+> **Status 2026-04-14**: Phases 0-7 and 9 (tooling/LSP) have SHIPPED in the Nom codebase (28 crates, 57 `cmd_*` entrypoints, 300 execution flows). The phase plan below is preserved as historical blueprint. For current state see [doc 09](../language-analysis/09-implementation-status-2026-04-13.md) and `MEMORY.md`. `.nomx v2` keyed syntax, typed-slot `@Kind matching "..." with at-least N confidence`, M1 glass-box report, M2 acceptance preservation, M4 three-tier ingest, M5 layered dreaming, M7 MECE CE, nom-intent M8 slice1 (commit `800baea`), nom-lsp M16 slice1 (commit `64b3058`), nom-bench registry (commit `fa50744`) are all live. Remaining critical-path work: M6 corpus pilot → M9 embeddings → M10 real planner-in-Nom → M15 parser-in-Nom → M16 LSP MVP → M17 fixpoint bootstrap (1.0 cut).
+
 ---
 
 ## Executive Summary
@@ -458,6 +460,8 @@ Tooling should be generated from the semantic pipeline, not bolted on manually.
 
 ## 5. The Real MVP For Novel
 
+> **SHIPPED 2026-04.** All "Keep in MVP" items below are live in the Nom codebase. Section retained for historical record of the scope discipline.
+
 The current docs are ambitious. That is good for vision, but dangerous for delivery.
 
 The actual first shippable Novel should be much smaller.
@@ -592,6 +596,8 @@ That is the shortest path to a real language.
 ---
 
 ## 9. Immediate Next Steps For This Repo
+
+> **All 7 steps SHIPPED 2026-04.** Grammar frozen (`.nomx v2`), Nom schema live (nom-dict DB1/DB2), three canonical examples exist (concept_demo, agent_demo, run_lexer), parser + resolver + verifier + Rust emit + glass-box report all in tree. Next real critical-path work: M6 corpus pilot (blocked on network) → M9 embedding re-rank → M10 real planner → M15 parser-in-Nom → M16 LSP MVP → M17 fixpoint bootstrap.
 
 1. Freeze a tiny `Novel MVP` grammar from Part 4 instead of expanding the syntax surface further.
 2. Define a machine-readable Nom schema with example entries for 10-20 core Noms.
