@@ -11,9 +11,10 @@
 
 use lsp_server::{Connection, ExtractError, IoThreads, Message, Request, RequestId, Response};
 use lsp_types::{
+    CompletionItem, CompletionItemKind, CompletionOptions, CompletionResponse,
     HoverContents, HoverProviderCapability, InitializeParams, MarkupContent, MarkupKind,
     ServerCapabilities,
-    request::{HoverRequest, Request as LspRequest},
+    request::{Completion, HoverRequest, Request as LspRequest},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -33,12 +34,17 @@ pub enum LspError {
     Serde(#[from] serde_json::Error),
 }
 
-/// Server capabilities for the week-1 slice — hover only.
-/// Later slices flip on completion_provider / definition_provider /
-/// semantic_tokens_provider as the corresponding handlers land.
+/// Server capabilities for the current slice — hover + keyword completion.
+/// Later slices flip on definition_provider / semantic_tokens_provider as
+/// the corresponding handlers land.
 pub fn server_capabilities() -> ServerCapabilities {
     ServerCapabilities {
         hover_provider: Some(HoverProviderCapability::Simple(true)),
+        completion_provider: Some(CompletionOptions {
+            resolve_provider: Some(false),
+            trigger_characters: None,
+            ..Default::default()
+        }),
         ..Default::default()
     }
 }
@@ -105,6 +111,10 @@ pub fn dispatch_request(req: Request) -> Response {
             Ok((id, params)) => handle_hover(id, params),
             Err(err) => method_mismatch(id, err),
         },
+        Completion::METHOD => match cast::<Completion>(req) {
+            Ok((id, params)) => handle_completion(id, params),
+            Err(err) => method_mismatch(id, err),
+        },
         _ => Response {
             id,
             result: None,
@@ -134,6 +144,46 @@ fn method_mismatch(id: RequestId, err: ExtractError<Request>) -> Response {
             message: format!("extract failed: {err:?}"),
             data: None,
         }),
+    }
+}
+
+/// Week-1 completion: return canonical `.nomx v2` keyword completions.
+/// Later slice will scope these by context (e.g. only inside a `define`
+/// body) and add dict-backed symbol completions.
+///
+/// The keyword set mirrors the shipped subset from doc 06 §1-§4
+/// (declaration + control + contract + linkers).
+fn handle_completion(
+    id: RequestId,
+    _params: lsp_types::CompletionParams,
+) -> Response {
+    const KEYWORDS: &[(&str, &str)] = &[
+        ("define", "declare a function: `define X that takes Y and returns Z:`"),
+        ("to", "one-liner: `to greet someone, respond with \"hi, \" + name.`"),
+        ("record", "declare a record: `record Point holds x is a number, y is a number.`"),
+        ("choice", "declare a choice: `choice Color is one of: red, green, blue.`"),
+        ("when", "conditional branch: `when <cond>, <then>. otherwise, <else>.`"),
+        ("unless", "negated conditional: `unless <cond>, <then>.`"),
+        ("for", "for-each loop: `for each x in xs, <body>.`"),
+        ("while", "while loop: `while <cond>, <body>.`"),
+        ("require", "precondition contract: `require <predicate>.`"),
+        ("ensure", "postcondition contract: `ensure <predicate>.`"),
+        ("throughout", "invariant contract: `throughout <predicate>.`"),
+    ];
+    let items: Vec<CompletionItem> = KEYWORDS
+        .iter()
+        .map(|(label, detail)| CompletionItem {
+            label: (*label).to_string(),
+            kind: Some(CompletionItemKind::KEYWORD),
+            detail: Some((*detail).to_string()),
+            ..Default::default()
+        })
+        .collect();
+    let response = CompletionResponse::Array(items);
+    Response {
+        id,
+        result: Some(serde_json::to_value(response).expect("completion serializes")),
+        error: None,
     }
 }
 
@@ -167,14 +217,47 @@ mod tests {
     use super::*;
 
     #[test]
-    fn server_capabilities_exposes_hover_only_in_week_1() {
+    fn server_capabilities_exposes_hover_and_completion() {
         let caps = server_capabilities();
         assert!(matches!(
             caps.hover_provider,
             Some(HoverProviderCapability::Simple(true))
         ));
-        assert!(caps.completion_provider.is_none());
+        assert!(caps.completion_provider.is_some(), "completion_provider must be on");
         assert!(caps.definition_provider.is_none());
+    }
+
+    #[test]
+    fn dispatch_completion_returns_keyword_items() {
+        let req = Request::new(
+            RequestId::from(3),
+            Completion::METHOD.to_string(),
+            lsp_types::CompletionParams {
+                text_document_position: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier {
+                        uri: lsp_types::Url::parse("file:///tmp/fake.nomx").unwrap(),
+                    },
+                    position: lsp_types::Position { line: 0, character: 0 },
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            },
+        );
+        let resp = dispatch_request(req);
+        assert!(resp.error.is_none());
+        let items: CompletionResponse =
+            serde_json::from_value(resp.result.expect("completion result set")).unwrap();
+        let labels: Vec<String> = match items {
+            CompletionResponse::Array(a) => a.into_iter().map(|i| i.label).collect(),
+            CompletionResponse::List(l) => l.items.into_iter().map(|i| i.label).collect(),
+        };
+        for keyword in ["define", "record", "when", "require", "ensure"] {
+            assert!(
+                labels.iter().any(|l| l == keyword),
+                "completion response missing '{keyword}' (labels: {labels:?})"
+            );
+        }
     }
 
     #[test]
