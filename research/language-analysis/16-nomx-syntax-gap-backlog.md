@@ -72,17 +72,18 @@
 | 55 | Channel-type grammar with capacity annotation | **W32** grammar rule | ⏳ queued (doc 14 #24) |
 | 56 | Finalizer clause (defer-style cleanup) | **W33** grammar rule | ⏳ queued (doc 14 #24) |
 | 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | 📘 doc-todo |
+| 58 | Typeclass-style constraints (`requires keys support ordering`) | **W34** grammar rule (blocks on borrow-model) | 🔒 blocked |
 
-Totals by destination (after doc 14 #24 Go goroutine+channel translation surfaced 4 more rows):
+Totals by destination (after doc 14 #25 Haskell pure-functional translation surfaced 1 more row):
 
-- ⏳ Wedge queued: **27** (+3 W31 spawn, W32 channel-type, W33 finalizer)
+- ⏳ Wedge queued: **27** (unchanged; W34 blocked alongside row #11)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **7** (+1 work_group idiom)
+- 📘 Authoring-guide doc-todo: **7**
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
-- 🔒 Blocked: **1**
+- 🔒 Blocked: **2** (row #11 lifetime annotations + row #58 typeclass constraints)
 
-Backlog size: 57 rows. Closure rate 35% (20/57). **24 translations total**. Paradigm coverage adds concurrency (Go goroutines + channels + WaitGroup).
+Backlog size: 58 rows. Closure rate 34% (20/58). **25 translations total**. Paradigm coverage now includes pure functional (Haskell typeclasses + fold + where). All major paradigm gaps closed.
 
 ## Wedge master index (for cross-ref with doc 13)
 

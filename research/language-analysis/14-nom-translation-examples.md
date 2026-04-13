@@ -1404,6 +1404,53 @@ the function fetch_all is
 
 ---
 
+## 25. Haskell — pure function with type class constraint
+
+```haskell
+groupBy :: Ord k => (a -> k) -> [a] -> Map k [a]
+groupBy keyOf xs = foldr insert Map.empty xs
+  where
+    insert x m = Map.insertWith (++) (keyOf x) [x] m
+```
+
+### `.nomx v1` translation
+
+```nomx
+define group_by
+  that takes a key_of function and a list of items,
+  returns a map from keys to lists of items.
+  require keys are orderable.
+the result is built by folding insert into the empty map,
+  where insert adds an item to the list under its key.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function group_by is
+  intended to partition a list into groups keyed by a
+  function applied to each item.
+
+  uses the @Function matching "fold list into accumulator" with at-least 0.9 confidence.
+  uses the @Function matching "insert into map with merge" with at-least 0.85 confidence.
+
+  requires the key_of function is deterministic on each item.
+  requires keys support ordering.
+  ensures every input item appears exactly once in exactly one group.
+  ensures within a group, items preserve their input order.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Type-class constraint (`Ord k =>`)** — Haskell's typeclass bounds are an algebraic structure over types. Nom's `requires keys support ordering` captures the intent as a runtime contract, not a static guarantee. Candidate: **W34 typeclass-style constraints** (`requires <Type> supports <Operation>`). Overlaps with borrow-model row #11 (blocked); revisit when generics land.
+2. **Fold / higher-order iteration** — `foldr insert Map.empty xs` is classic HOF. Nom's v2 abstracts as `uses the @Function matching "fold list into accumulator"`; the v1 form uses prose `the result is built by folding insert into the empty map, where insert …` — matches doc 17 §I8's named-intermediate rule. No new wedge needed.
+3. **`where` clause for local helpers** — Haskell's `where` defines helpers scoped to the function. Nom lifts `insert` to a named peer entity or a `the <name> is <expr>` intermediate per doc 17 §I8. Confirmed: D2 closure-lift handles this.
+4. **Map type from another module (`Map.empty`, `Map.insertWith`)** — module-prefixed identifiers. Nom translations punt these to `@Function matching "…"` typed-slot refs; the concrete `Map` module reference lives in the corpus. No new wedge; module-imports unblocked elsewhere in §5.10.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
