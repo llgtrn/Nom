@@ -269,16 +269,16 @@ Mapping onto doc 09's "Actual remaining work" critical path:
     - strict-validator integration parity (a4c37) (`7e4b3f3`)
     - empty + whitespace-only input safety net (a4c38) (`c869986`)
     - Delegate-to-run_pipeline migration has NO known blocker that would break on real repo sources.
-22. ✅ **Doc 14 translation corpus expanded 12 → 27 translations** across 14+ paradigm families — every major paradigm family from doc 02's 50-language survey now has at least one representative:
-    - imperative (Rust/Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) + concurrency (Go goroutines) + pure functional (Haskell) + algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions) + **math-as-language (Lean theorem)** + **actor-model message-passing (Elixir GenServer)**
-    - Surfaces W19-W37 grammar-wedge candidates covering: async, relational-algebra, selector-predicates, typed dimensions, color literals, nested nullability, build-deps, stage-chains, pinned actions, event-triggers, visibility, choice/sum-type, concurrent-spawn, channel-type, finalizer, typeclass-constraints, proof-kind, proof-tactic DSL, actor-spawn + messaging.
+22. ✅ **Doc 14 translation corpus expanded 12 → 36 translations** across 23 paradigm families — every major paradigm family from doc 02's 50-language survey now has at least one representative, AND multiple engineering-domain paradigms (IaC, orchestration, schema-IDL, pattern-DSL, state-machine-DSL, property-testing, array-programming):
+    - imperative (Rust/Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) + concurrency (Go goroutines) + pure functional (Haskell) + algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions) + math-as-language (Lean theorem) + actor-model (Elixir GenServer) + **logic-programming (Prolog)** + **metaprogramming (Lisp macros, by rejection → closure lifting)** + **schema-IDL (Protocol Buffers)** + **pattern-DSL (regex-as-prose)** + **state-machine-DSL (XState)** + **property-based-testing (Hypothesis)** + **infrastructure-as-code (Terraform HCL)** + **array-programming (NumPy)** + **workflow-orchestration (Airflow DAG)**
+    - Surfaces W19-W43 grammar-wedge candidates; **three consecutive minimal-wedge translations** (Terraform/NumPy/Airflow) validate the 7-noun closed kind set is sufficient for real engineering domains.
 23. ✅ **Doc 17 authoring-guide chapter COMPLETE at I1-I20** — every authoring-guide destination in doc 16 has canonical phrasing + anti-pattern + rationale:
     - I1-I5 (first batch): `perhaps…nothing`, exit codes, text-sprintf, UTF-8 verbatim, hyphen→underscore mapping
     - I6-I8: docstring→intent, redundant v1 body, pipelines→named intermediates
     - I9-I13 (second batch): atomic primitives, destructuring, list/text accessors, uses-vs-imperative, config-as-data split
     - I14-I16 (third batch): default params, lazy sequences, `identifier` shape label
     - I17-I20 (final batch): time-range, shell-exec, method→receiver, work_group
-24. ✅ **Doc 16 backlog 61 rows, 27/61 closed (44%)**: 0 authoring-guide doc-todo, 30 W-wedges queued (W5-W37), 1 smoke-test, 0 design-Q-open, 2 blocked (row #11 + #58 on borrow-model).
+24. ✅ **Doc 16 backlog 100 rows, 57/100 closed (57%)**: 0 authoring-guide doc-todo, 36 W-wedges queued (W5-W43), 1 smoke-test, 0 design-Q-open, 2 blocked (row #11 + #58 on borrow-model), 2 authoring-corpus-seed QualityNames queued (forward_compatibility, numerical_stability).
 25. ✅ **nom-concept tests: 139 total** (session start 77 → +62 this session).
 
 **Queued (ordered by ascending effort):**
