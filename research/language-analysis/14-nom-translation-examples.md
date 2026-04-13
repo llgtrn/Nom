@@ -2035,6 +2035,64 @@ Row additions: **0 new wedges** — Terraform's surface maps cleanly onto existi
 
 ---
 
+## 35. NumPy array operations — array-programming paradigm
+
+```python
+import numpy as np
+
+def normalize_rows(matrix: np.ndarray) -> np.ndarray:
+    row_sums = matrix.sum(axis=1, keepdims=True)
+    return np.where(row_sums != 0, matrix / row_sums, matrix)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define normalize_rows
+  that takes a matrix, returns a matrix where every row sums to one (or is untouched when its original sum is zero).
+for each row in the matrix,
+  let row_sum be the sum of row's entries.
+  when row_sum is not zero,
+    replace row with row divided by row_sum.
+  otherwise leave row unchanged.
+return the updated matrix.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data NumericMatrix is
+  intended to hold a two-dimensional array of real numbers with row and column extents.
+  exposes rows as integer.
+  exposes columns as integer.
+  exposes cells as list of list of real.
+
+the function normalize_rows is
+  intended to scale every row of a NumericMatrix so its entries sum to one, leaving all-zero rows untouched.
+  uses the @Data matching "NumericMatrix" with at-least 0.95 confidence.
+  requires matrix is a NumericMatrix with at least one row and at least one column.
+  ensures every returned row whose original sum was non-zero sums to one within floating-point tolerance.
+  ensures every returned row whose original sum was zero equals its input row exactly.
+  hazard floating-point rounding may leave row sums slightly off from one on pathological inputs.
+  favor correctness.
+  favor numerical_stability.
+```
+
+### Gaps surfaced
+
+1. **Broadcasting (`matrix / row_sums`)** — NumPy's core feature: element-wise operations over arrays of compatible shapes. Nom's translation says `replace row with row divided by row_sum` as a per-row prose operation; broadcasting is **not** a first-class Nom primitive, it's an implementation detail of the array runtime. **Candidate: authoring-guide rule — broadcasting arithmetic expresses as element-wise prose (`replace X with X op Y` inside a `for each` loop over the outer axis)**; the compiler + target backend may vectorize. No new wedge.
+2. **Axis parameter (`axis=1`, `keepdims=True`)** — positional/named knobs over which axis a reduction operates on. Nom's `for each row in the matrix` makes the axis explicit through iteration. Authoring-guide rule: **axis parameters decompose to explicit iteration; `axis=1` → `for each row`, `axis=0` → `for each column`**. No new wedge.
+3. **`np.where(cond, a, b)` ternary-over-arrays** — element-wise conditional. Nom's `when … otherwise …` inside the iteration handles this at the scalar level. Authoring-guide rule: **`np.where` element-wise ternary decomposes to `when … otherwise …` inside the outer iteration**. No new wedge.
+4. **Numerical stability as an objective** — `favor numerical_stability` surfaces another QualityName. Already planned as a standard axis. Authoring-corpus seed: **register `numerical_stability` as a standard QualityName alongside `correctness`, `performance`, `accessibility`, `forward_compatibility`**. Accumulates with the proto3 `forward_compatibility` seed (doc 16 #66).
+5. **Vectorization as a compiler concern** — authors express operations row-by-row (or cell-by-cell); the compiler vectorizes at build time per the target platform (SIMD, GPU, etc.). Authoring-guide rule: **vectorization is a compiler responsibility, not an author concern** — this isolates Nom source from CPU-ISA drift. Aligns with Phase 12 specialization discipline.
+6. **`ndarray` as a typed shape** — NumPy's `np.ndarray` is generic over dtype + shape. Nom's v2 uses `list of list of real` to describe the 2D shape; dtype is implicit in `real`. Authoring-guide rule: **N-dimensional arrays decompose to nested `list of` types**; higher-dimensional arrays chain the `list of` prefix. Simple, consistent.
+
+Row additions: **0 new wedges** — array-programming maps cleanly onto existing Nom primitives (data decl with nested-list shapes, iteration, element-wise `when`). 5 authoring-guide closures (broadcasting as element-wise prose, axis → explicit iteration, `np.where` → `when`/`otherwise`, vectorization as compiler concern, ndarray as nested-list shape) + 1 QualityName seed (`numerical_stability`).
+
+Second "zero new wedge" translation in a row — **array-programming is fully expressible with existing Nom primitives**, same as IaC. Confirms that the 7-noun closed kind set covers numerically-oriented domains too.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

@@ -100,18 +100,24 @@
 | 83 | HCL dependency DAG = composition `then` chain (no new wedge) | authoring-guide rule | ✅ closed (doc 14 #34; reuses a4c33 composition chain) |
 | 84 | HCL `${var.region}` interpolation → typed-slot `@Data` or named-identifier prose ref | authoring-guide rule | ✅ closed (doc 14 #34) |
 | 85 | HCL `lifecycle` meta-arguments → `hazard` clauses with explicit rationale | authoring-guide rule | ✅ closed (doc 14 #34) |
+| 86 | NumPy broadcasting → element-wise prose inside outer iteration (compiler vectorizes) | authoring-guide rule | ✅ closed (doc 14 #35) |
+| 87 | Axis parameter (`axis=N`) → explicit `for each row`/`for each column` iteration | authoring-guide rule | ✅ closed (doc 14 #35) |
+| 88 | `np.where` element-wise ternary → `when … otherwise …` inside outer iteration | authoring-guide rule | ✅ closed (doc 14 #35) |
+| 89 | Vectorization is a compiler responsibility, not an author concern | authoring-guide rule | ✅ closed (doc 14 #35; Phase 12 specialization) |
+| 90 | N-dimensional arrays decompose to nested `list of` types | authoring-guide rule | ✅ closed (doc 14 #35) |
+| 91 | `numerical_stability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #35; accumulates with #66 forward_compatibility) |
 
-Totals by destination (after doc 14 #34 Terraform HCL translation closed 6 authoring-guide rules with 0 new wedges — strongest "no new wedge" translation yet):
+Totals by destination (after doc 14 #35 NumPy array-programming translation — second "zero new wedge" translation in a row; array-programming fully expressible with existing Nom primitives):
 
 - ⏳ Wedge queued: **35** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **46**
+- ✅ Closed: **51**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **1** (forward_compatibility QualityName)
+- 🌱 Authoring-corpus seed: **2** (forward_compatibility + numerical_stability QualityNames)
 
-Backlog size: 87 rows. Closure rate 53% (46/87). **34 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + **infrastructure-as-code (Terraform HCL)**. Terraform adds 0 new wedges — validates that the 7-noun closed kind set is sufficient for real-world engineering domains.
+Backlog size: 93 rows. Closure rate 55% (51/93). **35 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + **array-programming (NumPy)**. NumPy adds 0 new wedges — second consecutive zero-wedge translation; confirms the closed kind set covers numerically-oriented domains.
 
 ## Wedge master index (for cross-ref with doc 13)
 
