@@ -198,7 +198,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 
 ## Next actions — status snapshot 2026-04-14
 
-**Completed this session (48 commits, 22 code wedges):**
+**Completed this session (54+ commits, 25 code wedges):**
 1. ✅ Doc committed + five upgrade plans populated (§A-E)
 2. ✅ Zed-main analyzed + §D populated (78,686 nodes indexed)
 3. ✅ **CoreNLP W1 Annotator pipeline** — `7caa41f` + `9928187` + `b32abc0` (11 nom-extract tests)
@@ -226,14 +226,18 @@ Mapping onto doc 09's "Actual remaining work" critical path:
    - Phase 3b Cypher export edges (`910365c`)
    - 27 nom-graph tests total
 8. ✅ **Research synthesis** — doc 11 (graph-rag research, `90958dd`), doc 12 (entity-scope deep-think, `4867307`), spec `2026-04-14-graph-rag-agentic-design.md`, slice-5b polymorphism clarification (`ebe530e`)
+9. ✅ **M8 slice-5b-mcp** — `McpAdapter<R, W>` generic Read+Write JSON-RPC (`838c7a3`)
+10. ✅ **M8 slice-6a** — `nom-lsp/src/agent.rs` markdown renderer for agentic drill-through (`471cbc0`, 6 tests)
+11. ✅ **M8 slice-6b** — `workspace/executeCommand` handler + `nom.whyThisNom` registration in `server_capabilities` (`2341ff1`, 14 tests)
 
 **Queued (ordered by ascending effort):**
-- **M8 slice-5b-mcp** — `McpAdapter` stdio JSON-RPC adapter; matches `scripts/gitnexus-mcp.js` shape (~1d)
-- **M8 slice-6** — `nom-lsp` "why-this-Nom?" editor drill-through, wraps `DictTools` in `InstrumentedTools`, pipes log entries back over LSP (~2d)
+- **M8 slice-5b-mcp-spawn** — wire `McpAdapter` to a spawned child process (~0.5d)
+- **M8 slice-5b-cli-flag-mcp** — add `mcp` arm to `--adapter` in `cmd_agent_classify` (~0.5d)
 - **Phase 2c graph unification** — switch `from_entries` / `build_call_edges` / `build_import_edges` / `detect_communities` to uid storage, deprecate Vec fields (~3d, biggest churn)
 - **M8 slice-3b-verify-full** — wire `nom-verifier` + `nom-security` + `nom-concept` MECE (~4d)
 - **M8 slice-3c-full** — real render via `nom-codegen` + `nom-llvm` + `nom-app` + `nom-media` (~5d, biggest user-visible wedge per doc 12 deep-think)
 - **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
+- **W4 strictness lane** (new 2026-04-14) — mine CoreNLP Annotator contract discipline, apply to `.nomx v2` parser + lexer to reject-on-ambiguous; closed-keyword audit; annotator-style staged parse (see doc 13 once drafted, plus `feedback_syntax_strictness_corenlp.md` in memory). Rationale: user NON-NEGOTIABLE directive — APP/nlp is just CoreNLP models, not a separate repo.
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
 
