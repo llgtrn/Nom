@@ -531,6 +531,11 @@ enum AppCmd {
         /// For tier=concept|module, the concept word or module hash to dream.
         #[arg(long)]
         target_id: Option<String>,
+        /// Repository ID to materialize the concept graph from the dict.
+        /// When provided, enables recursive child-concept dreaming via
+        /// `layered_dream_app_recursive` / `layered_dream_concept_recursive`.
+        #[arg(long)]
+        repo_id: Option<String>,
     },
 
     /// Emit one artifact per OutputAspect at the given output directory.
@@ -1096,8 +1101,8 @@ fn main() {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
                 cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
             }
-            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id } => {
-                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref())
+            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id, repo_id } => {
+                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref(), repo_id.as_deref())
             }
         },
     };
@@ -1114,6 +1119,7 @@ fn cmd_app_dream(
     json: bool,
     tier: &str,
     target_id: Option<&str>,
+    repo_id: Option<&str>,
 ) -> i32 {
     // Validate tier string early.
     let dream_tier = match nom_app::DreamTier::from_str(tier) {
@@ -1132,7 +1138,7 @@ fn cmd_app_dream(
         return 1;
     }
 
-    // module tier is deferred to M5b.
+    // module tier is deferred to M5c.
     if matches!(dream_tier, nom_app::DreamTier::Module) {
         eprintln!("nom dream: not yet implemented (module-tier coming in M5b)");
         return 2;
@@ -1150,10 +1156,30 @@ fn cmd_app_dream(
         NomDict::open_in_memory().unwrap()
     };
 
+    // Optionally materialize the concept graph when --repo-id is provided.
+    // If materialization fails, exit 1 with a diagnostic message.
+    let maybe_graph: Option<nom_concept::ConceptGraph> = if let Some(rid) = repo_id {
+        match store::materialize_concept_graph_from_db(&dict, rid) {
+            Ok(g) => Some(g),
+            Err(e) => {
+                eprintln!("nom: cannot materialize concept graph: {e}");
+                return 1;
+            }
+        }
+    } else {
+        None
+    };
+
     match dream_tier {
         nom_app::DreamTier::Concept => {
             let word = target_id.unwrap_or("");
-            let layered = nom_app::layered_dream_concept(word, &dict);
+            let layered = match &maybe_graph {
+                Some(graph) => {
+                    let mut seen = std::collections::HashSet::new();
+                    nom_app::layered_dream_concept_recursive(word, &dict, graph, &mut seen)
+                }
+                None => nom_app::layered_dream_concept(word, &dict),
+            };
             if json {
                 println!(
                     "{}",
@@ -1171,6 +1197,16 @@ fn cmd_app_dream(
                     layered.leaf.score_threshold,
                     layered.leaf.proposals.len()
                 );
+                if !layered.child_reports.is_empty() {
+                    let epic_count = layered.child_reports.iter().filter(|r| r.leaf.is_epic).count();
+                    let below = layered.child_reports.len() - epic_count;
+                    println!(
+                        "└─ {} child concept(s) dreamed ({} epic, {} below threshold)",
+                        layered.child_reports.len(),
+                        epic_count,
+                        below
+                    );
+                }
             }
             if layered.leaf.is_epic { 0 } else { 2 }
         }
@@ -1185,7 +1221,10 @@ fn cmd_app_dream(
                 media_assets: vec![],
                 settings: serde_json::Value::Null,
             };
-            let layered = nom_app::layered_dream_app(&manifest, &dict);
+            let layered = match &maybe_graph {
+                Some(graph) => nom_app::layered_dream_app_recursive(&manifest, &dict, graph),
+                None => nom_app::layered_dream_app(&manifest, &dict),
+            };
             let report = &layered.leaf;
             if json {
                 println!(
@@ -1211,6 +1250,16 @@ fn cmd_app_dream(
                         let concept = p.suggested_concept.as_deref().unwrap_or("-");
                         println!("     → author nomtu `{sw}` (kind={kind}, concept={concept})");
                     }
+                }
+                if !layered.child_reports.is_empty() {
+                    let epic_count = layered.child_reports.iter().filter(|r| r.leaf.is_epic).count();
+                    let below = layered.child_reports.len() - epic_count;
+                    println!(
+                        "└─ {} child concept(s) dreamed ({} epic, {} below threshold)",
+                        layered.child_reports.len(),
+                        epic_count,
+                        below
+                    );
                 }
                 println!();
                 println!("{}", report.next_instruction);

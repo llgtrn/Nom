@@ -109,4 +109,46 @@ mod tests {
             "expected the bad tier name echoed in stderr, got: {stderr}"
         );
     }
+
+    // ── M5b: --repo-id smoke tests ────────────────────────────────────────────
+
+    /// `nom app dream <hash> --tier app --repo-id <fake> --json` with no dict
+    /// should exit 0 or 2 (non-epic is fine), parse as valid JSON, and have
+    /// `child_reports` as an empty array (the repo doesn't exist in the in-memory
+    /// dict, so the graph is empty / no concepts to recurse into).
+    ///
+    /// Note: when `--dict` doesn't exist, the CLI uses an in-memory dict.
+    /// `materialize_concept_graph_from_db` on an in-memory dict with an unknown
+    /// repo_id returns an empty graph (not an error), so child_reports is [].
+    #[test]
+    fn repo_id_with_unknown_repo_returns_empty_child_reports() {
+        let fake_hash = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
+        let (code, stdout, stderr) = run_nom(&[
+            "app", "dream", fake_hash,
+            "--tier", "app",
+            "--repo-id", "nonexistent_repo_xyz",
+            "--json",
+        ]);
+        assert!(
+            code == 0 || code == 2,
+            "expected exit 0 or 2 for tier=app with unknown repo-id, got {code}\nstdout={stdout}\nstderr={stderr}"
+        );
+        let v: serde_json::Value = serde_json::from_str(&stdout)
+            .expect("--json output must be valid JSON");
+        assert_eq!(
+            v["tier"], "app",
+            "JSON must contain tier=app, got: {v}"
+        );
+        let child_reports = v["child_reports"].as_array()
+            .expect("child_reports must be an array");
+        assert!(
+            child_reports.is_empty(),
+            "child_reports must be empty for an unknown repo (empty graph), got: {child_reports:?}"
+        );
+        // stderr should be clean (no error for an unknown repo that returns an empty graph).
+        assert!(
+            stderr.is_empty(),
+            "stderr must be empty for an unknown repo in an in-memory dict, got: {stderr}"
+        );
+    }
 }

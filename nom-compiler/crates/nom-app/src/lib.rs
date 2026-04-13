@@ -1197,6 +1197,142 @@ pub fn layered_dream_concept(
     }
 }
 
+// ── M5b: recursive dream variants ────────────────────────────────────────────
+
+/// Collect the names of concepts that are directly referenced from a
+/// concept's own `index` clauses (one level only — no transitive expansion).
+///
+/// A "direct child concept" is any of:
+/// - `IndexClause::Extends { base, .. }` — the base concept name.
+/// - `IndexClause::Uses(refs)` where an `EntityRef` has `kind == Some("concept")`.
+fn direct_child_concepts(decl: &nom_concept::ConceptDecl) -> Vec<String> {
+    let mut children: Vec<String> = Vec::new();
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    for clause in &decl.index {
+        match clause {
+            nom_concept::IndexClause::Extends { base, .. } => {
+                if seen.insert(base.clone()) {
+                    children.push(base.clone());
+                }
+            }
+            nom_concept::IndexClause::Uses(refs) => {
+                for eref in refs {
+                    if eref.kind.as_deref() == Some("concept") && !eref.word.is_empty() {
+                        if seen.insert(eref.word.clone()) {
+                            children.push(eref.word.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
+    children
+}
+
+/// Recursive variant of `layered_dream_app`. Populates `child_reports`
+/// by dreaming each top-level concept directly referenced from the manifest's
+/// root concept (one `LayeredDreamReport` per direct child concept).
+///
+/// `graph` is the concept graph for the repo this manifest belongs to.
+/// If the root concept is not in the graph, or a referenced concept word
+/// is not in the graph, an empty leaf-only child report (score 0 +
+/// descriptive next_instruction) is produced — same fall-back behaviour
+/// as `layered_dream_concept` on miss.
+pub fn layered_dream_app_recursive(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+    graph: &nom_concept::ConceptGraph,
+) -> LayeredDreamReport {
+    let leaf = dream_report(manifest, dict);
+
+    // Find the root concept by name from the graph.
+    let root_concept = graph.concepts.iter().find(|c| c.name == manifest.name);
+    let children = match root_concept {
+        Some(decl) => direct_child_concepts(decl),
+        None => Vec::new(),
+    };
+
+    let mut seen: std::collections::HashSet<String> = std::collections::HashSet::new();
+    seen.insert(manifest.name.clone());
+
+    let child_reports: Vec<LayeredDreamReport> = children
+        .into_iter()
+        .map(|child| layered_dream_concept_recursive(&child, dict, graph, &mut seen))
+        .collect();
+
+    LayeredDreamReport {
+        tier: DreamTier::App,
+        label: manifest.name.clone(),
+        leaf,
+        child_reports,
+        pareto_front: Vec::new(),
+    }
+}
+
+/// Recursive variant of `layered_dream_concept`. Walks the concept's
+/// direct children (via `direct_child_concepts`) and emits a
+/// `LayeredDreamReport` for each. Cycle protection via caller-supplied
+/// `seen` set: concepts already in `seen` produce a leaf-only stub.
+///
+/// Concepts not in the graph fall back to the `layered_dream_concept`
+/// dict-only path (score determined by dict lookup alone).
+pub fn layered_dream_concept_recursive(
+    concept_word: &str,
+    dict: &nom_dict::NomDict,
+    graph: &nom_concept::ConceptGraph,
+    seen: &mut std::collections::HashSet<String>,
+) -> LayeredDreamReport {
+    // Cycle guard: if already visited, return a zero-score stub.
+    if seen.contains(concept_word) {
+        let stub_leaf = DreamReport {
+            app_score: 0,
+            score_threshold: EPIC_SCORE_THRESHOLD,
+            is_epic: false,
+            closure_size: 0,
+            complete: 0,
+            partial: 0,
+            test_cases: 0,
+            proposals: vec![],
+            next_instruction: format!(
+                "cycle detected at {concept_word}; child dream skipped"
+            ),
+        };
+        return LayeredDreamReport {
+            tier: DreamTier::Concept,
+            label: concept_word.to_string(),
+            leaf: stub_leaf,
+            child_reports: Vec::new(),
+            pareto_front: Vec::new(),
+        };
+    }
+
+    // Mark as visited before recursing.
+    seen.insert(concept_word.to_string());
+
+    // Compute this concept's own leaf score (dict-only path).
+    let leaf_report = layered_dream_concept(concept_word, dict);
+    let leaf = leaf_report.leaf;
+
+    // Find direct children from the graph.
+    let children = match graph.concepts.iter().find(|c| c.name == concept_word) {
+        Some(decl) => direct_child_concepts(decl),
+        None => Vec::new(),
+    };
+
+    let child_reports: Vec<LayeredDreamReport> = children
+        .into_iter()
+        .map(|child| layered_dream_concept_recursive(&child, dict, graph, seen))
+        .collect();
+
+    LayeredDreamReport {
+        tier: DreamTier::Concept,
+        label: concept_word.to_string(),
+        leaf,
+        child_reports,
+        pareto_front: Vec::new(),
+    }
+}
+
 /// Errors produced by `nom-app`.
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -2009,5 +2145,142 @@ mod tests {
             "next_instruction must explain why the concept wasn't found");
         assert!(report.child_reports.is_empty());
         assert!(report.pareto_front.is_empty());
+    }
+
+    // ── M5b: recursive dream tests ────────────────────────────────────────────
+
+    /// Empty graph + minimal manifest → child_reports is empty, behaviour
+    /// identical to the non-recursive variant.
+    #[test]
+    fn layered_dream_app_recursive_with_no_concepts_returns_empty_children() {
+        use nom_dict::NomDict;
+        use nom_concept::ConceptGraph;
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let graph = ConceptGraph { concepts: vec![], modules: vec![] };
+        let manifest = AppManifest {
+            manifest_hash: "m1".into(),
+            name: "empty_app".into(),
+            default_target: "web".into(),
+            root_page_hash: String::new(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let recursive = layered_dream_app_recursive(&manifest, &dict, &graph);
+        let flat = layered_dream_app(&manifest, &dict);
+
+        assert_eq!(recursive.tier, DreamTier::App);
+        assert_eq!(recursive.label, "empty_app");
+        assert!(recursive.child_reports.is_empty(),
+            "expected empty child_reports for empty graph");
+        assert!(recursive.pareto_front.is_empty());
+        // leaf score must match the non-recursive variant.
+        assert_eq!(recursive.leaf.app_score, flat.leaf.app_score);
+    }
+
+    /// Graph with A extends B: dreaming A produces one child report for B,
+    /// and B's report has empty children (since B has no children).
+    #[test]
+    fn layered_dream_concept_recursive_walks_one_level() {
+        use nom_dict::NomDict;
+        use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+
+        let dict = NomDict::open_in_memory().unwrap();
+
+        let concept_b = ConceptDecl {
+            name: "concept_b".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
+        };
+        let concept_a = ConceptDecl {
+            name: "concept_a".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "concept_b".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
+        };
+        let graph = ConceptGraph {
+            concepts: vec![concept_b, concept_a],
+            modules: vec![],
+        };
+
+        let mut seen = std::collections::HashSet::new();
+        let report = layered_dream_concept_recursive("concept_a", &dict, &graph, &mut seen);
+
+        assert_eq!(report.tier, DreamTier::Concept);
+        assert_eq!(report.label, "concept_a");
+        assert_eq!(report.child_reports.len(), 1,
+            "expected 1 child report (concept_b), got {:?}",
+            report.child_reports.iter().map(|r| &r.label).collect::<Vec<_>>());
+        let child = &report.child_reports[0];
+        assert_eq!(child.label, "concept_b");
+        assert!(child.child_reports.is_empty(),
+            "concept_b has no children, expected empty child_reports");
+    }
+
+    /// Graph with A→B→A (cycle): dreaming A from a fresh seen set produces
+    /// A → B → (cycle stub for A). The stub has next_instruction containing
+    /// "cycle" and score 0.
+    #[test]
+    fn layered_dream_concept_recursive_breaks_cycles() {
+        use nom_dict::NomDict;
+        use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+
+        let dict = NomDict::open_in_memory().unwrap();
+
+        let concept_a = ConceptDecl {
+            name: "cycle_a".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "cycle_b".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
+        };
+        let concept_b = ConceptDecl {
+            name: "cycle_b".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "cycle_a".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
+        };
+        let graph = ConceptGraph {
+            concepts: vec![concept_a, concept_b],
+            modules: vec![],
+        };
+
+        let mut seen = std::collections::HashSet::new();
+        let report = layered_dream_concept_recursive("cycle_a", &dict, &graph, &mut seen);
+
+        assert_eq!(report.label, "cycle_a");
+        assert_eq!(report.child_reports.len(), 1);
+        let b_report = &report.child_reports[0];
+        assert_eq!(b_report.label, "cycle_b");
+        // B's child reports must contain the cycle stub for A.
+        assert_eq!(b_report.child_reports.len(), 1,
+            "cycle_b should have one child (stub for cycle_a)");
+        let stub = &b_report.child_reports[0];
+        assert_eq!(stub.label, "cycle_a");
+        assert_eq!(stub.leaf.app_score, 0, "cycle stub must have score 0");
+        assert!(stub.leaf.next_instruction.contains("cycle"),
+            "cycle stub next_instruction must mention 'cycle', got: {}",
+            stub.leaf.next_instruction);
+        assert!(stub.child_reports.is_empty(),
+            "cycle stub must not recurse further");
     }
 }

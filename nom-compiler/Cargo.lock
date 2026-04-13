@@ -1090,6 +1090,7 @@ dependencies = [
 name = "nom-app"
 version = "0.1.0"
 dependencies = [
+ "nom-concept",
  "nom-dict",
  "nom-types",
  "nom-ux",
