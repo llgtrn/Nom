@@ -122,8 +122,17 @@ After `--write-locks`:
 - **No runtime sandboxing**. `requires` clauses are documentation-grade
   until the verifier exists (Phase 8). The compiler checks contract
   *presence* but does not enforce them at runtime.
-- **No MECE validation**. Objectives are ranked and stored. The validator
-  that checks they are non-overlapping is Phase 8 scope.
+- **MECE validation is shipped as a stub** (since commit landing this
+  README revision). The ME (mutual-exclusivity) check runs at composition
+  time: when `minimal_safe_agent` composes `agent_safety_policy`, the union
+  of objectives is `{security, composability, speed} ∪ {security, privacy,
+  speed}` → both name `security` and both name `speed` → the validator
+  reports two ME collisions and `nom build status` exits 1. **This is
+  intentional in this demo** — it proves the validator does real work.
+  To make the agent build clean, change one of the duplicate objectives
+  (e.g., rename `speed` to `latency` in the safety policy). The CE
+  (collective-exhaustiveness) check is deferred to Phase 9, when the
+  corpus registers the required-axis set per composition layer.
 
 ---
 

@@ -160,8 +160,9 @@ mod tests {
         }
 
         // ── Step 2: build status (no --write-locks) ───────────────────────────
+        // MECE-ME violation is present (security + speed shared), so exit 1.
         let (bc, bo, be) = run_status(&repo_dir, &dict_dir, false);
-        assert_eq!(bc, 0, "build status failed: stderr={be}\nstdout={bo}");
+        assert_eq!(bc, 1, "expected exit 1 due to MECE-ME violation: stderr={be}\nstdout={bo}");
         assert!(
             bo.contains("minimal_safe_agent"),
             "expected minimal_safe_agent mentioned: {bo}"
@@ -181,8 +182,9 @@ mod tests {
         );
 
         // ── Step 4: build status --write-locks ───────────────────────────────
+        // Exits 1 due to MECE-ME violation; write-locks still applied.
         let (wc, wo, we) = run_status(&repo_dir, &dict_dir, true);
-        assert_eq!(wc, 0, "build status --write-locks failed: stderr={we}\nstdout={wo}");
+        assert_eq!(wc, 1, "expected exit 1 (MECE violation) from --write-locks: stderr={we}\nstdout={wo}");
         assert!(
             wo.contains("Wrote") && wo.contains("hash lock"),
             "expected 'Wrote N hash lock' in output: {wo}"
@@ -215,20 +217,39 @@ mod tests {
             "hash must be hex: `{hash_part}`"
         );
 
-        // ── Step 6: second sync + status → idempotent ────────────────────────
+        // ── Step 6: second sync + status → idempotent (resolver), MECE fails ───
         let (sc2, so2, se2) = run_sync(&repo_dir, &dict_dir);
         assert_eq!(sc2, 0, "second sync failed: {se2}\n{so2}");
 
         let (bc2, bo2, be2) = run_status(&repo_dir, &dict_dir, false);
-        assert_eq!(bc2, 0, "second status failed: {be2}\n{bo2}");
+        // MECE-ME violation: minimal_safe_agent composes agent_safety_policy and
+        // both declare "security" and "speed" → exit 1.
+        assert_eq!(bc2, 1, "expected exit 1 due to MECE-ME violation: {be2}\n{bo2}");
         assert!(
-            bo2.contains("all clear") || bo2.contains("words resolved"),
-            "expected clean status after lock writeback: {bo2}"
+            bo2.contains("MECE"),
+            "expected 'MECE' in status output: {bo2}"
+        );
+        assert!(
+            bo2.contains("security"),
+            "expected 'security' axis in MECE output: {bo2}"
+        );
+        assert!(
+            bo2.contains("speed"),
+            "expected 'speed' axis in MECE output: {bo2}"
+        );
+        assert!(
+            bo2.contains("minimal_safe_agent"),
+            "expected 'minimal_safe_agent' in MECE output: {bo2}"
+        );
+        assert!(
+            bo2.contains("agent_safety_policy"),
+            "expected 'agent_safety_policy' in MECE output: {bo2}"
         );
 
         // Running --write-locks again must be idempotent (no additional insertions).
         let (wc2, wo2, we2) = run_status(&repo_dir, &dict_dir, true);
-        assert_eq!(wc2, 0, "second --write-locks failed: {we2}\n{wo2}");
+        // MECE violation still present → exit 1.
+        assert_eq!(wc2, 1, "expected exit 1 from --write-locks due to MECE violation: {we2}\n{wo2}");
         let agent_nom_second = std::fs::read_to_string(&agent_nom_path)
             .expect("read agent.nom second time");
         assert_eq!(

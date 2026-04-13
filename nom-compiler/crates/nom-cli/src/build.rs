@@ -155,6 +155,57 @@ pub fn cmd_build_status(
                 );
             }
         }
+
+        // ── MECE objectives check ─────────────────────────────────────────────
+        // Collect child concepts: any Uses clause whose EntityRef has kind "concept".
+        let child_concept_names: Vec<String> = concept
+            .index
+            .iter()
+            .flat_map(|clause| match clause {
+                nom_concept::IndexClause::Uses(refs) => refs.as_slice(),
+                nom_concept::IndexClause::Extends { .. } => &[],
+            })
+            .filter(|eref| eref.kind.as_deref() == Some("concept"))
+            .map(|eref| eref.word.clone())
+            .collect();
+
+        if !child_concept_names.is_empty() || !concept.objectives.is_empty() {
+            let child_decls: Vec<&nom_concept::ConceptDecl> = child_concept_names
+                .iter()
+                .filter_map(|name| graph.concepts.iter().find(|c| &c.name == name))
+                .collect();
+
+            let mece = nom_concept::check_mece(concept, &child_decls);
+
+            // Print the objectives union.
+            let union_str: Vec<String> = mece
+                .union
+                .iter()
+                .map(|b| format!("{}:{}", b.axis, b.source_concept))
+                .collect();
+            println!("  objectives union: [{}]", union_str.join(", "));
+
+            // Print ME violations and mark build failed.
+            for collision in &mece.me_collisions {
+                let offenders: Vec<&str> = collision
+                    .bindings
+                    .iter()
+                    .map(|b| b.source_concept.as_str())
+                    .collect();
+                println!(
+                    "  MECE-ME violation: axis '{}' set by [{}]",
+                    collision.axis,
+                    offenders.join(", ")
+                );
+                any_unresolved = true;
+            }
+
+            // Print stub note once per concept report.
+            for note in &mece.stub_notes {
+                println!("  note: {note}");
+            }
+        }
+
         println!();
 
         // Collect resolved refs for write-lock pass, keyed by `referenced_from` source file.
