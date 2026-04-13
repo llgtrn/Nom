@@ -52,7 +52,27 @@ Format: one row per repo ingested. Columns:
 
 | # | Repo | Size (LOC) | Stage reached | Rows added (fn) | Rows added (concept) | Placeholders | Outcome | Fix commit |
 |---|------|-----------:|---------------|----------------:|---------------------:|-------------:|---------|-----------|
-| 1 | *(first run pending)* | — | — | — | — | — | — | — |
+| 1 | bumpalo | ~3k Rust | test-harness only | — | — | — | `warn:sandbox-dll-block` | — |
+
+**Note 2026-04-14 first execution attempt:** Harness gate test
+`nom-corpus/tests/bumpalo_scan_smoke.rs` was written to exercise
+`nom_corpus::scan_directory` on the bumpalo upstream. Compilation
+succeeds; the test binary fails to start under the cron-loop's
+bash-shell shim with `STATUS_DLL_NOT_FOUND (0xc0000135)` — Windows
+UCRT API-set DLLs (e.g. `api-ms-win-crt-locale-l1-1-0.dll`) are not on
+the shim's loader path even after `PATH` augmentation. Direct
+invocation of `nom.exe` hits the same error.
+
+Workaround: the user must run `cargo test -p nom-corpus --test
+bumpalo_scan_smoke` (or `./nom-compiler/target/debug/nom.exe corpus
+scan <path> --json`) in a real Windows shell (PowerShell or cmd)
+where the UCRT redistributable is on the linker path. The test's
+compile time is ~40s cold, ~1s warm.
+
+Until then the per-repo report stays empty; cycles under the shim are
+limited to library-level unit tests (which run via cargo and succeed
+for pure-Rust crates like nom-dict, nom-concept, nom-graph) and to
+doc-level planning.
 
 Stage legend:
 - `scan` — `corpus scan` completed; repo structure mapped
