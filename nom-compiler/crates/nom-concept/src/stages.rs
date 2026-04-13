@@ -1282,6 +1282,114 @@ the function f is given x, returns y.
         }
     }
 
+    // ── Pipeline parity with parse_nom / parse_nomtu ─────────────────────
+
+    /// a4c20: the new pipeline agrees with parse_nom on concept NAMES for
+    /// a multi-concept source. Field-level parity (intent / contracts /
+    /// index) ships as S6 grows; the minimal assertion today is that both
+    /// parsers enumerate the same blocks in the same order.
+    #[test]
+    fn a4c20_pipeline_matches_parse_nom_on_concept_names() {
+        use crate::parse_nom;
+        let src = r#"the concept alpha is
+  intended to do alpha thing.
+  uses the @Function matching "alpha helper" with at-least 0.85 confidence.
+  favor correctness.
+
+the concept beta is
+  intended to do beta thing.
+  uses the @Function matching "beta helper" with at-least 0.85 confidence.
+  favor performance."#;
+
+        let legacy = parse_nom(src).expect("legacy parser must succeed");
+        let pipeline = run_pipeline(src).expect("pipeline must succeed");
+
+        let legacy_names: Vec<String> =
+            legacy.concepts.iter().map(|c| c.name.clone()).collect();
+        let pipeline_names: Vec<String> = match pipeline {
+            PipelineOutput::Nom(f) => f.concepts.iter().map(|c| c.name.clone()).collect(),
+            PipelineOutput::Nomtu(_) => panic!("expected Nom output"),
+        };
+        assert_eq!(
+            legacy_names, pipeline_names,
+            "pipeline and parse_nom must agree on concept names"
+        );
+    }
+
+    /// a4c21: the new pipeline agrees with parse_nomtu on entity NAMES +
+    /// KINDS for a multi-entity source. Intent is the additive field the
+    /// pipeline carries but parse_nomtu does not — the parity check scopes
+    /// to what both produce.
+    #[test]
+    fn a4c21_pipeline_matches_parse_nomtu_on_entity_names_and_kinds() {
+        use crate::parse_nomtu;
+        let src = r#"the function fetch_url is
+  intended to fetch a url and return the body.
+  benefit cache_hit.
+
+the function write_file is
+  intended to write a text file at a given path.
+  benefit fast_path."#;
+
+        let legacy = parse_nomtu(src).expect("legacy parser must succeed");
+        let pipeline = run_pipeline(src).expect("pipeline must succeed");
+
+        let legacy_ids: Vec<(String, String)> = legacy
+            .items
+            .iter()
+            .map(|i| match i {
+                NomtuItem::Entity(e) => (e.kind.clone(), e.word.clone()),
+                NomtuItem::Composition(c) => ("module".to_string(), c.word.clone()),
+            })
+            .collect();
+        let pipeline_ids: Vec<(String, String)> = match pipeline {
+            PipelineOutput::Nomtu(f) => f
+                .items
+                .iter()
+                .map(|i| match i {
+                    NomtuItem::Entity(e) => (e.kind.clone(), e.word.clone()),
+                    NomtuItem::Composition(c) => ("module".to_string(), c.word.clone()),
+                })
+                .collect(),
+            PipelineOutput::Nom(_) => panic!("expected Nomtu output"),
+        };
+        assert_eq!(
+            legacy_ids, pipeline_ids,
+            "pipeline and parse_nomtu must agree on (kind, name) pairs"
+        );
+    }
+
+    /// a4c22: the new pipeline matches parse_nomtu on EFFECT valences +
+    /// names per entity. Pinpoints that the S5 extraction produces the
+    /// same EffectClause shape as the legacy path.
+    #[test]
+    fn a4c22_pipeline_matches_parse_nomtu_on_effects() {
+        use crate::parse_nomtu;
+        let src = r#"the function fetch_url is
+  intended to fetch a url and return the body.
+  benefit cache_hit, fast_path.
+  hazard timeout."#;
+
+        let legacy = parse_nomtu(src).expect("legacy parser must succeed");
+        let pipeline = run_pipeline(src).expect("pipeline must succeed");
+
+        let legacy_effects = match &legacy.items[0] {
+            NomtuItem::Entity(e) => e.effects.clone(),
+            _ => panic!("expected Entity"),
+        };
+        let pipeline_effects = match pipeline {
+            PipelineOutput::Nomtu(f) => match &f.items[0] {
+                NomtuItem::Entity(e) => e.effects.clone(),
+                _ => panic!("expected Entity"),
+            },
+            _ => panic!("expected Nomtu"),
+        };
+        assert_eq!(
+            legacy_effects, pipeline_effects,
+            "pipeline and parse_nomtu must agree on effects"
+        );
+    }
+
     /// a4c19: mixing a concept with a non-concept block in one file
     /// rejects with NOMX-S6-mixed-concept-and-entity.
     #[test]
