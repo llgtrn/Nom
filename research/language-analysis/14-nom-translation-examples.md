@@ -1698,6 +1698,79 @@ Deferred/non-wedge paradigm: **metaprogramming adds 0 wedges but locks a major t
 
 ---
 
+## 30. Protocol Buffers — schema IDL + versioned wire format
+
+```protobuf
+syntax = "proto3";
+
+message User {
+  string id = 1;
+  string display_name = 2;
+  repeated string email = 3;
+  optional int32 age = 4;
+
+  enum Role {
+    ROLE_UNKNOWN = 0;
+    ROLE_ADMIN = 1;
+    ROLE_MEMBER = 2;
+  }
+  Role role = 5;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define user_record
+  that takes no input, returns a user schema.
+the schema has an id, a display name, a list of emails, perhaps an age, and a role.
+the role is one of unknown, admin, member.
+
+define encode_user
+  that takes a user, returns its wire bytes.
+include field 1 (id), field 2 (display name), repeated field 3 (emails), field 4 (age) if present, field 5 (role).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data User is
+  intended to describe a user record with stable wire-format field numbers for cross-version compatibility.
+  exposes id as identifier at field 1.
+  exposes display_name as text at field 2.
+  exposes email as list of text at field 3.
+  exposes age as perhaps integer at field 4.
+  exposes role as UserRole at field 5.
+
+the data UserRole is
+  intended to enumerate the allowed roles for a User, with a zero-valued unknown default for forward compatibility.
+  exposes unknown at tag 0.
+  exposes admin at tag 1.
+  exposes member at tag 2.
+
+the function encode_user is
+  intended to serialize a User to proto3 wire bytes in stable field order.
+  uses the @Data matching "User" with at-least 0.95 confidence.
+  ensures fields with absent values at the producer are elided from the wire output.
+  ensures known field numbers never shift across versions.
+  hazard unknown fields from newer writers are preserved opaquely by readers.
+  favor forward_compatibility.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Field-number pinning (`= 1`, `= 2`, …)** — proto3 pins each field to a small positive integer that never changes across schema versions. Nom's `at field N` / `at tag N` prose captures this, but there's no grammar rule for **persistent per-field numeric IDs** today. **Candidate: W38 wire-field-tag clause** — narrow, concrete, and broadly useful (same shape solves CBOR/MessagePack/Avro/Cap'n Proto). Small wedge.
+2. **`optional` / `repeated` modifiers** — already expressible as `perhaps T` (optional, covered by doc 17 §I1) and `list of T` (repeated, doc 17 §I15). No new wedge.
+3. **Nested enum / choice** — `Role` inside `User`. v2 translation flattens to a peer `UserRole` data decl, matching Nom's flat-namespace preference. Authoring-guide rule cross-ref: **nested enums lift to peer data decls**. No new wedge; covers nested-choice without adding grammar.
+4. **Zero-valued default for unknown** — proto3's `ROLE_UNKNOWN = 0` is a forward-compat discipline. v2 translation makes it explicit via a labeled `unknown` tag. Authoring-guide rule: **choice/enum decls should reserve a 0-tagged `unknown` variant for forward compatibility when wire-stable**.
+5. **`syntax = "proto3"` preamble** — version marker of the schema dialect. Nom's `.nomtu` is hash-pinned at the file level; wire-format dialect is part of the data decl's intent. No new wedge; the `intended to` clause carries the version narrative.
+6. **Forward compatibility as a first-class objective** — `favor forward_compatibility` surfaces a new QualityName that isn't yet in the standard set. **Authoring-corpus seed**: register `forward_compatibility` as a registered objective axis alongside `correctness`/`safety`/`performance`/`accessibility`.
+
+Row additions: **W38 wire-field-tag clause** (new wedge), authoring-corpus seed for `forward_compatibility` QualityName, authoring-guide rule for nested-enum flattening.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

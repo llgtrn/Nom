@@ -78,17 +78,21 @@
 | 61 | Actor-spawn + message-passing clause | **W37** grammar rule (may subsume W31) | ⏳ queued (doc 14 #27) |
 | 62 | Logic-query / Prolog unification — translates to list-returning function + `ensures` clause | authoring-guide rule | ✅ closed (doc 14 #28; no wedge needed — existing shape suffices) |
 | 63 | Lisp macro / metaprogramming — translates to higher-order function taking body-producing closure (links deferred D2) | authoring-guide rule | ✅ closed (doc 14 #29; Nom intentionally rejects macros — closure-lifting covers every common macro-use) |
+| 64 | Wire-field-tag clause (`at field N` / `at tag N` for proto3, CBOR, Avro, Cap'n Proto) | **W38** grammar rule | ⏳ queued (doc 14 #30) |
+| 65 | Nested enum → peer data decl flattening | authoring-guide rule | ✅ closed (doc 14 #30; existing flat-namespace preference + lift-to-peer rule covers all nested enums) |
+| 66 | `forward_compatibility` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #30) |
 
-Totals by destination (after doc 14 #29 Common Lisp macro translation confirmed the closure-lifting shape captures every common macro-use; no macro grammar needed):
+Totals by destination (after doc 14 #30 Protocol Buffers schema translation surfaced W38 wire-field-tag + forward_compatibility seed):
 
-- ⏳ Wedge queued: **30** (W37 actor-spawn; may subsume W31)
+- ⏳ Wedge queued: **31** (+W38 wire-field-tag)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **29**
+- ✅ Closed: **30**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
+- 🌱 Authoring-corpus seed: **1** (forward_compatibility QualityName)
 
-Backlog size: 63 rows. Closure rate 46% (29/63). **29 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + **metaprogramming (Lisp macros → closure-lifting, by rejection)**.
+Backlog size: 66 rows. Closure rate 45% (30/66). **30 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + **schema-IDL (Protocol Buffers wire format)**.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -105,6 +109,7 @@ Backlog size: 63 rows. Closure rate 46% (29/63). **29 translations** in doc 14. 
 - **W16:** Environment-variable access vocabulary.
 - **W17:** Nested-record-path syntax (TOML dot-paths).
 - **W18:** `@Union` typed-kind for sum-types (replaces earlier ambiguous "W5" reference).
+- **W38:** Wire-field-tag clause (`at field N` / `at tag N` for proto3, CBOR, Avro, Cap'n Proto — per-field stable numeric IDs).
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 
