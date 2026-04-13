@@ -1,8 +1,10 @@
 # Comprehensive 50-Language Analysis for Nom
 
 **Research date:** 2026-04-12
-**Last verified against codebase:** 2026-04-13, HEAD `afc6228`
+**Last verified against codebase:** 2026-04-14 (grammar-shelf audit)
 **Claims tagged:** ✅ SHIPPED (file:line or commit SHA cited), ⏳ PLANNED (phase noted), ❌ ASPIRATIONAL (no near-term plan)
+
+> **Grammar-adoption status (2026-04-14):** tree-sitter grammars for 42 of the 50 surveyed languages are now workspace deps in `nom-compiler/Cargo.toml` (lines 58-102): `rust, typescript, python, c, cpp, go, java, c-sharp, ruby, php, scala, haskell, ocaml, julia, bash, lua, r, zig, elm, objc, racket, erlang, d, fortran, elixir, groovy, swift, dart` — plus markup/config (`html, css, json, yaml, toml-ng, regex, make, cmake, verilog, proto, nix, glsl, graphql, latex`). The parser front-end for corpus ingestion is no longer scaffold-only. Phase-5 milestones (planner/verifier/codegen per-language) remain ⏳ PLANNED as tagged per-language. Genuinely absent grammars: **Nim, Odin, Ada, V, Carbon, Kotlin, F#, Perl, Clojure, Gleam, ReScript, Mojo, Roc, Flix, Unison, Vale, Prolog, APL/K, Forth, Smalltalk, Tcl** — these remain unblockable at the grammar layer until upstream crates ship. JavaScript (#34) is covered via `tree-sitter-typescript` which handles both.
 
 > **Status banner**: This document is a survey of design patterns and failures across 50 languages. The "Nom takeaway" paragraphs are design notes. Where those takeaways describe infrastructure that already exists in the Nom codebase, the claim is tagged ✅ SHIPPED with a citation. Where the infrastructure is planned but not yet built, the claim is tagged ⏳ PLANNED. Where it depends on research that has no concrete implementation timeline, the claim is tagged ❌ ASPIRATIONAL. The language survey itself (strengths/weaknesses/takeaways) is documentation of design intent, not implementation status.
 
