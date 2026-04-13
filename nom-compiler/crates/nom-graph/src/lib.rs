@@ -3,6 +3,22 @@
 //! Builds a graph from NomtuEntry bodies, tracking which functions call
 //! which others, what imports they need, and grouping them into semantic
 //! communities via label propagation.
+//!
+//! ## Graph-durability roadmap
+//!
+//! Phase 1 (shipped `60534e4`): `nom-dict::freshness` detects when the dict
+//! has diverged from source. Phase 2 (this module's `uid` submodule, phased
+//! across cycles) replaces positional `Vec<NomtuNode>` identity with content-
+//! hash `NodeUid` so renames survive as a chain instead of breaking edges
+//! silently. Phase 3 (pending): Cypher-compatible export so nom-graph dumps
+//! roundtrip through GitNexus.
+//!
+//! Phase 2a (this commit): add `NodeUid` + `compute_node_uid` as a new
+//! module. No existing call sites are touched yet — this is foundation so
+//! future wedges (2b upsert_entry, 2c HashMap storage) can land safely.
+//! See `docs/superpowers/specs/2026-04-14-graph-durability-design.md`.
+
+pub mod uid;
 
 use std::collections::{HashMap, HashSet, VecDeque};
 
