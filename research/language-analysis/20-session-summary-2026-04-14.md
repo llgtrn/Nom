@@ -77,7 +77,8 @@ All three are NON-NEGOTIABLE per user; applied continuously across cycles.
 
 - Session start: 77
 - Post-A4c + ct11-ct14 smoke tests + strict module + stages module: **120**
-- Net +43 tests landed, all in nom-concept alone.
+- Post-A4c parity push (a4c20-a4c38) + JSON round-trip + diag contract + strict-validator integration + empty-input safety: **139**
+- Net +62 tests landed, all in nom-concept alone.
 
 ---
 
