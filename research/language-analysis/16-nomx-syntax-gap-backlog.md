@@ -123,18 +123,24 @@
 | 106 | Checks-effects-interactions invariant declared explicitly as `hazard` when external transfers occur | authoring-guide rule | ✅ closed (doc 14 #38) |
 | 107 | Data decls are immutable by default; mutations happen via functions that take a prior value and return a new value | authoring-guide rule | ✅ closed (doc 14 #38; consistent with #25 Haskell + #35 NumPy) |
 | 108 | `gas_efficiency` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #38; accumulates with #66/#91) |
+| 109 | Reactive per-instance state = (state-data, transition-function, screen/view decl) triple — unifies #32 state-machine + #39 SwiftUI into one pattern | authoring-guide rule | ✅ closed (doc 14 #39) |
+| 110 | Declarative view trees expressed as prose positional descriptions inside `screen` decl body | authoring-guide rule | ✅ closed (doc 14 #39) |
+| 111 | View-modifier chains collapse to a single prose sentence per view component | authoring-guide rule | ✅ closed (doc 14 #39) |
+| 112 | Callback props are `reference to function taking T returning U` in a props data decl | authoring-guide rule | ✅ closed (doc 14 #39; ties deferred D2) |
+| 113 | Layout primitives as prose: `horizontal row of …`, `vertical column of …`, `stacked`, `trailing/leading spacer` | authoring-guide rule | ✅ closed (doc 14 #39; ties to `nom-ux` UX primitives) |
+| 114 | System-image references as platform-resolved prose names (SF Symbols → Material → web icons) | authoring-guide rule | ✅ closed (doc 14 #39; Phase 12 specialization) |
 
-Totals by destination (after doc 14 #38 Solidity smart-contract translation — **first true 0-new-wedge smart-contract translation**; 5 authoring-guide closures + 1 QualityName seed; reinforces W9 priority):
+Totals by destination (after doc 14 #39 SwiftUI declarative-reactive-UI translation — **second true 0-new-wedge translation in a row**; 6 authoring-guide closures; unifies #32 + #39 into single reactive-decomposition pattern):
 
-- ⏳ Wedge queued: **38** (unchanged; W9 `fail with` now has an external-use reinforcement)
+- ⏳ Wedge queued: **38** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **66**
+- ✅ Closed: **72**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **3** (forward_compatibility + numerical_stability + gas_efficiency QualityNames)
 
-Backlog size: 112 rows. Closure rate 59% (66/112). **38 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + **smart-contract (Solidity on-chain)**. Fifth consecutive minimal-wedge translation; smart-contract semantics map entirely onto existing primitives.
+Backlog size: 118 rows. Closure rate 61% (72/118). **39 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + **declarative-reactive-UI (SwiftUI; generalizes to Flutter/React/Vue/Compose)**. Sixth consecutive minimal-wedge translation; the (state-data, transition-fn, screen-decl) decomposition unifies state-machines and reactive UIs.
 
 ## Wedge master index (for cross-ref with doc 13)
 

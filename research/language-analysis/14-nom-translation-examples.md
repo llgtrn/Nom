@@ -2356,6 +2356,90 @@ Row additions: **0 new wedges** (reinforces W9 `fail with` priority; all 7 items
 
 ---
 
+## 39. SwiftUI view — declarative reactive UI
+
+```swift
+struct TodoRowView: View {
+    @State private var isDone: Bool
+    let title: String
+    let onToggle: (Bool) -> Void
+
+    var body: some View {
+        HStack {
+            Button(action: {
+                isDone.toggle()
+                onToggle(isDone)
+            }) {
+                Image(systemName: isDone ? "checkmark.circle.fill" : "circle")
+                    .foregroundColor(isDone ? .green : .gray)
+            }
+            Text(title)
+                .strikethrough(isDone)
+                .foregroundColor(isDone ? .secondary : .primary)
+            Spacer()
+        }
+        .padding(.vertical, 4)
+    }
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define render_todo_row
+  that takes a title text, a completion state, and an on-toggle callback, returns a rendered row.
+render a horizontal row containing a toggle button, the title, and a trailing spacer.
+when the completion state is done, render the toggle icon as a filled green checkmark and the title as strikethrough secondary.
+when the completion state is not done, render the toggle icon as a gray circle and the title as primary.
+the button fires the callback with the new completion state when tapped.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data TodoRowState is
+  intended to hold the per-instance mutable state of a single todo row.
+  exposes is_done as boolean.
+
+the data TodoRowProps is
+  intended to hold the caller-provided immutable properties of a todo row.
+  exposes title as text.
+  exposes on_toggle as reference to function taking boolean returning nothing.
+
+the screen todo_row is
+  intended to render a single todo entry as a horizontal row with a toggle button, title, and trailing spacer; visuals reflect the is_done state.
+  uses the @Data matching "TodoRowState" with at-least 0.95 confidence.
+  uses the @Data matching "TodoRowProps" with at-least 0.95 confidence.
+  when is_done is true, the toggle icon is a filled green checkmark and the title is strikethrough in secondary color.
+  when is_done is false, the toggle icon is an empty gray circle and the title is primary color.
+  the row padding is 4 units vertical, 0 units horizontal.
+
+the function todo_row_toggled is
+  intended to flip TodoRowState.is_done and fire the on_toggle callback with the new value.
+  uses the @Data matching "TodoRowState" with at-least 0.95 confidence.
+  uses the @Data matching "TodoRowProps" with at-least 0.95 confidence.
+  requires the current state is well-formed.
+  ensures the returned state has is_done inverted from the input state.
+  ensures on_toggle is called exactly once with the new is_done value before the returned state is observable.
+  favor responsiveness.
+```
+
+### Gaps surfaced
+
+1. **`@State` property wrapper** — SwiftUI's per-instance mutable state with automatic view-rebuild binding. Nom splits this cleanly: a **data decl** holds the state shape, a **function** describes transitions, a **screen** decl describes the render. Authoring-guide rule: **reactive per-instance state decomposes to (state-data decl, transition-function, screen decl) triple** — same tuple shape as the XState decomposition (#32). Consolidates reactive-UI with state-machine-DSL as a **single unified decomposition pattern**. No new wedge.
+2. **Declarative view tree (`HStack { … }`)** — structural tree of nested components. Nom's `screen` kind already exists (one of the 7 closed nouns). The screen decl's body is prose description of the tree, not nested syntax. **Candidate: authoring-guide rule — declarative view trees decompose to prose positional descriptions inside the `screen` decl's body**. No new wedge; the screen kind already absorbs this.
+3. **View modifier chaining (`.strikethrough(isDone).foregroundColor(…)`)** — post-fix decoration calls on views. Nom's prose `rendered as strikethrough in secondary color` is more direct. Authoring-guide rule: **modifier chains collapse to a single prose sentence per view component**. No new wedge.
+4. **Callback props (`let onToggle: (Bool) -> Void`)** — parent-supplied function parameters. Nom expresses this as `reference to function taking boolean returning nothing` inside a data decl. **Candidate: authoring-guide rule — callback props are `reference to function taking T returning U` in a props data decl**. Consistent with D2 (closures lift to named entities). No new wedge.
+5. **Layout containers (HStack/VStack/ZStack + Spacer)** — axis-specific layouts + flexible space. Nom's `horizontal row`/`vertical column`/`stacked` + `trailing spacer` is the direct prose analogue. Authoring-guide rule: **layout primitives are prose: `horizontal row of X, Y, Z`, `vertical column of …`, `trailing spacer`, `leading spacer`**. Tied to the UX primitives already reserved in `nom-ux` (per MEMORY.md). No new wedge.
+6. **System images / SF Symbols (`Image(systemName: "checkmark.circle.fill")`)** — Apple's symbol library. Nom's translation names them in prose (`filled green checkmark`). Authoring-guide rule: **system-image references are prose names; the build-time asset resolver maps to the target platform's icon set** (SF Symbols on Apple, Material Icons on Android, icon-font on web). Aligns with the platform-specialization discipline (Phase 12). No new wedge.
+7. **Platform-specific rendering semantics (animation, font metrics, touch-vs-mouse)** — SwiftUI's rendering stack is iOS/macOS specific. Nom's translation stays platform-agnostic; the build-time specialization (Phase 12) produces platform-specific output. Already covered.
+
+Row additions: **0 new wedges**. 6 authoring-guide closures: reactive per-instance state = (state-data, transition-function, screen) triple [unifies with #32 state-machine decomp], declarative view trees as prose inside screen decl body, modifier chains collapse to prose, callback props via `reference to function` in data decl, layout primitives as prose (row/column/stack/spacer), system images as platform-resolved prose names.
+
+**Sixth consecutive minimal-wedge translation** (and the second "true 0 new wedge" in a row after Solidity). Declarative reactive UI fully expresses via existing `screen` kind + data decls + transition functions. The **unified decomposition pattern** — (state-data, transition-function, view/screen-decl) — now covers XState (#32), SwiftUI (#39), and by extension Flutter/React/Vue/Compose. Any declarative-reactive-UI framework translates without grammar additions.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
