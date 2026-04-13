@@ -19,8 +19,13 @@
 //! See `docs/superpowers/specs/2026-04-14-graph-durability-design.md`.
 
 pub mod uid;
+pub mod upsert;
+
+pub use upsert::UpsertOutcome;
 
 use std::collections::{HashMap, HashSet, VecDeque};
+
+use crate::uid::NodeUid;
 
 use nom_types::NomtuEntry;
 use serde::{Deserialize, Serialize};
@@ -74,6 +79,14 @@ pub struct Community {
 // ── Graph ────────────────────────────────────────────────────────────
 
 /// The .nomtu knowledge graph.
+///
+/// Storage is in mid-migration from positional Vec adjacency (legacy,
+/// still read by `build_call_edges` / `build_import_edges` / everyone)
+/// to content-hash uid adjacency (Phase 2b onward, fed by
+/// `upsert_entry`). The two paths coexist; both sets of fields are
+/// valid on a given graph instance, and callers pick which one matches
+/// their use case. Phase 2c merges them; Phase 3 Cypher export reads
+/// the uid path.
 pub struct NomtuGraph {
     nodes: Vec<NomtuNode>,
     edges: Vec<NomtuEdge>,
@@ -83,6 +96,15 @@ pub struct NomtuGraph {
     bodies: HashMap<(String, Option<String>), String>,
     /// Languages keyed by (word, variant).
     languages: HashMap<(String, Option<String>), String>,
+
+    // ── Phase 2b: uid-addressed parallel storage ─────────────────────
+    /// Content-hash -> node. Populated by `upsert_entry`.
+    pub(crate) uid_nodes: HashMap<NodeUid, NomtuNode>,
+    /// current_uid -> prior uids that renamed into it, oldest first.
+    pub(crate) prior_hashes: HashMap<NodeUid, Vec<NodeUid>>,
+    /// (word, kind, variant) -> current uid. Used by `upsert_entry`
+    /// to distinguish Unchanged/Updated from Renamed.
+    pub(crate) word_variant_index: HashMap<(String, String, Option<String>), NodeUid>,
 }
 
 impl NomtuGraph {
@@ -93,6 +115,9 @@ impl NomtuGraph {
             word_index: HashMap::new(),
             bodies: HashMap::new(),
             languages: HashMap::new(),
+            uid_nodes: HashMap::new(),
+            prior_hashes: HashMap::new(),
+            word_variant_index: HashMap::new(),
         }
     }
 
