@@ -403,15 +403,31 @@ pub fn stage3_shape_extract(classified: &ClassifiedStream) -> Result<ShapedStrea
         let intended_rel = match intended_idx {
             Some(i) => i,
             None => {
-                return Err(StageFailure::new(
-                    StageId::ShapeExtract,
-                    b.start_byte,
-                    "missing-intent",
-                    format!(
-                        "block `the {} {}` has no `intended to …` sentence",
-                        b.kind, b.name
-                    ),
-                ));
+                // Concepts REQUIRE an `intended to …` sentence.
+                // Entity / composition / data / etc. blocks may omit it
+                // and carry a signature or exposes clauses instead —
+                // treat those as empty-intent and move on.
+                if b.kind == "concept" {
+                    return Err(StageFailure::new(
+                        StageId::ShapeExtract,
+                        b.start_byte,
+                        "missing-intent",
+                        format!(
+                            "concept `the {} {}` requires an `intended to …` sentence",
+                            b.kind, b.name
+                        ),
+                    ));
+                } else {
+                    blocks.push(ShapedBlock {
+                        kind: b.kind.clone(),
+                        name: b.name.clone(),
+                        start_tok: b.start_tok,
+                        end_tok: b.end_tok,
+                        start_byte: b.start_byte,
+                        intent: String::new(),
+                    });
+                    continue;
+                }
             }
         };
         // Next token must be `To`.
@@ -1224,20 +1240,36 @@ the function f is given x, returns y.
         );
     }
 
-    /// a4c07: two-block `.nomtu` source — neither uses `intended to`
-    /// in the entity form — the shape_extract must reject the first
-    /// block with `missing-intent` (entities don't carry intent yet;
-    /// S3 in this increment is strict about every block needing one,
-    /// matching the concept-style authoring idiom). This test locks
-    /// the strict policy; later A4c work may relax it for entities
-    /// once a separate signature-shape field carries their meaning.
+    /// a4c07: entity WITHOUT `intended to` parses cleanly through S3
+    /// (superseded — was previously a rejection test).
+    ///
+    /// Policy change: concepts REQUIRE `intended to …`; entities,
+    /// compositions, and data blocks may omit it and carry signature
+    /// or exposes clauses instead. Signature capture is then S6's
+    /// extract_entity_signature job.
     #[test]
-    fn a4c07_entity_without_intent_rejected() {
+    fn a4c07_entity_without_intent_accepted() {
         let src = r#"the function fetch_url is given a url, returns text.
   benefit cache_hit."#;
         let stream = stage1_tokenize(src).expect("S1");
         let classified = stage2_kind_classify(&stream).expect("S2");
-        let err = stage3_shape_extract(&classified).expect_err("S3 must reject");
+        let shaped = stage3_shape_extract(&classified).expect("S3 must accept");
+        assert_eq!(shaped.blocks.len(), 1);
+        assert_eq!(shaped.blocks[0].kind, "function");
+        assert_eq!(shaped.blocks[0].intent, "", "entity without intent has empty intent");
+    }
+
+    /// a4c31: CONCEPT without `intended to` is still rejected —
+    /// the strictness policy stays on for the concept form per doc
+    /// 17 §I6 (every concept carries its intent sentence).
+    #[test]
+    fn a4c31_concept_without_intent_still_rejected() {
+        let src = r#"the concept broken is
+  uses the @Function matching "something" with at-least 0.8 confidence.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let err = stage3_shape_extract(&classified).expect_err("S3 must reject concept");
         assert_eq!(err.stage, StageId::ShapeExtract);
         assert_eq!(err.reason, "missing-intent");
     }
@@ -1538,6 +1570,51 @@ the function write_file is
                 assert_eq!(refs[0].word, "");
             }
             _ => panic!("expected IndexClause::Uses"),
+        }
+    }
+
+    /// a4c32: real entity source (`is given a url, returns text.`)
+    /// runs end-to-end through the pipeline and the signature prose
+    /// matches what parse_nomtu produces. This closes the last
+    /// structural gap for entity blocks.
+    #[test]
+    fn a4c32_entity_signature_parity_with_parse_nomtu() {
+        use crate::parse_nomtu;
+        let src = r#"the function fetch_url is given a url, returns text.
+  benefit cache_hit."#;
+        let legacy = parse_nomtu(src).expect("legacy");
+        let pipeline = run_pipeline(src).expect("pipeline");
+        let legacy_sig = match &legacy.items[0] {
+            NomtuItem::Entity(e) => e.signature.clone(),
+            _ => panic!("Entity"),
+        };
+        let pipeline_sig = match pipeline {
+            PipelineOutput::Nomtu(f) => match &f.items[0] {
+                NomtuItem::Entity(e) => e.signature.clone(),
+                _ => panic!("Entity"),
+            },
+            _ => panic!("Nomtu"),
+        };
+        assert!(
+            !pipeline_sig.is_empty(),
+            "pipeline signature must not be empty; got {:?}",
+            pipeline_sig
+        );
+        // Legacy collects prose differently (one form like "given a url, returns text")
+        // so compare on shared keywords rather than byte equality.
+        for keyword in ["given", "url", "returns", "text"] {
+            assert!(
+                pipeline_sig.contains(keyword),
+                "pipeline signature should contain `{}`; got {:?}",
+                keyword,
+                pipeline_sig
+            );
+            assert!(
+                legacy_sig.contains(keyword),
+                "legacy signature should contain `{}`; got {:?}",
+                keyword,
+                legacy_sig
+            );
         }
     }
 
