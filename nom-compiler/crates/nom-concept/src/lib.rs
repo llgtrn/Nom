@@ -4,7 +4,7 @@
 //! `.nomtu` = multi-entity DB2 container (small scope).
 //! `.nom`   = multi-concept DB1 container (big scope).
 //!
-//! This crate defines the AST + parser. The `.nom` parser lands in a follow-up commit.
+//! This crate defines the AST + parser for both formats.
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -90,8 +90,6 @@ pub enum ContractClause {
 
 #[derive(Debug, Error)]
 pub enum ConceptError {
-    #[error("parser not yet implemented for `.nom` files (doc 08 §6.2)")]
-    NomParserUnimplemented,
     #[error("unknown kind `{0}`; closed set per doc 08 §8.1: {KINDS:?}")]
     UnknownKind(String),
     #[error("parse error at position {position}: expected {expected}, found {found}")]
@@ -120,6 +118,18 @@ mod lex {
         At,
         Dot,
         Comma,
+        // .nom keywords
+        Intended,
+        To,
+        Uses,
+        Extends,
+        Adding,
+        Removing,
+        Exposes,
+        This,
+        Works,
+        When,
+        Favor,
         /// A kind keyword ("function", "module", …).
         Kind(String),
         /// A bare word: `[a-z0-9_]+`.
@@ -210,6 +220,17 @@ mod lex {
                     "requires" => Tok::Requires,
                     "ensures"  => Tok::Ensures,
                     "matching" => Tok::Matching,
+                    "intended" => Tok::Intended,
+                    "to"       => Tok::To,
+                    "uses"     => Tok::Uses,
+                    "extends"  => Tok::Extends,
+                    "adding"   => Tok::Adding,
+                    "removing" => Tok::Removing,
+                    "exposes"  => Tok::Exposes,
+                    "this"     => Tok::This,
+                    "works"    => Tok::Works,
+                    "when"     => Tok::When,
+                    "favor"    => Tok::Favor,
                     "function" | "module" | "concept" | "screen"
                     | "data"   | "event"  | "media"   => Tok::Kind(word.to_string()),
                     _          => Tok::Word(word.to_string()),
@@ -269,6 +290,17 @@ mod parse {
             Tok::Requires => "`requires`".into(),
             Tok::Ensures  => "`ensures`".into(),
             Tok::Matching => "`matching`".into(),
+            Tok::Intended => "`intended`".into(),
+            Tok::To       => "`to`".into(),
+            Tok::Uses     => "`uses`".into(),
+            Tok::Extends  => "`extends`".into(),
+            Tok::Adding   => "`adding`".into(),
+            Tok::Removing => "`removing`".into(),
+            Tok::Exposes  => "`exposes`".into(),
+            Tok::This     => "`this`".into(),
+            Tok::Works    => "`works`".into(),
+            Tok::When     => "`when`".into(),
+            Tok::Favor    => "`favor`".into(),
             Tok::At       => "`@`".into(),
             Tok::Dot      => "`.`".into(),
             Tok::Comma    => "`,`".into(),
@@ -367,28 +399,8 @@ mod parse {
             }
             if let Some(s) = lex.next() {
                 match &s.tok {
-                    Tok::Quoted(q) => parts.push(format!("\"{}\"", q)),
                     Tok::Dot => { /* should not happen given peek above */ break }
-                    _ => {
-                        // Reconstruct the surface form of the token.
-                        let text = match &s.tok {
-                            Tok::The      => "the".to_string(),
-                            Tok::Is       => "is".to_string(),
-                            Tok::Composes => "composes".to_string(),
-                            Tok::Then     => "then".to_string(),
-                            Tok::With     => "with".to_string(),
-                            Tok::Requires => "requires".to_string(),
-                            Tok::Ensures  => "ensures".to_string(),
-                            Tok::Matching => "matching".to_string(),
-                            Tok::At       => "@".to_string(),
-                            Tok::Comma    => ",".to_string(),
-                            Tok::Kind(k)  => k.clone(),
-                            Tok::Word(w)  => w.clone(),
-                            Tok::Quoted(q) => format!("\"{}\"", q),
-                            Tok::Dot      => ".".to_string(),
-                        };
-                        parts.push(text);
-                    }
+                    _ => parts.push(tok_surface(&s.tok)),
                 }
             }
         }
@@ -425,6 +437,17 @@ mod parse {
             Tok::Requires => "requires".to_string(),
             Tok::Ensures  => "ensures".to_string(),
             Tok::Matching => "matching".to_string(),
+            Tok::Intended => "intended".to_string(),
+            Tok::To       => "to".to_string(),
+            Tok::Uses     => "uses".to_string(),
+            Tok::Extends  => "extends".to_string(),
+            Tok::Adding   => "adding".to_string(),
+            Tok::Removing => "removing".to_string(),
+            Tok::Exposes  => "exposes".to_string(),
+            Tok::This     => "this".to_string(),
+            Tok::Works    => "works".to_string(),
+            Tok::When     => "when".to_string(),
+            Tok::Favor    => "favor".to_string(),
             Tok::At       => "@".to_string(),
             Tok::Comma    => ",".to_string(),
             Tok::Kind(k)  => k.clone(),
@@ -603,6 +626,277 @@ mod parse {
         Ok(NomtuItem::Entity(entity))
     }
 
+    // ── .nom prose collector ────────────────────────────────────────────────
+
+    /// Is this token the start of a new top-level clause in a ConceptDecl?
+    fn is_concept_clause_start(tok: &Tok) -> bool {
+        matches!(
+            tok,
+            Tok::Uses
+            | Tok::Extends
+            | Tok::Exposes
+            | Tok::This
+            | Tok::Favor
+        )
+    }
+
+    /// Collect prose for intent / acceptance, stopping at `.` or any clause-
+    /// start keyword. Does NOT consume the terminator.
+    fn collect_concept_prose(lex: &mut Lexer<'_>) -> String {
+        let mut parts: Vec<String> = Vec::new();
+        loop {
+            match lex.peek() {
+                None => break,
+                Some(Tok::Dot) => break,
+                Some(ref t) if is_concept_clause_start(t) => break,
+                _ => {}
+            }
+            if let Some(s) = lex.next() {
+                parts.push(tok_surface(&s.tok));
+            }
+        }
+        parts.join(" ")
+    }
+
+    // ── .nom entity-ref list ─────────────────────────────────────────────────
+
+    /// Parse `"the" Kind Word ("," "the" Kind Word)*` into a Vec<EntityRef>.
+    /// Used inside `uses` and `adding`/`removing` clauses.
+    /// Stops when the next token is not `,` or when the comma is not followed
+    /// by `the`. Consumes the closing `.`.
+    fn parse_entity_ref_list(lex: &mut Lexer<'_>) -> Result<Vec<EntityRef>, ConceptError> {
+        let mut refs = Vec::new();
+        refs.push(parse_entity_ref(lex)?);
+        loop {
+            if lex.peek() != Some(Tok::Comma) {
+                break;
+            }
+            // Peek two tokens ahead: comma then `the` → another entity ref
+            lex.next(); // consume comma
+            // If next token is not `the`, we've consumed a trailing comma
+            // before a terminator — put nothing back (the comma was separator
+            // before `.`).
+            match lex.peek() {
+                Some(Tok::The) => {
+                    refs.push(parse_entity_ref(lex)?);
+                }
+                _ => break,
+            }
+        }
+        Ok(refs)
+    }
+
+    // ── .nom index clauses ───────────────────────────────────────────────────
+
+    /// Parse one IndexClause:
+    ///   `uses EntityRef (, EntityRef)* .`
+    ///   `extends the concept Word with adding EntityRef+ (removing EntityRef+)? .`
+    fn parse_index_clause(lex: &mut Lexer<'_>) -> Result<IndexClause, ConceptError> {
+        let pos = lex.position();
+        match lex.peek() {
+            Some(Tok::Uses) => {
+                lex.next(); // consume `uses`
+                let refs = parse_entity_ref_list(lex)?;
+                expect_dot(lex)?;
+                Ok(IndexClause::Uses(refs))
+            }
+            Some(Tok::Extends) => {
+                lex.next(); // consume `extends`
+                // expect `the concept Word`
+                expect_the(lex)?;
+                // `concept` is lexed as Tok::Kind("concept")
+                let pos2 = lex.position();
+                match lex.next() {
+                    Some(s) => match s.tok {
+                        Tok::Kind(ref k) if k == "concept" => {}
+                        other => return Err(err_expected("`concept`", &tok_display(&other), s.pos)),
+                    },
+                    None => return Err(err_expected("`concept`", "end of input", pos2)),
+                }
+                let base = expect_word(lex)?;
+                // expect `with`
+                let pos3 = lex.position();
+                match lex.next() {
+                    Some(s) if s.tok == Tok::With => {}
+                    Some(s) => return Err(err_expected("`with`", &tok_display(&s.tok), s.pos)),
+                    None => return Err(err_expected("`with`", "end of input", pos3)),
+                }
+                let change_set = parse_change_set(lex)?;
+                expect_dot(lex)?;
+                Ok(IndexClause::Extends { base, change_set })
+            }
+            other => {
+                let found = other.as_ref().map(tok_display).unwrap_or_else(|| "end of input".into());
+                Err(err_expected("`uses` or `extends`", &found, pos))
+            }
+        }
+    }
+
+    /// Parse `adding EntityRef+ (removing EntityRef+)?`
+    fn parse_change_set(lex: &mut Lexer<'_>) -> Result<ChangeSet, ConceptError> {
+        let pos = lex.position();
+        // expect `adding`
+        match lex.next() {
+            Some(s) if s.tok == Tok::Adding => {}
+            Some(s) => return Err(err_expected("`adding`", &tok_display(&s.tok), s.pos)),
+            None => return Err(err_expected("`adding`", "end of input", pos)),
+        }
+        let adding = parse_entity_ref_list(lex)?;
+
+        let removing = if lex.peek() == Some(Tok::Removing) {
+            lex.next(); // consume `removing`
+            parse_entity_ref_list(lex)?
+        } else {
+            Vec::new()
+        };
+
+        Ok(ChangeSet { adding, removing })
+    }
+
+    // ── .nom concept decl ────────────────────────────────────────────────────
+
+    /// Parse one ConceptDecl starting after the leading `the concept` has been
+    /// consumed:
+    ///   `Word is intended to IntentPhrase . IndexClause+ ExposesClause?
+    ///    AcceptanceClause* ObjectiveClause?`
+    fn parse_concept_decl(lex: &mut Lexer<'_>) -> Result<ConceptDecl, ConceptError> {
+        let name = expect_word(lex)?;
+        expect_is(lex)?;
+
+        // `intended to`
+        let pos = lex.position();
+        match lex.next() {
+            Some(s) if s.tok == Tok::Intended => {}
+            Some(s) => return Err(err_expected("`intended`", &tok_display(&s.tok), s.pos)),
+            None => return Err(err_expected("`intended`", "end of input", pos)),
+        }
+        let pos2 = lex.position();
+        match lex.next() {
+            Some(s) if s.tok == Tok::To => {}
+            Some(s) => return Err(err_expected("`to`", &tok_display(&s.tok), s.pos)),
+            None => return Err(err_expected("`to`", "end of input", pos2)),
+        }
+
+        let intent = collect_concept_prose(lex).trim().to_string();
+        expect_dot(lex)?;
+
+        // One or more IndexClauses
+        let mut index = Vec::new();
+        loop {
+            match lex.peek() {
+                Some(Tok::Uses) | Some(Tok::Extends) => {
+                    index.push(parse_index_clause(lex)?);
+                }
+                _ => break,
+            }
+        }
+        if index.is_empty() {
+            let pos3 = lex.position();
+            return Err(err_expected("`uses` or `extends` (at least one index clause required)", "none", pos3));
+        }
+
+        // Optional exposes clause
+        let exposes = if lex.peek() == Some(Tok::Exposes) {
+            lex.next(); // consume `exposes`
+            let mut names = Vec::new();
+            // collect comma-separated words until `.`
+            names.push(expect_word(lex)?);
+            while lex.peek() == Some(Tok::Comma) {
+                lex.next(); // consume `,`
+                match lex.peek() {
+                    Some(Tok::Dot) | None => break,
+                    _ => names.push(expect_word(lex)?),
+                }
+            }
+            expect_dot(lex)?;
+            names
+        } else {
+            Vec::new()
+        };
+
+        // Zero or more acceptance clauses: `this works when Prose .`
+        let mut acceptance = Vec::new();
+        loop {
+            if lex.peek() != Some(Tok::This) {
+                break;
+            }
+            lex.next(); // consume `this`
+            let pos4 = lex.position();
+            match lex.next() {
+                Some(s) if s.tok == Tok::Works => {}
+                Some(s) => return Err(err_expected("`works`", &tok_display(&s.tok), s.pos)),
+                None => return Err(err_expected("`works`", "end of input", pos4)),
+            }
+            let pos5 = lex.position();
+            match lex.next() {
+                Some(s) if s.tok == Tok::When => {}
+                Some(s) => return Err(err_expected("`when`", &tok_display(&s.tok), s.pos)),
+                None => return Err(err_expected("`when`", "end of input", pos5)),
+            }
+            let pred = collect_concept_prose(lex).trim().to_string();
+            expect_dot(lex)?;
+            acceptance.push(pred);
+        }
+
+        // Optional objective clause: `favor QualityName (then QualityName)* .`
+        let objectives = if lex.peek() == Some(Tok::Favor) {
+            lex.next(); // consume `favor`
+            let mut names = Vec::new();
+            names.push(expect_word(lex)?);
+            while lex.peek() == Some(Tok::Then) {
+                lex.next(); // consume `then`
+                names.push(expect_word(lex)?);
+            }
+            expect_dot(lex)?;
+            names
+        } else {
+            Vec::new()
+        };
+
+        Ok(ConceptDecl { name, intent, index, exposes, acceptance, objectives })
+    }
+
+    // ── .nom public entry point ──────────────────────────────────────────────
+
+    pub fn parse_nom(src: &str) -> Result<NomFile, ConceptError> {
+        let trimmed = src.trim();
+        if trimmed.is_empty() {
+            return Err(ConceptError::EmptyInput);
+        }
+
+        let mut lex = Lexer::new(src);
+        let mut concepts = Vec::new();
+
+        loop {
+            match lex.peek() {
+                None => break,
+                Some(Tok::The) => {
+                    lex.next(); // consume `the`
+                    // Next must be `concept` (Kind("concept"))
+                    let pos = lex.position();
+                    match lex.next() {
+                        Some(s) => match s.tok {
+                            Tok::Kind(ref k) if k == "concept" => {}
+                            other => return Err(err_expected("`concept`", &tok_display(&other), s.pos)),
+                        },
+                        None => return Err(err_expected("`concept`", "end of input", pos)),
+                    }
+                    concepts.push(parse_concept_decl(&mut lex)?);
+                }
+                Some(other) => {
+                    let pos = lex.position();
+                    return Err(err_expected("`the concept`", &tok_display(&other), pos));
+                }
+            }
+        }
+
+        if concepts.is_empty() {
+            return Err(ConceptError::EmptyInput);
+        }
+
+        Ok(NomFile { concepts })
+    }
+
     // ── public entry point ───────────────────────────────────────────────────
 
     pub fn parse_nomtu(src: &str) -> Result<NomtuFile, ConceptError> {
@@ -634,10 +928,8 @@ mod parse {
 // ── Public API ────────────────────────────────────────────────────────────────
 
 /// Parse a `.nom` source text into a [`NomFile`].
-///
-/// Stub: lexer integration lands in a follow-up commit.
-pub fn parse_nom(_src: &str) -> Result<NomFile, ConceptError> {
-    Err(ConceptError::NomParserUnimplemented)
+pub fn parse_nom(src: &str) -> Result<NomFile, ConceptError> {
+    parse::parse_nom(src)
 }
 
 /// Parse a `.nomtu` source text into a [`NomtuFile`].
@@ -871,11 +1163,227 @@ the module search_pipeline composes
         }
     }
 
-    /// Regression: the old stub now removed.
+    /// Regression: empty inputs return EmptyInput for both parsers.
     #[test]
-    fn parse_stubs_return_unimplemented() {
-        assert!(matches!(parse_nom(""), Err(ConceptError::NomParserUnimplemented)));
-        // parse_nomtu no longer returns NomtuParserUnimplemented – it returns EmptyInput instead
+    fn parse_empty_inputs_return_empty_input_error() {
+        assert!(matches!(parse_nom(""), Err(ConceptError::EmptyInput)));
+        assert!(matches!(parse_nom("   \n  "), Err(ConceptError::EmptyInput)));
         assert!(matches!(parse_nomtu(""), Err(ConceptError::EmptyInput)));
+    }
+
+    // ── .nom parser tests ────────────────────────────────────────────────────
+
+    const AUTH_NOM_FIXTURE: &str = r#"
+the concept authentication_jwt_basic is
+  intended to let users with valid tokens reach the dashboard.
+
+  uses the module auth_jwt_session_compose,
+       the function logout_session_invalidate_all,
+       the function refresh_session_rotate.
+
+  exposes auth_jwt_session_compose, logout_session_invalidate_all.
+
+  this works when users with valid tokens reach the dashboard
+                within two hundred milliseconds.
+  this works when invalid tokens are rejected
+                before any database read.
+
+  favor security then speed.
+"#;
+
+    /// n01: empty input returns EmptyInput.
+    #[test]
+    fn n01_empty_input_is_error() {
+        assert!(matches!(parse_nom(""), Err(ConceptError::EmptyInput)));
+        assert!(matches!(parse_nom("   \n  "), Err(ConceptError::EmptyInput)));
+    }
+
+    /// n02: the doc 08 §6.3 fixture parses to exactly the specified shape.
+    #[test]
+    fn n02_auth_fixture_full_shape() {
+        let f = parse_nom(AUTH_NOM_FIXTURE).expect("should parse");
+        assert_eq!(f.concepts.len(), 1);
+
+        let c = &f.concepts[0];
+        assert_eq!(c.name, "authentication_jwt_basic");
+        assert_eq!(c.intent, "let users with valid tokens reach the dashboard");
+
+        // index: one Uses clause with 3 entity refs
+        assert_eq!(c.index.len(), 1);
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 3);
+                assert_eq!(refs[0].word, "auth_jwt_session_compose");
+                assert_eq!(refs[0].kind.as_deref(), Some("module"));
+                assert_eq!(refs[1].word, "logout_session_invalidate_all");
+                assert_eq!(refs[1].kind.as_deref(), Some("function"));
+                assert_eq!(refs[2].word, "refresh_session_rotate");
+                assert_eq!(refs[2].kind.as_deref(), Some("function"));
+            }
+            _ => panic!("expected Uses clause"),
+        }
+
+        // exposes
+        assert_eq!(c.exposes, vec!["auth_jwt_session_compose", "logout_session_invalidate_all"]);
+
+        // acceptance
+        assert_eq!(c.acceptance.len(), 2);
+        assert!(c.acceptance[0].contains("valid tokens reach the dashboard"), "got: {}", c.acceptance[0]);
+        assert!(c.acceptance[1].contains("invalid tokens are rejected"), "got: {}", c.acceptance[1]);
+
+        // objectives
+        assert_eq!(c.objectives, vec!["security", "speed"]);
+    }
+
+    /// n03: concept with two separate `uses` clauses.
+    #[test]
+    fn n03_two_uses_clauses() {
+        let src = r#"
+the concept two_uses_example is
+  intended to demonstrate multiple index clauses.
+
+  uses the function alpha_compute.
+
+  uses the module beta_pipeline.
+
+  favor correctness.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        assert_eq!(f.concepts.len(), 1);
+        let c = &f.concepts[0];
+        assert_eq!(c.index.len(), 2);
+        match &c.index[0] {
+            IndexClause::Uses(refs) => assert_eq!(refs[0].word, "alpha_compute"),
+            _ => panic!("expected Uses"),
+        }
+        match &c.index[1] {
+            IndexClause::Uses(refs) => assert_eq!(refs[0].word, "beta_pipeline"),
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// n04: `extends the concept X with adding Y, Z removing W.`
+    #[test]
+    fn n04_extends_with_change_set() {
+        let src = r#"
+the concept extended_auth is
+  intended to extend base auth with refresh support.
+
+  extends the concept authentication_jwt_basic with
+    adding the function refresh_session_rotate,
+           the function revoke_session_all
+    removing the function logout_session_invalidate_all.
+
+  favor security.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        let c = &f.concepts[0];
+        assert_eq!(c.index.len(), 1);
+        match &c.index[0] {
+            IndexClause::Extends { base, change_set } => {
+                assert_eq!(base, "authentication_jwt_basic");
+                assert_eq!(change_set.adding.len(), 2);
+                assert_eq!(change_set.adding[0].word, "refresh_session_rotate");
+                assert_eq!(change_set.adding[1].word, "revoke_session_all");
+                assert_eq!(change_set.removing.len(), 1);
+                assert_eq!(change_set.removing[0].word, "logout_session_invalidate_all");
+            }
+            _ => panic!("expected Extends"),
+        }
+    }
+
+    /// n05: concept with no `exposes` clause → exposes is empty vec.
+    #[test]
+    fn n05_no_exposes_clause_gives_empty_vec() {
+        let src = r#"
+the concept minimal_concept is
+  intended to demonstrate that the public surface is optional.
+
+  uses the function do_the_thing.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        let c = &f.concepts[0];
+        assert!(c.exposes.is_empty(), "exposes should be empty");
+    }
+
+    /// n06: multiple `this works when` predicates → all captured.
+    #[test]
+    fn n06_multiple_acceptance_clauses() {
+        let src = r#"
+the concept multi_acceptance is
+  intended to verify multiple acceptance clauses.
+
+  uses the function check_a.
+
+  this works when condition alpha holds within five seconds.
+  this works when condition beta holds without errors.
+  this works when condition gamma completes on first try.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        let c = &f.concepts[0];
+        assert_eq!(c.acceptance.len(), 3);
+        assert!(c.acceptance[0].contains("condition alpha"));
+        assert!(c.acceptance[1].contains("condition beta"));
+        assert!(c.acceptance[2].contains("condition gamma"));
+    }
+
+    /// n07: `favor speed then size then readability` → 3-element objectives.
+    #[test]
+    fn n07_three_element_objectives() {
+        let src = r#"
+the concept perf_concept is
+  intended to optimize for multiple qualities.
+
+  uses the function fast_compute.
+
+  favor speed then size then readability.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        let c = &f.concepts[0];
+        assert_eq!(c.objectives, vec!["speed", "size", "readability"]);
+    }
+
+    /// n08: multi-concept file → 2 ConceptDecls.
+    #[test]
+    fn n08_multi_concept_file() {
+        let src = r#"
+the concept first_concept is
+  intended to do the first thing.
+
+  uses the function alpha_compute.
+
+  favor speed.
+
+the concept second_concept is
+  intended to do the second thing.
+
+  uses the module beta_pipeline.
+
+  favor correctness then clarity.
+"#;
+        let f = parse_nom(src).expect("should parse");
+        assert_eq!(f.concepts.len(), 2);
+        assert_eq!(f.concepts[0].name, "first_concept");
+        assert_eq!(f.concepts[0].objectives, vec!["speed"]);
+        assert_eq!(f.concepts[1].name, "second_concept");
+        assert_eq!(f.concepts[1].objectives, vec!["correctness", "clarity"]);
+    }
+
+    /// n09 (bonus): missing `intended to` after `is` → parse error mentioning `intended`.
+    #[test]
+    fn n09_missing_intended_to_returns_error() {
+        let src = r#"
+the concept bad_concept is
+  uses the function something.
+"#;
+        match parse_nom(src) {
+            Err(ConceptError::ParseError { expected, .. }) => {
+                assert!(
+                    expected.contains("intended"),
+                    "error should mention `intended`, got: {expected}"
+                );
+            }
+            other => panic!("expected ParseError mentioning `intended`, got {:?}", other),
+        }
     }
 }
