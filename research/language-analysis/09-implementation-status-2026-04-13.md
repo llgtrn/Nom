@@ -40,11 +40,11 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: weeks.
 - **Deps**: none; proceeds in parallel with M1/M2.
 
-### M4 — Three-tier recursive byte ingest (doc 08 §4.3)
+### M4 — Three-tier recursive byte ingest (doc 08 §4.3) ✅ SHIPPED
 
 - **Unblocks**: the layered compiler — atoms → `.nomtu` → `.nom` → cross-concept closure — that doc 08 promised but only shipped single-pass.
 - **Deliverable**: `resolve_closure` extended to recurse through nested concept refs in any tier; `nom store sync --recursive`. Test gate: `three_tier_recursive_e2e.rs` with a concept that imports a concept that imports a module.
-- **Evidence**: `c5cdce6` concept-graph closure walker (single-tier); `aaa914d` DB1+DB2 schema supports the tiering.
+- **Evidence**: `c5cdce6` concept-graph closure walker (single-tier); `aaa914d` DB1+DB2 schema supports the tiering. ✅ SHIPPED — `visit_entity_ref` in `crates/nom-concept/src/closure.rs` now recurses into nested concept declarations when `kind == "concept"` and the word matches a known concept in the graph; 4 new unit tests + `three_tier_recursive_e2e.rs`. `--recursive` flag omitted — recursion is always-on (backwards compat: roots without nested concept refs behave identically to pre-M4).
 - **Effort**: days.
 - **Deps**: M1.
 

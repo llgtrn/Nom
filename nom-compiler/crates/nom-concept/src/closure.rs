@@ -310,17 +310,45 @@ impl<'g> Walker<'g> {
     // ── entity-ref visitor ────────────────────────────────────────────────────
 
     fn visit_entity_ref(&mut self, eref: &EntityRef, parent: &str) -> Result<(), ClosureError> {
+        // Three-tier recursive descent (doc 08 §4.3): if this ref points to a
+        // concept that exists in the graph, recurse into it so its full transitive
+        // closure (words + nested concepts + unresolved refs) merges into ours.
+        // Cycle detection uses the shared white/gray/black coloring, so a
+        // concept-via-Uses cycle is caught just like an Extends cycle.
+        let is_concept_ref = eref.kind.as_deref() == Some("concept");
+        let nested_concept_name: Option<String> = if is_concept_ref && !eref.word.is_empty() {
+            if self.concept_index.contains_key(eref.word.as_str()) {
+                Some(eref.word.clone())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        if let Some(ref nested) = nested_concept_name {
+            // Recurse into the nested concept first (post-order: leaves before root).
+            // visit_concept is idempotent for Black nodes, and will error on Gray (cycle).
+            self.visit_concept(nested)?;
+            // Fall through to also emit the nested concept's hash if it is resolved.
+        }
+
         match &eref.hash {
             None => {
-                // Unresolved: record it.
-                self.unresolved.push(UnresolvedRef {
-                    kind: eref.kind.clone(),
-                    word: eref.word.clone(),
-                    matching: eref.matching.clone(),
-                    referenced_from: parent.to_string(),
-                    typed_slot: eref.typed_slot,
-                    confidence_threshold: eref.confidence_threshold,
-                });
+                // Unresolved: record it (unless this is a concept ref we already
+                // recursed into — in that case the hash being absent just means the
+                // inline @hash lock hasn't been written yet; the concept itself was
+                // visited above and its own unresolved refs were already collected).
+                if nested_concept_name.is_none() {
+                    self.unresolved.push(UnresolvedRef {
+                        kind: eref.kind.clone(),
+                        word: eref.word.clone(),
+                        matching: eref.matching.clone(),
+                        referenced_from: parent.to_string(),
+                        typed_slot: eref.typed_slot,
+                        confidence_threshold: eref.confidence_threshold,
+                    });
+                }
             }
             Some(hash) => {
                 // Check if this word is a composition and recurse into its composes list.
@@ -602,5 +630,187 @@ mod tests {
 
         assert_eq!(c1.word_hashes, c2.word_hashes, "word_hashes must be identical across calls");
         assert_eq!(c1.concepts, c2.concepts, "concepts must be identical across calls");
+    }
+
+    // ── test 8: three-tier recursive descent (M4) ─────────────────────────────
+
+    /// root uses concept A; A uses concept B; B uses 2 atomic entities.
+    /// Closure of root must include both atomic hashes + both nested concepts
+    /// in post-order: atoms first, then B, then A, then root.
+    #[test]
+    fn closure_recursion_through_nested_concepts() {
+        // concept_b: uses atom1@h1, atom2@h2
+        // concept_a: uses concept_b (via kind="concept")
+        // root:      uses concept_a (via kind="concept")
+        let concept_b = concept(
+            "concept_b",
+            vec![uses(vec![
+                eref_resolved("function", "atom1", "h1"),
+                eref_resolved("function", "atom2", "h2"),
+            ])],
+        );
+        let concept_a = concept(
+            "concept_a",
+            vec![uses(vec![eref_resolved("concept", "concept_b", "hb")])],
+        );
+        let root = concept(
+            "root",
+            vec![uses(vec![eref_resolved("concept", "concept_a", "ha")])],
+        );
+
+        let graph = empty_graph(vec![concept_b, concept_a, root]);
+        let closure = graph.closure("root").unwrap();
+
+        // Both atomic hashes must be present.
+        assert!(
+            closure.word_hashes.contains(&"h1".to_string()),
+            "h1 (atom1) must be in closure: {:?}",
+            closure.word_hashes
+        );
+        assert!(
+            closure.word_hashes.contains(&"h2".to_string()),
+            "h2 (atom2) must be in closure: {:?}",
+            closure.word_hashes
+        );
+        // Nested concept hashes must be present.
+        assert!(
+            closure.word_hashes.contains(&"hb".to_string()),
+            "hb (concept_b hash) must be in closure: {:?}",
+            closure.word_hashes
+        );
+        assert!(
+            closure.word_hashes.contains(&"ha".to_string()),
+            "ha (concept_a hash) must be in closure: {:?}",
+            closure.word_hashes
+        );
+
+        // All three nested concepts + root must be in concepts list.
+        assert!(closure.concepts.contains(&"concept_b".to_string()));
+        assert!(closure.concepts.contains(&"concept_a".to_string()));
+        assert!(closure.concepts.contains(&"root".to_string()));
+
+        // Post-order: concept_b before concept_a, concept_a before root.
+        let pos_b = closure.concepts.iter().position(|c| c == "concept_b").unwrap();
+        let pos_a = closure.concepts.iter().position(|c| c == "concept_a").unwrap();
+        let pos_r = closure.concepts.iter().position(|c| c == "root").unwrap();
+        assert!(pos_b < pos_a, "concept_b must come before concept_a");
+        assert!(pos_a < pos_r, "concept_a must come before root");
+
+        // Atoms must come before their enclosing concept hash in word_hashes.
+        let pos_h1 = closure.word_hashes.iter().position(|h| h == "h1").unwrap();
+        let pos_h2 = closure.word_hashes.iter().position(|h| h == "h2").unwrap();
+        let pos_hb = closure.word_hashes.iter().position(|h| h == "hb").unwrap();
+        let pos_ha = closure.word_hashes.iter().position(|h| h == "ha").unwrap();
+        assert!(pos_h1 < pos_hb, "atom h1 must come before concept_b hash hb");
+        assert!(pos_h2 < pos_hb, "atom h2 must come before concept_b hash hb");
+        assert!(pos_hb < pos_ha, "concept_b hash hb must come before concept_a hash ha");
+    }
+
+    // ── test 9: cycle detection across nested concepts (M4) ───────────────────
+
+    /// A uses B (via kind="concept"); B uses A (via kind="concept").
+    /// Closure must return ClosureError::Cycle with a path through both.
+    #[test]
+    fn closure_cycle_detection_across_nested_concepts() {
+        let concept_a = concept(
+            "concept_a",
+            vec![uses(vec![eref_resolved("concept", "concept_b", "hb")])],
+        );
+        let concept_b = concept(
+            "concept_b",
+            vec![uses(vec![eref_resolved("concept", "concept_a", "ha")])],
+        );
+
+        let graph = empty_graph(vec![concept_a, concept_b]);
+        let result = graph.closure("concept_a");
+        match result {
+            Err(ClosureError::Cycle { path }) => {
+                assert!(
+                    path.contains("concept_a") && path.contains("concept_b"),
+                    "cycle path must mention both concepts, got: {path}"
+                );
+            }
+            other => panic!("expected Cycle error, got: {other:?}"),
+        }
+    }
+
+    // ── test 10: unresolved refs in nested concepts surface to root (M4) ──────
+
+    /// root uses concept A; A has an unresolved ref with matching prose.
+    /// Closure of root must include A's unresolved ref.
+    #[test]
+    fn closure_unresolved_refs_in_nested_concepts_surface() {
+        let concept_a = concept(
+            "concept_a",
+            vec![uses(vec![eref_unresolved(
+                "function",
+                "login",
+                Some("handles user authentication"),
+            )])],
+        );
+        let root = concept(
+            "root",
+            // concept ref to concept_a without a hash (not yet pinned).
+            vec![uses(vec![EntityRef {
+                kind: Some("concept".to_string()),
+                word: "concept_a".to_string(),
+                hash: None,
+                matching: None,
+                typed_slot: false,
+                confidence_threshold: None,
+            }])],
+        );
+
+        let graph = empty_graph(vec![concept_a, root]);
+        let closure = graph.closure("root").unwrap();
+
+        // concept_a's unresolved ref must bubble up.
+        assert_eq!(
+            closure.unresolved.len(),
+            1,
+            "expected 1 unresolved ref (from nested concept_a), got: {:?}",
+            closure.unresolved
+        );
+        let uref = &closure.unresolved[0];
+        assert_eq!(uref.kind.as_deref(), Some("function"));
+        assert_eq!(uref.word, "login");
+        assert_eq!(
+            uref.matching.as_deref(),
+            Some("handles user authentication")
+        );
+        assert_eq!(uref.referenced_from, "concept_a");
+    }
+
+    // ── test 11: dedup of transitively-shared entities (M4) ───────────────────
+
+    /// root uses A and B; A and B both use entity X@hx.
+    /// Closure's word_hashes contains X's hash exactly once.
+    #[test]
+    fn closure_dedups_transitively_shared_entities() {
+        let concept_a = concept(
+            "concept_a",
+            vec![uses(vec![eref_resolved("function", "shared_x", "hx")])],
+        );
+        let concept_b = concept(
+            "concept_b",
+            vec![uses(vec![eref_resolved("function", "shared_x", "hx")])],
+        );
+        let root = concept(
+            "root",
+            vec![uses(vec![
+                eref_resolved("concept", "concept_a", "ha"),
+                eref_resolved("concept", "concept_b", "hb_concept"),
+            ])],
+        );
+
+        let graph = empty_graph(vec![concept_a, concept_b, root]);
+        let closure = graph.closure("root").unwrap();
+
+        let count_hx = closure.word_hashes.iter().filter(|h| h.as_str() == "hx").count();
+        assert_eq!(
+            count_hx, 1,
+            "hx must appear exactly once in word_hashes, got {count_hx}: {:?}",
+            closure.word_hashes
+        );
     }
 }
