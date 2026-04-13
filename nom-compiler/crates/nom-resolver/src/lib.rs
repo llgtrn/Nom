@@ -116,6 +116,7 @@ impl Resolver {
                 bc_path             TEXT,
                 bc_hash             TEXT,
                 bc_size             INTEGER,
+                body_bytes          BLOB,
                 -- agent metadata
                 capabilities        TEXT,
                 supervision         TEXT,
@@ -159,14 +160,14 @@ impl Resolver {
                 language,
                 body, body_kind, rust_body, translate_confidence,
                 community_id, callers_count, callees_count, is_entry_point,
-                bc_path, bc_hash, bc_size,
+                bc_path, bc_hash, bc_size, body_bytes,
                 capabilities, supervision, schedule,
                 version, tests, is_canonical, deprecated_by, updated_at)
              VALUES (?1,?2,?3,?4,?5,?6,?7,?8,?9,?10,
                      ?11,?12,?13,?14,?15,?16,?17,?18,?19,?20,
                      ?21,?22,?23,?24,?25,?26,?27,?28,?29,?30,
                      ?31,?32,?33,?34,?35,?36,?37,?38,?39,?40,
-                     ?41,?42,?43,?44,?45,?46,?47)
+                     ?41,?42,?43,?44,?45,?46,?47,?48)
              ON CONFLICT(word, variant, language) DO UPDATE SET
                 kind=excluded.kind,
                 hash=excluded.hash,
@@ -204,6 +205,7 @@ impl Resolver {
                 bc_path=excluded.bc_path,
                 bc_hash=excluded.bc_hash,
                 bc_size=excluded.bc_size,
+                body_bytes=excluded.body_bytes,
                 capabilities=excluded.capabilities,
                 supervision=excluded.supervision,
                 schedule=excluded.schedule,
@@ -252,14 +254,15 @@ impl Resolver {
                 entry.bc_path,              // 37
                 entry.bc_hash,              // 38
                 entry.bc_size,              // 39
-                entry.capabilities,         // 40
-                entry.supervision,          // 41
-                entry.schedule,             // 42
-                entry.version,              // 43
-                entry.tests,                // 44
-                entry.is_canonical,         // 45
-                entry.deprecated_by,        // 46
-                entry.updated_at,           // 47
+                entry.body_bytes.as_deref(),// 40
+                entry.capabilities,         // 41
+                entry.supervision,          // 42
+                entry.schedule,             // 43
+                entry.version,              // 44
+                entry.tests,                // 45
+                entry.is_canonical,         // 46
+                entry.deprecated_by,        // 47
+                entry.updated_at,           // 48
             ],
         )?;
         Ok(())
@@ -740,7 +743,7 @@ impl Resolver {
     }
 
     fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<NomtuEntry> {
-        // Column order matches SELECT_COLS (43 columns):
+        // Column order matches SELECT_COLS (50 columns):
         //  0: id, 1: word, 2: variant, 3: kind, 4: hash, 5: body_hash,
         //  6: describe, 7: concept, 8: labels,
         //  9: input_type, 10: output_type, 11: effects, 12: pre, 13: post,
@@ -750,13 +753,13 @@ impl Resolver {
         // 22: composability, 23: maturity, 24: overall_score,
         // 25: audit_passed, 26: audit_max_severity, 27: audit_findings,
         // 28: language,
-        // 29: body, 30: rust_body, 31: translate_confidence,
-        // 32: community_id, 33: callers_count, 34: callees_count,
-        // 35: is_entry_point,
-        // 36: bc_path, 37: bc_hash, 38: bc_size,
-        // 39: capabilities, 40: supervision, 41: schedule,
-        // 42: version, 43: tests, 44: is_canonical,
-        // 45: deprecated_by, 46: created_at, 47: updated_at
+        // 29: body, 30: body_kind, 31: rust_body, 32: translate_confidence,
+        // 33: community_id, 34: callers_count, 35: callees_count,
+        // 36: is_entry_point,
+        // 37: bc_path, 38: bc_hash, 39: bc_size, 40: body_bytes,
+        // 41: capabilities, 42: supervision, 43: schedule,
+        // 44: version, 45: tests, 46: is_canonical,
+        // 47: deprecated_by, 48: created_at, 49: updated_at
         let labels_json: String = row.get(8).unwrap_or_else(|_| "[]".to_owned());
         let labels: Vec<String> = serde_json::from_str(&labels_json).unwrap_or_default();
         let effects_json: String = row.get(11).unwrap_or_else(|_| "[]".to_owned());
@@ -804,16 +807,40 @@ impl Resolver {
             bc_path: row.get(37)?,
             bc_hash: row.get(38)?,
             bc_size: row.get(39)?,
-            capabilities: row.get(40)?,
-            supervision: row.get(41)?,
-            schedule: row.get(42)?,
-            version: row.get(43)?,
-            tests: row.get(44)?,
-            is_canonical: row.get(45)?,
-            deprecated_by: row.get(46)?,
-            created_at: row.get(47)?,
-            updated_at: row.get(48)?,
+            body_bytes: row.get(40)?,
+            capabilities: row.get(41)?,
+            supervision: row.get(42)?,
+            schedule: row.get(43)?,
+            version: row.get(44)?,
+            tests: row.get(45)?,
+            is_canonical: row.get(46)?,
+            deprecated_by: row.get(47)?,
+            created_at: row.get(48)?,
+            updated_at: row.get(49)?,
         })
+    }
+
+    /// Load the `body_bytes` BLOB for a nomtu row by its integer id.
+    ///
+    /// Returns `Ok(bytes)` when the row exists and has non-NULL body_bytes.
+    /// Returns `Err(ResolverError::NotFound)` when the row is missing or
+    /// `body_bytes` is NULL.
+    pub fn load_bc_bytes(&self, nomtu_id: i64) -> Result<Vec<u8>, ResolverError> {
+        let result: Option<Vec<u8>> = self
+            .conn
+            .query_row(
+                "SELECT body_bytes FROM nomtu WHERE id = ?1",
+                params![nomtu_id],
+                |row| row.get(0),
+            )
+            .optional()?;
+        match result {
+            Some(bytes) if !bytes.is_empty() => Ok(bytes),
+            _ => Err(ResolverError::NotFound {
+                word: format!("nomtu id={nomtu_id}"),
+                variant: None,
+            }),
+        }
     }
 }
 
@@ -827,7 +854,7 @@ const SELECT_COLS: &str = "SELECT id, word, variant, kind, hash, body_hash, \
      language, \
      body, body_kind, rust_body, translate_confidence, \
      community_id, callers_count, callees_count, is_entry_point, \
-     bc_path, bc_hash, bc_size, \
+     bc_path, bc_hash, bc_size, body_bytes, \
      capabilities, supervision, schedule, \
      version, tests, is_canonical, deprecated_by, created_at, updated_at";
 

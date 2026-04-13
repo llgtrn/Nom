@@ -39,6 +39,7 @@ use nom_resolver::{NomtuEntry, Resolver};
 use nom_security::{SecurityChecker, SecurityConfig, Severity, scan_body, security_score};
 use nom_verifier::Verifier;
 use rusqlite::OpenFlags;
+use sha2::{Digest, Sha256};
 use std::path::{Path, PathBuf};
 use std::process;
 
@@ -2898,6 +2899,52 @@ fn cmd_precompile(
 
     // Ensure artifact_path column exists
     let _ = conn.execute_batch("ALTER TABLE nomtu ADD COLUMN artifact_path TEXT;");
+    // Ensure body_bytes column exists (idempotent — ignored if already present)
+    let _ = conn.execute_batch("ALTER TABLE nomtu ADD COLUMN body_bytes BLOB;");
+
+    // Backfill body_bytes for rows that were precompiled before this migration.
+    // Idempotent: rows already populated (body_bytes IS NOT NULL) are skipped.
+    {
+        let backfill_ids: Vec<(i64, String)> = {
+            let mut stmt = conn
+                .prepare(
+                    "SELECT id, artifact_path FROM nomtu \
+                     WHERE body_kind = 'bc' \
+                       AND (body_bytes IS NULL OR length(body_bytes) = 0) \
+                       AND artifact_path IS NOT NULL",
+                )
+                .unwrap_or_else(|e| panic!("backfill query: {e}"));
+            stmt.query_map([], |row| {
+                Ok((row.get::<_, i64>(0)?, row.get::<_, String>(1)?))
+            })
+            .map(|rows| rows.filter_map(|r| r.ok()).collect())
+            .unwrap_or_default()
+        };
+        let mut backfilled = 0usize;
+        for (row_id, artifact_path) in &backfill_ids {
+            match std::fs::read(artifact_path) {
+                Ok(bytes) => {
+                    let hash_hex = format!("{:x}", Sha256::digest(&bytes));
+                    let bc_size = bytes.len() as i64;
+                    let _ = conn.execute(
+                        "UPDATE nomtu SET body_bytes = ?1, bc_hash = ?2, bc_size = ?3 \
+                         WHERE id = ?4",
+                        rusqlite::params![bytes, hash_hex, bc_size, row_id],
+                    );
+                    backfilled += 1;
+                }
+                Err(e) => {
+                    eprintln!(
+                        "  backfill warn: skipping id={row_id} ({}): {e}",
+                        artifact_path
+                    );
+                }
+            }
+        }
+        if backfilled > 0 {
+            println!("nom: backfilled body_bytes for {backfilled} existing bc rows");
+        }
+    }
 
     // Build query
     let mut sql = String::from(
@@ -3061,17 +3108,43 @@ fn cmd_precompile(
                 compiled += 1;
                 counts.0 += 1;
                 // §4.4.6: a successful precompile means this entry has a
-                // canonical `.bc` artifact. Tag body_kind = "bc" so later
-                // resolution + build passes can pick the bitcode path
-                // instead of recompiling from source.
-                let _ = conn.execute(
-                    "UPDATE nomtu SET artifact_path = ?1, body_kind = ?2 WHERE id = ?3",
-                    rusqlite::params![
-                        bc_path.to_string_lossy().as_ref(),
-                        nom_types::body_kind::BC,
-                        id,
-                    ],
-                );
+                // canonical `.bc` artifact. Inline the bytes into body_bytes
+                // so the row is self-contained; bc_path remains as a cache
+                // key only.
+                match std::fs::read(&bc_path) {
+                    Ok(bytes) => {
+                        let hash_hex = format!("{:x}", Sha256::digest(&bytes));
+                        let bc_size = bytes.len() as i64;
+                        let _ = conn.execute(
+                            "UPDATE nomtu SET artifact_path = ?1, body_kind = ?2, \
+                             body_bytes = ?3, bc_hash = ?4, bc_size = ?5 WHERE id = ?6",
+                            rusqlite::params![
+                                bc_path.to_string_lossy().as_ref(),
+                                nom_types::body_kind::BC,
+                                bytes,
+                                hash_hex,
+                                bc_size,
+                                id,
+                            ],
+                        );
+                    }
+                    Err(e) => {
+                        // File write succeeded but read failed — tag body_kind
+                        // without bytes so the row is at least marked.
+                        eprintln!(
+                            "  warn: could not read {}: {e}",
+                            bc_path.display()
+                        );
+                        let _ = conn.execute(
+                            "UPDATE nomtu SET artifact_path = ?1, body_kind = ?2 WHERE id = ?3",
+                            rusqlite::params![
+                                bc_path.to_string_lossy().as_ref(),
+                                nom_types::body_kind::BC,
+                                id,
+                            ],
+                        );
+                    }
+                }
             }
             Ok(PrecompileResult::Stubbed) => {
                 stubbed += 1;
