@@ -5,6 +5,8 @@
 Research conducted: 2026-04-11
 Focus: Vietnamese as grammar model, multilingual vocabulary architecture, locale standards, Unicode-safe source design
 
+> **2026-04-13 status update (supersedes §3.2, §9, §12, §7.3 examples):** Per user directive, Nom vocabulary is **fully English**. Vietnamese contributes **grammar STYLE only** (anchored-flexible word order, classifier phrases, effect valence) — zero VN tokens in the codebase. Commit `ecd0609` removed all VN keyword arms from the lexer, tests, and demos. The shipped `vi-VN` locale pack has `keyword_aliases` **intentionally empty**; localized-keyword packs (this doc's §9 VN/JA/ES surfaces, §12 Phase 3) are **not on the roadmap**. Localization is retained for diagnostics, docs, and register metadata only.
+
 ---
 
 ## Executive Summary
@@ -248,10 +250,10 @@ This is lexical democracy without semantic fragmentation.
 
 If Novel supports world language vocabulary, it must do it on real internationalization standards.
 
-### 6.1 Language tags: BCP 47
+### 6.1 Language tags: BCP 47 — ✅ shipped (M3a)
 
 W3C guidance around BCP 47 is the correct base for language tagging.
-Novel should tag localized resources using standard language tags such as:
+`nom-locale::LocaleTag::parse` ships M3a: language + script + region + variants, with extension/private-use subtags captured as `unsupported`. Novel tags localized resources using standard language tags such as:
 
 - `vi`
 - `en`
@@ -286,11 +288,9 @@ This gives a real standard for:
 - which characters can continue identifiers
 - how to define identifier-safe profiles
 
-### 6.4 Normalization: UAX #15
+### 6.4 Normalization: UAX #15 — ✅ shipped
 
-Novel source should normalize Unicode text consistently, ideally around NFC for source representation.
-
-Without this, visually identical identifiers can have different binary forms.
+Novel source normalizes Unicode text to NFC via the `unicode_normalization` crate in `nom-locale`. Without this, visually identical identifiers can have different binary forms.
 
 ### 6.5 Security and confusables: UTS #39
 
@@ -303,6 +303,8 @@ Novel must detect:
 - suspicious homograph identifiers
 
 Otherwise multilingual support becomes a security hole.
+
+> **Status (2026-04-13):** M3b-minimal shipped in `nom-locale` — `is_confusable()` + `ConfusableResult` backed by ~30 baked high-value pairs (Cyrillic/Greek/Latin homographs). Full UTS #39 `confusables.txt` (~15K entries) import is the remaining TODO for M3b-full.
 
 ### 6.6 Source code handling: UTS #55
 
