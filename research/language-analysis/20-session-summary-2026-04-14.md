@@ -94,7 +94,41 @@ All three are NON-NEGOTIABLE per user; applied continuously across cycles.
 ## Next-cycle candidates
 
 1. **Ship W4-A5 enum refactor** — `EntityKindSlot::{Known, UnknownUntilLookup}` across `nom-concept` + `nom-cli::store::{materialize,resolve}` (~1d). Close W4 entirely.
-2. **Ship a grammar wedge** from the W5-W19 queue — W9 `fail with` or W11 enums are the smallest starting points.
-3. **More translations** — Java, Ruby, Makefile, GraphQL, or CSS to stress non-code surfaces further.
+2. **Ship a grammar wedge** from the W5-W26 queue — W9 `fail with` or W11 enums are the smallest starting points.
+3. **More translations** — Java, Ruby, or other paradigms to stress non-code surfaces further.
 4. **100-repo harness live run** — requires a user-shell session to bypass the UCRT DLL sandbox block.
-5. **Pipeline feature-parity migration** — wire ref resolution + signature-shape extraction into S6 so `run_pipeline` can replace `parse_nomtu`/`parse_nom` internals.
+5. **Pipeline feature-parity migration** — switch `parse_nom` / `parse_nomtu` internals to delegate to `run_pipeline()`. All per-field parity locked by a4c20-a4c34 tests.
+
+---
+
+## Post-A4c pipeline-parity push (added 2026-04-14 late)
+
+After the initial A4c completion (commits `6436a2c` → `7da6a21`), a follow-up arc
+closed the remaining known parity gaps. Every visible EntityRef field is now
+captured by the pipeline; real `.nomtu` entity sources run end-to-end.
+
+| Commit | Adds | Test |
+|--------|------|------|
+| `196c4a8` | Pipeline concept/entity parity on names, kinds, effects | a4c20-a4c22 |
+| `65071df` | S6 concept index cardinality (count uses clauses) | a4c23 |
+| `94442bc` | Early-return-guard smoke test (doc 16 #14 closed) | a4c24 |
+| `f346ccd` | S6 typed-slot + v1 bare-word EntityRef partial extraction | a4c25-a4c26 |
+| `05e7762` | S6 matching `"..."` + confidence-threshold capture | a4c27-a4c28 |
+| `6f728a5` | Comprehensive multi-concept full-field parity | a4c29 |
+| `3c5551d` | S6 entity signature extraction helper | a4c30 |
+| `d1a57ed` | S3 policy relax: entities/compositions/data may omit `intended to` | a4c07 inverted + a4c31 + a4c32 |
+| `1185d6a` | S6 composition `then` chaining → `CompositionDecl.composes` | a4c33 |
+| `69bb443` | S6 v1 `@hash` backfill capture (post-first-build round-trip) | a4c34 |
+
+**nom-concept test total: 135** (session start 77 → +58 this session).
+
+Pipeline ↔ parse_nom/parse_nomtu parity now covers every observable field:
+concept.name, concept.index.len + per-ref (kind, word, hash, matching,
+typed_slot, confidence_threshold), EntityDecl.signature, EntityDecl.effects,
+CompositionDecl.composes. The delegate-to-run_pipeline migration has no
+known gap that would break on real repo sources.
+
+Doc 14 translation corpus expanded to 19 (paradigms: imperative /
+async / data / shell / build / container / editor-event / stylesheet).
+Doc 16 backlog at 48 rows: 20 closed, 20 wedges queued (W5-W26), 1
+smoke-test, 5 authoring-guide doc-todo, 0 design-Q-open, 1 blocked.
