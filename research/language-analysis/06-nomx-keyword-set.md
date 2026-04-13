@@ -1,6 +1,6 @@
 # `.nomx` Keyword Set
 
-> **Last verified against codebase: 2026-04-14, HEAD `ffb61de`.**
+> **Last verified against codebase: 2026-04-14 very-late, HEAD `6d13ae5`.** W4-A2 closed keyword set is locked by ct09a-ct09e (case-sensitive exact-match); W4-A1 mandatory kind marker locked by ct10a-ct10d. Seven-noun closed kind set (`function`, `module`, `concept`, `screen`, `data`, `event`, `media`) flows end-to-end through run_pipeline's S2 stage_kind_classify.
 
 Status: **v1 + v2 (keyed) keyword sets shipped** (see "Shipped keyword sets" block below). Draft sections remain for Phase-5+ expansions: type-phrase canonicalization, actor form, `QualityName` registry, `perhaps...nothing` pattern-match. Open questions at [05-natural-language-syntax.md §8](./05-natural-language-syntax.md) still apply for the unshipped items.
 
