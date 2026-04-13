@@ -162,6 +162,66 @@ impl AnnotationPipeline {
     }
 }
 
+// ── Concrete annotators wrapping existing nom-extract APIs ────────────
+
+/// Wraps [`parse_and_extract`](crate::extract::parse_and_extract) as an
+/// `Annotator` stage. Requires `source` (bytes = file contents, UTF-8)
+/// and `language` (bytes = short language name, e.g. `rust`, `python`).
+/// Satisfies `entities` (bytes = JSON array of `UirEntity`).
+///
+/// This closes CoreNLP W1b: the existing `extract_entities` pipeline is
+/// now introspectable + composable via the `Annotator` trait, with the
+/// same call semantics as the direct function.
+pub struct ParseAndExtractAnnotator;
+
+impl Annotator for ParseAndExtractAnnotator {
+    fn name(&self) -> &'static str {
+        "parse_and_extract"
+    }
+
+    fn requires(&self) -> &'static [&'static str] {
+        &["source", "language", "file_path"]
+    }
+
+    fn requirements_satisfied(&self) -> &'static [&'static str] {
+        &["entities"]
+    }
+
+    fn annotate(&self, ann: &mut Annotation) -> AnnotatorResult {
+        let source_bytes = ann.get("source").unwrap_or(b"");
+        let language_bytes = ann.get("language").unwrap_or(b"");
+        let file_path_bytes = ann.get("file_path").unwrap_or(b"");
+
+        let source = std::str::from_utf8(source_bytes).map_err(|e| AnnotatorError::Failed {
+            annotator: self.name(),
+            reason: format!("source is not valid UTF-8: {e}"),
+        })?;
+        let language = std::str::from_utf8(language_bytes).map_err(|e| AnnotatorError::Failed {
+            annotator: self.name(),
+            reason: format!("language is not valid UTF-8: {e}"),
+        })?;
+        let file_path = std::str::from_utf8(file_path_bytes).map_err(|e| {
+            AnnotatorError::Failed {
+                annotator: self.name(),
+                reason: format!("file_path is not valid UTF-8: {e}"),
+            }
+        })?;
+
+        let entities = crate::extract::parse_and_extract(source, file_path, language)
+            .map_err(|e| AnnotatorError::Failed {
+                annotator: self.name(),
+                reason: format!("parse_and_extract: {e:#}"),
+            })?;
+
+        let encoded = serde_json::to_vec(&entities).map_err(|e| AnnotatorError::Failed {
+            annotator: self.name(),
+            reason: format!("serialize entities: {e}"),
+        })?;
+        ann.set("entities", encoded);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -268,5 +328,53 @@ mod tests {
         // AtomsAnnotator's requires overlap with TokenizeAnnotator's satisfied
         // → pipeline is valid when they run in that order.
         assert_eq!(t.requirements_satisfied()[0], a.requires()[0]);
+    }
+
+    // ── W1b: ParseAndExtractAnnotator wraps real nom-extract code ────────
+
+    #[test]
+    fn parse_and_extract_annotator_declares_contract() {
+        let a = ParseAndExtractAnnotator;
+        assert_eq!(a.name(), "parse_and_extract");
+        assert_eq!(a.requires(), &["source", "language", "file_path"]);
+        assert_eq!(a.requirements_satisfied(), &["entities"]);
+    }
+
+    #[test]
+    fn parse_and_extract_annotator_rejects_missing_source() {
+        let mut ann = Annotation::new();
+        ann.set("language", b"rust".to_vec());
+        ann.set("file_path", b"x.rs".to_vec());
+        let mut p = AnnotationPipeline::new();
+        p.add(Box::new(ParseAndExtractAnnotator));
+        let err = p.run(&mut ann).expect_err("must fail without source");
+        match err {
+            AnnotatorError::MissingRequirement { annotator, key } => {
+                assert_eq!(annotator, "parse_and_extract");
+                assert_eq!(key, "source");
+            }
+            _ => panic!("wrong variant: {err:?}"),
+        }
+    }
+
+    #[test]
+    fn parse_and_extract_annotator_emits_entities_json() {
+        let mut ann = Annotation::new();
+        ann.set("source", b"fn greet(name: &str) -> String { name.to_string() }".to_vec());
+        ann.set("language", b"rust".to_vec());
+        ann.set("file_path", b"greet.rs".to_vec());
+
+        let mut p = AnnotationPipeline::new();
+        p.add(Box::new(ParseAndExtractAnnotator));
+        p.run(&mut ann).expect("parse_and_extract should succeed on valid Rust");
+
+        let entities_bytes = ann
+            .get("entities")
+            .expect("entities key must be written");
+        let parsed: serde_json::Value =
+            serde_json::from_slice(entities_bytes).expect("entities must be JSON");
+        let arr = parsed.as_array().expect("entities must be a JSON array");
+        assert!(!arr.is_empty(), "greet() should produce at least one entity");
+        assert_eq!(ann.ran(), &["parse_and_extract"]);
     }
 }
