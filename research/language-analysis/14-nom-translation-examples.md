@@ -1959,6 +1959,82 @@ Row additions: **W41 `property` kind declaration** (new wedge, expands closed ki
 
 ---
 
+## 34. Terraform HCL — declarative infrastructure-as-code
+
+```hcl
+terraform {
+  required_providers {
+    aws = { source = "hashicorp/aws", version = "~> 5.0" }
+  }
+}
+
+provider "aws" {
+  region = "us-east-1"
+}
+
+resource "aws_s3_bucket" "logs" {
+  bucket        = "my-app-logs"
+  force_destroy = true
+  tags          = { Environment = "production", Owner = "platform" }
+}
+
+resource "aws_s3_bucket_versioning" "logs_versioning" {
+  bucket = aws_s3_bucket.logs.id
+  versioning_configuration { status = "Enabled" }
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define provision_logs_bucket
+  that takes no input, returns the provisioned bucket's identifier.
+the bucket is a new s3 bucket named "my-app-logs" with force_destroy true, tagged environment production and owner platform.
+versioning is enabled on the bucket.
+return the bucket's identifier.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data LogsBucket is
+  intended to describe the production log-storage S3 bucket for the application.
+  exposes name as text.
+  exposes force_destroy as boolean.
+  exposes environment as text.
+  exposes owner as text.
+  exposes versioning_enabled as boolean.
+
+the function provision_logs_bucket is
+  intended to materialize the LogsBucket on AWS in us-east-1 with versioning enabled.
+  uses the @Data matching "LogsBucket" with at-least 0.95 confidence.
+  requires the AWS provider version is compatible with "~> 5.0".
+  requires the target region is "us-east-1".
+  ensures the bucket exists and carries the tags declared by LogsBucket.
+  ensures versioning is enabled on the created bucket.
+  hazard force_destroy true allows deleting non-empty buckets — do not set in non-production environments.
+  favor reproducibility.
+  favor correctness.
+
+the composition logs_bucket_stack composes
+  provision_logs_bucket then enable_versioning_on_bucket.
+```
+
+### Gaps surfaced
+
+1. **Provider version constraint (`~> 5.0`, `>= 1.5`, `!= 2.0.3`)** — HCL version-specifier DSL. Nom already supports `requires the AWS provider version is compatible with "~> 5.0"` in prose. **Candidate: authoring-guide rule — version constraints stay as quoted text inside `requires` clauses**; the resolver treats them as opaque strings at author time and hands them to the target provider's version resolver at build time. No new wedge.
+2. **Reference syntax (`aws_s3_bucket.logs.id`)** — dotted-path references to another resource's output field. Nom's composition/ref model already expresses this via `the data X exposes Y` + `uses the @Data matching "X"`. Authoring-guide rule: **Terraform dotted references decompose to two-step access: one `uses` clause brings the producer into scope, one prose sentence selects the specific exposed field**. No new wedge.
+3. **Top-level `resource` / `provider` / `data` blocks** — HCL's block-kinded declarations. Nom's 7-noun (soon-to-be-8 with W41 property) closed kind set **does not need a `resource` or `provider` kind**: resources decompose to `data` (the schema of the resource) + `function` (the provisioning step) + optional `composition` (multi-resource stacks). Authoring-guide rule: **one HCL `resource` block → one data decl + one provision function + optional composition entry**. The three-decl fan-out is the canonical translation.
+4. **Dependency inference (`depends_on` implicit from references)** — Terraform builds a DAG from resource references. Nom's composition `then` chaining (doc 16 #33 / a4c33) already sequences functions; the composition decl IS the DAG. `composes provision_logs_bucket then enable_versioning_on_bucket` captures the dependency. No new wedge.
+5. **Variable interpolation (`${var.region}`)** — not exercised in this example (values are literals) but common in larger HCL. Nom's identifier-reference-by-name in prose already handles this. Authoring-guide rule: **HCL variable interpolation becomes a typed-slot `@Data` or named-identifier reference in prose**.
+6. **`lifecycle { prevent_destroy = true }`** — meta-argument carrying authoring-time directives about the resource's destruction policy. Nom expresses this via `hazard` effect clauses (`hazard force_destroy true allows deleting non-empty buckets`). Authoring-guide rule: **lifecycle meta-arguments become `hazard` clauses with explicit human-readable rationale**. No new wedge.
+
+Row additions: **0 new wedges** — Terraform's surface maps cleanly onto existing Nom primitives (data decl, function decl, composition decl, requires/ensures/hazard clauses). 6 authoring-guide closures: version constraints as opaque text, dotted refs as two-step access, `resource` → data+function+composition fan-out, dependency DAG = composition `then` chain, variable interpolation = prose reference, lifecycle meta-args = `hazard` clauses.
+
+**This is the strongest "no new wedge" translation so far** — infrastructure-as-code is fully expressible with 7-noun Nom. Confirms the design hypothesis that the closed kind set is sufficient for real-world engineering domains.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

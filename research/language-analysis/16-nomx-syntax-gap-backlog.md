@@ -94,18 +94,24 @@
 | 77 | Shrinking-target declaration on properties (shortest/smallest/simplest) | authoring-guide rule | ✅ closed (doc 14 #33; embedded in W41 property grammar) |
 | 78 | Locked regression seeds live in source file, not sidecar cache | authoring-guide rule | ✅ closed (doc 14 #33; ties to doc 08 lock-in-source principle) |
 | 79 | Stateful properties = state-machine decomposition + post-step invariant check as property decl | authoring-guide rule | ✅ closed (doc 14 #33; composes #71 + W41) |
+| 80 | HCL provider-version constraints stay as quoted text inside `requires` clauses | authoring-guide rule | ✅ closed (doc 14 #34) |
+| 81 | HCL dotted refs (`aws_s3_bucket.logs.id`) decompose to two-step access (`uses @Data` + prose field select) | authoring-guide rule | ✅ closed (doc 14 #34) |
+| 82 | HCL `resource` block → data decl + provision function + optional composition fan-out | authoring-guide rule | ✅ closed (doc 14 #34; canonical IaC decomposition) |
+| 83 | HCL dependency DAG = composition `then` chain (no new wedge) | authoring-guide rule | ✅ closed (doc 14 #34; reuses a4c33 composition chain) |
+| 84 | HCL `${var.region}` interpolation → typed-slot `@Data` or named-identifier prose ref | authoring-guide rule | ✅ closed (doc 14 #34) |
+| 85 | HCL `lifecycle` meta-arguments → `hazard` clauses with explicit rationale | authoring-guide rule | ✅ closed (doc 14 #34) |
 
-Totals by destination (after doc 14 #33 Hypothesis property-based-test translation surfaced W41 property-kind + W42 generator-shape + 3 authoring-guide closures):
+Totals by destination (after doc 14 #34 Terraform HCL translation closed 6 authoring-guide rules with 0 new wedges — strongest "no new wedge" translation yet):
 
-- ⏳ Wedge queued: **35** (+W41 property-kind, +W42 generator-shape)
+- ⏳ Wedge queued: **35** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **40**
+- ✅ Closed: **46**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **1** (forward_compatibility QualityName)
 
-Backlog size: 81 rows. Closure rate 49% (40/81). **33 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + **property-based-testing (Hypothesis/QuickCheck)**.
+Backlog size: 87 rows. Closure rate 53% (46/87). **34 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + **infrastructure-as-code (Terraform HCL)**. Terraform adds 0 new wedges — validates that the 7-noun closed kind set is sufficient for real-world engineering domains.
 
 ## Wedge master index (for cross-ref with doc 13)
 
