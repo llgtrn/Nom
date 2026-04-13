@@ -89,12 +89,12 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: weeks.
 - **Deps**: M6.
 
-### M10 — Phase-5 planner-in-Nom port (doc 03 Phase 5)
+### M10 — Phase-5 planner-in-Nom port (doc 03 Phase 5) 🟢 gates shipped (M10a+M10b); real port deferred
 
 - **Unblocks**: the compiler starts eating its own manifests. After this, `RepoManifest` → executable plan is internal Nom composition, not external tooling.
 - **Deliverable**: `nom plan <manifest.json>` producing `BuildPlan` JSON (ordered step list + effect-aware scheduling). Planner itself authored as `.nomtu` entries in `stdlib/self_host/planner/`. Test gate: `planner_self_host_e2e.rs`.
-- **Evidence**: doc 04 §10.3.1 fixpoint toolchain pinned `29f5f1d`/`bc89d8a`/`96267df`; manifest JSON handoff shipped `fef0419`; self-host lexer precedent at `nom-compiler/stdlib/self_host/lexer.ll`.
-- **Effort**: quarters (doc 03 flags this as multi-week, user memory says "parked").
+- **Evidence**: doc 04 §10.3.1 fixpoint toolchain pinned `29f5f1d`/`bc89d8a`/`96267df`; manifest JSON handoff shipped `fef0419`; self-host lexer precedent at `nom-compiler/stdlib/self_host/lexer.ll`. **M10a** (commit `249fe62`) audited all 7 `.nom` files under `stdlib/self_host/` + `examples/run_lexer.nom` (all VN-clean post-`ecd0609`) and landed `self_host_parse_smoke.rs` as the regression gate. **M10b** (commit `cef8425`) pinned `run_lexer.bc` SHA-256 `085e8fa6...83296` as the §10.3.1 byte-determinism gate (Linux-CI first-run verification). The real port (authoring planner logic as `.nomtu`s + `nom plan` CLI) stays quarters-scale.
+- **Effort**: gates shipped in days; real port remains quarters (doc 03 flags this as multi-week, user memory says "parked").
 - **Deps**: M1, M4, M9.
 
 ### M11 — Multi-locale workspaces (deferred 09 §8 per-file locale + deferred 07 §3.1-3.4)
@@ -174,20 +174,27 @@ Self-hosting lane M10 → M15 → M17 is the critical chain; it depends on outpu
 ## Critical path to Nom 1.0 (motivation 16 "usable 1.0")
 
 ```
-HEAD (49869ab)
-  ├── M1  (glass-box report)        ✅ shipped — 41aedfe
-  ├── M2  (acceptance preservation) ✅ shipped — fb9c252
-  ├── M4  (three-tier byte ingest)  ✅ shipped — 8aab409
-  ├── M5  (layered dreaming)        ✅ shipped — f0ae193 + e28f69d + cc9641b
-  ├── M7a (MECE CE scaffold)        ✅ shipped — bcadcb3
-  ├── M3a (locale crate + BCP47)    ✅ shipped — 49869ab
-  ├── M3c (vi-VN alias + apply)     ✅ shipped — 339a74a
-  ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot (needs network; park for manual run)
-  ├── M9  (embedding re-rank)       — weeks
-  ├── M10 (planner-in-Nom)          — quarters
-  ├── M15 (parser-in-Nom)           — quarters
-  ├── M16 (LSP)                     — quarters
-  └── M17 (fixpoint bootstrap)      — quarters  ← 1.0 cut here
+HEAD (f34e6f8)
+  ├── M1   (glass-box report)              ✅ shipped — 41aedfe
+  ├── M2   (acceptance preservation)       ✅ shipped — fb9c252
+  ├── M4   (three-tier byte ingest)        ✅ shipped — 8aab409
+  ├── M5   (layered dreaming a+b+c)        ✅ shipped — f0ae193 + e28f69d + cc9641b
+  ├── M7a  (MECE CE registry + check)      ✅ shipped — bcadcb3
+  ├── M7c  (MECE in layered dream)         ✅ shipped — 4307c5a
+  ├── M3a  (nom-locale + BCP47 + NFC)      ✅ shipped — 49869ab
+  ├── M3c  (apply_locale + CLI)            ✅ infrastructure — 339a74a revert-b3fe503 (vocab stays empty per fully-English directive; infra is generic)
+  ├── VN-vocab-removal (fully English)     ✅ shipped — ecd0609 (31 lexer arms + agent_demo_vn/ deleted)
+  ├── M10a (self-host parse gate)          ✅ shipped — 249fe62
+  ├── M10b (run_lexer.bc reproducibility)  ✅ shipped — cef8425 (Linux-CI verify on first run)
+  ├── ci-matrix-fix                        ✅ shipped — f34e6f8 (6 crates added to Linux CI)
+  ├── M6   (PyPI-100 corpus pilot)         — weeks   ← next critical-path slot (needs network; park for manual run)
+  ├── M3b  (UTS #39 confusable detector)   — days   (needs Unicode data file)
+  ├── M9   (embedding re-rank)             — weeks
+  ├── M10c+ (compile-to-IR subset for self_host) — weeks
+  ├── M10  (real planner-in-Nom port)      — quarters
+  ├── M15  (parser-in-Nom)                 — quarters
+  ├── M16  (LSP)                           — quarters
+  └── M17  (fixpoint bootstrap)            — quarters  ← 1.0 cut here
 ```
 
 Milestones M3/M11 (multi-locale), M7/M12/M14 (MECE-CE + laws + cross-domain), M8 (intent transformer), M13 (mass corpus), M18 (specialization) are **post-1.0 enhancements** that land on the parallel tracks but don't gate the bootstrap proof. 1.0 = "compiler is self-hosted + Rust archived."
