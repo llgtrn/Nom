@@ -19,7 +19,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 | #1 LLVM fixpoint unachievable | CRITICAL | **Refined**: LLVM 18 pinned via `inkwell` ✅. Rust toolchain pinned via `rust-toolchain.toml = "1.94.1"` ✅ (landed 2026-04-12). `-g` (debug info) determinism still untested; `SOURCE_DATE_EPOCH` + `llvm.ident` stripping + PDB/COFF timestamp-zero still to be wired in the build driver. | Remaining: debug-info determinism probe | ✅ RESOLVED (toolchain pin). Canary tests added (`compile_nom_to_bc_is_deterministic`, `compile_app_to_artifacts_is_deterministic`). CI hardened (commits `29f5f1d`/`bc89d8a`/`96267df`). Remaining: debug-info strip + `SOURCE_DATE_EPOCH`. |
 | #2 Canonicalizer evolution breaks hash-as-syntax-token | CRITICAL | **Internal plan/code contradiction identified and resolved** in this commit: canonical.rs comment and §5.10.1 now align on version-scoped pins + mandatory `SupersededBy` sweep. | Plan edit only | ✅ RESOLVED — plan + code aligned; `canonical.rs` comment and §5.10.1 consistent. |
 | #3 License propagation unhandled at mass-corpus scale | CRITICAL | **Fully descoped by user 2026-04-12.** License column removed from `dictionary/seed.sql`, `SecurityConfig.allowed_licenses` field removed, resolver examples updated. License tracking is not part of the language. | — (done) | ✅ RESOLVED (descoped). |
-| #4 §5 is six subsystems, not one phase | MAJOR | **Confirmed**: six new workspace crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) from zero, ~12–18 kLOC scaffolding buried inside "§5.0 10 weeks." | +~3 weeks hidden scaffolding | ⏳ OPEN — all six crates are now scaffolded (per §5.0a in the plan, session after this review). Functional work is the remaining multi-week scope. Risk magnitude unchanged; scaffolding is done. |
+| #4 §5 is six subsystems, not one phase | MAJOR | **Confirmed**: six new workspace crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) from zero, ~12–18 kLOC scaffolding buried inside "§5.0 10 weeks." | +~3 weeks hidden scaffolding | ⏳ OPEN — all six crates scaffolded; functional work landing: nom-bench BenchFamily registry (`fa50744`), nom-intent M8 slice1 (`800baea`), nom-lsp M16 slice1 (`64b3058`), nom-media 10/10 codecs. Remaining multi-week scope concentrated in nom-corpus + nom-app + nom-flow + nom-ux. |
 | #5 No diagnostics/DWARF/panic-unwind story | MAJOR | **Refined**: `nom-diagnostics` crate exists (269 LOC) ✅. DWARF emission absent ❌. Unwinding absent (panic is abort-only via `nom_panic` stub) ❌. | ~1 week DIBuilder + 1 decision on unwinding | ⏳ OPEN — unchanged. DWARF absent; panic abort-only. §10.3.1 now documents this as a prerequisite with defaults (`-C debuginfo=0` + `panic = "abort"`). |
 
 ## Evidence summary per risk
@@ -67,7 +67,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 
 ## Exit-criteria audit
 
-Nine of sixteen evaluated sub-phases had weak or absent falsifiable done-conditions at the time of review. Strongest: Phase 4 (`test_phase4_closure_demo` green — passes today), Phase 5.0 core (`1M-entry scale benchmark, p50/p95/p99 committed to benches/`), Phase 12 (`≥70% binary size reduction on reference Node-app closure`). Weakest: §5.12 apps, §5.13 bench, §5.14 flow, §5.15 joint optimization, §5.18 aesthetic, §5.19 AI loop — most of these ship as commands rather than as gated criteria.
+Nine of sixteen evaluated sub-phases had weak or absent falsifiable done-conditions at the time of review. Strongest: Phase 4 (`test_phase4_closure_demo` green — passes today), Phase 5.0 core (`1M-entry scale benchmark, p50/p95/p99 committed to benches/`), Phase 12 (`≥70% binary size reduction on reference Node-app closure`). Weakest: §5.12 apps, §5.14 flow, §5.15 joint optimization, §5.18 aesthetic, §5.19 AI loop (§5.13 bench upgraded to gatable after `fa50744` BenchFamily registry) — most of these ship as commands rather than as gated criteria.
 
 ## Open plan edits not yet applied
 
@@ -140,4 +140,4 @@ Deep-planned in response to the user question *"from a Nom body in the DB, can t
 **Interaction with open items:**
 - LLVM DWARF (Risk #5) is unchanged; codec-compiled binaries need DWARF for debuggability — independent track, not blocked.
 - Risk #4 (§5 scope) remains MAJOR; the codec roadmap adds workload, doesn't reduce it.
-- Risk #1 (Rust toolchain pin) remains blocked on rustup.
+- Risk #1 (Rust toolchain pin) RESOLVED 2026-04-12 via `rust-toolchain.toml`; see Scoreboard. Remaining sub-item: debug-info determinism probe.
