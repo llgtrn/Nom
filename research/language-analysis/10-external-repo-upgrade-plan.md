@@ -265,11 +265,17 @@ Mapping onto doc 09's "Actual remaining work" critical path:
     - composition `then` chaining → `CompositionDecl.composes` (a4c33) (`1185d6a`)
     - v1 `@hash` backfill round-trip (a4c34) (`69bb443`)
     - Delegate-to-run_pipeline migration has NO known blocker that would break on real repo sources.
-22. ✅ **Doc 14 translation corpus expanded 12 → 21 translations** across 9 paradigm families:
-    - Rust (bat, try_lock, base64, flat_map) + Python (langchain agents + async compressor + airflow) + TypeScript (bolt.new editor) + C (aircrack-ng) + Go (gvisor) + C++ (llama-cpp) + Bash (accesskit) + TOML (helix book config) + GraphQL (Post type) + SQL (view) + CSS (button style) + Makefile + Dockerfile + YAML (GitHub Actions) + Java (User + Builder) + synthetic is_even
-    - Surfaces W19-W29 grammar-wedge candidates (async, relational-algebra, selector-predicates, typed dimensions, color literals, nested nullability, build-deps, stage-chains, pinned actions, event-triggers, visibility).
-    - Doc 16 backlog: **51 rows** (20 closed / 23 W-wedges queued / 5 authoring-guide doc-todo / 1 smoke-test / 0 design-Q-open / 1 blocked).
-23. ✅ **nom-concept tests: 135 total** (session start 77 → +58 this session).
+22. ✅ **Doc 14 translation corpus expanded 12 → 25 translations** across 12+ paradigm families:
+    - imperative (Rust/Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) + concurrency (Go goroutines) + pure functional (Haskell) + algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions)
+    - Surfaces W19-W34 grammar-wedge candidates (async, relational-algebra, selector-predicates, typed dimensions, color literals, nested nullability, build-deps, stage-chains, pinned actions, event-triggers, visibility, choice/sum-type, concurrent-spawn, channel-type, finalizer, typeclass-constraints).
+23. ✅ **Doc 17 authoring-guide chapter COMPLETE at I1-I20** — every authoring-guide destination in doc 16 has canonical phrasing + anti-pattern + rationale:
+    - I1-I5 (first batch): `perhaps…nothing`, exit codes, text-sprintf, UTF-8 verbatim, hyphen→underscore mapping
+    - I6-I8: docstring→intent, redundant v1 body, pipelines→named intermediates
+    - I9-I13 (second batch): atomic primitives, destructuring, list/text accessors, uses-vs-imperative, config-as-data split
+    - I14-I16 (third batch): default params, lazy sequences, `identifier` shape label
+    - I17-I20 (final batch): time-range, shell-exec, method→receiver, work_group
+24. ✅ **Doc 16 backlog 58 rows, 27/58 closed (47%)**: 0 authoring-guide doc-todo, 27 W-wedges queued (W5-W34), 1 smoke-test, 0 design-Q-open, 2 blocked (row #11 + #58 on borrow-model).
+25. ✅ **nom-concept tests: 135 total** (session start 77 → +58 this session).
 
 **Queued (ordered by ascending effort):**
 - **M8 slice-5b-mcp-spawn** — wire `McpAdapter` to a spawned child process (~0.5d)
@@ -280,7 +286,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 - **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
 - **W4 strictness lane** — **5 of 6 wedges closed** (A1/A2/A3/A4/A6 done; A5 audited with deferred enum refactor). Pipeline field parity complete.
 - **Delegate-to-run_pipeline migration** — switch `parse_nom` / `parse_nomtu` internals to delegate to `run_pipeline`. All a4c20-a4c34 tests are the regression gate; no known blockers.
-- **Grammar wedges W5-W29** — 23 queued in doc 16 (format-string interpolation, literal-string constants, `fail with` expressions, is-a probes, enums, methods, entry-point main, exit codes vocabulary, interpreter metadata, env-var access, TOML dot-paths, `@Union` typed-kind, async-markers, relational-algebra, selector-predicates, typed dimensions, color literals, nested nullability, build-deps, stage-chains, pinned-external-actions, event-triggers, visibility). None started yet.
+- **Grammar wedges W5-W34** — 27 queued in doc 16. None started yet; starting point candidates are W9 `fail with` (small), W11+W30 choice/enum grammar (medium), or W6 literal-string constants (small).
 - **100-repo ingestion harness** — doc 15 bumpalo smoke test compiled; live runtime blocked by sandbox UCRT shim, deferred to user shell.
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
