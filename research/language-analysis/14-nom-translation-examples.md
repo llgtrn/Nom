@@ -862,6 +862,62 @@ the button_primary_style for the default_theme is
 
 ---
 
+## 17. GraphQL type — schema with non-null + list modifiers
+
+Representing a typical GraphQL schema fragment:
+
+```graphql
+type Post {
+  id: ID!
+  title: String!
+  body: String!
+  tags: [String!]!
+  author: User
+  publishedAt: DateTime
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+record Post that holds
+  an id that is an identifier,
+  a title that is text,
+  a body that is text,
+  a tags that is a list of text,
+  an author that is perhaps a User,
+  a published_at that is perhaps a timestamp.
+the id, title, body, and tags are required.
+the author and published_at may be nothing.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Post is
+  intended to represent a published blog post with metadata.
+
+  exposes id as identifier.
+  exposes title as text.
+  exposes body as text.
+  exposes tags as text list.
+  exposes author as perhaps User.
+  exposes published_at as perhaps timestamp.
+
+  favor correctness.
+  favor documentation.
+```
+
+### Gaps surfaced
+
+1. **Non-null-by-default inversion** — GraphQL's `!` marks required; Nom's `perhaps` marks optional. The inversion is conceptually cleaner (required is the default; optional is an explicit opt-in), but translation requires inverting every nullability-marker. Authoring-guide rule confirmed from doc 17 §I1.
+2. **`ID!` scalar** — GraphQL has distinguishable `ID` vs `String` scalars; Nom today would map both to `text` or `identifier`. Candidate: reserve `identifier` as a distinct shape in the data-type vocabulary. Overlaps with **W22 typed literals.**
+3. **`[String!]!` list-of-non-null` vs `[String]`** — two axes of nullability per collection (collection-itself + each element). Nom's `text list` is non-null-by-default at both axes; the permissive variants would need explicit phrasing. Candidate: **W24 nested nullability modifiers** (`list of perhaps text`, `perhaps list of text`, `perhaps list of perhaps text`).
+4. **GraphQL `type Post implements Node { … }`** — interface implementation has no Nom analog yet. The `extends` keyword in concept grammar is closest but serves a different purpose (concept composition). Candidate: defer; might become relevant when interface-style subtyping enters the language.
+5. **Custom scalar `DateTime`** — the authoring corpus needs canonical time/date primitives. Similar to translation #15's time predicates. Consolidate under the time-range idiom authoring-guide row.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

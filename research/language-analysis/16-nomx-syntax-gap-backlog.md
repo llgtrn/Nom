@@ -58,17 +58,19 @@
 | 41 | Typed dimension literals (`8px`, `4px`) | **W22** grammar rule | ⏳ queued (doc 14 #16) |
 | 42 | Color literal grammar (`#0366d6`) | **W23** grammar rule | ⏳ queued (doc 14 #16) |
 | 43 | `within the last N days` time-range idiom | authoring-corpus seed | 📘 doc-todo |
+| 44 | Nested nullability modifiers (`perhaps list of perhaps text`) | **W24** grammar rule | ⏳ queued (doc 14 #17) |
+| 45 | `identifier` as distinct data shape (GraphQL `ID!`) | authoring-corpus seed | 📘 doc-todo |
 
-Totals by destination (after doc 14 #15-#16 SQL/CSS translations surfaced 5 new rows):
+Totals by destination (after doc 14 #17 GraphQL translation surfaced 2 more rows):
 
-- ⏳ Wedge queued: **17** (+4 W20/W21/W22/W23 new)
+- ⏳ Wedge queued: **18** (+1 W24 nested nullability)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **3** (+1 time-range idiom)
+- 📘 Authoring-guide doc-todo: **4** (+1 identifier shape)
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 43 rows (was 38). Closure rate 47% (20/43); new rows concentrate around typed literals (W22 dimensions / W23 colors) + relational algebra (W20 project/filter) + selector predicates (W21).
+Backlog size: 45 rows. Closure rate 44% (20/45). Translation corpus now covers imperative (Rust/Python/C/C++/Go), async (Python), data (TOML/GraphQL/SQL/CSS), shell (bash), and TS editor-event paradigms. 17 translations total.
 
 ## Wedge master index (for cross-ref with doc 13)
 
