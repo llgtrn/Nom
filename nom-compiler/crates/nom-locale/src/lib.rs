@@ -222,72 +222,28 @@ pub struct LocalePack {
 
 // ── vi-VN keyword alias table (M3c) ──────────────────────────────────────────
 
-/// Vietnamese keyword aliases mirroring the shipped nom-concept lexer set.
+/// vi-VN keyword_aliases is intentionally empty.
 ///
-/// Source: commits 4b04b1d (ASCII transliterations) + 5b59f82 (diacritic forms).
-/// Both forms lex to the same canonical English keyword.  The table lists
-/// diacritic forms first, ASCII transliterations second — same order as the
-/// lexer match arms.
+/// Per the user's load-bearing directive: Nom borrows Vietnamese GRAMMAR STYLE
+/// (classifier phrases, modifier-after-head order, effect valence) but keeps
+/// the vocabulary English. The lexer's existing Vietnamese keyword arms
+/// (commits 4b04b1d + 5b59f82) are kept-but-not-extended; they are not
+/// promoted into the locale pack's queryable alias table because doing so
+/// would mislabel the locale pack's purpose.
 ///
-/// `FromCanonical` direction picks the diacritic form when both exist.
-const VI_VN_KEYWORD_ALIASES: &[(&str, &str)] = &[
-    // ── Diacritic keyword aliases ─────────────────────────────────────────
-    ("là",         "is"),
-    ("cái",        "the"),
-    ("cần",        "requires"),
-    ("bảo_đảm",    "ensures"),
-    ("kết_hợp",    "composes"),
-    ("rồi",        "then"),
-    ("với",        "with"),
-    ("khớp",       "matching"),
-    ("dùng",       "uses"),
-    ("mở_rộng",    "extends"),
-    ("thêm",       "adds"),
-    ("bớt",        "removes"),
-    ("bày_ra",     "exposes"),
-    ("ưu_tiên",    "favor"),
-    ("mục_đích",   "intended to"),
-    // Kind nouns — diacritic
-    ("hàm",         "function"),
-    ("mô_đun",      "module"),
-    ("khái_niệm",   "concept"),
-    ("màn_hình",    "screen"),
-    ("dữ_liệu",     "data"),
-    ("sự_kiện",     "event"),
-    ("phương_tiện", "media"),
-    // ── ASCII transliteration aliases ─────────────────────────────────────
-    ("la",          "is"),
-    ("cai",         "the"),
-    ("can",         "requires"),
-    ("bao_dam",     "ensures"),
-    ("ket_hop",     "composes"),
-    ("roi",         "then"),
-    ("voi",         "with"),
-    ("khop",        "matching"),
-    ("dung",        "uses"),
-    ("mo_rong",     "extends"),
-    ("them",        "adds"),
-    ("bot",         "removes"),
-    ("bay_ra",      "exposes"),
-    ("uu_tien",     "favor"),
-    ("muc_dich",    "intended to"),
-    // Kind nouns — ASCII
-    ("ham",         "function"),
-    ("mo_dun",      "module"),
-    ("khai_niem",   "concept"),
-    ("man_hinh",    "screen"),
-    ("du_lieu",     "data"),
-    ("su_kien",     "event"),
-    ("phuong_tien", "media"),
-];
+/// Future grammar-style locale features (not keyword translations) go in
+/// `LocalePack.register_metadata` or a new grammar-rules field, not here.
+const VI_VN_KEYWORD_ALIASES: &[(&str, &str)] = &[];
 
 // ── Built-in pack registry ────────────────────────────────────────────────────
 
 /// Return all baked-in locale packs.
 ///
-/// Contains two packs: `vi-VN` (Vietnamese, Vietnam) with the shipped lexer
-/// alias set populated in M3c, and `en-US` (English, United States) with empty
-/// alias maps (no translation needed for the canonical locale).
+/// Contains two packs: `vi-VN` (Vietnamese, Vietnam) and `en-US` (English,
+/// United States). Both have empty `keyword_aliases` on purpose: Nom's
+/// vocabulary stays English; Vietnamese contributes GRAMMAR STYLE only
+/// (classifiers, modifier-after-head, effect valence). Keyword translation
+/// would contradict that directive.
 pub fn builtin_packs() -> Vec<LocalePack> {
     let vi_vn_aliases: BTreeMap<String, String> = VI_VN_KEYWORD_ALIASES
         .iter()
@@ -301,7 +257,7 @@ pub fn builtin_packs() -> Vec<LocalePack> {
             nom_aliases: BTreeMap::new(),
             register_metadata: RegisterMetadata {
                 display_name: "Vietnamese (Vietnam)".to_string(),
-                source: "baked:vi-v1-lexer-mirror".to_string(),
+                source: "baked:vi-v1-grammar-only".to_string(),
                 license: "CC0-1.0".to_string(),
                 registered_at: "epoch-0".to_string(),
             },
@@ -729,116 +685,113 @@ mod tests {
         );
     }
 
-    // ── M3c tests ─────────────────────────────────────────────────────────────
+    // ── M3c tests — apply_locale on a synthetic pack (vocab-agnostic) ─────────
+    //
+    // The shipped vi-VN pack has empty keyword_aliases per the user's
+    // "Vietnamese grammar, English vocabulary" directive. These tests build
+    // a synthetic test pack (not registered as a builtin) so the apply_locale
+    // machinery is still exercised. Any future grammar-oriented locale pack
+    // that DOES carry a keyword map will use the same code path.
+
+    fn test_pack_with_aliases(pairs: &[(&str, &str)]) -> LocalePack {
+        let keyword_aliases: BTreeMap<String, String> = pairs
+            .iter()
+            .map(|&(k, v)| (k.to_string(), v.to_string()))
+            .collect();
+        LocalePack {
+            id: LocaleTag::parse("xx-Test").expect("xx-Test is valid"),
+            keyword_aliases,
+            nom_aliases: BTreeMap::new(),
+            register_metadata: RegisterMetadata {
+                display_name: "Test pack".to_string(),
+                source: "test-fixture".to_string(),
+                license: "CC0-1.0".to_string(),
+                registered_at: "epoch-0".to_string(),
+            },
+        }
+    }
 
     #[test]
-    fn vi_vn_pack_has_populated_aliases() {
+    fn vi_vn_pack_keyword_aliases_is_empty_by_directive() {
         let packs = builtin_packs();
         let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
         assert!(
-            vi.keyword_aliases.len() >= 44,
-            "expected >= 44 aliases, got {}",
-            vi.keyword_aliases.len()
+            vi.keyword_aliases.is_empty(),
+            "vi-VN pack must have empty keyword_aliases — Vietnamese contributes \
+             GRAMMAR STYLE only; vocabulary stays English"
         );
-        assert_eq!(
-            vi.keyword_aliases.get("là").map(String::as_str),
-            Some("is"),
-            "`là` must map to `is`"
-        );
-        assert_eq!(vi.register_metadata.source, "baked:vi-v1-lexer-mirror");
+        assert_eq!(vi.register_metadata.source, "baked:vi-v1-grammar-only");
     }
 
     #[test]
     fn apply_to_canonical_basic() {
-        let packs = builtin_packs();
-        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        let report = apply_locale("cái hàm là", vi, ApplyDirection::ToCanonical);
-        assert_eq!(report.output, "the function is");
-        assert_eq!(report.replacements.len(), 3);
-        // First replacement: cái → the at line 1, col 1.
-        assert_eq!(report.replacements[0].from, "cái");
-        assert_eq!(report.replacements[0].to, "the");
+        let pack = test_pack_with_aliases(&[("alpha", "first"), ("beta", "second")]);
+        let report = apply_locale("alpha beta", &pack, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "first second");
+        assert_eq!(report.replacements.len(), 2);
+        assert_eq!(report.replacements[0].from, "alpha");
+        assert_eq!(report.replacements[0].to, "first");
         assert_eq!(report.replacements[0].line, 1);
         assert_eq!(report.replacements[0].column, 1);
-        // Second replacement: hàm → function.
-        assert_eq!(report.replacements[1].from, "hàm");
-        assert_eq!(report.replacements[1].to, "function");
-        // Third replacement: là → is.
-        assert_eq!(report.replacements[2].from, "là");
-        assert_eq!(report.replacements[2].to, "is");
     }
 
     #[test]
     fn apply_to_canonical_ignores_string_literals() {
-        // Only the first `cái` (outside the string) should be replaced.
-        // The `cái` inside the string literal is counted as skipped.
-        let packs = builtin_packs();
-        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        let src = r#"cái x = "cái không đổi""#;
-        let report = apply_locale(src, vi, ApplyDirection::ToCanonical);
-        // Only one replacement (the leading `cái`).
+        let pack = test_pack_with_aliases(&[("alpha", "first")]);
+        let src = r#"alpha x = "alpha unchanged""#;
+        let report = apply_locale(src, &pack, ApplyDirection::ToCanonical);
         assert_eq!(report.replacements.len(), 1);
-        assert_eq!(report.replacements[0].from, "cái");
-        // skipped_in_literals counts the `cái` inside the quotes.
+        assert_eq!(report.replacements[0].from, "alpha");
         assert_eq!(report.skipped_in_literals, 1);
-        // Output should start with "the".
-        assert!(report.output.starts_with("the"));
+        assert!(report.output.starts_with("first"));
     }
 
     #[test]
     fn apply_to_canonical_ignores_line_comments() {
-        // The `cái` on the comment line must not be replaced.
-        // The `cái` on the second line must be replaced.
-        let packs = builtin_packs();
-        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        let src = "# cái\ncái";
-        let report = apply_locale(src, vi, ApplyDirection::ToCanonical);
-        assert_eq!(
-            report.replacements.len(),
-            1,
-            "only the non-comment cái should be replaced"
-        );
+        let pack = test_pack_with_aliases(&[("alpha", "first")]);
+        let src = "# alpha\nalpha";
+        let report = apply_locale(src, &pack, ApplyDirection::ToCanonical);
+        assert_eq!(report.replacements.len(), 1);
         assert_eq!(report.replacements[0].line, 2);
-        assert_eq!(report.output, "# cái\nthe");
+        assert_eq!(report.output, "# alpha\nfirst");
     }
 
     #[test]
     fn apply_roundtrip_through_both_directions() {
-        let packs = builtin_packs();
-        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        // Start canonical → apply FromCanonical → should get diacritic forms.
-        let canonical = "the function is";
-        let to_vn = apply_locale(canonical, vi, ApplyDirection::FromCanonical);
-        assert_eq!(
-            to_vn.output, "cái hàm là",
-            "FromCanonical should produce diacritic vi-VN forms"
-        );
-        // Round-trip back to canonical.
-        let back = apply_locale(&to_vn.output, vi, ApplyDirection::ToCanonical);
-        assert_eq!(
-            back.output, canonical,
-            "ToCanonical(FromCanonical(canonical)) must equal canonical"
-        );
+        let pack = test_pack_with_aliases(&[("alpha", "first"), ("beta", "second")]);
+        let canonical = "first second";
+        let to_loc = apply_locale(canonical, &pack, ApplyDirection::FromCanonical);
+        assert_eq!(to_loc.output, "alpha beta");
+        let back = apply_locale(&to_loc.output, &pack, ApplyDirection::ToCanonical);
+        assert_eq!(back.output, canonical);
     }
 
     #[test]
     fn apply_multiword_phrase_expands() {
-        let packs = builtin_packs();
-        let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        // `mục_đích` is a single underscore-joined token → "intended to".
-        let report = apply_locale("mục_đích", vi, ApplyDirection::ToCanonical);
-        assert_eq!(report.output, "intended to");
+        // Single underscore-joined token expands to a multi-word canonical.
+        let pack = test_pack_with_aliases(&[("alpha_beta", "first second")]);
+        let report = apply_locale("alpha_beta", &pack, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "first second");
         assert_eq!(report.replacements.len(), 1);
-        assert_eq!(report.replacements[0].from, "mục_đích");
-        assert_eq!(report.replacements[0].to, "intended to");
+        assert_eq!(report.replacements[0].from, "alpha_beta");
+        assert_eq!(report.replacements[0].to, "first second");
     }
 
     #[test]
     fn apply_unknown_token_unchanged() {
+        let pack = test_pack_with_aliases(&[("alpha", "first")]);
+        let report = apply_locale("xyzzy", &pack, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "xyzzy");
+        assert!(report.replacements.is_empty());
+    }
+
+    #[test]
+    fn apply_on_empty_vi_vn_pack_is_noop() {
+        // The shipped vi-VN pack has no aliases → apply_locale is a no-op.
         let packs = builtin_packs();
         let vi = packs.iter().find(|p| p.id.canonical() == "vi-VN").unwrap();
-        let report = apply_locale("xyzzy", vi, ApplyDirection::ToCanonical);
-        assert_eq!(report.output, "xyzzy");
+        let report = apply_locale("the function is", vi, ApplyDirection::ToCanonical);
+        assert_eq!(report.output, "the function is");
         assert!(report.replacements.is_empty());
     }
 }

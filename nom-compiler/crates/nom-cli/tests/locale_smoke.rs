@@ -49,9 +49,11 @@ mod tests {
     }
 
     #[test]
-    fn locale_apply_vi_vn_to_canonical() {
+    fn locale_apply_on_empty_vi_vn_pack_is_noop() {
+        // The shipped vi-VN pack has empty keyword_aliases per the
+        // "Vietnamese grammar, English vocabulary" directive, so
+        // `nom locale apply vi-VN` is a pass-through on English source.
         use std::io::Write as _;
-        // Write a 1-line fixture to a temp file.
         let pid = std::process::id();
         let nanos = std::time::SystemTime::now()
             .duration_since(std::time::UNIX_EPOCH)
@@ -61,7 +63,7 @@ mod tests {
             .join(format!("nom-locale-apply-{pid}-{nanos}.nom"));
         {
             let mut f = std::fs::File::create(&tmp_path).expect("create temp file");
-            write!(f, "cái hàm là").expect("write fixture");
+            write!(f, "the function is").expect("write fixture");
         }
         let path = tmp_path.to_str().expect("temp path to str").to_string();
         let (code, stdout, stderr) = run(&["locale", "apply", "vi-VN", &path]);
@@ -69,7 +71,7 @@ mod tests {
         assert_eq!(code, 0, "expected exit 0, stderr={stderr}");
         assert!(
             stdout.contains("the function is"),
-            "expected 'the function is' in output: {stdout:?}"
+            "expected pass-through output: {stdout:?}"
         );
     }
 }
