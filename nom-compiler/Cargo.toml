@@ -30,6 +30,7 @@ members = [
     "crates/nom-concept",
     "crates/nom-locale",
     "crates/nom-intent",
+    "crates/nom-lsp",
 ]
 
 [workspace.package]

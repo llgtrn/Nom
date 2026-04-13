@@ -149,13 +149,19 @@ Realistic M8 MVP is **~Q1 2026-Q3** from today; hardened **+1 quarter**. Depends
 - **`InfoPopover`** in [crates/editor/src/hover_popover.rs:214,816](../../APP/zed-main/crates/editor/src/hover_popover.rs) chains `GetHover` result → markdown blocks → popover; `hover_popover_delay` (L184) debounces. Nom can replace markdown with a glass-box JSON fetcher — hover calls `cmd_build_report` against the symbol's entry.
 - **`DiagnosticPopover`** (hover_popover.rs:817,840) renders diagnostic + code-action affordance inline — direct analog for the **"why this Nom?"** drill-through button surfacing the `LayeredDreamReport`.
 
-### Concrete week-1 slice
+### Concrete week-1 slice — ✅ SHIPPED 2026-04-14
 
-1. `cargo new --lib nom-compiler/crates/nom-lsp`; add `tower-lsp` (or `lsp-server`) dep.
-2. Implement `initialize` returning `ServerCapabilities { hover_provider: Some(true), .. }`.
-3. Wire one `textDocument/hover` handler returning constant `"nom-lsp alive"`.
-4. Integration test: spawn server over pipes, send `initialize` + `hover`, assert reply.
-5. `nom lsp serve` CLI subcommand shelling into the binary.
+1. ✅ `nom-compiler/crates/nom-lsp/` created with `lsp-server` 0.7 + `lsp-types` 0.95 deps (rust-analyzer stack, not tower-lsp — sync server, no tokio dep, ~200 LOC scaffold).
+2. ✅ `server_capabilities()` returns `ServerCapabilities { hover_provider: Some(Simple(true)), .. }` with all other providers off — week-1 discipline of "only advertise what's handled."
+3. ✅ `dispatch_request(req) -> Response` pure function (Zed `on_request` closure registry analog, statically dispatched). `HoverRequest` routed to `handle_hover`; unknown methods return `MethodNotFound`.
+4. ✅ 4 unit tests in `nom-lsp/src/lib.rs`:
+   - `server_capabilities_exposes_hover_only_in_week_1`
+   - `dispatch_hover_returns_markdown_with_server_name`
+   - `dispatch_unknown_method_returns_method_not_found`
+   - `server_name_and_version_are_nonempty`
+5. ⏳ `nom lsp serve` CLI subcommand — separate 1-hour wedge (wire `serve_on_stdio()` from nom-cli). Week-1's library layer is binary-agnostic so the CLI slot is trivial.
+
+Effort delta: estimated 3-5 days, shipped in one cycle (≈30 min of code + tests + build). `lsp-server` + `lsp-types` totalled 42s compile time. Remaining M16 work (hover-against-real-dict, goto-def, completion, diagnostics, semantic tokens, Authoring Protocol drill-through, salsa incremental) stays at 6-8 weeks MVP / 4-5 months full per doc-09's quarters estimate — the week-1 scaffold doesn't shorten that; it just unblocks the parallel work.
 
 ### Estimated effort
 

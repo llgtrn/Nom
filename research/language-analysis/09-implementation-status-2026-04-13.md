@@ -222,6 +222,7 @@ Index `4140126`, stats: **251 files, 5947 nodes, 13743 edges, 300 processes, 226
 | Corpus infrastructure | 9 `cmd_corpus_*` (scan, ingest, ingest_parent, ingest_pypi, clone_batch, clone_ingest, register_axis, list_axes) + `nom-corpus::{checkpoint, equivalence_gate}` + 5-language translator (C/C++/Python/JS/Go) | ✅ scaffold (M7a dep) |
 | `nom-intent` M8-slice1 (bounded-output discipline) | `NomIntent::{Kind, Symbol, Flow, Reject(Reason)}` + `LlmFn` closure type + 4 tests locking reject-on-not-in-candidates | ✅ 2026-04-14 |
 | `nom-bench` family registry (Google-Benchmark pattern) | `BenchFamily` + `register` + `list` via `OnceLock<Mutex<Vec<_>>>` + 4 registry tests | ✅ 2026-04-14 |
+| `nom-lsp` M16-slice1 (LSP transport + hover stub, lsp-server + lsp-types deps) | `dispatch_request` + `handle_hover` markdown reply "nom-lsp vX — hover stub alive" + `server_capabilities()` exposes hover_provider only + 4 unit tests locking dispatch correctness | ✅ 2026-04-14 |
 | Multi-graph surface | `cmd_graph` ([nom-cli/src/main.rs:4562](../../nom-compiler/crates/nom-cli/src/main.rs)) → `NomtuGraph::{from_entries, build_call_edges, build_import_edges, detect_communities}` | ✅ |
 | Foreign-source translator | `cmd_translate` + `nom-translate::{translate, translate_c_to_rust, translate_cpp_to_rust, translate_python_to_rust, translate_js_to_rust, translate_go_to_rust}` | ✅ |
 | Author loop | `cmd_author_{translate, start, check}` + `author_check_handles_full_todo_app_nomx` + `.nomx v2` grammar fixtures (contracts, greet, loops, mixed_forms, hello, todo_app) | ✅ |
