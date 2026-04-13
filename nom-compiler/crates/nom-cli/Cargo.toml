@@ -32,6 +32,7 @@ nom-app = { path = "../nom-app" }
 nom-concept = { path = "../nom-concept" }
 nom-locale = { path = "../nom-locale" }
 nom-lsp = { path = "../nom-lsp" }
+nom-intent = { path = "../nom-intent" }
 walkdir = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true }

@@ -332,6 +332,17 @@ enum Commands {
         action: LspCmd,
     },
 
+    /// Agentic-RAG + ReAct surface over the dict. `nom agent classify`
+    /// runs a bounded Thought→Action→Observation loop against the 5
+    /// grouped capability-tools (query/compose/verify/render/explain)
+    /// defined in the M8 spec. This slice ships with a stub LLM that
+    /// immediately rejects — proof-of-plumbing for editor/CLI
+    /// integration. Real LLM adapter lands in slice-5b.
+    Agent {
+        #[command(subcommand)]
+        action: AgentCmd,
+    },
+
     /// Manage concepts — named domain groupings of nomtu entries. Each
     /// concept name is a first-class Nom syntax token, addressable via
     /// `use <concept>@<hash>` in .nom source.
@@ -966,6 +977,28 @@ enum LspCmd {
 }
 
 #[derive(Subcommand)]
+enum AgentCmd {
+    /// Classify prose through the M8 ReAct loop against the dict.
+    /// Slice-5a ships with a stub LLM that immediately rejects —
+    /// exercises the CLI → classify_with_react → DictTools → dict
+    /// plumbing end-to-end without requiring external LLM credentials.
+    /// Real LLM wiring in slice-5b.
+    Classify {
+        /// Prose input to classify.
+        prose: String,
+        /// Path to nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Max ReAct iterations (default 4 per spec).
+        #[arg(long, default_value_t = 4)]
+        max_iters: usize,
+        /// Emit transcript as JSON instead of human-readable text.
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum LocaleCmd {
     /// List all registered locale packs.
     List,
@@ -1183,6 +1216,11 @@ fn main() {
                     1
                 }
             },
+        },
+        Commands::Agent { action } => match action {
+            AgentCmd::Classify { prose, dict, max_iters, json } => {
+                cmd_agent_classify(&prose, &dict, max_iters, json)
+            }
         },
         Commands::Concept { action } => match action {
             ConceptCmd::New { name, describe, dict } => {
@@ -4788,6 +4826,58 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
 }
 
 // ── Audit command ───────────────────────────────────────────────────────────
+
+fn cmd_agent_classify(prose: &str, dict: &PathBuf, max_iters: usize, json: bool) -> i32 {
+    // Open the dict for DictTools' query + explain methods.
+    let d = match nom_dict::NomDict::open_in_place(dict) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom agent classify: cannot open dict {}: {e}", dict.display());
+            return 1;
+        }
+    };
+    let tools = nom_intent::dict_tools::DictTools::new(&d);
+
+    // Slice-5a stub LLM: always returns Reject(Unparseable). Proves the
+    // CLI → classify_with_react → DictTools → dict plumbing without
+    // requiring external LLM credentials. Slice-5b wires a real adapter.
+    let llm: nom_intent::react::ReActLlmFn = Box::new(|_prose, _transcript| {
+        Ok(nom_intent::react::ReActStep::Reject(
+            nom_intent::Reason::Unparseable,
+        ))
+    });
+
+    let budget = nom_intent::react::ReActBudget {
+        max_iterations: max_iters,
+        ..Default::default()
+    };
+
+    let transcript = match nom_intent::react::classify_with_react(prose, &budget, &llm, &tools)
+    {
+        Ok(t) => t,
+        Err(e) => {
+            eprintln!("nom agent classify: loop error: {e}");
+            return 1;
+        }
+    };
+
+    if json {
+        match serde_json::to_string_pretty(&transcript) {
+            Ok(s) => println!("{s}"),
+            Err(e) => {
+                eprintln!("nom agent classify: serialize error: {e}");
+                return 1;
+            }
+        }
+    } else {
+        println!("nom agent classify — transcript ({} step{})", transcript.len(),
+            if transcript.len() == 1 { "" } else { "s" });
+        for (i, step) in transcript.iter().enumerate() {
+            println!("  [{}] {:?}", i, step);
+        }
+    }
+    0
+}
 
 fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> i32 {
     let min_sev = match Severity::from_str_loose(min_severity) {
