@@ -118,18 +118,23 @@
 | 101 | Streaming triggers are `(kind, interval)` pair where kind is a closed choice | authoring-guide rule | ✅ closed (doc 14 #37) |
 | 102 | Stateful-aggregation state TTL → `hazard` clause on the aggregation function | authoring-guide rule | ✅ closed (doc 14 #37) |
 | 103 | Streaming sources must carry an explicit data decl; schema inference is an author-helper tool | authoring-guide rule | ✅ closed (doc 14 #37; ties to `nom author infer-schema`) |
+| 104 | On-chain functions implicitly `favor determinism` + forbid wall-clock/random/non-chain IO | authoring-guide rule | ✅ closed (doc 14 #38) |
+| 105 | On-chain implicit context (caller, value, gas) named explicitly in `requires`/`ensures` clauses | authoring-guide rule | ✅ closed (doc 14 #38) |
+| 106 | Checks-effects-interactions invariant declared explicitly as `hazard` when external transfers occur | authoring-guide rule | ✅ closed (doc 14 #38) |
+| 107 | Data decls are immutable by default; mutations happen via functions that take a prior value and return a new value | authoring-guide rule | ✅ closed (doc 14 #38; consistent with #25 Haskell + #35 NumPy) |
+| 108 | `gas_efficiency` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #38; accumulates with #66/#91) |
 
-Totals by destination (after doc 14 #37 Apache Spark Structured Streaming translation surfaced W44 watermark + W45 window-aggregation + 4 authoring-guide closures):
+Totals by destination (after doc 14 #38 Solidity smart-contract translation — **first true 0-new-wedge smart-contract translation**; 5 authoring-guide closures + 1 QualityName seed; reinforces W9 priority):
 
-- ⏳ Wedge queued: **38** (+W44 watermark, +W45 window-aggregation)
+- ⏳ Wedge queued: **38** (unchanged; W9 `fail with` now has an external-use reinforcement)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **61**
+- ✅ Closed: **66**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **2** (forward_compatibility + numerical_stability QualityNames)
+- 🌱 Authoring-corpus seed: **3** (forward_compatibility + numerical_stability + gas_efficiency QualityNames)
 
-Backlog size: 106 rows. Closure rate 58% (61/106). **37 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + **stream-processing (Apache Spark Structured Streaming)**. Fourth consecutive minimal-wedge translation.
+Backlog size: 112 rows. Closure rate 59% (66/112). **38 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + **smart-contract (Solidity on-chain)**. Fifth consecutive minimal-wedge translation; smart-contract semantics map entirely onto existing primitives.
 
 ## Wedge master index (for cross-ref with doc 13)
 

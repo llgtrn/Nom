@@ -2264,6 +2264,98 @@ Streaming is the **fourth consecutive minimal-wedge translation** (2 new small w
 
 ---
 
+## 38. Solidity smart contract — deterministic on-chain execution
+
+```solidity
+pragma solidity ^0.8.20;
+
+contract SimpleEscrow {
+    address public immutable buyer;
+    address public immutable seller;
+    uint256 public immutable amount;
+    bool public released;
+
+    error NotBuyer();
+    error AlreadyReleased();
+
+    constructor(address _seller) payable {
+        require(msg.value > 0, "amount must be positive");
+        buyer = msg.sender;
+        seller = _seller;
+        amount = msg.value;
+    }
+
+    function release() external {
+        if (msg.sender != buyer) revert NotBuyer();
+        if (released) revert AlreadyReleased();
+        released = true;
+        payable(seller).transfer(amount);
+    }
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define create_escrow
+  that takes the seller address and the deposited amount, returns a new escrow identifier.
+the escrow records the buyer (the caller), the seller, the amount, and a released flag starting at false.
+
+define release_escrow
+  that takes an escrow identifier, returns success or failure.
+when the caller is not the buyer, fail with reason "NotBuyer".
+when the escrow is already released, fail with reason "AlreadyReleased".
+set released to true, then transfer the amount to the seller.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Escrow is
+  intended to record the participants, deposit, and settlement status of a single escrow agreement between a buyer and a seller.
+  exposes buyer as address.
+  exposes seller as address.
+  exposes amount as natural.
+  exposes released as boolean.
+
+the function create_escrow is
+  intended to initialize a new Escrow with the caller as buyer and the passed deposit as amount; rejects zero-amount deposits.
+  uses the @Data matching "Escrow" with at-least 0.95 confidence.
+  requires the deposited amount is strictly positive.
+  requires the seller address is non-zero.
+  ensures the returned Escrow has released equal to false.
+  ensures the returned Escrow's buyer equals the calling address.
+  favor correctness.
+
+the function release_escrow is
+  intended to transfer the escrow's amount from contract custody to the seller, exactly once, only when invoked by the buyer.
+  uses the @Data matching "Escrow" with at-least 0.95 confidence.
+  requires the caller is the Escrow's buyer.
+  requires the Escrow has released equal to false.
+  ensures the Escrow's released becomes true before any external transfer.
+  ensures the seller receives exactly the Escrow's amount.
+  hazard on-chain execution is deterministic and observable — never embed private data in Escrow or its arguments.
+  hazard failing post-state-change transfers must revert the state change (checks-effects-interactions invariant).
+  favor correctness.
+  favor gas_efficiency.
+```
+
+### Gaps surfaced
+
+1. **Determinism as a first-class invariant** — Solidity code must produce byte-identical output for identical inputs across every node on the chain. Nom's fixpoint discipline (doc 04 §10.3.1) already demands this for the compiler; for smart-contract source the same invariant applies at runtime. Authoring-guide rule: **on-chain functions carry an implicit `favor determinism` + forbid any reference to wall-clock time, random, or non-chain IO**. Already covered by the `hazard` + `uses` model; no new wedge.
+2. **`revert` + custom errors (`error NotBuyer()`)** — Solidity 0.8+ style typed errors. Nom's prose `fail with reason "NotBuyer"` (doc 16 W9) maps directly. **Confirms W9 `fail with` grammar** is correctly scoped — Solidity's typed-error feature is the closest existing surface. No new wedge; reinforces W9's priority.
+3. **`msg.sender` + `msg.value`** — implicit call-context accessors. Nom's translation names them `the calling address` and `the deposited amount` via `requires` clauses. Authoring-guide rule: **on-chain implicit context (caller, value, gas remaining, block info) is named explicitly in `requires`/`ensures` clauses, never accessed via magic variables**. No new wedge.
+4. **`checks-effects-interactions` pattern** — a safety discipline: validate inputs, update state, then call external contracts, in that order. The hazard clause captures it. Authoring-guide rule: **on-chain functions must state the checks-effects-interactions invariant explicitly as a `hazard` when external transfers occur**. No new wedge; the hazard clause IS the safety gate.
+5. **`immutable` vs `constant`** — Solidity data-field modifiers controlling write-once semantics. Nom's `exposes X as Y` is implicitly write-once on construction for data decls; mutable state requires an explicit mutation function. Authoring-guide rule: **data decls are immutable by default; mutations happen via functions that take a prior Escrow and return a new Escrow**. Consistent with pure-functional translations (#25 Haskell, #35 NumPy). No new wedge.
+6. **Gas as a resource** — every on-chain operation consumes gas; excess gas halts execution. Nom expresses this as `favor gas_efficiency` QualityName. Authoring-corpus seed: **register `gas_efficiency` as a QualityName** alongside forward_compatibility and numerical_stability. Accumulates the seed set.
+7. **`pragma solidity ^0.8.20`** — compiler-version pinning. Maps to Nom's file-hash-pinning discipline (doc 08 `name@hash` lock). No new wedge.
+
+Row additions: **0 new wedges** (reinforces W9 `fail with` priority; all 7 items close via authoring-guide rules or reuse existing mechanisms). Authoring-corpus seed: **gas_efficiency** QualityName. 5 authoring-guide closures (determinism implicit for on-chain functions, implicit context named explicitly, checks-effects-interactions as hazard, data immutable by default / mutations via functions, connector-type pattern reused).
+
+**Fifth consecutive minimal-wedge translation + first true 0-new-wedge smart-contract translation.** Smart-contract semantics map entirely onto existing Nom primitives. The accumulating authoring-corpus QualityName seeds (forward_compatibility, numerical_stability, gas_efficiency) suggest a follow-up wedge to formalize the QualityName registration surface once the seed set stabilizes (~10 seeds).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
