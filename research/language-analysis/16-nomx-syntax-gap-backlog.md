@@ -76,17 +76,18 @@
 | 59 | `theorem` / `proof` kind declaration | **W35** grammar / kind-set decision | ⏳ queued (doc 14 #26, links deferred 11 §B) |
 | 60 | Proof-tactic DSL (`by induction with | zero => rfl`) | **W36** grammar rule | ⏳ deferred (waits on W35 + math infra) |
 | 61 | Actor-spawn + message-passing clause | **W37** grammar rule (may subsume W31) | ⏳ queued (doc 14 #27) |
+| 62 | Logic-query / Prolog unification — translates to list-returning function + `ensures` clause | authoring-guide rule | ✅ closed (doc 14 #28; no wedge needed — existing shape suffices) |
 
-Totals by destination (after doc 14 #27 Elixir GenServer translation surfaced 1 more row):
+Totals by destination (after doc 14 #28 Prolog logic-programming translation confirmed the list-returning + ensures-clause shape is sufficient):
 
-- ⏳ Wedge queued: **30** (+1 W37 actor-spawn; may subsume W31)
+- ⏳ Wedge queued: **30** (W37 actor-spawn; may subsume W31)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **27**
+- ✅ Closed: **28**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 
-Backlog size: 61 rows. Closure rate 44% (27/61). **27 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + **actor-model message-passing (Elixir GenServer)**.
+Backlog size: 62 rows. Closure rate 45% (28/62). **28 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + **logic-programming (Prolog unification)**.
 
 ## Wedge master index (for cross-ref with doc 13)
 

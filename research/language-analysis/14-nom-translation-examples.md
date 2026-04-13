@@ -1577,6 +1577,77 @@ the function handle_counter_command is
 
 ---
 
+## 28. Prolog — logic programming (unification + backtracking)
+
+```prolog
+% Family relationships.
+parent(tom, bob).
+parent(bob, ann).
+parent(bob, pat).
+
+grandparent(X, Z) :- parent(X, Y), parent(Y, Z).
+
+ancestor(X, Y) :- parent(X, Y).
+ancestor(X, Y) :- parent(X, Z), ancestor(Z, Y).
+```
+
+### `.nomx v1` translation
+
+```nomx
+define parent_of
+  that takes a person, returns the list of that person's direct children.
+the children are looked up in the family_facts table.
+
+define grandparent_of
+  that takes a person, returns the list of their grandchildren.
+for each child in parent_of(person),
+  include each grandchild in parent_of(child).
+
+define ancestor_of
+  that takes a person, returns the transitive closure of parent_of.
+include every direct child.
+for each child, include every ancestor_of(child).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data family_relation is
+  intended to record who is the direct parent of whom.
+  exposes parent as identifier.
+  exposes child as identifier.
+
+the function direct_parents_of is
+  intended to list everyone who is recorded as a direct parent of a given person.
+  uses the @Data matching "family_relation" with at-least 0.95 confidence.
+  ensures every returned identifier appears as a `parent` in some relation whose `child` is the given person.
+  favor correctness.
+
+the function grandparents_of is
+  intended to list everyone who is a parent of a parent of the given person.
+  uses the @Function matching "direct_parents_of" with at-least 0.9 confidence.
+  ensures every returned identifier is the parent of at least one parent of the given person.
+
+the function ancestors_of is
+  intended to list the transitive closure of `direct_parents_of` for a given person.
+  uses the @Function matching "direct_parents_of" with at-least 0.9 confidence.
+  ensures the result contains every direct parent and every ancestor of every direct parent.
+  hazard unbounded recursion on cyclic relations.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Unification as a computational mechanism** — Prolog's `parent(X, Y)` pattern isn't function application; it's bidirectional pattern-matching that binds variables on either side. Nom has no unification primitive. Translation flattens the query into directional function calls. **Candidate: W38 unification-query clause** — very open design question; may not be worth a wedge (Prolog is a niche paradigm and Nom can express logic queries via deterministic functions over data).
+2. **Backtracking / all-solutions semantics** — Prolog returns the full solution set by default; most other languages return one answer. Nom's translation says `returns the list of …` to make the set semantics explicit. Authoring-guide rule: **translate "all solutions" queries as list-returning functions; the resolver disambiguates from scalar-returning single-answer forms by return type.** No new wedge; existing list-returning shape suffices.
+3. **Horn clauses (`:- ` body)** — declarative rule definitions. Nom's `ensures … ensures …` acceptance clauses express the same relation declaratively. Horn-clause syntax itself isn't needed; the `ensures` clause IS the Horn body.
+4. **Cyclic-data hazard** — `ancestor_of` over a cyclic graph infinite-loops in naive Prolog too. Nom's `hazard unbounded recursion on cyclic relations` captures this via W4-A3 effect-valence. No new wedge.
+5. **Variable-naming convention (capital = variable, lowercase = atom)** — Nom doesn't need this convention because every bound name is either an identifier (the target of `the function X is …`) or a parameter (typed-slot + name at the call site).
+
+Deferred/non-wedge paradigm: **logic programming adds 0 wedges but locks a translation rule** — list-returning + `ensures`-clause shape captures the full Prolog surface for the common uses (family relations, graph reachability, type inference). Adding row #62 to doc 16 as an authoring-guide rule is sufficient.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
