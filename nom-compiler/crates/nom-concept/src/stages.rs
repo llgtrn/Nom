@@ -1623,6 +1623,38 @@ the function write_file is
         }
     }
 
+    /// a4c38: edge cases — empty source and whitespace-only input.
+    ///
+    /// S1 accepts empty source and produces an empty `TokenStream`.
+    /// S2 then returns an empty `ClassifiedStream` (no blocks). S6
+    /// receives zero blocks and currently returns `PipelineOutput::Nomtu`
+    /// with an empty `items` list — the no-concept, no-entity case.
+    ///
+    /// This pins that empty input doesn't panic or produce a spurious
+    /// rejection. Useful for LSP-style incremental-parse scenarios
+    /// where the user is typing and the buffer is temporarily empty.
+    #[test]
+    fn a4c38_empty_and_whitespace_inputs_handled() {
+        for src in ["", "   ", "\n\n\n", "  \n  \t  \n"] {
+            let out = run_pipeline(src)
+                .unwrap_or_else(|e| panic!("pipeline must accept empty input `{src:?}`: {e:?}"));
+            match out {
+                PipelineOutput::Nomtu(f) => {
+                    assert!(
+                        f.items.is_empty(),
+                        "empty source `{src:?}` must produce empty items list"
+                    );
+                }
+                PipelineOutput::Nom(f) => {
+                    assert!(
+                        f.concepts.is_empty(),
+                        "empty source `{src:?}` must produce empty concepts list"
+                    );
+                }
+            }
+        }
+    }
+
     /// a4c37: strict validator integrates with pipeline outputs.
     /// W4-A3's `validate_nom_strict` / `validate_nomtu_strict` were
     /// designed to consume the legacy `parse_nom`/`parse_nomtu` return
