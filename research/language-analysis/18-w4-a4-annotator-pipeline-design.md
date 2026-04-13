@@ -193,7 +193,13 @@ Strict cross-clause guard: if a contract clause reaches another clause keyword (
 
 4 tests (a4c13-a4c16): benefit+hazard with comma-separated names, zero effects yields empty vec, `boon`/`bane` synonyms map to Benefit/Hazard, unterminated-effect caught when `favor` appears before closing dot.
 
-Existing 94 nom-concept parser tests untouched — S2/S3/S4/S5 run alongside `parse_nomtu`/`parse_nom`. Step 5 (S6 refs + entity-signature shape) is the final A4c cycle.
+**Step 5 landed 2026-04-14 — A4c COMPLETE:** `stage6_ref_resolve` wired as skeletal end-to-end assembly. Returns `PipelineOutput::Nom(NomFile)` or `PipelineOutput::Nomtu(NomtuFile)` based on the first block's kind. Populates `intent` + `contracts` + `effects` from stage outputs; leaves ref-carrying fields (`index` on concepts, `composes` on modules) empty for a later cycle. Rejects mixed concept+entity sources with `NOMX-S6-mixed-concept-and-entity` per doc 08.
+
+Also lands `run_pipeline(src)` convenience driver that chains S1 → S6 and surfaces the first stage failure encountered. Gives editors / diagnostics a single on-ramp to the new pipeline.
+
+3 tests (a4c17-a4c19): end-to-end concept source → `PipelineOutput::Nom` with intent + acceptance populated; end-to-end entity source → `PipelineOutput::Nomtu` with Entity carrying contracts + effects; mixed concept+entity rejects cleanly.
+
+**A4c summary (steps 1-5):** all 6 stages (S1-S6) now have real bodies. 18 new tests in `stages` module plus 120 total nom-concept tests passing. Existing `parse_nom` / `parse_nomtu` paths untouched — pipeline runs alongside as the future replacement. Follow-up cycles: wire ref resolution into `ConceptDecl.index` + `CompositionDecl.composes`, add entity signature-shape extraction (`given X, returns Y`), then switch `parse_nom`/`parse_nomtu` internals to delegate to `run_pipeline` once feature parity is confirmed.
 
 Total: ~3 engineer-days as originally estimated.
 

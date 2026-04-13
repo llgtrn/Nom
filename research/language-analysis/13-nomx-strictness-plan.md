@@ -70,11 +70,17 @@ Verify lexer rejects synonyms and case-variant spellings for `matching`, `with`,
 
 **Shipped 2026-04-14 commit `d12a8b0`:** purely-additive `nom_concept::strict` module. `validate_nom_strict(&file)` / `validate_nomtu_strict(&file)` walk the AST post-parse and emit `StrictWarning { code: "NOMX-A3", message, location }` for every typed-slot ref missing a confidence threshold. 4 tests (s01-s04); default parser unchanged.
 
-### A4 — Annotator-style staged parser ⏳ (design spec landed)
+### A4 — Annotator-style staged parser ✅ (A4a + A4b + A4c all shipped)
 
 Refactor `parse_nomx_source` into explicit stages: `tokenize → kind_classify → signature_extract → contract_attach → resolve_references`. Each stage takes and returns a typed AST (`TokenStream → ClassifiedAst → SignedAst → ContractedAst → ResolvedAst`). Every stage MUST classify every node or reject. Estimated 3d (biggest wedge; largest refactor risk).
 
-**Design spec 2026-04-14:** [doc 18](18-w4-a4-annotator-pipeline-design.md) pins the 6-stage target (S1 tokenize → S2 kind_classify → S3 shape_extract → S4 contract_bind → S5 effect_bind → S6 ref_resolve), the typed AST per stage, the stage-boundary contracts, the 3-sub-wedge migration path (A4a tokenstream materialize ~0.5d / A4b stage boundaries without typed ASTs ~1d / A4c typed ASTs between stages ~1.5d), and how A5 ties in. Implementation can now proceed in small cycles.
+**Design spec 2026-04-14:** [doc 18](18-w4-a4-annotator-pipeline-design.md) pins the 6-stage target (S1 tokenize → S2 kind_classify → S3 shape_extract → S4 contract_bind → S5 effect_bind → S6 ref_resolve), the typed AST per stage, the stage-boundary contracts, the 3-sub-wedge migration path.
+
+**A4a shipped (6436a2c):** `collect_all_tokens` materialization primitive.
+**A4b shipped (e5be34f):** stages module scaffold with `StageId` + 6 stubs.
+**A4c shipped (5 increments — final 2026-04-14):** all 6 stages have real bodies. `run_pipeline(src)` convenience driver chains S1 → S6 and surfaces structured `StageFailure { stage, reason, detail, position }` diagnostics. Mixed concept+entity sources rejected. Ref resolution (`ConceptDecl.index`, `CompositionDecl.composes`) + entity signature-shape extraction (`given X, returns Y`) + internal migration of `parse_nom`/`parse_nomtu` to delegate to `run_pipeline` are follow-up cycles past the A4 wedge's original scope — the wedge itself is closed.
+
+W4 strictness-lane totals: **5 of 6 wedges closed** (A1 ✅ A2 ✅ A3 ✅ A4 ✅ A6 ✅; A5 audited with enum-refactor deferred).
 
 ### A5 — No lossy `Option` fields on typed AST 🔍 (audit complete, refactor deferred)
 

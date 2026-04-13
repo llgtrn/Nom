@@ -38,7 +38,10 @@
 //! into their todo markers; A4c lands the real bodies.
 
 use crate::lex::{Spanned, Tok};
-use crate::{ContractClause, EffectClause, EffectValence, KINDS};
+use crate::{
+    CompositionDecl, ConceptDecl, ContractClause, EffectClause, EffectValence, EntityDecl,
+    NomFile, NomtuFile, NomtuItem, KINDS,
+};
 
 /// Which stage of the annotator pipeline a failure came from.
 ///
@@ -794,14 +797,119 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
     })
 }
 
-/// S6 stub — final typed-AST assembly.
-pub fn stage6_ref_resolve(_stream: &TokenStream) -> Result<(), StageFailure> {
-    Err(StageFailure::new(
-        StageId::RefResolve,
-        0,
-        "not-yet-wired",
-        "stage6_ref_resolve body lands in A4c",
-    ))
+/// End-of-pipeline typed AST. One of `NomFile` or `NomtuFile`
+/// depending on the first block's kind — `concept` blocks flow into
+/// `NomFile`; `function` / `module` / `composition` / `data` / `screen` /
+/// `event` / `media` blocks flow into `NomtuFile`.
+#[derive(Debug, Clone)]
+pub enum PipelineOutput {
+    Nom(NomFile),
+    Nomtu(NomtuFile),
+}
+
+/// S6 — Assemble the final typed AST from the staged outputs.
+///
+/// This first-landing body is SKELETAL: it populates every field the
+/// stages have observed (intent / contracts / effects) but leaves
+/// ref-carrying fields (`index` on concepts, `composes` on
+/// compositions) empty. Later cycles wire the real ref-resolution
+/// path that walks each block's remaining ref_spans into `EntityRef`
+/// values.
+///
+/// For callers that need the full AST today, `parse_nom` / `parse_nomtu`
+/// remain the production path. S6 is a pipeline output demonstrator
+/// + a target shape for the upcoming full migration.
+///
+/// Dispatch: if ANY block's kind is `concept`, the output is a
+/// `NomFile` containing those concepts only (mixed sources are an
+/// authoring anti-pattern per doc 08). Otherwise the output is a
+/// `NomtuFile` with `function` blocks → `NomtuItem::Entity`,
+/// `composition`-style blocks not yet disambiguated from modules →
+/// `NomtuItem::Composition` only when the kind is exactly `module`
+/// (matches the current parser's heuristic). Bare `screen` / `data` /
+/// `event` / `media` kinds become Entity decls with empty signature
+/// — sufficient for the skeletal pass.
+pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, StageFailure> {
+    let has_concept = effected.blocks.iter().any(|b| b.kind == "concept");
+    let has_non_concept = effected.blocks.iter().any(|b| b.kind != "concept");
+    if has_concept && has_non_concept {
+        let first = effected
+            .blocks
+            .iter()
+            .find(|b| b.kind != "concept")
+            .expect("has_non_concept");
+        return Err(StageFailure::new(
+            StageId::RefResolve,
+            first.start_byte,
+            "mixed-concept-and-entity",
+            format!(
+                "block `{}` (kind `{}`) mixed with a concept block — pick one per file per doc 08",
+                first.name, first.kind
+            ),
+        ));
+    }
+
+    if has_concept {
+        let concepts = effected
+            .blocks
+            .iter()
+            .map(|b| ConceptDecl {
+                name: b.name.clone(),
+                intent: b.intent.clone(),
+                index: Vec::new(), // ref-resolution deferred
+                exposes: Vec::new(),
+                acceptance: b
+                    .contracts
+                    .iter()
+                    .map(|c| match c {
+                        ContractClause::Requires(p) => format!("requires {p}"),
+                        ContractClause::Ensures(p) => format!("ensures {p}"),
+                    })
+                    .collect(),
+                objectives: Vec::new(),
+            })
+            .collect();
+        Ok(PipelineOutput::Nom(NomFile { concepts }))
+    } else {
+        let items = effected
+            .blocks
+            .iter()
+            .map(|b| {
+                if b.kind == "module" {
+                    NomtuItem::Composition(CompositionDecl {
+                        word: b.name.clone(),
+                        composes: Vec::new(), // ref-resolution deferred
+                        glue: None,
+                        contracts: b.contracts.clone(),
+                        effects: b.effects.clone(),
+                    })
+                } else {
+                    NomtuItem::Entity(EntityDecl {
+                        kind: b.kind.clone(),
+                        word: b.name.clone(),
+                        signature: String::new(), // signature-shape extract deferred
+                        contracts: b.contracts.clone(),
+                        effects: b.effects.clone(),
+                    })
+                }
+            })
+            .collect();
+        Ok(PipelineOutput::Nomtu(NomtuFile { items }))
+    }
+}
+
+/// Convenience: drive the full pipeline end-to-end from source text.
+/// Returns `PipelineOutput` or the first stage's structured failure.
+///
+/// This is the on-ramp editors / diagnostics use. The production
+/// parser path (`parse_nom` / `parse_nomtu`) is unchanged.
+pub fn run_pipeline(src: &str) -> Result<PipelineOutput, StageFailure> {
+    let s1 = stage1_tokenize(src)?;
+    let s2 = stage2_kind_classify(&s1)?;
+    let s3 = stage3_shape_extract(&s2)?;
+    let s4 = stage4_contract_bind(&s3)?;
+    let s5 = stage5_effect_bind(&s4)?;
+    stage6_ref_resolve(&s5)
 }
 
 #[cfg(test)]
@@ -866,19 +974,7 @@ mod tests {
         assert_eq!(f.position, 42);
     }
 
-    /// a4b05: A4b stub S6 returns structured not-yet-wired failure
-    /// carrying the correct StageId. (S2-S5 now all wired through
-    /// A4c step1-step4; S6 lands in A4c step5.)
-    #[test]
-    fn a4b05_s6_stub_returns_not_yet_wired() {
-        let src = r#"the function f is given x, returns y.
-  favor correctness."#;
-        let stream = stage1_tokenize(src).expect("S1");
-        let err = stage6_ref_resolve(&stream).expect_err("stub must return Err");
-        assert_eq!(err.stage, StageId::RefResolve);
-        assert_eq!(err.reason, "not-yet-wired");
-        assert!(err.diag_id().starts_with("NOMX-S6"));
-    }
+    // S2-S6 all wired through A4c steps 1-5. a4b05 stub test dropped.
 
     // ── A4c-step1: S2 kind_classify body ──────────────────────────────────
 
@@ -1128,6 +1224,78 @@ the function f is given x, returns y.
         let err = stage5_effect_bind(&contracted).expect_err("S5 must reject");
         assert_eq!(err.stage, StageId::EffectBind);
         assert_eq!(err.reason, "unterminated-effect");
+    }
+
+    // ── A4c-step5: S6 ref_resolve + run_pipeline ──────────────────────────
+
+    /// a4c17: end-to-end pipeline on a `.nom` concept source yields
+    /// PipelineOutput::Nom with the right concept name + intent +
+    /// acceptance (requires/ensures rendered).
+    #[test]
+    fn a4c17_pipeline_end_to_end_concept() {
+        let src = r#"the concept pipeline_demo is
+  intended to exercise the full annotator pipeline.
+  requires the input is valid.
+  ensures the output is usable.
+  favor correctness."#;
+        let out = run_pipeline(src).expect("pipeline must succeed");
+        match out {
+            PipelineOutput::Nom(f) => {
+                assert_eq!(f.concepts.len(), 1);
+                let c = &f.concepts[0];
+                assert_eq!(c.name, "pipeline_demo");
+                assert!(c.intent.contains("exercise"));
+                assert_eq!(c.acceptance.len(), 2);
+                assert!(c.acceptance.iter().any(|a| a.starts_with("requires")));
+                assert!(c.acceptance.iter().any(|a| a.starts_with("ensures")));
+                assert!(c.index.is_empty(), "index is deferred in skeletal S6");
+            }
+            PipelineOutput::Nomtu(_) => panic!("expected Nom output"),
+        }
+    }
+
+    /// a4c18: end-to-end pipeline on a `.nomtu` entity source yields
+    /// PipelineOutput::Nomtu with an Entity carrying contracts +
+    /// effects.
+    #[test]
+    fn a4c18_pipeline_end_to_end_entity() {
+        let src = r#"the function write_cache is
+  intended to write an entry into the shared cache.
+  requires the key is ascii.
+  benefit cache_warmup, fast_path."#;
+        let out = run_pipeline(src).expect("pipeline must succeed");
+        match out {
+            PipelineOutput::Nomtu(f) => {
+                assert_eq!(f.items.len(), 1);
+                match &f.items[0] {
+                    NomtuItem::Entity(e) => {
+                        assert_eq!(e.kind, "function");
+                        assert_eq!(e.word, "write_cache");
+                        assert_eq!(e.contracts.len(), 1);
+                        assert_eq!(e.effects.len(), 1);
+                        assert_eq!(e.effects[0].valence, EffectValence::Benefit);
+                    }
+                    _ => panic!("expected Entity, got Composition"),
+                }
+            }
+            PipelineOutput::Nom(_) => panic!("expected Nomtu output"),
+        }
+    }
+
+    /// a4c19: mixing a concept with a non-concept block in one file
+    /// rejects with NOMX-S6-mixed-concept-and-entity.
+    #[test]
+    fn a4c19_mixed_kinds_in_one_file_rejected() {
+        let src = r#"the concept c_part is
+  intended to be a concept.
+  favor correctness.
+
+the function f_part is
+  intended to be an entity.
+  favor correctness."#;
+        let err = run_pipeline(src).expect_err("pipeline must reject");
+        assert_eq!(err.stage, StageId::RefResolve);
+        assert_eq!(err.reason, "mixed-concept-and-entity");
     }
 
     /// a4c12: two concepts each keep their own contract scope — no
