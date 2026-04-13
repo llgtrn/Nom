@@ -19,9 +19,9 @@ pub mod agent;
 use lsp_server::{Connection, ExtractError, IoThreads, Message, Request, RequestId, Response};
 use lsp_types::{
     CompletionItem, CompletionItemKind, CompletionOptions, CompletionResponse,
-    HoverContents, HoverProviderCapability, InitializeParams, MarkupContent, MarkupKind,
-    ServerCapabilities,
-    request::{Completion, HoverRequest, Request as LspRequest},
+    ExecuteCommandOptions, ExecuteCommandParams, HoverContents, HoverProviderCapability,
+    InitializeParams, MarkupContent, MarkupKind, ServerCapabilities,
+    request::{Completion, ExecuteCommand, HoverRequest, Request as LspRequest},
 };
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -30,6 +30,12 @@ use thiserror::Error;
 /// which Nom compiler shipped the LSP.
 pub const SERVER_NAME: &str = "nom-lsp";
 pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
+
+/// LSP command id for the "why this Nom?" drill-through. Clients invoke
+/// it with `workspace/executeCommand { command: "nom.whyThisNom",
+/// arguments: [prose: string, dict_path: string] }`; server returns
+/// the `MarkupContent` from `agent::render_agent_transcript`.
+pub const CMD_WHY_THIS_NOM: &str = "nom.whyThisNom";
 
 #[derive(Debug, Error)]
 pub enum LspError {
@@ -50,6 +56,10 @@ pub fn server_capabilities() -> ServerCapabilities {
         completion_provider: Some(CompletionOptions {
             resolve_provider: Some(false),
             trigger_characters: None,
+            ..Default::default()
+        }),
+        execute_command_provider: Some(ExecuteCommandOptions {
+            commands: vec![CMD_WHY_THIS_NOM.to_string()],
             ..Default::default()
         }),
         ..Default::default()
@@ -122,6 +132,10 @@ pub fn dispatch_request(req: Request) -> Response {
             Ok((id, params)) => handle_completion(id, params),
             Err(err) => method_mismatch(id, err),
         },
+        ExecuteCommand::METHOD => match cast::<ExecuteCommand>(req) {
+            Ok((id, params)) => handle_execute_command(id, params),
+            Err(err) => method_mismatch(id, err),
+        },
         _ => Response {
             id,
             result: None,
@@ -151,6 +165,80 @@ fn method_mismatch(id: RequestId, err: ExtractError<Request>) -> Response {
             message: format!("extract failed: {err:?}"),
             data: None,
         }),
+    }
+}
+
+/// Slice-6b: `workspace/executeCommand` handler. Routes on
+/// `params.command` and returns a JSON result. Currently supports only
+/// `nom.whyThisNom` — extensible via additional match arms as future
+/// slices add commands (e.g. `nom.toggleLocalePack`, `nom.dreamTier`).
+///
+/// `nom.whyThisNom` contract: arguments = [prose: string, dict_path:
+/// string]. Returns the `MarkupContent` from
+/// `agent::render_agent_transcript` serialized as JSON; editors render
+/// it directly. Errors (missing args, malformed args, dict-open failure,
+/// agent-loop error) produce LSP `InvalidParams` / `InternalError`
+/// responses with structured messages so the client can surface them.
+fn handle_execute_command(id: RequestId, params: ExecuteCommandParams) -> Response {
+    if params.command != CMD_WHY_THIS_NOM {
+        return Response {
+            id,
+            result: None,
+            error: Some(lsp_server::ResponseError {
+                code: lsp_server::ErrorCode::MethodNotFound as i32,
+                message: format!(
+                    "nom-lsp: command {:?} not handled; supported: [{}]",
+                    params.command, CMD_WHY_THIS_NOM
+                ),
+                data: None,
+            }),
+        };
+    }
+    // Args: [prose, dict_path] — both required strings.
+    let prose = match params.arguments.first().and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InvalidParams as i32,
+                    message: "nom.whyThisNom: missing argument[0] = prose (string)".into(),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let dict_path = match params.arguments.get(1).and_then(|v| v.as_str()) {
+        Some(s) => std::path::PathBuf::from(s),
+        None => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InvalidParams as i32,
+                    message: "nom.whyThisNom: missing argument[1] = dict_path (string)".into(),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let budget = nom_intent::react::ReActBudget::default();
+    match agent::render_agent_transcript(&prose, &dict_path, &budget) {
+        Ok(markup) => Response {
+            id,
+            result: Some(serde_json::to_value(markup).expect("markup serializes")),
+            error: None,
+        },
+        Err(e) => Response {
+            id,
+            result: None,
+            error: Some(lsp_server::ResponseError {
+                code: lsp_server::ErrorCode::InternalError as i32,
+                message: format!("nom.whyThisNom: {e}"),
+                data: None,
+            }),
+        },
     }
 }
 
@@ -224,13 +312,19 @@ mod tests {
     use super::*;
 
     #[test]
-    fn server_capabilities_exposes_hover_and_completion() {
+    fn server_capabilities_exposes_hover_completion_and_execute_command() {
         let caps = server_capabilities();
         assert!(matches!(
             caps.hover_provider,
             Some(HoverProviderCapability::Simple(true))
         ));
         assert!(caps.completion_provider.is_some(), "completion_provider must be on");
+        let ec = caps.execute_command_provider.expect("execute_command_provider must be on");
+        assert!(
+            ec.commands.iter().any(|c| c == CMD_WHY_THIS_NOM),
+            "nom.whyThisNom must be advertised; got {:?}",
+            ec.commands
+        );
         assert!(caps.definition_provider.is_none());
     }
 
@@ -291,6 +385,60 @@ mod tests {
             _ => panic!("expected markup hover"),
         };
         assert!(body.contains(SERVER_NAME), "hover body must name server: {body}");
+    }
+
+    #[test]
+    fn dispatch_execute_command_unknown_command_returns_method_not_found() {
+        let params = lsp_types::ExecuteCommandParams {
+            command: "nom.unknownCommand".into(),
+            arguments: vec![],
+            work_done_progress_params: Default::default(),
+        };
+        let req = Request::new(
+            RequestId::from(10),
+            ExecuteCommand::METHOD.to_string(),
+            params,
+        );
+        let resp = dispatch_request(req);
+        let err = resp.error.expect("unknown command must error");
+        assert_eq!(err.code, lsp_server::ErrorCode::MethodNotFound as i32);
+        assert!(err.message.contains("nom.unknownCommand"));
+    }
+
+    #[test]
+    fn dispatch_execute_command_why_missing_prose_arg_returns_invalid_params() {
+        let params = lsp_types::ExecuteCommandParams {
+            command: CMD_WHY_THIS_NOM.into(),
+            arguments: vec![], // missing prose + dict_path
+            work_done_progress_params: Default::default(),
+        };
+        let req = Request::new(
+            RequestId::from(11),
+            ExecuteCommand::METHOD.to_string(),
+            params,
+        );
+        let resp = dispatch_request(req);
+        let err = resp.error.expect("missing args must error");
+        assert_eq!(err.code, lsp_server::ErrorCode::InvalidParams as i32);
+        assert!(err.message.contains("argument[0]"));
+    }
+
+    #[test]
+    fn dispatch_execute_command_why_missing_dict_arg_returns_invalid_params() {
+        let params = lsp_types::ExecuteCommandParams {
+            command: CMD_WHY_THIS_NOM.into(),
+            arguments: vec![serde_json::json!("some prose")], // only prose, no dict_path
+            work_done_progress_params: Default::default(),
+        };
+        let req = Request::new(
+            RequestId::from(12),
+            ExecuteCommand::METHOD.to_string(),
+            params,
+        );
+        let resp = dispatch_request(req);
+        let err = resp.error.expect("missing dict_path must error");
+        assert_eq!(err.code, lsp_server::ErrorCode::InvalidParams as i32);
+        assert!(err.message.contains("argument[1]"));
     }
 
     #[test]
