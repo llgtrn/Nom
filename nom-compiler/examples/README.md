@@ -69,24 +69,24 @@ diagnostic span coverage on ten common authoring mistakes).
 
 ## Classic Nom (`.nom`)
 
-Pre-dates the `.nomx` track; still the production surface.
+The remaining classic-track artefact is `run_lexer.nom` — the self-host
+lexer driver. The M10a parse gate + M10b bc-reproducibility gate
+(`crates/nom-cli/tests/self_host_parse_smoke.rs` + `run_lexer_bc_reproducibility_smoke.rs`)
+cover it end-to-end. Compiled artifacts `run_lexer.bc` + `run_lexer.ll`
+sit alongside the source.
 
-| File | What it shows |
-|------|---------------|
-| `hello.nom` | classic `fn main() { }` entry |
-| `hello_llvm.nom` | LLVM-target variant |
-| `imperative.nom` / `natural.nom` / `natural_pure.nom` | different styles |
-| `auth.nom` / `webapi.nom` | realistic multi-decl programs |
-| `run_lexer.nom` | self-host lexer driver, compiles to `.bc` + `.ll` |
-| `best_practice.nom` | the Phase-4 demo |
-| `custom_word.nom` | first-class nomtu reference |
-| `test_auth.nom` | test-case example |
+Earlier scratchpad `.nom` files (`auth.nom`, `hello.nom`, `hello_llvm.nom`,
+`imperative.nom`, `natural.nom`, `natural_pure.nom`, `best_practice.nom`,
+`custom_word.nom`, `test_auth.nom`, `webapi.nom`) have been removed —
+they had zero graph references and predated the `.nomx v2 (keyed)`
+syntax + three-tier concept architecture that concept_demo/ and
+agent_demo/ now demonstrate.
 
 Compile + run:
 
 ```sh
-nom build path/to/file.nom
-./path/to/file
+nom build examples/run_lexer.nom
+./examples/run_lexer
 ```
 
 ## Full authoring loop

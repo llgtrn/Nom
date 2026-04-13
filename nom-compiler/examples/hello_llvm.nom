@@ -1,6 +1,0 @@
-nom hello
-  fn main() -> integer {
-    let x: integer = 42
-    let y: integer = 8
-    return x + y
-  }

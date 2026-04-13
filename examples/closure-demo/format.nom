@@ -1,4 +1,0 @@
-nom format_number
-  fn format_number(n: integer) -> integer {
-    return n * 2
-  }

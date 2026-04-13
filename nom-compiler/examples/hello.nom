@@ -1,4 +1,0 @@
-# The simplest Nom program: print hello world
-
-flow hello
-flow "hello world"->print

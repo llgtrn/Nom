@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "gitnexus": {
+      "type": "stdio",
+      "command": "node",
+      "args": ["C:\\Users\\trngh\\Documents\\GitHub\\Nom\\scripts\\gitnexus-mcp.js"]
+    }
+  }
+}

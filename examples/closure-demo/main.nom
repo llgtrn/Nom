@@ -1,5 +1,0 @@
-nom main
-  use greet
-  fn main() -> integer {
-    return greet(5)
-  }

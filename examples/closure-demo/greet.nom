@@ -1,5 +1,0 @@
-nom greet
-  use format_number
-  fn greet(n: integer) -> integer {
-    return format_number(n) + 10
-  }

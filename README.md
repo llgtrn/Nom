@@ -21,14 +21,13 @@ Author: LLg Trn
 cd nom-compiler
 cargo build --release
 
-# Compile a .nom file to a native binary
-nom build examples/auth.nom
-
-# Run the resulting binary
-./examples/.nom-out/auth/target/release/auth
+# Exercise the shipped concept-graph pipeline end-to-end on the canonical demo.
+./target/release/nom store sync examples/concept_demo
+./target/release/nom build status examples/concept_demo
+./target/release/nom build manifest examples/concept_demo --pretty
 ```
 
-Milestone: `auth.nom` (9 lines) compiles to an 834KB native Windows binary.
+Milestone: `examples/concept_demo/` parses → DB1/DB2 sync → closure walk → resolver → manifest JSON handoff for the Phase-5 planner.
 
 ## How It Works (shipped pipeline, `.nomx v2` keyed form per doc 07)
 
