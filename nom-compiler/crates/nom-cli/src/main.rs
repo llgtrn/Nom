@@ -2926,17 +2926,25 @@ fn cmd_precompile(
                 Ok(bytes) => {
                     let hash_hex = format!("{:x}", Sha256::digest(&bytes));
                     let bc_size = bytes.len() as i64;
-                    let _ = conn.execute(
+                    match conn.execute(
                         "UPDATE nomtu SET body_bytes = ?1, bc_hash = ?2, bc_size = ?3 \
                          WHERE id = ?4",
                         rusqlite::params![bytes, hash_hex, bc_size, row_id],
-                    );
-                    backfilled += 1;
+                    ) {
+                        Ok(_) => backfilled += 1,
+                        Err(e) => eprintln!(
+                            "  backfill warn: UPDATE failed for id={row_id}: {e}"
+                        ),
+                    }
                 }
                 Err(e) => {
                     eprintln!(
                         "  backfill warn: skipping id={row_id} ({}): {e}",
                         artifact_path
+                    );
+                    let _ = conn.execute(
+                        "UPDATE nomtu SET artifact_path = NULL WHERE id = ?1",
+                        rusqlite::params![row_id],
                     );
                 }
             }
@@ -3129,19 +3137,14 @@ fn cmd_precompile(
                         );
                     }
                     Err(e) => {
-                        // File write succeeded but read failed — tag body_kind
-                        // without bytes so the row is at least marked.
+                        // File write succeeded but read-back failed.
+                        // Do NOT promote body_kind to 'bc' — that would
+                        // violate invariant 15 (body_kind='bc' ⇒ body_bytes
+                        // IS NOT NULL). Leave the row unchanged; the next
+                        // precompile run will re-attempt.
                         eprintln!(
                             "  warn: could not read {}: {e}",
                             bc_path.display()
-                        );
-                        let _ = conn.execute(
-                            "UPDATE nomtu SET artifact_path = ?1, body_kind = ?2 WHERE id = ?3",
-                            rusqlite::params![
-                                bc_path.to_string_lossy().as_ref(),
-                                nom_types::body_kind::BC,
-                                id,
-                            ],
                         );
                     }
                 }
