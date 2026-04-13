@@ -51,15 +51,15 @@
 | 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 | 36 | Async-marker clause (`async def` / async functions) | **W19** grammar rule | ⏳ queued (doc 14 #13) |
-| 37 | Default parameter values (`callbacks = None`) | authoring-guide rule | 📘 doc-todo |
-| 38 | Iterator vs. materialized sequences (lazy by default) | authoring-guide rule | 📘 doc-todo |
+| 37 | Default parameter values (`callbacks = None`) | authoring-guide rule | ✅ doc 17 §I14 |
+| 38 | Iterator vs. materialized sequences (lazy by default) | authoring-guide rule | ✅ doc 17 §I15 |
 | 39 | Relational-algebra keywords (`project … from …`) | **W20** grammar rule | ⏳ queued (doc 14 #15) |
 | 40 | Selector-predicate clause on data instances | **W21** grammar rule | ⏳ queued (doc 14 #16) |
 | 41 | Typed dimension literals (`8px`, `4px`) | **W22** grammar rule | ⏳ queued (doc 14 #16) |
 | 42 | Color literal grammar (`#0366d6`) | **W23** grammar rule | ⏳ queued (doc 14 #16) |
 | 43 | `within the last N days` time-range idiom | authoring-corpus seed | 📘 doc-todo |
 | 44 | Nested nullability modifiers (`perhaps list of perhaps text`) | **W24** grammar rule | ⏳ queued (doc 14 #17) |
-| 45 | `identifier` as distinct data shape (GraphQL `ID!`) | authoring-corpus seed | 📘 doc-todo |
+| 45 | `identifier` as distinct data shape (GraphQL `ID!`) | authoring-corpus seed | ✅ doc 17 §I16 |
 | 46 | Build-time dependency graph (Make prereqs) | **W25** grammar rule | ⏳ queued (doc 14 #18) |
 | 47 | Multi-stage / stage-chain declarations (Dockerfile) | **W26** grammar rule | ⏳ queued (doc 14 #19) |
 | 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | 📘 doc-todo |
@@ -74,16 +74,16 @@
 | 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | 📘 doc-todo |
 | 58 | Typeclass-style constraints (`requires keys support ordering`) | **W34** grammar rule (blocks on borrow-model) | 🔒 blocked |
 
-Totals by destination (after doc 14 #25 Haskell pure-functional translation surfaced 1 more row):
+Totals by destination (after doc 17 I14-I16 closed 3 authoring-guide rows):
 
-- ⏳ Wedge queued: **27** (unchanged; W34 blocked alongside row #11)
+- ⏳ Wedge queued: **27** (unchanged)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **7**
-- ✅ Closed: **20**
+- 📘 Authoring-guide doc-todo: **4** (was 7; #37/#38/#45 closed by doc 17)
+- ✅ Closed: **23** (was 20)
 - 🧠 Design deferred (open): **0**
-- 🔒 Blocked: **2** (row #11 lifetime annotations + row #58 typeclass constraints)
+- 🔒 Blocked: **2**
 
-Backlog size: 58 rows. Closure rate 34% (20/58). **25 translations total**. Paradigm coverage now includes pure functional (Haskell typeclasses + fold + where). All major paradigm gaps closed.
+Backlog size: 58 rows. Closure rate 40% (23/58). 25 translations total; doc 17 authoring chapter grown to 16 idioms (I1-I16).
 
 ## Wedge master index (for cross-ref with doc 13)
 

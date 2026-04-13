@@ -413,9 +413,104 @@ the book_config for the helix_manual is
 
 ---
 
+## I14. Default parameter values
+
+**Resolves:** doc 16 row #37.
+
+Languages that support defaults (Python `def f(x=3)`, Kotlin `fun f(x: Int = 3)`, Ruby `def f(x = 3)`) let the caller omit arguments. Nom handles defaults **declaratively inside `intended to …` prose**, NOT as a type-system feature. Don't extend the signature grammar; extend the intent description:
+
+```nomx
+the function fetch_with_retry is
+  intended to fetch a url with exponential backoff,
+  using max_attempts of 3 if none is given.
+
+  uses the @Function matching "retry with backoff" with at-least 0.85 confidence.
+
+  requires url is well-formed.
+  ensures the response is either the fetched body or the last error.
+
+  favor correctness.
+```
+
+**Rules:**
+
+- Defaults live in the `intended to …` sentence via a phrase like `using X of <value> if none is given` or `defaulting X to <value>`.
+- Callers that omit the argument implicitly get the default. The compiler doesn't enforce defaults statically; it's a documentation + authoring convention.
+- Never add a `= 3` syntax to the parameter list. Keeps the signature grammar one shape.
+- For runtime validation (refuse unknown / require explicit value), use a `requires X is given` contract clause instead of a default.
+
+**Rationale:** defaults are authoring ergonomics, not type signatures. Putting them in prose keeps the grammar closed under the 7-kind set + contract clauses.
+
+---
+
+## I15. Iterator vs. materialized sequences — lazy by default
+
+**Resolves:** doc 16 row #38.
+
+Every `sequence` (Nom's generic list-like value) is **lazy by default**. Operations like `map`, `filter`, `flat_map`, and `where` compose into a chain that produces elements on demand. Materialization into a concrete list is explicit:
+
+```nomx
+the interesting_items is every item of input_items where item is active.
+# ^ lazy sequence — no allocation yet
+
+the interesting_list is collect the interesting_items into a vector.
+# ^ materialized vector
+
+the count is how many in interesting_items.
+# ^ materialization implicit (driven by the accessor)
+```
+
+**Rules:**
+
+- Chained sequence transformations stay lazy until a **terminal accessor** forces evaluation: `collect the X into a vector`, `how many in X`, `the first of X`, `the Nth of X`, `whether any of X is Y`.
+- `for each x in seq, …` iterates lazily; no full materialization.
+- Side-effecting iteration (e.g., `for each …, print`) runs the chain once, no storage.
+- When you explicitly want allocation, say so: `collect X into a vector` / `build X into a map`. Editors + linters catch unintentional re-traversals of a lazy sequence.
+
+**Anti-pattern:**
+
+```nomx
+# Bad — unclear whether this materializes and how many times:
+the items is input_items filtered by is_active mapped through to_summary.
+
+# Good — explicit about lazy vs. materialized:
+the summaries is every input_item where item is active, summarized by to_summary.
+the summary_list is collect the summaries into a vector.
+```
+
+---
+
+## I16. `identifier` as a distinct data shape
+
+**Resolves:** doc 16 row #45.
+
+GraphQL has `ID!`. TypeScript / Rust often use branded types (`type UserId = string & { __brand: 'user' }`). Nom treats **identifier** as a separate data shape in the authoring vocabulary — NOT a new kind in KINDS (that stays at 7), but a first-class shape label alongside `text` / `integer` / `timestamp` / `path`.
+
+```nomx
+the data User is
+  intended to represent a registered user.
+
+  exposes id as identifier.       # not `text` — a content-addressed ID
+  exposes email as text.
+  exposes created_at as timestamp.
+
+  favor correctness.
+```
+
+**Rules:**
+
+- `identifier` is a distinct type shape; `id as text` should flag in the strict validator.
+- Identifiers are **opaque** — downstream code doesn't assume structure (no length checks, no pattern-match). Corpus-registered helper functions like `@Function matching "generate new identifier"` / `@Function matching "compare identifiers"` provide the operations.
+- Different identifier families (UserId vs. SessionId) get different **feature-stack words**: `user_id_uuid_v7` vs. `session_id_short`. Resolver picks by kind + matching clause.
+- Never render identifiers via `text.concat` / `text.startsWith` / etc. Those are text operations; applying them to an identifier is a strict-mode warning.
+
+**Rationale:** identifier is the most common "looks like text but means something else" value in practice. Making it a distinct shape label catches confusions at the authoring layer without growing the closed kind set.
+
+---
+
 ## Closure status (doc 16 rollup)
 
-After this doc (I1-I13 landed):
+After this doc (I1-I16 landed):
 
 - Row #20 — ✅ I1 (perhaps/nothing)
 - Row #24 — ✅ I2 (exit codes)
@@ -431,6 +526,10 @@ After this doc (I1-I13 landed):
 - Row #27 — ✅ I12 (uses vs imperative for side-effects)
 - Row #33 — ✅ I13 (config-as-data vs config-as-code split)
 
-**Authoring-guide backlog:** 0 rows remain. All 13 authoring-guide destinations closed by this doc.
+- Row #37 — ✅ I14 (default parameter values)
+- Row #38 — ✅ I15 (iterator vs. materialized sequences)
+- Row #45 — ✅ I16 (identifier as distinct data shape)
+
+**Authoring-guide backlog (post-I16):** 4 rows remain (#53 method→receiver rule, #57 work_group idiom, and 2 others queued from earlier translations).
 
 Future cycles focus on the 12 wedge-queued rows (W4-A3/A4/A5/A6, W5-W18), the 4 remaining smoke-test rows, and the 2 open design questions (#4 Path/file subkinds, #15 closures).
