@@ -187,6 +187,130 @@ fn symbol_or_kind_value(intent: &NomIntent) -> Option<String> {
     }
 }
 
+// ── McpAdapter: stdio JSON-RPC line-delimited adapter ────────────────
+
+/// Adapter that delegates `next_step` to an external MCP-style process
+/// over line-delimited JSON-RPC 2.0. Generic over `Read + Write` so
+/// tests inject in-memory pipes and production wires stdin/stdout of a
+/// spawned child.
+///
+/// Protocol (simplified MCP 2024-11-05 shape):
+///
+/// Request  `{"jsonrpc":"2.0","id":N,"method":"react/next_step","params":{prose,transcript}}\n`
+/// Response `{"jsonrpc":"2.0","id":N,"result":<ReActStep-json>}\n`
+/// Error    `{"jsonrpc":"2.0","id":N,"error":{"code":C,"message":"..."}}\n`
+///
+/// Each `next_step` call increments `id`; responses must match the
+/// request id. Mis-matched ids raise `IntentError::StubMissing` for now
+/// (slice-5b-mcp-hardening will add correlation retry / timeout).
+pub struct McpAdapter<R, W> {
+    reader: std::cell::RefCell<std::io::BufReader<R>>,
+    writer: std::cell::RefCell<W>,
+    next_id: std::cell::Cell<u64>,
+}
+
+impl<R: std::io::Read, W: std::io::Write> McpAdapter<R, W> {
+    pub fn new(reader: R, writer: W) -> Self {
+        Self {
+            reader: std::cell::RefCell::new(std::io::BufReader::new(reader)),
+            writer: std::cell::RefCell::new(writer),
+            next_id: std::cell::Cell::new(1),
+        }
+    }
+}
+
+impl<R: std::io::Read, W: std::io::Write> ReActAdapter for McpAdapter<R, W> {
+    fn next_step(
+        &self,
+        prose: &str,
+        transcript: &[ReActStep],
+    ) -> Result<ReActStep, IntentError> {
+        use std::io::{BufRead, Write};
+
+        let id = self.next_id.get();
+        self.next_id.set(id + 1);
+
+        // Serialize request.
+        let params = serde_json::json!({
+            "prose": prose,
+            "transcript": transcript,
+        });
+        let req = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": "react/next_step",
+            "params": params,
+        });
+        let req_line = serde_json::to_string(&req).map_err(|e| {
+            IntentError::RetrievalFailed(format!("McpAdapter: serialize request: {e}"))
+        })?;
+
+        {
+            let mut writer = self.writer.borrow_mut();
+            writer.write_all(req_line.as_bytes()).map_err(|e| {
+                IntentError::RetrievalFailed(format!("McpAdapter: write request: {e}"))
+            })?;
+            writer.write_all(b"\n").map_err(|e| {
+                IntentError::RetrievalFailed(format!("McpAdapter: write newline: {e}"))
+            })?;
+            writer.flush().map_err(|e| {
+                IntentError::RetrievalFailed(format!("McpAdapter: flush: {e}"))
+            })?;
+        }
+
+        // Read response.
+        let mut line = String::new();
+        {
+            let mut reader = self.reader.borrow_mut();
+            let n = reader.read_line(&mut line).map_err(|e| {
+                IntentError::RetrievalFailed(format!("McpAdapter: read response: {e}"))
+            })?;
+            if n == 0 {
+                return Err(IntentError::RetrievalFailed(
+                    "McpAdapter: EOF before response".into(),
+                ));
+            }
+        }
+
+        // Parse response envelope.
+        let resp: serde_json::Value = serde_json::from_str(line.trim()).map_err(|e| {
+            IntentError::RetrievalFailed(format!(
+                "McpAdapter: parse response json: {e}; line={line:?}"
+            ))
+        })?;
+
+        // Verify id matches.
+        let resp_id = resp.get("id").and_then(|v| v.as_u64()).unwrap_or(0);
+        if resp_id != id {
+            return Err(IntentError::RetrievalFailed(format!(
+                "McpAdapter: response id {resp_id} != request id {id}"
+            )));
+        }
+
+        // Handle error branch.
+        if let Some(err) = resp.get("error") {
+            let msg = err
+                .get("message")
+                .and_then(|v| v.as_str())
+                .unwrap_or("<no message>");
+            return Err(IntentError::RetrievalFailed(format!(
+                "McpAdapter: remote error: {msg}"
+            )));
+        }
+
+        // Parse result as ReActStep.
+        let result_value = resp.get("result").ok_or_else(|| {
+            IntentError::RetrievalFailed(
+                "McpAdapter: response missing both `result` and `error`".into(),
+            )
+        })?;
+        let step: ReActStep = serde_json::from_value(result_value.clone()).map_err(|e| {
+            IntentError::RetrievalFailed(format!("McpAdapter: parse ReActStep: {e}"))
+        })?;
+        Ok(step)
+    }
+}
+
 fn last_proposal(transcript: &[ReActStep]) -> Option<NomIntent> {
     transcript.iter().rev().find_map(|s| match s {
         ReActStep::Observation(Observation::Proposal(intent))
@@ -372,5 +496,90 @@ mod tests {
         assert!(out.ends_with('…'));
         assert!(out.chars().count() <= 11);
         assert_eq!(summarize_prose("short", 40), "short");
+    }
+
+    // ── McpAdapter tests ────────────────────────────────────────────
+
+    fn mcp_with_response(response_json: &str) -> McpAdapter<std::io::Cursor<Vec<u8>>, Vec<u8>> {
+        let reader = std::io::Cursor::new(format!("{response_json}\n").into_bytes());
+        let writer = Vec::new();
+        McpAdapter::new(reader, writer)
+    }
+
+    #[test]
+    fn mcp_adapter_parses_answer_response() {
+        let resp = r#"{"jsonrpc":"2.0","id":1,"result":{"Answer":{"Kind":"app"}}}"#;
+        let adapter = mcp_with_response(resp);
+        let step = adapter.next_step("any prose", &[]).unwrap();
+        assert!(matches!(step, ReActStep::Answer(NomIntent::Kind(_))));
+    }
+
+    #[test]
+    fn mcp_adapter_parses_reject_response() {
+        let resp = r#"{"jsonrpc":"2.0","id":1,"result":{"Reject":"Unparseable"}}"#;
+        let adapter = mcp_with_response(resp);
+        let step = adapter.next_step("bad", &[]).unwrap();
+        assert!(matches!(step, ReActStep::Reject(Reason::Unparseable)));
+    }
+
+    #[test]
+    fn mcp_adapter_reports_remote_error() {
+        let resp = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"LLM unavailable"}}"#;
+        let adapter = mcp_with_response(resp);
+        let err = adapter.next_step("x", &[]).expect_err("must fail");
+        match err {
+            IntentError::RetrievalFailed(msg) => {
+                assert!(
+                    msg.contains("LLM unavailable"),
+                    "error should contain remote message, got {msg}"
+                );
+            }
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mcp_adapter_rejects_id_mismatch() {
+        // Response id=99, adapter expects id=1 on first call.
+        let resp = r#"{"jsonrpc":"2.0","id":99,"result":{"Answer":{"Kind":"x"}}}"#;
+        let adapter = mcp_with_response(resp);
+        let err = adapter.next_step("prose", &[]).expect_err("must fail");
+        match err {
+            IntentError::RetrievalFailed(msg) => {
+                assert!(msg.contains("response id 99"));
+                assert!(msg.contains("request id 1"));
+            }
+            other => panic!("wrong variant: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn mcp_adapter_writes_proper_jsonrpc_request() {
+        let resp = r#"{"jsonrpc":"2.0","id":1,"result":{"Reject":"Unparseable"}}"#;
+        let reader = std::io::Cursor::new(format!("{resp}\n").into_bytes());
+        let mut captured_writer = Vec::new();
+        {
+            let adapter = McpAdapter::new(reader, &mut captured_writer);
+            let _ = adapter.next_step("hello", &[]);
+        }
+        let sent = String::from_utf8(captured_writer).unwrap();
+        let parsed: serde_json::Value = serde_json::from_str(sent.trim()).unwrap();
+        assert_eq!(parsed["jsonrpc"], "2.0");
+        assert_eq!(parsed["id"], 1);
+        assert_eq!(parsed["method"], "react/next_step");
+        assert_eq!(parsed["params"]["prose"], "hello");
+        assert!(parsed["params"]["transcript"].is_array());
+    }
+
+    #[test]
+    fn mcp_adapter_errors_on_eof() {
+        let reader = std::io::Cursor::new(Vec::<u8>::new()); // immediate EOF
+        let writer = Vec::new();
+        let adapter = McpAdapter::new(reader, writer);
+        let err = adapter.next_step("x", &[]).expect_err("must fail");
+        match err {
+            IntentError::RetrievalFailed(msg) => assert!(msg.contains("EOF")),
+            other => panic!("wrong variant: {other:?}"),
+        }
     }
 }
