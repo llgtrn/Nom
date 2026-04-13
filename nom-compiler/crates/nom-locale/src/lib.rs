@@ -276,7 +276,7 @@ pub fn builtin_packs() -> Vec<LocalePack> {
     ]
 }
 
-// ── Confusable API (M3a stub) ─────────────────────────────────────────────────
+// ── Confusable API (M3b-minimal) ─────────────────────────────────────────────
 
 /// Result of a confusable check between two strings.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -287,27 +287,111 @@ pub enum ConfusableResult {
     /// (Safe to use together without ambiguity.)
     DifferentSafe,
     /// At least one confusable character pair was detected.
-    /// Populated in M3b when UTS #39 confusables.txt data lands.
     Confusable {
         /// `(char in a, visually similar char in b)` pairs.
         pairs: Vec<(char, char)>,
     },
-    /// M3a stub: UTS #39 data not yet loaded; check deferred to M3b.
+    /// Reserved for M3b-full: UTS #39 data not yet loaded; check deferred.
+    /// `is_confusable` never returns this variant after M3b-minimal.
     Deferred,
+}
+
+/// Small hand-curated baked table of the most common confusable character
+/// pairs for identifier-spoofing attacks. Each entry is (a, b) meaning
+/// a and b are visually confusable in at least one common font.
+///
+/// This is a **minimal starter set** (≤ 30 entries) — M3b-full will swap
+/// this for the full UTS #39 confusables.txt (~15K entries). The contract
+/// stays the same: `(a, b)` implies is_confusable(s1, s2) fires whenever
+/// s1 contains a and s2 contains b at the same position, or vice versa.
+///
+/// Entries are symmetric — we add (a, b) and the lookup does both
+/// directions. Do not double-list.
+///
+/// Sources: UTS #39 §2.1 "homoglyph attacks", common phishing cases.
+const COMMON_CONFUSABLES: &[(char, char)] = &[
+    // Cyrillic → Latin (most common attack vector).
+    ('а', 'a'),  // U+0430 CYRILLIC SMALL LETTER A vs U+0061
+    ('е', 'e'),  // U+0435 vs U+0065
+    ('о', 'o'),  // U+043E vs U+006F
+    ('р', 'p'),  // U+0440 vs U+0070
+    ('с', 'c'),  // U+0441 vs U+0063
+    ('у', 'y'),  // U+0443 vs U+0079
+    ('х', 'x'),  // U+0445 vs U+0078
+    ('А', 'A'),  // U+0410 vs U+0041
+    ('В', 'B'),  // U+0412 vs U+0042
+    ('Е', 'E'),  // U+0415 vs U+0045
+    ('К', 'K'),  // U+041A vs U+004B
+    ('М', 'M'),  // U+041C vs U+004D
+    ('Н', 'H'),  // U+041D vs U+0048
+    ('О', 'O'),  // U+041E vs U+004F
+    ('Р', 'P'),  // U+0420 vs U+0050
+    ('С', 'C'),  // U+0421 vs U+0043
+    ('Т', 'T'),  // U+0422 vs U+0054
+    ('Х', 'X'),  // U+0425 vs U+0058
+    // Greek → Latin
+    ('α', 'a'),  // U+03B1 vs U+0061
+    ('ο', 'o'),  // U+03BF vs U+006F
+    ('ν', 'v'),  // U+03BD vs U+0076
+    ('Α', 'A'),  // U+0391 vs U+0041
+    ('Β', 'B'),  // U+0392 vs U+0042
+    ('Ε', 'E'),  // U+0395 vs U+0045
+    ('Ζ', 'Z'),  // U+0396 vs U+005A
+    ('Ι', 'I'),  // U+0399 vs U+0049
+    ('Κ', 'K'),  // U+039A vs U+004B
+    ('Μ', 'M'),  // U+039C vs U+004D
+    ('Ν', 'N'),  // U+039D vs U+004E
+    ('Ο', 'O'),  // U+039F vs U+004F
+];
+
+/// Lookup a confusable pair in the baked table. Symmetric: returns true
+/// if (a, b) or (b, a) exists in COMMON_CONFUSABLES.
+fn is_confusable_pair(a: char, b: char) -> bool {
+    COMMON_CONFUSABLES
+        .iter()
+        .any(|&(x, y)| (x == a && y == b) || (x == b && y == a))
 }
 
 /// Check whether two strings contain visually confusable characters (UTS #39).
 ///
-/// **M3a stub**: always returns [`ConfusableResult::Equal`] for identical inputs
-/// and [`ConfusableResult::Deferred`] for all other inputs.  The full detector
-/// (loading `confusables.txt` from Unicode.org) ships in M3b.
+/// Only covers ≤ 30 common-attack pairs (Cyrillic→Latin, Greek→Latin);
+/// M3b-full will swap in the full UTS #39 confusables.txt (~15K entries).
+///
+/// Returns:
+/// - [`ConfusableResult::Equal`] if both inputs are NFC-identical.
+/// - [`ConfusableResult::Confusable`] if at least one char-position has a pair
+///   in the baked confusables table.
+/// - [`ConfusableResult::DifferentSafe`] if the strings differ (including
+///   different lengths) but no confusable pair was found.
+///
+/// Strings of unequal length are `DifferentSafe`: length mismatch is a
+/// structural difference, not a spoofing attack.
 pub fn is_confusable(a: &str, b: &str) -> ConfusableResult {
     let a_nfc = normalize_nfc(a);
     let b_nfc = normalize_nfc(b);
     if a_nfc == b_nfc {
-        ConfusableResult::Equal
+        return ConfusableResult::Equal;
+    }
+
+    let a_chars: Vec<char> = a_nfc.chars().collect();
+    let b_chars: Vec<char> = b_nfc.chars().collect();
+
+    // Strings of different lengths are structurally different, not confusable.
+    if a_chars.len() != b_chars.len() {
+        return ConfusableResult::DifferentSafe;
+    }
+
+    let mut pairs: Vec<(char, char)> = Vec::new();
+    for (&ca, &cb) in a_chars.iter().zip(b_chars.iter()) {
+        if ca != cb && is_confusable_pair(ca, cb) {
+            pairs.push((ca, cb));
+        }
+    }
+
+    if pairs.is_empty() {
+        ConfusableResult::DifferentSafe
     } else {
-        ConfusableResult::Deferred
+        ConfusableResult::Confusable { pairs }
     }
 }
 
@@ -676,11 +760,95 @@ mod tests {
     }
 
     #[test]
-    fn is_confusable_different_returns_deferred_m3a() {
-        // M3a stub always returns Deferred for non-equal inputs.
+    fn is_confusable_safely_different_returns_different_safe() {
+        // Strings that differ but share no confusable pairs → DifferentSafe.
         assert_eq!(
-            is_confusable("hello", "he1lo"),
-            ConfusableResult::Deferred
+            is_confusable("hello", "world"),
+            ConfusableResult::DifferentSafe
+        );
+    }
+
+    #[test]
+    fn is_confusable_cyrillic_cyr_a_vs_latin_a_fires() {
+        // "раypal" uses Cyrillic р (U+0440) and а (U+0430); "paypal" is pure Latin.
+        // Expect Confusable with exactly 2 pairs: (р, p) and (а, a).
+        let result = is_confusable("раypal", "paypal");
+        match result {
+            ConfusableResult::Confusable { pairs } => {
+                assert_eq!(pairs.len(), 2, "expected 2 confusable pairs, got: {:?}", pairs);
+                // Both (Cyr-р/p) and (Cyr-а/a) must appear (order may vary).
+                let has_cyr_r_p = pairs.iter().any(|&(ca, cb)| {
+                    (ca == '\u{0440}' && cb == 'p') || (ca == 'p' && cb == '\u{0440}')
+                });
+                let has_cyr_a_a = pairs.iter().any(|&(ca, cb)| {
+                    (ca == '\u{0430}' && cb == 'a') || (ca == 'a' && cb == '\u{0430}')
+                });
+                assert!(has_cyr_r_p, "missing Cyr-р/p pair in {:?}", pairs);
+                assert!(has_cyr_a_a, "missing Cyr-а/a pair in {:?}", pairs);
+            }
+            other => panic!("expected Confusable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn is_confusable_greek_alpha_vs_latin_a_fires() {
+        // "αpple" uses Greek alpha (U+03B1) in position 0; "apple" is pure Latin.
+        let result = is_confusable("αpple", "apple");
+        match result {
+            ConfusableResult::Confusable { pairs } => {
+                assert_eq!(pairs.len(), 1, "expected 1 confusable pair, got: {:?}", pairs);
+                let (ca, cb) = pairs[0];
+                assert!(
+                    (ca == 'α' && cb == 'a') || (ca == 'a' && cb == 'α'),
+                    "unexpected pair ({:?}, {:?})", ca, cb
+                );
+            }
+            other => panic!("expected Confusable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn is_confusable_different_lengths_safe() {
+        // Length mismatch is a structural difference, not a spoofing attack.
+        assert_eq!(
+            is_confusable("abc", "abcdef"),
+            ConfusableResult::DifferentSafe
+        );
+    }
+
+    #[test]
+    fn is_confusable_symmetric() {
+        // Both orderings must produce the same Confusable variant with the same
+        // pair content (the pair set must be identical regardless of argument order).
+        let fwd = is_confusable("аpple", "apple");
+        let rev = is_confusable("apple", "аpple");
+        match (fwd, rev) {
+            (ConfusableResult::Confusable { pairs: mut p1 }, ConfusableResult::Confusable { pairs: mut p2 }) => {
+                // Normalize each pair to (min, max) by char value for comparison.
+                let normalize = |p: &mut Vec<(char, char)>| {
+                    for pair in p.iter_mut() {
+                        if pair.0 > pair.1 { std::mem::swap(&mut pair.0, &mut pair.1); }
+                    }
+                    p.sort();
+                };
+                normalize(&mut p1);
+                normalize(&mut p2);
+                assert_eq!(p1, p2, "symmetric calls must yield the same pair set");
+            }
+            other => panic!("expected both to be Confusable, got {:?}", other),
+        }
+    }
+
+    #[test]
+    fn is_confusable_after_nfc_normalization() {
+        // U+1EBF "ế" as a single code point vs its NFD decomposition.
+        // After NFC both collapse to the same string → Equal.
+        let precomposed = "\u{1EBF}"; // ế as single code point (NFC)
+        let decomposed = "e\u{0302}\u{0301}"; // e + combining circumflex + combining acute (NFD)
+        assert_eq!(
+            is_confusable(precomposed, decomposed),
+            ConfusableResult::Equal,
+            "NFC-equivalent strings must return Equal"
         );
     }
 
