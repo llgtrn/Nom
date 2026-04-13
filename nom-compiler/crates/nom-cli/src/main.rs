@@ -992,6 +992,12 @@ enum AgentCmd {
         /// Max ReAct iterations (default 4 per spec).
         #[arg(long, default_value_t = 4)]
         max_iters: usize,
+        /// ReAct adapter: nom-cli (default; compiler-as-oracle,
+        /// deterministic state machine, offline) | stub (always-reject
+        /// stub from slice-5a; proves plumbing).
+        /// Future: mcp | openai | anthropic.
+        #[arg(long, default_value = "nom-cli")]
+        adapter: String,
         /// Emit transcript as JSON instead of human-readable text.
         #[arg(long)]
         json: bool,
@@ -1218,8 +1224,8 @@ fn main() {
             },
         },
         Commands::Agent { action } => match action {
-            AgentCmd::Classify { prose, dict, max_iters, json } => {
-                cmd_agent_classify(&prose, &dict, max_iters, json)
+            AgentCmd::Classify { prose, dict, max_iters, adapter, json } => {
+                cmd_agent_classify(&prose, &dict, max_iters, &adapter, json)
             }
         },
         Commands::Concept { action } => match action {
@@ -4827,7 +4833,15 @@ fn cmd_search(query: &str, dict: &PathBuf, limit: usize) -> i32 {
 
 // ── Audit command ───────────────────────────────────────────────────────────
 
-fn cmd_agent_classify(prose: &str, dict: &PathBuf, max_iters: usize, json: bool) -> i32 {
+fn cmd_agent_classify(
+    prose: &str,
+    dict: &PathBuf,
+    max_iters: usize,
+    adapter_name: &str,
+    json: bool,
+) -> i32 {
+    use nom_intent::react::{ReActAdapter, ReActStep};
+
     // Open the dict for DictTools' query + explain methods.
     let d = match nom_dict::NomDict::open_in_place(dict) {
         Ok(d) => d,
@@ -4838,13 +4852,37 @@ fn cmd_agent_classify(prose: &str, dict: &PathBuf, max_iters: usize, json: bool)
     };
     let tools = nom_intent::dict_tools::DictTools::new(&d);
 
-    // Slice-5a stub LLM: always returns Reject(Unparseable). Proves the
-    // CLI → classify_with_react → DictTools → dict plumbing without
-    // requiring external LLM credentials. Slice-5b wires a real adapter.
-    let llm: nom_intent::react::ReActLlmFn = Box::new(|_prose, _transcript| {
-        Ok(nom_intent::react::ReActStep::Reject(
-            nom_intent::Reason::Unparseable,
-        ))
+    // Slice-5b-cli-flag: pick adapter per --adapter flag. Default
+    // nom-cli = compiler-as-oracle deterministic state machine.
+    let adapter: Box<dyn ReActAdapter> = match adapter_name {
+        "nom-cli" => Box::new(nom_intent::adapters::NomCliAdapter::new()),
+        "stub" => {
+            struct StubAdapter;
+            impl ReActAdapter for StubAdapter {
+                fn next_step(
+                    &self,
+                    _prose: &str,
+                    _transcript: &[ReActStep],
+                ) -> Result<ReActStep, nom_intent::IntentError> {
+                    Ok(ReActStep::Reject(nom_intent::Reason::Unparseable))
+                }
+            }
+            Box::new(StubAdapter)
+        }
+        other => {
+            eprintln!(
+                "nom agent classify: unknown adapter {other:?}; use one of: nom-cli, stub"
+            );
+            return 1;
+        }
+    };
+
+    // classify_with_react still takes ReActLlmFn (closure). Wrap the
+    // trait object in a closure using the blanket impl's reverse
+    // direction — `move |p, t| adapter.next_step(p, t)` gives a Fn
+    // that satisfies the ReActLlmFn signature.
+    let llm: nom_intent::react::ReActLlmFn = Box::new(move |prose, transcript| {
+        adapter.next_step(prose, transcript)
     });
 
     let budget = nom_intent::react::ReActBudget {
