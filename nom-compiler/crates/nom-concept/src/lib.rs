@@ -9,6 +9,13 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod acceptance;
+pub use acceptance::{
+    PredicateBinding, PredicateRewording, PreservationReport,
+    bindings_for_concept, check_preservation, has_violations,
+    jaccard_similarity, normalize_predicate, predicate_text_hash,
+};
+
 pub mod closure;
 pub use closure::{ClosureError, ConceptClosure, ConceptGraph, UnresolvedRef};
 

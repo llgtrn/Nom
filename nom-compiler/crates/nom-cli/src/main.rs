@@ -433,6 +433,27 @@ enum BuildCmd {
         #[arg(long, default_value = "human")]
         format: String,
     },
+
+    /// Compare acceptance predicates from a prior `nom build report --format json`
+    /// output against the current build.  Exits 0 if all prior predicates are
+    /// preserved; exits 1 if any were dropped (structural violation).
+    ///
+    /// Rewordings and additions are informational only.
+    /// Runtime semantic check is deferred to Phase-8.
+    /// Per doc 09 M2.
+    VerifyAcceptance {
+        /// Path to the repo (its basename is used as repo_id).
+        repo: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Path to a prior `nom build report --format json` output (baseline).
+        #[arg(long)]
+        prior: PathBuf,
+        /// Restrict to one concept (default: all concepts in repo).
+        #[arg(long)]
+        concept: Option<String>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -889,6 +910,14 @@ fn main() {
                     concept.as_deref(),
                     out.as_deref(),
                     &format,
+                )
+            }
+            BuildCmd::VerifyAcceptance { repo, dict, prior, concept } => {
+                build::cmd_build_verify_acceptance(
+                    &repo,
+                    &dict,
+                    &prior,
+                    concept.as_deref(),
                 )
             }
         },

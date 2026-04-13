@@ -494,6 +494,130 @@ pub fn cmd_build_manifest(
     if any_issue { 1 } else { 0 }
 }
 
+/// CLI entry point: `nom build verify-acceptance <repo> --dict <path> --prior <file> [--concept <name>]`.
+///
+/// Compares acceptance predicates from a prior `nom build report --format json` output
+/// against the current build.  Exits 0 if no predicates were dropped; exits 1 otherwise.
+///
+/// Exit codes:
+///   0 — no predicate violations (none dropped).
+///   1 — at least one predicate was dropped, a DB error occurred, or the
+///       prior JSON file could not be read/parsed.
+pub fn cmd_build_verify_acceptance(
+    repo: &Path,
+    dict: &Path,
+    prior_bundle: &Path,
+    concept: Option<&str>,
+) -> i32 {
+    use nom_concept::{bindings_for_concept, check_preservation, has_violations};
+    use crate::report::ReportBundle;
+
+    // ── load prior bundle ─────────────────────────────────────────────────────
+    let prior_json = match std::fs::read_to_string(prior_bundle) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!(
+                "nom build verify-acceptance: cannot read {}: {e}",
+                prior_bundle.display()
+            );
+            return 1;
+        }
+    };
+
+    let prior_bundle_data: ReportBundle = match serde_json::from_str(&prior_json) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!(
+                "nom build verify-acceptance: cannot parse {}: {e}",
+                prior_bundle.display()
+            );
+            return 1;
+        }
+    };
+
+    // ── open dict + run current report ───────────────────────────────────────
+    let dict_db = match open_dict_in_place(dict) {
+        Some(d) => d,
+        None => return 1,
+    };
+
+    let current_bundle = match crate::report::build_report(repo, &dict_db, concept) {
+        Ok(b) => b,
+        Err(e) => {
+            eprintln!("nom build verify-acceptance: cannot build current report: {e}");
+            return 1;
+        }
+    };
+
+    // ── build prior predicate bindings (flat, all concepts or filtered) ───────
+    let prior_concepts: Vec<&crate::report::ConceptReport> = if let Some(name) = concept {
+        prior_bundle_data
+            .concepts
+            .iter()
+            .filter(|c| c.name == name)
+            .collect()
+    } else {
+        prior_bundle_data.concepts.iter().collect()
+    };
+
+    let prior_bindings: Vec<nom_concept::PredicateBinding> = prior_concepts
+        .iter()
+        .flat_map(|cr| bindings_for_concept(&cr.name, &cr.acceptance))
+        .collect();
+
+    // ── build current predicate bindings ─────────────────────────────────────
+    let current_concepts: Vec<&crate::report::ConceptReport> = if let Some(name) = concept {
+        current_bundle.concepts.iter().filter(|c| c.name == name).collect()
+    } else {
+        current_bundle.concepts.iter().collect()
+    };
+
+    let current_bindings: Vec<nom_concept::PredicateBinding> = current_concepts
+        .iter()
+        .flat_map(|cr| bindings_for_concept(&cr.name, &cr.acceptance))
+        .collect();
+
+    // ── run preservation check ────────────────────────────────────────────────
+    let report = check_preservation(&prior_bindings, &current_bindings, 0.5);
+
+    // ── print summary ─────────────────────────────────────────────────────────
+    println!(
+        "Preserved {} predicate(s). Dropped {}. Added {}. Reworded {}.",
+        report.preserved.len(),
+        report.dropped.len(),
+        report.added.len(),
+        report.reworded.len(),
+    );
+
+    if !report.dropped.is_empty() {
+        println!("Violations (dropped predicates):");
+        for b in &report.dropped {
+            println!("  [{}] Dropped: \"{}\"", b.concept, b.predicate);
+        }
+    }
+
+    if !report.added.is_empty() {
+        println!("Informational (added predicates):");
+        for b in &report.added {
+            println!("  [{}] Added: \"{}\"", b.concept, b.predicate);
+        }
+    }
+
+    if !report.reworded.is_empty() {
+        println!("Rewordings (informational):");
+        for rw in &report.reworded {
+            println!(
+                "  [{}] Reworded (similarity {:.2}): \"{}\" -> \"{}\"",
+                rw.concept, rw.similarity, rw.before, rw.after
+            );
+        }
+    }
+
+    println!("Note: {}", report.note);
+
+    if has_violations(&report) { 1 } else { 0 }
+}
+
 // ── helpers ──────────────────────────────────────────────────────────────────
 
 /// Capitalize the first ASCII character of a string.  `"function"` → `"Function"`.
