@@ -9,6 +9,9 @@
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
 
+pub mod closure;
+pub use closure::{ClosureError, ConceptClosure, ConceptGraph, UnresolvedRef};
+
 /// Closed kind set per doc 08 §8.1.
 pub const KINDS: &[&str] = &[
     "function", "module", "concept", "screen", "data", "event", "media",
