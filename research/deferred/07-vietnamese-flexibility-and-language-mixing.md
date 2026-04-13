@@ -5,6 +5,8 @@
 Research conducted: 2026-04-11
 Focus: Vietnamese topic prominence, ellipsis, classifiers, serial predication, borrowing, and code-switching
 
+> **Status (2026-04-13 update)**: Vocabulary-mixing recommendations (§4.1, §5.2, §6.1–6.3, §10 alias fields) are **SUPERSEDED**. Directive: Nom vocabulary is fully English; zero VN tokens in the codebase (`vi-VN` pack ships with empty `keyword_aliases`). Preserved as active design: anchored-flexible order (§1–§3), topic/ellipsis/classifier/serial-predication grammar-style lessons, canonical-identity-with-surface-tolerance model (§5.1/§5.4, §9). Shipped infrastructure: `nom-locale` M3a (BCP47 + NFC), M3b (confusable pairs), M3c (apply_locale) — vi-VN is a pass-through.
+
 ---
 
 ## Executive Summary
@@ -318,14 +320,7 @@ That means Vietnamese already has a built-in multi-register vocabulary architect
 
 This is extremely relevant for Novel.
 
-**Design lesson for Novel:** support multiple lexical registers for the same concept.
-
-For one Nom, allow:
-
-- native/plain name
-- Hán Việt/formal name
-- English/international alias
-- canonical machine ID
+**Design lesson for Novel (revised 2026-04-13):** support multiple *English* lexical registers (plain / formal-technical / abbreviated) for one canonical NomID. VN-language aliases are out of scope per fully-English vocabulary directive; keep the multi-register *idea*, drop the multi-language realization.
 
 ### 4.2 Borrowing works because Vietnamese keeps its own grammar frame
 
@@ -464,16 +459,16 @@ Examples:
 - `save`
 - `send`
 
-### 6.2 Formal/compact lane
+### 6.2 Formal/compact lane (revised)
 
-Use Hán Việt-style concise compounds for advanced users who want density and precision.
+Use concise English compounds for advanced users who want density. Hán Việt examples below are illustrative of the *register-stratification pattern only* — do **not** introduce these tokens; the codebase is fully English (2026-04-13 directive).
 
-Examples conceptually:
+Illustrative only (non-normative):
 
-- `xac_thuc` for authenticate
-- `luu_tru` for persistence/store
-- `gioi_han` for limiter
-- `kiem_dinh` for verification
+- ~~`xac_thuc`~~ → `authenticate` (or `auth`)
+- ~~`luu_tru`~~ → `store` / `persist`
+- ~~`gioi_han`~~ → `limit` / `ratelimit`
+- ~~`kiem_dinh`~~ → `verify`
 
 ### 6.3 International lane
 
@@ -613,10 +608,10 @@ This three-layer model is probably the cleanest way to capture the Vietnamese in
 
 1. Keep Part 4's core grammar canonical.
 2. Add a small "surface normalization" section to the future syntax spec instead of making the grammar itself free-form.
-3. Define alias metadata on Nom entries:
-   - `plain_vi`
-   - `han_viet`
-   - `english`
+3. Define English-only alias metadata on Nom entries (revised):
+   - `plain` (concrete descriptive)
+   - `formal` (compact compound)
+   - `abbrev` (short technical)
    - `preferred`
 4. Decide which alternations are safe in v1:
    - topic-fronted declarations
