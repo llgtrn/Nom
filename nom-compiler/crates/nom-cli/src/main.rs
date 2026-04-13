@@ -17,6 +17,7 @@
 //!   nom fmt <path>      — format .nom source files with canonical style
 
 mod author;
+mod build;
 mod concept;
 mod corpus;
 mod fmt;
@@ -74,31 +75,10 @@ enum Commands {
         no_prelude: bool,
     },
 
-    /// Compile a .nom file to a native binary
+    /// Build subcommands: compile a .nom file or query build status.
     Build {
-        /// Path to the .nom source file
-        file: PathBuf,
-        /// Output path for the binary (default: <file> without extension)
-        #[arg(short, long)]
-        output: Option<PathBuf>,
-        /// Path to the nomdict database
-        #[arg(long, default_value = "nomdict.db")]
-        dict: PathBuf,
-        /// Also emit Rust source code next to the .nom file
-        #[arg(long)]
-        emit_rust: bool,
-        /// Compile generated Rust to a native binary (default: true)
-        #[arg(long, default_value = "true")]
-        compile: bool,
-        /// Build in release mode
-        #[arg(long)]
-        release: bool,
-        /// Compilation target: rust (default), llvm, native
-        #[arg(long, default_value = "rust")]
-        target: String,
-        /// Skip loading the standard prelude (Result, Option types)
-        #[arg(long)]
-        no_prelude: bool,
+        #[command(subcommand)]
+        action: BuildCmd,
     },
 
     /// Type-check and verify contracts without producing output
@@ -361,6 +341,49 @@ enum Commands {
     Author {
         #[command(subcommand)]
         action: AuthorCmd,
+    },
+}
+
+#[derive(Subcommand)]
+enum BuildCmd {
+    /// Compile a .nom file to a native binary.
+    Compile {
+        /// Path to the .nom source file
+        file: PathBuf,
+        /// Output path for the binary (default: <file> without extension)
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Also emit Rust source code next to the .nom file
+        #[arg(long)]
+        emit_rust: bool,
+        /// Compile generated Rust to a native binary (default: true)
+        #[arg(long, default_value = "true")]
+        compile: bool,
+        /// Build in release mode
+        #[arg(long)]
+        release: bool,
+        /// Compilation target: rust (default), llvm, native
+        #[arg(long, default_value = "rust")]
+        target: String,
+        /// Skip loading the standard prelude (Result, Option types)
+        #[arg(long)]
+        no_prelude: bool,
+    },
+
+    /// Load a concept's closure from the DB and report its build-readiness.
+    /// Reads DB rows written by `nom store sync`; no compilation is performed.
+    Status {
+        /// Repo path (its basename is used as repo_id, matching what sync stored)
+        repo: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db)
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Only report on this concept name (error if not found)
+        #[arg(long)]
+        concept: Option<String>,
     },
 }
 
@@ -788,16 +811,21 @@ fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
         Commands::Run { file, dict, target, no_prelude } => cmd_run(&file, &dict, &target, no_prelude),
-        Commands::Build {
-            file,
-            output,
-            dict,
-            emit_rust,
-            compile,
-            release,
-            target,
-            no_prelude,
-        } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
+        Commands::Build { action } => match action {
+            BuildCmd::Compile {
+                file,
+                output,
+                dict,
+                emit_rust,
+                compile,
+                release,
+                target,
+                no_prelude,
+            } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
+            BuildCmd::Status { repo, dict, concept } => {
+                build::cmd_build_status(&repo, &dict, concept.as_deref())
+            }
+        },
         Commands::Check { file, dict } => cmd_check(&file, &dict),
         Commands::Test { file, dict, filter, execute, property } => {
             if property {

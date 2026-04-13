@@ -1052,7 +1052,10 @@ fn escape_json(s: &str) -> String {
 
 // ── nom store sync ────────────────────────────────────────────────────
 
-use nom_concept::{NomtuItem, parse_nom as concept_parse_nom, parse_nomtu};
+use nom_concept::{
+    CompositionDecl, ConceptClosure, ConceptDecl, ConceptGraph, EntityRef, IndexClause,
+    NomtuFile, NomtuItem, UnresolvedRef, parse_nom as concept_parse_nom, parse_nomtu,
+};
 use nom_dict::{ConceptRow, WordV2Row};
 use walkdir::WalkDir;
 
@@ -1321,4 +1324,260 @@ pub fn cmd_store_sync(repo: &Path, dict: &Path) -> i32 {
     );
 
     if errors.is_empty() { 0 } else { 1 }
+}
+
+// ── stub resolver ─────────────────────────────────────────────────────
+
+/// Statistics produced by `resolve_closure`.
+#[derive(Debug, Default)]
+pub struct ResolveStats {
+    pub resolved: usize,
+    pub still_unresolved: usize,
+    /// Refs with more than one candidate; picked by alphabetical-smallest hash.
+    pub ambiguous: usize,
+}
+
+/// A single unresolved ref that was matched against `words_v2`.
+#[derive(Debug, Clone)]
+pub struct ResolvedRef {
+    pub word: String,
+    pub kind: Option<String>,
+    /// The hash that was picked (alphabetically smallest among candidates).
+    pub hash: String,
+    /// Other candidates' hashes (empty when only one match existed).
+    pub alternatives: Vec<String>,
+}
+
+/// Resolve unresolved refs from a closure against the DB's `words_v2` table.
+///
+/// Strategy (stub — Phase 9 will replace with deterministic per-kind embedding
+/// index per doc 08 §5.3):
+/// - For each `UnresolvedRef`, query `find_words_v2_by_word(ref.word)`.
+/// - Filter by kind if `ref.kind` is `Some`.
+/// - 0 matches → still unresolved.
+/// - 1 match → resolved to that hash.
+/// - N matches → pick alphabetically-smallest hash (stable, deterministic per
+///   §10.3.1).  Record remaining hashes in `alternatives`.
+///
+/// # TODO: Phase 9 — replace with per-kind embedding index (doc 08 §5.3)
+pub fn resolve_closure(
+    closure: &ConceptClosure,
+    dict: &NomDict,
+) -> (Vec<ResolvedRef>, Vec<UnresolvedRef>, ResolveStats) {
+    let mut resolved_refs: Vec<ResolvedRef> = Vec::new();
+    let mut still_unresolved: Vec<UnresolvedRef> = Vec::new();
+    let mut stats = ResolveStats::default();
+
+    for uref in &closure.unresolved {
+        // Query all words_v2 rows for this word name (ordered by hash already).
+        let mut candidates: Vec<WordV2Row> = match dict.find_words_v2_by_word(&uref.word) {
+            Ok(rows) => rows,
+            Err(e) => {
+                eprintln!("nom: resolve_closure: db error for `{}`: {e}", uref.word);
+                still_unresolved.push(uref.clone());
+                stats.still_unresolved += 1;
+                continue;
+            }
+        };
+
+        // Filter by kind if the ref declares one.
+        if let Some(kind) = &uref.kind {
+            candidates.retain(|r| r.kind == *kind);
+        }
+
+        match candidates.len() {
+            0 => {
+                still_unresolved.push(uref.clone());
+                stats.still_unresolved += 1;
+            }
+            1 => {
+                resolved_refs.push(ResolvedRef {
+                    word: uref.word.clone(),
+                    kind: uref.kind.clone(),
+                    hash: candidates[0].hash.clone(),
+                    alternatives: vec![],
+                });
+                stats.resolved += 1;
+            }
+            _ => {
+                // `candidates` is already ordered by hash (ORDER BY hash in the query).
+                // The first entry is alphabetically smallest.
+                let picked = candidates[0].hash.clone();
+                let alternatives: Vec<String> =
+                    candidates[1..].iter().map(|r| r.hash.clone()).collect();
+                resolved_refs.push(ResolvedRef {
+                    word: uref.word.clone(),
+                    kind: uref.kind.clone(),
+                    hash: picked,
+                    alternatives,
+                });
+                stats.resolved += 1;
+                stats.ambiguous += 1;
+            }
+        }
+    }
+
+    (resolved_refs, still_unresolved, stats)
+}
+
+// ── DB-to-ConceptGraph materialisation ───────────────────────────────
+
+/// Rebuild a `ConceptGraph` from the rows already stored in `dict` for
+/// `repo_id`.
+///
+/// Concept rows come from `concept_defs`; their `index_into_db2` JSON
+/// deserialises back to `Vec<IndexClause>` (Serde already covers this via the
+/// `nom-concept` Deserialize derives).
+///
+/// Word rows come from `words_v2`; their `composed_of` JSON deserialises to a
+/// list of hash strings, which we use to reconstruct the `CompositionDecl`
+/// needed by the closure walker's composition index.  Entities (rows with
+/// `composed_of IS NULL`) are represented only by their hash in resolved
+/// `EntityRef`s inside concept index clauses, so they need no separate
+/// `NomtuFile` entry.
+pub fn materialize_concept_graph_from_db(
+    dict: &NomDict,
+    repo_id: &str,
+) -> Result<ConceptGraph, String> {
+    // ── 1. Load concept rows ──────────────────────────────────────────
+    let concept_rows = dict
+        .list_concept_defs_in_repo(repo_id)
+        .map_err(|e| format!("list_concept_defs_in_repo: {e}"))?;
+
+    let mut concepts: Vec<ConceptDecl> = Vec::with_capacity(concept_rows.len());
+    for row in &concept_rows {
+        let index: Vec<IndexClause> = serde_json::from_str(&row.index_into_db2)
+            .map_err(|e| format!("concept `{}` index_into_db2 JSON: {e}", row.name))?;
+
+        let exposes: Vec<String> = serde_json::from_str(&row.exposes)
+            .unwrap_or_default();
+        let acceptance: Vec<String> = serde_json::from_str(&row.acceptance)
+            .unwrap_or_default();
+        let objectives: Vec<String> = serde_json::from_str(&row.objectives)
+            .unwrap_or_default();
+
+        concepts.push(ConceptDecl {
+            name: row.name.clone(),
+            intent: row.intent.clone(),
+            index,
+            exposes,
+            acceptance,
+            objectives,
+        });
+    }
+
+    // ── 2. Load composition words (words_v2 where composed_of IS NOT NULL) ──
+    //
+    // We only need CompositionDecls; entity words are fully represented by
+    // their hash in the EntityRef inside concept index clauses, so no
+    // NomtuFile is needed for them.
+    //
+    // Strategy: fetch every words_v2 row for this repo via authored_in prefix
+    // matching, then keep only those with a non-null `composed_of`.
+    // NOTE: nom-dict doesn't expose a "list by repo" query for words_v2, so we
+    // collect them by scanning the concept index clauses for any resolved hashes
+    // and walking `composed_of` transitively.  For the status command this is
+    // sufficient — we only need the compositions the concepts actually reference.
+    let mut modules: Vec<NomtuFile> = Vec::new();
+    let mut visited_hashes: std::collections::HashSet<String> =
+        std::collections::HashSet::new();
+    let mut hash_queue: std::collections::VecDeque<String> =
+        std::collections::VecDeque::new();
+
+    // Seed queue from all resolved EntityRef hashes in concept index clauses.
+    for concept in &concepts {
+        collect_resolved_hashes_from_index(&concept.index, &mut hash_queue, &visited_hashes);
+    }
+
+    while let Some(hash) = hash_queue.pop_front() {
+        if !visited_hashes.insert(hash.clone()) {
+            continue;
+        }
+        let row = match dict.find_word_v2(&hash) {
+            Ok(Some(r)) => r,
+            Ok(None) => continue,
+            Err(e) => {
+                eprintln!("nom: materialize: find_word_v2 {hash}: {e}");
+                continue;
+            }
+        };
+
+        if let Some(composed_of_json) = &row.composed_of {
+            // Deserialise `composed_of` as a JSON array — may be hashes or word names
+            // (the sync path stores word names when hashes aren't yet resolved).
+            let composes_strs: Vec<String> =
+                serde_json::from_str(composed_of_json).unwrap_or_default();
+
+            // Build EntityRef list. Entries that look like hex-64 are hashes;
+            // others are word names only (unresolved from the sync pass).
+            let composes: Vec<EntityRef> = composes_strs
+                .iter()
+                .map(|s| {
+                    if s.len() == 64 && s.chars().all(|c| c.is_ascii_hexdigit()) {
+                        // It's a hash — enqueue for further traversal.
+                        if !visited_hashes.contains(s) {
+                            hash_queue.push_back(s.clone());
+                        }
+                        EntityRef {
+                            kind: None,
+                            word: s.clone(), // word unknown from hash alone; use hash as word
+                            hash: Some(s.clone()),
+                            matching: None,
+                        }
+                    } else {
+                        // It's a word name from an unresolved composition.
+                        EntityRef {
+                            kind: None,
+                            word: s.clone(),
+                            hash: None,
+                            matching: None,
+                        }
+                    }
+                })
+                .collect();
+
+            modules.push(NomtuFile {
+                items: vec![NomtuItem::Composition(CompositionDecl {
+                    word: row.word.clone(),
+                    composes,
+                    glue: None,
+                    contracts: vec![],
+                })],
+            });
+        }
+        // Entities (no composed_of) don't need a NomtuFile entry.
+    }
+
+    Ok(ConceptGraph { concepts, modules })
+}
+
+/// Walk all resolved hashes in `index` clauses and push them into `queue` if
+/// not already in `visited`.
+fn collect_resolved_hashes_from_index(
+    index: &[IndexClause],
+    queue: &mut std::collections::VecDeque<String>,
+    visited: &std::collections::HashSet<String>,
+) {
+    for clause in index {
+        match clause {
+            IndexClause::Uses(refs) => {
+                for eref in refs {
+                    if let Some(h) = &eref.hash {
+                        if !visited.contains(h) {
+                            queue.push_back(h.clone());
+                        }
+                    }
+                }
+            }
+            IndexClause::Extends { change_set, .. } => {
+                for eref in &change_set.adding {
+                    if let Some(h) = &eref.hash {
+                        if !visited.contains(h) {
+                            queue.push_back(h.clone());
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
