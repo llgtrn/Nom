@@ -227,4 +227,53 @@ Milestones M3/M11 (multi-locale), M7/M12/M14 (MECE-CE + laws + cross-domain), M8
 
 ---
 
+## Doc/reality gaps surfaced by GitNexus (2026-04-14)
+
+GitNexus (code knowledge graph at `.gitnexus/`) was queried against every doc in `research/` to audit coverage. Three crates are **materially under-documented** — the graph shows active call chains while the docs treat them as name-only scaffolds or miss them entirely. Ranked by gap severity:
+
+### Gap 1: `nom-graph` has **zero doc mentions**, but the crate is integrated end-to-end
+
+Source evidence (all in `nom-compiler/crates/nom-graph/src/lib.rs`):
+
+- `impl NomtuGraph` (line 72) — public graph type
+- `NomtuGraph::from_entries` (line 84) — constructs graph from dict entries
+- `build_call_edges` (line 130) — resolves CALLS edges
+- `build_import_edges` (line 162) — resolves IMPORTS edges
+- `detect_communities` (line 242) — Louvain-style clustering
+- 5 unit tests (lines 577, 603, 635, 648, 671 — CALLS detection, rust-imports, communities, closures)
+
+CLI surface: `cmd_graph` at [nom-cli/src/main.rs:4562](../../nom-compiler/crates/nom-cli/src/main.rs). This crate turns the dict into a queryable call/import graph on top of which the whole "Nom measures itself" story (doc 04 §§5.17, 5.18, 5.19) rides. Treat `nom-graph` as a **first-class peer** to `nom-concept` and `nom-extract`, not an extraction helper.
+
+### Gap 2: `nom-translate` is a **real 5-language dispatcher**, not a name
+
+Source evidence (`nom-compiler/crates/nom-translate/src/`):
+
+- `translate(body, from_language)` dispatcher — [lib.rs:31](../../nom-compiler/crates/nom-translate/src/lib.rs)
+- `translate_c_to_rust` — [c.rs:6](../../nom-compiler/crates/nom-translate/src/c.rs)
+- `translate_cpp_to_rust` — [cpp.rs:9](../../nom-compiler/crates/nom-translate/src/cpp.rs)
+- `translate_python_to_rust` — [python.rs:6](../../nom-compiler/crates/nom-translate/src/python.rs)
+- `translate_js_to_rust` — [js.rs:6](../../nom-compiler/crates/nom-translate/src/js.rs)
+- `translate_go_to_rust` — [go.rs:6](../../nom-compiler/crates/nom-translate/src/go.rs)
+
+CLI surface: `cmd_translate` at [nom-cli/src/main.rs:4344](../../nom-compiler/crates/nom-cli/src/main.rs). This is the ingest path for doc 04 §5.17 mass-corpus work — every foreign-language function body that lands in the dict routes through this crate. Every doc in `research/` that discusses §5.17 should cite `nom-translate` as the dispatch layer.
+
+### Gap 3: `nom-corpus` is **more than a skeleton**
+
+Source evidence: `compile_nom_to_bc` at [nom-corpus/src/lib.rs:246](../../nom-compiler/crates/nom-corpus/src/lib.rs) wires `parse_source → plan_unchecked → nom-llvm::compile` into a single bc-returning function; determinism test at [nom-corpus/src/lib.rs:1060](../../nom-compiler/crates/nom-corpus/src/lib.rs). The §5.17 ingestion pipeline depends on this path being deterministic (byte-identical `.bc` for the same input), and the test locks that property.
+
+### Under-reflected but not gaps
+
+- `nom-security` — `SecurityReport` exists in graph, only 1 doc mention. Intentional: it is a post-M1 concern (risk #7 above).
+- `nom-flow` / `nom-bench` — scaffold-level as the docs say; leave as-is until §5.16 benchmarks and §5.17 flow recording enter the path.
+- `nom-diagnostics`, `nom-config` — single-doc mentions each, both are small infra crates, no action needed.
+
+### Actions (follow-up commits)
+
+1. Doc 04 §§5.17–5.19 should add a `nom-graph` subsection and cite `cmd_graph` as the live surface.
+2. Every `nom-translate` reference that calls it "scaffold" should be replaced with "5-language dispatcher".
+3. Doc 03 (self-hosting roadmap) should note that `compile_nom_to_bc` determinism is already pinned — this de-risks M10b.
+4. New line in doc 04 risks: "Risk #10 — `nom-graph` ownership" (graph analysis surface exists but no doc lists its SLOs, invariants, or rebuild cost).
+
+---
+
 This doc will stay valid until the first milestone ships. When M1 lands, revise the "Where we are" paragraph and strike M1 from the path; leave the rest of the ordering untouched. Every re-derivation of the path should produce the same ordering from the same research inputs — that is itself a fixpoint check on the plan.
