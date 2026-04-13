@@ -40,7 +40,7 @@
 use crate::lex::{Spanned, Tok};
 use crate::{
     CompositionDecl, ConceptDecl, ContractClause, EffectClause, EffectValence, EntityDecl,
-    IndexClause, NomFile, NomtuFile, NomtuItem, KINDS,
+    EntityRef, IndexClause, NomFile, NomtuFile, NomtuItem, KINDS,
 };
 
 /// Which stage of the annotator pipeline a failure came from.
@@ -857,9 +857,7 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
             .map(|b| ConceptDecl {
                 name: b.name.clone(),
                 intent: b.intent.clone(),
-                index: count_uses_clauses(&toks[b.start_tok..b.end_tok])
-                    .map(|_| IndexClause::Uses(Vec::new()))
-                    .collect(),
+                index: extract_uses_clauses(&toks[b.start_tok..b.end_tok]).collect(),
                 exposes: Vec::new(),
                 acceptance: b
                     .contracts
@@ -901,25 +899,89 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
     }
 }
 
-/// Count how many `uses …` clauses appear in a block body span.
+/// Extract `uses …` clauses from a block body span with typed-slot
+/// partial resolution.
 ///
 /// A `uses` clause starts at a `Tok::Uses` and runs to the next
-/// top-level `.` at block depth.  Clauses that cross another clause
-/// keyword (`Requires`/`Ensures`/`Favor`/`Benefit`/`Hazard`/`Exposes`)
-/// before their terminator are still counted once — S6 here is
-/// cardinality-only; full ref resolution lands in a later step that
-/// populates `IndexClause::Uses(entity_refs)` with actual refs.
-fn count_uses_clauses(body_slice: &[Spanned]) -> impl Iterator<Item = ()> + '_ {
-    let mut depth_stack: Vec<usize> = Vec::new();
-    body_slice.iter().enumerate().filter_map(move |(i, s)| {
-        match &s.tok {
-            Tok::Uses => {
-                depth_stack.push(i);
-                Some(())
+/// top-level `.` at block depth.  For each clause this function
+/// parses the shortest useful prefix:
+///
+///   `uses the @Kind …`           → EntityRef { typed_slot: true, kind }
+///   `uses the function word …`   → EntityRef { typed_slot: false, kind: "function", word }
+///   anything else / malformed    → empty IndexClause::Uses(vec![])
+///
+/// Full ref resolution (matching clause + confidence threshold + hash
+/// backfill) is still deferred to a later step; the partial shape is
+/// enough to improve pipeline↔parse_nom parity beyond cardinality-only.
+fn extract_uses_clauses(body_slice: &[Spanned]) -> impl Iterator<Item = IndexClause> + '_ {
+    let mut i = 0usize;
+    std::iter::from_fn(move || {
+        while i < body_slice.len() {
+            if matches!(body_slice[i].tok, Tok::Uses) {
+                let start = i;
+                // Find end = next top-level Dot or EOF.
+                let mut j = start + 1;
+                while j < body_slice.len() && !matches!(body_slice[j].tok, Tok::Dot) {
+                    j += 1;
+                }
+                let clause = &body_slice[start + 1..j];
+                i = j + 1; // advance past the Dot (or EOF)
+                let refs = parse_uses_clause_refs(clause);
+                return Some(IndexClause::Uses(refs));
             }
-            _ => None,
+            i += 1;
         }
+        None
     })
+}
+
+/// Pull partial EntityRef structures out of a `uses` clause body
+/// (the tokens between `Tok::Uses` and the terminating `Tok::Dot`).
+///
+/// Recognized shapes:
+///   `the @Kind …`        → one typed-slot EntityRef
+///   `the function word …`→ one v1 bare-word EntityRef
+fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
+    // Find the first `the` — the v1 + v2 forms both start with it.
+    let the_idx = match clause.iter().position(|s| matches!(s.tok, Tok::The)) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    match clause.get(the_idx + 1).map(|s| &s.tok) {
+        Some(Tok::AtKind(k)) => {
+            let kind_lower = k.to_lowercase();
+            if !KINDS.contains(&kind_lower.as_str()) {
+                return Vec::new();
+            }
+            vec![EntityRef {
+                kind: Some(kind_lower),
+                word: String::new(),
+                hash: None,
+                matching: None,
+                typed_slot: true,
+                confidence_threshold: None,
+            }]
+        }
+        Some(Tok::Kind(k)) => {
+            let kind_lower = k.to_lowercase();
+            if !KINDS.contains(&kind_lower.as_str()) {
+                return Vec::new();
+            }
+            let word = match clause.get(the_idx + 2).map(|s| &s.tok) {
+                Some(Tok::Word(w)) => w.clone(),
+                _ => return Vec::new(),
+            };
+            vec![EntityRef {
+                kind: Some(kind_lower),
+                word,
+                hash: None,
+                matching: None,
+                typed_slot: false,
+                confidence_threshold: None,
+            }]
+        }
+        _ => Vec::new(),
+    }
 }
 
 /// Convenience: drive the full pipeline end-to-end from source text.
@@ -1381,6 +1443,57 @@ the function write_file is
             legacy_ids, pipeline_ids,
             "pipeline and parse_nomtu must agree on (kind, name) pairs"
         );
+    }
+
+    /// a4c25: S6 typed-slot EntityRef partial extraction. `uses the
+    /// @Function …` populates IndexClause::Uses[0] with an EntityRef
+    /// where typed_slot=true + kind="function". Bumps parity beyond
+    /// cardinality-only.
+    #[test]
+    fn a4c25_pipeline_populates_typed_slot_kind_in_index() {
+        let src = r#"the concept routing is
+  intended to route an incoming request.
+  uses the @Function matching "route request" with at-least 0.85 confidence.
+  favor correctness."#;
+        let out = run_pipeline(src).expect("pipeline");
+        let concept = match out {
+            PipelineOutput::Nom(f) => f.concepts.into_iter().next().expect("one concept"),
+            _ => panic!("expected Nom"),
+        };
+        assert_eq!(concept.index.len(), 1);
+        match &concept.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1, "one EntityRef expected");
+                assert!(refs[0].typed_slot, "should be typed-slot form");
+                assert_eq!(refs[0].kind.as_deref(), Some("function"));
+                assert_eq!(refs[0].word, "");
+            }
+            _ => panic!("expected IndexClause::Uses"),
+        }
+    }
+
+    /// a4c26: v1 bare-word `uses the function login_user …` populates
+    /// EntityRef { typed_slot: false, kind: "function", word: "login_user" }.
+    #[test]
+    fn a4c26_pipeline_populates_v1_bare_word_kind_plus_word() {
+        let src = r#"the concept auth is
+  intended to authenticate a user.
+  uses the function login_user matching "verify credentials".
+  favor correctness."#;
+        let out = run_pipeline(src).expect("pipeline");
+        let concept = match out {
+            PipelineOutput::Nom(f) => f.concepts.into_iter().next().expect("one concept"),
+            _ => panic!("expected Nom"),
+        };
+        match &concept.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                assert!(!refs[0].typed_slot);
+                assert_eq!(refs[0].kind.as_deref(), Some("function"));
+                assert_eq!(refs[0].word, "login_user");
+            }
+            _ => panic!("expected IndexClause::Uses"),
+        }
     }
 
     /// a4c24: doc 16 row #14 smoke — early-return guards (v1 `when X,
