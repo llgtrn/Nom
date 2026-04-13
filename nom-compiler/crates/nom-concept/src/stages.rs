@@ -38,7 +38,7 @@
 //! into their todo markers; A4c lands the real bodies.
 
 use crate::lex::{Spanned, Tok};
-use crate::{ContractClause, KINDS};
+use crate::{ContractClause, EffectClause, EffectValence, KINDS};
 
 /// Which stage of the annotator pipeline a failure came from.
 ///
@@ -651,14 +651,147 @@ pub fn stage4_contract_bind(shaped: &ShapedStream) -> Result<ContractedStream, S
     })
 }
 
-/// S5 stub — effect clause extraction.
-pub fn stage5_effect_bind(_stream: &TokenStream) -> Result<(), StageFailure> {
-    Err(StageFailure::new(
-        StageId::EffectBind,
-        0,
-        "not-yet-wired",
-        "stage5_effect_bind body lands in A4c",
-    ))
+/// Output of S5 — each contracted block gains zero-or-more typed
+/// effect clauses (benefit / hazard, plus `boon` / `bane` synonyms).
+#[derive(Debug, Clone)]
+pub struct EffectedStream {
+    pub toks: Vec<Spanned>,
+    pub blocks: Vec<EffectedBlock>,
+    pub source_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct EffectedBlock {
+    pub kind: String,
+    pub name: String,
+    pub start_tok: usize,
+    pub end_tok: usize,
+    pub start_byte: usize,
+    pub intent: String,
+    pub contracts: Vec<ContractClause>,
+    /// Effect clauses (valence + comma-separated effect names).
+    pub effects: Vec<EffectClause>,
+}
+
+/// S5 — Pull `benefit` / `hazard` effect clauses out of each
+/// contracted block's body.
+///
+/// Walks the body span for every `Tok::Benefit` or `Tok::Hazard` token
+/// (`boon` → `Tok::Benefit`, `bane` → `Tok::Hazard` per lexer synonym
+/// table at lib.rs:409-412). Collects comma-separated `Tok::Word(name)`
+/// entries until a closing `Tok::Dot`. Each effect name must be a
+/// simple `Word` — quoted strings or numbers reject.
+///
+/// Rejects:
+///
+/// - `NOMX-S5-unterminated-effect` — effect verb hits another clause
+///   keyword before a closing `.` (same cross-clause guard as S4).
+/// - `NOMX-S5-empty-effect` — `benefit .` with no names.
+/// - `NOMX-S5-non-word-effect-name` — name token is not a `Word`.
+pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStream, StageFailure> {
+    let toks = &contracted.toks;
+    let mut blocks = Vec::with_capacity(contracted.blocks.len());
+
+    for b in &contracted.blocks {
+        let body_slice = &toks[b.start_tok..b.end_tok];
+        let mut effects = Vec::new();
+        let mut i = 0usize;
+
+        while i < body_slice.len() {
+            let valence = match body_slice[i].tok {
+                Tok::Benefit => EffectValence::Benefit,
+                Tok::Hazard => EffectValence::Hazard,
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            };
+            let verb_pos = body_slice[i].pos;
+            let verb_name = match valence {
+                EffectValence::Benefit => "benefit",
+                EffectValence::Hazard => "hazard",
+            };
+            let mut names: Vec<String> = Vec::new();
+            let mut j = i + 1;
+            let mut saw_dot = false;
+            while j < body_slice.len() {
+                match &body_slice[j].tok {
+                    Tok::Dot => {
+                        saw_dot = true;
+                        break;
+                    }
+                    Tok::Comma => {
+                        j += 1;
+                    }
+                    Tok::Word(w) => {
+                        names.push(w.clone());
+                        j += 1;
+                    }
+                    Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit
+                    | Tok::Hazard | Tok::Uses | Tok::Exposes => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            body_slice[j].pos,
+                            "unterminated-effect",
+                            format!(
+                                "`{verb_name}` clause in block `{}` crosses into another clause at `{:?}` without a closing `.`",
+                                b.name, body_slice[j].tok
+                            ),
+                        ));
+                    }
+                    other => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            body_slice[j].pos,
+                            "non-word-effect-name",
+                            format!(
+                                "`{verb_name}` in block `{}` expects comma-separated Word names; saw `{:?}`",
+                                b.name, other
+                            ),
+                        ));
+                    }
+                }
+            }
+            if !saw_dot {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    verb_pos,
+                    "unterminated-effect",
+                    format!("`{verb_name}` clause in block `{}` has no closing `.`", b.name),
+                ));
+            }
+            if names.is_empty() {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    verb_pos,
+                    "empty-effect",
+                    format!("`{verb_name}` clause in block `{}` has no effect names", b.name),
+                ));
+            }
+            effects.push(EffectClause {
+                valence,
+                effects: names,
+            });
+            i = j + 1; // past the dot
+        }
+
+        blocks.push(EffectedBlock {
+            kind: b.kind.clone(),
+            name: b.name.clone(),
+            start_tok: b.start_tok,
+            end_tok: b.end_tok,
+            start_byte: b.start_byte,
+            intent: b.intent.clone(),
+            contracts: b.contracts.clone(),
+            effects,
+        });
+    }
+
+    Ok(EffectedStream {
+        toks: toks.clone(),
+        blocks,
+        source_len: contracted.source_len,
+    })
 }
 
 /// S6 stub — final typed-AST assembly.
@@ -733,26 +866,18 @@ mod tests {
         assert_eq!(f.position, 42);
     }
 
-    /// a4b05: A4b stubs S5-S6 return structured not-yet-wired failures
-    /// carrying the correct StageId. Locks the scaffold is callable
-    /// and surfaces the right stage tag until later sub-wedges wire
-    /// real bodies. (S2 A4c-step1, S3 A4c-step2, S4 A4c-step3.)
+    /// a4b05: A4b stub S6 returns structured not-yet-wired failure
+    /// carrying the correct StageId. (S2-S5 now all wired through
+    /// A4c step1-step4; S6 lands in A4c step5.)
     #[test]
-    fn a4b05_stubs_return_not_yet_wired_per_stage() {
+    fn a4b05_s6_stub_returns_not_yet_wired() {
         let src = r#"the function f is given x, returns y.
   favor correctness."#;
         let stream = stage1_tokenize(src).expect("S1");
-
-        let cases: &[(fn(&TokenStream) -> Result<(), StageFailure>, StageId, &str)] = &[
-            (stage5_effect_bind,   StageId::EffectBind,   "S5"),
-            (stage6_ref_resolve,   StageId::RefResolve,   "S6"),
-        ];
-        for (stage_fn, expected_stage, expected_code) in cases {
-            let err = stage_fn(&stream).expect_err("stub must return Err");
-            assert_eq!(err.stage, *expected_stage);
-            assert_eq!(err.reason, "not-yet-wired");
-            assert!(err.diag_id().starts_with(&format!("NOMX-{}", expected_code)));
-        }
+        let err = stage6_ref_resolve(&stream).expect_err("stub must return Err");
+        assert_eq!(err.stage, StageId::RefResolve);
+        assert_eq!(err.reason, "not-yet-wired");
+        assert!(err.diag_id().starts_with("NOMX-S6"));
     }
 
     // ── A4c-step1: S2 kind_classify body ──────────────────────────────────
@@ -925,6 +1050,84 @@ the function f is given x, returns y.
         let err = stage4_contract_bind(&shaped).expect_err("S4 must reject");
         assert_eq!(err.stage, StageId::ContractBind);
         assert_eq!(err.reason, "unterminated-contract");
+    }
+
+    // ── A4c-step4: S5 effect_bind (benefit / hazard) ──────────────────────
+
+    /// a4c13: block with `benefit cache_hit, fast_path.` and
+    /// `hazard timeout.` yields two EffectClauses with correct
+    /// valence + names.
+    #[test]
+    fn a4c13_benefit_and_hazard_extracted() {
+        let src = r#"the concept caching_layer is
+  intended to cache upstream responses.
+  benefit cache_hit, fast_path.
+  hazard timeout.
+  favor performance."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        let effected = stage5_effect_bind(&contracted).expect("S5");
+        assert_eq!(effected.blocks.len(), 1);
+        let b = &effected.blocks[0];
+        assert_eq!(b.effects.len(), 2);
+        assert_eq!(b.effects[0].valence, EffectValence::Benefit);
+        assert_eq!(b.effects[0].effects, vec!["cache_hit", "fast_path"]);
+        assert_eq!(b.effects[1].valence, EffectValence::Hazard);
+        assert_eq!(b.effects[1].effects, vec!["timeout"]);
+    }
+
+    /// a4c14: block with zero effect clauses yields an empty vec.
+    #[test]
+    fn a4c14_no_effects_yields_empty_vec() {
+        let src = r#"the concept simple is
+  intended to do one thing.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        let effected = stage5_effect_bind(&contracted).expect("S5");
+        assert!(effected.blocks[0].effects.is_empty());
+    }
+
+    /// a4c15: `boon` synonym maps to Benefit + `bane` maps to Hazard,
+    /// per lexer synonym table.
+    #[test]
+    fn a4c15_boon_and_bane_synonyms_map_correctly() {
+        let src = r#"the concept synonymy is
+  intended to exercise the synonym table.
+  boon warmup.
+  bane cold_start.
+  favor performance."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        let effected = stage5_effect_bind(&contracted).expect("S5");
+        let b = &effected.blocks[0];
+        assert_eq!(b.effects.len(), 2);
+        assert_eq!(b.effects[0].valence, EffectValence::Benefit); // boon
+        assert_eq!(b.effects[0].effects, vec!["warmup"]);
+        assert_eq!(b.effects[1].valence, EffectValence::Hazard); // bane
+        assert_eq!(b.effects[1].effects, vec!["cold_start"]);
+    }
+
+    /// a4c16: unterminated effect (missing `.`, hits favor) rejects.
+    #[test]
+    fn a4c16_unterminated_effect_rejected() {
+        let src = r#"the concept broken is
+  intended to surface the failure.
+  benefit warmup, fast_path
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        let err = stage5_effect_bind(&contracted).expect_err("S5 must reject");
+        assert_eq!(err.stage, StageId::EffectBind);
+        assert_eq!(err.reason, "unterminated-effect");
     }
 
     /// a4c12: two concepts each keep their own contract scope — no

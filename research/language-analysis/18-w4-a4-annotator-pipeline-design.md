@@ -189,7 +189,11 @@ Strict cross-clause guard: if a contract clause reaches another clause keyword (
 
 4 tests (a4c09-a4c12): requires+ensures extraction + source ordering, zero-contract block yields empty vec, unterminated-contract caught by the cross-clause guard, two concepts keep contracts scoped per block.
 
-Existing 94 nom-concept parser tests untouched — S2/S3/S4 run alongside `parse_nomtu`/`parse_nom`. Steps 4-5 (S5 effects, S6 refs, + entity-signature shape) land in subsequent cycles.
+**Step 4 landed 2026-04-14:** `stage5_effect_bind` wired to pull `benefit`/`hazard` clauses (plus `boon`/`bane` synonyms) from each contracted block. Produces `EffectedStream { toks, blocks, source_len }` with per-block `EffectedBlock { …, contracts, effects }`. Collects comma-separated `Word` names until `.`; rejects with `NOMX-S5-unterminated-effect` / `NOMX-S5-empty-effect` / `NOMX-S5-non-word-effect-name` under the same cross-clause guard as S4.
+
+4 tests (a4c13-a4c16): benefit+hazard with comma-separated names, zero effects yields empty vec, `boon`/`bane` synonyms map to Benefit/Hazard, unterminated-effect caught when `favor` appears before closing dot.
+
+Existing 94 nom-concept parser tests untouched — S2/S3/S4/S5 run alongside `parse_nomtu`/`parse_nom`. Step 5 (S6 refs + entity-signature shape) is the final A4c cycle.
 
 Total: ~3 engineer-days as originally estimated.
 
