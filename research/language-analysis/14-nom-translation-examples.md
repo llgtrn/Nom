@@ -651,45 +651,14 @@ the data book_config is
 
 ---
 
-## Running gap list (for next doc 13 refresh + doc 15)
+## Running gap list → migrated to doc 16
 
-1. Iteration destructuring (`for each K and V in M`) — lexer test missing. **Add in W4-A2b.**
-2. Format-string interpolation — grammar rule missing. **New wedge W5.**
-3. `returns nothing` grammar pin — **W4-A1 addendum.**
-4. Path/file subkinds vs generic `@Data` — **Design question; doc 15 §subkinds.**
-5. Union types / sum-return at v2 layer (`text or record`, `Result<A, B>`) — **New kind `@Union` candidate; doc 15.**
-6. Literal-string constants and Python-style `Literal[...]` — **W6 candidate.**
-7. Docstring → `intended to` mapping — **Authoring guide note.**
-8. Primitive-return idiom (`the result is true`) — **Authoring guide + W4-A1 addendum.**
-9. Sum-return phrasing at v1 — already works; **test it.**
-10. Atomic-state primitives — **Authoring corpus seed.**
-11. Lifetime annotations — **deferred (borrow-model work).**
-12. Redundant v1 body when fully delegated — **authoring-guide simplification rule.**
-13. Destructuring parameters (TS `{state, dispatch}: EditorView`) — **authoring-guide note.**
-14. Early-return guards — works; needs a smoke test (translation #6).
-15. Callback closures — **gap for doc 15 §closures.**
-16. `fail with "..."` expression grammar — **new wedge W9.**
-17. Multi-predicate short-circuit fail — subsumed by #16.
-18. `hazard` effect rendering — good smoke (translation #7).
-19. `is-a` runtime type probes — **new wedge W10.**
-20. `perhaps...nothing` idiom confirmed natural — **authoring-guide anchor.**
-21. Enum / sum-type declarations — **new wedge W11.**
-22. Receiver-form methods (`func (o OS) String()`) — **new wedge W12.**
-23. Entry-point `main` special-case — **new wedge W13.**
-24. Exit-code vocabulary (`success`/`failure`/`code N`) — **new wedge W14.**
-25. `text-sprintf` idiom — **authoring-guide note.**
-26. List/text accessor primitives (`at(0)`, `find_last`, `after`) — **authoring-corpus seeds.**
-27. Preferred form (`uses` vs imperative verbs) for side-effecting code — **authoring-guide decision needed.**
-28. Interpreter/shebang metadata clause — **new wedge W15.**
-29. Environment-variable access vocabulary — **new wedge W16.**
-30. Globbing / file-tree query primitives — **authoring-corpus seeds.**
-31. Process pipelines → named intermediate values — **authoring-guide rule.**
-32. Nested-section path syntax (TOML dot-paths) — **new wedge W17.**
-33. Config-as-data vs. config-as-code split — **authoring-guide clarification.**
-34. Non-ASCII string literals verbatim — **smoke-test candidate.**
-35. Hyphen-keys → underscore-identifiers mapping — **authoring-guide rule.**
-
-Each gap becomes either (a) a new wedge in doc 13 §5, (b) an authoring-guide entry, or (c) a deferred design question for doc 15 (to be drafted on next cycle).
+As of commit following `370f96d`, the 35-gap list has been promoted to its
+own document: [16-nomx-syntax-gap-backlog.md](./16-nomx-syntax-gap-backlog.md).
+It organizes gaps by destination (wedge, authoring-guide, deferred), tracks
+status per row, and carries a wedge master-index. New gaps from this doc's
+subsequent translations should be appended to doc 16 directly, with a single
+back-reference added to each translation's "Gaps surfaced" section here.
 
 ## Next cycle plan
 

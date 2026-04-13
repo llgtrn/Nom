@@ -1,0 +1,93 @@
+# 16 — `.nomx` syntax gap backlog
+
+**Date:** 2026-04-14
+**Purpose:** Dedicated home for the growing list of `.nomx` v1/v2 syntax gaps surfaced by the Accelworld/upstreams translation corpus (doc 14). Split off from doc 14 once the gap list crossed the 20-item threshold. Every gap routes to one of three destinations:
+
+- **W-wedge** — a concrete strictness-lane wedge in doc 13 §5
+- **authoring-guide entry** — a convention/idiom note for the authoring docs
+- **design deferred** — an open question to revisit when blocking work lands
+
+> **Status 2026-04-14:** 35 gaps enumerated from doc 14 translations #1-12; no destination closures yet this cycle. Each cycle's gap-additions append here and get triaged into one of the three destinations. A gap is "closed" once either (a) its wedge ships with a test, (b) its authoring-guide note is written, or (c) its deferred status is pinned with a blocker.
+
+---
+
+## Triage format
+
+| # | Gap | Destination | Status |
+|--:|-----|-------------|--------|
+| 1 | Iteration destructuring (`for each K and V in M`) | W4-A2b lexer test | ⏳ queued |
+| 2 | Format-string interpolation | **W5** grammar rule | ⏳ queued |
+| 3 | `returns nothing` grammar pin | W4-A1 addendum | ⏳ queued (A1 lock tests landed; addendum pending) |
+| 4 | Path/file subkinds vs generic `@Data` | design deferred | 🧠 design Q open |
+| 5 | Union types / sum-return at v2 (`text or record`, `Result<A,B>`) | **W18** `@Union` kind (renumbered from earlier "W5") | ⏳ queued |
+| 6 | Literal-string constants (Python `Literal[...]`) | **W6** grammar rule | ⏳ queued |
+| 7 | Docstring → `intended to` mapping | authoring-guide note | 📘 doc-todo |
+| 8 | Primitive-return idiom (`the result is true`) | authoring-guide + W4-A1 addendum | ⏳ queued |
+| 9 | Sum-return phrasing at v1 (already works) | smoke-test | 🧪 test-todo |
+| 10 | Atomic-state primitives | authoring-corpus seed | 📘 doc-todo |
+| 11 | Lifetime annotations | design deferred (borrow-model) | 🧠 blocked on §borrow-model |
+| 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | 📘 doc-todo |
+| 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | 📘 doc-todo |
+| 14 | Early-return guards (works) | smoke-test | 🧪 test-todo |
+| 15 | Callback closures | design deferred (§closures) | 🧠 design Q open |
+| 16 | `fail with "..."` expression grammar | **W9** grammar rule | ⏳ queued |
+| 17 | Multi-predicate short-circuit fail | subsumed by W9 | — |
+| 18 | `hazard` effect rendering | smoke-test (works today) | 🧪 test-todo |
+| 19 | `is-a` runtime type probes | **W10** grammar rule | ⏳ queued |
+| 20 | `perhaps...nothing` idiom (works) | authoring-guide anchor | 📘 doc-todo |
+| 21 | Enum / sum-type declarations | **W11** grammar rule | ⏳ queued |
+| 22 | Receiver-form methods (`func (o OS) String()`) | **W12** grammar rule | ⏳ queued |
+| 23 | Entry-point `main` special-case | **W13** grammar rule | ⏳ queued |
+| 24 | Exit-code vocabulary (`success`/`failure`/`code N`) | **W14** vocabulary | ⏳ queued |
+| 25 | `text-sprintf` idiom | authoring-guide note | 📘 doc-todo |
+| 26 | List/text accessor primitives (`at(0)`, `find_last`, `after`) | authoring-corpus seeds | 📘 doc-todo |
+| 27 | Preferred form (`uses` vs imperative verbs) for side-effects | authoring-guide decision | 📘 doc-todo |
+| 28 | Interpreter/shebang metadata clause | **W15** grammar rule | ⏳ queued |
+| 29 | Environment-variable access vocabulary | **W16** grammar rule | ⏳ queued |
+| 30 | Globbing / file-tree query primitives | authoring-corpus seeds | 📘 doc-todo |
+| 31 | Process pipelines → named intermediate values | authoring-guide rule | 📘 doc-todo |
+| 32 | Nested-section path syntax (TOML dot-paths) | **W17** grammar rule | ⏳ queued |
+| 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | 📘 doc-todo |
+| 34 | Non-ASCII string literals verbatim | smoke-test | 🧪 test-todo |
+| 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | 📘 doc-todo |
+
+Totals by destination:
+
+- ⏳ Wedge queued: **13** (A2b + 12 W-wedges W5-W18 including W9, W10, W11, W12, W13, W14, W15, W16, W17, W18, plus W6)
+- 🧪 Smoke-test todo: **4**
+- 📘 Authoring-guide doc-todo: **13**
+- 🧠 Design deferred (open): **2** (+1 blocked)
+
+## Wedge master index (for cross-ref with doc 13)
+
+- **W4 (strictness lane, 6 sub-wedges A1-A6):** A1 ✅ A2 ✅ A3-A6 ⏳ — see doc 13 §5.
+- **W5:** Format-string interpolation grammar.
+- **W6:** Literal-string constants (Python-`Literal`-style).
+- **W9:** `fail with "..."` expression grammar (subsumes W-short-circuit-fail).
+- **W10:** `is-a` runtime type probes.
+- **W11:** Enum / sum-type declarations.
+- **W12:** Receiver-form methods.
+- **W13:** Entry-point `main` special-case.
+- **W14:** Exit-code vocabulary.
+- **W15:** Interpreter/shebang metadata clause.
+- **W16:** Environment-variable access vocabulary.
+- **W17:** Nested-record-path syntax (TOML dot-paths).
+- **W18:** `@Union` typed-kind for sum-types (replaces earlier ambiguous "W5" reference).
+
+Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
+
+## How to use this doc
+
+**Adding a gap:**
+
+1. Translate a function in doc 14; note the gap in the translation's "Gaps surfaced" section.
+2. Append a row here with a destination pick.
+3. If the destination is a new W-wedge, reserve the next W-number and cross-reference doc 13.
+
+**Closing a gap:**
+
+1. Wedge: ship the commit, update Status to ✅, link the commit hash.
+2. Authoring-guide: write the entry, update Status to ✅, link the entry.
+3. Deferred: pin the blocker reason, update Status to 🔒, note when to revisit.
+
+**Review cadence:** every five new gaps, re-read the 🧠 design-deferred rows to see whether any blocker lifted.
