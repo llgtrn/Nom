@@ -261,4 +261,121 @@ mod tests {
             );
         }
     }
+
+    // ── effects + typed_slot assertions ──────────────────────────────────────
+
+    /// Sync agent_demo, run manifest, and verify:
+    ///   - `fetch_url` build item has 2 effect groups (benefit + hazard).
+    ///   - The first group is "benefit" with "cache_hit" in its names.
+    ///   - `minimal_safe_agent` build_order contains a typed-slot item with
+    ///     `typed_slot=true`, `word=""`, `hash=null`.
+    ///   - Existing concept / build-order assertions still pass (regression guard).
+    #[test]
+    fn build_manifest_effects_and_typed_slot() {
+        let src = agent_demo_src();
+        assert!(
+            src.exists(),
+            "agent_demo source not found at {}",
+            src.display()
+        );
+
+        let repo_dir = make_tmpdir("effects-repo");
+        let dict_dir = make_tmpdir("effects-dict");
+
+        copy_dir_all(&src, &repo_dir);
+
+        // Step 1: sync.
+        let (sc, so, se) = run_sync(&repo_dir, &dict_dir);
+        assert_eq!(sc, 0, "sync failed: stderr={se}\nstdout={so}");
+
+        // Step 2: manifest.
+        let (mc, mo, me) = run_manifest(&repo_dir, &dict_dir, None, false);
+        // Exit 1 due to MECE violations — same as primary test.
+        assert_eq!(mc, 1, "expected exit 1 (MECE violations): stderr={me}\nstdout={mo}");
+
+        let v: serde_json::Value =
+            serde_json::from_str(&mo).expect("stdout must be valid JSON");
+
+        let concepts = v["concepts"].as_array().expect("concepts must be array");
+
+        // ── regression: still 2 concepts ─────────────────────────────────────
+        assert_eq!(
+            concepts.len(),
+            2,
+            "regression: expected 2 concepts, got {}",
+            concepts.len()
+        );
+
+        // ── find minimal_safe_agent ───────────────────────────────────────────
+        let agent_cm = concepts
+            .iter()
+            .find(|c| c["name"].as_str() == Some("minimal_safe_agent"))
+            .expect("minimal_safe_agent must be in manifest");
+
+        let build_order = agent_cm["build_order"]
+            .as_array()
+            .expect("build_order must be array");
+
+        // ── effects on fetch_url ──────────────────────────────────────────────
+        let fetch_item = build_order
+            .iter()
+            .find(|b| b["word"].as_str() == Some("fetch_url"))
+            .expect("fetch_url must be in build_order");
+
+        let effects = fetch_item["effects"]
+            .as_array()
+            .expect("fetch_url must have an effects array");
+
+        assert_eq!(
+            effects.len(),
+            2,
+            "fetch_url must have 2 effect groups (benefit + hazard), got {}: {:?}",
+            effects.len(),
+            effects
+        );
+
+        let benefit_group = effects
+            .iter()
+            .find(|e| e["valence"].as_str() == Some("benefit"))
+            .expect("fetch_url must have a benefit group");
+
+        let benefit_names = benefit_group["names"]
+            .as_array()
+            .expect("benefit group must have names array");
+
+        let has_cache_hit = benefit_names
+            .iter()
+            .any(|n| n.as_str() == Some("cache_hit"));
+        assert!(
+            has_cache_hit,
+            "cache_hit must be in fetch_url benefit names: {:?}",
+            benefit_names
+        );
+
+        // ── typed-slot item in build_order ────────────────────────────────────
+        let typed_slot_item = build_order
+            .iter()
+            .find(|b| b["typed_slot"].as_bool() == Some(true))
+            .expect("build_order must contain at least one typed-slot item (@Function)");
+
+        assert_eq!(
+            typed_slot_item["word"].as_str().unwrap_or("non-empty"),
+            "",
+            "typed-slot item must have empty word"
+        );
+        assert!(
+            typed_slot_item["hash"].is_null(),
+            "typed-slot item must have null hash until Phase-9 resolver"
+        );
+
+        // ── regression: build_order still has >= 6 function items ─────────────
+        let fn_count = build_order
+            .iter()
+            .filter(|b| b["kind"].as_str() == Some("function"))
+            .count();
+        assert!(
+            fn_count >= 6,
+            "regression: expected >= 6 function items, got {fn_count}"
+        );
+    }
 }

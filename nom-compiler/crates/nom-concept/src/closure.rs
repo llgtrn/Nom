@@ -34,12 +34,15 @@ pub struct ConceptClosure {
 pub struct UnresolvedRef {
     /// Kind of the entity ("function", "module", "concept", etc.), if known.
     pub kind: Option<String>,
-    /// The bare word name.
+    /// The bare word name. Empty string when `typed_slot = true`.
     pub word: String,
     /// The prose matching hint, if any.
     pub matching: Option<String>,
     /// The parent concept or `.nomtu` name that referenced this.
     pub referenced_from: String,
+    /// True when source used the `.nomx v2` typed-slot form `the @Kind matching "..."`.
+    /// Propagated from `EntityRef::typed_slot`.
+    pub typed_slot: bool,
 }
 
 #[derive(Debug, Error)]
@@ -311,6 +314,7 @@ impl<'g> Walker<'g> {
                     word: eref.word.clone(),
                     matching: eref.matching.clone(),
                     referenced_from: parent.to_string(),
+                    typed_slot: eref.typed_slot,
                 });
             }
             Some(hash) => {

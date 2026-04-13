@@ -8,6 +8,7 @@
 //! Keep all logic in this file; do not put manifest logic in build.rs or
 //! store.rs.
 
+use std::collections::HashMap;
 use std::path::Path;
 
 use nom_dict::NomDict;
@@ -63,6 +64,27 @@ pub struct BuildItem {
     pub body_size: Option<i64>,
     /// For kind=module/composition: the constituent entity hashes.
     pub composed_of: Vec<String>,
+
+    /// True when source used `the @Kind matching "..."` (typed-slot per doc 07 §3).
+    /// When true, `word` is empty and `hash` may be None until Phase-9 resolver lands.
+    #[serde(default)]
+    pub typed_slot: bool,
+
+    /// Effect declarations on this entity (motivation 02 §9 / motivation 10 §E #4).
+    /// Empty for atomic Tier-0 entities ingested without effect annotations.
+    /// NOTE: Phase-5 follow-up — store effects in a JSON column in words_v2 during
+    /// `nom store sync` (option a) so manifest generation does not need a source re-parse.
+    #[serde(default)]
+    pub effects: Vec<EffectRecord>,
+}
+
+/// One effect group serialised for the manifest.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EffectRecord {
+    /// "benefit" | "hazard"
+    pub valence: String,
+    /// Effect names (e.g. "cache_hit", "timeout").
+    pub names: Vec<String>,
 }
 
 /// One ME (Mutually-Exclusive) violation serialised for the manifest.
@@ -87,6 +109,83 @@ pub struct UnresolvedRecord {
     pub word: String,
     pub matching: Option<String>,
     pub referenced_from: String,
+    /// True when source used the `.nomx v2` typed-slot form `the @Kind matching "..."`.
+    #[serde(default)]
+    pub typed_slot: bool,
+}
+
+// ── Effect collector ─────────────────────────────────────────────────────────
+
+/// Walk all `*.nomtu` files under `repo_path` (skipping `.git` and `target`)
+/// and collect the effect clauses declared on each entity or composition,
+/// keyed by word name.
+///
+/// Last-write-wins when the same word appears in multiple files (words are
+/// supposed to be unique per doc 08 §6.5).
+///
+/// # Phase-5 follow-up (option a)
+/// Store effects as a JSON column in `words_v2` during `nom store sync` so
+/// manifest generation does not need a source re-parse.  The column would be
+/// populated in the entity upsert loop and consumed here via `dict.find_word_v2`.
+fn collect_effects_from_repo(repo: &Path) -> HashMap<String, Vec<EffectRecord>> {
+    let mut map: HashMap<String, Vec<EffectRecord>> = HashMap::new();
+
+    collect_effects_recurse(repo, &mut map);
+    map
+}
+
+fn collect_effects_recurse(dir: &Path, map: &mut HashMap<String, Vec<EffectRecord>>) {
+    let entries = match std::fs::read_dir(dir) {
+        Ok(e) => e,
+        Err(_) => return,
+    };
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let ft = match entry.file_type() {
+            Ok(ft) => ft,
+            Err(_) => continue,
+        };
+        if ft.is_dir() {
+            let name = entry.file_name();
+            let name_str = name.to_string_lossy();
+            if name_str == ".git" || name_str == "target" {
+                continue;
+            }
+            collect_effects_recurse(&path, map);
+        } else if ft.is_file() {
+            if path.extension().and_then(|e| e.to_str()) != Some("nomtu") {
+                continue;
+            }
+            let src = match std::fs::read_to_string(&path) {
+                Ok(s) => s,
+                Err(_) => continue,
+            };
+            let nomtu_file = match nom_concept::parse_nomtu(&src) {
+                Ok(f) => f,
+                Err(_) => continue,
+            };
+            for item in &nomtu_file.items {
+                let (word, effect_clauses) = match item {
+                    nom_concept::NomtuItem::Entity(e) => (&e.word, &e.effects),
+                    nom_concept::NomtuItem::Composition(c) => (&c.word, &c.effects),
+                };
+                if effect_clauses.is_empty() {
+                    continue;
+                }
+                let records: Vec<EffectRecord> = effect_clauses
+                    .iter()
+                    .map(|ec| EffectRecord {
+                        valence: match ec.valence {
+                            nom_concept::EffectValence::Benefit => "benefit".to_string(),
+                            nom_concept::EffectValence::Hazard => "hazard".to_string(),
+                        },
+                        names: ec.effects.clone(),
+                    })
+                    .collect();
+                map.insert(word.clone(), records);
+            }
+        }
+    }
 }
 
 // ── Core pipeline ────────────────────────────────────────────────────────────
@@ -113,6 +212,9 @@ pub fn build_manifest(
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_secs())
         .unwrap_or(0);
+
+    // ── collect effects from source (option b — Phase-5 will migrate to words_v2 column) ──
+    let effects_map = collect_effects_from_repo(repo);
 
     // ── materialise graph from DB ─────────────────────────────────────────────
     let graph = materialize_concept_graph_from_db(dict, repo_id)?;
@@ -157,6 +259,7 @@ pub fn build_manifest(
                         word: path.clone(),
                         matching: None,
                         referenced_from: concept.name.clone(),
+                        typed_slot: false,
                     }],
                 });
                 continue;
@@ -175,6 +278,7 @@ pub fn build_manifest(
                         word: e.to_string(),
                         matching: None,
                         referenced_from: concept.name.clone(),
+                        typed_slot: false,
                     }],
                 });
                 continue;
@@ -212,19 +316,25 @@ pub fn build_manifest(
                 .and_then(|j| serde_json::from_str(j).ok())
                 .unwrap_or_default();
 
+            let word = row
+                .as_ref()
+                .map(|r| r.word.clone())
+                .unwrap_or_else(|| hash[..16.min(hash.len())].to_string());
+
+            let effects = effects_map.get(&word).cloned().unwrap_or_default();
+
             build_order.push(BuildItem {
                 kind: row
                     .as_ref()
                     .map(|r| r.kind.clone())
                     .unwrap_or_else(|| "unknown".to_string()),
-                word: row
-                    .as_ref()
-                    .map(|r| r.word.clone())
-                    .unwrap_or_else(|| hash[..16.min(hash.len())].to_string()),
+                word,
                 hash: Some(hash.clone()),
                 body_kind: row.as_ref().and_then(|r| r.body_kind.clone()),
                 body_size: row.as_ref().and_then(|r| r.body_size),
                 composed_of,
+                typed_slot: false,
+                effects,
             });
         }
 
@@ -244,6 +354,24 @@ pub fn build_manifest(
                 body_kind: None,
                 body_size: None,
                 composed_of: vec![],
+                typed_slot: false,
+                effects: vec![],
+            });
+        }
+
+        // Then: unresolved refs (no hash yet — resolver didn't pin them).
+        // Typed-slot refs (`@Kind matching "..."`) appear here with typed_slot=true,
+        // word="" and hash=None.  The Phase-9 resolver will back-fill the hash later.
+        for uref in &closure.unresolved {
+            build_order.push(BuildItem {
+                kind: uref.kind.clone().unwrap_or_else(|| "unknown".to_string()),
+                word: uref.word.clone(),
+                hash: None,
+                body_kind: None,
+                body_size: None,
+                composed_of: vec![],
+                typed_slot: uref.typed_slot,
+                effects: vec![],
             });
         }
 
@@ -303,6 +431,7 @@ pub fn build_manifest(
                 word: u.word.clone(),
                 matching: u.matching.clone(),
                 referenced_from: u.referenced_from.clone(),
+                typed_slot: u.typed_slot,
             })
             .collect();
 
@@ -423,5 +552,62 @@ mod tests {
             Some("does_not_exist"),
         );
         assert!(result.is_err(), "should error on unknown concept filter");
+    }
+
+    /// `collect_effects_from_repo` returns effects from files that have them
+    /// and ignores files without effects.
+    #[test]
+    fn collect_effects_from_repo_handles_mixed_files() {
+        let tmp = std::env::temp_dir().join(format!(
+            "nom-manifest-effects-unit-{}-{}",
+            std::process::id(),
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_nanos())
+                .unwrap_or(0),
+        ));
+        std::fs::create_dir_all(&tmp).expect("create tmp");
+
+        // File with effects on one entity.
+        std::fs::write(
+            tmp.join("with_effects.nomtu"),
+            "the function fetch_url is\n  \
+             given a url of text, returns text.\n  \
+             benefit cache_hit, fast_path.\n  \
+             hazard timeout.\n",
+        )
+        .expect("write nomtu with effects");
+
+        // File without effects.
+        std::fs::write(
+            tmp.join("no_effects.nomtu"),
+            "the function list_dir is\n  given a path of text, returns text.\n",
+        )
+        .expect("write nomtu without effects");
+
+        let map = collect_effects_from_repo(&tmp);
+
+        // fetch_url has 2 effect groups (benefit + hazard).
+        let fetch_effects = map.get("fetch_url").expect("fetch_url must be in map");
+        assert_eq!(fetch_effects.len(), 2, "expected 2 effect groups for fetch_url");
+
+        let benefit = fetch_effects
+            .iter()
+            .find(|e| e.valence == "benefit")
+            .expect("benefit group must exist");
+        assert!(benefit.names.contains(&"cache_hit".to_string()));
+        assert!(benefit.names.contains(&"fast_path".to_string()));
+
+        let hazard = fetch_effects
+            .iter()
+            .find(|e| e.valence == "hazard")
+            .expect("hazard group must exist");
+        assert!(hazard.names.contains(&"timeout".to_string()));
+
+        // list_dir has no effects — should not be in the map.
+        assert!(
+            !map.contains_key("list_dir"),
+            "list_dir must not be in effects map (no effects declared)"
+        );
     }
 }
