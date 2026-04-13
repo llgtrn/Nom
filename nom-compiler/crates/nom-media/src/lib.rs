@@ -407,7 +407,7 @@ pub fn verify_jpeg_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
             .map_err(|e| MediaError::Jpeg(format!("round-trip decode failed: {e}")))?;
     let roundtripped_pixels = image_to_rgba8(&roundtripped);
 
-    let score = psnr(&original_pixels, &roundtripped_pixels);
+    let score = psnr_rgba8(&original_pixels, &roundtripped_pixels);
     const THRESHOLD_DB: f64 = 30.0;
     if score < THRESHOLD_DB {
         return Err(MediaError::Jpeg(format!(
@@ -569,7 +569,7 @@ fn image_to_rgba8(img: &image::DynamicImage) -> Vec<u8> {
 fn encode_jpeg_deterministic(img: &image::DynamicImage) -> Result<Vec<u8>, MediaError> {
     use image::codecs::jpeg::JpegEncoder;
     let mut out = Vec::new();
-    let encoder = JpegEncoder::new_with_quality(Cursor::new(&mut out), 85);
+    let encoder = JpegEncoder::new_with_quality(Cursor::new(&mut out), JPEG_QUALITY);
     let width = img.width();
     let height = img.height();
     let color = img.color();
@@ -600,7 +600,7 @@ fn encode_avif_deterministic(
         (width as usize) * (height as usize) * 4,
         "encode_avif_deterministic: pixel buffer size mismatch"
     );
-    let rgba_pixels: &[RGBA8] = bytemuck_cast_slice(pixels);
+    let rgba_pixels: &[RGBA8] = rgba8_slice_from_bytes(pixels);
     let img = ravif::Img::new(rgba_pixels, width as usize, height as usize);
 
     let encoded = AvifEncoder::new()
@@ -618,11 +618,11 @@ fn encode_avif_deterministic(
 ///
 /// `RGBA8` is `rgb::RGBA<u8>` which is `#[repr(C)]` with four `u8` fields.
 /// The cast is safe when `len` is divisible by 4 (asserted by the caller).
-fn bytemuck_cast_slice(pixels: &[u8]) -> &[RGBA8] {
+fn rgba8_slice_from_bytes(pixels: &[u8]) -> &[RGBA8] {
     assert_eq!(
         pixels.len() % 4,
         0,
-        "bytemuck_cast_slice: pixel buffer length must be divisible by 4"
+        "rgba8_slice_from_bytes: pixel buffer length must be divisible by 4"
     );
     // SAFETY: RGBA8 = rgb::RGBA<u8> is repr(C) with alignment 1 and size 4.
     // The pointer cast is valid because the source slice has the same element
@@ -645,25 +645,21 @@ fn bytemuck_cast_slice(pixels: &[u8]) -> &[RGBA8] {
 /// ```
 ///
 /// Returns `f64::INFINITY` if the inputs are identical (MSE = 0).
-fn psnr(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(
-        a.len(),
-        b.len(),
-        "psnr: buffers must have equal length"
-    );
-    if a == b {
-        return f64::INFINITY;
-    }
+fn psnr_rgba8(a: &[u8], b: &[u8]) -> f64 {
+    assert_eq!(a.len(), b.len(), "psnr_rgba8: buffers must have equal length");
     let mse: f64 = a
         .iter()
         .zip(b.iter())
-        .map(|(&x, &y)| {
-            let diff = (x as f64) - (y as f64);
-            diff * diff
+        .map(|(x, y)| {
+            let d = *x as f64 - *y as f64;
+            d * d
         })
         .sum::<f64>()
-        / a.len() as f64;
-    10.0 * (255.0_f64 * 255.0 / mse).log10()
+        / (a.len() as f64);
+    if mse == 0.0 {
+        return f64::INFINITY;
+    }
+    20.0 * (255.0_f64).log10() - 10.0 * mse.log10()
 }
 
 /// Compute the Signal-to-Noise Ratio between two i16 PCM buffers.
@@ -951,6 +947,7 @@ const AVIF_SPEED: u8 = 4;
 const AVIF_QUALITY: f32 = 80.0;
 const AVIF_ALPHA_QUALITY: f32 = 80.0;
 const AVIF_THREADS: usize = 1;
+const JPEG_QUALITY: u8 = 85;
 
 /// Decode any still-image input (PNG, JPEG, BMP, TIFF, …) and
 /// re-encode to canonical AVIF bytes using `ravif` (pure-Rust AV1 encoder,
@@ -1037,16 +1034,10 @@ pub fn verify_avif_roundtrip(
     original_bytes: &[u8],
     stored_avif: &[u8],
 ) -> Result<f64, MediaError> {
-    // Decode original source to RGBA8 pixels.
-    let reader = ImageReader::new(Cursor::new(original_bytes))
-        .with_guessed_format()
-        .map_err(|e| MediaError::Avif(format!("original format detection failed: {e}")))?;
-    let orig_img = reader
-        .decode()
-        .map_err(|e| MediaError::Avif(format!("original image decode failed: {e}")))?;
-    let orig_rgba = orig_img.into_rgba8();
-    #[cfg_attr(windows, allow(unused_variables))]
-    let orig_pixels: &[u8] = orig_rgba.as_raw();
+    // On Windows the original_bytes are unused (no AVIF pixel decoder).
+    // Suppress the warning explicitly so the API signature stays symmetric.
+    #[cfg(windows)]
+    let _ = original_bytes;
 
     // Validate stored AVIF container structure (works on all platforms).
     parse_avif_metadata(stored_avif)?;
@@ -1056,6 +1047,16 @@ pub fn verify_avif_roundtrip(
     // on Windows without additional build infrastructure.
     #[cfg(not(windows))]
     {
+        // Decode original source to RGBA8 pixels (only needed for PSNR).
+        let reader = ImageReader::new(Cursor::new(original_bytes))
+            .with_guessed_format()
+            .map_err(|e| MediaError::Avif(format!("original format detection failed: {e}")))?;
+        let orig_img = reader
+            .decode()
+            .map_err(|e| MediaError::Avif(format!("original image decode failed: {e}")))?;
+        let orig_rgba = orig_img.into_rgba8();
+        let orig_pixels: &[u8] = orig_rgba.as_raw();
+
         // image 0.25 avif-native feature: AvifDecoder backed by dav1d.
         use image::ImageDecoder;
         let decoder = image::codecs::avif::AvifDecoder::new(Cursor::new(stored_avif))
@@ -1085,27 +1086,6 @@ pub fn verify_avif_roundtrip(
     ))
 }
 
-#[cfg(not(windows))]
-/// Compute PSNR (dB) between two equal-length RGBA8 pixel buffers.
-///
-/// Returns `f64::INFINITY` when MSE is zero (identical images), which is a
-/// legitimate result — not the placeholder that `Ok(INFINITY)` was before.
-fn psnr_rgba8(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "psnr_rgba8: buffers must have equal length");
-    let mse: f64 = a
-        .iter()
-        .zip(b.iter())
-        .map(|(x, y)| {
-            let d = *x as f64 - *y as f64;
-            d * d
-        })
-        .sum::<f64>()
-        / (a.len() as f64);
-    if mse == 0.0 {
-        return f64::INFINITY; // identical pixels — legitimate infinity
-    }
-    20.0 * (255.0_f64).log10() - 10.0 * mse.log10()
-}
 
 // ── AV1 video codec (§5.16.13 order #6 — §4.4.6 canonical video) ─────
 

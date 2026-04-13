@@ -19,6 +19,22 @@
 use nom_media::{ingest_avif, ingest_image_still_to_avif, verify_avif_roundtrip, Modality};
 use nom_types::body_kind;
 
+/// Emit a `#[test]` that is ignored on Windows with the standard AVIF reason.
+///
+/// On Windows, `verify_avif_roundtrip` always returns `Err` because the dav1d
+/// C toolchain is unavailable without extra build infrastructure.  Every PSNR
+/// test uses the same ignore string, so this macro de-duplicates it.
+macro_rules! avif_psnr_test {
+    (fn $name:ident() $body:block) => {
+        #[test]
+        #[cfg_attr(
+            windows,
+            ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra"
+        )]
+        fn $name() $body
+    };
+}
+
 /// 4×4 RGBA AVIF fixture.
 static TINY_AVIF: &[u8] = include_bytes!("fixtures/tiny.avif");
 
@@ -58,10 +74,7 @@ fn ingest_avif_canonical_bytes_start_with_ftyp_box() {
     );
 }
 
-#[test]
-// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
-// decoder). The PSNR gate is only meaningful on platforms with avif-native.
-#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
+avif_psnr_test! {
 fn verify_avif_roundtrip_passes_on_valid_fixture() {
     // Use TINY_PNG as the "original" source (decodable by image crate) and
     // TINY_AVIF as the "stored" canonical container (valid AVIF for parse).
@@ -72,7 +85,7 @@ fn verify_avif_roundtrip_passes_on_valid_fixture() {
         psnr >= 30.0,
         "PSNR {psnr:.2} dB is below 30 dB threshold"
     );
-}
+}}
 
 #[test]
 fn ingest_avif_is_deterministic() {
@@ -132,10 +145,7 @@ fn ingest_image_still_to_avif_body_kind_is_avif() {
     assert!(!result.canonical_bytes.is_empty());
 }
 
-#[test]
-// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
-// decoder). The PSNR gate is only meaningful on platforms with avif-native.
-#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
+avif_psnr_test! {
 fn verify_avif_roundtrip_passes_after_ingest_from_png() {
     let result = ingest_image_still_to_avif(TINY_PNG, Modality::ImageStill)
         .expect("ingest should succeed");
@@ -147,7 +157,7 @@ fn verify_avif_roundtrip_passes_after_ingest_from_png() {
         psnr >= 30.0,
         "PSNR {psnr:.2} dB is below 30 dB threshold"
     );
-}
+}}
 
 #[test]
 fn ingest_image_still_to_avif_is_deterministic() {
@@ -162,10 +172,7 @@ fn ingest_image_still_to_avif_is_deterministic() {
     );
 }
 
-#[test]
-// On Windows, verify_avif_roundtrip returns Err (no C toolchain → no dav1d
-// decoder). The PSNR gate is only meaningful on platforms with avif-native.
-#[cfg_attr(windows, ignore = "AVIF pixel decode requires dav1d (C toolchain), unavailable on Windows without extra build infra")]
+avif_psnr_test! {
 fn ingest_image_still_to_avif_gradient_64x64() {
     // Generate a 64×64 deterministic gradient programmatically (no binary fixture).
     // The gradient exercises real DCT blocks rather than trivial 4×4 pixels.
@@ -209,7 +216,7 @@ fn ingest_image_still_to_avif_gradient_64x64() {
         psnr >= 30.0,
         "PSNR {psnr:.2} dB is below 30 dB threshold for gradient"
     );
-}
+}}
 
 #[test]
 fn ingest_image_still_to_avif_rejects_invalid_bytes() {
