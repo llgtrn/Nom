@@ -320,6 +320,23 @@ impl NomDict {
         Ok(n as usize)
     }
 
+    /// Count of rows in `concept_defs` (DB1). Zero before any `nom store sync`.
+    pub fn count_concept_defs(&self) -> Result<i64> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM concept_defs", [], |row| row.get(0))?;
+        Ok(n)
+    }
+
+    /// Count of rows in `required_axes` (M7a registry). Zero until an axis
+    /// is registered via `nom corpus register-axis`.
+    pub fn count_required_axes(&self) -> Result<i64> {
+        let n: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM required_axes", [], |row| row.get(0))?;
+        Ok(n)
+    }
+
     /// §4.4.6: histogram of `body_kind` values across the dict.
     /// Returns `(kind_or_null, count)` pairs sorted by count desc.
     /// The NULL-bucket is returned as `"(untagged)"` so all rows are one
