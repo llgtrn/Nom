@@ -67,17 +67,18 @@
 | 50 | Event-trigger declarations (`runs when X happens`) | **W28** grammar rule | ⏳ queued (doc 14 #20) |
 | 51 | Visibility modifiers (`private` for scope hiding) | **W29** grammar rule | ⏳ queued (doc 14 #21) |
 | 52 | `choice X is one of A, B, C` grammar (sealed/enum) | **W30** grammar rule — merges with W11 | ⏳ queued (doc 14 #22) |
+| 53 | Method → receiver-as-parameter rule (Ruby classes, OOP methods) | authoring-guide rule | 📘 doc-todo |
 
-Totals by destination (after doc 14 #22 Kotlin sealed-class translation surfaced 1 more row):
+Totals by destination (after doc 14 #23 Ruby block+rescue translation surfaced 1 more row):
 
-- ⏳ Wedge queued: **24** (+1 W30 `choice` grammar — merges with W11)
+- ⏳ Wedge queued: **24**
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **5**
+- 📘 Authoring-guide doc-todo: **6** (+1 method→receiver-as-parameter)
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 52 rows. Closure rate 38% (20/52). **22 translations total**. Paradigm coverage now includes algebraic data types (Kotlin sealed class → v1 `choice X is one of …`).
+Backlog size: 53 rows. Closure rate 38% (20/53). **23 translations total**. Paradigm coverage now spans algebraic data types + OOP blocks/rescue + Ruby classes (methods lift to functions taking the receiver explicitly).
 
 ## Wedge master index (for cross-ref with doc 13)
 

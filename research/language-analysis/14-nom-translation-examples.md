@@ -1256,6 +1256,79 @@ the data HttpResult is
 
 ---
 
+## 23. Ruby method with block — implicit-callback pattern
+
+```ruby
+class Cache
+  def with_retry(max_attempts = 3)
+    attempts = 0
+    loop do
+      attempts += 1
+      begin
+        return yield
+      rescue StandardError => e
+        raise e if attempts >= max_attempts
+        sleep(attempts * 0.5)
+      end
+    end
+  end
+end
+
+result = cache.with_retry(5) { fetch_from_upstream(url) }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define retry_with_backoff
+  that takes a max_attempts and an attempt_action,
+  returns whatever attempt_action returns.
+  the attempts is 0.
+  while true,
+    the attempts is attempts plus 1.
+    when attempt_action succeeds, return its result.
+    when attempt_action raises an error,
+      when attempts is at least max_attempts, propagate the error.
+      otherwise, sleep for attempts times 0.5 seconds.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function retry_with_backoff is
+  intended to invoke an action repeatedly with linear backoff
+  until it succeeds or the attempt limit is reached.
+
+  uses the @Function matching "invoke action with fallible result" with at-least 0.9 confidence.
+  uses the @Function matching "sleep for seconds" with at-least 0.9 confidence.
+
+  requires max_attempts is at least 1.
+  ensures the returned value is the action's success value
+    or propagates the last error after max_attempts failures.
+  hazard rate_limited.
+
+  favor correctness.
+```
+
+And the call site:
+
+```nomx
+define fetch_with_cache
+  that takes a url, returns perhaps content.
+the content is the result of retry_with_backoff
+  with max_attempts 5 and attempt_action fetch_from_upstream.
+```
+
+### Gaps surfaced
+
+1. **Implicit blocks (`yield`, `{ … }`)** — Ruby's block argument is anonymous and positional. Nom translation lifts the block to a named function per doc 19 §D2 (e.g., `fetch_from_upstream`) and passes it as an ordinary parameter. **D2 confirmed for Ruby blocks too.**
+2. **`begin/rescue` → when-clause** — Nom's prose handles exception flow via `when X raises an error, …` / `propagate the error` / `when attempts is at least max_attempts, …`. No new grammar needed; closed under existing conditional prose.
+3. **Default parameter (`max_attempts = 3`)** — already queued in doc 16 row #37 (authoring-guide rule: declare defaults in `intended to …` prose). Ruby's common convention confirms this needs an explicit authoring-guide entry.
+4. **`sleep(attempts * 0.5)` arithmetic in args** — simple numeric expression; v1 prose `sleep for attempts times 0.5 seconds` captures it. Confirms doc 17 §I11's list/text accessor primitives generalize to arithmetic. No new wedge.
+5. **Class scope (`class Cache`)** — Ruby classes are namespaces holding methods. Nom's flat entity space has no class analog; the method becomes a top-level `function` that takes the cache as a parameter. Authoring-guide confirmation: **lift methods into functions that take the receiver explicitly.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
