@@ -264,6 +264,10 @@ Mapping onto doc 09's "Actual remaining work" critical path:
     - **S3 policy relax** — only concepts require `intended to`; entities/compositions/data may omit (a4c07 inverted + a4c31 + a4c32) (`d1a57ed`)
     - composition `then` chaining → `CompositionDecl.composes` (a4c33) (`1185d6a`)
     - v1 `@hash` backfill round-trip (a4c34) (`69bb443`)
+    - JSON round-trip parity (a4c35) (`6db7285`)
+    - earliest-stage-failure diagnostic contract (a4c36) (`d3c97ff`)
+    - strict-validator integration parity (a4c37) (`7e4b3f3`)
+    - empty + whitespace-only input safety net (a4c38) (`c869986`)
     - Delegate-to-run_pipeline migration has NO known blocker that would break on real repo sources.
 22. ✅ **Doc 14 translation corpus expanded 12 → 27 translations** across 14+ paradigm families — every major paradigm family from doc 02's 50-language survey now has at least one representative:
     - imperative (Rust/Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) + concurrency (Go goroutines) + pure functional (Haskell) + algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions) + **math-as-language (Lean theorem)** + **actor-model message-passing (Elixir GenServer)**
@@ -275,7 +279,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
     - I14-I16 (third batch): default params, lazy sequences, `identifier` shape label
     - I17-I20 (final batch): time-range, shell-exec, method→receiver, work_group
 24. ✅ **Doc 16 backlog 61 rows, 27/61 closed (44%)**: 0 authoring-guide doc-todo, 30 W-wedges queued (W5-W37), 1 smoke-test, 0 design-Q-open, 2 blocked (row #11 + #58 on borrow-model).
-25. ✅ **nom-concept tests: 135 total** (session start 77 → +58 this session).
+25. ✅ **nom-concept tests: 139 total** (session start 77 → +62 this session).
 
 **Queued (ordered by ascending effort):**
 - **M8 slice-5b-mcp-spawn** — wire `McpAdapter` to a spawned child process (~0.5d)
@@ -285,7 +289,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 - **M8 slice-3c-full** — real render via `nom-codegen` + `nom-llvm` + `nom-app` + `nom-media` (~5d, biggest user-visible wedge per doc 12 deep-think)
 - **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
 - **W4 strictness lane** — **5 of 6 wedges closed** (A1/A2/A3/A4/A6 done; A5 audited with deferred enum refactor). Pipeline field parity complete.
-- **Delegate-to-run_pipeline migration** — switch `parse_nom` / `parse_nomtu` internals to delegate to `run_pipeline`. All a4c20-a4c34 tests are the regression gate; no known blockers.
+- **Delegate-to-run_pipeline migration** — switch `parse_nom` / `parse_nomtu` internals to delegate to `run_pipeline`. All a4c20-a4c38 tests are the regression gate; no known blockers.
 - **Grammar wedges W5-W37** — 30 queued in doc 16. None started yet; starting point candidates are W9 `fail with` (small), W11+W30 choice/enum grammar (medium), W6 literal-string constants (small). Paradigm-specific wedges (W35 proof-kind, W37 actor-spawn) are design-level questions — tackle after the smaller grammar adjustments.
 - **100-repo ingestion harness** — doc 15 bumpalo smoke test compiled; live runtime blocked by sandbox UCRT shim, deferred to user shell.
 
