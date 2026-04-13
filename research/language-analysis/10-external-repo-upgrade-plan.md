@@ -159,7 +159,7 @@ Realistic M8 MVP is **~Q1 2026-Q3** from today; hardened **+1 quarter**. Depends
    - `dispatch_hover_returns_markdown_with_server_name`
    - `dispatch_unknown_method_returns_method_not_found`
    - `server_name_and_version_are_nonempty`
-5. ⏳ `nom lsp serve` CLI subcommand — separate 1-hour wedge (wire `serve_on_stdio()` from nom-cli). Week-1's library layer is binary-agnostic so the CLI slot is trivial.
+5. ✅ `nom lsp serve` CLI subcommand SHIPPED 2026-04-14 — `LspCmd::Serve` enum variant in [nom-cli/src/main.rs](../../nom-compiler/crates/nom-cli/src/main.rs) dispatches into `nom_lsp::serve_on_stdio()`. `nom-lsp` path-dep added to [nom-cli/Cargo.toml](../../nom-compiler/crates/nom-cli/Cargo.toml). Workspace `cargo build -p nom-cli` clean (1m29s). Editor integration path: `nom lsp serve` as the language-server command.
 
 Effort delta: estimated 3-5 days, shipped in one cycle (≈30 min of code + tests + build). `lsp-server` + `lsp-types` totalled 42s compile time. Remaining M16 work (hover-against-real-dict, goto-def, completion, diagnostics, semantic tokens, Authoring Protocol drill-through, salsa incremental) stays at 6-8 weeks MVP / 4-5 months full per doc-09's quarters estimate — the week-1 scaffold doesn't shorten that; it just unblocks the parallel work.
 

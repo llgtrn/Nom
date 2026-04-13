@@ -322,6 +322,16 @@ enum Commands {
         dict: PathBuf,
     },
 
+    /// Start the LSP server on stdio. Editors connect to get hover,
+    /// completion, goto-def, and diagnostics for .nom / .nomx source.
+    /// Speaks LSP 3.17 over Content-Length framed JSON-RPC.
+    /// Week-1 slice: hover returns a constant marker; later slices
+    /// wire real dict lookup + glass-box drill-through.
+    Lsp {
+        #[command(subcommand)]
+        action: LspCmd,
+    },
+
     /// Manage concepts — named domain groupings of nomtu entries. Each
     /// concept name is a first-class Nom syntax token, addressable via
     /// `use <concept>@<hash>` in .nom source.
@@ -932,6 +942,15 @@ enum ConceptCmd {
 }
 
 #[derive(Subcommand)]
+enum LspCmd {
+    /// Start the LSP server on stdio. Binary reads JSON-RPC on stdin,
+    /// emits replies on stdout. Editor clients shell this out as their
+    /// language-server command. Exits cleanly on shutdown/exit LSP
+    /// lifecycle messages.
+    Serve,
+}
+
+#[derive(Subcommand)]
 enum LocaleCmd {
     /// List all registered locale packs.
     List,
@@ -1138,6 +1157,15 @@ fn main() {
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
+        Commands::Lsp { action } => match action {
+            LspCmd::Serve => match nom_lsp::serve_on_stdio() {
+                Ok(()) => 0,
+                Err(e) => {
+                    eprintln!("nom lsp serve: {e}");
+                    1
+                }
+            },
+        },
         Commands::Concept { action } => match action {
             ConceptCmd::New { name, describe, dict } => {
                 concept::cmd_concept_new(&name, describe.as_deref(), &dict)
