@@ -151,4 +151,26 @@ mod tests {
             "stderr must be empty for an unknown repo in an in-memory dict, got: {stderr}"
         );
     }
+
+    // ── M5c: --pareto-front smoke test ────────────────────────────────────────
+
+    /// `nom app dream <hash> --tier app --pareto-front` exits 2 (non-epic, empty
+    /// dict) and stdout contains either "Pareto front" or "Pareto front: empty".
+    #[test]
+    fn pareto_front_flag_prints_pareto_section() {
+        let fake_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
+        let (code, stdout, stderr) = run_nom(&[
+            "app", "dream", fake_hash,
+            "--tier", "app",
+            "--pareto-front",
+        ]);
+        assert_eq!(
+            code, 2,
+            "expected exit 2 (non-epic with empty dict), got {code}\nstdout={stdout}\nstderr={stderr}"
+        );
+        assert!(
+            stdout.contains("Pareto front"),
+            "expected 'Pareto front' in stdout, got: {stdout}\nstderr={stderr}"
+        );
+    }
 }

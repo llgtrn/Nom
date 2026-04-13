@@ -1260,13 +1260,15 @@ pub fn layered_dream_app_recursive(
         .map(|child| layered_dream_concept_recursive(&child, dict, graph, &mut seen))
         .collect();
 
-    LayeredDreamReport {
+    let mut report = LayeredDreamReport {
         tier: DreamTier::App,
         label: manifest.name.clone(),
         leaf,
         child_reports,
         pareto_front: Vec::new(),
-    }
+    };
+    populate_pareto_fronts(&mut report);
+    report
 }
 
 /// Recursive variant of `layered_dream_concept`. Walks the concept's
@@ -1324,13 +1326,98 @@ pub fn layered_dream_concept_recursive(
         .map(|child| layered_dream_concept_recursive(&child, dict, graph, seen))
         .collect();
 
-    LayeredDreamReport {
+    let mut report = LayeredDreamReport {
         tier: DreamTier::Concept,
         label: concept_word.to_string(),
         leaf,
         child_reports,
         pareto_front: Vec::new(),
+    };
+    populate_pareto_fronts(&mut report);
+    report
+}
+
+// ── M5c: Pareto-front computation ─────────────────────────────────────────────
+
+/// Compute the Pareto front over a slice of layered reports.
+/// Each report is a candidate; the front is the set of candidates not
+/// dominated on (app_score, complete, low_partial_ratio).
+/// Returns formatted strings (one per non-dominated candidate) suitable
+/// for the `pareto_front` field of a parent LayeredDreamReport.
+pub fn pareto_front_of(candidates: &[LayeredDreamReport]) -> Vec<String> {
+    if candidates.is_empty() {
+        return Vec::new();
     }
+
+    // Extract the three axes for each candidate.
+    // Axis 1: app_score (higher is better)
+    // Axis 2: complete  (higher is better)
+    // Axis 3: 1.0 - partial / max(closure_size, 1) (higher is better)
+    struct Axes {
+        score: u32,
+        complete: usize,
+        low_partial: f32,
+    }
+
+    let axes: Vec<Axes> = candidates
+        .iter()
+        .map(|r| Axes {
+            score: r.leaf.app_score,
+            complete: r.leaf.complete,
+            low_partial: 1.0
+                - (r.leaf.partial as f32 / r.leaf.closure_size.max(1) as f32),
+        })
+        .collect();
+
+    // A candidate at index `i` is dominated iff there exists some `j != i`
+    // that is >= on all three axes and > on at least one.
+    let n = candidates.len();
+    let mut dominated = vec![false; n];
+    for i in 0..n {
+        for j in 0..n {
+            if i == j {
+                continue;
+            }
+            let ge_all = axes[j].score >= axes[i].score
+                && axes[j].complete >= axes[i].complete
+                && axes[j].low_partial >= axes[i].low_partial;
+            let gt_one = axes[j].score > axes[i].score
+                || axes[j].complete > axes[i].complete
+                || axes[j].low_partial > axes[i].low_partial;
+            if ge_all && gt_one {
+                dominated[i] = true;
+                break;
+            }
+        }
+    }
+
+    candidates
+        .iter()
+        .zip(axes.iter())
+        .zip(dominated.iter())
+        .filter(|&(_, &dom)| !dom)
+        .map(|((r, ax), _)| {
+            let total = r.leaf.score_threshold;
+            let closure = r.leaf.closure_size.max(1);
+            let partial_ratio = (r.leaf.partial as f32 / closure as f32 * 100.0).round() / 100.0;
+            format!(
+                "{}: score={}/{} complete={}/{} partial_ratio={:.2}",
+                r.label, ax.score, total, ax.complete, closure, partial_ratio
+            )
+        })
+        .collect()
+}
+
+/// Recursively populate `pareto_front` on a LayeredDreamReport and all
+/// its descendants. Idempotent. Pure post-processing pass over an
+/// already-recursed tree (M5b output).
+pub fn populate_pareto_fronts(report: &mut LayeredDreamReport) {
+    // Depth-first: populate children first.
+    for child in &mut report.child_reports {
+        populate_pareto_fronts(child);
+    }
+    // Then compute this node's own pareto_front from its direct children.
+    report.pareto_front = pareto_front_of(&report.child_reports);
 }
 
 /// Errors produced by `nom-app`.
@@ -2282,5 +2369,140 @@ mod tests {
             stub.leaf.next_instruction);
         assert!(stub.child_reports.is_empty(),
             "cycle stub must not recurse further");
+    }
+
+    // ── M5c: Pareto-front tests ───────────────────────────────────────────────
+
+    fn make_leaf(score: u32, complete: usize, partial: usize, closure_size: usize) -> DreamReport {
+        DreamReport {
+            app_score: score,
+            score_threshold: EPIC_SCORE_THRESHOLD,
+            is_epic: score >= EPIC_SCORE_THRESHOLD,
+            closure_size,
+            complete,
+            partial,
+            test_cases: 0,
+            proposals: vec![],
+            next_instruction: String::new(),
+        }
+    }
+
+    fn make_candidate(label: &str, score: u32, complete: usize, partial: usize, closure_size: usize) -> LayeredDreamReport {
+        LayeredDreamReport {
+            tier: DreamTier::Concept,
+            label: label.to_string(),
+            leaf: make_leaf(score, complete, partial, closure_size),
+            child_reports: vec![],
+            pareto_front: vec![],
+        }
+    }
+
+    #[test]
+    fn pareto_front_of_empty_returns_empty() {
+        let front = pareto_front_of(&[]);
+        assert!(front.is_empty());
+    }
+
+    #[test]
+    fn pareto_front_of_single_candidate_returns_single() {
+        let candidates = vec![make_candidate("alpha", 70, 5, 1, 10)];
+        let front = pareto_front_of(&candidates);
+        assert_eq!(front.len(), 1);
+        let s = &front[0];
+        assert!(s.contains("alpha"), "label missing: {s}");
+        assert!(s.contains("score="), "score= missing: {s}");
+        assert!(s.contains("complete="), "complete= missing: {s}");
+        assert!(s.contains("partial_ratio="), "partial_ratio= missing: {s}");
+    }
+
+    #[test]
+    fn pareto_front_of_dominated_pair_returns_one() {
+        // A dominates B on all three axes: higher score, more complete, less partial.
+        let a = make_candidate("dominated_winner", 80, 8, 1, 10);
+        let b = make_candidate("dominated_loser",  60, 5, 3, 10);
+        let front = pareto_front_of(&[a, b]);
+        assert_eq!(front.len(), 1, "expected only 1 non-dominated candidate, got {front:?}");
+        assert!(front[0].contains("dominated_winner"), "wrong candidate survived: {:?}", front[0]);
+    }
+
+    #[test]
+    fn pareto_front_of_incomparable_pair_returns_both() {
+        // A wins on score; B wins on completeness — neither dominates the other.
+        let a = make_candidate("high_score",     80, 3, 1, 10);
+        let b = make_candidate("high_completeness", 50, 9, 1, 10);
+        let front = pareto_front_of(&[a, b]);
+        assert_eq!(front.len(), 2, "both incomparable candidates should be on the front, got {front:?}");
+    }
+
+    #[test]
+    fn populate_pareto_fronts_descends_recursively() {
+        use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+        use nom_dict::NomDict;
+
+        // Build a 2-level concept tree: parent → [child_x, child_y]
+        // child_x → [grandchild_g] (so child_x.child_reports.len() == 1)
+        // child_y → []
+
+        let decl_grandchild = ConceptDecl {
+            name: "grandchild_g".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![], acceptance: vec![], objectives: vec![],
+        };
+        let decl_child_x = ConceptDecl {
+            name: "child_x".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "grandchild_g".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![], acceptance: vec![], objectives: vec![],
+        };
+        let decl_child_y = ConceptDecl {
+            name: "child_y".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![], acceptance: vec![], objectives: vec![],
+        };
+        let decl_parent = ConceptDecl {
+            name: "parent_concept".to_string(),
+            intent: String::new(),
+            index: vec![
+                IndexClause::Extends {
+                    base: "child_x".to_string(),
+                    change_set: ChangeSet::default(),
+                },
+                IndexClause::Extends {
+                    base: "child_y".to_string(),
+                    change_set: ChangeSet::default(),
+                },
+            ],
+            exposes: vec![], acceptance: vec![], objectives: vec![],
+        };
+        let graph = ConceptGraph {
+            concepts: vec![decl_grandchild, decl_child_x, decl_child_y, decl_parent],
+            modules: vec![],
+        };
+        let dict = NomDict::open_in_memory().unwrap();
+
+        // Use the recursive variant which calls populate_pareto_fronts internally.
+        let mut seen = std::collections::HashSet::new();
+        let report = layered_dream_concept_recursive("parent_concept", &dict, &graph, &mut seen);
+
+        // Parent has 2 children → pareto_front.len() <= 2 (may be 1 if one dominates).
+        assert!(
+            report.pareto_front.len() <= 2,
+            "parent pareto_front must have ≤2 entries, got {:?}",
+            report.pareto_front
+        );
+
+        // child_x has 1 grandchild → its pareto_front.len() == 1.
+        let child_x = report.child_reports.iter().find(|r| r.label == "child_x")
+            .expect("child_x must be in child_reports");
+        assert_eq!(
+            child_x.pareto_front.len(), 1,
+            "child_x has 1 child (grandchild_g), its pareto_front must have 1 entry, got {:?}",
+            child_x.pareto_front
+        );
     }
 }

@@ -536,6 +536,10 @@ enum AppCmd {
         /// `layered_dream_app_recursive` / `layered_dream_concept_recursive`.
         #[arg(long)]
         repo_id: Option<String>,
+        /// Print the Pareto front of child-concept candidates after the
+        /// dream summary. No-op when --json is set (JSON already includes it).
+        #[arg(long)]
+        pareto_front: bool,
     },
 
     /// Emit one artifact per OutputAspect at the given output directory.
@@ -1101,8 +1105,8 @@ fn main() {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
                 cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
             }
-            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id, repo_id } => {
-                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref(), repo_id.as_deref())
+            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id, repo_id, pareto_front } => {
+                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref(), repo_id.as_deref(), pareto_front)
             }
         },
     };
@@ -1120,6 +1124,7 @@ fn cmd_app_dream(
     tier: &str,
     target_id: Option<&str>,
     repo_id: Option<&str>,
+    show_pareto_front: bool,
 ) -> i32 {
     // Validate tier string early.
     let dream_tier = match nom_app::DreamTier::from_str(tier) {
@@ -1208,6 +1213,16 @@ fn cmd_app_dream(
                     );
                 }
             }
+            if !json && show_pareto_front {
+                if layered.pareto_front.is_empty() {
+                    println!("Pareto front: empty (no children to compare).");
+                } else {
+                    println!("Pareto front ({} candidate(s)):", layered.pareto_front.len());
+                    for (i, entry) in layered.pareto_front.iter().enumerate() {
+                        println!("  {}. {}", i + 1, entry);
+                    }
+                }
+            }
             if layered.leaf.is_epic { 0 } else { 2 }
         }
         nom_app::DreamTier::App => {
@@ -1263,6 +1278,16 @@ fn cmd_app_dream(
                 }
                 println!();
                 println!("{}", report.next_instruction);
+            }
+            if !json && show_pareto_front {
+                if layered.pareto_front.is_empty() {
+                    println!("Pareto front: empty (no children to compare).");
+                } else {
+                    println!("Pareto front ({} candidate(s)):", layered.pareto_front.len());
+                    for (i, entry) in layered.pareto_front.iter().enumerate() {
+                        println!("  {}. {}", i + 1, entry);
+                    }
+                }
             }
             if report.is_epic { 0 } else { 2 }
         }
