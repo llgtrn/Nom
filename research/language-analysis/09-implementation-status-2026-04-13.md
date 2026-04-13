@@ -32,12 +32,12 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: days.
 - **Deps**: M1 (report surfaces preservation outcomes).
 
-### M3 — Locale pack scaffold + canonicalization layer (deferred 07 §9 three-layer model) 🟢 scaffolded
+### M3 — Locale pack scaffold + canonicalization layer (deferred 07 §9 three-layer model) 🟢 mostly scaffolded (M3a+M3c ✅; M3b ⏳)
 
 - **Unblocks**: "Vietnamese grammar, global vocabulary" direction. Once aliases resolve to the same NomID, M11 multi-locale workspaces become feasible.
 - **Deliverable**: `crates/nom-locale/` new workspace crate with `LocalePack { id: BCP47, keyword_aliases, nom_aliases, register_metadata }`, UTS #39 confusable detector, UAX #15 NFC normalizer. `nom locale {list, validate, apply}` CLI. Test gate: `locale_vi_en_roundtrip_e2e.rs`.
-- **Evidence**: `4b04b1d` + `5b59f82` Vietnamese alias packs already shipped as one-off keyword aliasing; deferred 09 §6 specifies the full standards stack (BCP 47, CLDR, UAX 31/15, UTS 39/55). **M3a** (commit `49869ab`) lands the new `nom-locale` crate (12/12 tests) with `LocaleTag::parse` (BCP47 w/ language+script+region+variants; extensions captured in `unsupported`), `normalize_nfc` (UAX #15 via `unicode-normalization`), `LocalePack`+`RegisterMetadata`, baked `builtin_packs()` stubs for vi-VN + en-US, `is_confusable` M3a stub (returns `Deferred` until M3b data loads), and `nom locale list` / `nom locale validate` CLI. Total: +28 workspace members → 28 crates (nom-locale new). M3b will load UTS #39 confusables.txt; M3c will populate the VN alias table + implement `nom locale apply`.
-- **Effort**: M3a shipped in this cycle; M3b+M3c remain days-to-weeks each.
+- **Evidence**: `4b04b1d` + `5b59f82` Vietnamese alias packs already shipped as one-off keyword aliasing; deferred 09 §6 specifies the full standards stack (BCP 47, CLDR, UAX 31/15, UTS 39/55). **M3a** (commit `49869ab`) lands the `nom-locale` crate with `LocaleTag::parse` (BCP47), `normalize_nfc` (UAX #15), `LocalePack`+`RegisterMetadata`, baked `builtin_packs()` for vi-VN + en-US, `is_confusable` stub (returns `Deferred`), and `nom locale list` / `nom locale validate` CLI. **M3c** (commit `339a74a`) populates vi-VN `keyword_aliases` with 44 entries (22 diacritic + 22 ASCII, mirroring the lexer) + ships `apply_locale()` as a lexical pass with string-literal + comment skipping + bidirectional `to-canonical`/`from-canonical` support + `nom locale apply --write/--json` CLI. Tests: nom-locale 19/19 (+7 across M3a/M3c). M3b remains: load UTS #39 confusables.txt to upgrade `is_confusable` from `Deferred` stub to full checking.
+- **Effort**: M3a + M3c shipped; M3b (confusable data) remains days.
 - **Deps**: none; proceeds in parallel with M1/M2.
 
 ### M4 — Three-tier recursive byte ingest (doc 08 §4.3) ✅ SHIPPED
@@ -180,6 +180,7 @@ HEAD (49869ab)
   ├── M5  (layered dreaming)        ✅ shipped — f0ae193 + e28f69d + cc9641b
   ├── M7a (MECE CE scaffold)        ✅ shipped — bcadcb3
   ├── M3a (locale crate + BCP47)    ✅ shipped — 49869ab
+  ├── M3c (vi-VN alias + apply)     ✅ shipped — 339a74a
   ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot (needs network; park for manual run)
   ├── M9  (embedding re-rank)       — weeks
   ├── M10 (planner-in-Nom)          — quarters
