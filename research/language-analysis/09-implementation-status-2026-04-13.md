@@ -1,197 +1,216 @@
-# 09 — Implementation Status as of 2026-04-13
+# 09 — Ultimate Path from 2026-04-13 to Nom 1.0
 
-**Snapshot date**: 2026-04-13. **HEAD**: `fa1ba8a` (origin/main). **Session arc**: 24 commits past `1ae2136` (research docs 07+08 landed).
+**HEAD**: `fdfb32d` (origin/main). **Session arc**: 28 commits past `1ae2136` (docs 07+08 landed; `.nomx v2` keyed syntax + MECE validator + agent_demo + manifest handoff + store.rs refactor + research rewrite shipped). **Shipped surface**: doc 07 at ~98%, doc 08 at ~58%, doc 03 Phase 4 at 100%, doc 04 §4.4.6 + §10.3.1 enforced, effect valence + Vietnamese alias packs landed.
 
-This doc maps what's actually shipped vs aspirational across all 13 prior research/motivation documents. Future cycles can reference this as the canonical status before re-discovering state.
+Unlike the prior doc 09 (a status snapshot), this revision is a **PATH**: starting from HEAD `fdfb32d`, the ordered sequence of milestones that converts the current shipped surface into the vision pulled from 20 processed research docs + 7 deferred docs (total 4,382 lines of deferred research synthesized here for the first time).
 
-## End-to-end pipeline that runs today
+## Where we are
+
+The pipeline `source → DB1/DB2 store → ConceptGraph closure → resolved refs → MECE objectives → Manifest JSON` runs end-to-end today. Three demos exercise it: `examples/concept_demo` (minimal), `examples/agent_demo` (motivation 16 §5 killer-app seed: 6 tools + safety policy + intentional MECE collision), and `examples/agent_demo_vn` (inert Vietnamese locale pack — kept per user "don't extend"). e2e tests at `crates/nom-cli/tests/{concept_demo,agent_demo,agent_demo_vn,build_manifest}_e2e.rs` (Windows gated because `nom` links LLVM-C.dll). Test totals: `nom-concept` 76, `nom-dict` 24, `nom-media` 50. Typed-slot `@Kind` refs resolve via `find_words_v2_by_kind` with alphabetical-smallest deterministic tiebreak; `with at-least N confidence` threshold syntax shipped; per-slot top-K diagnostic surfaces alternatives in `nom build status`.
+
+## Where we're going
+
+The vision, synthesized across all research: Nom is a **verified semantic composition engine** (deferred 06 §8 blueprint) where the unit of the language is the `.nomtu` entry (a hash-addressed Nom with kind + contract + effects + provenance + scores); Vietnamese provides the **grammar skeleton** — classifier-first, head-initial, topic-markable, alias-rich — while vocabulary is **globally lexical** via locale packs mapping to the same NomID (deferred 09 §3, §5); the dictionary is structurally **isomorphic to Vietnamese morpheme composition** (deferred 11: ~50-80 math morphemes → all of math; deferred 12: 145 morphemes → all of science), so ~200 kinds can generate all of computable knowledge via `-> :: +` operators that are **simultaneously categorical morphism composition, modus ponens, and function application** (Curry-Howard-Lambek, deferred 11 §B); composition is verified at every stage through contract compatibility, effect tracking, dimensional analysis, and algebraic laws (deferred 11 §C, deferred 12 Modelica across/through §); the only AI component is a **thin intent-resolution transformer** mapping natural language to bounded Nom concepts (deferred 05 §Hybrid); every compile emits a **glass-box report** (deferred 06 §Phase 7); the compiler itself is eventually **remade in Nom via a fixpoint bootstrap** (doc 04 Phase 10) and Rust is archived.
+
+## The path
+
+Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · **Effort** · **Deps**.
+
+### M1 — Per-slot top-K glass-box in manifest + report format
+
+- **Unblocks**: transition from "fa1ba8a diagnostic" to a first-class glass-box artifact per deferred 06 §Phase 7 (the promised differentiator). Every later milestone needs reports to explain its own decisions.
+- **Deliverable**: `nom build report <repo>` CLI emitting a `ReportBundle` JSON (resolved NomID + alternatives + rejection reasons + scores + effect list + MECE outcome + provenance trail) + rendered human form. Test gate: `report_roundtrip_e2e.rs`.
+- **Evidence**: `853e70b` shipped per-slot top-K diagnostic; `fef0419` shipped manifest JSON plumbing. The structure already exists, the surfacing is a thin wrap.
+- **Effort**: days.
+- **Deps**: none (current HEAD).
+
+### M2 — Acceptance-predicate preservation engine (doc 08 §9.1)
+
+- **Unblocks**: the "preserve, never mislead" discipline that makes dreaming safe. Without this, M5 layered dreaming can drift.
+- **Deliverable**: `crates/nom-concept/src/acceptance.rs` implementing predicate-preservation checks across revisions + `nom build verify-acceptance` subcommand. Test gate: `acceptance_preserve_e2e.rs`.
+- **Evidence**: doc 08 §9.1 ⏳ marked; MECE validator shipped `c63a6a7` proves the hard-check pattern.
+- **Effort**: days.
+- **Deps**: M1 (report surfaces preservation outcomes).
+
+### M3 — Locale pack scaffold + canonicalization layer (deferred 07 §9 three-layer model)
+
+- **Unblocks**: "Vietnamese grammar, global vocabulary" direction. Once aliases resolve to the same NomID, M11 multi-locale workspaces become feasible.
+- **Deliverable**: `crates/nom-locale/` new workspace crate with `LocalePack { id: BCP47, keyword_aliases, nom_aliases, register_metadata }`, UTS #39 confusable detector, UAX #15 NFC normalizer. `nom locale {list, validate, apply}` CLI. Test gate: `locale_vi_en_roundtrip_e2e.rs`.
+- **Evidence**: `4b04b1d` + `5b59f82` Vietnamese alias packs already shipped as one-off keyword aliasing; deferred 09 §6 specifies the full standards stack (BCP 47, CLDR, UAX 31/15, UTS 39/55).
+- **Effort**: weeks.
+- **Deps**: none; proceeds in parallel with M1/M2.
+
+### M4 — Three-tier recursive byte ingest (doc 08 §4.3)
+
+- **Unblocks**: the layered compiler — atoms → `.nomtu` → `.nom` → cross-concept closure — that doc 08 promised but only shipped single-pass.
+- **Deliverable**: `resolve_closure` extended to recurse through nested concept refs in any tier; `nom store sync --recursive`. Test gate: `three_tier_recursive_e2e.rs` with a concept that imports a concept that imports a module.
+- **Evidence**: `c5cdce6` concept-graph closure walker (single-tier); `aaa914d` DB1+DB2 schema supports the tiering.
+- **Effort**: days.
+- **Deps**: M1.
+
+### M5 — Layered dreaming (concept-tier + module-tier) (doc 08 §9)
+
+- **Unblocks**: the `nom app dream` loop running at three tiers instead of one — proposals at the right granularity (whole app vs. concept vs. module vs. entry).
+- **Deliverable**: `nom app dream --tier {app|concept|module}` with DreamReport preservation across tiers + score ≥ EPIC_SCORE_THRESHOLD gating (memory: app_score ≥ 95). Test gate: `layered_dream_e2e.rs`.
+- **Evidence**: single-tier `nom app dream` already exists per user memory project_nom_dreaming_mode.md; tier recursion is additive.
+- **Effort**: weeks.
+- **Deps**: M2 (preservation) + M4 (recursive tiers).
+
+### M6 — Corpus ingestion: PyPI top-100 pilot (doc 04 §5.17 + deferred 08 §Path A)
+
+- **Unblocks**: the dictionary growth that underlies everything else. Without corpus, the MECE CE-check is stub, the semantic re-rank is stub, and the scaling claim (145 morphemes → all science) is unvalidated. A small pilot validates the pipeline before the full multi-ecosystem run.
+- **Deliverable**: `nom corpus ingest pypi --top 100 --budget 50GB` running stream-and-discard per §5.17 (peak disk = max per-repo-source + current-dict); checkpoint + resume; workspace-gc; ingestion report. Test gate: at least 10K `.nomtu` entries with Partial status in DB2.
+- **Evidence**: `nom-corpus` crate scaffolded per memory `project_nom_roadmap`; `underthesea` + `MELT` identified as preprocessing/eval references (deferred 08 §4).
+- **Effort**: weeks.
+- **Deps**: M1 (reports surface ingestion outcomes). Can run in parallel with M2-M5.
+
+### M7 — MECE CE-check via corpus-registered required axes (doc 08 §9.2)
+
+- **Unblocks**: the "collectively-exhaustive" half of MECE that currently ships as a stub. After this, an agent_demo that declares `database` but forgets `auth_provider` is caught at build time.
+- **Deliverable**: `entry_required_axes` table in corpus side-tables + `nom build status` extension checking each composition against registered per-kind required sets. Test gate: `mece_ce_missing_axis_e2e.rs` exits 1.
+- **Evidence**: `c63a6a7` MECE ME-check shipped (same validator pattern extends); doc 08 §9.2 ⏳.
+- **Effort**: days after M6.
+- **Deps**: M6 (corpus must register axes first).
+
+### M8 — Intent-resolution transformer (thin LLM integration) (deferred 05 §Hybrid + motivation 13)
+
+- **Unblocks**: the **prose → .nom artifact** pipeline described in user memory `project_nom_prose_to_artifact`. After this, "build me a secure API" resolves to `[http_server, auth_flow, tls, rate_limiter]` deterministically.
+- **Deliverable**: `crates/nom-intent/` — bounded-output transformer wrapper (output domain = registered Nom kinds) + validation against DB2 (did it produce real concepts?) + confidence threshold. `nom author resolve-intent <prose>` CLI. Test gate: `intent_bounded_output_e2e.rs` — outputs MUST resolve or report unresolvable.
+- **Evidence**: deferred 05 §Hybrid specifies ~1B params, bounded output space; `underthesea` + `PhoGPT` baselines identified (deferred 08 §5 Path A). AI-invokes-compiler protocol per user memory §5.19.
+- **Effort**: weeks.
+- **Deps**: M6 (needs a populated dictionary to resolve to).
+
+### M9 — Phase-9 corpus-embedding semantic re-rank (doc 07 §3.3 pending piece)
+
+- **Unblocks**: replace the alphabetical-smallest hash tiebreak with genuine semantic scoring; closes doc 07 to 100%.
+- **Deliverable**: per-kind embedding index in `entry_embeddings` side-table; `find_words_v2_by_kind` ranks by (score × similarity × provenance). Test gate: `embedding_rerank_regression_e2e.rs` — same demo resolves to higher-scored Nom than alphabetical pick would.
+- **Evidence**: `bf95c2c` + `c405d2a` shipped the deterministic stub; user memory roadmap §5.10 canonicalization lifts Partial → Complete.
+- **Effort**: weeks.
+- **Deps**: M6.
+
+### M10 — Phase-5 planner-in-Nom port (doc 03 Phase 5)
+
+- **Unblocks**: the compiler starts eating its own manifests. After this, `RepoManifest` → executable plan is internal Nom composition, not external tooling.
+- **Deliverable**: `nom plan <manifest.json>` producing `BuildPlan` JSON (ordered step list + effect-aware scheduling). Planner itself authored as `.nomtu` entries in `stdlib/self_host/planner/`. Test gate: `planner_self_host_e2e.rs`.
+- **Evidence**: doc 04 §10.3.1 fixpoint toolchain pinned `29f5f1d`/`bc89d8a`/`96267df`; manifest JSON handoff shipped `fef0419`; self-host lexer precedent at `nom-compiler/stdlib/self_host/lexer.ll`.
+- **Effort**: quarters (doc 03 flags this as multi-week, user memory says "parked").
+- **Deps**: M1, M4, M9.
+
+### M11 — Multi-locale workspaces (deferred 09 §8 per-file locale + deferred 07 §3.1-3.4)
+
+- **Unblocks**: a source file can declare `locale vi` or `locale ar script Arab` and the parser normalizes to canonical AST. Core of "lexical democracy without semantic fragmentation."
+- **Deliverable**: `locale <bcp47> [script <code>]` directive in parser; normalization layer between parse and resolve; formatter preserves locale. Test gate: `parse_same_ast_across_locales_e2e.rs` — VN, EN, ES sources produce byte-identical AST after normalization.
+- **Evidence**: deferred 07 §9 three-layer model (surface / normalization / semantic); deferred 09 §8 parser pipeline.
+- **Effort**: weeks.
+- **Deps**: M3 (locale packs must exist first).
+
+### M12 — Algebraic laws + dimensional analysis on Noms (deferred 11 §C + deferred 12 Modelica)
+
+- **Unblocks**: the "optimize by law" capability that no existing language does — associative reduction, commutative parallelization, dimensional type errors at compile time. Unblocks cross-domain composition (M14).
+- **Deliverable**: `laws: [associative, commutative, identity, inverse, distributive]` field on Nom entries; `dimensions: [length / time]` field; verifier pass that rejects `newtons + meters_per_second`; optimizer pass that re-associates multiplication chains. Test gate: `dimension_mismatch_rejected_e2e.rs` + `associative_reassoc_optimizer_e2e.rs`.
+- **Evidence**: deferred 11 §C concrete schema; deferred 12 Modelica across/through Power=effort×flow universality.
+- **Effort**: weeks.
+- **Deps**: M6 (laws live in dict).
+
+### M13 — Mass corpus: top-500 PyPI + top 500/ecosystem GitHub (doc 04 §5.17)
+
+- **Unblocks**: the scaling claim. 145 morphemes → all of science needs >1M entries to validate. Also unblocks M14 cross-domain.
+- **Deliverable**: full §5.17 protocol run across JS/Python/Rust/Go/Java/C++/Swift/Ruby/PHP; `nom corpus report` produces per-ecosystem completion metrics; Partial entries systematically lifted to Complete via §5.10.
+- **Evidence**: M6 pilot validates the pipeline; memory roadmap §5.17 specifies the full protocol.
+- **Effort**: quarters.
+- **Deps**: M6, M7.
+
+### M14 — Cross-domain connectors (Modelica across/through, deferred 12 §Architecture)
+
+- **Unblocks**: the universal-knowledge-composition claim. Physics/chemistry/biology/economics compose in one flow with automatic conservation-law verification.
+- **Deliverable**: `connector` kind + `across` / `through` contract fields + conservation-law verifier. Test gate: electromechanical motor example from deferred 12 §Modelica compiles and verifies `power_in >= power_out`.
+- **Evidence**: deferred 12 §Modelica; Vietnamese morpheme cross-domain reuse (trường, năng_lượng, cân_bằng) is the linguistic precedent.
+- **Effort**: weeks.
+- **Deps**: M12 (needs laws+dimensions), M13 (needs domain coverage in dict).
+
+### M15 — Parser-in-Nom prereqs + Parser in Nom (doc 04 Phases 6-7)
+
+- **Unblocks**: compiler self-hosting step 2. After this, `.nomtu` parser + `.nom` parser + `.nomx` parser are all expressed as Nom compositions.
+- **Deliverable**: `stdlib/self_host/parser/` tree parallel to existing lexer; `nom lex+parse` pipeline runnable from self-host `.nomtu`. Test gate: `parser_self_host_e2e.rs` produces byte-identical AST to Rust parser on full demo corpus.
+- **Evidence**: `05ee1b6` + `d9425ba` hand-rolled parsers shipped in Rust (source of truth for Nom port); lexer precedent done (memory: Phase 3 complete).
+- **Effort**: quarters (doc 04: 10-14 weeks for Phase 7 alone).
+- **Deps**: M10.
+
+### M16 — LSP + Authoring Protocol (doc 04 Phase 9, user memory lists as CORE)
+
+- **Unblocks**: the "tooling is generated from semantic pipeline, not bolted on" principle (deferred 06 §Phase 9). Editor hover explains every Nom; "why this Nom?" command drops users into the glass-box report.
+- **Deliverable**: `nom-lsp` crate implementing LSP server; Authoring Protocol spec + reference client. Test gate: `lsp_hover_why_this_nom_e2e.rs`.
+- **Evidence**: doc 04 §9 CORE designation; deferred 06 §Phase 9 checklist (formatter, LSP, hover, graph viz, verification diff).
+- **Effort**: quarters (doc 04: 12-16 weeks).
+- **Deps**: M1, M8. Can proceed in parallel with M13-M15.
+
+### M17 — Phase-10 fixpoint bootstrap + rust-nomc retirement (doc 04 Phase 10)
+
+- **Unblocks**: the proof that Nom is a language. This is the definition, from the rustc/GHC/OCaml/Zig lineage.
+- **Deliverable**: Stage0-Rust → Stage1 → Stage2 → Stage3; `s2 == s3` byte-identical. Proof-of-bootstrap tuple `(s1_hash, s2_hash, s3_hash, fixpoint_at_date, compiler_manifest_hash)` recorded permanently in the dict. Parity track: ≥99% IR equivalence + 100% runtime correctness on test corpus. Cutover: 4wk parity validation → default flip → Rust source archived to `.archive/rust-<version>/` → 3mo grace.
+- **Evidence**: user memory `project_nom_language_evolution.md` + roadmap Phase 10; §10.3.1 toolchain pin + fixpoint discipline already enforced.
+- **Effort**: quarters (multi-month).
+- **Deps**: M10, M15, M16. **This is the 1.0 gate.**
+
+### M18 — Phase-12 closure-level specialization (70-95% binary reduction) (doc 04 Phase 12)
+
+- **Unblocks**: the performance/deploy story that makes Nom credible for production (motivation 16 §6 "proving fast/scales/lasts").
+- **Deliverable**: `nom bench {<hash>, compare, regress, curate}` driving closure-level specialization via `entry_benchmarks`; bipartite min-cost assignment per §5.15 (joint multi-app × multi-platform). Test gate: `specialization_binary_reduction_e2e.rs` shows ≥70% reduction on demo corpus.
+- **Evidence**: memory roadmap §5.15 joint optimization; `entry_benchmarks` typed side-table designed.
+- **Effort**: quarters.
+- **Deps**: M13, M17.
+
+## Parallel tracks
+
+Three parallel lanes can proceed after the current HEAD:
+
+- **Glass-box / verification lane**: M1 → M2 → M7 → M12 → M14.
+- **Dictionary / corpus lane**: M6 → M9 → M13 → M18.
+- **Surface / tooling lane**: M3 → M11 → M16.
+
+Self-hosting lane M10 → M15 → M17 is the critical chain; it depends on outputs of all three parallel lanes before 1.0.
+
+## Critical path to Nom 1.0 (motivation 16 "usable 1.0")
 
 ```
-.md drafts                        author writes prose intent
-   │
-   │  nom author translate (existing)
-   ▼
-.nom + .nomtu source              hand-edited or AI-emitted; per doc 08 §3
-   │
-   │  nom store sync <repo>       walks files → parses → writes DB1+DB2 rows
-   ▼
-SQLite (concept_defs + words_v2)  per doc 08 §2; additive on existing entries table
-   │
-   │  nom build status <repo> [--write-locks]
-   ▼
-ConceptGraph + closure walk        DFS post-order with cycle detection (doc 08 §4.3)
-   │
-   │  resolve_closure              kind-or-word lookup; alphabetical-smallest tiebreak
-   │                                (Phase-9 corpus-embedding re-rank pending)
-   ▼
-ResolvedRefs + UnresolvedRefs      doc 08 §5 per-kind embedding-index discipline
-   │
-   │  check_mece                   per doc 08 §9.2 — Mutually-Exclusive axis check
-   │                                (Collectively-Exhaustive deferred to Phase-9 corpus)
-   ▼
-MECE-validated objectives          exit 1 on collision; stub note for CE
-   │
-   │  nom build manifest <repo>    JSON RepoManifest with full closure + objectives
-   │                                + acceptance + effects + typed_slot + threshold
-   ▼
-Phase-5 planner handoff (pending)
+HEAD (fdfb32d)
+  ├── M1  (glass-box report)        — days
+  ├── M2  (acceptance preservation) — days
+  ├── M6  (PyPI-100 corpus pilot)   — weeks
+  ├── M9  (embedding re-rank)       — weeks
+  ├── M10 (planner-in-Nom)          — quarters
+  ├── M15 (parser-in-Nom)           — quarters
+  ├── M16 (LSP)                     — quarters
+  └── M17 (fixpoint bootstrap)      — quarters  ← 1.0 cut here
 ```
 
-Concrete examples that exercise this pipeline:
+Milestones M3/M11 (multi-locale), M7/M12/M14 (MECE-CE + laws + cross-domain), M8 (intent transformer), M13 (mass corpus), M18 (specialization) are **post-1.0 enhancements** that land on the parallel tracks but don't gate the bootstrap proof. 1.0 = "compiler is self-hosted + Rust archived."
 
-- [`examples/concept_demo/`](../../nom-compiler/examples/concept_demo/) — minimal end-to-end (1 root concept + 1 nested concept + 1 module with 2 entities + 1 composition).
-- [`examples/agent_demo/`](../../nom-compiler/examples/agent_demo/) — motivation 16 STRONGEST candidate (AI-agent composition: 6 tools + safety policy + intentional MECE collision).
-- [`examples/agent_demo_vn/`](../../nom-compiler/examples/agent_demo_vn/) — Vietnamese keyword aliases applied to the same demo (motivation 02 phase 1; user later clarified vocabulary stays English).
+## Honest risks
 
-All three have e2e tests at `crates/nom-cli/tests/{concept_demo,agent_demo,agent_demo_vn,build_manifest}_e2e.rs` (all `#[cfg(not(windows))]` because the `nom` binary links LLVM-C.dll for compile commands; metadata pipeline runs anywhere).
+1. **M6/M13 corpus ingestion is disk-stream-and-discard or bust.** Doc 04 §5.17 says peak disk = max per-repo-source + current-dict; any caching of intermediates blows the budget. Skip-lists + checkpointing + bandwidth throttle are non-optional. Risk: a sloppy ingestion run corrupts the dict.
+2. **M8 intent transformer is the only probabilistic component.** Deferred 05 §Hybrid. If its output isn't hard-bounded to registered Nom kinds + validated against DB2, the whole "zero hallucination" thesis collapses. Must reject any token not in the registered output space.
+3. **M10/M15/M17 self-hosting underestimated historically.** Doc 04 marks Phase 5 multi-week, user memory says "parked." Every self-hosting language (rustc took ~10 years to full parity) runs long. M10 being a quarter is aggressive.
+4. **M11 multi-locale = immediate security surface.** Deferred 09 §11 flags confusable attacks (UTS #39), translation drift, tooling burden. Locale pack governance needs community review before expanding beyond VI/EN.
+5. **M14 cross-domain laws are easy to write, hard to verify.** Deferred 11 §7.1 semantic aliasing: two Noms that look equivalent but differ in hidden assumptions. Conservation laws need airtight contract vocabulary or the verifier makes pretty but wrong claims.
+6. **M3 Vietnamese positioning risk.** User clarified vocabulary stays English; `agent_demo_vn` was reclassified "keep but don't extend." Deferred 09 §11.5 cultural asymmetry warning: if Vietnamese provides deep grammar but English dominates visible tooling, system silently re-centralizes on English. M11 must genuinely ship non-English locales or the lingua-franca claim is hollow.
+7. **Scoring as pseudo-objective (deferred 06 §7.2).** "security: 0.96" is decorative numerology unless derivation + provenance + update policy + auditability are explicit. M1 glass-box must surface score provenance, not just the number.
+8. **Graph-aware ownership is later-stage (deferred 06 §7.3).** Memory strategy inference across shared mutable graphs is one of the hardest systems problems. Do not block 1.0 on ownership sophistication; ship simple strategy + improve post-1.0.
+9. **Dictionary curation is socio-technical (deferred 06 §7.5).** Who publishes, reviews, earns trust, excludes malicious Noms — this is governance, not code. Parallel to M13 mass ingestion, a review/trust model must exist or the dict becomes a supply-chain attack surface.
 
-## Per-doc status
+## What we're NOT building (and why)
 
-### `02-fifty-language-analysis.md`
-
-**Status**: 100% as docs (440 lines). Survey of 47 design failures across 40+ languages with mapped prevention in Nom architecture.
-
-**Implementation derivative**: many of the "Nom prevents this" claims rely on infrastructure not shipped yet (real planner, real codegen, runtime sandboxing). The CLAIMS are documented; the BACKING CODE is partial. `body_kind` invariant 15 is enforced (commit `540620d`/`6c336b4`); other claims await Phase-5+ code.
-
-### `03-self-hosting-roadmap.md`
-
-**Status**: docs at 100%, code at 40%. 7 phases: Phase 4 (DIDS) ✅ shipped. Phase 5 (planner-in-Nom) — 0% (multi-week, parked). Phases 6–10 — 0%.
-
-### `04-next-phases-plan.md`
-
-**Status**: docs at 100% (2540 lines, the meta-plan). Code: §4.4.6 body_kind invariant enforced (commits 540620d/6c336b4); §10.3.1 toolchain pin verified (29f5f1d/bc89d8a/96267df); §5.16.13 codec roadmap order #1 PNG path partly addressed via the AVIF milestone.
-
-### `04-next-phases-plan-review.md`
-
-**Status**: docs at 100% (142 lines, risk + review). Risk #1 toolchain unblocked + CI-enforced.
-
-### `05-natural-language-syntax.md`
-
-**Status**: docs at 100% (.nomx v1 grammar shipped; doc has 382 lines including §10 implementation status with 34/34 parser tests at the time). The `.nomx v1` parser at `crates/nom-parser/src/nomx.rs` predates the doc-08 layered work.
-
-**Note**: doc 08's `.nom`/`.nomtu` parser at `crates/nom-concept/src/lib.rs` is a SEPARATE parser that handles the doc-08 layered architecture, NOT a successor to the `.nomx v1` parser. They serve different scopes.
-
-### `06-nomx-keyword-set.md`
-
-**Status**: docs at 100% (vocabulary draft companion to 05). Implementation extends the doc 08 closed kind set with: `function|module|concept|screen|data|event|media`. Keyword set extended in cycles for typed-slot syntax (`@Function`, `with at-least N confidence`).
-
-### `07-keyed-similarity-syntax-proposal.md`
-
-**Status**: docs at 100% (.nomx v2 keyed syntax). **Code at ~98%** as of HEAD `fa1ba8a`:
-
-- ✅ `@Kind` sigil token + parser (`Tok::AtKind`, `parse_entity_ref_after_the` — commit c9d1835)
-- ✅ `EntityRef.typed_slot` AST flag + serde round-trip
-- ✅ Resolver branches on typed_slot → `find_words_v2_by_kind` with alphabetical tiebreak (commit c405d2a)
-- ✅ `with at-least 0.85 confidence` threshold syntax (commit 97c836f, closes §6.3)
-- ✅ Manifest carries typed_slot + threshold through serde
-- ✅ Per-slot top-K diagnostic in `nom build status` (doc 07 §3.3 — commit 853e70b): when typed-slot has N>1 candidates, prints `slot @Kind matching "..."` header + resolved + alternatives list
-- ⏳ Phase-9 corpus embedding semantic re-rank — not yet built; stub uses alphabetical pick
-
-**Three §6 open questions all resolved**:
-1. Kind sigil — shipped (user reversed doc-08 §8.1's prose-only decision)
-2. Lock storage — typed slots NOT written back per §3.5; v1 refs still get `name@hash` writeback
-3. Threshold authoring — option (c) per-slot inline shipped (`with at-least N confidence`)
-
-### `08-layered-concept-component-architecture.md`
-
-**Status**: docs at 100% (the architecture proposal). **Code at ~55%**:
-
-- ✅ Three-tier model: atoms (DB2 rows) / `.nomtu` modules (multi-entity files) / `.nom` concepts (multi-concept files; dictionary-relative index)
-- ✅ Two databases: DB1 (`concept_defs`) + DB2 (`words_v2`), additive to existing `entries` table (no breaking change)
-- ✅ Lock writeback — source IS the lock for v1 refs (doc 08 §8.2)
-- ✅ `nom store sync` + `nom build status [--write-locks]` + `nom build manifest`
-- ✅ Concept-graph closure walker with cycle detection
-- ✅ MECE validator (§9.2) — ME-collision check shipped; CE check stub-only (corpus-required-axis-set deferred)
-- ⏳ Layered dreaming (§9) — only single-tier `nom app dream` exists; concept-tier + module-tier dreaming pending
-- ⏳ Three-tier compiler (recursive ingest of bytes per §4.3) — pending Phase 5/6
-- ⏳ Acceptance-predicate preservation engine (§9.1) — preserve/no-mislead discipline pending
-- ⏳ Cascade through dream (§9.3) — pending
-- ⏳ Singleton enforcement via MECE — design shipped as part of MECE work; corpus required-axis registration deferred
-
-### Motivation 01 — `01-world-language-survey.md`
-
-**Status**: docs at 100% (parallel to language-analysis 02 from the motivation lens). No direct code.
-
-### Motivation 02 — `02-vietnamese-grammar-to-novel-syntax.md`
-
-**Status**: docs at 100%. **Code partial**:
-
-- ✅ Mandatory classifiers (§3) — `the function`, `the concept`, etc. shipped via doc 08 closed kind set
-- ✅ Modifier follows head (§2) — `<word> matching "..."` clauses + `<ref> with at-least N confidence`
-- ✅ Effect valence (§9 — genuinely novel per motivation 10 §E #4) — `benefit`/`hazard` keywords on entities and compositions (commit c9d1835), surfaced in manifest (eeb1e23). **English-only vocabulary** per user clarification; Vietnamese loanwords explicitly out of scope.
-- ✅ Vietnamese keyword aliases (locale pack) — ASCII (4b04b1d) + diacritic (5b59f82) shipped; user later clarified to keep but not extend (vocabulary stays English; Vietnamese inspires GRAMMAR style not vocabulary).
-- ⏳ Aspect markers (§8 — `verified`/`active`/`deferred` state) — 0%; low semantic value without runtime
-- ⏳ Topic-comment block discipline (§7) — implicit via current `{}`-free declarations; explicit `{...}` topic markers not yet formalized
-- ⏳ Reduplication parameterized variants (§12) — 0%
-- ⏳ Sino-Vietnamese morphemes as core kinds (§11) — implicit via the closed kind set; no `~200-500 root vocabulary` registered
-
-### Motivation 10 — `10-how-novel-replaces-everything.md`
-
-**Status**: docs at 100% (universal-replacement strategy). **Code: aspirational at scale**.
-
-- §B "Universal replacement" — long-game; the dictionary is empty modulo the demo nomtu files
-- §C "NovelOS dictionary extraction" — `nom-corpus` crate exists with `ingest pypi/github/repo` skeletons (per memory) but mass corpus ingestion is a Phase-5+ activity
-- §E "What Novel uniquely contributes" — 6 items listed; effect valence (§E#4) is the one item shipped as code; others (semantic contract extraction, scored composition with provenance, glass-box reports, Vietnamese 4-layer disambiguation cascade) are AST-level only
-
-### Motivation 13 — `13-beyond-all-models.md`
-
-**Status**: docs at 100% (hybrid AI/Nom architecture). **No direct code**; the framing informs design but no Phase-9 LLM-author-loop exists yet.
-
-### Motivation 16 — `16-competitive-analysis-and-roadmap.md`
-
-**Status**: docs at 100% (honest competitive position + roadmap). **Killer-app foundation: ~50%**.
-
-- §5 STRONGEST candidate (AI-agent composition) — `examples/agent_demo/` ships as the minimal demonstration
-- §6 build sequence Phases 0-1 — substantially landed (parser + tooling + LLVM backend in main + first useful CLI)
-- Phase 2-4 (proving fast/scales/lasts) — pending; needs corpus-fed dictionary at scale + benchmark integration
-
-## Architecture decisions made (with refs)
-
-| Decision | Rationale | Commit |
-|---|---|---|
-| Three tiers above artifact store | Authors reason in concept-level groupings (doc 08 §1) | `1ae2136` (doc) + entire arc |
-| DB1+DB2 additive (don't migrate `entries`) | Preserve existing 1715-line nom-dict + 1847-line nom-resolver | `aaa914d` |
-| Hand-rolled parsers (no nom/pest/lalrpop) | Determinism + small dep surface per §10.3.1 fixpoint | `05ee1b6` + `d9425ba` |
-| `@Kind` sigil for typed-slot refs | User explicit reversal of doc 08 §8.1 (had rejected sigils) per "syntax exactly like doc 07" | `c9d1835` |
-| Source-as-lock for v1 refs; no writeback for typed-slot refs | Doc 08 §8.2 + doc 07 §3.5 | `a04b91e` (v1) + `c405d2a` (v2) |
-| Stub resolver: alphabetical-smallest hash tiebreak | Determinism per §10.3.1; Phase-9 corpus replaces with semantic re-rank | `bf95c2c` + `c405d2a` |
-| MECE exit-1 on ME collision | Validator does real work, not advisory; agent_demo intentionally collides to prove it | `c63a6a7` |
-| Effect valence keywords English-only | User clarification: vocabulary stays English; Vietnamese inspires GRAMMAR style | `c9d1835` (with VN-loanword strip) |
-| Confidence threshold per-slot inline | Doc 07 §6.3 option (c) | `97c836f` |
-
-## What's parked + why
-
-- **Phase-5 planner-in-Nom port** — multi-week scope; manifest handoff exists but the planner consuming it doesn't.
-- **Phase-9 corpus-embedding resolver** — needs corpus pipeline + index infrastructure; multi-week.
-- **Aspect markers** (motivation 02 §8) — low semantic value without runtime to interpret `active`/`verified`/`deferred`.
-- **Topic-comment formalization** (motivation 02 §7) — current parser already accepts the implicit form; explicit `{...}` markers add complexity without immediate payoff.
-- **Vietnamese-character function names** — explicit exclusion in lexer (function names stay ASCII per `expect_word` enforcement); diacritic-in-identifier scope is bigger than diacritic-in-keyword.
-- **MECE CE-check** (collectively-exhaustive) — needs corpus-side required-axis registry per composition layer.
-- ~~**`store.rs` module split**~~ — DONE (commit fa1ba8a). 1814 → 5 files: `mod.rs` 957 + `add_media.rs` 112 + `sync.rs` 279 + `resolve.rs` 322 + `materialize.rs` 172. mod.rs further split into `commands.rs` is the remaining hygiene work.
-
-## Open questions still unresolved
-
-1. **Doc 07 vs doc 08 syntax tension on the `the NOUN` form** — doc 08 §8.1 chose prose, user reversed for typed slots. Both forms now coexist via `EntityRef.typed_slot`. Long-term: should `the NOUN` form be deprecated in favor of `@Kind`, or kept as the v1 path forever?
-2. **Tier-2 override scope** (doc 08 Q5) — deferred per user "I don't understand"; revisit when concrete use case arises.
-3. **Aspect marker semantics** — `verified`/`active`/`deferred` are runtime state. What's the runtime that interprets them? Phase-9+ work.
-4. **Singleton CE registry** — where does the corpus declare "exactly_one_per_app" axes (database, auth_provider, …)? Phase-9 corpus design decision.
-5. **Multi-locale demo strategy** — `agent_demo_vn` exists as inert locale-pack code per user "keep but don't extend." Should it be kept, archived, or deleted?
-
-## Test totals (HEAD `97c836f`)
-
-- `nom-concept`: 76 passed
-- `nom-dict`: 24 passed
-- `nom-media`: 50 + 3 ignored on Windows (3 PSNR tests gated; CI runs Linux)
-- `nom-cli` integration: gated `#[cfg(not(windows))]` on Windows dev box; runs in Linux CI
-- Workspace builds clean except 1 pre-existing `dead_code` warning on `ResolvedRef::kind` in `nom-cli/src/store.rs`
-
-## Branch state
-
-- Local HEAD: `fa1ba8a`
-- origin/main: `fa1ba8a` (in sync — every cycle pushes)
-- 24 commits past `1ae2136` this session
-- Working tree: only auto-stamped files (Cargo.lock, AGENTS.md, CLAUDE.md from gitnexus PostToolUse hook); nothing intentional uncommitted
+1. **No real per-kind LLM resolver in the build path.** Doc 04 §10.3.1 fixpoint forbids it: the compiler MUST be deterministic. M8 intent resolver is a **pre-build** author aid, not a build step. The build loop sees only deterministic hash-addressed entries.
+2. **No natural-language-to-Nom generation in v1 grammar (deferred 06 §Phase 0 freeze).** The canonical grammar stays small and stable. M8 is a thin translation layer between prose and bounded Nom concepts, not a generative NL front-end that invents new syntax.
+3. **No multiple backends before LLVM is excellent.** Deferred 06 §Phase 6 "every extra backend multiplies semantic complexity." Wasm / JS / WASI come post-1.0, after M17 fixpoint.
+4. **No GUI toolkit, distributed agents, or graph DB in the first stdlib.** Deferred 06 §Phase 8 explicitly defers these. The initial dict is: text transform, JSON, filesystem, HTTP endpoint composition, hashing, rate limiting, cache — enough to prove the model.
+5. **No free word order.** Deferred 07 §1 correction: Vietnamese is NOT order-free, it's **anchored-flexible**. M11 multi-locale adds lexical variation with strong anchors, not structural scrambling.
+6. **No aspect markers runtime** (motivation 02 §8). User memory: parked — low semantic value without a runtime that interprets `active`/`verified`/`deferred`. Revisit post-M17.
+7. **No Vietnamese function-name identifiers** (memory project_nom_language_evolution). `expect_word` enforces ASCII for function names; diacritic-in-identifier is a separate, bigger scope than diacritic-in-keyword. Locale packs localize keywords, not identifiers.
+8. **No free synonym explosion.** Deferred 07 §4.3, deferred 09 §11.1: alias packs are explicit, documented, community-governed. Uncontrolled synonyms destroy readability and create confusable-identifier security holes.
+9. **No compilation to many IRs before the fixpoint proof.** Multiple IRs (AST → resolved → verified → backend plan per deferred 06 §Phase 5) are internal to the compiler, not user-visible targets. The fixpoint proof (M17) must pin ONE toolchain.
+10. **No self-modifying dictionary at build time.** §5.10 canonicalization upgrades Partial → Complete is an **offline** maintenance operation, not a build-time side effect. Build must be a pure function of inputs + pinned dict.
 
 ---
 
-This doc is a snapshot. Next session should re-verify against `git log --oneline` and the actual test runs before relying on the percentages.
+This doc will stay valid until the first milestone ships. When M1 lands, revise the "Where we are" paragraph and strike M1 from the path; leave the rest of the ordering untouched. Every re-derivation of the path should produce the same ordering from the same research inputs — that is itself a fixpoint check on the plan.
