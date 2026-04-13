@@ -66,17 +66,18 @@
 | 49 | Pinned-external-action ref grammar (`actions/checkout@v4`) | **W27** grammar rule | ⏳ queued (doc 14 #20) |
 | 50 | Event-trigger declarations (`runs when X happens`) | **W28** grammar rule | ⏳ queued (doc 14 #20) |
 | 51 | Visibility modifiers (`private` for scope hiding) | **W29** grammar rule | ⏳ queued (doc 14 #21) |
+| 52 | `choice X is one of A, B, C` grammar (sealed/enum) | **W30** grammar rule — merges with W11 | ⏳ queued (doc 14 #22) |
 
-Totals by destination (after doc 14 #21 Java translation surfaced 1 more row):
+Totals by destination (after doc 14 #22 Kotlin sealed-class translation surfaced 1 more row):
 
-- ⏳ Wedge queued: **23** (+1 W29 visibility modifiers)
+- ⏳ Wedge queued: **24** (+1 W30 `choice` grammar — merges with W11)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **5**
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 51 rows. Closure rate 39% (20/51). **21 translations total**. Paradigm coverage now includes Java (class + builder dissolved into data + function per doc 19 §D2).
+Backlog size: 52 rows. Closure rate 38% (20/52). **22 translations total**. Paradigm coverage now includes algebraic data types (Kotlin sealed class → v1 `choice X is one of …`).
 
 ## Wedge master index (for cross-ref with doc 13)
 

@@ -1208,6 +1208,54 @@ the function build_user is
 
 ---
 
+## 22. Kotlin sealed class + data class — algebraic data types
+
+Representing Kotlin's common sum-of-products shape (HTTP result as a `Result<T>` variant):
+
+```kotlin
+sealed class HttpResult<out T> {
+    data class Ok<T>(val value: T, val latencyMs: Long) : HttpResult<T>()
+    data class Error(val code: Int, val message: String) : HttpResult<Nothing>()
+    object Timeout : HttpResult<Nothing>()
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+choice HttpResult that is one of
+  a ok variant that holds a value and a latency_ms,
+  an error variant that holds a code and a message,
+  a timeout variant that holds nothing.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data HttpResult is
+  intended to represent the three outcomes of an HTTP request:
+  success with a value, a server-side error, or a client-side timeout.
+
+  exposes kind as text one of ("ok", "error", "timeout").
+  exposes value as perhaps any.
+  exposes latency_ms as perhaps integer.
+  exposes code as perhaps integer.
+  exposes message as perhaps text.
+
+  favor correctness.
+  favor documentation.
+```
+
+### Gaps surfaced
+
+1. **`choice` / sealed sum-type declaration** — the v1 form `choice HttpResult that is one of …` cleanly expresses the algebraic-data-type shape that Kotlin's `sealed class` + three `data class` subtypes encode. Grammar already lists `choice` in doc 05 §4.1's declaration-verb set but the parser doesn't yet accept it. Candidate: **W30 `choice` grammar** (promotes row from `.nomx v1` prose-level to first-class). Overlaps with **W11** (enum/variant declarations); merge into a single wedge.
+2. **Variant-associated data** — `data class Ok<T>(val value: T, ...)` couples fields to the variant tag. Nom's v2 flattens to nullable fields + a `kind` discriminator; v1 keeps the variant+fields structure. Authoring-guide rule: prefer flat data shape in v2 unless the variants have disjoint field sets (in which case split into separate concepts).
+3. **Type parameter `<T>` / `<out T>`** — generics, again. Blocked on borrow-model work (doc 16 row #11).
+4. **`object Timeout`** — Kotlin's singleton object. Translates to a variant with no fields (`a timeout variant that holds nothing`). Zero wedge cost — composition of already-known primitives.
+5. **Exhaustive pattern match** — Kotlin's `when(result) { is Ok -> … }` requires all variants be handled. Nom's `matches against every variant` grammar candidate for when `choice` actually parses. **Part of W30.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
