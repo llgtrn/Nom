@@ -47,6 +47,10 @@ pub struct ConceptManifest {
     pub build_order: Vec<BuildItem>,
     /// ME violations detected by the MECE check.
     pub mece_violations: Vec<MeceViolationRecord>,
+    /// CE (Collectively-Exhaustive) unmet axes from the required-axes registry (M7a).
+    /// Empty when the registry has no entries for this scope.
+    #[serde(default)]
+    pub ce_unmet: Vec<String>,
     /// Refs that the stub resolver could not pin to a hash.
     pub unresolved: Vec<UnresolvedRecord>,
 }
@@ -264,6 +268,7 @@ pub fn build_manifest(
                     exposes: concept.exposes.clone(),
                     build_order: vec![],
                     mece_violations: vec![],
+                    ce_unmet: vec![],
                     unresolved: vec![UnresolvedRecord {
                         kind: Some("cycle".to_string()),
                         word: path.clone(),
@@ -284,6 +289,7 @@ pub fn build_manifest(
                     exposes: concept.exposes.clone(),
                     build_order: vec![],
                     mece_violations: vec![],
+                    ce_unmet: vec![],
                     unresolved: vec![UnresolvedRecord {
                         kind: Some("error".to_string()),
                         word: e.to_string(),
@@ -422,13 +428,21 @@ pub fn build_manifest(
             .collect();
 
         let mece_violations: Vec<MeceViolationRecord>;
+        let ce_unmet_for_concept: Vec<String>;
         if !child_concept_names.is_empty() || !concept.objectives.is_empty() {
             let child_decls: Vec<&nom_concept::ConceptDecl> = child_concept_names
                 .iter()
                 .filter_map(|name| graph.concepts.iter().find(|c| &c.name == name))
                 .collect();
 
-            let mece = nom_concept::check_mece(concept, &child_decls);
+            // Use registry-aware CE check.
+            let required_axes: Vec<(String, String)> = dict
+                .list_required_axes(repo_id, "concept")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|ax| (ax.axis, ax.cardinality))
+                .collect();
+            let mece = nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
 
             // Collect stub notes (deduplicate across concepts).
             for note in &mece.stub_notes {
@@ -453,8 +467,11 @@ pub fn build_manifest(
                         .collect(),
                 })
                 .collect();
+
+            ce_unmet_for_concept = mece.ce_unmet;
         } else {
             mece_violations = vec![];
+            ce_unmet_for_concept = vec![];
         }
 
         // ── map still_unresolved to UnresolvedRecord ──────────────────────────
@@ -478,6 +495,7 @@ pub fn build_manifest(
             exposes: concept.exposes.clone(),
             build_order,
             mece_violations,
+            ce_unmet: ce_unmet_for_concept,
             unresolved,
         });
     }

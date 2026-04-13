@@ -662,6 +662,41 @@ enum CorpusCmd {
         #[arg(long)]
         json: bool,
     },
+
+    /// Register a required quality axis for MECE CE-check (M7a).
+    ///
+    /// Registration is idempotent: re-registering the same
+    /// (repo_id, scope, axis) tuple updates the cardinality in place.
+    /// Axis labels are normalised to trimmed lowercase before storage.
+    RegisterAxis {
+        /// The quality axis label (e.g. "security", "safety", "performance").
+        axis: String,
+        /// Composition scope: "app" | "concept" | "module".
+        #[arg(long)]
+        scope: String,
+        /// Required cardinality: "at_least_one" | "exactly_one".
+        #[arg(long)]
+        cardinality: String,
+        /// Repository identifier (default: "default").
+        #[arg(long, default_value = "default")]
+        repo_id: String,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
+
+    /// List required quality axes registered for MECE CE-check (M7a).
+    ListAxes {
+        /// Composition scope to query: "app" | "concept" | "module".
+        #[arg(long)]
+        scope: String,
+        /// Repository identifier (default: "default").
+        #[arg(long, default_value = "default")]
+        repo_id: String,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1049,6 +1084,12 @@ fn main() {
             }
             CorpusCmd::IngestPypi { top, dict, json } => {
                 corpus::cmd_corpus_ingest_pypi(top, &dict, json)
+            }
+            CorpusCmd::RegisterAxis { axis, scope, cardinality, repo_id, dict } => {
+                corpus::cmd_corpus_register_axis(&axis, &scope, &cardinality, &repo_id, &dict)
+            }
+            CorpusCmd::ListAxes { scope, repo_id, dict } => {
+                corpus::cmd_corpus_list_axes(&scope, &repo_id, &dict)
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),

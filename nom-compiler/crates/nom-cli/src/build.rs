@@ -211,7 +211,14 @@ pub fn cmd_build_status(
                 .filter_map(|name| graph.concepts.iter().find(|c| &c.name == name))
                 .collect();
 
-            let mece = nom_concept::check_mece(concept, &child_decls);
+            // Use registry-aware CE check when the dict has registered axes.
+            let required_axes: Vec<(String, String)> = dict_db
+                .list_required_axes(repo_id, "concept")
+                .unwrap_or_default()
+                .into_iter()
+                .map(|ax| (ax.axis, ax.cardinality))
+                .collect();
+            let mece = nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
 
             // Print the objectives union.
             let union_str: Vec<String> = mece
@@ -236,7 +243,13 @@ pub fn cmd_build_status(
                 any_unresolved = true;
             }
 
-            // Print stub note once per concept report.
+            // Print CE violations.
+            for ce_msg in &mece.ce_unmet {
+                println!("  MECE-CE violation: {ce_msg}");
+                any_unresolved = true;
+            }
+
+            // Print stub notes (present only when no registry was consulted).
             for note in &mece.stub_notes {
                 println!("  note: {note}");
             }

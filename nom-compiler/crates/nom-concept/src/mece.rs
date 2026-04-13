@@ -125,6 +125,112 @@ pub fn check_mece(parent: &ConceptDecl, children: &[&ConceptDecl]) -> MeceReport
     }
 }
 
+/// Same as [`check_mece`] but with a required-axes registry consulted for the
+/// CE (Collectively-Exhaustive) check.
+///
+/// Each `required_axes` entry is a tuple of `(axis, cardinality)` where
+/// cardinality is one of `"at_least_one"` | `"exactly_one"`.
+///
+/// - `at_least_one`: the union must contain AT LEAST one objective whose
+///   resolved axis matches. Absence → `ce_unmet` entry.
+/// - `exactly_one`: the union must contain EXACTLY one such objective.
+///   Absence → `ce_unmet` entry. Duplicates → `ce_unmet` entry AND the
+///   existing ME collision logic also fires.
+///
+/// When `required_axes` is empty the function returns `ce_unmet = []` and
+/// **no** stub note (the registry is live; there are simply no requirements).
+pub fn check_mece_with_required_axes(
+    parent: &ConceptDecl,
+    children: &[&ConceptDecl],
+    required_axes: &[(String, String)],
+) -> MeceReport {
+    // ── 1. Build union + ME collisions (same logic as check_mece) ─────────
+    let mut union: Vec<ObjectiveBinding> = Vec::new();
+
+    for name in &parent.objectives {
+        union.push(ObjectiveBinding {
+            source_concept: parent.name.clone(),
+            name: name.clone(),
+            axis: stub_axis_of(name),
+        });
+    }
+
+    for child in children {
+        for name in &child.objectives {
+            union.push(ObjectiveBinding {
+                source_concept: child.name.clone(),
+                name: name.clone(),
+                axis: stub_axis_of(name),
+            });
+        }
+    }
+
+    let mut axis_map: HashMap<String, Vec<ObjectiveBinding>> = HashMap::new();
+    for binding in &union {
+        axis_map
+            .entry(binding.axis.clone())
+            .or_default()
+            .push(binding.clone());
+    }
+
+    let mut me_collisions: Vec<MeCollision> = axis_map
+        .iter()
+        .filter(|(_, bindings)| bindings.len() > 1)
+        .map(|(axis, bindings)| MeCollision {
+            axis: axis.clone(),
+            bindings: bindings.clone(),
+        })
+        .collect();
+
+    me_collisions.sort_by(|a, b| a.axis.cmp(&b.axis));
+
+    // ── 2. CE check against required_axes registry ────────────────────────
+    let mut ce_unmet: Vec<String> = Vec::new();
+
+    for (req_axis, cardinality) in required_axes {
+        let req_axis_norm = req_axis.trim().to_ascii_lowercase();
+        let count = union
+            .iter()
+            .filter(|b| b.axis == req_axis_norm)
+            .count();
+
+        match cardinality.as_str() {
+            "at_least_one" => {
+                if count == 0 {
+                    ce_unmet.push(format!(
+                        "axis={req_axis_norm} (cardinality=at_least_one): no objective covers this axis"
+                    ));
+                }
+            }
+            "exactly_one" => {
+                if count == 0 {
+                    ce_unmet.push(format!(
+                        "axis={req_axis_norm} (cardinality=exactly_one): no objective covers this axis"
+                    ));
+                } else if count > 1 {
+                    ce_unmet.push(format!(
+                        "axis={req_axis_norm} (cardinality=exactly_one): {count} objectives cover this axis"
+                    ));
+                }
+            }
+            _ => {
+                // Unknown cardinality: treat as unmet to surface the error.
+                ce_unmet.push(format!(
+                    "axis={req_axis_norm}: unknown cardinality '{cardinality}'"
+                ));
+            }
+        }
+    }
+
+    // ── 3. No stub notes when registry is live ────────────────────────────
+    MeceReport {
+        union,
+        me_collisions,
+        ce_unmet,
+        stub_notes: vec![],
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -245,6 +351,95 @@ mod tests {
                 collision.axis
             );
         }
+    }
+
+    // ── CE tests (check_mece_with_required_axes) ─────────────────────────────
+
+    /// CE-1: empty registry → ce_unmet is empty, no stub note.
+    #[test]
+    fn ce_check_empty_registry_vacuous_pass() {
+        let parent = concept("app", &["security", "speed"]);
+        let report = check_mece_with_required_axes(&parent, &[], &[]);
+
+        assert!(
+            report.ce_unmet.is_empty(),
+            "empty registry must produce ce_unmet=[], got: {:?}",
+            report.ce_unmet
+        );
+        assert!(
+            report.stub_notes.is_empty(),
+            "no stub notes when registry is live: {:?}",
+            report.stub_notes
+        );
+    }
+
+    /// CE-2: at_least_one axis present in union → passes.
+    #[test]
+    fn ce_check_at_least_one_present_passes() {
+        let parent = concept("auth", &["security", "speed"]);
+        let required = vec![("security".to_string(), "at_least_one".to_string())];
+        let report = check_mece_with_required_axes(&parent, &[], &required);
+
+        assert!(
+            report.ce_unmet.is_empty(),
+            "security present → ce_unmet must be empty: {:?}",
+            report.ce_unmet
+        );
+    }
+
+    /// CE-3: at_least_one axis absent from union → ce_unmet contains that axis.
+    #[test]
+    fn ce_check_at_least_one_absent_fails() {
+        let parent = concept("renderer", &["speed", "readability"]);
+        let required = vec![("safety".to_string(), "at_least_one".to_string())];
+        let report = check_mece_with_required_axes(&parent, &[], &required);
+
+        assert_eq!(
+            report.ce_unmet.len(),
+            1,
+            "missing safety axis must fire one ce_unmet: {:?}",
+            report.ce_unmet
+        );
+        assert!(
+            report.ce_unmet[0].contains("safety"),
+            "ce_unmet message must name the axis: {}",
+            report.ce_unmet[0]
+        );
+    }
+
+    /// CE-4: exactly_one axis with two bindings → both ce_unmet AND ME collision.
+    #[test]
+    fn ce_check_exactly_one_duplicate_fails() {
+        let parent = concept("agent", &["speed", "security"]);
+        let child = concept("policy", &["speed", "privacy"]);
+        let required = vec![("speed".to_string(), "exactly_one".to_string())];
+        let report = check_mece_with_required_axes(&parent, &[&child], &required);
+
+        // CE unmet because speed appears twice.
+        assert_eq!(
+            report.ce_unmet.len(),
+            1,
+            "duplicate speed must fire ce_unmet: {:?}",
+            report.ce_unmet
+        );
+        assert!(
+            report.ce_unmet[0].contains("speed"),
+            "ce_unmet must name axis: {}",
+            report.ce_unmet[0]
+        );
+        assert!(
+            report.ce_unmet[0].contains("2"),
+            "ce_unmet must mention count 2: {}",
+            report.ce_unmet[0]
+        );
+
+        // ME collision also fires for speed.
+        let me_axes: Vec<&str> = report.me_collisions.iter().map(|c| c.axis.as_str()).collect();
+        assert!(
+            me_axes.contains(&"speed"),
+            "ME collision must also fire for speed: {:?}",
+            me_axes
+        );
     }
 
     // ── test 6 ────────────────────────────────────────────────────────────────

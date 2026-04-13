@@ -278,6 +278,8 @@ impl NomDict {
         // Additive V3 tables: concept_defs (DB1) + words_v2 (DB2-v2).
         // CREATE TABLE IF NOT EXISTS makes this idempotent.
         self.conn.execute_batch(V3_SCHEMA_ADDITIONS_SQL)?;
+        // Additive V4 tables: required_axes (M7a MECE CE-check registry).
+        self.conn.execute_batch(V4_SCHEMA_ADDITIONS_SQL)?;
         Ok(())
     }
 
@@ -1103,6 +1105,97 @@ impl NomDict {
         Ok(rows)
     }
 
+    // ── required_axes CRUD (M7a — doc 08 §9.2) ───────────────────────
+
+    /// Register (or replace) a required axis for a given repo + scope.
+    ///
+    /// Uses `INSERT OR REPLACE` semantics via the PRIMARY KEY
+    /// `(repo_id, scope, axis)` — calling with the same key twice is a
+    /// silent idempotent update.
+    ///
+    /// Validation:
+    /// - `scope` must be one of `"app"`, `"concept"`, `"module"`.
+    /// - `cardinality` must be one of `"at_least_one"`, `"exactly_one"`.
+    /// - `axis` is normalised to `axis.trim().to_ascii_lowercase()`.
+    pub fn register_required_axis(
+        &self,
+        repo_id: &str,
+        scope: &str,
+        axis: &str,
+        cardinality: &str,
+    ) -> rusqlite::Result<()> {
+        if !matches!(scope, "app" | "concept" | "module") {
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "unknown scope '{scope}': must be app, concept, or module"
+            )));
+        }
+        if !matches!(cardinality, "at_least_one" | "exactly_one") {
+            return Err(rusqlite::Error::InvalidParameterName(format!(
+                "unknown cardinality '{cardinality}': must be at_least_one or exactly_one"
+            )));
+        }
+        let axis_norm = axis.trim().to_ascii_lowercase();
+        let registered_at = format!(
+            "epoch-{}",
+            std::time::SystemTime::now()
+                .duration_since(std::time::UNIX_EPOCH)
+                .map(|d| d.as_secs())
+                .unwrap_or(0)
+        );
+        self.conn.execute(
+            "INSERT INTO required_axes (axis, scope, cardinality, repo_id, registered_at)
+             VALUES (?1, ?2, ?3, ?4, ?5)
+             ON CONFLICT(repo_id, scope, axis) DO UPDATE SET
+                 cardinality   = excluded.cardinality,
+                 registered_at = excluded.registered_at",
+            rusqlite::params![axis_norm, scope, cardinality, repo_id, registered_at],
+        )?;
+        Ok(())
+    }
+
+    /// Return all `required_axes` rows for a given `repo_id` + `scope`,
+    /// ordered by axis for determinism.
+    pub fn list_required_axes(
+        &self,
+        repo_id: &str,
+        scope: &str,
+    ) -> rusqlite::Result<Vec<RequiredAxis>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT repo_id, scope, axis, cardinality, registered_at
+             FROM required_axes
+             WHERE repo_id = ?1 AND scope = ?2
+             ORDER BY axis",
+        )?;
+        let rows = stmt
+            .query_map(rusqlite::params![repo_id, scope], |row| {
+                Ok(RequiredAxis {
+                    repo_id: row.get(0)?,
+                    scope: row.get(1)?,
+                    axis: row.get(2)?,
+                    cardinality: row.get(3)?,
+                    registered_at: row.get(4)?,
+                })
+            })?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Delete a `required_axes` row. Returns `true` if a row was deleted,
+    /// `false` if no matching row existed.
+    pub fn unregister_required_axis(
+        &self,
+        repo_id: &str,
+        scope: &str,
+        axis: &str,
+    ) -> rusqlite::Result<bool> {
+        let axis_norm = axis.trim().to_ascii_lowercase();
+        let n = self.conn.execute(
+            "DELETE FROM required_axes WHERE repo_id = ?1 AND scope = ?2 AND axis = ?3",
+            rusqlite::params![repo_id, scope, axis_norm],
+        )?;
+        Ok(n > 0)
+    }
+
     // ── words_v2 CRUD (DB2-v2 — doc 08 §2.2) ──────────────────────────
 
     /// Insert or replace a `words_v2` row. Idempotent: on conflict
@@ -1351,6 +1444,37 @@ CREATE INDEX IF NOT EXISTS idx_words_v2_word ON words_v2(word);
 CREATE INDEX IF NOT EXISTS idx_words_v2_kind ON words_v2(kind);
 CREATE INDEX IF NOT EXISTS idx_words_v2_authored ON words_v2(authored_in);
 "#;
+
+// ── V4 schema additions (additive — M7a required_axes registry) ─────
+
+/// Additive SQL appended by `init_schema` after `V3_SCHEMA_ADDITIONS_SQL`.
+/// Does NOT modify any existing table. Uses `CREATE TABLE IF NOT EXISTS`
+/// so it is safe to call on a DB that already has these tables.
+///
+/// `required_axes` = M7a (doc 08 §9.2): per-scope required quality axes.
+pub const V4_SCHEMA_ADDITIONS_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS required_axes (
+    axis          TEXT NOT NULL,
+    scope         TEXT NOT NULL,
+    cardinality   TEXT NOT NULL,
+    repo_id       TEXT NOT NULL,
+    registered_at TEXT NOT NULL,
+    PRIMARY KEY (repo_id, scope, axis)
+);
+CREATE INDEX IF NOT EXISTS idx_required_axes_repo_scope ON required_axes(repo_id, scope);
+"#;
+
+// ── RequiredAxis (M7a — doc 08 §9.2) ────────────────────────────────
+
+/// One row in the `required_axes` table.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RequiredAxis {
+    pub repo_id: String,
+    pub scope: String,
+    pub axis: String,
+    pub cardinality: String,
+    pub registered_at: String,
+}
 
 // ── ConceptRow (DB1 — doc 08 §2.1) ──────────────────────────────────
 
@@ -2213,5 +2337,93 @@ mod tests {
             d.list_concept_defs_in_repo("any-repo").unwrap().len(),
             0
         );
+    }
+
+    // ── M7a required_axes tests ───────────────────────────────────────
+
+    /// Test RA-1: register and list round-trips correctly.
+    #[test]
+    fn register_and_list_roundtrips() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.register_required_axis("repo-a", "concept", "security", "at_least_one").unwrap();
+        d.register_required_axis("repo-a", "concept", "safety", "exactly_one").unwrap();
+
+        let axes = d.list_required_axes("repo-a", "concept").unwrap();
+        assert_eq!(axes.len(), 2, "expected 2 axes, got: {axes:?}");
+
+        // Sorted by axis name: safety < security.
+        assert_eq!(axes[0].axis, "safety");
+        assert_eq!(axes[0].cardinality, "exactly_one");
+        assert_eq!(axes[0].scope, "concept");
+        assert_eq!(axes[0].repo_id, "repo-a");
+
+        assert_eq!(axes[1].axis, "security");
+        assert_eq!(axes[1].cardinality, "at_least_one");
+
+        // Different scope is isolated.
+        let app_axes = d.list_required_axes("repo-a", "app").unwrap();
+        assert!(app_axes.is_empty(), "app scope must be empty");
+    }
+
+    /// Test RA-2: unknown scope is rejected.
+    #[test]
+    fn register_rejects_unknown_scope() {
+        let d = NomDict::open_in_memory().unwrap();
+        let err = d
+            .register_required_axis("repo-x", "planet", "correctness", "at_least_one")
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("planet") || msg.contains("scope"),
+            "error must mention invalid scope: {msg}"
+        );
+    }
+
+    /// Test RA-3: unknown cardinality is rejected.
+    #[test]
+    fn register_rejects_unknown_cardinality() {
+        let d = NomDict::open_in_memory().unwrap();
+        let err = d
+            .register_required_axis("repo-x", "app", "speed", "exactly_two")
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("exactly_two") || msg.contains("cardinality"),
+            "error must mention invalid cardinality: {msg}"
+        );
+    }
+
+    /// Test RA-4: axis is stored as trimmed lowercase; duplicate registrations
+    ///            with different casing overwrite the same row.
+    #[test]
+    fn register_normalizes_axis_to_lowercase_and_trim() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.register_required_axis("repo-b", "module", " Security ", "at_least_one").unwrap();
+
+        let axes = d.list_required_axes("repo-b", "module").unwrap();
+        assert_eq!(axes.len(), 1);
+        assert_eq!(axes[0].axis, "security", "axis must be stored in lowercase");
+
+        // Re-register with different casing + new cardinality → same row updated.
+        d.register_required_axis("repo-b", "module", "SECURITY", "exactly_one").unwrap();
+        let axes2 = d.list_required_axes("repo-b", "module").unwrap();
+        assert_eq!(axes2.len(), 1, "must still be exactly one row after re-registration");
+        assert_eq!(axes2[0].cardinality, "exactly_one");
+    }
+
+    /// Test RA-5: unregister returns false when the row does not exist.
+    #[test]
+    fn unregister_returns_false_for_missing_row() {
+        let d = NomDict::open_in_memory().unwrap();
+        let deleted = d.unregister_required_axis("repo-z", "app", "nonexistent").unwrap();
+        assert!(!deleted, "must return false when no row matches");
+
+        // Register then unregister → true, then false.
+        d.register_required_axis("repo-z", "app", "performance", "at_least_one").unwrap();
+        let deleted2 = d.unregister_required_axis("repo-z", "app", "performance").unwrap();
+        assert!(deleted2, "must return true after deleting existing row");
+
+        let deleted3 = d.unregister_required_axis("repo-z", "app", "performance").unwrap();
+        assert!(!deleted3, "second delete must return false");
     }
 }

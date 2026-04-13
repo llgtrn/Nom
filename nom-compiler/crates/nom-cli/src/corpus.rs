@@ -229,6 +229,63 @@ pub fn cmd_corpus_ingest_pypi(top: usize, dict: &Path, json: bool) -> i32 {
     if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
 }
 
+// ── cmd_corpus_register_axis ─────────────────────────────────────────────────
+
+pub fn cmd_corpus_register_axis(
+    axis: &str,
+    scope: &str,
+    cardinality: &str,
+    repo_id: &str,
+    dict: &Path,
+) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    match d.register_required_axis(repo_id, scope, axis, cardinality) {
+        Ok(()) => {
+            let axis_norm = axis.trim().to_ascii_lowercase();
+            println!(
+                "registered: scope={scope} axis={axis_norm} cardinality={cardinality} repo_id={repo_id}"
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("nom: register-axis error: {e}");
+            1
+        }
+    }
+}
+
+// ── cmd_corpus_list_axes ──────────────────────────────────────────────────────
+
+pub fn cmd_corpus_list_axes(scope: &str, repo_id: &str, dict: &Path) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    match d.list_required_axes(repo_id, scope) {
+        Ok(axes) => {
+            for ax in &axes {
+                println!("{}\t{}\t{}\t{}", ax.scope, ax.axis, ax.cardinality, ax.registered_at);
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("nom: list-axes error: {e}");
+            1
+        }
+    }
+}
+
 /// Resolve a `--dict` argument (which may point directly at a `.db` file
 /// or at a directory) to an absolute SQLite file path.
 fn resolve_db_path(dict: &Path) -> std::path::PathBuf {

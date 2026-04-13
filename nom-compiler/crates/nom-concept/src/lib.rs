@@ -20,7 +20,7 @@ pub mod closure;
 pub use closure::{ClosureError, ConceptClosure, ConceptGraph, UnresolvedRef};
 
 pub mod mece;
-pub use mece::{MeceReport, MeCollision, ObjectiveBinding, check_mece, stub_axis_of};
+pub use mece::{MeceReport, MeCollision, ObjectiveBinding, check_mece, check_mece_with_required_axes, stub_axis_of};
 
 /// Closed kind set per doc 08 §8.1.
 pub const KINDS: &[&str] = &[
