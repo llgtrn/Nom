@@ -1123,6 +1123,7 @@ dependencies = [
  "nom-app",
  "nom-ast",
  "nom-codegen",
+ "nom-concept",
  "nom-config",
  "nom-corpus",
  "nom-diagnostics",
@@ -1146,6 +1147,7 @@ dependencies = [
  "serde_json",
  "sha2",
  "thiserror 2.0.18",
+ "walkdir",
 ]
 
 [[package]]

@@ -645,6 +645,16 @@ enum StoreCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Walk a repo directory for `.nom` and `.nomtu` files and upsert
+    /// parsed rows into `concept_defs` (DB1) and `words_v2` (DB2-v2).
+    /// Idempotent: re-running produces the same DB state.
+    Sync {
+        /// Path to the repo directory to walk
+        repo: PathBuf,
+        /// Path to the nomdict database
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+    },
     /// Ingest a media file (PNG/JPEG/AVIF/FLAC/Opus/AAC/AV1/WebM/MP4/HEVC)
     /// and persist its canonical bytes to the DIDS store with the
     /// matching body_kind tag per §4.4.6 invariant 17.
@@ -879,6 +889,7 @@ fn main() {
                     json,
                 )
             }
+            StoreCmd::Sync { repo, dict } => store::cmd_store_sync(&repo, &dict),
             StoreCmd::AddMedia { path, dict, json, preserve_format } => store::cmd_store_add_media(&path, &dict, json, preserve_format),
         },
         Commands::Media { action } => match action {

@@ -29,6 +29,8 @@ nom-llvm = { path = "../nom-llvm" }
 nom-media = { path = "../nom-media" }
 nom-corpus = { path = "../nom-corpus" }
 nom-app = { path = "../nom-app" }
+nom-concept = { path = "../nom-concept" }
+walkdir = { workspace = true }
 clap = { workspace = true }
 rusqlite = { workspace = true }
 serde = { workspace = true }
