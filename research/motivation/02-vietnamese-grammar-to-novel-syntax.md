@@ -2,18 +2,14 @@
 
 **How the structure of the Vietnamese language informs Nom's programming syntax.**
 
-**Note (updated 2026-04-11):** Nom uses English as the primary keyword language,
-with foreign borrowing allowed. Vietnamese grammar inspires the STRUCTURE
-(classifiers, topic-comment, no braces, writing-style) but the WORDS are English.
-Locale packs provide Vietnamese keywords for Vietnamese-primary developers.
+**Note (updated 2026-04-11):** Nom uses English as the primary keyword language.
+Vietnamese grammar inspires the STRUCTURE (classifiers, topic-comment, no braces,
+writing-style) but the WORDS are fully English. No VN tokens exist in the lexer.
 
-**Note (updated 2026-04-13):** User clarified: Vietnamese keyword vocabulary
-(cai/ham/etc.) shipped in commits `4b04b1d`/`c601f31`/`5b59f82` and is parked
-(kept but not extended). Vocabulary stays English; only GRAMMAR STYLE is borrowed
-from Vietnamese. Vietnamese-loanword syntax tokens (duoc/bi) were explicitly
-rejected in favor of English-only `benefit`/`hazard` keywords (commit `c9d1835`).
-The `agent_demo_vn` example (`c601f31`) demonstrates the locale pack as inert
-validation only.
+**Note (updated 2026-04-13):** Vietnamese keyword vocabulary (cai/ham/etc.) that
+previously shipped in commits `4b04b1d`/`c601f31`/`5b59f82` has been fully removed
+([this-commit]). Grammar style inspires structure; vocabulary stays English; no VN
+tokens in the lexer. The `agent_demo_vn` example has been deleted.
 
 ---
 
@@ -341,12 +337,10 @@ defining). Everything inside is the comment (properties, requirements, behavior)
 
 ## 8. Aspect Markers (đã/đang/sẽ) → Temporal State
 
-**Section status: ⚠️ PARKED — the ASCII transliteration keyword aliases
-(`da`/`dang`/`se`) were shipped in commit `4b04b1d` as part of the Vietnamese
-locale pack. User clarified: vocabulary stays English; the aspect-marker state
-tracking (`verified`/`active`/`deferred`) has low semantic value without a runtime
-to interpret it. This section describes the design intent; the locale-pack keywords
-are inert (not parsed by the concept engine) and not being extended.**
+**Section status: ⚠️ PARKED — Vietnamese keyword vocabulary was removed
+([this-commit]). This section describes the design intent; aspect-marker state
+tracking (`verified`/`active`/`deferred`) has low semantic value without a runtime.
+Grammar style still influences how Nom structures flow: vocabulary stays English.**
 
 ### Vietnamese Property
 Three pre-verbal particles mark temporal aspect WITHOUT changing the verb:
@@ -584,7 +578,7 @@ meaning from stable atoms using word order and particles — no inflection, no m
 no hidden state changes. Novel does the same with software. The language is not INSPIRED
 by Vietnamese. It IS Vietnamese grammar applied to computation.
 
-> **Vocabulary clarification (2026-04-13):** The Vietnamese-loanword vocabulary layer
-> (cai/ham/duoc/bi etc.) was built as a locale-pack experiment and parked. It is NOT
-> part of the canonical Nom language. Nom's keywords are English. Vietnamese contributes
-> GRAMMAR STYLE (the structural mappings above), not vocabulary.
+> **Vocabulary clarification (updated [this-commit]):** The Vietnamese-loanword
+> vocabulary layer (cai/ham/duoc/bi etc.) has been fully removed from the lexer and
+> examples. It is NOT part of the Nom language. Nom's keywords are English-only ASCII.
+> Vietnamese contributes GRAMMAR STYLE (the structural mappings above), not vocabulary.

@@ -394,25 +394,6 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
                 ("the", "data"),
                 ("the", "event"),
                 ("the", "media"),
-                // Vietnamese ASCII aliases (motivation 02 locale-pack)
-                ("cai", "ham"),
-                ("cai", "mo_dun"),
-                ("cai", "khai_niem"),
-                ("cai", "man_hinh"),
-                ("cai", "function"),
-                ("cai", "module"),
-                ("cai", "concept"),
-                // Vietnamese diacritic aliases (motivation 02 locale-pack).
-                // Multi-word kind nouns use underscore-joined diacritic form
-                // (e.g. `mô_đun`, NOT `mô đun`) — deliberate design choice to
-                // keep token boundaries unambiguous without whitespace lookahead.
-                ("cái", "hàm"),
-                ("cái", "mô_đun"),
-                ("cái", "khái_niệm"),
-                ("cái", "màn_hình"),
-                ("cái", "dữ_liệu"),
-                ("cái", "sự_kiện"),
-                ("cái", "phương_tiện"),
             ];
             'needle_loop: for (article, kind) in needles {
                 let needle = format!("{article} {kind} {word}");
@@ -720,67 +701,22 @@ mod tests {
         assert!(patched.contains(&format!("the function baz@{hash}")));
     }
 
-    // ── Vietnamese locale-pack regression tests ───────────────────────────────
-
     #[test]
-    fn apply_hash_locks_vn_cai_ham_inserts_hash() {
-        // Regression: `cai ham foo khop "..."` must have @hash spliced after `foo`.
-        let source = "     cai ham foo khop \"read text from a workspace path\",\n";
-        let hash = "cafebabe00000000cafebabe00000000cafebabe00000000cafebabe00000000";
-        let refs = vec![make_ref("foo", hash)];
-        let (patched, count) = apply_hash_locks(source, &refs);
-        assert_eq!(count, 1, "VN cai ham line must receive hash insertion");
-        assert!(
-            patched.contains(&format!("foo@{hash}")),
-            "expected foo@hash in patched VN line: {patched}"
-        );
-        // The matching clause must survive unchanged.
-        assert!(
-            patched.contains("khop \"read text from a workspace path\""),
-            "khop clause must be preserved: {patched}"
-        );
-    }
-
-    #[test]
-    fn apply_hash_locks_vn_cai_ham_idempotent() {
-        // If `cai ham foo@<hash>` is already pinned, no second insertion.
-        let hash = "cafebabe00000000cafebabe00000000cafebabe00000000cafebabe00000000";
-        let source = format!("     cai ham foo@{hash} khop \"x\",\n");
-        let refs = vec![make_ref("foo", hash)];
-        let (patched, count) = apply_hash_locks(&source, &refs);
-        assert_eq!(count, 0, "already-pinned VN line must not be modified");
-        assert_eq!(patched, source, "source must be unchanged");
-    }
-
-    #[test]
-    fn apply_hash_locks_diacritic_cai_ham_inserts_hash() {
-        // `cái hàm read_file khớp "..."` must have @hash spliced after `read_file`.
-        let source = "     cái hàm read_file khớp \"read text from a workspace path\",\n";
+    fn apply_hash_locks_english_the_function_inserts_hash() {
+        // `the function read_file matching "..."` must have @hash spliced after `read_file`.
+        let source = "     the function read_file matching \"read text from a workspace path\",\n";
         let hash = "abc123def456abc123def456abc123def456abc123def456abc123def456abc1";
         let refs = vec![make_ref("read_file", hash)];
         let (patched, count) = apply_hash_locks(source, &refs);
-        assert_eq!(count, 1, "diacritic cái hàm line must receive hash insertion");
+        assert_eq!(count, 1, "the function line must receive hash insertion");
         assert!(
             patched.contains(&format!("read_file@{hash}")),
-            "expected read_file@hash in patched diacritic VN line: {patched}"
+            "expected read_file@hash in patched line: {patched}"
         );
-        // The khớp clause must survive unchanged.
+        // The matching clause must survive unchanged.
         assert!(
-            patched.contains("khớp \"read text from a workspace path\""),
-            "khớp clause must be preserved: {patched}"
+            patched.contains("matching \"read text from a workspace path\""),
+            "matching clause must be preserved: {patched}"
         );
-    }
-
-    #[test]
-    fn apply_hash_locks_vn_concept_line_not_touched() {
-        // A `cai khai_niem <name>` declaration line must NOT get a hash
-        // spliced when we are looking for a function named differently.
-        let source = "cai khai_niem agent_safety_policy muc_dich constrain what an agent may do.\n";
-        let hash = "aaaa000000000000aaaa000000000000aaaa000000000000aaaa000000000000";
-        // We are resolving `read_file`, not `agent_safety_policy`.
-        let refs = vec![make_ref("read_file", hash)];
-        let (patched, count) = apply_hash_locks(source, &refs);
-        assert_eq!(count, 0, "concept declaration line must not be patched for a different word");
-        assert_eq!(patched, source, "source must be unchanged");
     }
 }

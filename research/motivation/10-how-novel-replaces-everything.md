@@ -191,9 +191,9 @@ binary that an expert would write in 500 lines of Rust.
 
 > **Section B status: ⏳ PLANNED — the corpus is tiny today.**
 > At HEAD afc6228, the dictionary contains only the demo fixtures in
-> `nom-compiler/examples/concept_demo/`, `examples/agent_demo/`, and
-> `examples/agent_demo_vn/`. The 50K+ Nom extraction pipeline below is
-> multi-quarter work starting at Phase 5.
+> `nom-compiler/examples/concept_demo/` and `examples/agent_demo/`
+> (`agent_demo_vn` removed — [this-commit]). The 50K+ Nom extraction
+> pipeline below is multi-quarter work starting at Phase 5.
 
 ### Why "Universal Language" Has Always Failed — And Why Novel Is Different
 

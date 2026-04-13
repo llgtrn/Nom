@@ -215,7 +215,7 @@ alphabetical-smallest deterministic stub (commits `bf95c2c` + `c405d2a`).
 ## 6. Open questions
 
 1. **Kind vocabulary surface.** ✅ RESOLVED — `@Kind` sigil form shipped (commit `c9d1835`). User reversed doc-08 §8.1 prose-only decision; `@Function`, `@Screen` etc. are canonical. ~~Alternatives considered: `the Function-kind named …`, `(as a Function)`, trailing `… as a Function`.~~
-2. **Vietnamese phrasing of typed slots.** ✅ RESOLVED — vocabulary stays English. Vietnamese aliases are a locale pack only (commits `4b04b1d` + `5b59f82`). Per-kind names (`Function`, `Screen`, `MediaUnit`) stay English.
+2. **Vietnamese phrasing of typed slots.** ✅ RESOLVED — vocabulary is fully English-only ASCII. VN keyword aliases removed ([this-commit]). Per-kind names (`Function`, `Screen`, `MediaUnit`) stay English.
 3. **Threshold authoring.** ✅ RESOLVED — option (c) per-slot inline `with at-least N confidence` shipped (commit `97c836f`). Global defaults and per-file pragma deferred.
 4. **Build-reproducibility of non-hash-pinned slots.** ✅ RESOLVED — v1 refs get `name@hash` writeback (commit `a04b91e`); typed-slot refs (`@Kind`) are explicitly NOT written back per §3.5 (commit `c405d2a`). Resolved hash is recorded only in the build manifest.
 5. **Cross-kind compound prompts.** ⏳ PLANNED — product retrieval explicitly deferred. Author always decomposes into two independent typed slots. No `@MediaUnit+UxPattern` form.

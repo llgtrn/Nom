@@ -47,17 +47,12 @@ These extend the concept-layer lexer (`Tok` enum in
 - **Closed kind set** (doc 08 §8.1 closed-noun form):
   `function`, `module`, `concept`, `screen`, `data`, `event`, `media`.
 
-### Vietnamese keyword aliases (locale pack)
+### Vietnamese keyword aliases — REMOVED
 
-Shipped as a locale pack — English vocabulary stays canonical.
-Vietnamese aliases were added in two commits:
-
-- ASCII transliterations (commit `4b04b1d`) — e.g. `khai bao` for
-  `define`, `khi` for `when`, `tro ve` for `returns`.
-- Diacritic forms (commit `5b59f82`) — e.g. `khai báo`, `khi`, `trả về`.
-
-Per user clarification: **vocabulary stays English**; Vietnamese inspires
-grammar style only. The alias layer is kept but not extended.
+Vietnamese keyword aliases (commits `4b04b1d`, `5b59f82`) have been fully
+removed ([this-commit]). Vocabulary is English-only ASCII. Vietnamese
+inspires grammar style (classifier-first structure) only; no VN tokens
+exist in the lexer.
 
 ### PLANNED vocabulary expansions
 
@@ -217,13 +212,11 @@ parses as an identifier. Non-issue.
 > **Status (2026-04-13)**: Locale pack shipped; **not extending further** per user
 > clarification. Vietnamese inspires grammar style only; vocabulary stays English.
 
-ASCII aliases shipped commit `4b04b1d`; diacritic aliases shipped commit `5b59f82`.
-The shipped alias set covers the concept-layer keywords (`nom-concept`). The `.nomx v1`
-lexer (`nom-lexer`) does not have Vietnamese aliases — extending it was explicitly
-deferred.
+Vietnamese keyword aliases were removed ([this-commit]). The `.nomx` lexer
+has English-only vocabulary. Type-canonicalization is planned separately.
 
-- `define ... that ... ` ↔ `khai báo ... rằng ...` (diacritic) / `khai bao ... rang ...` (ASCII)
-- `when ... otherwise ...` ↔ `khi ... ngược lại ...`
+- `define ... that ...` — `.nomx v2` syntax
+- `when ... otherwise ...` — conditional keyword
 - `a number` ↔ PLANNED (type-canonicalization not yet shipped)
 - `a piece of text` ↔ PLANNED (same)
 

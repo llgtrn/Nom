@@ -453,8 +453,8 @@ If those two things are weak, the whole "beyond all models" story collapses.
 > and selection trace reporting via manifest + status commands (`fef0419`,
 > `853e70b`). The dictionary has concept/implementation separation (DB1+DB2,
 > `aaa914d`), provenance fields (`words_v2` schema), and alias management
-> (`4b04b1d`, `5b59f82`). Score explainability and evidence storage at scale
-> await the Phase-9 corpus pipeline.
+> (`4b04b1d`, `5b59f82` — VN keyword aliases removed in [this-commit]).
+> Score explainability and evidence storage at scale await Phase-9 corpus pipeline.
 
 ---
 

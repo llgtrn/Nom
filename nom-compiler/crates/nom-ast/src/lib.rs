@@ -27,8 +27,8 @@ pub struct Declaration {
 }
 
 /// The 10 classifier keywords that start declarations.
-/// Inspired by Vietnamese noun classifiers (con, cái, người, etc.)
-/// but using English words.
+/// Inspired by classifier-language patterns where a kind marker precedes
+/// the noun (e.g. `the FUNCTION foo`). Vocabulary is English-only ASCII.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash, Serialize, Deserialize)]
 pub enum Classifier {
     System,

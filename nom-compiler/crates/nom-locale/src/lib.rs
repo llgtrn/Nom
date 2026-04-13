@@ -317,7 +317,7 @@ pub fn is_confusable(a: &str, b: &str) -> ConfusableResult {
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ApplyDirection {
     /// Replace localized aliases with their canonical English keywords.
-    /// e.g. `"cái hàm là"` → `"the function is"`.
+    /// e.g. `"la ham foo"` → `"the function foo"` for a hypothetical locale pack.
     ToCanonical,
     /// Replace canonical English keywords with their localized aliases.
     /// Uses the diacritic form when both diacritic and ASCII forms map to the
@@ -360,9 +360,8 @@ pub struct ApplyReport {
 /// For `ToCanonical`: the `keyword_aliases` map (localized → canonical) is used.
 /// For `FromCanonical`: an inverted map (canonical → diacritic localized) is
 /// built on the fly; only unambiguous 1-to-1 mappings are applied.  If
-/// multiple localized aliases share a canonical (e.g. `"là"` and `"la"` both
-/// map to `"is"`), `FromCanonical` picks whichever appears **first** in the
-/// pack's alias table (diacritic form, for vi-VN).
+/// multiple localized aliases share a canonical, `FromCanonical` picks
+/// whichever appears **first** in the pack's alias table.
 pub fn apply_locale(source: &str, pack: &LocalePack, direction: ApplyDirection) -> ApplyReport {
     // Build the lookup map for the requested direction.
     let lookup: BTreeMap<&str, &str> = match direction {
