@@ -1,4 +1,4 @@
-# Keyed-Similarity Syntax & Philosophy — A Nom Redesign Proposal
+# Keyed-Similarity Syntax & Philosophy — A Nom Redesign (SHIPPED 2026-04-13, HEAD `afc6228`)
 
 > **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
 
@@ -74,7 +74,7 @@ What it misses, once the keyed-similarity lens is applied:
 
 The redesign: **keep the sentence grammar of `.nomx`, but make every reference carry its kind.**
 
-## 3. Proposed syntax
+## 3. Syntax (shipped — §3.1–§3.5 all in code; see status table above)
 
 ### 3.1 The typed-slot reference
 
@@ -202,7 +202,7 @@ Against doc 05 §6 and doc 04 phase map:
 | Phase | What ships | Status |
 |---|---|---|
 | **Doc 05 M1–M3** (already spec'd) | `.nomx` v1 — prose declarations, bare-word references. No changes. | ✅ SHIPPED |
-| **Doc 05 M4** + **new M4.5** | M4.5 lands the `@Kind` slot grammar as a **lexer + parser extension**, pure additive. Parser emits `TypedSlot` AST node. | ✅ SHIPPED — commits `c9d1835` + `c405d2a` + `97c836f` + `853e70b` |
+| **Doc 05 M4** + **M4.5** | M4.5 landed the `@Kind` slot grammar as a **lexer + parser extension**, pure additive. Parser emits `TypedSlot` AST node; resolver uses `find_words_v2_by_kind` with alphabetical-smallest tiebreak; `with at-least N confidence` threshold surfaces into manifest; `nom build status` renders per-slot top-K. | ✅ SHIPPED — commits `c9d1835` + `c405d2a` + `97c836f` + `853e70b` |
 | **Doc 04 Phase 5 (ingestion)** | Populates the dict with enough kind-scoped entries that per-kind retrieval is meaningful. Until this phase delivers ≥10k entries per active kind, typed-slot retrieval falls back to word lookup. | ⏳ PLANNED — Phase 5 (multi-week, parked) |
 | **Doc 04 Phase 8 (architectural ADOPT)** — **dependency** | The embedding-retrieval substrate noted in doc 04 §language-model framing is the natural home for per-kind metric spaces. One index per kind, not one global index. | ⏳ PLANNED — Phase 8 |
 | **Doc 04 Phase 9 (LSP + Authoring Protocol)** | Authoring Protocol gains a `retrieve` RPC typed by `EntryKind`, returning ranked candidates per the kind's local metric. IDEs render the per-slot top-K picker. | ⏳ PLANNED — Phase 9 |
