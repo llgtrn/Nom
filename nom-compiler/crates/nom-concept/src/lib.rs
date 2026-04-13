@@ -449,6 +449,30 @@ mod lex {
         }
     }
 
+    /// W4-A4a — materialize every token from `src` into a flat vector.
+    ///
+    /// Doc 18 §4 A4a. Drives `Lexer::next` to exhaustion and returns
+    /// the resulting `Vec<Spanned>`. This is the primitive the staged
+    /// pipeline (doc 18) will build on — subsequent sub-wedges wrap
+    /// this vector in a cursor type and run each stage S2-S6 over it.
+    ///
+    /// Pure + total: consumes the whole input, returns every emitted
+    /// token. Multi-token expansions (pending buffer) are flattened
+    /// into the vector in the order `Lexer` would have yielded them.
+    /// An empty source yields an empty vector.
+    ///
+    /// Today this helper has zero callers in the parser path; keeps
+    /// A4a a non-breaking additive wedge. A4b will switch named
+    /// stage helpers to consume this materialized form.
+    pub fn collect_all_tokens(src: &str) -> Vec<Spanned> {
+        let mut lexer = Lexer::new(src);
+        let mut out = Vec::new();
+        while let Some(s) = lexer.next() {
+            out.push(s);
+        }
+        out
+    }
+
     // ── character-class predicates ────────────────────────────────────────────
 
     /// Returns `true` if `c` may start an identifier / keyword token.
@@ -2777,6 +2801,70 @@ the concept ct11 is
             json.contains("guard or a lock_error")
                 || json.contains("lock_error"),
             "sum-return prose must survive in signature; json = {json}"
+        );
+    }
+
+    // ── W4-A4a: collect_all_tokens materialization (doc 18 §4) ────────────
+
+    /// a4a01: empty source yields an empty token vector.
+    #[test]
+    fn a4a01_empty_source_yields_empty_vec() {
+        use super::lex::collect_all_tokens;
+        assert!(collect_all_tokens("").is_empty());
+    }
+
+    /// a4a02: a small `.nomtu` entity tokenizes into the same sequence
+    /// that Lexer::next produces one-token-at-a-time. Locks that the
+    /// materializer doesn't drop or reorder tokens.
+    #[test]
+    fn a4a02_materialize_matches_lexer_sequential() {
+        use super::lex::{collect_all_tokens, Lexer};
+        let src = r#"the function fetch_url is given a url, returns text.
+  requires the url scheme is https.
+  benefit cache_hit."#;
+
+        let mut iter_lex = Lexer::new(src);
+        let mut sequential = Vec::new();
+        while let Some(s) = iter_lex.next() {
+            sequential.push(s.tok);
+        }
+
+        let materialized: Vec<_> = collect_all_tokens(src).into_iter().map(|s| s.tok).collect();
+        assert_eq!(
+            sequential, materialized,
+            "collect_all_tokens must match sequential Lexer::next output"
+        );
+    }
+
+    /// a4a03: spans are preserved through materialization. Each token's
+    /// `pos` must point back into the source at a byte offset before
+    /// its next sibling's `pos`.
+    #[test]
+    fn a4a03_spans_preserved_and_monotonic() {
+        use super::lex::collect_all_tokens;
+        let src = r#"the concept auth is
+  intended to authenticate a user.
+  favor correctness."#;
+        let toks = collect_all_tokens(src);
+        assert!(toks.len() > 3, "non-trivial source must yield many tokens");
+        for window in toks.windows(2) {
+            // Positions are not strictly monotonic because multi-token
+            // expansions can share a position, but they must be
+            // non-decreasing.
+            assert!(
+                window[0].pos <= window[1].pos,
+                "token positions must be non-decreasing: {:?} then {:?}",
+                window[0],
+                window[1]
+            );
+        }
+        // Last token's pos must be within source bytes.
+        let last = toks.last().expect("non-empty");
+        assert!(
+            last.pos <= src.len(),
+            "last token pos {} out of range for source len {}",
+            last.pos,
+            src.len()
         );
     }
 

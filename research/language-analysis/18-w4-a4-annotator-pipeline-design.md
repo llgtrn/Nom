@@ -150,9 +150,11 @@ Stage failure codes: `NOMX-S6-malformed-ref`, `NOMX-S6-kind-mismatch`.
 
 ## 4. Migration path (three sub-wedges)
 
-### A4a — TokenStream materialization (~0.5d)
+### A4a — TokenStream materialization (~0.5d) ✅
 
 Replace the `Lexer::next` iterator consumed by `parse_nom` / `parse_nomtu` with a pre-materialized `Vec<SpannedTok>` and a cursor. Zero behavior change; internal refactor only. Unlocks lookahead-based stages.
+
+**Shipped 2026-04-14:** `nom_concept::lex::collect_all_tokens(src) -> Vec<Spanned>` is the materialization primitive. 3 tests (a4a01-a4a03) lock: empty source → empty vec, sequential `Lexer::next` output matches `collect_all_tokens` byte-for-byte, spans are non-decreasing and all in-range. Parser still uses `Lexer::new` + iterative `next`; A4b will migrate named stage helpers to consume the materialized vector.
 
 ### A4b — Stage boundaries without typed ASTs (~1d)
 
