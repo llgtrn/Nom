@@ -128,7 +128,16 @@ typed_slot, confidence_threshold), EntityDecl.signature, EntityDecl.effects,
 CompositionDecl.composes. The delegate-to-run_pipeline migration has no
 known gap that would break on real repo sources.
 
-Doc 14 translation corpus expanded to 19 (paradigms: imperative /
-async / data / shell / build / container / editor-event / stylesheet).
-Doc 16 backlog at 48 rows: 20 closed, 20 wedges queued (W5-W26), 1
-smoke-test, 5 authoring-guide doc-todo, 0 design-Q-open, 1 blocked.
+Doc 14 translation corpus expanded to **25** across 12+ paradigm
+families — major paradigm coverage complete: imperative (Rust/
+Python/C/C++/Go) + OOP (Java/Kotlin/Ruby) + async (Python) +
+concurrency (Go goroutines) + pure functional (Haskell) +
+algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/
+CSS/YAML) + shell (Bash) + build (Make) + container (Docker) +
+TS editor-event + CI/CD (GitHub Actions).
+
+Doc 16 backlog at **58 rows**: 20 closed, 27 wedges queued
+(W5-W34), 1 smoke-test, 7 authoring-guide doc-todo, 0
+design-Q-open, 2 blocked (#11 lifetime annotations + #58
+typeclass constraints — both unlock together when the
+borrow-model lane starts).
