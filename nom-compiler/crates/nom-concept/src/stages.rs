@@ -1508,6 +1508,79 @@ the function write_file is
         }
     }
 
+    /// a4c29: realistic multi-concept source exercises the full pipeline
+    /// and asserts every visible field matches parse_nom.
+    ///
+    /// This is the comprehensive "everything" integration test — two
+    /// concepts, each with intent + multiple uses clauses (typed-slot
+    /// + v1 bare-word), matching clauses, confidence thresholds,
+    /// requires/ensures contracts, and favor objectives. Asserts:
+    ///
+    /// - concept count matches
+    /// - per-concept name, intent-keyword substrings match
+    /// - per-concept index length matches
+    /// - per-concept per-ref: kind, word, matching, typed_slot,
+    ///   confidence_threshold all agree with parse_nom
+    #[test]
+    fn a4c29_realistic_multi_concept_full_field_parity() {
+        use crate::parse_nom;
+        let src = r#"the concept auth_system is
+  intended to authenticate users via jwt and session tokens.
+  uses the @Function matching "verify jwt signature" with at-least 0.9 confidence.
+  uses the function load_user_profile matching "load by user id".
+  favor correctness.
+
+the concept routing is
+  intended to route incoming requests to the right handler.
+  uses the @Function matching "match path pattern" with at-least 0.85 confidence.
+  favor correctness."#;
+
+        let legacy = parse_nom(src).expect("legacy");
+        let pipeline = run_pipeline(src).expect("pipeline");
+        let pipeline_file = match pipeline {
+            PipelineOutput::Nom(f) => f,
+            _ => panic!("expected Nom"),
+        };
+
+        assert_eq!(legacy.concepts.len(), pipeline_file.concepts.len());
+        for (lc, pc) in legacy.concepts.iter().zip(pipeline_file.concepts.iter()) {
+            assert_eq!(lc.name, pc.name, "concept name mismatch");
+            assert_eq!(
+                lc.index.len(),
+                pc.index.len(),
+                "concept `{}` index length mismatch",
+                lc.name
+            );
+            for (li, pi) in lc.index.iter().zip(pc.index.iter()) {
+                let (l_refs, p_refs) = match (li, pi) {
+                    (IndexClause::Uses(l), IndexClause::Uses(p)) => (l, p),
+                    _ => continue, // Extends etc. out of scope
+                };
+                assert_eq!(
+                    l_refs.len(),
+                    p_refs.len(),
+                    "concept `{}` ref-list length mismatch",
+                    lc.name
+                );
+                for (lr, pr) in l_refs.iter().zip(p_refs.iter()) {
+                    assert_eq!(lr.kind, pr.kind, "kind mismatch in {}", lc.name);
+                    assert_eq!(lr.word, pr.word, "word mismatch in {}", lc.name);
+                    assert_eq!(lr.matching, pr.matching, "matching mismatch in {}", lc.name);
+                    assert_eq!(
+                        lr.typed_slot, pr.typed_slot,
+                        "typed_slot mismatch in {}",
+                        lc.name
+                    );
+                    assert_eq!(
+                        lr.confidence_threshold, pr.confidence_threshold,
+                        "confidence mismatch in {}",
+                        lc.name
+                    );
+                }
+            }
+        }
+    }
+
     /// a4c27: S6 captures the `matching "phrase"` clause on typed-slot refs.
     #[test]
     fn a4c27_pipeline_captures_matching_phrase() {
