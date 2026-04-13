@@ -20,8 +20,24 @@
 //!   `Candidates` list could swamp the LLM's context.
 
 use nom_dict::WordV2Row;
+use sha2::{Digest, Sha256};
 
 use crate::react::{AgentTools, Observation};
+
+/// SHA-256 over a deterministic serialization of a closure's
+/// (uid, body_kind) pairs. Each pair appears once, sorted by uid;
+/// pair serialization is `uid + "\t" + body_kind + "\n"`. Two walks
+/// over the same dict state produce byte-identical hashes.
+fn hash_closure(pairs: &[(String, String)]) -> String {
+    let mut hasher = Sha256::new();
+    for (uid, body_kind) in pairs {
+        hasher.update(uid.as_bytes());
+        hasher.update(b"\t");
+        hasher.update(body_kind.as_bytes());
+        hasher.update(b"\n");
+    }
+    format!("{:x}", hasher.finalize())
+}
 
 /// Build a compact human-readable summary of a dict entry. Depth 0 = one
 /// line with word+kind+body_kind+body_size; depth ≥ 1 adds signature +
@@ -81,6 +97,59 @@ impl<'a> DictTools<'a> {
     /// Core lookup: try hash-exact first, fall back to kind-scoped.
     /// Exposed as a pub fn so slice-3b / slice-3c can reuse it when
     /// implementing `verify` (needs UID lookup) and `explain` (same).
+    /// Walk the composed_of closure rooted at `uid`. Returns a
+    /// deterministic-order `Vec<(uid, body_kind)>` covering every
+    /// transitive dependency including the root. Cycle-safe via a
+    /// visited set. Returns `Err(msg)` only on dict I/O errors;
+    /// unresolved composed_of UIDs are silently skipped (matches the
+    /// lenient M6 corpus semantics where not every referenced hash is
+    /// necessarily present in-dict).
+    ///
+    /// Exposed `pub` so slice-3c-full (real linker) and slice-4
+    /// (InstrumentedTools glass-box) can reuse the walk.
+    pub fn compute_closure(&self, root_uid: &str) -> Result<Vec<(String, String)>, String> {
+        let mut visited = std::collections::BTreeSet::<String>::new();
+        let mut queue: std::collections::VecDeque<String> =
+            std::collections::VecDeque::new();
+        queue.push_back(root_uid.to_string());
+        while let Some(uid) = queue.pop_front() {
+            if visited.contains(&uid) {
+                continue;
+            }
+            let row = match self.dict.find_word_v2(&uid) {
+                Ok(Some(r)) => r,
+                Ok(None) => continue, // unresolved ref — skip, don't fail
+                Err(e) => return Err(format!("dict error on {uid}: {e}")),
+            };
+            visited.insert(uid.clone());
+            // composed_of is a JSON array of uids when present.
+            if let Some(composed_json) = row.composed_of.as_deref() {
+                if let Ok(children) = serde_json::from_str::<Vec<String>>(composed_json) {
+                    for child in children {
+                        if !visited.contains(&child) {
+                            queue.push_back(child);
+                        }
+                    }
+                }
+            }
+        }
+        // Emit (uid, body_kind) pairs in sorted uid order so two walks
+        // over the same dict state produce byte-identical output.
+        let mut out: Vec<(String, String)> = visited
+            .into_iter()
+            .filter_map(|uid| {
+                self.dict.find_word_v2(&uid).ok().flatten().map(|row| {
+                    let body_kind = row
+                        .body_kind
+                        .unwrap_or_else(|| "<no-body>".to_string());
+                    (row.hash, body_kind)
+                })
+            })
+            .collect();
+        out.sort_by(|a, b| a.0.cmp(&b.0));
+        Ok(out)
+    }
+
     pub fn lookup_candidates(&self, subject: &str, kind: Option<&str>) -> Vec<String> {
         // Hash-exact match: `subject` may be a 64-hex UID.
         if subject.len() == 64 && subject.chars().all(|c| c.is_ascii_hexdigit()) {
@@ -128,8 +197,38 @@ impl<'a> AgentTools for DictTools<'a> {
         Observation::Error("DictTools::verify not yet wired (slice-3b)".into())
     }
 
-    fn render(&self, _uid: &str, _target: &str) -> Observation {
-        Observation::Error("DictTools::render not yet wired (slice-3c)".into())
+    fn render(&self, uid: &str, target: &str) -> Observation {
+        // Slice-3c-render-metadata: walk the closure starting at `uid`,
+        // collect all (uid, body_kind) pairs in deterministic sorted
+        // order, and return a SHA-256 "render-plan hash" that identifies
+        // the set of artifacts a real render would produce. This is a
+        // proof-of-closure-walk wedge — slice-3c-full will replace the
+        // hash with real linker/asset-bundling output, but the WALK + HASH
+        // shape stays stable (byte-identical across runs for the same
+        // closure → downstream ReAct loops can assert idempotence).
+        //
+        // `target` is passed through to the Observation for caller
+        // bookkeeping (e.g. "llvm-native" vs "wasm" would produce same
+        // render-plan but the agent tracks which target it asked for).
+        if uid.len() != 64 || !uid.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Observation::Error(format!(
+                "DictTools::render: uid {uid:?} is not a 64-char hex hash"
+            ));
+        }
+        let closure = match self.compute_closure(uid) {
+            Ok(c) => c,
+            Err(msg) => return Observation::Error(msg),
+        };
+        if closure.is_empty() {
+            return Observation::Error(format!(
+                "DictTools::render: uid {uid} not found in dict"
+            ));
+        }
+        let plan_hash = hash_closure(&closure);
+        Observation::Rendered {
+            target: target.into(),
+            bytes_hash: plan_hash,
+        }
     }
 
     fn explain(&self, uid: &str, depth: usize) -> Observation {
@@ -232,20 +331,126 @@ mod tests {
     }
 
     #[test]
-    fn compose_verify_render_are_explicit_stubs() {
+    fn compose_verify_are_explicit_stubs() {
         let d = NomDict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
-        for obs in [
-            tools.compose("anything", &[]),
-            tools.verify("anything"),
-            tools.render("anything", "llvm-bc"),
-        ] {
+        for obs in [tools.compose("anything", &[]), tools.verify("anything")] {
             match obs {
                 Observation::Error(msg) => {
                     assert!(msg.contains("not yet wired"));
                 }
                 other => panic!("expected Error stub, got {other:?}"),
             }
+        }
+    }
+
+    #[test]
+    fn render_leaf_uid_produces_single_entry_plan_hash() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let obs = tools.render(HASH_ADD, "llvm-native");
+        match obs {
+            Observation::Rendered { target, bytes_hash } => {
+                assert_eq!(target, "llvm-native");
+                assert_eq!(bytes_hash.len(), 64, "plan hash must be SHA-256 hex");
+                assert!(bytes_hash.chars().all(|c| c.is_ascii_hexdigit()));
+            }
+            other => panic!("expected Rendered, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn render_is_deterministic_across_calls() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let obs1 = tools.render(HASH_ADD, "llvm-native");
+        let obs2 = tools.render(HASH_ADD, "llvm-native");
+        match (&obs1, &obs2) {
+            (
+                Observation::Rendered { bytes_hash: h1, .. },
+                Observation::Rendered { bytes_hash: h2, .. },
+            ) => assert_eq!(h1, h2),
+            _ => panic!("both calls must succeed"),
+        }
+    }
+
+    #[test]
+    fn render_target_tag_round_trips_without_affecting_hash() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let native = tools.render(HASH_ADD, "llvm-native");
+        let wasm = tools.render(HASH_ADD, "wasm");
+        match (&native, &wasm) {
+            (
+                Observation::Rendered { target: t1, bytes_hash: h1 },
+                Observation::Rendered { target: t2, bytes_hash: h2 },
+            ) => {
+                assert_eq!(t1, "llvm-native");
+                assert_eq!(t2, "wasm");
+                // Same closure → same plan hash even across targets;
+                // the agent uses `target` for its own bookkeeping only.
+                assert_eq!(h1, h2);
+            }
+            _ => panic!("both calls must succeed"),
+        }
+    }
+
+    #[test]
+    fn render_walks_composed_of_and_differs_on_extra_child() {
+        let d = NomDict::open_in_memory().unwrap();
+        // Seed a leaf and a composite entry whose composed_of references it.
+        seed_word(&d, HASH_ADD, "add", "function");
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_MUL.into(),
+            word: "arith".into(),
+            kind: "module".into(),
+            signature: None,
+            contracts: None,
+            body_kind: Some("module".into()),
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: Some(format!("[\"{HASH_ADD}\"]")),
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        let leaf = tools.render(HASH_ADD, "t");
+        let composite = tools.render(HASH_MUL, "t");
+        match (&leaf, &composite) {
+            (
+                Observation::Rendered { bytes_hash: h_leaf, .. },
+                Observation::Rendered { bytes_hash: h_comp, .. },
+            ) => {
+                assert_ne!(
+                    h_leaf, h_comp,
+                    "composite closure includes its child, so hash must differ from leaf"
+                );
+            }
+            _ => panic!("both calls must succeed"),
+        }
+    }
+
+    #[test]
+    fn render_rejects_bad_uid() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        match tools.render("not-a-hash", "llvm-native") {
+            Observation::Error(msg) => assert!(msg.contains("not a 64-char hex hash")),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn render_missing_uid_reports_not_found() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        match tools.render(HASH_ADD, "t") {
+            Observation::Error(msg) => assert!(msg.contains("not found in dict")),
+            other => panic!("expected Error, got {other:?}"),
         }
     }
 

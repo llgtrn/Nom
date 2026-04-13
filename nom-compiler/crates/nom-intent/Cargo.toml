@@ -10,3 +10,4 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 nom-dict = { path = "../nom-dict" }
+sha2 = { workspace = true }
