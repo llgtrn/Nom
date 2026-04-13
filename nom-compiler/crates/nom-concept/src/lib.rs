@@ -1389,4 +1389,46 @@ the concept bad_concept is
             other => panic!("expected ParseError mentioning `intended`, got {:?}", other),
         }
     }
+
+    /// n10: agent_demo's `agent.nom` fixture parses with objectives = ["security",
+    /// "composability", "speed"] in that order — verifies the parser preserves the
+    /// dream-objective ranking mandated by doc 08 §6.2.
+    #[test]
+    fn n10_agent_demo_objectives_order() {
+        // Inline fixture matching examples/agent_demo/agent.nom exactly (minus
+        // the "llm" word which is plain prose — the parser handles it fine).
+        let src = r#"
+the concept minimal_safe_agent is
+  intended to compose a small set of tools an llm can plan with safely.
+
+  uses the concept agent_safety_policy,
+       the function read_file matching "read text from a workspace path",
+       the function write_file matching "write text to a workspace path",
+       the function list_dir matching "list files in a workspace directory",
+       the function fetch_url matching "fetch the body of an https url",
+       the function search_web matching "search the web and return result links",
+       the function run_command matching "run an allowed shell command".
+
+  exposes read_file, write_file, list_dir, fetch_url, search_web, run_command.
+
+  this works when the safety policy is composed.
+  this works when every exposed tool has at least one require clause.
+
+  favor security then composability then speed.
+"#;
+        let f = parse_nom(src).expect("agent.nom fixture should parse");
+        assert_eq!(f.concepts.len(), 1);
+        let c = &f.concepts[0];
+        assert_eq!(c.name, "minimal_safe_agent");
+        // Order is significant — security must outrank composability must outrank speed.
+        assert_eq!(
+            c.objectives,
+            vec!["security", "composability", "speed"],
+            "objectives must preserve favor-then ordering from agent.nom"
+        );
+        // Spot-check: 2 acceptance clauses.
+        assert_eq!(c.acceptance.len(), 2);
+        // Spot-check: exposes list has 6 entries.
+        assert_eq!(c.exposes.len(), 6);
+    }
 }

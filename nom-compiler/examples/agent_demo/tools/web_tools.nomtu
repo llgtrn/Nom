@@ -1,0 +1,9 @@
+the function fetch_url is
+  given a url of text, returns the response body as text.
+  requires the url scheme is https.
+  ensures the result is the response body without modification or yes-no failure.
+
+the function search_web is
+  given a query of text, returns a list of result links as text.
+  requires the query is non-empty.
+  ensures the results are ordered by the underlying engine relevance.

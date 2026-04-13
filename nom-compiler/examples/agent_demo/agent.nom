@@ -1,0 +1,17 @@
+the concept minimal_safe_agent is
+  intended to compose a small set of tools an llm can plan with safely.
+
+  uses the concept agent_safety_policy,
+       the function read_file matching "read text from a workspace path",
+       the function write_file matching "write text to a workspace path",
+       the function list_dir matching "list files in a workspace directory",
+       the function fetch_url matching "fetch the body of an https url",
+       the function search_web matching "search the web and return result links",
+       the function run_command matching "run an allowed shell command".
+
+  exposes read_file, write_file, list_dir, fetch_url, search_web, run_command.
+
+  this works when the safety policy is composed.
+  this works when every exposed tool has at least one require clause.
+
+  favor security then composability then speed.

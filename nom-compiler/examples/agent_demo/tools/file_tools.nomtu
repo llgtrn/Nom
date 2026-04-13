@@ -1,0 +1,15 @@
+the function read_file is
+  given a path of text, returns the file contents as text.
+  requires the path is within the allowed workspace root.
+  ensures the contents reflect the file at the time of the read.
+
+the function write_file is
+  given a path of text and contents of text, returns yes or no.
+  requires the path is within the allowed workspace root.
+  requires the contents are valid utf-8 text.
+  ensures the file at the path matches the contents after the call returns yes.
+
+the function list_dir is
+  given a path of text, returns a list of file names as text.
+  requires the path is a directory within the allowed workspace root.
+  ensures the listing excludes hidden files unless explicitly requested.

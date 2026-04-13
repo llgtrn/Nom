@@ -12,6 +12,8 @@ example proving the pipeline works on real input.
 |------|------------|
 | [`concept_demo/`](concept_demo/) | Smallest end-to-end: `app.nom` → `auth/auth.nom` (uses prose `matching "..."`) → `auth/auth_helpers.nomtu` (2 entities + 1 composition) |
 | [`concept_demo/README.md`](concept_demo/README.md) | Three-step walkthrough |
+| [`agent_demo/`](agent_demo/) | AI-agent composition narrative: `agent.nom` (6 tools + safety policy) → `tools/*.nomtu` (6 contract-only entities) → `policy/safety.nom` (guardrails concept) |
+| [`agent_demo/README.md`](agent_demo/README.md) | Motivation 16 §5 "STRONGEST candidate" walkthrough |
 
 Pipeline you can run today (Linux / macOS — Windows skipped because
 `nom` links LLVM-C.dll for compile commands but the metadata path is fine):

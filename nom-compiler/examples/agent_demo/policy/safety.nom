@@ -1,0 +1,10 @@
+the concept agent_safety_policy is
+  intended to constrain what an agent may do during one task.
+
+  uses the function read_file matching "read text from a workspace path".
+
+  this works when the agent never writes outside the workspace root.
+  this works when the agent never invokes a command outside the allowed list.
+  this works when every web fetch uses https.
+
+  favor security then privacy then speed.

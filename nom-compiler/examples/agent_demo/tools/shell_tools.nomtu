@@ -1,0 +1,5 @@
+the function run_command is
+  given a command of text and arguments as text, returns the standard output as text.
+  requires the command is on the allowed-commands list.
+  requires no argument contains shell metacharacters that would expand outside the literal call.
+  ensures the output is captured verbatim and stderr is reported separately.
