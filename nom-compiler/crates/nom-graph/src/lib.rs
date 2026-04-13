@@ -18,9 +18,11 @@
 //! future wedges (2b upsert_entry, 2c HashMap storage) can land safely.
 //! See `docs/superpowers/specs/2026-04-14-graph-durability-design.md`.
 
+pub mod export;
 pub mod uid;
 pub mod upsert;
 
+pub use export::{export_to_dir, ExportError, ExportSummary};
 pub use upsert::UpsertOutcome;
 
 use std::collections::{HashMap, HashSet, VecDeque};
