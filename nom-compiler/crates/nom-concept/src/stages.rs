@@ -1623,6 +1623,45 @@ the function write_file is
         }
     }
 
+    /// a4c35: pipeline outputs (NomFile / NomtuFile inner types) round-
+    /// trip through serde_json cleanly. Locks that the typed-AST
+    /// surface is fully serializable — editors, `nom parse --json`,
+    /// and the future delegate-to-run_pipeline migration all depend
+    /// on this guarantee. The PipelineOutput enum itself isn't
+    /// Serialize (it's a dispatch tag used at the Rust API layer);
+    /// we check the contained file types instead.
+    #[test]
+    fn a4c35_pipeline_output_file_types_round_trip_json() {
+        let concept_src = r#"the concept routing is
+  intended to route incoming requests.
+  uses the @Function matching "match path" with at-least 0.85 confidence.
+  favor correctness."#;
+        let entity_src = r#"the function fetch_url is given a url, returns text.
+  benefit cache_hit."#;
+
+        // Concept path
+        let out = run_pipeline(concept_src).expect("concept pipeline");
+        match out {
+            PipelineOutput::Nom(f) => {
+                let j = serde_json::to_string(&f).expect("NomFile serializes");
+                let back: crate::NomFile = serde_json::from_str(&j).expect("NomFile deserializes");
+                assert_eq!(f, back, "NomFile must round-trip unchanged");
+            }
+            _ => panic!("expected Nom"),
+        }
+
+        // Entity path
+        let out = run_pipeline(entity_src).expect("entity pipeline");
+        match out {
+            PipelineOutput::Nomtu(f) => {
+                let j = serde_json::to_string(&f).expect("NomtuFile serializes");
+                let back: crate::NomtuFile = serde_json::from_str(&j).expect("NomtuFile deserializes");
+                assert_eq!(f, back, "NomtuFile must round-trip unchanged");
+            }
+            _ => panic!("expected Nomtu"),
+        }
+    }
+
     /// a4c34: v1 bare-word ref with @hash backfill is captured by S6.
     ///
     /// Post-first-build locks write the hash into the source
