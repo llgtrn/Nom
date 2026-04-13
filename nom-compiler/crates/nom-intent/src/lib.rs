@@ -12,6 +12,7 @@
 //! docs/superpowers/specs/2026-04-14-graph-rag-agentic-design.md for the full design.
 
 pub mod react;
+pub mod dict_tools;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
