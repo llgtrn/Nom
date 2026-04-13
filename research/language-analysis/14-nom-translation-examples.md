@@ -1451,6 +1451,54 @@ the function group_by is
 
 ---
 
+## 26. Lean 4 theorem — dependent types + proof
+
+Representing a typical formal statement + proof:
+
+```lean
+theorem add_comm (a b : Nat) : a + b = b + a := by
+  induction b with
+  | zero => rfl
+  | succ k ih => simp [Nat.add_succ, ih]
+```
+
+### `.nomx v1` translation
+
+```nomx
+theorem add_comm
+  that asserts for every natural a and b, a plus b equals b plus a.
+proof by induction on b:
+  base case when b is zero, both sides reduce to a.
+  inductive step when b is the successor of k with hypothesis ih:
+    simplify using add_succ and ih.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the proof add_comm is
+  intended to assert that natural addition is commutative:
+  for every naturals a and b, a plus b equals b plus a.
+
+  uses the @Function matching "induct on natural argument" with at-least 0.9 confidence.
+  uses the @Function matching "rewrite using hypothesis" with at-least 0.85 confidence.
+
+  requires a and b are natural numbers.
+  ensures the equality a + b = b + a is established.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **New kind `@Proof` / `theorem` declaration** — Nom's closed KINDS set (7 nouns) does NOT include `theorem`/`proof`/`lemma` today. Candidate: **W35 proof-kind** — possibly a subtype of `function` where the signature is `(args...) → Equality/Proposition`, captured via the `requires`/`ensures` contract pair, OR a new closed-kind entry. Deferred 11 §B argues math is a first-class citizen; this decision needs explicit direction (doc 15-level planning).
+2. **Dependent types (`a b : Nat`)** — universe-of-types as values. Blocked alongside row #11 (lifetime annotations) + W34 typeclasses. Unblocks together when the borrow/type-system lane starts.
+3. **Tactic language (`by induction b with | zero => rfl`)** — proof is a program in a different language layered onto the theorem. Nom's translation flattens the tactic script into prose (`proof by induction on b`). Candidate: **W36 proof-tactic DSL** — very long-tail, defer until Nom has any proof-checking infrastructure.
+4. **Universe cumulativity / elaboration** — Lean's type-universe polymorphism. Deep-proof-system concern; punt until math-library integration becomes a real milestone.
+5. **`rfl` / `simp` / named lemmas** — proof-search primitives. Each maps to a named entity in Nom's corpus (`refl`, `simplify`, `Nat.add_succ`). The `uses the @Function matching "..."` abstraction handles this cleanly once the proof-kind decision lands.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

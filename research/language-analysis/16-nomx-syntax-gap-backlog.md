@@ -73,17 +73,19 @@
 | 56 | Finalizer clause (defer-style cleanup) | **W33** grammar rule | ⏳ queued (doc 14 #24) |
 | 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | ✅ doc 17 §I20 |
 | 58 | Typeclass-style constraints (`requires keys support ordering`) | **W34** grammar rule (blocks on borrow-model) | 🔒 blocked |
+| 59 | `theorem` / `proof` kind declaration | **W35** grammar / kind-set decision | ⏳ queued (doc 14 #26, links deferred 11 §B) |
+| 60 | Proof-tactic DSL (`by induction with | zero => rfl`) | **W36** grammar rule | ⏳ deferred (waits on W35 + math infra) |
 
-Totals by destination (after doc 17 I17-I20 closed final 4 authoring-guide rows):
+Totals by destination (after doc 14 #26 Lean theorem translation surfaced 2 more rows):
 
-- ⏳ Wedge queued: **27**
+- ⏳ Wedge queued: **29** (+2 W35 proof-kind, W36 proof-tactic DSL)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **0** (all closed — doc 17 chapter complete at I1-I20)
-- ✅ Closed: **27** (was 23)
+- 📘 Authoring-guide doc-todo: **0**
+- ✅ Closed: **27**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 
-Backlog size: 58 rows. Closure rate **47%** (27/58). **Milestone: authoring-guide chapter fully complete (I1-I20).** Remaining work is 27 grammar wedges + 1 smoke-test + 2 blocked-on-borrow-model.
+Backlog size: 60 rows. Closure rate 45% (27/60). 26 translations total; math-as-language paradigm surfaced (Lean theorem + proof) — connects to deferred doc 11's "Mathematics as language" thesis.
 
 ## Wedge master index (for cross-ref with doc 13)
 
