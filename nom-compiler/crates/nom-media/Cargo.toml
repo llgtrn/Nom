@@ -8,7 +8,9 @@ license.workspace = true
 nom-types = { path = "../nom-types" }
 serde = { workspace = true }
 thiserror = { workspace = true }
-image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+# image is declared per-target so Windows avoids avif-native (requires dav1d/C);
+# non-Windows gets avif-native to decode AVIF for pixel-accurate PSNR.
+# See verify_avif_roundtrip in src/codecs/avif.rs.
 claxon = "0.4"
 flacenc = { version = "0.5", default-features = false }
 ogg = "0.9"
@@ -23,3 +25,9 @@ avif-parse = { version = "2", default-features = false }
 ravif = { version = "0.11", default-features = false }
 imgref = "1"
 rgb = "0.8"
+
+[target.'cfg(windows)'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
+
+[target.'cfg(not(windows))'.dependencies]
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "avif-native"] }
