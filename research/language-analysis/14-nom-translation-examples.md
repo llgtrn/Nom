@@ -1771,6 +1771,61 @@ Row additions: **W38 wire-field-tag clause** (new wedge), authoring-corpus seed 
 
 ---
 
+## 31. Regex pattern — declarative string-matching DSL
+
+```python
+import re
+
+EMAIL = re.compile(r"^([a-z0-9._%+-]+)@([a-z0-9.-]+\.[a-z]{2,})$", re.IGNORECASE)
+
+def split_email(s: str) -> tuple[str, str] | None:
+    m = EMAIL.match(s)
+    if not m:
+        return None
+    return m.group(1), m.group(2)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define split_email
+  that takes text, returns perhaps a pair of local part and domain.
+the pattern is `local_part "@" domain` where local_part is letters digits dot underscore percent plus dash and domain is letters digits dot dash dot two-or-more letters, case-insensitive.
+when the text matches the pattern,
+  return the captured local_part and domain.
+otherwise return nothing.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data EmailPattern is
+  intended to recognize a conventional email address and capture its local-part and domain components.
+  exposes local_part as text.
+  exposes domain as text.
+  matches text of the shape `local_part at domain` where local_part is one-or-more of letters digits dot underscore percent plus dash and domain is one-or-more of letters digits dot dash followed by dot followed by two-or-more letters, matched case-insensitively, anchored at start and end.
+
+the function split_email is
+  intended to extract local-part and domain from a candidate email string, or return nothing if the string does not match the pattern.
+  uses the @Data matching "EmailPattern" with at-least 0.95 confidence.
+  ensures the returned pair agrees with the pattern's captured groups when a match occurs.
+  ensures nothing is returned exactly when no match occurs.
+  hazard malformed Unicode input is rejected rather than coerced.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Regex-as-prose surface** — Nom rejects the dense regex metacharacter syntax (`^([a-z0-9._%+-]+)@…$`) and demands prose-shape descriptions. The v2 translation's `matches text of the shape …` clause introduces a **candidate pattern-grammar wedge**: ordered character-class enumerations, quantifier words (`one-or-more`, `two-or-more`, `optional`), anchoring (`anchored at start and end`), and case-folding (`matched case-insensitively`). **Candidate: W39 pattern-shape clause on data decls** — closed vocabulary over 8-10 primitives; compiles down to a deterministic regex internally but never exposes metacharacters to authors.
+2. **Capture groups as exposed fields** — the pattern's parenthesized groups become the data decl's `exposes` fields. Authoring-guide rule: **pattern capture-groups map 1:1 to `exposes` fields on the pattern's data decl**, with the exposed type derived from the character class (letters/digits → `text`, digits-only → `integer`, etc.).
+3. **Anchoring (`^` / `$`)** — every anchored pattern needs explicit "anchored at start and end" prose to match regex's `^…$` default. Partial-match patterns omit anchors. Authoring-guide rule: **always state anchoring explicitly — anchored patterns and substring-matching patterns are different shapes**.
+4. **Flag modifiers (`re.IGNORECASE`, multiline, dotall, unicode)** — translate as trailing clauses (`matched case-insensitively`, `matched across line boundaries`). Bounded closed set — part of the W39 vocabulary.
+5. **Alternation (`a|b`)** — not exercised in this example, but the wedge must cover it: `one of shape A or shape B`. Authoring-guide rule: **alternation becomes `one of` over peer-declared sub-patterns**, same shape as choice/enum W30.
+
+Row additions: **W39 pattern-shape clause** (new wedge, large-vocabulary but closed), authoring-guide rules for capture-group-to-exposes mapping + explicit anchoring + alternation-as-choice.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
