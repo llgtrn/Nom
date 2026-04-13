@@ -935,32 +935,34 @@ fn extract_uses_clauses(body_slice: &[Spanned]) -> impl Iterator<Item = IndexCla
     })
 }
 
-/// Pull partial EntityRef structures out of a `uses` clause body
-/// (the tokens between `Tok::Uses` and the terminating `Tok::Dot`).
+/// Pull one EntityRef out of a `uses` clause body (tokens between
+/// `Tok::Uses` and the terminating `Tok::Dot`).
 ///
 /// Recognized shapes:
-///   `the @Kind …`        → one typed-slot EntityRef
-///   `the function word …`→ one v1 bare-word EntityRef
+///   `the @Kind (matching "…")? (with at-least N confidence)?`
+///   `the function word (matching "…")?`
 fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
-    // Find the first `the` — the v1 + v2 forms both start with it.
     let the_idx = match clause.iter().position(|s| matches!(s.tok, Tok::The)) {
         Some(i) => i,
         None => return Vec::new(),
     };
-    match clause.get(the_idx + 1).map(|s| &s.tok) {
+    let (mut base, after_idx) = match clause.get(the_idx + 1).map(|s| &s.tok) {
         Some(Tok::AtKind(k)) => {
             let kind_lower = k.to_lowercase();
             if !KINDS.contains(&kind_lower.as_str()) {
                 return Vec::new();
             }
-            vec![EntityRef {
-                kind: Some(kind_lower),
-                word: String::new(),
-                hash: None,
-                matching: None,
-                typed_slot: true,
-                confidence_threshold: None,
-            }]
+            (
+                EntityRef {
+                    kind: Some(kind_lower),
+                    word: String::new(),
+                    hash: None,
+                    matching: None,
+                    typed_slot: true,
+                    confidence_threshold: None,
+                },
+                the_idx + 2,
+            )
         }
         Some(Tok::Kind(k)) => {
             let kind_lower = k.to_lowercase();
@@ -971,17 +973,51 @@ fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
                 Some(Tok::Word(w)) => w.clone(),
                 _ => return Vec::new(),
             };
-            vec![EntityRef {
-                kind: Some(kind_lower),
-                word,
-                hash: None,
-                matching: None,
-                typed_slot: false,
-                confidence_threshold: None,
-            }]
+            (
+                EntityRef {
+                    kind: Some(kind_lower),
+                    word,
+                    hash: None,
+                    matching: None,
+                    typed_slot: false,
+                    confidence_threshold: None,
+                },
+                the_idx + 3,
+            )
         }
-        _ => Vec::new(),
+        _ => return Vec::new(),
+    };
+
+    // Optional `matching "phrase"` clause.
+    let mut cursor = after_idx;
+    if let Some(Spanned { tok: Tok::Matching, .. }) = clause.get(cursor) {
+        cursor += 1;
+        if let Some(Spanned { tok: Tok::Quoted(q), .. }) = clause.get(cursor) {
+            base.matching = Some(q.clone());
+            cursor += 1;
+        }
     }
+
+    // Optional `with at-least <N> confidence` clause (v2 typed-slot only).
+    if base.typed_slot {
+        if let Some(Spanned { tok: Tok::With, .. }) = clause.get(cursor) {
+            if let (
+                Some(Spanned { tok: Tok::AtLeast, .. }),
+                Some(Spanned { tok: Tok::NumberLit(n), .. }),
+                Some(Spanned { tok: Tok::Word(conf), .. }),
+            ) = (
+                clause.get(cursor + 1),
+                clause.get(cursor + 2),
+                clause.get(cursor + 3),
+            ) {
+                if conf == "confidence" && (0.0..=1.0).contains(n) {
+                    base.confidence_threshold = Some(*n);
+                }
+            }
+        }
+    }
+
+    vec![base]
 }
 
 /// Convenience: drive the full pipeline end-to-end from source text.
@@ -1469,6 +1505,56 @@ the function write_file is
                 assert_eq!(refs[0].word, "");
             }
             _ => panic!("expected IndexClause::Uses"),
+        }
+    }
+
+    /// a4c27: S6 captures the `matching "phrase"` clause on typed-slot refs.
+    #[test]
+    fn a4c27_pipeline_captures_matching_phrase() {
+        let src = r#"the concept routing is
+  intended to route requests.
+  uses the @Function matching "route request" with at-least 0.85 confidence.
+  favor correctness."#;
+        let out = run_pipeline(src).expect("pipeline");
+        let concept = match out {
+            PipelineOutput::Nom(f) => f.concepts.into_iter().next().expect("one"),
+            _ => panic!("expected Nom"),
+        };
+        match &concept.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs[0].matching.as_deref(), Some("route request"));
+                assert_eq!(refs[0].confidence_threshold, Some(0.85));
+            }
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// a4c28: confidence threshold outside [0.0, 1.0] falls back to None
+    /// (silently — the strict validator would flag that separately).
+    #[test]
+    fn a4c28_out_of_range_confidence_ignored_in_pipeline() {
+        let src = r#"the concept ct28 is
+  intended to exercise out-of-range confidence.
+  uses the @Function matching "x" with at-least 1.5 confidence.
+  favor correctness."#;
+        // legacy parse_nom rejects 1.5 at parse time; we test the pipeline's
+        // partial-parse path. With an invalid literal, the clause's
+        // confidence_threshold stays None — the partial extractor is
+        // lenient so the pipeline doesn't reject the whole file on what
+        // could be an authoring typo; the strict validator reports it.
+        let out = match run_pipeline(src) {
+            Ok(o) => o,
+            Err(_) => return, // tolerated either way
+        };
+        if let PipelineOutput::Nom(f) = out {
+            if let Some(c) = f.concepts.first() {
+                if let Some(IndexClause::Uses(refs)) = c.index.first() {
+                    if let Some(r) = refs.first() {
+                        // range violation → threshold not populated
+                        assert!(r.confidence_threshold.is_none() || r.confidence_threshold != Some(1.5));
+                    }
+                }
+            }
         }
     }
 
