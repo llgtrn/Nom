@@ -1,6 +1,6 @@
 # 09 — Implementation Status as of 2026-04-13
 
-**Snapshot date**: 2026-04-13. **HEAD**: `97c836f` (origin/main). **Session arc**: 21 commits past `1ae2136` (research docs 07+08 landed).
+**Snapshot date**: 2026-04-13. **HEAD**: `fa1ba8a` (origin/main). **Session arc**: 24 commits past `1ae2136` (research docs 07+08 landed).
 
 This doc maps what's actually shipped vs aspirational across all 13 prior research/motivation documents. Future cycles can reference this as the canonical status before re-discovering state.
 
@@ -77,15 +77,15 @@ All three have e2e tests at `crates/nom-cli/tests/{concept_demo,agent_demo,agent
 
 ### `07-keyed-similarity-syntax-proposal.md`
 
-**Status**: docs at 100% (.nomx v2 keyed syntax). **Code at ~95%** as of HEAD `97c836f`:
+**Status**: docs at 100% (.nomx v2 keyed syntax). **Code at ~98%** as of HEAD `fa1ba8a`:
 
 - ✅ `@Kind` sigil token + parser (`Tok::AtKind`, `parse_entity_ref_after_the` — commit c9d1835)
 - ✅ `EntityRef.typed_slot` AST flag + serde round-trip
 - ✅ Resolver branches on typed_slot → `find_words_v2_by_kind` with alphabetical tiebreak (commit c405d2a)
 - ✅ `with at-least 0.85 confidence` threshold syntax (commit 97c836f, closes §6.3)
 - ✅ Manifest carries typed_slot + threshold through serde
+- ✅ Per-slot top-K diagnostic in `nom build status` (doc 07 §3.3 — commit 853e70b): when typed-slot has N>1 candidates, prints `slot @Kind matching "..."` header + resolved + alternatives list
 - ⏳ Phase-9 corpus embedding semantic re-rank — not yet built; stub uses alphabetical pick
-- ⏳ Per-slot top-K diagnostic surface (doc 07 §3.3 example) — not yet emitted by `build status`
 
 **Three §6 open questions all resolved**:
 1. Kind sigil — shipped (user reversed doc-08 §8.1's prose-only decision)
@@ -167,7 +167,7 @@ All three have e2e tests at `crates/nom-cli/tests/{concept_demo,agent_demo,agent
 - **Topic-comment formalization** (motivation 02 §7) — current parser already accepts the implicit form; explicit `{...}` markers add complexity without immediate payoff.
 - **Vietnamese-character function names** — explicit exclusion in lexer (function names stay ASCII per `expect_word` enforcement); diacritic-in-identifier scope is bigger than diacritic-in-keyword.
 - **MECE CE-check** (collectively-exhaustive) — needs corpus-side required-axis registry per composition layer.
-- **`store.rs` module split** — file is at ~1500 lines; refactor pending hygiene cycle.
+- ~~**`store.rs` module split**~~ — DONE (commit fa1ba8a). 1814 → 5 files: `mod.rs` 957 + `add_media.rs` 112 + `sync.rs` 279 + `resolve.rs` 322 + `materialize.rs` 172. mod.rs further split into `commands.rs` is the remaining hygiene work.
 
 ## Open questions still unresolved
 
@@ -187,10 +187,10 @@ All three have e2e tests at `crates/nom-cli/tests/{concept_demo,agent_demo,agent
 
 ## Branch state
 
-- Local HEAD: `97c836f`
-- origin/main: `97c836f` (in sync — every cycle pushes)
-- 21 commits past `1ae2136` this session
-- Working tree: only `nom-compiler/Cargo.lock` drift; nothing else uncommitted
+- Local HEAD: `fa1ba8a`
+- origin/main: `fa1ba8a` (in sync — every cycle pushes)
+- 24 commits past `1ae2136` this session
+- Working tree: only auto-stamped files (Cargo.lock, AGENTS.md, CLAUDE.md from gitnexus PostToolUse hook); nothing intentional uncommitted
 
 ---
 
