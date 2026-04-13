@@ -3,6 +3,8 @@
 **145 Vietnamese morphemes generate ALL scientific vocabulary. Novel's Nom dictionary
 does the same for ALL computable knowledge. This is where the language becomes universal.**
 
+> **Status: Deferred / Aspirational (2026-04-14).** Modelica-style connectors, `across`/`through` fields, cross-domain verification, and the `connector` kind are ⏳ PLANNED (M14; blocked on M12+M13). `nom-types::EntryKind` has 29 kinds; `Connector` is not among them. Vietnamese morphemes appear below as linguistic analysis, not as compiler tokens — per commit `ecd0609`, the shipped vocabulary is English-only; Vietnamese inspires GRAMMAR STYLE, never identifiers. All `novel`/`nom` code blocks are design sketches, not working syntax.
+
 ---
 
 ## The Discovery

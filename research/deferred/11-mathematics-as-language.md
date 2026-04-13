@@ -4,6 +4,8 @@
 category theory converge to make Novel a universal language for both
 software AND mathematics.**
 
+> **Status 2026-04-14:** Architectural reference doc. M12 (algebraic `laws: [...]` + dimensional analysis) is PLANNED — not yet implemented; no `laws` or `dimensions` field exists on Nom entries today (needs M6 first). Vocabulary policy has also evolved since this doc was drafted: per commit `ecd0609`, Vietnamese inspires GRAMMAR STYLE only — all tokens in the codebase are English. The Vietnamese identifiers in the code samples below (`tích_phân`, `đạo_hàm`, `phép_cộng`, etc.) illustrate the morpheme-isomorphism thesis; real Nom source uses English names (`integral`, `derivative`, `add`). The categorical/Curry-Howard-Lambek content is timeless.
+
 ---
 
 ## The Claim
