@@ -196,13 +196,25 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 
 ---
 
-## Next actions
+## Next actions — status snapshot 2026-04-14
 
-1. Land this doc as `research/language-analysis/10-external-repo-upgrade-plan.md` (happening with this commit).
-2. **User's zed-main analyze** completes → §D gets populated.
-3. **Micro-commit for `nom-graph` petgraph swap** — smallest concrete step, 3h of work, high signal. Ship as a standalone commit with before/after benchmark comparison.
-4. **Create `nom-intent` crate skeleton** per §C week-1 slice — compile green + one deterministic test against a stub LLM.
-5. **nom-bench registry** — `inventory` crate dep + `BenchFamilyRegistry` + `nom bench list` CLI wire-up as a 1-day wedge before the full 3-week plan.
+**Completed this session:**
+1. ✅ Doc committed + five upgrade plans populated (§A-E)
+2. ✅ Zed-main analyzed + §D populated (78,686 nodes indexed)
+3. ✅ **CoreNLP W1 Annotator trait + Annotation pipeline** shipped (`7caa41f` + `9928187` + `b32abc0`) — 11 nom-extract tests
+4. ✅ **`nom-intent` crate skeleton** — slice-1 bounded-output enum (`800baea`), slice-2 ReAct driver (`147939d`), slice-3a query (`9751aac`), slice-3c-partial explain (`44f66d3`), slice-5a CLI (`f169cd6`). 21 nom-intent tests total.
+5. ✅ **nom-bench `BenchFamily` registry** (`fa50744`) — `OnceLock<Mutex<Vec<_>>>` global registry + 4 tests
+6. ✅ **nom-lsp crate** shipped — slice-1 scaffold (`64b3058`), slice-2 CLI (`3ba982a`), slice-3 completion handler (`0b68743`). 5 nom-lsp tests.
+7. ✅ **Graph-durability β** — Phase 1 freshness (`60534e4`, nom-dict +6 tests), Phase 2a NodeUid (`2453375`, nom-graph +8), Phase 2b upsert_entry (`421f902`, +8), Phase 3a Cypher export (`1b9cc00`, +5). 27 nom-graph tests total.
+
+**Queued (ordered by effort ascending):**
+- **Phase 3b edges export** — needs Phase 2c uid-native edges OR synthesize-at-export (~1d)
+- **Phase 2c uid storage unification** — switch `from_entries` / `build_call_edges` / etc. to uid storage (~3d, biggest churn)
+- **M8 slice-3b** — `compose` + `verify` wiring via nom-concept MECE (~4d)
+- **M8 slice-5b** — real OpenAI/Anthropic LLM adapter (replaces stub in `cmd_agent_classify`)
+- **M8 slice-4** — `InstrumentedTools` glass-box logging wrapper
+- **M8 slice-3c-full** — `render` + LayeredDreamReport in `explain`
+- **M8 slice-6** — `nom-lsp` "why-this-Nom?" editor drill-through
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
 

@@ -223,6 +223,20 @@ Index `4140126`, stats: **251 files, 5947 nodes, 13743 edges, 300 processes, 226
 | `nom-intent` M8-slice1 (bounded-output discipline) | `NomIntent::{Kind, Symbol, Flow, Reject(Reason)}` + `LlmFn` closure type + 4 tests locking reject-on-not-in-candidates | ✅ 2026-04-14 |
 | `nom-bench` family registry (Google-Benchmark pattern) | `BenchFamily` + `register` + `list` via `OnceLock<Mutex<Vec<_>>>` + 4 registry tests | ✅ 2026-04-14 |
 | `nom-lsp` M16-slice1 (LSP transport + hover stub, lsp-server + lsp-types deps) | `dispatch_request` + `handle_hover` markdown reply "nom-lsp vX — hover stub alive" + `server_capabilities()` exposes hover_provider only + 4 unit tests locking dispatch correctness | ✅ 2026-04-14 |
+| `nom-lsp` M16-slice2 (`nom lsp serve` CLI) | `Commands::Lsp { action: LspCmd::Serve }` shells stdin/stdout through `nom_lsp::serve_on_stdio()` | ✅ 2026-04-14 (commit `3ba982a`) |
+| `nom-lsp` M16-slice3 (completion handler, 11 keywords) | `textDocument/completion` dispatches to 11 `.nomx v2` keywords (define/to/record/choice/when/unless/for/while/require/ensure/throughout) + 2 tests | ✅ 2026-04-14 (commit `0b68743`) |
+| M7b standard axes seed | `NomDict::seed_standard_axes(repo_id)` registers correctness/safety/performance/dependency/documentation at app-scope; `nom corpus seed-standard-axes` CLI; 3 tests | ✅ 2026-04-14 (commit `647665b`) |
+| CoreNLP W1 Annotator trait (nom-extract) | `trait Annotator { requires / requirements_satisfied / annotate }` + `Annotation` typed-key map + `AnnotationPipeline` runner + 5 tests | ✅ 2026-04-14 (commit `7caa41f`) |
+| CoreNLP W1b `ParseAndExtractAnnotator` | Wraps `parse_and_extract` as Annotator impl; 3 new tests (8 nom-extract total) | ✅ 2026-04-14 (commit `9928187`) |
+| CoreNLP W1c `ScanDirectoryAnnotator` | Wraps `scan_directory` as Annotator impl; 3 tests (11 nom-extract total) | ✅ 2026-04-14 (commit `b32abc0`) |
+| Graph-durability Phase 1 (dict freshness) | `nom-dict::freshness` — `compute_source_hash` + `{current,stored,mark,is_stale}_source_hash` + `dict_meta` V5 table + 6 tests | ✅ 2026-04-14 (commit `60534e4`) |
+| M8 slice-2 ReAct driver | `ReActStep / AgentAction / Observation / AgentTools / ReActBudget` + `classify_with_react` loop + `StubTools` + 7 tests | ✅ 2026-04-14 (commit `147939d`) |
+| M8 slice-3a `DictTools::query` | First live AgentTools impl — hash-exact + kind-substring retrieval + max_results budget + 6 tests | ✅ 2026-04-14 (commit `9751aac`) |
+| M8 slice-3c-partial `DictTools::explain` | 2nd live tool — `format_entry_summary(row, depth)` with one-line/multi-line variants + 4 tests | ✅ 2026-04-14 (commit `44f66d3`) |
+| Graph-durability Phase 2a `NodeUid` | `compute_node_uid(entry)` + `NO_BODY_SENTINEL` null-byte-separator identity + 8 tests | ✅ 2026-04-14 (commit `2453375`) |
+| Graph-durability Phase 2b `upsert_entry` | `UpsertOutcome::{Unchanged,Created,Updated,Renamed}` + `prior_hashes` chain + `history_of` + parallel `uid_nodes` storage + 8 tests | ✅ 2026-04-14 (commit `421f902`) |
+| Graph-durability Phase 3a Cypher export (nodes) | `export_to_dir(graph, out_dir, force)` emits LadybugDB CSV + `import.cypher` LOAD FROM script; RFC 4180 escaping; deterministic sort; 5 tests | ✅ 2026-04-14 (commit `1b9cc00`) |
+| M8 slice-5a `nom agent classify` CLI | Terminal-reachable ReAct loop: `Commands::Agent { AgentCmd::Classify }` with DictTools + stub LLM; 2 smoke tests | ✅ 2026-04-14 (commit `f169cd6`) |
 | Multi-graph surface | `cmd_graph` ([nom-cli/src/main.rs:4562](../../nom-compiler/crates/nom-cli/src/main.rs)) → `NomtuGraph::{from_entries, build_call_edges, build_import_edges, detect_communities}` | ✅ |
 | Foreign-source translator | `cmd_translate` + `nom-translate::{translate, translate_c_to_rust, translate_cpp_to_rust, translate_python_to_rust, translate_js_to_rust, translate_go_to_rust}` | ✅ |
 | Author loop | `cmd_author_{translate, start, check}` + `author_check_handles_full_todo_app_nomx` + `.nomx v2` grammar fixtures (contracts, greet, loops, mixed_forms, hello, todo_app) | ✅ |
