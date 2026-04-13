@@ -8,6 +8,7 @@ A | `benchmark-main` (google/benchmark) | 2264 / 5146 / 190 | `nom-bench`
 B | `graphify-master` | 238 / 364 / 2 — **SKIP** | — (pivoted to petgraph + GitNexus-core + rust-analyzer)
 C | `wrenai` (Canner) | 5692 / 15373 / 276 | `nom-intent` (M8) + `nom-cli/src/store/resolve.rs` re-rank (M9)
 D | `zed-main` | 78594 / 219709 / 300 | `nom-lsp` (M16)
+E | `CoreNLP-main` (stanfordnlp) | 48519 / 177153 / 300 | `nom-extract` + `nom-intent` M8.1 + `.nomx v2` enrichment DSL — see §E
 
 Previously live in our own index: `Nom` (251 / 5947 / 300). Refs A–C map to concrete remaining-work items in doc 09. Ref B was speculatively included; the indexing itself proves it irrelevant (a React/D3 chart app, zero graph-theoretic code) — the pivot to petgraph + gitnexus-core below is the actionable outcome.
 
@@ -204,3 +205,51 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 5. **nom-bench registry** — `inventory` crate dep + `BenchFamilyRegistry` + `nom bench list` CLI wire-up as a 1-day wedge before the full 3-week plan.
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
+
+---
+
+## E. `nom-extract` + `nom-intent` M8.1 + `.nomx v2` enrichment DSL (from CoreNLP-main) — 13 engineer-days total
+
+Stanford CoreNLP indexed 2026-04-14 (48519 nodes, 177153 edges, 300 flows). Companion model JARs at `C:\Users\trngh\Downloads\stanford-corenlp-models-english-{extra,kbp}.jar` (670 MB total) — noted as available runtime assets for **far-future** JVM-interop, excluded from all short-term wedges per `.omc` no-JVM constraint.
+
+### CoreNLP's 5 core primitives
+
+1. **`Annotator` interface** — [src/edu/stanford/nlp/pipeline/Annotator.java:54](../../APP/CoreNLP-main/src/edu/stanford/nlp/pipeline/Annotator.java). Uniform contract `annotate(Annotation)` + declared `requires()` / `requirementsSatisfied()`. Composable stage.
+2. **`AnnotationPipeline`** — [src/edu/stanford/nlp/pipeline/AnnotationPipeline.java:27](../../APP/CoreNLP-main/src/edu/stanford/nlp/pipeline/AnnotationPipeline.java). Ordered `Annotator` list; each writes typed keys onto the shared `Annotation` map. `StanfordCoreNLP` (`pipeline/StanfordCoreNLP.java`) is the properties-driven factory.
+3. **POS tagger — `MaxentTagger`** — [src/edu/stanford/nlp/tagger/maxent/MaxentTagger.java:231](../../APP/CoreNLP-main/src/edu/stanford/nlp/tagger/maxent/MaxentTagger.java). Maxent model, invoked via `POSTaggerAnnotator`.
+4. **Dep parser — `DependencyParser`** — [src/edu/stanford/nlp/parser/nndep/DependencyParser.java:74](../../APP/CoreNLP-main/src/edu/stanford/nlp/parser/nndep/DependencyParser.java) (neural transition-based) → `DependencyParseAnnotator`. Emits typed `SemanticGraph`.
+5. **Coref + pattern DSLs** — `CorefAnnotator.java:44`; **`SemgrexPattern.java:239`** (semantic-graph pattern lang); `TregexPattern.java:357` (tree pattern lang); **`OpenIE.java:65`** (SVO triples via `RelationTriple`).
+
+### Patterns stealable for Nom
+
+- **Typed-key Annotation map → `nom-extract` proposal envelope.** Each stage writes namespaced keys; downstream reads required preds. Same contract fixes "what ran on this prose" question in glass-box reports.
+- **Required/satisfied declaration → `nom-intent` M8 slice composition.** Each extractor declares `requires = {tokens, pos}`; pipeline self-orders.
+- **`SemgrexPattern`-style DSL → `.nomx v2` inspectable enrichment layer.** Write concept-matching rules against the DAG the parser emits — glass-box, no LLM opacity.
+- **`Tregex` over constituency trees → Nom AST lint/rewrite skills.** Fit for `compose_from_dict` transforms.
+- **`OpenIE.RelationTriple` → SVO → concept/module/entity tiers.** Subject = entity, verb = module, object = entity/concept; seeds dream-tree nodes.
+- **Annotator requirement graph → `nom-lsp` progressive enrichment.** Cheap stages (tokenize/POS) on keystroke; expensive (coref/OpenIE) on save.
+- **Properties-driven pipeline config → `.nomtu` authoring profiles.** Reuse Nom's hash-keyed config instead of `.properties`.
+
+### Concrete wedge menu (smallest → biggest)
+
+- **W1 · `Annotator` trait in `nom-extract`** (~2 days). Port `Annotator` interface (requires / satisfied / annotate). Wrap existing extractors. Unblocks pipeline introspection + glass-box reports.
+- **W2 · `SemgrexPattern`-lite DSL over Nom concept DAG** (~4 days). Read-only pattern matcher; 6 combinators (node, child, descendant, sibling, label, kind). Used by MECE validator + `nom-intent` narrowing.
+- **W3 · OpenIE-style SVO extractor → Proposal seed** (~7 days). Local dep-parse (tree-sitter-english or llamaindex-rs mini-parser, **NOT** CoreNLP JVM) emits `(subj, rel, obj)` → concept/module/entity tier; feeds `nom author translate`.
+
+### Don't adopt
+
+- **JVM runtime / 670 MB JAR models.** Out-of-scope per `.omc` constraint. Model assets noted only for far-future research integration.
+- **Statistical-ML taggers as first-class compiler input.** Keep LLM-as-oracle (M8); ML only inside M8 narrowing path.
+- **English-only assumptions in pattern DSLs.** Nom's vocabulary is English but syntax is head-initial / classifier-anchored — re-derive the relation taxonomy.
+- **Constituency parsing.** Dependency parse is enough for SVO; skip Tregex as premature.
+
+### Effort estimate
+
+| Wedge | Engineer-days | Risk | Ships |
+|---|---|---|---|
+| W1 Annotator trait | 2 | low | Pipeline introspection |
+| W2 Semgrex-lite DSL | 4 | medium (DSL surface) | .nomx v2 enrichment |
+| W3 SVO→Proposal | 7 | medium (parser choice) | M8.1 author-loop |
+| **Total** | **~13 days** | | **M8.1 shipped** |
+
+**Key insight**: CoreNLP's `Annotator.requires() / requirementsSatisfied()` contract is the cheapest steal — it directly fixes `nom-extract`'s current opaque ordering. The `SemgrexPattern` **DSL shape** (not the Java impl) is the highest-leverage structural borrow for `.nomx v2` glass-box enrichment. W3 must use a Rust-native mini dep-parser, never JNI into CoreNLP.
