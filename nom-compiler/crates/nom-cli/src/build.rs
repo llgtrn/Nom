@@ -137,6 +137,38 @@ pub fn cmd_build_status(
             }
         }
 
+        // Per doc 07 §3.3: typed-slot diagnostic — show alternatives when N>1.
+        // Only fires for typed-slot refs (kind set, word empty, alternatives non-empty).
+        for rref in resolved.iter().filter(|r| {
+            r.kind.is_some() && r.word.is_empty() && !r.alternatives.is_empty()
+        }) {
+            let kind_display = capitalize(rref.kind.as_deref().unwrap_or(""));
+            let matching_display = rref.matching.as_deref().unwrap_or("");
+            println!();
+            println!(
+                "  slot @{} matching \"{}\"",
+                kind_display, matching_display
+            );
+            let picked_word = dict_db
+                .find_word_v2(&rref.hash)
+                .ok()
+                .flatten()
+                .map(|row| row.word)
+                .unwrap_or_else(|| "<unknown>".to_string());
+            println!("    resolved: {}@{}", picked_word, rref.hash);
+            println!(
+                "    alternatives ({} picked alphabetically; Phase-9 will add semantic scoring):",
+                rref.alternatives.len()
+            );
+            for alt_hash in &rref.alternatives {
+                // Look up the alternative's word in words_v2 for nicer output.
+                match dict_db.find_word_v2(alt_hash) {
+                    Ok(Some(row)) => println!("      {}@{}", row.word, alt_hash),
+                    _ => println!("      <unknown>@{}", alt_hash),
+                }
+            }
+        }
+
         if still_unresolved.is_empty() {
             println!("  status: all clear");
         } else {
@@ -464,6 +496,15 @@ pub fn cmd_build_manifest(
 
 // ── helpers ──────────────────────────────────────────────────────────────────
 
+/// Capitalize the first ASCII character of a string.  `"function"` → `"Function"`.
+fn capitalize(s: &str) -> String {
+    let mut chars = s.chars();
+    match chars.next() {
+        None => String::new(),
+        Some(c) => c.to_uppercase().collect::<String>() + chars.as_str(),
+    }
+}
+
 fn open_dict_in_place(dict: &Path) -> Option<NomDict> {
     // If dict points directly at a .db file, use open_in_place; otherwise
     // open the directory root (same logic as store::open_dict).
@@ -494,6 +535,7 @@ mod tests {
             hash: hash.to_owned(),
             alternatives: vec![],
             confidence_threshold: None,
+            matching: None,
         }
     }
 

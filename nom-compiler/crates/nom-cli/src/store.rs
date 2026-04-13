@@ -1350,6 +1350,9 @@ pub struct ResolvedRef {
     /// the source `EntityRef`. Phase-9 corpus-embedding-resolver enforces this.
     /// Stub resolver records but ignores it.
     pub confidence_threshold: Option<f64>,
+    /// The prose matching hint from the source typed-slot `the @Kind matching "..."`,
+    /// propagated from `UnresolvedRef::matching`. Used by doc 07 §3.3 diagnostics.
+    pub matching: Option<String>,
 }
 
 /// Resolve unresolved refs from a closure against the DB's `words_v2` table.
@@ -1439,6 +1442,7 @@ pub fn resolve_closure(
                     hash: candidates[0].hash.clone(),
                     alternatives: vec![],
                     confidence_threshold: uref.confidence_threshold,
+                    matching: uref.matching.clone(),
                 });
                 stats.resolved += 1;
             }
@@ -1454,6 +1458,7 @@ pub fn resolve_closure(
                     hash: picked,
                     alternatives,
                     confidence_threshold: uref.confidence_threshold,
+                    matching: uref.matching.clone(),
                 });
                 stats.resolved += 1;
                 stats.ambiguous += 1;
@@ -1660,6 +1665,17 @@ mod tests {
         }
     }
 
+    fn make_uref_typed_slot_with_matching(kind: &str, matching: &str) -> UnresolvedRef {
+        UnresolvedRef {
+            kind: Some(kind.to_string()),
+            word: String::new(),
+            matching: Some(matching.to_string()),
+            referenced_from: "test_concept".to_string(),
+            typed_slot: true,
+            confidence_threshold: None,
+        }
+    }
+
     fn make_uref_word(word: &str, kind: Option<&str>) -> UnresolvedRef {
         UnresolvedRef {
             kind: kind.map(String::from),
@@ -1758,5 +1774,41 @@ mod tests {
         assert!(unresolved.is_empty());
         assert_eq!(resolved[0].hash, "abc123");
         assert_eq!(resolved[0].word, "read_file");
+    }
+
+    /// Typed-slot ref with 3 candidates and a matching hint: resolved ref carries
+    /// the picked hash + 2 alternatives + the matching string propagated through.
+    ///
+    /// Doc 07 §3.3: alternatives list fed to the `nom build status` diagnostic.
+    #[test]
+    fn typed_slot_three_candidates_propagates_matching_and_alternatives() {
+        let d = open_dict_with_rows(&[
+            make_fn_row("aaa-fn-first", "fetch_url"),
+            make_fn_row("bbb-fn-second", "list_dir"),
+            make_fn_row("ccc-fn-third", "read_file"),
+        ]);
+        let uref = make_uref_typed_slot_with_matching("function", "fetch the body of an https URL");
+        let closure = make_closure(vec![uref]);
+        let (resolved, unresolved, stats) = resolve_closure(&closure, &d);
+
+        assert_eq!(stats.resolved, 1, "should resolve to one picked hash");
+        assert_eq!(stats.ambiguous, 1, "ambiguous because N>1");
+        assert!(unresolved.is_empty());
+        assert_eq!(resolved.len(), 1);
+
+        let r = &resolved[0];
+        // Picked hash is alphabetically smallest.
+        assert_eq!(r.hash, "aaa-fn-first");
+        // Two alternatives: the other two hashes in hash order.
+        assert_eq!(r.alternatives, vec!["bbb-fn-second", "ccc-fn-third"]);
+        // matching propagated from uref.
+        assert_eq!(
+            r.matching.as_deref(),
+            Some("fetch the body of an https URL")
+        );
+        // kind propagated.
+        assert_eq!(r.kind.as_deref(), Some("function"));
+        // word stays empty for typed-slot.
+        assert_eq!(r.word, "");
     }
 }

@@ -172,6 +172,28 @@ mod tests {
             "expected agent_safety_policy mentioned: {bo}"
         );
 
+        // ── Step 2b: doc 07 §3.3 typed-slot diagnostic ───────────────────────
+        // The agent.nom typed-slot `the @Function matching "fetch the body of an https url"`
+        // has 6 candidates (all tool functions); resolver picks alphabetically, so 5 alternatives.
+        assert!(
+            bo.contains("slot @Function matching"),
+            "expected typed-slot diagnostic header 'slot @Function matching' in build status: {bo}"
+        );
+        // Count how many alternative lines appear — must be at least 5 (6 candidates - 1 picked).
+        let alt_lines = bo
+            .lines()
+            .filter(|l| l.trim_start().starts_with("fetch_url@")
+                || l.trim_start().starts_with("list_dir@")
+                || l.trim_start().starts_with("read_file@")
+                || l.trim_start().starts_with("run_command@")
+                || l.trim_start().starts_with("search_web@")
+                || l.trim_start().starts_with("write_file@"))
+            .count();
+        assert!(
+            alt_lines >= 5,
+            "expected at least 5 alternative lines in typed-slot diagnostic, got {alt_lines}: {bo}"
+        );
+
         // ── Step 3: agent.nom must NOT have @hash yet ─────────────────────────
         let agent_nom_path = repo_dir.join("agent.nom");
         let agent_nom_before = std::fs::read_to_string(&agent_nom_path)
