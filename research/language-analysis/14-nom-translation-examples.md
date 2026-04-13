@@ -1051,6 +1051,81 @@ the function pack_runtime_image is
 
 ---
 
+## 20. GitHub Actions workflow — YAML with logic
+
+Representing a typical CI workflow (mixing declarative structure + shell-exec payloads):
+
+```yaml
+name: CI
+on:
+  push:
+    branches: [main]
+  pull_request:
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions-rs/toolchain@v1
+        with:
+          toolchain: stable
+      - run: cargo test --all
+        env:
+          RUST_BACKTRACE: "1"
+```
+
+### `.nomx v1` translation
+
+```nomx
+record ci_workflow that holds
+  a name "CI",
+  a triggers section listing push to main and pull_request,
+  a jobs section with one job named test.
+
+the test job
+  runs on ubuntu-latest,
+  checks out the repository at version 4 of the checkout action,
+  installs the stable rust toolchain via actions-rs at version 1,
+  runs `cargo test --all` with RUST_BACKTRACE set to "1".
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ci_workflow is
+  intended to run the test suite on every push to main and every pull request.
+
+  exposes name as text.
+  exposes triggers as event list.
+  exposes jobs as job map.
+
+  favor correctness.
+
+the function run_ci_test_job is
+  intended to run `cargo test --all` after checking out the repo
+  and installing the stable rust toolchain.
+
+  uses the @Function matching "checkout repository action" with at-least 0.9 confidence.
+  uses the @Function matching "install rust toolchain action" with at-least 0.9 confidence.
+  uses the @Function matching "run shell command" with at-least 0.9 confidence.
+
+  requires ubuntu-latest runner is available.
+  ensures all tests pass before the job succeeds.
+
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **YAML's data+logic mix** — the workflow file is mostly data (structure, triggers, job map) but `steps.run` and `with.toolchain` parameters embed logic. Nom's translation splits into a `data` schema (the config shell) plus `function` entities (the per-job actions). Confirms doc 17 §I13 split rule scales to CI configs.
+2. **Third-party "actions" references (`actions/checkout@v4`)** — version-pinned external tool invocations. Maps to `@Function matching "checkout repository action" with at-least N confidence` plus corpus-registered action vocabulary. Overlaps with doc 16 #45 (identifier shape). Candidate: **W27 pinned-external-action ref grammar** if this recurs.
+3. **Environment variable injection (`env: RUST_BACKTRACE: "1"`)** — already queued as **W16** (env-var access). Confirmed this is a real authoring surface.
+4. **Event-triggered execution model** — CI workflow's `on:` section describes WHAT triggers execution, not what to run. Nom has no first-class event-trigger primitive today. Candidate: **W28 event-trigger declarations** (`runs when X happens`).
+5. **Matrix / strategy clauses** — not in this minimal example but common in CI. Defer to authoring-corpus seed for future translations.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

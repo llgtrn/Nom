@@ -63,17 +63,19 @@
 | 46 | Build-time dependency graph (Make prereqs) | **W25** grammar rule | ⏳ queued (doc 14 #18) |
 | 47 | Multi-stage / stage-chain declarations (Dockerfile) | **W26** grammar rule | ⏳ queued (doc 14 #19) |
 | 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | 📘 doc-todo |
+| 49 | Pinned-external-action ref grammar (`actions/checkout@v4`) | **W27** grammar rule | ⏳ queued (doc 14 #20) |
+| 50 | Event-trigger declarations (`runs when X happens`) | **W28** grammar rule | ⏳ queued (doc 14 #20) |
 
-Totals by destination (after doc 14 #18-#19 Makefile+Dockerfile translations surfaced 3 more rows):
+Totals by destination (after doc 14 #20 YAML/GitHub-Actions translation surfaced 2 more rows):
 
-- ⏳ Wedge queued: **20** (+2 W25 build-deps, W26 stage-chain)
+- ⏳ Wedge queued: **22** (+2 W27 pinned-external-action, W28 event-trigger)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **5** (+1 shell-exec primitive)
+- 📘 Authoring-guide doc-todo: **5**
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 48 rows. Closure rate 42% (20/48). 19 translations total in doc 14 spanning imperative / async / data / shell / editor-event / build / container paradigms.
+Backlog size: 50 rows. Closure rate 40% (20/50). **20 translations total** in doc 14 — round milestone. Paradigm coverage now: imperative (Rust/Python/C/C++/Go) + async (Python) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions).
 
 ## Wedge master index (for cross-ref with doc 13)
 
