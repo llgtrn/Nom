@@ -275,6 +275,9 @@ impl NomDict {
         // "duplicate column name" when it already exists — ignore that error.
         let _ = self.conn
             .execute_batch("ALTER TABLE entries ADD COLUMN body_bytes BLOB");
+        // Additive V3 tables: concept_defs (DB1) + words_v2 (DB2-v2).
+        // CREATE TABLE IF NOT EXISTS makes this idempotent.
+        self.conn.execute_batch(V3_SCHEMA_ADDITIONS_SQL)?;
         Ok(())
     }
 
@@ -1034,6 +1037,149 @@ impl NomDict {
         Ok(added)
     }
 
+    // ── concept_defs CRUD (DB1 — doc 08 §2.1) ─────────────────────────
+
+    /// Insert or replace a `concept_defs` row. Idempotent: on conflict
+    /// (`name` PK) all mutable fields are overwritten and `updated_at` is
+    /// bumped.
+    pub fn upsert_concept_def(&self, row: &ConceptRow) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO concept_defs
+                 (name, repo_id, intent, index_into_db2, exposes, acceptance,
+                  objectives, src_path, src_hash, body_hash, created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'), NULL)
+             ON CONFLICT(name) DO UPDATE SET
+                 repo_id        = excluded.repo_id,
+                 intent         = excluded.intent,
+                 index_into_db2 = excluded.index_into_db2,
+                 exposes        = excluded.exposes,
+                 acceptance     = excluded.acceptance,
+                 objectives     = excluded.objectives,
+                 src_path       = excluded.src_path,
+                 src_hash       = excluded.src_hash,
+                 body_hash      = excluded.body_hash,
+                 updated_at     = datetime('now')",
+            params![
+                row.name,
+                row.repo_id,
+                row.intent,
+                row.index_into_db2,
+                row.exposes,
+                row.acceptance,
+                row.objectives,
+                row.src_path,
+                row.src_hash,
+                row.body_hash,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch a `concept_defs` row by its primary key (`name`).
+    pub fn find_concept_def(&self, name: &str) -> Result<Option<ConceptRow>> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT name, repo_id, intent, index_into_db2, exposes, acceptance,
+                        objectives, src_path, src_hash, body_hash
+                 FROM concept_defs WHERE name = ?1",
+                params![name],
+                row_to_concept_def,
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Return all `concept_defs` rows for a given `repo_id`, ordered by name.
+    pub fn list_concept_defs_in_repo(&self, repo_id: &str) -> Result<Vec<ConceptRow>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT name, repo_id, intent, index_into_db2, exposes, acceptance,
+                    objectives, src_path, src_hash, body_hash
+             FROM concept_defs WHERE repo_id = ?1 ORDER BY name",
+        )?;
+        let rows = stmt
+            .query_map(params![repo_id], row_to_concept_def)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    // ── words_v2 CRUD (DB2-v2 — doc 08 §2.2) ──────────────────────────
+
+    /// Insert or replace a `words_v2` row. Idempotent: on conflict
+    /// (`hash` PK) all mutable fields are overwritten and `updated_at` is
+    /// bumped.
+    pub fn upsert_word_v2(&self, row: &WordV2Row) -> Result<()> {
+        self.conn.execute(
+            "INSERT INTO words_v2
+                 (hash, word, kind, signature, contracts, body_kind, body_size,
+                  origin_ref, bench_ids, authored_in, composed_of,
+                  created_at, updated_at)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'), NULL)
+             ON CONFLICT(hash) DO UPDATE SET
+                 word        = excluded.word,
+                 kind        = excluded.kind,
+                 signature   = excluded.signature,
+                 contracts   = excluded.contracts,
+                 body_kind   = excluded.body_kind,
+                 body_size   = excluded.body_size,
+                 origin_ref  = excluded.origin_ref,
+                 bench_ids   = excluded.bench_ids,
+                 authored_in = excluded.authored_in,
+                 composed_of = excluded.composed_of,
+                 updated_at  = datetime('now')",
+            params![
+                row.hash,
+                row.word,
+                row.kind,
+                row.signature,
+                row.contracts,
+                row.body_kind,
+                row.body_size,
+                row.origin_ref,
+                row.bench_ids,
+                row.authored_in,
+                row.composed_of,
+            ],
+        )?;
+        Ok(())
+    }
+
+    /// Fetch a `words_v2` row by its `hash` primary key.
+    pub fn find_word_v2(&self, hash: &str) -> Result<Option<WordV2Row>> {
+        let row = self
+            .conn
+            .query_row(
+                "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                        origin_ref, bench_ids, authored_in, composed_of
+                 FROM words_v2 WHERE hash = ?1",
+                params![hash],
+                row_to_word_v2,
+            )
+            .optional()?;
+        Ok(row)
+    }
+
+    /// Return all `words_v2` rows whose `word` column equals `word`,
+    /// ordered by hash for determinism.
+    pub fn find_words_v2_by_word(&self, word: &str) -> Result<Vec<WordV2Row>> {
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                    origin_ref, bench_ids, authored_in, composed_of
+             FROM words_v2 WHERE word = ?1 ORDER BY hash",
+        )?;
+        let rows = stmt
+            .query_map(params![word], row_to_word_v2)?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        Ok(rows)
+    }
+
+    /// Total count of rows in `words_v2`.
+    pub fn count_words_v2(&self) -> Result<i64> {
+        let n: i64 =
+            self.conn.query_row("SELECT COUNT(*) FROM words_v2", [], |row| row.get(0))?;
+        Ok(n)
+    }
+
     /// Bulk-insert scores in one transaction.
     pub fn bulk_set_scores(&self, scores: &[EntryScores]) -> Result<()> {
         let tx = self.conn.unchecked_transaction()?;
@@ -1106,10 +1252,137 @@ fn row_to_concept(row: &rusqlite::Row) -> rusqlite::Result<Concept> {
     })
 }
 
+fn row_to_concept_def(row: &rusqlite::Row) -> rusqlite::Result<ConceptRow> {
+    Ok(ConceptRow {
+        name: row.get(0)?,
+        repo_id: row.get(1)?,
+        intent: row.get(2)?,
+        index_into_db2: row.get(3)?,
+        exposes: row.get(4)?,
+        acceptance: row.get(5)?,
+        objectives: row.get(6)?,
+        src_path: row.get(7)?,
+        src_hash: row.get(8)?,
+        body_hash: row.get(9)?,
+    })
+}
+
+fn row_to_word_v2(row: &rusqlite::Row) -> rusqlite::Result<WordV2Row> {
+    Ok(WordV2Row {
+        hash: row.get(0)?,
+        word: row.get(1)?,
+        kind: row.get(2)?,
+        signature: row.get(3)?,
+        contracts: row.get(4)?,
+        body_kind: row.get(5)?,
+        body_size: row.get(6)?,
+        origin_ref: row.get(7)?,
+        bench_ids: row.get(8)?,
+        authored_in: row.get(9)?,
+        composed_of: row.get(10)?,
+    })
+}
+
 // Re-export so callers can construct edges without another use-line.
 pub use nom_types::EdgeType as __ReexportedEdgeType;
 #[allow(dead_code)]
 fn _compile_check(_: EdgeType) {}
+
+// ── V3 schema additions (additive — DB1 concept_defs + DB2 words_v2) ──
+
+/// Additive SQL appended by `init_schema` after `V2_SCHEMA_SQL`.
+/// Does NOT modify any existing table. Uses `CREATE TABLE IF NOT EXISTS`
+/// so it is safe to call on a DB that already has these tables.
+///
+/// `concept_defs` = DB1 (doc 08 §2.1): one row per `.nom` concept file.
+/// `words_v2`     = DB2-v2 (doc 08 §2.2): one row per nomtu hash.
+///
+/// Note: the legacy `concepts` table (entry-grouping, id PK) is kept
+/// unchanged.  The new DB1 table is named `concept_defs` to avoid the
+/// name collision.
+pub const V3_SCHEMA_ADDITIONS_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS concept_defs (
+    name           TEXT PRIMARY KEY,
+    repo_id        TEXT NOT NULL,
+    intent         TEXT NOT NULL,
+    index_into_db2 TEXT NOT NULL,
+    exposes        TEXT NOT NULL DEFAULT '[]',
+    acceptance     TEXT NOT NULL DEFAULT '[]',
+    objectives     TEXT NOT NULL DEFAULT '[]',
+    src_path       TEXT NOT NULL,
+    src_hash       TEXT NOT NULL,
+    body_hash      TEXT,
+    created_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at     TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_concept_defs_repo ON concept_defs(repo_id);
+CREATE INDEX IF NOT EXISTS idx_concept_defs_src ON concept_defs(src_path);
+
+CREATE TABLE IF NOT EXISTS words_v2 (
+    hash          TEXT PRIMARY KEY,
+    word          TEXT NOT NULL,
+    kind          TEXT NOT NULL,
+    signature     TEXT,
+    contracts     TEXT,
+    body_kind     TEXT,
+    body_size     INTEGER,
+    origin_ref    TEXT,
+    bench_ids     TEXT,
+    authored_in   TEXT,
+    composed_of   TEXT,
+    created_at    TEXT NOT NULL DEFAULT (datetime('now')),
+    updated_at    TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_words_v2_word ON words_v2(word);
+CREATE INDEX IF NOT EXISTS idx_words_v2_kind ON words_v2(kind);
+CREATE INDEX IF NOT EXISTS idx_words_v2_authored ON words_v2(authored_in);
+"#;
+
+// ── ConceptRow (DB1 — doc 08 §2.1) ──────────────────────────────────
+
+/// One row in the `concept_defs` table.
+/// JSON fields (`index_into_db2`, `exposes`, `acceptance`, `objectives`)
+/// are stored as raw strings — nom-dict has no dependency on nom-concept;
+/// the caller is responsible for serialisation/deserialisation.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ConceptRow {
+    pub name: String,
+    pub repo_id: String,
+    pub intent: String,
+    /// JSON array of EntityRef.
+    pub index_into_db2: String,
+    /// JSON array; default `"[]"`.
+    pub exposes: String,
+    /// JSON array; default `"[]"`.
+    pub acceptance: String,
+    /// JSON array; default `"[]"`.
+    pub objectives: String,
+    pub src_path: String,
+    pub src_hash: String,
+    pub body_hash: Option<String>,
+}
+
+// ── WordV2Row (DB2-v2 — doc 08 §2.2) ────────────────────────────────
+
+/// One row in the `words_v2` table.
+/// All `Option` fields map to nullable SQL columns.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct WordV2Row {
+    pub hash: String,
+    pub word: String,
+    pub kind: String,
+    pub signature: Option<String>,
+    /// JSON array of ContractClause; nullable.
+    pub contracts: Option<String>,
+    pub body_kind: Option<String>,
+    pub body_size: Option<i64>,
+    pub origin_ref: Option<String>,
+    pub bench_ids: Option<String>,
+    /// Path to .nomtu file; NULL if ingested from corpus.
+    pub authored_in: Option<String>,
+    /// JSON list of hashes; NULL if atomic entry.
+    pub composed_of: Option<String>,
+}
 
 // ── Legacy v1 shims ─────────────────────────────────────────────────
 //
@@ -1711,5 +1984,191 @@ mod tests {
         let added2 = d.add_concept_members_by_filter(&concept.id, &filter).unwrap();
         assert_eq!(added2, 0, "re-run must add 0 (all already members)");
         assert_eq!(d.count_concept_members(&concept.id).unwrap(), 2);
+    }
+
+    // ── DB1 / DB2-v2 tests ────────────────────────────────────────────
+
+    fn make_concept_row(name: &str, repo_id: &str) -> ConceptRow {
+        ConceptRow {
+            name: name.to_string(),
+            repo_id: repo_id.to_string(),
+            intent: format!("intent of {name}"),
+            index_into_db2: r#"[{"hash":"abc","label":"foo"}]"#.to_string(),
+            exposes: "[]".to_string(),
+            acceptance: "[]".to_string(),
+            objectives: "[]".to_string(),
+            src_path: format!("src/{name}.nom"),
+            src_hash: "deadbeef".to_string(),
+            body_hash: None,
+        }
+    }
+
+    fn make_word_v2_row(hash: &str, word: &str) -> WordV2Row {
+        WordV2Row {
+            hash: hash.to_string(),
+            word: word.to_string(),
+            kind: "Function".to_string(),
+            signature: Some("(token: str) -> bool".to_string()),
+            contracts: Some(r#"[{"pre":"token != null"}]"#.to_string()),
+            body_kind: Some("bc".to_string()),
+            body_size: Some(1024),
+            origin_ref: Some("repo:myproject".to_string()),
+            bench_ids: Some(r#"["bench-001"]"#.to_string()),
+            authored_in: Some("src/auth.nomtu".to_string()),
+            composed_of: None,
+        }
+    }
+
+    /// Test 1: init_schema creates concept_defs and words_v2 tables.
+    #[test]
+    fn init_schema_creates_concept_defs_and_words_v2_tables() {
+        let d = NomDict::open_in_memory().unwrap();
+        let conn = d.connection();
+
+        let tables: Vec<String> = conn
+            .prepare("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name")
+            .unwrap()
+            .query_map([], |row| row.get::<_, String>(0))
+            .unwrap()
+            .filter_map(|r| r.ok())
+            .collect();
+
+        assert!(
+            tables.contains(&"concept_defs".to_string()),
+            "concept_defs table must exist; got: {tables:?}"
+        );
+        assert!(
+            tables.contains(&"words_v2".to_string()),
+            "words_v2 table must exist; got: {tables:?}"
+        );
+    }
+
+    /// Test 2: running init twice must not error.
+    #[test]
+    fn concepts_idempotent_init() {
+        let d = NomDict::open_in_memory().unwrap();
+        // init_schema is called inside open_in_memory; calling it a second time
+        // via execute_batch of the same SQL must be a no-op (CREATE IF NOT EXISTS).
+        d.connection().execute_batch(V3_SCHEMA_ADDITIONS_SQL).unwrap();
+    }
+
+    /// Test 3: insert a ConceptRow and read it back identically.
+    #[test]
+    fn concept_def_round_trip() {
+        let d = NomDict::open_in_memory().unwrap();
+        let row = ConceptRow {
+            name: "auth_system".to_string(),
+            repo_id: "repo-abc".to_string(),
+            intent: "Validates JWT tokens for API access".to_string(),
+            index_into_db2: r#"[{"hash":"cafebabe","label":"validate_token_jwt"}]"#.to_string(),
+            exposes: r#"["validate_token_jwt"]"#.to_string(),
+            acceptance: r#"[{"given":"valid jwt","expect":"true"}]"#.to_string(),
+            objectives: r#"["security","reliability"]"#.to_string(),
+            src_path: "src/auth.nom".to_string(),
+            src_hash: "0011223344556677".to_string(),
+            body_hash: Some("aabbccdd".to_string()),
+        };
+        d.upsert_concept_def(&row).unwrap();
+
+        let fetched = d.find_concept_def("auth_system").unwrap().unwrap();
+        assert_eq!(fetched.name, row.name);
+        assert_eq!(fetched.repo_id, row.repo_id);
+        assert_eq!(fetched.intent, row.intent);
+        assert_eq!(fetched.index_into_db2, row.index_into_db2);
+        assert_eq!(fetched.exposes, row.exposes);
+        assert_eq!(fetched.acceptance, row.acceptance);
+        assert_eq!(fetched.objectives, row.objectives);
+        assert_eq!(fetched.src_path, row.src_path);
+        assert_eq!(fetched.src_hash, row.src_hash);
+        assert_eq!(fetched.body_hash, row.body_hash);
+    }
+
+    /// Test 4: upsert with a new intent overwrites the old one.
+    #[test]
+    fn concept_def_upsert_overwrites() {
+        let d = NomDict::open_in_memory().unwrap();
+        let mut row = make_concept_row("payments", "repo-pay");
+        d.upsert_concept_def(&row).unwrap();
+
+        let original = d.find_concept_def("payments").unwrap().unwrap();
+        assert_eq!(original.intent, "intent of payments");
+
+        row.intent = "Process Stripe + PayPal transactions".to_string();
+        d.upsert_concept_def(&row).unwrap();
+
+        let updated = d.find_concept_def("payments").unwrap().unwrap();
+        assert_eq!(updated.intent, "Process Stripe + PayPal transactions");
+
+        // Still only one row.
+        let all = d.list_concept_defs_in_repo("repo-pay").unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    /// Test 5: insert a WordV2Row with all fields populated; read back identically.
+    #[test]
+    fn word_v2_round_trip() {
+        let d = NomDict::open_in_memory().unwrap();
+        let row = make_word_v2_row("cafebabe1234", "validate_token_jwt");
+        d.upsert_word_v2(&row).unwrap();
+
+        let fetched = d.find_word_v2("cafebabe1234").unwrap().unwrap();
+        assert_eq!(fetched.hash, row.hash);
+        assert_eq!(fetched.word, row.word);
+        assert_eq!(fetched.kind, row.kind);
+        assert_eq!(fetched.signature, row.signature);
+        assert_eq!(fetched.contracts, row.contracts);
+        assert_eq!(fetched.body_kind, row.body_kind);
+        assert_eq!(fetched.body_size, row.body_size);
+        assert_eq!(fetched.origin_ref, row.origin_ref);
+        assert_eq!(fetched.bench_ids, row.bench_ids);
+        assert_eq!(fetched.authored_in, row.authored_in);
+        assert_eq!(fetched.composed_of, row.composed_of);
+
+        assert_eq!(d.count_words_v2().unwrap(), 1);
+    }
+
+    /// Test 6: find_words_v2_by_word returns only rows matching the word.
+    #[test]
+    fn find_words_v2_by_word_filters_correctly() {
+        let d = NomDict::open_in_memory().unwrap();
+
+        d.upsert_word_v2(&make_word_v2_row("hash-jwt-1", "validate_token_jwt")).unwrap();
+        d.upsert_word_v2(&make_word_v2_row("hash-jwt-2", "validate_token_jwt")).unwrap();
+        d.upsert_word_v2(&make_word_v2_row("hash-other", "other")).unwrap();
+
+        let jwt_rows = d.find_words_v2_by_word("validate_token_jwt").unwrap();
+        assert_eq!(jwt_rows.len(), 2, "expected 2 rows for validate_token_jwt");
+        assert!(jwt_rows.iter().all(|r| r.word == "validate_token_jwt"));
+
+        let other_rows = d.find_words_v2_by_word("other").unwrap();
+        assert_eq!(other_rows.len(), 1);
+
+        let missing = d.find_words_v2_by_word("nonexistent").unwrap();
+        assert!(missing.is_empty());
+
+        assert_eq!(d.count_words_v2().unwrap(), 3);
+    }
+
+    /// Test 7: the legacy `entries` table is unaffected by the additive changes.
+    #[test]
+    fn existing_entries_table_unaffected() {
+        let d = NomDict::open_in_memory().unwrap();
+
+        // Insert via the existing high-level API to confirm nothing broke.
+        d.upsert_entry(&make_entry("entry-legacy-001", "old_fn")).unwrap();
+
+        // Also confirm via raw SQL count.
+        let count: i64 = d
+            .connection()
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(count, 1, "entries table must still work after additive schema additions");
+
+        // And the new tables start empty.
+        assert_eq!(d.count_words_v2().unwrap(), 0);
+        assert_eq!(
+            d.list_concept_defs_in_repo("any-repo").unwrap().len(),
+            0
+        );
     }
 }
