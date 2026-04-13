@@ -1,31 +1,31 @@
 # 08 — Layered Concept / Module / Entity Architecture
 
-> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+> **Last verified against codebase: 2026-04-14, HEAD `64b3058`.**
 
-**Status: ~58% implemented as of 2026-04-13, HEAD `afc6228`.** Filed 2026-04-13. Builds on docs 02-07; resolves the three open tensions in [07-keyed-similarity-syntax-proposal.md §6](07-keyed-similarity-syntax-proposal.md).
+**Status: ~82% implemented as of 2026-04-14.** Filed 2026-04-13. Builds on docs 02-07; resolves the three open tensions in [07-keyed-similarity-syntax-proposal.md §6](07-keyed-similarity-syntax-proposal.md). Reality gains since original filing: M2 acceptance preservation, M4 three-tier recursive ingest, M5 layered dreaming (a+b+c), M7 MECE CE-check (a+c) — see doc 09 for the consolidated shipped inventory.
 
-## Implementation status (2026-04-13, HEAD `afc6228`)
+## Implementation status (2026-04-14, HEAD `64b3058`)
 
 | Feature | Status | Commit(s) |
 |---|---|---|
 | **Tier 0** — atoms in DB2 (`words_v2`) | ✅ SHIPPED | `aaa914d` |
 | **Tier 1** — `.nomtu` parser (`nom-concept` Tier-1) | ✅ SHIPPED | `05ee1b6` |
-| **Tier 1** — recursive-ingest compiler (bytes per §4.3) | ⏳ PLANNED | Phase 5 |
+| **Tier 1** — recursive-ingest compiler (bytes per §4.3) | ✅ SHIPPED | M4 (`three_tier_recursive_e2e.rs`) |
 | **Tier 2** — `.nom` parser (`nom-concept` Tier-2) | ✅ SHIPPED | `d9425ba` |
-| **Tier 2** — recursive ingest (concept → modules → atoms) | ⏳ PLANNED | Phase 5/6 |
+| **Tier 2** — recursive ingest (concept → modules → atoms) | ✅ SHIPPED | M4 (`three_tier_recursive_e2e.rs`) |
 | **Two databases** — DB1 (`concept_defs`) + DB2 (`words_v2`), additive | ✅ SHIPPED | `aaa914d` |
 | **Closure walker** — DFS post-order with cycle detection | ✅ SHIPPED | `c5cdce6` |
 | **Resolver stub** — `resolve_closure`, alphabetical-smallest tiebreak | ✅ SHIPPED | `bf95c2c` + `c405d2a` |
 | **Resolver** — Phase-9 corpus-embedding semantic re-rank | ⏳ PLANNED | Phase 9 |
 | **MECE validator** — ME-collision check (exit 1 on collision) | ✅ SHIPPED | `c63a6a7` |
-| **MECE validator** — CE-check (collectively-exhaustive) | ⏳ PLANNED — corpus-required-axis registry not yet built | Phase 9 |
+| **MECE validator** — CE-check (collectively-exhaustive) | ✅ SHIPPED | M7a `bcadcb3` (required_axes registry) + M7c `4307c5a` (layered-dream integration) |
 | `nom store sync` | ✅ SHIPPED | `ba7769f` |
 | `nom build status` (+ `--write-locks`) | ✅ SHIPPED | `bf95c2c` |
 | `nom build manifest` | ✅ SHIPPED | `fef0419` |
 | **Lock writeback** — `name@hash` for v1 refs (§8.2) | ✅ SHIPPED | `a04b91e` |
 | **Lock writeback** — typed-slot refs intentionally NOT written back (§3.5) | ✅ SHIPPED (by design) | `c405d2a` |
-| **Layered dreaming** (§9) — concept-tier + module-tier `nom dream` | ⏳ PLANNED | Phase 8/9 |
-| **Acceptance-predicate preservation engine** (§9.1) | ⏳ PLANNED | Phase 8/9 |
+| **Layered dreaming** (§9) — concept-tier + module-tier `nom dream` | ✅ SHIPPED | M5a `f0ae193` + M5b `e28f69d` + M5c `cc9641b` |
+| **Acceptance-predicate preservation engine** (§9.1) | ✅ SHIPPED | M2 (`acceptance_preserve_e2e.rs`) |
 | **Cascade through dream** (§9.3) | ⏳ PLANNED | Phase 8/9 |
 | **AppManifest deprecation** — `app.nom` as root concept | ⏳ PLANNED | Phase 10 |
 | **`nom-concept` crate** — Tier-1 + Tier-2 parser | ✅ SHIPPED (as part of `nom-concept`) | `05ee1b6` + `d9425ba` |
@@ -306,26 +306,26 @@ The compiler is a **recursive ingestor**: a concept ingests modules; a module in
 > **Status**: ✅ Stub shipped (commits `bf95c2c` + `c405d2a`) — alphabetical-smallest
 > hash tiebreak as deterministic placeholder. ⏳ Phase-9 corpus-embedding re-rank pending.
 
-## 9. Layered dreaming ⏳ PLANNED (Phase 8/9)
+## 9. Layered dreaming ✅ SHIPPED (M5a+b+c)
 
 Per the keyed-similarity insight (doc 07): each tier scores independently; no cross-tier normalization.
 
 - **Tier-0 dream** (`nom nomtu dream <hash>`) — atomic body. Score = local benchmarks. Already planned for Phase 12 specialization. ⏳ PLANNED
-- **Tier-1 dream** (`nom module dream <m>.nomtu`) — module composition. Score = (acceptance ∧ objectives) tuple. Iteration swaps atomic refs against alternatives from the embedding index. ⏳ PLANNED
-- **Tier-2 dream** (`nom concept dream <c>.nom`) — concept composition. Score = (acceptance ∧ objectives) tuple over modules. ⏳ PLANNED
-- **Tier-3 dream** (`nom app dream`) — root. Recursively dreams; returns a **Pareto front of dream-trees**. User picks; no silent weighting. ⏳ PLANNED (existing single-tier `nom app dream` ships; layered recursion pending)
+- **Tier-1 dream** (`nom module dream <m>.nomtu`) — module composition. Score = (acceptance ∧ objectives) tuple. Iteration swaps atomic refs against alternatives from the embedding index. ✅ SHIPPED (M5a/b)
+- **Tier-2 dream** (`nom concept dream <c>.nom`) — concept composition. Score = (acceptance ∧ objectives) tuple over modules. ✅ SHIPPED (M5a/b)
+- **Tier-3 dream** (`nom app dream`) — root. Recursively dreams; returns a **Pareto front of dream-trees**. User picks; no silent weighting. ✅ SHIPPED via `LayeredDreamReport { tier, leaf, child_reports, pareto_front }` (M5c `cc9641b`)
 
 `DreamReport` grows `tree: LayeredScoreNode` and `pareto: Vec<TreeCandidate>`. Existing `epic_score` stays as a leaf-tier scalar for back-compat.
 
-### 9.1 Acceptance preservation ⏳ PLANNED (Phase 8/9)
+### 9.1 Acceptance preservation ✅ SHIPPED (M2)
 
 **Acceptance predicates are local** to the concept that declares them. Apps re-declare what they care about; predicates do not propagate up automatically.
 
 `nom dream` is the **preservation engine**: every iteration that swaps a child must re-evaluate ALL of the parent's predicates and refuse swaps that drop or weaken any. Reports must surface "predicate X went from satisfied to vacuous because we swapped Y" instead of silently absorbing it. Because predicates are prose, they need a runtime check, not a static gate.
 
-> **Status**: ⏳ PLANNED — acceptance predicates are parsed and stored in the build manifest
-> (commit `fef0419`), but no preservation engine exists. The `nom dream` loop does not yet
-> re-evaluate predicates across swap iterations.
+> **Status**: ✅ SHIPPED (M2) — preservation engine re-evaluates all parent predicates
+> per swap; swaps that drop/weaken any predicate are refused. See `acceptance_preserve_e2e.rs`.
+> Predicate parse/storage in manifest landed earlier via `fef0419`.
 
 ### 9.2 Objective inheritance + MECE validation
 
@@ -345,7 +345,7 @@ When concept *child* composes into concept *parent*, the union of their objectiv
 > **Status**:
 > - ME-collision check: ✅ SHIPPED (commit `c63a6a7`) — exit 1 on axis collision;
 >   `examples/agent_demo/` intentionally collides to prove it works.
-> - CE-check: ⏳ PLANNED — corpus-required-axis registry not yet built; stub only.
+> - CE-check: ✅ SHIPPED (M7a `bcadcb3` — required_axes registry; M7c `4307c5a` — integrated into layered dream).
 > - Singleton enforcement: ⏳ PLANNED — the design is doc'd; corpus `exactly_one_per_app`
 >   registration deferred to Phase 9.
 
@@ -366,8 +366,8 @@ When concept A changes, downstream concepts that index it are NOT silently re-pi
 | Phase | What lands | Status |
 |---|---|---|
 | Inside Phase 4 (now) | `.nom` + `.nomtu` file formats; `nom store sync`; DB1/DB2 schema split. Pure metadata work; doesn't touch the artifact store. | ✅ SHIPPED — commits `aaa914d` + `05ee1b6` + `d9425ba` + `ba7769f` |
-| Before Phase 5 | `nom-concept` + `nom-module` parsing; recursive-ingest compiler. Phase 5's planner needs concept + module boundaries as input. | ✅ Parsing SHIPPED; ⏳ recursive-ingest compiler PLANNED (Phase 5) |
-| Phase 8 or 9 | Tier-1 + Tier-2 dreaming. Requires embedding index (Phase 9) for swaps and acceptance predicates (Phase 8) for scoring. | ⏳ PLANNED |
+| Before Phase 5 | `nom-concept` + `nom-module` parsing; recursive-ingest compiler. Phase 5's planner needs concept + module boundaries as input. | ✅ SHIPPED — parsing + recursive-ingest compiler (M4 `three_tier_recursive_e2e.rs`) |
+| Phase 8 or 9 | Tier-1 + Tier-2 dreaming. Requires embedding index (Phase 9) for swaps and acceptance predicates (Phase 8) for scoring. | ✅ SHIPPED (M5a+b+c); embedding-index re-rank still Phase 9 |
 | Phase 12 (unchanged) | Tier-0 specialization; now the leaf of the Pareto tree. | ⏳ PLANNED |
 | AppManifest deprecation | `app.nom` becomes the root. AppManifest is a generated view, not a separate artifact. | ⏳ PLANNED |
 
@@ -380,8 +380,8 @@ All twelve numbered questions from the planning round are resolved per user auth
 3. **Empty concept folder** — warning + dream-seed. ⏳ PLANNED — no warning emitted yet.
 4. **Orphan reaping** — manual `nom store gc`; never automatic. ⏳ PLANNED — `nom store gc` subcommand not yet implemented.
 5. **Tier-2 override scope** — *deferred*; revisit after the rest of the architecture stabilizes. ⏳ DEFERRED — no change from original resolution; still unresolved per doc 09.
-6. **Acceptance predicate portability** — local + dream-preserved (§9.1). ✅ Predicates parsed + stored in build manifest (commit `fef0419`); ⏳ dream-preservation engine PLANNED.
-7. **Dream-objective inheritance** — MECE validator (§9.2). ✅ ME check shipped (commit `c63a6a7`); ⏳ CE check PLANNED.
+6. **Acceptance predicate portability** — local + dream-preserved (§9.1). ✅ Predicates parsed + stored in build manifest (commit `fef0419`); ✅ dream-preservation engine SHIPPED (M2).
+7. **Dream-objective inheritance** — MECE validator (§9.2). ✅ ME check shipped (commit `c63a6a7`); ✅ CE check shipped (M7a `bcadcb3` + M7c `4307c5a`).
 8. **Custom quality registration** — corpus table. ⏳ PLANNED — no corpus quality table yet.
 9. **Cross-`.nomtu` references** — yes; resolved against DB2. ✅ SHIPPED — resolver does DB2 lookup by kind + word (commits `bf95c2c` + `c405d2a`).
 10. **Mixed kinds in one `.nomtu`** — yes, with the singleton caveat from item 2. ✅ SHIPPED — parser accepts multiple entity declarations of different kinds in one `.nomtu` file.
