@@ -217,6 +217,20 @@ The `verify` tool IS the Self-RAG critique. When the LLM is about to emit `Answe
 - **>5 grouped tools** — cap is 5 per ReAct "don't-exceed-20 tools" best practice; strict ceiling
 - **LLM in the build path** — ReAct loop is a **pre-build authoring aid**, not a compile-step (doc 04 §10.3.1 fixpoint unchanged)
 
+## Slice-5b clarification (2026-04-14 user directive)
+
+The "real LLM adapter" is NOT limited to OpenAI/Anthropic. Three concrete backends qualify, ordered by preference:
+
+1. **`NomCliAdapter`** — **the nom-compiler itself as oracle**. Uses the shipped `DictTools` + `classify_with_react` + `compose` token-overlap + MECE validator to produce `ReActStep`s deterministically. Zero external dependencies; completely offline. **Default adapter.**
+2. **`McpAdapter`** — connects to an MCP stdio server (same protocol as `scripts/gitnexus-mcp.js`), routes the prose + transcript through the MCP tool-call surface. Works with any MCP-compatible client (Claude Code, Codex CLI, Gemini CLI per doc 10 §D). Ships **before** external API adapters.
+3. **`RealLlmAdapter`** (optional) — OpenAI/Anthropic structured-output wrapper. Only shipped when external API access is configured; **not required** for the loop to work.
+
+The existing `ReActLlmFn` closure type (`Box<dyn Fn(...) -> Result<ReActStep, _>>`) becomes the **blanket impl** of a new `trait ReActAdapter { fn next_step(...) -> Result<ReActStep, _>; }`. Every concrete adapter implements this trait. `cmd_agent_classify` CLI gains `--adapter {nom-cli, mcp, openai, anthropic, stub}` selecting among them (default `nom-cli`).
+
+**Invariant preserved across all adapters:** output MUST resolve to a registered `NomIntent` variant. Reject-on-invalid ensures no adapter can break slice-1's bounded-output discipline. Tests assert this per-adapter.
+
+**Rationale** (per memory `project_react_llm_adapter_polymorphism.md`): Nom-as-its-own-oracle is the Agentic-RAG win. External LLMs are a nice-to-have, not a prerequisite. Doc 04 §10.3.1 fixpoint discipline holds — the "LLM" can be literally Nom's own deterministic compose+verify, which never enters the build path.
+
 ## Spec self-review (2026-04-14)
 
 - ✅ No TBDs / placeholders / vague "TODO" blocks remain
