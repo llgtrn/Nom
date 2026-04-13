@@ -74,4 +74,35 @@ mod tests {
             "expected pass-through output: {stdout:?}"
         );
     }
+
+    #[test]
+    fn locale_check_confusable_equal_exits_zero() {
+        let (code, stdout, _stderr) = run(&["locale", "check-confusable", "hello", "hello"]);
+        assert_eq!(code, 0);
+        assert!(stdout.contains("equal"), "expected 'equal' in output: {stdout}");
+    }
+
+    #[test]
+    fn locale_check_confusable_different_safe_exits_zero() {
+        let (code, stdout, _stderr) = run(&["locale", "check-confusable", "hello", "world"]);
+        assert_eq!(code, 0);
+        assert!(
+            stdout.contains("different-safe"),
+            "expected 'different-safe' in output: {stdout}"
+        );
+    }
+
+    #[test]
+    fn locale_check_confusable_cyrillic_vs_latin_exits_two() {
+        // U+0440 CYRILLIC SMALL LETTER ER vs U+0070 LATIN SMALL LETTER P
+        // U+0430 CYRILLIC SMALL LETTER A  vs U+0061 LATIN SMALL LETTER A
+        let spoofed = "\u{0440}\u{0430}ypal";
+        let legit = "paypal";
+        let (code, _stdout, stderr) = run(&["locale", "check-confusable", spoofed, legit]);
+        assert_eq!(code, 2, "expected exit 2 for confusable pair, stderr={stderr}");
+        assert!(
+            stderr.contains("confusable"),
+            "expected 'confusable' in stderr: {stderr}"
+        );
+    }
 }
