@@ -125,6 +125,51 @@ impl Default for ReActBudget {
 pub type ReActLlmFn =
     Box<dyn Fn(&str, &[ReActStep]) -> Result<ReActStep, IntentError>>;
 
+/// Slice-5b-trait: the polymorphic adapter role. Any concrete LLM
+/// backend (nom-compiler itself, MCP stdio server, OpenAI,
+/// Anthropic, canned stubs, …) implements this trait. The existing
+/// closure type `ReActLlmFn` gets a blanket impl below so no existing
+/// caller breaks.
+///
+/// Per the slice-5b design clarification (spec
+/// `docs/superpowers/specs/2026-04-14-graph-rag-agentic-design.md`
+/// + memory `project_react_llm_adapter_polymorphism.md`):
+/// - `NomCliAdapter` — default: nom-compiler-as-oracle via existing
+///   DictTools + compose + verify. Completely offline.
+/// - `McpAdapter` — stdio JSON-RPC to any MCP-compatible client.
+/// - `RealLlmAdapter` — optional external API wrapper (OpenAI /
+///   Anthropic), only when configured.
+///
+/// Invariant preserved across all adapters: returned `ReActStep`
+/// MUST use registered `NomIntent` variants. Reject-on-invalid is
+/// enforced per slice-1 discipline.
+pub trait ReActAdapter {
+    fn next_step(
+        &self,
+        prose: &str,
+        transcript: &[ReActStep],
+    ) -> Result<ReActStep, IntentError>;
+}
+
+/// Blanket impl: any `Fn(&str, &[ReActStep]) -> Result<_, _>` IS a
+/// valid adapter. Makes the existing test closures + stub LLMs
+/// transparently compatible with the new trait — zero breaking
+/// change. Existing callers using `&ReActLlmFn` continue to work
+/// because `ReActLlmFn` is `Box<dyn Fn(...)>` and Box<dyn Fn> impl's
+/// Fn via deref.
+impl<F> ReActAdapter for F
+where
+    F: Fn(&str, &[ReActStep]) -> Result<ReActStep, IntentError>,
+{
+    fn next_step(
+        &self,
+        prose: &str,
+        transcript: &[ReActStep],
+    ) -> Result<ReActStep, IntentError> {
+        self(prose, transcript)
+    }
+}
+
 // ── Tools trait ───────────────────────────────────────────────────────
 
 /// The 5 grouped tools the ReAct loop dispatches. Production `DictTools`
@@ -436,6 +481,44 @@ mod tests {
         assert_eq!(tools.verify_calls.get(), 1);
         assert_eq!(tools.render_calls.get(), 1);
         assert_eq!(tools.explain_calls.get(), 1);
+    }
+
+    /// A concrete struct implementing `ReActAdapter`. Exists purely to
+    /// prove the trait can be implemented by a non-closure type; future
+    /// `NomCliAdapter` / `McpAdapter` impls use this shape.
+    struct CannedAdapter {
+        step: ReActStep,
+    }
+    impl ReActAdapter for CannedAdapter {
+        fn next_step(
+            &self,
+            _prose: &str,
+            _transcript: &[ReActStep],
+        ) -> Result<ReActStep, IntentError> {
+            Ok(self.step.clone())
+        }
+    }
+
+    #[test]
+    fn react_adapter_trait_compiles_with_struct_impl_and_returns_expected_step() {
+        let adapter = CannedAdapter {
+            step: ReActStep::Answer(NomIntent::Kind("app".into())),
+        };
+        let step = adapter.next_step("prose", &[]).unwrap();
+        assert!(matches!(step, ReActStep::Answer(NomIntent::Kind(_))));
+    }
+
+    #[test]
+    fn react_adapter_blanket_impl_accepts_closure() {
+        // Closure that takes (prose, transcript) and returns Result<ReActStep>
+        // is now a ReActAdapter via the blanket impl. This test locks the
+        // zero-breaking-change guarantee: existing closure-based tests
+        // don't need to be rewritten.
+        let adapter = |_p: &str, _t: &[ReActStep]| {
+            Ok(ReActStep::Reject(Reason::Unparseable))
+        };
+        let step = adapter.next_step("anything", &[]).unwrap();
+        assert!(matches!(step, ReActStep::Reject(Reason::Unparseable)));
     }
 
     #[test]
