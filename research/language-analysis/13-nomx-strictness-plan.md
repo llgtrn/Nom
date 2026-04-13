@@ -74,9 +74,36 @@ Verify lexer rejects synonyms and case-variant spellings for `matching`, `with`,
 
 Refactor `parse_nomx_source` into explicit stages: `tokenize → kind_classify → signature_extract → contract_attach → resolve_references`. Each stage takes and returns a typed AST (`TokenStream → ClassifiedAst → SignedAst → ContractedAst → ResolvedAst`). Every stage MUST classify every node or reject. Estimated 3d (biggest wedge; largest refactor risk).
 
-### A5 — No lossy `Option` fields on typed AST ⏳
+### A5 — No lossy `Option` fields on typed AST 🔍 (audit complete, refactor deferred)
 
 Every `pub struct` in the nomx AST audited for `Option<T>` fields that represent "we could not determine this"; replace with required `T` or with explicit `Unresolved` variants. Estimated 1d.
+
+**Audit 2026-04-14 (no code change this cycle):**
+
+| Field | Form | Verdict |
+|---|---|---|
+| `CompositionDecl.glue: Option<String>` | syntactic optional (`with <glue>` clause) | ✅ keep |
+| `EntityRef.kind: Option<String>` | **LOSSY** — parser always sets `Some(k)`, but [`nom-cli/src/store/materialize.rs:105-116`](../../nom-compiler/crates/nom-cli/src/store/materialize.rs) sets `kind: None` when reconstructing compositions from a `composed_of` JSON blob (kind unknown until a DB lookup is done) | ⚠️ tighten |
+| `EntityRef.word: String` | empty-string sentinel when `typed_slot = true` | ⚠️ known — `typed_slot` flag disambiguates, but empty-string is a soft failure mode |
+| `EntityRef.hash: Option<String>` | pre-first-build unresolved | ✅ keep |
+| `EntityRef.matching: Option<String>` | syntactic optional | ✅ keep |
+| `EntityRef.confidence_threshold: Option<f64>` | syntactic optional (A3 policy chooses whether to warn) | ✅ keep |
+
+**Recommended refactor (deferred):** replace `EntityRef.kind: Option<String>` with an explicit enum:
+
+```rust
+pub enum EntityKindSlot {
+    /// Parser-assigned kind: one of the closed `KINDS` set.
+    Known(String),
+    /// Reconstructed from a hash without doing a kind lookup; callers
+    /// that need the kind must resolve via `find_words_v2_by_hash`.
+    UnknownUntilLookup,
+}
+```
+
+This makes the "we don't know yet" case **explicit and self-documenting**, rather than sharing the `Option::None` shape with "this field was omitted at parse time". The change is ~1 engineer-day across `nom-concept` + `nom-cli::store::materialize` + `nom-cli::store::resolve` + any other callsite that pattern-matches `.kind`. Deferred until a natural window (e.g., when `materialize.rs` gets refactored for the 100-repo ingestion harness).
+
+**Current state is NOT a correctness bug** — all consumers either set `Some(k)` or construct `None` only in materialize and recover the kind before use. The audit upgrades A5 from "possibly broken" to "known soft spot with a documented fix path". No behavior changes until the refactor lands.
 
 ### A6 — Reject-on-ambiguous in the dict resolver ✅ (already locked)
 
@@ -84,7 +111,7 @@ Every `pub struct` in the nomx AST audited for `Option<T>` fields that represent
 
 **Audited 2026-04-14 (no commit needed):** the existing tests `typed_slot_two_candidates_picks_smallest_hash` and `typed_slot_three_candidates_propagates_matching_and_alternatives` in [nom-cli/src/store/resolve.rs](../../nom-compiler/crates/nom-cli/src/store/resolve.rs) already pin the intended behavior — N candidates yield the alphabetically-smallest hash, `stats.ambiguous += 1`, and the `alternatives` field carries the rejected candidates. **The design decision is NOT "reject hard on ambiguity"** (that would break the §10.3.1 fixpoint discipline — the compiler must be deterministic over dict state) but "surface ambiguity via structured report fields". The current `ResolveStats { resolved, still_unresolved, ambiguous }` + per-ref `alternatives` + planned `nom build status` diagnostic (doc 07 §3.3) is the canonical reporting path. No new code needed.
 
-Total: ~7 engineer-days planned; **4 of 6 wedges now closed** (A1, A2, A3, A6). Remaining: A4 (~3d, largest refactor) and A5 (~1d).
+Total: ~7 engineer-days planned; **4 of 6 wedges closed** (A1, A2, A3, A6); **A5 audit complete** with recommended refactor deferred. Remaining: A4 (~3d annotator-pipeline refactor, largest) + A5 refactor (~1d when materialize.rs gets touched by the 100-repo harness).
 
 ## 6. Vocabulary invariant (unchanged)
 
