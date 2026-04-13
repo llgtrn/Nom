@@ -129,18 +129,25 @@
 | 112 | Callback props are `reference to function taking T returning U` in a props data decl | authoring-guide rule | ✅ closed (doc 14 #39; ties deferred D2) |
 | 113 | Layout primitives as prose: `horizontal row of …`, `vertical column of …`, `stacked`, `trailing/leading spacer` | authoring-guide rule | ✅ closed (doc 14 #39; ties to `nom-ux` UX primitives) |
 | 114 | System-image references as platform-resolved prose names (SF Symbols → Material → web icons) | authoring-guide rule | ✅ closed (doc 14 #39; Phase 12 specialization) |
+| 115 | `scenario` top-level kind declaration (expands closed kind set 8→9 after W41 property) | **W46** grammar rule | ⏳ queued (doc 14 #40) |
+| 116 | Scenario-clause grammar (`given`/`when`/`then` closed 3-keyword set; prose-sentence per clause) | **W47** grammar rule (pairs with W46) | ⏳ queued (doc 14 #40) |
+| 117 | Repeat `given`/`when`/`then` keyword on every clause — no `and`-continuation abbreviation | authoring-guide rule | ✅ closed (doc 14 #40; enforced by W47) |
+| 118 | Parameterized scenarios = N peer scenario decls OR property decl with matching generator | authoring-guide rule | ✅ closed (doc 14 #40; composes W46 + W41) |
+| 119 | Background setup decomposes to shared setup function invoked explicitly in each scenario's `given` clauses — no implicit hooks | authoring-guide rule | ✅ closed (doc 14 #40) |
+| 120 | Test fixtures live in named data decls, not inline in scenario prose | authoring-guide rule | ✅ closed (doc 14 #40) |
+| 121 | Gherkin `Feature:` block → Nom concept decl whose index references constituent scenario decls | authoring-guide rule | ✅ closed (doc 14 #40) |
 
-Totals by destination (after doc 14 #39 SwiftUI declarative-reactive-UI translation — **second true 0-new-wedge translation in a row**; 6 authoring-guide closures; unifies #32 + #39 into single reactive-decomposition pattern):
+Totals by destination (after doc 14 #40 Gherkin BDD-scenario translation surfaced W46 scenario-kind + W47 scenario-clause + 5 authoring-guide closures; the 7→9 kind set now covers universally-quantified claims (W41 property) + asserted-behavior claims (W46 scenario) — full testing/verification spectrum closed):
 
-- ⏳ Wedge queued: **38** (unchanged)
+- ⏳ Wedge queued: **40** (+W46 scenario-kind, +W47 scenario-clause)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **72**
+- ✅ Closed: **77**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **3** (forward_compatibility + numerical_stability + gas_efficiency QualityNames)
 
-Backlog size: 118 rows. Closure rate 61% (72/118). **39 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + **declarative-reactive-UI (SwiftUI; generalizes to Flutter/React/Vue/Compose)**. Sixth consecutive minimal-wedge translation; the (state-data, transition-fn, screen-decl) decomposition unifies state-machines and reactive UIs.
+Backlog size: 125 rows. Closure rate 62% (77/125). **40 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + **BDD-scenario (Gherkin)**. Seventh consecutive minimal-wedge translation. Kind set expanded 7→9 (function/module/concept/screen/data/event/media + property + scenario); testing/verification spectrum fully closed.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -165,6 +172,8 @@ Backlog size: 118 rows. Closure rate 61% (72/118). **39 translations** in doc 14
 - **W43:** Retry-policy clause — small-vocabulary orchestrator directive: `up to N times with delay D, backoff linear|exponential|constant`. Attaches to composition or individual function decl; orchestrator honors the declaration at build-time.
 - **W44:** Watermark clause — `watermark the stream at FIELD with an N-UNIT allowed lateness` for event-time correctness on streaming sources. Closed vocabulary for late-arrival policies.
 - **W45:** Window-aggregation clause — `window of D over FIELD` with closed kinds `tumbling`/`sliding`/`session`/`global`. Pairs with W40 exhaustiveness-check for per-window totality. Core stream-processing primitive.
+- **W46:** `scenario` top-level kind declaration — expands closed kind set 8→9 nouns (8th was W41 `property`). Asserted-behavior claim: named precondition/action/postcondition triple. Covers Gherkin, RSpec behavior blocks, Playwright test descriptions. Orthogonal to function/data/concept/property.
+- **W47:** Scenario-clause grammar — closed 3-keyword set `given`/`when`/`then`; each clause is a prose sentence. Ships paired with W46. Keyword repeats on every clause (no `and`-continuation).
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 

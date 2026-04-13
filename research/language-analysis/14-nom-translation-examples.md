@@ -2440,6 +2440,92 @@ Row additions: **0 new wedges**. 6 authoring-guide closures: reactive per-instan
 
 ---
 
+## 40. Gherkin BDD scenario — behavior-specification DSL
+
+```gherkin
+Feature: Shopping cart checkout
+  As a shopper, I want to check out my cart so I can receive my order.
+
+  Scenario: Successful checkout with valid card
+    Given a shopper with 3 items in their cart totaling $45.00
+    And the shopper has a valid credit card on file
+    When the shopper initiates checkout
+    Then an order confirmation is created
+    And the card is charged $45.00
+    And the cart is emptied
+
+  Scenario: Checkout fails with expired card
+    Given a shopper with 2 items in their cart totaling $30.00
+    And the shopper's credit card has expired
+    When the shopper initiates checkout
+    Then no order is created
+    And the cart retains all 2 items
+    And the shopper sees an "expired card" notice
+```
+
+### `.nomx v1` translation
+
+```nomx
+define successful_checkout_with_valid_card
+  that takes nothing, returns success.
+given a shopper with 3 items in their cart totaling $45.00,
+and the shopper has a valid credit card on file,
+when the shopper initiates checkout,
+then an order confirmation is created,
+and the card is charged $45.00,
+and the cart is emptied.
+
+define checkout_fails_with_expired_card
+  that takes nothing, returns failure with a surfaced "expired card" notice.
+given a shopper with 2 items in their cart totaling $30.00,
+and the shopper's credit card has expired,
+when the shopper initiates checkout,
+then no order is created,
+and the cart retains all 2 items,
+and the shopper sees an "expired card" notice.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the scenario successful_checkout_with_valid_card is
+  intended to assert that a shopper with a valid card successfully checks out and has their cart emptied while being charged the correct total.
+  given a shopper has 3 items in the cart totaling the amount $45.00.
+  given the shopper has a valid credit card on file.
+  when the shopper initiates checkout.
+  then an order confirmation exists with the shopper and the items.
+  then the card is charged exactly $45.00.
+  then the cart contains zero items.
+  favor correctness.
+
+the scenario checkout_fails_with_expired_card is
+  intended to assert that a shopper with an expired card sees a clear notice, has no order created, and retains their cart contents.
+  given a shopper has 2 items in the cart totaling the amount $30.00.
+  given the shopper's credit card has expired.
+  when the shopper initiates checkout.
+  then no order exists after the checkout attempt.
+  then the cart retains the same 2 items.
+  then the shopper receives a notice with text equal to "expired card".
+  favor correctness.
+  favor discoverability.
+```
+
+### Gaps surfaced
+
+1. **`scenario` as a new top-level kind** — BDD scenarios are not functions (no callable surface), not data (no exposed shape), not property decls (#33 — no generator + universal quantifier). They are **asserted-behavior specifications** over a named precondition / action / postcondition triple. **Candidate: W46 `scenario` kind declaration** — expands closed kind set 8→9 nouns (building on W41 `property`). Scenarios are THE canonical BDD surface and cover every `given … when … then …` DSL (Gherkin, RSpec behavior blocks, Playwright test descriptions). Essential wedge.
+2. **Given / When / Then as canonical clause keywords** — BDD's three-part structure. Closed-vocabulary clause keywords inside a scenario decl. **Candidate: W47 scenario-clause grammar** — closed 3-keyword set (`given`, `when`, `then`), each clause is a prose sentence. Ships alongside W46. Together these two wedges are about 20 tokens of grammar + 1 kind noun.
+3. **`And` continuation** — Gherkin's `And <clause>` continues the previous clause type (Given-And = another Given). Nom's translation repeats the keyword explicitly (`given … given … when … then … then …`) for clarity. Authoring-guide rule: **repeat the `given/when/then` keyword on every clause — no `and`-continuation abbreviation**, to keep each clause independently parseable. No separate wedge; the W47 grammar enforces repetition.
+4. **Scenario-outline / parameterized scenarios** — Gherkin's `Scenario Outline` + `Examples:` table runs the same scenario over a parameter matrix. Nom's translation splits this into **N peer scenario decls generated from a single authoring template** (build-time), or into a property decl (#33) with a named generator. Authoring-guide rule: **parameterized scenarios decompose either to N expanded peer scenarios (for small finite sets) or to a property decl with a matching generator (for large/infinite sets)**. No new wedge.
+5. **Background / Before / After hooks** — shared setup/teardown across scenarios in a feature. Nom captures shared setup via a **function decl** invoked at each scenario's `given` section, keeping the scenario decl pure. Authoring-guide rule: **background setup decomposes to a shared setup function that every scenario invokes explicitly in its `given` clauses** — no implicit hooks. Explicitness over magic.
+6. **Data tables inside steps (pipe-separated tables in step text)** — in-line tabular fixtures. Nom's prose references the test fixtures as named data decls rather than inlining tables. Authoring-guide rule: **test fixtures live in named data decls, not inline in scenario prose** — ties into feature-stack word discipline + keeps scenarios readable.
+7. **Feature-level metadata (`Feature:` + free-form description)** — scope/title/context for a group of scenarios. Nom's `concept` kind already holds big-scope grouping; a concept can compose N scenario decls via its index. Authoring-guide rule: **Gherkin `Feature:` blocks → a Nom concept decl whose index references the constituent scenario decls**. Keeps the 7→9 closed kind set intact. No new wedge.
+
+Row additions: **W46 `scenario` kind declaration** (new wedge, expands closed kind set 8→9), **W47 scenario-clause grammar** (new wedge, 3-keyword closed set + prose-sentence per clause), 4 authoring-guide closures (repeat clause keyword, parameterized scenarios = N peer scenarios OR property, background setup = shared setup function, fixtures in named data decls, Feature: = concept).
+
+**Seventh consecutive minimal-wedge translation.** `scenario` is the second-kind expansion after `property` (W41), and together these two new kinds close out the major missing surface: **universally-quantified claims (properties, #33)** and **asserted-behavior claims (scenarios, #40)**. The 7-noun kind set plus these two testing-kind expansions (→ 9 nouns) covers the full software-engineering testing-and-verification spectrum.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
