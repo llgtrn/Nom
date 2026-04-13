@@ -242,7 +242,7 @@ Index `4140126`, stats: **251 files, 5947 nodes, 13743 edges, 300 processes, 226
 
 5. **M9: Phase-9 corpus-embedding re-rank.** Stub in `nom-cli/src/store/resolve.rs` (referenced in doc 04 risk #7). Needs `entry_embeddings` side-table + `find_words_v2_by_kind` rank composition `(score × similarity × provenance)`. Weeks + depends on M6 to have content to embed.
 
-6. **M8: Intent-resolution transformer.** Zero Rust code exists for `nom-intent`. Deferred 05 §Hybrid specifies ~1B params + bounded output. Weeks + needs M6. Single biggest risk item per doc 09 honest-risk #2.
+6. **M8: Intent-resolution transformer.** **M8-slice1 ✅ 2026-04-14**: `nom-intent` crate skeleton shipped with `NomIntent::{Kind, Symbol, Flow, Reject(Reason)}` enum + bounded-output validator + `LlmFn` closure type for deterministic tests + 4 passing tests proving the Reject-on-not-in-candidates discipline. The full M8 still needs (a) real LLM adapter (OpenAI/Anthropic structured-output), (b) ANN over DB2 `entry_embedding` (needs M6), (c) correction loop ← WrenAI `SQLCorrection` pattern. 3-6 weeks MVP, 2 quarters hardened. Deferred 05 §Hybrid specifies ~1B params + bounded output.
 
 7. **M10c: compile-to-IR subset for self-host.** M10a+b gate parse + bc reproducibility; there's no IR-to-exec loop yet from self-host `.nom` sources. Weeks.
 

@@ -96,17 +96,25 @@ Graphify is a React/Redux + Node/Express/PostgreSQL CSV→D3 chart webapp. Zero 
 - **`OutputFormatter` pattern** ([sql_pairs_retrieval.py:18-33](../../APP/wrenai/wren-ai-service/src/pipelines/indexing/sql_pairs_retrieval.py)) — metadata-preserving re-shape. Adopt for `entry_benchmarks`-informed reranking.
 - **Historical-question retriever**: reuses past queries as implicit training. Nom should rerank by `entry_meta.last_used` + benchmark cost.
 
-### Week-1 slice for `nom-intent`
+### Week-1 slice for `nom-intent` — ✅ SHIPPED 2026-04-14
 
-Create `nom-compiler/crates/nom-intent/` with `lib.rs` exposing:
+Crate created at [nom-compiler/crates/nom-intent/](../../nom-compiler/crates/nom-intent/) with `lib.rs` exposing:
 
 ```rust
-pub fn classify(prose: &str, ctx: &IntentCtx) -> Result<NomIntent>;
-pub fn retrieve_candidates(prose: &str, k: usize) -> Vec<Uid>;
-pub fn validate(intent: &NomIntent, dict: &Dict) -> Result<()>;
+pub fn classify(prose: &str, ctx: &IntentCtx, llm: &LlmFn) -> Result<NomIntent, IntentError>;
+pub fn retrieve_candidates(prose: &str, k: usize) -> Result<Vec<String>, IntentError>;
+pub fn validate(intent: NomIntent, candidates: &[String], threshold: f32) -> NomIntent;
 ```
 
-First test: `classify("add two numbers", ctx)` resolves to the existing `add` nomtu uid; stub the LLM with a closure for deterministic tests. This lets the whole pipeline ship before any real LLM integration — the closure stub proves the bounding/validation discipline holds.
+With `NomIntent::{Kind(String), Symbol(String), Flow(String), Reject(Reason)}` as the exhaustive return type (mirrors WrenAI's `Literal[...]` bounding), `Reason::{Unparseable, UnknownKind, UnknownSymbol, BelowConfidenceThreshold}` for typed rejections, and `LlmFn = Box<dyn Fn(&str, &[String]) -> Result<NomIntent, IntentError>>` so tests pass deterministic closures.
+
+**4 passing tests in the initial skeleton** (no real LLM yet):
+- `classify_returns_symbol_when_llm_emits_match_in_candidates` — happy path
+- `validate_rejects_symbol_not_in_candidates` — **the bounded-output guarantee**
+- `validate_passes_symbol_when_candidates_empty` — degenerate case pre-M6 pilot
+- `reject_variant_round_trips_through_validate` — reject is terminal
+
+This lets the whole pipeline ship before any real LLM integration — the closure stub proves the bounding/validation discipline holds.
 
 ### Effort
 
