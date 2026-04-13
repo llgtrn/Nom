@@ -1623,6 +1623,39 @@ the function write_file is
         }
     }
 
+    /// a4c36: run_pipeline surfaces the EARLIEST StageFailure in the
+    /// chain — editors that colour diagnostics by stage need this
+    /// guarantee. If S2 rejects, the output carries `stage: KindClassify`
+    /// even though S3/S4/S5/S6 would also fail on the invalid input.
+    #[test]
+    fn a4c36_run_pipeline_surfaces_earliest_stage_failure() {
+        // Bare prose at top level → S2 kindless-block (not S3+)
+        let src_s2 = "some random prose without a block header.";
+        let err = run_pipeline(src_s2).expect_err("S2 must reject");
+        assert_eq!(err.stage, StageId::KindClassify, "earliest failure is S2");
+        assert!(err.diag_id().starts_with("NOMX-S2-"));
+
+        // Concept missing `intended to …` → S3 missing-intent (not S4+)
+        let src_s3 = r#"the concept broken is
+  uses the @Function matching "x" with at-least 0.8 confidence.
+  favor correctness."#;
+        let err = run_pipeline(src_s3).expect_err("S3 must reject");
+        assert_eq!(err.stage, StageId::ShapeExtract, "earliest failure is S3");
+        assert!(err.diag_id().starts_with("NOMX-S3-"));
+
+        // Mixed concept + entity → S6 mixed-concept-and-entity
+        let src_s6 = r#"the concept c is
+  intended to test mixed kinds.
+  favor correctness.
+
+the function f is
+  intended to be wrongly mixed in.
+  favor correctness."#;
+        let err = run_pipeline(src_s6).expect_err("S6 must reject");
+        assert_eq!(err.stage, StageId::RefResolve, "earliest failure is S6");
+        assert!(err.diag_id().starts_with("NOMX-S6-"));
+    }
+
     /// a4c35: pipeline outputs (NomFile / NomtuFile inner types) round-
     /// trip through serde_json cleanly. Locks that the typed-AST
     /// surface is fully serializable — editors, `nom parse --json`,
