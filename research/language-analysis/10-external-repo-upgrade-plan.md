@@ -198,7 +198,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 
 ## Next actions — status snapshot 2026-04-14
 
-**Completed this session (55+ commits, 26 code wedges):**
+**Completed this session (80+ commits, 40+ code + doc wedges):**
 1. ✅ Doc committed + five upgrade plans populated (§A-E)
 2. ✅ Zed-main analyzed + §D populated (78,686 nodes indexed)
 3. ✅ **CoreNLP W1 Annotator pipeline** — `7caa41f` + `9928187` + `b32abc0` (11 nom-extract tests)
@@ -230,7 +230,29 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 10. ✅ **M8 slice-6a** — `nom-lsp/src/agent.rs` markdown renderer for agentic drill-through (`471cbc0`, 6 tests)
 11. ✅ **M8 slice-6b** — `workspace/executeCommand` handler + `nom.whyThisNom` registration in `server_capabilities` (`2341ff1`, 14 tests)
 12. ✅ **W4-A2 strictness lock** — 5 closed-keyword-set tests pinning case-sensitive exact-match for `matching` / `with` / `confidence` / `the` / `is` / kinds / `at-least` (`65f1198`, doc 13 §5 A2). 82 nom-concept tests total.
-13. ✅ **W4-A1 strictness lock** — 4 ct10* tests pinning that entity refs MUST carry `@Kind` (v2) or `Kind Word` (v1); bare `the matching "..."` or unknown `@Banana` reject hard. (next commit) 86 nom-concept tests total.
+13. ✅ **W4-A1 strictness lock** — 4 ct10* tests pinning entity refs MUST carry `@Kind` (v2) or `Kind Word` (v1) (`792bc0d`).
+14. ✅ **W4-A3 strict-mode validator** — purely-additive `nom_concept::strict` module with `validate_nom_strict` / `validate_nomtu_strict` emitting `StrictWarning { code, message, location }` for typed-slot refs missing `with at-least N confidence` (`d12a8b0`, 4 tests s01-s04).
+15. ✅ **W4-A5 Option<T> audit** — all AST `Option` fields classified; one load-bearing `EntityRef.kind` in `materialize.rs:105-116` flagged for future `EntityKindSlot::{Known, UnknownUntilLookup}` enum refactor (`77eb636`, audit only, no code change).
+16. ✅ **W4-A6 reject-on-ambiguous audit** — pre-locked by existing `resolve.rs` tests (`1495491`, audit only).
+17. ✅ **100-repo harness gate: bumpalo scan smoke test** — `nom-corpus::scan_directory` integration test (`c97a6c2`, compiles; runtime blocked by sandbox UCRT shim).
+18. ✅ **Research finalization docs 13-19 landed**:
+    - doc 13 (`.nomx` strictness plan, CoreNLP-inspired) with §5 rollup ✅/⏳ markers per wedge
+    - doc 14 (Accelworld translation corpus, 12 translations across Rust/Python/TS/C/C++/Go/Bash/TOML)
+    - doc 15 (100-repo ingestion harness plan + placeholder semantics §2)
+    - doc 16 (35-row syntax gap backlog with triage markers)
+    - doc 17 (Nom authoring idioms I1-I13 — **complete chapter**, closes 13 doc 16 authoring-guide rows)
+    - doc 18 (W4-A4 annotator pipeline design spec)
+    - doc 19 (deferred design decisions — D1 `@Data` stays single kind / D2 no closure grammar, 0 open design Qs)
+19. ✅ **W4-A4 annotator pipeline shipped (5 sub-wedges)**:
+    - A4a `collect_all_tokens` materialization primitive (`6436a2c`)
+    - A4b `nom_concept::stages` module scaffold + `StageId` + 6 stubs (`e5be34f`)
+    - A4c-step1 `stage2_kind_classify` wired (`5dfcd25`)
+    - A4c-step2 `stage3_shape_extract` wired (`025a0cc`)
+    - A4c-step3 `stage4_contract_bind` wired (`4a335eb`)
+    - A4c-step4 `stage5_effect_bind` wired (`62581d2`)
+    - A4c-step5 `stage6_ref_resolve` + `run_pipeline(src)` driver (`7da6a21`)
+    - All stages emit structured `StageFailure { stage, position, reason, detail }` with `NOMX-S<N>-<slug>` diag ids; existing `parse_nomtu`/`parse_nom` paths untouched.
+20. ✅ **Smoke tests** — ct11 UTF-8 verbatim, ct12 hazard, ct13 boon/bane synonyms, ct14 sum-return at v1 (`1e752e7`). **nom-concept reaches 120 tests total**.
 
 **Queued (ordered by ascending effort):**
 - **M8 slice-5b-mcp-spawn** — wire `McpAdapter` to a spawned child process (~0.5d)
@@ -239,7 +261,9 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 - **M8 slice-3b-verify-full** — wire `nom-verifier` + `nom-security` + `nom-concept` MECE (~4d)
 - **M8 slice-3c-full** — real render via `nom-codegen` + `nom-llvm` + `nom-app` + `nom-media` (~5d, biggest user-visible wedge per doc 12 deep-think)
 - **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
-- **W4 strictness lane** (new 2026-04-14) — doc 13 specifies 6 wedges A1-A6. **A1 + A2 + A3 + A6 closed; A5 audited.** A3 lands as an additive `strict` module in nom-concept: `validate_nom_strict(&file)` + `validate_nomtu_strict(&file)` walk the AST post-parse and emit `StrictWarning { code, message, location }` for every typed-slot ref missing `with at-least N confidence`. A6 pre-locked by existing `resolve.rs` tests. **A5 audit:** `EntityRef.kind: Option<String>` is load-bearing in `materialize.rs:105-116` (reconstruction from hash); recommended tightening is a `EntityKindSlot::{Known, UnknownUntilLookup}` enum, deferred until materialize refactor. A5 surfaced as a known soft spot with a documented fix path, not a correctness bug. Remaining active: A4 (annotator-style staged parser, ~3d) + A5 refactor (~1d). See [doc 13 §5](13-nomx-strictness-plan.md#5-strictness-wedges-ordered).
+- **W4 strictness lane** — **5 of 6 wedges closed** (A1/A2/A3/A4/A6 done; A5 audited with deferred enum refactor). Annotator pipeline A4 complete through S1→S6; follow-up cycles wire ref resolution + entity signature shape, then migrate `parse_nomtu`/`parse_nom` internals to delegate to `run_pipeline`. See doc 13 §5 + doc 18.
+- **Grammar wedges W5-W18** — 12 queued in doc 16 (format-string interpolation, literal-string constants, `fail with` expressions, is-a probes, enums, methods, entry-point main, exit codes vocabulary, interpreter metadata, env-var access, TOML dot-paths, `@Union` typed-kind). None started yet.
+- **100-repo ingestion harness** — doc 15 bumpalo smoke test compiled; live runtime blocked by sandbox UCRT shim, deferred to user shell.
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
 
