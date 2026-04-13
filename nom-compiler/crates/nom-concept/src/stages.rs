@@ -895,7 +895,7 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
                 if b.kind == "module" {
                     NomtuItem::Composition(CompositionDecl {
                         word: b.name.clone(),
-                        composes: Vec::new(), // ref-resolution deferred
+                        composes: extract_composition_refs(&effected.toks[b.start_tok..b.end_tok]),
                         glue: None,
                         contracts: b.contracts.clone(),
                         effects: b.effects.clone(),
@@ -913,6 +913,46 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
             .collect();
         Ok(PipelineOutput::Nomtu(NomtuFile { items }))
     }
+}
+
+/// Extract the `composes` ref list from a `the module X composes A then B then C.` block.
+///
+/// Walks body tokens from `Tok::Composes` through `then`-separated
+/// entity refs until the first terminator (Dot / Requires / Ensures
+/// / Favor / Benefit / Hazard / With / Uses / Exposes / Intended).
+/// Each segment between `Composes`/`Then` and the next separator is
+/// parsed by the same partial-ref extractor used for `uses` clauses.
+fn extract_composition_refs(body_slice: &[Spanned]) -> Vec<EntityRef> {
+    let composes_idx = match body_slice.iter().position(|s| matches!(s.tok, Tok::Composes)) {
+        Some(i) => i,
+        None => return Vec::new(),
+    };
+    let mut out = Vec::new();
+    let mut seg_start = composes_idx + 1;
+    let mut i = seg_start;
+    let flush = |seg: &[Spanned], acc: &mut Vec<EntityRef>| {
+        let refs = parse_uses_clause_refs(seg);
+        acc.extend(refs);
+    };
+    while i < body_slice.len() {
+        match &body_slice[i].tok {
+            Tok::Then => {
+                flush(&body_slice[seg_start..i], &mut out);
+                seg_start = i + 1;
+                i += 1;
+            }
+            Tok::Dot | Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit | Tok::Hazard
+            | Tok::With | Tok::Uses | Tok::Exposes | Tok::Intended => {
+                flush(&body_slice[seg_start..i], &mut out);
+                return out;
+            }
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    flush(&body_slice[seg_start..i], &mut out);
+    out
 }
 
 /// Extract the entity signature prose from a block body span.
@@ -1570,6 +1610,40 @@ the function write_file is
                 assert_eq!(refs[0].word, "");
             }
             _ => panic!("expected IndexClause::Uses"),
+        }
+    }
+
+    /// a4c33: composition with `then`-chained refs populates
+    /// CompositionDecl.composes correctly.
+    ///
+    /// Source `the module pipeline composes the @Function … then the
+    /// @Function … then the @Function …` produces three EntityRefs
+    /// in source order, each with typed_slot=true + kind="function".
+    #[test]
+    fn a4c33_composition_then_chain_populates_composes() {
+        use crate::parse_nomtu;
+        let src = r#"the module pipeline composes the @Function matching "parse input" then the @Function matching "run step" then the @Function matching "emit result"."#;
+        let legacy = parse_nomtu(src).expect("legacy");
+        let pipeline = run_pipeline(src).expect("pipeline");
+
+        let legacy_composes_len = match &legacy.items[0] {
+            NomtuItem::Composition(c) => c.composes.len(),
+            _ => panic!("expected Composition"),
+        };
+        let pipeline_composes = match pipeline {
+            PipelineOutput::Nomtu(f) => match &f.items[0] {
+                NomtuItem::Composition(c) => c.composes.clone(),
+                _ => panic!("expected Composition"),
+            },
+            _ => panic!("expected Nomtu"),
+        };
+
+        assert_eq!(legacy_composes_len, 3, "legacy expected 3 refs");
+        assert_eq!(pipeline_composes.len(), 3, "pipeline expected 3 refs");
+        for (i, expected_match) in ["parse input", "run step", "emit result"].iter().enumerate() {
+            assert!(pipeline_composes[i].typed_slot);
+            assert_eq!(pipeline_composes[i].kind.as_deref(), Some("function"));
+            assert_eq!(pipeline_composes[i].matching.as_deref(), Some(*expected_match));
         }
     }
 
