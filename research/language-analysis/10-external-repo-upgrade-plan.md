@@ -25,7 +25,7 @@ Previously live in our own index: `Nom` (251 / 5947 / 300). Refs A–C map to co
 
 ### Concrete nom-bench upgrade steps
 
-1. **`nom-bench/src/registry.rs`** — `BenchFamilyRegistry` (use the `inventory` crate for compile-time singleton). CLI `nom bench list` enumerates it.
+1. **`nom-bench::{BenchFamily, register, list}`** ✅ SHIPPED 2026-04-14. Global `Mutex<Vec<BenchFamily>>` via `OnceLock` (no new dep vs the `inventory` crate alternative). Idempotent by `name`, preserves insertion order, serialized test-lock for parallel-test safety. 4 new passing tests: `register_and_list_round_trip`, `register_idempotent_by_name_replaces_prior`, `register_preserves_insertion_order_for_distinct_names`, `bench_family_round_trips_through_json`. CLI `nom bench list` subcommand still TODO (separate wedge).
 2. **`nom-bench/src/state.rs`** — `State::keep_running(&mut self)` iterator + `pause_timing` / `resume_timing`; extend `BenchmarkRun` with `Counters` map (`bytes_processed`, `items_processed`).
 3. **`nom-bench/src/fixture.rs`** — `trait Fixture { fn setup(&mut self, _: &State); fn teardown(&mut self, _: &State); }` invoked by runner per-repetition.
 4. **`nom-bench/src/runner.rs`** — `ThreadRunner` modeled on `ThreadRunnerDefault` ([src/benchmark_runner.cc:198-221](../../APP/benchmark-main/src/benchmark_runner.cc)); collects per-thread timers into existing `TimingMoments`.

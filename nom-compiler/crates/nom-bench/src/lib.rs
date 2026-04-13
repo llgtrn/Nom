@@ -12,6 +12,8 @@
 //! workload class (latency microbench, throughput burst, memory
 //! allocation trace, …).
 
+use std::sync::{Mutex, OnceLock};
+
 use thiserror::Error;
 
 /// Benchmark target platform. Distinct from `nom_ux::Platform`:
@@ -82,6 +84,50 @@ pub struct BenchmarkRun {
     pub custom_counters: serde_json::Value,
 }
 
+/// A registered benchmark family. Mirrors Google Benchmark's
+/// `BenchmarkInstance` (benchmark/src/benchmark_api_internal.h:19-77):
+/// registration is decoupled from execution so discovery runs before
+/// the harness. Listed via `nom bench list`.
+#[derive(Debug, Clone, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct BenchFamily {
+    /// Dot-namespaced identifier, e.g. `nom.parser.parse_source`.
+    pub name: String,
+    /// Workload keys this family supports (same shape as
+    /// `BenchmarkRun::workload_key`).
+    pub workload_keys: Vec<String>,
+}
+
+fn registry() -> &'static Mutex<Vec<BenchFamily>> {
+    static REG: OnceLock<Mutex<Vec<BenchFamily>>> = OnceLock::new();
+    REG.get_or_init(|| Mutex::new(Vec::new()))
+}
+
+/// Register a benchmark family. Idempotent by `name` — second call
+/// with the same name replaces the prior registration (workload_keys
+/// may evolve across recompiles).
+pub fn register(family: BenchFamily) {
+    let mut reg = registry().lock().expect("bench registry poisoned");
+    if let Some(existing) = reg.iter_mut().find(|f| f.name == family.name) {
+        *existing = family;
+    } else {
+        reg.push(family);
+    }
+}
+
+/// Enumerate registered families in registration order. Consumed by
+/// `nom bench list` and the §5.15 joint-optimization discovery pass.
+pub fn list() -> Vec<BenchFamily> {
+    registry().lock().expect("bench registry poisoned").clone()
+}
+
+/// Clear all registrations. Test-only; do not call from production
+/// paths — benchmark families registered at module-load time stay
+/// for the process lifetime.
+#[doc(hidden)]
+pub fn _clear_registry_for_tests() {
+    registry().lock().expect("bench registry poisoned").clear();
+}
+
 /// Errors produced by `nom-bench`.
 #[derive(Debug, Error)]
 pub enum BenchError {
@@ -100,6 +146,14 @@ pub enum BenchError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Mutex;
+
+    /// Serialize registry-mutating tests — `cargo test` runs tests in
+    /// parallel, and the global registry is process-wide.
+    fn test_lock() -> std::sync::MutexGuard<'static, ()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+    }
 
     #[test]
     fn empty_timing_moments_has_zero_samples() {
@@ -107,6 +161,58 @@ mod tests {
         assert_eq!(t.n_samples, 0);
         assert_eq!(t.p50_ns, 0);
         assert_eq!(t.p99_ns, 0);
+    }
+
+    #[test]
+    fn register_and_list_round_trip() {
+        let _g = test_lock();
+        _clear_registry_for_tests();
+        register(BenchFamily {
+            name: "nom.parser.parse_source".into(),
+            workload_keys: vec!["hello.nom".into()],
+        });
+        let got = list();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].name, "nom.parser.parse_source");
+    }
+
+    #[test]
+    fn register_idempotent_by_name_replaces_prior() {
+        let _g = test_lock();
+        _clear_registry_for_tests();
+        register(BenchFamily {
+            name: "nom.graph.from_entries".into(),
+            workload_keys: vec!["small".into()],
+        });
+        register(BenchFamily {
+            name: "nom.graph.from_entries".into(),
+            workload_keys: vec!["small".into(), "large".into()],
+        });
+        let got = list();
+        assert_eq!(got.len(), 1);
+        assert_eq!(got[0].workload_keys, vec!["small".to_string(), "large".to_string()]);
+    }
+
+    #[test]
+    fn register_preserves_insertion_order_for_distinct_names() {
+        let _g = test_lock();
+        _clear_registry_for_tests();
+        register(BenchFamily { name: "a.x".into(), workload_keys: vec![] });
+        register(BenchFamily { name: "b.y".into(), workload_keys: vec![] });
+        register(BenchFamily { name: "c.z".into(), workload_keys: vec![] });
+        let got = list();
+        assert_eq!(got.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["a.x", "b.y", "c.z"]);
+    }
+
+    #[test]
+    fn bench_family_round_trips_through_json() {
+        let f = BenchFamily {
+            name: "nom.resolver.typed_slot".into(),
+            workload_keys: vec!["concept_demo".into(), "agent_demo".into()],
+        };
+        let s = serde_json::to_string(&f).unwrap();
+        let back: BenchFamily = serde_json::from_str(&s).unwrap();
+        assert_eq!(f, back);
     }
 
     #[test]
