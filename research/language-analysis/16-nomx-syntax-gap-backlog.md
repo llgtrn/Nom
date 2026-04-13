@@ -57,33 +57,33 @@
 | 40 | Selector-predicate clause on data instances | **W21** grammar rule | ⏳ queued (doc 14 #16) |
 | 41 | Typed dimension literals (`8px`, `4px`) | **W22** grammar rule | ⏳ queued (doc 14 #16) |
 | 42 | Color literal grammar (`#0366d6`) | **W23** grammar rule | ⏳ queued (doc 14 #16) |
-| 43 | `within the last N days` time-range idiom | authoring-corpus seed | 📘 doc-todo |
+| 43 | `within the last N days` time-range idiom | authoring-corpus seed | ✅ doc 17 §I17 |
 | 44 | Nested nullability modifiers (`perhaps list of perhaps text`) | **W24** grammar rule | ⏳ queued (doc 14 #17) |
 | 45 | `identifier` as distinct data shape (GraphQL `ID!`) | authoring-corpus seed | ✅ doc 17 §I16 |
 | 46 | Build-time dependency graph (Make prereqs) | **W25** grammar rule | ⏳ queued (doc 14 #18) |
 | 47 | Multi-stage / stage-chain declarations (Dockerfile) | **W26** grammar rule | ⏳ queued (doc 14 #19) |
-| 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | 📘 doc-todo |
+| 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | ✅ doc 17 §I18 |
 | 49 | Pinned-external-action ref grammar (`actions/checkout@v4`) | **W27** grammar rule | ⏳ queued (doc 14 #20) |
 | 50 | Event-trigger declarations (`runs when X happens`) | **W28** grammar rule | ⏳ queued (doc 14 #20) |
 | 51 | Visibility modifiers (`private` for scope hiding) | **W29** grammar rule | ⏳ queued (doc 14 #21) |
 | 52 | `choice X is one of A, B, C` grammar (sealed/enum) | **W30** grammar rule — merges with W11 | ⏳ queued (doc 14 #22) |
-| 53 | Method → receiver-as-parameter rule (Ruby classes, OOP methods) | authoring-guide rule | 📘 doc-todo |
+| 53 | Method → receiver-as-parameter rule (Ruby classes, OOP methods) | authoring-guide rule | ✅ doc 17 §I19 |
 | 54 | Concurrent-spawn clause (`start a worker that …`) | **W31** grammar rule | ⏳ queued (doc 14 #24) |
 | 55 | Channel-type grammar with capacity annotation | **W32** grammar rule | ⏳ queued (doc 14 #24) |
 | 56 | Finalizer clause (defer-style cleanup) | **W33** grammar rule | ⏳ queued (doc 14 #24) |
-| 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | 📘 doc-todo |
+| 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | ✅ doc 17 §I20 |
 | 58 | Typeclass-style constraints (`requires keys support ordering`) | **W34** grammar rule (blocks on borrow-model) | 🔒 blocked |
 
-Totals by destination (after doc 17 I14-I16 closed 3 authoring-guide rows):
+Totals by destination (after doc 17 I17-I20 closed final 4 authoring-guide rows):
 
-- ⏳ Wedge queued: **27** (unchanged)
+- ⏳ Wedge queued: **27**
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **4** (was 7; #37/#38/#45 closed by doc 17)
-- ✅ Closed: **23** (was 20)
+- 📘 Authoring-guide doc-todo: **0** (all closed — doc 17 chapter complete at I1-I20)
+- ✅ Closed: **27** (was 23)
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 
-Backlog size: 58 rows. Closure rate 40% (23/58). 25 translations total; doc 17 authoring chapter grown to 16 idioms (I1-I16).
+Backlog size: 58 rows. Closure rate **47%** (27/58). **Milestone: authoring-guide chapter fully complete (I1-I20).** Remaining work is 27 grammar wedges + 1 smoke-test + 2 blocked-on-borrow-model.
 
 ## Wedge master index (for cross-ref with doc 13)
 

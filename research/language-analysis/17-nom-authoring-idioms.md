@@ -508,9 +508,106 @@ the data User is
 
 ---
 
+## I17. Time-range idiom: `within the last N days`
+
+**Resolves:** doc 16 row #43.
+
+Relative-time predicates (`created_at > NOW() - INTERVAL '30 days'`, `deleted_at > Time.now - 7.days.ago`, `updated_at > Instant.now() - Duration.ofDays(30)`) are one of the most universal patterns. Nom's canonical phrasing is **`within the last N <unit>`**:
+
+```nomx
+the active_users is every user
+  where user's last_login_at is within the last 30 days
+  and user's deleted_at is nothing.
+```
+
+**Rules:**
+
+- Units: `days` / `hours` / `minutes` / `seconds` / `weeks` / `months` / `years`. Mixed units (`within the last 1 hour 30 minutes`) are not supported — compose as two clauses or round to the smaller unit.
+- `within the last N <unit>` is evaluated relative to "now" at the point of prose evaluation; the time origin is implicit.
+- Inverse: `older than N <unit>` (past horizon) or `in the next N <unit>` (future horizon). Symmetric idioms; pick whichever reads more natural.
+- For non-relative times use explicit literals: `after 2026-04-14` or `between 2026-04-01 and 2026-04-30`.
+
+---
+
+## I18. Shell-exec primitive: `run <command> with <args>`
+
+**Resolves:** doc 16 row #48.
+
+Every translation that invokes a subprocess (`gcc`, `cargo`, `rm`, `docker build`) reaches for the shell. Nom's canonical phrasing names the binary + args + optional stdin/stdout/stderr redirection, without exposing the shell itself:
+
+```nomx
+the build_result is run "gcc" with the args ["-O2", "-Wall", "-o", "build/app", "src/main.c"]
+  and capture stdout into the build_log.
+
+run "rm" with the args ["-rf", "build/"].
+# ^ no capture — fire-and-observe
+```
+
+**Rules:**
+
+- `run "<binary>" with the args [<list>]` is the base form.
+- `and capture stdout into X` / `and capture stderr into Y` / `and feed stdin from Z` are optional post-fix modifiers.
+- **Don't translate shell pipelines directly** — unroll into named intermediate values per doc 17 §I8: `the sources are run "find" with args [...]. pass sources to run "gcc" with args [...]` beats `find ... | gcc ...`.
+- Exit codes surface via `the result is run "<binary>" with args ...; the exit_code is result's exit_code` — integer `0` is success per doc 17 §I2.
+- `hazard shell_injection` valence gets attached whenever any arg comes from untrusted input.
+
+---
+
+## I19. Method → receiver-as-parameter rule
+
+**Resolves:** doc 16 row #53.
+
+OOP methods (Ruby's `instance.method(arg)`, Python's `instance.method(arg)`, Java's `instance.method(arg)`) are functions that take the instance as an implicit first parameter. Nom has no class/method syntax; **translate every method into a top-level function whose first parameter is the receiver, named for what the receiver IS**:
+
+```
+# OOP source:
+cache.with_retry(5) { fetch(url) }
+
+# Nom translation:
+retry_with_backoff(cache, max_attempts = 5, attempt_action = fetch_upstream)
+```
+
+**Rules:**
+
+- The first parameter is **always** the receiver. Name it for the noun, not for `self` / `this`.
+- Chained methods (`builder.id("abc").email("x@y").build()`) unroll into a sequence of transformations or collapse into a single `build_<X>` call per doc 19 §D2.
+- Don't introduce `object.method()` dot-call syntax at the authoring layer — Nom is prefix-call.
+- For static / class methods, the receiver slot becomes the class-as-data: `user_count(users)` where `users` is the registered collection.
+
+---
+
+## I20. `work_group` idiom for concurrent work tracking
+
+**Resolves:** doc 16 row #57.
+
+Go's `sync.WaitGroup`, Rust's `JoinSet`, and Java's `CompletableFuture.allOf` all solve the same problem: "run N workers concurrently, then wait for all of them to finish". Nom's canonical form is **`work_group`** as a first-class authoring noun:
+
+```nomx
+the results_channel is a channel of results with capacity len(urls).
+the work_group tracks active workers.
+
+for each url in urls,
+  add one worker to work_group.
+  start a worker that
+    when the worker finishes, remove it from work_group.
+    send fetch_upstream(url) into results_channel.
+
+wait for work_group to drain.
+close results_channel.
+```
+
+**Rules:**
+
+- `work_group` is a noun — create with `the <name> work_group tracks active workers`, never with typed syntax like `WorkGroup::new()`.
+- `add one worker to <wg>` / `remove worker from <wg>` are the verbs. Pair them via `when the worker finishes, remove it from <wg>` finalizer phrasing (doc 17 §I9's atomic-primitive style).
+- `wait for <wg> to drain` blocks until the group's worker count reaches zero.
+- **Don't mix work_group with direct thread counters** — one or the other per function. Mixing surfaces as a strict-mode warning once W33 finalizer-clause grammar lands.
+
+---
+
 ## Closure status (doc 16 rollup)
 
-After this doc (I1-I16 landed):
+After this doc (I1-I20 landed):
 
 - Row #20 — ✅ I1 (perhaps/nothing)
 - Row #24 — ✅ I2 (exit codes)
@@ -529,7 +626,11 @@ After this doc (I1-I16 landed):
 - Row #37 — ✅ I14 (default parameter values)
 - Row #38 — ✅ I15 (iterator vs. materialized sequences)
 - Row #45 — ✅ I16 (identifier as distinct data shape)
+- Row #43 — ✅ I17 (time-range idiom `within the last N days`)
+- Row #48 — ✅ I18 (shell-exec primitive `run X with args Y`)
+- Row #53 — ✅ I19 (method → receiver-as-parameter rule)
+- Row #57 — ✅ I20 (work_group concurrent work tracking)
 
-**Authoring-guide backlog (post-I16):** 4 rows remain (#53 method→receiver rule, #57 work_group idiom, and 2 others queued from earlier translations).
+**Authoring-guide backlog: 0 rows remain.** All authoring-guide destinations closed. Doc 17 is the canonical authoring chapter (I1-I20).
 
 Future cycles focus on the 12 wedge-queued rows (W4-A3/A4/A5/A6, W5-W18), the 4 remaining smoke-test rows, and the 2 open design questions (#4 Path/file subkinds, #15 closures).
