@@ -1126,6 +1126,88 @@ the function run_ci_test_job is
 
 ---
 
+## 21. Java class — interface + builder pattern
+
+Representing a typical immutable-record Java class with a builder:
+
+```java
+public final class User {
+    private final String id;
+    private final String email;
+    private final Instant createdAt;
+
+    private User(Builder b) {
+        this.id = b.id;
+        this.email = b.email;
+        this.createdAt = b.createdAt;
+    }
+
+    public String getId() { return id; }
+    public String getEmail() { return email; }
+    public Instant getCreatedAt() { return createdAt; }
+
+    public static class Builder {
+        private String id;
+        private String email;
+        private Instant createdAt;
+
+        public Builder id(String id) { this.id = id; return this; }
+        public Builder email(String email) { this.email = email; return this; }
+        public Builder createdAt(Instant createdAt) { this.createdAt = createdAt; return this; }
+        public User build() { return new User(this); }
+    }
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+record User that holds
+  an id that is text,
+  an email that is text,
+  a created_at that is a timestamp.
+every field is set at construction and cannot change afterward.
+
+define build_user
+  that takes an id, an email, and a created_at, returns a User.
+the result is a new User with id, email, and created_at as given.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data User is
+  intended to represent an immutable user record with id, email, and creation time.
+
+  exposes id as text.
+  exposes email as text.
+  exposes created_at as timestamp.
+
+  favor correctness.
+  favor documentation.
+
+the function build_user is
+  intended to construct a User from the three required fields.
+
+  uses the @Function matching "assemble immutable record" with at-least 0.85 confidence.
+
+  requires id is non-empty.
+  requires email is a well-formed address.
+  ensures every field of the returned User matches the input.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Builder pattern dissolves** — Java's Builder + `build()` exists because the language lacks named arguments and default values. Nom's v2 form uses `uses the @Function matching "assemble immutable record"` and the v1 form calls the constructor directly with `takes an id, an email, and a created_at`. **The Builder pattern is a non-concept in Nom** — translations should drop it, not preserve it. Authoring-guide rule confirmed from doc 19 §D2's logic (lift implementation patterns to named entities).
+2. **Access modifiers (`public final` / `private`)** — Nom has no visibility markers today; every entity is accessible by name. Candidate: **W29 visibility modifiers** (probably just `private` for scope hiding, since `public` is the default).
+3. **Nested class `Builder`** — Java's inner-class scoping has no analog. Translated as a peer entity (`build_user`) that the caller invokes directly. Scoping-by-entity-name is the Nom convention.
+4. **Getters (`getId()` etc.)** — boilerplate that Nom's `exposes` covers automatically. Data kind auto-projects readable fields; no method declarations needed. Confirms doc 17 §I13.
+5. **`final` immutability** — Nom data kind's default is immutable; the `final` annotation is implicit. No wedge.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

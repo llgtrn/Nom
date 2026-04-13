@@ -65,17 +65,18 @@
 | 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | 📘 doc-todo |
 | 49 | Pinned-external-action ref grammar (`actions/checkout@v4`) | **W27** grammar rule | ⏳ queued (doc 14 #20) |
 | 50 | Event-trigger declarations (`runs when X happens`) | **W28** grammar rule | ⏳ queued (doc 14 #20) |
+| 51 | Visibility modifiers (`private` for scope hiding) | **W29** grammar rule | ⏳ queued (doc 14 #21) |
 
-Totals by destination (after doc 14 #20 YAML/GitHub-Actions translation surfaced 2 more rows):
+Totals by destination (after doc 14 #21 Java translation surfaced 1 more row):
 
-- ⏳ Wedge queued: **22** (+2 W27 pinned-external-action, W28 event-trigger)
+- ⏳ Wedge queued: **23** (+1 W29 visibility modifiers)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **5**
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 50 rows. Closure rate 40% (20/50). **20 translations total** in doc 14 — round milestone. Paradigm coverage now: imperative (Rust/Python/C/C++/Go) + async (Python) + data (TOML/GraphQL/SQL/CSS/YAML) + shell (Bash) + build (Make) + container (Docker) + TS editor-event + CI/CD (GitHub Actions).
+Backlog size: 51 rows. Closure rate 39% (20/51). **21 translations total**. Paradigm coverage now includes Java (class + builder dissolved into data + function per doc 19 §D2).
 
 ## Wedge master index (for cross-ref with doc 13)
 
