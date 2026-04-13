@@ -141,7 +141,7 @@ Nom reads like writing. Describe what you want. Get a working application.
 - `.nomx v2 (keyed)` syntax ~98% implemented: `@Kind` sigil (commit `c9d1835`), typed-slot resolver (`c405d2a`), `with at-least N confidence` threshold (`97c836f`), per-slot top-K diagnostic (`853e70b`)
 - Effect valence (motivation 02 §9 / motivation 10 §E #4 — genuinely novel): `benefit`/`hazard` keywords on entities; English-only (`c9d1835`)
 - MECE objectives validator fires on real input (commit `c63a6a7` — agent_demo intentionally collides to prove it)
-- Three e2e demos: `concept_demo/` (`a04b91e`), `agent_demo/` AI-agent composition (`e2d4eb4`), `agent_demo_vn/` Vietnamese keyword aliases (`c601f31`)
+- Two e2e demos: `concept_demo/` (`a04b91e`), `agent_demo/` AI-agent composition (`e2d4eb4`). Vocabulary is fully English; Vietnamese inspires grammar style only (commit `ecd0609` removed the earlier VN keyword-alias experiment)
 - Pipeline commands: `nom store sync`, `nom build status --write-locks`, `nom build manifest --pretty` (commits `ba7769f`, `bf95c2c`, `fef0419`)
 - `§4.4.6` body-bytes invariant enforced (commits `540620d` + `6c336b4`)
 - `§10.3.1` Rust toolchain pin (`1.94.1`) + CI enforcement (commits `29f5f1d` + `bc89d8a` + `96267df`)

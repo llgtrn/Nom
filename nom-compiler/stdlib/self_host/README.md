@@ -23,7 +23,7 @@ The Nom lexer, written in Nom. This file mirrors the Rust implementation in `nom
 **What works today:**
 - Valid Nom syntax that the parser recognizes
 - Complete token type enum matching the Rust lexer
-- All 80+ keywords including Vietnamese natural language aliases
+- All 80+ English keywords (vocabulary fully English; Vietnamese grammar style inspires structure only — commit `ecd0609` removed the earlier VN keyword-alias experiment)
 - Full operator and bracket scanning
 - Comment, string, number, and identifier scanning
 - Blank-line detection logic
