@@ -198,23 +198,42 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 
 ## Next actions — status snapshot 2026-04-14
 
-**Completed this session:**
+**Completed this session (48 commits, 22 code wedges):**
 1. ✅ Doc committed + five upgrade plans populated (§A-E)
 2. ✅ Zed-main analyzed + §D populated (78,686 nodes indexed)
-3. ✅ **CoreNLP W1 Annotator trait + Annotation pipeline** shipped (`7caa41f` + `9928187` + `b32abc0`) — 11 nom-extract tests
-4. ✅ **`nom-intent` crate skeleton** — slice-1 bounded-output enum (`800baea`), slice-2 ReAct driver (`147939d`), slice-3a query (`9751aac`), slice-3c-partial explain (`44f66d3`), slice-5a CLI (`f169cd6`). 21 nom-intent tests total.
-5. ✅ **nom-bench `BenchFamily` registry** (`fa50744`) — `OnceLock<Mutex<Vec<_>>>` global registry + 4 tests
-6. ✅ **nom-lsp crate** shipped — slice-1 scaffold (`64b3058`), slice-2 CLI (`3ba982a`), slice-3 completion handler (`0b68743`). 5 nom-lsp tests.
-7. ✅ **Graph-durability β** — Phase 1 freshness (`60534e4`, nom-dict +6 tests), Phase 2a NodeUid (`2453375`, nom-graph +8), Phase 2b upsert_entry (`421f902`, +8), Phase 3a Cypher export (`1b9cc00`, +5). 27 nom-graph tests total.
+3. ✅ **CoreNLP W1 Annotator pipeline** — `7caa41f` + `9928187` + `b32abc0` (11 nom-extract tests)
+4. ✅ **`nom-intent` crate fully built out — 57 tests**:
+   - slice-1 bounded-output `NomIntent` enum (`800baea`)
+   - slice-2 ReAct driver + 5-tool AgentTools trait (`147939d`)
+   - slice-3a `DictTools::query` (`9751aac`)
+   - slice-3c-partial `DictTools::explain` (`44f66d3`)
+   - slice-3c-render-metadata `DictTools::render` closure-walk hash (`07e6282`)
+   - slice-3b-verify `DictTools::verify` 4 invariant checks (`a82caec`)
+   - slice-3b-compose `DictTools::compose` token-overlap (`1ce0fc4`)
+   - **All 5 AgentTools methods live as of `1ce0fc4`**
+   - slice-4 `InstrumentedTools` decorator (`63ec6a4`)
+   - slice-5a `nom agent classify` CLI (`f169cd6`)
+   - slice-5b-trait `ReActAdapter` + blanket impl (`078089e`)
+   - slice-5b-nom-cli `NomCliAdapter` state machine (`b54a9c7`)
+   - slice-5b-cli-flag `--adapter` selector (`b993de1`)
+5. ✅ **nom-bench `BenchFamily` registry** (`fa50744`)
+6. ✅ **nom-lsp crate** — slice-1 scaffold (`64b3058`), slice-2 CLI (`3ba982a`), slice-3 completion (`0b68743`). 5 tests.
+7. ✅ **Graph-durability β — 6/6 specced deliverables shipped**:
+   - Phase 1 freshness (`60534e4`)
+   - Phase 2a NodeUid (`2453375`)
+   - Phase 2b upsert_entry (`421f902`)
+   - Phase 3a Cypher export nodes (`1b9cc00`)
+   - Phase 3b Cypher export edges (`910365c`)
+   - 27 nom-graph tests total
+8. ✅ **Research synthesis** — doc 11 (graph-rag research, `90958dd`), doc 12 (entity-scope deep-think, `4867307`), spec `2026-04-14-graph-rag-agentic-design.md`, slice-5b polymorphism clarification (`ebe530e`)
 
-**Queued (ordered by effort ascending):**
-- **Phase 3b edges export** — needs Phase 2c uid-native edges OR synthesize-at-export (~1d)
-- **Phase 2c uid storage unification** — switch `from_entries` / `build_call_edges` / etc. to uid storage (~3d, biggest churn)
-- **M8 slice-3b** — `compose` + `verify` wiring via nom-concept MECE (~4d)
-- **M8 slice-5b** — real OpenAI/Anthropic LLM adapter (replaces stub in `cmd_agent_classify`)
-- **M8 slice-4** — `InstrumentedTools` glass-box logging wrapper
-- **M8 slice-3c-full** — `render` + LayeredDreamReport in `explain`
-- **M8 slice-6** — `nom-lsp` "why-this-Nom?" editor drill-through
+**Queued (ordered by ascending effort):**
+- **M8 slice-5b-mcp** — `McpAdapter` stdio JSON-RPC adapter; matches `scripts/gitnexus-mcp.js` shape (~1d)
+- **M8 slice-6** — `nom-lsp` "why-this-Nom?" editor drill-through, wraps `DictTools` in `InstrumentedTools`, pipes log entries back over LSP (~2d)
+- **Phase 2c graph unification** — switch `from_entries` / `build_call_edges` / `build_import_edges` / `detect_communities` to uid storage, deprecate Vec fields (~3d, biggest churn)
+- **M8 slice-3b-verify-full** — wire `nom-verifier` + `nom-security` + `nom-concept` MECE (~4d)
+- **M8 slice-3c-full** — real render via `nom-codegen` + `nom-llvm` + `nom-app` + `nom-media` (~5d, biggest user-visible wedge per doc 12 deep-think)
+- **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
 
