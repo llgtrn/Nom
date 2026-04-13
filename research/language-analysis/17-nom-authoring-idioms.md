@@ -123,7 +123,7 @@ the math_char is "π".
 - Identifiers remain ASCII-only — if you need to name a function by a non-ASCII concept, transliterate (`pi_constant`, not `π_constant`).
 - The `matching "..."` clause follows the same rule — a typed-slot ref can match prose in any language: `the @Function matching "こんにちは greeting" with at-least 0.85 confidence`.
 
-**Smoke test candidate (doc 16 row #34):** add a `ct11_utf8_string_literal_roundtrip` test in nom-concept that parses a concept containing `Blaž Hrastnik` and asserts the exact bytes survive through the AST.
+**Smoke test shipped (doc 16 row #34):** `ct11_utf8_string_literals_verbatim` in nom-concept parses a concept with `こんにちは`, `Blaž Hrastnik`, and `π` inside `matching "..."` clauses and asserts each string survives byte-identical through serde-JSON round-trip. Scope note: only string literals are covered — intent-prose outside quotes currently relies on ASCII because the lexer's fallthrough branch treats non-ASCII chars as single-char `Word` tokens and the prose collector may reshape them. Lift that under a future wedge if non-ASCII intent prose becomes a real authoring need.
 
 ---
 
@@ -159,14 +159,114 @@ exposes default_theme as text.
 
 ---
 
+## I6. Docstrings translate to `intended to …`
+
+**Resolves:** doc 16 row #7.
+
+Source languages carry per-function prose in dedicated slots — Python docstrings, Rust `///`, Java javadoc, Go `// Package …` preambles. Nom collects all of that into the `intended to …` clause on the entity:
+
+```nomx
+the function get_python_source is
+  intended to return the Python source string for a callable or string argument,
+  or nothing when unavailable.
+
+  requires input is a Python object.
+  ensures result is text or nothing; never raises.
+
+  favor correctness.
+```
+
+**Rules:**
+
+- The `intended to …` phrase is a single sentence. Split longer docstrings into multiple sentences separated by `.`; each becomes part of the same intent slot.
+- Discard markup syntax from the source (Markdown backticks, ReST directives, `:param:` fields). Contracts move to `requires` / `ensures`; examples move to separate nomtu tests.
+- Keep the prose English-vocabulary per `ecd0609` — translate non-English docstrings, don't transliterate.
+- The goal is **what the entity does**, not **how the upstream library implemented it**. Drop implementation details.
+
+**Anti-pattern:**
+
+```nomx
+# Bad — verbatim-copied Python docstring with code fences + :param:
+  intended to "Get Python source (or not), preventing exceptions.
+
+  :param x: Any Python object
+  :returns: Source string or None
+  ".
+
+# Good — prose rewrite:
+  intended to return the Python source string for a callable argument,
+  or nothing when it cannot be obtained.
+```
+
+---
+
+## I7. Redundant v1 body when fully delegated
+
+**Resolves:** doc 16 row #12.
+
+When a function's whole job is to call one other function (thin wrapper, re-export, rename), the v1 body becomes redundant noise. In that case prefer the v2 form — the `uses` reference says everything needed:
+
+```nomx
+# v1 (redundant):
+define base64_decode
+  that takes input_text, returns bytes or a decode_error.
+the bytes are the base64 decoding of input_text.
+
+# v2 (preferred for thin wrappers):
+the function base64_decode is
+  intended to decode base64-encoded text into raw bytes.
+  uses the @Function matching "base64 decode primitive" with at-least 0.9 confidence.
+  requires input is valid base64.
+  ensures output matches the encoded payload.
+  favor correctness.
+```
+
+**Rules:**
+
+- When the body is one `uses` call (no branching, no local values), drop the v1 form and keep only v2.
+- When the body has >= 2 `uses` calls, the order matters — keep v1 (with imperative verbs) OR extend v2 with `then`-chained `uses` clauses.
+- Never write both forms for the same function. Pick one.
+
+---
+
+## I8. Pipelines / command substitution → named intermediate values
+
+**Resolves:** doc 16 rows #30 and #31 (partial).
+
+Shell's `javac \`find java -name '*.java'\``-style command substitution compresses a pipeline into a single line. Nom unrolls it:
+
+```nomx
+# Bad — opaque nesting (authoring-hostile, even if the grammar accepts it):
+compile every output of "find java -name '*.java'" with javac.
+
+# Good — named intermediate value:
+the java_sources are every .java file under the java folder.
+compile java_sources with javac,
+  targeting java 8,
+  with boot class path android_jar.
+```
+
+**Rules:**
+
+- Each intermediate expression gets a name via `the X is …`. Never nest more than two function calls in one sentence.
+- The name should describe WHAT the value is (`the java_sources are …`), not HOW it was obtained (`the output_of_find is …`).
+- A chain of three-plus pipes becomes a block: each line `the step<N> is …` ending with the final result.
+- Preserve the source language's idiom in a comment only if the translation is non-obvious; otherwise the named values carry the intent.
+
+---
+
 ## Closure status (doc 16 rollup)
 
-After this doc:
+After this doc (I1-I8 landed):
 
-- Row #20 — ✅ I1 above
-- Row #24 — ✅ I2 above
-- Row #25 — ✅ I3 above
-- Row #34 — ✅ I4 above (smoke-test referenced; not yet landed)
-- Row #35 — ✅ I5 above
+- Row #20 — ✅ I1 (perhaps/nothing)
+- Row #24 — ✅ I2 (exit codes)
+- Row #25 — ✅ I3 (text-sprintf)
+- Row #34 — ✅ I4 (UTF-8 string literals) + ct11 smoke test landed
+- Row #35 — ✅ I5 (hyphen→underscore)
+- Row #7  — ✅ I6 (docstrings → `intended to`)
+- Row #12 — ✅ I7 (redundant v1 body rule)
+- Row #30 + #31 (partial) — ✅ I8 (named intermediate values / globbing primitives unrolled)
 
-Remaining authoring-guide rows in doc 16 (8 of 13): #7 (docstring→`intended to`), #10 (atomic primitives), #12 (redundant v1 body), #13 (destructuring params), #26 (list/text accessors), #27 (`uses` vs imperative), #30 (globbing primitives), #31 (pipelines→intermediate values), #33 (config-as-data split). These land in future cycles as I6-I13.
+**Remaining authoring-guide rows in doc 16 (5 of 13 still open):**
+#10 (atomic primitives), #13 (destructuring params), #26 (list/text accessors), #27 (`uses` vs imperative), #33 (config-as-data split). These land in future cycles as I9-I13.

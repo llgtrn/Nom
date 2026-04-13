@@ -2669,6 +2669,44 @@ the concept ct10c is
         );
     }
 
+    /// ct11: UTF-8 string literals survive verbatim through the parser
+    /// (doc 17 §I4 smoke). Non-ASCII content inside `"..."` — author
+    /// names, multilingual prose in `matching` clauses, math symbols —
+    /// must land in the AST byte-identical to source. Identifiers remain
+    /// ASCII-only (enforced elsewhere by `is_word_start_char`).
+    ///
+    /// Scope: string literals (Quoted tokens) only. Intent prose outside
+    /// quotes is a separate surface and currently ASCII-reliant because
+    /// the lexer's fallthrough branch emits non-ASCII chars as single-
+    /// char Word tokens, which the prose collector may rewrite or drop.
+    /// Lift that restriction under a future wedge if non-ASCII prose is
+    /// needed inside `intended to …` sentences.
+    #[test]
+    fn ct11_utf8_string_literals_verbatim() {
+        let src = r#"
+the concept ct11 is
+  intended to test multilingual string literals survive verbatim.
+
+  uses the @Function matching "こんにちは greeting flow" with at-least 0.85 confidence.
+  uses the @Function matching "Blaž Hrastnik's rendering path" with at-least 0.8 confidence.
+  uses the @Function matching "π-radians to degrees" with at-least 0.8 confidence.
+
+  favor correctness.
+"#;
+        let parsed = parse_nom(src).expect("UTF-8 in matching clauses must parse");
+        let json = serde_json::to_string(&parsed).expect("must serialize");
+        for needle in [
+            "こんにちは greeting flow",
+            "Blaž Hrastnik",
+            "π-radians to degrees",
+        ] {
+            assert!(
+                json.contains(needle),
+                "UTF-8 matching string {needle:?} must survive verbatim; json = {json}"
+            );
+        }
+    }
+
     /// ct10d: sanity — `the function login_user matching "x"` (v1 with kind)
     /// and `the @Function matching "x"` (v2 typed-slot) both parse cleanly.
     #[test]

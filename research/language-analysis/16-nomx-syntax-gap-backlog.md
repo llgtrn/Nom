@@ -21,12 +21,12 @@
 | 4 | Path/file subkinds vs generic `@Data` | design deferred | 🧠 design Q open |
 | 5 | Union types / sum-return at v2 (`text or record`, `Result<A,B>`) | **W18** `@Union` kind (renumbered from earlier "W5") | ⏳ queued |
 | 6 | Literal-string constants (Python `Literal[...]`) | **W6** grammar rule | ⏳ queued |
-| 7 | Docstring → `intended to` mapping | authoring-guide note | 📘 doc-todo |
+| 7 | Docstring → `intended to` mapping | authoring-guide note | ✅ doc 17 §I6 |
 | 8 | Primitive-return idiom (`the result is true`) | authoring-guide + W4-A1 addendum | ⏳ queued |
 | 9 | Sum-return phrasing at v1 (already works) | smoke-test | 🧪 test-todo |
 | 10 | Atomic-state primitives | authoring-corpus seed | 📘 doc-todo |
 | 11 | Lifetime annotations | design deferred (borrow-model) | 🧠 blocked on §borrow-model |
-| 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | 📘 doc-todo |
+| 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | ✅ doc 17 §I7 |
 | 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | 📘 doc-todo |
 | 14 | Early-return guards (works) | smoke-test | 🧪 test-todo |
 | 15 | Callback closures | design deferred (§closures) | 🧠 design Q open |
@@ -44,19 +44,19 @@
 | 27 | Preferred form (`uses` vs imperative verbs) for side-effects | authoring-guide decision | 📘 doc-todo |
 | 28 | Interpreter/shebang metadata clause | **W15** grammar rule | ⏳ queued |
 | 29 | Environment-variable access vocabulary | **W16** grammar rule | ⏳ queued |
-| 30 | Globbing / file-tree query primitives | authoring-corpus seeds | 📘 doc-todo |
-| 31 | Process pipelines → named intermediate values | authoring-guide rule | 📘 doc-todo |
+| 30 | Globbing / file-tree query primitives | authoring-corpus seeds | ✅ doc 17 §I8 (partial — authoring idiom shipped; corpus seed still pending) |
+| 31 | Process pipelines → named intermediate values | authoring-guide rule | ✅ doc 17 §I8 |
 | 32 | Nested-section path syntax (TOML dot-paths) | **W17** grammar rule | ⏳ queued |
 | 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | 📘 doc-todo |
-| 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 (guide); 🧪 test still pending |
+| 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 
-Totals by destination (after doc 17 landed):
+Totals by destination (after doc 17 expanded to I8 + ct11 smoke test):
 
-- ⏳ Wedge queued: **12** (W14 reclassified to authoring-guide since exit-codes are a vocabulary convention, not a grammar rule)
-- 🧪 Smoke-test todo: **5** (+1 for UTF-8-in-literals)
-- 📘 Authoring-guide doc-todo: **8 remaining** (was 13; 5 closed by doc 17 — I1/I2/I3/I4/I5)
-- ✅ Closed: **5**
+- ⏳ Wedge queued: **12** (unchanged)
+- 🧪 Smoke-test todo: **4** (UTF-8 smoke shipped as ct11)
+- 📘 Authoring-guide doc-todo: **5 remaining** (#10, #13, #26, #27, #33)
+- ✅ Closed: **9** (#7, #12, #20, #24, #25, #30, #31, #34, #35)
 - 🧠 Design deferred (open): **2** (+1 blocked)
 
 ## Wedge master index (for cross-ref with doc 13)
