@@ -1062,16 +1062,26 @@ fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
                 Some(Tok::Word(w)) => w.clone(),
                 _ => return Vec::new(),
             };
+            // Optional `@hash` backfill after the word.  Post-first-build
+            // locks write `the function login_user@a1b2…` into the source;
+            // the resolver rewrites and the next parse reads it back.
+            let (hash, cursor_adj) = match (
+                clause.get(the_idx + 3).map(|s| &s.tok),
+                clause.get(the_idx + 4).map(|s| &s.tok),
+            ) {
+                (Some(Tok::At), Some(Tok::Word(h))) => (Some(h.clone()), 2),
+                _ => (None, 0),
+            };
             (
                 EntityRef {
                     kind: Some(kind_lower),
                     word,
-                    hash: None,
+                    hash,
                     matching: None,
                     typed_slot: false,
                     confidence_threshold: None,
                 },
-                the_idx + 3,
+                the_idx + 3 + cursor_adj,
             )
         }
         _ => return Vec::new(),
@@ -1608,6 +1618,35 @@ the function write_file is
                 assert!(refs[0].typed_slot, "should be typed-slot form");
                 assert_eq!(refs[0].kind.as_deref(), Some("function"));
                 assert_eq!(refs[0].word, "");
+            }
+            _ => panic!("expected IndexClause::Uses"),
+        }
+    }
+
+    /// a4c34: v1 bare-word ref with @hash backfill is captured by S6.
+    ///
+    /// Post-first-build locks write the hash into the source
+    /// (`the function login_user@a1b2 matching "..."`); the next
+    /// parse must read it back into EntityRef.hash so the resolver
+    /// can skip re-lookups on unchanged entries.
+    #[test]
+    fn a4c34_v1_hash_backfill_captured_by_s6() {
+        let src = r#"the concept session_manager is
+  intended to manage session lifetime.
+  uses the function login_user@a1b2c3d4 matching "verify credentials".
+  favor correctness."#;
+        let out = run_pipeline(src).expect("pipeline");
+        let concept = match out {
+            PipelineOutput::Nom(f) => f.concepts.into_iter().next().expect("one"),
+            _ => panic!("expected Nom"),
+        };
+        match &concept.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                assert_eq!(refs[0].kind.as_deref(), Some("function"));
+                assert_eq!(refs[0].word, "login_user");
+                assert_eq!(refs[0].hash.as_deref(), Some("a1b2c3d4"));
+                assert_eq!(refs[0].matching.as_deref(), Some("verify credentials"));
             }
             _ => panic!("expected IndexClause::Uses"),
         }
