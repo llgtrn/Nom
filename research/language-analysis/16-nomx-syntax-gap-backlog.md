@@ -50,17 +50,20 @@
 | 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | ✅ doc 17 §I13 |
 | 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
+| 36 | Async-marker clause (`async def` / async functions) | **W19** grammar rule | ⏳ queued (doc 14 #13) |
+| 37 | Default parameter values (`callbacks = None`) | authoring-guide rule | 📘 doc-todo |
+| 38 | Iterator vs. materialized sequences (lazy by default) | authoring-guide rule | 📘 doc-todo |
 
-Totals by destination (after doc 19 design decisions landed):
+Totals by destination (after doc 14 #13-#14 translations surfaced 3 new rows):
 
-- ⏳ Wedge queued: **12** (unchanged)
+- ⏳ Wedge queued: **13** (+1 W19 async-marker)
 - 🧪 Smoke-test todo: **2**
-- 📘 Authoring-guide doc-todo: **0** (doc 17 complete)
-- ✅ Closed: **19** (17 prior + #4 + #15 via doc 19 design decisions)
+- 📘 Authoring-guide doc-todo: **2** (+2 from doc 14: default params + lazy sequences)
+- ✅ Closed: **19**
 - 🧠 Design deferred (open): **0**
-- 🔒 Blocked: **1** (#11 lifetime annotations, blocked on borrow-model)
+- 🔒 Blocked: **1**
 
-**Milestone 2026-04-14:** all open design questions resolved. 19 of 35 doc 16 rows closed. Remaining work is all actionable: 12 W-wedges (grammar additions), 2 minor smoke tests, 1 blocked-on-other-work.
+Backlog size: 38 rows total (was 35). Design-Q-closed state preserved; new rows are all actionable or follow-up doc-todo work.
 
 ## Wedge master index (for cross-ref with doc 13)
 

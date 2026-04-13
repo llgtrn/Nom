@@ -651,6 +651,114 @@ the data book_config is
 
 ---
 
+## 13. `acompress_documents` — Python async bridge
+
+**Source:** [langchain-master/libs/core/langchain_core/documents/compressor.py:55-74](../../../APP/Accelworld/upstreams/langchain-master/libs/core/langchain_core/documents/compressor.py#L55)
+
+```python
+async def acompress_documents(
+    self,
+    documents: Sequence[Document],
+    query: str,
+    callbacks: Callbacks | None = None,
+) -> Sequence[Document]:
+    """Async compress retrieved documents given the query context."""
+    return await run_in_executor(
+        None, self.compress_documents, documents, query, callbacks
+    )
+```
+
+### `.nomx v1` translation
+
+```nomx
+define acompress_documents
+  that takes documents, query, and callbacks,
+  returns a sequence of documents,
+  as an asynchronous operation.
+  the callbacks is perhaps nothing.
+the compressed is the result of running compress_documents
+  on documents, query, and callbacks, in an executor.
+acompress_documents returns the compressed.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function acompress_documents is
+  intended to asynchronously compress a batch of retrieved documents
+  using the synchronous compress_documents primitive in an executor.
+
+  uses the @Function matching "run synchronous function in an executor" with at-least 0.9 confidence.
+  uses the @Function matching "compress retrieved documents" with at-least 0.85 confidence.
+
+  requires documents is non-empty.
+  ensures result is the same length and order as documents.
+
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Async marker** — `as an asynchronous operation` is a placeholder phrasing. No Nom primitive exists for asynchronous execution contexts. Candidate: **W19 async-marker clause** (`a function that is asynchronous, returns ...` or `the asynchronous function X is …`).
+2. **`await` expression** — `the result of running X in an executor` is prose; real async code needs a first-class await form. Possibly subsumed by W19.
+3. **Executor / runtime metadata** — Python's `run_in_executor(None, ...)` wraps a sync call as async. Nom could express this via a typed effect clause `hazard thread_pool_switch` once effect-to-runtime mapping lands (doc 11). Authoring-corpus seed.
+4. **Default parameter values** (`callbacks: Callbacks | None = None`) — Nom v1 uses `perhaps nothing`; v2 has no explicit "default = X" syntax. Authoring-guide rule: declare defaults inside `intended to …` prose, not as a type-system feature (follows the data-over-grammar principle from §I13).
+5. **`Sequence[Document]` generic type** — `a sequence of documents` works at v1; v2 implicitly handles this via `matching "compress retrieved documents"`. No new wedge needed — generic-type lowering is a doc 04 §borrow-model concern deferred with lifetime annotations (doc 16 row #11).
+
+---
+
+## 14. `flat_map` — pure functional pattern (sampled)
+
+Representing functional map-and-flatten, which shows up in every modern codebase (`flatMap` in Kotlin / Rust's `Iterator::flat_map` / Python's itertools).
+
+```rust
+pub fn flat_map<T, U, I, F>(input: I, f: F) -> Vec<U>
+where
+    I: IntoIterator<Item = T>,
+    F: FnMut(T) -> Vec<U>,
+{
+    input.into_iter().flat_map(f).collect()
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define flat_map
+  that takes an input sequence and a function from item to a sub-sequence,
+  returns a flat sequence.
+for each item in the input sequence,
+  append every element of the function applied to item
+  to the result.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function flat_map is
+  intended to apply a function that returns a sub-sequence to every item
+  in the input sequence and concatenate all the sub-sequences in order.
+
+  uses the @Function matching "apply function to each item" with at-least 0.9 confidence.
+  uses the @Function matching "concatenate sequences" with at-least 0.9 confidence.
+
+  requires the function is deterministic on each item.
+  ensures the order of output elements preserves input order
+    and sub-sequence order for each input item.
+
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Higher-order parameter** — `a function from item to a sub-sequence` is an anonymous callback, resolved per [doc 19 §D2](19-deferred-design-decisions.md) (lift to a named entity rather than inline closure). Translation confirms the D2 rule handles real-world `flat_map` shapes.
+2. **Generic parameters (`T`, `U`)** — Rust's type-variables vanish at the v1 prose layer; v2 uses prose descriptors (`item`, `sub-sequence`) that the resolver grounds via the matching clause. Deferred with lifetime annotations (doc 16 row #11, blocked).
+3. **Iterator vs. concrete `Vec<U>`** — translation hides the iterator-vs-materialized distinction behind `sequence`. Authoring-guide rule: **sequences are lazily evaluated by default; force materialization explicitly** (`collect the sequence into a vector` idiom).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
