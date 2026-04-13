@@ -193,8 +193,110 @@ impl<'a> AgentTools for DictTools<'a> {
         Observation::Error("DictTools::compose not yet wired (slice-3b)".into())
     }
 
-    fn verify(&self, _target: &str) -> Observation {
-        Observation::Error("DictTools::verify not yet wired (slice-3b)".into())
+    fn verify(&self, target: &str) -> Observation {
+        // Slice-3b-verify: dict-local invariant checks on a single uid.
+        // Does NOT yet call out to nom-verifier / nom-security / nom-concept
+        // MECE — that's slice-3b-verify-full which touches 3 more crates.
+        // This wedge lands a structurally-useful Verdict with 4 local
+        // checks so the agent can self-critique drafts (Self-RAG shape)
+        // before the heavy verifier lands.
+        if target.len() != 64 || !target.chars().all(|c| c.is_ascii_hexdigit()) {
+            return Observation::Error(format!(
+                "DictTools::verify: target {target:?} is not a 64-char hex hash"
+            ));
+        }
+        let row = match self.dict.find_word_v2(target) {
+            Ok(Some(r)) => r,
+            Ok(None) => {
+                return Observation::Error(format!(
+                    "DictTools::verify: uid {target} not found in dict"
+                ));
+            }
+            Err(e) => {
+                return Observation::Error(format!("DictTools::verify: dict error: {e}"));
+            }
+        };
+
+        let mut failures: Vec<String> = Vec::new();
+        let mut warnings: Vec<String> = Vec::new();
+
+        // Check 1: code kinds must have either a signature or a body_kind.
+        // A Function with neither is almost certainly broken ingestion.
+        let code_kinds = ["function", "method", "test_case", "api_endpoint"];
+        if code_kinds.contains(&row.kind.to_lowercase().as_str()) {
+            if row.signature.is_none() && row.body_kind.is_none() {
+                failures.push(format!(
+                    "code entry '{}' has neither signature nor body_kind (ingestion likely broken)",
+                    row.word
+                ));
+            }
+            if row.signature.is_none() {
+                warnings.push(format!(
+                    "code entry '{}' has no signature — callers cannot typecheck against this",
+                    row.word
+                ));
+            }
+        }
+
+        // Check 2: composed entries must have non-empty composed_of JSON.
+        let composite_kinds = ["module", "concept", "app_manifest", "user_flow"];
+        if composite_kinds.contains(&row.kind.to_lowercase().as_str()) {
+            match row.composed_of.as_deref() {
+                None | Some("[]") | Some("") => failures.push(format!(
+                    "composite entry '{}' (kind={}) has empty composed_of — no downstream entries to build",
+                    row.word, row.kind
+                )),
+                Some(json) => {
+                    if serde_json::from_str::<Vec<String>>(json).is_err() {
+                        failures.push(format!(
+                            "composite entry '{}' has composed_of that is not a JSON array of strings",
+                            row.word
+                        ));
+                    }
+                }
+            }
+        }
+
+        // Check 3: body_kind/kind consistency heuristic.
+        // function + body_kind=module is almost certainly a mis-tag.
+        if let (Some(kind_lc), Some(bk)) = (
+            Some(row.kind.to_lowercase()),
+            row.body_kind.as_deref().map(|s| s.to_lowercase()),
+        ) {
+            let mismatch = match kind_lc.as_str() {
+                "module" | "concept" | "app_manifest" | "user_flow" => {
+                    matches!(bk.as_str(), "llvm-bc" | "rust-src" | "avif" | "opus")
+                }
+                "function" | "method" | "test_case" | "api_endpoint" => {
+                    matches!(bk.as_str(), "module" | "concept" | "app_manifest")
+                }
+                "media_unit" | "codec" | "container" => {
+                    matches!(bk.as_str(), "llvm-bc" | "rust-src" | "module")
+                }
+                _ => false,
+            };
+            if mismatch {
+                warnings.push(format!(
+                    "entry '{}' kind={} with body_kind={} — unusual pairing, review",
+                    row.word, row.kind, bk
+                ));
+            }
+        }
+
+        // Check 4: hash field should match the target we looked up.
+        // Defensive check — catches dict corruption mid-upsert.
+        if row.hash != target {
+            failures.push(format!(
+                "dict corruption: find_word_v2(\"{target}\") returned row with hash=\"{}\"",
+                row.hash
+            ));
+        }
+
+        Observation::Verdict {
+            passed: failures.is_empty(),
+            failures,
+            warnings,
+        }
     }
 
     fn render(&self, uid: &str, target: &str) -> Observation {
@@ -331,16 +433,150 @@ mod tests {
     }
 
     #[test]
-    fn compose_verify_are_explicit_stubs() {
+    fn compose_is_explicit_stub() {
         let d = NomDict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
-        for obs in [tools.compose("anything", &[]), tools.verify("anything")] {
-            match obs {
-                Observation::Error(msg) => {
-                    assert!(msg.contains("not yet wired"));
-                }
-                other => panic!("expected Error stub, got {other:?}"),
+        match tools.compose("anything", &[]) {
+            Observation::Error(msg) => assert!(msg.contains("not yet wired")),
+            other => panic!("expected Error stub, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_passes_on_well_formed_function_entry() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_ADD.into(),
+            word: "add".into(),
+            kind: "function".into(),
+            signature: Some("fn add(a: i64, b: i64) -> i64".into()),
+            contracts: None,
+            body_kind: Some("llvm-bc".into()),
+            body_size: Some(1024),
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: Some("examples/arith.nom".into()),
+            composed_of: None,
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify(HASH_ADD) {
+            Observation::Verdict { passed, failures, warnings } => {
+                assert!(passed, "well-formed entry must pass; failures={failures:?}");
+                assert!(failures.is_empty());
+                assert!(warnings.is_empty(), "no warnings expected, got {warnings:?}");
             }
+            other => panic!("expected Verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_fails_on_empty_composite() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_MUL.into(),
+            word: "math".into(),
+            kind: "module".into(),
+            signature: None,
+            contracts: None,
+            body_kind: None,
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: Some("[]".into()),
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify(HASH_MUL) {
+            Observation::Verdict { passed, failures, .. } => {
+                assert!(!passed);
+                assert!(
+                    failures.iter().any(|f| f.contains("empty composed_of")),
+                    "expected empty-composed_of failure in {failures:?}"
+                );
+            }
+            other => panic!("expected Verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_warns_on_function_without_signature() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_ADD.into(),
+            word: "x".into(),
+            kind: "function".into(),
+            signature: None,
+            contracts: None,
+            body_kind: Some("llvm-bc".into()),
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: None,
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify(HASH_ADD) {
+            Observation::Verdict { passed, failures, warnings } => {
+                assert!(passed, "function with body_kind but no signature passes + warns");
+                assert!(failures.is_empty());
+                assert!(
+                    warnings.iter().any(|w| w.contains("no signature")),
+                    "expected no-signature warning in {warnings:?}"
+                );
+            }
+            other => panic!("expected Verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_warns_on_kind_body_kind_mismatch() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_ADD.into(),
+            word: "weird".into(),
+            kind: "module".into(),
+            signature: None,
+            contracts: None,
+            body_kind: Some("llvm-bc".into()), // module with llvm-bc = mis-tag
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: Some(format!("[\"{HASH_MUL}\"]")),
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify(HASH_ADD) {
+            Observation::Verdict { warnings, .. } => {
+                assert!(
+                    warnings.iter().any(|w| w.contains("unusual pairing")),
+                    "expected mismatch warning in {warnings:?}"
+                );
+            }
+            other => panic!("expected Verdict, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_rejects_bad_uid() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify("not-a-hash") {
+            Observation::Error(msg) => assert!(msg.contains("not a 64-char hex hash")),
+            other => panic!("expected Error, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn verify_missing_uid_reports_not_found() {
+        let d = NomDict::open_in_memory().unwrap();
+        let tools = DictTools::new(&d);
+        match tools.verify(HASH_ADD) {
+            Observation::Error(msg) => assert!(msg.contains("not found in dict")),
+            other => panic!("expected Error, got {other:?}"),
         }
     }
 
