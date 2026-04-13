@@ -24,6 +24,7 @@ mod fmt;
 mod manifest;
 mod mcp;
 mod media;
+mod report;
 mod store;
 
 use clap::{Parser, Subcommand};
@@ -410,6 +411,27 @@ enum BuildCmd {
         /// Pretty-print JSON (default: compact).
         #[arg(long)]
         pretty: bool,
+    },
+
+    /// Emit a full auditable report combining per-slot resolution trace,
+    /// rejection reasons, alternatives, MECE outcome, effect list, and
+    /// provenance trail.  Both JSON and human-readable forms are supported.
+    /// Per deferred 06 §Phase 7 / doc 09 M1.
+    Report {
+        /// Path to the repo (its basename is used as repo_id).
+        repo: PathBuf,
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Restrict to one concept (default: all concepts in repo).
+        #[arg(long)]
+        concept: Option<String>,
+        /// Write output to this file instead of stdout.
+        #[arg(long)]
+        out: Option<PathBuf>,
+        /// Output format: human (default) or json.
+        #[arg(long, default_value = "human")]
+        format: String,
     },
 }
 
@@ -858,6 +880,15 @@ fn main() {
                     concept.as_deref(),
                     out.as_deref(),
                     pretty,
+                )
+            }
+            BuildCmd::Report { repo, dict, concept, out, format } => {
+                report::cmd_build_report(
+                    &repo,
+                    &dict,
+                    concept.as_deref(),
+                    out.as_deref(),
+                    &format,
                 )
             }
         },
