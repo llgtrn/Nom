@@ -84,7 +84,8 @@ jobs:
                    nom-lexer nom-parser nom-ast nom-graph nom-search \
                    nom-translate nom-verifier nom-planner nom-diagnostics \
                    nom-media nom-ux nom-corpus nom-bench nom-app nom-flow \
-                   nom-cli; do
+                   nom-concept nom-locale nom-config nom-extract nom-score \
+                   nom-runtime nom-cli; do
             echo "=== $p ==="
             cargo test -p "$p" --quiet 2>&1 | tail -5
           done
