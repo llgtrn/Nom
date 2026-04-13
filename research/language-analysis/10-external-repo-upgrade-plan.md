@@ -230,6 +230,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 10. ✅ **M8 slice-6a** — `nom-lsp/src/agent.rs` markdown renderer for agentic drill-through (`471cbc0`, 6 tests)
 11. ✅ **M8 slice-6b** — `workspace/executeCommand` handler + `nom.whyThisNom` registration in `server_capabilities` (`2341ff1`, 14 tests)
 12. ✅ **W4-A2 strictness lock** — 5 closed-keyword-set tests pinning case-sensitive exact-match for `matching` / `with` / `confidence` / `the` / `is` / kinds / `at-least` (`65f1198`, doc 13 §5 A2). 82 nom-concept tests total.
+13. ✅ **W4-A1 strictness lock** — 4 ct10* tests pinning that entity refs MUST carry `@Kind` (v2) or `Kind Word` (v1); bare `the matching "..."` or unknown `@Banana` reject hard. (next commit) 86 nom-concept tests total.
 
 **Queued (ordered by ascending effort):**
 - **M8 slice-5b-mcp-spawn** — wire `McpAdapter` to a spawned child process (~0.5d)
@@ -238,7 +239,7 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 - **M8 slice-3b-verify-full** — wire `nom-verifier` + `nom-security` + `nom-concept` MECE (~4d)
 - **M8 slice-3c-full** — real render via `nom-codegen` + `nom-llvm` + `nom-app` + `nom-media` (~5d, biggest user-visible wedge per doc 12 deep-think)
 - **M8 slice-5b-real-llm** (optional) — OpenAI/Anthropic wrapper (requires API keys)
-- **W4 strictness lane** (new 2026-04-14) — doc 13 specifies 6 wedges A1-A6 (~7 engineer-days total). **A2 shipped** `65f1198`. Remaining: A1 (mandatory kind marker), A3 (confidence threshold opt-in fail), A4 (annotator-style staged parser, biggest), A5 (no-lossy-Option AST), A6 (reject-on-ambiguous in resolver). See [doc 13 §5](13-nomx-strictness-plan.md#5-strictness-wedges-ordered) + `feedback_syntax_strictness_corenlp.md` in memory.
+- **W4 strictness lane** (new 2026-04-14) — doc 13 specifies 6 wedges A1-A6 (~7 engineer-days total). **A1 + A2 shipped.** A1 = 4 ct10* tests locking `@Kind` / `Kind Word` requirement on entity refs. A2 = 5 ct09* closed-keyword-set tests. Remaining: A3 (confidence threshold opt-in fail), A4 (annotator-style staged parser, biggest), A5 (no-lossy-Option AST), A6 (reject-on-ambiguous in resolver). See [doc 13 §5](13-nomx-strictness-plan.md#5-strictness-wedges-ordered) + `feedback_syntax_strictness_corenlp.md` in memory.
 
 External-repo mining discipline for future cycles: always `--skip-git` for non-cloned references, always cite the original-repo file:line (not just the symbol name), always verify the pattern against Nom's existing code before writing up a recommendation (the graphify pivot was the saved cycle from doing this).
 

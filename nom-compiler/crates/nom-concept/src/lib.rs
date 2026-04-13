@@ -2605,4 +2605,91 @@ the concept ct05 is
             }
         }
     }
+
+    // ── W4-A1: mandatory kind marker on every entity ref (doc 13 §5 A1) ───
+    //
+    // Every `the <entity_ref>` must have either a v1 `Kind Word` form or
+    // a v2 `@Kind` form. Omitting the kind entirely is a hard parse error.
+    // These tests pin the current strictness so future refactors can't
+    // accidentally allow bare-prose entity refs.
+
+    /// ct10a: `the matching "x"` (no kind, no word) is rejected.
+    #[test]
+    fn ct10a_entity_ref_without_kind_rejected() {
+        let src = r#"
+the concept ct10a is
+  intended to test rejection of kindless entity refs.
+
+  uses the matching "something".
+
+  favor correctness.
+"#;
+        assert!(
+            parse_nom(src).is_err(),
+            "`the matching \"x\"` (no kind) must be rejected"
+        );
+    }
+
+    /// ct10b: `the @NotAKind matching "x"` (unknown kind) is rejected.
+    #[test]
+    fn ct10b_entity_ref_with_unknown_kind_rejected() {
+        let src = r#"
+the concept ct10b is
+  intended to test rejection of unknown @Kind values.
+
+  uses the @Banana matching "something".
+
+  favor correctness.
+"#;
+        let result = parse_nom(src);
+        assert!(
+            matches!(result, Err(ConceptError::UnknownKind(_))),
+            "`the @Banana` must produce UnknownKind, got {result:?}"
+        );
+    }
+
+    /// ct10c: `the login_user` (v1 word-only, no kind keyword) is rejected.
+    /// Note: v1 bare-word form requires BOTH `Kind` and `Word` — omitting
+    /// the kind and supplying only a word falls through to `expect_kind`
+    /// which returns `UnknownKind` for the first `Word` token it sees.
+    #[test]
+    fn ct10c_entity_ref_v1_word_without_kind_rejected() {
+        let src = r#"
+the concept ct10c is
+  intended to test rejection of kindless v1 refs.
+
+  uses the login_user matching "something".
+
+  favor correctness.
+"#;
+        let result = parse_nom(src);
+        assert!(
+            result.is_err(),
+            "`the login_user matching ...` (no kind keyword) must be rejected, got {result:?}"
+        );
+    }
+
+    /// ct10d: sanity — `the function login_user matching "x"` (v1 with kind)
+    /// and `the @Function matching "x"` (v2 typed-slot) both parse cleanly.
+    #[test]
+    fn ct10d_kind_bearing_entity_refs_parse() {
+        let v1_src = r#"
+the concept ct10d_v1 is
+  intended to smoke-test v1 kind-bearing ref.
+
+  uses the function login_user matching "auth flow".
+
+  favor correctness.
+"#;
+        let v2_src = r#"
+the concept ct10d_v2 is
+  intended to smoke-test v2 typed-slot ref.
+
+  uses the @Function matching "auth flow".
+
+  favor correctness.
+"#;
+        parse_nom(v1_src).expect("v1 kind-bearing ref must parse");
+        parse_nom(v2_src).expect("v2 typed-slot ref must parse");
+    }
 }
