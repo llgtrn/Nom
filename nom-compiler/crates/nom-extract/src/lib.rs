@@ -3,6 +3,7 @@
 //! Combines parsing (tree-sitter), entity extraction (UIR), and atom extraction
 //! into a single crate. Also provides directory scanning for batch extraction.
 
+pub mod annotator;
 pub mod extract;
 pub mod scan;
 
