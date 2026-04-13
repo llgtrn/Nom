@@ -24,6 +24,29 @@ use sha2::{Digest, Sha256};
 
 use crate::react::{AgentTools, Observation};
 
+/// Lowercase + split on non-alphanumeric. Empty tokens dropped. Used
+/// by `compose` for pre-LLM candidate narrowing. `"add_two_numbers"`
+/// → `["add","two","numbers"]`; `"Add Two Numbers"` → `["add","two","numbers"]`.
+fn tokenize(s: &str) -> Vec<String> {
+    s.split(|c: char| !c.is_ascii_alphanumeric())
+        .filter(|t| !t.is_empty())
+        .map(|t| t.to_lowercase())
+        .collect()
+}
+
+/// Count of prose tokens that appear in the word tokens. Direction
+/// matters: "how much of the prose did this candidate cover?" not
+/// the other way. "add" covers 1/3 of "add two numbers"; "add_vec"
+/// also covers 1/3.
+fn token_overlap(prose_tokens: &[String], word_tokens: &[String]) -> usize {
+    let word_set: std::collections::HashSet<&str> =
+        word_tokens.iter().map(|s| s.as_str()).collect();
+    prose_tokens
+        .iter()
+        .filter(|t| word_set.contains(t.as_str()))
+        .count()
+}
+
 /// SHA-256 over a deterministic serialization of a closure's
 /// (uid, body_kind) pairs. Each pair appears once, sorted by uid;
 /// pair serialization is `uid + "\t" + body_kind + "\n"`. Two walks
@@ -189,8 +212,68 @@ impl<'a> AgentTools for DictTools<'a> {
         Observation::Candidates(candidates)
     }
 
-    fn compose(&self, _prose: &str, _context: &[String]) -> Observation {
-        Observation::Error("DictTools::compose not yet wired (slice-3b)".into())
+    fn compose(&self, prose: &str, context: &[String]) -> Observation {
+        // Slice-3b-compose: LLM-free deterministic narrowing via token
+        // overlap between prose and each candidate's `word` field.
+        // Slice-5b replaces this scoring with a real LLM structured-
+        // output call; this wedge proves the plumbing end-to-end and
+        // serves as the CRAG "pre-LLM narrow" step.
+        //
+        // Discipline: returns NomIntent::Reject(UnknownSymbol) on empty
+        // candidates — never invents a symbol not in context. Matches
+        // slice-1 bounded-output discipline.
+        if context.is_empty() {
+            return Observation::Proposal(crate::NomIntent::Reject(
+                crate::Reason::UnknownSymbol,
+            ));
+        }
+        let prose_tokens = tokenize(prose);
+        if prose_tokens.is_empty() {
+            return Observation::Proposal(crate::NomIntent::Reject(
+                crate::Reason::Unparseable,
+            ));
+        }
+        let mut best: Option<(usize, String, String)> = None; // (score, word, kind)
+        for uid in context {
+            if let Ok(Some(row)) = self.dict.find_word_v2(uid) {
+                let word_tokens = tokenize(&row.word);
+                let score = token_overlap(&prose_tokens, &word_tokens);
+                if score == 0 {
+                    continue;
+                }
+                let replace = match &best {
+                    None => true,
+                    // Higher score wins. Alphabetical tiebreak on word
+                    // for deterministic output — same discipline as
+                    // slice-1 find_words_v2_by_kind.
+                    Some((b_score, b_word, _)) => {
+                        score > *b_score
+                            || (score == *b_score && row.word < *b_word)
+                    }
+                };
+                if replace {
+                    best = Some((score, row.word.clone(), row.kind.clone()));
+                }
+            }
+        }
+        match best {
+            Some((_, word, kind)) => {
+                // Map kind to the appropriate NomIntent variant.
+                let intent = match kind.to_lowercase().as_str() {
+                    "function" | "method" | "test_case" | "api_endpoint" => {
+                        crate::NomIntent::Symbol(word)
+                    }
+                    "concept" | "module" | "app_manifest" | "user_flow" => {
+                        crate::NomIntent::Kind(word)
+                    }
+                    _ => crate::NomIntent::Symbol(word),
+                };
+                Observation::Proposal(intent)
+            }
+            None => Observation::Proposal(crate::NomIntent::Reject(
+                crate::Reason::UnknownSymbol,
+            )),
+        }
     }
 
     fn verify(&self, target: &str) -> Observation {
@@ -433,12 +516,102 @@ mod tests {
     }
 
     #[test]
-    fn compose_is_explicit_stub() {
+    fn compose_empty_context_returns_reject_unknown_symbol() {
         let d = NomDict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
-        match tools.compose("anything", &[]) {
-            Observation::Error(msg) => assert!(msg.contains("not yet wired")),
-            other => panic!("expected Error stub, got {other:?}"),
+        match tools.compose("add two numbers", &[]) {
+            Observation::Proposal(crate::NomIntent::Reject(crate::Reason::UnknownSymbol)) => {
+                // expected — empty context means no bounded candidates, never invent
+            }
+            other => panic!("expected Reject(UnknownSymbol), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_token_overlap_picks_best_candidate() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        seed_word(&d, HASH_MUL, "multiply", "function");
+        let tools = DictTools::new(&d);
+        // "add two numbers" → prose tokens ["add","two","numbers"]
+        // vs "add" (1 match) vs "multiply" (0 match) → pick add.
+        let ctx = vec![HASH_ADD.to_string(), HASH_MUL.to_string()];
+        match tools.compose("add two numbers", &ctx) {
+            Observation::Proposal(crate::NomIntent::Symbol(w)) => {
+                assert_eq!(w, "add");
+            }
+            other => panic!("expected Symbol(\"add\"), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_no_overlap_returns_reject() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        // prose has no overlap with "add"
+        let ctx = vec![HASH_ADD.to_string()];
+        match tools.compose("completely unrelated prose here", &ctx) {
+            Observation::Proposal(crate::NomIntent::Reject(crate::Reason::UnknownSymbol)) => {
+                // expected
+            }
+            other => panic!("expected Reject(UnknownSymbol), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_maps_concept_kind_to_intent_kind() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.upsert_word_v2(&WordV2Row {
+            hash: HASH_ADD.into(),
+            word: "auth".into(),
+            kind: "concept".into(),
+            signature: None,
+            contracts: None,
+            body_kind: None,
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: Some(format!("[\"{HASH_MUL}\"]")),
+        })
+        .unwrap();
+        let tools = DictTools::new(&d);
+        let ctx = vec![HASH_ADD.to_string()];
+        match tools.compose("need auth for this app", &ctx) {
+            Observation::Proposal(crate::NomIntent::Kind(w)) => assert_eq!(w, "auth"),
+            other => panic!("expected Kind(\"auth\"), got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_deterministic_alphabetical_tiebreak_on_equal_score() {
+        let d = NomDict::open_in_memory().unwrap();
+        // Both candidates match "handler" exactly once.
+        seed_word(&d, HASH_ADD, "zeta_handler", "function");
+        seed_word(&d, HASH_MUL, "alpha_handler", "function");
+        let tools = DictTools::new(&d);
+        // Same score (1) for both → alphabetical smallest wins → "alpha_handler"
+        let ctx = vec![HASH_ADD.to_string(), HASH_MUL.to_string()];
+        match tools.compose("handler", &ctx) {
+            Observation::Proposal(crate::NomIntent::Symbol(w)) => {
+                assert_eq!(w, "alpha_handler", "alphabetical tiebreak must be deterministic");
+            }
+            other => panic!("expected Symbol, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn compose_empty_prose_returns_reject_unparseable() {
+        let d = NomDict::open_in_memory().unwrap();
+        seed_word(&d, HASH_ADD, "add", "function");
+        let tools = DictTools::new(&d);
+        let ctx = vec![HASH_ADD.to_string()];
+        match tools.compose("   \t  ", &ctx) {
+            Observation::Proposal(crate::NomIntent::Reject(crate::Reason::Unparseable)) => {
+                // expected — whitespace-only prose tokenizes to empty
+            }
+            other => panic!("expected Reject(Unparseable), got {other:?}"),
         }
     }
 
