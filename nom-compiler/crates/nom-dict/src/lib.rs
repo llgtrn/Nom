@@ -7,6 +7,8 @@
 //!
 //! Layout: `data/nomdict.db`. WAL mode is enabled for concurrent reads.
 
+pub mod freshness;
+
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
 
@@ -280,6 +282,8 @@ impl NomDict {
         self.conn.execute_batch(V3_SCHEMA_ADDITIONS_SQL)?;
         // Additive V4 tables: required_axes (M7a MECE CE-check registry).
         self.conn.execute_batch(V4_SCHEMA_ADDITIONS_SQL)?;
+        // Additive V5 tables: dict_meta (freshness tracking, spec 2026-04-14).
+        self.conn.execute_batch(V5_SCHEMA_ADDITIONS_SQL)?;
         Ok(())
     }
 
@@ -1512,6 +1516,19 @@ CREATE TABLE IF NOT EXISTS required_axes (
     PRIMARY KEY (repo_id, scope, axis)
 );
 CREATE INDEX IF NOT EXISTS idx_required_axes_repo_scope ON required_axes(repo_id, scope);
+"#;
+
+/// V5 additions: `dict_meta` key-value table for dict-level state that isn't
+/// per-entry (the `entry_meta` table covers per-entry metadata). Phase 1 of
+/// the graph-durability spec (docs/superpowers/specs/2026-04-14-graph-
+/// durability-design.md) uses `dict_last_source_hash` to track whether the
+/// dict is fresh against the working-tree source files.
+pub const V5_SCHEMA_ADDITIONS_SQL: &str = r#"
+CREATE TABLE IF NOT EXISTS dict_meta (
+    key        TEXT PRIMARY KEY,
+    value      TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+);
 "#;
 
 // ── RequiredAxis (M7a — doc 08 §9.2) ────────────────────────────────
