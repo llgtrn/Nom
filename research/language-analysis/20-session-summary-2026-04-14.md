@@ -136,8 +136,25 @@ algebraic data types (Kotlin sealed) + data (TOML/GraphQL/SQL/
 CSS/YAML) + shell (Bash) + build (Make) + container (Docker) +
 TS editor-event + CI/CD (GitHub Actions).
 
-Doc 16 backlog at **58 rows**: 20 closed, 27 wedges queued
-(W5-W34), 1 smoke-test, 7 authoring-guide doc-todo, 0
+Doc 16 backlog at **58 rows**: **27 closed** (+7 over earlier count
+from doc 17 §I14-§I20 authoring-guide expansion), 27 wedges queued
+(W5-W34), 1 smoke-test, **0 authoring-guide doc-todo**, 0
 design-Q-open, 2 blocked (#11 lifetime annotations + #58
 typeclass constraints — both unlock together when the
-borrow-model lane starts).
+borrow-model lane starts). **Closure rate 47%.**
+
+**Milestone: Doc 17 authoring-guide chapter COMPLETE at I1-I20.**
+Every authoring-guide destination in doc 16 now has a canonical
+phrasing + anti-pattern + rationale:
+
+- I1-I5 (first batch): `perhaps…nothing`, exit codes, `text of`,
+  UTF-8 string literals, hyphen→underscore mapping
+- I6-I8: docstring→intent, redundant v1 body, pipelines →
+  named intermediates
+- I9-I13 (second batch): atomic primitives, destructuring,
+  list/text accessors, uses-vs-imperative, config-as-data split
+- I14-I16 (third batch): default params, lazy sequences,
+  `identifier` shape label
+- **I17-I20 (final batch):** time-range `within the last N days`,
+  shell-exec `run X with args Y`, method→receiver-as-parameter,
+  `work_group` concurrent tracking
