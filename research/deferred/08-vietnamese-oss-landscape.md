@@ -5,6 +5,8 @@
 Research conducted: 2026-04-11
 Local clone workspace: `.analysis/oss-vietnamese/`
 
+> **Status 2026-04-14**: VN tokens are NOT adopted into Nom vocabulary (commit `ecd0609`). VN OSS projects listed here are retained as **CORPUS + EVAL** reference only. Any "tokenization into Nom" / "alias dictionaries from Vietnamese/Hán Việt/English layers" framing below is **superseded**. For the actual NL-intent surface see `nom-intent` M8 slice1 (commit `800baea`, 2026-04-14) — it does not depend on VN tokenizers. Adjacent work: M6 PyPI-100 corpus pilot is blocked on network access; VN corpus work similarly gated.
+
 ---
 
 ## Executive Summary
