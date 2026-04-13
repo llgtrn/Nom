@@ -68,17 +68,21 @@
 | 51 | Visibility modifiers (`private` for scope hiding) | **W29** grammar rule | ⏳ queued (doc 14 #21) |
 | 52 | `choice X is one of A, B, C` grammar (sealed/enum) | **W30** grammar rule — merges with W11 | ⏳ queued (doc 14 #22) |
 | 53 | Method → receiver-as-parameter rule (Ruby classes, OOP methods) | authoring-guide rule | 📘 doc-todo |
+| 54 | Concurrent-spawn clause (`start a worker that …`) | **W31** grammar rule | ⏳ queued (doc 14 #24) |
+| 55 | Channel-type grammar with capacity annotation | **W32** grammar rule | ⏳ queued (doc 14 #24) |
+| 56 | Finalizer clause (defer-style cleanup) | **W33** grammar rule | ⏳ queued (doc 14 #24) |
+| 57 | `work_group` idiom for concurrent work tracking | authoring-guide rule | 📘 doc-todo |
 
-Totals by destination (after doc 14 #23 Ruby block+rescue translation surfaced 1 more row):
+Totals by destination (after doc 14 #24 Go goroutine+channel translation surfaced 4 more rows):
 
-- ⏳ Wedge queued: **24**
+- ⏳ Wedge queued: **27** (+3 W31 spawn, W32 channel-type, W33 finalizer)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **6** (+1 method→receiver-as-parameter)
+- 📘 Authoring-guide doc-todo: **7** (+1 work_group idiom)
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 53 rows. Closure rate 38% (20/53). **23 translations total**. Paradigm coverage now spans algebraic data types + OOP blocks/rescue + Ruby classes (methods lift to functions taking the receiver explicitly).
+Backlog size: 57 rows. Closure rate 35% (20/57). **24 translations total**. Paradigm coverage adds concurrency (Go goroutines + channels + WaitGroup).
 
 ## Wedge master index (for cross-ref with doc 13)
 

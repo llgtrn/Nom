@@ -1329,6 +1329,81 @@ the content is the result of retry_with_backoff
 
 ---
 
+## 24. Go goroutine + channel — concurrent fan-out
+
+```go
+func fetchAll(urls []string) []Result {
+    results := make(chan Result, len(urls))
+    var wg sync.WaitGroup
+    for _, url := range urls {
+        wg.Add(1)
+        go func(u string) {
+            defer wg.Done()
+            results <- fetch(u)
+        }(url)
+    }
+    wg.Wait()
+    close(results)
+    out := make([]Result, 0, len(urls))
+    for r := range results {
+        out = append(out, r)
+    }
+    return out
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define fetch_all
+  that takes a list of urls, returns a list of results.
+  require every url in the list is well-formed.
+the results_channel is a channel of results with capacity len(urls).
+the work_group tracks active workers.
+for each url in urls,
+  add one worker to work_group.
+  start a goroutine that
+    when the goroutine finishes, remove its worker from work_group.
+    the result is fetch of the url.
+    send result into results_channel.
+wait for work_group to drain.
+close results_channel.
+the out is an empty list of results with capacity len(urls).
+for each r received from results_channel,
+  append r to out.
+return out.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function fetch_all is
+  intended to fetch every url concurrently and collect the results
+  into a single list in no particular order.
+
+  uses the @Function matching "fetch single url" with at-least 0.85 confidence.
+  uses the @Function matching "spawn concurrent worker" with at-least 0.85 confidence.
+  uses the @Function matching "wait for all workers to finish" with at-least 0.85 confidence.
+
+  requires every url is well-formed.
+  ensures the result list has exactly one entry per input url
+    and contains no duplicates.
+  hazard thread_contention.
+
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Goroutine spawn (`go func(u) { … }(url)`)** — concurrent worker launch. Nom's v2 abstracts this behind `uses the @Function matching "spawn concurrent worker"`. The v1 form uses `start a goroutine that …` which is prose; no first-class `spawn` keyword exists yet. Candidate: **W31 concurrent-spawn clause** (`start a worker that …`).
+2. **Channels as buffered queues** — Go's `make(chan Result, N)` creates a bounded queue. Nom translation describes it as `a channel of results with capacity N`. Candidate: **W32 channel-type grammar** with capacity annotation.
+3. **`defer wg.Done()` → finalizer semantics** — Go's defer runs at function exit. Nom has no defer analog today. Translation inlines it as "when the goroutine finishes, …". Candidate: **W33 finalizer clause** or stick with prose.
+4. **Range-over-channel (`for r := range results_channel`)** — consumer loop that stops when channel closes. Translates to `for each r received from results_channel`. Maps to existing v1 iteration prose; no new wedge.
+5. **`sync.WaitGroup` / `Add` / `Wait`** — worker-tracking primitive. Nom's prose `work_group tracks active workers` / `wait for work_group to drain` captures it. Could be merged with doc 17 §I9 atomic primitives; confirm whether authoring-guide needs a `work_group` idiom addition.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
