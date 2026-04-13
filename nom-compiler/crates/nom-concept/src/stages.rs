@@ -40,7 +40,7 @@
 use crate::lex::{Spanned, Tok};
 use crate::{
     CompositionDecl, ConceptDecl, ContractClause, EffectClause, EffectValence, EntityDecl,
-    NomFile, NomtuFile, NomtuItem, KINDS,
+    IndexClause, NomFile, NomtuFile, NomtuItem, KINDS,
 };
 
 /// Which stage of the annotator pipeline a failure came from.
@@ -850,13 +850,16 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
     }
 
     if has_concept {
+        let toks = &effected.toks;
         let concepts = effected
             .blocks
             .iter()
             .map(|b| ConceptDecl {
                 name: b.name.clone(),
                 intent: b.intent.clone(),
-                index: Vec::new(), // ref-resolution deferred
+                index: count_uses_clauses(&toks[b.start_tok..b.end_tok])
+                    .map(|_| IndexClause::Uses(Vec::new()))
+                    .collect(),
                 exposes: Vec::new(),
                 acceptance: b
                     .contracts
@@ -896,6 +899,27 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
             .collect();
         Ok(PipelineOutput::Nomtu(NomtuFile { items }))
     }
+}
+
+/// Count how many `uses …` clauses appear in a block body span.
+///
+/// A `uses` clause starts at a `Tok::Uses` and runs to the next
+/// top-level `.` at block depth.  Clauses that cross another clause
+/// keyword (`Requires`/`Ensures`/`Favor`/`Benefit`/`Hazard`/`Exposes`)
+/// before their terminator are still counted once — S6 here is
+/// cardinality-only; full ref resolution lands in a later step that
+/// populates `IndexClause::Uses(entity_refs)` with actual refs.
+fn count_uses_clauses(body_slice: &[Spanned]) -> impl Iterator<Item = ()> + '_ {
+    let mut depth_stack: Vec<usize> = Vec::new();
+    body_slice.iter().enumerate().filter_map(move |(i, s)| {
+        match &s.tok {
+            Tok::Uses => {
+                depth_stack.push(i);
+                Some(())
+            }
+            _ => None,
+        }
+    })
 }
 
 /// Convenience: drive the full pipeline end-to-end from source text.
@@ -1357,6 +1381,32 @@ the function write_file is
             legacy_ids, pipeline_ids,
             "pipeline and parse_nomtu must agree on (kind, name) pairs"
         );
+    }
+
+    /// a4c23: pipeline's concept index-length matches parse_nom's.
+    /// This is the cardinality-only parity — full ref payload equality
+    /// comes in a later step.
+    #[test]
+    fn a4c23_pipeline_matches_parse_nom_on_index_length() {
+        use crate::parse_nom;
+        let src = r#"the concept auth_flow is
+  intended to handle authentication.
+  uses the @Function matching "verify token" with at-least 0.85 confidence.
+  uses the @Function matching "load user" with at-least 0.8 confidence.
+  favor correctness."#;
+        let legacy = parse_nom(src).expect("legacy parser");
+        let pipeline = run_pipeline(src).expect("pipeline");
+        let pipeline_index_lens: Vec<usize> = match pipeline {
+            PipelineOutput::Nom(f) => f.concepts.iter().map(|c| c.index.len()).collect(),
+            _ => panic!("expected Nom"),
+        };
+        let legacy_index_lens: Vec<usize> =
+            legacy.concepts.iter().map(|c| c.index.len()).collect();
+        assert_eq!(
+            legacy_index_lens, pipeline_index_lens,
+            "pipeline and parse_nom must agree on per-concept index length"
+        );
+        assert_eq!(pipeline_index_lens[0], 2, "two `uses` clauses expected");
     }
 
     /// a4c22: the new pipeline matches parse_nomtu on EFFECT valences +
