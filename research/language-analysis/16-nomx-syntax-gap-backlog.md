@@ -106,18 +106,24 @@
 | 89 | Vectorization is a compiler responsibility, not an author concern | authoring-guide rule | ✅ closed (doc 14 #35; Phase 12 specialization) |
 | 90 | N-dimensional arrays decompose to nested `list of` types | authoring-guide rule | ✅ closed (doc 14 #35) |
 | 91 | `numerical_stability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #35; accumulates with #66 forward_compatibility) |
+| 92 | Airflow `>>` dependency operator → composition `then` chain | authoring-guide rule | ✅ closed (doc 14 #36) |
+| 93 | Workflow schedule parameters belong in peer data decl, not on the composition | authoring-guide rule | ✅ closed (doc 14 #36) |
+| 94 | Retry-policy clause (`up to N times with delay D, backoff strategy S`) | **W43** grammar rule | ⏳ queued (doc 14 #36) |
+| 95 | Task operators (PythonOperator, BashOperator, …) flatten to plain function decls; runtime is build-time concern | authoring-guide rule | ✅ closed (doc 14 #36) |
+| 96 | Airflow `@task` decorator is a no-op in translation | authoring-guide rule | ✅ closed (doc 14 #36) |
+| 97 | XCom cross-task communication → explicit `uses` + typed returns | authoring-guide rule | ✅ closed (doc 14 #36) |
 
-Totals by destination (after doc 14 #35 NumPy array-programming translation — second "zero new wedge" translation in a row; array-programming fully expressible with existing Nom primitives):
+Totals by destination (after doc 14 #36 Airflow DAG translation — minimal wedge: only W43 retry-policy; 6 authoring-guide closures):
 
-- ⏳ Wedge queued: **35** (unchanged)
+- ⏳ Wedge queued: **36** (+W43 retry-policy)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **51**
+- ✅ Closed: **57**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **2** (forward_compatibility + numerical_stability QualityNames)
 
-Backlog size: 93 rows. Closure rate 55% (51/93). **35 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + **array-programming (NumPy)**. NumPy adds 0 new wedges — second consecutive zero-wedge translation; confirms the closed kind set covers numerically-oriented domains.
+Backlog size: 100 rows. Closure rate 57% (57/100). **36 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + **workflow-orchestration (Airflow DAG)**. Third consecutive minimal-wedge translation — closed kind set covers real engineering surfaces.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -139,6 +145,7 @@ Backlog size: 93 rows. Closure rate 55% (51/93). **35 translations** in doc 14. 
 - **W40:** Exhaustiveness-check over `when` clauses on enum-valued data — totality gate for state-machine transitions and any `when current is X` branching on a closed set. Ties into W30 + existing MECE validator.
 - **W41:** `property` top-level kind declaration — expands closed kind set from 7 to 8 nouns. Universally-quantified claim over a generator; orthogonal to function/data/concept.
 - **W42:** Generator-shape clause — closed-vocabulary domain-range descriptors for property input generators (`list lengths from N to M`, `integers from -X to Y`, `text of shape …`). Reuses W39 pattern-shape vocabulary.
+- **W43:** Retry-policy clause — small-vocabulary orchestrator directive: `up to N times with delay D, backoff linear|exponential|constant`. Attaches to composition or individual function decl; orchestrator honors the declaration at build-time.
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 

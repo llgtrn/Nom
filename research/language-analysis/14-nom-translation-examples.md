@@ -2093,6 +2093,91 @@ Second "zero new wedge" translation in a row — **array-programming is fully ex
 
 ---
 
+## 36. Airflow DAG — workflow orchestration paradigm
+
+```python
+from airflow import DAG
+from airflow.operators.python import PythonOperator
+from datetime import datetime, timedelta
+
+default_args = {"owner": "data", "retries": 3, "retry_delay": timedelta(minutes=5)}
+
+with DAG(
+    "daily_etl",
+    default_args=default_args,
+    schedule_interval="0 2 * * *",
+    start_date=datetime(2026, 1, 1),
+    catchup=False,
+) as dag:
+    extract = PythonOperator(task_id="extract", python_callable=extract_data)
+    transform = PythonOperator(task_id="transform", python_callable=transform_data)
+    load = PythonOperator(task_id="load", python_callable=load_data)
+
+    extract >> transform >> load
+```
+
+### `.nomx v1` translation
+
+```nomx
+define daily_etl
+  that takes no input, returns the run status.
+run extract_data, then transform_data, then load_data.
+retry each task up to three times with five-minute delays between attempts.
+schedule every day at 02:00, starting from 2026-01-01; skip missed runs.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function extract_data is
+  intended to pull the day's source records from the upstream operational store.
+  ensures the extracted record set is consistent with the source at a single read-point-in-time.
+  hazard network partitions may require retry; downstream must tolerate duplicate reads under at-least-once.
+  favor correctness.
+
+the function transform_data is
+  intended to reshape extracted records into the analytics schema.
+  uses the @Function matching "extract_data" with at-least 0.9 confidence.
+  requires the extracted record set is well-formed.
+  ensures every output record traces back to exactly one input record.
+  favor correctness.
+
+the function load_data is
+  intended to write transformed records into the analytics warehouse.
+  uses the @Function matching "transform_data" with at-least 0.9 confidence.
+  ensures the warehouse row count equals the transformed row count.
+  hazard retries must be idempotent at the warehouse; use upsert, not append.
+  favor correctness.
+
+the composition daily_etl composes
+  extract_data then transform_data then load_data.
+
+the data DailyEtlSchedule is
+  intended to describe when and how often the daily_etl composition should run.
+  exposes owner as text.
+  exposes start_date as date.
+  exposes cron as text.
+  exposes retries as integer.
+  exposes retry_delay as duration.
+  exposes catchup as boolean.
+```
+
+### Gaps surfaced
+
+1. **DAG-as-composition** — Airflow's `extract >> transform >> load` dependency operator is exactly Nom's composition `then` chain (doc 16 #33 / a4c33). Every Airflow DAG maps to a single composition decl plus N function decls. Authoring-guide rule: **Airflow `>>` operator → composition `then` chain**. No new wedge.
+2. **Schedule / cron / start_date / catchup as data** — Airflow embeds orchestration parameters directly in the `DAG(...)` call. Nom splits this into a peer data decl (`DailyEtlSchedule`) that describes the schedule declaratively, keeping the composition pure. Authoring-guide rule: **scheduling parameters belong in a peer data decl, not on the composition** — schedule is data, execution is function+composition.
+3. **Retries / retry_delay / backoff strategies** — error-recovery metadata per task. Nom's prose surface expresses retries as a data-level declaration (`exposes retries as integer`) and relies on the orchestrator to honor it. **Candidate: W43 retry-policy clause** — narrow, concrete: `retry up to N times with delay D, backoff strategy S`. Ships alongside the composition or as a clause on individual functions. Small wedge.
+4. **Operator types (PythonOperator, BashOperator, KubernetesPodOperator, SparkOperator)** — Airflow's plugin mechanism for executing tasks in different environments. Nom's translation flattens these: every task becomes a function regardless of runtime, and the target runtime is part of the function's `hazard` / `benefit` metadata. Authoring-guide rule: **task operators decompose to plain function decls; execution environment is a build-time concern, not an authoring concern**.
+5. **`catchup=False`** — skip missed runs when the scheduler starts after `start_date`. Nom captures this as a boolean field on the schedule data. No new wedge; it's a data-level concern.
+6. **Dynamic DAGs / `@task` decorator** — Airflow 2.x lets tasks be defined as decorated Python functions. Nom already treats tasks as plain function decls, so the decorator is trivially absent. Authoring-guide rule: **Airflow `@task` decorator is a no-op in translation — define the function normally**.
+7. **XCom (cross-task communication)** — in Airflow, a task's return value is serialized and passed via XCom storage. Nom's `uses` + `ensures/requires` clauses make data flow between composed functions explicit and typed. Authoring-guide rule: **XCom decomposes to explicit `uses` + typed returns between composed functions** — no XCom-specific grammar.
+
+Row additions: **W43 retry-policy clause** (new wedge, small-vocabulary: `up to N times`, `with delay D`, `backoff linear|exponential`), 6 authoring-guide closures (DAG-as-composition, schedule-as-data, operator types flatten to functions, catchup as data field, `@task` decorator no-op, XCom as `uses` + typed returns).
+
+Workflow orchestration is the **third consecutive "minimal-wedge" translation** — further evidence that the 7-noun closed kind set covers real engineering surfaces. Every common orchestrator feature decomposes to data decls + function decls + composition chains + existing effect-valenced clauses.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
