@@ -27,6 +27,7 @@ members = [
     "crates/nom-bench",
     "crates/nom-app",
     "crates/nom-flow",
+    "crates/nom-concept",
 ]
 
 [workspace.package]
