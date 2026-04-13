@@ -8,7 +8,7 @@ writing-style) but the WORDS are fully English. No VN tokens exist in the lexer.
 
 **Note (updated 2026-04-13):** Vietnamese keyword vocabulary (cai/ham/etc.) that
 previously shipped in commits `4b04b1d`/`c601f31`/`5b59f82` has been fully removed
-([this-commit]). Grammar style inspires structure; vocabulary stays English; no VN
+(ecd0609). Grammar style inspires structure; vocabulary stays English; no VN
 tokens in the lexer. The `agent_demo_vn` example has been deleted.
 
 ---
@@ -338,7 +338,7 @@ defining). Everything inside is the comment (properties, requirements, behavior)
 ## 8. Aspect Markers (đã/đang/sẽ) → Temporal State
 
 **Section status: ⚠️ PARKED — Vietnamese keyword vocabulary was removed
-([this-commit]). This section describes the design intent; aspect-marker state
+(ecd0609). This section describes the design intent; aspect-marker state
 tracking (`verified`/`active`/`deferred`) has low semantic value without a runtime.
 Grammar style still influences how Nom structures flow: vocabulary stays English.**
 
@@ -578,7 +578,7 @@ meaning from stable atoms using word order and particles — no inflection, no m
 no hidden state changes. Novel does the same with software. The language is not INSPIRED
 by Vietnamese. It IS Vietnamese grammar applied to computation.
 
-> **Vocabulary clarification (updated [this-commit]):** The Vietnamese-loanword
+> **Vocabulary clarification (updated ecd0609):** The Vietnamese-loanword
 > vocabulary layer (cai/ham/duoc/bi etc.) has been fully removed from the lexer and
 > examples. It is NOT part of the Nom language. Nom's keywords are English-only ASCII.
 > Vietnamese contributes GRAMMAR STYLE (the structural mappings above), not vocabulary.

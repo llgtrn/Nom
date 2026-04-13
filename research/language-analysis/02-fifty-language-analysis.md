@@ -337,7 +337,7 @@
 ### 50. Vietnamese Aspect Markers and Tonal Semantics
 - **Strength:** Vietnamese encodes aspect via particles (`đã` completed, `đang` ongoing, `sẽ` future) rather than verb morphology. The verb itself never changes form.
 - **Nom takeaway:** Vietnamese aspect markers map to Nom's temporal flow semantics: `flow::once` (completed, idempotent), `flow::stream` (ongoing), `flow::scheduled` (prospective). Consider aspect-aware flow qualifiers.
-  - ⏳ PLANNED — `flow::once`, `flow::stream`, `flow::scheduled` qualifiers not yet in the parser. Vietnamese keyword aliases have been removed ([this-commit]); vocabulary is English-only. Aspect-marker semantics require runtime interpretation (Phase 5+).
+  - ⏳ PLANNED — `flow::once`, `flow::stream`, `flow::scheduled` qualifiers not yet in the parser. Vietnamese keyword aliases have been removed (ecd0609); vocabulary is English-only. Aspect-marker semantics require runtime interpretation (Phase 5+).
 
 ---
 

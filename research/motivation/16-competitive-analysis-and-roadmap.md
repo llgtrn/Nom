@@ -182,7 +182,7 @@ That is now outdated. As of HEAD afc6228, the following fixtures are in the repo
 - `nom-compiler/examples/agent_demo/` — AI-agent composition seed: 6 tools + safety
   policy + intentional MECE collision. Commit `e2d4eb4`.
 - `nom-compiler/examples/agent_demo_vn/` — Vietnamese locale-pack validation demo,
-  deleted in [this-commit] (fully English vocabulary directive).
+  deleted in ecd0609 (fully English vocabulary directive).
 
 These are hand-authored demo fixtures, not corpus-extracted entries. The `nom.dev`
 registry with curated community `.nomtu` files remains PLANNED for Phase 1+.
@@ -280,7 +280,7 @@ STRONGEST: Candidate 1 — AI agent composition.
 BUILD:
     1. Hand-written recursive descent parser for .nom syntax       ✅ DONE (05ee1b6, d9425ba)
     2. Tree-walking interpreter (for rapid iteration)              ✅ DONE (concept graph walker, c5cdce6)
-    3. 5 working examples that demonstrate .nomtu composition      ✅ DONE (concept_demo, agent_demo; agent_demo_vn removed [this-commit])
+    3. 5 working examples that demonstrate .nomtu composition      ✅ DONE (concept_demo, agent_demo; agent_demo_vn removed ecd0609)
     4. nom run command that works                                   ⏳ PLANNED (metadata pipeline ships; run/compile PLANNED)
     5. Vietnamese error messages from day one                      ❌ REMOVED — vocabulary is fully English-only ASCII
 

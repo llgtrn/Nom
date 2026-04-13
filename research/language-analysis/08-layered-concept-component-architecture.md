@@ -393,7 +393,7 @@ All twelve numbered questions from the planning round are resolved per user auth
 
 - **Doc 07 vs doc 08 syntax tension on `the NOUN` form** — both forms now coexist via `EntityRef.typed_slot` (commit `c9d1835`). Long-term: should `the NOUN` form be deprecated in favor of `@Kind`? Unresolved.
 - **Aspect marker semantics** (`verified`/`active`/`deferred`) — `0%`; low semantic value without runtime. ⏳ PLANNED Phase 9+.
-- **Multi-locale demo strategy** — `agent_demo_vn` deleted and VN keyword vocabulary fully removed ([this-commit]). Vocabulary is English-only ASCII; Vietnamese inspires grammar structure only.
+- **Multi-locale demo strategy** — `agent_demo_vn` deleted and VN keyword vocabulary fully removed (ecd0609). Vocabulary is English-only ASCII; Vietnamese inspires grammar structure only.
 
 ### 6.5 (referenced from §6 above) — Feature-stack word naming
 

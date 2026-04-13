@@ -50,7 +50,7 @@ These extend the concept-layer lexer (`Tok` enum in
 ### Vietnamese keyword aliases — REMOVED
 
 Vietnamese keyword aliases (commits `4b04b1d`, `5b59f82`) have been fully
-removed ([this-commit]). Vocabulary is English-only ASCII. Vietnamese
+removed (ecd0609). Vocabulary is English-only ASCII. Vietnamese
 inspires grammar style (classifier-first structure) only; no VN tokens
 exist in the lexer.
 
@@ -212,7 +212,7 @@ parses as an identifier. Non-issue.
 > **Status (2026-04-13)**: Locale pack shipped; **not extending further** per user
 > clarification. Vietnamese inspires grammar style only; vocabulary stays English.
 
-Vietnamese keyword aliases were removed ([this-commit]). The `.nomx` lexer
+Vietnamese keyword aliases were removed (ecd0609). The `.nomx` lexer
 has English-only vocabulary. Type-canonicalization is planned separately.
 
 - `define ... that ...` — `.nomx v2` syntax
