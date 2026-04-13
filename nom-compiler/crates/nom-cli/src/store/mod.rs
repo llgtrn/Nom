@@ -22,8 +22,8 @@ pub mod sync;
 pub use add_media::cmd_store_add_media;
 pub use commands::*;
 pub use materialize::materialize_concept_graph_from_db;
-pub use resolve::{ResolveStats, ResolvedRef, resolve_closure};
-pub use sync::{SyncStats, cmd_store_sync, sync_repo};
+pub use resolve::{ResolvedRef, resolve_closure};
+pub use sync::cmd_store_sync;
 
 use std::path::{Path, PathBuf};
 
