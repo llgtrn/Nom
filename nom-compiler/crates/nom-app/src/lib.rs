@@ -1087,6 +1087,116 @@ fn severity_rank(s: &nom_types::Severity) -> u8 {
     }
 }
 
+/// Tier label for layered dreaming. Each tier scores against its own
+/// (acceptance ∧ objectives) tuple — no cross-tier normalization.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum DreamTier {
+    App,
+    Concept,
+    Module,
+}
+
+impl DreamTier {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            DreamTier::App => "app",
+            DreamTier::Concept => "concept",
+            DreamTier::Module => "module",
+        }
+    }
+
+    pub fn from_str(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "app" => Some(DreamTier::App),
+            "concept" => Some(DreamTier::Concept),
+            "module" => Some(DreamTier::Module),
+            _ => None,
+        }
+    }
+}
+
+/// Layered dream report. v0 wraps a single `DreamReport` at the requested
+/// tier; subsequent slices populate `child_reports` for recursive descent
+/// and `pareto_front` for tier-3 candidate selection.
+#[derive(Debug, Clone, PartialEq, serde::Serialize, serde::Deserialize)]
+pub struct LayeredDreamReport {
+    pub tier: DreamTier,
+    pub label: String,
+    pub leaf: DreamReport,
+    /// Empty in this wedge (M5a); populated by recursive descent in M5b.
+    pub child_reports: Vec<LayeredDreamReport>,
+    /// Empty in this wedge (M5a); populated by tier-3 Pareto selection in M5c.
+    pub pareto_front: Vec<String>,
+}
+
+/// Compute a `LayeredDreamReport` at the App tier. Wraps the existing
+/// `dream_report` — identical semantics, richer envelope. `child_reports`
+/// and `pareto_front` are empty in this M5a wedge.
+pub fn layered_dream_app(
+    manifest: &AppManifest,
+    dict: &nom_dict::NomDict,
+) -> LayeredDreamReport {
+    let leaf = dream_report(manifest, dict);
+    LayeredDreamReport {
+        tier: DreamTier::App,
+        label: manifest.name.clone(),
+        leaf,
+        child_reports: Vec::new(),
+        pareto_front: Vec::new(),
+    }
+}
+
+/// Compute a `LayeredDreamReport` at the Concept tier.
+///
+/// Looks up `concept_word` in the dict via `find_by_word`. If found, builds a
+/// synthetic single-entry `AppManifest` rooted at the first matching entry and
+/// delegates to `dream_report`. If the word is not in the dict, returns a
+/// zero-score leaf with a descriptive `next_instruction`.
+pub fn layered_dream_concept(
+    concept_word: &str,
+    dict: &nom_dict::NomDict,
+) -> LayeredDreamReport {
+    let entries = dict.find_by_word(concept_word).unwrap_or_default();
+    let leaf = if let Some(entry) = entries.into_iter().next() {
+        let manifest = AppManifest {
+            manifest_hash: entry.id.clone(),
+            name: concept_word.to_string(),
+            default_target: "web".to_string(),
+            root_page_hash: entry.id.clone(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        dream_report(&manifest, dict)
+    } else {
+        DreamReport {
+            app_score: 0,
+            score_threshold: EPIC_SCORE_THRESHOLD,
+            is_epic: false,
+            closure_size: 0,
+            complete: 0,
+            partial: 0,
+            test_cases: 0,
+            proposals: vec![],
+            next_instruction: format!(
+                "Concept word '{concept_word}' was not found in the dict. \
+                 Use `nom store add` or `nom nomtu add` to create an entry \
+                 with this word, then re-run `nom app dream --tier concept \
+                 --target-id {concept_word}`."
+            ),
+        }
+    };
+    LayeredDreamReport {
+        tier: DreamTier::Concept,
+        label: concept_word.to_string(),
+        leaf,
+        child_reports: Vec::new(),
+        pareto_front: Vec::new(),
+    }
+}
+
 /// Errors produced by `nom-app`.
 #[derive(Debug, Error)]
 pub enum AppError {
@@ -1840,5 +1950,64 @@ mod tests {
         assert_eq!(m.default_target_platform(), Some(nom_ux::Platform::Desktop));
         m.default_target = "garbage".into();
         assert_eq!(m.default_target_platform(), None);
+    }
+
+    // ── M5a: LayeredDreamReport tests ────────────────────────────────────────
+
+    #[test]
+    fn layered_dream_app_wraps_existing_report() {
+        use nom_dict::NomDict;
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let manifest = AppManifest {
+            manifest_hash: "test_hash".into(),
+            name: "my_app".into(),
+            default_target: "web".into(),
+            root_page_hash: String::new(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        };
+        let report = layered_dream_app(&manifest, &dict);
+        assert_eq!(report.tier, DreamTier::App);
+        assert_eq!(report.label, "my_app");
+        assert_eq!(report.leaf.app_score, 0);
+        assert!(report.child_reports.is_empty());
+        assert!(report.pareto_front.is_empty());
+    }
+
+    #[test]
+    fn dream_tier_from_str_round_trips() {
+        // All three labels round-trip.
+        assert_eq!(DreamTier::from_str("app"), Some(DreamTier::App));
+        assert_eq!(DreamTier::from_str("concept"), Some(DreamTier::Concept));
+        assert_eq!(DreamTier::from_str("module"), Some(DreamTier::Module));
+        // Case-insensitive.
+        assert_eq!(DreamTier::from_str("App"), Some(DreamTier::App));
+        assert_eq!(DreamTier::from_str("CONCEPT"), Some(DreamTier::Concept));
+        assert_eq!(DreamTier::from_str("Module"), Some(DreamTier::Module));
+        // Unknown returns None.
+        assert_eq!(DreamTier::from_str("atom"), None);
+        assert_eq!(DreamTier::from_str(""), None);
+        // as_str round-trips.
+        assert_eq!(DreamTier::App.as_str(), "app");
+        assert_eq!(DreamTier::Concept.as_str(), "concept");
+        assert_eq!(DreamTier::Module.as_str(), "module");
+    }
+
+    #[test]
+    fn layered_dream_concept_unknown_word_returns_empty_leaf() {
+        use nom_dict::NomDict;
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let report = layered_dream_concept("totally_unknown_word_xyz", &dict);
+        assert_eq!(report.tier, DreamTier::Concept);
+        assert_eq!(report.label, "totally_unknown_word_xyz");
+        assert_eq!(report.leaf.app_score, 0);
+        assert!(!report.leaf.next_instruction.is_empty(),
+            "next_instruction must explain why the concept wasn't found");
+        assert!(report.child_reports.is_empty());
+        assert!(report.pareto_front.is_empty());
     }
 }

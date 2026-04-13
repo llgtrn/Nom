@@ -525,6 +525,12 @@ enum AppCmd {
         /// Emit JSON instead of text.
         #[arg(long)]
         json: bool,
+        /// Dream tier: app (default, recursive), concept (single concept), module (single .nomtu).
+        #[arg(long, default_value = "app")]
+        tier: String,
+        /// For tier=concept|module, the concept word or module hash to dream.
+        #[arg(long)]
+        target_id: Option<String>,
     },
 
     /// Emit one artifact per OutputAspect at the given output directory.
@@ -1090,8 +1096,8 @@ fn main() {
             AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
                 cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
             }
-            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json } => {
-                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json)
+            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id } => {
+                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref())
             }
         },
     };
@@ -1106,57 +1112,114 @@ fn cmd_app_dream(
     includes: &[String],
     dict_path: &Path,
     json: bool,
+    tier: &str,
+    target_id: Option<&str>,
 ) -> i32 {
-    let manifest = nom_app::AppManifest {
-        manifest_hash: manifest_hash.to_string(),
-        name: name.to_string(),
-        default_target: target.to_string(),
-        root_page_hash: root.to_string(),
-        data_sources: includes.to_vec(),
-        actions: vec![],
-        media_assets: vec![],
-        settings: serde_json::Value::Null,
+    // Validate tier string early.
+    let dream_tier = match nom_app::DreamTier::from_str(tier) {
+        Some(t) => t,
+        None => {
+            eprintln!("nom: unknown dream tier '{tier}' (expected app|concept|module)");
+            return 1;
+        }
     };
-    let report = if dict_path.exists() {
+
+    // tier=concept|module require --target-id.
+    if matches!(dream_tier, nom_app::DreamTier::Concept | nom_app::DreamTier::Module)
+        && target_id.is_none()
+    {
+        eprintln!("nom: --target-id required for tier={tier}");
+        return 1;
+    }
+
+    // module tier is deferred to M5b.
+    if matches!(dream_tier, nom_app::DreamTier::Module) {
+        let hash = target_id.unwrap_or("");
+        eprintln!("concept dream: {hash} not yet implemented (module-tier coming in M5b)");
+        return 2;
+    }
+
+    let dict = if dict_path.exists() {
         match NomDict::open_in_place(dict_path) {
-            Ok(d) => nom_app::dream_report(&manifest, &d),
+            Ok(d) => d,
             Err(e) => {
                 eprintln!("open dict {}: {e}", dict_path.display());
                 return 1;
             }
         }
     } else {
-        nom_app::dream_report(&manifest, &NomDict::open_in_memory().unwrap())
+        NomDict::open_in_memory().unwrap()
     };
-    if json {
-        println!(
-            "{}",
-            serde_json::to_string_pretty(&report).unwrap_or_default()
-        );
-    } else if report.is_epic {
-        println!(
-            "✨ dream: {name} is epic — score {} ≥ {} threshold.",
-            report.app_score, report.score_threshold
-        );
-    } else {
-        println!(
-            "dream: {name} score {}/{} — {} proposal(s):",
-            report.app_score,
-            report.score_threshold,
-            report.proposals.len()
-        );
-        for (i, p) in report.proposals.iter().enumerate() {
-            println!("  {}. [{}] {}", i + 1, p.kind, p.rationale);
-            if let Some(sw) = &p.suggested_word {
-                let kind = p.suggested_entry_kind.as_deref().unwrap_or("?");
-                let concept = p.suggested_concept.as_deref().unwrap_or("-");
-                println!("     → author nomtu `{sw}` (kind={kind}, concept={concept})");
+
+    match dream_tier {
+        nom_app::DreamTier::Concept => {
+            let word = target_id.unwrap_or("");
+            let layered = nom_app::layered_dream_concept(word, &dict);
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&layered).unwrap_or_default()
+                );
+            } else if layered.leaf.is_epic {
+                println!(
+                    "✨ concept dream: {word} is epic — score {} ≥ {}.",
+                    layered.leaf.app_score, layered.leaf.score_threshold
+                );
+            } else {
+                println!(
+                    "concept dream: {word} score {}/{} — {} proposal(s)",
+                    layered.leaf.app_score,
+                    layered.leaf.score_threshold,
+                    layered.leaf.proposals.len()
+                );
             }
+            if layered.leaf.is_epic { 0 } else { 2 }
         }
-        println!();
-        println!("{}", report.next_instruction);
+        nom_app::DreamTier::App => {
+            let manifest = nom_app::AppManifest {
+                manifest_hash: manifest_hash.to_string(),
+                name: name.to_string(),
+                default_target: target.to_string(),
+                root_page_hash: root.to_string(),
+                data_sources: includes.to_vec(),
+                actions: vec![],
+                media_assets: vec![],
+                settings: serde_json::Value::Null,
+            };
+            let layered = nom_app::layered_dream_app(&manifest, &dict);
+            let report = &layered.leaf;
+            if json {
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(&layered).unwrap_or_default()
+                );
+            } else if report.is_epic {
+                println!(
+                    "✨ dream: {name} is epic — score {} ≥ {} threshold.",
+                    report.app_score, report.score_threshold
+                );
+            } else {
+                println!(
+                    "dream: {name} score {}/{} — {} proposal(s):",
+                    report.app_score,
+                    report.score_threshold,
+                    report.proposals.len()
+                );
+                for (i, p) in report.proposals.iter().enumerate() {
+                    println!("  {}. [{}] {}", i + 1, p.kind, p.rationale);
+                    if let Some(sw) = &p.suggested_word {
+                        let kind = p.suggested_entry_kind.as_deref().unwrap_or("?");
+                        let concept = p.suggested_concept.as_deref().unwrap_or("-");
+                        println!("     → author nomtu `{sw}` (kind={kind}, concept={concept})");
+                    }
+                }
+                println!();
+                println!("{}", report.next_instruction);
+            }
+            if report.is_epic { 0 } else { 2 }
+        }
+        nom_app::DreamTier::Module => unreachable!("handled above"),
     }
-    if report.is_epic { 0 } else { 2 }
 }
 
 fn cmd_app_build(
