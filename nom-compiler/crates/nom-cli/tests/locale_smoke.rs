@@ -105,4 +105,39 @@ mod tests {
             "expected 'confusable' in stderr: {stderr}"
         );
     }
+
+    #[test]
+    fn locale_check_confusable_json_confusable_pairs() {
+        let spoofed = "\u{0430}pple"; // Cyrillic а + Latin pple
+        let legit = "apple";
+        let (code, stdout, _stderr) = run(&[
+            "locale",
+            "check-confusable",
+            spoofed,
+            legit,
+            "--json",
+        ]);
+        assert_eq!(code, 2);
+        assert!(
+            stdout.contains(r#""result":"confusable""#),
+            "expected confusable JSON: {stdout}"
+        );
+        assert!(stdout.contains(r#""pairs":"#), "expected pairs field: {stdout}");
+    }
+
+    #[test]
+    fn locale_check_confusable_json_equal_exits_zero() {
+        let (code, stdout, _stderr) = run(&[
+            "locale",
+            "check-confusable",
+            "hello",
+            "hello",
+            "--json",
+        ]);
+        assert_eq!(code, 0);
+        assert!(
+            stdout.contains(r#""result":"equal""#),
+            "expected equal JSON: {stdout}"
+        );
+    }
 }

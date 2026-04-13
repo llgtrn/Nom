@@ -963,6 +963,9 @@ enum LocaleCmd {
         a: String,
         /// Second string.
         b: String,
+        /// Emit JSON report instead of human-readable text.
+        #[arg(long)]
+        json: bool,
     },
 }
 
@@ -1195,26 +1198,60 @@ fn main() {
         Commands::Locale { action } => match action {
             LocaleCmd::List => locale::cmd_locale_list(),
             LocaleCmd::Validate { tag } => locale::cmd_locale_validate(&tag),
-            LocaleCmd::CheckConfusable { a, b } => {
-                match nom_locale::is_confusable(&a, &b) {
-                    nom_locale::ConfusableResult::Equal => {
-                        println!("equal: strings are byte-identical after NFC");
-                        0
-                    }
-                    nom_locale::ConfusableResult::DifferentSafe => {
-                        println!("different-safe: no confusable overlap detected");
-                        0
-                    }
-                    nom_locale::ConfusableResult::Confusable { pairs } => {
-                        eprintln!("confusable: {} pair(s) overlap", pairs.len());
-                        for (x, y) in pairs {
-                            eprintln!("  {x:?} ≈ {y:?} (U+{:04X} ≈ U+{:04X})", x as u32, y as u32);
+            LocaleCmd::CheckConfusable { a, b, json } => {
+                let result = nom_locale::is_confusable(&a, &b);
+                if json {
+                    match &result {
+                        nom_locale::ConfusableResult::Equal => {
+                            println!(r#"{{"result":"equal"}}"#);
+                            0
                         }
-                        2
+                        nom_locale::ConfusableResult::DifferentSafe => {
+                            println!(r#"{{"result":"different-safe"}}"#);
+                            0
+                        }
+                        nom_locale::ConfusableResult::Confusable { pairs } => {
+                            let items: Vec<String> = pairs
+                                .iter()
+                                .map(|(x, y)| {
+                                    format!(
+                                        r#"{{"a":"\u{:04x}","b":"\u{:04x}"}}"#,
+                                        *x as u32, *y as u32
+                                    )
+                                })
+                                .collect();
+                            println!(
+                                r#"{{"result":"confusable","pairs":[{}]}}"#,
+                                items.join(",")
+                            );
+                            2
+                        }
+                        nom_locale::ConfusableResult::Deferred => {
+                            println!(r#"{{"result":"deferred"}}"#);
+                            0
+                        }
                     }
-                    nom_locale::ConfusableResult::Deferred => {
-                        println!("deferred: M3b-full data not loaded");
-                        0
+                } else {
+                    match result {
+                        nom_locale::ConfusableResult::Equal => {
+                            println!("equal: strings are byte-identical after NFC");
+                            0
+                        }
+                        nom_locale::ConfusableResult::DifferentSafe => {
+                            println!("different-safe: no confusable overlap detected");
+                            0
+                        }
+                        nom_locale::ConfusableResult::Confusable { pairs } => {
+                            eprintln!("confusable: {} pair(s) overlap", pairs.len());
+                            for (x, y) in pairs {
+                                eprintln!("  {x:?} ≈ {y:?} (U+{:04X} ≈ U+{:04X})", x as u32, y as u32);
+                            }
+                            2
+                        }
+                        nom_locale::ConfusableResult::Deferred => {
+                            println!("deferred: M3b-full data not loaded");
+                            0
+                        }
                     }
                 }
             }
