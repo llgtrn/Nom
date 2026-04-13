@@ -180,7 +180,7 @@ ends. No `Box::leak`, no `Rc` cycles in surface syntax.
 | 4 | `a maybe-<X>` + pattern-match gate | Zero-null guarantee | ❌ NOT YET — requires type system / expression tree |
 | 5 | Parallel-by-default actors + message types | Zero-race guarantee | ❌ NOT YET — actor form not in parser |
 | 6 | Inline contracts (`when given …, ensure …`) | Spec-level parity | ✅ SHIPPED (`require`/`ensure`/`throughout` in parser; `contracts.nomx` sample green) |
-| 7 | Migrate planner.nom → planner.nomx | Self-host parity | ⏳ PLANNED — Phase 5+ (planner itself not yet ported) |
+| 7 | Migrate planner.nom → planner.nomx | Self-host parity | ⏳ PLANNED — **M10a (`249fe62`) + M10b (`cef8425`) shipped the parse-smoke and run_lexer.bc SHA-256 reproducibility gates** so migrating planner.nom into `.nomx` form is protected against regressions, but the actual port + `nom plan <manifest.json>` CLI is M15 per doc 09 (quarters). Blocked on parser-in-Nom landing first. |
 
 Each milestone includes a readability test: a randomly-selected
 non-programmer must be able to describe what the code does after
@@ -188,9 +188,7 @@ one read, within 30 seconds, with <5% misinterpretation.
 
 ## 8. Open questions (needs user authoring)
 
-- Vietnamese natural-language keyword aliases (lexer already has
-  80+ aliases — extend to grammar level, so Vietnamese prose parses
-  into the same AST)
+- ~~Vietnamese natural-language keyword aliases~~ **RESOLVED 2026-04-13** — per `ecd0609` and the fully-English vocabulary directive, Vietnamese is the grammar-style source only. Zero VN tokens ship in the codebase. This question no longer applies: the lexer's VN aliases were deleted, `is_vn_diacritic` predicate removed, `agent_demo_vn/` deleted. Locale packs (`nom-locale::apply_locale`) handle surface-level translation; they do not reintroduce keyword aliases into the lexer.
 - Ambiguity rules: when does "the name of the user" mean `user.name`
   vs. `name_of_user(...)`? Proposal: context-free in the grammar;
   resolved by type inference.
