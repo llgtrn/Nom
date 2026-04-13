@@ -11,3 +11,5 @@ serde_json = { workspace = true }
 thiserror = { workspace = true }
 lsp-server = "0.7"
 lsp-types = "0.95"
+nom-intent = { path = "../nom-intent" }
+nom-dict = { path = "../nom-dict" }

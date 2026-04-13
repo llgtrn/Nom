@@ -8,6 +8,13 @@
 //! Library-level entry points (`serve_on_pipes`, `handle_request`) are
 //! separately testable; the binary is a thin wrapper added when the
 //! `nom lsp serve` CLI subcommand lands.
+//!
+//! Slice-6a added the `agent` module — pure functions that drive the
+//! agentic ReAct loop and format transcripts as LSP markdown. These
+//! power the "why-this-Nom?" editor drill-through without yet being
+//! wired into a request handler (that's slice-6b).
+
+pub mod agent;
 
 use lsp_server::{Connection, ExtractError, IoThreads, Message, Request, RequestId, Response};
 use lsp_types::{
