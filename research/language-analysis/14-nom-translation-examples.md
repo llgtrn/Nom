@@ -1499,6 +1499,84 @@ the proof add_comm is
 
 ---
 
+## 27. Elixir GenServer — actor-model + pattern matching
+
+```elixir
+defmodule Counter do
+  use GenServer
+
+  def start_link(initial), do: GenServer.start_link(__MODULE__, initial)
+
+  def init(initial), do: {:ok, initial}
+
+  def handle_call(:value, _from, state), do: {:reply, state, state}
+  def handle_cast({:add, n}, state), do: {:noreply, state + n}
+end
+```
+
+### `.nomx v1` translation
+
+```nomx
+the module Counter manages a mutable counter via message passing.
+
+define start_counter
+  that takes an initial value, returns an actor_handle.
+the handle is a new actor with Counter's init, initial state as given.
+
+define init_counter
+  that takes an initial value, returns actor_state.
+the state is initial.
+
+define handle_query
+  that takes a query and the current state, returns a reply with new state.
+when the query is value,
+  reply with state, keep state unchanged.
+
+define handle_command
+  that takes a command and the current state, returns the new state.
+when the command is add with n,
+  the new state is state plus n.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Counter is
+  intended to hold the mutable count for a stateful counter actor.
+  exposes state as integer.
+
+the function start_counter is
+  intended to start a new Counter actor with the given initial value.
+  uses the @Function matching "spawn actor" with at-least 0.9 confidence.
+  requires initial is an integer.
+  ensures the returned actor_handle is alive.
+  favor correctness.
+
+the function handle_counter_query is
+  intended to reply to synchronous queries against a Counter actor.
+  when the query is value, the reply is state and state is unchanged.
+
+  uses the @Function matching "reply synchronously to actor query" with at-least 0.85 confidence.
+  requires the query is a recognized command.
+
+the function handle_counter_command is
+  intended to update Counter state in response to asynchronous commands.
+  when the command is add with n, state becomes state plus n.
+
+  uses the @Function matching "update actor state" with at-least 0.85 confidence.
+  ensures state reflects all processed commands in arrival order.
+```
+
+### Gaps surfaced
+
+1. **Actor-model primitives** — `spawn`, `send to actor`, `reply synchronously`, `handle asynchronously` form a small closed vocabulary. Similar shape to the concurrency wedges (W31 spawn, W32 channel-type) but different semantics (mailbox per actor vs. shared channel). Candidate: **W37 actor-spawn + messaging clause** (may subsume W31 once both are designed).
+2. **Pattern matching on messages (`:value` vs `{:add, n}`)** — Elixir's distinguishing feature. Nom's `when the query is value, …` / `when the command is add with n, …` prose captures it clearly; the underlying mechanism is the same as W11/W30's sealed/enum matching. **W30 (choice grammar) + W37 (actor messaging) combined enable this; no separate wedge needed.**
+3. **`GenServer` behavior / `use` macro** — Elixir's mixin-style module inheritance. Nom has no module-inheritance model; translation flattens to peer functions. Authoring-guide confirmation: **behaviors decompose into per-callback functions**.
+4. **Atoms (`:ok`, `:value`, `:add`)** — tiny interned symbols used as tags. Nom's translation uses prose nouns (`value`, `add`) with context disambiguation. No new wedge; the feature-stack word discipline handles atom-like identifiers.
+5. **Tuple returns (`{:reply, state, state}`)** — position-tagged records. Nom prefers named fields; the translation unwraps the tuple into prose (`reply with state, keep state unchanged`). No new wedge.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

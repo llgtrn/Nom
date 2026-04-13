@@ -75,17 +75,18 @@
 | 58 | Typeclass-style constraints (`requires keys support ordering`) | **W34** grammar rule (blocks on borrow-model) | 🔒 blocked |
 | 59 | `theorem` / `proof` kind declaration | **W35** grammar / kind-set decision | ⏳ queued (doc 14 #26, links deferred 11 §B) |
 | 60 | Proof-tactic DSL (`by induction with | zero => rfl`) | **W36** grammar rule | ⏳ deferred (waits on W35 + math infra) |
+| 61 | Actor-spawn + message-passing clause | **W37** grammar rule (may subsume W31) | ⏳ queued (doc 14 #27) |
 
-Totals by destination (after doc 14 #26 Lean theorem translation surfaced 2 more rows):
+Totals by destination (after doc 14 #27 Elixir GenServer translation surfaced 1 more row):
 
-- ⏳ Wedge queued: **29** (+2 W35 proof-kind, W36 proof-tactic DSL)
+- ⏳ Wedge queued: **30** (+1 W37 actor-spawn; may subsume W31)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
 - ✅ Closed: **27**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 
-Backlog size: 60 rows. Closure rate 45% (27/60). 26 translations total; math-as-language paradigm surfaced (Lean theorem + proof) — connects to deferred doc 11's "Mathematics as language" thesis.
+Backlog size: 61 rows. Closure rate 44% (27/61). **27 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + **actor-model message-passing (Elixir GenServer)**.
 
 ## Wedge master index (for cross-ref with doc 13)
 
