@@ -343,6 +343,17 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
                 ("cai", "function"),
                 ("cai", "module"),
                 ("cai", "concept"),
+                // Vietnamese diacritic aliases (motivation 02 locale-pack).
+                // Multi-word kind nouns use underscore-joined diacritic form
+                // (e.g. `mô_đun`, NOT `mô đun`) — deliberate design choice to
+                // keep token boundaries unambiguous without whitespace lookahead.
+                ("cái", "hàm"),
+                ("cái", "mô_đun"),
+                ("cái", "khái_niệm"),
+                ("cái", "màn_hình"),
+                ("cái", "dữ_liệu"),
+                ("cái", "sự_kiện"),
+                ("cái", "phương_tiện"),
             ];
             'needle_loop: for (article, kind) in needles {
                 let needle = format!("{article} {kind} {word}");
@@ -485,6 +496,25 @@ mod tests {
         let (patched, count) = apply_hash_locks(&source, &refs);
         assert_eq!(count, 0, "already-pinned VN line must not be modified");
         assert_eq!(patched, source, "source must be unchanged");
+    }
+
+    #[test]
+    fn apply_hash_locks_diacritic_cai_ham_inserts_hash() {
+        // `cái hàm read_file khớp "..."` must have @hash spliced after `read_file`.
+        let source = "     cái hàm read_file khớp \"read text from a workspace path\",\n";
+        let hash = "abc123def456abc123def456abc123def456abc123def456abc123def456abc1";
+        let refs = vec![make_ref("read_file", hash)];
+        let (patched, count) = apply_hash_locks(source, &refs);
+        assert_eq!(count, 1, "diacritic cái hàm line must receive hash insertion");
+        assert!(
+            patched.contains(&format!("read_file@{hash}")),
+            "expected read_file@hash in patched diacritic VN line: {patched}"
+        );
+        // The khớp clause must survive unchanged.
+        assert!(
+            patched.contains("khớp \"read text from a workspace path\""),
+            "khớp clause must be preserved: {patched}"
+        );
     }
 
     #[test]

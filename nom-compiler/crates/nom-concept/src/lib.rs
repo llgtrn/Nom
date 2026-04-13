@@ -213,13 +213,38 @@ mod lex {
                 return Some(Spanned { tok: Tok::Quoted(content), pos: start });
             }
 
-            // Bare word: [a-z0-9_]+
-            if b.is_ascii_lowercase() || b == b'_' || b.is_ascii_digit() {
+            // Bare word / keyword token.
+            //
+            // Accepted character classes:
+            //   • ASCII lowercase a–z
+            //   • ASCII digit 0–9
+            //   • ASCII underscore _
+            //   • Vietnamese lowercase letters with diacritics (the closed set used
+            //     by keyword aliases below).  Multi-word Vietnamese keywords use
+            //     underscore-joining (e.g. `bảo_đảm`, NOT `bảo đảm`).  This is a
+            //     deliberate design choice: programming languages have always used
+            //     delimiter characters between identifier-position tokens, and the
+            //     underscore form is unambiguous to lex without whitespace lookahead.
+            //
+            // CONSTRAINT: Vietnamese diacritics are accepted ONLY in keyword tokens.
+            //   Function / word names MUST remain pure ASCII.  This is enforced at
+            //   the parser level: after lexing, `Tok::Word` carries whatever raw
+            //   string the scanner produced.  If a caller uses a diacritic name the
+            //   lexer will produce a Word token containing diacritic characters.
+            //   The parser's `expect_word` accepts any Word, but the test suite
+            //   (test #7 `unicode_only_in_keywords_function_names_stay_ascii`)
+            //   documents and verifies that diacritic words that are NOT in the
+            //   keyword table produce an UnknownKind / ParseError rather than a
+            //   well-formed declaration.
+            //
+            // We use char-based iteration (not byte-based) so that multi-byte
+            // UTF-8 codepoints advance `self.pos` by the correct byte count.
+            if is_word_start_char(self.src[self.pos..].chars().next().unwrap_or('\0')) {
                 let word_start = self.pos;
                 while self.pos < self.src.len() {
-                    let c = self.src.as_bytes()[self.pos];
-                    if c.is_ascii_lowercase() || c == b'_' || c.is_ascii_digit() {
-                        self.pos += 1;
+                    let c = self.src[self.pos..].chars().next().unwrap();
+                    if is_word_continue_char(c) {
+                        self.pos += c.len_utf8();
                     } else {
                         break;
                     }
@@ -237,6 +262,10 @@ mod lex {
                 // `khi` and `muc_dich` are compressed multi-word aliases expanded
                 // at lex time: `khi` → This Works When; `muc_dich` → Intended To.
                 // Expansion is local here so the parser needs no changes.
+                //
+                // Vietnamese diacritic forms (NEW): same keyword mapping as ASCII
+                // aliases above, but written with native diacritics.  The underscore
+                // join rule applies identically: `bảo_đảm`, `kết_hợp`, etc.
                 let tok = match word {
                     // ── English keywords ─────────────────────────────────────
                     "the"      => Tok::The,
@@ -284,6 +313,29 @@ mod lex {
                         self.pending.push(Spanned { tok: Tok::To, pos: start });
                         Tok::Intended
                     }
+                    // ── Vietnamese diacritic keyword aliases ─────────────────
+                    // Each diacritic form maps to the exact same Tok variant as
+                    // its ASCII counterpart.  Only KEYWORDS get diacritic forms;
+                    // function/word names must stay ASCII (see constraint above).
+                    "là"       => Tok::Is,        // là   → is   (= la)
+                    "cái"      => Tok::The,       // cái  → the  (= cai)
+                    "cần"      => Tok::Requires,  // cần  → requires  (= can)
+                    "bảo_đảm"  => Tok::Ensures,   // bảo đảm → ensures  (= bao_dam)
+                    "kết_hợp"  => Tok::Composes,  // kết hợp → composes  (= ket_hop)
+                    "rồi"      => Tok::Then,      // rồi  → then  (= roi)
+                    "với"      => Tok::With,      // với  → with  (= voi)
+                    "khớp"     => Tok::Matching,  // khớp → matching  (= khop)
+                    "dùng"     => Tok::Uses,      // dùng → uses  (= dung)
+                    "mở_rộng"  => Tok::Extends,   // mở rộng → extends  (= mo_rong)
+                    "thêm"     => Tok::Adding,    // thêm → adding  (= them)
+                    "bớt"      => Tok::Removing,  // bớt  → removing  (= bot)
+                    "bày_ra"   => Tok::Exposes,   // bày ra → exposes  (= bay_ra)
+                    "ưu_tiên"  => Tok::Favor,     // ưu tiên → favor  (= uu_tien)
+                    // mục_đích → intended to  [lexer-side expansion; = muc_dich]
+                    "mục_đích" => {
+                        self.pending.push(Spanned { tok: Tok::To, pos: start });
+                        Tok::Intended
+                    }
                     // ── Kind nouns (English) ─────────────────────────────────
                     "function" | "module" | "concept" | "screen"
                     | "data"   | "event"  | "media"   => Tok::Kind(word.to_string()),
@@ -295,16 +347,28 @@ mod lex {
                     "du_lieu"     => Tok::Kind("data".to_string()),     // dữ liệu
                     "su_kien"     => Tok::Kind("event".to_string()),    // sự kiện
                     "phuong_tien" => Tok::Kind("media".to_string()),    // phương tiện
+                    // ── Kind nouns (Vietnamese diacritic aliases) ────────────
+                    "hàm"         => Tok::Kind("function".to_string()), // hàm  (= ham)
+                    "mô_đun"      => Tok::Kind("module".to_string()),   // mô đun  (= mo_dun)
+                    "khái_niệm"   => Tok::Kind("concept".to_string()),  // khái niệm  (= khai_niem)
+                    "màn_hình"    => Tok::Kind("screen".to_string()),   // màn hình  (= man_hinh)
+                    "dữ_liệu"     => Tok::Kind("data".to_string()),     // dữ liệu  (= du_lieu)
+                    "sự_kiện"     => Tok::Kind("event".to_string()),    // sự kiện  (= su_kien)
+                    "phương_tiện" => Tok::Kind("media".to_string()),    // phương tiện  (= phuong_tien)
                     _             => Tok::Word(word.to_string()),
                 };
                 return Some(Spanned { tok, pos: start });
             }
 
-            // Skip anything else (e.g. uppercase, punctuation in prose) as an
-            // opaque byte so the rest-of-prose collector can gather it.
-            self.pos += 1;
+            // Skip anything else (e.g. uppercase, punctuation, non-keyword
+            // Unicode) as an opaque char so the rest-of-prose collector can
+            // gather it.  We advance by the char's UTF-8 byte length so we
+            // never land mid-codepoint.
+            let ch = self.src[self.pos..].chars().next().unwrap_or('\0');
+            let ch_len = ch.len_utf8();
+            self.pos += ch_len;
             Some(Spanned {
-                tok: Tok::Word(String::from_utf8_lossy(&[b]).into_owned()),
+                tok: Tok::Word(ch.to_string()),
                 pos: start,
             })
         }
@@ -322,6 +386,70 @@ mod lex {
         pub fn position(&self) -> usize {
             self.pos
         }
+    }
+
+    // ── character-class predicates ────────────────────────────────────────────
+
+    /// Returns `true` if `c` may start an identifier / keyword token.
+    ///
+    /// Accepted:
+    ///   • ASCII lowercase a–z
+    ///   • ASCII underscore _  (e.g. `_reserved`)
+    ///   • Vietnamese lowercase letters with diacritics (closed set used by
+    ///     the diacritic keyword aliases above).
+    ///
+    /// Rejected: ASCII uppercase, digits at start, other Unicode letters.
+    pub fn is_word_start_char(c: char) -> bool {
+        c.is_ascii_lowercase() || c == '_' || is_vietnamese_diacritic_lower(c)
+    }
+
+    /// Returns `true` if `c` may continue an identifier / keyword token.
+    ///
+    /// Same set as `is_word_start_char` plus ASCII digits 0–9.
+    pub fn is_word_continue_char(c: char) -> bool {
+        c.is_ascii_lowercase() || c == '_' || c.is_ascii_digit() || is_vietnamese_diacritic_lower(c)
+    }
+
+    /// Returns `true` for exactly the Vietnamese lowercase diacritic characters
+    /// that appear in the closed keyword alias set.  This is an explicit
+    /// whitelist — we do NOT use a Unicode category check such as
+    /// `c.is_alphabetic()` because:
+    ///   (a) We want to keep the set small and auditable.
+    ///   (b) We do not want to silently accept arbitrary Unicode letters in
+    ///       identifiers (function names must stay ASCII).
+    ///   (c) We have no `unicode-xid` dependency and want to avoid adding one.
+    ///
+    /// The set covers every diacritic codepoint that appears in the keyword
+    /// table: là / cái / cần / bảo_đảm / kết_hợp / rồi / với / khớp / dùng /
+    /// mở_rộng / thêm / bớt / bày_ra / ưu_tiên / mục_đích / hàm / mô_đun /
+    /// khái_niệm / màn_hình / dữ_liệu / sự_kiện / phương_tiện.
+    #[inline]
+    fn is_vietnamese_diacritic_lower(c: char) -> bool {
+        matches!(
+            c,
+            // à á â ã ä å – base `a` with tone/diacritic
+            'à' | 'á' | 'â' | 'ã' | 'ä' | 'å' |
+            // ả ã ạ ặ ấ ầ ẩ ẫ ậ ắ ằ ẳ ẵ ặ
+            'ả' | 'ạ' | 'ặ' | 'ấ' | 'ầ' | 'ẩ' | 'ẫ' | 'ậ' | 'ắ' | 'ằ' | 'ẳ' | 'ẵ' |
+            // è é ê – base `e`
+            'è' | 'é' | 'ê' |
+            'ẻ' | 'ẽ' | 'ẹ' | 'ế' | 'ề' | 'ể' | 'ễ' | 'ệ' |
+            // ì í – base `i`
+            'ì' | 'í' | 'ỉ' | 'ĩ' | 'ị' |
+            // ò ó ô õ – base `o`
+            'ò' | 'ó' | 'ô' | 'õ' |
+            'ỏ' | 'ọ' | 'ố' | 'ồ' | 'ổ' | 'ỗ' | 'ộ' | 'ớ' | 'ờ' | 'ở' | 'ỡ' | 'ợ' |
+            // ơ – base `o` with horn (U+01A1)
+            'ơ' |
+            // ù ú – base `u`
+            'ù' | 'ú' | 'ủ' | 'ũ' | 'ụ' | 'ứ' | 'ừ' | 'ử' | 'ữ' | 'ự' |
+            // ư – base `u` with horn (U+01B0)
+            'ư' |
+            // ỳ ý – base `y`
+            'ỳ' | 'ý' | 'ỷ' | 'ỹ' | 'ỵ' |
+            // đ – d with stroke (U+0111)
+            'đ'
+        )
     }
 }
 
@@ -408,13 +536,31 @@ mod parse {
     }
 
     /// Expect a bare word; return it.
+    ///
+    /// CONSTRAINT: word (function/entity/variable names) MUST be pure ASCII.
+    /// Vietnamese diacritic characters are permitted in KEYWORDS only (they are
+    /// mapped to Tok variants before the parser sees them).  A word token that
+    /// contains non-ASCII bytes means the user wrote a diacritic function name,
+    /// which is not supported — we reject it with a ParseError so the error is
+    /// surfaced at the exact source position rather than silently accepted.
     fn expect_word(lex: &mut Lexer<'_>) -> Result<String, ConceptError> {
         let pos = lex.position();
         match lex.next() {
-            None => Err(err_expected("a word", "end of input", pos)),
+            None => Err(err_expected("an ASCII word", "end of input", pos)),
             Some(s) => match s.tok {
-                Tok::Word(w) => Ok(w),
-                other => Err(err_expected("a word", &tok_display(&other), s.pos)),
+                Tok::Word(w) => {
+                    if !w.is_ascii() {
+                        Err(ConceptError::ParseError {
+                            expected: "an ASCII identifier (function/entity names must be ASCII; \
+                                       Vietnamese diacritics are for keywords only)".to_string(),
+                            found: format!("`{w}` (contains non-ASCII characters)"),
+                            position: s.pos,
+                        })
+                    } else {
+                        Ok(w)
+                    }
+                }
+                other => Err(err_expected("an ASCII word", &tok_display(&other), s.pos)),
             },
         }
     }
@@ -1644,6 +1790,178 @@ cai khai_niem tac_nhan_don_gian la muc_dich compose a small set of tools safely.
         assert_eq!(c.exposes.len(), 3);
         assert_eq!(c.acceptance.len(), 2);
         assert_eq!(c.objectives, vec!["bao_mat", "toc_do"]);
+    }
+
+    // ── Vietnamese diacritic keyword tests ──────────────────────────────────
+
+    /// vnd1: `cái hàm foo là "x".` lexes identically to `cai ham foo la "x".`
+    /// which in turn is identical to `the function foo is "x".`.
+    #[test]
+    fn vn_diacritic_la_lexes_as_is() {
+        use super::lex::{Lexer, Tok};
+
+        fn lex_all(src: &str) -> Vec<Tok> {
+            let mut l = Lexer::new(src);
+            let mut out = Vec::new();
+            while let Some(s) = l.next() {
+                out.push(s.tok);
+            }
+            out
+        }
+
+        let english    = lex_all(r#"the function foo is "x" ."#);
+        let vn_ascii   = lex_all(r#"cai ham foo la "x" ."#);
+        let vn_diacritic = lex_all(r#"cái hàm foo là "x" ."#);
+        assert_eq!(english, vn_ascii,    "ASCII VN must match English token stream");
+        assert_eq!(english, vn_diacritic, "diacritic VN must match English token stream");
+    }
+
+    /// vnd2: a concept written entirely in diacritic VN parses to one ConceptDecl
+    /// with intent captured, one Uses clause, and two objectives.
+    #[test]
+    fn vn_diacritic_full_concept_parses() {
+        let src = r#"
+cái khái_niệm auth là mục_đích let users in.
+  dùng cái hàm login.
+  ưu_tiên security rồi speed.
+"#;
+        let f = parse_nom(src).expect("full diacritic VN concept should parse");
+        assert_eq!(f.concepts.len(), 1);
+        let c = &f.concepts[0];
+        assert_eq!(c.name, "auth");
+        assert_eq!(c.intent, "let users in");
+        assert_eq!(c.index.len(), 1);
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                assert_eq!(refs[0].word, "login");
+                assert_eq!(refs[0].kind.as_deref(), Some("function"));
+            }
+            _ => panic!("expected Uses clause"),
+        }
+        assert_eq!(c.objectives, vec!["security", "speed"]);
+    }
+
+    /// vnd3: composition written with diacritic keywords parses correctly.
+    #[test]
+    fn vn_diacritic_composition_parses() {
+        let src = r#"cái mô_đun foo kết_hợp cái hàm bar rồi cái hàm baz với "glue"."#;
+        let f = parse_nomtu(src).expect("diacritic VN composition should parse");
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            NomtuItem::Composition(c) => {
+                assert_eq!(c.word, "foo");
+                assert_eq!(c.composes.len(), 2);
+                assert_eq!(c.composes[0].word, "bar");
+                assert_eq!(c.composes[0].kind.as_deref(), Some("function"));
+                assert_eq!(c.composes[1].word, "baz");
+                assert_eq!(c.composes[1].kind.as_deref(), Some("function"));
+                assert_eq!(c.glue.as_deref(), Some("glue"));
+            }
+            _ => panic!("expected Composition"),
+        }
+    }
+
+    /// vnd4: entity with both `cần` (requires) and `bảo_đảm` (ensures) contract clauses.
+    #[test]
+    fn vn_diacritic_contracts() {
+        let src = r#"cái hàm check_token là given a token, returns ok.
+cần the token is non-empty.
+bảo_đảm the result is valid."#;
+        let f = parse_nomtu(src).expect("diacritic contract clauses should parse");
+        assert_eq!(f.items.len(), 1);
+        match &f.items[0] {
+            NomtuItem::Entity(e) => {
+                assert_eq!(e.contracts.len(), 2);
+                assert!(matches!(&e.contracts[0], ContractClause::Requires(_)));
+                assert!(matches!(&e.contracts[1], ContractClause::Ensures(_)));
+            }
+            _ => panic!("expected Entity"),
+        }
+    }
+
+    /// vnd5: `mục_đích` expands to the Intended To token sequence (mirrors
+    /// existing `muc_dich` test for `vn_alias_concept_with_uses_and_favor`).
+    #[test]
+    fn vn_diacritic_muc_dich_compresses_correctly() {
+        use super::lex::{Lexer, Tok};
+
+        let src = "mục_đích do things.";
+        let mut l = Lexer::new(src);
+        let toks: Vec<Tok> = {
+            let mut out = Vec::new();
+            while let Some(s) = l.next() {
+                out.push(s.tok);
+            }
+            out
+        };
+        // First two tokens must be Intended, To (same as muc_dich expansion).
+        assert!(toks.len() >= 2, "expected at least 2 tokens");
+        assert_eq!(toks[0], Tok::Intended, "mục_đích must expand to Intended first");
+        assert_eq!(toks[1], Tok::To,       "mục_đích must expand to To second");
+    }
+
+    /// vnd6: same document uses BOTH ASCII `cai ham` AND diacritic `cái hàm`.
+    /// Both parse correctly — the lexer is form-agnostic.
+    #[test]
+    fn mixed_ascii_and_diacritic_in_one_doc() {
+        let src = r#"
+cái khái_niệm mixed_forms là mục_đích test form agnosticism.
+  dùng cái hàm foo,
+       cai ham bar.
+  ưu_tiên correctness.
+"#;
+        let f = parse_nom(src).expect("mixed ASCII + diacritic concept should parse");
+        let c = &f.concepts[0];
+        assert_eq!(c.name, "mixed_forms");
+        assert_eq!(c.index.len(), 1);
+        match &c.index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 2);
+                assert_eq!(refs[0].word, "foo");
+                assert_eq!(refs[1].word, "bar");
+                for r in refs {
+                    assert_eq!(r.kind.as_deref(), Some("function"));
+                }
+            }
+            _ => panic!("expected Uses"),
+        }
+        assert_eq!(c.objectives, vec!["correctness"]);
+    }
+
+    /// vnd7: a function name written with Vietnamese diacritics (`xác_thực`)
+    /// must FAIL — function names must stay ASCII.  The diacritic name is not
+    /// in the keyword table so it becomes a `Tok::Word`; the `the` / `cái`
+    /// article + kind consume fine, but `expect_word` accepts the diacritic
+    /// word as the identifier.  Then `expect_is` / `expect_kind` will fail
+    /// because the next token won't be `is` — instead we'll see the `là` token
+    /// (or end-of-input), not an `is`.
+    ///
+    /// This test demonstrates the enforcement path: if you use a VN diacritic
+    /// name as the function word, the parse fails at the `is` position.
+    #[test]
+    fn unicode_only_in_keywords_function_names_stay_ascii() {
+        // `xác_thực` is not a keyword so it becomes a bare Word token.
+        // The parser tries `the function <word> is ...`; it reads `xác_thực`
+        // as the word, then expects `is` but finds end-of-input (or garbage)
+        // → ParseError.
+        let src = r#"cái hàm xác_thực là given a user, returns ok."#;
+        // `xác_thực` is not a keyword.  The lexer will produce:
+        //   Tok::The  Tok::Kind("function")  Tok::Word("xác_thực")  Tok::Is ...
+        // BUT `x` is ASCII so `xác_thực` starts with `x` — the scanner will
+        // stop at `á` (not a word-continue byte for ASCII) and produce
+        // Tok::Word("x") then several individual diacritic-char Word tokens.
+        // The parser will see Tok::Word("x") as the entity name, then the next
+        // token is not Tok::Is → ParseError.
+        match parse_nomtu(src) {
+            Err(ConceptError::ParseError { .. }) => {
+                // Expected: parser rejected the diacritic function name
+            }
+            Err(other) => panic!("expected ParseError, got {:?}", other),
+            Ok(f) => panic!(
+                "expected parse failure for diacritic function name, got {:?}", f
+            ),
+        }
     }
 
     /// n10: agent_demo's `agent.nom` fixture parses with objectives = ["security",
