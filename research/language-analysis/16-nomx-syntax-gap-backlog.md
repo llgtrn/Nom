@@ -24,10 +24,10 @@
 | 7 | Docstring → `intended to` mapping | authoring-guide note | ✅ doc 17 §I6 |
 | 8 | Primitive-return idiom (`the result is true`) | authoring-guide + W4-A1 addendum | ⏳ queued |
 | 9 | Sum-return phrasing at v1 (already works) | smoke-test | 🧪 test-todo |
-| 10 | Atomic-state primitives | authoring-corpus seed | 📘 doc-todo |
+| 10 | Atomic-state primitives | authoring-corpus seed | ✅ doc 17 §I9 |
 | 11 | Lifetime annotations | design deferred (borrow-model) | 🧠 blocked on §borrow-model |
 | 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | ✅ doc 17 §I7 |
-| 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | 📘 doc-todo |
+| 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | ✅ doc 17 §I10 |
 | 14 | Early-return guards (works) | smoke-test | 🧪 test-todo |
 | 15 | Callback closures | design deferred (§closures) | 🧠 design Q open |
 | 16 | `fail with "..."` expression grammar | **W9** grammar rule | ⏳ queued |
@@ -40,24 +40,26 @@
 | 23 | Entry-point `main` special-case | **W13** grammar rule | ⏳ queued |
 | 24 | Exit-code vocabulary (`success`/`failure`/`code N`) | authoring-guide | ✅ doc 17 §I2 |
 | 25 | `text-sprintf` idiom | authoring-guide note | ✅ doc 17 §I3 |
-| 26 | List/text accessor primitives (`at(0)`, `find_last`, `after`) | authoring-corpus seeds | 📘 doc-todo |
-| 27 | Preferred form (`uses` vs imperative verbs) for side-effects | authoring-guide decision | 📘 doc-todo |
+| 26 | List/text accessor primitives (`at(0)`, `find_last`, `after`) | authoring-corpus seeds | ✅ doc 17 §I11 |
+| 27 | Preferred form (`uses` vs imperative verbs) for side-effects | authoring-guide decision | ✅ doc 17 §I12 |
 | 28 | Interpreter/shebang metadata clause | **W15** grammar rule | ⏳ queued |
 | 29 | Environment-variable access vocabulary | **W16** grammar rule | ⏳ queued |
 | 30 | Globbing / file-tree query primitives | authoring-corpus seeds | ✅ doc 17 §I8 (partial — authoring idiom shipped; corpus seed still pending) |
 | 31 | Process pipelines → named intermediate values | authoring-guide rule | ✅ doc 17 §I8 |
 | 32 | Nested-section path syntax (TOML dot-paths) | **W17** grammar rule | ⏳ queued |
-| 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | 📘 doc-todo |
+| 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | ✅ doc 17 §I13 |
 | 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 
-Totals by destination (after doc 17 expanded to I8 + ct11 smoke test):
+Totals by destination (after doc 17 I9-I13 landed):
 
 - ⏳ Wedge queued: **12** (unchanged)
-- 🧪 Smoke-test todo: **4** (UTF-8 smoke shipped as ct11)
-- 📘 Authoring-guide doc-todo: **5 remaining** (#10, #13, #26, #27, #33)
-- ✅ Closed: **9** (#7, #12, #20, #24, #25, #30, #31, #34, #35)
+- 🧪 Smoke-test todo: **4** (UTF-8 smoke shipped as ct11; 4 of 5 still pending)
+- 📘 Authoring-guide doc-todo: **0** (all 13 closed — doc 17 complete)
+- ✅ Closed: **14** (all 13 authoring-guide items + #34's smoke test)
 - 🧠 Design deferred (open): **2** (+1 blocked)
+
+**Milestone 2026-04-14:** the authoring-guide chapter (doc 17) is complete. 14 of 35 doc 16 rows closed. Next focus lanes: wedges (12 queued) + remaining smoke tests (4).
 
 ## Wedge master index (for cross-ref with doc 13)
 

@@ -255,9 +255,154 @@ compile java_sources with javac,
 
 ---
 
+## I9. Atomic / concurrency primitives
+
+**Resolves:** doc 16 row #10.
+
+When translating code that touches atomic state (compare-and-swap, fetch-add, memory ordering, mutex acquire/release), Nom surfaces the intent as a **single phrase** — the surrounding syntax doesn't carry the atomic-operation boilerplate:
+
+```nomx
+# "atomically become": compare-and-swap style mutation.
+the lock flag atomically becomes true.
+the counter atomically increases by 1.
+the pending atomically decreases to zero.
+
+# "atomically read": snapshot-read of a shared value.
+the current_depth is atomically read from the depth_counter.
+
+# Mutex / guard scopes.
+while holding the cache mutex,
+  the entry is perhaps found at key.
+```
+
+**Rules:**
+
+- The adverb `atomically` prefixes the operation. Verbs: `becomes`, `increases by`, `decreases by`, `decreases to`, `read from`, `swap with`.
+- Never expose memory-order choices at authoring level (`Relaxed` / `Acquire` / `Release`). The compiler picks the strongest consistency by default; the `hazard cpu_contention` effect can request a relaxed profile when needed.
+- Guard scopes use `while holding the X mutex, … end` or the single-line variant `while holding X, …`. Never nest two `holding` scopes in one function — that's the deadlock smell.
+
+**Anti-pattern:**
+
+```nomx
+# Bad — exposes atomic primitive by name:
+the flag is compare_and_swap(true, false, relaxed_ordering).
+
+# Good — intent-surface phrase:
+the lock flag atomically becomes true.
+```
+
+---
+
+## I10. Destructuring parameters
+
+**Resolves:** doc 16 row #13.
+
+TypeScript's `function foo({state, dispatch}: EditorView)`, Python's `def foo((a, b))`, Rust's `fn foo(Point { x, y }: Point)` — these compress "take this record and pull two named fields out of it" into one parameter. Nom's authoring-level form names the record and references its fields:
+
+```nomx
+# v1 — "takes" with an "and holds" phrase:
+define indent_more
+  that takes an editor_view that holds state and dispatch,
+  returns a boolean.
+
+# v2 — the function body references the named fields directly:
+the function indent_more is
+  intended to insert one indent unit at the current selection.
+
+  requires editor_view's state is not read-only.
+  uses the @Function matching "dispatch editor change" with at-least 0.85 confidence.
+```
+
+**Rules:**
+
+- Parameter carries its record name (`editor_view`), not the destructured fields. This keeps the signature one line.
+- Body references the fields by possessive (`the editor_view's state`, `editor_view's dispatch`). No need to re-bind local names.
+- For three-or-more referenced fields, pre-bind them with `let` equivalents at the body top: `the state is editor_view's state. the dispatch is editor_view's dispatch.`
+- Never use tuple-style destructuring (`takes a pair (x, y)`); always name the whole value.
+
+---
+
+## I11. List / text accessor primitives
+
+**Resolves:** doc 16 row #26.
+
+Translations keep bumping into a small cluster of list- and text-index accessors. Pin these as canonical phrases the parser should learn (each ships as an authoring-corpus primitive first, then a wedge-grammar rule later):
+
+| Intent | Nom phrase | Source analogs |
+|---|---|---|
+| First element | `the first of L` | `L[0]`, `L.first()`, `L.at(0)` |
+| Nth element | `the Nth of L` | `L[N]`, `L.at(N)` |
+| Last element | `the last of L` | `L[-1]`, `L.last()` |
+| Length | `how many in L` | `len(L)`, `L.length`, `L.size()` |
+| Exists | `whether any of L is X` | `X in L`, `L.contains(X)` |
+| Slice | `L from N to M` | `L[N:M]`, `L.slice(N,M)` |
+| Find first | `the first of L where <predicate>` | `next(filter(...))`, `L.iter().find(...)` |
+| Text prefix | `X's prefix up to "sep"` | `X.split("sep")[0]` |
+| Text suffix | `X's part after the last "sep"` | `basename`, `rsplit_once("/").1` |
+
+**Rules:**
+
+- Every accessor phrase reads as English. No bracket syntax at the authoring surface.
+- Phrases are idioms, not operators — the parser tokenizes them via the existing `Word` stream; eventually doc 13's W-wedges may hoist the most common forms into reserved tokens.
+- `the Nth of L` uses 1-based ordinals (`the first`, `the second`, …) OR an explicit numeric literal (`the 7th of L`). Zero-indexed access is a translation-time concern, not authoring-time.
+
+---
+
+## I12. `uses` vs imperative verbs for side-effecting code
+
+**Resolves:** doc 16 row #27.
+
+Doc 14 surfaced ambiguity about whether side-effects should be modeled as `uses the @Function matching "…"` (intent layer) or as imperative verb clauses in the body (`print "…"`, `write X to Y`). Rule:
+
+- **v2 (intent layer):** Always list the side-effect via a `uses` ref. The v2 form is declarative — the function's *intent* is "do X"; the `uses` is "by invoking a primitive that does X".
+- **v1 (body layer):** Write imperative verbs directly (`print`, `write`, `delete`, `dispatch`). Matching the source-language's flow keeps translations straightforward.
+- **Both forms in one translation:** acceptable when v1 gives the flow and v2 summarizes the intent. A hybrid entity can carry a v1 body section and still `uses` primitives for intent discoverability.
+
+**Rule of thumb:** a side-effecting function with a single-sentence intent uses v2 only. Two or more distinct effects → write v1; add the most important effect as a v2 `uses` for discoverability.
+
+---
+
+## I13. Config-as-data vs. config-as-code split
+
+**Resolves:** doc 16 row #33.
+
+A `.toml` / `.yaml` / `.json` config is **pure data** — it has no behavior. When translating such a file into Nom, use the `data` kind with `exposes` fields, NOT the `function` kind:
+
+```nomx
+# Pure data — declare the schema:
+the data book_config is
+  intended to hold the mdBook build configuration.
+
+  exposes book_authors as text list.
+  exposes book_language as text.
+  exposes book_src as path.
+  exposes html_cname as text.
+  exposes html_default_theme as text.
+
+  favor correctness.
+  favor documentation.
+
+# Pure data — provide a named value:
+the book_config for the helix_manual is
+  book_authors is ["Blaž Hrastnik"],
+  book_language is "en",
+  book_src is "src",
+  html_cname is "docs.helix-editor.com",
+  html_default_theme is "colibri".
+```
+
+**Rules:**
+
+- **Schema declaration** (`the data X is … exposes … favor …`) goes in one concept file; **named instances** (`the X for Y is …`) go wherever they're used.
+- Never mix schema + instance in the same sentence. `exposes` declares; `is` supplies.
+- Emitters (Nom → TOML, Nom → YAML) round-trip by pairing the schema with an instance. Format-specific conventions (hyphen keys per I5, dotted-section names per W17) are reversed at emit time, not at authoring time.
+- Config-as-code — things that look like config but run logic (a `build.rs`, a Makefile target, a GitHub Actions YAML with `run:` blocks) — stay in the `function` kind with an `intent to build X using Y` frame. The boundary is whether execution happens.
+
+---
+
 ## Closure status (doc 16 rollup)
 
-After this doc (I1-I8 landed):
+After this doc (I1-I13 landed):
 
 - Row #20 — ✅ I1 (perhaps/nothing)
 - Row #24 — ✅ I2 (exit codes)
@@ -266,7 +411,13 @@ After this doc (I1-I8 landed):
 - Row #35 — ✅ I5 (hyphen→underscore)
 - Row #7  — ✅ I6 (docstrings → `intended to`)
 - Row #12 — ✅ I7 (redundant v1 body rule)
-- Row #30 + #31 (partial) — ✅ I8 (named intermediate values / globbing primitives unrolled)
+- Row #30 + #31 — ✅ I8 (named intermediate values / pipeline unroll)
+- Row #10 — ✅ I9 (atomic / concurrency primitives)
+- Row #13 — ✅ I10 (destructuring parameters)
+- Row #26 — ✅ I11 (list / text accessor primitives)
+- Row #27 — ✅ I12 (uses vs imperative for side-effects)
+- Row #33 — ✅ I13 (config-as-data vs config-as-code split)
 
-**Remaining authoring-guide rows in doc 16 (5 of 13 still open):**
-#10 (atomic primitives), #13 (destructuring params), #26 (list/text accessors), #27 (`uses` vs imperative), #33 (config-as-data split). These land in future cycles as I9-I13.
+**Authoring-guide backlog:** 0 rows remain. All 13 authoring-guide destinations closed by this doc.
+
+Future cycles focus on the 12 wedge-queued rows (W4-A3/A4/A5/A6, W5-W18), the 4 remaining smoke-test rows, and the 2 open design questions (#4 Path/file subkinds, #15 closures).
