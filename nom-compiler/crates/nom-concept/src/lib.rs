@@ -25,6 +25,9 @@ pub use mece::{MeceReport, MeCollision, ObjectiveBinding, check_mece, check_mece
 pub mod strict;
 pub use strict::{StrictWarning, validate_nom as validate_nom_strict, validate_nomtu as validate_nomtu_strict};
 
+pub mod stages;
+pub use stages::{StageId, StageFailure, TokenStream, stage1_tokenize};
+
 /// Closed kind set per doc 08 §8.1.
 pub const KINDS: &[&str] = &[
     "function", "module", "concept", "screen", "data", "event", "media",

@@ -156,9 +156,18 @@ Replace the `Lexer::next` iterator consumed by `parse_nom` / `parse_nomtu` with 
 
 **Shipped 2026-04-14:** `nom_concept::lex::collect_all_tokens(src) -> Vec<Spanned>` is the materialization primitive. 3 tests (a4a01-a4a03) lock: empty source → empty vec, sequential `Lexer::next` output matches `collect_all_tokens` byte-for-byte, spans are non-decreasing and all in-range. Parser still uses `Lexer::new` + iterative `next`; A4b will migrate named stage helpers to consume the materialized vector.
 
-### A4b — Stage boundaries without typed ASTs (~1d)
+### A4b — Stage boundaries without typed ASTs (~1d) 🛠️ scaffold landed
 
 Wrap the existing parser's code blocks in named helper functions `stage2_classify_blocks` / `stage3_shape_extract` / `stage4_contract_bind` / `stage5_effect_bind` / `stage6_ref_resolve`. Each helper still consumes mutable state (the cursor + accumulator) but now has a clear entry point and error attribution. Adds the `ConceptError::StageFailure { stage, … }` variant and threads it through. Zero behavior change; error messages now identify the stage that failed.
+
+**Scaffold 2026-04-14:** `nom_concept::stages` module lands with:
+
+- `StageId::{Tokenize, KindClassify, ShapeExtract, ContractBind, EffectBind, RefResolve}` with `.code()` → `"S1".."S6"` and `.label()` → long names.
+- `StageFailure { stage, position, reason, detail }` + `.diag_id()` → `"NOMX-S<N>-<slug>"`.
+- `TokenStream { toks, source_len }` + working `stage1_tokenize(src)` that wraps A4a's `collect_all_tokens`.
+- `stage2_*` through `stage6_*` function stubs returning structured "not-yet-wired" failures. A4c wires the real bodies.
+
+5 tests (a4b01-a4b05) lock: stage codes uniqueness + labels, S1 empty + non-trivial matches `collect_all_tokens`, diag-id NOMX-S<N> format, stubs surface the right StageId. **Zero impact on existing parsers** — `parse_nom` / `parse_nomtu` untouched.
 
 ### A4c — Typed ASTs between stages (~1.5d)
 
