@@ -2178,6 +2178,92 @@ Workflow orchestration is the **third consecutive "minimal-wedge" translation** 
 
 ---
 
+## 37. Apache Spark Structured Streaming — distributed stream-processing
+
+```scala
+import org.apache.spark.sql.streaming.Trigger
+
+val events = spark.readStream
+  .format("kafka")
+  .option("subscribe", "user-events")
+  .load()
+
+val windowed = events
+  .withWatermark("event_time", "10 minutes")
+  .groupBy(window($"event_time", "5 minutes"), $"user_id")
+  .count()
+
+windowed.writeStream
+  .outputMode("append")
+  .format("parquet")
+  .option("path", "/warehouse/user_events_by_window")
+  .trigger(Trigger.ProcessingTime("1 minute"))
+  .start()
+```
+
+### `.nomx v1` translation
+
+```nomx
+define count_user_events_by_window
+  that takes a live stream of user events, returns a live stream of per-user event counts grouped by 5-minute event-time windows.
+watermark the stream at event_time with a 10-minute allowed lateness.
+group the events by (5-minute window over event_time, user_id).
+count events in each group.
+write every minute-aligned micro-batch to the warehouse parquet sink at /warehouse/user_events_by_window in append mode.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data UserEvent is
+  intended to describe a single user-originated event carrying the event's user, timestamp, and payload.
+  exposes user_id as identifier.
+  exposes event_time as timestamp.
+  exposes payload as record.
+
+the data WindowedUserEventCount is
+  intended to describe a per-user event count over a closed event-time window.
+  exposes user_id as identifier.
+  exposes window_start as timestamp.
+  exposes window_end as timestamp.
+  exposes count as integer.
+
+the function count_user_events_by_window is
+  intended to transform a live stream of UserEvent into a live stream of WindowedUserEventCount grouped by 5-minute event-time windows, with 10-minute late-arrival tolerance.
+  uses the @Data matching "UserEvent" with at-least 0.95 confidence.
+  uses the @Data matching "WindowedUserEventCount" with at-least 0.95 confidence.
+  requires every UserEvent carries a non-null event_time.
+  ensures each UserEvent contributes to exactly one WindowedUserEventCount whose window contains its event_time, provided the event arrives no later than 10 minutes past window close.
+  ensures events arriving more than 10 minutes past their window close are dropped, not silently reassigned.
+  hazard dropped late events are logged but not emitted downstream — callers must account for at-least-once-and-on-time semantics.
+  favor correctness.
+  favor latency.
+
+the data UserEventCountStreamSink is
+  intended to describe where and how WindowedUserEventCount results are materialized.
+  exposes format as text.
+  exposes path as text.
+  exposes output_mode as text.
+  exposes trigger_interval as duration.
+```
+
+### Gaps surfaced
+
+1. **Unbounded streams as first-class data** — Spark's `DataFrame` carries both bounded (batch) and unbounded (streaming) semantics. Nom's translation is explicit: `a live stream of X` in the intent + a sink data decl describing materialization. **Candidate: W44 `live stream of T` type modifier** — parallel to `list of T` and `perhaps T`. Small vocabulary extension. Alternative: absorb into W15 (iterator-vs-materialized) authoring-guide item. Recommend **authoring-guide rule** over new wedge — the prose `live stream of` already works unambiguously; no grammar needed.
+2. **Watermark + late-arrival policy** — event-time correctness primitive. `watermark the stream at event_time with a 10-minute allowed lateness` is closed-vocabulary prose. **Candidate: W44 watermark clause** (renumbered, replacing the stream-type idea above) — ships with the retry-policy/W43 family: closed orchestrator directives. Small wedge, critical for correctness.
+3. **Windowed aggregation** (`window($"event_time", "5 minutes")`) — structural primitive of event-time processing. Nom's prose `grouped by 5-minute event-time windows` captures this, but the grammar could benefit from a dedicated `window of D over FIELD` clause. **Candidate: W45 window-aggregation clause** — closed vocabulary: `tumbling`, `sliding`, `session`, `global`. Pairs with W40 exhaustiveness check on window types. Small wedge.
+4. **Output mode (`append`, `update`, `complete`)** — controls what Spark emits per micro-batch. Closed three-value set. Nom captures this as `exposes output_mode as text` on the sink data decl; a dedicated enum would be better. Authoring-guide rule: **output modes are a closed three-value `choice` (append/update/complete); declare the sink as a typed choice rather than raw text**. Ties to W30 choice grammar.
+5. **Trigger interval (`ProcessingTime("1 minute")`, `Continuous`, `Once`)** — scheduler contract for micro-batch cadence. Captured as `exposes trigger_interval as duration` + closed `trigger_kind` choice. Authoring-guide rule: **streaming triggers are a `(kind, interval)` pair where kind is a closed choice**. No new wedge.
+6. **Stateful aggregations + state TTL** — Spark maintains state per (window, key) tuple with a `stateOperatorTimeout` knob. Nom's translation embeds TTL in the `hazard` clauses. **Candidate: authoring-guide rule — stateful aggregation state TTL is a `hazard` clause on the aggregation function**. No new wedge.
+7. **Source connectors (Kafka, Kinesis, files, JDBC)** — read-side plugin mechanism. Same decomposition as Airflow operators (#36): source connector type is a build-time concern, not an authoring concern. Authoring-guide rule reused: **source/sink connector types flatten to plain function decls; runtime-specific connector is build-time**.
+8. **`DataFrame` implicit schema inference** — Spark infers schemas at read time. Nom rejects implicit schema; every data decl is explicit. Authoring-guide rule: **streaming sources must have an explicit data decl describing their row shape**; schema inference is an authoring-helper tool (`nom author infer-schema`) that emits the data decl, not a runtime behavior.
+
+Row additions: **W44 watermark clause** (new wedge, closed vocabulary for late-arrival policy), **W45 window-aggregation clause** (new wedge, closed kinds: tumbling/sliding/session/global), 4 authoring-guide closures (output-mode as choice, trigger as (kind, interval) pair, state-TTL as hazard clause, schemas explicit not inferred), 1 rule cross-reference (connector types from #36 generalize).
+
+Streaming is the **fourth consecutive minimal-wedge translation** (2 new small wedges, both concrete and narrow). Cumulative evidence: every engineering-domain translation since Elixir GenServer (#27) has needed ≤ 2 new grammar wedges; the closed kind set + composition + effect valence + `uses` clauses cover the rest.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

@@ -112,18 +112,24 @@
 | 95 | Task operators (PythonOperator, BashOperator, …) flatten to plain function decls; runtime is build-time concern | authoring-guide rule | ✅ closed (doc 14 #36) |
 | 96 | Airflow `@task` decorator is a no-op in translation | authoring-guide rule | ✅ closed (doc 14 #36) |
 | 97 | XCom cross-task communication → explicit `uses` + typed returns | authoring-guide rule | ✅ closed (doc 14 #36) |
+| 98 | Watermark clause for late-arrival policy on event-time streams | **W44** grammar rule | ⏳ queued (doc 14 #37) |
+| 99 | Window-aggregation clause (`window of D over FIELD` with tumbling/sliding/session/global kinds) | **W45** grammar rule (pairs with W40 MECE) | ⏳ queued (doc 14 #37) |
+| 100 | Streaming output-modes are a closed choice (append/update/complete); declare sink as typed choice | authoring-guide rule | ✅ closed (doc 14 #37; ties W30) |
+| 101 | Streaming triggers are `(kind, interval)` pair where kind is a closed choice | authoring-guide rule | ✅ closed (doc 14 #37) |
+| 102 | Stateful-aggregation state TTL → `hazard` clause on the aggregation function | authoring-guide rule | ✅ closed (doc 14 #37) |
+| 103 | Streaming sources must carry an explicit data decl; schema inference is an author-helper tool | authoring-guide rule | ✅ closed (doc 14 #37; ties to `nom author infer-schema`) |
 
-Totals by destination (after doc 14 #36 Airflow DAG translation — minimal wedge: only W43 retry-policy; 6 authoring-guide closures):
+Totals by destination (after doc 14 #37 Apache Spark Structured Streaming translation surfaced W44 watermark + W45 window-aggregation + 4 authoring-guide closures):
 
-- ⏳ Wedge queued: **36** (+W43 retry-policy)
+- ⏳ Wedge queued: **38** (+W44 watermark, +W45 window-aggregation)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **57**
+- ✅ Closed: **61**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **2** (forward_compatibility + numerical_stability QualityNames)
 
-Backlog size: 100 rows. Closure rate 57% (57/100). **36 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + **workflow-orchestration (Airflow DAG)**. Third consecutive minimal-wedge translation — closed kind set covers real engineering surfaces.
+Backlog size: 106 rows. Closure rate 58% (61/106). **37 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + **stream-processing (Apache Spark Structured Streaming)**. Fourth consecutive minimal-wedge translation.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -146,6 +152,8 @@ Backlog size: 100 rows. Closure rate 57% (57/100). **36 translations** in doc 14
 - **W41:** `property` top-level kind declaration — expands closed kind set from 7 to 8 nouns. Universally-quantified claim over a generator; orthogonal to function/data/concept.
 - **W42:** Generator-shape clause — closed-vocabulary domain-range descriptors for property input generators (`list lengths from N to M`, `integers from -X to Y`, `text of shape …`). Reuses W39 pattern-shape vocabulary.
 - **W43:** Retry-policy clause — small-vocabulary orchestrator directive: `up to N times with delay D, backoff linear|exponential|constant`. Attaches to composition or individual function decl; orchestrator honors the declaration at build-time.
+- **W44:** Watermark clause — `watermark the stream at FIELD with an N-UNIT allowed lateness` for event-time correctness on streaming sources. Closed vocabulary for late-arrival policies.
+- **W45:** Window-aggregation clause — `window of D over FIELD` with closed kinds `tumbling`/`sliding`/`session`/`global`. Pairs with W40 exhaustiveness-check for per-window totality. Core stream-processing primitive.
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 
