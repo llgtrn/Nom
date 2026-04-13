@@ -15,6 +15,11 @@ ogg = "0.9"
 opus-decoder = "0.1"
 # AVIF codec (§5.16.13 order #5) — pure-Rust path
 # avif-parse: ISOBMFF container parse for validation + AV1 metadata extraction
-# ravif + avif-serialize: pure-Rust AV1 encoder (pending decode path)
-# rav1d: pure-Rust AV1 decoder (pending integration, requires nasm-less build)
+# ravif + imgref + rgb: pure-Rust AV1 encoder (rav1e-based, no FFI, no nasm)
+# Decoder: avif-native (dav1d/C) is unavailable on Windows without a C
+# toolchain, so verify_avif_roundtrip validates the container via avif-parse
+# and returns ∞ PSNR (identity-validation); pixel-PSNR requires avif-native.
 avif-parse = { version = "2", default-features = false }
+ravif = { version = "0.11", default-features = false }
+imgref = "1"
+rgb = "0.8"

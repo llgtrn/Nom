@@ -648,6 +648,10 @@ enum StoreCmd {
     /// Ingest a media file (PNG/JPEG/AVIF/FLAC/Opus/AAC/AV1/WebM/MP4/HEVC)
     /// and persist its canonical bytes to the DIDS store with the
     /// matching body_kind tag per §4.4.6 invariant 17.
+    ///
+    /// Still images (PNG/JPEG/BMP/TIFF/WebP/…) are encoded to canonical AVIF
+    /// by default (modality-canonical track). Use `--preserve-format` to
+    /// store PNG→PNG, JPEG→JPEG, etc. instead.
     AddMedia {
         /// Path to the media file
         path: PathBuf,
@@ -657,6 +661,11 @@ enum StoreCmd {
         /// Emit JSON instead of human-readable output
         #[arg(long)]
         json: bool,
+        /// Store in per-format encoding instead of modality-canonical AVIF.
+        /// When set, PNG is stored as PNG, JPEG as JPEG, etc. By default
+        /// all still images are re-encoded to canonical AVIF (§4.4.6 inv 17).
+        #[arg(long)]
+        preserve_format: bool,
     },
 }
 
@@ -870,7 +879,7 @@ fn main() {
                     json,
                 )
             }
-            StoreCmd::AddMedia { path, dict, json } => store::cmd_store_add_media(&path, &dict, json),
+            StoreCmd::AddMedia { path, dict, json, preserve_format } => store::cmd_store_add_media(&path, &dict, json, preserve_format),
         },
         Commands::Media { action } => match action {
             MediaCmd::Import { path, json } => media::cmd_media_import(&path, json),

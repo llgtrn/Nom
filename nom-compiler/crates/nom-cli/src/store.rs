@@ -542,17 +542,15 @@ pub fn cmd_store_list(
     0
 }
 
-/// `nom store add-media <file> [--dict <path>] [--json]`
+/// `nom store add-media <file> [--dict <path>] [--json] [--preserve-format]`
 ///
-/// Ingest a media file, persist its canonical bytes' SHA-256 hash as a
-/// v2 `entries` row tagged with the matching §4.4.6 `body_kind`, and
-/// print the resulting id.
+/// Ingest a media file, persist its canonical bytes to a `nomtu` row tagged
+/// with the matching §4.4.6 `body_kind`, and print the resulting id.
 ///
-/// The canonical bytes themselves are NOT stored in `Entry.body` (which
-/// is `Option<String>`, a legacy text column). A future schema migration
-/// will add a BLOB column; for now `body = None` and the hash (= `id`)
-/// is the persistent record.
-pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
+/// Default (modality-canonical track): still images are re-encoded to AVIF
+/// regardless of source format. Pass `preserve_format = true` (CLI flag
+/// `--preserve-format`) to store PNG→PNG, JPEG→JPEG, etc. instead.
+pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool, preserve_format: bool) -> i32 {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
         Err(e) => {
@@ -568,7 +566,9 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool) -> i32 {
         .to_ascii_lowercase();
 
     // Dispatch to the shared ingest helper (same table as `nom media import`).
-    let summary = match crate::media::ingest_by_extension(&bytes, &ext) {
+    // preserve_format=false (default) routes ImageStill formats to modality-
+    // canonical AVIF; preserve_format=true uses the per-format track.
+    let summary = match crate::media::ingest_by_extension(&bytes, &ext, preserve_format) {
         Ok(s) => s,
         Err(e) => {
             eprintln!("nom: {e}");

@@ -89,18 +89,26 @@ fn parse_kind_line(stdout: &str) -> Option<String> {
 // ── Round-trip test helper ────────────────────────────────────────────
 
 /// Core assertion: add-media the fixture, get it back, verify fields.
-fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str) {
+///
+/// `preserve_format`: if true, passes `--preserve-format` to stay on the
+/// per-format track (PNG→PNG, JPEG→JPEG). If false (default), uses the
+/// modality-canonical track (PNG/JPEG → AVIF per §4.4.6 invariant 17).
+fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str, preserve_format: bool) {
     let root = make_tmpdir(expected_body_kind);
     let dict = dict_flag(&root);
 
     // Step 1: add-media
-    let (code, stdout, stderr) = run_nom(&[
+    let mut args = vec![
         "store",
         "add-media",
         fixture.to_str().unwrap(),
         "--dict",
         &dict,
-    ]);
+    ];
+    if preserve_format {
+        args.push("--preserve-format");
+    }
+    let (code, stdout, stderr) = run_nom(&args);
     assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
 
     // Step 2: parse id
@@ -131,8 +139,10 @@ fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str) {
 /// `Some(bytes)` where `sha256(bytes) == id`. This is §4.4.6 invariant 15:
 /// the BLOB stored in `body_bytes` is the canonical representation, and
 /// the entry `id` is exactly the SHA-256 hex of those bytes.
+///
+/// `preserve_format`: passed through to the CLI flag; see `assert_add_media_roundtrip`.
 #[cfg(not(windows))]
-fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str) {
+fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str, preserve_format: bool) {
     use nom_dict::NomDict;
     use sha2::{Digest, Sha256};
 
@@ -140,13 +150,18 @@ fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str) {
     let dict = dict_flag(&root);
 
     // Step 1: add-media via binary
-    let (code, stdout, stderr) = run_nom(&[
+    let mut args = vec![
         "store",
         "add-media",
         fixture.to_str().unwrap(),
         "--dict",
         &dict,
-    ]);
+    ];
+    let preserve_format_str = "--preserve-format".to_string();
+    if preserve_format {
+        args.push(&preserve_format_str);
+    }
+    let (code, stdout, stderr) = run_nom(&args);
     assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
 
     // Step 2: parse id
@@ -170,71 +185,101 @@ fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str) {
     );
 }
 
-// ── Tests ─────────────────────────────────────────────────────────────
+// ── Tests — per-format track (--preserve-format) ─────────────────────
 
 #[test]
 #[cfg(not(windows))]
-fn body_bytes_stored_png() {
-    assert_body_bytes_stored(&fixtures_dir().join("tiny.png"), "png");
+fn body_bytes_stored_png_preserve_format() {
+    // Per-format track: PNG stored as PNG.
+    assert_body_bytes_stored(&fixtures_dir().join("tiny.png"), "png", true);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
-fn add_media_png_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "png");
+fn add_media_png_roundtrip_preserve_format() {
+    // Per-format track: --preserve-format keeps PNG→PNG.
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "png", true);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
-fn add_media_jpeg_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "jpeg");
+fn add_media_jpeg_roundtrip_preserve_format() {
+    // Per-format track: --preserve-format keeps JPEG→JPEG.
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "jpeg", true);
 }
 
+// ── Tests — modality-canonical track (default, no --preserve-format) ──
+
+/// Body-bytes invariant: PNG input → canonical AVIF stored with sha256==id.
+#[test]
+#[cfg(not(windows))]
+fn body_bytes_stored_png_canonical_avif() {
+    // Default track: PNG input → AVIF canonical bytes stored.
+    assert_body_bytes_stored(&fixtures_dir().join("tiny.png"), "avif", false);
+}
+
+/// PNG input with default track → body_kind="avif".
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_png_canonical_avif() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "avif", false);
+}
+
+/// JPEG input with default track → body_kind="avif".
+#[test]
+#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+fn add_media_jpeg_canonical_avif() {
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "avif", false);
+}
+
+/// AVIF input with default track → body_kind="avif" (ImageStill canonical).
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_avif_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.avif"), "avif");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.avif"), "avif", false);
 }
+
+// ── Tests — non-image formats (unaffected by preserve_format) ─────────
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_flac_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.flac"), "flac");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.flac"), "flac", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_opus_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.opus"), "opus");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.opus"), "opus", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_aac_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.aac"), "aac");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.aac"), "aac", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_av1_roundtrip() {
     // The fixture uses the .av1.ivf double-extension; extract just the "ivf" ext.
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.av1.ivf"), "av1");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.av1.ivf"), "av1", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_webm_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.webm"), "webm");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.webm"), "webm", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_mp4_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.mp4"), "mp4");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.mp4"), "mp4", false);
 }
 
 #[test]
 #[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
 fn add_media_hevc_roundtrip() {
-    assert_add_media_roundtrip(&fixtures_dir().join("tiny.hevc"), "hevc");
+    assert_add_media_roundtrip(&fixtures_dir().join("tiny.hevc"), "hevc", false);
 }

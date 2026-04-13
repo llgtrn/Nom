@@ -11,8 +11,8 @@
 use std::path::Path;
 
 use nom_media::{
-    ingest_aac, ingest_av1, ingest_avif, ingest_flac, ingest_hevc, ingest_jpeg, ingest_mp4,
-    ingest_opus, ingest_png, ingest_webm, modality_from_ext,
+    ingest_aac, ingest_av1, ingest_avif, ingest_flac, ingest_hevc, ingest_image_still_to_avif,
+    ingest_jpeg, ingest_mp4, ingest_opus, ingest_png, ingest_webm, modality_from_ext, Modality,
 };
 use nom_types::body_kind;
 
@@ -36,10 +36,39 @@ pub struct IngestSummary {
 /// Dispatch `bytes` through the matching codec ingester keyed on `ext`
 /// (lowercase file extension without the leading dot).
 ///
+/// When `preserve_format` is `false` (default), any extension that maps to
+/// [`Modality::ImageStill`] routes to the modality-canonical track:
+/// [`ingest_image_still_to_avif`], producing `body_kind = "avif"` regardless
+/// of source format (PNG, JPEG, BMP, TIFF, WebP, …).
+///
+/// When `preserve_format` is `true`, each format uses its per-format codec
+/// (PNG→PNG, JPEG→JPEG, AVIF→AVIF).
+///
 /// Returns `Ok(IngestSummary)` on success or `Err(message)` on any
 /// codec error or unrecognized extension. The caller owns the error
 /// string and may pass it to `eprintln!` unchanged.
-pub fn ingest_by_extension(bytes: &[u8], ext: &str) -> Result<IngestSummary, String> {
+pub fn ingest_by_extension(
+    bytes: &[u8],
+    ext: &str,
+    preserve_format: bool,
+) -> Result<IngestSummary, String> {
+    // Modality-canonical track: ImageStill → AVIF (unless --preserve-format).
+    if !preserve_format {
+        if let Some(Modality::ImageStill) = modality_from_ext(ext) {
+            let r = ingest_image_still_to_avif(bytes, Modality::ImageStill)
+                .map_err(|e| format!("modality-canonical AVIF ingest failed: {e}"))?;
+            return Ok(IngestSummary {
+                body_kind_tag: body_kind::AVIF,
+                describe: format!(
+                    "modality-canonical avif from {ext}, {}x{}, {}",
+                    r.width, r.height, r.color_type
+                ),
+                canonical_bytes: r.canonical_bytes,
+            });
+        }
+    }
+
+    // Per-format track (reached when preserve_format=true, or for non-still formats).
     match ext {
         "png" => {
             let r = ingest_png(bytes).map_err(|e| format!("PNG ingest failed: {e}"))?;
@@ -209,7 +238,9 @@ pub fn cmd_media_import(path: &Path, json: bool) -> i32 {
         Some(_) => {} // modality known; dispatch by extension below
     }
 
-    match ingest_by_extension(&bytes, &ext) {
+    // `nom media import` always uses the modality-canonical track (no --preserve-format flag
+    // on this subcommand; add one later if a per-format import path is needed).
+    match ingest_by_extension(&bytes, &ext, false) {
         Ok(summary) => {
             // Re-derive the per-format metadata for the detailed print_kv output.
             // Since IngestSummary carries describe + body_kind_tag, we reconstruct
