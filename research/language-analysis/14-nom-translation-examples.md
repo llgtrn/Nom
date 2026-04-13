@@ -918,6 +918,139 @@ the data Post is
 
 ---
 
+## 18. Makefile rule — target + prereqs + recipe
+
+```makefile
+build: src/main.c src/util.c
+	gcc -O2 -Wall -o build/app src/main.c src/util.c
+
+clean:
+	rm -rf build/
+.PHONY: build clean
+```
+
+### `.nomx v1` translation
+
+```nomx
+define build_app_binary
+  that takes nothing, returns nothing.
+  require every source file under src/ exists.
+  compile src/main.c and src/util.c
+    with gcc using level 2 optimization and all warnings,
+    producing build/app.
+
+define clean_build_output
+  that takes nothing, returns nothing.
+  delete the build folder recursively.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function build_app_binary is
+  intended to compile the C sources into a single app binary
+  under the build folder with optimization level 2 and all warnings on.
+
+  uses the @Function matching "run c compiler" with at-least 0.9 confidence.
+
+  requires every source file under src/ exists.
+  ensures build/app exists and is executable.
+
+  favor correctness.
+  favor performance.
+
+the function clean_build_output is
+  intended to remove all build artifacts.
+
+  uses the @Function matching "delete directory recursively" with at-least 0.9 confidence.
+
+  ensures build/ folder is absent after invocation.
+  hazard data_loss.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Prereq declarations (`build: src/main.c src/util.c`)** — Make's dependency graph has no Nom analog; the prose `require every source file under src/ exists` is weaker (it only asserts presence, not "rebuild when they change"). Candidate: **W25 build-time dependency graph** (requires integration with `nom build` incremental model).
+2. **Shell commands in recipes (`gcc -O2 -Wall -o build/app …`)** — Nom translation punts to `uses the @Function matching "run c compiler"`. The authoring-corpus needs a canonical "shell exec" primitive with arg + stdout semantics. Authoring-corpus seed confirmed.
+3. **`.PHONY` targets** — Make's metadata that a target is not a file. Nom has no analog; `intended to` prose disambiguates implicitly. Translation note, not a wedge.
+4. **`hazard data_loss`** — this is the right valence for `rm -rf`. Confirmed the effect system already expresses destructive operations cleanly.
+
+---
+
+## 19. Dockerfile — base image + ordered directives
+
+```dockerfile
+FROM rust:1.82-slim AS builder
+WORKDIR /app
+COPY Cargo.toml Cargo.lock ./
+COPY src ./src
+RUN cargo build --release
+
+FROM debian:bookworm-slim
+COPY --from=builder /app/target/release/myapp /usr/local/bin/
+ENTRYPOINT ["/usr/local/bin/myapp"]
+```
+
+### `.nomx v1` translation
+
+```nomx
+define build_release_image
+  that takes nothing, returns nothing.
+  start with a base image of rust version 1.82 in slim variant.
+  the working_directory is /app.
+  copy Cargo.toml and Cargo.lock into the working_directory.
+  copy the src folder into the working_directory.
+  run cargo build release.
+
+define pack_runtime_image
+  that takes the release binary path, returns nothing.
+  start with a base image of debian bookworm slim.
+  copy the release binary into /usr/local/bin/.
+  set the entrypoint to /usr/local/bin/myapp.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function build_release_image is
+  intended to compile the Rust source tree into a release binary
+  inside a containerized build stage.
+
+  uses the @Function matching "select base image" with at-least 0.9 confidence.
+  uses the @Function matching "copy path into container layer" with at-least 0.85 confidence.
+  uses the @Function matching "run cargo build release" with at-least 0.9 confidence.
+
+  requires Cargo.toml and the src folder exist at the host root.
+  ensures /app/target/release/myapp exists after invocation.
+
+  favor correctness.
+  favor performance.
+
+the function pack_runtime_image is
+  intended to assemble a minimal runtime image carrying only
+  the compiled app binary.
+
+  uses the @Function matching "select base image" with at-least 0.9 confidence.
+  uses the @Function matching "copy path from previous stage" with at-least 0.85 confidence.
+  uses the @Function matching "set container entrypoint" with at-least 0.9 confidence.
+
+  requires the builder stage produced /app/target/release/myapp.
+  ensures the final image runs the app on container start.
+
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Multi-stage builds (`AS builder` then `FROM debian …`)** — Dockerfile's stage graph is linear but named; each stage has its own filesystem. Translation splits into two functions + a shared understanding that `pack_runtime_image` depends on `build_release_image`'s output. The dependency edge is implicit in the prose. Candidate: **W26 stage-chain declarations** or reuse `then` composition from `.nomtu` module syntax.
+2. **`COPY --from=builder`** — cross-stage copy. Unique to Dockerfile; translation punts. Likely subsumed by W26.
+3. **Image tags (`rust:1.82-slim`, `debian:bookworm-slim`)** — hyphenated identifiers that represent registry coordinates. Maps to a `@Data matching "container base image"` typed-slot ref with a canonical naming scheme.
+4. **`ENTRYPOINT ["..."]` as a JSON-array directive** — Dockerfile mixes declarative + imperative syntax in one file. Nom's translation separates the concerns (two functions for two stages). Authoring-guide confirmed: container directives map to function-kind entities, not data-kind.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

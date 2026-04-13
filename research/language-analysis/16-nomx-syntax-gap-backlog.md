@@ -60,17 +60,20 @@
 | 43 | `within the last N days` time-range idiom | authoring-corpus seed | 📘 doc-todo |
 | 44 | Nested nullability modifiers (`perhaps list of perhaps text`) | **W24** grammar rule | ⏳ queued (doc 14 #17) |
 | 45 | `identifier` as distinct data shape (GraphQL `ID!`) | authoring-corpus seed | 📘 doc-todo |
+| 46 | Build-time dependency graph (Make prereqs) | **W25** grammar rule | ⏳ queued (doc 14 #18) |
+| 47 | Multi-stage / stage-chain declarations (Dockerfile) | **W26** grammar rule | ⏳ queued (doc 14 #19) |
+| 48 | Shell-exec primitive (canonical arg + stdout semantics) | authoring-corpus seed | 📘 doc-todo |
 
-Totals by destination (after doc 14 #17 GraphQL translation surfaced 2 more rows):
+Totals by destination (after doc 14 #18-#19 Makefile+Dockerfile translations surfaced 3 more rows):
 
-- ⏳ Wedge queued: **18** (+1 W24 nested nullability)
+- ⏳ Wedge queued: **20** (+2 W25 build-deps, W26 stage-chain)
 - 🧪 Smoke-test todo: **1**
-- 📘 Authoring-guide doc-todo: **4** (+1 identifier shape)
+- 📘 Authoring-guide doc-todo: **5** (+1 shell-exec primitive)
 - ✅ Closed: **20**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **1**
 
-Backlog size: 45 rows. Closure rate 44% (20/45). Translation corpus now covers imperative (Rust/Python/C/C++/Go), async (Python), data (TOML/GraphQL/SQL/CSS), shell (bash), and TS editor-event paradigms. 17 translations total.
+Backlog size: 48 rows. Closure rate 42% (20/48). 19 translations total in doc 14 spanning imperative / async / data / shell / editor-event / build / container paradigms.
 
 ## Wedge master index (for cross-ref with doc 13)
 
