@@ -200,6 +200,83 @@ HEAD (f34e6f8)
 
 Milestones M3/M11 (multi-locale), M7/M12/M14 (MECE-CE + laws + cross-domain), M8 (intent transformer), M13 (mass corpus), M18 (specialization) are **post-1.0 enhancements** that land on the parallel tracks but don't gate the bootstrap proof. 1.0 = "compiler is self-hosted + Rust archived."
 
+## Remaining work (GitNexus-verified 2026-04-14)
+
+Index `4140126`, stats: **251 files, 5947 nodes, 13743 edges, 300 processes, 226 communities, 28 workspace crates, 57 `cmd_*` CLI functions, 30 e2e + smoke tests under `nom-cli/tests/`.** All facts below are pulled from live Cypher queries against `.gitnexus/lbug`; where facts reference specific symbols, those symbols were confirmed to exist at the pinned commit.
+
+### Already shipped (do not re-do)
+
+| Path element | Evidence (GitNexus-cited) | Status |
+|---|---|---|
+| Concept/Module/Entry graph | `nom-concept::ConceptGraph` + `resolve_closure` walker + `visit_entity_ref` recursion + 300 processes | ✅ |
+| DB1/DB2 dict + three-tier closure | `nom-dict::{find_word_v2, find_words_v2_by_kind, list_concept_defs_in_repo, count_concept_defs, count_required_axes}` + typed-slot resolution | ✅ |
+| Resolver + MECE-ME + MECE-CE | `nom-concept::mece` + `check_mece_with_required_axes` + CE registry table | ✅ (M7a) |
+| Manifest JSON handoff | `cmd_build_manifest` ([nom-cli/src/build.rs:436](../../nom-compiler/crates/nom-cli/src/build.rs)) + manifest roots | ✅ |
+| Glass-box report | `cmd_build_report` ([nom-cli/src/report.rs:528](../../nom-compiler/crates/nom-cli/src/report.rs)) | ✅ (M1) |
+| Acceptance-predicate preservation | `cmd_build_verify_acceptance` ([nom-cli/src/build.rs:500](../../nom-compiler/crates/nom-cli/src/build.rs)) + `acceptance_preserve_e2e.rs` | ✅ (M2) |
+| Three-tier recursive ingest | `three_tier_recursive_e2e.rs` + recursive `visit_entity_ref` | ✅ (M4) |
+| Layered dreaming (M5a+b+c) | `LayeredDreamReport` + `Cmd_app_dream` process + `layered_dream_smoke.rs` | ✅ (M5) |
+| Locale packs | `nom-locale::{LocaleTag::parse, apply_locale, builtin_packs, normalize_nfc, is_confusable}` + 25 unit tests + `cmd_locale_{list,validate,apply,check-confusable}` | ✅ (M3a+M3b-min+M3c) |
+| Self-host gates | 10 `self_host_*` test files: `parse_smoke`, `ast`, `codegen`, `parser`, `planner`, `verifier`, `pipeline`, `rust_parity`, `meta`, `smoke` — including `every_self_host_nom_file_compiles_to_bc` + `every_self_host_nom_has_its_own_acceptance_test` meta-gate + `run_lexer_bc_reproducibility_smoke.rs` SHA-256 pin | ✅ (M10a+M10b) |
+| Media pipeline (AVIF) | `nom-media::ingest`, `cmd_media_import`, `cmd_store_add_media`, `avif_ingest.rs` + `bc_body_round_trip.rs` + `media_import.rs` tests | ✅ |
+| Corpus infrastructure | 9 `cmd_corpus_*` (scan, ingest, ingest_parent, ingest_pypi, clone_batch, clone_ingest, register_axis, list_axes) + `nom-corpus::{checkpoint, equivalence_gate}` + 5-language translator (C/C++/Python/JS/Go) | ✅ scaffold (M7a dep) |
+| Multi-graph surface | `cmd_graph` ([nom-cli/src/main.rs:4562](../../nom-compiler/crates/nom-cli/src/main.rs)) → `NomtuGraph::{from_entries, build_call_edges, build_import_edges, detect_communities}` | ✅ |
+| Foreign-source translator | `cmd_translate` + `nom-translate::{translate, translate_c_to_rust, translate_cpp_to_rust, translate_python_to_rust, translate_js_to_rust, translate_go_to_rust}` | ✅ |
+| Author loop | `cmd_author_{translate, start, check}` + `author_check_handles_full_todo_app_nomx` + `.nomx v2` grammar fixtures (contracts, greet, loops, mixed_forms, hello, todo_app) | ✅ |
+| Audit / security | `cmd_audit` + `CryptoPattern` + `SecurityFinding` + `redact_secret` + `SecurityReport` | ✅ scaffold (intentionally light — post-M1 concern) |
+| MCP server | `cmd_mcp_serve` ([nom-cli/src/mcp.rs:22](../../nom-compiler/crates/nom-cli/src/mcp.rs)) + `mcp_smoke.rs` | ✅ |
+
+### Actual remaining work (ordered by critical path)
+
+#### Short-horizon (days — 1-2 wk)
+
+1. **M3b-full: UTS #39 confusables.txt load.** Current: `is_confusable` ships with ~30 baked pairs (Cyrillic а, Greek α vs Latin a) plus NFC normalization. Missing: the **full official Unicode confusables table** (~6500 pairs). Blocked on network fetch (user todo #3). One day once data available; codec + test scaffolding already in [nom-locale/src/lib.rs](../../nom-compiler/crates/nom-locale/src/lib.rs).
+
+2. **M7b: seed standard axes.** `required_axes` registry exists (M7a); `correctness / safety / performance / dependency / documentation` default set is not baked into `builtin_packs`-equivalent. Days. Trivial without M6.
+
+3. **Doc-reality gap follow-ups** (from the "Doc/reality gaps" section below): doc 04 §5.17 `nom-translate` re-wording + risk #10 `nom-graph` ownership + doc 03 M10b determinism citation. Half-day.
+
+#### Medium-horizon (weeks)
+
+4. **M6: PyPI-100 corpus pilot.** Every CLI piece exists (`cmd_corpus_ingest_pypi` + checkpoint + equivalence_gate with Rust translator). Missing: an actual network-fed run to populate `entries` table. User todo #4 — blocks on manual network access. **Hard gate** because M7b/M8/M9/M12/M13 all depend on a populated dict. Practical risk: a single ingestion bug on the first live run corrupts the dict; keep a clean backup before starting.
+
+5. **M9: Phase-9 corpus-embedding re-rank.** Stub in `nom-cli/src/store/resolve.rs` (referenced in doc 04 risk #7). Needs `entry_embeddings` side-table + `find_words_v2_by_kind` rank composition `(score × similarity × provenance)`. Weeks + depends on M6 to have content to embed.
+
+6. **M8: Intent-resolution transformer.** Zero Rust code exists for `nom-intent`. Deferred 05 §Hybrid specifies ~1B params + bounded output. Weeks + needs M6. Single biggest risk item per doc 09 honest-risk #2.
+
+7. **M10c: compile-to-IR subset for self-host.** M10a+b gate parse + bc reproducibility; there's no IR-to-exec loop yet from self-host `.nom` sources. Weeks.
+
+#### Long-horizon (quarters — true self-hosting chain)
+
+8. **M10: real planner-in-Nom.** Currently `stdlib/self_host/planner.nom` parses clean and compiles to bc (M10a+b), but no `cmd_plan` consumes it. Real port = write planner logic as `.nomtu` compositions and plumb `nom plan <manifest.json>` through. Quarter+.
+
+9. **M15: parser-in-Nom.** `stdlib/self_host/parser.nom` is the target file (gates in place). Quarter+ (doc 04 estimates 10-14 weeks).
+
+10. **M16: LSP + Authoring Protocol.** `nom-lsp` crate doesn't exist. Doc 04 Phase 9 CORE, memory lists as CORE. Quarter (12-16 weeks).
+
+11. **M17: fixpoint bootstrap (1.0 cut).** Stage0-Rust → Stage1 → Stage2 → Stage3 with `s2 == s3` byte-identical. Proof-of-bootstrap tuple recorded in dict. Requires M10 + M15 + M16 shipped first. Rust then archived to `.archive/rust-<version>/`. **This is the 1.0 gate — nothing else is.**
+
+#### Post-1.0 (genuinely optional until M17)
+
+12. **M11: multi-locale workspaces** (`locale <bcp47>` directive in parser). M3 infrastructure is in; no parser wire-up.
+13. **M12: algebraic laws + dimensional analysis.** `laws: [...]` + `dimensions: [...]` fields on entries; verifier passes. Weeks + needs populated dict.
+14. **M13: mass corpus** (top-500 PyPI + top 500/ecosystem GitHub). §5.17 full protocol run. Quarters + needs M6/M7b complete.
+15. **M14: cross-domain Modelica connectors.** Needs M12 + M13.
+16. **M18: closure-level specialization** (70-95% binary reduction). Needs M13 + M17.
+
+### Critical-path answer in one line
+
+**Nom 1.0 = M6 (weeks) → M9 (weeks) → M10 real (quarter) → M15 (quarter) → M16 (quarter) → M17 (quarter).** Everything else is either shipped, parallel, or post-1.0. The shortest honest time to 1.0 from today is **~18 months** if M6 starts soon and the self-hosting chain doesn't hit the rustc-style "10× underestimate" trap that doc 09 risk #3 warns about.
+
+### What is NOT on the critical path (explicit non-blockers)
+
+- **Every `cmd_*` CLI polish** — shipped surface already covers demo flows.
+- **`nom-flow` + `nom-bench`** — remain scaffold (FlowArtifact + BenchmarkRun exist in graph; low inbound usage). Post-M13 work.
+- **`nom-security` expansion** — `SecurityReport` is adequate for M1; ecosystem hardening is post-1.0.
+- **Additional `.nomx` grammar fixtures** — 6 active fixtures (contracts, greet_sentence, loops, mixed_forms, hello, todo_app) sufficient for `.nomx v2` lock-in.
+- **Vietnamese vocabulary reintroduction** — permanently rejected per ecd0609 + user memory; only VN grammar-style shapes Nom.
+
+
 ## Honest risks
 
 1. **M6/M13 corpus ingestion is disk-stream-and-discard or bust.** Doc 04 §5.17 says peak disk = max per-repo-source + current-dict; any caching of intermediates blows the budget. Skip-lists + checkpointing + bandwidth throttle are non-optional. Risk: a sloppy ingestion run corrupts the dict.
