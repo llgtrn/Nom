@@ -34,12 +34,12 @@
 | 17 | Multi-predicate short-circuit fail | subsumed by W9 | — |
 | 18 | `hazard` effect rendering | smoke-test (works today) | 🧪 test-todo |
 | 19 | `is-a` runtime type probes | **W10** grammar rule | ⏳ queued |
-| 20 | `perhaps...nothing` idiom (works) | authoring-guide anchor | 📘 doc-todo |
+| 20 | `perhaps...nothing` idiom (works) | authoring-guide anchor | ✅ doc 17 §I1 |
 | 21 | Enum / sum-type declarations | **W11** grammar rule | ⏳ queued |
 | 22 | Receiver-form methods (`func (o OS) String()`) | **W12** grammar rule | ⏳ queued |
 | 23 | Entry-point `main` special-case | **W13** grammar rule | ⏳ queued |
-| 24 | Exit-code vocabulary (`success`/`failure`/`code N`) | **W14** vocabulary | ⏳ queued |
-| 25 | `text-sprintf` idiom | authoring-guide note | 📘 doc-todo |
+| 24 | Exit-code vocabulary (`success`/`failure`/`code N`) | authoring-guide | ✅ doc 17 §I2 |
+| 25 | `text-sprintf` idiom | authoring-guide note | ✅ doc 17 §I3 |
 | 26 | List/text accessor primitives (`at(0)`, `find_last`, `after`) | authoring-corpus seeds | 📘 doc-todo |
 | 27 | Preferred form (`uses` vs imperative verbs) for side-effects | authoring-guide decision | 📘 doc-todo |
 | 28 | Interpreter/shebang metadata clause | **W15** grammar rule | ⏳ queued |
@@ -48,14 +48,15 @@
 | 31 | Process pipelines → named intermediate values | authoring-guide rule | 📘 doc-todo |
 | 32 | Nested-section path syntax (TOML dot-paths) | **W17** grammar rule | ⏳ queued |
 | 33 | Config-as-data vs. config-as-code split | authoring-guide clarification | 📘 doc-todo |
-| 34 | Non-ASCII string literals verbatim | smoke-test | 🧪 test-todo |
-| 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | 📘 doc-todo |
+| 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 (guide); 🧪 test still pending |
+| 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 
-Totals by destination:
+Totals by destination (after doc 17 landed):
 
-- ⏳ Wedge queued: **13** (A2b + 12 W-wedges W5-W18 including W9, W10, W11, W12, W13, W14, W15, W16, W17, W18, plus W6)
-- 🧪 Smoke-test todo: **4**
-- 📘 Authoring-guide doc-todo: **13**
+- ⏳ Wedge queued: **12** (W14 reclassified to authoring-guide since exit-codes are a vocabulary convention, not a grammar rule)
+- 🧪 Smoke-test todo: **5** (+1 for UTF-8-in-literals)
+- 📘 Authoring-guide doc-todo: **8 remaining** (was 13; 5 closed by doc 17 — I1/I2/I3/I4/I5)
+- ✅ Closed: **5**
 - 🧠 Design deferred (open): **2** (+1 blocked)
 
 ## Wedge master index (for cross-ref with doc 13)
