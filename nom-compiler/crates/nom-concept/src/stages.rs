@@ -1623,6 +1623,39 @@ the function write_file is
         }
     }
 
+    /// a4c37: strict validator integrates with pipeline outputs.
+    /// W4-A3's `validate_nom_strict` / `validate_nomtu_strict` were
+    /// designed to consume the legacy `parse_nom`/`parse_nomtu` return
+    /// types. Pipeline's `PipelineOutput::Nom(NomFile)` carries the
+    /// same `NomFile` type — this test confirms the strict validator
+    /// fires on pipeline-produced ASTs exactly as on legacy-parser-
+    /// produced ASTs. Same NOMX-A3 warning for typed-slot refs
+    /// missing confidence thresholds.
+    #[test]
+    fn a4c37_strict_validator_runs_on_pipeline_output() {
+        let src = r#"the concept strict_demo is
+  intended to surface missing-threshold warnings from pipeline output.
+
+  uses the @Function matching "some helper".
+
+  favor correctness."#;
+
+        let out = run_pipeline(src).expect("pipeline");
+        let file = match out {
+            PipelineOutput::Nom(f) => f,
+            _ => panic!("expected Nom"),
+        };
+
+        let warnings = crate::validate_nom_strict(&file);
+        assert_eq!(warnings.len(), 1, "exactly one missing-threshold warning");
+        assert_eq!(warnings[0].code, "NOMX-A3");
+        assert!(
+            warnings[0].message.contains("@Function"),
+            "warning must name the kind: {}",
+            warnings[0].message
+        );
+    }
+
     /// a4c36: run_pipeline surfaces the EARLIEST StageFailure in the
     /// chain — editors that colour diagnostics by stage need this
     /// guarantee. If S2 rejects, the output carries `stage: KindClassify`
