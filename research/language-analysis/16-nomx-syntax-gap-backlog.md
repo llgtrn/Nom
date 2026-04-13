@@ -89,18 +89,23 @@
 | 72 | Exhaustiveness-check over `when` clauses on enum-valued data (MECE over state × event) | **W40** grammar rule (ties W30 + MECE validator) | ⏳ queued (doc 14 #32) |
 | 73 | Time-driven transitions → peer `*_timeout` function returning duration per state | authoring-guide rule | ✅ closed (doc 14 #32) |
 | 74 | Entry/exit actions → peer effect-valenced functions with explicit hazard clauses | authoring-guide rule | ✅ closed (doc 14 #32) |
+| 75 | `property` top-level kind declaration (expands closed kind set 7→8) | **W41** grammar rule | ⏳ queued (doc 14 #33) |
+| 76 | Generator-shape clause (domain-range vocabulary for property input domains) | **W42** grammar rule (reuses W39 vocabulary) | ⏳ queued (doc 14 #33) |
+| 77 | Shrinking-target declaration on properties (shortest/smallest/simplest) | authoring-guide rule | ✅ closed (doc 14 #33; embedded in W41 property grammar) |
+| 78 | Locked regression seeds live in source file, not sidecar cache | authoring-guide rule | ✅ closed (doc 14 #33; ties to doc 08 lock-in-source principle) |
+| 79 | Stateful properties = state-machine decomposition + post-step invariant check as property decl | authoring-guide rule | ✅ closed (doc 14 #33; composes #71 + W41) |
 
-Totals by destination (after doc 14 #32 XState state-machine translation surfaced W40 exhaustiveness-check + 3 authoring-guide closures):
+Totals by destination (after doc 14 #33 Hypothesis property-based-test translation surfaced W41 property-kind + W42 generator-shape + 3 authoring-guide closures):
 
-- ⏳ Wedge queued: **33** (+W40 exhaustiveness-check)
+- ⏳ Wedge queued: **35** (+W41 property-kind, +W42 generator-shape)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **37**
+- ✅ Closed: **40**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **1** (forward_compatibility QualityName)
 
-Backlog size: 75 rows. Closure rate 49% (37/75). **32 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + **state-machine-DSL (XState)**.
+Backlog size: 81 rows. Closure rate 49% (40/81). **33 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + **property-based-testing (Hypothesis/QuickCheck)**.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -120,6 +125,8 @@ Backlog size: 75 rows. Closure rate 49% (37/75). **32 translations** in doc 14. 
 - **W38:** Wire-field-tag clause (`at field N` / `at tag N` for proto3, CBOR, Avro, Cap'n Proto — per-field stable numeric IDs).
 - **W39:** Pattern-shape clause on data decls (regex-as-prose: closed 8-10-word vocabulary for character-classes, quantifiers, anchoring, case-folding, alternation).
 - **W40:** Exhaustiveness-check over `when` clauses on enum-valued data — totality gate for state-machine transitions and any `when current is X` branching on a closed set. Ties into W30 + existing MECE validator.
+- **W41:** `property` top-level kind declaration — expands closed kind set from 7 to 8 nouns. Universally-quantified claim over a generator; orthogonal to function/data/concept.
+- **W42:** Generator-shape clause — closed-vocabulary domain-range descriptors for property input generators (`list lengths from N to M`, `integers from -X to Y`, `text of shape …`). Reuses W39 pattern-shape vocabulary.
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 

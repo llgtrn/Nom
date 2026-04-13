@@ -1910,6 +1910,55 @@ Row additions: **W40 exhaustiveness-check over `when` clauses** (new wedge, ties
 
 ---
 
+## 33. Hypothesis property-based test — generative testing with shrinking
+
+```python
+from hypothesis import given, strategies as st
+
+@given(st.lists(st.integers()))
+def test_reverse_twice_is_identity(xs):
+    assert list(reversed(list(reversed(xs)))) == xs
+```
+
+### `.nomx v1` translation
+
+```nomx
+define check_reverse_twice_is_identity
+  that takes any list of integers, returns success.
+the once-reversed is reverse of xs.
+the twice-reversed is reverse of once-reversed.
+the twice-reversed equals xs.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function reverse_twice_is_identity is
+  intended to assert that reversing a list of integers twice yields the original list, for every input list.
+  uses the @Function matching "reverse list" with at-least 0.95 confidence.
+  requires xs is a list of integers.
+  ensures reversing xs twice equals xs.
+  favor correctness.
+
+the property reverse_involution_property is
+  intended to declare that `reverse` is an involution on lists of integers — running it twice returns the input.
+  checks reverse_twice_is_identity for every list of integers, shrinking counterexamples to the shortest failing list.
+  covers list lengths from 0 to 1000 integers and integer magnitudes from negative-one-billion to positive-one-billion by default.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **`property` as a new top-level kind** — QuickCheck/Hypothesis properties are not functions (no single input); they are **universally quantified claims** over a generator. v2 translation introduces `the property NAME is … checks FN for every …`. **Candidate: W41 `property` kind declaration** — adds `property` to the closed kind set (currently 7 nouns → 8). Small wedge. Keeps property-checking orthogonal to function/data/concept.
+2. **Generator specification (`list of integers`, `strings of length 1..100`)** — closed-vocabulary descriptors for input domains. `covers list lengths from N to M` is the prose surface. **Candidate: W42 generator-shape clause** — reuses pattern-shape vocabulary from W39 plus domain-range descriptors. Tied to the property kind; ships together.
+3. **Shrinking behavior** — when a property fails, Hypothesis reduces the counterexample to a minimal form. `shrinking counterexamples to the shortest failing list` is the canonical prose. Authoring-guide rule: **every property decl should declare its shrinking target (shortest, smallest, simplest) to make failures maximally informative**. No new wedge; it's a convention embedded in W41's property grammar.
+4. **Stateful property tests (Hypothesis `RuleBasedStateMachine`)** — not exercised here but worth noting: stateful properties test sequences of operations. These decompose to **peer transition functions + an invariant function checked after every step** — reuses XState decomposition (doc 14 #32) + property kind together. Authoring-guide rule: **stateful properties = state-machine decomposition + post-step invariant check as a property decl**.
+5. **Deterministic replay / failing-seed persistence** — Hypothesis persists failing seeds to `.hypothesis/examples`. Nom's hash-pinned `.nomtu` files can carry a `regression_seed` clause on property decls to lock known failing inputs into the source. Authoring-guide rule: **locked regression seeds belong in the property's source file, not in a sidecar cache**. Ties to the existing doc 08 lock-in-source principle.
+
+Row additions: **W41 `property` kind declaration** (new wedge, expands closed kind set 7→8), **W42 generator-shape clause** (new wedge, closed vocabulary), 2 authoring-guide rules (shrinking target + locked regression seeds) + 1 decomposition rule (stateful properties = state-machine + invariant property).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
