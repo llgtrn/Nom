@@ -2441,4 +2441,168 @@ the concept ct05 is
             }
         }
     }
+
+    // ── W4-A2: closed-keyword-set strictness lock (doc 13 §5 A2) ────────────
+    //
+    // These tests pin the invariant that `.nomx v2` keywords are
+    // case-sensitive, exact-match, no-synonym. Any future refactor that
+    // adds case-insensitive or fuzzy matching to the concept lexer will
+    // fail these — forcing the change to be an explicit, reviewed decision.
+    //
+    // Strictness model: CoreNLP's Annotator pipeline classifies every token
+    // or refuses the input. Nom's v2 keywords follow the same discipline —
+    // misspelled or case-varied keywords degrade to `Tok::Word(s)` which
+    // the parser rejects at the next grammar step, never silently promoted
+    // into a reserved token.
+
+    /// ct09a: case variants of `matching` are NOT promoted to `Tok::Matching`.
+    ///
+    /// Strictness invariant: uppercase chars are NOT valid word-starts
+    /// (see `is_word_start_char`), so variants like `Matching` fall
+    /// through to the catch-all branch and emit a single-char `Word(M)`
+    /// token. Whatever the shape of the fallback, the ONLY thing that
+    /// matters is: it must NOT lex as `Tok::Matching`.
+    #[test]
+    fn ct09a_matching_keyword_is_case_sensitive() {
+        use super::lex::{Lexer, Tok};
+        for variant in &["Matching", "MATCHING", "MATCHing", "matchIng"] {
+            let mut l = Lexer::new(variant);
+            let tok = l.next().expect("should produce a token");
+            assert_ne!(
+                tok.tok,
+                Tok::Matching,
+                "`{variant}` must NOT lex as the reserved Matching token"
+            );
+        }
+        // Sanity: exact lowercase does promote.
+        let mut l = Lexer::new("matching");
+        assert_eq!(l.next().expect("token").tok, Tok::Matching);
+    }
+
+    /// ct09b: case variants of `with` / `confidence` / `the` / `is` do
+    /// NOT promote to their reserved tokens — they hit the single-char
+    /// fallback per ct09a's invariant.
+    #[test]
+    fn ct09b_core_keywords_case_sensitive() {
+        use super::lex::{Lexer, Tok};
+        // (input, forbidden-reserved-token) — the input MUST NOT produce
+        // the forbidden token. The actual token it produces may be a
+        // single-char Word (uppercase letters fall through), and that's
+        // fine — it will fail the parser's grammar check downstream.
+        let cases: &[(&str, Tok)] = &[
+            ("With",       Tok::With),
+            ("WITH",       Tok::With),
+            ("Confidence", Tok::Word("confidence".to_string())), // `Confidence` must not fool the parser's `Word if w == "confidence"` check
+            ("The",        Tok::The),
+            ("THE",        Tok::The),
+            ("IS",         Tok::Is),
+            ("Is",         Tok::Is),
+        ];
+        for (input, forbidden) in cases {
+            let mut l = Lexer::new(input);
+            let tok = l.next().expect("should produce a token");
+            assert_ne!(
+                &tok.tok, forbidden,
+                "`{input}` must NOT lex as {forbidden:?}"
+            );
+        }
+        // Sanity: lowercase promotions work.
+        for (input, expected) in &[
+            ("with",       Tok::With),
+            ("the",        Tok::The),
+            ("is",         Tok::Is),
+        ] {
+            let mut l = Lexer::new(input);
+            assert_eq!(&l.next().expect("token").tok, expected);
+        }
+    }
+
+    /// ct09c: near-miss synonyms of `matching` never promote.
+    ///
+    /// `match`, `matches`, `matched`, `matchy` must stay Words. The v2
+    /// parser only accepts exact `matching` per doc 07 §6.1.
+    #[test]
+    fn ct09c_matching_has_no_synonyms() {
+        use super::lex::{Lexer, Tok};
+        for variant in &["match", "matches", "matched", "matchy"] {
+            let mut l = Lexer::new(variant);
+            let tok = l.next().expect("should produce a token");
+            assert_eq!(
+                tok.tok,
+                Tok::Word(variant.to_string()),
+                "`{variant}` must lex as Word, never Matching"
+            );
+        }
+    }
+
+    /// ct09d: `at_least` / `atleast` / `at-Least` / `At-least` do NOT
+    /// lex as `Tok::AtLeast`. Only the exact compound `at-least` (ASCII
+    /// lowercase, hyphen-joined) wins.
+    #[test]
+    fn ct09d_at_least_compound_is_exact_only() {
+        use super::lex::{Lexer, Tok};
+
+        // Underscore variant — covered already by ct07 but re-pinned here.
+        let mut l1 = Lexer::new("at_least");
+        assert_eq!(
+            l1.next().expect("token").tok,
+            Tok::Word("at_least".to_string()),
+            "`at_least` (underscore) must NOT lex as AtLeast"
+        );
+
+        // `atleast` (no separator) — whole word falls to Word.
+        let mut l2 = Lexer::new("atleast");
+        assert_eq!(
+            l2.next().expect("token").tok,
+            Tok::Word("atleast".to_string()),
+            "`atleast` (no separator) must lex as Word"
+        );
+
+        // Case variant `At-least` — `At` never maps to `Tok::At*`; it is
+        // a generic word start. Current lexer sees `At` as Word start and
+        // then the hyphen terminates it; token boundary breaks the compound.
+        let mut l3 = Lexer::new("At-least");
+        let tok3 = l3.next().expect("token");
+        assert_ne!(
+            tok3.tok,
+            Tok::AtLeast,
+            "`At-least` (capital A) must NOT lex as AtLeast"
+        );
+
+        // Exact form still wins.
+        let mut l4 = Lexer::new("at-least");
+        assert_eq!(l4.next().expect("token").tok, Tok::AtLeast);
+    }
+
+    /// ct09e: kind nouns are lowercase-exact. `Function`, `FUNCTION`
+    /// stay as `Tok::Word(...)`, never as `Tok::Kind(...)`.
+    #[test]
+    fn ct09e_kind_nouns_are_lowercase_exact() {
+        use super::lex::{Lexer, Tok};
+        for variant in &[
+            "Function", "FUNCTION", "Module", "Concept", "Screen", "DATA",
+            "Event", "Media",
+        ] {
+            let mut l = Lexer::new(variant);
+            let tok = l.next().expect("should produce a token");
+            matches!(tok.tok, Tok::Word(_))
+                .then_some(())
+                .unwrap_or_else(|| panic!(
+                    "`{variant}` must lex as Word, not Kind — got {:?}",
+                    tok.tok
+                ));
+        }
+        // Sanity: lowercase promotes.
+        for canonical in &[
+            "function", "module", "concept", "screen", "data", "event", "media",
+        ] {
+            let mut l = Lexer::new(canonical);
+            match l.next().expect("token").tok {
+                Tok::Kind(ref w) if w == canonical => {}
+                other => panic!(
+                    "`{canonical}` must lex as Kind({canonical}), got {other:?}"
+                ),
+            }
+        }
+    }
 }
