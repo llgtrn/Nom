@@ -23,7 +23,7 @@
 | 6 | Literal-string constants (Python `Literal[...]`) | **W6** grammar rule | ⏳ queued |
 | 7 | Docstring → `intended to` mapping | authoring-guide note | ✅ doc 17 §I6 |
 | 8 | Primitive-return idiom (`the result is true`) | authoring-guide + W4-A1 addendum | ⏳ queued |
-| 9 | Sum-return phrasing at v1 (already works) | smoke-test | 🧪 test-todo |
+| 9 | Sum-return phrasing at v1 (already works) | smoke-test | ✅ ct14 (nom-concept) |
 | 10 | Atomic-state primitives | authoring-corpus seed | ✅ doc 17 §I9 |
 | 11 | Lifetime annotations | design deferred (borrow-model) | 🧠 blocked on §borrow-model |
 | 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | ✅ doc 17 §I7 |
@@ -32,7 +32,7 @@
 | 15 | Callback closures | design deferred (§closures) | 🧠 design Q open |
 | 16 | `fail with "..."` expression grammar | **W9** grammar rule | ⏳ queued |
 | 17 | Multi-predicate short-circuit fail | subsumed by W9 | — |
-| 18 | `hazard` effect rendering | smoke-test (works today) | 🧪 test-todo |
+| 18 | `hazard` effect rendering | smoke-test (works today) | ✅ ct12 + ct13 (benefit/boon synonym) |
 | 19 | `is-a` runtime type probes | **W10** grammar rule | ⏳ queued |
 | 20 | `perhaps...nothing` idiom (works) | authoring-guide anchor | ✅ doc 17 §I1 |
 | 21 | Enum / sum-type declarations | **W11** grammar rule | ⏳ queued |
@@ -51,15 +51,15 @@
 | 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 
-Totals by destination (after doc 17 I9-I13 landed):
+Totals by destination (after ct12/ct13/ct14 smoke tests landed):
 
 - ⏳ Wedge queued: **12** (unchanged)
-- 🧪 Smoke-test todo: **4** (UTF-8 smoke shipped as ct11; 4 of 5 still pending)
-- 📘 Authoring-guide doc-todo: **0** (all 13 closed — doc 17 complete)
-- ✅ Closed: **14** (all 13 authoring-guide items + #34's smoke test)
+- 🧪 Smoke-test todo: **2** (#14 early-return guards + #18's third-variant rendering — deferred since v1 early-return grammar is already pinned by ct10*)
+- 📘 Authoring-guide doc-todo: **0** (doc 17 complete)
+- ✅ Closed: **17** (all 13 authoring-guide items + #9 + #18 + #34 smoke tests)
 - 🧠 Design deferred (open): **2** (+1 blocked)
 
-**Milestone 2026-04-14:** the authoring-guide chapter (doc 17) is complete. 14 of 35 doc 16 rows closed. Next focus lanes: wedges (12 queued) + remaining smoke tests (4).
+**Milestone 2026-04-14:** authoring-guide chapter complete + 3 of 5 smoke tests shipped. 17 of 35 doc 16 rows closed. Remaining: 12 W-wedges, 2 smoke tests, 2 deferred design questions, 1 blocked.
 
 ## Wedge master index (for cross-ref with doc 13)
 

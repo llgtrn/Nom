@@ -360,6 +360,19 @@ Doc 14 surfaced ambiguity about whether side-effects should be modeled as `uses 
 
 **Rule of thumb:** a side-effecting function with a single-sentence intent uses v2 only. Two or more distinct effects → write v1; add the most important effect as a v2 `uses` for discoverability.
 
+**Effects (`benefit` / `hazard` + synonyms `boon` / `bane`):** attach on entity or composition decls inside `.nomtu` files, NOT on concept bodies inside `.nom` files. See ct12 / ct13 smoke tests in nom-concept for the canonical shape:
+
+```nomx
+the function cipher_rc4_set_key is given a key, returns nothing.
+  requires key length is positive.
+  hazard weak_cipher, deprecated.
+
+the function write_cache is given a key and value, returns nothing.
+  benefit cache_warmup.
+```
+
+For concept-layer positive/negative-effect statements, use prose inside `intended to …` instead (the effect-valence system is entity-local).
+
 ---
 
 ## I13. Config-as-data vs. config-as-code split

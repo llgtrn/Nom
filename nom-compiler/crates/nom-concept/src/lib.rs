@@ -2707,6 +2707,76 @@ the concept ct11 is
         }
     }
 
+    /// ct12: `hazard` effect valence parses on an entity decl
+    /// (`.nomtu` context) and preserves its payload (doc 16 row #18).
+    /// Translation #7 (Cipher_RC4_set_key) uses `hazard weak_cipher.`
+    /// to mark a deprecated primitive; this test confirms the valence
+    /// + effect phrase survive through the AST + serde round-trip.
+    ///
+    /// Note: effects (`benefit` / `hazard`) are valid on entity &
+    /// composition decls inside `.nomtu` files, not on `.nom` concept
+    /// bodies. Doc 17 §I12 carries the matching idiom.
+    #[test]
+    fn ct12_hazard_effect_survives_parse() {
+        let src = r#"the function cipher_rc4_set_key is given a key, returns nothing.
+  requires key length is positive.
+  hazard weak_cipher, deprecated."#;
+        let parsed = parse_nomtu(src).expect("hazard effect must parse");
+        let json = serde_json::to_string(&parsed).expect("must serialize");
+        assert!(
+            json.contains("Hazard"),
+            "Hazard valence must appear; json = {json}"
+        );
+        assert!(
+            json.contains("weak_cipher"),
+            "hazard effect payload must survive; json = {json}"
+        );
+    }
+
+    /// ct13: `benefit` canonical + `boon` synonym both promote to the
+    /// same Benefit valence. Pins the lexer synonym table (lib.rs:409-412).
+    #[test]
+    fn ct13_benefit_and_boon_both_map_to_benefit_valence() {
+        let canonical_src = r#"the function write_cache is given a key and value, returns nothing.
+  benefit cache_warmup."#;
+        let synonym_src = r#"the function write_cache is given a key and value, returns nothing.
+  boon cache_warmup."#;
+        let canonical = parse_nomtu(canonical_src).expect("benefit parses");
+        let synonym = parse_nomtu(synonym_src).expect("boon parses");
+        let cjson = serde_json::to_string(&canonical).expect("serialize canonical");
+        let sjson = serde_json::to_string(&synonym).expect("serialize synonym");
+        for (label, json) in [("canonical", &cjson), ("synonym", &sjson)] {
+            assert!(
+                json.contains("Benefit"),
+                "{label} must carry Benefit valence; json = {json}"
+            );
+            assert!(
+                json.contains("cache_warmup"),
+                "{label} must carry cache_warmup payload; json = {json}"
+            );
+        }
+    }
+
+    /// ct14: sum-return (`returns text or an error`) at v1 entity level
+    /// parses (doc 16 row #9 smoke). Translations #4 (try_lock) + #5
+    /// (base64_decode) use this form; pins the behavior so future
+    /// strictness work (W18 `@Union` kind) doesn't regress it.
+    #[test]
+    fn ct14_sum_return_at_v1_parses() {
+        let src = r#"the function try_lock is given a resource, returns a guard or a lock_error.
+  ensures the lock is held on success."#;
+        let parsed = parse_nomtu(src)
+            .expect("sum-return `returns A or B` at v1 must parse");
+        let json = serde_json::to_string(&parsed).expect("must serialize");
+        // The signature prose must survive; the parser doesn't yet
+        // split it into a typed @Union, but it's preserved verbatim.
+        assert!(
+            json.contains("guard or a lock_error")
+                || json.contains("lock_error"),
+            "sum-return prose must survive in signature; json = {json}"
+        );
+    }
+
     /// ct10d: sanity — `the function login_user matching "x"` (v1 with kind)
     /// and `the @Function matching "x"` (v2 typed-slot) both parse cleanly.
     #[test]
