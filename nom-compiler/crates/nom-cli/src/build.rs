@@ -315,14 +315,37 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
                 continue;
             }
 
-            // Look for `the <kind> <word>` pattern.  The word must be followed
-            // by whitespace, punctuation, end-of-line, or `matching`.
-            // We scan for the token boundary manually to avoid a regex dep on
-            // the single caller site (regex is available via workspace but we
-            // keep the rewrite pure for testability).
-            let kinds = ["function", "module", "concept", "screen", "data", "event", "media"];
-            for kind in kinds {
-                let needle = format!("the {kind} {word}");
+            // Look for `<article> <kind> <word>` pattern.  The word must be
+            // followed by whitespace, punctuation, end-of-line, or a matching
+            // keyword.  We scan for the token boundary manually to avoid a
+            // regex dep on the single caller site (regex is available via
+            // workspace but we keep the rewrite pure for testability).
+            //
+            // Articles: `the` (English) and `cai` (Vietnamese locale-pack,
+            //   motivation 02 alias for the classifier article).
+            // Kind words: English names + Vietnamese ASCII aliases (same
+            //   motivation 02 locale-pack):
+            //   function / ham, module / mo_dun, concept / khai_niem,
+            //   screen / man_hinh, data, event, media.
+            let needles: &[(&str, &str)] = &[
+                ("the", "function"),
+                ("the", "module"),
+                ("the", "concept"),
+                ("the", "screen"),
+                ("the", "data"),
+                ("the", "event"),
+                ("the", "media"),
+                // Vietnamese ASCII aliases (motivation 02 locale-pack)
+                ("cai", "ham"),
+                ("cai", "mo_dun"),
+                ("cai", "khai_niem"),
+                ("cai", "man_hinh"),
+                ("cai", "function"),
+                ("cai", "module"),
+                ("cai", "concept"),
+            ];
+            'needle_loop: for (article, kind) in needles {
+                let needle = format!("{article} {kind} {word}");
                 if let Some(pos) = patched_line.find(&needle) {
                     let after_pos = pos + needle.len();
                     // Confirm what follows is not `@` (already pinned) or an
@@ -336,7 +359,7 @@ pub fn apply_hash_locks(source: &str, refs: &[ResolvedRef]) -> (String, usize) {
                     if !already_pinned && !word_continues {
                         patched_line.insert_str(after_pos, &format!("@{hash}"));
                         count += 1;
-                        break; // one insertion per ref per line is enough
+                        break 'needle_loop; // one insertion per ref per line is enough
                     }
                 }
             }
@@ -430,5 +453,50 @@ mod tests {
         assert!(patched.contains("the concept foo is"), "other lines preserved");
         assert!(patched.contains("intended to do bar"), "other lines preserved");
         assert!(patched.contains(&format!("the function baz@{hash}")));
+    }
+
+    // ── Vietnamese locale-pack regression tests ───────────────────────────────
+
+    #[test]
+    fn apply_hash_locks_vn_cai_ham_inserts_hash() {
+        // Regression: `cai ham foo khop "..."` must have @hash spliced after `foo`.
+        let source = "     cai ham foo khop \"read text from a workspace path\",\n";
+        let hash = "cafebabe00000000cafebabe00000000cafebabe00000000cafebabe00000000";
+        let refs = vec![make_ref("foo", hash)];
+        let (patched, count) = apply_hash_locks(source, &refs);
+        assert_eq!(count, 1, "VN cai ham line must receive hash insertion");
+        assert!(
+            patched.contains(&format!("foo@{hash}")),
+            "expected foo@hash in patched VN line: {patched}"
+        );
+        // The matching clause must survive unchanged.
+        assert!(
+            patched.contains("khop \"read text from a workspace path\""),
+            "khop clause must be preserved: {patched}"
+        );
+    }
+
+    #[test]
+    fn apply_hash_locks_vn_cai_ham_idempotent() {
+        // If `cai ham foo@<hash>` is already pinned, no second insertion.
+        let hash = "cafebabe00000000cafebabe00000000cafebabe00000000cafebabe00000000";
+        let source = format!("     cai ham foo@{hash} khop \"x\",\n");
+        let refs = vec![make_ref("foo", hash)];
+        let (patched, count) = apply_hash_locks(&source, &refs);
+        assert_eq!(count, 0, "already-pinned VN line must not be modified");
+        assert_eq!(patched, source, "source must be unchanged");
+    }
+
+    #[test]
+    fn apply_hash_locks_vn_concept_line_not_touched() {
+        // A `cai khai_niem <name>` declaration line must NOT get a hash
+        // spliced when we are looking for a function named differently.
+        let source = "cai khai_niem agent_safety_policy muc_dich constrain what an agent may do.\n";
+        let hash = "aaaa000000000000aaaa000000000000aaaa000000000000aaaa000000000000";
+        // We are resolving `read_file`, not `agent_safety_policy`.
+        let refs = vec![make_ref("read_file", hash)];
+        let (patched, count) = apply_hash_locks(source, &refs);
+        assert_eq!(count, 0, "concept declaration line must not be patched for a different word");
+        assert_eq!(patched, source, "source must be unchanged");
     }
 }

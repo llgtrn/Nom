@@ -1,0 +1,5 @@
+cai ham run_command la
+  given a command of text and arguments as text, returns the standard output as text.
+  can the command is on the allowed-commands list.
+  can no argument contains shell metacharacters that would expand outside the literal call.
+  bao_dam the output is captured verbatim and stderr is reported separately.

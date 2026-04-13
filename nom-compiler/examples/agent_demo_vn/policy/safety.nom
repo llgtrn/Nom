@@ -1,0 +1,9 @@
+cai khai_niem agent_safety_policy muc_dich constrain what an agent may do during one task.
+
+dung cai ham read_file khop "read text from a workspace path".
+
+khi the agent never writes outside the workspace root.
+khi the agent never invokes a command outside the allowed list.
+khi every web fetch uses https.
+
+uu_tien security roi privacy roi speed.

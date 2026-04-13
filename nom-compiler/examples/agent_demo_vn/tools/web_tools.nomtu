@@ -1,0 +1,9 @@
+cai ham fetch_url la
+  given a url of text, returns the response body as text.
+  can the url scheme is https.
+  bao_dam the result is the response body without modification or yes-no failure.
+
+cai ham search_web la
+  given a query of text, returns a list of result links as text.
+  can the query is non-empty.
+  bao_dam the results are ordered by the underlying engine relevance.
