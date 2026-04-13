@@ -77,17 +77,18 @@
 | 60 | Proof-tactic DSL (`by induction with | zero => rfl`) | **W36** grammar rule | ⏳ deferred (waits on W35 + math infra) |
 | 61 | Actor-spawn + message-passing clause | **W37** grammar rule (may subsume W31) | ⏳ queued (doc 14 #27) |
 | 62 | Logic-query / Prolog unification — translates to list-returning function + `ensures` clause | authoring-guide rule | ✅ closed (doc 14 #28; no wedge needed — existing shape suffices) |
+| 63 | Lisp macro / metaprogramming — translates to higher-order function taking body-producing closure (links deferred D2) | authoring-guide rule | ✅ closed (doc 14 #29; Nom intentionally rejects macros — closure-lifting covers every common macro-use) |
 
-Totals by destination (after doc 14 #28 Prolog logic-programming translation confirmed the list-returning + ensures-clause shape is sufficient):
+Totals by destination (after doc 14 #29 Common Lisp macro translation confirmed the closure-lifting shape captures every common macro-use; no macro grammar needed):
 
 - ⏳ Wedge queued: **30** (W37 actor-spawn; may subsume W31)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **28**
+- ✅ Closed: **29**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 
-Backlog size: 62 rows. Closure rate 45% (28/62). **28 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + **logic-programming (Prolog unification)**.
+Backlog size: 63 rows. Closure rate 46% (29/63). **29 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + **metaprogramming (Lisp macros → closure-lifting, by rejection)**.
 
 ## Wedge master index (for cross-ref with doc 13)
 

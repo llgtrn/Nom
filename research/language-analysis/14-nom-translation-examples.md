@@ -1648,6 +1648,56 @@ Deferred/non-wedge paradigm: **logic programming adds 0 wedges but locks a trans
 
 ---
 
+## 29. Common Lisp macro — code-as-data metaprogramming
+
+```lisp
+(defmacro when-let ((binding form) &body body)
+  `(let ((,binding ,form))
+     (when ,binding
+       ,@body)))
+
+; Usage:
+(when-let (user (find-user id))
+  (print (user-name user))
+  (log-access user))
+```
+
+### `.nomx v1` translation
+
+```nomx
+define when_present
+  that takes a producer and a body, returns the body's result or nothing.
+the value is the producer's result.
+when the value is present,
+  run the body with value bound, return its result.
+otherwise return nothing.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function when_present is
+  intended to bind a produced value into a scope and run a body only when the value is present; returns the body's result or nothing.
+  uses the @Function matching "produce-or-nothing" with at-least 0.9 confidence.
+  ensures the body never runs when the producer returns nothing.
+  ensures the body receives the produced value by name when the producer returns a value.
+  hazard the body's side effects are skipped on absence — callers must not rely on them.
+  favor correctness.
+  favor clarity.
+```
+
+### Gaps surfaced
+
+1. **Macros / code-as-data** — Lisp's `defmacro` expands syntactic forms before evaluation. Nom has **no macro system and intentionally does not add one**: the canonical translation promotes the macro body to a higher-order function that takes a **body-producing closure**. Authoring-guide rule: **macros decompose into higher-order functions taking body-producing closures; callers pass closures explicitly rather than relying on surface-syntax rewriting**. Aligns with deferred design D2 (doc 19): closures lift to named entities. **No new wedge** — existing function + closure-lifting shape suffices.
+2. **Splice / quasi-quote (`` ` ``, `,`, `,@`)** — syntactic escape markers inside macro templates. Since Nom rejects macros, splice/quasi-quote are not needed. Authoring-guide rule stands: the macro's textual substitution becomes function composition at runtime.
+3. **Homoiconicity** — code and data share the same surface syntax in Lisp. Nom's `.nomtu` is hash-pinned and deliberately NOT homoiconic; however, the dict IS queryable as data (DB2 rows with `(kind, word, signature, body_kind, …)`), which covers the "code is data" use case via a different mechanism (dict-as-graph, not s-expressions). Authoring-guide cross-reference: **dict queries replace code-as-data macro introspection**.
+4. **`&body` rest-parameter convention** — variable-arity positional block. Nom expresses this via a single closure parameter in v2; callers pass a named closure. No new wedge.
+5. **Read-time vs. compile-time vs. runtime separation** — Lisp exposes all three; Nom collapses read-time + compile-time into `nom author` + `nom store sync` (source → DB). No macro-level wedge follows.
+
+Deferred/non-wedge paradigm: **metaprogramming adds 0 wedges but locks a major translation rule** — the macro → higher-order-function-with-body-closure mapping covers every common macro-use (resource scoping, retry policies, condition guards, defmacro-based DSLs). Row #63 closes as authoring-guide rule + cross-reference to doc 19 D2.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
