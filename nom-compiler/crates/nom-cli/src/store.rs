@@ -1346,6 +1346,10 @@ pub struct ResolvedRef {
     pub hash: String,
     /// Other candidates' hashes (empty when only one match existed).
     pub alternatives: Vec<String>,
+    /// Per-slot inline confidence threshold (doc 07 §6.3), propagated from
+    /// the source `EntityRef`. Phase-9 corpus-embedding-resolver enforces this.
+    /// Stub resolver records but ignores it.
+    pub confidence_threshold: Option<f64>,
 }
 
 /// Resolve unresolved refs from a closure against the DB's `words_v2` table.
@@ -1434,6 +1438,7 @@ pub fn resolve_closure(
                     kind: uref.kind.clone(),
                     hash: candidates[0].hash.clone(),
                     alternatives: vec![],
+                    confidence_threshold: uref.confidence_threshold,
                 });
                 stats.resolved += 1;
             }
@@ -1448,6 +1453,7 @@ pub fn resolve_closure(
                     kind: uref.kind.clone(),
                     hash: picked,
                     alternatives,
+                    confidence_threshold: uref.confidence_threshold,
                 });
                 stats.resolved += 1;
                 stats.ambiguous += 1;
@@ -1562,6 +1568,7 @@ pub fn materialize_concept_graph_from_db(
                             hash: Some(s.clone()),
                             matching: None,
                             typed_slot: false,
+                            confidence_threshold: None,
                         }
                     } else {
                         // It's a word name from an unresolved composition.
@@ -1571,6 +1578,7 @@ pub fn materialize_concept_graph_from_db(
                             hash: None,
                             matching: None,
                             typed_slot: false,
+                            confidence_threshold: None,
                         }
                     }
                 })
@@ -1648,6 +1656,7 @@ mod tests {
             matching: None,
             referenced_from: "test_concept".to_string(),
             typed_slot: true,
+            confidence_threshold: None,
         }
     }
 
@@ -1658,6 +1667,7 @@ mod tests {
             matching: None,
             referenced_from: "test_concept".to_string(),
             typed_slot: false,
+            confidence_threshold: None,
         }
     }
 

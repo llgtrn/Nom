@@ -21,25 +21,25 @@ pub const KINDS: &[&str] = &[
 ];
 
 /// `.nom` file: 1..N concept declarations.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NomFile {
     pub concepts: Vec<ConceptDecl>,
 }
 
 /// `.nomtu` file: 1..N entity declarations and/or composition declarations.
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct NomtuFile {
     pub items: Vec<NomtuItem>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum NomtuItem {
     Entity(EntityDecl),
     Composition(CompositionDecl),
 }
 
 /// One concept (one DB1 row).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct ConceptDecl {
     pub name: String,
     pub intent: String,
@@ -49,13 +49,13 @@ pub struct ConceptDecl {
     pub objectives: Vec<String>,
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub enum IndexClause {
     Uses(Vec<EntityRef>),
     Extends { base: String, change_set: ChangeSet },
 }
 
-#[derive(Debug, Clone, PartialEq, Eq, Default, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Default, Serialize, Deserialize)]
 pub struct ChangeSet {
     pub adding: Vec<EntityRef>,
     pub removing: Vec<EntityRef>,
@@ -92,7 +92,7 @@ pub struct EntityDecl {
 }
 
 /// A composition emitted by a `.nomtu` (one extra DB2 row).
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct CompositionDecl {
     pub word: String,
     pub composes: Vec<EntityRef>,
@@ -106,7 +106,8 @@ pub struct CompositionDecl {
 /// Two surface forms (doc 07 §3):
 ///   v1 (bare word): `the function login_user matching "..."` — `typed_slot = false`
 ///   v2 (typed slot): `the @Function matching "..."` — `typed_slot = true`, `word = ""`
-#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+///   v2 + threshold:  `the @Function matching "..." with at-least 0.85 confidence`
+#[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityRef {
     pub kind: Option<String>,
     /// Entity name. Empty string when `typed_slot = true`.
@@ -117,6 +118,12 @@ pub struct EntityRef {
     /// When true, `word` is "" and the resolver picks a hash from the dict by kind + matching.
     #[serde(default)]
     pub typed_slot: bool,
+    /// Per-slot inline confidence threshold (doc 07 §6.3).
+    /// Phase-9 corpus-embedding-resolver enforces this. Stub resolver ignores it.
+    /// `None` ≡ "use default per-kind threshold" (also ignored by stub).
+    /// Valid range: [0.0, 1.0]; enforced at parse time.
+    #[serde(default)]
+    pub confidence_threshold: Option<f64>,
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -142,7 +149,12 @@ pub enum ConceptError {
 // ── Lexer ────────────────────────────────────────────────────────────────────
 
 mod lex {
-    #[derive(Debug, Clone, PartialEq, Eq)]
+    /// Token variants produced by the lexer.
+    ///
+    /// `Eq` is intentionally NOT derived: `NumberLit(f64)` contains `f64`
+    /// which does not implement `Eq` (NaN != NaN). All comparisons use
+    /// `PartialEq`, which is sufficient throughout the parser and tests.
+    #[derive(Debug, Clone, PartialEq)]
     pub enum Tok {
         The,
         Is,
@@ -169,6 +181,13 @@ mod lex {
         Works,
         When,
         Favor,
+        /// `at-least` compound keyword for confidence threshold clauses (doc 07 §6.3).
+        /// Emitted by the lexer when it sees the word `at` followed immediately by
+        /// the literal sequence `-least` (hyphen + the word `least`).
+        AtLeast,
+        /// A decimal number literal: `[0-9]+(.[0-9]+)?`.
+        /// Used for confidence threshold values in typed-slot refs.
+        NumberLit(f64),
         /// A kind keyword ("function", "module", …).
         Kind(String),
         /// A bare word: `[a-z0-9_]+`.
@@ -269,6 +288,30 @@ mod lex {
                 return Some(Spanned { tok: Tok::Quoted(content), pos: start });
             }
 
+            // Decimal number literal: `[0-9]+(.[0-9]+)?`
+            // Exponents (e.g. `1.5e10`) are intentionally not supported — confidence
+            // thresholds are plain decimals in [0.0, 1.0].
+            if b.is_ascii_digit() {
+                let num_start = self.pos;
+                while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_digit() {
+                    self.pos += 1;
+                }
+                // Optional fractional part `.digits`
+                if self.pos < self.src.len() && self.src.as_bytes()[self.pos] == b'.' {
+                    // Peek one byte further to check for a digit (avoids consuming a
+                    // trailing `.` that terminates a statement).
+                    if self.pos + 1 < self.src.len() && self.src.as_bytes()[self.pos + 1].is_ascii_digit() {
+                        self.pos += 1; // consume `.`
+                        while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_digit() {
+                            self.pos += 1;
+                        }
+                    }
+                }
+                let num_str = &self.src[num_start..self.pos];
+                let value: f64 = num_str.parse().unwrap_or(0.0);
+                return Some(Spanned { tok: Tok::NumberLit(value), pos: start });
+            }
+
             // Bare word / keyword token.
             //
             // Accepted character classes:
@@ -340,6 +383,48 @@ mod lex {
                     "removing" => Tok::Removing,
                     "exposes"  => Tok::Exposes,
                     "this"     => Tok::This,
+                    // ── `at-least` compound keyword (doc 07 §6.3) ────────────
+                    // When the word `at` is followed immediately by the byte
+                    // sequence `-least` (hyphen then the word `least`), consume
+                    // all three segments and emit `AtLeast`.  If the remainder
+                    // is something other than `-least` (e.g. `at` alone, `at_most`,
+                    // or `at` as prose), fall through to `Tok::Word("at")`.
+                    "at" => {
+                        // The parser position is already past `at`.
+                        // Check if the very next byte is `-`.
+                        if self.pos < self.src.len() && self.src.as_bytes()[self.pos] == b'-' {
+                            // Peek at the word after `-`.
+                            let after_hyphen = self.pos + 1;
+                            if after_hyphen < self.src.len()
+                                && is_word_start_char(
+                                    self.src[after_hyphen..].chars().next().unwrap_or('\0'),
+                                )
+                            {
+                                let word2_start = after_hyphen;
+                                let mut word2_end = after_hyphen;
+                                while word2_end < self.src.len() {
+                                    let c = self.src[word2_end..].chars().next().unwrap();
+                                    if is_word_continue_char(c) {
+                                        word2_end += c.len_utf8();
+                                    } else {
+                                        break;
+                                    }
+                                }
+                                let word2 = &self.src[word2_start..word2_end];
+                                if word2 == "least" {
+                                    // Consume `-least` (1 byte for `-` + len of `least`).
+                                    self.pos = word2_end;
+                                    Tok::AtLeast
+                                } else {
+                                    Tok::Word("at".to_string())
+                                }
+                            } else {
+                                Tok::Word("at".to_string())
+                            }
+                        } else {
+                            Tok::Word("at".to_string())
+                        }
+                    }
                     "works"    => Tok::Works,
                     "when"     => Tok::When,
                     "favor"    => Tok::Favor,
@@ -535,34 +620,36 @@ mod parse {
 
     fn tok_display(tok: &Tok) -> String {
         match tok {
-            Tok::The      => "`the`".into(),
-            Tok::Is       => "`is`".into(),
-            Tok::Composes => "`composes`".into(),
-            Tok::Then     => "`then`".into(),
-            Tok::With     => "`with`".into(),
-            Tok::Requires => "`requires`".into(),
-            Tok::Ensures  => "`ensures`".into(),
-            Tok::Matching => "`matching`".into(),
-            Tok::Benefit  => "`benefit`".into(),
-            Tok::Hazard   => "`hazard`".into(),
-            Tok::Intended => "`intended`".into(),
-            Tok::To       => "`to`".into(),
-            Tok::Uses     => "`uses`".into(),
-            Tok::Extends  => "`extends`".into(),
-            Tok::Adding   => "`adding`".into(),
-            Tok::Removing => "`removing`".into(),
-            Tok::Exposes  => "`exposes`".into(),
-            Tok::This     => "`this`".into(),
-            Tok::Works    => "`works`".into(),
-            Tok::When     => "`when`".into(),
-            Tok::Favor    => "`favor`".into(),
-            Tok::At       => "`@`".into(),
-            Tok::Dot      => "`.`".into(),
-            Tok::Comma    => "`,`".into(),
-            Tok::Kind(k)  => format!("`{k}`"),
-            Tok::Word(w)  => format!("`{w}`"),
-            Tok::Quoted(q) => format!("`\"{q}\"`"),
-            Tok::AtKind(k) => format!("`@{k}`"),
+            Tok::The        => "`the`".into(),
+            Tok::Is         => "`is`".into(),
+            Tok::Composes   => "`composes`".into(),
+            Tok::Then       => "`then`".into(),
+            Tok::With       => "`with`".into(),
+            Tok::Requires   => "`requires`".into(),
+            Tok::Ensures    => "`ensures`".into(),
+            Tok::Matching   => "`matching`".into(),
+            Tok::Benefit    => "`benefit`".into(),
+            Tok::Hazard     => "`hazard`".into(),
+            Tok::Intended   => "`intended`".into(),
+            Tok::To         => "`to`".into(),
+            Tok::Uses       => "`uses`".into(),
+            Tok::Extends    => "`extends`".into(),
+            Tok::Adding     => "`adding`".into(),
+            Tok::Removing   => "`removing`".into(),
+            Tok::Exposes    => "`exposes`".into(),
+            Tok::This       => "`this`".into(),
+            Tok::Works      => "`works`".into(),
+            Tok::When       => "`when`".into(),
+            Tok::Favor      => "`favor`".into(),
+            Tok::At         => "`@`".into(),
+            Tok::Dot        => "`.`".into(),
+            Tok::Comma      => "`,`".into(),
+            Tok::AtLeast    => "`at-least`".into(),
+            Tok::NumberLit(n) => format!("`{n}`"),
+            Tok::Kind(k)    => format!("`{k}`"),
+            Tok::Word(w)    => format!("`{w}`"),
+            Tok::Quoted(q)  => format!("`\"{q}\"`"),
+            Tok::AtKind(k)  => format!("`@{k}`"),
         }
     }
 
@@ -706,34 +793,36 @@ mod parse {
 
     fn tok_surface(tok: &Tok) -> String {
         match tok {
-            Tok::The      => "the".to_string(),
-            Tok::Is       => "is".to_string(),
-            Tok::Composes => "composes".to_string(),
-            Tok::Then     => "then".to_string(),
-            Tok::With     => "with".to_string(),
-            Tok::Requires => "requires".to_string(),
-            Tok::Ensures  => "ensures".to_string(),
-            Tok::Matching => "matching".to_string(),
-            Tok::Benefit  => "benefit".to_string(),
-            Tok::Hazard   => "hazard".to_string(),
-            Tok::Intended => "intended".to_string(),
-            Tok::To       => "to".to_string(),
-            Tok::Uses     => "uses".to_string(),
-            Tok::Extends  => "extends".to_string(),
-            Tok::Adding   => "adding".to_string(),
-            Tok::Removing => "removing".to_string(),
-            Tok::Exposes  => "exposes".to_string(),
-            Tok::This     => "this".to_string(),
-            Tok::Works    => "works".to_string(),
-            Tok::When     => "when".to_string(),
-            Tok::Favor    => "favor".to_string(),
-            Tok::At       => "@".to_string(),
-            Tok::Comma    => ",".to_string(),
-            Tok::Kind(k)  => k.clone(),
-            Tok::Word(w)  => w.clone(),
-            Tok::Quoted(q) => format!("\"{}\"", q),
-            Tok::Dot      => ".".to_string(),
-            Tok::AtKind(k) => format!("@{k}"),
+            Tok::The        => "the".to_string(),
+            Tok::Is         => "is".to_string(),
+            Tok::Composes   => "composes".to_string(),
+            Tok::Then       => "then".to_string(),
+            Tok::With       => "with".to_string(),
+            Tok::Requires   => "requires".to_string(),
+            Tok::Ensures    => "ensures".to_string(),
+            Tok::Matching   => "matching".to_string(),
+            Tok::Benefit    => "benefit".to_string(),
+            Tok::Hazard     => "hazard".to_string(),
+            Tok::Intended   => "intended".to_string(),
+            Tok::To         => "to".to_string(),
+            Tok::Uses       => "uses".to_string(),
+            Tok::Extends    => "extends".to_string(),
+            Tok::Adding     => "adding".to_string(),
+            Tok::Removing   => "removing".to_string(),
+            Tok::Exposes    => "exposes".to_string(),
+            Tok::This       => "this".to_string(),
+            Tok::Works      => "works".to_string(),
+            Tok::When       => "when".to_string(),
+            Tok::Favor      => "favor".to_string(),
+            Tok::At         => "@".to_string(),
+            Tok::Comma      => ",".to_string(),
+            Tok::AtLeast    => "at-least".to_string(),
+            Tok::NumberLit(n) => n.to_string(),
+            Tok::Kind(k)    => k.clone(),
+            Tok::Word(w)    => w.clone(),
+            Tok::Quoted(q)  => format!("\"{}\"", q),
+            Tok::Dot        => ".".to_string(),
+            Tok::AtKind(k)  => format!("@{k}"),
         }
     }
 
@@ -839,6 +928,73 @@ mod parse {
                 } else {
                     None
                 };
+
+                // Optional `with at-least <number> confidence` clause (doc 07 §6.3).
+                // Only valid on typed-slot refs; applies to `the @Kind (matching "...")? with at-least N confidence`.
+                let confidence_threshold = if lex.peek() == Some(Tok::With) {
+                    lex.next(); // consume `with`
+                    // Next must be `at-least`
+                    let pos3 = lex.position();
+                    match lex.next() {
+                        Some(s) if s.tok == Tok::AtLeast => {}
+                        Some(s) => return Err(err_expected(
+                            "`at-least` after `with` in confidence clause",
+                            &tok_display(&s.tok),
+                            s.pos,
+                        )),
+                        None => return Err(err_expected(
+                            "`at-least` after `with` in confidence clause",
+                            "end of input",
+                            pos3,
+                        )),
+                    }
+                    // Next must be a number literal
+                    let pos4 = lex.position();
+                    let n = match lex.next() {
+                        Some(s) => match s.tok {
+                            Tok::NumberLit(n) => n,
+                            other => return Err(err_expected(
+                                "a number in [0.0, 1.0] after `at-least`",
+                                &tok_display(&other),
+                                s.pos,
+                            )),
+                        },
+                        None => return Err(err_expected(
+                            "a number in [0.0, 1.0] after `at-least`",
+                            "end of input",
+                            pos4,
+                        )),
+                    };
+                    // Range check: [0.0, 1.0]
+                    if !(0.0..=1.0).contains(&n) {
+                        return Err(ConceptError::ParseError {
+                            expected: "a confidence threshold in [0.0, 1.0]".to_string(),
+                            found: format!("{n} (out of range)"),
+                            position: pos4,
+                        });
+                    }
+                    // Next must be the word `confidence`
+                    let pos5 = lex.position();
+                    match lex.next() {
+                        Some(s) => match s.tok {
+                            Tok::Word(ref w) if w == "confidence" => {}
+                            other => return Err(err_expected(
+                                "`confidence` after threshold value",
+                                &tok_display(&other),
+                                s.pos,
+                            )),
+                        },
+                        None => return Err(err_expected(
+                            "`confidence` after threshold value",
+                            "end of input",
+                            pos5,
+                        )),
+                    }
+                    Some(n)
+                } else {
+                    None
+                };
+
                 let _ = at_pos; // silence unused warning
                 return Ok(EntityRef {
                     kind: Some(kind_lower),
@@ -846,6 +1002,7 @@ mod parse {
                     hash: None,
                     matching,
                     typed_slot: true,
+                    confidence_threshold,
                 });
             }
             _ => {}
@@ -878,7 +1035,7 @@ mod parse {
             None
         };
 
-        Ok(EntityRef { kind: Some(kind), word, hash, matching, typed_slot: false })
+        Ok(EntityRef { kind: Some(kind), word, hash, matching, typed_slot: false, confidence_threshold: None })
     }
 
     /// Parse `"the" Kind Word ("@" Hash)? ("matching" Phrase)?`
@@ -1362,6 +1519,7 @@ mod tests {
                 hash: Some("a1b2c3d4".to_string()),
                 matching: None,
                 typed_slot: false,
+                confidence_threshold: None,
             }])],
             exposes: vec!["auth_jwt_session_compose".to_string()],
             acceptance: vec![
@@ -2590,6 +2748,199 @@ the concept ck_{lc} is
         for kind in &["Function", "Module", "Concept", "Screen", "Data", "Event", "Media"] {
             let src = concept_template(kind);
             parse_nom(&src).unwrap_or_else(|e| panic!("@{kind} should parse, got: {:?}", e));
+        }
+    }
+
+    // ── confidence threshold tests (doc 07 §6.3) ─────────────────────────────
+
+    /// ct01: full syntax `the @Function matching "..." with at-least 0.85 confidence`
+    /// parses to EntityRef with confidence_threshold = Some(0.85).
+    #[test]
+    fn ct01_parse_typed_slot_with_threshold() {
+        let src = r#"
+the concept ct01 is
+  intended to test confidence threshold.
+
+  uses the @Function matching "user authentication" with at-least 0.85 confidence.
+
+  favor correctness.
+"#;
+        let nom_file = parse_nom(src).expect("should parse");
+        match &nom_file.concepts[0].index[0] {
+            IndexClause::Uses(refs) => {
+                assert_eq!(refs.len(), 1);
+                let r = &refs[0];
+                assert!(r.typed_slot, "must be typed slot");
+                assert_eq!(r.kind.as_deref(), Some("function"));
+                assert_eq!(r.matching.as_deref(), Some("user authentication"));
+                let t = r.confidence_threshold.expect("threshold must be Some");
+                assert!((t - 0.85).abs() < 1e-10, "threshold must be 0.85, got {t}");
+            }
+            _ => panic!("expected Uses"),
+        }
+    }
+
+    /// ct02: threshold values 0.0 and 1.0 are inclusive.
+    #[test]
+    fn ct02_threshold_zero_and_one_inclusive() {
+        for (value_str, expected) in [("0.0", 0.0_f64), ("1.0", 1.0_f64)] {
+            let src = format!(r#"
+the concept ct02_{label} is
+  intended to test edge threshold.
+
+  uses the @Function matching "x" with at-least {value_str} confidence.
+
+  favor correctness.
+"#, label = if expected == 0.0 { "zero" } else { "one" });
+            let nom_file = parse_nom(&src)
+                .unwrap_or_else(|e| panic!("threshold {value_str} should parse, got: {e:?}"));
+            match &nom_file.concepts[0].index[0] {
+                IndexClause::Uses(refs) => {
+                    let t = refs[0].confidence_threshold.expect("threshold must be Some");
+                    assert!((t - expected).abs() < 1e-10,
+                        "threshold {value_str}: expected {expected}, got {t}");
+                }
+                _ => panic!("expected Uses"),
+            }
+        }
+    }
+
+    /// ct03: threshold below 0.0 is rejected with ParseError.
+    #[test]
+    fn ct03_threshold_above_one_rejected() {
+        // Note: negative literals start with `-` which is not in the identifier
+        // charset; `1.5` is the easiest above-1.0 test.
+        let src = r#"
+the concept ct03 is
+  intended to test out-of-range threshold.
+
+  uses the @Function matching "x" with at-least 1.5 confidence.
+
+  favor correctness.
+"#;
+        assert!(
+            matches!(parse_nom(src), Err(ConceptError::ParseError { .. })),
+            "threshold 1.5 must produce ParseError"
+        );
+    }
+
+    /// ct04: threshold without `with` keyword is a parse error
+    /// (`the @Function matching "x" at-least 0.85 confidence` — missing `with`).
+    #[test]
+    fn ct04_at_least_without_with_rejected() {
+        // The `at-least` compound without a leading `with` ends up in a `uses`
+        // list with a dot terminator missing or wrong token sequence → ParseError.
+        let src = r#"
+the concept ct04 is
+  intended to test missing with keyword.
+
+  uses the @Function matching "x" at-least 0.85 confidence.
+
+  favor correctness.
+"#;
+        assert!(
+            parse_nom(src).is_err(),
+            "missing `with` before `at-least` must produce an error"
+        );
+    }
+
+    /// ct05: `with at-least N` without trailing `confidence` word is a parse error.
+    #[test]
+    fn ct05_with_at_least_missing_confidence_word_rejected() {
+        let src = r#"
+the concept ct05 is
+  intended to test missing confidence word.
+
+  uses the @Function matching "x" with at-least 0.85.
+
+  favor correctness.
+"#;
+        assert!(
+            matches!(parse_nom(src), Err(ConceptError::ParseError { .. })),
+            "missing trailing `confidence` word must produce ParseError"
+        );
+    }
+
+    /// ct06: serde JSON round-trip preserves confidence_threshold = Some(0.85).
+    #[test]
+    fn ct06_serde_round_trip_preserves_threshold() {
+        let eref = EntityRef {
+            kind: Some("function".to_string()),
+            word: String::new(),
+            hash: None,
+            matching: Some("auth".to_string()),
+            typed_slot: true,
+            confidence_threshold: Some(0.85),
+        };
+        let nomtu = NomtuFile {
+            items: vec![NomtuItem::Composition(
+                crate::CompositionDecl {
+                    word: "test_compose".to_string(),
+                    composes: vec![eref],
+                    glue: None,
+                    contracts: vec![],
+                    effects: vec![],
+                }
+            )],
+        };
+        let json = serde_json::to_string(&nomtu).expect("serialize");
+        let back: NomtuFile = serde_json::from_str(&json).expect("deserialize");
+        match &back.items[0] {
+            NomtuItem::Composition(c) => {
+                let t = c.composes[0].confidence_threshold.expect("threshold must survive round-trip");
+                assert!((t - 0.85).abs() < 1e-10, "threshold must be 0.85, got {t}");
+            }
+            _ => panic!("expected Composition"),
+        }
+    }
+
+    /// ct07: `cai @Hash a1b2` (bare `at` followed by a hash word) does not
+    /// false-fire the `at-least` compound — `at` stays as `Tok::Word("at")`.
+    #[test]
+    fn ct07_at_token_alone_still_works() {
+        // The existing `cai @Hash` form: `cai @Function` → entity ref.
+        // More importantly, plain `at` in prose should not become AtLeast.
+        use super::lex::{Lexer, Tok};
+
+        // `at` not followed by `-least` → Word("at")
+        let mut l = Lexer::new("at");
+        let tok = l.next().expect("should produce a token");
+        assert_eq!(tok.tok, Tok::Word("at".to_string()), "bare `at` must remain Word(\"at\")");
+
+        // `at_most` (underscore, not hyphen) → Word("at_most")
+        let mut l2 = Lexer::new("at_most");
+        let tok2 = l2.next().expect("should produce a token");
+        assert_eq!(tok2.tok, Tok::Word("at_most".to_string()), "`at_most` must be Word");
+
+        // `at-least` (compound) → AtLeast
+        let mut l3 = Lexer::new("at-least");
+        let tok3 = l3.next().expect("should produce a token");
+        assert_eq!(tok3.tok, Tok::AtLeast, "`at-least` must lex as AtLeast");
+    }
+
+    /// ct08: number literal lexing works for key values.
+    #[test]
+    fn ct08_number_literal_lexing() {
+        use super::lex::{Lexer, Tok};
+
+        let cases: &[(&str, f64)] = &[
+            ("0",    0.0),
+            ("1",    1.0),
+            ("0.5",  0.5),
+            ("0.85", 0.85),
+            ("0.0",  0.0),
+            ("1.0",  1.0),
+        ];
+        for (input, expected) in cases {
+            let mut l = Lexer::new(input);
+            let tok = l.next().expect("should produce a token");
+            match tok.tok {
+                Tok::NumberLit(n) => {
+                    assert!((n - expected).abs() < 1e-10,
+                        "input `{input}`: expected {expected}, got {n}");
+                }
+                other => panic!("input `{input}`: expected NumberLit, got {:?}", other),
+            }
         }
     }
 }

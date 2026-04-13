@@ -17,7 +17,7 @@ use crate::{CompositionDecl, ConceptDecl, EntityRef, IndexClause, NomtuFile, Nom
 // ── Public types ─────────────────────────────────────────────────────────────
 
 /// The computed closure of a concept.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct ConceptClosure {
     /// Root concept name (the entry point).
     pub root: String,
@@ -30,7 +30,7 @@ pub struct ConceptClosure {
 }
 
 /// A reference that has no pinned hash yet.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct UnresolvedRef {
     /// Kind of the entity ("function", "module", "concept", etc.), if known.
     pub kind: Option<String>,
@@ -43,6 +43,10 @@ pub struct UnresolvedRef {
     /// True when source used the `.nomx v2` typed-slot form `the @Kind matching "..."`.
     /// Propagated from `EntityRef::typed_slot`.
     pub typed_slot: bool,
+    /// Per-slot inline confidence threshold (doc 07 §6.3).
+    /// Propagated from `EntityRef::confidence_threshold`.
+    /// Phase-9 corpus-embedding-resolver enforces this. Stub resolver ignores it.
+    pub confidence_threshold: Option<f64>,
 }
 
 #[derive(Debug, Error)]
@@ -315,6 +319,7 @@ impl<'g> Walker<'g> {
                     matching: eref.matching.clone(),
                     referenced_from: parent.to_string(),
                     typed_slot: eref.typed_slot,
+                    confidence_threshold: eref.confidence_threshold,
                 });
             }
             Some(hash) => {
@@ -386,6 +391,7 @@ mod tests {
             hash: Some(hash.to_string()),
             matching: None,
             typed_slot: false,
+            confidence_threshold: None,
         }
     }
 
@@ -396,6 +402,7 @@ mod tests {
             hash: None,
             matching: matching.map(|s| s.to_string()),
             typed_slot: false,
+            confidence_threshold: None,
         }
     }
 

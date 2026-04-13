@@ -493,6 +493,7 @@ mod tests {
             kind: Some("module".to_owned()),
             hash: hash.to_owned(),
             alternatives: vec![],
+            confidence_threshold: None,
         }
     }
 

@@ -76,6 +76,13 @@ pub struct BuildItem {
     /// `nom store sync` (option a) so manifest generation does not need a source re-parse.
     #[serde(default)]
     pub effects: Vec<EffectRecord>,
+
+    /// Per-slot inline confidence threshold (doc 07 §6.3).
+    /// Phase-9 corpus-embedding-resolver enforces this. Stub resolver ignores it.
+    /// `None` ≡ "use default per-kind threshold" (also ignored by stub).
+    /// Only set when source used `the @Kind ... with at-least N confidence`.
+    #[serde(default)]
+    pub confidence_threshold: Option<f64>,
 }
 
 /// One effect group serialised for the manifest.
@@ -112,6 +119,9 @@ pub struct UnresolvedRecord {
     /// True when source used the `.nomx v2` typed-slot form `the @Kind matching "..."`.
     #[serde(default)]
     pub typed_slot: bool,
+    /// Per-slot inline confidence threshold (doc 07 §6.3), if declared.
+    #[serde(default)]
+    pub confidence_threshold: Option<f64>,
 }
 
 // ── Effect collector ─────────────────────────────────────────────────────────
@@ -260,6 +270,7 @@ pub fn build_manifest(
                         matching: None,
                         referenced_from: concept.name.clone(),
                         typed_slot: false,
+                        confidence_threshold: None,
                     }],
                 });
                 continue;
@@ -279,6 +290,7 @@ pub fn build_manifest(
                         matching: None,
                         referenced_from: concept.name.clone(),
                         typed_slot: false,
+                        confidence_threshold: None,
                     }],
                 });
                 continue;
@@ -337,6 +349,7 @@ pub fn build_manifest(
                 composed_of,
                 typed_slot: false,
                 effects,
+                confidence_threshold: None,
             });
         }
 
@@ -358,6 +371,7 @@ pub fn build_manifest(
                 composed_of: vec![],
                 typed_slot: false,
                 effects: vec![],
+                confidence_threshold: None,
             });
         }
 
@@ -375,6 +389,7 @@ pub fn build_manifest(
                 composed_of: vec![],
                 typed_slot: true,
                 effects: vec![],
+                confidence_threshold: rref.confidence_threshold,
             });
         }
 
@@ -390,6 +405,7 @@ pub fn build_manifest(
                 composed_of: vec![],
                 typed_slot: uref.typed_slot,
                 effects: vec![],
+                confidence_threshold: uref.confidence_threshold,
             });
         }
 
@@ -450,6 +466,7 @@ pub fn build_manifest(
                 matching: u.matching.clone(),
                 referenced_from: u.referenced_from.clone(),
                 typed_slot: u.typed_slot,
+                confidence_threshold: u.confidence_threshold,
             })
             .collect();
 
