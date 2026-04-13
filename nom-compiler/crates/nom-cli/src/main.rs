@@ -1134,8 +1134,7 @@ fn cmd_app_dream(
 
     // module tier is deferred to M5b.
     if matches!(dream_tier, nom_app::DreamTier::Module) {
-        let hash = target_id.unwrap_or("");
-        eprintln!("concept dream: {hash} not yet implemented (module-tier coming in M5b)");
+        eprintln!("nom dream: not yet implemented (module-tier coming in M5b)");
         return 2;
     }
 
