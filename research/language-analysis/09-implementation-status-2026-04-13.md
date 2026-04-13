@@ -187,8 +187,9 @@ HEAD (f34e6f8)
   ├── M10a (self-host parse gate)          ✅ shipped — 249fe62
   ├── M10b (run_lexer.bc reproducibility)  ✅ shipped — cef8425 (Linux-CI verify on first run)
   ├── ci-matrix-fix                        ✅ shipped — f34e6f8 (6 crates added to Linux CI)
+  ├── M3b-minimal (30 common confusables)  ✅ shipped — 712ede4 (Cyrillic/Greek→Latin; M3b-full = UTS #39 full table)
   ├── M6   (PyPI-100 corpus pilot)         — weeks   ← next critical-path slot (needs network; park for manual run)
-  ├── M3b  (UTS #39 confusable detector)   — days   (needs Unicode data file)
+  ├── M3b-full (UTS #39 confusables.txt)   — days   (data-file load to replace the baked 30-pair table)
   ├── M9   (embedding re-rank)             — weeks
   ├── M10c+ (compile-to-IR subset for self_host) — weeks
   ├── M10  (real planner-in-Nom port)      — quarters
