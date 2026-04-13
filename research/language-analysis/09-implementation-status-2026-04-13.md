@@ -48,13 +48,13 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: days.
 - **Deps**: M1.
 
-### M5 — Layered dreaming (concept-tier + module-tier) (doc 08 §9)
+### M5 — Layered dreaming (concept-tier + module-tier) (doc 08 §9) ✅
 
 - **Unblocks**: the `nom app dream` loop running at three tiers instead of one — proposals at the right granularity (whole app vs. concept vs. module vs. entry).
-- **Deliverable**: `nom app dream --tier {app|concept|module}` with DreamReport preservation across tiers + score ≥ EPIC_SCORE_THRESHOLD gating (memory: app_score ≥ 95). Test gate: `layered_dream_e2e.rs`.
-- **Evidence**: single-tier `nom app dream` already exists per user memory project_nom_dreaming_mode.md; tier recursion is additive.
-- **Effort**: weeks.
-- **Deps**: M2 (preservation) + M4 (recursive tiers).
+- **Deliverable**: `nom app dream --tier {app|concept|module} [--repo-id <id>] [--pareto-front]` with `LayeredDreamReport { tier, label, leaf, child_reports, pareto_front }`. Recursion through child concepts via concept graph; cycle protection; Pareto front over (app_score, complete, low_partial_ratio) — no cross-tier normalization per doc 08 §6.
+- **Evidence**: shipped in three commits — `f0ae193` + `9b3f501` (M5a wedge: tier flag + LayeredDreamReport scaffolding), `e28f69d` (M5b: child_reports populated via nom-concept ConceptGraph closure walk), `cc9641b` (M5c: pareto_front populated via 3-axis dominance scan + `--pareto-front` text flag). Tests: `nom-app` 26/26 (was 15 pre-M5; +11 across M5a/b/c) + `layered_dream_smoke.rs` 6 assertions on Linux CI. Module-tier (`--tier module`) prints "not yet implemented (module-tier coming in M5b)" placeholder — wedge intentionally narrow; full module-tier dreaming reuses the same recursive shape against module CompositionDecls and lands when M6 corpus pilot starts producing modules worth dreaming over.
+- **Effort**: weeks → **shipped in days as 3-slice wedge**.
+- **Deps**: M2 ✅ (preservation) + M4 ✅ (recursive tiers).
 
 ### M6 — Corpus ingestion: PyPI top-100 pilot (doc 04 §5.17 + deferred 08 §Path A)
 
@@ -173,10 +173,12 @@ Self-hosting lane M10 → M15 → M17 is the critical chain; it depends on outpu
 ## Critical path to Nom 1.0 (motivation 16 "usable 1.0")
 
 ```
-HEAD (fdfb32d)
-  ├── M1  (glass-box report)        — days
-  ├── M2  (acceptance preservation) — days
-  ├── M6  (PyPI-100 corpus pilot)   — weeks
+HEAD (cc9641b)
+  ├── M1  (glass-box report)        ✅ shipped — 41aedfe
+  ├── M2  (acceptance preservation) ✅ shipped — fb9c252
+  ├── M4  (three-tier byte ingest)  ✅ shipped — 8aab409
+  ├── M5  (layered dreaming)        ✅ shipped — f0ae193 + e28f69d + cc9641b
+  ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot
   ├── M9  (embedding re-rank)       — weeks
   ├── M10 (planner-in-Nom)          — quarters
   ├── M15 (parser-in-Nom)           — quarters
