@@ -18,7 +18,7 @@
 | 1 | Iteration destructuring (`for each K and V in M`) | W4-A2b lexer test | ⏳ queued |
 | 2 | Format-string interpolation | **W5** grammar rule | ⏳ queued |
 | 3 | `returns nothing` grammar pin | W4-A1 addendum | ⏳ queued (A1 lock tests landed; addendum pending) |
-| 4 | Path/file subkinds vs generic `@Data` | design deferred | 🧠 design Q open |
+| 4 | Path/file subkinds vs generic `@Data` | design deferred | ✅ doc 19 §D1 (stay `@Data`; feature-stack subkinds) |
 | 5 | Union types / sum-return at v2 (`text or record`, `Result<A,B>`) | **W18** `@Union` kind (renumbered from earlier "W5") | ⏳ queued |
 | 6 | Literal-string constants (Python `Literal[...]`) | **W6** grammar rule | ⏳ queued |
 | 7 | Docstring → `intended to` mapping | authoring-guide note | ✅ doc 17 §I6 |
@@ -29,7 +29,7 @@
 | 12 | Redundant v1 body when fully delegated | authoring-guide simplification rule | ✅ doc 17 §I7 |
 | 13 | Destructuring parameters (TS `{state,dispatch}: EditorView`) | authoring-guide note | ✅ doc 17 §I10 |
 | 14 | Early-return guards (works) | smoke-test | 🧪 test-todo |
-| 15 | Callback closures | design deferred (§closures) | 🧠 design Q open |
+| 15 | Callback closures | design deferred (§closures) | ✅ doc 19 §D2 (lift to named entities) |
 | 16 | `fail with "..."` expression grammar | **W9** grammar rule | ⏳ queued |
 | 17 | Multi-predicate short-circuit fail | subsumed by W9 | — |
 | 18 | `hazard` effect rendering | smoke-test (works today) | ✅ ct12 + ct13 (benefit/boon synonym) |
@@ -51,15 +51,16 @@
 | 34 | Non-ASCII string literals verbatim | authoring-guide + smoke-test | ✅ doc 17 §I4 + ct11 smoke test (see nom-concept/src/lib.rs) |
 | 35 | Hyphen-keys → underscore-identifiers mapping | authoring-guide rule | ✅ doc 17 §I5 |
 
-Totals by destination (after ct12/ct13/ct14 smoke tests landed):
+Totals by destination (after doc 19 design decisions landed):
 
 - ⏳ Wedge queued: **12** (unchanged)
-- 🧪 Smoke-test todo: **2** (#14 early-return guards + #18's third-variant rendering — deferred since v1 early-return grammar is already pinned by ct10*)
+- 🧪 Smoke-test todo: **2**
 - 📘 Authoring-guide doc-todo: **0** (doc 17 complete)
-- ✅ Closed: **17** (all 13 authoring-guide items + #9 + #18 + #34 smoke tests)
-- 🧠 Design deferred (open): **2** (+1 blocked)
+- ✅ Closed: **19** (17 prior + #4 + #15 via doc 19 design decisions)
+- 🧠 Design deferred (open): **0**
+- 🔒 Blocked: **1** (#11 lifetime annotations, blocked on borrow-model)
 
-**Milestone 2026-04-14:** authoring-guide chapter complete + 3 of 5 smoke tests shipped. 17 of 35 doc 16 rows closed. Remaining: 12 W-wedges, 2 smoke tests, 2 deferred design questions, 1 blocked.
+**Milestone 2026-04-14:** all open design questions resolved. 19 of 35 doc 16 rows closed. Remaining work is all actionable: 12 W-wedges (grammar additions), 2 minor smoke tests, 1 blocked-on-other-work.
 
 ## Wedge master index (for cross-ref with doc 13)
 
