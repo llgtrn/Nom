@@ -3,6 +3,33 @@
 Runnable fixtures covering the full authoring lifecycle: prose draft →
 .nom or .nomx → compile → run. Grouped by authoring stage.
 
+## Layered concept architecture (`.nom` + `.nomtu`, **end-to-end shipped 2026-04-13**)
+
+The doc 08 architecture is no longer aspirational — there's a runnable
+example proving the pipeline works on real input.
+
+| Path | What it is |
+|------|------------|
+| [`concept_demo/`](concept_demo/) | Smallest end-to-end: `app.nom` → `auth/auth.nom` (uses prose `matching "..."`) → `auth/auth_helpers.nomtu` (2 entities + 1 composition) |
+| [`concept_demo/README.md`](concept_demo/README.md) | Three-step walkthrough |
+
+Pipeline you can run today (Linux / macOS — Windows skipped because
+`nom` links LLVM-C.dll for compile commands but the metadata path is fine):
+
+```sh
+cd nom-compiler
+cargo build -p nom-cli
+./target/debug/nom store sync examples/concept_demo
+./target/debug/nom build status examples/concept_demo
+./target/debug/nom build status examples/concept_demo --write-locks
+```
+
+After `--write-locks` the source `.nom` file gets `@<hash>` spliced after
+each resolved word — the `.nom` source becomes self-locking, no
+sidecar `.nom.lock` (doc 08 §8.2). Subsequent runs are reproducible.
+
+End-to-end test: [`crates/nom-cli/tests/concept_demo_e2e.rs`](../crates/nom-cli/tests/concept_demo_e2e.rs).
+
 ## Prose drafts (`.md`)
 
 Input to `nom author translate <input> --target app` — each tests the
