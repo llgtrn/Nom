@@ -222,6 +222,52 @@ impl Annotator for ParseAndExtractAnnotator {
     }
 }
 
+/// Wraps [`scan_directory`](crate::scan::scan_directory) as an `Annotator`
+/// stage. Requires `directory` (UTF-8 bytes = filesystem path). Satisfies
+/// `source_files` (JSON array of path strings).
+///
+/// Pair with [`ParseAndExtractAnnotator`] to build a walk-then-extract
+/// pipeline: directory → source_files → (iterate) → entities. Later slices
+/// will add a fan-out annotator that iterates source_files and runs a
+/// sub-pipeline per file; this wedge ships the directory discovery stage
+/// independently.
+pub struct ScanDirectoryAnnotator;
+
+impl Annotator for ScanDirectoryAnnotator {
+    fn name(&self) -> &'static str {
+        "scan_directory"
+    }
+
+    fn requires(&self) -> &'static [&'static str] {
+        &["directory"]
+    }
+
+    fn requirements_satisfied(&self) -> &'static [&'static str] {
+        &["source_files"]
+    }
+
+    fn annotate(&self, ann: &mut Annotation) -> AnnotatorResult {
+        let dir_bytes = ann.get("directory").unwrap_or(b"");
+        let dir = std::str::from_utf8(dir_bytes).map_err(|e| AnnotatorError::Failed {
+            annotator: self.name(),
+            reason: format!("directory is not valid UTF-8: {e}"),
+        })?;
+
+        let paths = crate::scan::scan_directory(std::path::Path::new(dir));
+        let path_strings: Vec<String> = paths
+            .iter()
+            .map(|p| p.to_string_lossy().into_owned())
+            .collect();
+
+        let encoded = serde_json::to_vec(&path_strings).map_err(|e| AnnotatorError::Failed {
+            annotator: self.name(),
+            reason: format!("serialize source_files: {e}"),
+        })?;
+        ann.set("source_files", encoded);
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -355,6 +401,51 @@ mod tests {
             }
             _ => panic!("wrong variant: {err:?}"),
         }
+    }
+
+    #[test]
+    fn scan_directory_annotator_declares_contract() {
+        let a = ScanDirectoryAnnotator;
+        assert_eq!(a.name(), "scan_directory");
+        assert_eq!(a.requires(), &["directory"]);
+        assert_eq!(a.requirements_satisfied(), &["source_files"]);
+    }
+
+    #[test]
+    fn scan_directory_annotator_rejects_missing_directory() {
+        let mut ann = Annotation::new();
+        let mut p = AnnotationPipeline::new();
+        p.add(Box::new(ScanDirectoryAnnotator));
+        let err = p.run(&mut ann).expect_err("must fail without directory");
+        match err {
+            AnnotatorError::MissingRequirement { annotator, key } => {
+                assert_eq!(annotator, "scan_directory");
+                assert_eq!(key, "directory");
+            }
+            _ => panic!("wrong variant: {err:?}"),
+        }
+    }
+
+    #[test]
+    fn scan_directory_annotator_emits_source_files_json() {
+        // Create a tmp dir with one .rs file and one .txt ignored file.
+        let tmp = std::env::temp_dir().join(format!("nom_scan_{}", std::process::id()));
+        std::fs::create_dir_all(&tmp).unwrap();
+        std::fs::write(tmp.join("greet.rs"), "fn greet() {}").unwrap();
+        std::fs::write(tmp.join("notes.txt"), "ignored").unwrap();
+
+        let mut ann = Annotation::new();
+        ann.set("directory", tmp.to_string_lossy().into_owned().into_bytes());
+        let mut p = AnnotationPipeline::new();
+        p.add(Box::new(ScanDirectoryAnnotator));
+        p.run(&mut ann).expect("scan_directory should succeed");
+
+        let files_bytes = ann.get("source_files").expect("source_files key must be set");
+        let files: Vec<String> = serde_json::from_slice(files_bytes).unwrap();
+        assert!(files.iter().any(|f| f.ends_with("greet.rs")));
+        assert!(!files.iter().any(|f| f.ends_with("notes.txt")), "txt must be skipped");
+
+        std::fs::remove_dir_all(&tmp).ok();
     }
 
     #[test]
