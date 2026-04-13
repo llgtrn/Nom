@@ -1826,6 +1826,90 @@ Row additions: **W39 pattern-shape clause** (new wedge, large-vocabulary but clo
 
 ---
 
+## 32. XState machine — declarative state-transition DSL
+
+```javascript
+import { createMachine } from 'xstate';
+
+const trafficLightMachine = createMachine({
+  id: 'trafficLight',
+  initial: 'green',
+  states: {
+    green: {
+      on: { TIMER: 'yellow' },
+      after: { 5000: 'yellow' }
+    },
+    yellow: {
+      on: { TIMER: 'red' },
+      after: { 2000: 'red' }
+    },
+    red: {
+      on: { TIMER: 'green' },
+      after: { 6000: 'green' }
+    }
+  }
+});
+```
+
+### `.nomx v1` translation
+
+```nomx
+define traffic_light
+  that takes no input, returns a state machine with three states green, yellow, red.
+start in green.
+when in green and timer fires, move to yellow.
+when in yellow and timer fires, move to red.
+when in red and timer fires, move to green.
+green also times out to yellow after 5 seconds.
+yellow also times out to red after 2 seconds.
+red also times out to green after 6 seconds.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data TrafficLightState is
+  intended to enumerate the three positions of a standard traffic light signal.
+  exposes green at tag 0.
+  exposes yellow at tag 1.
+  exposes red at tag 2.
+
+the data TrafficLightEvent is
+  intended to enumerate the events that drive traffic-light state transitions.
+  exposes timer at tag 0.
+
+the function traffic_light_transition is
+  intended to compute the next TrafficLightState given the current state and a received TrafficLightEvent.
+  uses the @Data matching "TrafficLightState" with at-least 0.95 confidence.
+  uses the @Data matching "TrafficLightEvent" with at-least 0.95 confidence.
+  when the current state is green and the event is timer, the next state is yellow.
+  when the current state is yellow and the event is timer, the next state is red.
+  when the current state is red and the event is timer, the next state is green.
+  ensures every (state, event) pair maps to exactly one next state.
+  favor correctness.
+
+the function traffic_light_timeout is
+  intended to return the timeout duration in milliseconds for auto-advancing out of a state.
+  uses the @Data matching "TrafficLightState" with at-least 0.95 confidence.
+  when the current state is green, the timeout is 5000 milliseconds.
+  when the current state is yellow, the timeout is 2000 milliseconds.
+  when the current state is red, the timeout is 6000 milliseconds.
+  ensures every state has exactly one timeout.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **State-machine definition surface** — XState's `states: { green: { on: { TIMER: 'yellow' } } }` is a nested object literal. Nom's translation decomposes it into **two pure functions** (transition + timeout) plus **two data decls** (state-enum + event-enum). The `when … the next state is …` clauses inside the function body serve as the transition table. **Candidate: authoring-guide rule — state machines decompose to `(states-data, events-data, transition-function, timeout-function, entry-effects-function, exit-effects-function)` tuple of declarations**. No new grammar; existing function + data + when-clause shape suffices.
+2. **Total-coverage requirement (MECE over state × event)** — every (state, event) pair must have a defined next state. The `ensures every (state, event) pair maps to exactly one next state` clause captures this, but the compiler can't verify totality today because `when` clauses don't participate in MECE analysis. **Candidate: W40 exhaustiveness-check for `when` clauses over enum-valued data** — ties into W30 (choice) and the existing MECE validator.
+3. **Auto-transitions (`after: { 5000: 'yellow' }`)** — time-driven transitions distinct from event-driven ones. v2 translation extracts `timeout` into a separate pure function. Authoring-guide rule: **time-driven transitions decompose to a peer `*_timeout` function returning duration per state**. Keeps pure; no new wedge.
+4. **Entry / exit actions** (not shown in this example, but XState supports them) — effects fired when entering/leaving a state. Nom maps these to peer `*_on_entry` / `*_on_exit` effect-valenced functions (using `hazard` for side effects). Authoring-guide rule: **entry/exit actions become peer effect-valenced functions with explicit hazard clauses**. No new wedge.
+5. **Hierarchical / nested states** (XState superstates, parallel regions) — not exercised here but would stress the model. The decomposition-to-peer-functions rule extends: a superstate becomes a prefix naming-convention (`inner_state_name`) with a composition decl that joins peer transition functions.
+
+Row additions: **W40 exhaustiveness-check over `when` clauses** (new wedge, ties to W30 + MECE), authoring-guide rule for state-machine decomposition tuple, rule for time-driven transitions, rule for entry/exit actions.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
