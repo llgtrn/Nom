@@ -1,11 +1,74 @@
 # `.nomx` Keyword Set (proposed)
 
+> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+
 Status: **Draft, needs human authoring** on the open questions in
 [05-natural-language-syntax.md §8](./05-natural-language-syntax.md).
 
 Companion to proposal 05. Enumerates the English phrase tokens the
 `.nomx` lexer needs to recognize, grouped by role. Vietnamese aliases
-TBD per the open question on natural-language extension.
+resolved as a locale pack (English-only vocabulary; Vietnamese inspires
+grammar style, not vocabulary — user clarification, commit `c9d1835`).
+
+## Shipped keyword sets (as of HEAD `afc6228`)
+
+### `.nomx v1` lexer — `crates/nom-lexer/src/nomx.rs`
+
+The `.nomx v1` lexer at `nom-compiler/crates/nom-lexer/src/nomx.rs`
+ships the following token vocabulary (all tested; 29 tests green):
+
+- **Declaration verbs**: `define`, `to`, `record`, `choice`
+- **Control flow**: `when`, `unless`, `otherwise`, `for`, `each`,
+  `in`, `of`, `while`
+- **Linking verbs / binding**: `is`, `are`, `holds`, `returns`,
+  `takes`, `responds`, `with`, `and`, `then`, `followed`, `joined`
+- **Contract verbs**: `require`, `ensure`, `throughout`, `given`
+- **Prepositional operators**: `plus`, `minus`, `times`, `divided`,
+  `by`, `of`, `from`, `apply`
+- **Value literals**: `zero`, `one`, `true`, `yes`, `false`, `no`,
+  `nothing`, string literals, digit literals
+- **Punctuation**: `.`, `:`, `,`
+- **Articles** (stripped at lex time): `a`, `an`, `the`, `that`,
+  `which`, `who`, `whose`
+
+### `.nomx v2 (keyed)` keywords — `crates/nom-concept/src/lib.rs`
+
+Shipped via commits `c9d1835` + `97c836f` + `c405d2a` + `853e70b`.
+These extend the concept-layer lexer (`Tok` enum in
+`nom-compiler/crates/nom-concept/src/lib.rs`):
+
+- **`@Kind` sigil tokens** (`Tok::AtKind(String)`) — typed-slot refs
+  e.g. `@Function`, `@Screen`, `@MediaUnit`, any `EntryKind` variant.
+- **`with at-least N confidence`** — per-slot confidence threshold
+  (`Tok::AtLeast`, `Tok::Confidence`, `Tok::FloatLit`) for doc 07
+  §6.3 inline threshold syntax.
+- **Effect valence**: `benefit` / `boon` (synonym) → `Tok::Benefit`;
+  `hazard` / `bane` (synonym) → `Tok::Hazard`.
+- **Closed kind set** (doc 08 §8.1 closed-noun form):
+  `function`, `module`, `concept`, `screen`, `data`, `event`, `media`.
+
+### Vietnamese keyword aliases (locale pack)
+
+Shipped as a locale pack — English vocabulary stays canonical.
+Vietnamese aliases were added in two commits:
+
+- ASCII transliterations (commit `4b04b1d`) — e.g. `khai bao` for
+  `define`, `khi` for `when`, `tro ve` for `returns`.
+- Diacritic forms (commit `5b59f82`) — e.g. `khai báo`, `khi`, `trả về`.
+
+Per user clarification: **vocabulary stays English**; Vietnamese inspires
+grammar style only. The alias layer is kept but not extended.
+
+### PLANNED vocabulary expansions
+
+- ⏳ Type phrase canonicalization (`a number`, `a piece of text`,
+  `a maybe-<T>`) — tokens exist in `cond_tokens`/`rhs_tokens` raw
+  streams but not yet mapped to type AST nodes (Phase 5+ work).
+- ⏳ Actor form keywords (`actor … holds …`) — not in either lexer yet.
+- ⏳ Phase-9 corpus-registered quality names (`QualityName` registry)
+  for `favor … then …` objective clauses.
+- ⏳ `perhaps … nothing` pattern-match syntax for `Maybe<Kind>`
+  (doc 07 §6.6 open question — PLANNED).
 
 ## 1. Declaration keywords (verb phrases)
 
@@ -149,20 +212,23 @@ Open question: what if a user names a nomtu word `the_ratio`? The
 underscore breaks the article-detection boundary, so it still
 parses as an identifier. Non-issue.
 
-## 9. Vietnamese alias layer (open)
+## 9. Vietnamese alias layer
 
-The current lexer has 80+ Vietnamese keyword aliases (see
-`lexer.nom` line ~45). The proposal is to extend them to the
-`.nomx` phrase set one-for-one:
+> **Status (2026-04-13)**: Locale pack shipped; **not extending further** per user
+> clarification. Vietnamese inspires grammar style only; vocabulary stays English.
 
-- `define ... that ... ` ↔ `định nghĩa ... rằng ...`
-- `when ... otherwise ...` ↔ `khi ... nếu không ...`
-- `a number` ↔ `một số`
-- `a piece of text` ↔ `một đoạn văn`
+ASCII aliases shipped commit `4b04b1d`; diacritic aliases shipped commit `5b59f82`.
+The shipped alias set covers the concept-layer keywords (`nom-concept`). The `.nomx v1`
+lexer (`nom-lexer`) does not have Vietnamese aliases — extending it was explicitly
+deferred.
 
-Needs native-speaker authoring. **Proposal**: ship English-only
-in milestone 1; Vietnamese aliases in milestone 3 after the
-grammar stabilizes.
+- `define ... that ... ` ↔ `khai báo ... rằng ...` (diacritic) / `khai bao ... rang ...` (ASCII)
+- `when ... otherwise ...` ↔ `khi ... ngược lại ...`
+- `a number` ↔ PLANNED (type-canonicalization not yet shipped)
+- `a piece of text` ↔ PLANNED (same)
+
+**Pending vocabulary expansions for Vietnamese layer**: tagged PLANNED — these follow
+type-phrase canonicalization (§ Shipped keyword sets → PLANNED).
 
 ---
 

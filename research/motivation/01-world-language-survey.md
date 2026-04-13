@@ -4,7 +4,20 @@
 how Nom's architecture structurally prevents it — with evidence.**
 
 Research conducted: 2026-04-10, updated 2026-04-11
-Sources: 6 parallel research agents, 160+ web sources, academic papers, creator interviews
+
+---
+
+> **Status banner — Last verified against codebase: 2026-04-13, HEAD afc6228.**
+>
+> Claims in this document are tagged inline:
+> - ✅ SHIPPED — backed by code in the repository (file:line or commit SHA cited)
+> - ⏳ PLANNED — on the roadmap; no shipped code yet
+> - ❌ ASPIRATIONAL — beyond current roadmap horizon; no concrete plan yet
+>
+> The architecture described here is the long-term design vision. Most "Nom exceeds X"
+> claims describe the final dictionary-backed system, which requires corpus ingestion
+> (Phase 5+), a real planner (Phase 5+), and a complete codegen path (Phase 2+).
+> The current HEAD implements the concept-graph / DIDS pipeline (Phase 4) only.
 
 Implementation note (2026-04-12): the current compiler now includes first-class
 graph query algebra (`union`, `intersect`, `difference`), recursive traversal
@@ -20,6 +33,9 @@ Each category lists failures from existing languages, then shows
 **exactly how Nom's design prevents the same failure** — not by
 being "smarter" but by operating in a different design space where
 the failure CANNOT OCCUR.
+
+Tags mark the current state of each "Nom exceeds" claim against the
+codebase at HEAD afc6228.
 
 ---
 
@@ -37,7 +53,7 @@ the failure CANNOT OCCUR.
 | 8 | Haskell | Lazy evaluation space leaks | Unpredictable memory |
 | 9 | Ruby | GC 80% of slowdowns | Rails memory bloat |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ⏳ PLANNED (Phase 5+ codegen required)
 
 Nom doesn't manage memory at all. You don't write implementations —
 you write SENTENCES. The .nomtu implementations are pre-compiled and
@@ -63,6 +79,10 @@ tested with 847+ tests). The compiler links them with optimal strategy
 inferred from the flow graph. Memory bugs require touching memory.
 Nom doesn't let you touch memory.
 
+> Current state: The `.nom`/`.nomtu` parser and concept-graph pipeline are
+> shipped (commits `05ee1b6`, `d9425ba`, `c5cdce6`). No codegen phase exists
+> yet; LLVM compilation of concept graphs is Phase 5+ work.
+
 ---
 
 ## CATEGORY 2: CONCURRENCY
@@ -76,7 +96,7 @@ Nom doesn't let you touch memory.
 | 14 | Python | GIL prevents parallelism | 30 years to fix |
 | 15 | Ruby | GVL same problem | Cannot use multi-core |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ⏳ PLANNED (Phase 5+ codegen required)
 
 The flow graph IS the concurrency model. When you write:
 
@@ -98,6 +118,9 @@ The `branch` keyword defines parallelism. The compiler generates the
 threading code from the graph structure. You can't have a race condition
 in a sentence — only in code that manually shares memory.
 
+> Current state: The `->` operator and flow syntax parse correctly. The
+> branch/parallel codegen claim is PLANNED; no code generator for it exists yet.
+
 ---
 
 ## CATEGORY 3: TYPE SYSTEMS
@@ -112,7 +135,7 @@ in a sentence — only in code that manually shares memory.
 | 21 | Python/JS/Ruby | Gradual typing trilemma | Unsound OR slow OR surprising |
 | 22 | Haskell | String = [Char] | Terrible performance |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ⏳ PLANNED (contract cross-checking requires Phase 5+ planner)
 
 Nom's type system is contracts on .nomtu entries — not syntactic types:
 
@@ -131,13 +154,10 @@ graph. No type erasure (contracts live in .nomtu, preserved always).
 No `any` escape (every .nomtu has a concrete contract). No covariance
 bugs (contracts are checked bidirectionally at each edge).
 
-**Why the failure CAN'T occur:** Type system problems come from the
-gap between what the type system promises and what actually happens
-at runtime. Nom's contracts are concrete — `in: bytes, out: hashbytes`.
-There's no generic type parameter to erase, no `any` to escape through,
-no covariant array to corrupt. The contract says what goes in and what
-comes out. The compiler checks every connection. If it doesn't match,
-it doesn't compile.
+> Current state: The `effects` keyword and `benefit`/`hazard` valence are
+> shipped (`c9d1835`). The MECE objectives validator checks mutual-exclusion
+> in composition (`c63a6a7`). Full contract cross-checking at every `->` edge
+> is PLANNED for Phase 5+.
 
 ---
 
@@ -150,7 +170,7 @@ it doesn't compile.
 | 25 | C | Error codes easily ignored | No forced handling |
 | 26 | C++ | Exception safety 4-level guarantee | Doubles memory |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ⏳ PLANNED (requires runtime planner + codegen)
 
 You don't write error handling. The contracts compose:
 
@@ -180,11 +200,6 @@ iftrue response200
 iffalse response503
 ```
 
-**Why the failure CAN'T occur:** Error handling problems come from
-programmers forgetting to handle errors, or handling them wrong.
-In Nom, the compiler reads the contracts and generates error handling
-automatically where needed. You can't forget — the compiler doesn't forget.
-
 ---
 
 ## CATEGORY 5: COMPOSITION & ABSTRACTION
@@ -196,7 +211,7 @@ automatically where needed. You can't forget — the compiler doesn't forget.
 | 29 | Scala | Implicits — 3 features, 1 keyword | "Recipe for disaster" |
 | 30 | Scala | Too many ways to do everything | Inconsistent code |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ✅ SHIPPED (three-operator model) + ⏳ PLANNED (full resolution)
 
 Composition IS the only abstraction in Nom. There is no inheritance,
 no implicits, no traits, no interfaces. There are only three operators:
@@ -211,11 +226,10 @@ One way to compose. One way to specialize. One way to combine.
 No diamond problem (no inheritance). No orphan rule (no traits).
 No implicits (everything is explicit in the sentence).
 
-**Why the failure CAN'T occur:** Composition failures come from
-having too many composition mechanisms (inheritance, mixins, traits,
-implicits, generics, macros) that interact in unexpected ways.
-Nom has three operators. They don't interact. They compose linearly.
-There's nothing to conflict with.
+> Current state: All three operators parse correctly (`05ee1b6`, `d9425ba`).
+> The concept-graph closure walker resolves `::` specialization references
+> through `words_v2` (`c5cdce6`, `c405d2a`). Full cross-edge contract
+> verification is PLANNED for Phase 5+.
 
 ---
 
@@ -226,7 +240,7 @@ There's nothing to conflict with.
 | 31 | Most languages | Side effects invisible | Whole-program analysis needed |
 | 32 | Haskell | Monad gymnastics | Hundreds of bad tutorials |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ✅ SHIPPED (effect valence keywords) + ⏳ PLANNED (full propagation)
 
 Every .nomtu declares its effects:
 
@@ -249,11 +263,10 @@ that print adds `stdout` — compile error.
 No monads. No IO type wrapper. Just a list of effects on each .nomtu,
 propagated by set union through the graph.
 
-**Why the failure CAN'T occur:** Effect invisibility comes from
-functions that can do IO without declaring it. Every .nomtu
-MUST declare its effects — it's a required field. The compiler
-propagates effects through every edge. Hidden effects are structurally
-impossible because the .nomtu format requires them.
+> Current state: `benefit`/`hazard` effect-valence keywords are shipped and
+> surfaced in the build manifest (commits `c9d1835`, `eeb1e23`). The full
+> set-union propagation across edges and the `effects only [...]` constraint
+> are PLANNED for Phase 5+.
 
 ---
 
@@ -266,7 +279,7 @@ impossible because the .nomtu format requires them.
 | 35 | PHP | Bad defaults poisoned ecosystem | Millions of vulnerable sites |
 | 36 | VB6 | VB6→VB.NET broke everything | Migration tool industry |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ✅ SHIPPED (content-addressed `words_v2` schema)
 
 Nom evolves by adding NEW words to the dictionary, not by changing
 existing ones. Old .nomtu entries stay. New ones appear alongside them.
@@ -282,11 +295,10 @@ Like English: "email" was added in the 1990s.
 "mail" didn't change meaning. No "English 2→3 migration."
 ```
 
-**Why the failure CAN'T occur:** Breaking changes require changing
-existing behavior. Content-addressed .nomtu are IMMUTABLE — the hash
-IS the identity. You can add new .nomtu but you can't change existing
-ones (that would change the hash). Old programs pinned to old hashes
-compile identically forever. Evolution = growth, not mutation.
+> Current state: The `words_v2` content-addressed schema is shipped (commit
+> `aaa914d`, `nom-dict/src/lib.rs`). Lock writeback for v1 refs is shipped
+> (`a04b91e`). The `nom.dev` registry and `nom.lock` tooling are PLANNED
+> for Phase 1.
 
 ---
 
@@ -301,7 +313,7 @@ compile identically forever. Evolution = growth, not mutation.
 | 41 | Solidity | Reentrancy | The DAO: ~$60M |
 | 42 | Bash | Word splitting + globbing | Flag injection |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ⏳ PLANNED (requires populated dictionary + scoring pipeline)
 
 You don't write code that can have buffer overflows, SQL injection,
 or type juggling. You compose from .nomtu words that were extracted
@@ -318,17 +330,11 @@ The security score comes from: CVE history, constant-time analysis,
 crypto audit status, test coverage. Not from your code — from the
 .nomtu's proven track record.
 
-No string concatenation for queries (composition, not interpolation).
-No user input touching memory (you don't touch memory).
-No prototype chain (no objects, no prototypes).
-
-**Why the failure CAN'T occur:** Security bugs come from writing
-implementation code that handles untrusted input incorrectly.
-In Nom, you don't write implementation code — you compose from
-pre-verified .nomtu with security scores. Buffer overflows require
-buffers. SQL injection requires string concatenation. Type juggling
-requires type coercion. Nom has none of these because you write
-sentences, not code.
+> Current state: The `where security>0.9` constraint syntax parses correctly.
+> Per-slot `with at-least N confidence` threshold is shipped (`97c836f`).
+> The actual 8-dimension scoring and corpus-backed security scores require
+> corpus ingestion (Phase 5+); today the dictionary contains only the demo
+> fixtures in `examples/concept_demo/` and `examples/agent_demo/`.
 
 ---
 
@@ -341,16 +347,15 @@ sentences, not code.
 | 45 | npm | event-stream malware | 8M infected downloads |
 | 46 | Python | pip: no lockfile | Silent incompatibilities |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ✅ PARTIAL — metadata pipeline shipped; full registry PLANNED
 
 `nom` IS the entire toolchain. One command. No Make, no Gradle,
 no webpack, no separate package manager.
 
 ```
-nom build auth.nom     # compile to binary
-nom run auth.nom       # build + run
-nom test auth.nom      # run test declarations
-nom check auth.nom     # verify contracts only
+nom store sync <repo>     # parse .nom/.nomtu → DB1+DB2
+nom build status <repo>   # resolve concept graph → per-slot top-K
+nom build manifest <repo> # JSON artifact with full closure
 ```
 
 Dependencies are .nomtu files downloaded from nom.dev.
@@ -359,12 +364,9 @@ Content-addressed means: left-pad CAN'T be unpublished (the hash
 still points to the content). event-stream CAN'T be silently modified
 (changing the code changes the hash, which is a different .nomtu).
 
-**Why the failure CAN'T occur:** Build system problems come from
-having separate tools (compiler, linker, package manager, build system)
-that don't understand each other. Nom is one tool that does everything.
-Supply chain attacks come from trust-by-default registries. nomdict
-is content-addressed with provenance — the implementation is what the
-hash says it is, always.
+> Current state: `nom store sync`, `nom build status`, and `nom build manifest`
+> are shipped (commits `ba7769f`, `bf95c2c`, `fef0419`). The `nom.dev` registry,
+> `nom run`, `nom test`, and `nom check` commands are PLANNED for Phase 1.
 
 ---
 
@@ -379,7 +381,7 @@ hash says it is, always.
 | 47e | CSS | Global scope, specificity wars | Fragile rules |
 | 47f | COBOL | Verbose punch-card syntax | Academics hate it |
 
-**How Nom exceeds this:**
+**How Nom exceeds this:** ✅ SHIPPED (parser) + ⏳ PLANNED (full null-safety enforcement at runtime)
 
 Nom reads like English writing. No braces. No tabs. No semicolons.
 Classifiers start declarations. Blank lines end them.
@@ -397,30 +399,26 @@ of imports, annotations, classes, methods, try/catch blocks, and
 configuration. Python needs 20+ lines. Even Rust needs 30+ lines.
 Nom: 5 lines of plain English.
 
-No typeof null bug (no null — use `none` with explicit contract handling).
-No sigils (plain English words). No 1-based indexing (no arrays in
-the sentence layer — arrays live inside .nomtu implementations).
-No global scope (each declaration is its own scope, started by classifier).
-
-**Why the failure CAN'T occur:** Syntax problems come from historical
-accidents that can't be fixed (typeof null), feature overload (Perl sigils),
-or wrong abstraction level (COBOL verbosity). Nom's syntax is 10 keywords,
-3 operators, and writing-style structure. There's nothing to overload,
-nothing to get wrong historically, nothing verbose. You write sentences.
+> Current state: The `.nomx v1` prose-style parser is shipped (`crates/nom-parser/src/nomx.rs`,
+> 34/34 tests passing per doc 05 §10). The `.nom`/`.nomtu` parser for the layered
+> architecture is shipped (`crates/nom-concept/src/lib.rs`, commits `05ee1b6`, `d9425ba`).
+> Runtime null-safety guarantees are PLANNED.
 
 ---
 
 ## THE 7 ROOT CAUSES — And How Nom's Architecture Eliminates Each
 
+> Tag: ⏳ PLANNED / ❌ ASPIRATIONAL (most depend on Phase 5+ corpus + codegen)
+
 | Root Cause | Why Other Languages Have It | Why Nom Can't Have It |
 |-----------|---------------------------|---------------------|
-| **Invisible state** | Functions hide effects, ownership, threading | Every .nomtu declares effects. Graph shows all data flow. Nothing hidden. |
-| **Wrong abstraction** | Too low (C) or too high (Haskell) | .nom sentences are intent-level. .nomtu implementations are system-level. You work at intent. |
-| **Frozen semantics** | Syntax changes break code | Syntax is fixed (10 keywords). Dictionary grows without breaking. Content-addressed .nomtu are immutable. |
-| **Syntax without meaning** | Compiler parses tokens, doesn't know what code does | Every .nomtu has a `describe` sentence AND a typed `contract`. Compiler knows WHAT each word means. |
-| **Trust by default** | npm/pip install whatever, hope it's safe | Every .nomtu has scores (security, quality), provenance (source, license, tests), and content-addressing (tamper-proof). |
-| **One paradigm** | Java=OOP, Haskell=FP, C=imperative — each fights others | .nomtu implementations can be written in any paradigm. The sentence layer doesn't care. `need hash` works whether hash is implemented in Rust (imperative), Haskell (functional), or assembly. |
-| **Human must verify** | AI generates code, human reviews every line | Glass box report shows exactly which .nomtu were selected, what scores they have, why. Auditable without reading code. |
+| **Invisible state** | Functions hide effects, ownership, threading | Every .nomtu declares effects. Graph shows all data flow. Nothing hidden. ⏳ PLANNED (full propagation) |
+| **Wrong abstraction** | Too low (C) or too high (Haskell) | .nom sentences are intent-level. .nomtu implementations are system-level. You work at intent. ✅ SHIPPED (parser + concept graph) |
+| **Frozen semantics** | Syntax changes break code | Syntax is fixed (10 keywords). Dictionary grows without breaking. Content-addressed .nomtu are immutable. ✅ SHIPPED (`words_v2` schema, `aaa914d`) |
+| **Syntax without meaning** | Compiler parses tokens, doesn't know what code does | Every .nomtu has a `describe` sentence AND a typed `contract`. Compiler knows WHAT each word means. ⏳ PLANNED (contract semantics tied to planner) |
+| **Trust by default** | npm/pip install whatever, hope it's safe | Every .nomtu has scores (security, quality), provenance (source, license, tests), and content-addressing (tamper-proof). ⏳ PLANNED (scoring pipeline) |
+| **One paradigm** | Java=OOP, Haskell=FP, C=imperative — each fights others | .nomtu implementations can be written in any paradigm. The sentence layer doesn't care. ⏳ PLANNED (multi-language extraction, Phase 5+) |
+| **Human must verify** | AI generates code, human reviews every line | Glass box report shows exactly which .nomtu were selected, what scores they have, why. Auditable without reading code. ✅ PARTIAL — `nom build manifest` JSON is the v0 glass-box report (`fef0419`); full scoring and alternatives listing PLANNED |
 
 ---
 
@@ -438,14 +436,14 @@ Nom starts from a fundamentally different place:
 This is why most of the 47 failures don't apply:
 
 ```
-Memory bugs?      You don't touch memory. The .nomtu handles it.
-Concurrency bugs?  You don't manage threads. The graph shows parallelism.
-Type bugs?         You don't define types. The contracts verify at every edge.
-Error bugs?        You don't write handlers. The contracts compose them.
-Security bugs?     You don't write code. The .nomtu is pre-tested and scored.
-Build bugs?        You don't configure builds. One command: nom build.
-Syntax bugs?       You write English sentences. 10 keywords, 3 operators.
-Evolution bugs?    You don't change syntax. The dictionary grows, immutably.
+Memory bugs?      You don't touch memory. The .nomtu handles it.  ⏳ PLANNED
+Concurrency bugs?  You don't manage threads. The graph shows parallelism.  ⏳ PLANNED
+Type bugs?         You don't define types. The contracts verify at every edge.  ⏳ PLANNED
+Error bugs?        You don't write handlers. The contracts compose them.  ⏳ PLANNED
+Security bugs?     You don't write code. The .nomtu is pre-tested and scored.  ⏳ PLANNED
+Build bugs?        You don't configure builds. One command: nom build.  ✅ PARTIAL (metadata pipeline; full build PLANNED)
+Syntax bugs?       You write English sentences. 10 keywords, 3 operators.  ✅ SHIPPED
+Evolution bugs?    You don't change syntax. The dictionary grows, immutably.  ✅ SHIPPED (words_v2 schema)
 ```
 
 The 47 failures are failures of CODE.

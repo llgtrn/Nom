@@ -1,6 +1,36 @@
 # 08 — Layered Concept / Module / Entity Architecture
 
-**Status: Draft, AI-synthesized; requires human authoring per §11.** Filed 2026-04-13. Builds on docs 02-07; resolves the three open tensions in [07-keyed-similarity-syntax-proposal.md §6](07-keyed-similarity-syntax-proposal.md).
+> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+
+**Status: ~58% implemented as of 2026-04-13, HEAD `afc6228`.** Filed 2026-04-13. Builds on docs 02-07; resolves the three open tensions in [07-keyed-similarity-syntax-proposal.md §6](07-keyed-similarity-syntax-proposal.md).
+
+## Implementation status (2026-04-13, HEAD `afc6228`)
+
+| Feature | Status | Commit(s) |
+|---|---|---|
+| **Tier 0** — atoms in DB2 (`words_v2`) | ✅ SHIPPED | `aaa914d` |
+| **Tier 1** — `.nomtu` parser (`nom-concept` Tier-1) | ✅ SHIPPED | `05ee1b6` |
+| **Tier 1** — recursive-ingest compiler (bytes per §4.3) | ⏳ PLANNED | Phase 5 |
+| **Tier 2** — `.nom` parser (`nom-concept` Tier-2) | ✅ SHIPPED | `d9425ba` |
+| **Tier 2** — recursive ingest (concept → modules → atoms) | ⏳ PLANNED | Phase 5/6 |
+| **Two databases** — DB1 (`concept_defs`) + DB2 (`words_v2`), additive | ✅ SHIPPED | `aaa914d` |
+| **Closure walker** — DFS post-order with cycle detection | ✅ SHIPPED | `c5cdce6` |
+| **Resolver stub** — `resolve_closure`, alphabetical-smallest tiebreak | ✅ SHIPPED | `bf95c2c` + `c405d2a` |
+| **Resolver** — Phase-9 corpus-embedding semantic re-rank | ⏳ PLANNED | Phase 9 |
+| **MECE validator** — ME-collision check (exit 1 on collision) | ✅ SHIPPED | `c63a6a7` |
+| **MECE validator** — CE-check (collectively-exhaustive) | ⏳ PLANNED — corpus-required-axis registry not yet built | Phase 9 |
+| `nom store sync` | ✅ SHIPPED | `ba7769f` |
+| `nom build status` (+ `--write-locks`) | ✅ SHIPPED | `bf95c2c` |
+| `nom build manifest` | ✅ SHIPPED | `fef0419` |
+| **Lock writeback** — `name@hash` for v1 refs (§8.2) | ✅ SHIPPED | `a04b91e` |
+| **Lock writeback** — typed-slot refs intentionally NOT written back (§3.5) | ✅ SHIPPED (by design) | `c405d2a` |
+| **Layered dreaming** (§9) — concept-tier + module-tier `nom dream` | ⏳ PLANNED | Phase 8/9 |
+| **Acceptance-predicate preservation engine** (§9.1) | ⏳ PLANNED | Phase 8/9 |
+| **Cascade through dream** (§9.3) | ⏳ PLANNED | Phase 8/9 |
+| **AppManifest deprecation** — `app.nom` as root concept | ⏳ PLANNED | Phase 10 |
+| **`nom-concept` crate** — Tier-1 + Tier-2 parser | ✅ SHIPPED (as part of `nom-concept`) | `05ee1b6` + `d9425ba` |
+| **`nom-module`** crate (or sub-module) | ✅ SHIPPED as sub-module of `nom-concept` | `05ee1b6` |
+| **`@Kind` sigil** (§8.1 reversal — user reversed prose-only decision) | ✅ SHIPPED | `c9d1835` |
 
 ## 1. Insight
 
@@ -254,32 +284,48 @@ The compiler is a **recursive ingestor**: a concept ingests modules; a module in
 
 ### 8.1 Tension 1 — Kind marker
 
-**Resolution: prose form `the NOUN`** from a closed set: `function`, `module`, `concept`, `screen`, `data`, `event`, `media`. Sigils (`@Function`) rejected as C-shape regression; parenthesized prose (`(as a Function)`) rejected as awkward inside composition expressions. The `the NOUN` pattern is unambiguous because the noun set is closed.
+**Original resolution: prose form `the NOUN`** from a closed set: `function`, `module`, `concept`, `screen`, `data`, `event`, `media`. Sigils (`@Function`) rejected as C-shape regression; parenthesized prose (`(as a Function)`) rejected as awkward inside composition expressions. The `the NOUN` pattern is unambiguous because the noun set is closed.
+
+> **UPDATE (2026-04-13)**: User reversed this decision. Both forms now coexist:
+> `the function login_user matching "..."` (v1 bare-word; `typed_slot = false`) and
+> `the @Function matching "..."` (v2 typed-slot; `typed_slot = true`). Shipped via commit
+> `c9d1835`. The `EntityRef.typed_slot` flag in `nom-concept/src/lib.rs` discriminates them.
 
 ### 8.2 Tension 2 — Lock storage
 
 **Resolution: `.nom` and `.nomtu` source carry `name@hash` after first build.** The source file IS the lock. No `.nom.lock` sidecar. Authoring writes `the function login matching "..."`; the resolver writes back `the function login@a1b2 matching "..."`. The `matching` clause stays as documentation + regeneration hint. Source self-describes; no truth split.
 
+> **Status**: ✅ SHIPPED for v1 refs (commit `a04b91e`). Typed-slot refs (`@Kind`) are
+> intentionally NOT written back — per doc 07 §3.5 (commit `c405d2a`). The resolved
+> hash for typed-slot refs is recorded in the build manifest only.
+
 ### 8.3 Tension 3 — Resolver
 
 **Resolution: deterministic per-kind embedding index, no LLM in the build path.** Built by `nom corpus embed` (Phase 9). LLM dispatch is reserved for `nom author`; never enters `nom build`, `nom store sync`, or `nom dream`. Preserves §10.3.1 fixpoint discipline (Stage 2 ≡ Stage 3 byte-identical).
 
-## 9. Layered dreaming
+> **Status**: ✅ Stub shipped (commits `bf95c2c` + `c405d2a`) — alphabetical-smallest
+> hash tiebreak as deterministic placeholder. ⏳ Phase-9 corpus-embedding re-rank pending.
+
+## 9. Layered dreaming ⏳ PLANNED (Phase 8/9)
 
 Per the keyed-similarity insight (doc 07): each tier scores independently; no cross-tier normalization.
 
-- **Tier-0 dream** (`nom nomtu dream <hash>`) — atomic body. Score = local benchmarks. Already planned for Phase 12 specialization.
-- **Tier-1 dream** (`nom module dream <m>.nomtu`) — module composition. Score = (acceptance ∧ objectives) tuple. Iteration swaps atomic refs against alternatives from the embedding index.
-- **Tier-2 dream** (`nom concept dream <c>.nom`) — concept composition. Score = (acceptance ∧ objectives) tuple over modules.
-- **Tier-3 dream** (`nom app dream`) — root. Recursively dreams; returns a **Pareto front of dream-trees**. User picks; no silent weighting.
+- **Tier-0 dream** (`nom nomtu dream <hash>`) — atomic body. Score = local benchmarks. Already planned for Phase 12 specialization. ⏳ PLANNED
+- **Tier-1 dream** (`nom module dream <m>.nomtu`) — module composition. Score = (acceptance ∧ objectives) tuple. Iteration swaps atomic refs against alternatives from the embedding index. ⏳ PLANNED
+- **Tier-2 dream** (`nom concept dream <c>.nom`) — concept composition. Score = (acceptance ∧ objectives) tuple over modules. ⏳ PLANNED
+- **Tier-3 dream** (`nom app dream`) — root. Recursively dreams; returns a **Pareto front of dream-trees**. User picks; no silent weighting. ⏳ PLANNED (existing single-tier `nom app dream` ships; layered recursion pending)
 
 `DreamReport` grows `tree: LayeredScoreNode` and `pareto: Vec<TreeCandidate>`. Existing `epic_score` stays as a leaf-tier scalar for back-compat.
 
-### 9.1 Acceptance preservation
+### 9.1 Acceptance preservation ⏳ PLANNED (Phase 8/9)
 
 **Acceptance predicates are local** to the concept that declares them. Apps re-declare what they care about; predicates do not propagate up automatically.
 
 `nom dream` is the **preservation engine**: every iteration that swaps a child must re-evaluate ALL of the parent's predicates and refuse swaps that drop or weaken any. Reports must surface "predicate X went from satisfied to vacuous because we swapped Y" instead of silently absorbing it. Because predicates are prose, they need a runtime check, not a static gate.
+
+> **Status**: ⏳ PLANNED — acceptance predicates are parsed and stored in the build manifest
+> (commit `fef0419`), but no preservation engine exists. The `nom dream` loop does not yet
+> re-evaluate predicates across swap iterations.
 
 ### 9.2 Objective inheritance + MECE validation
 
@@ -296,7 +342,14 @@ When concept *child* composes into concept *parent*, the union of their objectiv
 
 **Dreaming uses the MECE-validated objective set as the Pareto frontier targets.**
 
-### 9.3 Cascade through dream
+> **Status**:
+> - ME-collision check: ✅ SHIPPED (commit `c63a6a7`) — exit 1 on axis collision;
+>   `examples/agent_demo/` intentionally collides to prove it works.
+> - CE-check: ⏳ PLANNED — corpus-required-axis registry not yet built; stub only.
+> - Singleton enforcement: ⏳ PLANNED — the design is doc'd; corpus `exactly_one_per_app`
+>   registration deferred to Phase 9.
+
+### 9.3 Cascade through dream ⏳ PLANNED (Phase 8/9)
 
 When concept A changes, downstream concepts that index it are NOT silently re-pinned. `nom store sync` detects the change and marks downstream concepts as **stale**; the next `nom dream` is responsible for preserving the entire predicate set without misleading.
 
@@ -305,33 +358,42 @@ When concept A changes, downstream concepts that index it are NOT silently re-pi
 - A downstream concept's dream IS re-triggered when an upstream changes (the staleness flag is the trigger).
 - Reports surface what was preserved vs. re-resolved vs. failed and why.
 
+> **Status**: ⏳ PLANNED — `nom store sync` is shipped (commit `ba7769f`) but staleness
+> propagation and dream-mediated cascade are not yet implemented.
+
 ## 10. Migration
 
-| Phase | What lands |
-|---|---|
-| Inside Phase 4 (now) | `.nom` + `.nomtu` file formats; `nom store sync`; DB1/DB2 schema split. Pure metadata work; doesn't touch the artifact store. |
-| Before Phase 5 | `nom-concept` + `nom-module` parsing; recursive-ingest compiler. Phase 5's planner needs concept + module boundaries as input. |
-| Phase 8 or 9 | Tier-1 + Tier-2 dreaming. Requires embedding index (Phase 9) for swaps and acceptance predicates (Phase 8) for scoring. |
-| Phase 12 (unchanged) | Tier-0 specialization; now the leaf of the Pareto tree. |
-| AppManifest deprecation | `app.nom` becomes the root. AppManifest is a generated view, not a separate artifact. |
+| Phase | What lands | Status |
+|---|---|---|
+| Inside Phase 4 (now) | `.nom` + `.nomtu` file formats; `nom store sync`; DB1/DB2 schema split. Pure metadata work; doesn't touch the artifact store. | ✅ SHIPPED — commits `aaa914d` + `05ee1b6` + `d9425ba` + `ba7769f` |
+| Before Phase 5 | `nom-concept` + `nom-module` parsing; recursive-ingest compiler. Phase 5's planner needs concept + module boundaries as input. | ✅ Parsing SHIPPED; ⏳ recursive-ingest compiler PLANNED (Phase 5) |
+| Phase 8 or 9 | Tier-1 + Tier-2 dreaming. Requires embedding index (Phase 9) for swaps and acceptance predicates (Phase 8) for scoring. | ⏳ PLANNED |
+| Phase 12 (unchanged) | Tier-0 specialization; now the leaf of the Pareto tree. | ⏳ PLANNED |
+| AppManifest deprecation | `app.nom` becomes the root. AppManifest is a generated view, not a separate artifact. | ⏳ PLANNED |
 
 ## 11. Open questions resolved + carry-overs
 
-All twelve numbered questions from the planning round are resolved (per user authoring on 2026-04-13). Summary:
+All twelve numbered questions from the planning round are resolved per user authoring on 2026-04-13. Implementation status added below.
 
-1. **Media kind marker** — `media`. Closed kind set: `function`, `module`, `concept`, `screen`, `data`, `event`, `media`.
-2. **`.nomtu` sharing** — no duplication; cross-references by name through DB2; singleton resources live in a shared concept.
-3. **Empty concept folder** — warning + dream-seed.
-4. **Orphan reaping** — manual `nom store gc`; never automatic.
-5. **Tier-2 override scope** — *deferred*; revisit after the rest of the architecture stabilizes.
-6. **Acceptance predicate portability** — local + dream-preserved (§9.1).
-7. **Dream-objective inheritance** — MECE validator (§9.2).
-8. **Custom quality registration** — corpus table.
-9. **Cross-`.nomtu` references** — yes; resolved against DB2.
-10. **Mixed kinds in one `.nomtu`** — yes, with the singleton caveat from item 2.
-11. **Lock cascade** — dream-mediated (§9.3).
-12. **Word naming for 100M+ entities** — feature-stacks (§6.5 below).
-13. **Singleton enforcement** — registered as axes with `cardinality=exactly_one`, enforced via the MECE validator (§9.2).
+1. **Media kind marker** — `media`. Closed kind set: `function`, `module`, `concept`, `screen`, `data`, `event`, `media`. ✅ Closed kind set shipped in lexer (`nom-concept/src/lib.rs`, commit `c9d1835`).
+2. **`.nomtu` sharing** — no duplication; cross-references by name through DB2; singleton resources live in a shared concept. ✅ Design enforced by parser/resolver; `nom store sync` populates DB2 (commit `ba7769f`).
+3. **Empty concept folder** — warning + dream-seed. ⏳ PLANNED — no warning emitted yet.
+4. **Orphan reaping** — manual `nom store gc`; never automatic. ⏳ PLANNED — `nom store gc` subcommand not yet implemented.
+5. **Tier-2 override scope** — *deferred*; revisit after the rest of the architecture stabilizes. ⏳ DEFERRED — no change from original resolution; still unresolved per doc 09.
+6. **Acceptance predicate portability** — local + dream-preserved (§9.1). ✅ Predicates parsed + stored in build manifest (commit `fef0419`); ⏳ dream-preservation engine PLANNED.
+7. **Dream-objective inheritance** — MECE validator (§9.2). ✅ ME check shipped (commit `c63a6a7`); ⏳ CE check PLANNED.
+8. **Custom quality registration** — corpus table. ⏳ PLANNED — no corpus quality table yet.
+9. **Cross-`.nomtu` references** — yes; resolved against DB2. ✅ SHIPPED — resolver does DB2 lookup by kind + word (commits `bf95c2c` + `c405d2a`).
+10. **Mixed kinds in one `.nomtu`** — yes, with the singleton caveat from item 2. ✅ SHIPPED — parser accepts multiple entity declarations of different kinds in one `.nomtu` file.
+11. **Lock cascade** — dream-mediated (§9.3). ⏳ PLANNED — cascade design documented; not yet implemented.
+12. **Word naming for 100M+ entities** — feature-stacks (§6.5 below). ✅ Design shipped in doc; ⏳ corpus-root-vocabulary registry is Phase-5+ work.
+13. **Singleton enforcement** — registered as axes with `cardinality=exactly_one`, enforced via the MECE validator (§9.2). ⏳ PLANNED — ME collision check shipped; `cardinality=exactly_one_per_app` axis registration deferred to Phase 9.
+
+**Carry-over open questions** (doc 09 scope, not resolved in the original 13):
+
+- **Doc 07 vs doc 08 syntax tension on `the NOUN` form** — both forms now coexist via `EntityRef.typed_slot` (commit `c9d1835`). Long-term: should `the NOUN` form be deprecated in favor of `@Kind`? Unresolved.
+- **Aspect marker semantics** (`verified`/`active`/`deferred`) — `0%`; low semantic value without runtime. ⏳ PLANNED Phase 9+.
+- **Multi-locale demo strategy** — `agent_demo_vn` kept but not extended per user clarification.
 
 ### 6.5 (referenced from §6 above) — Feature-stack word naming
 

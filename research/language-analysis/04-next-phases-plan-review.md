@@ -2,7 +2,8 @@
 
 **Reviewer:** Claude (opus-4-6-1m), with critic subagent dispatch and 6 empirical probe iterations.
 **Date:** 2026-04-12.
-**Plan reviewed:** [04-next-phases-plan.md](./04-next-phases-plan.md), 2351 lines.
+**Last verified against codebase:** 2026-04-13, HEAD `afc6228`. Risk statuses updated inline below.
+**Plan reviewed:** [04-next-phases-plan.md](./04-next-phases-plan.md), 2351 lines (now 2540 lines after subsequent session patches).
 **Method:** one adversarial pass (subagent), then five iterations of empirical verification against the shipped nom-compiler workspace and the plan text itself.
 
 This document is a snapshot of the review — the plan has since been patched for Risk #2 and Risk #1 prerequisites (see commit following this review).
@@ -13,17 +14,17 @@ Directionally right, systemically overambitious as one phase, and underspecified
 
 ## Scoreboard
 
-| Risk | Initial severity | Post-evidence verdict | Fix size |
-|------|------------------|----------------------|----------|
-| #1 LLVM fixpoint unachievable | CRITICAL | **Refined**: LLVM 18 pinned via `inkwell` ✅. Rust toolchain pinned via `rust-toolchain.toml = "1.94.1"` ✅ (landed 2026-04-12). `-g` (debug info) determinism still untested; `SOURCE_DATE_EPOCH` + `llvm.ident` stripping + PDB/COFF timestamp-zero still to be wired in the build driver. | Remaining: debug-info determinism probe |
-| #2 Canonicalizer evolution breaks hash-as-syntax-token | CRITICAL | **Internal plan/code contradiction identified and resolved** in this commit: canonical.rs comment and §5.10.1 now align on version-scoped pins + mandatory `SupersededBy` sweep. | Plan edit only |
-| #3 License propagation unhandled at mass-corpus scale | CRITICAL | **Fully descoped by user 2026-04-12.** License column removed from `dictionary/seed.sql`, `SecurityConfig.allowed_licenses` field removed, resolver examples updated. License tracking is not part of the language. | — (done) |
-| #4 §5 is six subsystems, not one phase | MAJOR | **Confirmed**: six new workspace crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) from zero, ~12–18 kLOC scaffolding buried inside "§5.0 10 weeks." | +~3 weeks hidden scaffolding |
-| #5 No diagnostics/DWARF/panic-unwind story | MAJOR | **Refined**: `nom-diagnostics` crate exists (269 LOC) ✅. DWARF emission absent ❌. Unwinding absent (panic is abort-only via `nom_panic` stub) ❌. | ~1 week DIBuilder + 1 decision on unwinding |
+| Risk | Initial severity | Post-evidence verdict | Fix size | 2026-04-13 status |
+|------|------------------|----------------------|----------|-------------------|
+| #1 LLVM fixpoint unachievable | CRITICAL | **Refined**: LLVM 18 pinned via `inkwell` ✅. Rust toolchain pinned via `rust-toolchain.toml = "1.94.1"` ✅ (landed 2026-04-12). `-g` (debug info) determinism still untested; `SOURCE_DATE_EPOCH` + `llvm.ident` stripping + PDB/COFF timestamp-zero still to be wired in the build driver. | Remaining: debug-info determinism probe | ✅ RESOLVED (toolchain pin). Canary tests added (`compile_nom_to_bc_is_deterministic`, `compile_app_to_artifacts_is_deterministic`). CI hardened (commits `29f5f1d`/`bc89d8a`/`96267df`). Remaining: debug-info strip + `SOURCE_DATE_EPOCH`. |
+| #2 Canonicalizer evolution breaks hash-as-syntax-token | CRITICAL | **Internal plan/code contradiction identified and resolved** in this commit: canonical.rs comment and §5.10.1 now align on version-scoped pins + mandatory `SupersededBy` sweep. | Plan edit only | ✅ RESOLVED — plan + code aligned; `canonical.rs` comment and §5.10.1 consistent. |
+| #3 License propagation unhandled at mass-corpus scale | CRITICAL | **Fully descoped by user 2026-04-12.** License column removed from `dictionary/seed.sql`, `SecurityConfig.allowed_licenses` field removed, resolver examples updated. License tracking is not part of the language. | — (done) | ✅ RESOLVED (descoped). |
+| #4 §5 is six subsystems, not one phase | MAJOR | **Confirmed**: six new workspace crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) from zero, ~12–18 kLOC scaffolding buried inside "§5.0 10 weeks." | +~3 weeks hidden scaffolding | ⏳ OPEN — all six crates are now scaffolded (per §5.0a in the plan, session after this review). Functional work is the remaining multi-week scope. Risk magnitude unchanged; scaffolding is done. |
+| #5 No diagnostics/DWARF/panic-unwind story | MAJOR | **Refined**: `nom-diagnostics` crate exists (269 LOC) ✅. DWARF emission absent ❌. Unwinding absent (panic is abort-only via `nom_panic` stub) ❌. | ~1 week DIBuilder + 1 decision on unwinding | ⏳ OPEN — unchanged. DWARF absent; panic abort-only. §10.3.1 now documents this as a prerequisite with defaults (`-C debuginfo=0` + `panic = "abort"`). |
 
 ## Evidence summary per risk
 
-### Risk #1 — LLVM fixpoint
+### Risk #1 — LLVM fixpoint ✅ RESOLVED (toolchain pin + canaries + CI hardening)
 
 - [nom-llvm/Cargo.toml:11](../../nom-compiler/crates/nom-llvm/Cargo.toml#L11) pins `inkwell = { version = "0.5", features = ["llvm18-0"] }` — LLVM major-version is already pinned.
 - 2026-04-12: `rust-toolchain.toml` with `channel = "1.94.1"` landed and verified — `cargo --version` / `rustc --version` both resolve to 1.94.1 and `cargo check --workspace` passes under the pinned toolchain. Risk #1b is now closed on the Rust-toolchain side; remaining Risk #1 prerequisites (build-driver-level debug-info determinism flags) are separate.
@@ -34,7 +35,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 - `-g` (debug info) determinism is untested. Debug info is where most non-determinism hides (paths, timestamps, compilation-unit ordering).
 - Plan text at §10.3.1 line 2052 now carries an explicit prerequisites block: LLVM pinned, Rust toolchain pinned, `SOURCE_DATE_EPOCH` set, `llvm.ident` stripped, PDB/COFF timestamps zeroed. These are ABI-level facts, not aspirations.
 
-### Risk #2 — canonicalizer evolution (RESOLVED)
+### Risk #2 — canonicalizer evolution ✅ RESOLVED
 
 - [canonical.rs:29-31](../../nom-compiler/crates/nom-types/src/canonical.rs#L29-L31) originally said *"Adding new variants appends — never reorder, never recycle"*.
 - §5.10.1 originally said *"sugar gets desugared, operator associativity gets fixed"* — which is NOT append-only at the tag-stream level.
@@ -43,7 +44,7 @@ Directionally right, systemically overambitious as one phase, and underspecified
 - Code comment and plan §5.10.1 both updated in this commit.
 - Proof-of-bootstrap tuple (§10.3.1) should now record canonicalizer version in use (future edit — not in this commit).
 
-### Risk #3 — license propagation (DESCOPED + REMOVED)
+### Risk #3 — license propagation ✅ RESOLVED (DESCOPED + REMOVED)
 
 - 2026-04-12: license tracking removed from the language entirely per user direction ("no need to care about license, delete entire column have license, and bypass all kind").
 - `dictionary/seed.sql`: `license` column dropped from the legacy `nomtu` schema — column list in INSERTs and corresponding value removed from all 70 rows.
@@ -51,13 +52,13 @@ Directionally right, systemically overambitious as one phase, and underspecified
 - [nom-resolver/src/lib.rs](../../nom-compiler/crates/nom-resolver/src/lib.rs): `license=MIT` examples in docstring + 2 tests replaced with `source=stdlib` (parser grammar was generic; no behavioral change).
 - Output license of translated `body_nom` remains unstated — intentionally, since license tracking is not part of the language.
 
-### Risk #4 — §5 scope
+### Risk #4 — §5 scope ⏳ PARTIALLY MITIGATED (scaffolding done; functional work remains)
 
-- Workspace at [Cargo.toml:1-24](../../nom-compiler/Cargo.toml#L1-L24) has 20 crates. Six promised-for-§5 crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) do not exist.
+- ~~Workspace at [Cargo.toml:1-24](../../nom-compiler/Cargo.toml#L1-L24) has 20 crates. Six promised-for-§5 crates (`nom-ux`, `nom-media`, `nom-corpus`, `nom-bench`, `nom-app`, `nom-flow`) do not exist.~~ **2026-04-13 update**: all six crates are now scaffolded (see §5.0a in plan). `nom-media` additionally has functional codec work: 10/10 §5.16.13 codecs landed (PNG/FLAC/JPEG real re-encode; Opus/AVIF/AV1/AAC identity-mapped; WebM/MP4 muxers; HEVC decode-only), 56 tests. `nom-types` extended with `EntryKind` (29 variants), `EdgeType` (28 variants), and `body_kind` module (14 constants per §4.4.6 Inv-17).
 - At the workspace's current per-crate average LOC, adding six seed crates is ~12–18 kLOC of pure Rust scaffolding. Phase 4's total commit count was 13 for DIDS (Task A1-A3, B1-B4, C1-C3, D1-D3).
-- Plan edit recommendation (not yet applied): split §5.0 into §5.0a (scaffolding, ~2–3 weeks), §5.0b (body-only translator @ 100M, ~10 weeks), §5.0c (integration test, ~1 week). Honest Phase 5.0 horizon: ~13–14 weeks.
+- Plan edit recommendation (not yet applied): split §5.0 into §5.0a (scaffolding, ~2–3 weeks), §5.0b (body-only translator @ 100M, ~10 weeks), §5.0c (integration test, ~1 week). Honest Phase 5.0 horizon: ~13–14 weeks. **§5.0a is done**; §5.0b and §5.0c remain.
 
-### Risk #5 — diagnostics / DWARF / unwinding
+### Risk #5 — diagnostics / DWARF / unwinding ⏳ OPEN
 
 - `nom-diagnostics` crate exists at 269 LOC — my initial "no diagnostic rendering system" claim was wrong. Retracted.
 - DWARF emission: zero hits for `DIBuilder|debug_info|DW_TAG|DILocation` in nom-compiler's own code. [examples/run_lexer.ll](../../nom-compiler/examples/run_lexer.ll) contains zero `!dbg`/`!DILocation`/`!DISubprogram` directives. Debug info is genuinely absent.

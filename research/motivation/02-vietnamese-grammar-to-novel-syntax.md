@@ -7,6 +7,24 @@ with foreign borrowing allowed. Vietnamese grammar inspires the STRUCTURE
 (classifiers, topic-comment, no braces, writing-style) but the WORDS are English.
 Locale packs provide Vietnamese keywords for Vietnamese-primary developers.
 
+**Note (updated 2026-04-13):** User clarified: Vietnamese keyword vocabulary
+(cai/ham/etc.) shipped in commits `4b04b1d`/`c601f31`/`5b59f82` and is parked
+(kept but not extended). Vocabulary stays English; only GRAMMAR STYLE is borrowed
+from Vietnamese. Vietnamese-loanword syntax tokens (duoc/bi) were explicitly
+rejected in favor of English-only `benefit`/`hazard` keywords (commit `c9d1835`).
+The `agent_demo_vn` example (`c601f31`) demonstrates the locale pack as inert
+validation only.
+
+---
+
+> **Status banner — Last verified against codebase: 2026-04-13, HEAD afc6228.**
+>
+> Per-section tags:
+> - ✅ SHIPPED — backed by code at the cited commit/file
+> - ⏳ PLANNED — on roadmap; no shipped code yet
+> - ❌ ASPIRATIONAL — beyond current roadmap; no concrete plan
+> - ⚠️ PARKED — work done but frozen; not being extended
+
 ---
 
 ## The Core Thesis
@@ -23,6 +41,11 @@ the same kind of thing — one for human meaning, one for software meaning.
 ---
 
 ## 1. Analytic Grammar → Immutable Tokens
+
+**Section status: ✅ SHIPPED (implicit) — content-addressed `words_v2` schema enforces
+immutability by construction. Each hash in `words_v2` is the identity of the entry;
+changing the body produces a different hash, so tokens cannot mutate in place.
+(commit `aaa914d`, `nom-dict/src/lib.rs`)**
 
 ### Vietnamese Property
 Vietnamese is analytic/isolating. "ăn" (eat) is always "ăn" — no conjugation (ate,
@@ -48,6 +71,11 @@ A keyword means one thing. A Nom name means one thing. Period.
 ---
 
 ## 2. SVO Word Order → Flow Syntax
+
+**Section status: ⏳ PLANNED (Phase 5/6) — the `->` operator parses correctly and the
+concept-graph closure walker resolves flow chains (`c5cdce6`). The full SVO-as-planner
+semantics (where modifier-follows-head is enforced by the planner, not just the parser)
+await Phase 5.**
 
 ### Vietnamese Property
 Subject-Verb-Object: "Tôi ăn cơm" (I eat rice).
@@ -75,6 +103,12 @@ describe. Never precede it.
 ---
 
 ## 3. Classifiers (Loại Từ) → Nom Kind Classifiers
+
+**Section status: ✅ SHIPPED — closed kind set in `nom-concept/src/lib.rs`. The
+`function`/`module`/`concept` classifiers are enforced as mandatory in the `.nom`
+and `.nomtu` parsers (commits `05ee1b6`, `d9425ba`). The `the function` / `the @Function`
+typed-slot forms are also shipped (`c9d1835`). Every `.nom` declaration requires a
+kind classifier; unclassified declarations produce a parse error.**
 
 ### Vietnamese Property
 Vietnamese REQUIRES classifiers between numbers and nouns. They categorize reality:
@@ -132,6 +166,10 @@ direction — rivers (con sông), roads (con đường), knives (con dao). This 
 
 ## 4. Six Tones → Six Nom Modifiers
 
+**Section status: ❌ ASPIRATIONAL — no modifier syntax (`!`, `~`, `?`, `^`, `.`) has
+been shipped. The closed kind set covers classifiers (§3) but the tone-to-modifier
+mapping is not implemented in any parser or AST node.**
+
 ### Vietnamese Property
 Six tones change the meaning of the same syllable:
 - **ma** (ngang/flat) = ghost — the base, unmarked form
@@ -181,6 +219,10 @@ same syllable, different meaning.
 
 ## 5. Compound Words (Từ Ghép) → Two Composition Modes
 
+**Section status: ⏳ PLANNED — the `::` (subordinate/specialization) and `+` (coordinate)
+operators parse correctly. Full compound resolution through the dictionary (Phase 5+)
+is PLANNED. The `words_v2` kind-based lookup (`c405d2a`) is the first step.**
+
 ### Vietnamese Property
 Two types of compounds:
 
@@ -228,6 +270,10 @@ system auth = compose {
 
 ## 6. Serial Verb Construction → Flow Chaining
 
+**Section status: ⏳ PLANNED — the `->` operator chains parse correctly and the closure
+walker traverses them (`c5cdce6`). The semantic claim that a chain is "one composite
+operation" (not sequential independent steps) requires the Phase 5+ codegen path.**
+
 ### Vietnamese Property
 Verbs chain without conjunctions to express one complex event:
 - "Tôi chạy ra ngoài" (I run exit outside) = I ran outside
@@ -256,6 +302,11 @@ of independent steps. Data flows through; the whole chain is one unit.
 ---
 
 ## 7. Topic-Comment Structure → Declaration Syntax
+
+**Section status: ⏳ PLANNED — the current parser accepts the implicit topic-comment
+form (classifier + name followed by indented properties). Explicit `{...}` topic-comment
+block markers are not yet formalized; the `{` as topic separator shown below is design
+intent, not shipped syntax.**
 
 ### Vietnamese Property
 Vietnamese is topic-prominent:
@@ -289,6 +340,13 @@ defining). Everything inside is the comment (properties, requirements, behavior)
 ---
 
 ## 8. Aspect Markers (đã/đang/sẽ) → Temporal State
+
+**Section status: ⚠️ PARKED — the ASCII transliteration keyword aliases
+(`da`/`dang`/`se`) were shipped in commit `4b04b1d` as part of the Vietnamese
+locale pack. User clarified: vocabulary stays English; the aspect-marker state
+tracking (`verified`/`active`/`deferred`) has low semantic value without a runtime
+to interpret it. This section describes the design intent; the locale-pack keywords
+are inert (not parsed by the concept engine) and not being extended.**
 
 ### Vietnamese Property
 Three pre-verbal particles mark temporal aspect WITHOUT changing the verb:
@@ -331,6 +389,13 @@ temporal state. Like Vietnamese: the verb never changes.
 
 ## 9. Được/Bị → Effect Valence
 
+**Section status: ✅ SHIPPED — English-only (`benefit`/`hazard` keywords). Effect
+valence keywords are shipped in `nom-concept/src/lib.rs` (commit `c9d1835`) and
+surfaced in `nom build manifest` output (commit `eeb1e23`). The Vietnamese loanwords
+`duoc`/`bi` were explicitly rejected per user clarification: vocabulary stays English.
+The `agent_demo` fixtures at `nom-compiler/examples/agent_demo/` use `benefit`/`hazard`
+in practice.**
+
 ### Vietnamese Property
 Two passive markers encode ATTITUDE:
 - **được** (positive): "Tôi được tăng lương" (I [benefited] raise salary = I got a raise)
@@ -341,26 +406,25 @@ Same grammatical operation (passive voice), different semantic valence.
 ### Novel Mapping
 
 ```novel
-# được (positive effect) → beneficial system events
-duoc cache_hit              # good: response served from cache
-duoc load_balanced          # good: load was distributed
-duoc auto_scaled            # good: capacity increased
+# được (positive effect) → beneficial system events  (English: "benefit")
+benefit cache_hit              # good: response served from cache
+benefit load_balanced          # good: load was distributed
+benefit auto_scaled            # good: capacity increased
 
-# bị (negative effect) → adverse system events
-bi   timeout                # bad: upstream didn't respond
-bi   rate_limited           # bad: request was throttled
-bi   memory_pressure        # bad: resources strained
+# bị (negative effect) → adverse system events  (English: "hazard")
+hazard  timeout                # bad: upstream didn't respond
+hazard  rate_limited           # bad: request was throttled
+hazard  memory_pressure        # bad: resources strained
 
 # In effect declarations:
-flow request_handler {
-    effects duoc [cached, optimized]           # positive effects
-    effects bi   [timeout, rate_limited]       # negative effects
-}
-
-# This drives monitoring automatically:
-# được events → success metrics, dashboards
-# bị events → alerts, escalation, incident response
+flow request_handler
+    benefit [cached, optimized]           # positive effects
+    hazard  [timeout, rate_limited]       # negative effects
 ```
+
+> Note: The syntax above shows design intent. The `duoc`/`bi` loanword aliases
+> shown in earlier drafts of this document are NOT shipped; they were explicitly
+> rejected. The English keywords `benefit`/`hazard` are canonical.
 
 **Design rule:** Effects carry semantic valence. The engine knows whether an effect is
 beneficial or adverse, driving monitoring, alerting, and system behavior automatically.
@@ -369,6 +433,10 @@ No existing programming language does this.
 ---
 
 ## 10. No Articles, No Plural → Minimal Syntax
+
+**Section status: ✅ SHIPPED (implicit) — the `.nom`/`.nomtu` parsers require no
+articles, no plural forms, and no semicolons. This is enforced by the parser grammar
+in `nom-concept/src/lib.rs`.**
 
 ### Vietnamese Property
 No articles (a, an, the). No required plural forms. "Sách" = book, books, the book,
@@ -395,6 +463,11 @@ No semicolons. No let/const/var. No new. No type annotations when inferrable.
 ---
 
 ## 11. Sino-Vietnamese Morphemes → Core Nom Kinds
+
+**Section status: ✅ SHIPPED (implicit) — the closed kind set in `nom-concept/src/lib.rs`
+(`function|module|concept|screen|data|event|media` etc.) serves as the finite root
+vocabulary from which Nom declarations are built. The full `~200-500 root vocabulary`
+registration in a corpus is PLANNED for Phase 5+.**
 
 ### Vietnamese Property
 ~3,000 Sino-Vietnamese base morphemes compose into unlimited technical vocabulary:
@@ -424,6 +497,10 @@ composition, not by inventing new roots.
 
 ## 12. Reduplication (Từ Láy) → Parameterized Variants
 
+**Section status: ❌ ASPIRATIONAL — no reduplication or parameterized-variant syntax
+has been designed or shipped. The `::` specialization operator (§5) is the closest
+analog but does not implement the softening/strengthening semantic described here.**
+
 ### Vietnamese Property
 ~10% of Vietnamese vocabulary uses reduplication — systematic sound patterns that
 create related meanings:
@@ -448,6 +525,11 @@ encrypt :: strong    → encrypt :: light        # strong encryption → lightwe
 
 ## 13. Grammatical Particles → Operators
 
+**Section status: ✅ SHIPPED for most particles — `where`, `+`, `->`, `matching` all
+parse correctly. The `{...}` topic-comment block (§7) is design intent. The `da`/`dang`/`se`
+aspect markers (§8) are ⚠️ PARKED locale-pack aliases. The `benefit`/`hazard` valence
+keywords (§9) are ✅ SHIPPED English-only.**
+
 ### Vietnamese Property
 Particles connect clauses and manage information flow:
 
@@ -462,42 +544,47 @@ Particles connect clauses and manage information flow:
 
 ### Novel Mapping
 
-| Vietnamese | Novel Operator | Syntax | Meaning |
-|-----------|---------------|--------|---------|
-| và (and) | `+` | A + B | Coordinate composition |
-| mà (but/that) | `where` | A where P | Constraint/guard |
-| thì (topic) | `{` | A { ... } | Topic-comment block |
-| để (purpose) | `->` | A -> B | Flow/pipeline |
-| cho (for) | `for` | A for B | Target/beneficiary |
-| rồi (done) | `da` | da A | Verified/complete |
-| đang (ongoing) | `dang` | dang A | Active/running |
-| sẽ (will) | `se` | se A | Planned/deferred |
+| Vietnamese | Novel Operator | Syntax | Meaning | Status |
+|-----------|---------------|--------|---------|--------|
+| và (and) | `+` | A + B | Coordinate composition | ✅ SHIPPED |
+| mà (but/that) | `where` | A where P | Constraint/guard | ✅ SHIPPED |
+| thì (topic) | `{` | A { ... } | Topic-comment block | ⏳ PLANNED |
+| để (purpose) | `->` | A -> B | Flow/pipeline | ✅ SHIPPED |
+| cho (for) | `for` | A for B | Target/beneficiary | ⏳ PLANNED |
+| rồi (done) | `da` | da A | Verified/complete | ⚠️ PARKED |
+| đang (ongoing) | `dang` | dang A | Active/running | ⚠️ PARKED |
+| sẽ (will) | `se` | se A | Planned/deferred | ⚠️ PARKED |
 
 ---
 
 ## Summary: The Vietnamese-Novel Grammar Correspondence
 
 ```
-Vietnamese Grammar          Novel Syntax
-─────────────────          ────────────
-Analytic (no inflection)   Immutable Noms (no context-dependent meaning)
-SVO word order             entity -> action -> target
-Modifier follows head      constraint follows declaration (where)
-Mandatory classifiers      Mandatory kind classifiers (flow, agent, store)
-6 tones on same syllable   6 modifiers on same Nom (!, ~, ?, ^, .)
-Subordinate compounds      Specialization (::)
-Coordinate compounds       Combination (+)
-Serial verb construction   Flow chaining (->)
-Topic-comment structure    Declaration blocks ({ })
-Aspect markers (đã/đang/sẽ) Temporal state (da/dang/se)
-Được/bị valence           Effect valence (duoc/bi)
-No articles/plural         Minimal syntax (no noise)
-Sino-Vietnamese morphemes  Core Nom kinds (~200-500 roots)
-Reduplication patterns     Parameterized variants
-Grammatical particles      Operators (where, +, ->, for)
+Vietnamese Grammar          Novel Syntax                          Status
+─────────────────          ────────────                          ──────
+Analytic (no inflection)   Immutable Noms (no context-dep.)      ✅ SHIPPED (words_v2, aaa914d)
+SVO word order             entity -> action -> target             ✅ SHIPPED (parser)
+Modifier follows head      constraint follows declaration (where) ✅ SHIPPED (parser)
+Mandatory classifiers      Mandatory kind classifiers             ✅ SHIPPED (nom-concept/src/lib.rs)
+6 tones on same syllable   6 modifiers on same Nom (!, ~, ?, ^.) ❌ ASPIRATIONAL
+Subordinate compounds      Specialization (::)                    ✅ SHIPPED (parser + c405d2a)
+Coordinate compounds       Combination (+)                        ✅ SHIPPED (parser)
+Serial verb construction   Flow chaining (->)                     ✅ SHIPPED (parser + c5cdce6)
+Topic-comment structure    Declaration blocks ({ })               ⏳ PLANNED
+Aspect markers (đã/đang/sẽ) Temporal state (da/dang/se)          ⚠️ PARKED (4b04b1d)
+Được/bị valence           Effect valence (benefit/hazard)        ✅ SHIPPED English-only (c9d1835)
+No articles/plural         Minimal syntax (no noise)              ✅ SHIPPED (parser)
+Sino-Vietnamese morphemes  Core Nom kinds (~200-500 roots)        ✅ PARTIAL (closed kind set)
+Reduplication patterns     Parameterized variants                 ❌ ASPIRATIONAL
+Grammatical particles      Operators (where, +, ->, for)          ✅ SHIPPED (most)
 ```
 
 The deepest insight: Vietnamese grammar is already compositional-semantic. It composes
 meaning from stable atoms using word order and particles — no inflection, no mutation,
 no hidden state changes. Novel does the same with software. The language is not INSPIRED
 by Vietnamese. It IS Vietnamese grammar applied to computation.
+
+> **Vocabulary clarification (2026-04-13):** The Vietnamese-loanword vocabulary layer
+> (cai/ham/duoc/bi etc.) was built as a locale-pack experiment and parked. It is NOT
+> part of the canonical Nom language. Nom's keywords are English. Vietnamese contributes
+> GRAMMAR STYLE (the structural mappings above), not vocabulary.

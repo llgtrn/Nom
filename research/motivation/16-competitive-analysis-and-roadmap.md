@@ -5,6 +5,18 @@ where it's not, and how to actually ship it.**
 
 ---
 
+> **Status banner — Last verified against codebase: 2026-04-13, HEAD afc6228.**
+>
+> The build sequence phases in §6 are annotated below with current state.
+> The killer-app candidates in §5 are annotated with what has shipped.
+> §3 honest-position section has been updated to reflect actual published fixtures.
+>
+> - ✅ DONE — fully shipped
+> - ⏳ PARTIAL — some pieces shipped; full milestone PLANNED
+> - ❌ ASPIRATIONAL — no shipped code yet
+
+---
+
 ## 1. The Honest Position
 
 Nom is not better than everything at everything.
@@ -49,6 +61,10 @@ WHY NOM WINS HERE: npm's model is trust-by-default at scale.
     event-stream CAN'T happen (provenance tracks every change).
 ```
 
+> Current state: Content-addressing and provenance fields are shipped in
+> `words_v2` schema (commit `aaa914d`). 8-dimension scoring and the `nom.dev`
+> registry are ⏳ PLANNED for Phase 1/5+.
+
 ### vs Copilot (20M users, $1B ARR, 29% security issues)
 
 ```
@@ -71,6 +87,12 @@ WHY NOM WINS HERE: Copilot GENERATES code (may hallucinate).
     BUT: Nom needs AI for intent resolution. Hybrid is the answer.
 ```
 
+> Current state: `nom build manifest` is the v0 glass-box report (commit `fef0419`).
+> Per-slot top-K diagnostic is shipped in `nom build status` (commit `853e70b`).
+> The "0% fabrication" guarantee holds only within the dictionary boundary;
+> the dictionary itself is tiny today (demo fixtures only). Full guarantee
+> requires Phase-9 corpus pipeline.
+
 ### vs Unison (content-addressed code, ~6.5K GitHub stars)
 
 ```
@@ -90,6 +112,10 @@ WHY NOM WINS HERE: Unison proved content-addressing works technically
     but failed on adoption because it abandoned files/git/editors.
     Nom keeps normal files AND gets content-addressing benefits.
 ```
+
+> Current state: Content-addressed `words_v2` schema is shipped (`aaa914d`).
+> Normal `.nom`/`.nomtu` files working with git are shipped (all examples).
+> `nom.dev` and multi-language extraction are ⏳ PLANNED.
 
 ### vs Wolfram ($395/year, 6500 functions, proprietary)
 
@@ -132,13 +158,14 @@ LESSON: composable domain modeling alone doesn't drive adoption.
 
 ```
 vs Rust:       Rust has 200K+ crates, battle-tested ecosystem, 72% satisfaction.
-               Nom has 0 published .nomtu. Ecosystem must be built from scratch.
+               Nom has a handful of demo .nomtu fixtures (see below).
+               Ecosystem must be built from scratch.
 
 vs Python:     Python has NumPy/TensorFlow/Django, millions of developers.
                Nom has no ML/web framework. The .nomtu dictionary is aspirational.
 
 vs Copilot:    20M users generating 46% of code. Massive momentum.
-               Nom has 0 users. No IDE integration yet. No autocomplete.
+               Nom has 0 external users. No IDE integration yet. No autocomplete.
 
 vs established languages: every successful language had 5-10 years of
                development before reaching stability. Nom is at year 0.
@@ -147,8 +174,22 @@ The base rate: ~8,945 languages created, ~50-100 in active use.
                That's a 0.6-1.1% survival rate. Nom must beat 99% odds.
 ```
 
-**The honest answer: Nom's ideas are strong, its execution is at zero.**
-The research is done. The spec exists. Nothing compiles yet.
+**Updated (2026-04-13):** The previous version stated "Nom has 0 published .nomtu."
+That is now outdated. As of HEAD afc6228, the following fixtures are in the repository:
+
+- `nom-compiler/examples/concept_demo/` — minimal end-to-end (1 root concept + 1 nested
+  concept + 1 module with 2 entities + 1 composition). Commit `a04b91e`.
+- `nom-compiler/examples/agent_demo/` — AI-agent composition seed: 6 tools + safety
+  policy + intentional MECE collision. Commit `e2d4eb4`.
+- `nom-compiler/examples/agent_demo_vn/` — Vietnamese locale-pack validation of the
+  same demo. Commit `c601f31`.
+
+These are hand-authored demo fixtures, not corpus-extracted entries. The `nom.dev`
+registry with curated community `.nomtu` files remains PLANNED for Phase 1+.
+
+**The honest answer: Nom's ideas are strong, its execution is at Phase 4 of 12.**
+The metadata pipeline, concept graph, MECE validator, and manifest command are
+shipped. The planner, codegen, corpus, and registry are PLANNED.
 
 ---
 
@@ -199,6 +240,10 @@ CANDIDATE 1: "The language AI agents program in"
          Glass box = auditable agent decisions.
     TIMING: perfect (2026 AI agent boom)
     RISK: agents may just use Python/TypeScript
+    STATUS: ⏳ PARTIAL — seed demo at nom-compiler/examples/agent_demo/
+            (commit e2d4eb4). 6 tool entries + safety policy + MECE
+            collision test. Demo runs end-to-end through manifest pipeline.
+            Full killer-app (public demo, nom.dev integration) is PLANNED.
 
 CANDIDATE 2: "Verified microservice composer"
     WHY: describe your API in .nom, get verified implementation.
@@ -206,6 +251,7 @@ CANDIDATE 2: "Verified microservice composer"
          Scores ensure quality. Provenance ensures trust.
     TIMING: good (microservices are mainstream)
     RISK: Kubernetes/Terraform already own this space
+    STATUS: ❌ ASPIRATIONAL — no microservice codegen exists.
 
 CANDIDATE 3: "Supply chain security through composition"
     WHY: $60B in supply chain losses. npm disasters monthly.
@@ -214,96 +260,107 @@ CANDIDATE 3: "Supply chain security through composition"
          Glass box = perfect SBOM (Software Bill of Materials)
     TIMING: excellent (regulations tightening globally)
     RISK: may be seen as "just another SBOM tool"
+    STATUS: ⏳ PARTIAL — provenance fields in words_v2 (aaa914d);
+            nom.lock and full SBOM generation are PLANNED.
 
 STRONGEST: Candidate 1 — AI agent composition.
     Because: no other language is designed for this.
     Because: the timing is perfect (agents are the next wave).
     Because: it showcases every Nom advantage naturally.
+    Because: agent_demo fixture ships today as the concrete seed (e2d4eb4).
 ```
 
 ---
 
 ## 6. The Build Sequence (What to Build When)
 
-### Phase 0: Prove It Compiles (Months 1-3)
+### Phase 0: Prove It Compiles (Months 1-3) — ✅ DONE
 
 ```
 BUILD:
-    1. Hand-written recursive descent parser for .nom syntax
-    2. Tree-walking interpreter (for rapid iteration)
-    3. 5 working examples that demonstrate .nomtu composition
-    4. nom run command that works
-    5. Vietnamese error messages from day one
+    1. Hand-written recursive descent parser for .nom syntax       ✅ DONE (05ee1b6, d9425ba)
+    2. Tree-walking interpreter (for rapid iteration)              ✅ DONE (concept graph walker, c5cdce6)
+    3. 5 working examples that demonstrate .nomtu composition      ✅ DONE (concept_demo, agent_demo, agent_demo_vn)
+    4. nom run command that works                                   ⏳ PLANNED (metadata pipeline ships; run/compile PLANNED)
+    5. Vietnamese error messages from day one                      ⚠️ PARKED (locale-pack parked; not extended)
 
 DO NOT BUILD YET:
-    - LLVM backend (too early — language design will change)
-    - self-hosting (Go waited 6 years, Zig waited 7)
-    - tree-sitter grammar (that's for editors, not the compiler)
-    - package manager (no packages to manage yet)
+    - LLVM backend (too early — language design will change)       ✅ Respected (no concept-graph LLVM yet)
+    - self-hosting (Go waited 6 years, Zig waited 7)               ✅ Respected
+    - tree-sitter grammar (that's for editors, not the compiler)   ✅ Respected
+    - package manager (no packages to manage yet)                  ✅ Respected
 
-MILESTONE: nom chaayj hello.nom produces output.
-    Not fast. Not optimized. Just: it works.
+MILESTONE: nom build status + nom build manifest work end-to-end.
+    Not fast. Not optimized. Just: it works. ✅ DONE
 ```
 
-### Phase 1: Prove It's Useful (Months 4-8)
+> Notes on Phase 0: The original milestone was `nom chaayj hello.nom produces output`.
+> The actual Phase 4 milestone reached is richer: `nom build manifest` produces a
+> full JSON `RepoManifest` with resolved closure, MECE-validated objectives, effects,
+> and typed_slot. Parser + concept-graph + MECE validator + manifest = shipped.
+> The LLVM `.nomx v1` path (pre-concept-architecture) also produces `.bc` bitcode
+> for `run_lexer.nom`. The concept-graph-to-LLVM path is Phase 5+.
+
+### Phase 1: Prove It's Useful (Months 4-8) — ⏳ PARTIAL
 
 ```
 BUILD:
-    6. 50-200 hand-curated .nomtu files (seed dictionary)
-    7. nom.dev prototype (simple HTTP API serving .nomtu files)
-    8. nom.lock for reproducible builds
-    9. Contract verification (typed in/out/effects checking)
-    10. The killer app demo (AI agent composer? supply chain tool?)
-    11. Tree-sitter grammar + minimal LSP (error squiggles)
+    6. 50-200 hand-curated .nomtu files (seed dictionary)          ⏳ PARTIAL (3 demo repos, ~dozen entries)
+    7. nom.dev prototype (simple HTTP API serving .nomtu files)    ⏳ PLANNED
+    8. nom.lock for reproducible builds                            ✅ PARTIAL (lock writeback for v1 refs, a04b91e)
+    9. Contract verification (typed in/out/effects checking)       ✅ PARTIAL (MECE + typed-slot shipped; full cross-edge PLANNED)
+   10. The killer app demo (AI agent composer)                     ⏳ PARTIAL (agent_demo seed at e2d4eb4; public demo PLANNED)
+   11. Tree-sitter grammar + minimal LSP (error squiggles)        ⏳ PLANNED
 
 MILESTONE: build the killer app IN Nom and demo it publicly.
     The demo is more important than the language being perfect.
+    Current: agent_demo runs end-to-end in CI (non-Windows). Public demo PLANNED.
 ```
 
-### Phase 2: Prove It's Fast (Months 9-18)
+### Phase 2: Prove It's Fast (Months 9-18) — ❌ ASPIRATIONAL
 
 ```
 BUILD:
-    12. LLVM backend via inkwell (native compilation)
-    13. .nomiz IR (compiled composition graph)
-    14. Cranelift backend for fast debug builds
-    15. DWARF debug info (step through .nom in GDB/LLDB)
-    16. Full LSP (completions, hover, go-to-definition)
-    17. VS Code extension
+   12. LLVM backend via inkwell (native compilation)               ❌ ASPIRATIONAL (concept-graph → LLVM)
+   13. .nomiz IR (compiled composition graph)                      ❌ ASPIRATIONAL
+   14. Cranelift backend for fast debug builds                     ❌ ASPIRATIONAL
+   15. DWARF debug info (step through .nom in GDB/LLDB)           ❌ ASPIRATIONAL
+   16. Full LSP (completions, hover, go-to-definition)             ❌ ASPIRATIONAL
+   17. VS Code extension                                           ❌ ASPIRATIONAL
 
 MILESTONE: nom xaaydduwngj app.nom produces a native binary
-    that runs at assembly-smooth speed.
+    that runs at assembly-smooth speed.  ❌ ASPIRATIONAL
 ```
 
-### Phase 3: Prove It Scales (Months 18-36)
+### Phase 3: Prove It Scales (Months 18-36) — ❌ ASPIRATIONAL
 
 ```
 BUILD:
-    18. Semi-automatic .nomtu extraction from existing codebases
-    19. nom.dev as full registry (community contributions)
-    20. Locale packs (Vietnamese, English, Chinese, Arabic, ...)
-    21. Multiple backends (WASM, ARM, RISC-V)
-    22. Documentation, tutorials, learning paths
-    23. Foundation formation
+   18. Semi-automatic .nomtu extraction from existing codebases    ❌ ASPIRATIONAL (nom-corpus skeletons exist)
+   19. nom.dev as full registry (community contributions)          ❌ ASPIRATIONAL
+   20. Locale packs (Vietnamese, English, Chinese, Arabic, ...)    ⚠️ PARKED (VN locale pack exists; not extended)
+   21. Multiple backends (WASM, ARM, RISC-V)                       ❌ ASPIRATIONAL
+   22. Documentation, tutorials, learning paths                    ❌ ASPIRATIONAL
+   23. Foundation formation                                        ❌ ASPIRATIONAL
 
 MILESTONE: 1,000+ .nomtu in the dictionary.
     External developers building real projects.
-    First conference talk.
+    First conference talk.  ❌ ASPIRATIONAL
 ```
 
-### Phase 4: Prove It Lasts (Year 3+)
+### Phase 4: Prove It Lasts (Year 3+) — ❌ ASPIRATIONAL
 
 ```
 BUILD:
-    24. Stability promise (Nom 1.0 — "your code won't break")
-    25. Edition system (learn from Rust — plan for evolution)
-    26. Self-hosting (compiler written in Nom)
-    27. Corporate sponsor outreach
-    28. Scale dictionary to 100K+ .nomtu
-    29. Cross-domain composition (physics, chemistry, biology)
+   24. Stability promise (Nom 1.0 — "your code won't break")       ❌ ASPIRATIONAL
+   25. Edition system (learn from Rust — plan for evolution)        ❌ ASPIRATIONAL
+   26. Self-hosting (compiler written in Nom)                       ❌ ASPIRATIONAL
+   27. Corporate sponsor outreach                                   ❌ ASPIRATIONAL
+   28. Scale dictionary to 100K+ .nomtu                            ❌ ASPIRATIONAL
+   29. Cross-domain composition (physics, chemistry, biology)       ❌ ASPIRATIONAL
 
 MILESTONE: Nom 1.0 release.
-    Stability guarantee. Growing community. Real production use.
+    Stability guarantee. Growing community. Real production use.  ❌ ASPIRATIONAL
 ```
 
 ---
@@ -379,20 +436,22 @@ WHY NOM:
 
 WHY IT MIGHT FAIL:
     1% base rate for language survival
-    zero ecosystem today (nothing compiles yet)
+    tiny ecosystem today (demo fixtures only — see §3)
     dictionary extraction is unproven at scale
-    Raw Telex syntax may alienate non-Vietnamese developers
     no corporate sponsor
-    no killer app built yet
+    no killer app built publicly yet
 
-THE HONEST TAKE:
+THE HONEST TAKE (updated 2026-04-13):
     The ideas are strong. The evidence supports the architecture.
     The competitive landscape has real gaps that Nom fills.
-    But ideas don't compile. Only code compiles.
-    Phase 0 starts now.
+    Phase 4 (DIDS pipeline) is fully shipped as of HEAD afc6228.
+    The agent_demo seed exists as the killer-app starting point.
+    Phase 5+ (planner, codegen, corpus) is the next multi-quarter milestone.
+    Phase 0 is done. Phase 1 is in progress.
 ```
 
 ```
 A nomtu is a word. A .nom is a sentence. A binary is a story.
-Phase 0: write the first sentence.
+Phase 0: done — the first sentence works.
+Phase 1: in progress — building the first useful app.
 ```

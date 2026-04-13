@@ -7,6 +7,18 @@ Status: comparative architecture note, not a universal superiority proof
 
 ---
 
+> **Status banner — Last verified against codebase: 2026-04-13, HEAD afc6228.**
+>
+> This document is an architecture framing note with no direct code. The framing
+> informs the design but no Phase-9 LLM-author loop exists yet. Tags below mark the
+> current implementation state of each claim in §5 and §7.
+>
+> - ✅ SHIPPED — backed by code at the cited commit/file
+> - ⏳ PLANNED — on roadmap; no shipped code yet
+> - ❌ ASPIRATIONAL — beyond current roadmap; no concrete plan
+
+---
+
 ## Executive Summary
 
 The earlier version of this document made the right strategic move but pushed it too far.
@@ -267,7 +279,7 @@ Novel relationship:
 The old version overclaimed.
 These are the stronger, more honest guarantees.
 
-### Guarantee 1: No fabrication inside the selected dictionary boundary
+### Guarantee 1: No fabrication inside the selected dictionary boundary ⏳ PLANNED
 
 If the system answers using only:
 
@@ -284,7 +296,14 @@ It is:
 
 That is a real and useful guarantee.
 
-### Guarantee 2: Contract-aware composition
+> Current state: The resolver stub (`bf95c2c`, `c405d2a`) picks the
+> alphabetical-smallest match from `words_v2`. It does not fabricate entries —
+> it either finds a match or reports `UnresolvedRef`. However, the dictionary
+> at HEAD afc6228 contains only the demo fixtures (3 examples). The "trusted
+> selection boundary" is meaningful only when backed by a Phase-9 corpus of
+> verified entries. This guarantee is PLANNED pending that corpus.
+
+### Guarantee 2: Contract-aware composition ✅ SHIPPED
 
 If contracts are explicit enough, the engine can reject many invalid compositions
 before backend generation.
@@ -294,7 +313,13 @@ It is:
 
 **interface and policy errors can be caught earlier and more systematically.**
 
-### Guarantee 3: Auditable selection
+> Current state: The closure walker + MECE validator (commits `c5cdce6` + `c63a6a7`)
+> walk the concept graph and reject objective collisions with exit code 1. The
+> `agent_demo` intentionally produces a MECE collision to prove the validator works.
+> Cross-edge contract type-checking (does `hash.out` match `store.in`?) is PLANNED
+> for Phase 5+; the MECE check is the first concrete instantiation of this guarantee.
+
+### Guarantee 3: Auditable selection ✅ SHIPPED
 
 The engine should always be able to say:
 
@@ -304,6 +329,13 @@ The engine should always be able to say:
 - what confidence/evidence supported the choice
 
 This is stronger than opaque model selection and more useful operationally.
+
+> Current state: `nom build status` prints per-slot top-K alternatives (commit
+> `853e70b`): when a typed-slot has N>1 candidates, it prints the resolved entry
+> plus alternatives. `nom build manifest` (commit `fef0419`) emits a JSON
+> `RepoManifest` with full closure, objectives, effects, typed_slot, and threshold.
+> Both commands are auditable today. The "why rejected" explanation (score
+> comparison, contract incompatibility) is PLANNED once scoring is populated.
 
 ---
 
@@ -331,6 +363,11 @@ That is the right precedent.
 ---
 
 ## 7. How AI Models Should Enter the Dictionary
+
+> **Section 7 status: ⏳ PLANNED — no model-as-implementation entries exist yet.**
+> The `words_v2` schema (`aaa914d`) can store any kind of entry including `kind: model`,
+> but no AI model has been ingested as a dictionary entry. The YAML spec below is the
+> design target.
 
 AI models should be treated as implementations, not metaphysics.
 
@@ -411,6 +448,14 @@ If Novel wants to outperform model-only workflows where it matters, then:
 
 If those two things are weak, the whole "beyond all models" story collapses.
 
+> Current state (HEAD afc6228): The compiler has deterministic resolution
+> (alphabetical tiebreak, commit `bf95c2c`), MECE contract checking (`c63a6a7`),
+> and selection trace reporting via manifest + status commands (`fef0419`,
+> `853e70b`). The dictionary has concept/implementation separation (DB1+DB2,
+> `aaa914d`), provenance fields (`words_v2` schema), and alias management
+> (`4b04b1d`, `5b59f82`). Score explainability and evidence storage at scale
+> await the Phase-9 corpus pipeline.
+
 ---
 
 ## 10. Bottom Line
@@ -430,3 +475,17 @@ That is the real "beyond all models" position:
 
 not universal superiority,
 but a stronger division of labor between probabilistic intelligence and deterministic composition.
+
+> What is auditable today (HEAD afc6228):
+> - `nom build status` — per-slot top-K candidates with typed-slot kind and
+>   confidence threshold (`853e70b`, `97c836f`)
+> - `nom build manifest` — JSON RepoManifest with full closure, objectives,
+>   effects, and typed_slot (`fef0419`, `eeb1e23`)
+> - MECE collision detection — exit-1 on objective mutual-exclusion violation
+>   (`c63a6a7`); `agent_demo` demonstrates this with an intentional collision
+>
+> What is PLANNED before the full "beyond all models" story holds:
+> - Phase-9 corpus pipeline (scored, provenance-verified dictionary entries)
+> - Phase-9 embedding-based resolver (replaces alphabetical stub)
+> - Phase-5+ contract cross-edge type checking
+> - Model-as-implementation dictionary entries (`kind: model`)

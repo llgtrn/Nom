@@ -1,5 +1,12 @@
 # Natural-Language Syntax (≥95%) — Grammar Redesign Proposal
 
+> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+> `.nomx v1` (this doc's grammar) and `.nomx v2 (keyed)` (doc 07's grammar) **coexist**.
+> Doc 07 v2 is fully shipped per commits `97c836f` + `c405d2a` + `853e70b` + `c9d1835`.
+> The `.nomx v1` parser lives at `nom-compiler/crates/nom-parser/src/nomx.rs`.
+> The doc-08 layered parser at `nom-compiler/crates/nom-concept/src/lib.rs` is a **separate parser**
+> for the `.nom`/`.nomtu` tier-1/tier-2 architecture — not a successor to `.nomx v1`.
+
 Status: **Draft, needs human authoring**. Filed 2026-04-13 in response to
 user directive: "make the Nom language similar to Natural language 95%…
 it still too similar to syntax of C or python."
@@ -165,15 +172,15 @@ ends. No `Box::leak`, no `Rc` cycles in surface syntax.
 
 ## 7. Milestones
 
-| # | Deliverable | Proves |
-|---|-------------|--------|
-| 1 | `define … that …` + sentence form → same AST | Read-parity on trivial fns |
-| 2 | `when … otherwise …` branches | Read-parity on conditionals |
-| 3 | `a number` / `a piece of text` canonicalization | Read-parity on types |
-| 4 | `a maybe-<X>` + pattern-match gate | Zero-null guarantee |
-| 5 | Parallel-by-default actors + message types | Zero-race guarantee |
-| 6 | Inline contracts (`when given …, ensure …`) | Spec-level parity |
-| 7 | Migrate planner.nom → planner.nomx | Self-host parity |
+| # | Deliverable | Proves | Status |
+|---|-------------|--------|--------|
+| 1 | `define … that …` + sentence form → same AST | Read-parity on trivial fns | ✅ SHIPPED (`nom-parser/src/nomx.rs`, commits `ca3fc97`–`b49430f`) |
+| 2 | `when … otherwise …` branches | Read-parity on conditionals | ✅ SHIPPED (parser covers `when`/`unless`/`otherwise`) |
+| 3 | `a number` / `a piece of text` canonicalization | Read-parity on types | ❌ NOT YET — tokens captured in `cond_tokens`/`rhs_tokens` but not canonicalized to types |
+| 4 | `a maybe-<X>` + pattern-match gate | Zero-null guarantee | ❌ NOT YET — requires type system / expression tree |
+| 5 | Parallel-by-default actors + message types | Zero-race guarantee | ❌ NOT YET — actor form not in parser |
+| 6 | Inline contracts (`when given …, ensure …`) | Spec-level parity | ✅ SHIPPED (`require`/`ensure`/`throughout` in parser; `contracts.nomx` sample green) |
+| 7 | Migrate planner.nom → planner.nomx | Self-host parity | ⏳ PLANNED — Phase 5+ (planner itself not yet ported) |
 
 Each milestone includes a readability test: a randomly-selected
 non-programmer must be able to describe what the code does after
@@ -276,10 +283,21 @@ actor counter {                             an actor called counter holds a numb
 }
 ```
 
-## 10. Implementation status (updated 2026-04-13)
+## 10. Implementation status (updated 2026-04-13, HEAD `afc6228`)
 
 Prototype code has landed alongside this proposal. The `.nomx` track
 coexists with the C-like grammar — no existing code paths touched.
+
+**Note on parser count**: `cargo test -p nom-parser` (HEAD `afc6228`)
+reports **81 passed** across both the `.nomx` parser module (`nomx.rs`)
+and the broader `nom-parser` crate (lib-level tests). The `.nomx`
+lexer sub-crate (`nom-lexer`) reports **29 passed**.
+
+The "34/34" count cited in earlier doc-09 snapshot referred to
+`.nomx`-specific parser tests only as of an earlier HEAD; the current
+totals are higher due to subsequent error-path test additions (commits
+`468bba6`–`e94a866`) and the `mixed_forms.nomx` fixture (commit
+`b49430f`).
 
 ### Lexer (`nom_lexer::nomx`, ~330 LOC)
 
@@ -294,8 +312,7 @@ coexists with the C-like grammar — no existing code paths touched.
 - Articles (`a/an/the/which/who/whose`) stripped at lex time per §4.8.
 - `NomxToken::role()` + `starts_declaration()` + `ends_sentence()`
   helpers for the parser and future LSP semantic tokens.
-- Tests: 12/12 green including hello.nomx round-trip + role
-  classification of all 34 variants.
+- Tests: **29 green** (HEAD `afc6228`; `cargo test -p nom-lexer`).
 
 ### Parser (`nom_parser::nomx`, ~600 LOC)
 
@@ -326,8 +343,9 @@ Expression parsing within `rhs_tokens` / `cond_tokens` etc. captures
 the raw token sequence. Typed expression tree lands with the type
 system — this keeps the AST shape stable while grammar bells grow.
 
-Tests: 34/34 green. Covers every decl form + every statement form +
-ten error-path tests that pin both diagnostic message and span
+Tests: **81 passed** across the full `nom-parser` crate (HEAD `afc6228`;
+`cargo test -p nom-parser`). Covers every decl form + every statement
+form + error-path tests that pin both diagnostic message and span
 accuracy (missing name, missing colon, missing `is`, missing `,`
 after when/unless/while/for-each, missing `,` after `to <verb>`
 phrase, record field missing `is`). Includes end-to-end parse of

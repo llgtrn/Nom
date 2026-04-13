@@ -1,8 +1,33 @@
 # Keyed-Similarity Syntax & Philosophy — A Nom Redesign Proposal
 
-**Status: Draft, AI-synthesized, requires human authoring per §6.**
+> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+
+**Status: ~98% implemented as of 2026-04-13, HEAD `afc6228`.**
 Filed 2026-04-13. Companion to [05-natural-language-syntax.md](./05-natural-language-syntax.md) and [06-nomx-keyword-set.md](./06-nomx-keyword-set.md).
 External input: *"Similarity and Relevance in Multiscreen"* (arXiv 2604.01178v1, §3.1–3.2) — reachable on 2026-04-13.
+
+## Implementation status (2026-04-13, HEAD `afc6228`)
+
+| Feature | Status | Commit(s) |
+|---|---|---|
+| `@Kind` sigil token (`Tok::AtKind`) + parser | ✅ SHIPPED | `c9d1835` |
+| `EntityRef.typed_slot` AST flag + serde round-trip | ✅ SHIPPED | `c9d1835` |
+| Resolver branches on `typed_slot` → `find_words_v2_by_kind` | ✅ SHIPPED | `c405d2a` |
+| Alphabetical-smallest hash tiebreak (deterministic stub) | ✅ SHIPPED | `bf95c2c` + `c405d2a` |
+| `with at-least N confidence` threshold syntax | ✅ SHIPPED | `97c836f` |
+| Manifest carries `typed_slot` + `threshold` through serde | ✅ SHIPPED | `eeb1e23` + `c405d2a` |
+| Per-slot top-K diagnostic in `nom build status` (§3.3) | ✅ SHIPPED | `853e70b` |
+| §6.1 open question (kind sigil) | ✅ RESOLVED — `@Kind` form shipped; user reversed doc-08 §8.1 prose-only decision | `c9d1835` |
+| §6.2 open question (Vietnamese phrasing) | ✅ RESOLVED — vocabulary stays English; Vietnamese is locale pack only | `c9d1835` (with VN-loanword strip) |
+| §6.3 open question (threshold authoring) | ✅ RESOLVED — option (c) per-slot inline `with at-least N confidence` | `97c836f` |
+| §6.4 open question (build reproducibility / lock) | ✅ RESOLVED — v1 refs get `name@hash` writeback; typed-slot refs NOT written back per §3.5 | `a04b91e` (v1) + `c405d2a` (v2) |
+| §6.5 open question (cross-kind compound prompts) | ⏳ PLANNED — each slot resolved independently; product retrieval explicitly deferred | — |
+| §6.6 open question ("no match" as type) | ⏳ PLANNED — `a @Kind matching` accepted by parser; Option/Maybe semantics deferred to type system | — |
+| §6.7 open question (confidence as first-class value) | ⏳ PLANNED — threshold stored in AST; `ensure confidence(result) ≥ N` form not yet in verifier | — |
+| §6.8 open question (`Specializes` edges in retrieval) | ⏳ PLANNED — Phase 8/9; no Specializes-aware resolver yet | — |
+| §6.9 open question (empty-dict behavior) | ⏳ PLANNED — currently: always compile error for unresolved typed-slot | — |
+| §6.10 open question (AI vs embedding-index resolver) | ✅ RESOLVED — deterministic index primary (alphabetical stub); Phase-9 corpus-embedding re-rank pending | `bf95c2c` |
+| Phase-9 corpus-embedding semantic re-rank | ⏳ PLANNED — stub uses alphabetical pick until Phase 9 | — |
 
 ---
 
@@ -174,31 +199,31 @@ The critical upgrade: §5.7 and §5.9 were previously properties that type infer
 
 Against doc 05 §6 and doc 04 phase map:
 
-| Phase | What ships |
-|---|---|
-| **Doc 05 M1–M3** (already spec'd) | `.nomx` v1 — prose declarations, bare-word references. No changes. |
-| **Doc 05 M4** + **new M4.5** | M4.5 lands the `@Kind` slot grammar as a **lexer + parser extension**, pure additive. No retrieval implementation yet; the parser emits a `TypedSlot` AST node that any resolver can later bind. |
-| **Doc 04 Phase 5 (ingestion)** | Populates the dict with enough kind-scoped entries that per-kind retrieval is meaningful. Until this phase delivers ≥10k entries per active kind, typed-slot retrieval falls back to word lookup. |
-| **Doc 04 Phase 8 (architectural ADOPT)** — **dependency** | The embedding-retrieval substrate noted in doc 04 §language-model framing is the natural home for per-kind metric spaces. One index per kind, not one global index. |
-| **Doc 04 Phase 9 (LSP + Authoring Protocol)** | Authoring Protocol gains a `retrieve` RPC typed by `EntryKind`, returning ranked candidates per the kind's local metric. IDEs render the per-slot top-K picker. |
-| **Doc 04 Phase 10 (Bootstrap)** | The self-hosted compiler must itself emit `TypedSlot` diagnostics. No change to the fixpoint proof (§10.3.1) — typed-slot resolution is a build-manifest side-effect, not a compile-output byte. |
+| Phase | What ships | Status |
+|---|---|---|
+| **Doc 05 M1–M3** (already spec'd) | `.nomx` v1 — prose declarations, bare-word references. No changes. | ✅ SHIPPED |
+| **Doc 05 M4** + **new M4.5** | M4.5 lands the `@Kind` slot grammar as a **lexer + parser extension**, pure additive. Parser emits `TypedSlot` AST node. | ✅ SHIPPED — commits `c9d1835` + `c405d2a` + `97c836f` + `853e70b` |
+| **Doc 04 Phase 5 (ingestion)** | Populates the dict with enough kind-scoped entries that per-kind retrieval is meaningful. Until this phase delivers ≥10k entries per active kind, typed-slot retrieval falls back to word lookup. | ⏳ PLANNED — Phase 5 (multi-week, parked) |
+| **Doc 04 Phase 8 (architectural ADOPT)** — **dependency** | The embedding-retrieval substrate noted in doc 04 §language-model framing is the natural home for per-kind metric spaces. One index per kind, not one global index. | ⏳ PLANNED — Phase 8 |
+| **Doc 04 Phase 9 (LSP + Authoring Protocol)** | Authoring Protocol gains a `retrieve` RPC typed by `EntryKind`, returning ranked candidates per the kind's local metric. IDEs render the per-slot top-K picker. | ⏳ PLANNED — Phase 9 |
+| **Doc 04 Phase 10 (Bootstrap)** | The self-hosted compiler must itself emit `TypedSlot` diagnostics. No change to the fixpoint proof (§10.3.1) — typed-slot resolution is a build-manifest side-effect, not a compile-output byte. | ⏳ PLANNED — Phase 10 |
 
-**Landing point:** v2 grammar is spec-ready today; its implementation predates Phase 5 only as a parser/AST addition. The retrieval semantics postdate Phase 5 (needs vocabulary) and depend on Phase 8 (per-kind embedding indexes). LSP surface postdates Phase 9.
+**Landing point:** v2 grammar is fully shipped. The retrieval semantics (corpus-fed
+embedding index) postdate Phase 5/8. Until then the resolver uses an
+alphabetical-smallest deterministic stub (commits `bf95c2c` + `c405d2a`).
 
-This is parallel to `.nomx` v1's own path — grammar first, runtime later.
+## 6. Open questions
 
-## 6. Open questions — need human authoring
-
-1. **Kind vocabulary surface.** Is `@Function` / `@Screen` / `@MediaUnit` acceptable as a prose-adjacent marker, or does it feel like a sigil regression? Alternatives considered: `the Function-kind named …`, `(as a Function)`, trailing `… as a Function`. The `@` form is terse and already reserved. **Tension:** prose-readability vs. kind-visibility.
-2. **Vietnamese phrasing of typed slots.** `@Kind matching …` in Vietnamese: `@Kind khớp với …` or `hàm phù hợp với …`? Doc 05 §8 open question extends to v2. Per-kind names themselves (Function, Screen, MediaUnit) may or may not translate.
-3. **Threshold authoring.** Who sets the per-kind threshold, and where? Options: (a) a dict-global default per kind, (b) per-file pragma, (c) per-slot inline (`the @Function matching "…" with at-least 0.85 confidence`). Inline is most explicit but noisiest; global is cleanest but brittle across dict evolutions. **Tension:** determinism of the build vs. friction at authoring time.
-4. **Build-reproducibility of non-hash-pinned slots.** A `the @Function matching "…"` slot resolves to a hash at build time. Is that hash recorded in the source file (self-rewriting editor), in a side-car manifest (`.nom.lock`), or only in the dict's build manifest? The doc 04 §language-model-framing invariant "Determinism survives AI mediation" must survive this. **Tension:** authoring-surface mutability vs. source-as-truth.
-5. **Cross-kind compound prompts.** If a prompt like "hero image of a brutalist carousel" naturally wants to retrieve a MediaUnit *and* a UxPattern, does the grammar allow `the @MediaUnit+UxPattern matching …` (product retrieval) or does the author always have to decompose into two slots? Product retrieval is seductive but re-introduces cross-kind normalization, which the whole proposal is designed to avoid.
-6. **"No match" as type, not value.** Should `a @Kind matching …` be typed `Option<Hash<Kind>>`, `Maybe<Kind>`, or a new kind-parametric `Perhaps<Kind>` with its own pattern-match syntax (`perhaps …, nothing`)? Doc 05 §5 proposes `a maybe-<T>`; extending to kind-parametric form is a grammar question.
-7. **Confidence as a first-class value.** Should the resolved score be readable in-source (`the @Function matching "…" where score ≥ 0.9`) so the author can gate on confidence? If yes, score becomes a value type and feeds into contracts (`ensure confidence(result) ≥ 0.85`).
-8. **Interaction with `Specializes` edges.** A `the @Screen matching "home"` resolves to one `Screen`; but `Screen` commonly has `Specializes` variants per platform. Does the retrieval resolve the base `Screen` (and the build path picks the Specialization per target), or does retrieval resolve a `Screen × Platform` pair? The former is cleaner but leaves a second, hidden retrieval step.
-9. **Empty-dict behavior at bootstrap.** Before Phase 5 ingestion delivers corpus, what does `the @Function matching "…"` do? Options: (a) always compile error, (b) fall back to word lookup with a warning, (c) disable the form behind a feature flag until the dict hits a size threshold.
-10. **AI as the resolver vs. embedding-index as the resolver.** Doc 04 §language-model-framing says the AI is the *search surface*, not the *generation surface*, and determinism survives AI mediation. Does `the @Kind matching …` dispatch through the AI (flexible, approximate, non-reproducible across LLM versions) or through a deterministic embedding index (reproducible, limited, less semantic)? Proposed answer: **deterministic index primary, AI is the authoring helper that suggests the prompt prose.** Needs user ratification.
+1. **Kind vocabulary surface.** ✅ RESOLVED — `@Kind` sigil form shipped (commit `c9d1835`). User reversed doc-08 §8.1 prose-only decision; `@Function`, `@Screen` etc. are canonical. ~~Alternatives considered: `the Function-kind named …`, `(as a Function)`, trailing `… as a Function`.~~
+2. **Vietnamese phrasing of typed slots.** ✅ RESOLVED — vocabulary stays English. Vietnamese aliases are a locale pack only (commits `4b04b1d` + `5b59f82`). Per-kind names (`Function`, `Screen`, `MediaUnit`) stay English.
+3. **Threshold authoring.** ✅ RESOLVED — option (c) per-slot inline `with at-least N confidence` shipped (commit `97c836f`). Global defaults and per-file pragma deferred.
+4. **Build-reproducibility of non-hash-pinned slots.** ✅ RESOLVED — v1 refs get `name@hash` writeback (commit `a04b91e`); typed-slot refs (`@Kind`) are explicitly NOT written back per §3.5 (commit `c405d2a`). Resolved hash is recorded only in the build manifest.
+5. **Cross-kind compound prompts.** ⏳ PLANNED — product retrieval explicitly deferred. Author always decomposes into two independent typed slots. No `@MediaUnit+UxPattern` form.
+6. **"No match" as type, not value.** ⏳ PLANNED — parser accepts `a @Kind matching` form; `Option<Hash<Kind>>` / `Maybe<Kind>` semantics deferred to the type system (Phase 5+).
+7. **Confidence as a first-class value.** ⏳ PLANNED — threshold stored in AST (`EntityRef.confidence_threshold: Option<f64>`); `ensure confidence(result) ≥ N` contract form not yet in verifier.
+8. **Interaction with `Specializes` edges.** ⏳ PLANNED — Phase 8/9; no Specializes-aware resolver yet. Current resolver returns the base kind entry.
+9. **Empty-dict behavior at bootstrap.** ✅ RESOLVED (de-facto) — currently always a compile error for unresolved typed-slot (`UnresolvedRefs` in build status output). Option (b) fallback deferred.
+10. **AI as the resolver vs. embedding-index as the resolver.** ✅ RESOLVED — deterministic index primary; AI is the authoring helper that suggests prompt prose. Stub is alphabetical-smallest (commits `bf95c2c` + `c405d2a`); Phase-9 corpus-embedding re-rank replaces stub.
 
 ## 7. One-line philosophy
 
@@ -208,4 +233,4 @@ The same way `.nomx` v1 replaced C-shaped declarations with sentence forms, `.no
 
 ---
 
-*This is a design document, not an implementation plan. Before any `TypedSlot` AST node lands in `nom-parser`, §6 must be answered by the user.*
+*`TypedSlot` AST node is shipped (commit `c9d1835`). §6 questions 1/2/3/4/9/10 are resolved. §6 questions 5/6/7/8 are PLANNED (Phase 5+).*

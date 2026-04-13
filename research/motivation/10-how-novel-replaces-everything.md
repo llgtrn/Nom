@@ -8,6 +8,20 @@ universal language replacement strategies, Unison/GraalVM/WASM/LLVM lessons.
 
 ---
 
+> **Status banner — Last verified against codebase: 2026-04-13, HEAD afc6228.**
+>
+> This document describes the long-range architecture (Phases 5–12). Most sections
+> are aspirational at scale relative to the current HEAD. The DIDS pipeline (Phase 4)
+> is fully shipped; corpus ingestion, codegen, and the populated dictionary are
+> multi-quarter PLANNED work.
+>
+> Per-claim tags:
+> - ✅ SHIPPED — backed by code at the cited commit/file
+> - ⏳ PLANNED — on roadmap; no shipped code yet
+> - ❌ ASPIRATIONAL — beyond current roadmap; no concrete plan
+
+---
+
 ## The Thesis
 
 Novel does not replace other languages by being "better syntax."
@@ -33,6 +47,12 @@ Novel enters through **consumption**: every function in every language becomes a
 ---
 
 ## Section A: Assembly-Smooth Compilation — The Technical Architecture
+
+> **Section A status: ⏳ PLANNED — entirely pending Phase 5/6 codegen.**
+> No LLVM backend for `.nom` concept graphs exists at HEAD afc6228. The `.nomx v1`
+> parser does lower to LLVM bitcode (`nom-compiler/examples/run_lexer.nom`), but
+> that is the pre-concept-architecture path. The assembly-smooth guarantees below
+> describe the target architecture.
 
 ### Why Novel Can Match Hand-Written Assembly
 
@@ -138,6 +158,9 @@ Tier 3:
 
 ### Performance Benchmarks (Expected)
 
+> These are design targets, not measured results. No benchmark infrastructure
+> for Novel-generated code exists at HEAD afc6228.
+
 | Aspect | Novel vs | Expected Result | Why |
 |--------|---------|----------------|-----|
 | Dispatch | Dynamic dispatch (Java/C#) | **3-7x faster** | All static dispatch, no vtables |
@@ -165,6 +188,12 @@ binary that an expert would write in 500 lines of Rust.
 ---
 
 ## Section B: The Universal Replacement Strategy
+
+> **Section B status: ⏳ PLANNED — the corpus is tiny today.**
+> At HEAD afc6228, the dictionary contains only the demo fixtures in
+> `nom-compiler/examples/concept_demo/`, `examples/agent_demo/`, and
+> `examples/agent_demo_vn/`. The 50K+ Nom extraction pipeline below is
+> multi-quarter work starting at Phase 5.
 
 ### Why "Universal Language" Has Always Failed — And Why Novel Is Different
 
@@ -207,27 +236,27 @@ The engine composes them without forcing one paradigm.
 ### The Adoption Path (Enter Through Interop, Not Replacement)
 
 ```
-Phase 0: Pre-populate dictionary
+Phase 0: Pre-populate dictionary  ⏳ PLANNED (Phase 5+)
     Extract Noms from top 100 Rust crates (30K+ functions)
     Extract Noms from Python stdlib + top 50 pip packages
     Extract Noms from Go stdlib + top 50 Go modules
     Result: 50K+ Noms before any Novel user writes a line of code
 
-Phase 1: Wrapped libraries
+Phase 1: Wrapped libraries  ⏳ PLANNED
     novel build my_app.novel → uses argon2 Nom (extracted from Rust)
     The user never sees Rust. They see: need hash :: argon2
     But underneath, it's real Rust code, battle-tested, 847 tests.
 
-Phase 2: Mixed codebases
+Phase 2: Mixed codebases  ⏳ PLANNED
     Existing Rust/Python/Go projects can import Novel-composed modules.
     Novel-composed modules can import existing libraries as Noms.
     Gradual adoption, not big-bang rewrite.
 
-Phase 3: Novel-first projects
+Phase 3: Novel-first projects  ⏳ PLANNED
     New projects start in Novel because the dictionary is rich enough.
     The ecosystem problem is solved before it's a problem.
 
-Phase 4: Novel replaces
+Phase 4: Novel replaces  ❌ ASPIRATIONAL
     Not by force. By gravity.
     When composing from 100M scored, verified Noms is faster, safer,
     and cheaper than writing from scratch — developers switch naturally.
@@ -238,22 +267,24 @@ Phase 4: Novel replaces
 These capabilities require Novel's architecture and CANNOT be retrofitted
 to existing languages without breaking backward compatibility:
 
-| Capability | Why Incumbents Can't | Novel Has It |
-|-----------|---------------------|-------------|
-| Scored dependencies | npm/pip/cargo have no quality scores | Every Nom has 8 scores |
-| Effect tracking | Would break every existing function signature | Effects declared on every Nom |
-| Contract composition | Would require rewriting every library API | Contracts ARE the Nom interface |
-| Glass box reports | Would require tooling for every library | Reports generated from dictionary metadata |
-| Zero-hallucination AI | LLMs generate from patterns | Novel composes from ground truth |
-| Graph-aware memory | Would break ownership/GC model | Engine infers from graph (no model to break) |
-| Automatic parallelism | Would require annotating every function | Branch/merge in flow syntax |
-
-This is the **counter-positioning** opportunity: Novel can do things that existing
-languages literally cannot adopt without destroying backward compatibility.
+| Capability | Why Incumbents Can't | Novel Has It | Status |
+|-----------|---------------------|-------------|--------|
+| Scored dependencies | npm/pip/cargo have no quality scores | Every Nom has 8 scores | ⏳ PLANNED |
+| Effect tracking | Would break every existing function signature | Effects declared on every Nom | ✅ SHIPPED (`benefit`/`hazard`, c9d1835) |
+| Contract composition | Would require rewriting every library API | Contracts ARE the Nom interface | ⏳ PLANNED (Phase 5+ planner) |
+| Glass box reports | Would require tooling for every library | Reports generated from dictionary metadata | ✅ PARTIAL (`nom build manifest` JSON, fef0419) |
+| Zero-hallucination AI | LLMs generate from patterns | Novel composes from ground truth | ⏳ PLANNED (Phase 9 corpus) |
+| Graph-aware memory | Would break ownership/GC model | Engine infers from graph (no model to break) | ⏳ PLANNED (Phase 5+ codegen) |
+| Automatic parallelism | Would require annotating every function | Branch/merge in flow syntax | ⏳ PLANNED (Phase 5+ codegen) |
 
 ---
 
 ## Section C: NovelOS Dictionary Extraction — Concrete Architecture
+
+> **Section C status: ⏳ PLANNED — `nom-corpus` crate has skeletons.**
+> The `nom-corpus` crate exists with `ingest pypi/github/repo` command skeletons
+> (per roadmap memory). Mass corpus ingestion is a Phase 5+ activity requiring
+> multi-week infrastructure work. The extraction pipeline below is the design spec.
 
 ### What Exists Today (From Vietnamese OSS Analysis)
 
@@ -275,7 +306,7 @@ EXISTS (can reuse):
     ✓ Evaluation framework (MELT: 10 tasks, Vietnamese datasets)
     ✓ Content-addressed storage (git's model, validated by Unison)
 
-NEW WORK (Novel's core contribution):
+NEW WORK (Novel's core contribution — all ⏳ PLANNED):
     ✗ Contract extraction from arbitrary source code
     ✗ Effect analysis (detecting network/filesystem/database/clock/random)
     ✗ Quality scoring (8 dimensions from static analysis)
@@ -285,6 +316,8 @@ NEW WORK (Novel's core contribution):
 ```
 
 ### The Extraction Pipeline (Technical Detail)
+
+> All 7 steps are ⏳ PLANNED.
 
 ```
 STEP 1: PARSE (tree-sitter)
@@ -400,6 +433,8 @@ STEP 7: EMIT (produce dictionary entry)
 
 From .analysis/oss-vietnamese/:
 
+> All entries below are ⏳ PLANNED.
+
 | Tool | Integration Point | Phase |
 |------|------------------|-------|
 | **underthesea regex patterns** | Vietnamese diacritic character sets, URL/email/datetime patterns for Novel's parser | Phase 1 |
@@ -424,15 +459,21 @@ ORDER IS FIXED:
   flow auth { ... }              # classifier first
   request -> auth -> respond     # flow direction = data direction
   hash :: argon2                 # head :: modifier
+```
 
+> ✅ SHIPPED — these ordering rules are enforced by the parser.
+
+```
 ORDER IS FREE:
   system auth {                  system auth {
-      need hash                      effects bi [timeout]
+      need hash                      effects hazard [timeout]
       require latency < 50ms         require latency < 50ms
-      effects bi [timeout]           need hash
+      effects hazard [timeout]       need hash
   }                              }
   # Identical after normalization — keywords disambiguate
 ```
+
+> ⏳ PLANNED — normalization of free-order fields is a planner-level concern (Phase 5+).
 
 ### In Nom Dictionary
 
@@ -443,26 +484,20 @@ ORDER IS FREE:
   Like Vietnamese: "give me all con (animal classifiers)" = kind-based lookup.
 ```
 
+> ✅ PARTIAL — `nom build status` performs kind-based lookup via `find_words_v2_by_kind`
+> (commit `c405d2a`). Full query-by-score and query-by-contract are PLANNED.
+
 ### In Compilation Pipeline
 
 ```
 ORDER IS FIXED:
   Parse → Resolve → Select → Verify → Analyze → Generate → Compile → Report
   Each stage depends on the previous (data flow).
-
-ORDER IS FREE within each stage:
-  Verification of Nom A's contract vs Nom B's contract is independent of
-  verifying Nom C vs Nom D. Parallel verification.
 ```
 
-### In Glass Box Reports
-
-```
-ORDER IS FREE:
-  Reports can be organized by: Nom kind, score dimension, effect type,
-  provenance source, or stakeholder view. The data is the same;
-  the projection varies.
-```
+> ✅ PARTIAL — `nom store sync` → `nom build status` → `nom build manifest` is the
+> current shipped pipeline (commits `ba7769f`, `bf95c2c`, `fef0419`). Generate and
+> Compile stages are PLANNED.
 
 ---
 
@@ -470,35 +505,46 @@ ORDER IS FREE:
 
 From the universal replacement research, these have NO precedent:
 
-1. **Semantic contract extraction from arbitrary source code**
+1. **Semantic contract extraction from arbitrary source code** ⏳ PLANNED
    Tree-sitter parses. GitHub Semantic analyzes. But extracting typed contracts
    with effects, preconditions, postconditions, and quality scores from arbitrary
    functions across 7 languages — this is new.
 
-2. **Scored composition with provenance**
+2. **Scored composition with provenance** ⏳ PARTIAL
    npm has downloads. crates.io has recent-downloads. But 8-dimensional scoring
    (security, quality, performance, reliability, composability, maintenance,
    maturity, accessibility) with auditable provenance — this is new.
+   > Provenance fields exist in the `words_v2` DB2 schema (commit `aaa914d`).
+   > 8-dimension scoring is PLANNED for Phase 5+.
 
-3. **Graph-aware ownership inference**
+3. **Graph-aware ownership inference** ❌ ASPIRATIONAL
    Rust has borrow checking (local). Novel has graph-level ownership inference
    (global). The engine sees the full topology and infers move/share/lock
    without programmer annotation — this is new.
 
-4. **Effect valence (duoc/bi)**
+4. **Effect valence (benefit/hazard)** ✅ SHIPPED — **English-only**
    No existing language distinguishes between positive and negative effects.
    "Cache hit" (good) and "timeout" (bad) are both just "side effects" in
    every other language. Vietnamese-inspired valence is new.
+   > Shipped as `benefit`/`hazard` keywords in `nom-concept/src/lib.rs`
+   > (commit `c9d1835`). Surfaced in `nom build manifest` (commit `eeb1e23`).
+   > Vietnamese loanwords `duoc`/`bi` were explicitly rejected; English-only is canonical.
 
-5. **Vietnamese 4-layer disambiguation cascade for Nom resolution**
+5. **Vietnamese 4-layer disambiguation cascade for Nom resolution** ❌ ASPIRATIONAL
    Kind prefix → classifier → composition context → constraints.
    Each layer O(1). Total resolution faster than any existing type system.
    Inspired by Vietnamese tones → classifiers → compounds → context. New.
+   > Current resolver is a stub using alphabetical-smallest hash tiebreak
+   > (commit `bf95c2c`, `c405d2a`). Phase-9 corpus embedding re-rank is PLANNED.
 
-6. **Glass box composition reports**
+6. **Glass box composition reports** ⏳ PARTIAL
    Not just "what code was generated" but "what Noms were selected, what
    scores they have, where they came from, what contracts were verified,
    what effects exist, and what alternatives were considered." New.
+   > `nom build manifest` is the v0 glass-box report (commit `fef0419`).
+   > It includes closure + objectives + effects + typed_slot + threshold.
+   > Per-slot top-K alternatives diagnostic is shipped in `nom build status`
+   > (commit `853e70b`). Full alternatives listing with scores is PLANNED.
 
 ---
 
@@ -508,17 +554,17 @@ From the universal replacement research, these have NO precedent:
 Novel does not replace languages by being better at what they do.
 It replaces them by making what they do unnecessary.
 
-You don't write implementations. You compose proven ones.
-You don't debug code. You verify contracts.
-You don't manage dependencies. You query a scored dictionary.
-You don't choose paradigms. The engine picks the right one per Nom.
-You don't trust AI output. You audit a glass box report.
-You don't learn new syntax for each domain. You use classifiers.
+You don't write implementations. You compose proven ones.         ⏳ PLANNED
+You don't debug code. You verify contracts.                       ⏳ PLANNED
+You don't manage dependencies. You query a scored dictionary.     ⏳ PLANNED
+You don't choose paradigms. The engine picks the right one.       ⏳ PLANNED
+You don't trust AI output. You audit a glass box report.          ✅ PARTIAL (nom build manifest, fef0419)
+You don't learn new syntax for each domain. You use classifiers.  ✅ SHIPPED
 
-The dictionary IS the ecosystem.
-NovelOS builds it from every language that ever existed.
-Novel composes from it with Vietnamese-level efficiency.
-Novelos compiles it smooth like assembly.
+The dictionary IS the ecosystem.                                   ⏳ PLANNED (corpus tiny today)
+NovelOS builds it from every language that ever existed.           ⏳ PLANNED (Phase 5+)
+Novel composes from it with Vietnamese-level efficiency.           ✅ PARTIAL (DIDS pipeline ships)
+Novelos compiles it smooth like assembly.                          ⏳ PLANNED (Phase 5+ codegen)
 
 Phần mềm là ngôn ngữ. Nom là từ điển. Novel là cách bạn nói.
 Software is language. Nom is the dictionary. Novel is how you speak it.

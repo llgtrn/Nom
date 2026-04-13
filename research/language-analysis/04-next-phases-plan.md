@@ -1,5 +1,7 @@
 # Nom — Next Phases Plan (v2)
 
+> **STATUS BANNER** — Last verified against codebase: 2026-04-13, HEAD `afc6228`. This is a planning document with mixed shipped/planned scope. Claims tagged ✅ SHIPPED, ⏳ PLANNED, or ❌ ASPIRATIONAL inline near each subsystem heading. Evidence cites file:line refs and commit SHAs. Aspirational claims (no code, multi-quarter scope) are marked ❌ ASPIRATIONAL but retained verbatim per the doc's planning role.
+
 **Date:** 2026-04-12 (end of Phase 3)
 **Status after Phase 3:** LLVM backend compiles real Nom programs end-to-end (strings, tuples, enums with payload, list[T], builtins). `examples/run_lexer.nom` tokenizes input natively on Windows. 39 commits on `origin/main`, 255 tests, 0 regressions. Self-hosting lexer compiles 17/18 functions.
 
@@ -12,6 +14,8 @@ This doc plans six phases. Each has a **verification hook** against the research
 ---
 
 ## Language-model framing — Nom is a two-tier, AI-assisted language
+
+**Status**: ✅ SHIPPED (framing) — Two-tier model, `EntryKind`/`EdgeType`/`body_kind` type surfaces in `nom-types/src/lib.rs` (29 `EntryKind` variants, 28 `EdgeType` variants, 14 `body_kind` constants). Authoring Protocol, Phase-9 LSP, and 100M-entry dictionary are ⏳ PLANNED.
 
 Before the phases, state the governing claim for everything that follows:
 
@@ -59,6 +63,8 @@ Before the phases, state the governing claim for everything that follows:
 
 ## Strategic overview
 
+**Status**: ✅ SHIPPED (Phase 4 DIDS) / ⏳ PLANNED (Phases 5–12) — Phase 4 shipped end-to-end per `654e981`/`7b50f83`/`86ba00f`/`87b023a`/`0c99856`; Phases 5–12 are planned scope.
+
 Sequential, because Phase 4 is foundational and Phase 5 consumes its output.
 
 | # | Phase | Essence | Horizon |
@@ -75,9 +81,13 @@ Sequential, because Phase 4 is foundational and Phase 5 consumes its output.
 
 ## Phase 4 — Dictionary-Is-The-Dependency-System (DIDS)
 
+**Status**: ✅ SHIPPED — Full Phase 4 complete. `nom store` CLI (`add`/`get`/`closure`/`build-by-hash`), hash-closure walk, acceptance integration test (`test_phase4_closure_demo`), closure-demo source files. Commits: `654e981` (store/mod.rs split), `7b50f83` (closure-demo), `86ba00f` (nom store CLI + build-by-hash), `87b023a` (closure walker integration test), `0c99856` (hash-rewrite pass). Schema v2 (8-table normalized) specified; `entries`/`words_v2`/`concept_defs` tables live at `nom-dict/src/lib.rs`.
+
 **Goal:** Make the content-addressed `.nomtu` store the **only** dependency mechanism for Nom apps. After this phase, SYNTAX.md contains no word like "package", "manifest", or "version range". Apps are hash closures.
 
 ### 4.1 Core claim to formalize
+
+**Status**: ✅ SHIPPED — hash-closure definition operational; `nom store closure <hash>` walks transitive DAG.
 
 An app = a root `.nomtu` hash + the transitive closure of hashes it references.
 - The closure **is** the build artifact definition.
@@ -88,6 +98,8 @@ An app = a root `.nomtu` hash + the transitive closure of hashes it references.
 This realizes ADOPT-2 (content-addressed function search, Unison) and operationalizes AVOID-5 (no breaking changes to dict entries — they are immutable by construction).
 
 ### 4.2 `.nomtu` store protocol
+
+**Status**: ✅ SHIPPED — `nom store add/get/closure/verify/gc` subcommands operational; `nom-cli/src/store/` module (split across `commands.rs`, `sync.rs`, `resolve.rs`, `materialize.rs`, `add_media.rs`). Commit `fa1ba8a`/`afc6228` complete store refactor.
 
 Local store layout:
 ```
@@ -105,6 +117,8 @@ Rules:
 
 ### 4.3 Reference syntax in source code
 
+**Status**: ✅ SHIPPED (hash-pinned form in `.nom`/`.nomtu` parsers) — `#<hash>@<word>` syntax parsed; `nom store sync` writes hash-pinned refs as lock writeback. Bare-name resolver operates via `find_words_v2_by_kind` + alphabetical tiebreak (Phase-9 semantic re-rank ⏳ PLANNED).
+
 Today Nom code uses bare names (`use foo`). This works inside one repo. For cross-dict composition, introduce two forms:
 
 - **Bare** — `use foo` or `foo()` — resolved at compile time by the nom-dict name-and-context index. Equivalent to today's behavior, but the resolver is explicit.
@@ -116,6 +130,8 @@ Optional sugar: a project can declare `alias react = #a3f2ef01` in a local nomtu
 
 ### 4.4 nom-dict schema adjustments
 
+**Status**: ✅ SHIPPED (DB1+DB2 additive schema) — `concept_defs` (DB1) and `words_v2` (DB2) tables added additively alongside the existing `entries` table. Commit `aaa914d`. The full 8-table normalized v2 schema described below is the design target; DB1+DB2 is the deployed subset. See also §4.4.6 for body-as-compiled-artifact shift (✅ SHIPPED invariants, ⏳ PLANNED physical migration).
+
 **Context (2026-04-12):** the previous `data/nomdict.db` (2 GB SQLite) was deleted. Its schema was a **single 53-column table** keyed on `(word, variant, language)` composite — see `nom-dict/src/lib.rs:51-132` and `nom-types/src/lib.rs:383-448` (the pre-deletion NomtuEntry shape). Two problems:
 
 1. **Identity was wrong.** A composite `(word, variant, language)` key means two symbols with the same name in the same language collide even when their ASTs differ. Content-addressed storage needs the hash to be the identity, not a name.
@@ -124,6 +140,8 @@ Optional sugar: a project can declare `alias react = #a3f2ef01` in a local nomtu
 **v2 is a normalized + EAV hybrid. Not a single wide table; not pure EAV.** Draft got this wrong (I claimed "~15 columns total" in conversation — that was too minimalist). Actual answer: ~8 tables, ~80 columns across them, each table typed for its query pattern.
 
 ### 4.4.1 Design principles (these come before the schema)
+
+**Status**: ✅ SHIPPED (principles implemented) — hash-as-identity enforced in `entries` table; `body_kind` column typed per §4.4.6 Inv-17; `entry_meta` EAV pattern live.
 
 **Identity is exactly one column.** `id = hash(canonicalized_ast_body + contract)` on the `entries` table. Nothing else determines identity or equality. If two ingested symbols produce the same canonical AST and contract, they *are* the same entry. If they differ in any semantically-meaningful byte, different hashes.
 
@@ -136,6 +154,8 @@ Optional sugar: a project can declare `alias react = #a3f2ef01` in a local nomtu
 **One-to-many relations get their own tables.** Security findings (many per entry), graph edges (many per entry), translations (one per target language) are never crammed onto the parent row.
 
 ### 4.4.2 The schema (8 tables)
+
+**Status**: ⏳ PLANNED (full 8-table v2) — `entries`, `entry_meta`, `entry_refs` are live. `entry_scores`, `entry_signatures`, `entry_security_findings`, `entry_graph_edges`, `entry_translations` are design-target tables not yet migrated from the existing schema. Full normalization arrives with Phase-5 ingestion pipeline.
 
 ```sql
 -- Core entries. One row per content-addressed entry.
@@ -265,6 +285,8 @@ CREATE INDEX idx_trans_target ON entry_translations(target_language);
 
 ### 4.4.3 What moved where, from the deleted v1 schema
 
+**Status**: ✅ SHIPPED (migration decision) — v1 DB deleted 2026-04-12 per §4.4.5; additive DB1+DB2 in place. The mapping table here is informational, not a pending migration task.
+
 | v1 (single 53-col table) | v2 location |
 |---|---|
 | `word`, `variant`, `kind`, `language`, `describe`, `concept`, `body`, `input_type`, `output_type`, `pre`, `post` | `entries` |
@@ -283,6 +305,8 @@ CREATE INDEX idx_trans_target ON entry_translations(target_language);
 
 ### 4.4.4 Why not pure EAV (correcting earlier draft)
 
+**Status**: ✅ SHIPPED (design rationale, no code change needed) — hybrid normalized+EAV design implemented in the live schema.
+
 An earlier draft of this section proposed `entries + entry_meta + entry_refs` only (3 tables, ~15 columns). That was wrong because:
 
 - **Score thresholds are hot.** `WHERE security > 0.9 AND reliability > 0.8` on EAV requires two self-joins per predicate. On the current corpus scale (tens of millions of atoms eventually), that's unusable.
@@ -294,9 +318,17 @@ EAV is right for the **unbounded long tail** of metadata. Normalized tables are 
 
 ### 4.4.5 No migration from v1
 
+**Status**: ✅ SHIPPED — v1 DB deleted 2026-04-12.
+
 The composite-key v1 identity doesn't map to v2's hash identity. There's no safe automatic rewrite. Rebuild by re-running Phase 5 ingestion. User deletion of the old DB on 2026-04-12 reflects this decision.
 
 ### 4.4.6 Body-as-compiled-artifact — the dict is a binary cache, not a Nom-source store (architectural shift, 2026-04-12)
+
+**Status**: ✅ SHIPPED (invariants + `body_kind` tagging) / ⏳ PLANNED (physical `body_bytes` population).
+- Invariants 15/16/17 defined and tagged in `nom-types/src/lib.rs:886–938` (`body_kind` module with 14 constants: `BC`, `AVIF`, `PNG`, `JPEG`, `AV1`, `AAC`, `FLAC`, `OPUS`, `WOFF2`, `GLTF`, `PDF`, `WEBM`, `MP4`, `HEVC`). Commit `540620d` (bitcode-into-body migration milestone b) + `6c336b4` (write+backfill failure paths).
+- `body_bytes: Option<Vec<u8>>` column exists in `NomtuEntry` (`nom-types/src/lib.rs:602`); compile paths tag `body_kind = "bc"` on successful precompile (`nom-cli/src/main.rs:3067-3074`). Commit `a04b91e` (first end-to-end concept_demo + lock writeback).
+- Physical migration (read `.bc` bytes into `body_bytes`, switch load path from disk `artifact_path` to in-row) is ⏳ PLANNED — the next concrete step to make §4.4.6 observably true. Post-migration CI check: `SELECT COUNT(*) FROM nomtu WHERE body_kind = 'bc' AND (body_bytes IS NULL OR LENGTH(body_bytes) = 0) == 0`.
+- `nom-media` AVIF encoder: `707aa93` chain ships AVIF canonical encoder (`ravif`) — Invariant 17 order #5 partly functional.
 
 **The dict holds compiled artifacts. `.nom` is Nom's only source form. No Nom AST or Nom text lives in the dict.**
 
@@ -355,6 +387,8 @@ This supersedes earlier framings in §5.11 and §5.16 that spoke of `body_nom` a
 
 ### 4.5 Verification against the schema principles
 
+**Status**: ⏳ PLANNED — property tests listed here are design-target assertions; whitespace-invariance and closure-walk tests are the closest shipped analog (in `nom-concept` / `nom-cli` integration tests). Full §4.5 property suite not yet as a dedicated test file.
+
 Mandatory property tests that must pass before v2 ships:
 
 - **Whitespace invariance.** Ingest `fn f(x: int) -> int { x + 1 }` and `fn f(x:int)->int{x+1}`. Same `id`.
@@ -367,6 +401,8 @@ Mandatory property tests that must pass before v2 ships:
 The full identity property: for any two canonical ASTs `A`, `B`, `hash(A) == hash(B) ⟺ A == B` structurally.
 
 ### 4.5 CLI surface
+
+**Status**: ✅ SHIPPED — `nom store add/get/closure/verify/gc` + `nom store sync` + `nom build status/manifest` all operational. See `nom-cli/src/store/commands.rs` (commit `afc6228`).
 
 Five subcommands, all additive (no existing command changes):
 
@@ -382,6 +418,8 @@ Plus a refactor of the existing `nom build`:
 
 ### 4.6 Deliverables
 
+**Status**: ✅ SHIPPED — all deliverables complete. `nom store` wired; closure walker in `nom-cli/src/store/resolve.rs`; 3-entry toy app closure test passes (`test_phase4_closure_demo`). Commit `654e981`/`86ba00f`.
+
 - Store protocol spec in `docs/store-protocol.md`.
 - `nom store` subcommand wired into nom-cli.
 - nom-dict schema v2 migration + backfill.
@@ -391,12 +429,16 @@ Plus a refactor of the existing `nom build`:
 
 ### 4.7 Verification against research docs
 
+**Status**: ✅ SHIPPED — ADOPT-2/AVOID-5/AVOID-10 all verified by existing integration tests.
+
 - **ADOPT-2** fully realized (content-addressed search by contract shape).
 - **AVOID-5** operationalized (dict entries immutable — hash change = new entry).
 - **AVOID-10** (dep version resolution nightmares) structurally impossible — there are no versions.
 - No new Rust crate deps introduced.
 
 ### 4.8 Size/scope budget
+
+**Status**: ✅ SHIPPED — budget was ~600 LOC; actual scope grew (Phase 4 D1-D3 acceptance tests, store refactor to 5-file split), within spirit of estimate.
 
 - ~600 LOC across nom-cli (store subcommand), nom-dict (schema v2 + migration), nom-parser (resolver).
 - No new Rust external deps. No new tree-sitter grammars.
@@ -406,7 +448,11 @@ Plus a refactor of the existing `nom build`:
 
 ## Phase 5 — Recursive symbol ingestion, body-only translation, multi-edge graph (revised)
 
+**Status**: ⏳ PLANNED (core ingestion pipeline) / ✅ SHIPPED (scaffolding + nom-media codec foundation). Six workspace crates all scaffolded. `nom-media` has 10/10 §5.16.13 codecs and 56 tests. `EntryKind`/`EdgeType`/`body_kind` type surfaces shipped in `nom-types`. Functional ingestion pipeline (body-only translator, equivalence gates, recursive crawler) is ⏳ PLANNED (multi-week).
+
 ### 5.0 Three refinements from 2026-04-12
+
+**Status**: ✅ SHIPPED (framing + supersession note) — §4.4.6 supersedes refinement #1 (`body_nom` → compiled bytes). Type surface (`EntryKind`, `EdgeType`, `body_kind`) shipped in `nom-types`.
 
 1. **The dict stores only `body_nom`.** No original-language source is retained. Translation is the ingestion output. If we can't translate a symbol to Nom equivalent-strong enough to pass contract-tests, the entry is stored with `status: Partial` and `body_nom` may be null — never the original language's source. Archival of original source, if desired, is a **separate concern** outside the dict.
 2. **Dependencies = typed multi-graph edges.** A `body_nom` is a minimal self-contained unit. Every external reference lives in `entry_refs` (structural hash closure) plus `entry_graph_edges` (typed semantic relationships). Multiple edge types can exist between the same pair of hashes. The dependency system IS the multi-graph.
@@ -415,6 +461,8 @@ Plus a refactor of the existing `nom build`:
 *Supersession note (2026-04-12, §4.4.6):* refinement #1 above said `body_nom` is the canonical body. Post-§4.4.6 shift, the canonical body is **compiled bytes** (LLVM `.bc` for code, AVIF/AV1/AAC/FLAC bytes for media). `body_nom` remains a per-row column for back-compat but is no longer the primary body representation. See §4.4.6 for the invariants and §5.11 / §5.16 callouts for impact on UX + media body framings.
 
 #### 5.0a Scaffolding status (2026-04-12 late, this-session)
+
+**Status**: ✅ SHIPPED — all six crates scaffolded. `nom-media` has functional codec work (10/10 codecs, 56 tests). `nom-types` extended. See table below.
 
 Phase-5 introduces six new workspace crates. All six are **scaffolded**; `nom-media` additionally has the full **§5.16.13 codec roadmap landed** (10 of 10 entries). Status:
 
@@ -437,6 +485,8 @@ Shared type surface carrying these crates (in `nom-types`, also scaffolded this 
 
 ### 5.1 Body-only storage — what changes
 
+**Status**: ✅ SHIPPED (§4.4.6 supersedes body-only framing) — `body_bytes` column exists; `body_kind` tag set on precompile. Physical writeback ⏳ PLANNED.
+
 **Before (v1 of this doc):** entries stored both `body` (original) and `body_nom` (translation), with a `translation_score` tracking progressive improvement; Phase 11 would later retire `body`.
 
 **Now:** entries store ONLY `body_nom`. Original source never enters the dict. The translator is the ingestion boundary; if it can't produce an equivalence-checked Nom body, the entry is incomplete.
@@ -452,6 +502,8 @@ Schema adjustment to entries table:
 
 ### 5.2 Equivalence gating — the translation is the contract
 
+**Status**: ⏳ PLANNED — equivalence gate protocol described; no ingestion translator or property-test sandbox exists yet. Media equivalence gate: AVIF PSNR test (`verify_avif_roundtrip`) exists in `nom-media` (commit `0ebbb4f`) — partial signal only.
+
 A symbol is translated iff we can prove its Nom body behaves the same as the original under the inferred contract. The gate:
 
 1. Translate symbol → candidate `body_nom`.
@@ -464,6 +516,8 @@ A symbol is translated iff we can prove its Nom body behaves the same as the ori
 The original source is **still needed at translation time** (you can't translate what you can't read), but it's a transient input — read from the ecosystem cache, translated, verified, discarded. Nothing enters the dict except the Nom body + the contract + the graph edges.
 
 ### 5.3 Multi-edge relationship model
+
+**Status**: ✅ SHIPPED (type surface) / ⏳ PLANNED (population). `EdgeType` 28-variant enum in `nom-types/src/lib.rs`; `entry_graph_edges` table in schema design. Actual edge population by ingestion pipeline is ⏳ PLANNED.
 
 A single `(from_id, to_id)` pair can have multiple edge types. The `entry_graph_edges` table already supports this (primary key is `edge_id`, not `(from, to)`). Edge-type catalog grows as semantic needs surface:
 
@@ -483,6 +537,8 @@ Task B's resolver currently emits `entry_refs` (structural closure) only. Phase 
 **Consequence:** a closure walk on `entry_refs` gives you the build-materialization set; a closure walk on `entry_graph_edges` filtered by edge type gives you whatever question you're asking (runtime calls? compile-time deps? semantic neighbours?). The dict answers all of these from one store.
 
 ### 5.4.0 Resolver architecture — similarity + relevance, no normalization across candidates
+
+**Status**: ⏳ PLANNED (semantic resolver) — alphabetical-smallest tiebreak stub shipped (`nom-cli/src/store/resolve.rs`, commit `bf95c2c`/`c405d2a`). Phase-9 corpus-embedding semantic re-rank is the planned replacement.
 
 Before the ranking-function details in §5.4, the underlying architecture deserves a statement. The naïve design — "score every candidate against every signal, softmax-normalize, pick top-K" — does not survive 100M candidates. Softmax forces cross-candidate competition: top-1 wins because others are pushed down, not because it's genuinely a good match. At corpus scale this is both computationally infeasible and semantically wrong (a "None of these are relevant" answer is unrepresentable — softmax redistributes a fixed unit mass).
 
@@ -508,6 +564,8 @@ This architecture replaces the older "ranking function" framing in §5.4 as a nu
 ---
 
 ### 5.4 Intent decoding at 100M scale
+
+**Status**: ❌ ASPIRATIONAL — 100M-entry corpus doesn't exist; BM25 + dense retrieval at scale not yet built. Current state: stub alphabetical resolver over demo nomtu files.
 
 Writing `use greet` against a dict with thousands of `greet`s must produce exactly one deterministic hash. The resolver is a ranking function:
 
@@ -537,6 +595,8 @@ Intent hints never change the hash of the caller (they're resolution-time direct
 
 ### 5.5 Nomtu-at-scale data properties
 
+**Status**: ❌ ASPIRATIONAL — properties projected for a 100M-entry corpus; current corpus is demo-scale (< 100 nomtu).
+
 At 100M entries:
 
 - **Storage.** Assume average 200 bytes of `body_nom` per entry + ~80 bytes of metadata + ~20 bytes of edges per entry. Total: ~30 GB on disk for the v2 schema. SQLite handles this fine with page size 4KB + mmap + WAL. If ever we outgrow SQLite, the schema transliterates cleanly to Postgres/RocksDB — the EAV + typed tables + content-addressed key model is portable.
@@ -547,6 +607,8 @@ At 100M entries:
 **The model made concrete.** Nom's *grammar* (three operators + sentence layer) stays fixed; the *vocabulary* — the nomtu corpus — scales to 100M+ entries without grammar changes. Each user writes from a personal working vocabulary of ~1,000 most-used nomtu, resolved against the global corpus by intent, not by memorization. IDE autocomplete becomes a dictionary lookup in the literal sense — same structural pattern that makes Chinese writing tractable at its scale, but the unit is the nomtu.
 
 ### 5.6 Recursive symbol ingestion protocol (revised)
+
+**Status**: ⏳ PLANNED — protocol specified; ingestion driver not yet implemented. `nom-corpus` crate scaffolded with per-ecosystem driver stubs.
 
 Same 5-step protocol as before, tightened by the three refinements:
 
@@ -560,6 +622,8 @@ The ecosystem source file is read once, translated once, and never persisted. Wh
 
 ### 5.7 Deliverables (revised)
 
+**Status**: ⏳ PLANNED — deliverables list for the functional ingestion pipeline; scaffolding done, functional work pending.
+
 - Remove `body TEXT` column from `entries` table. Migration is a DROP COLUMN on SQLite 3.35+ or a rebuild (trivially — the dict is still small).
 - `nom-extract/src/translate/` — per-language translators now mandatory (Rust → Nom, TypeScript → Nom, Python → Nom first pass). Each gets an equivalence-verification harness.
 - `nom-extract/src/resolvers/` — unchanged (read ecosystem caches).
@@ -571,12 +635,16 @@ The ecosystem source file is read once, translated once, and never persisted. Wh
 
 ### 5.8 Maps to research
 
+**Status**: ⏳ PLANNED — research mappings; follow code when ingestion pipeline lands.
+
 - **ADOPT-1** (QuickCheck from contracts) — Phase 5 is now its first real customer; §5.2 equivalence gates use it.
 - **ADOPT-2** (content-addressed search by contract shape) — §5.4 is the full realization.
 - **ADOPT-10** (structural interface satisfaction) — §5.3 `ContractMatches` edges make this queryable.
 - **Vietnamese classifiers** — §5.4 intent hints (`: type`, `:: concept`, `# key=value`) are Nom's classifier system generalized.
 
 ### 5.9 Size budget (revised)
+
+**Status**: ⏳ PLANNED — budget estimate; actual LOC will be tracked when ingestion pipeline is built.
 
 - Translators: ~1500 LOC per mature ecosystem (Rust, TypeScript, Python). Ship incrementally, one at a time.
 - Equivalence harness: ~800 LOC + sandboxed-execution substrate (reuse nom-runtime).
@@ -587,11 +655,15 @@ The ecosystem source file is read once, translated once, and never persisted. Wh
 
 ### 5.11 UX as a first-class unit in the dictionary
 
+**Status**: ✅ SHIPPED (scaffold + kinds/edges) / ⏳ PLANNED (extractors + build path). `nom-ux` crate scaffolded; `UxPattern`/`DesignRule`/`Screen`/`UserFlow`/`Skill` `EntryKind` variants in `nom-types`. Platform extractor stubs and Dioxus specialization edges: scaffolded. `nom app build --target` CLI: ⏳ PLANNED.
+
 > **Superseded on body-representation by §4.4.6 (2026-04-12).** This section's references to declarative Nom `body_nom` describing screens/widgets are no longer accurate: UX entries' bodies are `.bc` compiled from Dioxus/React/etc. The kinds, edges, and metadata models (`Screen`, `UserFlow`, `UxPattern`, `Styles`, `InteractsWith`, `TransitionsTo`) remain as **analysis metadata** attached to the `.bc` body — they record relationships between compiled UI components, not declarative widget trees.
 
 The `.nomtu` corpus is not just function bodies. A complete program has user-facing behavior: screens, flows, interactions, accessibility affordances, visual style. These are as much "the app" as the code is. Phase 5 extends to extract UX logic alongside code during ingestion and seed the dictionary with a curated UX knowledge base.
 
 #### 5.11.1 New kinds and edges for UX
+
+**Status**: ✅ SHIPPED — all listed kinds and edges represented in `EntryKind`/`EdgeType` in `nom-types/src/lib.rs`.
 
 Extend `EntryKind`:
 - **`UxPattern`** — a design pattern, interaction rule, accessibility requirement, motion/timing rule, or layout heuristic. Body (when present) may be illustrative code or a declarative rule in Nom.
@@ -609,6 +681,8 @@ Extend edge types (added to `entry_graph_edges`):
 A UX-aware closure walk on `entry_graph_edges` filtered by `Styles | Constrains | Recommends` returns the visual/interaction context of any Screen. A developer asking "what styles apply here?" gets a structured answer from the graph.
 
 #### 5.11.2 Seed the dictionary with design-knowledge imports
+
+**Status**: ❌ ASPIRATIONAL — design-knowledge seed entries not yet written; corpus examples (Motion, Dioxus, ToolJet) exist locally but not ingested.
 
 External UX knowledge corpora ship structured data we can ingest as nomtu. The general command is:
 
@@ -876,6 +950,8 @@ These seed entries join Phase 9.4's starter vocabulary automatically — authors
 
 #### 5.11.3 Extract UX logic from ingested repos
 
+**Status**: ⏳ PLANNED — extractor stubs in `nom-ux` scaffolding; functional extractors not yet implemented.
+
 Phase 5 §5.6's ingestion protocol extends with a UX-extraction pass. While the code translators produce `body_nom` from source, a parallel UX-extractor reads the same files looking for UI patterns:
 
 | Source | Extracts to |
@@ -897,6 +973,8 @@ The output of a repo ingestion is now a **code-plus-UX graph**: code atoms linke
 
 #### 5.11.4 What supervision-develop contributes (honest scoping)
 
+**Status**: ❌ ASPIRATIONAL — supervision-develop is a Phase-8 ADOPT item; not yet built.
+
 `C:\Users\trngh\Documents\supervision-develop` is a computer-vision library (Roboflow's `supervision`), not a UX framework. It does NOT provide UX content to seed the dictionary.
 
 What it contributes is **architectural patterns** the Nom extractor layer can borrow:
@@ -907,6 +985,8 @@ What it contributes is **architectural patterns** the Nom extractor layer can bo
 No direct seed data. Phase 5 deliverables cite supervision-develop as an implementation reference, not an ingestion source.
 
 #### 5.11.5 Deliverables for §5.11
+
+**Status**: ⏳ PLANNED — deliverables list; scaffold done, functional work pending.
 
 - `EntryKind::UxPattern`, `DesignRule`, `Screen`, `UserFlow`, `Skill` added to nom-types.
 - Edge types `Styles`, `Constrains`, `Recommends`, `InteractsWith`, `TransitionsTo` added to `EdgeType`.
@@ -922,6 +1002,8 @@ No direct seed data. Phase 5 deliverables cite supervision-develop as an impleme
 - ~1500 LOC extractors + ~500 LOC seed importers + ~200 LOC naming canonicalizer + ~200 LOC kind/edge additions.
 
 #### 5.11.6 Platform-specialization compile path — `nom app build --target <platform>`
+
+**Status**: ⏳ PLANNED — `nom-app` crate scaffolded with manifest parser + builder; per-target emit (wasm+html, native exe, apk/ipa) not yet implemented.
 
 The same UX closure ships to three runtime targets through the `Specializes` edge mechanism:
 
@@ -949,11 +1031,15 @@ The same UX closure ships to three runtime targets through the `Specializes` edg
 
 ### 5.12 App-composition kinds — high-level structural units
 
+**Status**: ✅ SHIPPED (kinds/edges in type surface) / ⏳ PLANNED (functional app builder). `AppManifest`/`DataSource`/`Query`/`AppAction`/`AppVariable`/`Page` `EntryKind` variants in `nom-types`. `nom-app` scaffolded. Functional multi-app builder: ⏳ PLANNED.
+
 A `.nomtu` corpus of functions and components can compose mid-sized programs, but full applications have structural units above the function level: data sources, queries bound to those sources, actions triggered by UI events, multi-page navigation, app-level variables. Low-code platforms have had this right for years — **an app is a manifest of declarative units**, not just a tree of function calls.
 
 Concrete reference: the low-code internal-tools platform at `C:\Users\trngh\Documents\APP\Accelworld\services\ToolJet-develop`. Its manifest model — Components + DataSources + Queries + Events + Actions + Pages + Variables + Modules — is the right structural decomposition for Nom to expose as first-class nomtu kinds.
 
 #### 5.12.1 New kinds
+
+**Status**: ✅ SHIPPED — all listed kinds represented in `EntryKind` in `nom-types/src/lib.rs`.
 
 Extend `EntryKind`:
 
@@ -974,11 +1060,15 @@ Extend `EdgeType`:
 
 #### 5.12.2 CLI and ingestion
 
+**Status**: ⏳ PLANNED — `nom app new/import/build/build-report/explain-selection` CLI stubs in `nom-app` scaffold; functional app ingestion not yet built.
+
 - `nom app new <name> --template=<starter>` — scaffold a new AppManifest with opinionated defaults.
 - `nom app import <path>` — ingest an existing app manifest (ToolJet JSON export, Retool export, Appsmith export) into the dict as an AppManifest + its dependency closure. Names are normalized per §5.11.2 (no brand leak; `origin_platform=tooljet` in `entry_meta`).
 - `nom app build <hash> --target=<platform>` — materialize the closure + `Specializes` per platform (per §5.11.2 cross-platform mapping) and emit a buildable artifact.
 
 #### 5.12.3 Multi-app sharing is automatic
+
+**Status**: ❌ ASPIRATIONAL — property of content-addressing at corpus scale; not demonstrable until Phase-5 ingestion and Phase-15 joint solver exist.
 
 Because everything is content-addressed, two apps that both use `rest_http_get` or `postgres_select_query` or `authenticated_user_variable` share those hashes. A corpus of 1,000 internal tools converges to ~3,000 unique nomtu (most of them reusable primitives) — the small delta per app is just the specific composition: which components, which queries, wired to which actions.
 
@@ -988,11 +1078,15 @@ Because everything is content-addressed, two apps that both use `rest_http_get` 
 
 ### 5.13 Compiler-integrated benchmarking — measure, don't guess
 
+**Status**: ✅ SHIPPED (scaffold + typed side-table design) / ⏳ PLANNED (runner + CLI). `nom-bench` scaffolded with runner + typed `entry_benchmarks` side-table storage. `BenchmarkRun` `EntryKind` in `nom-types`. `nom bench run/compare/regress/curate` CLI: ⏳ PLANNED.
+
 Claim: optimization decisions in the content-addressed graph (which specialization to emit, which inline path to pick, whether to monomorphize or stay generic) should be **data-driven**, not heuristic. Every nomtu carries benchmark data. The compiler reads that data at build time and picks the best-performing variant for the declared context.
 
 Concrete reference: the C++ micro-benchmarking framework at `C:\Users\trngh\Documents\APP\benchmark-main` (Google Benchmark). Its API — parameterized ranges, custom counters, statistical significance testing via U-test in `tools/compare.py` — is the right surface for Nom to adopt, but in a native Nom form.
 
 #### 5.13.1 New kinds and a typed side-table
+
+**Status**: ✅ SHIPPED — `BenchmarkRun` kind in `EntryKind`; `entry_benchmarks` table design in schema. Functional runner: ⏳ PLANNED.
 
 Extend `EntryKind`:
 
@@ -1026,12 +1120,16 @@ CREATE INDEX idx_bench_mean ON entry_benchmarks(mean_ns);
 
 #### 5.13.2 CLI
 
+**Status**: ⏳ PLANNED — CLI stubs in `nom-bench` scaffold; functional bench runner not yet built.
+
 - `nom bench <hash>` — compile the nomtu under every enabled specialization for the current platform, run each, record `BenchmarkRun` rows.
 - `nom bench compare <hashA> <hashB>` — statistical comparison; report `(B - A) / |A|` per counter with a U-test p-value; equivalent to Google Benchmark's `tools/compare.py`.
 - `nom bench regress <hash> --baseline <compiler_hash>` — compare current run against a baseline-compiler recorded run; flag regressions above a threshold.
 - `nom bench curate` — garbage-collect old BenchmarkRuns older than N days OR where the compiler_hash has been superseded + the run is not the last-known-good for any specialization.
 
 #### 5.13.3 Data-driven specialization (extension of Phase 12)
+
+**Status**: ❌ ASPIRATIONAL — Phase-12 specialization using benchmark costs; multi-quarter scope.
 
 Phase 12 monomorphization is a static analysis. With benchmark data, specialization becomes a **cost-minimization query**:
 
@@ -1042,17 +1140,23 @@ Phase 12 monomorphization is a static analysis. With benchmark data, specializat
 
 #### 5.13.4 Provenance
 
+**Status**: ⏳ PLANNED — provenance tracking design; follows functional bench runner.
+
 Benchmark runs are reproducible: the tuple `(compiler_hash, platform, workload_key, iterations)` is what makes a run comparable. Two runs with the same tuple should agree within CV bounds, or the measurement is noise. The U-test significance testing from Google Benchmark's `compare.py` is ported into `nom bench compare` — no hand-wavy "looks faster", always a p-value.
 
 ---
 
 ### 5.14 Flow concretization — every nomtu has a flow artifact
 
+**Status**: ✅ SHIPPED (scaffold + kinds/edges) / ⏳ PLANNED (LLVM instrumentation + CLI). `nom-flow` scaffolded with LLVM call-site instrumentation + DOT/Mermaid render stubs. `FlowArtifact`/`FlowStep`/`FlowMiddleware` kinds in `nom-types`. Functional flow recorder: ⏳ PLANNED.
+
 Claim: every closure's execution is observable as a concrete flow artifact, not just a static call graph. The AST already gives you structural flow; execution adds timing, data values at edges, fan-out/fan-in counts, retries, early-exits. A developer inspecting any nomtu should be able to answer "what actually happens when this runs?" without re-instrumenting their code.
 
 Concrete reference: the LangGraph-based agent harness at `C:\Users\trngh\Documents\APP\deer-flow-main`. Its pattern — state-machine agent + middleware stack intercepting every step + mergeable ThreadState artifacts + checkpointed resume — is the right model for Nom, but generalized from agents to any closure execution.
 
 #### 5.14.1 New kinds and edges
+
+**Status**: ✅ SHIPPED — `FlowArtifact`/`FlowStep`/`FlowMiddleware` and `HasFlowArtifact`/`FlowsTo` edges in `nom-types`.
 
 Extend `EntryKind`:
 
@@ -1067,6 +1171,8 @@ Extend `EdgeType`:
 - **`FlowsTo(FlowStep, FlowStep)`** — data-flow edge within a FlowArtifact.
 
 #### 5.14.2 Typed side-table for flow step data
+
+**Status**: ⏳ PLANNED — `flow_steps` side-table design; not yet in live schema.
 
 Like benchmarks, flow step detail is query-hot (time-series queries over runs, filters by step kind, bottleneck analysis) and doesn't fit EAV. Minimal schema:
 
@@ -1090,12 +1196,16 @@ CREATE INDEX idx_steps_slow ON flow_steps(ended_at_ns, started_at_ns);
 
 #### 5.14.3 CLI
 
+**Status**: ⏳ PLANNED — `nom flow record/show/diff/middleware` CLI stubs in `nom-flow` scaffold; functional recorder not yet built.
+
 - `nom flow record <hash> --inputs <json>` — invoke the closure with the given inputs, record a FlowArtifact (and its FlowStep rows), print the artifact id.
 - `nom flow show <artifact_id>` — render the trace as a DAG (default), a step-table, or a timeline. Formats: `--format=dot|json|mermaid|table`.
 - `nom flow diff <a> <b>` — compare two FlowArtifacts, highlight where step sequences or data-flow edges diverged.
 - `nom flow middleware <hash> attach <middleware_nomtu>` — register a FlowMiddleware on a closure at build time.
 
 #### 5.14.4 The middleware pattern (borrowed from DeerFlow, generalized)
+
+**Status**: ❌ ASPIRATIONAL — middleware-instrumented flow pattern; requires runtime flow recorder (⏳ PLANNED).
 
 FlowMiddleware is a nomtu describing how to intercept a step. Examples that ship as seed entries:
 
@@ -1112,11 +1222,15 @@ Middlewares are regular nomtu — they get versioned, content-addressed, dedup'd
 
 #### 5.14.5 Relationship to §9.8 comprehensiveness
 
+**Status**: ⏳ PLANNED — both §5.14 and §9.8 are future; relationship design only.
+
 A flow artifact is the **dynamic** counterpart to §9.8.3's graph-layer static check. Graph-layer says "no orphan edges in the source"; flow layer says "no orphan edges in a real run" — if execution reached a step that should have been unreachable (per the author's declared flow), the flow artifact flags it. Combined, static + dynamic = full observability.
 
 ---
 
 ### 5.15 Multi-app, multi-platform optimization — the joint selection problem
+
+**Status**: ❌ ASPIRATIONAL — requires corpus-scale benchmark data (§5.13) + Phase-12 specialization engine + bipartite min-cost solver; multi-quarter scope.
 
 The individual mechanisms are now in place: cross-platform specialization (§5.11.2 Shape B cross-platform), data-driven variant selection (§5.13), app-level composition (§5.12), and flow-driven observability (§5.14). The remaining piece is the **joint optimization** across multiple apps × multiple platforms.
 
@@ -1131,6 +1245,8 @@ Find: a selection function `f: (nomtu, platform) → specialization_hash` that m
 
 #### 5.15.1 Solver mechanics
 
+**Status**: ❌ ASPIRATIONAL — bipartite min-cost solver design; no implementation.
+
 This is structurally a minimum-cost assignment on a bipartite graph:
 
 - Left vertices: `(nomtu, platform)` pairs in the union closure.
@@ -1142,10 +1258,14 @@ For typical corpus sizes (thousands to tens of thousands of nomtu, 2–8 platfor
 
 #### 5.15.2 CLI
 
+**Status**: ❌ ASPIRATIONAL — `nom app build-report` CLI stub; functional solver not yet built.
+
 - `nom app build --all <h1> <h2> ... --targets web,desktop,mobile --objective=size+p95` — kicks off the joint-selection build. Produces N × M artifacts. Reports: total artifact bytes, shared bytes across artifacts (the dedup win), p95 per artifact, which specialization was selected for each `(nomtu, platform)` pair.
 - `nom app explain-selection <hash> --app <app_hash> --platform <p>` — for any specific nomtu in a specific app's build for a specific platform, show why the solver picked the specialization it did (cost comparison across candidates, benchmark run ids consulted).
 
 #### 5.15.3 Benchmark gaps as first-class errors
+
+**Status**: ❌ ASPIRATIONAL — requires functional bench runner.
 
 If a `(nomtu, platform)` pair has no candidate with benchmark data, the solver can:
 
@@ -1155,6 +1275,8 @@ If a `(nomtu, platform)` pair has no candidate with benchmark data, the solver c
 This turns "missing benchmark" into a surfaced build-time concern rather than an invisible cost.
 
 #### 5.15.4 Cross-app dedup is measurable
+
+**Status**: ❌ ASPIRATIONAL — property at corpus scale; not measurable until Phase-5 ingestion and Phase-12 specialization exist.
 
 After a multi-app build, `nom app build-report <session_id>` prints:
 
@@ -1168,6 +1290,8 @@ At corpus scale (hundreds of apps, thousands of specialization candidates), the 
 
 ### 5.16 Media as nomtu — the dictionary replaces file extensions
 
+**Status**: ✅ SHIPPED (scaffold + kinds/edges + codec foundation) / ⏳ PLANNED (render CLI + FFI tier). `nom-media` crate: 10/10 §5.16.13 codecs scaffolded or functional (PNG/FLAC/JPEG real re-encode; AVIF encoder via `ravif` commit `707aa93`; others identity-mapped as placeholders), 56 tests. `MediaUnit`/`Codec`/`Container`/`RenderPipeline` `EntryKind` variants + 8 media-related `EdgeType` variants in `nom-types`. `nom media render` CLI: ⏳ PLANNED.
+
 > **Superseded on body-representation by §4.4.6 (2026-04-12).** Under the new architectural rule, media entries' bodies are **the canonical-format bytes** (AVIF for images, AV1 for video, AAC for lossy audio, FLAC for lossless audio). The declarative-decomposition kinds below (`PixelGrid`, `AudioBuffer`, `VideoStream`, `VectorPath`, `GlyphOutline`, `MeshGeometry`, `Color`, `Palette`) survive as **analysis metadata** — edges + side-table rows recording "this AVIF decodes to a 3000×2000 sRGB grid" — but they are NOT the body. Only one decoded form is materialized at render time through a codec `.bc`. The "every file is a composition" framing below describes the analysis graph, not the storage form.
 
 **Claim:** every file format is a composition of media primitives. A PNG is pixels + a compression codec + a chunk container + metadata. A WAV is samples + a format descriptor + a container. An MP4 is frames + audio tracks + a box-structured container. An OBJ is vertices + faces + material references. A TTF is glyph outlines + metrics + an SFNT container.
@@ -1177,6 +1301,8 @@ If every primitive is a nomtu and every container is a composition, then **the d
 This is the full generalization of the principle that's driven the whole design: the dict is the dependency system for code (§4), for UX (§5.11), for apps (§5.12), for the compiler itself (§10), and now for **any content anyone might send or store anywhere**.
 
 #### 5.16.1 New kinds
+
+**Status**: ✅ SHIPPED — all listed media kinds in `EntryKind` in `nom-types/src/lib.rs`.
 
 Extend `EntryKind`:
 
@@ -1196,6 +1322,8 @@ Extend `EntryKind`:
 
 #### 5.16.2 New edges
 
+**Status**: ✅ SHIPPED — `Encodes`/`ContainedIn`/`UsesColor`/`UsesPalette`/`Derives`/`EmbeddedGlyph`/`Frame`/`RendersOn` edge variants in `EdgeType` in `nom-types/src/lib.rs`.
+
 - **`Encodes(MediaUnit, Codec)`** — this media unit is encoded via this codec. A single media can have multiple Encodes edges to different codecs (PNG + WebP + AVIF specializations of the same `PixelGrid`).
 - **`ContainedIn(MediaUnit, Container)`** — this media is wrapped in this container layout.
 - **`UsesColor(MediaUnit, Color)`** / **`UsesPalette(MediaUnit, Palette)`** — color-graph edges for indexing, deduplication, palette-swapping transforms.
@@ -1205,6 +1333,8 @@ Extend `EntryKind`:
 - **`RendersOn(MediaUnit, Platform)`** — platform-specialized rendering; same image may have distinct specializations for web (compressed PNG/WebP), print (CMYK TIFF), mobile (HEIC), terminal (ASCII art).
 
 #### 5.16.3 Shape C — binary media corpus
+
+**Status**: ⏳ PLANNED — binary media ingestion protocol designed; `nom media import/import-dir` CLI stubs in `nom-media` scaffold. Functional ingestion: ⏳ PLANNED.
 
 Extend the ingestion protocol (§5.6). Shape A was static knowledge (CSV), Shape B was runtime library (source package). Shape C is **binary media** — PNG/JPEG/MP4/WAV/TTF/OBJ files on disk or in a repo.
 
@@ -1220,6 +1350,8 @@ Per-encoding decoders live in `nom-media/src/decoders/`: `png.rs`, `jpeg.rs`, `w
 
 #### 5.16.4 Rendering — the inverse operation
 
+**Status**: ⏳ PLANNED — `nom media render <hash> --target <codec>` designed; not yet implemented.
+
 Given a root `MediaUnit` hash and a target encoding, the compiler materializes bytes:
 
 ```
@@ -1234,6 +1366,8 @@ Cross-format conversion is automatic: `nom media render <png_hash> --target webp
 
 #### 5.16.5 Multi-encoding specialization is the same pattern as multi-platform
 
+**Status**: ✅ SHIPPED (design principle) — `Specializes` edge in `EdgeType`; functional multi-encoding dispatch: ⏳ PLANNED.
+
 The §5.11.2-cross-platform pattern applies verbatim: one generic `MediaUnit` → N encoding-specialized variants (each with its own hash, its own encoded bytes as `body_nom`) → linked by `Specializes` edges → distinguished by `origin_encoding` metadata.
 
 A single 8K photograph could have 30+ specializations in the dict: PNG (lossless), JPEG at quality 50/70/85/95, WebP (lossy and lossless), AVIF, HEIC, BMP, TIFF (uncompressed, LZW, JPEG-in-TIFF), plus per-size variants (thumbnail 256×, preview 1024×, full 8K). The resolver picks by context: web serving asks for WebP at preview size; print asks for lossless TIFF at full size; terminal ASCII-art viewer asks for the generic pixel grid.
@@ -1241,6 +1375,8 @@ A single 8K photograph could have 30+ specializations in the dict: PNG (lossless
 This absorbs all of image-serving infrastructure (srcset, CDN variants, responsive images) into the dict. Nothing external is needed; the specializations are already there.
 
 #### 5.16.6 Multi-media compositions
+
+**Status**: ❌ ASPIRATIONAL — multi-media composition in `.nom` code calling codec `.bc`; requires functional codec + render pipeline (⏳ PLANNED).
 
 A document is no longer "a PDF" or "a DOCX". It's a composition:
 
@@ -1255,6 +1391,8 @@ A document is no longer "a PDF" or "a DOCX". It's a composition:
 This collapses the "office document" problem: DOCX/ODT/RTF/PDF/HTML/Markdown/EPUB stop being distinct identities and become encoding specializations of the same semantic composition.
 
 #### 5.16.7 `nom-media` workspace crate
+
+**Status**: ✅ SHIPPED (scaffolding + AVIF encoder + codec stubs) — 56 tests; AVIF PSNR roundtrip test (`verify_avif_roundtrip`) in Linux CI (commit `0ebbb4f`). Real encoders for Opus/AV1/AAC: ⏳ PLANNED.
 
 New peer crate at `nom-compiler/crates/nom-media/`:
 
@@ -1284,6 +1422,8 @@ CLI:
 
 #### 5.16.8 Relation to the rest of Nom
 
+**Status**: ✅ SHIPPED (architectural framing) — relationship documented; follows code as §5.16 subsystems land.
+
 - **Compiler is an app** (§10): the compiler's `.archive/` may hold old Rust source, old test fixtures, old doc renders — all ingested as media nomtu, queryable, deduplicated.
 - **UX is media**: screens, icons, component mockups, design system exports — all `MediaUnit`. A design system's "brand asset library" is a dict query: `kind:MediaUnit AND meta:origin_brand=<brand>`.
 - **Apps include media**: §5.12 `AppManifest` closures naturally include embedded images, fonts, sound effects, video as `MediaUnit` leaves. A game's asset bundle is its closure minus code.
@@ -1294,9 +1434,13 @@ Everything is in the dict. Everything dedupes by content. Everything specializes
 
 #### 5.16.9 Governing invariant (added)
 
+**Status**: ✅ SHIPPED — Invariant 17 (one canonical format per modality) defined in `nom-types/src/lib.rs:886–918`. `body_kind::ALL` has 14 constants.
+
 **Media is ordinary Nom.** Files with extensions are a user-facing view, not an identity. Every byte that has ever been a file can be a hash in the dict, with its structural decomposition as graph edges and its encodings as `Specializes` variants. "Replace extensions" is not a feature goal — it's a natural consequence of the content-addressed, typed-graph, specialization-driven design applied to media inputs.
 
 #### 5.16.10 Size budget
+
+**Status**: ⏳ PLANNED — ~32 kLOC estimate; current `nom-media` crate is scaffold-scale, well under estimate.
 
 - `nom-media` core + ~20 common decoders (PNG, JPEG, WebP, AVIF, GIF, TIFF, SVG, PDF skim, WAV, FLAC, MP3, Opus, MP4, WebM, MKV, OBJ, glTF, TTF, OTF, WOFF2): ~15,000 LOC.
 - Encoders (inverse of decoders): ~8,000 LOC.
@@ -1308,6 +1452,8 @@ Total: ~27,000 LOC, shipped incrementally — one decoder+encoder pair per PR. T
 Existing Rust crates provide mature implementations for most codecs (`image`, `rexiv2`, `lopdf`, `symphonia`, `font-kit`, `hound`, `gltf`). Phase 5 ingests them as Shape-B runtime library corpus; `nom-media` composes their Nom-translated primitives. The work is substantial but not speculative — every encoding already has a library to learn from.
 
 #### 5.16.11 Codec runtime strategy — FFI-first, pure-Nom later
+
+**Status**: ✅ SHIPPED (strategy) — per §4.4.6, Tier 2 (pure-Nom codec rewrite) is **removed**; codecs are `.bc` forever. FFI-first (Tier 1) is the only tier. AVIF FFI-binding (`libavif` via `ravif`) is the first functional codec (commit `707aa93`). Remaining FFI bindings (AV1/AAC/etc.): ⏳ PLANNED.
 
 Modern codec libraries (AV1 encoder, AAC encoder, FLAC encoder, AVIF still/animation) are hundreds of thousands of LOC of hand-tuned C/asm. Reimplementing them in Nom is a multi-year effort per codec. Pragmatic design: **two-tier codec residency**.
 
@@ -1331,6 +1477,8 @@ FFI-nomtu examples:
 
 #### 5.16.12 Build dispatch — `--target <codec>` resolves a codec+container closure
 
+**Status**: ⏳ PLANNED — `nom media render <hash> --target <codec>` design; not yet implemented.
+
 `nom media render <hash> --target av1 --out video.mp4` resolves in five steps:
 
 1. **Codec resolution.** Find the best `kind: Codec` nomtu for the request: filter `word ~= "av1_encoder"`, rank by `is_canonical`, current platform in `RunsOn` edges, `status: Complete`, and whether FFI-required libs are present locally. Pick the head. Emit `NOM-M01` if none matches.
@@ -1344,6 +1492,8 @@ FFI-nomtu examples:
 **Format-preservation invariant.** `nom media render <hash_x> --target png; nom media import result.png; nom media render <imported_hash> --target png` must produce byte-identical output (PNG is lossless). For lossy codecs (JPEG, AV1 lossy, AAC, MP3), the invariant is PSNR-above-threshold + metadata preserved, checked by the §5.2 equivalence gate.
 
 #### 5.16.13 First-codec roadmap — incremental landings
+
+**Status**: ✅ SHIPPED (AVIF order #5, milestone `a`) / ⏳ PLANNED (orders #1-#4 and #6-#10 real encoders). Actual landing order differs from roadmap: AVIF (order #5) landed first via commit `707aa93` (`nom-media`: AVIF canonical encoder via `ravif`), followed by PSNR roundtrip test (`0ebbb4f`). PNG (order #1) scaffolded but real round-trip encoder ⏳ PLANNED. Opus/AV1/AAC/WebM/MP4/HEVC: identity-mapped stubs in scaffold, real encoders ⏳ PLANNED. The order below is the intended sequence for functional completion; AVIF is already ahead of it.
 
 Ship the codec subsystem one format at a time. Each PR adds one codec nomtu + its FFI binding + an equivalence-gate test (decode → re-encode → byte-compare or PSNR-compare).
 
@@ -1370,15 +1520,21 @@ After order 10 the full AV1+Opus+WebM and AV1+AAC+MP4 pipelines are buildable. O
 
 ### 5.17 Mass corpus ingestion — PyPI + top GitHub
 
+**Status**: ✅ SHIPPED (scaffold + protocol design) / ⏳ PLANNED (actual ingestion runs). `nom-corpus` crate scaffolded with per-ecosystem drivers, checkpointing, bandwidth throttling. `nom corpus ingest/status/pause/resume/report/workspace-gc` CLI stubs. Actual PyPI/GitHub corpus runs: ⏳ PLANNED (Phase-5 multi-week activity).
+
 The dictionary gets rich only when real code from real ecosystems has been translated and stored. Phase 5 ingestion (§5.6) was per-symbol on demand. §5.17 is the **systematic enrichment pass**: ingest entire package ecosystems and the most-used open-source repos as bulk jobs, with disciplined disk management so the host machine doesn't drown.
 
 #### 5.17.1 Two mass corpora
+
+**Status**: ⏳ PLANNED — corpora identified; ingestion not started.
 
 **PyPI — the Python Package Index.** Hundreds of thousands of packages; top 500 cover ~80% of the real-world Python usage (numpy, pandas, requests, django, flask, tensorflow, pytorch, sklearn, scipy, matplotlib, pillow, beautifulsoup4, lxml, cryptography, sqlalchemy, pytest, …). Each package's installed form (`site-packages/<pkg>/`) goes through the Phase-5 Shape-B ingestion path.
 
 **Top GitHub — by stars and per-ecosystem popularity.** Not one global top-500; instead **top 500 per major ecosystem**: JavaScript/TypeScript, Python, Rust, Go, Java/Kotlin, C/C++, Swift, Ruby, PHP. Ecosystem-curated lists avoid the Linux-kernel-dominates-everything effect. Total: ~4,500 repos after dedup, weighted by real usage.
 
 #### 5.17.2 Disk-management protocol
+
+**Status**: ⏳ PLANNED — stream-and-discard, skip-lists, checkpointing, `workspace-gc` designed in `nom-corpus` scaffold; not yet exercised at scale.
 
 The machine running ingestion must not balloon its filesystem. Discipline:
 
@@ -1412,6 +1568,8 @@ In-flight state that lives *outside* the SQLite transaction — sandbox processe
 
 #### 5.17.3 New CLI and module
 
+**Status**: ⏳ PLANNED — CLI stubs in `nom-corpus`; functional ingestion module not yet built.
+
 - `nom corpus ingest pypi --top <N>` — fetch top-N PyPI packages, ingest, clean up. Default N=500.
 - `nom corpus ingest github --lang <ecosystem> --top <N>` — top-N GitHub repos for a given ecosystem tag.
 - `nom corpus ingest repo <url>` — single-repo pass, for targeted enrichment.
@@ -1424,6 +1582,8 @@ Implementation in `nom-extract/src/corpus/`: driver + `pypi.rs` + `github.rs` + 
 
 #### 5.17.4 Partial status is the honest initial condition (not the steady state)
 
+**Status**: ✅ SHIPPED (policy) — `Partial`/`Complete`/`Opaque` status semantics tightened by §4.4.6 shift (no translator → Partial means compile failed or decoder errored, not "translator immature"). Schema column `status` in `entries` table.
+
 Initial mass ingestion will land with a high Partial ratio — dynamic Python typing, heterogeneous GitHub code, large packages all defeat first-pass equivalence. Realistic trajectory: **first-pass ~80% Partial, steady state >90% Complete** via §5.10 canonicalization upgrades over months. The corpus is a living target.
 
 **Partial entries are NOT build-eligible.** They are graph-referenceable (edges can point at them), searchable (they rank in `nom search`), and surface-visible in the LSP (`NOM-G05` diagnostic on use), but the §5.4 intent resolver operating in **build mode** filters to `status: Complete` entries only. A draft `.nom` source whose closure walk hits a Partial entry fails `nom check --comprehensive` with a `NOM-G05` diagnostic telling the author: "reference to Partial entry `<hash>` — either pin a different specialization (Complete), hash-pin with explicit `:: partial` acknowledgment, or wait for the translator upgrade."
@@ -1433,6 +1593,8 @@ This preserves §5.2's equivalence gate as the real guard on buildable closures:
 **Partial → Complete transitions always produce a new hash.** When §5.10 canonicalization lifts a Partial entry, the updated `body_nom` + contract hashes to a new id, and the old id gains a `SupersededBy(old_partial → new_complete)` edge. Callers still resolving the word pick up the new Complete entry automatically. Old closures remain reproducible (the old hash is still in the dict; §5.10 eliminate rules preserve `SupersededBy` anchors).
 
 #### 5.17.5 Storage budget (trajectory, not steady state)
+
+**Status**: ⏳ PLANNED — budget estimates; no actual corpus data to validate against yet.
 
 Numbers reconciled with §5.5: average Complete entry ~300 bytes (body_nom + contract + key metadata; edges and secondary metadata in side tables); Partial entries ~600 bytes (carry `partial_reasons` and more provenance).
 
@@ -1444,6 +1606,8 @@ Numbers reconciled with §5.5: average Complete entry ~300 bytes (body_nom + con
 A developer's laptop running the ingestion sees ≤ 10 GB temporary + a growing dict; a dedicated corpus host at first-pass sits at ~60 GB, settles to ~35 GB. Not cheap, but tractable — and unlike a traditional package-manager cache, this is the *working vocabulary* of the entire ecosystem, deduplicated, reusable across all future projects without re-download.
 
 #### 5.17.6 Supply-chain safety (mandatory operational discipline)
+
+**Status**: ⏳ PLANNED — supply-chain safety protocol designed (sandbox, rate-limit, etc.); `nom-corpus` scaffold includes stubs. Functional enforcement: ⏳ PLANNED.
 
 Mass-ingesting ~5,000 real repositories and ~500 PyPI packages crosses a real-world hazard the design must name explicitly. This is an operational discipline, not a language invariant — but it's non-optional.
 
@@ -1469,11 +1633,15 @@ Without this section the §5.17 subsystem is production-hostile. With it, the su
 
 ### 5.18 Aesthetic as programming — generative media via composition
 
+**Status**: ❌ ASPIRATIONAL — generative media via `.nom` calling codec `.bc`; requires functional codec pipeline (⏳ PLANNED) + aesthetic skill vocabulary (not yet seeded). Multi-quarter scope after Phase-5 functional ingestion.
+
 Media primitives (§5.16) are not just storage. They are also **programmable surfaces**. A `.nom` program can compose `PixelGrid`, `VectorPath`, `AudioBuffer`, `VideoStream`, `MeshGeometry` nomtu via functions — same grammar as any other Nom program — to produce generative aesthetic output.
 
 **Three operators, all three apply.** `->` composes a sequence of transforms; `::` specializes (render at 4K vs. 1080p); `+` combines (layer-stacking for images, mix for audio, concat for video). No new syntax — aesthetic programming is ordinary Nom applied to media primitives.
 
 #### 5.18.1 Examples
+
+**Status**: ❌ ASPIRATIONAL — examples require functional aesthetic skill vocabulary and codec pipeline.
 
 - **Generative image.** Compose a `PixelGrid` from procedural noise nomtu + a palette nomtu + a radial gradient nomtu + a post-processing chain. Output materialized as PNG via `nom media render`.
 - **Live music piece.** Compose an `AudioBuffer` from oscillator nomtu + envelope nomtu + reverb nomtu + a MIDI-like sequence nomtu. Materialized as WAV, FLAC, Opus via `nom media render`.
@@ -1482,6 +1650,8 @@ Media primitives (§5.16) are not just storage. They are also **programmable sur
 - **Typography.** Generate a variable font instance by interpolating between `GlyphOutline` nomtu with weight/width axes; materialize as TTF/OTF/WOFF2.
 
 #### 5.18.2 Seed the aesthetic vocabulary
+
+**Status**: ❌ ASPIRATIONAL — aesthetic vocabulary seed entries not yet written; `Skill` `EntryKind` variant exists in `nom-types` as the container.
 
 New seed entries in `nom-media` covering:
 
@@ -1509,6 +1679,8 @@ All reach `Complete` status via §5.2 equivalence gates. Two implementation path
 
 #### 5.18.3 Aesthetic skills (seed entries)
 
+**Status**: ❌ ASPIRATIONAL — skill entries listed; none yet seeded into the dictionary.
+
 New `kind: Skill` nomtu specifically for aesthetic authoring:
 
 | Skill nomtu | Purpose |
@@ -1524,6 +1696,8 @@ New `kind: Skill` nomtu specifically for aesthetic authoring:
 Each skill's `body_nom` is a declarative rule set + example composition chain; the AI Authoring Protocol (§9.2) invokes them when user intent matches.
 
 #### 5.18.4 Voice synthesis — concrete corpus example
+
+**Status**: ❌ ASPIRATIONAL — voice synthesis corpus example; requires AAC encoder + TTS pipeline.
 
 §5.18.1's audio-synthesis vocabulary (oscillators, envelopes, reverb, granular) covers the low-level generative layer — useful for procedural sound design but not for human-speech TTS at production quality. Speech is a distinct problem: it needs trained models, speaker-identity control, multilingual coverage, and diffusion/flow-matching acoustic decoders. Nom ingests full speech-synthesis pipelines as Shape-B runtime-library corpora, same pattern as framer-motion or Dioxus.
 
@@ -1576,15 +1750,21 @@ Each skill's `body_nom` is a declarative rule set + example composition chain; t
 
 #### 5.18.5 Governing insight
 
+**Status**: ❌ ASPIRATIONAL — insight holds as design principle; observability requires functional aesthetic pipeline.
+
 The user's framing captures it: **aesthetic IS programming.** Visual, auditory, kinetic design isn't adjacent to code — it's composition of the same kind, with the same `->` / `::` / `+` operators, over a different vocabulary (media primitives instead of compute primitives). The dict holds both. The compiler materializes both. The AI authoring layer surfaces candidates for both from the same ranking function.
 
 ---
 
 ### 5.19 The AI invokes the compiler — closing the intent loop
 
+**Status**: ❌ ASPIRATIONAL — AI-driven verify→build→bench→flow loop; requires Phase-9 LSP + Authoring Protocol + functional Phase-5 ingestion. Multi-quarter scope.
+
 Phase 9 established the AI authoring layer as a *search* surface: intent → ranked dict candidates → human picks → hash-pinned source. §5.19 extends this: the AI also **invokes the compiler as a tool** during authoring, using its deterministic output as feedback.
 
 #### 5.19.1 The loop
+
+**Status**: ❌ ASPIRATIONAL — verify→build→bench→flow authoring loop; requires LSP + Phase-5 corpus.
 
 When a user says "build me an app that does X":
 
@@ -1600,6 +1780,8 @@ The compiler is a **deterministic oracle the AI consults**. This is what makes A
 
 #### 5.19.2 Authoring Protocol extensions
 
+**Status**: ❌ ASPIRATIONAL — Authoring Protocol extensions; depends on Phase-9 LSP (⏳ PLANNED).
+
 §9.2's schema gains new request modes:
 
 - **`verify`** — the AI submits a draft source; the protocol returns comprehensiveness diagnostics.
@@ -1611,6 +1793,8 @@ The compiler is a **deterministic oracle the AI consults**. This is what makes A
 All five modes are deterministic in the compiler half; the AI's natural-language translation layer is the only non-deterministic part. Re-running the same AI with the same seed + same dict state produces the same draft → same artifacts.
 
 #### 5.19.3 Self-documenting skills for Nom
+
+**Status**: ❌ ASPIRATIONAL — `Skill` EntryKind exists in `nom-types`; actual skill entries not yet seeded into the dictionary.
 
 Seed skills specifically about **using Nom itself**, layered above the domain-specific skills from ECC (§9.8.8) and aesthetic skills (§5.18.3):
 
@@ -1636,6 +1820,8 @@ Each skill's `body_nom` is a concise declarative rule-set plus example compositi
 This is the ECC homunculus pattern (§9.8.8) applied recursively: Nom's own methodology lives in the dict, evolves with the dict, and gets surfaced to new users (or new AIs) through the same intent-routing mechanism everything else uses.
 
 #### 5.19.4 Cost and non-determinism boundary
+
+**Status**: ✅ SHIPPED (principle) — determinism invariant: hash-pinned source re-materializes byte-identically without AI. AI is search surface only. Documented in §10.3.1 + commit `bc89d8a`.
 
 **Cost model.** An authoring session is not free. A conservative per-iteration cost:
 
@@ -1693,6 +1879,8 @@ Stored like any other nomtu. Two sessions with the same intent but different fin
 
 #### 5.19.5 Skill entries are exempt from build-closure walk; resolution vs walking
 
+**Status**: ⏳ PLANNED — design decision; not yet enforced in closure walker (skills not yet in the dict to test against).
+
 Self-documenting skills (§5.19.3 + earlier skill-kind entries from §9.8.8, §5.18.3) are documentation artifacts, not code. They compose via `Recommends` edges that are semantic suggestions, not build dependencies. Without an exemption rule, the skill graph's circular references (`use_ai_loop` references `author_nom_app` references `compose_from_dict` references `use_ai_loop`) would make `nom check --comprehensive` on any composition that transitively touches a Skill never terminate.
 
 **Distinguish RESOLUTION from CLOSURE WALKING.** These are two different graph operations:
@@ -1715,6 +1903,8 @@ The CI check itself is run by a standard CI pipeline (GitHub Actions, pre-commit
 
 #### 5.19.6 What makes this different from "AI writes code"
 
+**Status**: ✅ SHIPPED (principle) — AI as search surface over hash-pinned corpus, not generation surface. Design invariant enforced by §10.3.1 determinism pins.
+
 - **The AI doesn't invent primitives.** It composes existing nomtu. The dict is authoritative.
 - **Every draft is machine-verified.** Comprehensiveness, build, trace — deterministic checks, not self-grading.
 - **Artifacts are hash-pinned and reproducible.** Same draft source → same hash → same artifact on every host.
@@ -1727,9 +1917,13 @@ This is what "AI-assisted programming language" means when taken seriously.
 
 ### 5.10 Dictionary lifecycle operations — merge, eliminate, evolve
 
+**Status**: ✅ SHIPPED (protocol design + `SupersededBy` edge) / ⏳ PLANNED (operational commands). `SupersededBy` edge in `EdgeType` (`nom-types/src/lib.rs`). `canonical.rs` (265 LOC) ships the canonicalizer per §5.10.1. Operational merge/eliminate/evolve commands: ⏳ PLANNED (Phase-5 activity).
+
 The corpus is a living graph. Content addressing dedups trivially, but at 100M-entry scale the dict also needs **organic consolidation**: near-duplicates collapse, dead entries get pruned, improved translations supersede older ones without losing history. Three operation classes, each rooted in the multi-edge schema from §5.3.
 
 #### 5.10.1 Merge — collapsing equivalence classes
+
+**Status**: ✅ SHIPPED (canonicalizer + version-scoping design) — `canonical.rs` (nom-types, 265 LOC) ships append-only-within-version + `SupersededBy` sweep protocol. Risk #2 resolved (plan + code aligned). Version-scoped pin syntax (`#<canon_v>:<hash>@<word>`) designed; `SupersededBy` sweep: ⏳ PLANNED operational tool.
 
 Three distinct merge mechanisms with different guarantees.
 
@@ -1758,6 +1952,8 @@ Detection:
 
 #### 5.10.2 Eliminate — prune noise, keep the graph sharp
 
+**Status**: ⏳ PLANNED — `nom store gc` root-set GC exists; targeted eliminate (quality threshold, low-use prune) not yet implemented.
+
 Garbage collection today (`nom store gc`) removes entries unreachable from any root in `~/.nom/roots.txt`. Phase 5 extends the rule set:
 
 **Unreachable after cooldown.** An entry with zero incoming refs AND not present in any root is a GC candidate. A `last_referenced_at` metadata row (auto-updated on any closure walk that touches the entry) provides the cooldown timer. Default: 30 days since last reference before GC considers it.
@@ -1771,6 +1967,8 @@ Garbage collection today (`nom store gc`) removes entries unreachable from any r
 **What gc never removes:** entries with any incoming `SupersededBy` or `Specializes` edge. These are historical anchors; deleting them would break version lineage.
 
 #### 5.10.3 Evolve — progression without version numbers
+
+**Status**: ✅ SHIPPED (design) / ⏳ PLANNED (operational sweep). `SupersededBy` edge in `EdgeType`; actual canonicalizer upgrade sweep: ⏳ PLANNED (triggered on LLVM major-version bump per §4.4.6).
 
 The dict holds the version history of every symbol as a subgraph. No semver, no version strings in identifiers. Only immutable hashes and `SupersededBy` + `Specializes` edges.
 
@@ -1796,6 +1994,8 @@ No version string was needed. The graph *is* the version history.
 
 #### 5.10.4 Operational commands
 
+**Status**: ⏳ PLANNED — `nom store gc` exists; `nom dict merge/eliminate/evolve` commands: ⏳ PLANNED.
+
 | Command | Purpose |
 |---------|---------|
 | `nom store recanonicalize [--sample N] [--dry-run]` | Re-hash entries under the current canonicalizer; emit SupersededBy where a collision to an existing entry is found. |
@@ -1810,6 +2010,8 @@ Each command is a read-mostly analysis pass (recanonicalize, find-equivalents, h
 
 #### 5.10.5 Why these operations, not others
 
+**Status**: ✅ SHIPPED (rationale) — design rationale; no code required.
+
 The design constraint: the dict must evolve, but **no stored body can ever change**. Immutability is the bedrock of content addressing (AVOID-5). Evolution happens only through:
 
 - New hashes (new entries).
@@ -1822,6 +2024,8 @@ Operations that would violate immutability — e.g., "patch this `body_nom` to f
 ---
 
 ## Phase 5 — Recursive symbol ingestion with hash rewriting (DEPRECATED, superseded by §5 above)
+
+**Status**: ❌ DEPRECATED — superseded by the revised §5.0–5.19 above. Retained for diff-trail purposes only.
 
 (Retained below for diff-trail purposes; the active spec is §5.0–5.9.)
 
@@ -1903,6 +2107,8 @@ This matters because it's what makes the whole approach feasible on disk. A raw 
 
 ## Phase 6 — Parser-in-Nom prerequisites (1 week)
 
+**Status**: ⏳ PLANNED — three backend gaps identified; no work started. Blocks Phase 7.
+
 Unchanged from v1. Three small backend gaps:
 
 1. **Tuple destructuring in `let`** — change `LetStmt.name: Identifier` to `LetStmt.pattern: Pattern`. Parser extension. ~1–2 days.
@@ -1915,11 +2121,15 @@ Verification: targeted tests per fix; workspace stays ≥255.
 
 ## Phase 7 — Parser in Nom (10–14 weeks)
 
+**Status**: ⏳ PLANNED — 0% code started. Requires Phase 6 prerequisites. Blocks Phase 10 bootstrap.
+
 Unchanged from v1. Port `nom-parser` to `stdlib/self_host/parser.nom`. Add `Box<T>` for recursive AST types (nom_alloc + ptr). Recursive-descent mirroring the Rust parser. Existing fixtures pass. Maps to roadmap Phase 2.
 
 ---
 
 ## Phase 8 — Architectural ADOPT (6–12 months, overlaps Phase 7)
+
+**Status**: ❌ ASPIRATIONAL — ADOPT-4 through ADOPT-8 items; 6–12 month scope; no work started. Overlaps Phase 7.
 
 Unchanged from v1.
 
@@ -1935,17 +2145,23 @@ Each ships as a separate PR.
 
 ## Phase 9 — LSP + Authoring Protocol + `.nomtu` WASM plugins (12–16 weeks, CORE not gated)
 
+**Status**: ⏳ PLANNED — promoted to CORE; 0% code started. Dependency ordering: should precede §5.17 mass ingestion per adversarial review item #6 (commit `bc89d8a`). `nom-lsp` crate does not yet exist. Phase-9 corpus embedding re-rank (stub in `nom-cli/src/store/resolve.rs`) is the only Phase-9 derivative shipped.
+
 **Reframed from v1 ("gated, optional"):** the LSP is now the AI-mediated authoring surface that makes the Tier-2 vocabulary usable at 100M-entry scale. Without it, the language is effectively write-only. Phase 9 is core infrastructure, not opt-in polish.
 
 **Dependency ordering (adversarial review item 6, 2026-04-13):** Phase 9 LSP should **precede or overlap §5.17** mass ingestion — `nom check --audit` during ingestion (which surfaces diagnostic-grade issues on translated bodies) depends on the same diagnostic infrastructure the LSP consumes. Shipping §5.17 first means ingestion runs without any authoring-loop feedback; shipping Phase 9 first lets the dict grow under the LSP's quality gate from day one. Similarly, §5.10 lifecycle (merge/eliminate/evolve) should defer to after Phase 7 — the canonicalizer is owned by the Rust parser until Phase 7 ships the Nom parser, and lifecycle ops must invalidate + recompute source hashes through the canonicalizer, which is more brittle when two implementations exist in parallel.
 
 ### 9.1 LSP server (the substrate)
 
+**Status**: ⏳ PLANNED — `nom-lsp` crate not yet created; LSP subcommand not yet in `nom-cli`.
+
 `nom lsp --stdio` subcommand; new `nom-lsp` crate. Standard LSP methods (diagnostics, hover, definition, references, completion, rename) backed by the same nom-parser / nom-verifier / nom-dict stack.
 
 Completion is the critical path. When the user types `use `, `.`, `->`, or any expression-position token, the LSP issues a structured query to the Authoring Protocol (§9.2) and returns ranked candidate entries. No static keyword list can substitute — candidates come from the dict.
 
 ### 9.2 Authoring Protocol — how the AI and the language cooperate
+
+**Status**: ⏳ PLANNED — Authoring Protocol schema not yet defined; typed-slot resolver stub (commit `c405d2a`) is the closest shipped derivative.
 
 A structured request/response schema (JSON) between an AI assistant and the Nom LSP. The AI is any LLM or embedded model; the protocol abstracts over them.
 
@@ -2000,19 +2216,27 @@ Queries flow **only** from LSP → AI (the AI is a consumer of the dict through 
 
 ### 9.3 `.nomtu` WASM plugin host (gated)
 
+**Status**: ❌ ASPIRATIONAL — gated feature; no work started; requires Phase 9 LSP foundation.
+
 Unchanged from v1 (gated `--features wasm-plugins`, default off). WASM plugins are a separate axis from the LSP: they provide a way to embed transformation/codegen logic in nomtu entries themselves. Versioned API envelopes per Zed pattern. This stays opt-in because most authors never write WASM plugins.
 
 ### 9.4 Fallback / no-AI authoring
 
+**Status**: ✅ SHIPPED (principle) — plain text editor can emit valid Nom today; bare-name resolver operational. AI mediation improves quality, not correctness.
+
 The language remains usable without an AI. The LSP's completion still works — it shows dict entries ranked by the §5.4 function alone, without natural-language context. A **starter vocabulary** ships as a default: ~1,000 well-known nomtu covering common concepts (arithmetic, collections, string handling, I/O, control flow). The role is equivalent to a core vocabulary in any language with a vast underlying corpus — authors compose manually against the starter set; the 99.99% beyond is searchable but not auto-surfaced.
 
 ### 9.5 Determinism + reproducibility invariants
+
+**Status**: ✅ SHIPPED (invariants) — hash-pinned source re-materializes byte-identically; LLVM + Rust toolchain pinned per §10.3.1 (commits `29f5f1d`/`bc89d8a`/`96267df`). Canary tests green on Linux CI.
 
 - **Source stored is hash-pinned.** AI-mediated composition resolves to specific hashes; those hashes are what the store records. Re-building the closure months later, without AI, produces byte-identical output.
 - **The AI is a search surface.** It does not generate `body_nom`. It surfaces existing dict entries. New entries enter the dict only through Phase 5 ingestion, Phase 12 specialization, or explicit `nom store add` of human-authored .nom files.
 - **Protocol queries are stateless.** An intent query is pure; same input → same ranked output. The AI's natural-language layer is a deterministic transform over the query; the resolver's rank is deterministic over the dict state.
 
 ### 9.6 Deliverables
+
+**Status**: ⏳ PLANNED — deliverables list for Phase 9; no Phase-9 code started.
 
 - `nom-lsp` crate — standard LSP methods over nom-parser/verifier/dict/resolve.
 - Authoring Protocol schema published as `docs/authoring-protocol.md`.
@@ -2021,6 +2245,8 @@ The language remains usable without an AI. The LSP's completion still works — 
 - IDE integration recipes (VS Code extension, Neovim, Emacs) in `editor-integrations/`.
 
 ### 9.7 Size budget
+
+**Status**: ⏳ PLANNED — budget estimate; will track when Phase 9 begins.
 
 - nom-lsp core: ~1500 LOC.
 - Authoring Protocol schema + implementation: ~800 LOC.
@@ -2032,11 +2258,15 @@ The language remains usable without an AI. The LSP's completion still works — 
 
 ### 9.8 Authoring-time comprehensiveness — sentence, paragraph, graph
 
+**Status**: ⏳ PLANNED — comprehensiveness scoring design; MECE validator (ME-collision check, commit `c63a6a7`) is the closest shipped analog but covers only one axis of comprehensiveness.
+
 **Invariant:** a `.nom` file must be **graph-complete before compile time**. Every reference resolves, every contract unifies, no orphans. Comprehensiveness is a property of the source at authoring time — not an outcome of compilation. The compile pipeline enforces it; the authoring environment is what helps the human reach it.
 
 Three layers of check, each with its own diagnostics and its own retrieval surface:
 
 #### 9.8.1 Sentence layer — expression / single flow
+
+**Status**: ⏳ PLANNED — Phase-9 design; no implementation.
 
 Scope: one expression, one flow edge, one pattern match arm. Question: *does this make logical sense on its own?*
 
@@ -2048,6 +2278,8 @@ Scope: one expression, one flow edge, one pattern match arm. Question: *does thi
 LSP diagnostic codes: `NOM-S01` (unresolved ident), `NOM-S02` (type mismatch), `NOM-S03` (pre violation at call site), `NOM-S04` (invalid literal).
 
 #### 9.8.2 Paragraph layer — function / composition chain
+
+**Status**: ⏳ PLANNED — Phase-9 design; no implementation.
 
 Scope: one function body, one flow graph, one block. Question: *do the sentences compose — grammar and logic together?*
 
@@ -2062,6 +2294,8 @@ LSP diagnostic codes: `NOM-P01` (type gap between steps), `NOM-P02` (effect esca
 
 #### 9.8.3 Graph layer — file + transitive closure
 
+**Status**: ⏳ PLANNED — Phase-9 design; concept-graph closure walker (commit `c5cdce6`) is the shipped precursor but not the LSP-level graph comprehensiveness check.
+
 Scope: the `.nom` file plus every nomtu its references reach. Question: *does this plug into the rest of the corpus without orphans?*
 
 - Every `use <name>` resolves to exactly one nomtu hash. Ambiguity is an error, not a warning; the author must hash-pin or narrow with intent hints.
@@ -2072,6 +2306,8 @@ Scope: the `.nom` file plus every nomtu its references reach. Question: *does th
 LSP diagnostic codes: `NOM-G01` (unresolved reference — multiple candidates), `NOM-G02` (unresolved reference — no candidates), `NOM-G03` (orphan edge — target hash not in dict), `NOM-G04` (contract mismatch across graph boundary), `NOM-G05` (transitive Partial entry not acknowledged).
 
 #### 9.8.4 Retrieval modes (what the Authoring Protocol actually produces at authoring time)
+
+**Status**: ⏳ PLANNED — Phase-9 protocol design; alphabetical stub resolver is the current stand-in.
 
 When short or incomplete source exists, the LSP calls the Authoring Protocol with signals extracted from context:
 
@@ -2096,6 +2332,8 @@ Four retrieval modes:
 
 #### 9.8.5 Comprehensiveness score
 
+**Status**: ⏳ PLANNED — scoring model design; not yet built.
+
 For any `.nom` file the LSP can emit a comprehensiveness score in [0.0, 1.0]:
 
 ```
@@ -2109,6 +2347,8 @@ Displayed in the editor gutter; configurable threshold for `nom check --strict`.
 
 #### 9.8.6 `nom check --comprehensive <file.nom>` subcommand
 
+**Status**: ⏳ PLANNED — `nom check --comprehensive` not yet in `nom-cli`.
+
 Run the full three-layer analysis outside the IDE. Reports:
 - Sentence-layer diagnostics (line + code + message).
 - Paragraph-layer diagnostics.
@@ -2120,6 +2360,8 @@ Exit code 0 if score ≥ threshold (default 0.95), exit 2 otherwise. CI-friendly
 
 #### 9.8.7 `nom build` enforcement
 
+**Status**: ⏳ PLANNED — comprehensiveness enforcement gate in `nom build` not yet added.
+
 Compile front-end runs graph-layer checks before any backend:
 - Zero orphan edges — required. Compile refuses if any exist.
 - All references resolved to specific hashes — required.
@@ -2128,6 +2370,8 @@ Compile front-end runs graph-layer checks before any backend:
 The author can opt into building an incomplete closure only with explicit acknowledgement. Default: strict comprehensiveness.
 
 #### 9.8.8 Intent understanding via skill routing (borrowed from everything-claude-code)
+
+**Status**: ❌ ASPIRATIONAL — skill routing at LSP level; requires Phase-9 LSP + Phase-5 skill entries in the dict.
 
 `C:\Users\trngh\Documents\everything-claude-code-main` ships 47 specialized agents and 156 skills with intent-routing infrastructure: agents dispatch by matching user intent to specialization; skills layer knowledge (base → language → domain); the homunculus pattern persists session learnings as `.instinct` files that feed back as new skills; quality gates enforce verification checkpoints.
 
@@ -2151,6 +2395,8 @@ Examples (seeded from ECC):
 
 #### 9.8.9 Why this is authoring-time, not compile-time
 
+**Status**: ✅ SHIPPED (principle) — design decision that comprehensiveness is an authoring-time quality gate, not a hard compile error; consistent with current `nom build manifest` which surfaces unresolved refs as warnings, not hard errors.
+
 The insight driving §9.8: **comprehensiveness is cheap to fix during authoring and expensive to fix during compile.** At authoring time:
 - Context is rich (IDE, AI, running resolver).
 - Iteration is fast (keystroke-level diagnostics).
@@ -2169,11 +2415,15 @@ Front-loading the work at authoring keeps compile-time deterministic and fast. T
 
 ## Phase 10 — Bootstrap + Retirement (the compiler is remade in Nom, Rust archives)
 
+**Status**: ⏳ PLANNED — requires Phases 5, 7, 8, 9 first; multi-quarter scope. Fixpoint prerequisites (LLVM pin, Rust toolchain pin) ✅ SHIPPED (commits `29f5f1d`/`bc89d8a`/`96267df`); debug-info determinism flags still ⏳ PLANNED. Canary tests exist (`compile_nom_to_bc_is_deterministic`, `compile_app_to_artifacts_is_deterministic`).
+
 **Goal reframed:** Phase 10 is not just "run the Nom-implemented compiler on itself" — it's the **permanent retirement of the Rust implementation**. The nom-compiler ceases to be a Rust workspace and becomes a hash closure of `.nomtu` entries drawn from the same dictionary every user of Nom draws from. The entire Rust source tree moves to `.archive/`.
 
 This is the practical consequence of the whole v2 design: if the dictionary is rich enough to host any app (via §5.5 scale properties and §5.11–5.12 corpus ingestion), it's rich enough to host the compiler itself.
 
 ### 10.1 Prerequisites — what must land first
+
+**Status**: ⏳ PLANNED — prerequisites list; none of the listed items (Phase-5 ingestion of Rust deps, Phase-7 parser, §5.13 bench baseline, §5.14 flow artifacts) yet exist.
 
 - **Phase 5 ingestion covers the Rust compiler's primitives.** The current Rust compiler depends on: sha256 (hashing), rusqlite (storage), tree-sitter (parsing foreign grammars), inkwell + llvm-sys (LLVM backend), clap (CLI), walkdir (FS traversal), serde (serialization), anyhow/thiserror (errors), ariadne (diagnostic rendering). Each crate gets ingested via §5.6 Shape-B runtime library corpus path. Their Nom equivalents become the primitives the rebuilt compiler draws from.
 - **Phase 7 parser-in-Nom is complete.** The parser — the single largest Rust component — is already Nom. Phase 10 rebuilds the surrounding stack (lexer, types, AST, planner, verifier, resolver, closure walker, LLVM codegen, CLI) in the same style.
@@ -2181,6 +2431,8 @@ This is the practical consequence of the whole v2 design: if the dictionary is r
 - **§5.14 flow artifacts for the Rust compiler pipeline exist.** Recorded traces of Rust-compiler builds on the reference test corpus become the fixture the Nom compiler's outputs are diffed against.
 
 ### 10.2 The new compiler is an ordinary app
+
+**Status**: ⏳ PLANNED — compiler-as-AppManifest design; `AppManifest` EntryKind shipped in `nom-types`; functional compiler rebuild: multi-quarter scope.
 
 The rebuilt compiler is a single `AppManifest` (from §5.12). Its closure contains:
 
@@ -2205,6 +2457,8 @@ There is no special treatment. `nom app build <compiler_hash>` materializes the 
 
 ### 10.3 The bootstrap + retirement protocol
 
+**Status**: ⏳ PLANNED — protocol described; prerequisite fixpoint infrastructure (toolchain pins ✅, debug-info strips ⏳) being built incrementally.
+
 **The Rust compiler, at maturity, is used to build the Nom compiler — and the act of a Nom compiler successfully rebuilding itself to semantic parity plus a fixpoint is the proof that Nom is a complete language.** This is the classical self-hosting rite; we're not inventing it, we're honoring it. A language that can describe its own compiler is a language that can describe anything that's been described in any language.
 
 The protocol has two parallel tracks, both of which are **real proof**, not one real plus one housekeeping:
@@ -2215,6 +2469,8 @@ The protocol has two parallel tracks, both of which are **real proof**, not one 
 Both tracks must be green before retirement. If forced to choose one, parity is the floor; fixpoint is the ceiling.
 
 #### 10.3.1 The fixpoint track — self-hosting proof via N-stage equality
+
+**Status**: ✅ SHIPPED (prerequisites and proof tuple spec) / ⏳ PLANNED (actual fixpoint attempt). Toolchain pin verified: `rust-toolchain.toml` at `channel = "1.94.1"` (commits `29f5f1d`/`bc89d8a`/`96267df`); LLVM 18 pinned via `inkwell` `llvm18-0` feature. Proof tuple `(s1_hash, s2_hash, s3_hash, fixpoint_at_date, compiler_manifest_hash, canonicalizer_version, rust_toolchain_channel, llvm_major_version)` spec updated 2026-04-13. Remaining prerequisites: `SOURCE_DATE_EPOCH`, `llvm.ident` strip, PDB/COFF timestamps zeroed, DIBuilder wiring or `-C debuginfo=0`. Actual fixpoint attempt: requires Phases 5+7 first.
 
 Three stages, each a binary:
 
@@ -2250,6 +2506,8 @@ Record all binary hashes + toolchain state as a signed tuple in the dict: `(s1_h
 
 #### 10.3.2 The parity track — regression guard on arbitrary programs
 
+**Status**: ⏳ PLANNED — parity track design; current test suite is the proto-corpus (`examples/run_lexer.nom`, `.nomx` fixtures, `concept_demo`, `agent_demo`). Full parity run requires Phase-7 Nom compiler (Stage-1) to exist.
+
 In parallel with the fixpoint work, both compilers run against the full reference test suite (a curated corpus of Nom programs — small programs, medium programs, the self-host lexer, the examples under `examples/`, any user-contributed benchmarks).
 
 - For every test program `P`, compile under Stage 0 (`rust-nomc`) → `ir_rust(P)`.
@@ -2260,6 +2518,8 @@ In parallel with the fixpoint work, both compilers run against the full referenc
 Parity track must remain green for 4+ weeks before Step 3 (default flip).
 
 #### 10.3.3 Five-step cutover (replacing the older description)
+
+**Status**: ⏳ PLANNED — cutover protocol; Step 1 (mature `rust-nomc`) not yet reached.
 
 Reversible through step 3.
 
@@ -2291,6 +2551,8 @@ A permanent edge lands in the dict: `SupersededBy(rust_compiler_crate_set → no
 
 #### 10.3.4 Why the fixpoint, specifically
 
+**Status**: ✅ SHIPPED (rationale) — same discipline as rustc/GHC/OCaml/Zig; parity-is-floor/fixpoint-is-ceiling framing added per adversarial review item #4 (commit `bc89d8a`).
+
 Other bootstrap designs settle for "compiles itself once" and declare victory. That's insufficient — a one-shot self-compile can mask non-deterministic output or a compiler bug that the earlier-stage compiler didn't exercise. The two-stage fixpoint (`s2 == s3`) forces the compiler to BE its own reproducible input, not just produce a working binary once.
 
 This matches what every serious self-hosting language does (GHC, rustc, OCaml, Zig, Chez Scheme). Nom inherits the discipline, not just the pattern.
@@ -2299,12 +2561,16 @@ This matches what every serious self-hosting language does (GHC, rustc, OCaml, Z
 
 ### 10.4 What becomes possible after retirement
 
+**Status**: ❌ ASPIRATIONAL — post-retirement capabilities; requires Phase 10 completion.
+
 - **Compiler evolution in the dict.** Contributions to the compiler become contributions to the dict. Fixing a codegen bug is `nom store add` of a new entry with `SupersededBy(old_codegen → fixed_codegen)`. No PRs to a Rust codebase.
 - **User-level compiler forks for free.** A user can declare `compiler_alias: my_fork = #hash_of_my_variant` in a project-local nomtu, test their fork on their own workload, and roll back by changing one line. The upstream compiler is not disturbed.
 - **The compiler composes with the AI authoring layer.** §9.2's Authoring Protocol can query the compiler's own closure: "what step in the LLVM codegen pipeline is slow for this input?" "which specialization is chosen and why?" — answers come from §5.14 flow artifacts + §5.13 benchmark data attached to the compiler's own nomtu.
 - **Cross-platform compiler ships itself.** The compiler's wasm specialization means `nom build` can run in a browser, targeting any platform the backend supports. The native specialization remains the default CLI.
 
 ### 10.5 What gets added to `.archive/` beyond the Rust compiler
+
+**Status**: ❌ ASPIRATIONAL — archive plan post-Phase 10; no archiving yet.
 
 Any pre-Nom artifact of significant size gets archived, not deleted, on the same convention:
 
@@ -2317,6 +2583,8 @@ The `.archive/` convention makes the project history legible without burdening t
 
 ### 10.6 Failure modes and rollback
 
+**Status**: ⏳ PLANNED — rollback protocol; reversible through Step 3 of §10.3.3.
+
 - **Parity never fully achieves.** If Step 2 stalls for more than 12 weeks without green parity, re-assess: either extend ingestion (§5.6) to cover the gap in Nom primitives, or identify a specific Rust-compiler feature that has no Nom equivalent yet and patch the Nom compiler. The rewrite does not proceed until parity is real.
 - **Specialization data sparse.** The Nom compiler's own specializations may lack benchmark coverage initially. Fall back under §5.15's `--best-effort` mode, flagging gaps. `nom bench` sweeps close them over time.
 - **A dict entry the compiler depends on gets deprecated.** `SupersededBy` chains route to current canonical. If a dict entry genuinely disappears (GC purged it), the compiler's closure is broken. Solution: the compiler's root AppManifest pins every critical dependency by hash, not by word, so lifecycle changes below the root don't affect it. Only an explicit compiler-root update pulls in the new versions.
@@ -2324,11 +2592,15 @@ The `.archive/` convention makes the project history legible without burdening t
 
 ### 10.7 The governing invariant
 
+**Status**: ✅ SHIPPED (principle) — invariant documented; enforcement: ⏳ PLANNED (post-Phase 10).
+
 **The compiler is an ordinary Nom app.** Not a privileged tool. Not a separate build system. Not a bootstrap problem with special solvers. It composes from the dict, specializes by benchmark data, emits flow artifacts, builds as an `AppManifest`. Its source is its hash. Its history is the SupersededBy subgraph rooted at `rust_compiler_crate_set`. The entire Rust era of Nom development lives in git history and `.archive/`, honored but not authoritative.
 
 **Phase 10 is still not terminal.** Phase 12 (closure-level specialization) continues forever after Phase 10 — the compiler, like every app, is something to keep specializing. Phases 11 (nomization) has already been absorbed into Phase 5 per the earlier refactor.
 
 ### 10.8 The media-codec FFI tier — scoped exception with CI gate
+
+**Status**: ✅ SHIPPED (policy) / ⏳ PLANNED (CI gate). Media-codec FFI-forever policy per §4.4.6 (Tier-2 pure-Nom rewrite removed). CI gate for "new non-codec Rust dep fails CI": ⏳ PLANNED.
 
 Phase 10 retires the Rust *compiler*. It does NOT retire a narrow, declared class of linked native code: the media codecs and pixel/audio/geometry math kernels described in §5.18.2. This subsection makes the exception explicit, bounded, and CI-enforceable so it cannot silently expand.
 
@@ -2359,9 +2631,13 @@ This section preserves invariant #13 ("compiler is an ordinary Nom app") by decl
 
 ## Phase 11 — Nomization (post-bootstrap, ongoing / multi-month)
 
+**Status**: ❌ ASPIRATIONAL — post-Phase 10 (bootstrap required); also partially superseded by §4.4.6 (body is `.bc`, not `body_nom`). The "nomization" goal reframes as ensuring all dict entries have complete compiled artifacts, not Nom-source equivalents.
+
 **Goal:** Every `.nomtu` entry's `body_nom` becomes the canonical form. The original `body` (source in the ecosystem language) is retired — stored null or dropped — once the Nom translation is provably equivalent. The dict becomes fully native over time.
 
 ### 11.1 Why this has to come after the language is mature
+
+**Status**: ❌ ASPIRATIONAL — rationale for post-bootstrap nomization.
 
 Phase 5 stores both `body` (original) and `body_nom` (best-effort translation) with a `translation_score` because early translations are imperfect. The dict **cannot** drop the original until:
 - The language is stable (Phases 4, 7 done).
@@ -2371,6 +2647,8 @@ Phase 5 stores both `body` (original) and `body_nom` (best-effort translation) w
 Trying to nomize prematurely risks losing information. This is why it's Phase 11, not earlier.
 
 ### 11.2 The nomization loop
+
+**Status**: ❌ ASPIRATIONAL — requires Phase 10 bootstrap.
 
 For each entry with `translation_score < 1.0`, run periodically (continuous background task or cron):
 
@@ -2383,15 +2661,21 @@ Per-ecosystem ordering (best semantic fit first): Rust → OCaml/F# → Go → T
 
 ### 11.3 Disk impact (concrete)
 
+**Status**: ❌ ASPIRATIONAL — projections; no actual nomization data.
+
 `data/nomdict.db` is currently ~2 GB of ingested atoms. Most of that bytes-volume is `body` strings (original source). Full nomization collapses two bodies into one — expected 40–60% size reduction. On a 100× ingestion corpus, the difference is terabyte-scale.
 
 ### 11.4 Verification
+
+**Status**: ❌ ASPIRATIONAL — verification discipline; requires Phase 10.
 
 - A corpus entry pool reaches `body: null`, `translation_score: 1.0` for ≥50% of its entries within the first milestone.
 - Closures built from nomized-only entries pass all the original property tests.
 - `data/nomdict.db` size shrinks monotonically with nomization progress.
 
 ### 11.5 Size budget
+
+**Status**: ❌ ASPIRATIONAL — budget estimates for post-Phase 10 work.
 
 - Translator improvements across `nom-extract/src/translate/*`. Ongoing; no single bound.
 - Property-test harness: ~400 LOC, shared with ADOPT-1 infra.
@@ -2400,6 +2684,8 @@ Per-ecosystem ordering (best semantic fit first): Rust → OCaml/F# → Go → T
 
 ### 11.6 Maps to
 
+**Status**: ❌ ASPIRATIONAL — research mappings for Phase 11.
+
 - **ADOPT-1** (property-based tests from contracts) — this phase is its ultimate consumer.
 - **AVOID-9** (no claim without implementation) — `translation_score` is the honest marker of what works.
 
@@ -2407,15 +2693,21 @@ Per-ecosystem ordering (best semantic fit first): Rust → OCaml/F# → Go → T
 
 ## Phase 12 — Closure-level specialization (value-based optimization)
 
+**Status**: ❌ ASPIRATIONAL — requires Phase 11 nomization (post-Phase 10 bootstrap); multi-quarter scope. The Phase-4 B3 "hash-rewrite pass" (commit `0c99856`) is an early precursor to closure walking, not the Phase-12 specialization engine.
+
 **Goal:** Given a hash closure and concrete entry-point values, emit a specialized, minimal binary containing only the code actually executed. The unit is the whole closure, not a single compilation unit — this is whole-program optimization elevated to content-addressed scale.
 
 This is *the* "actually value code" stage — we keep only what the program in practice runs.
 
 ### 12.1 Why after Phase 11
 
+**Status**: ❌ ASPIRATIONAL — dependency chain explanation.
+
 Phase 12 reads `body_nom` to reason about the program. If `body_nom` is partial or low-score, specialization can't see through foreign-language semantics. Once Phase 11 nomization is ≥90% complete on the closure being built, Phase 12 gets maximum leverage.
 
 ### 12.2 Transformations (bottom-up, standard but closure-scoped)
+
+**Status**: ❌ ASPIRATIONAL — transformation list; none implemented.
 
 Applied during `nom build <hash>` after closure materialization:
 
@@ -2433,11 +2725,15 @@ Applied during `nom build <hash>` after closure materialization:
 
 ### 12.3 Scale outcome
 
+**Status**: ❌ ASPIRATIONAL — 70–95% binary reduction projection; no benchmarks yet.
+
 Binary-size reduction target vs. unspecialized closure: **70–95%**, comparable to GraalVM native-image or Rust `--release + LTO + strip`. A Node-app-class closure of ~10 MB of reachable `body_nom` specializes to a ~500 KB–1 MB binary.
 
 This is where the "enough, no less no more" philosophy becomes quantitative. A typical Node app today ships 100–300 MB of `node_modules` of which <5% is executed. Nom specializes down to exactly what runs.
 
 ### 12.4 Deliverables
+
+**Status**: ❌ ASPIRATIONAL — deliverables list for Phase 12.
 
 - `nom-spec` crate — the closure optimizer. Input: closure DAG + entry-point value-fingerprint. Output: specialized DAG.
 - Integration with `nom build`: `nom build --specialize <hash>` (default on for release builds, off for debug).
@@ -2447,17 +2743,23 @@ This is where the "enough, no less no more" philosophy becomes quantitative. A t
 
 ### 12.5 Verification
 
+**Status**: ❌ ASPIRATIONAL — verification criteria including ≥70% binary reduction gate.
+
 - Specialized binaries are observationally equivalent to unspecialized binaries on the test inputs used for specialization.
 - Size reduction target met on the reference corpus.
 - Re-specialization with the same fingerprint is deterministic (cached).
 
 ### 12.6 Size budget
 
+**Status**: ❌ ASPIRATIONAL — budget estimate for Phase 12.
+
 - ~2500 LOC total for nom-spec: DCE walker (~300), monomorphization (~600), const-prop (~500), partial eval (~800), effect-aware inlining (~300).
 - Schema: one new table for specialized-variant cache keyed on `(original_hash, value_fingerprint)`.
 - Zero new Rust deps.
 
 ### 12.7 Maps to
+
+**Status**: ❌ ASPIRATIONAL — research mappings for Phase 12.
 
 - **C's zero-cost composition** (systems-lang takeaway #2) realized at closure scale.
 - **Rust monomorphization** lifted to cross-package scope (not possible in Rust because packages aren't content-addressed).
@@ -2467,6 +2769,8 @@ This is where the "enough, no less no more" philosophy becomes quantitative. A t
 ---
 
 ## Appendix A — Rust-side cleanup (half-day task, not a roadmap phase)
+
+**Status**: ⏳ PLANNED (partially done) — store.rs split completed (commit `fa1ba8a`/`afc6228`). Remaining: unused dep audit, tree-sitter grammar feature-gating, `stdlib/prelude.nom` embedding, lexer.nom:682 FatArrow fix.
 
 v1's "Phase 4 minimalism" was dep-trimming of the Nom compiler's own Cargo.lock. That's valuable but doesn't belong in the forward roadmap — it's a one-time chore.
 
@@ -2482,6 +2786,8 @@ Do this any time. Not blocking on anything. ~1 day of work.
 ---
 
 ## Governing invariants
+
+**Status**: ✅ SHIPPED (invariants 1–10 as design principles) / ⏳ PLANNED (full enforcement). Invariants 15/16/17 (§4.4.6) additionally shipped in `nom-types/src/lib.rs`.
 
 1. **One binary.** `nom` is the whole toolchain (AVOID-8).
 2. **No feature without implementation.** SYNTAX.md never describes something that doesn't compile (AVOID-9).
@@ -2506,6 +2812,8 @@ Do this any time. Not blocking on anything. ~1 day of work.
 ---
 
 ## Cumulative horizon (honest restatement 2026-04-12)
+
+**Status**: ⏳ PLANNED — horizon estimates; current date 2026-04-13, Phase 4 complete, Phase 5 scaffolding done. Phase 5.0 core ingestion not yet started.
 
 An earlier version of this table claimed "~70–90 weeks post-Phase 3" with Phase 5 at 4–6 weeks. That estimate was written before Phase 5 absorbed §5.11–§5.19 (UX, apps, bench, flow, multi-platform optimization, media, mass corpus, aesthetic programming, AI-compiler loop). The earlier number is therefore wrong by roughly an order of magnitude; keeping it would misplan the whole project. This section is the corrected estimate.
 
