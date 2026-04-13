@@ -1128,6 +1128,17 @@ pub struct LayeredDreamReport {
     pub child_reports: Vec<LayeredDreamReport>,
     /// Empty in this wedge (M5a); populated by tier-3 Pareto selection in M5c.
     pub pareto_front: Vec<String>,
+    /// MECE collisions at this concept's composition layer (M7c).
+    /// Rendered as `"axis=<axis> [<concept1>, <concept2>, ...]"` (concepts sorted).
+    /// Empty when tier == App (no parent), or when called without a required-axes
+    /// registry (backward-compat path).
+    #[serde(default)]
+    pub me_collisions: Vec<String>,
+    /// CE violations at this concept's composition layer (M7c).
+    /// One string per unmet required axis (forwarded from `MeceReport.ce_unmet`).
+    /// Empty when `required_axes` was not provided.
+    #[serde(default)]
+    pub ce_unmet: Vec<String>,
 }
 
 /// Compute a `LayeredDreamReport` at the App tier. Wraps the existing
@@ -1144,6 +1155,8 @@ pub fn layered_dream_app(
         leaf,
         child_reports: Vec::new(),
         pareto_front: Vec::new(),
+        me_collisions: Vec::new(),
+        ce_unmet: Vec::new(),
     }
 }
 
@@ -1194,6 +1207,8 @@ pub fn layered_dream_concept(
         leaf,
         child_reports: Vec::new(),
         pareto_front: Vec::new(),
+        me_collisions: Vec::new(),
+        ce_unmet: Vec::new(),
     }
 }
 
@@ -1242,6 +1257,7 @@ pub fn layered_dream_app_recursive(
     manifest: &AppManifest,
     dict: &nom_dict::NomDict,
     graph: &nom_concept::ConceptGraph,
+    required_axes: &[(String, String)],
 ) -> LayeredDreamReport {
     let leaf = dream_report(manifest, dict);
 
@@ -1257,15 +1273,18 @@ pub fn layered_dream_app_recursive(
 
     let child_reports: Vec<LayeredDreamReport> = children
         .into_iter()
-        .map(|child| layered_dream_concept_recursive(&child, dict, graph, &mut seen))
+        .map(|child| layered_dream_concept_recursive(&child, dict, graph, &mut seen, required_axes))
         .collect();
 
+    // App tier has no parent — me_collisions / ce_unmet stay empty at root.
     let mut report = LayeredDreamReport {
         tier: DreamTier::App,
         label: manifest.name.clone(),
         leaf,
         child_reports,
         pareto_front: Vec::new(),
+        me_collisions: Vec::new(),
+        ce_unmet: Vec::new(),
     };
     populate_pareto_fronts(&mut report);
     report
@@ -1283,6 +1302,7 @@ pub fn layered_dream_concept_recursive(
     dict: &nom_dict::NomDict,
     graph: &nom_concept::ConceptGraph,
     seen: &mut std::collections::HashSet<String>,
+    required_axes: &[(String, String)],
 ) -> LayeredDreamReport {
     // Cycle guard: if already visited, return a zero-score stub.
     if seen.contains(concept_word) {
@@ -1305,6 +1325,8 @@ pub fn layered_dream_concept_recursive(
             leaf: stub_leaf,
             child_reports: Vec::new(),
             pareto_front: Vec::new(),
+            me_collisions: Vec::new(),
+            ce_unmet: Vec::new(),
         };
     }
 
@@ -1313,17 +1335,54 @@ pub fn layered_dream_concept_recursive(
 
     // Compute this concept's own leaf score (dict-only path).
     let leaf_report = layered_dream_concept(concept_word, dict);
-    let leaf = leaf_report.leaf;
+    let mut leaf = leaf_report.leaf;
 
-    // Find direct children from the graph.
-    let children = match graph.concepts.iter().find(|c| c.name == concept_word) {
-        Some(decl) => direct_child_concepts(decl),
-        None => Vec::new(),
+    // Find the parent ConceptDecl and direct children from the graph.
+    let maybe_parent = graph.concepts.iter().find(|c| c.name == concept_word);
+    let (children_names, me_collisions, ce_unmet) = match maybe_parent {
+        Some(parent_decl) => {
+            let child_names = direct_child_concepts(parent_decl);
+            // Collect child ConceptDecl refs for MECE check.
+            let child_decls: Vec<&nom_concept::ConceptDecl> = child_names
+                .iter()
+                .filter_map(|name| graph.concepts.iter().find(|c| &c.name == name))
+                .collect();
+            let mece = nom_concept::check_mece_with_required_axes(
+                parent_decl,
+                &child_decls,
+                required_axes,
+            );
+            // Format me_collisions: "axis=<axis> [<concept1>, <concept2>, ...]" sorted.
+            let formatted_me: Vec<String> = mece
+                .me_collisions
+                .iter()
+                .map(|col| {
+                    let mut sources: Vec<&str> = col
+                        .bindings
+                        .iter()
+                        .map(|b| b.source_concept.as_str())
+                        .collect();
+                    sources.sort_unstable();
+                    sources.dedup();
+                    format!("axis={} [{}]", col.axis, sources.join(", "))
+                })
+                .collect();
+            (child_names, formatted_me, mece.ce_unmet)
+        }
+        None => (Vec::new(), Vec::new(), Vec::new()),
     };
 
-    let child_reports: Vec<LayeredDreamReport> = children
+    // Penalize the leaf score for MECE violations.
+    let violation_count = (me_collisions.len() + ce_unmet.len()) as u32;
+    if violation_count > 0 {
+        let penalty = violation_count * 10;
+        leaf.app_score = leaf.app_score.saturating_sub(penalty);
+        leaf.is_epic = leaf.app_score >= leaf.score_threshold;
+    }
+
+    let child_reports: Vec<LayeredDreamReport> = children_names
         .into_iter()
-        .map(|child| layered_dream_concept_recursive(&child, dict, graph, seen))
+        .map(|child| layered_dream_concept_recursive(&child, dict, graph, seen, required_axes))
         .collect();
 
     let mut report = LayeredDreamReport {
@@ -1332,6 +1391,8 @@ pub fn layered_dream_concept_recursive(
         leaf,
         child_reports,
         pareto_front: Vec::new(),
+        me_collisions,
+        ce_unmet,
     };
     populate_pareto_fronts(&mut report);
     report
@@ -2255,7 +2316,7 @@ mod tests {
             media_assets: vec![],
             settings: serde_json::Value::Null,
         };
-        let recursive = layered_dream_app_recursive(&manifest, &dict, &graph);
+        let recursive = layered_dream_app_recursive(&manifest, &dict, &graph, &[]);
         let flat = layered_dream_app(&manifest, &dict);
 
         assert_eq!(recursive.tier, DreamTier::App);
@@ -2301,7 +2362,7 @@ mod tests {
         };
 
         let mut seen = std::collections::HashSet::new();
-        let report = layered_dream_concept_recursive("concept_a", &dict, &graph, &mut seen);
+        let report = layered_dream_concept_recursive("concept_a", &dict, &graph, &mut seen, &[]);
 
         assert_eq!(report.tier, DreamTier::Concept);
         assert_eq!(report.label, "concept_a");
@@ -2352,7 +2413,7 @@ mod tests {
         };
 
         let mut seen = std::collections::HashSet::new();
-        let report = layered_dream_concept_recursive("cycle_a", &dict, &graph, &mut seen);
+        let report = layered_dream_concept_recursive("cycle_a", &dict, &graph, &mut seen, &[]);
 
         assert_eq!(report.label, "cycle_a");
         assert_eq!(report.child_reports.len(), 1);
@@ -2394,6 +2455,8 @@ mod tests {
             leaf: make_leaf(score, complete, partial, closure_size),
             child_reports: vec![],
             pareto_front: vec![],
+            me_collisions: vec![],
+            ce_unmet: vec![],
         }
     }
 
@@ -2487,7 +2550,7 @@ mod tests {
 
         // Use the recursive variant which calls populate_pareto_fronts internally.
         let mut seen = std::collections::HashSet::new();
-        let report = layered_dream_concept_recursive("parent_concept", &dict, &graph, &mut seen);
+        let report = layered_dream_concept_recursive("parent_concept", &dict, &graph, &mut seen, &[]);
 
         // Parent has 2 children → pareto_front.len() <= 2 (may be 1 if one dominates).
         assert!(
@@ -2503,6 +2566,254 @@ mod tests {
             child_x.pareto_front.len(), 1,
             "child_x has 1 child (grandchild_g), its pareto_front must have 1 entry, got {:?}",
             child_x.pareto_front
+        );
+    }
+
+    // ── M7c: MECE-in-dream tests ──────────────────────────────────────────────
+
+    /// ME collision: parent + child both declare the same axis → me_collisions.len() == 1
+    /// and the penalized leaf.app_score is strictly less than without collision.
+    #[test]
+    fn layered_dream_concept_recursive_me_collision_penalizes_score() {
+        use nom_dict::NomDict;
+        use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+
+        // Seed the dict with an entry for "fast_parent" so that
+        // layered_dream_concept produces a non-zero base score.
+        let seed_entry = Entry {
+            id: "fp_seed_id".to_string(),
+            word: "fast_parent".to_string(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".to_string(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&seed_entry).unwrap();
+
+        // Both parent and child declare "speed" → ME collision on "speed".
+        let child = ConceptDecl {
+            name: "fast_child".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec!["speed".to_string()],
+        };
+        let parent = ConceptDecl {
+            name: "fast_parent".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "fast_child".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec!["speed".to_string()],
+        };
+        let graph = ConceptGraph {
+            concepts: vec![child, parent],
+            modules: vec![],
+        };
+
+        // With collision.
+        let mut seen_with = std::collections::HashSet::new();
+        let report_with = layered_dream_concept_recursive(
+            "fast_parent", &dict, &graph, &mut seen_with, &[],
+        );
+
+        // Without collision: parent has no objectives.
+        let parent_no_obj = ConceptDecl {
+            name: "fast_parent".to_string(),
+            intent: String::new(),
+            index: vec![IndexClause::Extends {
+                base: "fast_child".to_string(),
+                change_set: ChangeSet::default(),
+            }],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![], // no objectives → no collision
+        };
+        let child_no_collision = ConceptDecl {
+            name: "fast_child".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec!["speed".to_string()],
+        };
+        let graph_no_collision = ConceptGraph {
+            concepts: vec![child_no_collision, parent_no_obj],
+            modules: vec![],
+        };
+        let mut seen_without = std::collections::HashSet::new();
+        let report_without = layered_dream_concept_recursive(
+            "fast_parent", &dict, &graph_no_collision, &mut seen_without, &[],
+        );
+
+        assert_eq!(
+            report_with.me_collisions.len(), 1,
+            "expected 1 ME collision for shared 'speed' axis, got {:?}",
+            report_with.me_collisions
+        );
+        assert!(
+            report_with.leaf.app_score < report_without.leaf.app_score,
+            "score with collision ({}) must be strictly less than without ({})",
+            report_with.leaf.app_score, report_without.leaf.app_score
+        );
+        // Even if pre-penalty score would have been >= 95, the collision must flip is_epic.
+        assert!(
+            !report_with.leaf.is_epic,
+            "concept with ME collision must not be epic (score={})",
+            report_with.leaf.app_score
+        );
+    }
+
+    /// CE unmet: required_axes includes ("safety", "at_least_one") but neither
+    /// parent nor children declare "safety" → ce_unmet.len() == 1 and score is penalized.
+    #[test]
+    fn layered_dream_concept_recursive_ce_unmet_penalizes_score() {
+        use nom_dict::NomDict;
+        use nom_concept::{ConceptDecl, ConceptGraph};
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus};
+
+        let dict = NomDict::open_in_memory().unwrap();
+
+        // Seed the dict with an entry for "unsafe_concept" so the base score > 0.
+        let seed_entry = Entry {
+            id: "uc_seed_id".to_string(),
+            word: "unsafe_concept".to_string(),
+            variant: None,
+            kind: EntryKind::Function,
+            language: "nom".to_string(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: Contract::default(),
+            status: EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "t".into(),
+            updated_at: None,
+        };
+        dict.upsert_entry(&seed_entry).unwrap();
+
+        let parent = ConceptDecl {
+            name: "unsafe_concept".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec!["speed".to_string()], // no safety
+        };
+        let graph = ConceptGraph { concepts: vec![parent], modules: vec![] };
+
+        let required_axes = vec![("safety".to_string(), "at_least_one".to_string())];
+        let mut seen_with = std::collections::HashSet::new();
+        let report_with = layered_dream_concept_recursive(
+            "unsafe_concept", &dict, &graph, &mut seen_with, &required_axes,
+        );
+
+        let mut seen_without = std::collections::HashSet::new();
+        let report_without = layered_dream_concept_recursive(
+            "unsafe_concept", &dict, &graph, &mut seen_without, &[],
+        );
+
+        assert_eq!(
+            report_with.ce_unmet.len(), 1,
+            "expected 1 CE violation for missing 'safety' axis, got {:?}",
+            report_with.ce_unmet
+        );
+        assert!(
+            report_with.ce_unmet[0].contains("safety"),
+            "ce_unmet message must name the axis, got: {}",
+            report_with.ce_unmet[0]
+        );
+        assert!(
+            report_with.leaf.app_score < report_without.leaf.app_score,
+            "score with CE violation ({}) must be strictly less than without ({})",
+            report_with.leaf.app_score, report_without.leaf.app_score
+        );
+    }
+
+    /// Empty required_axes → ce_unmet is empty and score is not penalized by CE.
+    #[test]
+    fn layered_dream_concept_recursive_empty_required_axes_no_ce_effect() {
+        use nom_dict::NomDict;
+        use nom_concept::{ConceptDecl, ConceptGraph};
+
+        let dict = NomDict::open_in_memory().unwrap();
+
+        let parent = ConceptDecl {
+            name: "any_concept".to_string(),
+            intent: String::new(),
+            index: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec!["speed".to_string()],
+        };
+        let graph = ConceptGraph { concepts: vec![parent], modules: vec![] };
+
+        let mut seen = std::collections::HashSet::new();
+        let report = layered_dream_concept_recursive(
+            "any_concept", &dict, &graph, &mut seen, &[],
+        );
+
+        assert!(
+            report.ce_unmet.is_empty(),
+            "empty required_axes must produce empty ce_unmet, got {:?}",
+            report.ce_unmet
+        );
+        // me_collisions must also be empty (single concept, no children).
+        assert!(
+            report.me_collisions.is_empty(),
+            "no children → no ME collisions, got {:?}",
+            report.me_collisions
+        );
+    }
+
+    /// Unknown concept (not in graph) → returns report with empty me_collisions / ce_unmet.
+    #[test]
+    fn layered_dream_concept_recursive_unknown_concept_returns_empty_mece() {
+        use nom_dict::NomDict;
+        use nom_concept::ConceptGraph;
+
+        let dict = NomDict::open_in_memory().unwrap();
+        let graph = ConceptGraph { concepts: vec![], modules: vec![] };
+        let required_axes = vec![("safety".to_string(), "at_least_one".to_string())];
+
+        let mut seen = std::collections::HashSet::new();
+        let report = layered_dream_concept_recursive(
+            "totally_unknown_concept_xyz", &dict, &graph, &mut seen, &required_axes,
+        );
+
+        assert!(
+            report.me_collisions.is_empty(),
+            "unknown concept must have empty me_collisions, got {:?}",
+            report.me_collisions
+        );
+        assert!(
+            report.ce_unmet.is_empty(),
+            "unknown concept must have empty ce_unmet, got {:?}",
+            report.ce_unmet
         );
     }
 }

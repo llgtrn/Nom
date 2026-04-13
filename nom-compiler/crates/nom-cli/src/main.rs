@@ -1257,13 +1257,27 @@ fn cmd_app_dream(
         None
     };
 
+    // Fetch the required-axes registry for the repo when --repo-id is provided.
+    // Used by the recursive variants for M7c MECE CE-check.
+    let required_axes: Vec<(String, String)> = if let Some(rid) = repo_id {
+        dict.list_required_axes(rid, "concept")
+            .unwrap_or_default()
+            .into_iter()
+            .map(|row| (row.axis, row.cardinality))
+            .collect()
+    } else {
+        Vec::new()
+    };
+
     match dream_tier {
         nom_app::DreamTier::Concept => {
             let word = target_id.unwrap_or("");
             let layered = match &maybe_graph {
                 Some(graph) => {
                     let mut seen = std::collections::HashSet::new();
-                    nom_app::layered_dream_concept_recursive(word, &dict, graph, &mut seen)
+                    nom_app::layered_dream_concept_recursive(
+                        word, &dict, graph, &mut seen, &required_axes,
+                    )
                 }
                 None => nom_app::layered_dream_concept(word, &dict),
             };
@@ -1293,6 +1307,24 @@ fn cmd_app_dream(
                         epic_count,
                         below
                     );
+                    for child in &layered.child_reports {
+                        let mece_count = child.me_collisions.len() + child.ce_unmet.len();
+                        if mece_count > 0 {
+                            println!(
+                                "  ↪ {}: score {}/{} — {} MECE violation(s)",
+                                child.label,
+                                child.leaf.app_score,
+                                child.leaf.score_threshold,
+                                mece_count
+                            );
+                            for me in &child.me_collisions {
+                                println!("      ME: {me}");
+                            }
+                            for ce in &child.ce_unmet {
+                                println!("      CE: {ce}");
+                            }
+                        }
+                    }
                 }
             }
             if !json && show_pareto_front {
@@ -1319,7 +1351,9 @@ fn cmd_app_dream(
                 settings: serde_json::Value::Null,
             };
             let layered = match &maybe_graph {
-                Some(graph) => nom_app::layered_dream_app_recursive(&manifest, &dict, graph),
+                Some(graph) => nom_app::layered_dream_app_recursive(
+                    &manifest, &dict, graph, &required_axes,
+                ),
                 None => nom_app::layered_dream_app(&manifest, &dict),
             };
             let report = &layered.leaf;
@@ -1357,6 +1391,24 @@ fn cmd_app_dream(
                         epic_count,
                         below
                     );
+                    for child in &layered.child_reports {
+                        let mece_count = child.me_collisions.len() + child.ce_unmet.len();
+                        if mece_count > 0 {
+                            println!(
+                                "  ↪ {}: score {}/{} — {} MECE violation(s)",
+                                child.label,
+                                child.leaf.app_score,
+                                child.leaf.score_threshold,
+                                mece_count
+                            );
+                            for me in &child.me_collisions {
+                                println!("      ME: {me}");
+                            }
+                            for ce in &child.ce_unmet {
+                                println!("      CE: {ce}");
+                            }
+                        }
+                    }
                 }
                 println!();
                 println!("{}", report.next_instruction);

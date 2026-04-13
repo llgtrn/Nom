@@ -145,6 +145,25 @@ mod tests {
             child_reports.is_empty(),
             "child_reports must be empty for an unknown repo (empty graph), got: {child_reports:?}"
         );
+        // M7c: root report must carry me_collisions and ce_unmet fields (both empty at root).
+        assert!(
+            v["me_collisions"].is_array(),
+            "JSON must contain 'me_collisions' array (M7c), got: {v}"
+        );
+        assert!(
+            v["ce_unmet"].is_array(),
+            "JSON must contain 'ce_unmet' array (M7c), got: {v}"
+        );
+        assert!(
+            v["me_collisions"].as_array().unwrap().is_empty(),
+            "root me_collisions must be empty (no parent for app tier), got: {:?}",
+            v["me_collisions"]
+        );
+        assert!(
+            v["ce_unmet"].as_array().unwrap().is_empty(),
+            "root ce_unmet must be empty (no parent for app tier), got: {:?}",
+            v["ce_unmet"]
+        );
         // stderr should be clean (no error for an unknown repo that returns an empty graph).
         assert!(
             stderr.is_empty(),
