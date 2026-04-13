@@ -235,7 +235,7 @@ Index `4140126`, stats: **251 files, 5947 nodes, 13743 edges, 300 processes, 226
 
 1. **M3b-full: UTS #39 confusables.txt load.** Current: `is_confusable` ships with ~30 baked pairs (Cyrillic а, Greek α vs Latin a) plus NFC normalization. Missing: the **full official Unicode confusables table** (~6500 pairs). Blocked on network fetch (user todo #3). One day once data available; codec + test scaffolding already in [nom-locale/src/lib.rs](../../nom-compiler/crates/nom-locale/src/lib.rs).
 
-2. **M7b: seed standard axes.** `required_axes` registry exists (M7a); `correctness / safety / performance / dependency / documentation` default set is not baked into `builtin_packs`-equivalent. Days. Trivial without M6.
+2. **M7b: seed standard axes** ✅ SHIPPED 2026-04-14. `NomDict::seed_standard_axes(repo_id)` registers the canonical `correctness / safety / performance / dependency / documentation` set at app-scope with `at_least_one` cardinality; idempotent via INSERT OR REPLACE. `nom corpus seed-standard-axes --repo-id <id>` CLI subcommand ships alongside. 3 passing tests in `nom-dict`: canonical-five-axes, idempotent, scoped-per-repo-id. No M6 dep — authors can seed defaults today.
 
 3. **Doc-reality gap follow-ups** (from the "Doc/reality gaps" section below): doc 04 §5.17 `nom-translate` re-wording + risk #10 `nom-graph` ownership + doc 03 M10b determinism citation. Half-day.
 

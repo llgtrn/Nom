@@ -261,6 +261,51 @@ pub fn cmd_corpus_register_axis(
     }
 }
 
+// ── cmd_corpus_seed_standard_axes (M7b) ───────────────────────────────────────
+
+/// Seed the canonical five required axes (correctness, safety, performance,
+/// dependency, documentation) at app scope for the given `repo_id`.
+/// Idempotent — replays without duplication.
+pub fn cmd_corpus_seed_standard_axes(repo_id: &str, dict: &Path, json: bool) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    match d.seed_standard_axes(repo_id) {
+        Ok(seeded) => {
+            if json {
+                let payload: Vec<_> = seeded
+                    .iter()
+                    .map(|(s, a, c)| {
+                        serde_json::json!({"scope": s, "axis": a, "cardinality": c})
+                    })
+                    .collect();
+                println!(
+                    "{}",
+                    serde_json::to_string_pretty(
+                        &serde_json::json!({"seeded": payload, "repo_id": repo_id})
+                    )
+                    .unwrap_or_default()
+                );
+            } else {
+                println!("seeded {} standard axes for repo_id={repo_id}:", seeded.len());
+                for (scope, axis, cardinality) in &seeded {
+                    println!("  scope={scope} axis={axis} cardinality={cardinality}");
+                }
+            }
+            0
+        }
+        Err(e) => {
+            eprintln!("nom: seed-standard-axes error: {e}");
+            1
+        }
+    }
+}
+
 // ── cmd_corpus_list_axes ──────────────────────────────────────────────────────
 
 pub fn cmd_corpus_list_axes(scope: &str, repo_id: &str, dict: &Path) -> i32 {

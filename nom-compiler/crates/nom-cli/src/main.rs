@@ -714,6 +714,21 @@ enum CorpusCmd {
         #[arg(long, default_value = "nomdict.db")]
         dict: PathBuf,
     },
+
+    /// Seed the canonical M7b "standard required axes" set for a repo:
+    /// correctness, safety, performance, dependency, documentation — all
+    /// at app-scope with `at_least_one` cardinality. Idempotent.
+    SeedStandardAxes {
+        /// Repository identifier (default: "default").
+        #[arg(long, default_value = "default")]
+        repo_id: String,
+        /// Path to the nomdict database.
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Emit JSON for scripting.
+        #[arg(long)]
+        json: bool,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1154,6 +1169,9 @@ fn main() {
             }
             CorpusCmd::ListAxes { scope, repo_id, dict } => {
                 corpus::cmd_corpus_list_axes(&scope, &repo_id, &dict)
+            }
+            CorpusCmd::SeedStandardAxes { repo_id, dict, json } => {
+                corpus::cmd_corpus_seed_standard_axes(&repo_id, &dict, json)
             }
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),

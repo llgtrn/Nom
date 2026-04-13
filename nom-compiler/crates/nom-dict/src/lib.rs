@@ -1213,6 +1213,39 @@ impl NomDict {
         Ok(n > 0)
     }
 
+    /// Seed the M7b canonical "standard required axes" set into this
+    /// dict's `required_axes` registry for the given `repo_id`. Idempotent
+    /// (uses `register_required_axis`'s INSERT OR REPLACE semantics); safe
+    /// to call repeatedly.
+    ///
+    /// The five axes — `correctness`, `safety`, `performance`,
+    /// `dependency`, `documentation` — are the default MECE set for any
+    /// app-scope concept. Authors can override by calling
+    /// `unregister_required_axis` before their own `register_required_axis`,
+    /// or by using a different `repo_id`.
+    ///
+    /// Returns the list of `(scope, axis, cardinality)` tuples that were
+    /// written so the caller can display what landed.
+    pub fn seed_standard_axes(
+        &self,
+        repo_id: &str,
+    ) -> rusqlite::Result<Vec<(String, String, String)>> {
+        const STANDARD: &[(&str, &str, &str)] = &[
+            // (scope, axis, cardinality)
+            ("app", "correctness", "at_least_one"),
+            ("app", "safety", "at_least_one"),
+            ("app", "performance", "at_least_one"),
+            ("app", "dependency", "at_least_one"),
+            ("app", "documentation", "at_least_one"),
+        ];
+        let mut seeded = Vec::with_capacity(STANDARD.len());
+        for (scope, axis, cardinality) in STANDARD {
+            self.register_required_axis(repo_id, scope, axis, cardinality)?;
+            seeded.push((scope.to_string(), axis.to_string(), cardinality.to_string()));
+        }
+        Ok(seeded)
+    }
+
     // ── words_v2 CRUD (DB2-v2 — doc 08 §2.2) ──────────────────────────
 
     /// Insert or replace a `words_v2` row. Idempotent: on conflict
@@ -2442,5 +2475,52 @@ mod tests {
 
         let deleted3 = d.unregister_required_axis("repo-z", "app", "performance").unwrap();
         assert!(!deleted3, "second delete must return false");
+    }
+
+    #[test]
+    fn seed_standard_axes_writes_canonical_five_axes() {
+        let d = NomDict::open_in_memory().unwrap();
+        let seeded = d.seed_standard_axes("app-seed").unwrap();
+
+        // Five axes: correctness, safety, performance, dependency, documentation.
+        assert_eq!(seeded.len(), 5, "must seed exactly 5 axes");
+
+        let axes: std::collections::HashSet<&str> =
+            seeded.iter().map(|(_, a, _)| a.as_str()).collect();
+        for expected in
+            ["correctness", "safety", "performance", "dependency", "documentation"]
+        {
+            assert!(axes.contains(expected), "missing {expected} in seeded set");
+        }
+
+        // All at app-scope with at_least_one cardinality.
+        for (scope, _, card) in &seeded {
+            assert_eq!(scope, "app");
+            assert_eq!(card, "at_least_one");
+        }
+
+        // Rows visible via list_required_axes.
+        let listed = d.list_required_axes("app-seed", "app").unwrap();
+        assert_eq!(listed.len(), 5);
+    }
+
+    #[test]
+    fn seed_standard_axes_is_idempotent() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.seed_standard_axes("app-idem").unwrap();
+        d.seed_standard_axes("app-idem").unwrap();
+        d.seed_standard_axes("app-idem").unwrap();
+        let rows = d.list_required_axes("app-idem", "app").unwrap();
+        assert_eq!(rows.len(), 5, "must stay at 5 after repeated seeds");
+    }
+
+    #[test]
+    fn seed_standard_axes_scoped_per_repo_id() {
+        let d = NomDict::open_in_memory().unwrap();
+        d.seed_standard_axes("alpha").unwrap();
+        d.seed_standard_axes("beta").unwrap();
+        assert_eq!(d.list_required_axes("alpha", "app").unwrap().len(), 5);
+        assert_eq!(d.list_required_axes("beta", "app").unwrap().len(), 5);
+        assert_eq!(d.count_required_axes().unwrap(), 10);
     }
 }
