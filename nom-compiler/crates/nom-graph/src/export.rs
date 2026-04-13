@@ -54,6 +54,13 @@ pub enum ExportError {
 pub struct ExportSummary {
     pub nodes_written: usize,
     pub files_written: Vec<PathBuf>,
+    /// Phase 3b: edges emitted per EdgeType variant name, sorted.
+    pub edges_written: Vec<(String, usize)>,
+    /// Phase 3b: edges whose (word, variant) endpoints couldn't be
+    /// resolved against word_variant_index (missing node or ambiguous
+    /// multi-kind match). Skipped, not fatal — count is reported so
+    /// callers can log / warn.
+    pub edges_skipped: usize,
 }
 
 /// Export the graph's uid-addressed nodes to LadybugDB CSV dump shape.
@@ -87,15 +94,115 @@ pub fn export_to_dir(
     write_nodes_csv(graph, &nodes_path)?;
     files_written.push(nodes_path);
 
-    // Import script.
+    // Edges CSVs — one per EdgeType variant used by this graph. Phase 3b.
+    let (edges_written, edges_skipped) =
+        write_edges_csvs(graph, out_dir, &mut files_written)?;
+
+    // Import script (schema + LOAD FROM for nodes + all emitted edge kinds).
     let import_path = out_dir.join("import.cypher");
-    write_import_cypher(&import_path)?;
+    write_import_cypher(&import_path, &edges_written)?;
     files_written.push(import_path);
 
     Ok(ExportSummary {
         nodes_written: graph.uid_nodes.len(),
         files_written,
+        edges_written,
+        edges_skipped,
     })
+}
+
+/// Build `(word, variant) -> uid` resolver from the uid-addressed
+/// storage. Returns `None` on ambiguous matches (same word+variant
+/// maps to multiple kinds → caller skips that edge).
+fn build_endpoint_resolver(
+    graph: &NomtuGraph,
+) -> std::collections::HashMap<(String, Option<String>), Option<String>> {
+    let mut resolver: std::collections::HashMap<
+        (String, Option<String>),
+        Option<String>,
+    > = std::collections::HashMap::new();
+    for ((word, _kind, variant), uid) in &graph.word_variant_index {
+        let key = (word.clone(), variant.clone());
+        resolver
+            .entry(key)
+            .and_modify(|existing| {
+                // If we already saw a uid for this (word, variant), flag
+                // ambiguous by setting to None. Callers filter these out.
+                if existing.as_deref() != Some(uid.as_str()) {
+                    *existing = None;
+                }
+            })
+            .or_insert_with(|| Some(uid.clone()));
+    }
+    resolver
+}
+
+fn write_edges_csvs(
+    graph: &NomtuGraph,
+    out_dir: &Path,
+    files_written: &mut Vec<PathBuf>,
+) -> Result<(Vec<(String, usize)>, usize), ExportError> {
+    use crate::EdgeType;
+
+    let resolver = build_endpoint_resolver(graph);
+    let mut by_type: std::collections::BTreeMap<String, Vec<(String, String, f64)>> =
+        std::collections::BTreeMap::new();
+    let mut skipped = 0usize;
+
+    for edge in graph.edges() {
+        let from_key = (edge.from_word.clone(), edge.from_variant.clone());
+        let to_key = (edge.to_word.clone(), edge.to_variant.clone());
+        let from_uid = match resolver.get(&from_key).and_then(|v| v.clone()) {
+            Some(u) => u,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let to_uid = match resolver.get(&to_key).and_then(|v| v.clone()) {
+            Some(u) => u,
+            None => {
+                skipped += 1;
+                continue;
+            }
+        };
+        let type_name = edge_type_name(edge.edge_type);
+        by_type
+            .entry(type_name)
+            .or_default()
+            .push((from_uid, to_uid, edge.confidence));
+    }
+
+    // Emit one CSV per edge type with rows, deterministic ordering.
+    let mut summary: Vec<(String, usize)> = Vec::new();
+    for (type_name, mut rows) in by_type {
+        rows.sort_by(|a, b| (&a.0, &a.1).cmp(&(&b.0, &b.1)));
+        let path = out_dir.join(format!("edges_{type_name}.csv"));
+        let file = fs::File::create(&path).map_err(|e| ExportError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+        let mut w = io::BufWriter::new(file);
+        writeln!(w, "from_uid,to_uid,confidence").map_err(|e| ExportError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
+        for (from, to, conf) in &rows {
+            writeln!(w, "{},{},{:.6}", csv_escape(from), csv_escape(to), conf).map_err(
+                |e| ExportError::Io { path: path.clone(), source: e },
+            )?;
+        }
+        w.flush()
+            .map_err(|e| ExportError::Io { path: path.clone(), source: e })?;
+        summary.push((type_name, rows.len()));
+        files_written.push(path);
+    }
+
+    Ok((summary, skipped))
+}
+
+fn edge_type_name(t: crate::EdgeType) -> String {
+    format!("{t:?}")
 }
 
 fn write_nodes_csv(graph: &NomtuGraph, path: &Path) -> Result<(), ExportError> {
@@ -130,9 +237,12 @@ fn write_nodes_csv(graph: &NomtuGraph, path: &Path) -> Result<(), ExportError> {
     Ok(())
 }
 
-fn write_import_cypher(path: &Path) -> Result<(), ExportError> {
-    let script = r#"// nom-graph export — LadybugDB LOAD FROM script (Phase 3a, nodes-only).
-// Edges land in Phase 3b once uid-addressed edges ship.
+fn write_import_cypher(
+    path: &Path,
+    edges: &[(String, usize)],
+) -> Result<(), ExportError> {
+    let mut script = String::from(
+        r#"// nom-graph export — LadybugDB LOAD FROM script (Phase 3a+3b).
 //
 // Usage:  gitnexus cypher < import.cypher
 // Or:     npx kuzu-cli --init import.cypher <graph.db>
@@ -151,7 +261,24 @@ CREATE NODE TABLE IF NOT EXISTS NomtuNode(
 
 // Load nodes.
 COPY NomtuNode FROM "nodes_NomtuNode.csv" (HEADER=true);
-"#;
+"#,
+    );
+
+    // Phase 3b: REL TABLE per edge kind that actually has rows, then COPY FROM.
+    if !edges.is_empty() {
+        script.push_str("\n// Edge rel tables + loads (Phase 3b).\n");
+        for (type_name, _count) in edges {
+            script.push_str(&format!(
+                "CREATE REL TABLE IF NOT EXISTS {type_name}(FROM NomtuNode TO NomtuNode, confidence DOUBLE);\n"
+            ));
+        }
+        for (type_name, _count) in edges {
+            script.push_str(&format!(
+                "COPY {type_name} FROM \"edges_{type_name}.csv\" (HEADER=true);\n"
+            ));
+        }
+    }
+
     fs::write(path, script).map_err(|e| ExportError::Io {
         path: path.into(),
         source: e,
@@ -231,8 +358,90 @@ mod tests {
         let dir = tmp_dir("empty");
         let summary = export_to_dir(&g, &dir, false).unwrap();
         assert_eq!(summary.nodes_written, 0);
+        assert!(summary.edges_written.is_empty());
+        assert_eq!(summary.edges_skipped, 0);
         let csv = fs::read_to_string(dir.join("nodes_NomtuNode.csv")).unwrap();
         assert_eq!(csv.trim(), "uid,word,variant,language,kind,body_hash");
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn export_emits_edges_csv_with_resolved_endpoints() {
+        let mut g = NomtuGraph::new();
+        // Seed nodes via upsert so word_variant_index knows about them.
+        let a = g
+            .upsert_entry(&mk("add", "function", Some("h1")))
+            .current_uid()
+            .clone();
+        let m = g
+            .upsert_entry(&mk("mul", "function", Some("h2")))
+            .current_uid()
+            .clone();
+        // Inject an edge directly into the legacy Vec<NomtuEdge>. build_call_edges
+        // path would normally populate this; the export only cares that the edge
+        // exists with matching (word, variant) endpoints.
+        g.add_edge(crate::NomtuEdge {
+            from_word: "add".into(),
+            from_variant: None,
+            to_word: "mul".into(),
+            to_variant: None,
+            edge_type: crate::EdgeType::Calls,
+            confidence: 1.0,
+        });
+
+        let dir = tmp_dir("edges");
+        let summary = export_to_dir(&g, &dir, false).unwrap();
+        assert_eq!(summary.edges_skipped, 0);
+        assert_eq!(summary.edges_written, vec![("Calls".to_string(), 1)]);
+
+        let csv = fs::read_to_string(dir.join("edges_Calls.csv")).unwrap();
+        let lines: Vec<&str> = csv.lines().collect();
+        assert_eq!(lines[0], "from_uid,to_uid,confidence");
+        assert!(lines[1].starts_with(&format!("{a},{m},")));
+        assert!(lines[1].ends_with("1.000000"));
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn export_skips_edges_with_unknown_endpoints() {
+        let mut g = NomtuGraph::new();
+        g.upsert_entry(&mk("add", "function", Some("h1")));
+        // Edge references a `mul` that was NEVER upserted → endpoint unresolved.
+        g.add_edge(crate::NomtuEdge {
+            from_word: "add".into(),
+            from_variant: None,
+            to_word: "mul_nowhere".into(),
+            to_variant: None,
+            edge_type: crate::EdgeType::Calls,
+            confidence: 0.8,
+        });
+        let dir = tmp_dir("skipped");
+        let summary = export_to_dir(&g, &dir, false).unwrap();
+        assert_eq!(summary.edges_skipped, 1);
+        assert!(summary.edges_written.is_empty(), "no CSV for unresolved-only edge type");
+        // edges_Calls.csv must NOT exist (no rows emitted).
+        assert!(!dir.join("edges_Calls.csv").exists());
+        fs::remove_dir_all(&dir).ok();
+    }
+
+    #[test]
+    fn import_cypher_declares_rel_tables_for_emitted_edges() {
+        let mut g = NomtuGraph::new();
+        g.upsert_entry(&mk("x", "function", Some("h1")));
+        g.upsert_entry(&mk("y", "function", Some("h2")));
+        g.add_edge(crate::NomtuEdge {
+            from_word: "x".into(),
+            from_variant: None,
+            to_word: "y".into(),
+            to_variant: None,
+            edge_type: crate::EdgeType::Imports,
+            confidence: 0.9,
+        });
+        let dir = tmp_dir("rel_tables");
+        export_to_dir(&g, &dir, false).unwrap();
+        let cypher = fs::read_to_string(dir.join("import.cypher")).unwrap();
+        assert!(cypher.contains("CREATE REL TABLE IF NOT EXISTS Imports"));
+        assert!(cypher.contains("COPY Imports FROM \"edges_Imports.csv\""));
         fs::remove_dir_all(&dir).ok();
     }
 
