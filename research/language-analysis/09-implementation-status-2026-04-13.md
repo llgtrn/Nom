@@ -64,13 +64,13 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: weeks.
 - **Deps**: M1 (reports surface ingestion outcomes). Can run in parallel with M2-M5.
 
-### M7 — MECE CE-check via corpus-registered required axes (doc 08 §9.2)
+### M7 — MECE CE-check via corpus-registered required axes (doc 08 §9.2) 🟢 scaffolded
 
 - **Unblocks**: the "collectively-exhaustive" half of MECE that currently ships as a stub. After this, an agent_demo that declares `database` but forgets `auth_provider` is caught at build time.
 - **Deliverable**: `entry_required_axes` table in corpus side-tables + `nom build status` extension checking each composition against registered per-kind required sets. Test gate: `mece_ce_missing_axis_e2e.rs` exits 1.
-- **Evidence**: `c63a6a7` MECE ME-check shipped (same validator pattern extends); doc 08 §9.2 ⏳.
-- **Effort**: days after M6.
-- **Deps**: M6 (corpus must register axes first).
+- **Evidence**: `c63a6a7` MECE ME-check shipped (same validator pattern extends); **M7a** (commit `bcadcb3`) landed the `required_axes` SQLite registry + `check_mece_with_required_axes` CE logic + `nom corpus register-axis` / `list-axes` CLI, independent of corpus content. nom-dict 29/29 (+5), nom-concept 92/92 (+4). Build.rs + manifest.rs now call the registry-aware variant; empty registry → vacuous CE pass. M7b will seed the standard axes (correctness / safety / performance) once M6 corpus pilot runs.
+- **Effort**: M7a scaffold shipped in this cycle; M7b (default axis seeding) is days after M6.
+- **Deps**: M6 (corpus pilot populates the canonical axis list) — **M7a has no M6 dep and is already usable by authors registering axes manually via `nom corpus register-axis`**.
 
 ### M8 — Intent-resolution transformer (thin LLM integration) (deferred 05 §Hybrid + motivation 13)
 
@@ -173,12 +173,13 @@ Self-hosting lane M10 → M15 → M17 is the critical chain; it depends on outpu
 ## Critical path to Nom 1.0 (motivation 16 "usable 1.0")
 
 ```
-HEAD (cc9641b)
+HEAD (bcadcb3)
   ├── M1  (glass-box report)        ✅ shipped — 41aedfe
   ├── M2  (acceptance preservation) ✅ shipped — fb9c252
   ├── M4  (three-tier byte ingest)  ✅ shipped — 8aab409
   ├── M5  (layered dreaming)        ✅ shipped — f0ae193 + e28f69d + cc9641b
-  ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot
+  ├── M7a (MECE CE scaffold)        ✅ shipped — bcadcb3
+  ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot (needs network; park for manual run)
   ├── M9  (embedding re-rank)       — weeks
   ├── M10 (planner-in-Nom)          — quarters
   ├── M15 (parser-in-Nom)           — quarters
