@@ -87,7 +87,9 @@ All three are NON-NEGOTIABLE per user; applied continuously across cycles.
 - W4 first shipments: `108d877` (doc 10+13) → `65f1198` (A2) → `792bc0d` (A1) → `d12a8b0` (A3) → `1495491` (A6)
 - A4 pipeline: `c0a1bc0` (doc 18) → `6436a2c` (A4a) → `e5be34f` (A4b) → `5dfcd25`/`025a0cc`/`4a335eb`/`62581d2`/`7da6a21` (A4c-steps)
 - Research finalization: `171a660` (doc 14 seed) → `8cb2265` (+3 TR + doc 15) → `c97a6c2` (bumpalo gate) → `ba5cd3e`/`370f96d` (+Go/C++/Bash/TOML) → `fcfda05` (doc 16 split) → `a8ce0a4`/`1331c00`/`ffa121a` (doc 17 I1-I13) → `1e752e7` (ct11-ct14 smoke) → `e013511` (doc 19) → `848f431` (doc 09 refresh) → `d3921bb` (doc 10 Next-actions refresh) → `f1dd162` (+2 async/flat_map)
-- This doc's immediate predecessor: `f1dd162`.
+- Post-A4c parity push: `196c4a8` → `65071df` → `94442bc` → `f346ccd` → `05e7762` → `6f728a5` → `3c5551d` → `d1a57ed` → `1185d6a` → `69bb443` → `6db7285` (a4c35) → `d3c97ff` (a4c36) → `7e4b3f3` (a4c37) → `c869986` (a4c38)
+- Doc refreshes trailing: `d051daa` (doc 10 HEAD-sync) → `6446459` (doc 09 late-banner refresh)
+- This doc's immediate predecessor: `6446459`. Latest HEAD is `6446459`.
 
 ---
 
