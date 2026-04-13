@@ -32,12 +32,12 @@ Each milestone: **Name** · **Unblocks** · **Deliverable** · **Evidence** · *
 - **Effort**: days.
 - **Deps**: M1 (report surfaces preservation outcomes).
 
-### M3 — Locale pack scaffold + canonicalization layer (deferred 07 §9 three-layer model)
+### M3 — Locale pack scaffold + canonicalization layer (deferred 07 §9 three-layer model) 🟢 scaffolded
 
 - **Unblocks**: "Vietnamese grammar, global vocabulary" direction. Once aliases resolve to the same NomID, M11 multi-locale workspaces become feasible.
 - **Deliverable**: `crates/nom-locale/` new workspace crate with `LocalePack { id: BCP47, keyword_aliases, nom_aliases, register_metadata }`, UTS #39 confusable detector, UAX #15 NFC normalizer. `nom locale {list, validate, apply}` CLI. Test gate: `locale_vi_en_roundtrip_e2e.rs`.
-- **Evidence**: `4b04b1d` + `5b59f82` Vietnamese alias packs already shipped as one-off keyword aliasing; deferred 09 §6 specifies the full standards stack (BCP 47, CLDR, UAX 31/15, UTS 39/55).
-- **Effort**: weeks.
+- **Evidence**: `4b04b1d` + `5b59f82` Vietnamese alias packs already shipped as one-off keyword aliasing; deferred 09 §6 specifies the full standards stack (BCP 47, CLDR, UAX 31/15, UTS 39/55). **M3a** (commit `49869ab`) lands the new `nom-locale` crate (12/12 tests) with `LocaleTag::parse` (BCP47 w/ language+script+region+variants; extensions captured in `unsupported`), `normalize_nfc` (UAX #15 via `unicode-normalization`), `LocalePack`+`RegisterMetadata`, baked `builtin_packs()` stubs for vi-VN + en-US, `is_confusable` M3a stub (returns `Deferred` until M3b data loads), and `nom locale list` / `nom locale validate` CLI. Total: +28 workspace members → 28 crates (nom-locale new). M3b will load UTS #39 confusables.txt; M3c will populate the VN alias table + implement `nom locale apply`.
+- **Effort**: M3a shipped in this cycle; M3b+M3c remain days-to-weeks each.
 - **Deps**: none; proceeds in parallel with M1/M2.
 
 ### M4 — Three-tier recursive byte ingest (doc 08 §4.3) ✅ SHIPPED
@@ -173,12 +173,13 @@ Self-hosting lane M10 → M15 → M17 is the critical chain; it depends on outpu
 ## Critical path to Nom 1.0 (motivation 16 "usable 1.0")
 
 ```
-HEAD (bcadcb3)
+HEAD (49869ab)
   ├── M1  (glass-box report)        ✅ shipped — 41aedfe
   ├── M2  (acceptance preservation) ✅ shipped — fb9c252
   ├── M4  (three-tier byte ingest)  ✅ shipped — 8aab409
   ├── M5  (layered dreaming)        ✅ shipped — f0ae193 + e28f69d + cc9641b
   ├── M7a (MECE CE scaffold)        ✅ shipped — bcadcb3
+  ├── M3a (locale crate + BCP47)    ✅ shipped — 49869ab
   ├── M6  (PyPI-100 corpus pilot)   — weeks   ← next critical-path slot (needs network; park for manual run)
   ├── M9  (embedding re-rank)       — weeks
   ├── M10 (planner-in-Nom)          — quarters
