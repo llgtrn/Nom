@@ -38,7 +38,7 @@
 //! into their todo markers; A4c lands the real bodies.
 
 use crate::lex::{Spanned, Tok};
-use crate::KINDS;
+use crate::{ContractClause, KINDS};
 
 /// Which stage of the annotator pipeline a failure came from.
 ///
@@ -509,14 +509,146 @@ fn tok_prose_repr(t: &Tok) -> String {
     }
 }
 
-/// S4 stub — contract clause extraction.
-pub fn stage4_contract_bind(_stream: &TokenStream) -> Result<(), StageFailure> {
-    Err(StageFailure::new(
-        StageId::ContractBind,
-        0,
-        "not-yet-wired",
-        "stage4_contract_bind body lands in A4c",
-    ))
+/// Output of S4 — each shaped block gains zero-or-more typed
+/// contract clauses (requires/ensures) pulled from its body.
+#[derive(Debug, Clone)]
+pub struct ContractedStream {
+    pub toks: Vec<Spanned>,
+    pub blocks: Vec<ContractedBlock>,
+    pub source_len: usize,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct ContractedBlock {
+    pub kind: String,
+    pub name: String,
+    pub start_tok: usize,
+    pub end_tok: usize,
+    pub start_byte: usize,
+    pub intent: String,
+    /// Contract clauses in source order. Empty for blocks that declare none.
+    pub contracts: Vec<ContractClause>,
+}
+
+/// S4 — Pull `requires <prose>.` / `ensures <prose>.` out of each
+/// shaped block's body.
+///
+/// Read-only walk over `shaped.toks[block.start_tok..block.end_tok]`.
+/// Every `Tok::Requires` or `Tok::Ensures` must be followed by prose
+/// tokens terminated by a `Tok::Dot`; the collected prose (trimmed)
+/// becomes a `ContractClause::Requires` or `ContractClause::Ensures`.
+///
+/// Rejects:
+///
+/// - `NOMX-S4-unterminated-contract` — contract verb seen but no `.`
+///   closes the clause before the block ends.
+/// - `NOMX-S4-empty-contract` — `requires .` or `ensures .` with no
+///   prose between verb and dot.
+///
+/// Note this increment does NOT yet extract effect clauses
+/// (`benefit`/`hazard`); those land in A4c-step4 as S5.
+pub fn stage4_contract_bind(shaped: &ShapedStream) -> Result<ContractedStream, StageFailure> {
+    let toks = &shaped.toks;
+    let mut blocks = Vec::with_capacity(shaped.blocks.len());
+
+    for b in &shaped.blocks {
+        let body_slice = &toks[b.start_tok..b.end_tok];
+        let mut contracts = Vec::new();
+        let mut i = 0usize;
+
+        while i < body_slice.len() {
+            let is_requires = matches!(body_slice[i].tok, Tok::Requires);
+            let is_ensures  = matches!(body_slice[i].tok, Tok::Ensures);
+            if !is_requires && !is_ensures {
+                i += 1;
+                continue;
+            }
+            let verb_pos = body_slice[i].pos;
+            let prose_start = i + 1;
+            // Find next Tok::Dot, but fail strict if we cross another
+            // top-level clause keyword first (another Requires/Ensures,
+            // Favor, Benefit, Hazard, Uses, Exposes). That indicates
+            // the author wrote an unclosed contract.
+            let verb_name = if is_requires { "requires" } else { "ensures" };
+            let mut dot_idx_opt: Option<usize> = None;
+            for j in prose_start..body_slice.len() {
+                match &body_slice[j].tok {
+                    Tok::Dot => {
+                        dot_idx_opt = Some(j);
+                        break;
+                    }
+                    Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit
+                    | Tok::Hazard | Tok::Uses | Tok::Exposes => {
+                        return Err(StageFailure::new(
+                            StageId::ContractBind,
+                            body_slice[j].pos,
+                            "unterminated-contract",
+                            format!(
+                                "`{verb_name}` clause in block `{}` crosses into another clause at `{:?}` without a closing `.`",
+                                b.name, body_slice[j].tok
+                            ),
+                        ));
+                    }
+                    _ => {}
+                }
+            }
+            let dot_idx = match dot_idx_opt {
+                Some(n) => n,
+                None => {
+                    return Err(StageFailure::new(
+                        StageId::ContractBind,
+                        verb_pos,
+                        "unterminated-contract",
+                        format!(
+                            "`{verb_name}` clause in block `{}` has no closing `.`",
+                            b.name
+                        ),
+                    ));
+                }
+            };
+            let prose = body_slice[prose_start..dot_idx]
+                .iter()
+                .map(|s| tok_prose_repr(&s.tok))
+                .collect::<Vec<_>>()
+                .join(" ")
+                .trim()
+                .to_string();
+            if prose.is_empty() {
+                return Err(StageFailure::new(
+                    StageId::ContractBind,
+                    verb_pos,
+                    "empty-contract",
+                    format!(
+                        "`{}` clause in block `{}` has no predicate prose",
+                        if is_requires { "requires" } else { "ensures" },
+                        b.name
+                    ),
+                ));
+            }
+            contracts.push(if is_requires {
+                ContractClause::Requires(prose)
+            } else {
+                ContractClause::Ensures(prose)
+            });
+            i = dot_idx + 1;
+        }
+
+        blocks.push(ContractedBlock {
+            kind: b.kind.clone(),
+            name: b.name.clone(),
+            start_tok: b.start_tok,
+            end_tok: b.end_tok,
+            start_byte: b.start_byte,
+            intent: b.intent.clone(),
+            contracts,
+        });
+    }
+
+    Ok(ContractedStream {
+        toks: toks.clone(),
+        blocks,
+        source_len: shaped.source_len,
+    })
 }
 
 /// S5 stub — effect clause extraction.
@@ -601,10 +733,10 @@ mod tests {
         assert_eq!(f.position, 42);
     }
 
-    /// a4b05: A4b stubs S4-S6 return structured not-yet-wired failures
+    /// a4b05: A4b stubs S5-S6 return structured not-yet-wired failures
     /// carrying the correct StageId. Locks the scaffold is callable
     /// and surfaces the right stage tag until later sub-wedges wire
-    /// real bodies. (S2 wired in A4c-step1, S3 wired in A4c-step2.)
+    /// real bodies. (S2 A4c-step1, S3 A4c-step2, S4 A4c-step3.)
     #[test]
     fn a4b05_stubs_return_not_yet_wired_per_stage() {
         let src = r#"the function f is given x, returns y.
@@ -612,7 +744,6 @@ mod tests {
         let stream = stage1_tokenize(src).expect("S1");
 
         let cases: &[(fn(&TokenStream) -> Result<(), StageFailure>, StageId, &str)] = &[
-            (stage4_contract_bind, StageId::ContractBind, "S4"),
             (stage5_effect_bind,   StageId::EffectBind,   "S5"),
             (stage6_ref_resolve,   StageId::RefResolve,   "S6"),
         ];
@@ -733,6 +864,93 @@ the function f is given x, returns y.
         let err = stage3_shape_extract(&classified).expect_err("S3 must reject");
         assert_eq!(err.stage, StageId::ShapeExtract);
         assert_eq!(err.reason, "missing-intent");
+    }
+
+    // ── A4c-step3: S4 contract_bind (requires / ensures) ───────────────────
+
+    /// a4c09: a concept with `requires` + `ensures` yields a
+    /// ContractedBlock with two clauses in source order.
+    #[test]
+    fn a4c09_requires_ensures_extracted() {
+        let src = r#"the concept auth_system is
+  intended to authenticate users.
+  requires the jwt signature is valid.
+  ensures the token owner identity is established.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        assert_eq!(contracted.blocks.len(), 1);
+        let b = &contracted.blocks[0];
+        assert_eq!(b.contracts.len(), 2);
+        match &b.contracts[0] {
+            ContractClause::Requires(s) => assert!(s.contains("jwt signature is valid")),
+            _ => panic!("expected Requires first"),
+        }
+        match &b.contracts[1] {
+            ContractClause::Ensures(s) => assert!(s.contains("token owner identity")),
+            _ => panic!("expected Ensures second"),
+        }
+    }
+
+    /// a4c10: block with zero contract clauses yields an empty vec.
+    #[test]
+    fn a4c10_no_contracts_yields_empty_vec() {
+        let src = r#"the concept simple is
+  intended to do one thing.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        assert_eq!(contracted.blocks[0].contracts.len(), 0);
+    }
+
+    /// a4c11: unterminated contract clause (missing `.`) rejects with
+    /// NOMX-S4-unterminated-contract.
+    #[test]
+    fn a4c11_unterminated_contract_rejected() {
+        // Block ends at the next top-level `the`, but our `requires`
+        // line here has no dot before the concept body ends. Since
+        // S2's end_tok heuristic relies on seeing a dot first, we
+        // construct a minimal case: no trailing dot at all.
+        let src = r#"the concept broken is
+  intended to surface the failure.
+  requires something important
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let err = stage4_contract_bind(&shaped).expect_err("S4 must reject");
+        assert_eq!(err.stage, StageId::ContractBind);
+        assert_eq!(err.reason, "unterminated-contract");
+    }
+
+    /// a4c12: two concepts each keep their own contract scope — no
+    /// cross-block leakage.
+    #[test]
+    fn a4c12_contracts_scoped_per_block() {
+        let src = r#"the concept c_one is
+  intended to do thing one.
+  requires input is valid.
+  favor correctness.
+
+the concept c_two is
+  intended to do thing two.
+  ensures the result is usable.
+  favor correctness."#;
+        let stream = stage1_tokenize(src).expect("S1");
+        let classified = stage2_kind_classify(&stream).expect("S2");
+        let shaped = stage3_shape_extract(&classified).expect("S3");
+        let contracted = stage4_contract_bind(&shaped).expect("S4");
+        assert_eq!(contracted.blocks.len(), 2);
+        // c_one has exactly one Requires, no Ensures.
+        assert_eq!(contracted.blocks[0].contracts.len(), 1);
+        assert!(matches!(&contracted.blocks[0].contracts[0], ContractClause::Requires(_)));
+        // c_two has exactly one Ensures, no Requires.
+        assert_eq!(contracted.blocks[1].contracts.len(), 1);
+        assert!(matches!(&contracted.blocks[1].contracts[0], ContractClause::Ensures(_)));
     }
 
     /// a4c08: two concepts, each with its own intent, yield two

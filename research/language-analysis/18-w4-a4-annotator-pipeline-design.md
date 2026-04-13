@@ -183,7 +183,13 @@ Strict policy choice: S3 currently requires an `intended to …` on **every** bl
 
 3 tests (a4c06-a4c08): concept intent extracted cleanly, entity-without-intent rejects with `NOMX-S3-missing-intent`, two concepts each keep their own scoped intent phrase (no cross-contamination).
 
-Existing 94 nom-concept parser tests untouched — S2 + S3 run alongside `parse_nomtu`/`parse_nom`. Steps 3-5 (S4 contracts, S5 effects, S6 refs, + entity-signature shape) land in subsequent cycles.
+**Step 3 landed 2026-04-14:** `stage4_contract_bind` wired to pull `requires <prose>.` / `ensures <prose>.` from each shaped block. Produces `ContractedStream { toks, blocks, source_len }` with per-block `ContractedBlock { …, intent, contracts }`. Rejects with `NOMX-S4-unterminated-contract` / `NOMX-S4-empty-contract`.
+
+Strict cross-clause guard: if a contract clause reaches another clause keyword (`Requires`, `Ensures`, `Favor`, `Benefit`, `Hazard`, `Uses`, `Exposes`) before its terminating `.`, S4 rejects — catches authoring mistakes where the dot is missing but the next clause is already starting.
+
+4 tests (a4c09-a4c12): requires+ensures extraction + source ordering, zero-contract block yields empty vec, unterminated-contract caught by the cross-clause guard, two concepts keep contracts scoped per block.
+
+Existing 94 nom-concept parser tests untouched — S2/S3/S4 run alongside `parse_nomtu`/`parse_nom`. Steps 4-5 (S5 effects, S6 refs, + entity-signature shape) land in subsequent cycles.
 
 Total: ~3 engineer-days as originally estimated.
 
