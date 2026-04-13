@@ -1,9 +1,8 @@
-# `.nomx` Keyword Set (proposed)
+# `.nomx` Keyword Set
 
-> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+> **Last verified against codebase: 2026-04-14, HEAD `ffb61de`.**
 
-Status: **Draft, needs human authoring** on the open questions in
-[05-natural-language-syntax.md §8](./05-natural-language-syntax.md).
+Status: **v1 + v2 (keyed) keyword sets shipped** (see "Shipped keyword sets" block below). Draft sections remain for Phase-5+ expansions: type-phrase canonicalization, actor form, `QualityName` registry, `perhaps...nothing` pattern-match. Open questions at [05-natural-language-syntax.md §8](./05-natural-language-syntax.md) still apply for the unshipped items.
 
 Companion to proposal 05. Enumerates the English phrase tokens the
 `.nomx` lexer needs to recognize, grouped by role. Vietnamese aliases
