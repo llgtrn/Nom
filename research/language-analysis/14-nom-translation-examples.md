@@ -4570,6 +4570,127 @@ Row additions: **0 new wedges** — Redis key-value operations + transactions + 
 
 ---
 
+## 64. gRPC service — bidirectional RPC with streaming
+
+```proto
+syntax = "proto3";
+package chat.v1;
+
+service ChatService {
+  rpc GetUser (GetUserRequest) returns (User);
+  rpc ListMessages (ListMessagesRequest) returns (stream Message);
+  rpc UploadAttachment (stream AttachmentChunk) returns (UploadReceipt);
+  rpc LiveChat (stream ChatFrame) returns (stream ChatFrame);
+}
+
+message GetUserRequest { string user_id = 1; }
+message User { string id = 1; string display_name = 2; }
+message ListMessagesRequest { string channel_id = 1; int32 limit = 2; }
+message Message { string id = 1; string body = 2; int64 posted_at_unix_ms = 3; }
+message AttachmentChunk { bytes data = 1; int32 sequence = 2; }
+message UploadReceipt { string attachment_id = 1; int64 total_bytes = 2; }
+message ChatFrame { string sender_id = 1; string body = 2; }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define chat_service
+  that takes no input, returns a service exposing four RPCs.
+get_user is a unary RPC returning a User given a user id.
+list_messages is a server-streaming RPC returning a stream of Messages for a given channel and limit.
+upload_attachment is a client-streaming RPC that accepts a stream of AttachmentChunk and returns one UploadReceipt.
+live_chat is a bidirectional-streaming RPC that exchanges ChatFrames in both directions.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data User is
+  intended to identify one user with a stable id and display name.
+  exposes id as identifier at field 1.
+  exposes display_name as text at field 2.
+
+the data Message is
+  intended to describe one chat message with a stable id, body text, and posted time in unix milliseconds.
+  exposes id as identifier at field 1.
+  exposes body as text at field 2.
+  exposes posted_at_unix_ms as natural from 0 to 9223372036854775807 at field 3.
+
+the data AttachmentChunk is
+  intended to carry one piece of an uploaded attachment stream with a sequence index for client-side ordering.
+  exposes data as bytes at field 1.
+  exposes sequence as natural from 0 to 2147483647 at field 2.
+
+the data UploadReceipt is
+  intended to acknowledge a completed attachment upload with the server-assigned id and the total received byte count.
+  exposes attachment_id as identifier at field 1.
+  exposes total_bytes as natural from 0 to 9223372036854775807 at field 2.
+
+the data ChatFrame is
+  intended to describe one frame of a bidirectional live-chat session identifying the sender and the frame body.
+  exposes sender_id as identifier at field 1.
+  exposes body as text at field 2.
+
+the function get_user is
+  intended to return the User for a given user_id via a unary RPC call — one request, one response.
+  uses the @Data matching "User" with at-least 0.95 confidence.
+  requires the user_id refers to an existing user or the server returns a not-found error.
+  ensures the returned User has id equal to the requested user_id.
+  favor correctness.
+
+the function list_messages is
+  intended to return a server-produced stream of up-to-limit Messages for a given channel, in posted-at-ascending order.
+  uses the @Data matching "Message" with at-least 0.95 confidence.
+  requires limit is at-least 1 and at-most 1000.
+  ensures every streamed Message belongs to the requested channel.
+  ensures streamed Messages arrive in ascending posted_at_unix_ms order.
+  ensures at-most limit Messages are streamed before the server closes its half of the RPC.
+  hazard long-lived server streams may be dropped on transient network failure — callers should resume from the last-received posted_at_unix_ms.
+  favor responsiveness.
+
+the function upload_attachment is
+  intended to accept a client-produced stream of AttachmentChunks in sequence-index order and return a single UploadReceipt summarizing the upload.
+  uses the @Data matching "AttachmentChunk" with at-least 0.95 confidence.
+  uses the @Data matching "UploadReceipt" with at-least 0.95 confidence.
+  requires client chunks arrive in strictly-increasing sequence order.
+  ensures the returned UploadReceipt's total_bytes equals the sum of the data lengths of every received chunk.
+  hazard if the client closes its half before the last chunk is sent, the server returns a truncated-upload error; callers must retry from chunk 0.
+  favor correctness.
+
+the function live_chat is
+  intended to maintain a bidirectional-streaming session: both peers may send ChatFrames at any time, and both may close their half independently.
+  uses the @Data matching "ChatFrame" with at-least 0.95 confidence.
+  ensures every ChatFrame sent by one peer is eventually delivered to the other peer or an error is surfaced.
+  ensures closing one peer's half does not close the other peer's half (half-close semantics).
+  hazard out-of-order delivery may occur if the transport layer retries; application-level sequence tracking is the caller's responsibility.
+  favor responsiveness.
+
+the concept ChatService is
+  intended to group the four ChatService RPCs behind a single gRPC service endpoint with a shared route-prefix "chat.v1.ChatService".
+  index includes get_user bound to the @Route matching "/chat.v1.ChatService/GetUser" with at-least 0.95 confidence.
+  index includes list_messages bound to the @Route matching "/chat.v1.ChatService/ListMessages" with at-least 0.95 confidence.
+  index includes upload_attachment bound to the @Route matching "/chat.v1.ChatService/UploadAttachment" with at-least 0.95 confidence.
+  index includes live_chat bound to the @Route matching "/chat.v1.ChatService/LiveChat" with at-least 0.95 confidence.
+```
+
+### Gaps surfaced
+
+1. **Four RPC-kind matrix (unary, server-stream, client-stream, bidi-stream)** — gRPC's defining feature. Nom's translation captures each via explicit `ensures` quantifier patterns: unary has one-in-one-out, server-stream uses `ensures every streamed X …`, client-stream uses `requires` on arrival + one return, bidi-stream uses paired `ensures` on both directions. Authoring-guide rule: **gRPC RPC kinds decompose via quantified `ensures` patterns — unary (one-req/one-resp), server-stream (`ensures every streamed X`), client-stream (`requires` + sum-aggregating `ensures`), bidi-stream (paired `ensures` on both peer halves)**. No new wedge.
+2. **`stream` keyword as a parameter/return modifier** — gRPC's syntactic marker for streaming direction. Nom elides this at source level; the streaming nature emerges from the W49-quantified `ensures` clauses. Authoring-guide rule: **gRPC `stream` keywords are no-op in Nom translations; streaming-vs-unary semantics encoded in `ensures` quantifier choice**. No new wedge.
+3. **Half-close semantics** — in a streaming RPC, either peer can close its direction independently. Nom's `ensures closing one peer's half does not close the other peer's half` captures this. Authoring-guide rule: **bidirectional-streaming half-close semantics declared explicitly via `ensures` clauses about peer-independent closure**. No new wedge.
+4. **Service-level route grouping (`package chat.v1`)** — gRPC groups RPCs under a package+service namespace. Nom's translation uses a `concept` decl (via W50 `@Route` typed-slot) with four route bindings sharing the prefix. Authoring-guide rule: **gRPC service packages map to Nom concept decls via W50 `@Route` typed-slot + shared route prefix; one concept per gRPC service**. Reuses #53 OpenAPI concept-as-route-map idiom. No new wedge.
+5. **Wire-format inherited from Protobuf** — gRPC messages use Protobuf serialization (covered by #30). The `at field N` clauses are already covered by W38 wire-field-tag wedge. No new wedge.
+6. **Resumable streaming (last-received cursor)** — practical concern for long-lived server streams. Nom surfaces this as a `hazard` with explicit resume advice. Authoring-guide rule: **long-lived server-streaming RPCs declare resumability guidance as a `hazard` — callers own resume-cursor logic at application level**. No new wedge.
+7. **Out-of-order delivery in bidi-streams** — transport-layer retry can reorder frames. Hazard clause captures it. Authoring-guide rule: **transport-layer reordering hazard on bidi-streams delegates application-level sequence tracking to callers**. No new wedge.
+8. **Deadlines and cancellation** — gRPC's per-RPC deadline + cancellation mechanism. Nom's existing `hazard`/`requires` clauses can state these; not exercised in this example but would fit the same pattern. Authoring-guide rule: **RPC deadlines and cancellation tokens are `requires` (deadline-bound on caller) + `hazard` (cancellation may surface mid-stream)**. No new wedge.
+
+Row additions: **0 new wedges** — gRPC bidirectional-streaming RPCs fully express via per-RPC function decls + W49-quantified `ensures` on streaming direction + concept decl with W50 `@Route` typed-slot bindings + existing `hazard` clauses for transport concerns. 7 authoring-guide closures: RPC-kind matrix via quantified `ensures` patterns, `stream` keyword no-op in Nom, half-close semantics via explicit `ensures`, gRPC service packages → Nom concept decls with route prefix, resumable streaming as `hazard` with cursor advice, out-of-order transport hazard delegates to callers, deadlines/cancellation via `requires`+`hazard`.
+
+**Thirty-first consecutive minimal-wedge translation + twenty-third 0-new-wedge run.** gRPC — the dominant RPC framework in modern polyglot-microservice stacks — decomposes cleanly into **W49-quantified `ensures` patterns for streaming direction** + **W50 `@Route` typed-slot for service-to-route binding**. Combined with OpenAPI (#53) and GraphQL subscription (#62), **the networked-API paradigm family is now fully covered**: HTTP REST (OpenAPI), RPC (gRPC), query (GraphQL), and subscription (GraphQL-sub) all share the same Nom primitives via @Route + callbacks + ensures-quantifier semantics.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

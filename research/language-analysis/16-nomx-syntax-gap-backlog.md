@@ -290,18 +290,24 @@
 | 273 | Cluster-failover consistency gaps → explicit `hazard` on multi-step atomic groups that span commit boundaries | authoring-guide rule | ✅ closed (doc 14 #63) |
 | 274 | Distributed-lock TTL-vs-work-duration → two-hazard pair (holder-crash + work-outlasts-TTL); callers own duration bounds | authoring-guide rule | ✅ closed (doc 14 #63) |
 | 275 | Redis key-naming conventions (colon hierarchies) → build-stage key-derivation function from named data-decl fields; source never hardcodes key strings | authoring-guide rule | ✅ closed (doc 14 #63; prevents key-collision bugs) |
+| 276 | gRPC RPC kinds (unary/server-stream/client-stream/bidi) decompose via W49-quantified `ensures` patterns; no `stream` keyword at Nom source | authoring-guide rule | ✅ closed (doc 14 #64) |
+| 277 | Bidirectional-streaming half-close semantics → explicit `ensures closing one peer's half does not close the other peer's` | authoring-guide rule | ✅ closed (doc 14 #64) |
+| 278 | gRPC service packages → Nom concept decls via W50 `@Route` typed-slot + shared route prefix; one concept per gRPC service | authoring-guide rule | ✅ closed (doc 14 #64; reuses #53 concept-as-route-map) |
+| 279 | Long-lived server-streaming RPCs declare resumability guidance as `hazard` with cursor advice; caller owns resume logic | authoring-guide rule | ✅ closed (doc 14 #64) |
+| 280 | Transport-layer reordering on bidi-streams → application-level sequence tracking delegated to callers via explicit `hazard` | authoring-guide rule | ✅ closed (doc 14 #64) |
+| 281 | RPC deadlines and cancellation tokens → `requires` (deadline-bound on caller) + `hazard` (cancellation may surface mid-stream) | authoring-guide rule | ✅ closed (doc 14 #64) |
 
-Totals by destination (after doc 14 #63 Redis key-value + atomic-ops + distributed-lock + pub/sub translation — **twenty-second 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-store paradigm family has 5 exemplars unified**: SQL relational (#15/#43) + GraphQL graph (#17) + jq JSON (#57) + Protobuf schema (#30) + Redis key-value (#63) all share same Nom primitives):
+Totals by destination (after doc 14 #64 gRPC bidirectional-streaming translation — **twenty-third 0-new-wedge translation in a row**; 6 authoring-guide closures; **networked-API paradigm family fully closed**: HTTP REST (#53 OpenAPI) + RPC (#64 gRPC) + query (#17 GraphQL) + subscription (#62 GraphQL-sub) all share @Route + callbacks + ensures-quantifier semantics):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **225**
+- ✅ Closed: **231**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 289 rows. Closure rate 78% (225/289). **63 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + **key-value-store (Redis)**. Thirtieth consecutive minimal-wedge translation, twenty-second 0-new-wedge. **Data-store paradigm family now has 5 exemplars unified** — SQL + GraphQL + jq + Protobuf + Redis all reduce to peer data decls + function decls + W49-quantified `ensures`.
+Backlog size: 296 rows. Closure rate 78% (231/296). **64 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + **bidirectional-streaming-RPC (gRPC)**. Thirty-first consecutive minimal-wedge translation, twenty-third 0-new-wedge. **Networked-API paradigm family fully closed** (HTTP REST + RPC + query + subscription all share Nom primitives).
 
 ## Wedge master index (for cross-ref with doc 13)
 
