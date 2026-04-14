@@ -515,6 +515,61 @@ INSERT OR IGNORE INTO patterns (
   '["length mismatch silently zero-fills","value-in-type that diverges from a runtime value"]',
   '["totality","correctness"]',
   '[]'
+),
+(
+  'dimensional-analysis',
+  'a quantity whose type carries its physical units so that arithmetic only combines compatible units and yields a well-typed result quantity',
+  '["data","function"]',
+  '["intended","exposes","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the data <Quantity> is\n  intended to represent a physical measurement carrying both a numeric magnitude and a unit.\n  exposes magnitude as real.\n  exposes unit as identifier.\n  favor numerical_stability.',
+  '["silent unit coercion across incompatible dimensions"]',
+  '["numerical_stability","correctness"]',
+  '[]'
+),
+(
+  'singleton-per-app',
+  'a resource the app must declare exactly once — a database, an auth provider, a metrics sink — enforced by the authoring-time cardinality check',
+  '["data","concept"]',
+  '["intended","exposes","requires","ensures","favor"]',
+  '["@Data"]',
+  'the data <AppDb> is\n  intended to identify the single authoritative database the app reads and writes.\n  exposes connection_spec as text.\n  favor availability.',
+  '["two sibling declarations shadowing each other at merge time"]',
+  '["availability","auditability"]',
+  '[]'
+),
+(
+  'idempotent-command',
+  'a write operation safe to retry because repeated application yields the same observable state as a single application',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <apply> is\n  intended to produce a target state transition that is safe to retry on transient failure.\n  uses the @Data matching "command" with at-least 0.9 confidence.\n  requires the command carries a stable correlation identifier.\n  ensures repeated application with the same identifier yields a single state transition.\n  hazard correlation-identifier reuse across distinct logical commands silently conflates them.\n  favor correctness.',
+  '["correlation-identifier reuse","non-idempotent side-effects hidden inside a retry-safe wrapper"]',
+  '["correctness","availability"]',
+  '[]'
+),
+(
+  'authorization-guard',
+  'a capability-based access check gating an operation on a principal holding the declared permission for the declared resource',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <guard> is\n  intended to refuse every operation whose caller lacks the declared capability for the target resource.\n  uses the @Data matching "capability" with at-least 0.9 confidence.\n  requires the capability was issued by the authorized issuer.\n  ensures every denial emits an auditable record with the caller, resource, and denied permission.\n  hazard ambient capabilities escape the declared scope through reference leakage.\n  favor auditability.',
+  '["ambient capability leakage","silent permission downgrade on rejection"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'lifecycle-managed-resource',
+  'a resource whose acquire and release are lexically paired so the release always runs even on failure paths',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <use> is\n  intended to perform a bounded action against a resource whose release runs on every exit path.\n  uses the @Data matching "resource handle" with at-least 0.9 confidence.\n  requires the acquire call has a lexically-matched release call.\n  ensures the release runs exactly once on every exit path including failure.\n  hazard a release that escapes its lexical scope may double-release or skip the release.\n  favor correctness.',
+  '["double release","skipped release on rare failure paths"]',
+  '["correctness","availability"]',
+  '[]'
 );
 -- ── Schema version stamp ────────────────────────────────────────────
 
