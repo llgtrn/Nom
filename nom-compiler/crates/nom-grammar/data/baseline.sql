@@ -2428,6 +2428,343 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 7 -- NLP + time + geospatial
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'sentence-boundary-detect',
+  'segment a text stream into sentence spans using punctuation and casing cues',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to divide a text buffer into ordered sentence spans.\n  uses the @Data matching "token stream with offsets" with at-least 0.9 confidence.\n  requires the input to be decoded unicode text.\n  ensures spans cover the input without overlap and preserve byte offsets.\n  hazard abbreviations and decimal numerals may trigger false boundaries.\n  favor correctness.',
+  '["abbreviation false split","decimal false split","ellipsis ambiguity"]',
+  '["correctness","determinism"]',
+  '[]'
+),
+(
+  'stopword-filter-pass',
+  'drop high-frequency function words from a token sequence before downstream scoring',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to remove high-frequency function words from a token list.\n  uses the @Data matching "curated stopword set for the target register" with at-least 0.9 confidence.\n  requires tokens to be lowercase-normalized.\n  ensures original token order is preserved for surviving tokens.\n  hazard aggressive lists erase negation and quantifier cues that flip downstream meaning.\n  favor clarity.',
+  '["loses negation","register mismatch","erases quantifiers"]',
+  '["clarity","performance"]',
+  '[]'
+),
+(
+  'stemming-lemma-normalize',
+  'collapse inflected surface forms to a shared root for bag-of-token matching',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to map each surface token to a canonical root form.\n  uses the @Data matching "morphology table for the source locale" with at-least 0.9 confidence.\n  requires the token locale to be known before lookup.\n  ensures tokens sharing a lemma collapse to the same output string.\n  hazard overstemming merges unrelated senses and yields downstream precision loss.\n  favor determinism.',
+  '["overstemming","understemming","locale drift"]',
+  '["determinism","correctness"]',
+  '[]'
+),
+(
+  'named-entity-span-tag',
+  'label contiguous token spans with entity categories such as person, place, or organization',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to assign entity category labels to contiguous token spans.\n  uses the @Data matching "tokenized sentence with part-of-speech tags" with at-least 0.9 confidence.\n  requires sentence boundaries to be resolved upstream.\n  ensures spans do not overlap and each label comes from the declared category set.\n  hazard novel or mixed-vocabulary entities silently receive the generic fallback label.\n  favor auditability.',
+  '["out-of-vocabulary entity","mixed-vocabulary drop","overlapping spans"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'part-of-speech-tag',
+  'assign a grammatical category to every token in a sentence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to emit a grammatical category for each input token.\n  uses the @Data matching "token sequence with sentence context" with at-least 0.9 confidence.\n  requires the tag inventory to be fixed before inference.\n  ensures output length equals input token count and every tag is drawn from the fixed inventory.\n  hazard rare words and zero-context fragments fall back to the most frequent class.\n  favor determinism.',
+  '["rare-word fallback","zero-context fragment","tag inventory drift"]',
+  '["determinism","correctness"]',
+  '[]'
+),
+(
+  'text-similarity-score',
+  'return a bounded similarity score between two text passages using vector overlap',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to measure semantic closeness between two text passages.\n  uses the @Data matching "shared token or embedding space for both inputs" with at-least 0.9 confidence.\n  requires both inputs to share the same normalization pipeline.\n  ensures the returned score lies in the closed interval zero to one and is symmetric.\n  hazard length asymmetry inflates scores when one passage is a strict substring of the other.\n  favor numerical_stability.',
+  '["length asymmetry","normalization mismatch","vocabulary gap"]',
+  '["numerical_stability","reproducibility"]',
+  '[]'
+),
+(
+  'language-detection-guess',
+  'predict the language of a short text passage from character and n-gram signals',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return the most probable language label for a text passage.\n  uses the @Data matching "character n-gram profile per candidate language" with at-least 0.9 confidence.\n  requires at least one non-whitespace grapheme in the input.\n  ensures the returned label belongs to the declared candidate set and carries a confidence score.\n  hazard short inputs and mixed-language passages produce unstable guesses.\n  favor reproducibility.',
+  '["short-input instability","mixed-language passage","script collision"]',
+  '["reproducibility","determinism"]',
+  '[]'
+),
+(
+  'spell-correction-edit-distance',
+  'suggest the closest dictionary word for an unknown token using bounded edit distance',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to propose the nearest dictionary word for an unknown token.\n  uses the @Data matching "ranked dictionary keyed by frequency" with at-least 0.9 confidence.\n  requires a maximum edit distance bound to be supplied by the caller.\n  ensures every candidate returned lies within the supplied distance bound.\n  hazard proper nouns and domain jargon get rewritten toward common dictionary words.\n  favor clarity.',
+  '["proper-noun rewrite","jargon collapse","frequency bias"]',
+  '["clarity","correctness"]',
+  '[]'
+),
+(
+  'topic-keyword-extract',
+  'extract a ranked list of salient keywords representing the topic of a document',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return a ranked list of keywords that summarize a document.\n  uses the @Data matching "document with computed term frequency statistics" with at-least 0.9 confidence.\n  requires the document to be tokenized and stopword-filtered upstream.\n  ensures the output list is bounded in length and ordered by descending salience.\n  hazard boilerplate headers and repeated navigation text dominate the ranking.\n  favor clarity.',
+  '["boilerplate dominance","short-document noise","repeated-phrase bias"]',
+  '["clarity","discoverability"]',
+  '[]'
+),
+(
+  'sentiment-polarity-score',
+  'score a passage on a bounded polarity axis from negative through neutral to positive',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to place a passage on a bounded sentiment polarity axis.\n  uses the @Data matching "polarity lexicon with negation and intensifier cues" with at-least 0.9 confidence.\n  requires sentence boundaries and negation scope to be resolved upstream.\n  ensures the returned score lies in the closed interval negative one to positive one.\n  hazard sarcasm and figurative language invert the surface polarity.\n  favor auditability.',
+  '["sarcasm inversion","figurative language","domain-shift lexicon"]',
+  '["auditability","reproducibility"]',
+  '[]'
+),
+(
+  'monotonic-clock-reading',
+  'read a monotonic clock source that never moves backward',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return a tick count from a source that never decreases across calls within one process.\n  uses the @Data matching "monotonic tick source exposing a strictly non-decreasing counter" with at-least 0.9 confidence.\n  requires the caller to hold no assumption that ticks map to wall-clock seconds.\n  ensures two successive calls on the same thread return values where the later value is at least the earlier value.\n  hazard tick counters wrap on long-running processes and must be widened before subtraction.\n  favor determinism.',
+  '["counter wrap","unit confusion"]',
+  '["determinism","correctness","reproducibility"]',
+  '[]'
+),
+(
+  'wall-clock-timestamp',
+  'capture a wall-clock instant with explicit timezone and epoch',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to record a wall-clock instant as an epoch offset plus a named timezone.\n  uses the @Data matching "instant record carrying epoch seconds, sub-second fraction, and zone identifier" with at-least 0.9 confidence.\n  requires the host clock to be synchronized within a declared skew budget before capture.\n  ensures the returned record round-trips through serialization without losing zone or sub-second fraction.\n  hazard wall clocks can jump backward during synchronization and must never be used to measure elapsed duration.\n  favor auditability.',
+  '["clock jump","zone loss","leap smear"]',
+  '["auditability","correctness","portability"]',
+  '[]'
+),
+(
+  'duration-arithmetic',
+  'add and subtract durations with checked overflow and consistent units',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to combine two signed durations expressed in the same base unit and return a single duration or an overflow marker.\n  uses the @Data matching "signed duration carrying a 64-bit count and a fixed base unit tag" with at-least 0.9 confidence.\n  requires both inputs to share the same base unit tag before addition proceeds.\n  ensures any result that would exceed the signed 64-bit range is reported as an overflow marker rather than wrapping silently.\n  hazard mixing base units without conversion yields numerically plausible but semantically wrong results.\n  favor numerical_stability.',
+  '["unit mismatch","silent overflow"]',
+  '["numerical_stability","correctness","totality"]',
+  '[]'
+),
+(
+  'calendar-date-component',
+  'decompose an instant into calendar year month day fields under a stated zone',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to project a wall instant into year month day hour minute second fields under a named timezone.\n  uses the @Data matching "calendar field record with year, month, day, hour, minute, second, and zone identifier" with at-least 0.9 confidence.\n  requires the timezone rules database consulted during projection to be versioned and pinned for the caller.\n  ensures projecting an instant and then recomposing it under the same zone version yields the original instant.\n  hazard daylight-saving transitions produce ambiguous or non-existent local times that must be resolved by an explicit policy.\n  favor reproducibility.',
+  '["dst ambiguity","zone db drift"]',
+  '["reproducibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'recurrence-rule-expander',
+  'expand a bounded recurrence rule into a finite list of occurrence instants',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to produce every occurrence instant of a recurrence rule that falls within a closed start and end window.\n  uses the @Data matching "recurrence specification with frequency, interval, weekday mask, month mask, and optional count limit" with at-least 0.9 confidence.\n  requires the window end to be finite and the rule to declare either a count cap or an until instant.\n  ensures the returned list is sorted ascending, contains no duplicates, and every element lies inside the requested window.\n  hazard unbounded rules without a count cap or until instant can produce effectively infinite expansion and must be rejected.\n  favor totality.',
+  '["unbounded expansion","zone drift"]',
+  '["totality","determinism","correctness"]',
+  '[]'
+),
+(
+  'business-day-calendar',
+  'test whether a calendar date counts as a working day under a named calendar',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to decide whether a given calendar date counts as a working day under a named working-calendar.\n  uses the @Data matching "working-calendar record holding weekend mask, holiday dates, and jurisdiction tag" with at-least 0.9 confidence.\n  requires the working-calendar to be loaded from a versioned source pinned by the caller.\n  ensures the decision depends only on the date fields and the pinned calendar version, never on the current wall clock.\n  hazard holiday lists diverge across jurisdictions and must never be silently substituted for one another.\n  favor auditability.',
+  '["jurisdiction swap","stale holiday list"]',
+  '["auditability","reproducibility","correctness"]',
+  '[]'
+),
+(
+  'timer-delayed-fire',
+  'schedule a callback to fire after a minimum delay against a monotonic source',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to arrange for a callback to be invoked no earlier than a given delay measured on a monotonic source.\n  uses the @Data matching "timer request holding a callback handle, a minimum delay, and a monotonic source reference" with at-least 0.9 confidence.\n  requires the delay to be non-negative and expressed in the same unit as the chosen monotonic source.\n  ensures the callback, when invoked, observes a monotonic reading at or after the scheduled fire tick.\n  hazard wall-clock jumps during sleep can distort delay if the scheduler falls back to wall time.\n  favor latency.',
+  '["wall fallback","cancellation race"]',
+  '["latency","determinism","responsiveness"]',
+  '[]'
+),
+(
+  'clock-skew-detection',
+  'compare two clock sources and flag drift beyond a declared budget',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to compare a local clock reading to a reference clock reading and flag drift beyond a declared budget.\n  uses the @Data matching "skew report holding local instant, reference instant, measured offset, and budget" with at-least 0.9 confidence.\n  requires both readings to be captured within a network round-trip bound recorded on the report.\n  ensures the report classifies the local clock as within-budget, lagging, or leading relative to the reference.\n  hazard asymmetric network paths bias the measured offset and must be bounded by the recorded round-trip.\n  favor auditability.',
+  '["path asymmetry","round-trip inflation"]',
+  '["auditability","correctness","availability"]',
+  '[]'
+),
+(
+  'leap-second-handling',
+  'resolve leap-second insertions under an explicit smoothing policy',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to map an instant that falls inside a leap-second window onto a linear timeline under a stated smoothing policy.\n  uses the @Data matching "leap policy record naming one of strict-insertion, linear-smear, or step-and-hold" with at-least 0.9 confidence.\n  requires the caller to declare the smoothing policy before any instant is resolved under it.\n  ensures two instants resolved under the same policy preserve their strict ordering after resolution.\n  hazard switching policies mid-stream breaks ordering guarantees and must be refused.\n  favor determinism.',
+  '["policy switch","ordering break"]',
+  '["determinism","correctness","reproducibility"]',
+  '[]'
+),
+(
+  'interval-overlap-test',
+  'decide whether two half-open time intervals overlap under a single timeline',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to decide whether two half-open time intervals share at least one instant on a single timeline.\n  uses the @Data matching "half-open interval pair with start-inclusive and end-exclusive instants on a shared timeline" with at-least 0.9 confidence.\n  requires both intervals to carry the same timeline tag and each start to be at most its own end.\n  ensures the decision is symmetric in its two inputs and returns false when either interval is empty.\n  hazard comparing intervals from different timelines without conversion produces meaningless overlaps.\n  favor correctness.',
+  '["timeline mismatch","empty interval"]',
+  '["correctness","totality","clarity"]',
+  '[]'
+),
+(
+  'geographic-coordinate-point',
+  'represent a latitude-longitude point with datum awareness',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to hold a surface location as latitude and longitude with a stated datum.\n  exposes latitude as real.\n  exposes longitude as real.\n  exposes datum as identifier.\n  favor portability.',
+  '["silent datum mismatch","out-of-range latitude","axis-order confusion"]',
+  '["portability","correctness","clarity"]',
+  '[]'
+),
+(
+  'coordinate-reference-projection',
+  'project coordinates between a source and target reference system',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to map a point from a source reference system into a target reference system.\n  uses the @Data matching "source and target reference identifiers" with at-least 0.9 confidence.\n  requires both reference systems to be registered and resolvable.\n  ensures the returned point carries the target reference identifier.\n  hazard silent loss of precision near projection boundaries.\n  favor numerical_stability.',
+  '["precision loss at projection edges","unregistered reference identifier","wrong axis order after projection"]',
+  '["numerical_stability","correctness","portability"]',
+  '[]'
+),
+(
+  'spatial-index-quadtree',
+  'index two-dimensional points for fast region queries',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","exposes","favor"]',
+  '["@Data"]',
+  'the concept <name> is\n  intended to partition a bounded plane recursively so that region queries return only nearby points.\n  uses the @Data matching "bounding rectangle" with at-least 0.9 confidence.\n  composes a tree of four child quadrants per node.\n  requires every inserted point to lie inside the root bounding rectangle.\n  ensures a region query returns every indexed point that intersects the query rectangle.\n  exposes insert and query-region operations.\n  favor performance.',
+  '["unbounded recursion on coincident points","memory blowup at high density","stale index after mutation"]',
+  '["performance","correctness","determinism"]',
+  '[]'
+),
+(
+  'geofence-membership-check',
+  'decide whether a point lies inside a named polygonal fence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to report whether a surface point lies inside a closed fence polygon.\n  uses the @Data matching "fence polygon and query point" with at-least 0.9 confidence.\n  requires the fence polygon to be simple and closed.\n  ensures the result is a decision of inside, outside, or on-boundary.\n  hazard ambiguous verdict for points exactly on an edge.\n  favor determinism.',
+  '["boundary point ambiguity","self-intersecting polygon","antimeridian wrap not handled"]',
+  '["determinism","correctness","clarity"]',
+  '[]'
+),
+(
+  'route-shortest-path',
+  'find a lowest-cost route between two nodes in a weighted graph',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return the lowest-cost sequence of edges from a start node to a goal node.\n  uses the @Data matching "weighted road graph with start and goal identifiers" with at-least 0.9 confidence.\n  requires every edge weight to be non-negative and finite.\n  ensures no cheaper path exists in the graph between the same endpoints.\n  hazard infinite loop on negative-weight cycle.\n  favor minimum_cost.',
+  '["negative edge weight","disconnected endpoints","exploding frontier on dense graph"]',
+  '["minimum_cost","correctness","performance"]',
+  '[]'
+),
+(
+  'address-geocoding-lookup',
+  'resolve a postal address string to a coordinate with a confidence score',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to turn a free-form postal address into a coordinate point with a confidence score.\n  uses the @Data matching "raw address text and address gazetteer" with at-least 0.9 confidence.\n  requires the gazetteer to be loaded and non-empty.\n  ensures every returned coordinate carries a score between zero and one.\n  hazard ambiguous address resolving to an unrelated locality.\n  favor auditability.',
+  '["ambiguous address match","stale gazetteer","silent fallback to centroid"]',
+  '["auditability","correctness","clarity"]',
+  '[]'
+),
+(
+  'tile-pyramid-addressing',
+  'address map tiles by zoom-level and integer coordinates',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","exposes","favor"]',
+  '["@Data"]',
+  'the concept <name> is\n  intended to address map tiles by a zoom level and a pair of integer tile coordinates.\n  uses the @Data matching "zoom level" with at-least 0.9 confidence.\n  composes a pyramid where each zoom step quadruples the tile count.\n  requires tile coordinates to fit inside the bounds implied by the zoom level.\n  ensures every surface location maps to exactly one tile at each zoom.\n  exposes tile-for-point and bounds-for-tile operations.\n  favor reproducibility.',
+  '["off-by-one tile at boundary","axis flip between tile addressings","unbounded zoom requests"]',
+  '["reproducibility","determinism","portability"]',
+  '[]'
+),
+(
+  'distance-on-sphere',
+  'measure great-circle distance between two surface points',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return the great-circle distance in meters between two surface points on a reference sphere.\n  uses the @Data matching "two surface points with shared datum" with at-least 0.9 confidence.\n  requires both points to be finite latitude-longitude pairs in the same datum.\n  ensures the returned distance is non-negative and symmetric in its inputs.\n  hazard catastrophic cancellation for near-antipodal point pairs.\n  favor numerical_stability.',
+  '["near-antipodal cancellation","datum mismatch between inputs","confusing spheroid with sphere"]',
+  '["numerical_stability","correctness","determinism"]',
+  '[]'
+),
+(
+  'polygon-clip-intersection',
+  'clip one polygon against another and return the intersection region',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return the polygon region that is inside both input polygons.\n  uses the @Data matching "subject polygon and clip polygon" with at-least 0.9 confidence.\n  requires both polygons to be simple and closed.\n  ensures every returned ring is simple, closed, and contained in both inputs.\n  hazard degenerate slivers at near-collinear edges.\n  favor numerical_stability.',
+  '["degenerate sliver output","self-intersecting input","precision loss near collinear edges"]',
+  '["numerical_stability","correctness","determinism"]',
+  '[]'
+),
+(
+  'time-zone-aware-timestamp',
+  'stamp a surface event with an instant and its local time zone',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to record the instant and local time zone at which a surface event occurred.\n  exposes instant as real.\n  exposes zone as identifier.\n  exposes offset_minutes as real.\n  favor auditability.',
+  '["ambiguous instant during daylight transition","stale zone identifier","offset drift over historical dates"]',
+  '["auditability","correctness","reproducibility"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
