@@ -3205,6 +3205,102 @@ Row additions: **0 new wedges** — PDDL's action-and-predicate planning surface
 
 ---
 
+## 49. Mermaid diagram — visualization-as-code DSL
+
+```mermaid
+sequenceDiagram
+  participant User
+  participant API
+  participant Cache
+  participant DB
+
+  User->>API: GET /profile
+  API->>Cache: lookup profile_key
+  alt cache hit
+    Cache-->>API: profile
+  else cache miss
+    API->>DB: SELECT * FROM profiles WHERE id=?
+    DB-->>API: profile row
+    API->>Cache: store profile_key
+  end
+  API-->>User: 200 OK + profile
+```
+
+### `.nomx v1` translation
+
+```nomx
+define profile_fetch_flow
+  that takes a user and returns their profile.
+the user calls API with GET /profile.
+API asks Cache for the profile_key.
+when Cache has it, return the cached profile.
+otherwise API asks DB for the profile row, stores it in Cache, and returns it.
+API returns 200 OK with the profile.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ProfileRequest is
+  intended to describe an incoming profile-fetch request from a user.
+  exposes user_id as identifier.
+
+the data ProfileCacheEntry is
+  intended to describe a cached profile-lookup result with its key and contents.
+  exposes profile_key as identifier.
+  exposes profile as record.
+
+the data ProfileResponse is
+  intended to describe the HTTP response returned to the user for a profile fetch.
+  exposes status_code as natural from 100 to 599.
+  exposes profile as record.
+
+the function lookup_profile_in_cache is
+  intended to return the cached profile for a given profile_key, or nothing when the cache does not hold that key.
+  uses the @Data matching "ProfileCacheEntry" with at-least 0.95 confidence.
+  ensures the result is some cache entry when the cache holds an entry for the key, nothing otherwise.
+
+the function fetch_profile_from_db is
+  intended to retrieve the profile row from the authoritative database for a given user_id.
+  ensures the result is the database's profile row for the user when one exists, a well-formed not-found error otherwise.
+  hazard database queries have unbounded latency under load — callers should enforce a timeout.
+  favor correctness.
+
+the function store_profile_in_cache is
+  intended to write a profile into the cache for a given profile_key with a bounded TTL.
+  uses the @Data matching "ProfileCacheEntry" with at-least 0.95 confidence.
+  ensures the cache subsequently returns the written profile for the same key until TTL expires.
+  hazard cache writes are best-effort; a failed write must not fail the fetch path.
+
+the composition fetch_profile composes
+  lookup_profile_in_cache
+  then when_nothing_fetch_profile_from_db_and_store_profile_in_cache
+  then respond_with_profile.
+
+the screen profile_fetch_flow_sequence is
+  intended to render the sequence of calls that realize a profile fetch, as a diagram showing User → API → Cache → (DB on miss) → User.
+  uses the @Composition matching "fetch_profile" with at-least 0.95 confidence.
+  the diagram shape is a sequence-diagram with participants User, API, Cache, DB.
+  the participants communicate via synchronous calls and responses.
+  branches display the cache-hit and cache-miss paths side-by-side.
+```
+
+### Gaps surfaced
+
+1. **Diagram-as-first-class-artifact** — Mermaid treats the diagram as the output. Nom's translation treats **the flow as real code (composition decl) AND the diagram as a peer `screen` decl that renders it**. Authoring-guide rule: **diagrams are `screen` decls that reference the composition they visualize**; the diagram renderer is a build-stage consumer of the composition's structure. No new wedge; `screen` kind absorbs diagram rendering.
+2. **Participants as typed roles** — `participant User`, `participant API` etc. declare logical roles in the exchange. Nom's translation treats participants as **callers of named function decls**; the function decls are the behavior, the participants are deployment targets. Authoring-guide rule: **Mermaid participants decompose to named function decls; participant name = function location in the composition graph**. No new wedge.
+3. **`alt` / `else` branches in sequence diagrams** — conditional flow in the sequence. Nom's composition decl with `when` clauses captures this via composition-with-fork (related to the composition `then` chain, doc 16 #33 / a4c33, extended with branching). Authoring-guide rule: **Mermaid `alt`/`else` blocks decompose to composition decls with conditional branching — the same `when X … otherwise …` prose used in `if-then-else` translations**. The existing W40 exhaustiveness-check (#32) validates the alt-blocks are MECE.
+4. **Arrow styles (`->>` sync, `-->` response, `-)>` async)** — kind-of-message annotations. Nom's prose `synchronous calls and responses` captures the common cases; asynchronous messages reuse the effect-valence hazard model for fire-and-forget. Authoring-guide rule: **Mermaid arrow styles decompose to prose clauses on the screen decl describing the message kind** (`synchronous call` / `asynchronous message` / `response` / `error response`). No new wedge.
+5. **Multiple diagram kinds (flowchart, class, ER, gantt, state, sequence, pie, git)** — Mermaid supports ~10 diagram styles. Nom's `screen` decl carries the diagram-kind as part of its `intended to` prose: `the diagram shape is a sequence-diagram with …`. Authoring-guide rule: **diagram kind is declared in the `intended to`/`the diagram shape is` sentences; the renderer dispatches to the correct Mermaid layout engine**. No new wedge; data-driven dispatch.
+6. **Styling directives (classDef, theme, color)** — visual customization. Nom's `screen` decl already has a rendering-style surface (covered by doc 17 layout-primitives authoring rules from #39). No new wedge.
+7. **Diagram-code divergence** — the eternal risk with Mermaid: the diagram in the docs says one thing, the real code does another. Nom's translation **eliminates this risk by construction**: the `screen` decl references the composition via `uses @Composition`, so the diagram is a view over the real code, not a prose description. Authoring-guide rule: **diagrams that reference compositions via `uses` are automatically regenerated when the composition changes; free-standing prose diagrams are rejected as they drift from code**. Major correctness win.
+
+Row additions: **0 new wedges** — Mermaid visualization fully expresses via the `screen` kind + `uses @Composition` reference + rendering-layout prose on the screen decl. 6 authoring-guide closures: diagrams as screen decls referencing compositions, participants as named function decls, alt/else branches as composition decls with conditional branching, arrow styles as prose clauses, diagram kind via `intended to`, diagram-code drift rejection via `uses @Composition` coupling.
+
+**Sixteenth consecutive minimal-wedge translation + ninth 0-new-wedge run.** Mermaid is **the seventh domain** covered by the unified (state-data, transition-fn, composition, property, screen) primitives — it pushes visualization into the `screen` kind, which was originally reserved for UI. The `screen` kind is thus **generalized: it covers user-facing UIs (#39 SwiftUI) AND internal-facing architectural diagrams (#49 Mermaid)**. The `uses @Composition` reference on screen decls eliminates the single biggest correctness hazard of diagram-as-code tools: drift between diagram and reality.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
