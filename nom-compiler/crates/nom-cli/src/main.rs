@@ -1190,6 +1190,26 @@ enum GrammarCmd {
         #[arg(short, long)]
         path: Option<PathBuf>,
     },
+    /// Search the patterns catalog by intent prose using a deterministic
+    /// token-overlap (Jaccard) similarity against each row's intent.
+    /// Returns the top-N matches above the score threshold. The same
+    /// backend the CI uniqueness test uses; no embeddings required.
+    PatternSearch {
+        /// Free-form prose describing what the author wants to express.
+        prose: String,
+        /// Maximum matches to return (default 10).
+        #[arg(long, default_value_t = 10)]
+        limit: usize,
+        /// Minimum Jaccard score (0.0–1.0); matches below are dropped.
+        #[arg(long, default_value_t = 0.10)]
+        threshold: f64,
+        /// Emit JSON array instead of human-readable lines.
+        #[arg(long)]
+        json: bool,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
     /// Add a single row to the `quality_names` table. S5b rejects any
     /// `favor X` clause whose name is not registered here.
     AddQuality {
@@ -1622,6 +1642,9 @@ fn main() {
             }
             GrammarCmd::PatternStats { json, path } => {
                 cmd_grammar_pattern_stats(path.as_deref(), json)
+            }
+            GrammarCmd::PatternSearch { prose, limit, threshold, json, path } => {
+                cmd_grammar_pattern_search(path.as_deref(), &prose, limit, threshold, json)
             }
         },
     };
@@ -2170,6 +2193,114 @@ fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
         for (q, n) in &by_favor {
             println!("  {q:24} {n:4}");
         }
+    }
+    0
+}
+
+/// Stopwords stripped before Jaccard tokenization. Mirrors the closed
+/// list in `nom-concept/tests/pattern_examples_parse.rs` so the
+/// CLI search uses the exact same backend the CI uniqueness test
+/// enforces — same words → same matches.
+const FUZZY_STOPWORDS: &[&str] = &[
+    "a","the","of","to","and","or","with","for","in","on","as","an","is",
+    "into","from","by","that","this","its","at","be","are","it","one","two",
+    "each","every","any","all","no","not","then","than","only","also","same",
+];
+
+fn fuzzy_tokens(prose: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut cur = String::new();
+    let lower = prose.to_lowercase();
+    for ch in lower.chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_alphabetic() {
+            cur.push(ch);
+        } else {
+            if cur.len() >= 3 && !FUZZY_STOPWORDS.contains(&cur.as_str()) {
+                out.insert(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    out
+}
+
+fn cmd_grammar_pattern_search(
+    path: Option<&Path>,
+    prose: &str,
+    limit: usize,
+    threshold: f64,
+    json: bool,
+) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
+    };
+
+    let query_tokens = fuzzy_tokens(prose);
+    if query_tokens.is_empty() {
+        eprintln!("nom grammar pattern search: prose has no domain words after stopword filter");
+        return 1;
+    }
+
+    let mut stmt = match conn.prepare("SELECT pattern_id, intent FROM patterns") {
+        Ok(s) => s,
+        Err(e) => { eprintln!("nom grammar pattern search: prepare: {e}"); return 1; }
+    };
+    let rows: Vec<(String, String)> = match stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
+    {
+        Ok(rs) => rs,
+        Err(e) => { eprintln!("nom grammar pattern search: query: {e}"); return 1; }
+    };
+
+    let mut scored: Vec<(f64, String, String)> = Vec::new();
+    for (id, intent) in &rows {
+        let row_tokens = fuzzy_tokens(intent);
+        if row_tokens.is_empty() {
+            continue;
+        }
+        let inter = query_tokens.intersection(&row_tokens).count();
+        let union = query_tokens.union(&row_tokens).count();
+        if union == 0 {
+            continue;
+        }
+        let jacc = inter as f64 / union as f64;
+        if jacc >= threshold {
+            scored.push((jacc, id.clone(), intent.clone()));
+        }
+    }
+    // Stable ordering: by score descending, then pattern_id ascending.
+    scored.sort_by(|a, b| {
+        b.0.partial_cmp(&a.0)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.1.cmp(&b.1))
+    });
+    scored.truncate(limit);
+
+    if json {
+        let arr: Vec<serde_json::Value> = scored
+            .iter()
+            .map(|(s, id, intent)| serde_json::json!({
+                "score": s, "pattern_id": id, "intent": intent
+            }))
+            .collect();
+        println!("{}", serde_json::to_string_pretty(&arr).unwrap_or_default());
+    } else {
+        for (s, id, intent) in &scored {
+            println!("{:.3}  {:48}  {}", s, id, intent);
+        }
+        eprintln!(
+            "\n{} match{} (threshold {threshold}, limit {limit}, query tokens: {:?})",
+            scored.len(),
+            if scored.len() == 1 { "" } else { "es" },
+            query_tokens
+        );
     }
     0
 }
