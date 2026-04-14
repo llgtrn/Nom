@@ -3301,6 +3301,87 @@ Row additions: **0 new wedges** — Mermaid visualization fully expresses via th
 
 ---
 
+## 50. Dafny verified function — imperative code with inline proofs
+
+```dafny
+method BinarySearch(a: array<int>, key: int) returns (index: int)
+  requires a != null
+  requires forall i, j :: 0 <= i < j < a.Length ==> a[i] <= a[j]
+  ensures 0 <= index ==> index < a.Length && a[index] == key
+  ensures index < 0 ==> forall i :: 0 <= i < a.Length ==> a[i] != key
+{
+  var lo := 0;
+  var hi := a.Length;
+  while lo < hi
+    invariant 0 <= lo <= hi <= a.Length
+    invariant forall i :: 0 <= i < lo ==> a[i] < key
+    invariant forall i :: hi <= i < a.Length ==> a[i] > key
+    decreases hi - lo
+  {
+    var mid := (lo + hi) / 2;
+    if a[mid] == key {
+      return mid;
+    } else if a[mid] < key {
+      lo := mid + 1;
+    } else {
+      hi := mid;
+    }
+  }
+  return -1;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define binary_search
+  that takes a sorted integer array and a key, returns the matching index or -1.
+require the array is non-null and sorted non-decreasing.
+scan a shrinking window from 0 to array length; each step halves the window toward the key or returns on an exact match; the window's lower bound always lies below the key, its upper bound always lies above.
+on exact match, return that index.
+when the window is empty, return -1.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function binary_search is
+  intended to return the index of a key in a sorted integer array, or -1 if the key is absent.
+  requires the array is non-null.
+  requires the array is sorted non-decreasing; that is, for every pair of indices i less than j in range, the array at i is at most the array at j.
+  ensures when the returned index is non-negative, the index is within range and the array at the index equals the key.
+  ensures when the returned index is negative, every element of the array differs from the key.
+  favor correctness.
+  favor performance.
+
+the property binary_search_loop_invariant is
+  intended to assert the invariant maintained by the iterative search body: the window bounds [lo, hi) remain in range, every element left of lo is strictly less than the key, and every element at or right of hi is strictly greater than the key.
+  uses the @Function matching "binary_search" with at-least 0.95 confidence.
+  checks for every reachable (lo, hi) during binary_search's scan, 0 is at most lo which is at most hi which is at most the array length.
+  checks for every reachable (lo, hi) during binary_search's scan, for every index i less than lo, the array at i is less than the key.
+  checks for every reachable (lo, hi) during binary_search's scan, for every index i at-least hi and less than the array length, the array at i is greater than the key.
+  checks the value hi - lo strictly decreases on every iteration.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Loop invariants as inline proofs** — Dafny's `invariant` clauses attached to loops. Nom's translation lifts these **out of the function body into a peer `property` decl** whose `checks` clauses reference the function. Authoring-guide rule: **Dafny loop invariants decompose to peer property decls whose `checks` clauses name the containing function's reachable states**. Keeps function bodies prose-only; proof obligations live in property decls. No new wedge.
+2. **Termination via `decreases` clause** — Dafny's way of proving loops terminate by witnessing a decreasing well-founded measure. Nom's `checks the value hi - lo strictly decreases on every iteration` captures the same fact via the property decl. Authoring-guide rule: **`decreases` clauses decompose to `checks … strictly decreases on every iteration` inside a peer property decl**. Existing `checks` vocabulary suffices.
+3. **`requires` / `ensures` as verification contracts** — already Nom-native; Dafny's contracts map 1:1 to Nom's existing `requires`/`ensures` clauses on the function decl. No new wedge; reinforces the existing clause surface.
+4. **Mutable local variables + while-loops** — imperative body idiom. Nom's v2 translation collapses the loop into a prose description of the invariant, leaving the imperative details to the compiler's code-generation. Authoring-guide rule: **imperative while-loops decompose to a prose invariant description on the function + a property decl holding the verification obligations; the compiler generates the actual loop from the invariant declaratively**. Same shape as #25 Haskell, #35 NumPy, #43 SQL CTE (authors specify invariants; compiler chooses execution).
+5. **`forall i, j :: 0 <= i < j < a.Length ==> a[i] <= a[j]` quantifier syntax** — Dafny's universal quantifier. Nom's prose `for every pair of indices i less than j in range, the array at i is at most the array at j` is the direct analogue. Uses quantifier-vocabulary W49 (`every`). No new wedge; reinforces W49.
+6. **Proof-assisted refinement** — Dafny integrates Z3 SMT solving to discharge proof obligations at build time. Nom's build-stage verifier (doc 04 §10.3.1 fixpoint + MECE validator + strict validator) is the analogous machinery. Authoring-guide rule: **verification-tool choice (Z3/CVC5/Alt-Ergo/Lean/Coq) is build-stage specialization; the source property decl is tool-agnostic**. Same as TLA+ (#47) / PDDL (#48). Unified across formal-methods translations.
+7. **Mixed executable-plus-proof code** — Dafny's defining feature: the same artifact carries both the implementation and its correctness proof. Nom achieves this via **the function decl (implementation surface) coupled with a peer property decl (correctness surface)**; both are source, both are hash-pinned, both travel together. Authoring-guide rule: **executable + verification code stay in the same `.nomtu`/`.nom` unit as peer function + property decls; they share a hash-pinned lock**. No new wedge; composition of existing primitives.
+
+Row additions: **0 new wedges** — Dafny verified-imperative-programming fully expresses via existing `requires`/`ensures` on the function + a peer `property` decl holding loop invariants and termination witnesses. 7 authoring-guide closures: loop invariants → peer property with `checks` clauses naming reachable states, `decreases` → `checks … strictly decreases`, Dafny `requires`/`ensures` map 1:1 to Nom's, imperative loops → prose invariant + property obligations + compiler code-gen, Dafny `forall` → W49 `every`, verification-tool choice = build-stage, executable + verification code stay in same unit as peer decls.
+
+**Seventeenth consecutive minimal-wedge translation + tenth 0-new-wedge run.** Dafny — the industry-standard verified-imperative language — decomposes cleanly into **(function decl + peer property decl)** pairs. This validates a **major claim from doc 19 D2**: the property decl as a first-class peer to the function decl unifies generative testing (#33), temporal-logic model-checking (#47), AI-planning (#48), and verified-imperative programming (#50). **Four of the deepest formal-methods paradigms reduced to the same two-decl shape.**
+
+**Milestone: 50 translations shipped**, 36 paradigms covered, 10 consecutive 0-new-wedge translations. The closed kind set (9 nouns: function/module/concept/screen/data/event/media/property/scenario) + composition + effect-valence + typed-slot resolver is sufficient for **every major programming paradigm surveyed**.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
