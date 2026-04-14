@@ -136,18 +136,25 @@
 | 119 | Background setup decomposes to shared setup function invoked explicitly in each scenario's `given` clauses — no implicit hooks | authoring-guide rule | ✅ closed (doc 14 #40) |
 | 120 | Test fixtures live in named data decls, not inline in scenario prose | authoring-guide rule | ✅ closed (doc 14 #40) |
 | 121 | Gherkin `Feature:` block → Nom concept decl whose index references constituent scenario decls | authoring-guide rule | ✅ closed (doc 14 #40) |
+| 122 | Clock-domain clause (`at every rising/falling edge of CLOCK`) for synchronous-logic function decls | **W48** grammar rule | ⏳ queued (doc 14 #41) |
+| 123 | Fixed-width integer types → `natural from 0 to (2^N)-1` / `integer from -(2^(N-1)) to (2^(N-1))-1` range-typed | authoring-guide rule | ✅ closed (doc 14 #41) |
+| 124 | Hardware translations are pure state-transition functions; no blocking/non-blocking mutation choice exists | authoring-guide rule | ✅ closed (doc 14 #41; eliminates a Verilog bug-class) |
+| 125 | Asynchronous-input domains declare synchronizer-chain requirement as `hazard` clause | authoring-guide rule | ✅ closed (doc 14 #41) |
+| 126 | Multi-edge triggers decompose to peer transition functions + explicit precedence | authoring-guide rule | ✅ closed (doc 14 #41) |
+| 127 | Verilog `module` → Nom composition decl with input/output data decls + transition function | authoring-guide rule | ✅ closed (doc 14 #41; same shape as #32/#38/#39) |
+| 128 | `synthesizability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #41; accumulates to 4 seeds) |
 
-Totals by destination (after doc 14 #40 Gherkin BDD-scenario translation surfaced W46 scenario-kind + W47 scenario-clause + 5 authoring-guide closures; the 7→9 kind set now covers universally-quantified claims (W41 property) + asserted-behavior claims (W46 scenario) — full testing/verification spectrum closed):
+Totals by destination (after doc 14 #41 Verilog hardware-description translation surfaced W48 clock-domain + 5 authoring-guide closures + synthesizability seed; the (state-data, transition-fn, composition) pattern is now proven across 5 traditionally-separate domains):
 
-- ⏳ Wedge queued: **40** (+W46 scenario-kind, +W47 scenario-clause)
+- ⏳ Wedge queued: **41** (+W48 clock-domain)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **77**
+- ✅ Closed: **82**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **3** (forward_compatibility + numerical_stability + gas_efficiency QualityNames)
+- 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 125 rows. Closure rate 62% (77/125). **40 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + **BDD-scenario (Gherkin)**. Seventh consecutive minimal-wedge translation. Kind set expanded 7→9 (function/module/concept/screen/data/event/media + property + scenario); testing/verification spectrum fully closed.
+Backlog size: 132 rows. Closure rate 62% (82/132). **41 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + **hardware-description-RTL (Verilog)**. Eighth consecutive minimal-wedge translation. Unified decomposition pattern (state-data, transition-fn, composition) proven across state-machines + reactive-UIs + smart-contracts + hardware-RTL + test-scenarios.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -174,6 +181,7 @@ Backlog size: 125 rows. Closure rate 62% (77/125). **40 translations** in doc 14
 - **W45:** Window-aggregation clause — `window of D over FIELD` with closed kinds `tumbling`/`sliding`/`session`/`global`. Pairs with W40 exhaustiveness-check for per-window totality. Core stream-processing primitive.
 - **W46:** `scenario` top-level kind declaration — expands closed kind set 8→9 nouns (8th was W41 `property`). Asserted-behavior claim: named precondition/action/postcondition triple. Covers Gherkin, RSpec behavior blocks, Playwright test descriptions. Orthogonal to function/data/concept/property.
 - **W47:** Scenario-clause grammar — closed 3-keyword set `given`/`when`/`then`; each clause is a prose sentence. Ships paired with W46. Keyword repeats on every clause (no `and`-continuation).
+- **W48:** Clock-domain clause — `at every rising edge of CLOCK` / `at every falling edge of CLOCK` attaches to synchronous-logic function decls. Expresses temporal contracts without adding a new kind; sits alongside `requires`/`ensures`. Narrow closed vocabulary.
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 

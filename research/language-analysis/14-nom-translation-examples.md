@@ -2526,6 +2526,79 @@ Row additions: **W46 `scenario` kind declaration** (new wedge, expands closed ki
 
 ---
 
+## 41. Verilog synchronous counter — hardware description (synthesizable RTL)
+
+```verilog
+module counter_4bit (
+    input  wire       clk,
+    input  wire       reset_n,
+    input  wire       enable,
+    output reg  [3:0] count
+);
+    always @(posedge clk or negedge reset_n) begin
+        if (!reset_n)      count <= 4'b0000;
+        else if (enable)   count <= count + 4'b0001;
+    end
+endmodule
+```
+
+### `.nomx v1` translation
+
+```nomx
+define counter_4bit
+  that takes a clock signal, an active-low reset signal, and an enable signal, returns a 4-bit count output.
+on every rising clock edge,
+  when reset_n is low, count becomes 0.
+  when reset_n is high and enable is high, count becomes count plus 1 (modulo 16).
+  otherwise count is unchanged.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ClockSignal is
+  intended to represent a free-running periodic clock input to synchronous logic.
+  exposes rising_edges_per_second as real.
+
+the data ResetSignal is
+  intended to represent an active-low synchronous reset input; low forces state back to its initial value.
+  exposes active_low as boolean.
+
+the data CounterState4 is
+  intended to hold the latched 4-bit counter value between clock edges.
+  exposes count as natural from 0 to 15.
+
+the function counter_4bit_on_clock_edge is
+  intended to compute the next CounterState4 on each rising clock edge given the prior state, reset, and enable inputs.
+  uses the @Data matching "CounterState4" with at-least 0.95 confidence.
+  uses the @Data matching "ResetSignal" with at-least 0.95 confidence.
+  requires the rising clock edge has just occurred.
+  when reset_n is low, the next count is 0.
+  when reset_n is high and enable is high, the next count is the prior count plus 1 modulo 16.
+  when reset_n is high and enable is low, the next count equals the prior count.
+  ensures the next count is a natural in the range 0 to 15.
+  ensures synchronous semantics — the output only changes on rising clock edges.
+  hazard metastability may occur if reset_n or enable change within the setup/hold window of the clock edge; callers must synchronize asynchronous inputs through a two-stage flip-flop chain.
+  favor correctness.
+  favor synthesizability.
+```
+
+### Gaps surfaced
+
+1. **Clock-domain semantics** — RTL's defining feature: state changes are clock-edge-triggered, not event-triggered in the general sense. Nom's v2 translation captures this via `requires the rising clock edge has just occurred` + `ensures synchronous semantics`. **Candidate: W48 clock-domain clause** — `at every rising/falling edge of CLOCK` clause attached to function/data decls. Expresses the temporal contract directly; reuses the existing `requires`/`ensures` framing without adding a new kind. Small wedge. Alternative: authoring-guide rule using prose requires/ensures — works today, ship grammar later if RTL usage density grows.
+2. **Bit-width types (`reg [3:0]`, `wire`, `4'b0000` literal)** — signed/unsigned integer types with explicit bit width. Nom's `natural from 0 to 15` captures the 4-bit range declaratively. Authoring-guide rule: **fixed-width integer types decompose to `natural from 0 to (2^N)-1` or `integer from -(2^(N-1)) to (2^(N-1))-1`** for unsigned/signed N-bit. No new wedge; range-typed naturals handle the semantic content. The bit-width is a build-time specialization detail.
+3. **Blocking vs non-blocking assignment (`=` vs `<=`)** — Verilog's distinction between combinational and sequential assignment. Nom avoids this pitfall entirely: the v2 translation is purely functional (the function returns the next state), with no mutation operator choice. Authoring-guide rule: **hardware translations are pure state-transition functions; no blocking/non-blocking choice exists because there's no mutation**. Eliminates one of Verilog's largest classes of bugs.
+4. **Metastability as a `hazard`** — asynchronous-input timing violations are a real-world correctness hazard. The v2 translation surfaces this explicitly as a hazard clause, teaching callers to use two-stage synchronizers. Authoring-guide rule: **asynchronous-input domains must declare their synchronizer-chain requirement as a `hazard` clause**. Ties into existing effect valence model.
+5. **Posedge/negedge event lists (`@(posedge clk or negedge reset_n)`)** — edge-trigger specification. Nom's translation decomposes to **one function per edge-event-class**: one function fires on every rising clock edge, and the async reset is a separate concern (captured as a condition check inside the clock-edge function). Authoring-guide rule: **multiple edge-triggers decompose to multiple peer transition functions + explicit precedence** rather than one mixed-trigger function. No new wedge.
+6. **Synthesizable subset discipline** — not every Verilog construct synthesizes; authors must stay inside the synthesizable subset. Nom's `favor synthesizability` surfaces another QualityName. Authoring-corpus seed: **`synthesizability` QualityName**. Accumulates with forward_compatibility + numerical_stability + gas_efficiency → 4 seeds.
+7. **Module hierarchy (`module` keyword + port list)** — Verilog's `module` is close to Nom's `module` kind. Port list decomposes to data decls for inputs + data decls for outputs. Authoring-guide rule: **Verilog modules = Nom composition decl with explicit input data decls + output data decls + transition function** — identical shape to XState/SwiftUI/Solidity translations.
+
+Row additions: **W48 clock-domain clause** (new wedge, narrow — `at every rising/falling edge of CLOCK` clause), 5 authoring-guide closures (bit-width as range-typed natural, pure state-transition eliminates blocking/non-blocking, metastability as hazard, multi-edge decomposition, module = composition), 1 QualityName seed (synthesizability).
+
+**Eighth consecutive minimal-wedge translation.** Hardware description — traditionally considered one of the most alien paradigms to general-purpose languages — maps cleanly via the same (state-data, transition-function, composition) pattern used for state machines, reactive UIs, smart contracts, and property tests. The unification pattern is now proven across **five traditionally-separate domains** (state-machine DSL, reactive UI, on-chain contracts, hardware RTL, test scenarios) with a single Nom primitive set.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
