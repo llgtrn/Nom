@@ -201,18 +201,24 @@
 | 184 | Dafny `forall` quantifier → W49 `every` in prose — reuses the quantifier-vocabulary lock | authoring-guide rule | ✅ closed (doc 14 #50) |
 | 185 | Verification-tool choice (Z3/CVC5/Alt-Ergo/Lean/Coq) = build-stage specialization; property decl is tool-agnostic | authoring-guide rule | ✅ closed (doc 14 #50; unifies with #47 + #48) |
 | 186 | Executable + verification code stay in same `.nomtu`/`.nom` unit as peer function + property decls; shared hash-pinned lock | authoring-guide rule | ✅ closed (doc 14 #50) |
+| 187 | WAT typed locals → named values with range-typed naturals or integers; type prefix on ops (`i32.add`) is build-stage selection | authoring-guide rule | ✅ closed (doc 14 #51; merges with #41 Verilog + #44 Forth) |
+| 188 | WAT `memory`/`table`/`global` declarations → peer data decls on the Nom module | authoring-guide rule | ✅ closed (doc 14 #51) |
+| 189 | WAT structured control flow (`block`/`loop`/`br`/`br_if`) → prose control words (`loop`, `when`, `otherwise`, `exit`) | authoring-guide rule | ✅ closed (doc 14 #51; same rule as #44 Forth row #146) |
+| 190 | Fixed-width integer overflow behavior declared explicitly as `hazard` (wrap/saturate/trap are 3 distinct semantics, must be chosen not defaulted) | authoring-guide rule | ✅ closed (doc 14 #51) |
+| 191 | WAT exports/imports map to Nom composition index references; no separate export keyword needed | authoring-guide rule | ✅ closed (doc 14 #51; reuses doc 08 composition index) |
+| 192 | WAT text/binary as authoring-vs-build artifact; `.nomtu` → WASM binary is plausible Phase-12 specialization target without grammar extension | authoring-guide rule | ✅ closed (doc 14 #51) |
 
-Totals by destination (after doc 14 #50 Dafny verified-imperative-programming translation — **tenth 0-new-wedge translation** + 50-translation milestone; 7 authoring-guide closures; **four deepest formal-methods paradigms** (generative testing #33 + model-checking #47 + AI-planning #48 + verified-imperative #50) **all reduced to (function decl + peer property decl) shape**):
+Totals by destination (after doc 14 #51 WebAssembly-text translation — **eleventh 0-new-wedge translation in a row**; 6 authoring-guide closures; integer-width handling now fully unified across Forth/Verilog/WAT via a single rule):
 
 - ⏳ Wedge queued: **42** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **138**
+- ✅ Closed: **144**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **5** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost QualityNames)
 
-Backlog size: 193 rows. Closure rate 72% (138/193). **50 translations** in doc 14 — **milestone round-number**. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + **verified-imperative-programming (Dafny)**. Seventeenth consecutive minimal-wedge translation, **tenth 0-new-wedge in a row**. **The closed kind set (9 nouns) + composition + effect-valence + typed-slot resolver is sufficient for every major programming paradigm surveyed.**
+Backlog size: 199 rows. Closure rate 72% (144/199). **51 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + **portable-binary-target (WebAssembly text)**. Eighteenth consecutive minimal-wedge translation, eleventh 0-new-wedge. **Nom's hash-pinned composition index maps naturally onto WAT's export/import table — `.nomtu` → WASM binary is a plausible Phase-12 target without grammar extension.**
 
 ## Wedge master index (for cross-ref with doc 13)
 

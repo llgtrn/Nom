@@ -3382,6 +3382,70 @@ Row additions: **0 new wedges** — Dafny verified-imperative-programming fully 
 
 ---
 
+## 51. WebAssembly text (WAT) — typed portable binary target
+
+```wat
+(module
+  (memory (export "memory") 1)
+  (func $fib (export "fib") (param $n i32) (result i32)
+    (local $a i32) (local $b i32) (local $tmp i32) (local $i i32)
+    (local.set $a (i32.const 0))
+    (local.set $b (i32.const 1))
+    (local.set $i (i32.const 0))
+    (block $done
+      (loop $iter
+        (br_if $done (i32.ge_s (local.get $i) (local.get $n)))
+        (local.set $tmp (i32.add (local.get $a) (local.get $b)))
+        (local.set $a (local.get $b))
+        (local.set $b (local.get $tmp))
+        (local.set $i (i32.add (local.get $i) (i32.const 1)))
+        (br $iter)))
+    (local.get $a)))
+```
+
+### `.nomx v1` translation
+
+```nomx
+define fib
+  that takes an index n in the 32-bit signed integers, returns the nth Fibonacci number in the 32-bit signed integers.
+the sequence starts at a=0, b=1; each step advances to (b, a+b).
+loop n times; return the current a.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function fib is
+  intended to return the nth value in the Fibonacci sequence, using 32-bit signed integer arithmetic with silent wraparound on overflow.
+  requires n is a 32-bit signed integer; negative inputs are treated as 0.
+  ensures the returned value equals the closed-form Fibonacci number for n in [0, 46] where 32-bit arithmetic is exact.
+  ensures the returned value for n greater than 46 is the closed-form Fibonacci number modulo 2 to the 32nd power.
+  hazard 32-bit integer overflow silently wraps at n greater than 46; callers needing exact Fibonacci for large n must use a wider-integer variant.
+  favor performance.
+  favor portability.
+
+the data WasmMemorySegment is
+  intended to describe a single exported WebAssembly linear memory segment with its initial-page count and export name.
+  exposes export_name as text.
+  exposes initial_pages as natural from 1 to 65536.
+```
+
+### Gaps surfaced
+
+1. **Stack-machine with typed locals** — WAT is similar to Forth (#44) in being stack-based, but crucially **locals are typed** (`(local $a i32)`) and operations are typed (`i32.add` vs `i64.add`). Nom's translation already names locals and exposes their types via `requires`/`ensures` clauses. Authoring-guide rule: **WAT typed locals decompose to named values with range-typed naturals or integers (per #41 Verilog width-range rule) — type prefix on ops (`i32.add`) is a build-stage selection, not an author concern**. No new wedge; merges with existing Forth and Verilog rules.
+2. **Memory as a declared resource (`(memory ...)`)** — linear memory is a first-class module-level resource in WAT. Nom's `WasmMemorySegment` data decl captures it. Authoring-guide rule: **WAT `memory`/`table`/`global` declarations decompose to peer data decls on the Nom module**. No new wedge.
+3. **Structured control flow (`block`/`loop`/`br`/`br_if`)** — WAT's block-scoped labels + branch ops. Nom's prose `loop n times` + `when X, exit` captures the same flow semantics. Authoring-guide rule: **WAT structured control flow decomposes to prose control words (`loop`, `when`, `otherwise`, `exit`)**. Same rule as Forth IF/THEN (#44 row #146). No new wedge.
+4. **Integer overflow semantics (silent wrap at 2^32)** — WAT commits to two's-complement wrap-on-overflow. Nom's translation surfaces this as a `hazard` clause explicitly. Authoring-guide rule: **fixed-width integer overflow behavior must be declared explicitly as a `hazard` clause — silent wrap, saturation, and trap-on-overflow are three distinct semantics and must be chosen, not defaulted**. Ties to W9 `fail with` for trap semantics. No new wedge.
+5. **Exports and imports (`(export ...)`, `(import ...)`)** — WAT module boundary primitives. Nom's `.nom` + `.nomtu` file model (doc 08) already carries the export/import semantics via the composition index. Authoring-guide rule: **WAT exports/imports map to Nom composition index references; no separate export keyword is needed**. No new wedge.
+6. **Portability-as-QualityName** — `favor portability` reuses an existing objective axis (same as #15 SQL and others). No new seed needed.
+7. **WAT text vs WASM binary** — text format is human-edited, binary is the actual runtime target. Nom's hash-pinned source + build-stage specialization (Phase 12) is the unified model: text is an authoring artifact, binary is a build output. No new wedge.
+
+Row additions: **0 new wedges** — WAT fully expresses via existing primitives (named typed locals from Forth/Verilog rules, data decls for memory/global/table, prose control flow, explicit overflow hazard, composition index for exports/imports). 6 authoring-guide closures: typed locals via range-typed naturals + build-stage type-prefix selection, WAT `memory`/`table`/`global` as peer data decls, structured control flow as prose control words, fixed-width overflow as explicit hazard, WAT exports/imports via Nom composition index, WAT text/binary as authoring-vs-build artifact.
+
+**Eighteenth consecutive minimal-wedge translation + eleventh 0-new-wedge run.** WebAssembly text format — the explicit portable-binary target — decomposes cleanly into Nom's existing primitives. Notable: **Nom's hash-pinned composition index maps onto WAT's export/import table naturally**, suggesting that `.nomtu` → WASM binary is a plausible Phase-12 specialization target without grammar extension. The accumulating evidence (Forth #44 + Verilog #41 + WAT #51 all reuse typed-locals-as-range-typed-naturals) suggests **integer-width handling is fully covered by the Verilog #41 rule with no further wedge needed**.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
