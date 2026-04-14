@@ -60,15 +60,15 @@ anything load-bearing.
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
   0 → 7 keyword_synonyms (proof→property, composition→module,
   row→data, diagram→screen, participants→data, layout→screen,
-  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 228
+  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 258
   canonical authoring patterns in the grammar.sqlite patterns
-  table. 190 of those via parallel-subagent batches covering 19
-  themes (concurrency, distributed, UI/UX, security, testing,
-  observability, persistence, numerical, build/CI, networking,
-  graphics, audio, business domain, compiler primitives, ML, game
-  engine, NLP, time/calendar, geospatial); 38 hand-authored. P6
-  audit caught banned tokens in two batches and blocked them
-  pre-commit — AI clients can query for canonical renderings rather
+  table. 220 via parallel-subagent batches covering 22 themes
+  (concurrency, distributed, UI/UX, security, testing, observability,
+  persistence, numerical, build/CI, networking, graphics, audio,
+  business domain, compiler primitives, ML, game engine, NLP,
+  time/calendar, geospatial, IoT/embedded, bioinformatics, robotics);
+  38 hand-authored. P6 audit caught banned tokens in three batches
+  and blocked them pre-commit — AI clients can query for canonical renderings rather
   than parsing prose. Catalog:
   pure-function-contract, exposes-data-shape, concept-composition,
   property-quantified-claim, scenario-given-when-then,
