@@ -449,18 +449,26 @@
 | 432 | Named inductive hypotheses (IHn') → absent at Nom source; induction-principle name (`induction on X`) supplies the hypothesis implicitly to the build-stage proof engine | authoring-guide rule | ✅ closed (doc 14 #86) |
 | 433 | Peer-lemma dependencies (Coq prior-proven lemma citations) → `uses @Property matching "X"` typed-slot refs on property decl; build-stage proof engine sees full peer-property closure; reuses W41 + existing typed-slot resolver | authoring-guide rule | ✅ closed (doc 14 #86) |
 | 434 | Base-case / inductive-case proof splits → folded into one `ensures induction on X with Y supplying the inductive step` clause; case split is the induction principle's job, not the author's | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 435 | BNF-as-source syntax declarations (K `syntax Exp ::= ...`, Antlr, Yacc) → tagged-variant data decls with one variant per BNF alternative; associativity + bracket annotations move to parser build-stage concern, not authoring surface | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 436 | Rewriting-rule sets (K `rule LHS => RHS`, Maude, Stratego) → `ensures X-shape reduces to Y-shape` clauses on single step-function decl; each rule is one ensures; rule-set is the contract's totality | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 437 | Sort-annotated pattern variables (K's `I1:Int`, ML's `n:int`) → data-decl payload-type declarations + ensures-clause destructuring; authoring level uses data-decl fields as sort surface, no separate pattern-language | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 438 | Primitive-sort operators vs. user-language operators (K's `+Int`) → distinguished at Nom source by argument types, not by naming convention; authoring never needs `+Int` vs `+UserLang` prefixes | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 439 | Named-cell evaluation contexts (K configurations, mcrl2 states) → function signatures + `ensures` clauses; authoring never uses named cells; build-stage backends may introduce cells internally | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 440 | Small-step operational semantics → step-function decl with one-redex `ensures` + peer property asserting convergence via `ensures the sequence e, step(e), step(step(e)), ... terminates at X within at-most N steps`; big-step collapses to direct recursion (covered by #25 + #86) | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 441 | Rewriting-strategy conventions (leftmost-innermost, call-by-need, etc.) → explicit `ensures redex selection is X: Y` clause; strategy is part of contract, not library-level default | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 442 | Termination witnesses for rewriting systems → `ensures ... terminates at X within at-most N steps` clause with N bounded by structural measure (number of redex-bearing nodes); dreaming can swap bound if stricter measure proven | authoring-guide rule | ✅ closed (doc 14 #87) |
 
-Totals by destination (after doc 14 #86 Coq proof-tactics translation — **forty-fifth 0-new-wedge translation in a row**; 8 authoring-guide closures; **formal-methods paradigm family now has 6 exemplars**: Hypothesis #33 + TLA+ #47 + PDDL #48 + Dafny #50 + Idris #73 + Coq #86 — unifying insight: Nom treats mechanized proofs as declarative contracts, not procedural scripts; author names the proof principle + peer lemmas, build-stage proof engine handles tactic application; ~80% of Coq authoring burden eliminated while preserving structural skeleton):
+Totals by destination (after doc 14 #87 K framework term-rewriting translation — **forty-sixth 0-new-wedge translation in a row**; 8 authoring-guide closures; **formal-methods paradigm family now has 7 exemplars**: Hypothesis #33 + TLA+ #47 + PDDL #48 + Dafny #50 + Idris #73 + Coq #86 + K #87 — deepest unifying insight: formal-semantics frameworks, theorem provers, model checkers, and testing frameworks all reduce to the same Nom surface (named property + generator + cited peer functions/properties + ensures clauses); only the ensures vocabulary varies — structural skeleton is identical across reduces-to / satisfies-LTL / proof-discharged-by / holds-for-all-generated-inputs):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **385** (+8 from #86)
+- ✅ Closed: **393** (+8 from #87)
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 455 rows (+8). Closure rate 84.6% (385/455). **86 translations** in doc 14. Fifty-third consecutive minimal-wedge, **forty-fifth 0-new-wedge**. **Formal-methods family now 6 exemplars**. **Unifying insight**: mechanized proofs as declarative contracts — author names induction principle + peer lemmas via @Property typed slots; build-stage proof engine handles step-by-step tactic application; removes procedural ritual while preserving structural skeleton.
+Backlog size: 463 rows (+8). Closure rate 84.9% (393/463). **87 translations** in doc 14. Fifty-fourth consecutive minimal-wedge, **forty-sixth 0-new-wedge**. **Formal-methods family now 7 exemplars**. **Deepest unifying insight**: formal-semantics frameworks + theorem provers + model checkers + testing frameworks all reduce to the same Nom surface (named property + generator + cited peer functions/properties + ensures clauses); only the ensures vocabulary varies — structural skeleton is identical across reduces-to / satisfies-LTL / proof-discharged-by / holds-for-all-generated-inputs.
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
