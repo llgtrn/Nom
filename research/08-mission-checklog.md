@@ -60,7 +60,11 @@ anything load-bearing.
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
   0 → 7 keyword_synonyms (proof→property, composition→module,
   row→data, diagram→screen, participants→data, layout→screen,
-  format→data — corpus-idiomatic vocabulary rewritten
+  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 3
+  canonical patterns (pure-function-contract, exposes-data-shape,
+  concept-composition — the three high-frequency shapes extracted
+  from doc 14 into the patterns table; AI clients can now query for
+  canonical renderings instead of reading the archive prose
   to the canonical 9-kind set at S1). S4 contract scanner + S5
   effect scanner both relaxed the same way: drop the mid-scan
   clause-opener check (English verbs inside prose clauses trip it);
