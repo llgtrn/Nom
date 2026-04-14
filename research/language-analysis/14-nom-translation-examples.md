@@ -6931,6 +6931,80 @@ Row additions: **0 new wedges** — Pony capability-secure actors decompose clea
 
 ---
 
+## 89. Chapel data-parallel over distributed locales
+
+```chapel
+use BlockDist;
+
+config const n = 1000;
+
+const D : domain(1) dmapped Block(boundingBox = {1..n}) = {1..n};
+var A : [D] real = [i in D] i : real;
+
+var total : real;
+forall i in D with (+ reduce total) {
+  total += A[i] * A[i];
+}
+
+writeln("sum of squares: ", total);
+```
+
+### `.nomx v1` translation
+
+```nomx
+define sum_of_squares_distributed
+  that computes the sum of squares of an array of real numbers whose indices 1..n are block-distributed across all available compute locales, by running a data-parallel forall loop that accumulates a single reduction result back to the root locale.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data DistributedArray is
+  intended to describe a one-dimensional array of real numbers indexed from 1..n, whose index range is partitioned into equal-sized contiguous blocks and assigned one block per available compute locale; each element is owned by exactly one locale and can be read or written only via the owning locale or via a cross-locale reference.
+  exposes element_count as whole_number.
+  exposes locale_count as whole_number.
+  exposes block_size_per_locale as whole_number.
+  exposes element_kind as text.
+
+the data ReductionResult is
+  intended to describe the final accumulated value produced by a data-parallel reduction across all locales; carries both the result and the identity of the root locale that received it.
+  exposes value as real_number.
+  exposes root_locale_index as whole_number.
+
+the function sum_of_squares_distributed is
+  intended to compute the sum of squares over every element of a DistributedArray by running one local-accumulator per locale in parallel and combining the per-locale accumulators via an associative sum reduction at the root locale; returns a single ReductionResult.
+  uses the @Data matching "DistributedArray" with at-least 0.95 confidence.
+  uses the @Data matching "ReductionResult" with at-least 0.95 confidence.
+  requires the input DistributedArray's element_count is positive and its locale_count is at-least 1.
+  requires every element of the array is initialized before this function is invoked; reading an uninitialized element is undefined.
+  ensures every element of the array is read exactly once during the computation.
+  ensures every locale processes its own block of the array without transferring element data across locale boundaries; only the per-locale accumulator scalars cross the network.
+  ensures the returned ReductionResult.value equals the mathematical sum of x*x for x in every element of the array, up to floating-point rounding per element_kind's numerical-stability axis.
+  ensures the operation is associative: re-ordering the per-locale partial sums produces the same ReductionResult.value (modulo floating-point reordering within numerical_stability tolerance).
+  ensures no locale retains a reference to another locale's block after this function returns.
+  hazard floating-point sum-reduction is non-associative in general; the returned value may differ in its least-significant bits depending on the order of per-locale combination. Authors who need bit-exact reproducibility must pair with a `favor numerical_stability` clause and a sorted-reduction implementation; the default-associative implementation is intended for throughput, not reproducibility.
+  hazard a locale that crashes mid-reduction causes the root locale to block on the failed partial sum; callers must pair with a W49-quantified timeout or a supervisor concept per Erlang-OTP (#85).
+  favor correctness.
+  favor numerical_stability.
+```
+
+### Gaps surfaced
+
+1. **`domain(1) dmapped Block(boundingBox = {1..n})` distribution declaration** — Chapel's way of declaring a distributed index space. Nom replaces this with a data-decl whose `exposes` fields carry the partitioning metadata (element_count + locale_count + block_size_per_locale), and the partitioning semantics live in the concept-level `ensures every locale processes its own block ... without transferring element data across locale boundaries` clause. Authoring-guide rule: **domain-distribution declarations (Chapel dmapped, UPC shared, X10 places) → data decl with exposes fields for partition metadata + concept-level `ensures element X is owned by exactly one locale / processed locally without cross-locale element transfer` clauses; no separate distribution-keyword surface**. No new wedge.
+2. **`config const n = 1000`** — Chapel's way of declaring a compile-time-configurable constant. Nom rejects compile-time-config as an authoring surface: configuration lives in build-stage `nom store sync` variable bindings and is invisible at the authoring level (the constant becomes just an element_count field read from the runtime-provided DistributedArray). Authoring-guide rule: **compile-time configurable constants (Chapel `config const`, C `#define`, CMake options) → regular data-decl fields populated at build-stage from a config source; no `config` keyword at Nom source**. No new wedge.
+3. **`forall i in D with (+ reduce total)`** — Chapel's data-parallel reduction loop. Nom replaces this with the function's `ensures every element is read exactly once` + `ensures the returned ReductionResult.value equals the mathematical sum ...` contract pair; the reduction operator is implicit in the mathematical equality. Authoring-guide rule: **data-parallel reduction loops (Chapel forall-with-reduce, OpenMP #pragma omp parallel reduction, Rust rayon reduce) → function decl with `ensures every element is read exactly once` + `ensures result equals mathematical expression` contract pair; the reduction operator is named in the mathematical expression, not as a loop-keyword**. No new wedge.
+4. **Associativity requirement for reduction operators** — Chapel's implicit assumption that the reduction operator is associative (required for parallel reordering). Nom surfaces this explicitly as `ensures the operation is associative: re-ordering the per-locale partial sums produces the same result (modulo floating-point reordering within tolerance)`. Authoring-guide rule: **implicit associativity assumptions in parallel reductions → explicit `ensures operation is associative: re-ordering X produces the same result (modulo Y)` clause at the function decl; swapping to a non-associative operator requires weakening this ensures**. No new wedge.
+5. **Locale references (`on` statements, `reff.locale`)** — Chapel's way of moving computation between locales. Nom replaces this with the concept-level `ensures no locale retains a reference to another locale's block after this function returns` — a data-flow contract at the function boundary, not a statement-level operator. Authoring-guide rule: **locale-reference / placement operators (Chapel `on Locale.here`, Julia `@spawnat`, X10 `at`) → function-level `ensures no locale retains a cross-locale reference after return` contract; placement is a concept-boundary concern, not a statement-level surface**. No new wedge.
+6. **Floating-point non-associativity hazard** — Chapel silently tolerates order-dependent floating-point results across reductions. Nom makes this an explicit `hazard floating-point sum-reduction is non-associative in general; bit-exact reproducibility requires pairing with numerical_stability favor clause and sorted-reduction implementation` — the hazard surfaces to callers who care. Authoring-guide rule: **floating-point non-associativity across parallel reductions → explicit `hazard` clause documenting the bit-reproducibility vs throughput trade-off; pair with `favor numerical_stability` for bit-exact paths**. No new wedge; uses the W51-registered `numerical_stability` QualityName seed.
+7. **Locale-failure propagation** — Chapel's runtime default is to block on failed locale communication. Nom makes this a peer `hazard` clause cross-referencing the fault-tolerance family (#27 + #85): locale crashes pair with supervisor or W49-quantified timeout contracts. Authoring-guide rule: **distributed-compute failure modes (locale crash, MPI rank death, partition lost) → `hazard ... pair with W49-quantified timeout or supervisor concept per Erlang-OTP #85` clause; recovery is a concept-level composition, not a built-in language feature**. No new wedge; reuses #85 unifying pattern.
+8. **`writeln`** — Chapel's I/O primitive. Nom rejects I/O at the computation-function boundary: `writeln` is a separate I/O function whose `ensures` clause describes the side effect (per #84 OCaml-effects pattern). The sum-of-squares function returns the ReductionResult; a caller composes it with a peer print function. Authoring-guide rule: **implicit I/O at the end of a computation (Chapel writeln, Python print, Julia @show) → separate I/O function decl with effect-emission `ensures` (reuses #84); computation function is pure with respect to I/O**. No new wedge.
+
+Row additions: **0 new wedges** — Chapel data-parallel-over-locales decomposes cleanly into (DistributedArray data decl with partition-metadata fields + ReductionResult data decl + function with per-locale-processing + associativity + no-cross-locale-retention + floating-point-non-associativity-hazard + locale-failure-hazard `ensures`/`hazard` clauses). 8 authoring-guide closures covering domain-distribution elision, compile-time-config elision, forall-reduction as mathematical-equality ensures, explicit-associativity contract, locale-placement as concept-boundary, floating-point-reproducibility hazard, locale-failure as fault-tolerance composition, I/O as separate function (reuses #84).
+
+**Fifty-sixth consecutive minimal-wedge translation + forty-eighth 0-new-wedge run** (Dafny #50 through Chapel #89 — 40-member streak, all 0-new-wedge). Chapel — developed by Cray (now HPE) since 2005 as the production-ready distributed-computing language for exascale machines (Frontier, Aurora) — decomposes cleanly into Nom's (data decl + function + `ensures`/`hazard` clauses) primitives, with zero compile-time-config or distribution-operator surface at Nom source. **Scientific-computing paradigm family now has 7 exemplars**: Fortran (#61) + NumPy (#35) + R (#52) + SQL-CTE (#43) + Julia (#66) + MATLAB (#68) + **Chapel distributed-locale (#89)** — spanning serial + array-parallel + implicit-parallel + multiple-dispatch + stencil + **distributed-data-parallel**. The unifying insight: **parallelism models (shared-memory, data-parallel, distributed-locale, actor-message-passing) all reduce to the same Nom surface** — function decls with `ensures` clauses that describe the observable mathematical/logical result; the concurrency mechanism is a build-stage implementation concern, not an authoring-time vocabulary. What varies is the `hazard` clauses that surface the trade-offs (non-associativity of floating-point, locale-crash propagation, data-race vs GC overhead). Eight authoring-guide closures land in doc 16.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
