@@ -5087,6 +5087,126 @@ Row additions: **0 new wedges** — MATLAB's matrix-oriented numerical computing
 
 ---
 
+## 69. Smalltalk — pure message-passing OO
+
+```smalltalk
+Object subclass: #BankAccount
+  instanceVariableNames: 'balance owner'
+  classVariableNames: ''
+  package: 'Banking'.
+
+BankAccount >> initializeFor: aName withOpening: anAmount
+  owner := aName.
+  balance := anAmount.
+  ^ self.
+
+BankAccount >> deposit: anAmount
+  anAmount > 0 ifFalse: [^ self error: 'deposit must be positive'].
+  balance := balance + anAmount.
+  ^ balance.
+
+BankAccount >> withdraw: anAmount
+  (anAmount > 0 and: [anAmount <= balance])
+    ifFalse: [^ self error: 'invalid withdrawal'].
+  balance := balance - anAmount.
+  ^ balance.
+
+BankAccount >> transferTo: aRecipient amount: anAmount
+  self withdraw: anAmount.
+  aRecipient deposit: anAmount.
+  ^ true.
+```
+
+### `.nomx v1` translation
+
+```nomx
+define open_account
+  that takes an owner name and an opening amount, returns a new account with the given owner and balance.
+the account's owner is the given name, the balance is the opening amount.
+
+define deposit_into_account
+  that takes an account and a deposit amount, returns the new balance.
+reject non-positive deposit amounts with an error.
+the new balance is the old balance plus the deposit amount.
+
+define withdraw_from_account
+  that takes an account and a withdrawal amount, returns the new balance.
+reject non-positive withdrawals and withdrawals greater than the balance.
+the new balance is the old balance minus the withdrawal amount.
+
+define transfer_between_accounts
+  that takes a source account, a recipient account, and a transfer amount, returns success.
+first withdraw the amount from the source, then deposit into the recipient.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data BankAccount is
+  intended to describe one bank account with an owner identity and a ledger balance; account state is immutable and every mutation returns a fresh BankAccount.
+  exposes owner as text.
+  exposes balance as real from 0 to 1e15.
+
+the data MoneyTransferError is
+  intended to enumerate the distinct failure modes when moving money into or out of a BankAccount.
+  exposes invalid_amount at tag 0.
+  exposes insufficient_balance at tag 1.
+
+the function open_account is
+  intended to return a new BankAccount for the named owner with the given opening balance.
+  uses the @Data matching "BankAccount" with at-least 0.95 confidence.
+  requires owner is non-empty text.
+  requires opening_amount is at-least 0.
+  ensures the returned account's owner equals owner.
+  ensures the returned account's balance equals opening_amount.
+  favor correctness.
+
+the function deposit_into_account is
+  intended to return a new BankAccount reflecting the successful addition of a positive deposit_amount to the prior account's balance; returns a MoneyTransferError.invalid_amount when deposit_amount is not strictly positive.
+  uses the @Data matching "BankAccount" with at-least 0.95 confidence.
+  uses the @Data matching "MoneyTransferError" with at-least 0.95 confidence.
+  ensures when deposit_amount is strictly positive, the returned account has balance equal to prior balance plus deposit_amount, and owner unchanged.
+  ensures when deposit_amount is not strictly positive, the result is MoneyTransferError.invalid_amount and no account state is produced.
+  favor correctness.
+
+the function withdraw_from_account is
+  intended to return a new BankAccount reflecting the successful subtraction of a positive withdrawal_amount from the prior account's balance, provided the balance is sufficient; returns appropriate MoneyTransferError variants otherwise.
+  uses the @Data matching "BankAccount" with at-least 0.95 confidence.
+  uses the @Data matching "MoneyTransferError" with at-least 0.95 confidence.
+  ensures when withdrawal_amount is strictly positive and at-most prior balance, the returned account has balance equal to prior balance minus withdrawal_amount, and owner unchanged.
+  ensures when withdrawal_amount is not strictly positive, the result is MoneyTransferError.invalid_amount.
+  ensures when withdrawal_amount exceeds prior balance, the result is MoneyTransferError.insufficient_balance.
+  favor correctness.
+
+the function transfer_between_accounts is
+  intended to atomically move funds from a source account to a recipient account, returning the updated pair or an error describing why the transfer could not be applied.
+  uses the @Data matching "BankAccount" with at-least 0.95 confidence.
+  uses the @Function matching "withdraw_from_account" with at-least 0.95 confidence.
+  uses the @Function matching "deposit_into_account" with at-least 0.95 confidence.
+  ensures when the source can afford the transfer and the amount is strictly positive, the returned pair has source.balance equal to prior source.balance minus amount and recipient.balance equal to prior recipient.balance plus amount.
+  ensures when the transfer cannot succeed (invalid amount or insufficient source balance), no account state is updated and an appropriate MoneyTransferError is returned.
+  ensures the two state changes (source-debit and recipient-credit) appear as a single atomic group from other observers' perspectives.
+  hazard cross-account atomicity on a distributed ledger requires a coordinating protocol (2PC, saga, or consensus); callers on distributed storage should treat this function's atomicity guarantee as in-process only.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Message-sending syntax (`account deposit: 100`)** — Smalltalk's defining feature: all computation is "send message to receiver". Nom's translation treats messages as **function calls with the receiver as the first argument** (same rule as #23 Ruby method decomposition, doc 16 #53): `account deposit: 100` → `deposit_into_account(account, 100)`. Authoring-guide rule: **Smalltalk message-sends decompose to plain function decls with receiver as the first parameter; no postfix-send operator at Nom source level**. Reuses #23 Ruby rule. No new wedge.
+2. **`self`/`this` implicit receiver** — inside a method body, `self` refers to the current instance. Nom rejects implicit receivers; every method takes the instance explicitly as its first named parameter. Authoring-guide rule: **`self`/`this`/`self error:` → explicit-parameter access in Nom; no implicit receiver**. Reuses #46 Rego implicit-globals rule + #38 Solidity msg.sender rule. No new wedge.
+3. **`ifFalse: [...]` / `ifTrue: [...]` as message-with-block-argument** — Smalltalk's control flow is itself message-passing. Nom's translation uses ordinary `when X … otherwise …` prose. Authoring-guide rule: **Smalltalk `ifTrue:`/`ifFalse:` with block arguments → `when P … otherwise …` prose; blocks decompose to closure-lifted named functions when they're non-trivial (doc 19 D2)**. No new wedge.
+4. **Mutable-instance-variable semantics (`balance := balance + anAmount`)** — Smalltalk classes have mutable fields. Nom rejects mutation; every mutation returns a fresh instance. Authoring-guide rule: **mutable-instance-variable assignments decompose to functions returning a fresh instance with the updated field; no mutation at Nom source level** (same as #50 Dafny + #55 Elm record-update rule). No new wedge.
+5. **`^` return** — Smalltalk's explicit-return syntax inside a method. Nom's function decl carries the return in its top-level `returns X` and `ensures` clauses. Authoring-guide rule: **Smalltalk `^` returns → function-decl `returns` + `ensures` description; reuses #67 Zig rule 301 (no `return` statements at Nom source)**. No new wedge.
+6. **`error:` as a convention** — Smalltalk's convention for raising errors. Nom's tagged-variant data decl (MoneyTransferError) + variant `ensures` clauses is the direct analogue. Authoring-guide rule: **Smalltalk error convention → tagged-variant error data decl + per-variant `ensures` (reuses #38 Solidity + #67 Zig + #25 Haskell Either)**. No new wedge.
+7. **Class method vs instance method (`>>`)** — Smalltalk distinguishes these syntactically. Nom collapses them: class methods become module-level functions, instance methods become functions with a first receiver parameter. Authoring-guide rule: **class-method vs instance-method distinction collapses in Nom; both are plain function decls, distinguished only by whether they take a receiver parameter**. No new wedge.
+8. **Cross-account atomicity as a hazard** — the classic transfer-between-accounts problem. Nom's translation surfaces both the in-process atomicity `ensures` and the distributed-atomicity `hazard`. Authoring-guide rule: **cross-aggregate atomicity declared via `ensures … appear as a single atomic group` + `hazard` naming the distributed-coordination requirement**. Reuses #63 Redis cluster-failover hazard pattern. No new wedge.
+
+Row additions: **0 new wedges** — Smalltalk pure-OO message-passing fully expresses via function decls with receiver-as-first-param + tagged-variant error data decls + explicit `ensures` for mutation-returns + `when/otherwise` for control flow + cross-aggregate atomicity `ensures`/`hazard` pair. 7 authoring-guide closures: message-sends → function decls (reuses #23), `self`/`this` → explicit params, `ifTrue:`/`ifFalse:` blocks → `when`/`otherwise`, mutable-fields → return-fresh-instance (reuses #50 + #55), `^` → `returns` + `ensures`, `error:` → tagged-variant error decl, class-vs-instance distinction collapses, cross-aggregate atomicity via `ensures`+`hazard`.
+
+**Thirty-sixth consecutive minimal-wedge translation + twenty-eighth 0-new-wedge run.** Smalltalk — the original pure-OO language (1972) — decomposes cleanly into Nom's primitives. Combined with Java (#21 class), Kotlin (#22 sealed), Ruby (#23 method), Solidity (#38 smart contract), Elixir (#27 actor), Swift (via SwiftUI #39), and now Smalltalk, **the OO paradigm family is fully covered across message-passing (Smalltalk/Elixir/Erlang), class-based (Java/Kotlin/Ruby/Swift), and contract-oriented (Solidity) variants** — all reduce to the same (data decl + first-param-receiver function decls + tagged-variant errors) shape.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

@@ -324,18 +324,26 @@
 | 307 | MATLAB `assert(P, msg)` → `requires P` at function-decl; build stage checks statically where possible, runtime where necessary | authoring-guide rule | ✅ closed (doc 14 #68) |
 | 308 | Matrix transposes decomposed to prose (`the transpose of X`); no operator at Nom source | authoring-guide rule | ✅ closed (doc 14 #68) |
 | 309 | Shape-query functions (`size(A)`) → direct field access on shape-carrying data decl | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 310 | Smalltalk message-sends → plain function decls with receiver as first parameter; no postfix-send operator (reuses #23 Ruby rule) | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 311 | Smalltalk `self`/`this`/implicit receivers → explicit-parameter access; no implicit receiver at Nom source (reuses #46 / #38) | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 312 | Smalltalk `ifTrue:`/`ifFalse:` with block arguments → `when P … otherwise …` prose; non-trivial blocks closure-lifted per doc 19 D2 | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 313 | Mutable-instance-variable assignments → functions returning fresh instance with updated field (reuses #50 Dafny + #55 Elm) | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 314 | Smalltalk `^` returns → function-decl `returns` + `ensures` description (reuses #67 Zig rule 301) | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 315 | Smalltalk `error:` convention → tagged-variant error data decl + per-variant `ensures` (reuses #38 / #67 / #25 error-family) | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 316 | Class-method vs instance-method distinction collapses to plain function decls in Nom; difference is whether the decl takes a receiver parameter | authoring-guide rule | ✅ closed (doc 14 #69) |
+| 317 | Cross-aggregate atomicity → `ensures … appear as a single atomic group` + `hazard` naming distributed-coordination requirement (reuses #63 Redis cluster-failover pattern) | authoring-guide rule | ✅ closed (doc 14 #69) |
 
-Totals by destination (after doc 14 #68 MATLAB matrix-oriented scientific-computing translation — **twenty-seventh 0-new-wedge translation in a row**; 8 authoring-guide closures; **six-exemplar scientific-computing paradigm family** fully closed (Fortran + NumPy + R + SQL-CTE + Julia + MATLAB)):
+Totals by destination (after doc 14 #69 Smalltalk pure-OO translation — **twenty-eighth 0-new-wedge translation in a row**; 8 authoring-guide closures; **OO paradigm family fully covered across 3 variants**: message-passing (Smalltalk/Elixir/Erlang) + class-based (Java/Kotlin/Ruby/Swift) + contract-oriented (Solidity) all reduce to (data decl + first-param-receiver function decls + tagged-variant errors)):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **260**
+- ✅ Closed: **268**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **9** (9/10 threshold unchanged)
 
-Backlog size: 327 rows. Closure rate 80% (260/327). **68 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + **matrix-oriented-scientific (MATLAB)**. **Backlog closure crosses 80% (260/327).** Thirty-fifth consecutive minimal-wedge translation, **twenty-seventh 0-new-wedge in a row**. **Six-exemplar scientific-computing paradigm family fully closed.**
+Backlog size: 335 rows. Closure rate 80% (268/335). **69 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + matrix-oriented-scientific + **pure-message-passing-OO (Smalltalk)**. Thirty-sixth consecutive minimal-wedge translation, twenty-eighth 0-new-wedge. **OO paradigm family fully covered across 3 variants** (message-passing + class-based + contract-oriented).
 
 ## Wedge master index (for cross-ref with doc 13)
 
