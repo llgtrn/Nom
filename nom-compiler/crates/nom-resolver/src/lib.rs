@@ -14,6 +14,7 @@
 
 pub mod v2;
 pub mod v2_rewrite;
+pub mod intent;
 
 use nom_ast::NomRef;
 pub use nom_types::NomtuEntry;
