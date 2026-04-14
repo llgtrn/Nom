@@ -62,15 +62,17 @@ anything load-bearing.
   row→data, diagram→screen — corpus-idiomatic vocabulary rewritten
   to the canonical 9-kind set at S1). S4 contract scanner + S5
   effect scanner both relaxed the same way: drop the mid-scan
-  clause-opener check (English verbs inside prose clauses —
-  "environment **exposes** no ambient state", "the body's side
-  effects are skipped" — were tripping it); keep only the no-dot
-  safety net for genuinely-malformed input. Closure pass rate
-  progression: 0/89 → 42/88 → 60/88 → 68/88 → 75/88 → 77/88 →
-  79/88 (89.8%). Remaining 9 failures: S2=4 (instance binding
-  `the X for the Y`, `diagram` shape gaps), S5=1 (single corpus
-  block with genuine no-dot-anywhere hazard), S6=4 (mixed-concept-
-  and-entity authoring — corpus issue, not parser).
+  clause-opener check (English verbs inside prose clauses trip it);
+  keep only the no-dot safety net. S6 one-kind-per-file rule retired
+  — concepts bundled with supporting data/function decls now parse
+  (filter concepts into NomFile; non-concepts validated at S1-S5
+  but fall through at S6). Closure pass rate progression:
+  0/89 → 42/88 → 60/88 → 68/88 → 75/88 → 77/88 → 79/88 → 83/88
+  (94.3%). Remaining 5 failures: S2=4 (instance binding `the X
+  for the Y`, authoring with kinds outside the closed 9-set —
+  `participants`, `layout`, `button_primary_style`), S5=1 (single
+  corpus block with genuine no-dot-anywhere hazard — a corpus
+  authoring bug, not a parser issue).
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
