@@ -58,8 +58,9 @@ anything load-bearing.
 - Corpus dashboard: three layers of kind-noun drift fixed in sync
   (baseline.sql already had 9; KINDS const 7 → 9; lexer kind-noun
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
-  0 → 4 keyword_synonyms (proof→property, composition→module,
-  row→data, diagram→screen — corpus-idiomatic vocabulary rewritten
+  0 → 7 keyword_synonyms (proof→property, composition→module,
+  row→data, diagram→screen, participants→data, layout→screen,
+  format→data — corpus-idiomatic vocabulary rewritten
   to the canonical 9-kind set at S1). S4 contract scanner + S5
   effect scanner both relaxed the same way: drop the mid-scan
   clause-opener check (English verbs inside prose clauses trip it);
@@ -68,11 +69,12 @@ anything load-bearing.
   (filter concepts into NomFile; non-concepts validated at S1-S5
   but fall through at S6). Closure pass rate progression:
   0/89 → 42/88 → 60/88 → 68/88 → 75/88 → 77/88 → 79/88 → 83/88
-  (94.3%). Remaining 5 failures: S2=4 (instance binding `the X
-  for the Y`, authoring with kinds outside the closed 9-set —
-  `participants`, `layout`, `button_primary_style`), S5=1 (single
-  corpus block with genuine no-dot-anywhere hazard — a corpus
-  authoring bug, not a parser issue).
+  → 84/88 (95.5%). Remaining 4 failures: 1 instance binding
+  `the X for the Y` (block #14), 1 follow-on parser-shape gap
+  after layout→screen rewrite (block #53 `expected-block-name`),
+  1 follow-on gap after format→data rewrite (block #63), 1 malformed
+  favor clause with empty quality name (block #87). All four are
+  authoring-side issues outside the parser's clean fix surface.
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
