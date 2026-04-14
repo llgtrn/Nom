@@ -31,6 +31,7 @@ members = [
     "crates/nom-locale",
     "crates/nom-intent",
     "crates/nom-lsp",
+    "crates/nom-grammar",
 ]
 
 [workspace.package]

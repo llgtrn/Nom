@@ -372,6 +372,16 @@ enum Commands {
         #[command(subcommand)]
         action: LocaleCmd,
     },
+
+    /// Grammar registry — AI-retrievable basic-syntax store per doc 21.
+    /// P1: `nom grammar init <path>` creates an empty grammar.sqlite with
+    /// schema tables for keywords, clause_shapes, authoring_rules,
+    /// quality_names, and kinds. Later phases populate from the parser
+    /// and from doc 16.
+    Grammar {
+        #[command(subcommand)]
+        action: GrammarCmd,
+    },
 }
 
 #[derive(Subcommand)]
@@ -977,6 +987,28 @@ enum LspCmd {
 }
 
 #[derive(Subcommand)]
+enum GrammarCmd {
+    /// Initialize an empty grammar.sqlite with the P1 schema tables.
+    /// Idempotent — safe to rerun; stamps schema_version. Later phases
+    /// populate from the parser + doc 16.
+    Init {
+        /// Path for grammar.sqlite (default: ~/.nom/grammar.sqlite)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Print row counts for every registry table plus schema_version.
+    /// Useful for `nom grammar status` smoke check.
+    Status {
+        /// Path to grammar.sqlite (default: ~/.nom/grammar.sqlite)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+        /// Emit JSON instead of human-readable lines
+        #[arg(long)]
+        json: bool,
+    },
+}
+
+#[derive(Subcommand)]
 enum AgentCmd {
     /// Classify prose through the M8 ReAct loop against the dict.
     /// Slice-5a ships with a stub LLM that immediately rejects —
@@ -1349,8 +1381,80 @@ fn main() {
                 locale::cmd_locale_apply(&tag, &file, from_canonical, write, json)
             }
         },
+        Commands::Grammar { action } => match action {
+            GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
+            GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
+        },
     };
     process::exit(exit_code);
+}
+
+fn default_grammar_path() -> PathBuf {
+    if let Ok(home) = std::env::var("HOME") {
+        PathBuf::from(home).join(".nom").join("grammar.sqlite")
+    } else if let Ok(up) = std::env::var("USERPROFILE") {
+        PathBuf::from(up).join(".nom").join("grammar.sqlite")
+    } else {
+        PathBuf::from(".nom").join("grammar.sqlite")
+    }
+}
+
+fn cmd_grammar_init(path: Option<&Path>) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    match nom_grammar::init_at(&p) {
+        Ok(conn) => {
+            let version = nom_grammar::schema_version(&conn).unwrap_or(0);
+            println!("nom grammar init: ready at {} (schema_version {})", p.display(), version);
+            0
+        }
+        Err(e) => {
+            eprintln!("nom grammar init: {e}");
+            1
+        }
+    }
+}
+
+fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom grammar status: {e}");
+            return 1;
+        }
+    };
+    let version = nom_grammar::schema_version(&conn).unwrap_or(0);
+    let counts = match nom_grammar::counts(&conn) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom grammar status: {e}");
+            return 1;
+        }
+    };
+    if json {
+        let body = serde_json::json!({
+            "path": p.display().to_string(),
+            "schema_version": version,
+            "counts": counts,
+        });
+        println!("{}", serde_json::to_string_pretty(&body).unwrap());
+    } else {
+        println!("nom grammar status:");
+        println!("  path:           {}", p.display());
+        println!("  schema_version: {}", version);
+        println!("  keywords:       {}", counts.keywords);
+        println!("  clause_shapes:  {}", counts.clause_shapes);
+        println!("  authoring_rules:{}", counts.authoring_rules);
+        println!("  quality_names:  {}", counts.quality_names);
+        println!("  kinds:          {}", counts.kinds);
+    }
+    0
 }
 
 fn cmd_app_dream(
