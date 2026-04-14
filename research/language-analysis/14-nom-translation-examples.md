@@ -6515,6 +6515,90 @@ Row additions: **0 new wedges** — Io's prototype-based OO + delegation + dynam
 
 ---
 
+## 84. OCaml 5 algebraic effects — user-defined effect handlers
+
+```ocaml
+type _ Effect.t += ReadFile : string -> string Effect.t
+type _ Effect.t += LogMessage : string -> unit Effect.t
+
+let process_config path =
+  let contents = Effect.perform (ReadFile path) in
+  Effect.perform (LogMessage ("loaded " ^ path));
+  String.trim contents
+
+let with_filesystem k =
+  let open Effect.Deep in
+  try_with k ()
+    { effc = fun (type a) (eff : a Effect.t) ->
+        match eff with
+        | ReadFile p -> Some (fun (kont : (a, _) continuation) ->
+            continue kont (In_channel.read_all p))
+        | LogMessage m -> Some (fun kont ->
+            print_endline m; continue kont ())
+        | _ -> None }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define process_config
+  that takes a file path, returns the trimmed file contents after logging a diagnostic message about the load.
+
+define run_with_filesystem
+  that takes a thunk that performs ReadFile and LogMessage effects, returns the thunk's result with the effects interpreted as real OS filesystem reads and stdout writes.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data EffectRequest is
+  intended to enumerate the named side-effecting capabilities a function may request from its surrounding handler.
+  exposes read_file_request at tag 0 with payload path as text.
+  exposes log_message_request at tag 1 with payload message as text.
+
+the data EffectResponse is
+  intended to describe the fulfilled result of one EffectRequest, matched by tag to the request.
+  exposes read_file_response as perhaps text.
+  exposes log_message_response as boolean.
+
+the function process_config is
+  intended to read a configuration file at a given path and return its trimmed contents, requesting one read_file and one log_message effect through the caller-supplied effect-handler interface; the function itself never performs real I/O.
+  uses the @Data matching "EffectRequest" with at-least 0.95 confidence.
+  uses the @Data matching "EffectResponse" with at-least 0.95 confidence.
+  requires the caller provides a handler that resolves every emitted EffectRequest to a consistent EffectResponse.
+  ensures the returned text equals the handler's read_file_response for the given path, with leading and trailing whitespace removed.
+  ensures exactly one read_file_request is emitted during the call, with its path equal to the input path.
+  ensures exactly one log_message_request is emitted during the call, with its message containing the string "loaded" followed by the path.
+  ensures the order of emitted requests is: the read_file_request first, then the log_message_request.
+  hazard any handler that diverges from the declared semantics (e.g., returns nothing for read_file_response on a path that does exist) makes this function's output undefined; callers are responsible for handler correctness.
+  favor correctness.
+
+the function run_with_real_filesystem is
+  intended to evaluate an effect-emitting function by fulfilling every EffectRequest through real-OS primitives — read_file via POSIX open+read, log_message via stdout write.
+  uses the @Data matching "EffectRequest" with at-least 0.95 confidence.
+  uses the @Data matching "EffectResponse" with at-least 0.95 confidence.
+  ensures every read_file_request emitted by the inner function is resolved by reading the corresponding file from the filesystem at the time of the request.
+  ensures every log_message_request emitted by the inner function is resolved by writing the message to stdout followed by a newline.
+  ensures the inner function observes effects in the order it emitted the requests.
+  hazard real-OS calls may fail (missing file, permission denied, disk full); this handler surfaces such failures via read_file_response as nothing, losing distinction between kinds of failure. Callers that care about fault classification need a richer handler.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Algebraic-effect emission (`Effect.perform`)** — OCaml 5's signature feature: a function emits a typed effect request and the surrounding handler decides how to fulfill it. Nom's translation makes the effect-emission explicit at authoring time: `ensures exactly one read_file_request is emitted during the call` + `ensures the order of emitted requests is …`. Authoring-guide rule: **algebraic-effect emission → explicit `ensures exactly N X_request is emitted` clauses in the emitting function's contract + order-of-emission `ensures` clause; the handler is a peer function with its own `ensures` clauses describing fulfillment semantics**. No new wedge.
+2. **Effect handlers (`try_with ... { effc = ... }`)** — OCaml's way of bundling per-effect fulfillment logic. Nom's translation treats a handler as a peer function with per-request `ensures` clauses. Authoring-guide rule: **effect handlers decompose to peer function decls with one `ensures every X_request is resolved by Y` clause per handled effect**. No new wedge.
+3. **Continuations (`continue kont ...`)** — OCaml's way of resuming the handled function from the point of effect emission. Nom rejects first-class continuations (per #77 Scheme call/cc rule) and treats the handler as a direct dispatch function: each `ensures every X_request is resolved by Y` clause describes the one-shot dispatch, not a continuation-passing machine. Authoring-guide rule: **OCaml-style resumable continuations in effect handlers → one-shot dispatch-per-request semantics at Nom source level; multi-shot or deep-stack continuations are rejected (reuses #77 call/cc → 4-pattern decomposition rule)**. No new wedge.
+4. **Polymorphic effect types (`type _ Effect.t += ...`)** — OCaml's extensible effect-sum type. Nom's tagged-variant `EffectRequest` data decl captures the same closed-for-now + extensible-at-build-stage pattern. Authoring-guide rule: **extensible effect-sum types → tagged-variant data decls where adding a new effect variant is a build-stage concern (rebuild with a wider data decl; callers see the expanded enumeration after reload)**. No new wedge; reuses #22 Kotlin sealed + #55 Elm Msg extensibility.
+5. **Effect-purity via-handler-substitution** — OCaml's killer feature: a function that performs effects is pure with respect to any handler; swapping handlers swaps semantics. Nom's translation surfaces this explicitly: the function's `ensures` describes only the emission pattern, not the semantics of the effect. Authoring-guide rule: **effect-purity via handler substitution is the default Nom stance: functions describe what they request, not what the request does; handler-swap is the natural unit-test + mock-vs-production substitution**. No new wedge; this is the existing doc-08 separation-of-concerns principle applied to I/O.
+6. **Unhandled-effect exception** — OCaml raises if a required effect escapes all handlers. Nom's translation makes this a `requires the caller provides a handler that resolves every emitted X_request` clause. Authoring-guide rule: **unhandled-effect behavior → `requires the caller provides a handler that resolves every emitted X_request` contract at the function decl; build-stage enforces the contract statically when possible**. No new wedge.
+
+Row additions: **0 new wedges** — OCaml algebraic effects + handlers + continuations + polymorphic effect types + purity + unhandled-effect all decompose to (tagged-variant EffectRequest data decl + emitting function with emission-pattern `ensures` + handler function with per-request resolution `ensures` + caller's `requires` on handler completeness). 6 authoring-guide closures: effect emission → explicit emission-pattern `ensures`, handlers → peer function with per-request `ensures`, resumable continuations → one-shot dispatch (reuses #77), extensible effect-sum → tagged-variant data decls, effect-purity via handler substitution is Nom default stance, unhandled-effect → `requires handler resolves every X_request`.
+
+**Fifty-first consecutive minimal-wedge translation + forty-third 0-new-wedge run.** OCaml 5 algebraic effects — one of the most theoretically interesting new additions to the ML family (2023) — decompose cleanly into Nom's (tagged-variant + function decls + `ensures`/`requires`) primitives. Combined with Haskell monads (#25), F# computation expressions (#76), Scheme call/cc (#77), and now OCaml effects (#84), **the effect-handling paradigm family is fully covered across 4 exemplars**: all reduce to the same authoring surface where **the function describes what it requests and the handler describes how requests are resolved**. The **authoring-time separation of effect-emission from effect-interpretation** is the unifying principle.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

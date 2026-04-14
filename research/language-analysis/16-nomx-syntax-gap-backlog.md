@@ -427,18 +427,24 @@
 | 410 | Prototype-clone object creation → `create_X` function decls with named-param field values; no `clone` operator at Nom source | authoring-guide rule | ✅ closed (doc 14 #83) |
 | 411 | Prototype-based exceptions (Io, JS `throw Error`) → tagged-variant error data decls + per-variant `ensures` (reuses #25 + #67 + #38) | authoring-guide rule | ✅ closed (doc 14 #83) |
 | 412 | Prototype-chain meta-manipulation → build-stage code-gen authored as ordinary Nom function decls; no runtime reflection at authoring level (reuses #29 + #56) | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 413 | Algebraic-effect emission → explicit `ensures exactly N X_request is emitted` + order-of-emission `ensures` clauses; handler is peer function with per-request `ensures` | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 414 | Effect handlers → peer function decls with one `ensures every X_request is resolved by Y` clause per handled effect | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 415 | OCaml resumable continuations in effect handlers → one-shot dispatch-per-request semantics at Nom source level; multi-shot continuations rejected (reuses #77) | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 416 | Extensible effect-sum types → tagged-variant data decls; adding new effect variant is build-stage concern (reuses #22 + #55) | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 417 | Effect-purity via handler substitution is default Nom stance: functions describe what they request, handlers describe what requests do | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 418 | Unhandled-effect → `requires the caller provides a handler that resolves every emitted X_request` contract at function decl; build-stage enforces statically when possible | authoring-guide rule | ✅ closed (doc 14 #84) |
 
-Totals by destination (after doc 14 #83 Io prototype-based-OO translation — **forty-second 0-new-wedge translation in a row**; 7 authoring-guide closures; **OO paradigm family now has 8 exemplars unified across 4 variants**: class-based (Java/Kotlin/Ruby/Swift) + message-passing (Smalltalk/Elixir) + contract-oriented (Solidity) + prototype-based (Io)):
+Totals by destination (after doc 14 #84 OCaml 5 algebraic-effects translation — **forty-third 0-new-wedge translation in a row**; 6 authoring-guide closures; **effect-handling paradigm family fully covered across 4 exemplars**: Haskell monads + F# computation expressions + Scheme call/cc + OCaml effects):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **363**
+- ✅ Closed: **369**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 433 rows. Closure rate 84% (363/433). **83 translations** in doc 14. Fiftieth consecutive minimal-wedge, **forty-second 0-new-wedge**. **OO paradigm family now has 8 exemplars unified across 4 variants** (class-based + message-passing + contract-oriented + prototype-based).
+Backlog size: 439 rows. Closure rate 84% (369/439). **84 translations** in doc 14. Fifty-first consecutive minimal-wedge, **forty-third 0-new-wedge**. **Effect-handling family fully covered across 4 exemplars**. **Unifying principle**: functions describe what they request; handlers describe what requests do.
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
