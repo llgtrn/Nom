@@ -325,6 +325,7 @@ fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
 // S8 removes them.
 
 use crate::{EntityRow, row_to_entity};
+use nom_types::{EntryScores, EntrySignature, SecurityFinding};
 use rusqlite::{OptionalExtension, params};
 
 /// Insert-or-update a row in `entities` on the entities tier.
@@ -669,6 +670,116 @@ pub fn add_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Result<
         rusqlite::params![concept_id, entry_id],
     )?;
     Ok(changed == 1)
+}
+
+// ── S6 dict-split: 5 entries-tier mutators ────────────────────────────
+//
+// Faithful re-emit of the legacy `NomDict::*` setter SQL with
+// `&self.conn` swapped for `&d.entities`. Same insert-or-update
+// semantics, same idempotency. The `EntryScores` impl stays on the
+// legacy 8 columns; the three T3.2 dimensions (quality, maintenance,
+// accessibility) are populated by a different code path (the corpus
+// pilot) and remain NULL through this setter.
+
+/// Insert or replace an entry's score row. Updates the legacy 8
+/// dimensions; the T3.2-extended `quality`, `maintenance`,
+/// `accessibility` columns are left untouched (NULL or whatever the
+/// corpus pipeline put there).
+pub fn set_scores(d: &Dict, id: &str, scores: &EntryScores) -> Result<()> {
+    d.entities.execute(
+        "INSERT INTO entry_scores (id, security, reliability, performance, readability,
+                                   testability, portability, composability, maturity,
+                                   overall_score)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)
+         ON CONFLICT(id) DO UPDATE SET
+             security      = excluded.security,
+             reliability   = excluded.reliability,
+             performance   = excluded.performance,
+             readability   = excluded.readability,
+             testability   = excluded.testability,
+             portability   = excluded.portability,
+             composability = excluded.composability,
+             maturity      = excluded.maturity,
+             overall_score = excluded.overall_score",
+        params![
+            id,
+            scores.security,
+            scores.reliability,
+            scores.performance,
+            scores.readability,
+            scores.testability,
+            scores.portability,
+            scores.composability,
+            scores.maturity,
+            scores.overall_score,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Add a (key, value) metadata row. The PK is (id, key, value), so
+/// the same key can carry many values (e.g. multiple `tag` entries
+/// for the same id). Idempotent per the PK.
+pub fn add_meta(d: &Dict, id: &str, key: &str, value: &str) -> Result<()> {
+    d.entities.execute(
+        "INSERT OR IGNORE INTO entry_meta (id, key, value) VALUES (?1, ?2, ?3)",
+        params![id, key, value],
+    )?;
+    Ok(())
+}
+
+/// Insert or replace the signature row for an entry.
+pub fn set_signature(d: &Dict, id: &str, sig: &EntrySignature) -> Result<()> {
+    d.entities.execute(
+        "INSERT INTO entry_signatures
+            (id, visibility, is_async, is_method, return_type, params_json)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)
+         ON CONFLICT(id) DO UPDATE SET
+             visibility  = excluded.visibility,
+             is_async    = excluded.is_async,
+             is_method   = excluded.is_method,
+             return_type = excluded.return_type,
+             params_json = excluded.params_json",
+        params![
+            id,
+            sig.visibility,
+            sig.is_async,
+            sig.is_method,
+            sig.return_type,
+            sig.params_json,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Append a security finding row. Many findings per entry are allowed
+/// (PK is `finding_id` AUTOINCREMENT, not the entry id).
+pub fn add_finding(d: &Dict, id: &str, finding: &SecurityFinding) -> Result<()> {
+    d.entities.execute(
+        "INSERT INTO entry_security_findings
+             (id, severity, category, rule_id, message, evidence, line, remediation)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8)",
+        params![
+            id,
+            finding.severity.as_str(),
+            finding.category,
+            finding.rule_id,
+            finding.message,
+            finding.evidence,
+            finding.line,
+            finding.remediation,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Idempotent structural-closure-ref insert. PK enforces uniqueness.
+pub fn add_ref(d: &Dict, from_id: &str, to_id: &str) -> Result<()> {
+    d.entities.execute(
+        "INSERT OR IGNORE INTO entry_refs (from_id, to_id) VALUES (?1, ?2)",
+        params![from_id, to_id],
+    )?;
+    Ok(())
 }
 
 #[cfg(test)]
@@ -1246,6 +1357,142 @@ mod tests {
         assert_eq!(v, vec![("c2".to_string(), "beta".to_string())]);
         // Idempotent on missing name.
         delete_concept(&d, "missing").unwrap();
+    }
+
+    // ── S6 port tests ──────────────────────────────────────────────
+
+    #[test]
+    fn set_scores_inserts_then_updates_via_conflict_clause() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_s", "partial");
+        let scores = nom_types::EntryScores {
+            id: "h_s".into(),
+            security: Some(0.8),
+            reliability: Some(0.7),
+            performance: Some(0.6),
+            readability: Some(0.5),
+            testability: Some(0.4),
+            portability: Some(0.3),
+            composability: Some(0.9),
+            maturity: Some(0.95),
+            overall_score: Some(0.65),
+        };
+        set_scores(&d, "h_s", &scores).unwrap();
+        // Update with a different overall_score; row must be updated, not duplicated.
+        let mut updated = scores.clone();
+        updated.overall_score = Some(0.99);
+        set_scores(&d, "h_s", &updated).unwrap();
+        let n: i64 = d
+            .entities
+            .query_row("SELECT COUNT(*) FROM entry_scores WHERE id = 'h_s'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(n, 1);
+        let overall: Option<f32> = d
+            .entities
+            .query_row(
+                "SELECT overall_score FROM entry_scores WHERE id = 'h_s'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        // EntryScores fields are f32, so the round-trip is f32-precise.
+        assert!(matches!(overall, Some(v) if (v - 0.99_f32).abs() < f32::EPSILON));
+    }
+
+    #[test]
+    fn add_meta_is_idempotent_per_pk_triple() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_m", "partial");
+        add_meta(&d, "h_m", "tag", "alpha").unwrap();
+        add_meta(&d, "h_m", "tag", "alpha").unwrap(); // dup, ignored
+        add_meta(&d, "h_m", "tag", "beta").unwrap();
+        let n: i64 = d
+            .entities
+            .query_row("SELECT COUNT(*) FROM entry_meta WHERE id = 'h_m'", [], |r| {
+                r.get(0)
+            })
+            .unwrap();
+        assert_eq!(n, 2, "two distinct (key, value) tuples expected");
+    }
+
+    #[test]
+    fn set_signature_inserts_then_updates() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_sig", "partial");
+        let sig = nom_types::EntrySignature {
+            id: "h_sig".into(),
+            visibility: Some("pub".into()),
+            is_async: false,
+            is_method: false,
+            return_type: Some("i32".into()),
+            params_json: "[]".into(),
+        };
+        set_signature(&d, "h_sig", &sig).unwrap();
+        let mut updated = sig.clone();
+        updated.is_async = true;
+        set_signature(&d, "h_sig", &updated).unwrap();
+        let async_flag: bool = d
+            .entities
+            .query_row(
+                "SELECT is_async FROM entry_signatures WHERE id = 'h_sig'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(async_flag);
+    }
+
+    #[test]
+    fn add_finding_appends_many_rows_per_entry() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_f", "partial");
+        for cat in ["injection", "xss", "csrf"] {
+            add_finding(
+                &d,
+                "h_f",
+                &nom_types::SecurityFinding {
+                    finding_id: 0,
+                    id: "h_f".into(),
+                    severity: nom_types::Severity::Critical,
+                    category: cat.into(),
+                    rule_id: None,
+                    message: None,
+                    evidence: None,
+                    line: None,
+                    remediation: None,
+                },
+            )
+            .unwrap();
+        }
+        let n: i64 = d
+            .entities
+            .query_row(
+                "SELECT COUNT(*) FROM entry_security_findings WHERE id = 'h_f'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 3, "three findings expected");
+    }
+
+    #[test]
+    fn add_ref_is_idempotent_per_pk_pair() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_a", "partial");
+        seed_entry(&d, "h_b", "partial");
+        add_ref(&d, "h_a", "h_b").unwrap();
+        add_ref(&d, "h_a", "h_b").unwrap(); // dup, ignored
+        let n: i64 = d
+            .entities
+            .query_row(
+                "SELECT COUNT(*) FROM entry_refs WHERE from_id = 'h_a'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(n, 1);
     }
 
     #[test]
