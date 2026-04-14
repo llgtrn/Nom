@@ -248,18 +248,26 @@
 | 231 | jq stream-generator semantics → explicit list-returning functions with two-sided `ensures` set-equality | authoring-guide rule | ✅ closed (doc 14 #57) |
 | 232 | Iteration vs indexing distinguished in prose (`for each X in …` vs `the Nth X in …`); never via bracket syntax | authoring-guide rule | ✅ closed (doc 14 #57) |
 | 233 | jq null-on-missing-path → `perhaps T` at schema level (same as #55 Elm optionality discipline) | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 234 | Fixed-point decimal → `real from X to Y.YY` + `hazard` on floating-point representation; audit-grade code requires explicit decimal precision | authoring-guide rule | ✅ closed (doc 14 #58; W51 decimal-precision candidate noted, not urgent) |
+| 235 | COBOL divisions (IDENTIFICATION / DATA / PROCEDURE / ENVIRONMENT) → peer top-level decls in `.nomtu`; division role implicit in decl kind | authoring-guide rule | ✅ closed (doc 14 #58) |
+| 236 | COBOL level numbers (01/05/77) → peer data decls with `reference to T` fields; nested record shapes lift to flat peers | authoring-guide rule | ✅ closed (doc 14 #58; reuses #30 + #54 flat-namespace) |
+| 237 | COBOL working-storage globals → explicit function parameters (inputs) + peer data decls (shared constants / policies) | authoring-guide rule | ✅ closed (doc 14 #58) |
+| 238 | COBOL arithmetic verbs (`COMPUTE`/`ADD TO`/`SUBTRACT FROM`/`MULTIPLY BY`/`DIVIDE INTO`) → `ensures X equals Y op Z` clauses | authoring-guide rule | ✅ closed (doc 14 #58) |
+| 239 | COBOL `DISPLAY` / I/O statements → peer formatting functions; I/O not inline in computation functions | authoring-guide rule | ✅ closed (doc 14 #58; preserves purity) |
+| 240 | Rounding mode stated explicitly in `ensures` clauses (banker's / half-up / truncate / floor / ceiling); no default | authoring-guide rule | ✅ closed (doc 14 #58) |
+| 241 | `auditability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #58; accumulates to 8 seeds) |
 
-Totals by destination (after doc 14 #57 jq JSON-transformation translation — **sixteenth 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-transformation paradigm family has six exemplars unified**: Bash pipes + Haskell composition + R %>% + SQL CTE + jq JSON + tidyverse all reduce to same Nom primitives):
+Totals by destination (after doc 14 #58 COBOL business-data-processing translation — **seventeenth 0-new-wedge translation in a row**; 7 authoring-guide closures + auditability seed; unified primitive set now proven across **70-year span** of programming paradigms (Forth/COBOL to Dafny/K8s)):
 
-- ⏳ Wedge queued: **43** (unchanged)
+- ⏳ Wedge queued: **43** (unchanged; W51 decimal-precision candidate noted for future cycles)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **183**
+- ✅ Closed: **191**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **7** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability QualityNames)
+- 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 245 rows. Closure rate 75% (183/245). **57 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + **JSON-transformation-DSL (jq)**. **Backlog closure crosses 75%.** Twenty-fourth consecutive minimal-wedge translation, sixteenth 0-new-wedge. **Data-transformation paradigm family has six exemplars all reducing to named-intermediate prose + two-sided `ensures` set-equality.**
+Backlog size: 254 rows. Closure rate 75% (191/254). **58 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + **business-data-processing (COBOL)**. Twenty-fifth consecutive minimal-wedge translation, seventeenth 0-new-wedge. **Unified primitive set proven across 70-year paradigm span** from Forth/COBOL to Dafny/K8s.
 
 ## Wedge master index (for cross-ref with doc 13)
 

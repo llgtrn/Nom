@@ -3965,6 +3965,95 @@ Row additions: **0 new wedges** — jq JSON-transformation pipelines fully expre
 
 ---
 
+## 58. COBOL — business data-processing (data + procedure divisions)
+
+```cobol
+       IDENTIFICATION DIVISION.
+       PROGRAM-ID. PAYROLL-CALC.
+
+       DATA DIVISION.
+       WORKING-STORAGE SECTION.
+       01 EMPLOYEE-RECORD.
+          05 EMP-ID        PIC 9(5).
+          05 EMP-HOURS     PIC 9(3)V99.
+          05 EMP-RATE      PIC 9(3)V99.
+          05 EMP-GROSS-PAY PIC 9(5)V99.
+          05 EMP-TAX       PIC 9(5)V99.
+          05 EMP-NET-PAY   PIC 9(5)V99.
+
+       77 TAX-RATE         PIC V99 VALUE 0.22.
+
+       PROCEDURE DIVISION.
+       CALC-PAYROLL.
+           COMPUTE EMP-GROSS-PAY = EMP-HOURS * EMP-RATE.
+           COMPUTE EMP-TAX       = EMP-GROSS-PAY * TAX-RATE.
+           COMPUTE EMP-NET-PAY   = EMP-GROSS-PAY - EMP-TAX.
+           DISPLAY "Employee "    EMP-ID
+                   " Gross: "     EMP-GROSS-PAY
+                   " Tax: "       EMP-TAX
+                   " Net: "       EMP-NET-PAY.
+           STOP RUN.
+```
+
+### `.nomx v1` translation
+
+```nomx
+define payroll_calc
+  that takes an employee's id, hours worked, and hourly rate, returns the gross pay, tax owed, and net pay.
+the gross pay is hours worked times the hourly rate.
+the tax owed is the gross pay times 0.22.
+the net pay is the gross pay minus the tax owed.
+display the employee id with their gross pay, tax, and net pay as a summary line.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data EmployeePay is
+  intended to carry the pay-cycle inputs and derived amounts for a single employee in a payroll run.
+  exposes employee_id as natural from 0 to 99999.
+  exposes hours_worked as real from 0 to 999.99.
+  exposes hourly_rate as real from 0 to 999.99.
+  exposes gross_pay as real from 0 to 99999.99.
+  exposes tax_owed as real from 0 to 99999.99.
+  exposes net_pay as real from 0 to 99999.99.
+
+the data PayrollPolicy is
+  intended to hold the jurisdiction-wide payroll parameters used for tax computation in a payroll run.
+  exposes federal_tax_rate as real from 0 to 1.
+
+the function compute_employee_pay is
+  intended to compute gross, tax, and net pay for a single employee from their hours, rate, and the applicable payroll policy, producing a fully-populated EmployeePay.
+  uses the @Data matching "EmployeePay" with at-least 0.95 confidence.
+  uses the @Data matching "PayrollPolicy" with at-least 0.95 confidence.
+  requires hours_worked is non-negative.
+  requires hourly_rate is non-negative.
+  requires federal_tax_rate is between 0 and 1 inclusive.
+  ensures the returned gross_pay equals hours_worked times hourly_rate, rounded to 2 decimal places using banker's rounding.
+  ensures the returned tax_owed equals gross_pay times federal_tax_rate, rounded to 2 decimal places.
+  ensures the returned net_pay equals gross_pay minus tax_owed, rounded to 2 decimal places.
+  hazard floating-point representation introduces cumulative rounding error — audit-grade payroll should use fixed-point decimal throughout.
+  favor correctness.
+  favor auditability.
+```
+
+### Gaps surfaced
+
+1. **Fixed-point decimal (`PIC 9(5)V99`)** — COBOL's defining datatype: a decimal number with explicit total-digit and decimal-place counts, stored as binary-coded decimal or packed decimal. Nom's translation uses prose `real from 0 to 99999.99` but flags floating-point rounding as a `hazard` clause. **Candidate: authoring-guide rule — fixed-point decimal types decompose to `real from 0 to X.YY` with an explicit `hazard` on floating-point representation; audit-grade code requires fixed-point decimal declared via `real with at-most N decimal places`**. Suggests a future **W51 decimal-precision clause** but not urgent — the prose range + hazard already communicates intent.
+2. **Division structure (IDENTIFICATION / DATA / PROCEDURE)** — COBOL's four-division file layout. Nom's `.nomtu` + `.nom` file model handles this: identification is implicit (file name + function name), data division corresponds to peer data decls, procedure division corresponds to function decls, environment division is handled by the build stage. Authoring-guide rule: **COBOL divisions decompose to peer top-level decls in a `.nomtu` file — no division keyword is needed; the kind of each decl carries the division role**. No new wedge.
+3. **Level numbers (`01`, `05`, `77`)** — COBOL's way of indicating nested records. Nom's translation lifts nested levels to peer data decls with `reference to T` fields, same rule as #30 Protobuf + #54 K8s flat-namespace pattern. Authoring-guide rule: **COBOL level numbers decompose to peer data decls (01 = top-level, 05 = nested fields lifted to peers with `reference to T`, 77 = standalone constant in a policy data decl)**. No new wedge.
+4. **Global working storage (PIC 9s, 77 constants)** — COBOL's mutable shared state. Nom rejects global mutable state; every value is a function parameter or data-decl field. Authoring-guide rule: **COBOL working-storage globals decompose to explicit function parameters (for inputs) and peer data decls (for shared constants like PayrollPolicy)**. No new wedge.
+5. **`COMPUTE` assignment** — COBOL's arithmetic verb. Nom's `ensures gross_pay equals hours_worked times hourly_rate` is the direct prose analogue. Authoring-guide rule: **COBOL arithmetic verbs (`COMPUTE`, `ADD TO`, `SUBTRACT FROM`, `MULTIPLY BY`, `DIVIDE INTO`) decompose to `ensures X equals Y op Z` clauses**. No new wedge.
+6. **`DISPLAY` output** — COBOL's console-write verb. Nom would split this into a separate function decl (`format_payroll_summary`) rather than inlining the I/O. Authoring-guide rule: **COBOL `DISPLAY` statements decompose to peer formatting functions; I/O is not inline in computation functions**. Preserves purity of `compute_employee_pay`. No new wedge.
+7. **Auditability as a QualityName** — `favor auditability` surfaces a new objective axis that's particularly meaningful for financial/regulated code. Authoring-corpus seed: **`auditability`** QualityName. Accumulates with 7 existing seeds → 8.
+8. **Banker's rounding vs truncation** — real-world financial code needs to specify rounding mode explicitly. Nom's `ensures … rounded to 2 decimal places using banker's rounding` captures this. Authoring-guide rule: **rounding mode is stated explicitly in `ensures` clauses (banker's / half-up / truncate / floor / ceiling); no default is assumed**. No new wedge.
+
+Row additions: **0 new wedges** — COBOL's business-data-processing model fully expresses via peer data decls + per-division decls + function arithmetic-via-ensures + hazard on floating-point. 7 authoring-guide closures: fixed-point decimal via `real from X to Y.YY` + hazard (W51 candidate noted but not urgent), COBOL divisions → peer top-level decls, level numbers → peer data decls with `reference to T`, working-storage globals → function params + policy data decls, COMPUTE → ensures-equality, DISPLAY → peer formatting function (I/O not inline), rounding mode stated explicitly. 1 QualityName seed: **auditability**.
+
+**Twenty-fifth consecutive minimal-wedge translation + seventeenth 0-new-wedge run.** COBOL — often regarded as the most alien mainstream language to modern designers — decomposes cleanly into Nom's existing primitives. The **peer-data-decl + peer-function-decl + per-division-decomposition** pattern is now proven across an enormous span: from dense symbolic (Forth #44, WAT #51, Rust macros #56) to verbose business-prose (COBOL #58), from pure-functional (Haskell #25) to imperative-with-proofs (Dafny #50), from declarative-config (Terraform/Docker/Nix/K8s) to on-chain (Solidity). **The unified primitive set handles the full 70-year span of programming paradigms.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
