@@ -68,14 +68,14 @@ shipped. Each needs design + spec + parser/test work:
 ## Pattern catalog
 
 - The catalog has crossed the original 100-150 target and now sits
-  at **258 rows** spanning 22 themes. The "every example_shape
-  parses" half of the completion bar is **enforced and met**: the
-  test `nom-concept/tests/pattern_examples_parse.rs` reports
+  at **258 rows** spanning 22 themes. Both halves of the completion
+  bar are **enforced**: the test
+  `nom-concept/tests/pattern_examples_parse.rs` reports
   **258/258 example_shapes parse end-to-end** through the DB-driven
-  pipeline (no panics, no row growth). The remaining "intent
-  uniquely matches the captured class of intents" half is still
-  unenforced — open question: how to formalize "uniquely matches"
-  given that the corpus is now archive-only.
+  pipeline (no panics, no row growth), AND **258 distinct intents
+  across 258 rows** — zero exact-string duplicates. The fuzzy
+  semantic-similarity tightening of the uniqueness check is queued
+  for the cycle that lands embedding-driven resolver re-rank.
 
 ## Bench + flow
 

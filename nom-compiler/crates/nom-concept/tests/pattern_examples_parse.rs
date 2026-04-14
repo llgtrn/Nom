@@ -89,6 +89,32 @@ fn parsing_example_shapes_does_not_grow_grammar() {
 }
 
 #[test]
+fn every_pattern_intent_is_distinct() {
+    // First-cut enforcement of the doc 09 'intent uniquely matches'
+    // half of the catalog completion bar. Two patterns with the same
+    // intent are a redundancy bug — either the catalog is duplicating
+    // a shape or one of the rows is mis-named. Exact-string distinct
+    // is a coarse but real bar; future cycles can tighten to a fuzzy
+    // semantic-similarity check once the resolver embedding lands.
+    let (_dir, conn) = open_baseline();
+    let mut stmt = conn
+        .prepare(
+            "SELECT intent, COUNT(*) AS n, GROUP_CONCAT(pattern_id) AS ids \
+             FROM patterns GROUP BY intent HAVING n > 1 ORDER BY n DESC",
+        )
+        .expect("prepare");
+    let dupes: Vec<(String, i64, String)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
+        .expect("query")
+        .map(|r| r.expect("row"))
+        .collect();
+    assert!(
+        dupes.is_empty(),
+        "patterns with duplicate intent strings: {dupes:#?}"
+    );
+}
+
+#[test]
 fn pattern_example_shapes_dashboard() {
     // Pure observational: report pass/fail per stage so the catalog
     // completion bar can be tightened over time. Not a gate — many
