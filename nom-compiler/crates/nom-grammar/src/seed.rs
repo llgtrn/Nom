@@ -429,6 +429,114 @@ pub fn seed_quality_names(conn: &Connection) -> Result<usize> {
     Ok(inserted)
 }
 
+// ── Native authoring patterns (Nom vocabulary; foreign-language origins absent) ──
+
+/// One row in the `patterns` table — a reusable authoring shape distilled
+/// to its Nom-native primitives. Origin notes are doc references only,
+/// never foreign-language names.
+pub struct PatternSeed {
+    pub pattern_id: &'static str,
+    pub intent: &'static str,
+    pub nom_kinds: &'static [&'static str],
+    pub nom_clauses: &'static [&'static str],
+    pub typed_slot_refs: &'static [&'static str],
+    pub example_shape: &'static str,
+    pub hazards: &'static [&'static str],
+    pub favors: &'static [&'static str],
+    pub source_doc_refs: &'static [&'static str],
+}
+
+/// Founding 5 native authoring patterns. The migration from doc-14/16
+/// captured insights into native rows continues per cycle until 100%
+/// preservation is verified, after which the source docs are deleted.
+pub const PATTERNS_SEED: &[PatternSeed] = &[
+    PatternSeed {
+        pattern_id: "tagged-variant-error-data",
+        intent: "Express a closed set of error outcomes as a single data decl with one variant per outcome and per-variant payload fields, then bind a function's failure modes via per-variant ensures clauses.",
+        nom_kinds: &["data", "function"],
+        nom_clauses: &["intended", "exposes", "ensures", "favor"],
+        typed_slot_refs: &["@Data"],
+        example_shape: "the data ParseError is\n  intended to enumerate the recoverable failure outcomes of parsing a source string.\n  exposes empty_input at tag 0.\n  exposes invalid_token at tag 1 with payload offset as whole_number.\n  exposes unterminated_block at tag 2 with payload start_offset as whole_number.\n\nthe function parse_source is\n  intended to ...\n  ensures when input is the empty string, the result is the ParseError empty_input variant.\n  ensures when an invalid token is encountered, the result is the ParseError invalid_token variant with offset equal to the byte index of the bad token.\n  favor totality.\n  favor auditability.",
+        hazards: &["adding a new variant without updating every callsite's exhaustiveness coverage breaks the totality favor"],
+        favors: &["totality", "auditability"],
+        source_doc_refs: &["doc 08", "doc 14"],
+    },
+    PatternSeed {
+        pattern_id: "fault-tolerant-supervision-concept",
+        intent: "Coordinate child entities under a restart strategy with a bounded fault budget; each child crash is observed and handled per the strategy declaration.",
+        nom_kinds: &["concept", "data", "function"],
+        nom_clauses: &["intended", "uses", "ensures", "hazard", "favor"],
+        typed_slot_refs: &["@Data", "@Function", "@Concept"],
+        example_shape: "the concept worker_pool_supervisor is\n  intended to coordinate one db_worker and one cache_worker as peer children with a one-for-one restart strategy and a 5-crashes-per-10-seconds fault budget.\n  uses the @Data matching \"ChildSpec\" with at-least 0.95 confidence.\n  uses the @Data matching \"SupervisorPolicy\" with at-least 0.95 confidence.\n  ensures when any single child crashes, only that child is restarted.\n  ensures at-most 5 restart attempts are performed within any rolling 10-second window; the 6th crash propagates upward.\n  ensures every message in each child's mailbox is eventually handled; mailboxes are FIFO.\n  hazard a child whose start function blocks longer than the boot timeout fails the whole concept; every start function must return promptly.\n  favor availability.\n  favor auditability.",
+        hazards: &["boot-timeout cascade — a single slow start blocks the whole concept", "transient-vs-normal-exit confusion when a child treats a recoverable error as normal shutdown"],
+        favors: &["availability", "auditability"],
+        source_doc_refs: &["doc 08", "doc 14"],
+    },
+    PatternSeed {
+        pattern_id: "property-with-generator-and-peer-lemmas",
+        intent: "Assert a universally-quantified claim over a generator, with the proof obligation discharged by named induction principle citing peer property decls.",
+        nom_kinds: &["property", "function"],
+        nom_clauses: &["intended", "generator", "uses", "ensures", "favor"],
+        typed_slot_refs: &["@Function", "@Property", "@Data"],
+        example_shape: "the property addition_is_commutative is\n  intended to assert that natural-number addition is commutative — for every pair of natural numbers, swapping the operand order preserves the sum.\n  generator pairs of natural numbers from 0 to 2000.\n  uses the @Function matching \"add\" with at-least 0.95 confidence.\n  uses the @Property matching \"add_with_zero_is_identity\" with at-least 0.9 confidence.\n  uses the @Property matching \"add_successor_distributes\" with at-least 0.9 confidence.\n  ensures for every pair (n, m) drawn from the generator, add(n, m) equals add(m, n).\n  ensures the proof obligation is discharged by induction on n with the peer properties supplying the inductive step.\n  favor totality.\n  favor auditability.",
+        hazards: &["informal proof sketches that lose the inductive-step lemma reference produce unprovable claims at build time"],
+        favors: &["totality", "auditability"],
+        source_doc_refs: &["doc 08", "doc 14"],
+    },
+    PatternSeed {
+        pattern_id: "given-when-then-scenario",
+        intent: "Capture a single asserted-behavior triple as a scenario decl: a precondition that must hold, an action performed, and a postcondition observed.",
+        nom_kinds: &["scenario"],
+        nom_clauses: &["intended", "given", "when", "then", "favor"],
+        typed_slot_refs: &["@Function", "@Concept"],
+        example_shape: "the scenario login_with_valid_credentials is\n  intended to describe the happy-path login behavior for a registered user with the correct password.\n  given a registered user whose stored password hash matches the password \"correct horse battery staple\".\n  when the login function is invoked with that user's email and the password \"correct horse battery staple\".\n  then the result is a session token whose expiration is at-least 30 minutes from invocation time.\n  favor auditability.",
+        hazards: &["scenarios with vague then-clauses cannot be machine-checked — every then must name a concrete observable"],
+        favors: &["auditability"],
+        source_doc_refs: &["doc 08", "doc 14"],
+    },
+    PatternSeed {
+        pattern_id: "request-handler-effect-separation",
+        intent: "Decompose effectful work into a request-emitting function (which describes what it requests) and a peer handler concept (which describes how requests are resolved). The effect-emitting function is pure with respect to handler choice; swapping handlers swaps semantics without rewriting the request emitter.",
+        nom_kinds: &["data", "function", "concept"],
+        nom_clauses: &["intended", "exposes", "uses", "requires", "ensures", "hazard", "favor"],
+        typed_slot_refs: &["@Data", "@Function"],
+        example_shape: "the data ReadFileRequest is\n  intended to describe a request to read a configuration file at a given path.\n  exposes path as text.\n\nthe data ReadFileResponse is\n  intended to describe the fulfilled result of one ReadFileRequest.\n  exposes contents as perhaps text.\n\nthe function load_config is\n  intended to read a configuration file at a given path and return its trimmed contents by emitting one ReadFileRequest through the caller-supplied handler.\n  uses the @Data matching \"ReadFileRequest\" with at-least 0.95 confidence.\n  uses the @Data matching \"ReadFileResponse\" with at-least 0.95 confidence.\n  requires the caller provides a handler that resolves every emitted ReadFileRequest to a consistent ReadFileResponse.\n  ensures exactly one ReadFileRequest is emitted, with its path equal to the input path.\n  ensures the returned text equals the handler's ReadFileResponse contents with leading and trailing whitespace removed.\n  hazard a handler that diverges from the declared semantics makes this function's output undefined; callers are responsible for handler correctness.\n  favor correctness.",
+        hazards: &["a handler that silently returns nothing for a path that does exist makes the function's output undefined", "callers may pair multiple handler implementations producing inconsistent results — the requires clause guards against this"],
+        favors: &["correctness", "auditability"],
+        source_doc_refs: &["doc 08", "doc 14"],
+    },
+];
+
+pub fn seed_patterns(conn: &Connection) -> Result<usize> {
+    let mut inserted = 0;
+    for p in PATTERNS_SEED {
+        let nom_kinds = serde_json::to_string(p.nom_kinds).unwrap_or_else(|_| "[]".into());
+        let nom_clauses = serde_json::to_string(p.nom_clauses).unwrap_or_else(|_| "[]".into());
+        let typed_slot_refs = serde_json::to_string(p.typed_slot_refs).unwrap_or_else(|_| "[]".into());
+        let hazards = serde_json::to_string(p.hazards).unwrap_or_else(|_| "[]".into());
+        let favors = serde_json::to_string(p.favors).unwrap_or_else(|_| "[]".into());
+        let source_doc_refs = serde_json::to_string(p.source_doc_refs).unwrap_or_else(|_| "[]".into());
+        conn.execute(
+            "INSERT OR REPLACE INTO patterns \
+             (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, example_shape, hazards, favors, source_doc_refs) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)",
+            params![
+                p.pattern_id,
+                p.intent,
+                nom_kinds,
+                nom_clauses,
+                typed_slot_refs,
+                p.example_shape,
+                hazards,
+                favors,
+                source_doc_refs,
+            ],
+        )?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
 /// Counts from a full seed run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SeedCounts {
@@ -436,6 +544,7 @@ pub struct SeedCounts {
     pub quality_names: usize,
     pub keywords: usize,
     pub clause_shapes: usize,
+    pub patterns: usize,
 }
 
 /// Seed every grammar table with native Nom content. Idempotent.
@@ -444,11 +553,13 @@ pub fn seed_all(conn: &Connection) -> Result<SeedCounts> {
     let quality_names = seed_quality_names(conn).context("seeding quality_names")?;
     let keywords = seed_keywords(conn).context("seeding keywords")?;
     let clause_shapes = seed_clause_shapes(conn).context("seeding clause_shapes")?;
+    let patterns = seed_patterns(conn).context("seeding patterns")?;
     Ok(SeedCounts {
         kinds,
         quality_names,
         keywords,
         clause_shapes,
+        patterns,
     })
 }
 
@@ -561,6 +672,44 @@ mod tests {
         assert_eq!(c.quality_names, 10);
         assert!(c.keywords >= 40);
         assert!(c.clause_shapes >= 40);
+        assert!(c.patterns >= 5);
+    }
+
+    #[test]
+    fn patterns_seed_carries_native_vocabulary_only() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        seed_patterns(&conn).unwrap();
+        // Spot-check: the founding 5 native patterns are present.
+        for pid in [
+            "tagged-variant-error-data",
+            "fault-tolerant-supervision-concept",
+            "property-with-generator-and-peer-lemmas",
+            "given-when-then-scenario",
+            "request-handler-effect-separation",
+        ] {
+            let intent: String = conn
+                .query_row(
+                    "SELECT intent FROM patterns WHERE pattern_id = ?1",
+                    [pid],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| panic!("pattern {pid} missing"));
+            assert!(!intent.is_empty(), "pattern {pid} has empty intent");
+        }
+    }
+
+    #[test]
+    fn pattern_seeding_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let n1 = seed_patterns(&conn).unwrap();
+        let n2 = seed_patterns(&conn).unwrap();
+        assert_eq!(n1, n2);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM patterns", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count as usize, n1);
     }
 
     #[test]

@@ -62,6 +62,25 @@ CREATE TABLE IF NOT EXISTS kinds (
   shipped_commit  TEXT NOT NULL,
   notes           TEXT
 );
+
+-- Nom-native authoring patterns. Each row captures a reusable shape an
+-- author can drop into a .nomx source. Patterns are described entirely in
+-- Nom's vocabulary; foreign-language origins are absent by invariant. The
+-- intent is that an AI client queries this table to find the canonical
+-- shape for a given problem class without ever consulting external docs.
+CREATE TABLE IF NOT EXISTS patterns (
+  pattern_id       TEXT PRIMARY KEY,
+  intent           TEXT NOT NULL,
+  nom_kinds        TEXT NOT NULL,
+  nom_clauses      TEXT NOT NULL,
+  typed_slot_refs  TEXT NOT NULL,
+  example_shape    TEXT NOT NULL,
+  hazards          TEXT NOT NULL,
+  favors           TEXT NOT NULL,
+  source_doc_refs  TEXT NOT NULL,
+  created_at       TEXT NOT NULL DEFAULT (datetime('now'))
+);
+CREATE INDEX IF NOT EXISTS idx_patterns_intent ON patterns(intent);
 "#;
 
 /// Initialize an empty grammar.sqlite at the given path. Idempotent — safe to call on
@@ -113,6 +132,7 @@ pub struct RegistryCounts {
     pub clause_shapes: u64,
     pub quality_names: u64,
     pub kinds: u64,
+    pub patterns: u64,
 }
 
 pub fn counts(conn: &Connection) -> Result<RegistryCounts> {
@@ -126,6 +146,7 @@ pub fn counts(conn: &Connection) -> Result<RegistryCounts> {
         clause_shapes: count_of("clause_shapes")?,
         quality_names: count_of("quality_names")?,
         kinds: count_of("kinds")?,
+        patterns: count_of("patterns")?,
     })
 }
 
@@ -165,6 +186,7 @@ mod tests {
                 clause_shapes: 0,
                 quality_names: 0,
                 kinds: 0,
+                patterns: 0,
             }
         );
     }

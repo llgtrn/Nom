@@ -1440,11 +1440,12 @@ fn cmd_grammar_seed(path: Option<&Path>) -> i32 {
     match nom_grammar::seed::seed_all(&conn) {
         Ok(c) => {
             println!(
-                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes at {}",
+                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes, {} patterns at {}",
                 c.kinds,
                 c.quality_names,
                 c.keywords,
                 c.clause_shapes,
+                c.patterns,
                 p.display()
             );
             0
@@ -1491,6 +1492,7 @@ fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {
         println!("  clause_shapes:  {}", counts.clause_shapes);
         println!("  quality_names:  {}", counts.quality_names);
         println!("  kinds:          {}", counts.kinds);
+        println!("  patterns:       {}", counts.patterns);
     }
     0
 }
