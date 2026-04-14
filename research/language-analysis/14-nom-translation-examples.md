@@ -2766,6 +2766,76 @@ Row additions: **0 new wedges** — recursive relation traversal fully expresses
 
 ---
 
+## 44. Forth stack-machine word — postfix concatenative
+
+```forth
+: square ( n -- n*n )  dup * ;
+
+: sum-of-squares ( a b -- a*a+b*b )  square swap square + ;
+
+: abs-value ( n -- |n| )
+  dup 0 < if negate then ;
+```
+
+### `.nomx v1` translation
+
+```nomx
+define square
+  that takes a number, returns its square.
+the result is the number times itself.
+
+define sum_of_squares
+  that takes two numbers a and b, returns a*a + b*b.
+the result is square(a) + square(b).
+
+define abs_value
+  that takes a number, returns its absolute value.
+when the number is negative, the result is the negation of the number.
+otherwise the result is the number itself.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function square is
+  intended to return the product of a number with itself.
+  requires n is a real number.
+  ensures the result equals n times n.
+  ensures the result is non-negative for every real n.
+  favor correctness.
+
+the function sum_of_squares is
+  intended to return the sum of the squares of two real numbers.
+  uses the @Function matching "square" with at-least 0.95 confidence.
+  requires a and b are real numbers.
+  ensures the result equals square(a) plus square(b).
+  ensures the result is non-negative.
+  favor correctness.
+
+the function abs_value is
+  intended to return the non-negative magnitude of a number, regardless of its sign.
+  requires n is a real number.
+  ensures the result is non-negative.
+  ensures the result equals n when n is non-negative.
+  ensures the result equals the negation of n when n is negative.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Stack-implicit argument/return passing** — Forth's defining feature: words consume/produce values on an implicit parameter stack (`( a b -- a*a+b*b )`). Nom **rejects implicit context entirely** — every argument and return is named in the function decl's prose. Authoring-guide rule: **stack-based implicit I/O decomposes to explicit named parameters and return-by-name; Forth's `dup`/`swap`/`drop` stack manipulators collapse into naming variables and letting the compiler arrange the stack at build time**. No new wedge; eliminates an entire class of stack-juggling bugs by construction.
+2. **Stack effect comment (`( n -- n*n )`)** — Forth's informal type-and-arity notation. Nom's `requires n is a real number. ensures the result equals n times n.` carries the same information declaratively. Authoring-guide rule: **Forth stack-effect comments map to the `requires` (pre-stack) + `ensures` (post-stack) clause pair** — with proper names instead of positional tags. Drop-in replacement.
+3. **Concatenative composition (`square swap square +`)** — word-by-word left-to-right composition, reading values off the stack. Nom's `uses @Function matching "square"` + explicit prose (`square(a) plus square(b)`) spells out data flow without positional stack tracking. Authoring-guide rule: **Forth word sequences decompose to named-intermediate prose expressions; no position-anonymous composition**. Same rule as #7 pipelines → named intermediates (doc 17 §I8).
+4. **Compile-time vs runtime words (`IMMEDIATE` words)** — Forth collapses compile-time and runtime via its word dictionary. Nom enforces strict separation (source-time authoring → compile-time resolution → runtime execution) per doc 04 §10.3.1 fixpoint discipline. Authoring-guide rule: **no author-time immediate words in Nom; code-generation belongs in build-stage passes, never in the source surface**. Matches the Lisp-macro rejection (#29).
+5. **Colon definitions (`: name body ;`)** — Forth's subroutine-definition form. Nom's `the function name is …` is the direct analogue; no grammar needed.
+6. **Conditional control flow (`dup 0 < if negate then`)** — stack-consuming conditional. Nom's `when X is negative … otherwise …` is declarative and named. Authoring-guide rule: **Forth `IF/THEN/ELSE` constructs decompose to `when … otherwise …` with named values**. No new wedge.
+
+Row additions: **0 new wedges** — stack-based concatenative programming rejects Nom's naming discipline entirely; translation pushes all implicit stack state to explicit named parameters/returns, which already work. 5 authoring-guide closures (stack-implicit I/O → explicit named params, stack-effect comments = `requires`+`ensures` pair, concatenative composition → named-intermediate prose, no immediate/compile-time words, Forth IF/THEN → `when … otherwise …`).
+
+**Eleventh consecutive minimal-wedge translation + fifth 0-new-wedge run.** Forth — historically the most grammar-minimal language, compact enough to fit in 2KB of ROM — translates to Nom **at the cost of verbosity but with zero grammar additions**. The verbosity is the *point*: each implicit stack operation becomes an explicit named value, which is what Nom's whole readability thesis demands. **Extremely compact languages translate to verbose Nom; extremely verbose languages (Java) translate to compact Nom. The sweet-spot is somewhere near modern idiomatic Python, which has the least translation overhead.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

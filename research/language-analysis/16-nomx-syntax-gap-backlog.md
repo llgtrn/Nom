@@ -156,18 +156,23 @@
 | 139 | CTEs lift to peer top-level decls — no local-scope CTE form in Nom | authoring-guide rule | ✅ closed (doc 14 #43; consistent with flat-namespace preference) |
 | 140 | Relation-oriented functions specify post-conditions over the full result set (universal quantifiers), never per-row procedural steps | authoring-guide rule | ✅ closed (doc 14 #43; matches pure-functional discipline) |
 | 141 | SQL `ORDER BY` / `GROUP BY` clauses map to `ensures the output is sorted by …` / `ensures the output is grouped by …` | authoring-guide rule | ✅ closed (doc 14 #43) |
+| 142 | Stack-based implicit I/O decomposes to explicit named parameters and return-by-name; stack-juggle words collapse into naming variables | authoring-guide rule | ✅ closed (doc 14 #44) |
+| 143 | Forth stack-effect comments (`( n -- n*n )`) map to `requires` (pre-stack) + `ensures` (post-stack) clause pair with named values | authoring-guide rule | ✅ closed (doc 14 #44) |
+| 144 | Concatenative composition decomposes to named-intermediate prose expressions (same rule as doc 17 §I8 pipelines) | authoring-guide rule | ✅ closed (doc 14 #44) |
+| 145 | No author-time `IMMEDIATE`/compile-time words in Nom; code-gen belongs in build-stage passes, never in source surface | authoring-guide rule | ✅ closed (doc 14 #44; matches #29 Lisp-macro rejection) |
+| 146 | Forth `IF/THEN/ELSE` → `when … otherwise …` with named values | authoring-guide rule | ✅ closed (doc 14 #44) |
 
-Totals by destination (after doc 14 #43 recursive SQL CTE translation — **fourth 0-new-wedge translation**; 6 authoring-guide closures; recursive relation traversal fully expresses via existing `ensures` clause vocabulary):
+Totals by destination (after doc 14 #44 Forth stack-machine translation — **fifth 0-new-wedge translation**; 5 authoring-guide closures; verbose-but-explicit decomposition for all stack-implicit I/O):
 
 - ⏳ Wedge queued: **41** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **95**
+- ✅ Closed: **100**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 145 rows. Closure rate 66% (95/145). **43 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + **recursive-relational-query (SQL CTE)**. Tenth consecutive minimal-wedge translation, fourth 0-new-wedge. Authors declare post-conditions via `ensures`; compiler chooses execution strategy — same shape as NumPy (#35).
+Backlog size: 151 rows. Closure rate 66% (100/151). **44 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + **stack-based-concatenative (Forth)**. **Backlog crosses 100 closures (100/151 = 66%).** Eleventh consecutive minimal-wedge translation, fifth 0-new-wedge.
 
 ## Wedge master index (for cross-ref with doc 13)
 
