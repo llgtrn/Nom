@@ -1,6 +1,19 @@
 # 22 — Dict-Split Migration Plan (3 separated SQLite files)
 
-**Filed 2026-04-14 very-very-late.** Status: **Draft plan; requires user sign-off before execution.**
+**Filed 2026-04-14 very-very-late.** Status: **S1-S2-S3a landed; S3b-S8 queued. Terminology-rename question open (see §14).**
+
+> **Progress ledger (2026-04-14 very-late):**
+> - ✅ **S1** `ff09fac` — `Dict { concepts, words }` struct + `open_dir` / `open_paths` / `open_in_memory`
+> - ✅ **S2** `dd91ff5` — per-tier schemas (`CONCEPTS_SCHEMA_SQL` + `WORDS_SCHEMA_SQL`) with no cross-file FKs
+> - ✅ **S3a** `f90f009` — 5 words_v2 functions ported to free-function `&Dict` form (upsert / find / find_by_word / find_by_kind / count) with 7 new tests (55/55 nom-dict tests pass)
+> - ⏳ **S3b-S3f** — remaining ~35 functions (concept_defs + entries + entry_meta + entry_refs + entry_graph_edges + entry_translations + required_axes + dict_meta + ...)
+> - ⏳ **S4-S6** — nom-concept / nom-cli / nom-app / nom-intent / nom-lsp / nom-corpus caller updates
+> - ⏳ **S7** — `nom store migrate split` one-shot tool
+> - ⏳ **S8** — legacy `NomDict` removal + final doc sync
+>
+> **Pending decisions blocking S3b** (see §14):
+> - Terminology rename — `words_v2` → `entities`, `words.sqlite` → `entities.sqlite`
+> - Placeholder fixes on `quality_names.metric_function` / `kinds.allowed_clauses` / `kinds.allowed_refs` / `authoring_rules.source_paradigm` / `authoring_rules.nom_shape`
 
 > **User directive 2026-04-14:** "have to be 3 seperated" SQLite files. Current state: one physical `dict.sqlite` holds both DB1 (`concept_defs`) and DB2 (`words_v2`) as sibling tables; `grammar.sqlite` (from doc 21 P1, commit `b53f74c`) is already separate. Target: **three physical files** — `concepts.sqlite` + `words.sqlite` + `grammar.sqlite` — with artifact bodies continuing to live at `~/.nom/store/<hash>/body.*` (filesystem tree, not a DB).
 
