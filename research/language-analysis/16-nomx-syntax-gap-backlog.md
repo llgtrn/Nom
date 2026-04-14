@@ -221,18 +221,26 @@
 | 204 | Path/query/header parameters → `requires` clauses typed against function parameter list | authoring-guide rule | ✅ closed (doc 14 #53) |
 | 205 | Content-type specified via `ensures … serialized as <format>` when non-default; JSON is implicit default | authoring-guide rule | ✅ closed (doc 14 #53) |
 | 206 | Concept decl as route-map container (binds N route strings via `@Route` typed-slot to N function decls) | authoring-guide rule | ✅ closed (doc 14 #53; new idiom for doc 17) |
+| 207 | Declarative-orchestration decomposes to (desired-state data decl + reconcile function with eventual-consistency `ensures`) | authoring-guide rule | ✅ closed (doc 14 #54) |
+| 208 | Label-selector metadata → named identifier-typed fields on desired-state data decl | authoring-guide rule | ✅ closed (doc 14 #54) |
+| 209 | K8s resource quantities with unit suffixes (`250m`, `256Mi`) → plain SI-base-unit natural ranges; build stage handles formatting | authoring-guide rule | ✅ closed (doc 14 #54) |
+| 210 | Deeply-nested specs → peer data decls with `reference to T` fields; no more than one level of nesting per data decl | authoring-guide rule | ✅ closed (doc 14 #54; same as #30/#34/#38) |
+| 211 | Image-tag pinning as `requires` constraint; floating tags (`latest`) rejected at authoring time | authoring-guide rule | ✅ closed (doc 14 #54; prevents a major class of production incidents) |
+| 212 | K8s probe kinds (readiness/liveness/startup) → peer data decls sharing common schema with `probe_kind` discriminator | authoring-guide rule | ✅ closed (doc 14 #54) |
+| 213 | Multi-resource YAML manifests → multi-decl `.nomtu` files (1 data + 1 reconcile fn per resource + 1 composition for rollout order) | authoring-guide rule | ✅ closed (doc 14 #54) |
+| 214 | `availability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #54; accumulates to 7 seeds) |
 
-Totals by destination (after doc 14 #53 OpenAPI schema-first-API translation surfaced W50 `@Route` typed-slot (narrow, ships gRPC + event + CLI dispatch) + 7 authoring-guide closures + new concept-as-route-map idiom):
+Totals by destination (after doc 14 #54 Kubernetes declarative-orchestration translation — **thirteenth 0-new-wedge translation in a row**; 7 authoring-guide closures + availability seed; **infrastructure/deployment paradigm quadrant** (Terraform #34 + Docker #19 + Nix #42 + K8s #54) **fully closed**):
 
-- ⏳ Wedge queued: **43** (+W50 @Route)
+- ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **157**
+- ✅ Closed: **164**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **6** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor QualityNames)
+- 🌱 Authoring-corpus seed: **7** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability QualityNames)
 
-Backlog size: 215 rows. Closure rate 73% (157/215). **53 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + **HTTP-API-spec (OpenAPI)**. Twentieth consecutive minimal-wedge translation. Concept-as-route-map is a new idiom.
+Backlog size: 224 rows. Closure rate 73% (164/224). **54 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + **container-orchestration (Kubernetes)**. Twenty-first consecutive minimal-wedge translation, thirteenth 0-new-wedge. **Infrastructure/deployment paradigm quadrant fully closed** (Terraform + Docker + Nix + K8s all reduce to desired-state-data + reconcile-function).
 
 ## Wedge master index (for cross-ref with doc 13)
 

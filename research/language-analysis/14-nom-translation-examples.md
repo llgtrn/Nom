@@ -3647,6 +3647,110 @@ Row additions: **W50 `@Route` typed-slot kind** (new wedge, narrow — extends @
 
 ---
 
+## 54. Kubernetes YAML manifest — declarative cluster-resource orchestration
+
+```yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: api-server
+  labels: { app: api }
+spec:
+  replicas: 3
+  selector:
+    matchLabels: { app: api }
+  template:
+    metadata:
+      labels: { app: api }
+    spec:
+      containers:
+        - name: api
+          image: registry.example.com/api:1.4.2
+          ports:
+            - containerPort: 8080
+          resources:
+            requests: { cpu: "250m", memory: "256Mi" }
+            limits:   { cpu: "1",    memory: "512Mi" }
+          readinessProbe:
+            httpGet: { path: /healthz, port: 8080 }
+            initialDelaySeconds: 5
+            periodSeconds: 10
+```
+
+### `.nomx v1` translation
+
+```nomx
+define api_deployment
+  that takes no input, returns a cluster-deployment spec for api-server.
+the deployment runs three replicas of the api container image registry.example.com/api:1.4.2.
+each replica listens on container port 8080.
+each replica requests 250 millicpu + 256 MiB memory, is limited to 1 cpu + 512 MiB memory.
+each replica is considered ready when /healthz returns 200 on port 8080; check after 5s, then every 10s.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ContainerImage is
+  intended to identify a specific container image by its registry path and tag.
+  exposes registry as text.
+  exposes repository as text.
+  exposes tag as text.
+
+the data ResourceBudget is
+  intended to describe a container's minimum-requested and maximum-allowed CPU and memory.
+  exposes cpu_request_millicores as natural from 1 to 1000000.
+  exposes cpu_limit_millicores as natural from 1 to 1000000.
+  exposes memory_request_bytes as natural from 1 to 1000000000000.
+  exposes memory_limit_bytes as natural from 1 to 1000000000000.
+
+the data ReadinessCheck is
+  intended to describe how the orchestrator probes whether a container is ready to receive traffic.
+  exposes probe_kind as text.
+  exposes path as text.
+  exposes port as natural from 1 to 65535.
+  exposes initial_delay_seconds as natural from 0 to 3600.
+  exposes period_seconds as natural from 1 to 3600.
+
+the data ApiServerDeployment is
+  intended to describe the api-server cluster deployment's desired state — replica count, image, port, resource budget, readiness probe.
+  exposes name as identifier.
+  exposes replicas as natural from 1 to 10000.
+  exposes image as reference to ContainerImage.
+  exposes container_port as natural from 1 to 65535.
+  exposes resources as reference to ResourceBudget.
+  exposes readiness as reference to ReadinessCheck.
+
+the function reconcile_api_deployment is
+  intended to converge the cluster state toward the ApiServerDeployment desired state, creating or updating pods until replica count matches and readiness probes pass.
+  uses the @Data matching "ApiServerDeployment" with at-least 0.95 confidence.
+  requires the image tag is pinned to a specific version (never `latest`).
+  requires cpu_limit >= cpu_request and memory_limit >= memory_request.
+  ensures the cluster eventually has exactly replicas pods matching the deployment's label selector, each running the specified image.
+  ensures pods are only routed traffic after their readiness probe passes.
+  hazard rolling updates may transiently serve mixed old/new image responses; callers needing strict consistency should use pod disruption budgets.
+  hazard unpinned image tags (`latest`, floating tags) silently change across reconciles — blocked by the requires clause.
+  favor availability.
+  favor reproducibility.
+```
+
+### Gaps surfaced
+
+1. **Declarative desired-state vs actual-state reconciliation** — Kubernetes' defining paradigm: authors specify the target state, the controller converges. Nom's translation splits this into a **data decl (desired state) + reconcile function (convergence)**. Authoring-guide rule: **declarative-orchestration decomposes to (desired-state data decl + reconcile function with eventual-consistency `ensures`)**; the eventual-consistency is stated explicitly in `ensures the cluster eventually has …`. No new wedge.
+2. **Labels and selectors (`matchLabels: { app: api }`)** — Kubernetes' identity/matching mechanism. Nom's translation uses named identifier fields on the data decl. Authoring-guide rule: **label-selector metadata decomposes to named identifier-typed fields on the desired-state data decl; selector-matching is a build-stage resolver concern**. No new wedge.
+3. **Resource quantities with unit suffixes (`250m`, `256Mi`, `1Gi`)** — Kubernetes' domain-specific number formats. Nom's translation converts to plain SI-base units (millicores for CPU, bytes for memory). Authoring-guide rule: **K8s resource quantities with unit suffixes decompose to plain SI-base-unit natural ranges**; `250m CPU` → `250 millicores`, `256Mi` → `268435456 bytes`. Build stage handles unit formatting. No new wedge.
+4. **Nested spec objects (`spec.template.spec.containers[0].resources.requests`)** — deep YAML paths. Nom rejects deep nesting in favor of peer data decls per level (ContainerImage, ResourceBudget, ReadinessCheck are all peer decls referenced by field). Authoring-guide rule: **Kubernetes-style deeply-nested specs decompose to peer data decls with `reference to T` fields**; never more than one level of nesting per data decl. Same pattern as #38 Solidity / #34 Terraform / #30 Protobuf. Strong flat-namespace discipline. No new wedge.
+5. **Image-tag safety (`latest` is a known hazard)** — the reconcile function's `requires the image tag is pinned to a specific version (never latest)` encodes a real-world deployment discipline. Authoring-guide rule: **image-tag pinning is a `requires` constraint on the deployment function; floating tags are rejected at authoring time**. Prevents a major class of production incidents. No new wedge.
+6. **Probes (readiness, liveness, startup)** — three distinct orchestrator health-check kinds. Nom's `ReadinessCheck` data decl generalizes via a `probe_kind` identifier; peer `LivenessCheck` and `StartupCheck` data decls would share the shape. Authoring-guide rule: **K8s probe kinds decompose to peer data decls sharing a common schema with a `probe_kind` discriminator**. No new wedge.
+7. **Multi-resource manifest files (`---` separator)** — K8s YAML allows multiple resources per file. Nom's `.nom` / `.nomtu` file model already supports multi-decl files (doc 08). Authoring-guide rule: **multi-resource YAML manifests decompose to multi-decl `.nomtu` files; one resource per data-decl + one reconcile function per resource + one composition decl to orchestrate rollout order**. No new wedge.
+8. **Availability as a QualityName** — `favor availability` is a new objective. Authoring-corpus seed: **`availability`** QualityName. Accumulates with the 6 existing seeds → 7.
+
+Row additions: **0 new wedges** — K8s declarative orchestration fully expresses via (desired-state data decl + reconcile function + peer nested data decls for resource-quantities/probes/images) + existing `requires`/`ensures`/`hazard` vocabulary. 7 authoring-guide closures: declarative orchestration decomposition, label-selectors as identifier fields, K8s units → SI-base natural ranges, deeply-nested specs → peer data decls with `reference to T`, image-tag pinning as `requires` constraint, probe kinds as peer data decls, multi-resource YAML as multi-decl `.nomtu`. 1 QualityName seed: **availability**.
+
+**Twenty-first consecutive minimal-wedge translation + thirteenth 0-new-wedge run.** Kubernetes manifests — probably the most widely-deployed declarative-configuration format in modern infrastructure — decomposes entirely into Nom's data-decl-plus-reconcile-function pattern. Combined with Terraform (#34), Docker (#19), and Nix (#42), this **closes the infrastructure/deployment paradigm quadrant**: all four decompose to (desired-state data decl + reconcile/provision function) with explicit eventual-consistency contracts. The image-tag-pinning rule (requires never-`latest`) is a particularly nice example of how Nom's `requires` vocabulary enforces production-hygiene conventions at authoring time, not via linters after the fact.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
