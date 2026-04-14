@@ -68,14 +68,14 @@ shipped. Each needs design + spec + parser/test work:
 ## Pattern catalog
 
 - The catalog has crossed the original 100-150 target and now sits
-  at **258 rows** spanning 22 themes. Open: when does it reach
-  "complete enough" to delete the archived translation corpus?
-  Current bar (unchanged): every captured insight has a corresponding
-  pattern row whose `example_shape` parses cleanly AND whose `intent`
-  uniquely matches the captured class of intents. The first half is
-  not yet enforced — `example_shape` parsing has not been added to
-  the P3 closure proof. Candidate next wedge: extend the closure
-  proof to feed every `patterns.example_shape` through the parser.
+  at **258 rows** spanning 22 themes. The "every example_shape
+  parses" half of the completion bar is **enforced and met**: the
+  test `nom-concept/tests/pattern_examples_parse.rs` reports
+  **258/258 example_shapes parse end-to-end** through the DB-driven
+  pipeline (no panics, no row growth). The remaining "intent
+  uniquely matches the captured class of intents" half is still
+  unenforced — open question: how to formalize "uniquely matches"
+  given that the corpus is now archive-only.
 
 ## Bench + flow
 
