@@ -1143,6 +1143,32 @@ enum GrammarCmd {
         #[arg(short, long)]
         path: Option<PathBuf>,
     },
+    /// List patterns from the registry, optionally filtered by intent
+    /// substring or kind. Useful for AI clients exploring the catalog.
+    PatternList {
+        /// Restrict to patterns whose `intent` contains this substring
+        /// (case-insensitive). Empty matches all.
+        #[arg(long, default_value = "")]
+        intent_contains: String,
+        /// Restrict to patterns referencing this kind in `nom_kinds`.
+        /// Empty matches all.
+        #[arg(long, default_value = "")]
+        kind: String,
+        /// Maximum rows to print.
+        #[arg(long, default_value_t = 50)]
+        limit: usize,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Show the full record for a single pattern by id.
+    PatternShow {
+        /// Pattern id to look up.
+        pattern_id: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
     /// Add a single row to the `quality_names` table. S5b rejects any
     /// `favor X` clause whose name is not registered here.
     AddQuality {
@@ -1567,6 +1593,12 @@ fn main() {
                 path.as_deref(), &pattern_id, &intent, &nom_kinds, &nom_clauses,
                 &typed_slot_refs, &example_shape, &hazards, &favors, &source_doc_refs,
             ),
+            GrammarCmd::PatternList { intent_contains, kind, limit, path } => {
+                cmd_grammar_pattern_list(path.as_deref(), &intent_contains, &kind, limit)
+            }
+            GrammarCmd::PatternShow { pattern_id, path } => {
+                cmd_grammar_pattern_show(path.as_deref(), &pattern_id)
+            }
         },
     };
     process::exit(exit_code);
@@ -1900,6 +1932,112 @@ fn cmd_grammar_add_pattern(
             0
         }
         Err(e) => { eprintln!("nom grammar add-pattern: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_pattern_list(
+    path: Option<&Path>,
+    intent_contains: &str,
+    kind: &str,
+    limit: usize,
+) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("nom grammar pattern list: {e}"); return 1; }
+    };
+    let intent_pat = format!("%{}%", intent_contains.to_lowercase());
+    let kind_pat = format!("%\"{}\"%", kind);
+    let kind_filter = !kind.is_empty();
+    let sql = if kind_filter {
+        "SELECT pattern_id, intent FROM patterns \
+         WHERE LOWER(intent) LIKE ?1 AND nom_kinds LIKE ?2 \
+         ORDER BY pattern_id LIMIT ?3"
+    } else {
+        "SELECT pattern_id, intent FROM patterns \
+         WHERE LOWER(intent) LIKE ?1 \
+         ORDER BY pattern_id LIMIT ?2"
+    };
+    let mut stmt = match conn.prepare(sql) {
+        Ok(s) => s,
+        Err(e) => { eprintln!("nom grammar pattern list: prepare: {e}"); return 1; }
+    };
+    let collect = |iter: rusqlite::Result<Vec<(String, String)>>| -> i32 {
+        match iter {
+            Ok(rows) => {
+                let count = rows.len();
+                for (id, intent) in rows {
+                    println!("{id:48}  {intent}");
+                }
+                eprintln!("\n{count} pattern{} listed (limit {limit})",
+                    if count == 1 { "" } else { "s" });
+                0
+            }
+            Err(e) => { eprintln!("nom grammar pattern list: query: {e}"); 1 }
+        }
+    };
+    if kind_filter {
+        let rows = stmt.query_map(rusqlite::params![intent_pat, kind_pat, limit as i64], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        }).and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>());
+        collect(rows)
+    } else {
+        let rows = stmt.query_map(rusqlite::params![intent_pat, limit as i64], |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        }).and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>());
+        collect(rows)
+    }
+}
+
+fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("nom grammar pattern show: {e}"); return 1; }
+    };
+    let sql = "SELECT pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
+                      example_shape, hazards, favors, source_doc_refs \
+               FROM patterns WHERE pattern_id = ?1";
+    let row = conn.query_row(sql, [pattern_id], |r| {
+        Ok((
+            r.get::<_, String>(0)?,
+            r.get::<_, String>(1)?,
+            r.get::<_, String>(2)?,
+            r.get::<_, String>(3)?,
+            r.get::<_, String>(4)?,
+            r.get::<_, String>(5)?,
+            r.get::<_, String>(6)?,
+            r.get::<_, String>(7)?,
+            r.get::<_, String>(8)?,
+        ))
+    });
+    match row {
+        Ok((id, intent, kinds, clauses, refs, example, hazards, favors, source_refs)) => {
+            println!("pattern_id     : {id}");
+            println!("intent         : {intent}");
+            println!("nom_kinds      : {kinds}");
+            println!("nom_clauses    : {clauses}");
+            println!("typed_slot_refs: {refs}");
+            println!("hazards        : {hazards}");
+            println!("favors         : {favors}");
+            println!("source_doc_refs: {source_refs}");
+            println!("example_shape:");
+            for line in example.split("\\n") {
+                println!("  {line}");
+            }
+            0
+        }
+        Err(rusqlite::Error::QueryReturnedNoRows) => {
+            eprintln!("nom grammar pattern show: no pattern with id '{pattern_id}'");
+            1
+        }
+        Err(e) => { eprintln!("nom grammar pattern show: {e}"); 1 }
     }
 }
 
