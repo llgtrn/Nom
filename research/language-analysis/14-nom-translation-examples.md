@@ -3028,6 +3028,84 @@ Row additions: **W49 quantifier-vocabulary lock** (new wedge, narrow: enumerate 
 
 ---
 
+## 47. TLA+ spec — temporal-logic model-checked specification
+
+```tla
+------------------------------ MODULE Counter ------------------------------
+EXTENDS Naturals
+
+VARIABLES count
+
+Init == count = 0
+
+Increment == count' = count + 1
+Reset     == count' = 0
+
+Next == Increment \/ Reset
+
+Spec == Init /\ [][Next]_count
+
+BoundedCount == count <= 1000
+
+THEOREM Spec => []BoundedCount
+============================================================================
+```
+
+### `.nomx v1` translation
+
+```nomx
+define counter_spec
+  that takes no input, returns a bounded-integer invariant claim.
+initially count is 0.
+on every step, count either increments by 1 or resets to 0.
+for all reachable states, count is at most 1000.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data CounterState is
+  intended to hold the single integer counter variable tracked by the specification.
+  exposes count as natural from 0 to 1000.
+
+the function counter_initial_state is
+  intended to return the state every execution begins in.
+  ensures the returned count equals 0.
+
+the function counter_step is
+  intended to compute the set of valid successor states from any given CounterState.
+  uses the @Data matching "CounterState" with at-least 0.95 confidence.
+  ensures one valid successor has count equal to the prior count plus 1, when the prior count is less than 1000.
+  ensures another valid successor has count equal to 0.
+  ensures no other successor is valid.
+  favor correctness.
+
+the property counter_is_bounded is
+  intended to assert that every reachable counter state has a count between 0 and 1000 inclusive.
+  uses the @Data matching "CounterState" with at-least 0.95 confidence.
+  uses the @Function matching "counter_initial_state" with at-least 0.95 confidence.
+  uses the @Function matching "counter_step" with at-least 0.95 confidence.
+  checks for every reachable state starting from counter_initial_state and every sequence of counter_step transitions, the state's count is between 0 and 1000 inclusive.
+  covers all reachable states up to a depth of 10000 transitions by default.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Primed variables (`count'`) for next-state** — TLA+'s signature notation for "value in the next state". Nom's translation splits `count` and `count'` into `the prior count` (input) and `the returned count` / `the successor's count` (output) by treating every step function as a pure state-transition. Authoring-guide rule: **TLA+ primed variables decompose to input/output parameters on pure transition functions** — same pattern as hardware RTL (#41). No new wedge; the (state-data, transition-function) decomposition handles it.
+2. **Temporal-logic operators (`[][Next]_v`, `<>P`, `[]P`)** — TLA+'s "always" and "eventually". Nom's property decl (#33 + W41) captures "always" via the `checks for every reachable state, …` clause. "Eventually" (liveness) would need `checks there exists a reachable state where …` — maps to the **existential quantifier `some` from W49**. Authoring-guide rule: **temporal `[]P` (always) decomposes to `checks for every reachable state, P`; temporal `<>P` (eventually) decomposes to `checks some reachable state satisfies P`**. No new wedge; reuses W41 property + W49 quantifier vocab.
+3. **`Next == Increment \/ Reset` disjunctive action** — union of possible transitions. Nom's v2 captures this by multiple `ensures one valid successor …` clauses on the transition function. Authoring-guide rule: **disjunctive actions in TLA+ → multiple `ensures one valid successor has …` clauses on the transition function**. Consistent with the disjunctive-ensures pattern (#46 Rego). No new wedge.
+4. **`Spec == Init /\ [][Next]_count` as the full specification** — composition of initial condition + next-state relation + stuttering frame. Nom's composition decl + property decl together carry this: the composition `counter_initial_state then counter_step` names the Init-plus-Next structure; the property's `for every reachable state starting from …` phrasing closes the loop. Authoring-guide rule: **TLA+ top-level `Spec == Init /\ [][Next]_v` decomposes to a composition decl (`init_fn then step_fn`) plus a property decl whose check quantifies over reachable states**. No new wedge.
+5. **Model-check depth bound (`up to a depth of 10000 transitions`)** — bounded-search parameter for the model checker. Analogous to Hypothesis's `covers list lengths from N to M` (#33). Reuses the property decl's `covers …` clause. No new wedge.
+6. **Invariant vs safety vs liveness** — TLA+ distinguishes these by the temporal operators used. Nom's v2 encodes the kind-of-claim in the `intended to` prose + the `checks …` clause shape. Authoring-guide rule: **the kind of claim (invariant / safety / liveness) is stated in the property's `intended to` clause plus the `for every` or `some` quantifier in its `checks` clause — not in a separate keyword**. Keeps the property decl surface uniform across model-checking and property-based-testing (#33).
+7. **Formal-methods tooling (TLC model checker, Apalache)** — tool choice is a build-time decision, not an authoring concern. Authoring-guide rule: **formal-methods tool choice (TLC / Apalache / Coq / Lean / Alloy) is a build-stage specialization; the source property decl is tool-agnostic**.
+
+Row additions: **0 new wedges** — temporal-logic model-checking specifications fully express via existing property decl (W41) + composition decl + `uses` clauses + the quantifier vocabulary (W49). 7 authoring-guide closures: TLA+ primed variables = I/O params on transition functions, temporal `[]`/`<>` = `for every`/`some` in property checks clauses, disjunctive actions = multiple ensures clauses, `Spec == Init /\ Next` = composition + property, model-check depth = `covers` clause, kind-of-claim in `intended to` + quantifier not in keyword, formal-methods tool = build-stage specialization.
+
+**Fourteenth consecutive minimal-wedge translation + seventh 0-new-wedge run.** TLA+ — often considered incompatible with general-purpose programming languages — decomposes cleanly into Nom's property-decl-plus-composition-decl pattern. The **`property` kind (W41) is now validated as the canonical surface for both generative testing (Hypothesis #33) AND temporal-logic model-checking (TLA+ #47)**. The property decl's `checks …` clause is the universal claim surface; quantifiers (W49) disambiguate invariant/safety/liveness.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

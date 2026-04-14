@@ -174,18 +174,25 @@
 | 157 | Membership checks as prose `has X among Y` / `is X or Y or Z` — no `in` operator | authoring-guide rule | ✅ closed (doc 14 #46; non-symbol discipline) |
 | 158 | Helper rules decompose to peer function decls | authoring-guide rule | ✅ closed (doc 14 #46) |
 | 159 | Policy composition = disjunctive-ensures pattern; no separate composition keyword | authoring-guide rule | ✅ closed (doc 14 #46) |
+| 160 | TLA+ primed variables (`x'`) decompose to input/output parameters on pure transition functions | authoring-guide rule | ✅ closed (doc 14 #47; same as #41 hardware-RTL) |
+| 161 | Temporal `[]P` (always) → `checks for every reachable state, P`; `<>P` (eventually) → `checks some reachable state satisfies P` | authoring-guide rule | ✅ closed (doc 14 #47; reuses W41 + W49) |
+| 162 | Disjunctive actions (TLA+ `Next == A \/ B`) → multiple `ensures one valid successor has …` clauses | authoring-guide rule | ✅ closed (doc 14 #47; consistent with #46 Rego) |
+| 163 | TLA+ `Spec == Init /\ [][Next]_v` → composition decl (`init then step`) + property decl quantifying over reachable states | authoring-guide rule | ✅ closed (doc 14 #47) |
+| 164 | Model-check depth bounds use existing `covers …` clause on the property (same as Hypothesis #33) | authoring-guide rule | ✅ closed (doc 14 #47) |
+| 165 | Kind-of-claim (invariant/safety/liveness) stated in `intended to` + `for every`/`some` quantifier — no separate keyword | authoring-guide rule | ✅ closed (doc 14 #47; keeps property decl surface uniform) |
+| 166 | Formal-methods tool choice (TLC/Apalache/Coq/Lean/Alloy) is build-stage specialization; source property decl is tool-agnostic | authoring-guide rule | ✅ closed (doc 14 #47) |
 
-Totals by destination (after doc 14 #46 Rego policy-DSL translation surfaced W49 quantifier-vocabulary-lock — a **retroactive payoff wedge** clarifying ensure-clause parsing across 15+ prior translations):
+Totals by destination (after doc 14 #47 TLA+ temporal-logic translation — **seventh 0-new-wedge translation**; 7 authoring-guide closures; validates `property` kind (W41) as universal claim surface for both generative testing AND temporal-logic model-checking):
 
-- ⏳ Wedge queued: **42** (+W49 quantifier-vocabulary)
+- ⏳ Wedge queued: **42** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **112**
+- ✅ Closed: **119**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 166 rows. Closure rate 67% (112/166). **46 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + **policy-DSL (Rego/OPA)**. Thirteenth consecutive minimal-wedge translation.
+Backlog size: 173 rows. Closure rate 69% (119/173). **47 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + **temporal-logic-model-checking (TLA+)**. Fourteenth consecutive minimal-wedge translation, seventh 0-new-wedge. **`property` kind now validated as the universal claim surface for generative testing + model-checking.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
