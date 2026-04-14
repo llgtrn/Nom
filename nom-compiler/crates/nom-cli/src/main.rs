@@ -1144,7 +1144,8 @@ enum GrammarCmd {
         path: Option<PathBuf>,
     },
     /// List patterns from the registry, optionally filtered by intent
-    /// substring or kind. Useful for AI clients exploring the catalog.
+    /// substring, kind, or favored quality. Useful for AI clients
+    /// exploring the catalog.
     PatternList {
         /// Restrict to patterns whose `intent` contains this substring
         /// (case-insensitive). Empty matches all.
@@ -1154,9 +1155,16 @@ enum GrammarCmd {
         /// Empty matches all.
         #[arg(long, default_value = "")]
         kind: String,
+        /// Restrict to patterns optimizing for this quality (matched
+        /// against `favors` JSON list). Empty matches all.
+        #[arg(long, default_value = "")]
+        favor: String,
         /// Maximum rows to print.
         #[arg(long, default_value_t = 50)]
         limit: usize,
+        /// Emit JSON array instead of human-readable lines.
+        #[arg(long)]
+        json: bool,
         /// Grammar DB path (default: ~/.nom/grammar.sqlite).
         #[arg(short, long)]
         path: Option<PathBuf>,
@@ -1165,6 +1173,19 @@ enum GrammarCmd {
     PatternShow {
         /// Pattern id to look up.
         pattern_id: String,
+        /// Emit JSON object instead of human-readable lines.
+        #[arg(long)]
+        json: bool,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Print summary stats over the patterns table — total count,
+    /// counts grouped by primary kind, and the top favored qualities.
+    PatternStats {
+        /// Emit JSON object instead of human-readable lines.
+        #[arg(long)]
+        json: bool,
         /// Grammar DB path (default: ~/.nom/grammar.sqlite).
         #[arg(short, long)]
         path: Option<PathBuf>,
@@ -1593,11 +1614,14 @@ fn main() {
                 path.as_deref(), &pattern_id, &intent, &nom_kinds, &nom_clauses,
                 &typed_slot_refs, &example_shape, &hazards, &favors, &source_doc_refs,
             ),
-            GrammarCmd::PatternList { intent_contains, kind, limit, path } => {
-                cmd_grammar_pattern_list(path.as_deref(), &intent_contains, &kind, limit)
+            GrammarCmd::PatternList { intent_contains, kind, favor, limit, json, path } => {
+                cmd_grammar_pattern_list(path.as_deref(), &intent_contains, &kind, &favor, limit, json)
             }
-            GrammarCmd::PatternShow { pattern_id, path } => {
-                cmd_grammar_pattern_show(path.as_deref(), &pattern_id)
+            GrammarCmd::PatternShow { pattern_id, json, path } => {
+                cmd_grammar_pattern_show(path.as_deref(), &pattern_id, json)
+            }
+            GrammarCmd::PatternStats { json, path } => {
+                cmd_grammar_pattern_stats(path.as_deref(), json)
             }
         },
     };
@@ -1939,7 +1963,9 @@ fn cmd_grammar_pattern_list(
     path: Option<&Path>,
     intent_contains: &str,
     kind: &str,
+    favor: &str,
     limit: usize,
+    json: bool,
 ) -> i32 {
     let p = match path {
         Some(p) => p.to_path_buf(),
@@ -1949,50 +1975,65 @@ fn cmd_grammar_pattern_list(
         Ok(c) => c,
         Err(e) => { eprintln!("nom grammar pattern list: {e}"); return 1; }
     };
-    let intent_pat = format!("%{}%", intent_contains.to_lowercase());
-    let kind_pat = format!("%\"{}\"%", kind);
-    let kind_filter = !kind.is_empty();
-    let sql = if kind_filter {
-        "SELECT pattern_id, intent FROM patterns \
-         WHERE LOWER(intent) LIKE ?1 AND nom_kinds LIKE ?2 \
-         ORDER BY pattern_id LIMIT ?3"
-    } else {
-        "SELECT pattern_id, intent FROM patterns \
-         WHERE LOWER(intent) LIKE ?1 \
-         ORDER BY pattern_id LIMIT ?2"
-    };
-    let mut stmt = match conn.prepare(sql) {
+
+    // Build dynamic WHERE clause + parameter list. SQLite's named-
+    // parameter API would be cleaner; for the tiny filter set here a
+    // hand-built string is fine.
+    let mut where_parts: Vec<String> = Vec::new();
+    let mut params: Vec<String> = Vec::new();
+    where_parts.push("LOWER(intent) LIKE ?".into());
+    params.push(format!("%{}%", intent_contains.to_lowercase()));
+    if !kind.is_empty() {
+        where_parts.push("nom_kinds LIKE ?".into());
+        params.push(format!("%\"{}\"%", kind));
+    }
+    if !favor.is_empty() {
+        where_parts.push("favors LIKE ?".into());
+        params.push(format!("%\"{}\"%", favor));
+    }
+    let sql = format!(
+        "SELECT pattern_id, intent FROM patterns WHERE {} ORDER BY pattern_id LIMIT ?",
+        where_parts.join(" AND ")
+    );
+    let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
         Err(e) => { eprintln!("nom grammar pattern list: prepare: {e}"); return 1; }
     };
-    let collect = |iter: rusqlite::Result<Vec<(String, String)>>| -> i32 {
-        match iter {
-            Ok(rows) => {
+    let mut bound: Vec<&dyn rusqlite::ToSql> =
+        params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
+    let limit_i64 = limit as i64;
+    bound.push(&limit_i64);
+    let rows: rusqlite::Result<Vec<(String, String)>> = stmt
+        .query_map(rusqlite::params_from_iter(bound), |r| {
+            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
+        })
+        .and_then(|it| it.collect());
+
+    match rows {
+        Ok(rows) => {
+            if json {
+                let arr: Vec<serde_json::Value> = rows
+                    .iter()
+                    .map(|(id, intent)| serde_json::json!({"pattern_id": id, "intent": intent}))
+                    .collect();
+                println!("{}", serde_json::to_string_pretty(&arr).unwrap_or_default());
+            } else {
                 let count = rows.len();
-                for (id, intent) in rows {
+                for (id, intent) in &rows {
                     println!("{id:48}  {intent}");
                 }
-                eprintln!("\n{count} pattern{} listed (limit {limit})",
-                    if count == 1 { "" } else { "s" });
-                0
+                eprintln!(
+                    "\n{count} pattern{} listed (limit {limit})",
+                    if count == 1 { "" } else { "s" }
+                );
             }
-            Err(e) => { eprintln!("nom grammar pattern list: query: {e}"); 1 }
+            0
         }
-    };
-    if kind_filter {
-        let rows = stmt.query_map(rusqlite::params![intent_pat, kind_pat, limit as i64], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        }).and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>());
-        collect(rows)
-    } else {
-        let rows = stmt.query_map(rusqlite::params![intent_pat, limit as i64], |r| {
-            Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?))
-        }).and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>());
-        collect(rows)
+        Err(e) => { eprintln!("nom grammar pattern list: query: {e}"); 1 }
     }
 }
 
-fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str) -> i32 {
+fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str, json: bool) -> i32 {
     let p = match path {
         Some(p) => p.to_path_buf(),
         None => default_grammar_path(),
@@ -2019,17 +2060,32 @@ fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str) -> i32 {
     });
     match row {
         Ok((id, intent, kinds, clauses, refs, example, hazards, favors, source_refs)) => {
-            println!("pattern_id     : {id}");
-            println!("intent         : {intent}");
-            println!("nom_kinds      : {kinds}");
-            println!("nom_clauses    : {clauses}");
-            println!("typed_slot_refs: {refs}");
-            println!("hazards        : {hazards}");
-            println!("favors         : {favors}");
-            println!("source_doc_refs: {source_refs}");
-            println!("example_shape:");
-            for line in example.split("\\n") {
-                println!("  {line}");
+            if json {
+                let obj = serde_json::json!({
+                    "pattern_id": id,
+                    "intent": intent,
+                    "nom_kinds": kinds,
+                    "nom_clauses": clauses,
+                    "typed_slot_refs": refs,
+                    "example_shape": example,
+                    "hazards": hazards,
+                    "favors": favors,
+                    "source_doc_refs": source_refs,
+                });
+                println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+            } else {
+                println!("pattern_id     : {id}");
+                println!("intent         : {intent}");
+                println!("nom_kinds      : {kinds}");
+                println!("nom_clauses    : {clauses}");
+                println!("typed_slot_refs: {refs}");
+                println!("hazards        : {hazards}");
+                println!("favors         : {favors}");
+                println!("source_doc_refs: {source_refs}");
+                println!("example_shape:");
+                for line in example.split("\\n") {
+                    println!("  {line}");
+                }
             }
             0
         }
@@ -2039,6 +2095,83 @@ fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str) -> i32 {
         }
         Err(e) => { eprintln!("nom grammar pattern show: {e}"); 1 }
     }
+}
+
+fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        Ok(c) => c,
+        Err(e) => { eprintln!("nom grammar pattern stats: {e}"); return 1; }
+    };
+
+    let total: i64 = conn
+        .query_row("SELECT COUNT(*) FROM patterns", [], |r| r.get(0))
+        .unwrap_or(0);
+
+    // Per-kind tally — count patterns whose nom_kinds JSON references each kind.
+    let kinds = [
+        "function", "module", "concept", "screen", "data",
+        "event", "media", "property", "scenario",
+    ];
+    let mut by_kind: Vec<(String, i64)> = Vec::new();
+    for k in kinds {
+        let pat = format!("%\"{}\"%", k);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM patterns WHERE nom_kinds LIKE ?1",
+                [pat],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        by_kind.push((k.to_string(), n));
+    }
+
+    // Top-favored qualities — count patterns whose favors JSON references each.
+    let qualities = [
+        "correctness", "determinism", "auditability", "reproducibility",
+        "performance", "latency", "responsiveness", "availability",
+        "numerical_stability", "statistical_rigor", "clarity", "accessibility",
+        "discoverability", "documentation", "portability", "totality",
+        "minimum_cost", "forward_compatibility", "synthesizability", "gas_efficiency",
+    ];
+    let mut by_favor: Vec<(String, i64)> = Vec::new();
+    for q in qualities {
+        let pat = format!("%\"{}\"%", q);
+        let n: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM patterns WHERE favors LIKE ?1",
+                [pat],
+                |r| r.get(0),
+            )
+            .unwrap_or(0);
+        if n > 0 {
+            by_favor.push((q.to_string(), n));
+        }
+    }
+    by_favor.sort_by(|a, b| b.1.cmp(&a.1));
+
+    if json {
+        let obj = serde_json::json!({
+            "total": total,
+            "by_kind": by_kind.iter().map(|(k, n)| serde_json::json!({"kind": k, "count": n})).collect::<Vec<_>>(),
+            "by_favor": by_favor.iter().map(|(q, n)| serde_json::json!({"quality": q, "count": n})).collect::<Vec<_>>(),
+        });
+        println!("{}", serde_json::to_string_pretty(&obj).unwrap_or_default());
+    } else {
+        println!("total patterns: {total}");
+        println!("\nby kind (pattern references kind in nom_kinds):");
+        for (k, n) in &by_kind {
+            println!("  {k:14} {n:4}");
+        }
+        println!("\nby favor (pattern optimizes for quality):");
+        for (q, n) in &by_favor {
+            println!("  {q:24} {n:4}");
+        }
+    }
+    0
 }
 
 fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {
