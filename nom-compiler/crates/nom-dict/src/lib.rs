@@ -1385,7 +1385,7 @@ impl NomDict {
 
 // ── Helpers ─────────────────────────────────────────────────────────
 
-fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
+pub(crate) fn row_to_entry(row: &rusqlite::Row) -> rusqlite::Result<Entry> {
     let kind_str: String = row.get(3)?;
     let status_str: String = row.get(13)?;
     Ok(Entry {

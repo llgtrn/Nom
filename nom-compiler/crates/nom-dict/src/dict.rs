@@ -324,8 +324,8 @@ fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
 // taking &Dict; `NomDict` methods stay in place as single-file fallback until
 // S8 removes them.
 
-use crate::{EntityRow, row_to_entity};
-use nom_types::{EntryScores, EntrySignature, SecurityFinding};
+use crate::{EntityRow, row_to_entity, row_to_entry};
+use nom_types::{Entry, EntryScores, EntrySignature, SecurityFinding, Severity};
 use rusqlite::{OptionalExtension, params};
 
 /// Insert-or-update a row in `entities` on the entities tier.
@@ -780,6 +780,113 @@ pub fn add_ref(d: &Dict, from_id: &str, to_id: &str) -> Result<()> {
         params![from_id, to_id],
     )?;
     Ok(())
+}
+
+// ── S7 dict-split: 5 Entry/Score/Finding-returning readers ───────────
+//
+// Lift the heavier readers off `NomDict`. All five return owned data
+// re-using the existing `nom_types::*` shapes (no new types added);
+// the SELECT lists are byte-identical with the legacy version so
+// callers swap by pure rename.
+
+const ENTRY_SELECT: &str =
+    "SELECT id, word, variant, kind, language, describe, concept, body, body_nom, \
+     input_type, output_type, pre, post, status, translation_score, \
+     is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes \
+     FROM entries";
+
+/// Look up every entry whose `word` column equals `word`, ordered by
+/// id. Empty vec when nothing matches. Mirrors `NomDict::find_by_word`.
+pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
+    let sql = format!("{} WHERE word = ?1 ORDER BY id", ENTRY_SELECT);
+    let mut stmt = d.entities.prepare_cached(&sql)?;
+    let rows = stmt
+        .query_map(params![word], row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Entries whose `body_kind` equals `kind`, ordered by id, capped by
+/// `limit`. Mirrors `NomDict::find_by_body_kind`.
+pub fn find_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<Vec<Entry>> {
+    let sql = format!("{} WHERE body_kind = ?1 ORDER BY id LIMIT ?2", ENTRY_SELECT);
+    let mut stmt = d.entities.prepare_cached(&sql)?;
+    let rows = stmt
+        .query_map(params![kind, limit as i64], row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Case-insensitive substring search on `entries.describe`. Used by
+/// the LLM `search_nomtu` tool path — caller wraps the query in
+/// `%query%`-style wildcards via the LIKE pattern. Mirrors
+/// `NomDict::search_describe`.
+pub fn search_describe(d: &Dict, query: &str, limit: usize) -> Result<Vec<Entry>> {
+    let pattern = format!("%{}%", query);
+    let sql = format!(
+        "{} WHERE describe LIKE ?1 COLLATE NOCASE ORDER BY id LIMIT ?2",
+        ENTRY_SELECT
+    );
+    let mut stmt = d.entities.prepare_cached(&sql)?;
+    let rows = stmt
+        .query_map(params![pattern, limit as i64], row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Fetch the optional scores row for an entry. Reads the legacy 8
+/// dimensions; the T3.2-extended (quality, maintenance, accessibility)
+/// columns are read by a separate path.
+pub fn get_scores(d: &Dict, id: &str) -> Result<Option<EntryScores>> {
+    let row = d
+        .entities
+        .query_row(
+            "SELECT id, security, reliability, performance, readability,
+                    testability, portability, composability, maturity, overall_score
+             FROM entry_scores WHERE id = ?1",
+            params![id],
+            |row| {
+                Ok(EntryScores {
+                    id: row.get(0)?,
+                    security: row.get(1)?,
+                    reliability: row.get(2)?,
+                    performance: row.get(3)?,
+                    readability: row.get(4)?,
+                    testability: row.get(5)?,
+                    portability: row.get(6)?,
+                    composability: row.get(7)?,
+                    maturity: row.get(8)?,
+                    overall_score: row.get(9)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Fetch every security finding for an entry, ordered by `finding_id`
+/// for stable iteration. Mirrors `NomDict::get_findings`.
+pub fn get_findings(d: &Dict, id: &str) -> Result<Vec<SecurityFinding>> {
+    let mut stmt = d.entities.prepare_cached(
+        "SELECT finding_id, id, severity, category, rule_id, message, evidence, line, remediation \
+         FROM entry_security_findings WHERE id = ?1 ORDER BY finding_id",
+    )?;
+    let rows = stmt
+        .query_map(params![id], |row| {
+            Ok(SecurityFinding {
+                finding_id: row.get(0)?,
+                id: row.get(1)?,
+                severity: Severity::from_str(&row.get::<_, String>(2)?),
+                category: row.get(3)?,
+                rule_id: row.get(4)?,
+                message: row.get(5)?,
+                evidence: row.get(6)?,
+                line: row.get(7)?,
+                remediation: row.get(8)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
 }
 
 #[cfg(test)]
@@ -1360,6 +1467,105 @@ mod tests {
     }
 
     // ── S6 port tests ──────────────────────────────────────────────
+
+    // ── S7 port tests ──────────────────────────────────────────────
+
+    fn seed_full_entry(d: &Dict, id: &str, word: &str, body_kind: Option<&str>, describe: Option<&str>) {
+        d.entities
+            .execute(
+                "INSERT INTO entries (id, word, kind, language, status, body_kind, describe) \
+                 VALUES (?1, ?2, 'function', 'nom', 'partial', ?3, ?4)",
+                rusqlite::params![id, word, body_kind, describe],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn find_by_word_returns_all_matches_ordered_by_id() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_full_entry(&d, "h_b", "add", None, None);
+        seed_full_entry(&d, "h_a", "add", None, None);
+        seed_full_entry(&d, "h_c", "mul", None, None);
+        let v = find_by_word(&d, "add").unwrap();
+        let ids: Vec<&str> = v.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["h_a", "h_b"]);
+    }
+
+    #[test]
+    fn find_by_body_kind_filters_and_caps() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_full_entry(&d, "a", "x", Some("module"), None);
+        seed_full_entry(&d, "b", "y", Some("module"), None);
+        seed_full_entry(&d, "c", "z", Some("module"), None);
+        seed_full_entry(&d, "d", "w", Some("function"), None);
+        let v = find_by_body_kind(&d, "module", 2).unwrap();
+        let ids: Vec<&str> = v.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn search_describe_is_case_insensitive_substring() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_full_entry(&d, "a", "sha", None, Some("Compute SHA-256 hash"));
+        seed_full_entry(&d, "b", "md5", None, Some("Compute MD5 hash"));
+        seed_full_entry(&d, "c", "uuid", None, Some("Generate UUID v4"));
+        let v = search_describe(&d, "sha", 10).unwrap();
+        assert_eq!(v.len(), 1);
+        assert_eq!(v[0].id, "a");
+        let v2 = search_describe(&d, "compute", 10).unwrap();
+        assert_eq!(v2.len(), 2);
+    }
+
+    #[test]
+    fn get_scores_returns_some_after_set_then_none_for_missing() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_full_entry(&d, "h_score", "x", None, None);
+        let scores = nom_types::EntryScores {
+            id: "h_score".into(),
+            security: Some(0.9),
+            reliability: Some(0.8),
+            performance: Some(0.7),
+            readability: Some(0.6),
+            testability: Some(0.5),
+            portability: Some(0.4),
+            composability: Some(0.3),
+            maturity: Some(0.2),
+            overall_score: Some(0.55),
+        };
+        set_scores(&d, "h_score", &scores).unwrap();
+        let got = get_scores(&d, "h_score").unwrap().unwrap();
+        assert_eq!(got.security, Some(0.9));
+        assert_eq!(got.composability, Some(0.3));
+        assert!(get_scores(&d, "missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn get_findings_returns_all_findings_in_finding_id_order() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_full_entry(&d, "h_f", "x", None, None);
+        for cat in ["a_cat", "b_cat"] {
+            add_finding(
+                &d,
+                "h_f",
+                &nom_types::SecurityFinding {
+                    finding_id: 0,
+                    id: "h_f".into(),
+                    severity: nom_types::Severity::High,
+                    category: cat.into(),
+                    rule_id: None,
+                    message: None,
+                    evidence: None,
+                    line: None,
+                    remediation: None,
+                },
+            )
+            .unwrap();
+        }
+        let v = get_findings(&d, "h_f").unwrap();
+        assert_eq!(v.len(), 2);
+        assert_eq!(v[0].category, "a_cat");
+        assert_eq!(v[1].category, "b_cat");
+    }
 
     #[test]
     fn set_scores_inserts_then_updates_via_conflict_clause() {
