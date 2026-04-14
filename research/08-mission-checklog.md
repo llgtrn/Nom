@@ -39,12 +39,11 @@ anything load-bearing.
   every `favor X` clause. S4 + S6 still use the hardcoded path;
   the cross-stage required-clause-presence validator is queued.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
-  `nom grammar status`, `nom grammar add-kind`, `nom grammar
-  add-synonym`, `nom grammar add-quality`, `nom grammar add-keyword`,
-  `nom grammar add-clause-shape`, `nom grammar add-pattern` — Phase C
-  complete; six row-level subcommands cover every grammar.sqlite
-  table populated by a user (keywords + keyword_synonyms + kinds +
-  clause_shapes + quality_names + patterns).
+  `nom grammar status`, `nom grammar add-{kind,synonym,quality,
+  keyword,clause-shape,pattern}` (Phase C — six row-level adds),
+  plus `nom grammar pattern-list [--intent-contains TEXT] [--kind K]
+  [--limit N]` and `nom grammar pattern-show <pattern_id>` for
+  read-only exploration of the 258-pattern catalog.
 - Phase E proofs — 6 of 7 shipped: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
   (100-run Debug-equality on curated inputs), P3 closure-against-
