@@ -369,8 +369,24 @@
 | 352 | SVA assertion labels collapse to Nom property decl name; no separate label syntax | authoring-guide rule | ✅ closed (doc 14 #74) |
 | 353 | SVA severity (`$info`/`$warning`/`$error`/`$fatal`) → `hazard` clause + `favor auditability`/`favor correctness`; build stage maps to runtime action | authoring-guide rule | ✅ closed (doc 14 #74) |
 | 354 | SVA formal-tool choice (JasperGold/VC Formal/Symbiyosys) → build-stage specialization (reuses #47 + #50 tool-choice rule) | authoring-guide rule | ✅ closed (doc 14 #74) |
+| 355 | APL glyph primitives → English prose names; no non-ASCII symbolic operators at Nom source (reinforces #66 Julia + MEMORY.md English-vocab) | authoring-guide rule | ✅ closed (doc 14 #75) |
+| 356 | APL right-to-left evaluation → named intermediate values (reuses doc 17 §I8 + #52 + #57 pipe rules) | authoring-guide rule | ✅ closed (doc 14 #75) |
+| 357 | APL outer-products and reductions → `ensures` clauses quantifying over elements (reuses #35 + #61 + #66 + #68 scientific-computing rules) | authoring-guide rule | ✅ closed (doc 14 #75) |
+| 358 | APL tacit/dfn style (implicit `⍵`) → explicit named-parameter function decls (reuses #44 + #46 rules) | authoring-guide rule | ✅ closed (doc 14 #75) |
+| 359 | Golf-style terseness → verbose declarative prose via density-inversion principle — now 3 exemplars (Forth + Perl + APL) | authoring-guide rule | ✅ closed (doc 14 #75) |
+| 360 | Set-comprehension-heavy code (APL primes, Haskell list-comp, SQL SELECT) → two-sided `ensures` set-equality clauses (reuses #43 + #57 rules) | authoring-guide rule | ✅ closed (doc 14 #75) |
 
-Totals by destination (after doc 14 #74 SystemVerilog Assertions translation — **thirty-third 0-new-wedge translation in a row**; 7 authoring-guide closures; **property-based-verification paradigm family fully covered across 5 exemplars**: TLA+ (#47) + Dafny (#50) + Idris (#73) + PDDL (#48) + SVA (#74)):
+Totals by destination (after doc 14 #75 APL ultra-terse array-golf translation — **thirty-fourth 0-new-wedge translation in a row**; 6 authoring-guide closures; **density-inversion principle confirmed with 3rd exemplar**):
+
+- ⏳ Wedge queued: **44** (unchanged)
+- 🧪 Smoke-test todo: **1**
+- 📘 Authoring-guide doc-todo: **0**
+- ✅ Closed: **310**
+- 🧠 Design deferred (open): **0**
+- 🔒 Blocked: **2**
+- 🌱 Authoring-corpus seed: **10** (unchanged)
+
+Backlog size: 380 rows. Closure rate 82% (310/380). **75 translations** in doc 14 — **75-translation milestone**. Forty-second consecutive minimal-wedge, **thirty-fourth 0-new-wedge**. **Density-inversion principle confirmed with 3 exemplars** (Forth #44 + Perl #72 + APL #75): extremely terse source → verbose Nom; extremely verbose source → compact Nom; idiomatic Python/Ruby at the sweet-spot.
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**

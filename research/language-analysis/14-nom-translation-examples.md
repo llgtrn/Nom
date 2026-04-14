@@ -5698,6 +5698,88 @@ Row additions: **0 new wedges** — SystemVerilog Assertions fully express via p
 
 ---
 
+## 75. APL — ultra-terse array-golf with right-to-left evaluation
+
+```apl
+⍝ Compute the average of an integer vector.
+avg ← { (+/ ⍵) ÷ ≢⍵ }
+
+⍝ Standard deviation using the above.
+sd ← { ((+/ (⍵ - avg ⍵) * 2) ÷ ≢⍵) * 0.5 }
+
+⍝ Find all primes up to N using the Sieve of Eratosthenes.
+primes ← { (2=+⌿0=⍵∘.|⍵)/⍵←1+⍳⍵ }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define mean_of
+  that takes a numeric vector, returns its arithmetic mean.
+the mean is the sum of the vector's elements divided by the element count.
+
+define standard_deviation_of
+  that takes a numeric vector, returns its population standard deviation.
+compute the mean, then the mean of (each element minus the mean, squared), then take its square root.
+
+define primes_up_to
+  that takes a positive integer n, returns the list of primes from 2 up to n inclusive.
+build the candidates 1 through n.
+keep each candidate that is divisible by exactly two of the candidates in the range.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data NumericVector is
+  intended to describe a one-dimensional sequence of real numbers with a known element count.
+  exposes count as natural from 0 to 1000000000.
+  exposes elements as list of real.
+
+the function mean_of is
+  intended to return the arithmetic mean of a NumericVector.
+  uses the @Data matching "NumericVector" with at-least 0.95 confidence.
+  requires the input vector's count is at-least 1.
+  ensures the returned value equals the sum of every element divided by the element count.
+  hazard summing many floats in natural order can accumulate rounding error; numerical-stability-sensitive callers should use Kahan summation at the build stage.
+  favor numerical_stability.
+  favor correctness.
+
+the function standard_deviation_of is
+  intended to return the population standard deviation of a NumericVector.
+  uses the @Data matching "NumericVector" with at-least 0.95 confidence.
+  uses the @Function matching "mean_of" with at-least 0.95 confidence.
+  requires the input vector's count is at-least 1.
+  ensures the returned value equals the square root of the mean of squared deviations from mean_of the input.
+  ensures the returned value is non-negative.
+  favor numerical_stability.
+  favor correctness.
+
+the function primes_up_to is
+  intended to return the list of prime integers from 2 through n, inclusive, using trial-division semantics specified at the set level.
+  requires n is at-least 2.
+  ensures every returned value is a natural at-least 2 and at-most n that has exactly two positive divisors among 1 through n (itself and 1).
+  ensures every natural at-least 2 and at-most n that has exactly two positive divisors appears in the returned list.
+  ensures the returned list is sorted ascending.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Single-character Greek/APL primitives (`⌿`, `∘.`, `⍳`, `≢`, `/`)** — APL's defining feature: every primitive is one glyph. Nom's translation uses prose names (`sum`, `count`, `divides`) without any APL glyphs. Authoring-guide rule: **APL glyph primitives → English prose names; no non-ASCII symbolic operators at Nom source level (reinforces #66 Julia Unicode-identifier rule + MEMORY.md English-vocabulary)**. No new wedge.
+2. **Right-to-left evaluation** — APL's signature parse order. Nom's function decls evaluate left-to-right by naming each step. Authoring-guide rule: **APL right-to-left evaluation → named intermediate values (reuses doc 17 §I8 + #57 jq pipe + #52 R %>% rule); no hidden evaluation order at Nom source**. No new wedge.
+3. **Outer product (`∘.`) and reduction (`/`, `⌿`)** — APL's core array operators. Nom's translation decomposes these to `ensures every element …` + `ensures the sum equals …`. Authoring-guide rule: **array outer-products and reductions → `ensures` clauses quantifying over elements (reuses #35 NumPy + #61 Fortran + #66 Julia + #68 MATLAB scientific-computing rules)**. No new wedge.
+4. **Point-free / tacit definitions (`{ (+/ ⍵) ÷ ≢⍵ }`)** — APL dfns with implicit argument `⍵`. Nom rejects implicit arguments. Authoring-guide rule: **APL tacit/dfn style → explicit named-parameter function decls (reuses #44 Forth stack-implicit + #46 Rego implicit-globals rules)**. No new wedge.
+5. **Vector as first-class datatype** — APL's whole point. Nom's NumericVector data decl + operations-over-vectors + `list of real` for elements is the direct analogue (reuses #35 NumPy + #68 MATLAB). No new wedge.
+6. **Golf-style terseness** — APL is the canonical golf language. Nom's translation is the canonical opposite: every piece of knowledge is explicit prose. Authoring-guide rule: **golf-style terseness (APL / K / J / Perl one-liners) → verbose declarative prose via the density-inversion principle (reuses #44 Forth + #72 Perl density-inversion rule, now 3 exemplars)**. No new wedge; reinforces the inversion principle.
+7. **The specification-vs-implementation duality** — APL's `primes` function specifies what the output is via set-comprehension at high density; Nom's translation specifies the same set declaratively via two-sided `ensures` clauses (`every returned value has exactly two divisors` + `every natural with exactly two divisors appears`). Authoring-guide rule: **set-comprehension-heavy code (APL primes, Haskell list-comprehensions, SQL SELECT) → two-sided `ensures` set-equality clauses (reuses #43 SQL CTE + #57 jq filter rules)**. No new wedge.
+
+Row additions: **0 new wedges** — APL's ultra-terse array-golf fully expresses via NumericVector data decl + prose-named operations + quantified `ensures` + density-inversion verbose prose. 6 authoring-guide closures: APL glyphs → English prose names, right-to-left → named intermediates, outer-products/reductions → `ensures every element`, tacit/dfn → explicit named params, golf terseness → density-inversion verbose prose (3rd exemplar), set-comprehension → two-sided `ensures` set-equality.
+
+**Forty-second consecutive minimal-wedge translation + thirty-fourth 0-new-wedge run.** APL — the canonical golf language (1966) with the highest density-per-character of any mainstream language — decomposes cleanly into Nom's primitives. The **density-inversion principle now has three concrete exemplars** (Forth #44 + Perl #72 + APL #75): extremely terse source languages translate to verbose Nom; extremely verbose source languages (COBOL #58, Ada #70, Java #21) translate to compact Nom; idiomatic Python/Ruby sits at the sweet-spot. The 75-translation milestone is reached.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
