@@ -457,18 +457,26 @@
 | 440 | Small-step operational semantics → step-function decl with one-redex `ensures` + peer property asserting convergence via `ensures the sequence e, step(e), step(step(e)), ... terminates at X within at-most N steps`; big-step collapses to direct recursion (covered by #25 + #86) | authoring-guide rule | ✅ closed (doc 14 #87) |
 | 441 | Rewriting-strategy conventions (leftmost-innermost, call-by-need, etc.) → explicit `ensures redex selection is X: Y` clause; strategy is part of contract, not library-level default | authoring-guide rule | ✅ closed (doc 14 #87) |
 | 442 | Termination witnesses for rewriting systems → `ensures ... terminates at X within at-most N steps` clause with N bounded by structural measure (number of redex-bearing nodes); dreaming can swap bound if stricter measure proven | authoring-guide rule | ✅ closed (doc 14 #87) |
+| 443 | Pony-style reference capabilities (`iso`/`val`/`ref`/`box`/`tag`/`trn`) → data-decl structural rule: sendable messages contain only primitive or sendable-data fields; capability lattice is build-stage-enforced, not authoring-syntax | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 444 | Actor-keyword declarations (Pony, Akka, Erlang, Elixir) → concept decl with `ensures private State is never accessible outside concept scope` + `ensures no two behavior invocations execute concurrently` ensures-clauses; concept kind IS the actor surface | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 445 | Actor behaviors (async `be` vs sync `fun`) → tagged-variant message data decls + peer function decls for handlers + concept-level `ensures when X message arrives, handler H is eventually invoked` clauses; no separate behavior-keyword surface | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 446 | Private-field conventions (Pony `_name`, Python `__name`, Scala `private`) → `ensures the concept's private X is never accessible outside concept scope` clause at concept level; naming-based privacy absent at Nom source | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 447 | Actor-creation / constructor conventions (Pony `new`, Python `__init__`, Rust `new`) → peer `create_X` function decls when parameterization needed, else plain concept-by-name reference; no `new`/`init` keyword at Nom source | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 448 | Opaque-actor-tag types (Pony `Main tag`) → text-identifier fields on message data decls; build-stage actor-routing resolves identifier to live mailbox; authoring never carries capability-typed references | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 449 | Actor-mailbox delivery guarantees (FIFO / priority / unordered) → explicit `ensures ... is FIFO / is priority-ordered / is unordered` clauses on concept; guarantee is part of contract, not library default | authoring-guide rule | ✅ closed (doc 14 #88) |
+| 450 | Silent-drop failure modes in message-passing (Pony dead-actor-send, Erlang dead-process-send) → explicit `hazard` clause at message-type-handling function decl; pairing with W49-quantified timeout property is standard mitigation | authoring-guide rule | ✅ closed (doc 14 #88) |
 
 Totals by destination (after doc 14 #87 K framework term-rewriting translation — **forty-sixth 0-new-wedge translation in a row**; 8 authoring-guide closures; **formal-methods paradigm family now has 7 exemplars**: Hypothesis #33 + TLA+ #47 + PDDL #48 + Dafny #50 + Idris #73 + Coq #86 + K #87 — deepest unifying insight: formal-semantics frameworks, theorem provers, model checkers, and testing frameworks all reduce to the same Nom surface (named property + generator + cited peer functions/properties + ensures clauses); only the ensures vocabulary varies — structural skeleton is identical across reduces-to / satisfies-LTL / proof-discharged-by / holds-for-all-generated-inputs):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **393** (+8 from #87)
+- ✅ Closed: **401** (+8 from #88 Pony capability-secure actors)
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 463 rows (+8). Closure rate 84.9% (393/463). **87 translations** in doc 14. Fifty-fourth consecutive minimal-wedge, **forty-sixth 0-new-wedge**. **Formal-methods family now 7 exemplars**. **Deepest unifying insight**: formal-semantics frameworks + theorem provers + model checkers + testing frameworks all reduce to the same Nom surface (named property + generator + cited peer functions/properties + ensures clauses); only the ensures vocabulary varies — structural skeleton is identical across reduces-to / satisfies-LTL / proof-discharged-by / holds-for-all-generated-inputs.
+Backlog size: 471 rows (+8). Closure rate 85.1% (401/471). **88 translations** in doc 14. Fifty-fifth consecutive minimal-wedge, **forty-seventh 0-new-wedge**. **Formal-methods family 7 exemplars + actor-paradigm family 5 exemplars** (GenServer #27 + OTP supervisor #85 + goroutine-family via #03 + **capability-secure compile-time-race-free Pony #88**). **Unifying insight from #88**: reference-capability systems that prove data-race freedom at compile-time (Pony) reduce to the same Nom surface as dynamic actor models (Elixir/Erlang) — the private-state + FIFO-mailbox + serialized-invocation `ensures` clauses carry the contract; compile-time type-system enforcement becomes build-stage validation of message-field structural rules.
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
