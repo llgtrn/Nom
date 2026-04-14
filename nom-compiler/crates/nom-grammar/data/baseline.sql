@@ -38,19 +38,16 @@ INSERT OR IGNORE INTO quality_names (name, axis, metric_function, cardinality, r
 ('auditability',          'ops',                NULL, 'any',                  NULL,  'doc 08', NULL),
 ('accessibility',         'ops',                NULL, 'exactly_one_per_app',  'app', 'doc 08', NULL),
 ('totality',              'proofs',             NULL, 'any',                  NULL,  'doc 08', NULL),
--- Corpus-driven extensions: qualities referenced by the archived doc 14
--- translation corpus but absent from the founding 10. Adding them here
--- is what lets the closure proof's parse rate climb above zero.
-('correctness',           'semantics',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('determinism',           'semantics',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('clarity',               'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('documentation',         'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('discoverability',       'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('reproducibility',       'ops',                NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('portability',           'ops',                NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('responsiveness',        'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('latency',               'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
-('performance',           'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL);
+('correctness',           'semantics',          NULL, 'any',                  NULL,  'doc 08', NULL),
+('determinism',           'semantics',          NULL, 'any',                  NULL,  'doc 08', NULL),
+('clarity',               'authoring',          NULL, 'any',                  NULL,  'doc 08', NULL),
+('documentation',         'authoring',          NULL, 'any',                  NULL,  'doc 08', NULL),
+('discoverability',       'authoring',          NULL, 'any',                  NULL,  'doc 08', NULL),
+('reproducibility',       'ops',                NULL, 'any',                  NULL,  'doc 08', NULL),
+('portability',           'ops',                NULL, 'any',                  NULL,  'doc 08', NULL),
+('responsiveness',        'performance',        NULL, 'any',                  NULL,  'doc 08', NULL),
+('latency',               'performance',        NULL, 'any',                  NULL,  'doc 08', NULL),
+('performance',           'performance',        NULL, 'any',                  NULL,  'doc 08', NULL);
 
 -- ── Keywords (reserved tokens recognized by the lexer) ──────────────
 
@@ -121,13 +118,13 @@ INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_com
 -- set, we rewrite at lex time so the archive captures stay
 -- canonical-form-free while still parsing.
 INSERT OR IGNORE INTO keyword_synonyms (synonym, canonical_keyword, source_ref, shipped_commit, notes) VALUES
-('proof',        'property', 'doc 14 block 24', 'baseline-1.0', 'universally-quantified theorem claim maps to property kind'),
-('composition',  'module',   'doc 14 block 32', 'baseline-1.0', 'composition-of-functions idiom maps to module kind'),
-('row',          'data',     'doc 14 block 37', 'baseline-1.0', 'data-table row idiom maps to data kind'),
-('diagram',      'screen',   'doc 14 block 47', 'baseline-1.0', 'architecture diagram — screen is the generalized rendered-artifact kind'),
-('participants', 'data',     'doc 14 block 47', 'baseline-1.0', 'workflow participant list maps to data kind'),
-('layout',       'screen',   'doc 14 block 53', 'baseline-1.0', 'UI layout arrangement maps to screen kind'),
-('format',       'data',     'doc 14 block 63', 'baseline-1.0', 'data format specification maps to data kind');
+('proof',        'property', 'baseline-1.0', 'baseline-1.0', 'universally-quantified theorem claim maps to property kind'),
+('composition',  'module',   'baseline-1.0', 'baseline-1.0', 'composition-of-functions idiom maps to module kind'),
+('row',          'data',     'baseline-1.0', 'baseline-1.0', 'data-table row idiom maps to data kind'),
+('diagram',      'screen',   'baseline-1.0', 'baseline-1.0', 'architecture diagram — screen is the generalized rendered-artifact kind'),
+('participants', 'data',     'baseline-1.0', 'baseline-1.0', 'workflow participant list maps to data kind'),
+('layout',       'screen',   'baseline-1.0', 'baseline-1.0', 'UI layout arrangement maps to screen kind'),
+('format',       'data',     'baseline-1.0', 'baseline-1.0', 'data format specification maps to data kind');
 
 -- Clause shapes (per-kind grammar)
 -- function (6 clauses): intended (req) / uses / requires / ensures (≥1 req) / hazard / favor
@@ -200,12 +197,11 @@ INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, g
 ('media', 'uses',     0, 2, '''uses the'' ''@'' Kind ''matching'' ...', 'doc 04'),
 ('media', 'favor',    0, 3, '''favor'' <quality-name> ''.''', 'doc 08');
 
--- ── Patterns (canonical authoring shapes extracted from doc 14 corpus) ──
+-- ── Patterns (canonical authoring shapes) ──
 --
--- Each row captures a shape that ≥N v2 translations conform to. AI
--- clients query this table to find the canonical rendering for a
--- given intent. Seed is minimal — three high-frequency shapes.
--- Additional patterns are user-added via `nom grammar add-pattern`
+-- Each row is a reusable authoring shape an AI client consults to
+-- find the canonical rendering for a given intent. Seed is minimal;
+-- additional patterns are user-added via `nom grammar add-pattern`
 -- or future batch imports.
 
 INSERT OR IGNORE INTO patterns (
@@ -221,7 +217,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <name> is\n  intended to <prose>.\n  uses the @Function matching "<intent>" with at-least 0.9 confidence.\n  requires <pre>.\n  ensures <post>.\n  hazard <risk>.\n  favor correctness.',
   '[]',
   '["correctness"]',
-  '["doc 14 — majority shape across function translations"]'
+  '[]'
 ),
 (
   'exposes-data-shape',
@@ -232,7 +228,7 @@ INSERT OR IGNORE INTO patterns (
   'the data <Name> is\n  intended to <prose>.\n  exposes <field> as <type>.\n  exposes <field> as <type>.\n  favor documentation.',
   '[]',
   '["documentation","clarity"]',
-  '["doc 14 — majority shape across data translations"]'
+  '[]'
 ),
 (
   'concept-composition',
@@ -243,7 +239,7 @@ INSERT OR IGNORE INTO patterns (
   'the concept <name> is\n  intended to <prose>.\n  uses the @Function matching "<intent>" with at-least 0.9 confidence.\n  composes <ref> then <ref>.\n  exposes <surface>.\n  favor correctness.',
   '[]',
   '["correctness","availability"]',
-  '["doc 14 — standard concept composition pattern"]'
+  '[]'
 ),
 (
   'property-quantified-claim',
@@ -254,7 +250,7 @@ INSERT OR IGNORE INTO patterns (
   'the property <name> is\n  intended to assert <prose-claim>.\n  generator <prose-domain>.\n  uses the @Function matching "<peer-lemma>" with at-least 0.9 confidence.\n  requires <domain-precondition>.\n  ensures for every <x> in the generator, <claim-about-x>.\n  favor correctness.',
   '[]',
   '["correctness","totality"]',
-  '["doc 14 block 24 — proof add_comm","formal-methods paradigm family"]'
+  '[]'
 ),
 (
   'scenario-given-when-then',
@@ -265,7 +261,7 @@ INSERT OR IGNORE INTO patterns (
   'the scenario <name> is\n  intended to describe <prose>.\n  given <prose-setup>.\n  when <prose-action>.\n  then <prose-outcome>.\n  favor correctness.',
   '[]',
   '["correctness","clarity"]',
-  '["W46/W47 — BDD acceptance pattern"]'
+  '[]'
 ),
 (
   'event-quantified-delivery',
@@ -276,7 +272,7 @@ INSERT OR IGNORE INTO patterns (
   'the event <name> is\n  intended to <prose>.\n  exposes <field> as <type>.\n  ensures delivery is <quantifier> to every subscriber.\n  favor availability.',
   '["duplicate delivery when quantifier is at-least-once"]',
   '["availability","auditability"]',
-  '["doc 04 — event quantifier clause"]'
+  '[]'
 ),
 (
   'screen-exposes-surface',
@@ -287,7 +283,7 @@ INSERT OR IGNORE INTO patterns (
   'the screen <name> is\n  intended to <prose>.\n  uses the @Data matching "<model>" with at-least 0.9 confidence.\n  exposes <surface-field> as <type>.\n  favor accessibility.',
   '[]',
   '["accessibility","responsiveness"]',
-  '["doc 14 — screen kind generalized to UI/diagram/typography"]'
+  '[]'
 ),
 (
   'supervised-process-tree',
@@ -298,7 +294,7 @@ INSERT OR IGNORE INTO patterns (
   'the concept <supervisor> is\n  intended to supervise a set of child processes with lifecycle policies.\n  uses the @Data matching "child spec" with at-least 0.9 confidence.\n  composes <child-a> then <child-b>.\n  hazard a supervisor cascade can restart otherwise-healthy children.\n  favor availability.',
   '["restart storms","hidden cascade failures"]',
   '["availability","auditability"]',
-  '["doc 14 block ~85 — supervised-process paradigm"]'
+  '[]'
 ),
 (
   'tagged-variant-errors',
@@ -309,7 +305,7 @@ INSERT OR IGNORE INTO patterns (
   'the data <Outcome> is\n  intended to represent either a success payload or one of a fixed set of named failure variants.\n  exposes variant as one of: success, not_found, conflict, forbidden.\n  exposes payload as text.\n  favor clarity.',
   '["callers who ignore a variant silently skip error handling"]',
   '["clarity","correctness"]',
-  '["doc 14 — error-handling paradigm across several exemplars"]'
+  '[]'
 ),
 (
   'retry-policy',
@@ -320,7 +316,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <name> is\n  intended to perform a potentially-transient operation with bounded retry.\n  uses the @Function matching "one attempt" with at-least 0.9 confidence.\n  requires the underlying operation is idempotent.\n  ensures at most N attempts are made with exponential backoff between tries.\n  hazard retrying a non-idempotent side-effect can double-apply it.\n  favor availability.',
   '["non-idempotent side-effects","thundering-herd on coordinated retry"]',
   '["availability","auditability"]',
-  '["W43 retry-policy wedge","fault-tolerance paradigm family"]'
+  '[]'
 ),
 (
   'effect-handler',
@@ -331,7 +327,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <handler> is\n  intended to interpret a captured effect into a concrete action.\n  uses the @Data matching "effect token" with at-least 0.9 confidence.\n  requires the handler is total over the effect''s variant set.\n  ensures every raised effect resumes with a well-typed continuation value.\n  hazard a partial handler silently discards unhandled effect variants.\n  favor correctness.',
   '["partial handlers","handler-loop infinite resumption"]',
   '["correctness","totality"]',
-  '["doc 14 — effect-handling paradigm family (4 exemplars)"]'
+  '[]'
 ),
 (
   'reactive-ui-state-machine',
@@ -342,7 +338,7 @@ INSERT OR IGNORE INTO patterns (
   'the concept <ui-machine> is\n  intended to describe the finite-state behavior of a user-interface surface.\n  uses the @Data matching "machine state" with at-least 0.9 confidence.\n  uses the @Event matching "trigger" with at-least 0.9 confidence.\n  composes <state-a> then <state-b>.\n  ensures every transition is guarded by a declared predicate.\n  favor responsiveness.',
   '["unreachable states","transition guards that depend on external mutable state"]',
   '["responsiveness","accessibility"]',
-  '["doc 14 — reactive-UI paradigm family (3 exemplars)"]'
+  '[]'
 ),
 (
   'content-addressed-build',
@@ -353,7 +349,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <build> is\n  intended to produce a reproducible, content-addressed build artifact.\n  uses the @Data matching "pinned source" with at-least 0.95 confidence.\n  uses the @Data matching "pinned inputs" with at-least 0.95 confidence.\n  requires every input is pinned to a specific hash.\n  ensures identical inputs produce a byte-identical output artifact.\n  hazard any unpinned system dependency leaks ambient state.\n  favor reproducibility.',
   '["ambient state leaks","impure build steps (network, clock, random)"]',
   '["reproducibility","correctness"]',
-  '["doc 14 block 40 — content-addressed-build paradigm"]'
+  '[]'
 ),
 (
   'schema-query',
@@ -364,7 +360,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <query> is\n  intended to return every row matching the declared predicates, projected onto a typed result shape.\n  uses the @Data matching "source collection" with at-least 0.9 confidence.\n  requires the predicates are total over the row schema.\n  ensures the result is stable under repeated identical queries.\n  favor determinism.',
   '["N+1 access patterns","implicit collection scans"]',
   '["determinism","auditability"]',
-  '["doc 14 — data-store paradigm family (6 exemplars)"]'
+  '[]'
 ),
 (
   'pipeline-transformation',
@@ -375,7 +371,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <pipeline> is\n  intended to map every input record through a fixed sequence of pure transformations.\n  uses the @Function matching "stage" with at-least 0.9 confidence.\n  composes <filter> then <map> then <aggregate>.\n  ensures output order matches input order when the pipeline is stateless.\n  favor clarity.',
   '["stateful stages hidden inside a seemingly-pure pipeline"]',
   '["clarity","determinism"]',
-  '["doc 14 — data-transformation paradigm family (6 exemplars)"]'
+  '[]'
 ),
 (
   'network-api-endpoint',
@@ -386,7 +382,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <endpoint> is\n  intended to accept a typed request and return a typed response or a named error.\n  uses the @Data matching "request shape" with at-least 0.9 confidence.\n  uses the @Data matching "response shape" with at-least 0.9 confidence.\n  requires the caller is authenticated.\n  ensures the response includes a correlation identifier.\n  hazard unbounded request bodies exhaust server memory.\n  favor availability.',
   '["missing rate limits","unbounded request bodies"]',
   '["availability","auditability"]',
-  '["doc 14 — networked-API paradigm family (4 exemplars)"]'
+  '[]'
 ),
 (
   'verified-imperative',
@@ -397,7 +393,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <step> is\n  intended to perform a bounded imperative step with authored-in contract verification.\n  requires the precondition is total over the input type.\n  ensures the postcondition holds on every accepted input.\n  hazard loops without a declared variant do not terminate.\n  favor totality.',
   '["unverified loops","side-effects not captured by the contract"]',
   '["totality","correctness"]',
-  '["doc 14 — formal-methods paradigm family (verified-imperative branch)"]'
+  '[]'
 ),
 (
   'algebraic-law',
@@ -408,7 +404,7 @@ INSERT OR IGNORE INTO patterns (
   'the property <law> is\n  intended to assert that <operation> satisfies the declared algebraic law over its input domain.\n  generator pairs of inputs drawn from the operation''s declared domain.\n  uses the @Function matching "<operation>" with at-least 0.95 confidence.\n  ensures for every generated input, the law holds as an equality.\n  favor correctness.',
   '["partial operations whose law only holds on a subdomain"]',
   '["correctness","totality"]',
-  '["Phase 11 mathematics-as-language — algebraic-law substrate"]'
+  '[]'
 ),
 (
   'monadic-do-sequence',
@@ -419,7 +415,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <sequence> is\n  intended to perform a sequence of effectful steps where each step depends on the previous step''s value.\n  uses the @Function matching "lift step" with at-least 0.9 confidence.\n  composes <step-a> then <step-b> then <step-c>.\n  requires every step is total over its input type.\n  ensures a failure at any step short-circuits the remainder.\n  favor clarity.',
   '["a step that forgets to propagate its failure breaks the short-circuit guarantee"]',
   '["clarity","correctness"]',
-  '["doc 14 — monadic-sugar paradigm family (4 exemplars)"]'
+  '[]'
 ),
 (
   'first-class-continuation',
@@ -430,7 +426,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <capture> is\n  intended to snapshot the current continuation as a first-class value the caller may invoke later.\n  uses the @Data matching "continuation token" with at-least 0.9 confidence.\n  requires the captured continuation is resumed at most once.\n  ensures resuming yields the value the capture point would have returned.\n  hazard multi-resume of a once-continuation duplicates observable effects.\n  favor clarity.',
   '["multi-resume duplicating observable effects","captured state that has since mutated"]',
   '["clarity","correctness"]',
-  '["doc 14 — first-class-continuation paradigm (4 named patterns)"]'
+  '[]'
 ),
 (
   'type-class-polymorphism',
@@ -441,7 +437,7 @@ INSERT OR IGNORE INTO patterns (
   'the concept <interface> is\n  intended to describe a uniform surface over any data kind that supplies the declared operations.\n  uses the @Function matching "required operation" with at-least 0.9 confidence.\n  composes <operation-a> then <operation-b>.\n  requires every implementing data kind supplies the declared operations.\n  ensures consumers depending on the interface compile against any conforming implementation.\n  favor correctness.',
   '["silent conformance gap when a required operation is merely absent"]',
   '["correctness","clarity"]',
-  '["doc 14 — abstraction-quadrant paradigm family (type-class branch)"]'
+  '[]'
 ),
 (
   'stream-processing-window',
@@ -452,7 +448,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <aggregate> is\n  intended to produce a per-window aggregate over a stream of timestamped events.\n  uses the @Event matching "incoming event" with at-least 0.9 confidence.\n  uses the @Function matching "reduce" with at-least 0.9 confidence.\n  requires every event carries a timestamp suitable for window assignment.\n  ensures late-arriving events outside the watermark are excluded.\n  hazard missing watermarks cause unbounded in-memory state retention.\n  favor availability.',
   '["missing watermarks","unbounded in-memory windows"]',
   '["availability","auditability"]',
-  '["W44 watermark + W45 window-aggregation wedges"]'
+  '[]'
 ),
 (
   'infrastructure-declaration',
@@ -463,7 +459,7 @@ INSERT OR IGNORE INTO patterns (
   'the concept <deployment> is\n  intended to describe a target infrastructure state as a set of named resources with declared relationships.\n  uses the @Data matching "resource spec" with at-least 0.9 confidence.\n  composes <network> then <compute> then <storage>.\n  requires every resource references only declared peers.\n  ensures a diff against live state yields a minimal convergent plan.\n  favor reproducibility.',
   '["hidden resource dependencies discovered only at apply time"]',
   '["reproducibility","auditability"]',
-  '["doc 14 — infrastructure-automation paradigm pentagram (5 exemplars)"]'
+  '[]'
 ),
 (
   'structured-imperative-block',
@@ -474,7 +470,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <step> is\n  intended to execute a bounded sequence of imperative statements with declared local scope.\n  requires every local variable is initialized before use.\n  ensures every declared loop has a visible termination measure.\n  favor totality.',
   '["uninitialized locals read before write","unbounded loops without declared variant"]',
   '["totality","clarity"]',
-  '["doc 14 — structured-imperative paradigm family (5 exemplars)"]'
+  '[]'
 ),
 (
   'logic-programming-rule',
@@ -485,7 +481,7 @@ INSERT OR IGNORE INTO patterns (
   'the property <rule> is\n  intended to assert that whenever the body conditions hold, the head fact is derivable.\n  generator tuples from the declared fact store.\n  uses the @Data matching "base fact" with at-least 0.9 confidence.\n  requires the rule terminates on any finite fact store.\n  ensures the derived fact set is closed under repeated application.\n  favor determinism.',
   '["non-terminating recursion under unrestricted negation"]',
   '["determinism","correctness"]',
-  '["doc 14 — logic-programming paradigm family (4 exemplars)"]'
+  '[]'
 ),
 (
   'term-rewriting-semantics',
@@ -496,7 +492,7 @@ INSERT OR IGNORE INTO patterns (
   'the property <rewrite> is\n  intended to assert that the declared rewrite rule reduces a matching term to its normal form.\n  generator well-typed terms drawn from the declared concrete syntax.\n  uses the @Data matching "term shape" with at-least 0.9 confidence.\n  requires the rewrite system is confluent over the term domain.\n  ensures every accepted term reduces to a unique normal form in finitely many steps.\n  favor correctness.',
   '["non-confluent rewrite rules producing divergent normal forms"]',
   '["correctness","determinism"]',
-  '["doc 14 — formal-methods paradigm family (term-rewriting branch)"]'
+  '[]'
 ),
 (
   'macro-expansion',
@@ -507,7 +503,7 @@ INSERT OR IGNORE INTO patterns (
   'the function <expand> is\n  intended to rewrite a compact authoring shape into a larger canonical source pattern at compile time.\n  uses the @Data matching "input shape" with at-least 0.9 confidence.\n  requires the expansion is hygiene-preserving over the enclosing scope.\n  ensures the expanded source parses cleanly under the same grammar.\n  hazard name capture in the expansion shadows names in the surrounding scope.\n  favor clarity.',
   '["name capture","expansion that no longer parses"]',
   '["clarity","correctness"]',
-  '["doc 14 — abstraction-quadrant paradigm family (macro branch)"]'
+  '[]'
 ),
 (
   'dependent-type-indexed',
@@ -518,9 +514,8 @@ INSERT OR IGNORE INTO patterns (
   'the data <Vec> is\n  intended to describe a collection whose element type and length are both part of its shape.\n  exposes element_type as identifier.\n  exposes length as natural.\n  exposes elements as list of reference to element_type.\n  favor totality.',
   '["length mismatch silently zero-fills","value-in-type that diverges from a runtime value"]',
   '["totality","correctness"]',
-  '["doc 14 — dependent-types paradigm family"]'
+  '[]'
 );
-
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
