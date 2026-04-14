@@ -354,6 +354,61 @@ INSERT OR IGNORE INTO patterns (
   '["ambient state leaks","impure build steps (network, clock, random)"]',
   '["reproducibility","correctness"]',
   '["doc 14 block 40 — content-addressed-build paradigm"]'
+),
+(
+  'schema-query',
+  'a declarative query over a structured data store returning a typed projection of matching rows',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","favor"]',
+  '["@Data"]',
+  'the function <query> is\n  intended to return every row matching the declared predicates, projected onto a typed result shape.\n  uses the @Data matching "source collection" with at-least 0.9 confidence.\n  requires the predicates are total over the row schema.\n  ensures the result is stable under repeated identical queries.\n  favor determinism.',
+  '["N+1 access patterns","implicit collection scans"]',
+  '["determinism","auditability"]',
+  '["doc 14 — data-store paradigm family (6 exemplars)"]'
+),
+(
+  'pipeline-transformation',
+  'a chain of pure transformations over a stream of input records, yielding an output stream of derived records',
+  '["function","data"]',
+  '["intended","uses","composes","ensures","favor"]',
+  '["@Function","@Data"]',
+  'the function <pipeline> is\n  intended to map every input record through a fixed sequence of pure transformations.\n  uses the @Function matching "stage" with at-least 0.9 confidence.\n  composes <filter> then <map> then <aggregate>.\n  ensures output order matches input order when the pipeline is stateless.\n  favor clarity.',
+  '["stateful stages hidden inside a seemingly-pure pipeline"]',
+  '["clarity","determinism"]',
+  '["doc 14 — data-transformation paradigm family (6 exemplars)"]'
+),
+(
+  'network-api-endpoint',
+  'a named HTTP or RPC endpoint with typed request and response shapes and explicit failure modes',
+  '["function","data","event"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <endpoint> is\n  intended to accept a typed request and return a typed response or a named error.\n  uses the @Data matching "request shape" with at-least 0.9 confidence.\n  uses the @Data matching "response shape" with at-least 0.9 confidence.\n  requires the caller is authenticated.\n  ensures the response includes a correlation identifier.\n  hazard unbounded request bodies exhaust server memory.\n  favor availability.',
+  '["missing rate limits","unbounded request bodies"]',
+  '["availability","auditability"]',
+  '["doc 14 — networked-API paradigm family (4 exemplars)"]'
+),
+(
+  'verified-imperative',
+  'imperative code carrying contracts that are checked at authoring time rather than deferred to runtime',
+  '["function"]',
+  '["intended","requires","ensures","hazard","favor"]',
+  '[]',
+  'the function <step> is\n  intended to perform a bounded imperative step with authored-in contract verification.\n  requires the precondition is total over the input type.\n  ensures the postcondition holds on every accepted input.\n  hazard loops without a declared variant do not terminate.\n  favor totality.',
+  '["unverified loops","side-effects not captured by the contract"]',
+  '["totality","correctness"]',
+  '["doc 14 — formal-methods paradigm family (verified-imperative branch)"]'
+),
+(
+  'algebraic-law',
+  'a named law over an operation — associativity, commutativity, identity, distributivity — checked as a universally-quantified claim',
+  '["property","function"]',
+  '["intended","generator","uses","ensures","favor"]',
+  '["@Function"]',
+  'the property <law> is\n  intended to assert that <operation> satisfies the declared algebraic law over its input domain.\n  generator pairs of inputs drawn from the operation''s declared domain.\n  uses the @Function matching "<operation>" with at-least 0.95 confidence.\n  ensures for every generated input, the law holds as an equality.\n  favor correctness.',
+  '["partial operations whose law only holds on a subdomain"]',
+  '["correctness","totality"]',
+  '["Phase 11 mathematics-as-language — algebraic-law substrate"]'
 );
 
 -- ── Schema version stamp ────────────────────────────────────────────
