@@ -55,18 +55,20 @@ anything load-bearing.
   names audit (whole-word match over every text column after baseline
   import), P7 no-Rust-bundled-data audit. P5 synonym round-trip is
   already covered by `synonym_round_trip.rs`.
-- Corpus dashboard: baseline.sql extended from 10 → 20 quality_names;
-  KINDS const 7 → 9 (property + scenario matching baseline); S5
-  hazard/benefit scanner relaxed to tolerate non-Word filler tokens
-  (was `hazard Word, Word.` only; now accepts `hazard the X is Y.`
-  free prose). Closure pass rate progression: 0/89 → 42/88 → 60/88
-  (68%). Remaining 28 failures: S2=19 (`the X` parser quirk where
-  nested prose opens a phantom top-level block; `proof` genuinely
-  outside the closed kind set), S5=3 (malformed corpus blocks where
-  the hazard clause never terminates before the next Requires
-  opener), S6=3 (mixed-concept-and-entity — corpus authoring issue),
-  S4=3 (unterminated-contract across tightly-packed multi-line
-  blocks).
+- Corpus dashboard: three layers of kind-noun drift fixed in sync
+  (baseline.sql already had 9; KINDS const 7 → 9; lexer kind-noun
+  pattern 7 → 9). baseline.sql also extended 10 → 20 quality_names
+  (added correctness / determinism / clarity / documentation /
+  discoverability / reproducibility / portability / responsiveness /
+  latency / performance from doc 14 corpus). S5 hazard/benefit
+  scanner relaxed to tolerate non-Word filler tokens (`Is`, `As`,
+  `Of`, `The`) — accepts both `hazard Word, Word.` and free-prose
+  `hazard the X is Y.`. Closure pass rate progression:
+  0/89 → 42/88 → 60/88 → 68/88 (77%). Remaining 20 failures are
+  legitimate grammar gaps the corpus intentionally exposes: instance
+  binding `the X for the Y`, `proof` / `composition` as kinds
+  outside the closed 9-set, S4 unterminated-contract in tightly-
+  packed multi-line blocks, S6 mixed-concept-and-entity authoring.
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
