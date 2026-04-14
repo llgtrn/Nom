@@ -55,14 +55,18 @@ anything load-bearing.
   names audit (whole-word match over every text column after baseline
   import), P7 no-Rust-bundled-data audit. P5 synonym round-trip is
   already covered by `synonym_round_trip.rs`.
-- Corpus dashboard: baseline.sql extended from 10 → 20 quality_names
-  (added correctness / determinism / clarity / documentation /
-  discoverability / reproducibility / portability / responsiveness /
-  latency / performance); closure pass rate jumped 0/89 → 42/89.
-  Remaining 47 failures: S5=24 (parser state bug — hazard clause
-  absorbs following capitalized words), S2=20 (unknown-kind — corpus
-  uses `proof` + novel `data`-named declarations), S4=3 (unterminated-
-  contract in tightly-packed multi-line blocks).
+- Corpus dashboard: baseline.sql extended from 10 → 20 quality_names;
+  KINDS const 7 → 9 (property + scenario matching baseline); S5
+  hazard/benefit scanner relaxed to tolerate non-Word filler tokens
+  (was `hazard Word, Word.` only; now accepts `hazard the X is Y.`
+  free prose). Closure pass rate progression: 0/89 → 42/88 → 60/88
+  (68%). Remaining 28 failures: S2=19 (`the X` parser quirk where
+  nested prose opens a phantom top-level block; `proof` genuinely
+  outside the closed kind set), S5=3 (malformed corpus blocks where
+  the hazard clause never terminates before the next Requires
+  opener), S6=3 (mixed-concept-and-entity — corpus authoring issue),
+  S4=3 (unterminated-contract across tightly-packed multi-line
+  blocks).
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
