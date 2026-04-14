@@ -95,3 +95,38 @@ shipped. Each needs design + spec + parser/test work:
 - Flow-step recording — every execution flow is captured as a tree of
   flow-step rows. Open: how is flow capture toggled (per-build, per-test,
   always)?
+
+## Gated work — corpus pilot M6 (T4.1 doc-only spec)
+
+This is the canonical spec for M6 ahead of any ingestion pass. Tracked
+here (under Open Questions) rather than in a standalone file per the
+no-new-MD-files-every-cycle discipline.
+
+- **Scope:** PyPI top-100 packages + minimal manual curation pass.
+  Each package becomes one or more `entries` rows in the dict with
+  `status = 'partial'` until the canonicalization pipeline lifts them
+  to `'complete'`.
+- **Disk discipline:** stream-and-discard. Peak disk = `max(per-package
+  source) + current-dict`. No source survives ingestion. Skip-list +
+  checkpoint file in `~/.nom/store/m6-checkpoint.json`. Bandwidth
+  throttle non-optional (default 8 Mbps).
+- **Failure surface:** every crash gets a row in
+  `entries.status = 'failed'` with a JSON `failure_meta` so the
+  pipeline keeps moving. Re-runs only re-attempt failed rows.
+- **Quality scoring:** entries land with NULL `entry_scores` columns
+  (T3.2 schema is in place). The canonicalization pass populates
+  the 11 dimensions per package using deterministic heuristics
+  initially; ML-derived scores wait for the embedding gate.
+- **External gates that block start:**
+  1. Network access (currently network-fenced cycles).
+  2. ~50 GB free disk on the workspace volume (recently constrained
+     to the point that `cargo clean` was needed mid-session).
+  3. Windows DLL-load fix per archived doc 15 §3.
+- **Verification target:** at least 80 of the 100 PyPI packages
+  produce ≥1 `entries` row each; aggregate `status = 'failed'` rate
+  ≤20%. Failures grouped by category in a glass-box report.
+
+Open: which 100 packages — is `pip top-packages` enough, or do we
+hand-curate to balance pure-Python vs. extension-module ratios?
+Current draft: `top-pypi-packages.json` from
+hugovk/top-pypi-packages, take the first 100.
