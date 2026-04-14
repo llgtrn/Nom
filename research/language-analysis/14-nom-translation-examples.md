@@ -5524,6 +5524,83 @@ Row additions: **0 new wedges** — Perl's sigils + implicit variables + regex +
 
 ---
 
+## 73. Idris 2 — dependent types with totality checking
+
+```idris
+module Vector.Append
+
+data Vect : Nat -> Type -> Type where
+  Nil  : Vect Z a
+  (::) : a -> Vect n a -> Vect (S n) a
+
+append : Vect n a -> Vect m a -> Vect (n + m) a
+append Nil       ys = ys
+append (x :: xs) ys = x :: append xs ys
+
+total
+safeHead : Vect (S n) a -> a
+safeHead (x :: _) = x
+```
+
+### `.nomx v1` translation
+
+```nomx
+define vector_append
+  that takes two fixed-length vectors sharing an element type, returns a fixed-length vector whose length is the sum of the two input lengths and whose elements are the first vector followed by the second.
+
+define safe_head
+  that takes a non-empty fixed-length vector, returns its first element.
+the input is guaranteed by the type system to contain at least one element, so no runtime failure mode exists.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data FixedLengthVector is
+  intended to describe a vector whose element type and length are both part of its shape; the length is a natural number known at type-check time.
+  exposes element_type as identifier.
+  exposes length as natural from 0 to 1000000.
+  exposes elements as list of reference to element_type.
+
+the function vector_append is
+  intended to concatenate two fixed-length vectors of the same element type into one fixed-length vector whose length is the arithmetic sum of the input lengths.
+  uses the @Data matching "FixedLengthVector" with at-least 0.95 confidence.
+  requires both input vectors share the same element_type.
+  ensures the returned vector has element_type equal to both inputs' element_type.
+  ensures the returned vector has length equal to the first input's length plus the second input's length.
+  ensures the first input.length elements of the result equal the first input's elements in order.
+  ensures the last second input.length elements of the result equal the second input's elements in order.
+  ensures the length equality is enforced at build time — callers providing inputs with known lengths see a build-time error if the resulting length would violate any downstream length constraint.
+  favor correctness.
+
+the function safe_head is
+  intended to return the first element of a fixed-length vector whose length is strictly positive; the length constraint is a build-time precondition, not a runtime check.
+  uses the @Data matching "FixedLengthVector" with at-least 0.95 confidence.
+  requires the input vector has length at-least 1.
+  ensures the returned value equals the input's first element.
+  ensures the requires clause is discharged at build time whenever the caller's input length is known to be at-least 1 — no runtime empty-vector check runs in such call sites.
+  ensures the function is total — every permitted input produces a value; there is no non-terminating branch and no undefined output.
+  favor correctness.
+  favor totality.
+```
+
+### Gaps surfaced
+
+1. **Dependent types (`Vect n a`, length in the type)** — Idris's signature feature: types parameterized by values. Nom's translation makes the length a first-class `exposes` field on the FixedLengthVector data decl, with `ensures` clauses tying output-length to input-lengths arithmetically. Authoring-guide rule: **dependent-type value parameters → `exposes` fields on data decls + `requires`/`ensures` arithmetic over those fields; build-stage type-checking discharges the constraints where decidable**. The existing `requires`/`ensures` vocabulary IS dependent-type-level predication, just stated in prose. No new wedge.
+2. **GADT-style data declaration (`Vect : Nat -> Type -> Type`)** — Idris's way of declaring types with index parameters. Nom's data decl with `element_type as identifier` + `length as natural` captures the same two type indices as first-class fields. Authoring-guide rule: **GADT indexed data constructors decompose to data decls whose `exposes` include the type-level indices as named fields**. No new wedge.
+3. **`total` annotation** — Idris's totality-checking keyword: compiler proves every branch terminates and handles every input. Nom's translation surfaces this as `ensures the function is total — every permitted input produces a value; there is no non-terminating branch and no undefined output`. Authoring-guide rule: **totality annotations (Idris `total`, Agda termination-checker) → explicit `ensures the function is total` clauses; build stage discharges via termination analysis**. Adds to `favor totality` as a complementary QualityName — reuses accessibility-style QualityName seed. Authoring-corpus seed addition: **`totality`** QualityName joins the seed list at 10/10 — threshold reached. No new wedge; crosses the formalization-wedge threshold for the QualityName registry.
+4. **Pattern-matching with type-directed exhaustiveness (`append Nil ys = ys; append (x :: xs) ys = ...`)** — Idris requires every constructor variant be handled. Nom's exhaustiveness-check (W40) + `when … otherwise …` + multi-branch `ensures` covers this. Authoring-guide rule: **type-directed pattern-matching exhaustiveness → W40 exhaustiveness-check on `when` clauses over enum-valued data + `ensures` over each variant**. Existing wedge W40 suffices. No new wedge.
+5. **Infix constructor (`(::)`)** — Idris's custom infix operators. Nom rejects custom infix. Authoring-guide rule: **custom infix operators → named functions or named record-construction; no user-defined infix at Nom source level**. No new wedge.
+6. **Type-constraint-driven elaboration** — Idris's build-stage type-driven completion (`?hole` elaboration). Nom's typed-slot resolver + build-stage verifier handles the analogous role. Authoring-guide rule: **Idris `?hole` elaboration → Nom build-stage typed-slot resolution (Phase 9) + MECE validator**. No new wedge.
+7. **Natural numbers as a data type (`Nat = Z | S Nat`)** — Peano representation. Nom's translation elides this: naturals are a built-in range-typed primitive. Authoring-guide rule: **Peano-naturals encoding in Idris/Agda/Coq → plain `natural from 0 to N` range-typed primitives in Nom; the build stage selects the representation (machine integer vs arbitrary-precision) based on the range**. No new wedge.
+8. **Totality-as-build-time-guarantee** — Idris's killer feature: partial functions are rejected at build time. Nom matches this via `ensures the function is total` + `favor totality`; the strict validator (W4-A3) enforces at authoring time. Authoring-guide rule: **totality enforcement is a build-stage concern; authoring-level commitment is expressed via `ensures total` + `favor totality`**. No new wedge.
+
+Row additions: **0 new wedges** — Idris's dependent-type system + totality checking + GADT-style declarations + type-directed exhaustiveness + Peano naturals all decompose to (data decls with type-level indices as `exposes` fields + `requires`/`ensures` over those fields + explicit totality `ensures` + range-typed naturals + W40 exhaustiveness-check). 7 authoring-guide closures: dependent-type value parameters → `exposes` fields + arithmetic `ensures`, GADT indexed constructors → data decls with type-level index fields, totality annotations → `ensures total`, type-directed exhaustiveness → W40 (reuses), custom infix rejected, Idris `?hole` elaboration → Nom typed-slot resolver + MECE validator, Peano naturals → range-typed natural primitives. **QualityName seed: `totality` — brings the seed count to 10, reaching the QualityName-registration formalization threshold.**
+
+**Fortieth consecutive minimal-wedge translation + thirty-second 0-new-wedge run.** Idris 2 — the canonical production-use dependent-typed language — decomposes cleanly into Nom's existing primitives. Combined with Lean (#26 theorem proving), Dafny (#50 verified imperative), and Coq (implicit via #26), **the dependent-types + verification paradigm family is now fully covered**: pure theorem proving (Lean/Coq), verified imperative (Dafny), and production dependent-typed programming (Idris) all reduce to data-decl-level type indices + `requires`/`ensures` arithmetic + explicit totality. **QualityName seed count reaches 10** — the formalization-wedge threshold — with the addition of `totality`. Next cycle candidate: **W51 QualityName registry wedge** (formalize the QualityName registration surface now that 10 seeds have accumulated).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

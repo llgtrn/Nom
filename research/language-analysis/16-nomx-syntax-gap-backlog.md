@@ -354,18 +354,26 @@
 | 337 | Perl postfix `or`/`unless`/`if` modifiers → `when X is … otherwise …` prose or `requires`/`ensures` at function-decl level | authoring-guide rule | ✅ closed (doc 14 #72) |
 | 338 | Opt-in strictness pragmas (`use strict`, JS `"use strict"`, `--strict` flags) are no-op in Nom — strictness is always-on via W4-A3 | authoring-guide rule | ✅ closed (doc 14 #72) |
 | 339 | Perl reference operators (`\`, `->`, `$$ref`, `@$ref`) → plain named parameters; value-vs-reference is build-stage decision | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 340 | Dependent-type value parameters → `exposes` fields on data decls + `requires`/`ensures` arithmetic over those fields; build-stage discharge where decidable | authoring-guide rule | ✅ closed (doc 14 #73; existing requires/ensures IS dependent-type-level predication) |
+| 341 | GADT indexed data constructors → data decls whose `exposes` include type-level indices as named fields | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 342 | Totality annotations (Idris `total`/Agda termination-checker) → `ensures the function is total` clauses; build-stage discharge via termination analysis | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 343 | Type-directed pattern-matching exhaustiveness → W40 exhaustiveness-check + `ensures` over each variant (reuses existing wedge) | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 344 | Custom infix operators (Idris `(::)`) → named functions or named record-construction; no user-defined infix at Nom source | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 345 | Idris `?hole` elaboration → Nom build-stage typed-slot resolver (Phase 9) + MECE validator | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 346 | Peano-naturals encoding (Idris/Agda/Coq `Nat = Z | S Nat`) → plain `natural from 0 to N` range-typed primitives; build stage selects representation | authoring-guide rule | ✅ closed (doc 14 #73) |
+| 347 | `totality` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #73; **accumulates to 10 seeds — QualityName-registration formalization threshold reached**) |
 
-Totals by destination (after doc 14 #72 Perl text-processing translation — **thirty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **script-language paradigm family unified** via the density-inversion principle):
+Totals by destination (after doc 14 #73 Idris 2 dependent-types translation — **thirty-second 0-new-wedge translation in a row**; 7 authoring-guide closures + `totality` QualityName seed; **10/10 QualityName-seeds threshold reached** — formalization wedge candidate):
 
-- ⏳ Wedge queued: **43** (unchanged)
+- ⏳ Wedge queued: **43** (unchanged; **W51 QualityName-registration formalization wedge now unblocked by 10/10 seed threshold**)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **290**
+- ✅ Closed: **297**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **9** (9/10 threshold unchanged)
+- 🌱 Authoring-corpus seed: **10** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability + accessibility + totality QualityNames) — **10/10 formalization threshold REACHED**
 
-Backlog size: 358 rows. Closure rate 81% (290/358). **72 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + matrix-oriented-scientific + pure-message-passing-OO + safety-critical-strong-typing-tasking + STM-immutable-data + **text-processing-regex-sigils (Perl)**. Thirty-ninth consecutive minimal-wedge translation, **thirty-first 0-new-wedge in a row**.
+Backlog size: 366 rows. Closure rate 81% (297/366). **73 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + matrix-oriented-scientific + pure-message-passing-OO + safety-critical-strong-typing-tasking + STM-immutable-data + **text-processing-regex-sigils (Perl)**. Thirty-ninth consecutive minimal-wedge translation, **thirty-first 0-new-wedge in a row**.
 
 ## Wedge master index (for cross-ref with doc 13)
 
