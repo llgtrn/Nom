@@ -580,6 +580,97 @@ pub fn get_refs(d: &Dict, id: &str) -> Result<Vec<String>> {
     Ok(rows)
 }
 
+// ── S5 dict-split: closure walk + 4 concept-tier ports ───────────────
+//
+// S5 mixes tiers: closure walks `entry_refs` on the entities tier;
+// the four concept fns operate on `concepts` rows on the concepts tier.
+// All five return owned data so callers don't need to hold borrows
+// across tier boundaries.
+
+/// Breadth-first transitive closure starting at `root_id`, walking
+/// `entry_refs.from_id → to_id` on the entities tier. Returns ids in
+/// BFS order (root first, then siblings, then grandchildren). Cycles
+/// are tolerated — visited ids are skipped. Mirrors `NomDict::closure`.
+pub fn closure(d: &Dict, root_id: &str) -> Result<Vec<String>> {
+    use std::collections::{HashSet, VecDeque};
+    let mut out = Vec::new();
+    let mut seen = HashSet::new();
+    let mut queue: VecDeque<String> = VecDeque::new();
+    queue.push_back(root_id.to_string());
+    while let Some(cur) = queue.pop_front() {
+        if !seen.insert(cur.clone()) {
+            continue;
+        }
+        out.push(cur.clone());
+        let mut stmt = d
+            .entities
+            .prepare_cached("SELECT to_id FROM entry_refs WHERE from_id = ?1")?;
+        let next: Vec<String> = stmt
+            .query_map(rusqlite::params![cur], |row| row.get::<_, String>(0))?
+            .collect::<rusqlite::Result<Vec<_>>>()?;
+        for n in next {
+            if !seen.contains(&n) {
+                queue.push_back(n);
+            }
+        }
+    }
+    Ok(out)
+}
+
+/// Look up a concept by trimmed name, returning the (id, name, describe)
+/// triple. The full `Concept` struct lives in lib.rs; this free-fn
+/// returns only the columns the concepts tier actually carries (no
+/// timestamps, since the split-DB concepts table omits them).
+pub fn get_concept_id_by_name(d: &Dict, name: &str) -> Result<Option<String>> {
+    let row = d
+        .concepts
+        .query_row(
+            "SELECT id FROM concepts WHERE name = ?1",
+            rusqlite::params![name.trim()],
+            |r| r.get::<_, String>(0),
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Return all concept (id, name) pairs ordered alphabetically by name.
+/// Mirrors `NomDict::list_concepts` shape but returns lighter rows
+/// since the split-DB concepts table omits timestamps.
+pub fn list_concept_ids(d: &Dict) -> Result<Vec<(String, String)>> {
+    let mut stmt = d
+        .concepts
+        .prepare_cached("SELECT id, name FROM concepts ORDER BY name")?;
+    let rows = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Delete a concept (and cascade-delete its membership rows by FK).
+/// Cross-file FK is intentionally absent — the entry rows on the
+/// entities tier survive; only the grouping is removed. Mirrors
+/// `NomDict::delete_concept`.
+pub fn delete_concept(d: &Dict, name: &str) -> Result<()> {
+    d.concepts.execute(
+        "DELETE FROM concepts WHERE name = ?1",
+        rusqlite::params![name.trim()],
+    )?;
+    Ok(())
+}
+
+/// Add one entry id to a concept. INSERT OR IGNORE so it is safe to
+/// call repeatedly. Returns `true` if a row was inserted, `false` if
+/// the (concept_id, entry_id) pair was already present. Mirrors
+/// `NomDict::add_concept_member`. The entry_id is intentionally
+/// dangling per doc 22 §1 (no cross-file FK).
+pub fn add_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Result<bool> {
+    let changed = d.concepts.execute(
+        "INSERT OR IGNORE INTO concept_members (concept_id, entry_id) VALUES (?1, ?2)",
+        rusqlite::params![concept_id, entry_id],
+    )?;
+    Ok(changed == 1)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1074,6 +1165,99 @@ mod tests {
                 ("zz".into(), "0".into()),
             ]
         );
+    }
+
+    // ── S5 port tests ──────────────────────────────────────────────
+
+    fn seed_concept(d: &Dict, id: &str, name: &str) {
+        d.concepts
+            .execute(
+                "INSERT INTO concepts (id, name) VALUES (?1, ?2)",
+                rusqlite::params![id, name],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn closure_walks_entry_refs_in_bfs_order_and_skips_cycles() {
+        let d = Dict::open_in_memory().unwrap();
+        // Layout: a -> b, a -> c, b -> d, c -> d (diamond), d -> a (cycle)
+        for id in ["a", "b", "c", "d"] {
+            seed_entry(&d, id, "partial");
+        }
+        for (from, to) in [("a", "b"), ("a", "c"), ("b", "d"), ("c", "d"), ("d", "a")] {
+            d.entities
+                .execute(
+                    "INSERT INTO entry_refs (from_id, to_id) VALUES (?1, ?2)",
+                    rusqlite::params![from, to],
+                )
+                .unwrap();
+        }
+        let walk = closure(&d, "a").unwrap();
+        // Root first, then b/c (siblings — order depends on insertion),
+        // then d. Cycle through d->a is suppressed by `seen`.
+        assert_eq!(walk[0], "a");
+        assert!(walk.contains(&"b".to_string()));
+        assert!(walk.contains(&"c".to_string()));
+        assert!(walk.contains(&"d".to_string()));
+        assert_eq!(walk.len(), 4, "cycle must not duplicate ids; got {walk:?}");
+    }
+
+    #[test]
+    fn get_concept_id_by_name_returns_some_then_none() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "cid_crypto", "cryptography");
+        assert_eq!(
+            get_concept_id_by_name(&d, "cryptography").unwrap(),
+            Some("cid_crypto".to_string())
+        );
+        assert_eq!(get_concept_id_by_name(&d, "missing").unwrap(), None);
+        // Whitespace trimmed.
+        assert_eq!(
+            get_concept_id_by_name(&d, "  cryptography  ").unwrap(),
+            Some("cid_crypto".to_string())
+        );
+    }
+
+    #[test]
+    fn list_concept_ids_sorts_by_name() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "z", "zoology");
+        seed_concept(&d, "a", "anthropology");
+        seed_concept(&d, "m", "mathematics");
+        let v = list_concept_ids(&d).unwrap();
+        assert_eq!(
+            v,
+            vec![
+                ("a".to_string(), "anthropology".to_string()),
+                ("m".into(), "mathematics".into()),
+                ("z".into(), "zoology".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn delete_concept_removes_only_named_row() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "c1", "alpha");
+        seed_concept(&d, "c2", "beta");
+        delete_concept(&d, "alpha").unwrap();
+        let v = list_concept_ids(&d).unwrap();
+        assert_eq!(v, vec![("c2".to_string(), "beta".to_string())]);
+        // Idempotent on missing name.
+        delete_concept(&d, "missing").unwrap();
+    }
+
+    #[test]
+    fn add_concept_member_is_idempotent_and_reports_change() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "cid", "math");
+        // First add inserts → true.
+        assert!(add_concept_member(&d, "cid", "entry_a").unwrap());
+        // Second add is a no-op → false.
+        assert!(!add_concept_member(&d, "cid", "entry_a").unwrap());
+        // Different entry → true again.
+        assert!(add_concept_member(&d, "cid", "entry_b").unwrap());
     }
 
     #[test]
