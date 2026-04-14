@@ -18,10 +18,22 @@ doc 06). The `nom-grammar` crate ships only the schema + connection +
 query API; it carries zero pattern data. After `nom grammar init`, the
 patterns table is empty.
 
-Population is the user's responsibility — via direct SQL, via future
-row-level CLI commands (`nom grammar add-pattern`), or via SQL import
-files. No `seed_patterns()` function exists in Rust source; bundling
-data inside the binary is forbidden by the awareness-only rule.
+Population is the user's responsibility — via direct SQL, via the
+`nom grammar add-pattern` row-level CLI command (shipped Phase C), or
+via `nom grammar import <sql-file>` for batch population. The
+canonical baseline at `nom-compiler/crates/nom-grammar/data/baseline.sql`
+ships **258 seeded patterns** spanning 22 themes (concurrency,
+distributed systems, UI/UX, security, testing, observability,
+persistence, numerical, build/CI, networking, graphics, audio,
+business domain, compiler primitives, ML, game engine, NLP,
+time/calendar, geospatial, IoT/embedded, bioinformatics, robotics).
+No `seed_patterns()` function exists in Rust source; bundling data
+inside the binary is forbidden by the awareness-only rule.
+
+Read-only exploration is available via `nom grammar pattern-list
+[--intent-contains TEXT] [--kind K] [--favor Q] [--limit N] [--json]`,
+`nom grammar pattern-show <id> [--json]`, and `nom grammar
+pattern-stats [--json]` (per-kind tallies + by-favor leaderboard).
 
 ## Target state
 

@@ -31,18 +31,27 @@ archived research must appear here; none may be silently dropped.
   clause_shapes, quality_names, patterns) has a matching add-*
   subcommand using INSERT OR IGNORE for idempotency. Canonical
   baseline shipped at `nom-compiler/crates/nom-grammar/data/baseline.sql`
-  (9 kinds + 20 quality_names + 43 keywords + 43 clause_shapes).
-- **Phase E proof tests** — 6 of 7 shipped (P1 schema-completeness,
+  (9 kinds + 20 quality_names + 43 keywords + 7 keyword_synonyms +
+  43 clause_shapes + 258 patterns across 22 themes).
+- **Phase E proof tests** — **7 of 7 shipped** (P1 schema-completeness,
   P2 determinism, P3 closure-against-archive, P4 strictness property,
-  P6 no-foreign-names audit, P7 no-Rust-bundled-data audit).
-  P5 synonym round-trip already covered by `synonym_round_trip.rs`.
-- **Corpus closure dashboard** — 68/88 v2 blocks from archived doc 14
-  parse end-to-end (77%). Three parser-side fixes drove the progression
-  0 → 42 → 60 → 68: baseline quality_names 10 → 20, KINDS const 7 → 9,
-  S5 hazard scanner filler-tolerant. Remaining 20 failures are
-  legitimate grammar gaps (instance binding, `proof` / `composition`
-  as candidate 10th kinds, multi-line contract ambiguity) tracked as
-  future wedges, not parser bugs.
+  P5 synonym round-trip, P6 no-foreign-names audit, P7 no-Rust-bundled-
+  data audit). The grammar is provably DB-driven, deterministic, closed
+  against the captured corpus, strictly validating, foreign-name-free,
+  source-free of bundled data, and operationally confirmed via synonym
+  round-trip.
+- **Corpus closure dashboard** — **84/88 v2 blocks (95.5%)** from
+  archived doc 14 parse end-to-end. Progression: 0/89 → 42 → 60 → 68
+  → 75 → 77 → 79 → 83 → 84/88. Driven by baseline quality_names
+  10 → 20, KINDS const 7 → 9, lexer kind-noun 7 → 9, 7 keyword
+  synonyms (proof/composition/row/diagram/participants/layout/format),
+  S4 + S5 + S6 scanner relaxations. Remaining 4 failures: 3 are
+  legitimate grammar gaps (instance binding `the X for the Y`,
+  novel-kind authoring), 1 is a malformed corpus block. Saturated
+  against the closed kind set.
+- **Read-only pattern explorer** — `nom grammar pattern-list`,
+  `pattern-show`, `pattern-stats` shipped (each with `--json`).
+  AI clients can query the catalog without writing SQL.
 - **Dict-split S3b–S8** — port the remaining ~35 nom-dict functions
   to free functions on `&Dict`; delete the legacy `NomDict` struct, the
   legacy `entries` table, the legacy `concepts` table, and the
