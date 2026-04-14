@@ -387,18 +387,25 @@
 | 370 | Scheme `set!` on closed variables → stateful-function `ensures state preserved across invocations` + `hazard` on concurrent access | authoring-guide rule | ✅ closed (doc 14 #77) |
 | 371 | Tail-call optimization is build-stage responsibility; author-time intent expressible via `ensures constant stack usage regardless of input size` | authoring-guide rule | ✅ closed (doc 14 #77) |
 | 372 | `dynamic-wind` / try-finally semantics → `ensures cleanup ran under all paths` contract + cleanup in peer function | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 373 | MongoDB pipeline stages (`$match`/`$lookup`/`$unwind`/`$group`/`$sort`/`$limit`) → collapse to function-level `ensures` clauses; build-stage optimizer chooses stage order | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 374 | Document-store joins (MongoDB `$lookup`, CouchDB views, Elasticsearch parent/child) → prose join conditions inside `ensures` quantifiers (reuses #43 SQL) | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 375 | Array-flattening (`$unwind`, Postgres `jsonb_array_elements`, BigQuery `UNNEST`) → implicit in `ensures` quantification over nested elements | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 376 | Group-aggregation accumulators (`$sum`/`$avg`/`$max`/`$count`/`$first`/`$last`) → `exposes` fields on result data decl; semantics in `ensures` clause | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 377 | MongoDB `$field` references → plain prose field access; no `$` prefix at Nom source (reuses #72 Perl sigils principle) | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 378 | Database-index presence hazards → explicit `hazard` clause on any function that joins or sorts by a field; callers own index lifecycle | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 379 | Typed-timestamp literals across databases (ISODate/TIMESTAMP/datetime) → `timestamp` field type + prose comparisons (at-least/at-most/between) | authoring-guide rule | ✅ closed (doc 14 #78) |
 
-Totals by destination (after doc 14 #77 Scheme call/cc translation — **thirty-sixth 0-new-wedge translation in a row**; 6 authoring-guide closures; **control-flow paradigm family fully covered**: non-local control flow decomposes to 4 named patterns; every control path must be visible in the function's `ensures` clauses):
+Totals by destination (after doc 14 #78 MongoDB aggregation pipeline translation — **thirty-seventh 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-store paradigm family now has 6 exemplars unified**: SQL + GraphQL + jq + Protobuf + Redis + MongoDB):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **322**
+- ✅ Closed: **329**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 392 rows. Closure rate 82% (322/392). **77 translations** in doc 14. Forty-fourth consecutive minimal-wedge, **thirty-sixth 0-new-wedge**. **Key principle documented: non-local control flow that the reader cannot predict from the prose is rejected — every control path must be visible in the function's `ensures` clauses.**
+Backlog size: 399 rows. Closure rate 82% (329/399). **78 translations** in doc 14. Forty-fifth consecutive minimal-wedge, **thirty-seventh 0-new-wedge**. **Data-store family now has 6 exemplars unified.**
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**

@@ -5943,6 +5943,94 @@ Row additions: **0 new wedges** — Scheme `call/cc` + generators + mutation + t
 
 ---
 
+## 78. MongoDB aggregation pipeline — document-query staged pipeline
+
+```javascript
+db.orders.aggregate([
+  { $match: { status: "shipped", placed_at: { $gte: ISODate("2026-01-01") } } },
+  { $lookup: {
+      from: "customers",
+      localField: "customer_id",
+      foreignField: "_id",
+      as: "customer"
+  } },
+  { $unwind: "$customer" },
+  { $group: {
+      _id: "$customer.region",
+      total_revenue: { $sum: "$amount" },
+      order_count: { $sum: 1 }
+  } },
+  { $sort: { total_revenue: -1 } },
+  { $limit: 10 }
+]);
+```
+
+### `.nomx v1` translation
+
+```nomx
+define top_regions_by_revenue
+  that takes a cutoff date, returns the 10 customer regions with the highest revenue from shipped orders on or after the cutoff.
+filter orders to those with status "shipped" and placed_at at-least the cutoff.
+join each matching order to its customer record by customer_id.
+group by customer region; sum the amounts and count orders per region.
+sort regions by total revenue descending.
+take the first 10.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Order is
+  intended to describe one customer order as stored in the orders collection.
+  exposes id as identifier.
+  exposes customer_id as identifier.
+  exposes status as text.
+  exposes amount as real from 0 to 1e12.
+  exposes placed_at as timestamp.
+
+the data Customer is
+  intended to describe one customer as stored in the customers collection, with their identifying region.
+  exposes id as identifier.
+  exposes region as text.
+
+the data RegionRevenueRow is
+  intended to describe one aggregated row of the top-regions-by-revenue report.
+  exposes region as text.
+  exposes total_revenue as real from 0 to 1e18.
+  exposes order_count as natural from 0 to 1000000000.
+
+the function top_regions_by_revenue is
+  intended to return the 10 customer regions with the highest total revenue from shipped orders placed on or after the given cutoff date, sorted by revenue descending.
+  uses the @Data matching "Order" with at-least 0.95 confidence.
+  uses the @Data matching "Customer" with at-least 0.95 confidence.
+  uses the @Data matching "RegionRevenueRow" with at-least 0.95 confidence.
+  requires cutoff_date is a valid timestamp.
+  ensures every returned RegionRevenueRow has total_revenue equal to the sum of amount over all orders with status "shipped", placed_at at-least cutoff_date, and whose customer's region equals the row's region.
+  ensures every returned RegionRevenueRow has order_count equal to the count of orders with status "shipped", placed_at at-least cutoff_date, and whose customer's region equals the row's region.
+  ensures the returned list is sorted by total_revenue descending; ties retain underlying storage order.
+  ensures the returned list has at-most 10 entries; when fewer than 10 regions qualify, all qualifying regions are returned.
+  hazard joining across two large collections may require a supporting index on orders.customer_id — query latency degrades without it.
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Pipeline stages (`$match`, `$lookup`, `$unwind`, `$group`, `$sort`, `$limit`)** — MongoDB's named stage vocabulary. Nom's translation collapses the stages into a single function whose `ensures` clauses describe the end-state, not the per-stage intermediate. Authoring-guide rule: **MongoDB pipeline stages → collapse to function-level `ensures` clauses describing the output relation; the build-stage optimizer chooses stage order + picks the aggregation framework or alternate storage**. Same rule as #43 SQL CTE. No new wedge.
+2. **`$lookup` join with `localField`/`foreignField`** — MongoDB's way of expressing a relational join. Nom's translation uses prose `whose customer's region equals the row's region`, pushing the join condition into a quantified `ensures` clause. Authoring-guide rule: **document-store joins (MongoDB `$lookup`, CouchDB views, Elasticsearch parent/child) → prose join conditions inside `ensures` quantifiers; reuses #43 SQL join rule**. No new wedge.
+3. **`$unwind` to flatten arrays** — MongoDB's array-to-rows operator. Nom's `ensures every returned row corresponds to one ... and its joined customer` avoids needing an explicit unwind operator. Authoring-guide rule: **array-flattening (`$unwind`, Postgres `jsonb_array_elements`, BigQuery `UNNEST`) → implicit in `ensures` quantification over nested elements**. No new wedge.
+4. **`$group` with named accumulators (`$sum`, `$avg`, `$max`)** — aggregation expressions inside the group stage. Nom's translation names each accumulator as an `exposes` field on the result data decl. Authoring-guide rule: **group-aggregation accumulators → `exposes` fields on the result data decl, one per aggregate; the accumulator semantics (sum/avg/max/count/first/last) are stated in the `ensures` clause defining the field**. No new wedge.
+5. **Dollar-sign field-reference (`"$customer.region"`)** — MongoDB's way of referencing input-document fields. Nom uses plain prose (`the row's customer.region`). Authoring-guide rule: **MongoDB `$fieldName` references → plain prose field access; no `$` prefix at Nom source level**. No new wedge; same principle as #72 Perl sigils.
+6. **Implicit ordering of stages** — MongoDB stages execute in declared order. Nom's translation rejects implicit stage ordering; all semantics are expressed in the end-state `ensures`. Authoring-guide rule: **stage-execution order is a build-stage optimization; authoring decl states the output relation, not the per-stage execution plan**. Same as #43 SQL + #52 R rules. No new wedge.
+7. **Missing-index hazard** — a classic operational concern. Nom surfaces this via `hazard joining across two large collections may require a supporting index`. Authoring-guide rule: **database-index presence hazards → explicit `hazard` clause on any function that joins or sorts by a field; callers own the index lifecycle**. No new wedge.
+8. **ISODate literals (`ISODate("2026-01-01")`)** — MongoDB's typed-timestamp literal. Nom's translation uses the existing `timestamp` field type + prose comparison. Authoring-guide rule: **typed-timestamp literals across databases (ISODate/TIMESTAMP/datetime) → `timestamp` field type + prose comparisons (at-least/at-most/between)**. No new wedge.
+
+Row additions: **0 new wedges** — MongoDB aggregation pipelines fully express via peer data decls (one per collection) + single function decl with relation-level `ensures` + `hazard` for index concerns + quantifier vocabulary (W49). 7 authoring-guide closures: pipeline stages collapse to function-level `ensures`, document-store joins as prose quantifiers, `$unwind` implicit in quantification, group-accumulators → `exposes` fields, MongoDB `$field` refs → plain prose, stage ordering is build-stage, missing-index as `hazard`, typed-timestamp literals → `timestamp` field.
+
+**Forty-fifth consecutive minimal-wedge translation + thirty-seventh 0-new-wedge run.** MongoDB aggregation pipelines — the canonical document-database query DSL — decompose cleanly into Nom's primitives. Combined with SQL CTE (#43 relational), jq (#57 JSON), Redis (#63 key-value), and Protobuf (#30 schema), **the data-store family now has 6 exemplars unified**: SQL + GraphQL + jq + Protobuf + Redis + MongoDB all share peer data decls + function decls with `ensures` quantifiers + `hazard` on operational-hygiene concerns. The pipeline-stage-collapse rule (stages → end-state `ensures`) is particularly valuable for any future document-store translations (Elasticsearch, CouchDB, Cassandra CQL).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
