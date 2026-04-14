@@ -256,18 +256,24 @@
 | 239 | COBOL `DISPLAY` / I/O statements → peer formatting functions; I/O not inline in computation functions | authoring-guide rule | ✅ closed (doc 14 #58; preserves purity) |
 | 240 | Rounding mode stated explicitly in `ensures` clauses (banker's / half-up / truncate / floor / ceiling); no default | authoring-guide rule | ✅ closed (doc 14 #58) |
 | 241 | `auditability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #58; accumulates to 8 seeds) |
+| 242 | Bash vs PowerShell distinction (string-pipes vs object-pipes) collapses at Nom source level; choice is build-stage target selection | authoring-guide rule | ✅ closed (doc 14 #59) |
+| 243 | Implicit pipeline-item references (`$_`/`it`/`self`/`this`) → explicit named values in prose | authoring-guide rule | ✅ closed (doc 14 #59) |
+| 244 | PowerShell verb-noun cmdlets → Nom function decls with feature-stack names; verb-noun is a naming convention, not a grammar feature | authoring-guide rule | ✅ closed (doc 14 #59; aligns with MEMORY.md feature-stack roadmap) |
+| 245 | Named parameters always (PowerShell `-Path`); positional parameters rejected outside single-argument functions | authoring-guide rule | ✅ closed (doc 14 #59; prevents call-site ambiguity) |
+| 246 | Inline script-block predicates decompose to named filter functions OR `ensures every X satisfies P` clauses | authoring-guide rule | ✅ closed (doc 14 #59) |
+| 247 | Filesystem-enumeration non-atomicity is a `hazard` on any recursive-scan function | authoring-guide rule | ✅ closed (doc 14 #59) |
 
-Totals by destination (after doc 14 #58 COBOL business-data-processing translation — **seventeenth 0-new-wedge translation in a row**; 7 authoring-guide closures + auditability seed; unified primitive set now proven across **70-year span** of programming paradigms (Forth/COBOL to Dafny/K8s)):
+Totals by destination (after doc 14 #59 PowerShell object-pipeline translation — **eighteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **shell-family triad** (Bash + jq + PowerShell) **fully unified** with zero new grammar):
 
-- ⏳ Wedge queued: **43** (unchanged; W51 decimal-precision candidate noted for future cycles)
+- ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **191**
+- ✅ Closed: **197**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 254 rows. Closure rate 75% (191/254). **58 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + **business-data-processing (COBOL)**. Twenty-fifth consecutive minimal-wedge translation, seventeenth 0-new-wedge. **Unified primitive set proven across 70-year paradigm span** from Forth/COBOL to Dafny/K8s.
+Backlog size: 260 rows. Closure rate 76% (197/260). **59 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + **object-pipeline-shell (PowerShell)**. Twenty-sixth consecutive minimal-wedge translation, eighteenth 0-new-wedge. **Shell-family triad unified** (Bash + jq + PowerShell all collapse to named-intermediate data-transformation with zero new grammar).
 
 ## Wedge master index (for cross-ref with doc 13)
 

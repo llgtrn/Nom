@@ -4054,6 +4054,82 @@ Row additions: **0 new wedges** — COBOL's business-data-processing model fully
 
 ---
 
+## 59. PowerShell — pipeline-of-structured-objects shell
+
+```powershell
+Get-ChildItem -Path C:\Logs -Filter *.log -Recurse |
+    Where-Object { $_.Length -gt 10MB -and $_.LastWriteTime -lt (Get-Date).AddDays(-30) } |
+    Sort-Object -Property Length -Descending |
+    Select-Object -First 10 -Property FullName, Length, LastWriteTime |
+    Format-Table -AutoSize
+```
+
+### `.nomx v1` translation
+
+```nomx
+define top_stale_large_logs
+  that takes a root directory, returns a summary table of the 10 largest log files older than 30 days.
+find every file under the root whose name ends in .log, recursing into subdirectories.
+keep only files larger than 10 megabytes that have not been modified in the last 30 days.
+sort the remaining files by size descending.
+take the first 10.
+format the result as a table with columns (full_name, size, last_modified).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data LogFileEntry is
+  intended to describe one log file on disk with its path, size, and last-modification timestamp.
+  exposes full_name as text.
+  exposes size_bytes as natural from 0 to 1099511627776.
+  exposes last_modified as timestamp.
+
+the data LogFileFilter is
+  intended to hold the thresholds used to select stale, large log files.
+  exposes minimum_size_bytes as natural from 0 to 1099511627776.
+  exposes maximum_age_days as natural from 0 to 36500.
+
+the function find_stale_large_logs is
+  intended to scan a root directory recursively for log files exceeding the given size threshold that have not been modified within the given age window, returning the top-K by size-descending.
+  uses the @Data matching "LogFileEntry" with at-least 0.95 confidence.
+  uses the @Data matching "LogFileFilter" with at-least 0.95 confidence.
+  requires the root directory exists and is readable.
+  requires maximum_age_days is positive.
+  requires top_k is a natural between 1 and 1000.
+  ensures every returned entry has a name ending in ".log".
+  ensures every returned entry has size_bytes at-least LogFileFilter.minimum_size_bytes.
+  ensures every returned entry has last_modified at-most the current time minus LogFileFilter.maximum_age_days days.
+  ensures the returned entries are sorted by size_bytes descending; ties retain filesystem-enumeration order.
+  ensures the returned entry count is at-most top_k.
+  hazard filesystem enumeration is not atomic — concurrent log rotation may cause entries to shift between scan completion and result use; callers should treat the output as a snapshot.
+  favor correctness.
+
+the function format_log_entries_as_table is
+  intended to render a list of LogFileEntry rows as a human-readable aligned table with columns full_name, size, last_modified.
+  uses the @Data matching "LogFileEntry" with at-least 0.95 confidence.
+  ensures the returned text has exactly one header row plus one data row per input entry.
+  ensures each column is aligned to its widest cell.
+  favor clarity.
+```
+
+### Gaps surfaced
+
+1. **Pipeline of structured objects** — PowerShell's defining difference from Bash: each stage passes typed `.NET` objects, not strings. Nom's translation doesn't expose this distinction explicitly because **every Nom pipe stage already passes typed data** — the bash-vs-powershell distinction disappears. Authoring-guide rule: **pipeline-of-objects and pipeline-of-strings collapse to the same Nom decomposition — named intermediates with typed data decls**; the bash/powershell distinction is a build-stage concern (shell target), not an authoring concern. No new wedge.
+2. **Property-access with `$_` (current pipeline item)** — PowerShell's implicit-current-item variable. Nom rejects implicit pronouns; every filter names the item explicitly (`every returned entry`). Authoring-guide rule: **implicit pipeline-item references decompose to explicit named values; no `$_` / `it` / `self` / `this` in prose**. No new wedge.
+3. **Cmdlet verb-noun naming (`Get-ChildItem`, `Sort-Object`, `Select-Object`)** — PowerShell's discoverable naming convention. Nom's feature-stack word discipline (MEMORY.md) shares the same ethos — compose names from registered vocabulary rather than ad-hoc identifiers. Authoring-guide rule: **PowerShell verb-noun cmdlets decompose to Nom function decls with feature-stack names (`find_files_recursive`, `sort_by_size_descending`, `select_top_n`); the verb-noun structure is a naming convention, not a grammar feature**. No new wedge.
+4. **Parameter binding by name (`-Path`, `-Filter`, `-Recurse`)** — PowerShell's named-arg style. Nom's translation names all function parameters explicitly (`root directory`, `LogFileFilter`). Authoring-guide rule: **PowerShell named parameters map to named function parameters in the Nom function decl — positional parameters are rejected outside single-argument functions**. Prevents call-site ambiguity. No new wedge.
+5. **Filter predicates via script block (`{ $_.Length -gt 10MB }`)** — inline anonymous predicates. Nom lifts these to named functions or expresses them inline in `ensures` clauses. Authoring-guide rule: **inline script-block predicates decompose to named filter functions OR to `ensures every X satisfies P` clauses** — same rule as #7 Lisp macros → closure lifting. No new wedge.
+6. **Unit-suffixed literals (`10MB`, `-30 days`)** — PowerShell has built-in syntax for common units. Nom's translation converts to plain SI-base units (`10 megabytes` → `10485760 bytes`; `-30 days` → `maximum_age_days=30`). Same rule as #54 K8s unit suffixes. No new wedge.
+7. **Output formatting (`Format-Table`)** — PowerShell's terminal-pretty-print stage. Nom's translation separates this into a peer function (`format_log_entries_as_table`) rather than inlining. Authoring-guide rule: **formatting/rendering stages decompose to peer function decls; computation functions are output-format-agnostic**. Same as #58 COBOL DISPLAY rule. No new wedge.
+8. **Filesystem-snapshot atomicity caveat** — surfaced as an explicit `hazard`. Production-hygiene rule that most shell scripts leave unsaid. Authoring-guide rule: **filesystem enumeration non-atomicity is a `hazard` on any recursive-scan function; consumers should treat results as point-in-time snapshots**. No new wedge.
+
+Row additions: **0 new wedges** — PowerShell's object-pipeline model maps 1:1 onto Nom's already-typed pipe decomposition. 7 authoring-guide closures: bash-vs-powershell distinction collapses at source level, implicit `$_` → explicit named values, verb-noun cmdlets → feature-stack function names, named parameters always (no positional outside 1-arg), inline script blocks → named filters or `ensures` clauses, unit-suffixed literals → SI-base units (reuses #54), formatting as peer function (reuses #58), filesystem-snapshot as `hazard`.
+
+**Twenty-sixth consecutive minimal-wedge translation + eighteenth 0-new-wedge run.** PowerShell — the "typed shell" — is the cleanest possible confirmation that **Nom's pipe-decomposition (named intermediates + typed data decls) was always already PowerShell-semantic**, despite the source prose looking like Bash. The bash vs powershell choice becomes a build-stage target selection, not an authoring decision. This completes the **shell-family triad** (Bash #11 + jq #57 + PowerShell #59) with zero new grammar — all three collapse to the same named-intermediate data-transformation pattern.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
