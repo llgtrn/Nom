@@ -89,8 +89,10 @@ All three are NON-NEGOTIABLE per user; applied continuously across cycles.
 - A4 pipeline: `c0a1bc0` (doc 18) → `6436a2c` (A4a) → `e5be34f` (A4b) → `5dfcd25`/`025a0cc`/`4a335eb`/`62581d2`/`7da6a21` (A4c-steps)
 - Research finalization: `171a660` (doc 14 seed) → `8cb2265` (+3 TR + doc 15) → `c97a6c2` (bumpalo gate) → `ba5cd3e`/`370f96d` (+Go/C++/Bash/TOML) → `fcfda05` (doc 16 split) → `a8ce0a4`/`1331c00`/`ffa121a` (doc 17 I1-I13) → `1e752e7` (ct11-ct14 smoke) → `e013511` (doc 19) → `848f431` (doc 09 refresh) → `d3921bb` (doc 10 Next-actions refresh) → `f1dd162` (+2 async/flat_map)
 - Post-A4c parity push: `196c4a8` → `65071df` → `94442bc` → `f346ccd` → `05e7762` → `6f728a5` → `3c5551d` → `d1a57ed` → `1185d6a` → `69bb443` → `6db7285` (a4c35) → `d3c97ff` (a4c36) → `7e4b3f3` (a4c37) → `c869986` (a4c38)
-- Doc refreshes trailing: `d051daa` (doc 10 HEAD-sync) → `6446459` (doc 09 late-banner refresh)
-- This doc's immediate predecessor: `6446459`. Latest HEAD is `6446459`.
+- Doc refreshes trailing: `d051daa` (doc 10 HEAD-sync) → `6446459` (doc 09 late-banner refresh) → `3320180` (doc 20 commit-progression extension) → `6d13ae5` (doc 20 test-total rollup 120→139) → `974c2bd` (doc 06 banner to HEAD 6d13ae5)
+- Paradigm translations post-20-milestone (cycles 17+): `f66b53c` Prolog (#28) → `ed63541` Lisp-macro-rejection (#29) → `315182b` Protobuf (#30) → `bb9410c` regex (#31) → `a596993` XState (#32) → `e460fd5` Hypothesis (#33) → `e272d51` Terraform (#34) → `cb0bd92` NumPy (#35) → `9e839ba` Airflow (#36) → `f98af49` (doc 10 sync) → `42cfc8b` Spark-streaming (#37) → `9b4a438` Solidity (#38) → `03d4ca4` SwiftUI (#39) → `19b1101` Gherkin (#40) → `c69945c` (doc 10 sync) → `4c3f5f7` Verilog (#41) → `ef3dbaf` Nix (#42) → `1862aba` SQL-CTE (#43) → `0bb28c6` Forth (#44) → `7dae19b` OCaml-functor (#45) → `f426ff4` (doc 10 sync) → `7108218` Rego (#46) → `e11c6ae` TLA+ (#47) → `5a0c2b1` PDDL (#48) → `41607ca` Mermaid (#49) → `47242e9` **Dafny (#50 milestone)** → `bae9488` (doc 10 sync) → `3a45e93` (doc 09 end-of-session banner)
+- This doc's immediate predecessor: `3a45e93`. Latest HEAD is `3a45e93`.
+- **Translation milestone**: 20 → **50 translations**, 14 → **37 paradigm families**, 44% → **72% closure**, 30 → **42 wedges queued** (all W5-W49).
 
 ---
 
