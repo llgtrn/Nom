@@ -1190,6 +1190,343 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 3 -- observability + persistence + numerical
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'structured-log-event',
+  'emit a structured log record with typed fields for a named operation outcome',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to record a structured observation about <operation> with typed fields.\n  uses the @Function matching "serialize fields to structured record" with at-least 0.9 confidence.\n  requires the @Data matching "bounded key-value map with stable schema" with at-least 0.9 confidence.\n  ensures every record carries timestamp and severity and operation identifier.\n  hazard unbounded field cardinality inflates storage and slows indexing.\n  favor auditability.',
+  '["unbounded field cardinality","leaking sensitive values into fields","non-stable schema drift"]',
+  '["auditability","clarity"]',
+  '[]'
+),
+(
+  'distributed-trace-span',
+  'open and close a span that records a unit of work across process boundaries',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to represent <unit_of_work> as a timed span linked to a parent span when present.\n  uses the @Function matching "create span with parent link and attributes" with at-least 0.9 confidence.\n  requires the @Data matching "parent span context or empty root marker" with at-least 0.9 confidence.\n  ensures the span is closed exactly once with a status and end timestamp.\n  hazard forgetting to close a span produces dangling intervals.\n  favor auditability.',
+  '["dangling open spans","missing parent link breaks reconstruction","attribute cardinality explosion"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'metric-counter-gauge-histogram',
+  'declare a metric instrument with kind counter or gauge or histogram and record samples',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to update a metric with a sample under a bounded label set.\n  uses the @Function matching "update metric instrument by kind" with at-least 0.9 confidence.\n  requires the @Data matching "metric kind is counter or gauge or histogram" with at-least 0.9 confidence.\n  ensures counter samples are non-negative and gauge samples replace prior value and histogram samples fall in a declared bucket layout.\n  hazard high-cardinality label combinations exhaust memory.\n  favor performance.',
+  '["high-cardinality labels","mixing kinds on one name","histogram bucket drift across versions"]',
+  '["performance","correctness"]',
+  '[]'
+),
+(
+  'health-check-probe',
+  'expose a probe that reports liveness and readiness of a component',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to answer whether <component> is live and ready to accept work.\n  uses the @Function matching "aggregate dependent check results" with at-least 0.9 confidence.\n  requires the @Data matching "list of dependent check outcomes with timeout" with at-least 0.9 confidence.\n  ensures the probe returns within a fixed deadline and classifies the component as live or not-live and ready or not-ready.\n  hazard a probe that performs heavy work can itself become the outage.\n  favor availability.',
+  '["probe performs heavy work","timeout longer than caller deadline","conflating liveness with readiness"]',
+  '["availability","responsiveness"]',
+  '[]'
+),
+(
+  'error-budget-sli',
+  'compute a service level indicator against an error budget over a rolling window',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to measure the fraction of good events over a rolling window and compare against a target.\n  uses the @Function matching "ratio of good events to total events in window" with at-least 0.9 confidence.\n  requires the @Data matching "good event count and total event count and target ratio" with at-least 0.9 confidence.\n  ensures the indicator is reported with the window bounds and the remaining budget.\n  hazard sampling gaps make the indicator silently overstate health.\n  favor statistical_rigor.',
+  '["sampling gaps in the window","clock skew across reporters","target drift without versioning"]',
+  '["statistical_rigor","auditability"]',
+  '[]'
+),
+(
+  'correlation-identifier-propagation',
+  'extract and inject a correlation identifier across a request boundary',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to carry a correlation identifier from an incoming request into every outgoing request and log record.\n  uses the @Function matching "extract identifier from carrier and inject into outgoing carrier" with at-least 0.9 confidence.\n  requires the @Data matching "carrier headers with a reserved identifier key" with at-least 0.9 confidence.\n  ensures the identifier is preserved unchanged when present and freshly generated when absent.\n  hazard losing the identifier at an asynchronous boundary fragments the trace.\n  favor correctness.',
+  '["loss at asynchronous boundary","identifier rewritten by intermediary","missing generation when absent"]',
+  '["correctness","auditability"]',
+  '[]'
+),
+(
+  'sampled-trace-export',
+  'decide whether to export a trace and batch accepted traces to a sink',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to decide admission of a trace by a sampling policy and forward accepted traces to a sink in batches.\n  uses the @Function matching "apply sampling policy then enqueue for batched export" with at-least 0.9 confidence.\n  requires the @Data matching "sampling policy and bounded export queue" with at-least 0.9 confidence.\n  ensures accepted traces are delivered at most once and rejected traces are counted.\n  hazard unbounded queues collapse the host under export backpressure.\n  favor reproducibility.',
+  '["unbounded export queue","sampling policy hides rare failures","duplicate export on retry"]',
+  '["reproducibility","performance"]',
+  '[]'
+),
+(
+  'runtime-heap-snapshot',
+  'capture a heap snapshot for offline inspection under guard conditions',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to write the current heap state of a process to a snapshot artifact.\n  uses the @Function matching "freeze allocator and serialize reachable graph" with at-least 0.9 confidence.\n  requires the @Data matching "snapshot sink with sufficient free space and permission" with at-least 0.9 confidence.\n  ensures the process resumes with the same observable state after the snapshot completes.\n  hazard capture stalls the process for the duration of the freeze.\n  favor reproducibility.',
+  '["long freeze stalls the process","snapshot contains sensitive values","sink lacks free space"]',
+  '["reproducibility","auditability"]',
+  '[]'
+),
+(
+  'slow-query-log',
+  'record queries whose duration exceeds a threshold with bounded evidence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to capture a query and its plan when wall-clock duration exceeds a threshold.\n  uses the @Function matching "compare duration to threshold and emit evidence record" with at-least 0.9 confidence.\n  requires the @Data matching "duration threshold and redaction rules for parameters" with at-least 0.9 confidence.\n  ensures parameter values are redacted and the plan fingerprint is stable across invocations.\n  hazard verbatim parameter capture leaks sensitive values.\n  favor auditability.',
+  '["verbatim parameter capture","unstable plan fingerprint","threshold too low floods the log"]',
+  '["auditability","clarity"]',
+  '[]'
+),
+(
+  'alert-routing-rule',
+  'route a triggered alert to receivers by matching labels with deduplication and silencing',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to deliver an alert to receivers whose selector matches its labels while respecting silence windows.\n  uses the @Function matching "match labels against rule selectors and deduplicate within a window" with at-least 0.9 confidence.\n  requires the @Data matching "rule set with selectors and silence windows and receiver bindings" with at-least 0.9 confidence.\n  ensures identical alerts within the deduplication window are delivered once and silenced alerts are suppressed with a recorded reason.\n  hazard overly broad silences hide live incidents.\n  favor availability.',
+  '["overly broad silences","deduplication window masks recurrence","selector matches everything"]',
+  '["availability","auditability"]',
+  '[]'
+),
+(
+  'persist-write-ahead-log',
+  'append mutations to a durable log before applying them',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to record a mutation in the write-ahead log before state is changed.\n  uses the @Data matching "append-only log segment" with at-least 0.9 confidence.\n  requires the log segment to be flushed to durable storage before acknowledgement.\n  ensures a crash between log write and state apply can be replayed deterministically.\n  hazard unbounded log growth without checkpoint truncation.\n  favor reproducibility.',
+  '["fsync skipped under load","log truncation races with replay","partial record on torn write"]',
+  '["reproducibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'persist-snapshot-plus-incremental-backup',
+  'capture a full snapshot then layer incremental deltas on top',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to emit a delta backup relative to the most recent base snapshot.\n  uses the @Data matching "base snapshot manifest" with at-least 0.9 confidence.\n  requires the base snapshot to be immutable and checksummed.\n  ensures a full restore is the base snapshot plus every delta in order.\n  hazard a broken delta chain silently corrupts every later restore.\n  favor reproducibility.',
+  '["broken delta chain","base snapshot mutated in place","missing delta ordering"]',
+  '["reproducibility","auditability","availability"]',
+  '[]'
+),
+(
+  'persist-forward-only-migration',
+  'apply a schema migration that has no downgrade path',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to transform the schema from one version to the next.\n  uses the @Data matching "migration script registry" with at-least 0.9 confidence.\n  requires every prior migration to have been applied exactly once.\n  ensures the recorded schema version advances by one on success and stays unchanged on failure.\n  hazard a partially applied migration leaves rows in a shape no version can read.\n  favor correctness.',
+  '["partial apply on failure","skipped prior migration","irreversible data loss"]',
+  '["correctness","auditability","determinism"]',
+  '[]'
+),
+(
+  'persist-versioned-schema-evolution',
+  'evolve a schema by adding versioned variants side by side',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","exposes","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to let a reader decode any record written under any past schema version.\n  uses the @Data matching "versioned record envelope" with at-least 0.9 confidence.\n  composes the @Function matching "decode record at version" with at-least 0.9 confidence.\n  requires every stored record to carry its originating schema version.\n  ensures no past version is silently dropped without an explicit retirement step.\n  hazard version sprawl makes the decoder surface grow without bound.\n  exposes a decoder that selects the reader by embedded version tag.\n  favor forward_compatibility.',
+  '["version sprawl","missing version tag on legacy rows","decoder fan-out"]',
+  '["forward_compatibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'persist-indexed-lookup-table',
+  'maintain a secondary index so lookups avoid a full scan',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to resolve a key to a row identifier without scanning the base table.\n  exposes a read path that is logarithmic in the row count.\n  exposes a write path that updates the index in the same transaction as the base row.\n  favor latency.',
+  '["index drifts from base table on crash","write amplification","stale index after bulk load"]',
+  '["latency","performance","correctness"]',
+  '[]'
+),
+(
+  'persist-soft-delete-with-tombstone',
+  'mark a row deleted with a tombstone instead of removing it',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to mark a row as deleted by writing a tombstone with the deletion time.\n  uses the @Data matching "tombstone marker" with at-least 0.9 confidence.\n  requires every reader to filter out rows carrying a tombstone.\n  ensures the row can be audited and resurrected until a compaction sweep removes it.\n  hazard a reader that forgets the tombstone filter returns deleted rows as live.\n  favor auditability.',
+  '["reader forgets tombstone filter","tombstone never compacted","resurrection after compaction"]',
+  '["auditability","correctness","reproducibility"]',
+  '[]'
+),
+(
+  'persist-time-series-retention-policy',
+  'drop time series samples older than a bounded retention window',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to remove every sample whose timestamp is older than a retention cutoff.\n  uses the @Data matching "time series shard index" with at-least 0.9 confidence.\n  requires the retention cutoff to be monotonic and never move backward.\n  ensures storage used by expired samples is released within one retention sweep.\n  hazard a clock skew expires samples earlier than the stated policy.\n  favor determinism.',
+  '["clock skew","retention moves backward","unbounded growth on sweep failure"]',
+  '["determinism","reproducibility","auditability"]',
+  '[]'
+),
+(
+  'persist-bloom-filter-membership-test',
+  'use a compact probabilistic structure to skip definite misses',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to report whether a key might be in a set so a definite miss skips the disk read.\n  uses the @Data matching "bit array with hash functions" with at-least 0.9 confidence.\n  requires the caller to treat a positive result as unconfirmed and verify against the authoritative store.\n  ensures a false negative is impossible while a false positive is bounded by the configured rate.\n  hazard callers that trust a positive as definite produce wrong answers.\n  favor performance.',
+  '["false positive treated as definite","filter never resized as set grows","hash seed drift"]',
+  '["performance","latency","correctness"]',
+  '[]'
+),
+(
+  'persist-copy-on-write-versioning',
+  'produce a new version by writing changed pages and sharing the rest',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","exposes","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to expose each version as an immutable snapshot that shares unchanged pages with its parent.\n  uses the @Data matching "page reference graph" with at-least 0.9 confidence.\n  composes the @Function matching "write page and rebind parent pointer" with at-least 0.9 confidence.\n  requires every write to allocate a fresh page and never mutate a shared one.\n  ensures any past version is readable as long as its root pointer is retained.\n  hazard orphaned pages accumulate if reference counts are not maintained.\n  exposes a root pointer per version and a reachability sweep for reclamation.\n  favor reproducibility.',
+  '["orphaned page leak","shared page mutated by mistake","reference count underflow"]',
+  '["reproducibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'persist-materialized-view-refresh',
+  'recompute a precomputed view so reads stay within a freshness bound',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to recompute a view from base tables whenever its staleness exceeds a freshness bound.\n  uses the @Data matching "materialized view definition" with at-least 0.9 confidence.\n  requires the refresh to observe a consistent snapshot of every base table.\n  ensures a reader sees either the prior committed view or the new one, never a partial blend.\n  hazard a long refresh overlaps the next scheduled refresh and starves readers.\n  favor latency.',
+  '["overlapping refresh","partial view visible to readers","base table snapshot skew"]',
+  '["latency","performance","correctness"]',
+  '[]'
+),
+(
+  'fixed-point-iteration',
+  'iterate a contraction map to convergence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to apply a step repeatedly to a seed until the change drops below a tolerance.\n  uses the @Function matching "contraction-step" with at-least 0.9 confidence.\n  requires the step to be a contraction on the working domain.\n  ensures the returned value satisfies the tolerance bound on its own update.\n  hazard divergence when the map is not contractive.\n  favor numerical_stability.',
+  '["non-contractive map","oscillation","slow convergence"]',
+  '["numerical_stability","determinism"]',
+  '[]'
+),
+(
+  'matrix-vector-product',
+  'multiply a dense matrix by a vector',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to compute a matrix applied to a vector producing a new vector.\n  uses the @Data matching "row-major matrix" with at-least 0.9 confidence.\n  requires the matrix column count to equal the vector length.\n  ensures the result length equals the matrix row count.\n  hazard catastrophic cancellation on nearly-opposite summands.\n  favor numerical_stability.',
+  '["shape mismatch","cancellation","overflow"]',
+  '["numerical_stability","performance"]',
+  '[]'
+),
+(
+  'ordinary-differential-equation-integrator',
+  'advance an initial-value problem by one adaptive step',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to advance state under a derivative by a step with local error under tolerance.\n  uses the @Function matching "embedded pair step" with at-least 0.9 confidence.\n  requires the derivative to be evaluable at every probe point in the trial step.\n  ensures the returned state carries an estimated local error within the declared tolerance.\n  hazard stiffness causing vanishing accepted step sizes.\n  favor numerical_stability.',
+  '["stiffness","step size underflow","error estimate bias"]',
+  '["numerical_stability","correctness"]',
+  '[]'
+),
+(
+  'monte-carlo-estimator',
+  'estimate an expectation by independent sampling',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to approximate the mean of an integrand under a sampler using a fixed sample count.\n  uses the @Function matching "independent sampler" with at-least 0.9 confidence.\n  requires the sampler draws to be independent and identically distributed.\n  ensures the reported estimate carries a standard error decreasing like one over square-root of sample count.\n  hazard heavy-tailed integrand inflating variance beyond the reported error.\n  favor statistical_rigor.',
+  '["heavy tails","correlated draws","seed reuse"]',
+  '["statistical_rigor","reproducibility"]',
+  '[]'
+),
+(
+  'gradient-descent-step',
+  'update parameters along the negative gradient',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to move parameters by a learning rate times the negative of the gradient.\n  uses the @Function matching "loss gradient" with at-least 0.9 confidence.\n  requires the gradient to have the same shape as the parameters.\n  ensures the returned parameters equal the prior parameters minus the learning rate times the gradient componentwise.\n  hazard learning rate too large causing loss to increase.\n  favor numerical_stability.',
+  '["exploding step","vanishing step","shape mismatch"]',
+  '["numerical_stability","determinism"]',
+  '[]'
+),
+(
+  'nearest-neighbor-index',
+  'return the closest stored points to a query',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to return the k closest entries in an index to a query under a distance.\n  uses the @Data matching "spatial partition index" with at-least 0.9 confidence.\n  requires the query to share dimensionality with entries in the index.\n  ensures the returned list holds exactly k entries ordered by non-decreasing distance.\n  hazard distance ties producing nondeterministic ordering.\n  favor determinism.',
+  '["tie breaking","dimensionality mismatch","stale index"]',
+  '["determinism","performance"]',
+  '[]'
+),
+(
+  'basis-decomposition-transform',
+  'project a signal onto an orthogonal basis',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to decompose a signal into coefficients against an orthogonal basis.\n  uses the @Data matching "orthogonal basis" with at-least 0.9 confidence.\n  requires the basis vectors to be mutually orthogonal within a tolerance.\n  ensures reconstructing from the returned coefficients recovers the signal within the tolerance.\n  hazard non-orthogonal basis producing leakage across coefficients.\n  favor numerical_stability.',
+  '["non orthogonality","aliasing","boundary artifacts"]',
+  '["numerical_stability","correctness"]',
+  '[]'
+),
+(
+  'numerical-integration-rule',
+  'approximate a definite integral by a quadrature rule',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to approximate the integral of an integrand over an interval using a quadrature rule.\n  uses the @Function matching "quadrature node weight set" with at-least 0.9 confidence.\n  requires the integrand to be finite at every node selected by the rule.\n  ensures the reported estimate carries an error bound consistent with the rule order on smooth integrands.\n  hazard endpoint singularity invalidating the rule error bound.\n  favor numerical_stability.',
+  '["endpoint singularity","oscillatory integrand","node evaluation failure"]',
+  '["numerical_stability","correctness"]',
+  '[]'
+),
+(
+  'confidence-interval-estimator',
+  'build a confidence interval for a population parameter',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to bracket the parameter of a sample at a nominal coverage using a declared method.\n  uses the @Function matching "interval construction method" with at-least 0.9 confidence.\n  requires the sample to satisfy the independence assumptions demanded by the method.\n  ensures the returned interval reports its coverage method and sample size alongside the bounds.\n  hazard dependent observations inflating the true miscoverage beyond the nominal rate.\n  favor statistical_rigor.',
+  '["dependent samples","small sample bias","method assumption violation"]',
+  '["statistical_rigor","auditability"]',
+  '[]'
+),
+(
+  'discrete-event-simulator',
+  'advance a simulation through time-ordered events',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to process events from an event queue against a state until a stop condition holds.\n  uses the @Data matching "priority ordered event queue" with at-least 0.9 confidence.\n  requires every event in the queue to carry a scheduled time greater than or equal to the current simulation clock.\n  ensures events are handled in non-decreasing order of scheduled time with deterministic tie-breaking.\n  hazard simultaneous events ordered by insertion instead of a declared tie rule.\n  favor determinism.',
+  '["tie ordering","clock regression","unbounded event storm"]',
+  '["determinism","reproducibility"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
