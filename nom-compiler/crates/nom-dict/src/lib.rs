@@ -7,7 +7,10 @@
 //!
 //! Layout: `data/nomdict.db`. WAL mode is enabled for concurrent reads.
 
+pub mod dict;
 pub mod freshness;
+
+pub use dict::{CONCEPTS_FILENAME, Dict, WORDS_FILENAME};
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
