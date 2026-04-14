@@ -225,7 +225,7 @@ impl<R: std::io::Read, W: std::io::Write> ReActAdapter for McpAdapter<R, W> {
         prose: &str,
         transcript: &[ReActStep],
     ) -> Result<ReActStep, IntentError> {
-        use std::io::{BufRead, Write};
+        use std::io::BufRead;
 
         let id = self.next_id.get();
         self.next_id.set(id + 1);

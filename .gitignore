@@ -13,6 +13,11 @@ data/
 *.db
 *.db-shm
 *.db-wal
+# Exception: the canonical grammar baseline ships as a small SQL data
+# file alongside the nom-grammar crate. Allow it through the data/
+# block above.
+!nom-compiler/crates/nom-grammar/data/
+!nom-compiler/crates/nom-grammar/data/*.sql
 
 # Nom build output
 .nom-out/

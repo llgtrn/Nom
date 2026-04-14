@@ -23,15 +23,24 @@ anything load-bearing.
 - `grammar.sqlite` schema for seven tables: `schema_meta`,
   `keywords`, `keyword_synonyms`, `clause_shapes`, `kinds`,
   `quality_names`, `patterns`. The Rust crate ships only the schema +
-  connection helpers + query API + read-only `resolve_synonym` /
-  `is_known_kind` / `kinds_row_count` helpers; data is the user's
-  responsibility.
+  connection helpers + query API + read-only helpers (`resolve_synonym`,
+  `is_known_kind`, `kinds_row_count`, `clause_shapes_row_count_for_kind`,
+  `required_clauses_for_kind`, `is_known_quality`,
+  `quality_names_row_count`); data is the user's responsibility.
+- Canonical baseline shipped as
+  `nom-compiler/crates/nom-grammar/data/baseline.sql`. After
+  `nom grammar init`, run `nom grammar import data/baseline.sql` to
+  load 9 kinds + 10 quality_names + 43 keywords + 43 clause_shapes
+  into the registry. Idempotent (INSERT OR IGNORE).
 - Grammar-aware pipeline `run_pipeline_with_grammar`: S1 consults
   `keyword_synonyms` for canonicalization; S2 consults `kinds` for
   strict kind validation; S3 consults `clause_shapes` for the
   per-kind empty-registry guard; S5b consults `quality_names` for
   every `favor X` clause. S4 + S6 still use the hardcoded path;
   the cross-stage required-clause-presence validator is queued.
+- CLI: `nom grammar init`, `nom grammar import <sql-file>`,
+  `nom grammar status` (shipped). Per-row `add-*` subcommands are
+  queued under Phase C.
 - CLI: `nom grammar init` (creates the file + applies schema),
   `nom grammar status` (counts rows per table; supports `--json`).
 - Annotator-style staged pipeline (S1–S6) shipped.

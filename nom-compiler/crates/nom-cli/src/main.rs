@@ -1006,6 +1006,18 @@ enum GrammarCmd {
         #[arg(long)]
         json: bool,
     },
+    /// Import a SQL file into grammar.sqlite. Used to apply the
+    /// canonical baseline (`crates/nom-grammar/data/baseline.sql`) or
+    /// any user-authored grammar evolution. Idempotent SQL files
+    /// (INSERT OR IGNORE) re-import safely.
+    Import {
+        /// Path to grammar.sqlite (default: ~/.nom/grammar.sqlite). The file
+        /// must already exist (run `nom grammar init` first).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+        /// Path to the SQL file to execute against the registry.
+        sql_file: PathBuf,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1384,6 +1396,7 @@ fn main() {
         Commands::Grammar { action } => match action {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
+            GrammarCmd::Import { path, sql_file } => cmd_grammar_import(path.as_deref(), &sql_file),
         },
     };
     process::exit(exit_code);
@@ -1415,6 +1428,60 @@ fn cmd_grammar_init(path: Option<&Path>) -> i32 {
             1
         }
     }
+}
+
+fn cmd_grammar_import(db_path: Option<&Path>, sql_file: &Path) -> i32 {
+    let p = match db_path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::open_readonly(&p) {
+        // open_readonly errors if the file is missing → user must run `nom grammar init` first.
+        Ok(_) => match rusqlite::Connection::open(&p) {
+            Ok(c) => c,
+            Err(e) => {
+                eprintln!("nom grammar import: opening {} failed: {e}", p.display());
+                return 1;
+            }
+        },
+        Err(e) => {
+            eprintln!(
+                "nom grammar import: {}. Run `nom grammar init` first.",
+                e
+            );
+            return 1;
+        }
+    };
+    let sql = match std::fs::read_to_string(sql_file) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom grammar import: reading {}: {e}", sql_file.display());
+            return 1;
+        }
+    };
+    if let Err(e) = conn.execute_batch(&sql) {
+        eprintln!("nom grammar import: applying SQL failed: {e}");
+        return 1;
+    }
+    let counts = nom_grammar::counts(&conn).unwrap_or_else(|_| nom_grammar::RegistryCounts {
+        keywords: 0,
+        keyword_synonyms: 0,
+        clause_shapes: 0,
+        quality_names: 0,
+        kinds: 0,
+        patterns: 0,
+    });
+    println!(
+        "nom grammar import: applied {} ; rows now: keywords={} keyword_synonyms={} clause_shapes={} quality_names={} kinds={} patterns={}",
+        sql_file.display(),
+        counts.keywords,
+        counts.keyword_synonyms,
+        counts.clause_shapes,
+        counts.quality_names,
+        counts.kinds,
+        counts.patterns
+    );
+    0
 }
 
 fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {

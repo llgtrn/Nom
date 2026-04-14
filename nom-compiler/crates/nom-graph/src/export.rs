@@ -142,8 +142,6 @@ fn write_edges_csvs(
     out_dir: &Path,
     files_written: &mut Vec<PathBuf>,
 ) -> Result<(Vec<(String, usize)>, usize), ExportError> {
-    use crate::EdgeType;
-
     let resolver = build_endpoint_resolver(graph);
     let mut by_type: std::collections::BTreeMap<String, Vec<(String, String, f64)>> =
         std::collections::BTreeMap::new();

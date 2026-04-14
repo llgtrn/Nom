@@ -20,8 +20,6 @@ ensures a session token is returned on success.
 
 #[test]
 fn synonym_round_trip_at_pipeline_level() {
-    use rusqlite::Connection;
-
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("grammar.sqlite");
     let conn = nom_grammar::init_at(&db).expect("init");

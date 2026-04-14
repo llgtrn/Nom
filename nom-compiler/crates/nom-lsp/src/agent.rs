@@ -218,7 +218,7 @@ fn shorten(s: &str, max: usize) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_intent::react::{AgentAction, Observation};
+    use nom_intent::react::Observation;
     use nom_intent::{instrumented::CallKind, NomIntent, Reason};
 
     #[test]

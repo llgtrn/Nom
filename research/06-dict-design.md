@@ -77,8 +77,16 @@ schema-only support in Rust; data is user-populated:
   favors, source_doc_refs, created_at)`
 
 After `nom grammar init`, every table is empty. The user populates rows
-through SQL, row-level CLI commands (planned: `nom grammar add-keyword`,
-`nom grammar add-pattern`, etc.), or batch SQL imports.
+through `nom grammar import <sql-file>` (shipped) or future row-level CLI
+commands (`nom grammar add-keyword`, `nom grammar add-pattern`, etc.) or
+direct SQL.
+
+The canonical baseline ships as a SQL data file at
+`nom-compiler/crates/nom-grammar/data/baseline.sql`. Running
+`nom grammar import crates/nom-grammar/data/baseline.sql` against an
+initialized DB loads the closed surface: 9 kinds + 10 quality_names +
+43 keywords + 43 clause_shapes. The patterns and keyword_synonyms
+tables remain empty by design — they grow as the user adds rows.
 
 ## Artifact store
 
