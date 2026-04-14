@@ -57,18 +57,17 @@ anything load-bearing.
   already covered by `synonym_round_trip.rs`.
 - Corpus dashboard: three layers of kind-noun drift fixed in sync
   (baseline.sql already had 9; KINDS const 7 → 9; lexer kind-noun
-  pattern 7 → 9). baseline.sql also extended 10 → 20 quality_names
-  (added correctness / determinism / clarity / documentation /
-  discoverability / reproducibility / portability / responsiveness /
-  latency / performance from doc 14 corpus). S5 hazard/benefit
-  scanner relaxed to tolerate non-Word filler tokens (`Is`, `As`,
-  `Of`, `The`) — accepts both `hazard Word, Word.` and free-prose
-  `hazard the X is Y.`. Closure pass rate progression:
-  0/89 → 42/88 → 60/88 → 68/88 (77%). Remaining 20 failures are
-  legitimate grammar gaps the corpus intentionally exposes: instance
-  binding `the X for the Y`, `proof` / `composition` as kinds
-  outside the closed 9-set, S4 unterminated-contract in tightly-
-  packed multi-line blocks, S6 mixed-concept-and-entity authoring.
+  pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
+  0 → 4 keyword_synonyms (proof→property, composition→module,
+  row→data, diagram→screen — corpus-idiomatic vocabulary rewritten
+  to the canonical 9-kind set at S1). S5 hazard/benefit scanner
+  relaxed to tolerate non-Word filler tokens. Closure pass rate
+  progression: 0/89 → 42/88 → 60/88 → 68/88 → 75/88 (85%).
+  Remaining 13 failures: S2=4 (instance binding `the X for the Y`,
+  `diagram` block with other shape gaps), S4=3 (unterminated-contract
+  in multi-line blocks — mirrors the S5 fix; scoped next wedge),
+  S5=3 (malformed corpus blocks with unterminated hazard), S6=3
+  (mixed-concept-and-entity authoring).
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
