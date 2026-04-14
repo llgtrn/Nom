@@ -109,13 +109,19 @@ fn synonym_aware_pipeline_matches_baseline_when_grammar_populated() {
     let db = dir.path().join("grammar.sqlite");
     let conn = nom_grammar::init_at(&db).expect("init");
 
-    // Populate only the kinds row that S2 needs for SOURCE_CANONICAL.
+    // Populate the rows that S2 + S3 require for SOURCE_CANONICAL.
     conn.execute(
         "INSERT INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
          VALUES ('function', '', '[]', '[]', 'B2-test', NULL)",
         [],
     )
     .expect("seed kind");
+    conn.execute(
+        "INSERT INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) \
+         VALUES ('function', 'intended', 1, 1, '...', 'B3-test')",
+        [],
+    )
+    .expect("seed clause shape");
 
     let baseline = run_pipeline(SOURCE_CANONICAL).expect("baseline");
     let with_grammar = run_pipeline_with_grammar(SOURCE_CANONICAL, &conn).expect("with grammar");

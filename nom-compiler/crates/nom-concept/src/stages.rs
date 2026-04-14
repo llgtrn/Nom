@@ -1195,20 +1195,64 @@ pub fn run_pipeline(src: &str) -> Result<PipelineOutput, StageFailure> {
 }
 
 /// Phase B variant: drive the full pipeline with grammar-driven
-/// synonym resolution at S1 and kind validation against the `kinds`
-/// table at S2. The grammar connection is consulted by S1 + S2
-/// today; later phases extend the DB consultation to S3
-/// (clause_shapes) and S5 (quality_names).
+/// synonym resolution at S1, kind validation at S2, and clause-shape
+/// presence guard at S3. The grammar connection is consulted by S1 +
+/// S2 + S3 today; later phases extend the DB consultation to S5
+/// (quality_names).
 pub fn run_pipeline_with_grammar(
     src: &str,
     grammar: &rusqlite::Connection,
 ) -> Result<PipelineOutput, StageFailure> {
     let s1 = stage1_tokenize_with_synonyms(src, grammar)?;
     let s2 = stage2_kind_classify_with_grammar(&s1, grammar)?;
-    let s3 = stage3_shape_extract(&s2)?;
+    let s3 = stage3_shape_extract_with_grammar(&s2, grammar)?;
     let s4 = stage4_contract_bind(&s3)?;
     let s5 = stage5_effect_bind(&s4)?;
     stage6_ref_resolve(&s5)
+}
+
+/// S3 with grammar-driven clause-shape presence guard per Phase B3.
+///
+/// Pre-flight invariant: every block's kind MUST have at least one
+/// row in `grammar.sqlite.clause_shapes`. A kind with zero rows means
+/// the user has not declared the per-kind clause grammar, so the
+/// parser refuses to validate the block — surfacing the un-populated
+/// state with NOMX-S3-empty-clause-shapes-for-kind.
+///
+/// This first-cut Phase B3 ships only the empty-registry guard. The
+/// per-required-clause-presence check (every is_required=1 clause
+/// must appear in the body) lives in a future cross-stage validator
+/// once S4/S5 report the full clause inventory back.
+pub fn stage3_shape_extract_with_grammar(
+    classified: &ClassifiedStream,
+    grammar: &rusqlite::Connection,
+) -> Result<ShapedStream, StageFailure> {
+    // Pre-flight: every block's kind has at least one clause_shapes row.
+    for block in &classified.blocks {
+        let n = nom_grammar::clause_shapes_row_count_for_kind(grammar, &block.kind)
+            .map_err(|e| {
+                StageFailure::new(
+                    StageId::ShapeExtract,
+                    block.start_byte,
+                    "clause-shapes-query-failed",
+                    format!("DB query against clause_shapes failed: {e}"),
+                )
+            })?;
+        if n == 0 {
+            return Err(StageFailure::new(
+                StageId::ShapeExtract,
+                block.start_byte,
+                "empty-clause-shapes-for-kind",
+                format!(
+                    "kind `{}` has zero rows in grammar.sqlite.clause_shapes; \
+                     the per-kind clause grammar is undeclared",
+                    block.kind
+                ),
+            ));
+        }
+    }
+    // Run the existing S3 to extract intent + body spans per block.
+    stage3_shape_extract(classified)
 }
 
 /// S2 with grammar-driven kind validation per Phase B2 blueprint.

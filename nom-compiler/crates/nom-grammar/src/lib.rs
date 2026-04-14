@@ -214,6 +214,40 @@ pub fn kinds_row_count(conn: &Connection) -> Result<u64> {
     Ok(n as u64)
 }
 
+/// Returns the count of `clause_shapes` rows for the given kind.
+/// S3 calls this to detect the empty-registry condition: a kind with
+/// zero clause_shapes rows means the user has not declared the per-
+/// kind grammar surface, so the parser cannot validate the block's
+/// shape.
+pub fn clause_shapes_row_count_for_kind(conn: &Connection, kind: &str) -> Result<u64> {
+    let n: i64 = conn.query_row(
+        "SELECT COUNT(*) FROM clause_shapes WHERE kind = ?1",
+        params![kind],
+        |r| r.get(0),
+    )?;
+    Ok(n as u64)
+}
+
+/// Returns the names of every clause where `is_required = 1` for the
+/// given kind, ordered by `position`. S3 (or a future cross-stage
+/// validator) calls this to assert that every required clause is
+/// present in the block body.
+///
+/// `is_required` semantics: 0 = optional, 1 = required, 2 = required-
+/// at-least-one-of (one_of_group). This helper returns only the
+/// `is_required = 1` rows; the one-of-group case is a future helper.
+pub fn required_clauses_for_kind(conn: &Connection, kind: &str) -> Result<Vec<String>> {
+    let mut stmt = conn.prepare(
+        "SELECT clause_name FROM clause_shapes \
+         WHERE kind = ?1 AND is_required = 1 \
+         ORDER BY position",
+    )?;
+    let names = stmt
+        .query_map(params![kind], |r| r.get::<_, String>(0))?
+        .collect::<Result<Vec<_>, _>>()?;
+    Ok(names)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -370,6 +404,65 @@ mod tests {
         assert!(is_known_kind(&conn, "function").unwrap());
         assert!(!is_known_kind(&conn, "concept").unwrap()); // unrelated row absent
         assert_eq!(kinds_row_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn clause_shapes_row_count_for_kind_returns_zero_when_empty() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        assert_eq!(clause_shapes_row_count_for_kind(&conn, "function").unwrap(), 0);
+    }
+
+    #[test]
+    fn clause_shapes_row_count_for_kind_counts_only_matching_kind() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        // Insert two rows for function, one for property
+        conn.execute(
+            "INSERT INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) \
+             VALUES ('function', 'intended', 1, 1, 'intended to <prose>.', 'phaseB3-test')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) \
+             VALUES ('function', 'requires', 0, 2, 'requires <prose>.', 'phaseB3-test')",
+            [],
+        ).unwrap();
+        conn.execute(
+            "INSERT INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) \
+             VALUES ('property', 'generator', 1, 1, 'generator <prose>.', 'phaseB3-test')",
+            [],
+        ).unwrap();
+        assert_eq!(clause_shapes_row_count_for_kind(&conn, "function").unwrap(), 2);
+        assert_eq!(clause_shapes_row_count_for_kind(&conn, "property").unwrap(), 1);
+        assert_eq!(clause_shapes_row_count_for_kind(&conn, "scenario").unwrap(), 0);
+    }
+
+    #[test]
+    fn required_clauses_for_kind_returns_only_required_rows_in_position_order() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        // Insert clauses for `scenario`: given/when/then required, favor optional
+        for (clause, required, position) in [
+            ("intended", 1, 1),
+            ("given", 1, 2),
+            ("when", 1, 3),
+            ("then", 1, 4),
+            ("favor", 0, 5),
+        ] {
+            conn.execute(
+                "INSERT INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) \
+                 VALUES ('scenario', ?1, ?2, ?3, '...', 'phaseB3-test')",
+                params![clause, required, position],
+            ).unwrap();
+        }
+        let required = required_clauses_for_kind(&conn, "scenario").unwrap();
+        assert_eq!(required, vec!["intended", "given", "when", "then"]);
+        // Other kinds have no required clauses
+        assert!(required_clauses_for_kind(&conn, "function").unwrap().is_empty());
     }
 
     #[test]
