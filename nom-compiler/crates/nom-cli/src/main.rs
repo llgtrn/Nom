@@ -1006,13 +1006,6 @@ enum GrammarCmd {
         #[arg(long)]
         json: bool,
     },
-    /// Populate the registry tables with native Nom content (kinds + quality
-    /// names + keywords + clause shapes). Idempotent.
-    Seed {
-        /// Path to grammar.sqlite (default: ~/.nom/grammar.sqlite)
-        #[arg(short, long)]
-        path: Option<PathBuf>,
-    },
 }
 
 #[derive(Subcommand)]
@@ -1391,7 +1384,6 @@ fn main() {
         Commands::Grammar { action } => match action {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
-            GrammarCmd::Seed { path } => cmd_grammar_seed(path.as_deref()),
         },
     };
     process::exit(exit_code);
@@ -1420,38 +1412,6 @@ fn cmd_grammar_init(path: Option<&Path>) -> i32 {
         }
         Err(e) => {
             eprintln!("nom grammar init: {e}");
-            1
-        }
-    }
-}
-
-fn cmd_grammar_seed(path: Option<&Path>) -> i32 {
-    let p = match path {
-        Some(p) => p.to_path_buf(),
-        None => default_grammar_path(),
-    };
-    let conn = match nom_grammar::init_at(&p) {
-        Ok(c) => c,
-        Err(e) => {
-            eprintln!("nom grammar seed: init failed: {e}");
-            return 1;
-        }
-    };
-    match nom_grammar::seed::seed_all(&conn) {
-        Ok(c) => {
-            println!(
-                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes, {} patterns at {}",
-                c.kinds,
-                c.quality_names,
-                c.keywords,
-                c.clause_shapes,
-                c.patterns,
-                p.display()
-            );
-            0
-        }
-        Err(e) => {
-            eprintln!("nom grammar seed: {e}");
             1
         }
     }

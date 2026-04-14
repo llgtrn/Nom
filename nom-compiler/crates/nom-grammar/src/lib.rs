@@ -1,13 +1,11 @@
-//! nom-grammar — AI-retrievable basic-syntax registry for Nom.
+//! nom-grammar — schema + query API for `grammar.sqlite`.
 //!
-//! Per doc 21 (research/language-analysis/21-grammar-registry-design.md), this crate owns
-//! `grammar.sqlite` — a machine-readable projection of everything the Nom parser accepts,
-//! so external AI clients can deterministically query keywords, clause shapes, paradigm
-//! mappings, QualityNames, and the closed kind set without reading .md prose.
-//!
-//! P1 scope: schema-only. Later phases populate from nom-concept + doc 16.
-
-pub mod seed;
+//! This crate is grammar-AWARENESS code: it owns the SQL schema, opens
+//! connections, and answers structural queries. The grammar DATA itself
+//! (kind names, keyword tokens, clause shapes, quality names, patterns)
+//! lives in the DB, never in this crate. Population is the user's
+//! responsibility — via row-level CLI commands, SQL scripts, or whatever
+//! tooling the user prefers. The DB starts empty after `nom grammar init`.
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
