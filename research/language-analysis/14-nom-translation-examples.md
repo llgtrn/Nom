@@ -5780,6 +5780,87 @@ Row additions: **0 new wedges** — APL's ultra-terse array-golf fully expresses
 
 ---
 
+## 76. F# computation expressions — workflow-builder monadic sugar
+
+```fsharp
+let asyncDivide (dividend: float) (divisor: float) : Async<Result<float, string>> =
+    async {
+        if divisor = 0.0 then
+            return Error "division by zero"
+        else
+            let! roundedDividend = async { return round dividend }
+            let! roundedDivisor = async { return round divisor }
+            return Ok (roundedDividend / roundedDivisor)
+    }
+
+let pipeline (a: float) (b: float) (c: float) : Async<Result<float, string>> =
+    async {
+        let! step1 = asyncDivide a b
+        match step1 with
+        | Error e -> return Error e
+        | Ok x ->
+            let! step2 = asyncDivide x c
+            return step2
+    }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define async_divide
+  that takes two real numbers, returns asynchronously either the rounded quotient or an error message on division by zero.
+check for zero divisor first.
+round each operand asynchronously, then return the quotient.
+
+define pipeline
+  that takes three real numbers a, b, c, returns asynchronously either (a / b) / c or the first error encountered along the way.
+run async_divide(a, b); on error, propagate; on success, chain async_divide(result, c).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data DivisionError is
+  intended to enumerate the distinct failure modes of a safe-division operation.
+  exposes division_by_zero at tag 0.
+
+the function async_divide is
+  intended to return an asynchronous computation that yields either the rounded quotient of two rounded real numbers or a DivisionError.division_by_zero when the divisor is zero.
+  uses the @Data matching "DivisionError" with at-least 0.95 confidence.
+  ensures the returned asynchronous computation, when awaited, yields DivisionError.division_by_zero exactly when the divisor equals 0.
+  ensures the returned asynchronous computation, when awaited and the divisor is non-zero, yields the quotient of the rounded dividend and the rounded divisor.
+  ensures the work required to produce either outcome occurs in an asynchronous context — the caller does not block the runtime awaiting an intermediate synchronous call.
+  hazard floating-point rounding may lose precision for operands near Float.Epsilon; callers needing exact arithmetic should use rational or decimal types.
+  favor correctness.
+
+the function pipeline is
+  intended to compose two async_divide operations such that ((a / b) / c) is computed asynchronously, propagating the first DivisionError encountered without attempting the second division.
+  uses the @Function matching "async_divide" with at-least 0.95 confidence.
+  uses the @Data matching "DivisionError" with at-least 0.95 confidence.
+  ensures the returned asynchronous computation, when awaited, yields the first DivisionError encountered if either intermediate division-by-zero occurs; the second division never runs when the first failed.
+  ensures the returned asynchronous computation, when awaited and both divisions succeed, yields the result of async_divide(async_divide(a, b).Ok, c).
+  ensures the two async operations are sequenced — the second does not begin until the first completes.
+  favor correctness.
+  favor responsiveness.
+```
+
+### Gaps surfaced
+
+1. **Computation expressions / workflow builders (`async { ... }`, `seq { ... }`, `task { ... }`)** — F#'s signature feature: a generic syntactic form for any monad, parameterized by a builder. Nom's translation collapses this to ordinary function decls: an `async { ... }` block becomes a function that returns an asynchronous computation (marked via `ensures the returned asynchronous computation, when awaited, …`). Authoring-guide rule: **F# computation-expression blocks → function decls whose return type is the monadic type, whose `ensures` clauses describe the awaited behavior; the build stage threads the monad bind for the target runtime (Task/Async/Result/Seq/etc.)**. No new wedge.
+2. **`let!` bind operator** — the monadic bind sugar in F#. Nom's translation makes the bind explicit via prose (`run async_divide(a, b); on success, chain async_divide(result, c)`). Authoring-guide rule: **monadic bind operators (`let!`/`do!`/Haskell `<-`/Scala `for` yield) → named-intermediate prose with explicit sequencing; build stage compiles to the target monad's bind**. Reuses doc 17 §I8 named-intermediates rule. No new wedge.
+3. **Result<T, E> with short-circuit propagation** — F#'s idiomatic error-handling combined with computation expressions. Nom's two-branch `ensures` (one per Result variant) + `ensures the second division never runs when the first failed` explicitly encodes short-circuit semantics. Authoring-guide rule: **Result-monad short-circuit propagation → explicit `ensures … never runs when earlier step failed` short-circuit clauses**. Reinforces #67 Zig error-union rule + #25 Haskell Either rule. No new wedge.
+4. **`match ... with` exhaustive pattern-match on discriminated unions** — F#'s tagged-union match. Nom reuses #22 Kotlin sealed + W40 exhaustiveness-check. Authoring-guide rule: **F# `match`/`with` pattern-matching on discriminated unions → `when X is Variant1 ... when X is Variant2 ... otherwise` prose + W40 exhaustiveness**. No new wedge.
+5. **Pure-function default + explicit side-effects** — F#'s pure-by-default discipline. Nom matches this: functions are pure by default, effects surface via `hazard` clauses. No new wedge; reinforces the default Nom stance.
+6. **Generic discriminated unions (`Result<'T, 'E>`)** — F#'s parametric types. Nom's typed-slot resolver + concrete-per-type decomposition (reuses #21 Java generics + #45 OCaml functor rules). No new wedge.
+7. **Interoperability with imperative .NET** — F# computation expressions can bridge to imperative .NET APIs via `Async.RunSynchronously` etc. Nom's build-stage handles runtime bridging; authoring surface stays pure. Authoring-guide rule: **runtime interop (`Async.RunSynchronously`, JS `await` at top-level, Python `asyncio.run`) is a build-stage runtime-entry-point concern, not expressed at Nom source level**. No new wedge.
+8. **Workflow-builder extensibility** — F# users can define custom workflow builders for custom monads. Nom's build stage handles per-monad lowering; authors never define a workflow builder directly. Authoring-guide rule: **custom workflow-builders (F# `XxxBuilder`, Haskell `MonadTrans`) are build-stage lowerings; authoring surface is the per-function `ensures … when awaited …` contract, not a custom-syntax definition**. No new wedge.
+
+Row additions: **0 new wedges** — F# computation expressions + Result + match-with-exhaustiveness all decompose via function decls with monad-typed returns + `ensures awaited behavior` + short-circuit `ensures never runs when earlier failed` + W40 exhaustiveness + named-intermediate prose. 7 authoring-guide closures: computation-expression blocks → function decls with monad-typed return + awaited-behavior `ensures`, monadic bind → named-intermediate prose, Result short-circuit → explicit "never runs when earlier failed" clauses, match-with → `when`/`otherwise` + W40, pure-default reinforces Nom stance, generic DUs reuse #21 + #45, runtime interop is build-stage, custom workflow-builders are build-stage lowerings.
+
+**Forty-third consecutive minimal-wedge translation + thirty-fifth 0-new-wedge run.** F# computation expressions — one of the most expressive monadic-sugar surfaces in a mainstream language — decompose cleanly into Nom's (function decl + monad-typed return + awaited-behavior `ensures`) pattern. Combined with Python async (#13), Scala for-yield (implicit via #25 Haskell), Haskell do-notation (#25), and now F# `async {}` / `seq {}` / `task {}`, **the monadic-sugar paradigm family is fully covered**: every monadic-sugar surface reduces to ordinary function decls whose `ensures` clauses describe the awaited / iterated / fallible behavior. Authors never write `let!` / `<-` / `yield return` at Nom source level; those are build-stage lowerings to the target monad's bind.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
