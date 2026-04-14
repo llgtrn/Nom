@@ -781,13 +781,11 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                 EffectValence::Hazard => "hazard",
             };
             // Scan to the clause-terminating `.`, collecting every Word
-            // token as an effect name. Non-Word tokens (Is, As, Of, The,
-            // Comma, etc.) are tolerated as filler — the corpus includes
-            // both the tagged form `hazard X, Y.` and the free-prose
-            // form `hazard the body's side effects are skipped.`.
-            // Strict safety net: hitting a clause-opener (Requires,
-            // Ensures, Favor, Benefit, Hazard, Uses, Exposes) still
-            // reports unterminated-effect.
+            // token as an effect name. All other tokens (including
+            // clause-opener keywords like Requires/Ensures — which may
+            // appear as English verbs in free-prose hazards) are
+            // tolerated as filler. The safety net is the no-dot
+            // branch below, matching the S4 contract-scanner shape.
             let mut names: Vec<String> = Vec::new();
             let mut j = i + 1;
             let mut saw_dot = false;
@@ -800,18 +798,6 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                     Tok::Word(w) => {
                         names.push(w.clone());
                         j += 1;
-                    }
-                    Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit
-                    | Tok::Hazard | Tok::Uses | Tok::Exposes => {
-                        return Err(StageFailure::new(
-                            StageId::EffectBind,
-                            body_slice[j].pos,
-                            "unterminated-effect",
-                            format!(
-                                "`{verb_name}` clause in block `{}` crosses into another clause at `{:?}` without a closing `.`",
-                                b.name, body_slice[j].tok
-                            ),
-                        ));
                     }
                     _ => {
                         j += 1;
@@ -1735,11 +1721,14 @@ the function f is given x, returns y.
 
     /// a4c16: unterminated effect (missing `.`, hits favor) rejects.
     #[test]
-    fn a4c16_unterminated_effect_rejected() {
-        let src = r#"the concept broken is
-  intended to surface the failure.
-  benefit warmup, fast_path
-  favor correctness."#;
+    fn a4c16_unterminated_effect_rejected_when_no_dot_at_all() {
+        // Matches the S4 a4c11 shape: genuinely-unterminated effect
+        // (no closing dot anywhere in the remaining stream) still
+        // rejects. The 2026-04-14 relaxation removed the over-
+        // aggressive clause-crossing mid-scan check (English verbs
+        // lexed as clause-openers in free-prose hazards were
+        // tripping it), but kept the no-dot safety net.
+        let src = "the concept broken is\n  intended to surface the failure.\n  benefit warmup, fast_path";
         let stream = stage1_tokenize(src).expect("S1");
         let classified = stage2_kind_classify(&stream).expect("S2");
         let shaped = stage3_shape_extract(&classified).expect("S3");
