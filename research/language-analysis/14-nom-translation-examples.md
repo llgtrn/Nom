@@ -6827,6 +6827,110 @@ Row additions: **0 new wedges** — K framework term-rewriting decomposes cleanl
 
 ---
 
+## 88. Pony capability-secure actors — compile-time data-race freedom
+
+```pony
+actor Counter
+  var _count: U64 = 0
+
+  be increment(delta: U64) =>
+    _count = _count + delta
+
+  be get_count(caller: Main tag) =>
+    caller.receive_count(_count)
+
+actor Main
+  new create(env: Env) =>
+    let c = Counter
+    c.increment(5)
+    c.get_count(this)
+
+  be receive_count(n: U64) =>
+    env.out.print("count: " + n.string())
+```
+
+### `.nomx v1` translation
+
+```nomx
+define counter_actor
+  that holds a private integer count and exposes two asynchronous behaviors: increment adds a delta to the count, and get_count sends the current count back to a caller actor.
+
+define main_actor
+  that creates a counter_actor, sends it one increment for 5, requests its count, then prints the received value when the response arrives.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data CounterState is
+  intended to hold the private count for one counter-actor instance; this state is never visible to any other actor and is only read or written inside counter-actor behaviors.
+  exposes count as whole_number.
+
+the data IncrementRequest is
+  intended to describe a request to add a delta to a counter-actor's count; this is a sendable message (no references to mutable state outside the message's payload).
+  exposes delta as whole_number.
+
+the data CountQuery is
+  intended to describe a request to read a counter-actor's count and send the result back to a specific caller-actor.
+  exposes caller_actor_name as text.
+
+the data CountResponse is
+  intended to describe the fulfilled result of a CountQuery; this is a sendable message containing the observed count at the time the query was handled.
+  exposes observed_count as whole_number.
+
+the concept counter_actor is
+  intended to coordinate a single private CounterState whose only mutators are the two behaviors increment and get_count; no other actor ever observes the state directly, and concurrent behavior invocations are serialized by the actor's mailbox.
+  uses the @Data matching "CounterState" with at-least 0.95 confidence.
+  uses the @Data matching "IncrementRequest" with at-least 0.95 confidence.
+  uses the @Data matching "CountQuery" with at-least 0.95 confidence.
+  uses the @Function matching "handle_increment" with at-least 0.9 confidence.
+  uses the @Function matching "handle_get_count" with at-least 0.9 confidence.
+  ensures the concept's private CounterState is never accessible outside the concept's scope; all reads and writes happen inside handle_increment or handle_get_count.
+  ensures when an IncrementRequest message m arrives in the mailbox, the concept eventually invokes handle_increment with m; the invocation is serialized with respect to every other behavior invocation on this actor.
+  ensures when a CountQuery message q arrives, the concept eventually invokes handle_get_count with q; a CountResponse message is then sent to the caller identified by q.caller_actor_name with observed_count equal to the CounterState.count at invocation time.
+  ensures every message in the mailbox is eventually handled; the mailbox is FIFO.
+  ensures no two behavior invocations on this actor ever execute concurrently; data-race freedom for CounterState is a structural guarantee of the serialized-mailbox discipline.
+  hazard sending a CountQuery to an actor that has been garbage-collected or never existed produces a silent-drop in Pony (the observer-actor never receives a response); authors must pair CountQuery with a timeout property or explicit liveness check.
+  favor availability.
+  favor auditability.
+
+the function handle_increment is
+  intended to apply one IncrementRequest to the CounterState: add the request's delta to the state's count, producing a fresh CounterState with the updated count.
+  uses the @Data matching "CounterState" with at-least 0.95 confidence.
+  uses the @Data matching "IncrementRequest" with at-least 0.95 confidence.
+  requires the IncrementRequest's delta plus the CounterState's count does not overflow the whole_number range.
+  ensures the returned CounterState.count equals the input CounterState.count plus the IncrementRequest's delta.
+  favor correctness.
+  favor totality.
+
+the function handle_get_count is
+  intended to produce a CountResponse for one CountQuery by reading the CounterState's count; the response is sent asynchronously to the caller.
+  uses the @Data matching "CounterState" with at-least 0.95 confidence.
+  uses the @Data matching "CountQuery" with at-least 0.95 confidence.
+  uses the @Data matching "CountResponse" with at-least 0.95 confidence.
+  ensures the returned CountResponse.observed_count equals the CounterState.count at the time this function was invoked.
+  ensures the CountResponse is addressed to the caller identified by the CountQuery's caller_actor_name.
+  favor correctness.
+  favor totality.
+```
+
+### Gaps surfaced
+
+1. **Reference capabilities (`iso` / `val` / `ref` / `box` / `tag` / `trn`)** — Pony's distinctive feature: every reference carries a capability declaring read/write/send permissions, and the compiler uses these to prove data-race freedom statically. Nom rejects an explicit capability-annotation syntax at the authoring level: **sendable messages are tagged-variant data decls with only primitive / sendable-data fields, and the `hazard any message referencing mutable external state makes the send illegal at build-stage` contract is the enforcement surface**. Authoring-guide rule: **Pony-style reference capabilities → data-decl structural rule that sendable messages contain only primitive or sendable-data fields; the capability lattice is build-stage-enforced, not authoring-syntax**. No new wedge.
+2. **`actor` keyword** — Pony's way of declaring an actor type. Nom's `concept` kind with a private-data-slot ensures-clause is the actor surface; the actor-vs-class distinction is the presence of the "serialized mailbox" ensures-clause pattern + the "private state never observable outside concept scope" ensures-clause. Authoring-guide rule: **actor-keyword declarations (Pony, Akka, Erlang, Elixir) → concept decl with `ensures the concept's private State is never accessible outside concept scope` + `ensures no two behavior invocations execute concurrently` ensures-clauses; the concept kind is the actor surface**. No new wedge.
+3. **Behaviors (`be <name>(...)` vs. functions `fun <name>(...)`)** — Pony distinguishes asynchronous behaviors (send-and-return) from synchronous functions (call-and-wait). Nom captures this via the `ensures when an X message arrives in the mailbox, the concept eventually invokes handle_X with the message` clause; the message type is the data decl, and handle_X is a peer function. Authoring-guide rule: **actor behaviors → tagged-variant message data decls + peer function decls for handlers + concept-level `ensures when X message arrives, handler H is eventually invoked` clauses; no separate behavior-keyword surface**. No new wedge.
+4. **Private fields (`_count`)** — Pony's naming convention for state that is only reachable from inside the actor. Nom makes this explicit: the concept-level `ensures the concept's private State is never accessible outside concept scope` clause carries the contract; the data decl has no public/private marker because Nom's concept-scope is the visibility rule. Authoring-guide rule: **private-field conventions (Pony `_name`, Python `__name`, Scala `private`) → `ensures the concept's private X is never accessible outside concept scope` clause at the concept level; naming-based privacy is absent at Nom source**. No new wedge.
+5. **Actor creation via `new`** — Pony's actor-lifecycle entrypoint. Nom rejects `new`-method syntax: creating an instance is naming it via a `create_counter_actor` function decl (if parameterization is needed) or simply referencing the concept by name (if no parameterization). Authoring-guide rule: **actor-creation / constructor conventions → peer `create_X` function decls when parameterization is needed, else plain concept-by-name reference; no `new` / `__init__` / `init` syntax at Nom source**. No new wedge.
+6. **`Main tag` receiver type** — Pony's way of expressing that the receiver of a message holds the target actor by opaque tag (sendable but unreadable reference). Nom replaces this with a text field (`caller_actor_name`) that the build-stage resolver maps to the live-actor routing table; capabilities become build-stage routing concerns, not authoring-syntax. Authoring-guide rule: **opaque-actor-tag types → text-identifier fields on message data decls; build-stage actor-routing resolves the identifier to a live mailbox; authoring never carries capability-typed references**. No new wedge.
+7. **FIFO mailbox semantics** — Pony guarantees in-order delivery from one actor to another. Nom makes this an explicit `ensures every message in the mailbox is eventually handled; the mailbox is FIFO` clause on the concept; swapping the mailbox to an unordered / priority-queue implementation requires weakening the ensures. Authoring-guide rule: **actor-mailbox delivery guarantees → explicit `ensures ... is FIFO / is priority-ordered / is unordered` clauses on the concept; the guarantee is part of the contract, not a library-level default**. No new wedge.
+8. **Silent-drop on dead-actor-send** — Pony's real-world gotcha: messages to garbage-collected or never-existent actors disappear without notice, causing mysterious liveness bugs. Nom's `hazard sending X to an actor that has been garbage-collected or never existed produces a silent-drop; authors must pair with a timeout property or explicit liveness check` clause surfaces this authoring-time, letting callers pair it with a W49-quantified timeout property. Authoring-guide rule: **silent-drop failure modes in message-passing systems → explicit `hazard` clause at the message-type-handling function decl; pairing with W49-quantified timeout property is the standard mitigation**. No new wedge.
+
+Row additions: **0 new wedges** — Pony capability-secure actors decompose cleanly into (tagged-variant message data decls + peer function decls for handlers + concept decl with FIFO-mailbox + private-state + serialized-invocation `ensures` clauses + dead-actor-send `hazard`). 8 authoring-guide closures covering reference-capability elision, actor-keyword as concept-with-ensures, behavior-vs-function decomposition, private-field-as-concept-ensures, constructor elision, opaque-tag as text-identifier, mailbox-delivery-as-ensures, silent-drop as explicit hazard.
+
+**Fifty-fifth consecutive minimal-wedge translation + forty-seventh 0-new-wedge run** (Dafny #50 through Pony #88 — 39-member streak, all 0-new-wedge). Pony's capability-secure actor model — the only practical programming language with compile-time data-race-freedom and zero runtime overhead for concurrent message-passing — decomposes cleanly into Nom's (tagged-variant + function + concept with FIFO-mailbox / private-state / serialized-invocation `ensures` clauses + dead-actor-send `hazard`) primitives. **Actor / concurrent-message-passing paradigm family now has 5 exemplars**: Elixir GenServer (#27) + Erlang OTP supervisor (#85) + Go goroutines (covered in Rust #01 / Go #03 family) + **capability-secure compile-time-race-free (Pony #88)**, plus the retry-policy + fault-tolerance patterns via W43 and #27. The unifying insight: **reference-capability systems that prove data-race freedom at compile-time reduce to the same Nom surface as dynamic actor models** — the private-state + FIFO-mailbox + serialized-invocation `ensures` clauses carry the contract; the compiler's type-system enforcement becomes build-stage validation of message-field structural rules (only primitive or sendable-data fields on message data decls). Pony's novelty is the compile-time proof, not the authoring surface — and Nom's authoring surface is already sufficient to express the discipline. Eight authoring-guide closures land in doc 16.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
