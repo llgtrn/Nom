@@ -6031,6 +6031,109 @@ Row additions: **0 new wedges** — MongoDB aggregation pipelines fully express 
 
 ---
 
+## 79. Pascal — classic structured programming with records
+
+```pascal
+program PayrollReport(output);
+
+const
+  MAX_EMPLOYEES = 100;
+
+type
+  Employee = record
+    id: integer;
+    hours: real;
+    rate: real;
+  end;
+  EmployeeArray = array[1..MAX_EMPLOYEES] of Employee;
+
+var
+  staff: EmployeeArray;
+  count: integer;
+
+function GrossPay(e: Employee): real;
+begin
+  GrossPay := e.hours * e.rate;
+end;
+
+procedure PrintPayroll(var employees: EmployeeArray; n: integer);
+var
+  i: integer;
+  total: real;
+begin
+  total := 0.0;
+  for i := 1 to n do
+  begin
+    writeln('emp ', employees[i].id, ' earns ', GrossPay(employees[i]):0:2);
+    total := total + GrossPay(employees[i]);
+  end;
+  writeln('Total payroll: ', total:0:2);
+end;
+```
+
+### `.nomx v1` translation
+
+```nomx
+define gross_pay_for_employee
+  that takes an employee record, returns the gross pay (hours times rate).
+
+define print_payroll
+  that takes an array of up to 100 employees and a count, returns the total payroll by printing each employee's gross pay and the grand total.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data EmployeePayRecord is
+  intended to describe one employee's payroll inputs by id, hours worked, and hourly rate.
+  exposes id as integer from -2147483648 to 2147483647.
+  exposes hours as real from 0 to 1000.
+  exposes rate as real from 0 to 100000.
+
+the data PayrollRoster is
+  intended to describe a bounded-size payroll run with at-most 100 employees to be processed in one printing pass.
+  exposes employees as list of reference to EmployeePayRecord.
+  exposes count as natural from 0 to 100.
+
+the function gross_pay_for_employee is
+  intended to return the gross pay (hours times hourly rate) for a single EmployeePayRecord.
+  uses the @Data matching "EmployeePayRecord" with at-least 0.95 confidence.
+  requires the employee's hours is non-negative.
+  requires the employee's rate is non-negative.
+  ensures the returned gross_pay equals the employee's hours times the employee's rate, rounded to 2 decimal places using banker's rounding.
+  favor correctness.
+  favor auditability.
+
+the function format_payroll_report is
+  intended to return a text report listing each employee's gross pay followed by a total-payroll line; the output is a multi-line text, not a side effect.
+  uses the @Data matching "PayrollRoster" with at-least 0.95 confidence.
+  uses the @Function matching "gross_pay_for_employee" with at-least 0.95 confidence.
+  requires the PayrollRoster count is at-least 0 and at-most 100.
+  ensures the returned text has exactly count per-employee lines followed by one total line.
+  ensures each per-employee line names the employee's id and their gross pay formatted to 2 decimal places.
+  ensures the total line contains the sum of gross_pay_for_employee over every employee in the roster, formatted to 2 decimal places.
+  ensures the returned text is deterministic for identical inputs (no random formatting, no locale-dependent numerals).
+  favor correctness.
+  favor clarity.
+```
+
+### Gaps surfaced
+
+1. **Fixed-size arrays (`array[1..100] of T`)** — Pascal's compile-time-bounded array. Nom's translation lifts the bound into a `count as natural from 0 to 100` field + `list of reference to T` elements. Authoring-guide rule: **fixed-size array types → bounded count field + `list of T` on a roster/container data decl; array bounds become `requires` ranges on the bound field**. No new wedge.
+2. **Records (`type Employee = record ... end`)** — Pascal's struct analogue. Nom's data decl with `exposes` fields is a direct match. Authoring-guide rule: **Pascal `record` types → Nom data decls with `exposes` fields; one record type per data decl**. No new wedge.
+3. **`function` vs `procedure`** — Pascal distinguishes value-returning callables from side-effectful ones. Nom collapses both into function decls that return a value (with `ensures` describing the return) and optionally surface side effects as `hazard` clauses. Authoring-guide rule: **Pascal `procedure` (side-effectful, no return) → function decl that returns its primary observable output (often a formatted text or a fresh state); no silent side effects at Nom source level**. Matches #58 COBOL DISPLAY + #68 MATLAB bundled-return rules. No new wedge.
+4. **`var` parameter (pass-by-reference)** — Pascal's explicit mutable-parameter mode. Nom rejects mutable parameters; the function returns a fresh value or accepts + returns a pair. Authoring-guide rule: **Pascal `var` parameters → return-fresh-instance or return bundled (read-state, new-state) pair; no pass-by-reference mutation at Nom source level (reuses #70 Ada `out`/`in out` rule)**. No new wedge.
+5. **Number formatting (`:0:2`)** — Pascal's inline format-specifier for `writeln`. Nom's translation mentions formatting in the `ensures` clause (`formatted to 2 decimal places`) and pushes implementation to the build stage. Authoring-guide rule: **inline formatting specifiers → prose `ensures formatted to N decimal places` / `ensures left-aligned in M columns`; no format-specifier micro-syntax at Nom source level**. No new wedge; reuses #58 COBOL DISPLAY rule.
+6. **Side-effectful `writeln` inside loop** — Pascal's default imperative-output idiom. Nom's translation pushes output generation to a pure function that returns text, decoupling from the runtime's write primitive. Authoring-guide rule: **imperative output (writeln/print/puts/console.log) → pure function returning text; runtime write happens at a single top-level entry point**. Reinforces #58 COBOL + #68 MATLAB formatting-as-peer-function rule. No new wedge.
+7. **Nested `begin ... end` block structure** — Pascal's signature syntax. Nom's prose control flow makes block-nesting invisible. Authoring-guide rule: **Pascal `begin ... end` → invisible at Nom source level; nesting depth is a build-stage concern, not an authoring decision**. No new wedge.
+8. **Ordinal subrange types** — Pascal's way of declaring constrained integer subtypes. Nom's `integer from X to Y` / `natural from X to Y` is the direct analogue (reuses #70 Ada subtype + #41 Verilog range-typed rules). No new wedge.
+
+Row additions: **0 new wedges** — Pascal's fixed-size arrays + records + procedure/function distinction + var-params + formatting + begin/end structure all decompose to (bounded roster data decls + plain data decls for records + pure text-returning functions + explicit return-fresh-instance + prose formatting `ensures` + invisible block structure + range-typed ordinals). 7 authoring-guide closures: fixed-size arrays → bounded count + list-of, Pascal records → data decls, procedure → function returning primary output, var-params → return-fresh-instance, format specifiers → prose `ensures formatted to N dp`, imperative output → pure text-returning function, begin/end invisible, ordinal subranges → range-typed integers.
+
+**Forty-sixth consecutive minimal-wedge translation + thirty-eighth 0-new-wedge run.** Pascal — the canonical structured-programming teaching language (1970) — decomposes cleanly into Nom's primitives. Combined with Ada (#70 safety-critical), COBOL (#58 business-data), C (#04 unstructured systems), and C++ (#05), **the structured-imperative paradigm family is exhaustively covered**: from minimalist Pascal records to business-oriented COBOL divisions to Ada tasks to C's raw-memory systems, every structured-imperative idiom reduces to (data decls + pure function decls + explicit return-fresh-instance + range-typed primitives + `ensures`/`requires`/`hazard`).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

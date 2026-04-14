@@ -394,18 +394,25 @@
 | 377 | MongoDB `$field` references → plain prose field access; no `$` prefix at Nom source (reuses #72 Perl sigils principle) | authoring-guide rule | ✅ closed (doc 14 #78) |
 | 378 | Database-index presence hazards → explicit `hazard` clause on any function that joins or sorts by a field; callers own index lifecycle | authoring-guide rule | ✅ closed (doc 14 #78) |
 | 379 | Typed-timestamp literals across databases (ISODate/TIMESTAMP/datetime) → `timestamp` field type + prose comparisons (at-least/at-most/between) | authoring-guide rule | ✅ closed (doc 14 #78) |
+| 380 | Fixed-size array types (Pascal `array[1..N]`) → bounded count field + `list of T` on roster/container data decl | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 381 | Pascal `record` types → Nom data decls with `exposes` fields; one record per data decl | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 382 | Pascal `procedure` (side-effectful, no return) → function decl returning primary observable output; no silent side effects at Nom source | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 383 | Pascal `var` parameters → return-fresh-instance or return bundled (read-state, new-state) pair; no pass-by-reference mutation (reuses #70 Ada `out`/`in out`) | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 384 | Inline formatting specifiers (`:0:2`, `printf "%.2f"`) → prose `ensures formatted to N decimal places` / `ensures left-aligned in M columns` | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 385 | Imperative output (writeln/print/puts/console.log) → pure function returning text; runtime write at single top-level entry point | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 386 | Pascal `begin`/`end` block structure invisible at Nom source; nesting depth is build-stage concern | authoring-guide rule | ✅ closed (doc 14 #79) |
 
-Totals by destination (after doc 14 #78 MongoDB aggregation pipeline translation — **thirty-seventh 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-store paradigm family now has 6 exemplars unified**: SQL + GraphQL + jq + Protobuf + Redis + MongoDB):
+Totals by destination (after doc 14 #79 Pascal structured-programming translation — **thirty-eighth 0-new-wedge translation in a row**; 7 authoring-guide closures; **structured-imperative paradigm family exhaustively covered**: Pascal + Ada + COBOL + C + C++):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **329**
+- ✅ Closed: **336**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 399 rows. Closure rate 82% (329/399). **78 translations** in doc 14. Forty-fifth consecutive minimal-wedge, **thirty-seventh 0-new-wedge**. **Data-store family now has 6 exemplars unified.**
+Backlog size: 406 rows. Closure rate 83% (336/406). **79 translations** in doc 14. Forty-sixth consecutive minimal-wedge, **thirty-eighth 0-new-wedge**. **Backlog closure crosses 83%.** **Structured-imperative paradigm family exhaustively covered across 5 exemplars** (Pascal + Ada + COBOL + C + C++).
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**
