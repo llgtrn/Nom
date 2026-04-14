@@ -283,18 +283,25 @@
 | 266 | Transport-layer silent-disconnect is standard `hazard` on persistent-connection functions; callers own heartbeat+reconnect logic | authoring-guide rule | ✅ closed (doc 14 #62) |
 | 267 | Persistent-subscription functions return unsubscribe handle as primary return (matches #12 event-listener pattern) | authoring-guide rule | ✅ closed (doc 14 #62) |
 | 268 | Message-delivery semantics (at-most-once / exactly-once / at-least-once) stated explicitly via W49 quantifiers in `ensures` clauses | authoring-guide rule | ✅ closed (doc 14 #62; reinforces W49 payoff) |
+| 269 | Atomic-group operations → single function decl with `ensures … happen as a single atomic group from other observers' perspectives` | authoring-guide rule | ✅ closed (doc 14 #63) |
+| 270 | Compare-and-set operations → two-branch `ensures` clauses (success path + no-op path, both explicit) | authoring-guide rule | ✅ closed (doc 14 #63) |
+| 271 | TTL fields on state-carrying data decls → `natural from 1 to N` with explicit upper bound; unbounded TTLs rejected | authoring-guide rule | ✅ closed (doc 14 #63; prevents runaway-memory bugs) |
+| 272 | Pub/sub broadcast "active-at-publication-time" via paired `ensures` + `hazard`; durable delivery requires a different primitive | authoring-guide rule | ✅ closed (doc 14 #63) |
+| 273 | Cluster-failover consistency gaps → explicit `hazard` on multi-step atomic groups that span commit boundaries | authoring-guide rule | ✅ closed (doc 14 #63) |
+| 274 | Distributed-lock TTL-vs-work-duration → two-hazard pair (holder-crash + work-outlasts-TTL); callers own duration bounds | authoring-guide rule | ✅ closed (doc 14 #63) |
+| 275 | Redis key-naming conventions (colon hierarchies) → build-stage key-derivation function from named data-decl fields; source never hardcodes key strings | authoring-guide rule | ✅ closed (doc 14 #63; prevents key-collision bugs) |
 
-Totals by destination (after doc 14 #62 GraphQL subscription translation — **twenty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **event-driven paradigm family** (GraphQL-sub #62 + TS-event #12 + Elixir-GenServer #27 + XState #32) all specifiable via W49-quantified `ensures` clauses):
+Totals by destination (after doc 14 #63 Redis key-value + atomic-ops + distributed-lock + pub/sub translation — **twenty-second 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-store paradigm family has 5 exemplars unified**: SQL relational (#15/#43) + GraphQL graph (#17) + jq JSON (#57) + Protobuf schema (#30) + Redis key-value (#63) all share same Nom primitives):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **218**
+- ✅ Closed: **225**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 282 rows. Closure rate 77% (218/282). **62 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + **push-subscription (GraphQL subscription)**. Twenty-ninth consecutive minimal-wedge translation, twenty-first 0-new-wedge. **Event-driven paradigm family fully specifiable via W49 quantifiers in `ensures` clauses.**
+Backlog size: 289 rows. Closure rate 78% (225/289). **63 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + **key-value-store (Redis)**. Thirtieth consecutive minimal-wedge translation, twenty-second 0-new-wedge. **Data-store paradigm family now has 5 exemplars unified** — SQL + GraphQL + jq + Protobuf + Redis all reduce to peer data decls + function decls + W49-quantified `ensures`.
 
 ## Wedge master index (for cross-ref with doc 13)
 

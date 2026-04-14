@@ -4467,6 +4467,109 @@ Row additions: **0 new wedges** — GraphQL push subscriptions fully express via
 
 ---
 
+## 63. Redis commands — key-value store with atomic operations
+
+```redis
+# Rate-limit user to 10 requests per 60 seconds using a sliding counter.
+MULTI
+INCR user:42:request_count
+EXPIRE user:42:request_count 60
+EXEC
+
+# Check whether user 42 is currently over the limit.
+GET user:42:request_count
+
+# Atomically claim a distributed lock with a 30-second safety TTL.
+SET lock:critical-section "owner-id-77" NX EX 30
+
+# Publish a cache-invalidation event.
+PUBLISH cache-evictions "product:8123"
+```
+
+### `.nomx v1` translation
+
+```nomx
+define increment_rate_limit_counter
+  that takes a user id, returns the new counter value after incrementing; if the counter is newly created, set a 60-second expiration.
+atomically increment the counter at key "user:{user_id}:request_count", then expire the key in 60 seconds.
+return the post-increment value.
+
+define get_current_rate
+  that takes a user id, returns the current rate-limit counter value, or nothing when the counter does not exist.
+return the value at key "user:{user_id}:request_count" if present, otherwise nothing.
+
+define try_claim_distributed_lock
+  that takes a lock name, an owner identifier, and a TTL in seconds, returns true on successful claim, false if another owner already holds the lock.
+atomically set the lock key to the owner id only if the key is absent, with the TTL as its expiration.
+return whether the set succeeded.
+
+define publish_cache_eviction
+  that takes a cache entry key, broadcasts an eviction event to every subscriber of the cache-evictions channel.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data RateLimitWindow is
+  intended to describe one user's request-count window used for fixed-window rate limiting.
+  exposes user_id as identifier.
+  exposes request_count as natural from 0 to 1000000.
+  exposes window_seconds as natural from 1 to 86400.
+
+the data DistributedLockClaim is
+  intended to describe an attempt to claim a named distributed lock with an owner identity and a TTL safety net.
+  exposes lock_name as identifier.
+  exposes owner_id as identifier.
+  exposes ttl_seconds as natural from 1 to 86400.
+
+the function increment_rate_limit_counter is
+  intended to atomically increment a user's request counter and ensure the counter has a 60-second expiration if it was just created.
+  uses the @Data matching "RateLimitWindow" with at-least 0.95 confidence.
+  requires the user_id refers to a known user.
+  ensures the returned post-increment value is the prior value plus 1, or 1 when the counter did not exist before.
+  ensures the counter's expiration is set to exactly 60 seconds from now at the time of the call.
+  ensures the increment and the expiration-set happen as a single atomic group from other observers' perspectives.
+  hazard on Redis cluster failover between increment and expire, the counter may exist without an expiration — operational runbooks must account for this.
+  favor correctness.
+  favor performance.
+
+the function try_claim_distributed_lock is
+  intended to attempt to claim a named distributed lock on behalf of an owner, with a TTL safety net, atomically; returns true when the claim succeeds, false when another owner already holds the lock.
+  uses the @Data matching "DistributedLockClaim" with at-least 0.95 confidence.
+  requires the lock_name is non-empty.
+  requires the owner_id uniquely identifies the caller.
+  ensures when the lock did not previously exist, it is set to the owner_id with TTL ttl_seconds from now, and the function returns true.
+  ensures when the lock previously existed (held by any owner, including the current caller), it is not modified, and the function returns false.
+  ensures the check-and-set is atomic — no two concurrent callers can both see the return value true for the same lock_name.
+  hazard TTL-based locks expire if the holder's work outlasts the TTL — callers must either extend the lock or keep their critical section shorter than the TTL.
+  hazard if the holder crashes before releasing the lock, the lock clears when the TTL elapses but not before.
+  favor correctness.
+
+the function publish_cache_eviction is
+  intended to broadcast a cache-eviction notice to every current subscriber of the cache-evictions channel, identifying which cache entry is no longer valid.
+  requires the cache_key is non-empty.
+  ensures every subscriber active at the time of publication receives the eviction notice exactly once.
+  hazard subscribers that connect after publication do not receive the message — callers seeking durable event delivery must use a durable-log channel, not pub/sub.
+  favor responsiveness.
+```
+
+### Gaps surfaced
+
+1. **MULTI/EXEC transactions** — Redis's way of grouping commands for atomic execution. Nom's translation surfaces this via `ensures the increment and the expiration-set happen as a single atomic group from other observers' perspectives`. Authoring-guide rule: **atomic-group operations decompose to a single function decl with an `ensures … happen as a single atomic group from other observers' perspectives` clause; the per-step decomposition is internal to the function body**. No new wedge.
+2. **`SET key value NX EX 30` compare-and-set with TTL** — the canonical distributed-lock primitive. Nom's `ensures when lock did not previously exist, it is set … and returns true` + `ensures when it previously existed, it is not modified` captures the CAS semantics fully. Authoring-guide rule: **compare-and-set operations decompose to two-branch `ensures` clauses describing the success and no-op paths explicitly**. No new wedge.
+3. **TTL semantics as a data-decl field** — expiration as part of the type. Nom's `ttl_seconds as natural from 1 to 86400` on a DistributedLockClaim data decl makes TTL a first-class schema element. Authoring-guide rule: **TTL fields on state-carrying data decls are `natural from 1 to N` with an explicit upper bound; unbounded TTLs are rejected**. Prevents runaway-memory bugs. No new wedge.
+4. **Pub/Sub fan-out semantics** — `PUBLISH` delivers to every active subscriber, but new subscribers miss past messages. Nom's translation surfaces the "active-at-publication-time" subtlety explicitly as both an `ensures` and a `hazard`. Authoring-guide rule: **pub/sub broadcast semantics state the "active-at-publication-time" caveat via paired `ensures` + `hazard` clauses; durable-delivery requires a different primitive (log or queue)**. No new wedge.
+5. **Failover consistency hazards** — the race between INCR and EXPIRE on Redis cluster failover is a real-world operational concern. Nom surfaces it as a `hazard`. Authoring-guide rule: **cluster-failover consistency gaps are explicit `hazard` clauses on any multi-step atomic group that spans commit boundaries**. No new wedge.
+6. **Distributed-lock TTL-vs-work-duration race** — the classic distributed-lock failure mode. Nom surfaces both the holder-crash case and the work-outlasts-TTL case as separate hazards. Authoring-guide rule: **distributed-lock TTL-vs-work-duration is a two-hazard pair (holder-crash + work-outlasts-TTL); callers decide to either extend the lock or bound critical-section duration**. No new wedge.
+7. **Redis CLI string syntax (`user:42:request_count`)** — Redis keys are flat strings with colon-as-namespace convention. Nom's translation builds keys from named data-decl fields (user_id) — the colon-separator convention is a build-stage key-derivation function. Authoring-guide rule: **Redis key-naming conventions (colon-separated hierarchies) decompose to a build-stage key-derivation function from named data-decl fields; source never hardcodes key strings**. Prevents a class of key-collision bugs. No new wedge.
+8. **At-least-once vs at-most-once delivery (PUBLISH pub/sub)** — Redis pub/sub is at-most-once. Uses W49 quantifier vocabulary. Authoring-guide rule: **delivery-cardinality (at-most-once / exactly-once / at-least-once) stated via W49 quantifier in `ensures`; pub/sub is always at-most-once unless explicitly augmented with durable-log**. Reinforces W49 + #62 rule. No new wedge.
+
+Row additions: **0 new wedges** — Redis key-value operations + transactions + distributed locks + pub/sub fully express via peer data decls + function decls with atomic-group `ensures` + explicit TTL bounds + paired `ensures`/`hazard` for pub/sub semantics + W49 delivery-cardinality quantifiers. 8 authoring-guide closures: atomic-group → single function with atomicity `ensures`, compare-and-set → two-branch `ensures`, TTL fields bounded via `natural from 1 to N`, pub/sub active-at-publication via paired ensures+hazard, cluster-failover gaps as hazard, distributed-lock TTL pair as two hazards, key-naming via build-stage derivation function (not hardcoded strings), delivery-cardinality via W49.
+
+**Thirtieth consecutive minimal-wedge translation + twenty-second 0-new-wedge run.** Redis — the foundational key-value store underpinning much of modern caching + messaging + distributed-coordination — decomposes cleanly into Nom's existing primitives. The **key-value + atomic operations + distributed-lock + pub/sub paradigm** joins the data-store family alongside SQL relational (#15, #43), document-graph (#17 GraphQL), JSON transformation (#57 jq), and Protocol Buffers schema (#30). All five major data-store paradigms share the same Nom primitive set.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
