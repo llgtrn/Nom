@@ -269,18 +269,25 @@
 | 252 | Ansible inventory targeting → host-group identifier input parameters; inventory resolution is build-stage | authoring-guide rule | ✅ closed (doc 14 #60) |
 | 253 | Task-order and handler-order captured by composition `then` chain + handler-scheduler function; no separate ordering keyword | authoring-guide rule | ✅ closed (doc 14 #60) |
 | 254 | Multi-host parallel execution → build-stage higher-order wrapper over per-host composition | authoring-guide rule | ✅ closed (doc 14 #60; reuses Phase 12 specialization principle) |
+| 255 | Array-slice stencil arithmetic → prose stencil descriptions inside `ensures` clauses; compiler stencil pass generates per-cell loops or SIMD kernels | authoring-guide rule | ✅ closed (doc 14 #61; same pattern as #35 NumPy) |
+| 256 | Implicit-DO array assignments (`T_new(1:N, 1:N) = f(T)`) → `ensures every X …` quantified clauses (uses W49) | authoring-guide rule | ✅ closed (doc 14 #61) |
+| 257 | Numerical-stability conditions (CFL, Courant, Reynolds-limit) → explicit `requires` + accompanying `hazard` on violation | authoring-guide rule | ✅ closed (doc 14 #61; moves a bug-class from runtime to authoring-time) |
+| 258 | Boundary-vs-interior distinction stated explicitly in `ensures` clauses; never implicit from slice arithmetic | authoring-guide rule | ✅ closed (doc 14 #61) |
+| 259 | Implicit-typing conventions rejected; every Nom value has an explicit type via `exposes` or prose range | authoring-guide rule | ✅ closed (doc 14 #61) |
+| 260 | Fortran PARAMETER constants → data-decl fields on a dedicated policy data decl (like PayrollPolicy in #58) | authoring-guide rule | ✅ closed (doc 14 #61) |
+| 261 | Fortran PROGRAM/SUBROUTINE/FUNCTION distinctions collapse to plain Nom function decls; entry-point status is build-stage configuration | authoring-guide rule | ✅ closed (doc 14 #61) |
 
-Totals by destination (after doc 14 #60 Ansible idempotent-imperative translation — **nineteenth 0-new-wedge translation in a row** + **60-translation milestone reached**; 7 authoring-guide closures; **infrastructure-automation paradigm pentagram** (Terraform + Docker + Nix + K8s + Ansible) **fully closed**):
+Totals by destination (after doc 14 #61 Fortran scientific-computing translation — **twentieth 0-new-wedge translation in a row**; 7 authoring-guide closures; **scientific-computing paradigm family** (Fortran + NumPy + R + SQL-CTE) all reduce to stencil-as-prose + quantified `ensures` + explicit stability conditions):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **204**
+- ✅ Closed: **211**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 268 rows. Closure rate 76% (204/268). **60 translations** in doc 14 — **60-milestone reached**. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + **idempotent-automation (Ansible)**. Twenty-seventh consecutive minimal-wedge translation, nineteenth 0-new-wedge. **Infrastructure-automation paradigm pentagram fully closed** (Terraform + Docker + Nix + K8s + Ansible all reduce to desired-state-data + task-fn-with-ensures-idempotent + composition chain).
+Backlog size: 275 rows. Closure rate 77% (211/275). **61 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + **scientific-computing-with-array-sections (Fortran)**. **Backlog closure crosses 77%.** Twenty-eighth consecutive minimal-wedge translation, twentieth 0-new-wedge.
 
 ## Wedge master index (for cross-ref with doc 13)
 

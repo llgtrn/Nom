@@ -4276,6 +4276,104 @@ Row additions: **0 new wedges** — Ansible's imperative-but-idempotent automati
 
 ---
 
+## 61. Fortran — scientific computing with array sections
+
+```fortran
+PROGRAM heat_diffusion
+  IMPLICIT NONE
+  INTEGER, PARAMETER :: N = 100, STEPS = 1000
+  REAL, DIMENSION(0:N+1, 0:N+1) :: T, T_new
+  REAL :: alpha = 0.1
+  INTEGER :: step, i, j
+
+  ! Initial condition: hot square in the middle
+  T = 0.0
+  T(N/4:3*N/4, N/4:3*N/4) = 100.0
+
+  DO step = 1, STEPS
+    T_new(1:N, 1:N) = T(1:N, 1:N) + alpha * ( &
+        T(0:N-1, 1:N) + T(2:N+1, 1:N) + &
+        T(1:N,   0:N-1) + T(1:N,   2:N+1) - &
+        4.0 * T(1:N, 1:N))
+    T = T_new
+  END DO
+
+  PRINT *, "Final center temperature:", T(N/2, N/2)
+END PROGRAM heat_diffusion
+```
+
+### `.nomx v1` translation
+
+```nomx
+define simulate_heat_diffusion
+  that takes a grid size, a diffusion coefficient, and a step count, returns the final temperature field.
+start the grid at zero everywhere, except a hot square of value 100 at the middle quarter.
+for each step from 1 to the step count,
+  compute each interior cell's next value as its current value plus the coefficient times (the sum of its four orthogonal neighbors minus four times itself).
+  replace the grid with the updated grid.
+return the final grid.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data TemperatureGrid is
+  intended to describe a two-dimensional temperature field with a fixed extent, including a ring of boundary cells held at a fixed temperature.
+  exposes extent as natural from 2 to 10000.
+  exposes cells as list of list of real.
+
+the data DiffusionParameters is
+  intended to hold the numerical parameters for a finite-difference heat-diffusion simulation.
+  exposes diffusion_coefficient as real from 0 to 0.25.
+  exposes step_count as natural from 1 to 1000000000.
+
+the function initialize_hot_middle_grid is
+  intended to return a TemperatureGrid of the given extent with boundary and most interior cells at zero, and a centered square spanning the middle half at 100.
+  uses the @Data matching "TemperatureGrid" with at-least 0.95 confidence.
+  requires extent is at-least 4.
+  ensures every cell in the middle-half square (indices from extent/4 to 3*extent/4 inclusive in both dimensions) has value 100.
+  ensures every other cell (including all boundary cells) has value 0.
+
+the function advance_diffusion_step is
+  intended to compute one explicit Euler step of the 2D heat equation on an interior grid, leaving the boundary cells unchanged.
+  uses the @Data matching "TemperatureGrid" with at-least 0.95 confidence.
+  uses the @Data matching "DiffusionParameters" with at-least 0.95 confidence.
+  requires the diffusion_coefficient is strictly less than 0.25 (explicit-Euler CFL stability condition for 2D diffusion on a unit grid).
+  ensures every returned interior cell's value equals its prior value plus diffusion_coefficient times (the sum of its four orthogonal neighbors' prior values minus four times its prior value).
+  ensures every returned boundary cell's value equals its prior value unchanged.
+  hazard violating the CFL condition silently produces numerically unstable solutions — coefficients of 0.25 or more will grow without bound.
+  favor numerical_stability.
+  favor correctness.
+
+the function simulate_heat_diffusion is
+  intended to iterate the explicit-Euler heat-diffusion step for a fixed number of steps and return the final TemperatureGrid.
+  uses the @Data matching "TemperatureGrid" with at-least 0.95 confidence.
+  uses the @Data matching "DiffusionParameters" with at-least 0.95 confidence.
+  uses the @Function matching "initialize_hot_middle_grid" with at-least 0.95 confidence.
+  uses the @Function matching "advance_diffusion_step" with at-least 0.95 confidence.
+  ensures the returned grid is the result of applying advance_diffusion_step exactly step_count times to the initialize_hot_middle_grid output.
+  favor correctness.
+
+the composition simulate_heat_diffusion composes
+  initialize_hot_middle_grid then repeat_advance_diffusion_for_step_count_steps.
+```
+
+### Gaps surfaced
+
+1. **Array-slice syntax (`T(0:N-1, 1:N)`, `T(N/4:3*N/4, N/4:3*N/4)`)** — Fortran's signature feature: dense array-slicing with one-line stencil operators. Nom's translation **moves the stencil into prose** (`the sum of its four orthogonal neighbors minus four times itself`) inside an `ensures` clause, rather than encoding slice-arithmetic. Authoring-guide rule: **array-slice arithmetic decomposes to prose stencil descriptions inside `ensures` clauses; the compiler's stencil pass generates the per-cell loops or SIMD kernels**. Same pattern as NumPy (#35) broadcasting: authors declare the per-cell rule; compiler chooses vectorization. No new wedge.
+2. **Implicit DO loops via array-slice assignment** — a Fortran array assignment `T_new(1:N, 1:N) = f(T)` implicitly iterates over every interior cell. Nom's `ensures every returned interior cell …` uses a universal quantifier (W49 `every`) to capture the same intent declaratively. Authoring-guide rule: **implicit-DO array assignments decompose to `ensures every X …` quantified clauses**. No new wedge.
+3. **CFL stability condition as an explicit `requires`** — the explicit-Euler scheme is unstable unless `dt * α / dx²  < 0.25`. Nom surfaces this as a `requires the diffusion_coefficient is strictly less than 0.25` clause + a `hazard` clause on violation. Authoring-guide rule: **numerical-stability conditions (CFL, Courant, Reynolds-number limits) belong in explicit `requires` clauses with accompanying `hazard` clauses describing the failure mode**. Prevents a major class of scientific-computing bugs at authoring time. No new wedge.
+4. **Boundary conditions** — the boundary cells don't update. Nom's `ensures every returned boundary cell's value equals its prior value unchanged` captures the boundary-treatment explicitly. Authoring-guide rule: **boundary-vs-interior distinction stated explicitly in `ensures` clauses; never implicit from slice arithmetic**. Prevents another class of scientific-computing bugs. No new wedge.
+5. **`IMPLICIT NONE` discipline** — Fortran has optional implicit-typing of variables by first-letter (a-h, o-z = REAL; i-n = INTEGER). Modern code adds `IMPLICIT NONE` to force explicit declaration. Nom's translation never has implicit typing; every `exposes` field declares its type. Authoring-guide rule: **implicit-typing conventions are rejected; every Nom value has an explicit type via `exposes` or prose range**. No new wedge.
+6. **PARAMETER constants** — Fortran's compile-time constants. Nom's data-decl fields with prose range carry the same semantic. Authoring-guide rule: **Fortran PARAMETERs → data-decl fields on a dedicated policy data decl (like PayrollPolicy in #58)**. No new wedge.
+7. **PROGRAM / SUBROUTINE / FUNCTION distinctions** — Fortran's callable-unit types. Nom collapses them: every callable is a `function` decl with typed inputs/outputs. PROGRAM = entry-point function. Authoring-guide rule: **Fortran program/subroutine/function distinctions collapse to plain Nom function decls; entry-point status is carried by a build-stage entry-point configuration, not a source keyword**. No new wedge.
+
+Row additions: **0 new wedges** — Fortran's scientific-computing-with-array-sections fully expresses via stencil-as-prose inside `ensures` + quantified-cell assertions + explicit CFL `requires` + explicit boundary treatment. 7 authoring-guide closures: array-slice stencils → prose inside `ensures`, implicit-DO → `ensures every X`, numerical-stability CFL conditions → `requires` + `hazard`, boundary-vs-interior explicit in `ensures`, implicit-typing rejected, PARAMETER → policy data decl fields, PROGRAM/SUBROUTINE/FUNCTION → plain function decls.
+
+**Twenty-eighth consecutive minimal-wedge translation + twentieth 0-new-wedge run.** Fortran — the oldest high-level language still in production use (1957) — decomposes cleanly into Nom's primitives. Combined with NumPy (#35), MATLAB's likely future decomposition, and R (#52), the **scientific-computing paradigm family** joins the running list of fully-unified domains. The CFL-condition-as-explicit-requires rule is a particularly valuable addition: **numerical-stability bugs move from runtime surprises to authoring-time contract violations**.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
