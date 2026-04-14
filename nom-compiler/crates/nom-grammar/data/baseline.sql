@@ -299,6 +299,61 @@ INSERT OR IGNORE INTO patterns (
   '["restart storms","hidden cascade failures"]',
   '["availability","auditability"]',
   '["doc 14 block ~85 — supervised-process paradigm"]'
+),
+(
+  'tagged-variant-errors',
+  'errors as named tagged variants of a shared data kind, each with domain-specific payload',
+  '["data","function"]',
+  '["intended","exposes","hazard","favor"]',
+  '[]',
+  'the data <Outcome> is\n  intended to represent either a success payload or one of a fixed set of named failure variants.\n  exposes variant as one of: success, not_found, conflict, forbidden.\n  exposes payload as text.\n  favor clarity.',
+  '["callers who ignore a variant silently skip error handling"]',
+  '["clarity","correctness"]',
+  '["doc 14 — error-handling paradigm across several exemplars"]'
+),
+(
+  'retry-policy',
+  'a function-level orchestrator clause describing retry, backoff, and giveup semantics under transient failure',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function"]',
+  'the function <name> is\n  intended to perform a potentially-transient operation with bounded retry.\n  uses the @Function matching "one attempt" with at-least 0.9 confidence.\n  requires the underlying operation is idempotent.\n  ensures at most N attempts are made with exponential backoff between tries.\n  hazard retrying a non-idempotent side-effect can double-apply it.\n  favor availability.',
+  '["non-idempotent side-effects","thundering-herd on coordinated retry"]',
+  '["availability","auditability"]',
+  '["W43 retry-policy wedge","fault-tolerance paradigm family"]'
+),
+(
+  'effect-handler',
+  'a captured effect with a handler that determines the effect interpretation; the substrate for generators, async, non-determinism',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <handler> is\n  intended to interpret a captured effect into a concrete action.\n  uses the @Data matching "effect token" with at-least 0.9 confidence.\n  requires the handler is total over the effect''s variant set.\n  ensures every raised effect resumes with a well-typed continuation value.\n  hazard a partial handler silently discards unhandled effect variants.\n  favor correctness.',
+  '["partial handlers","handler-loop infinite resumption"]',
+  '["correctness","totality"]',
+  '["doc 14 — effect-handling paradigm family (4 exemplars)"]'
+),
+(
+  'reactive-ui-state-machine',
+  'a user-interface concept describing states, transitions, and guards without hidden mutation',
+  '["concept","data","event","screen"]',
+  '["intended","uses","composes","ensures","favor"]',
+  '["@Data","@Event","@Screen"]',
+  'the concept <ui-machine> is\n  intended to describe the finite-state behavior of a user-interface surface.\n  uses the @Data matching "machine state" with at-least 0.9 confidence.\n  uses the @Event matching "trigger" with at-least 0.9 confidence.\n  composes <state-a> then <state-b>.\n  ensures every transition is guarded by a declared predicate.\n  favor responsiveness.',
+  '["unreachable states","transition guards that depend on external mutable state"]',
+  '["responsiveness","accessibility"]',
+  '["doc 14 — reactive-UI paradigm family (3 exemplars)"]'
+),
+(
+  'content-addressed-build',
+  'a build function whose output is hashed over its inputs — pinned source + pinned dependency closure + pinned commands — yielding reproducibility by construction',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <build> is\n  intended to produce a reproducible, content-addressed build artifact.\n  uses the @Data matching "pinned source" with at-least 0.95 confidence.\n  uses the @Data matching "pinned inputs" with at-least 0.95 confidence.\n  requires every input is pinned to a specific hash.\n  ensures identical inputs produce a byte-identical output artifact.\n  hazard any unpinned system dependency leaks ambient state.\n  favor reproducibility.',
+  '["ambient state leaks","impure build steps (network, clock, random)"]',
+  '["reproducibility","correctness"]',
+  '["doc 14 block 40 — content-addressed-build paradigm"]'
 );
 
 -- ── Schema version stamp ────────────────────────────────────────────
