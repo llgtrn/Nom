@@ -1,11 +1,15 @@
 # Natural-Language Syntax (≥95%) — Grammar Redesign Proposal
 
-> **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
+> **Last verified against codebase: 2026-04-14, HEAD `a3c95f3`.**
 > `.nomx v1` (this doc's grammar) and `.nomx v2 (keyed)` (doc 07's grammar) **coexist**.
 > Doc 07 v2 is fully shipped per commits `97c836f` + `c405d2a` + `853e70b` + `c9d1835`.
 > The `.nomx v1` parser lives at `nom-compiler/crates/nom-parser/src/nomx.rs`.
 > The doc-08 layered parser at `nom-compiler/crates/nom-concept/src/lib.rs` is a **separate parser**
 > for the `.nom`/`.nomtu` tier-1/tier-2 architecture — not a successor to `.nomx v1`.
+> Since 2026-04-13 verification: 84 paradigm translations / 71 families with 43 consecutive 0-new-wedge
+> translations (see doc 14 + doc 16) — `.nomx v1` grammar surface has proven stable across the survey
+> and is the authoring starting point for all doc-14 cycles. No grammar-level changes to this doc's
+> surface since 2026-04-13; additions arrive via W-wedges (doc 16) without deprecating v1.
 
 Status: **Draft, needs human authoring**. Filed 2026-04-13 in response to
 user directive: "make the Nom language similar to Natural language 95%…
