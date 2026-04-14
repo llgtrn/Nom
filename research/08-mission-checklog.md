@@ -60,8 +60,8 @@ anything load-bearing.
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
   0 → 7 keyword_synonyms (proof→property, composition→module,
   row→data, diagram→screen, participants→data, layout→screen,
-  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 23
-  canonical patterns covering ~12 paradigm families extracted
+  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 28
+  canonical patterns covering ~15 paradigm families extracted
   from doc 14 into the patterns table; AI clients can query for
   canonical renderings instead of reading archive prose. Catalog:
   pure-function-contract, exposes-data-shape, concept-composition,
@@ -72,7 +72,9 @@ anything load-bearing.
   schema-query, pipeline-transformation, network-api-endpoint,
   verified-imperative, algebraic-law, monadic-do-sequence,
   first-class-continuation, type-class-polymorphism,
-  stream-processing-window, infrastructure-declaration
+  stream-processing-window, infrastructure-declaration,
+  structured-imperative-block, logic-programming-rule,
+  term-rewriting-semantics, macro-expansion, dependent-type-indexed
   to the canonical 9-kind set at S1). S4 contract scanner + S5
   effect scanner both relaxed the same way: drop the mid-scan
   clause-opener check (English verbs inside prose clauses trip it);
