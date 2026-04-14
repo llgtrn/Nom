@@ -5601,6 +5601,103 @@ Row additions: **0 new wedges** — Idris's dependent-type system + totality che
 
 ---
 
+## 74. SystemVerilog Assertions (SVA) — temporal properties for hardware verification
+
+```systemverilog
+module fifo_guard (
+    input  logic clk,
+    input  logic rst_n,
+    input  logic push,
+    input  logic pop,
+    input  logic full,
+    input  logic empty
+);
+
+  // Property: push is never asserted when the FIFO is full.
+  property no_push_when_full;
+    @(posedge clk) disable iff (!rst_n)
+      push |-> !full;
+  endproperty
+  assert_no_push_when_full:
+    assert property (no_push_when_full)
+      else $error("push asserted while full");
+
+  // Property: after a push, empty deasserts within one cycle.
+  property push_clears_empty;
+    @(posedge clk) disable iff (!rst_n)
+      (push && empty) |-> ##1 !empty;
+  endproperty
+  assert_push_clears_empty:
+    assert property (push_clears_empty);
+
+endmodule
+```
+
+### `.nomx v1` translation
+
+```nomx
+define assert_fifo_discipline
+  that observes a FIFO's push, pop, full, and empty signals synchronously with a clock, and surfaces a diagnostic when any discipline is violated.
+property 1: push is never asserted when the FIFO is full.
+property 2: after a push to an empty FIFO, the empty signal deasserts within one cycle.
+reset suppresses property checking when active.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data FifoSignals is
+  intended to describe the observable FIFO control signals sampled at each clock edge for assertion checking.
+  exposes push as boolean.
+  exposes pop as boolean.
+  exposes full as boolean.
+  exposes empty as boolean.
+
+the data AssertionContext is
+  intended to describe the synchronization and enable context for a SystemVerilog assertion — which clock edge it samples on, and under what condition checking is suspended.
+  exposes clock_edge_kind as text.
+  exposes disabled_when as text.
+
+the property no_push_when_full is
+  intended to assert that on every rising clock edge where reset is inactive, whenever push is high, full is low.
+  uses the @Data matching "FifoSignals" with at-least 0.95 confidence.
+  uses the @Data matching "AssertionContext" with at-least 0.95 confidence.
+  checks for every rising clock edge where reset_n is high, if push is true at that edge, then full is false at that edge.
+  favor correctness.
+
+the property push_clears_empty is
+  intended to assert that a push into an empty FIFO deasserts the empty signal one cycle later, as long as reset stays inactive.
+  uses the @Data matching "FifoSignals" with at-least 0.95 confidence.
+  uses the @Data matching "AssertionContext" with at-least 0.95 confidence.
+  checks for every rising clock edge where reset_n is high, if push is true and empty is true at that edge, then empty is false one cycle later.
+  favor correctness.
+
+the function enforce_fifo_assertions is
+  intended to run every FIFO assertion against a live or simulated signal trace, returning the list of assertion-violation diagnostics.
+  uses the @Property matching "no_push_when_full" with at-least 0.95 confidence.
+  uses the @Property matching "push_clears_empty" with at-least 0.95 confidence.
+  ensures every returned diagnostic names the property that failed and the clock cycle at which the failure occurred.
+  ensures an assertion with reset_n low produces no diagnostic regardless of the signal values (`disable iff` semantics).
+  favor correctness.
+  favor auditability.
+```
+
+### Gaps surfaced
+
+1. **Temporal implication (`|->`, `|=>`, `##1`, `##[1:$]`)** — SVA's core operator set for expressing "A leads to B within N cycles". Nom's translation renders these as prose `if A at cycle t, then B at cycle t+N` in the property's `checks` clause. Authoring-guide rule: **temporal-implication operators → `checks for every reachable cycle t, if CONDITION-AT-t, then OUTCOME-AT-(t+N)` prose; cycle-offset quantifier (`##1` / `##[N:M]`) maps to `at cycle t+N` / `within cycles t+N to t+M`**. No new wedge; reuses W41 property kind + W49 quantifier vocab.
+2. **`@(posedge clk)` clocking event** — SVA's synchronization declaration. Nom already has W48 clock-domain clause (#41 Verilog). The `AssertionContext` data decl carries the clocking metadata. Authoring-guide rule: **SVA clocking events (`@(posedge clk)`, `@(negedge reset)`) → W48 clock-domain clause on the property decl + `exposes clock_edge_kind` on an AssertionContext data decl**. No new wedge; W48 suffices.
+3. **`disable iff (!rst_n)` gating** — SVA's way of suspending checking during reset. Nom's translation captures this as an `ensures an assertion with reset_n low produces no diagnostic regardless of the signal values` contract clause. Authoring-guide rule: **SVA `disable iff (COND)` → `ensures an assertion with COND produces no diagnostic` contract clause on the enforcing function**. No new wedge.
+4. **`assert property` vs `cover property`** — SVA distinguishes failure-detection (assert) from coverage-accumulation (cover). Nom's `property` kind covers assertions directly; coverage-style properties would use a separate function that accumulates observed samples. Authoring-guide rule: **SVA `assert property` → `property` decl; SVA `cover property` → a peer function that accumulates a coverage histogram per cycle, separate from the property decl**. No new wedge.
+5. **Labeled assertions (`assert_no_push_when_full: assert property (...)`)** — SVA's way of naming assertions for tool output. Nom's property decl name IS the label. Authoring-guide rule: **SVA assertion labels → Nom property decl name; no separate label syntax**. No new wedge.
+6. **`$error` / `$fatal` severity** — SVA's severity-level on the failure action. Nom's `favor auditability` + `hazard` clauses carry the severity intent; the build stage maps severity to runtime behavior. Authoring-guide rule: **SVA severity on assertion failure (`$info`/`$warning`/`$error`/`$fatal`) → `hazard` clause describing the severity + `favor auditability` / `favor correctness`; build stage maps to runtime action**. No new wedge.
+7. **Formal verification vs simulation target** — SVA properties can be proved by a formal tool or sampled during simulation. Same build-stage tool-choice pattern as #47 TLA+ (Coq/Alloy/Apalache) and #50 Dafny (Z3/CVC5). Authoring-guide rule: **SVA formal-tool choice (JasperGold/VC Formal/Symbiyosys) is build-stage specialization; the property decl is tool-agnostic**. Reuses #47 + #50 rule. No new wedge.
+
+Row additions: **0 new wedges** — SystemVerilog Assertions fully express via property decls (W41) + W48 clock-domain clauses + temporal `checks` prose + `disable iff` contract clauses + enforcement function with per-property `uses` references. 6 authoring-guide closures: temporal-implication operators → `checks for every cycle t, if A-at-t then B-at-(t+N)`, SVA clocking events → W48, `disable iff` → `ensures no diagnostic when COND`, `assert property` vs `cover property` (property decl vs peer histogram fn), assertion labels → property decl name, SVA severity → `hazard` + `favor`, formal-tool choice → build-stage specialization (reuses #47/#50).
+
+**Forty-first consecutive minimal-wedge translation + thirty-third 0-new-wedge run.** SystemVerilog Assertions — the industry-standard temporal-logic-verification DSL for hardware (SoC, ASIC, FPGA) — decompose cleanly into Nom's property kind + clock-domain clauses + temporal `checks` prose. Combined with TLA+ (#47 model-checking), Dafny (#50 verified imperative), Idris (#73 dependent types), and PDDL (#48 AI planning), **the property-based-verification paradigm family is fully covered across 5 exemplars**: all reduce to `property` decls with `checks` clauses quantified over reachable states/cycles/inputs.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
