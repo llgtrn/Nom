@@ -7,6 +7,8 @@
 
 **Current state (as of HEAD `afc6228`):** LLVM backend works for fn/struct/enum/let/if/while/return/match. `lexer.nom` is written in Nom and **compiles end-to-end to `.bc`** (commit `1ecac11`; `stdlib/self_host/lexer.bc` exists). Phases 2–6 have scaffold source files that parse but are not fully compilable. Phase 7 (bootstrap) is planned.
 
+> **Paradigm-coverage enablement banner (2026-04-14 very-late):** Self-hosting requires the Nom language to express its own compiler's semantics. Doc 14 now contains **84 paradigm translations across 71 families with 43 consecutive 0-new-wedge translations**, demonstrating that the current Nom primitive set (9 closed kinds + composition + W49 quantifier vocabulary + `requires`/`ensures`/`hazard` contract clauses) is sufficient for: parser authoring (#80 Datalog + #43 SQL CTE + #28 Prolog all show recursive-grammar-as-relation patterns), semantic analysis (#50 Dafny verified-imperative + #73 Idris dependent-types show compiler-contract authoring), code generation (#41 Verilog + #51 WAT + #81 Chisel show target-DSL emission), error-reporting (#38 Solidity + #67 Zig + #69 Smalltalk + #84 OCaml-effects all share tagged-variant error data decls). **The paradigm-stability result implies self-hosting is unblocked at the authoring layer** — remaining work is the ingest + codegen + planner implementation tracked in the phase table below, not additional grammar wedges.
+
 ---
 
 ## Per-Phase Status Table
