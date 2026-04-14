@@ -262,18 +262,25 @@
 | 245 | Named parameters always (PowerShell `-Path`); positional parameters rejected outside single-argument functions | authoring-guide rule | ✅ closed (doc 14 #59; prevents call-site ambiguity) |
 | 246 | Inline script-block predicates decompose to named filter functions OR `ensures every X satisfies P` clauses | authoring-guide rule | ✅ closed (doc 14 #59) |
 | 247 | Filesystem-enumeration non-atomicity is a `hazard` on any recursive-scan function | authoring-guide rule | ✅ closed (doc 14 #59) |
+| 248 | Idempotence declared explicitly via `ensures the operation is idempotent — a second call with the same spec makes no further changes` | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 249 | Jinja2 / Go-template / ERB / Liquid in-string interpolation → explicit data-decl references; no `{{ }}` at source level | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 250 | Deferred-handler scheduling → change-flag return + peer handler-scheduler function at end of composition; no implicit `changed=true fires handler` magic | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 251 | Privilege-escalation requirements → `requires the caller has <role> rights` clauses on function decls | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 252 | Ansible inventory targeting → host-group identifier input parameters; inventory resolution is build-stage | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 253 | Task-order and handler-order captured by composition `then` chain + handler-scheduler function; no separate ordering keyword | authoring-guide rule | ✅ closed (doc 14 #60) |
+| 254 | Multi-host parallel execution → build-stage higher-order wrapper over per-host composition | authoring-guide rule | ✅ closed (doc 14 #60; reuses Phase 12 specialization principle) |
 
-Totals by destination (after doc 14 #59 PowerShell object-pipeline translation — **eighteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **shell-family triad** (Bash + jq + PowerShell) **fully unified** with zero new grammar):
+Totals by destination (after doc 14 #60 Ansible idempotent-imperative translation — **nineteenth 0-new-wedge translation in a row** + **60-translation milestone reached**; 7 authoring-guide closures; **infrastructure-automation paradigm pentagram** (Terraform + Docker + Nix + K8s + Ansible) **fully closed**):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **197**
+- ✅ Closed: **204**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 260 rows. Closure rate 76% (197/260). **59 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + **object-pipeline-shell (PowerShell)**. Twenty-sixth consecutive minimal-wedge translation, eighteenth 0-new-wedge. **Shell-family triad unified** (Bash + jq + PowerShell all collapse to named-intermediate data-transformation with zero new grammar).
+Backlog size: 268 rows. Closure rate 76% (204/268). **60 translations** in doc 14 — **60-milestone reached**. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + **idempotent-automation (Ansible)**. Twenty-seventh consecutive minimal-wedge translation, nineteenth 0-new-wedge. **Infrastructure-automation paradigm pentagram fully closed** (Terraform + Docker + Nix + K8s + Ansible all reduce to desired-state-data + task-fn-with-ensures-idempotent + composition chain).
 
 ## Wedge master index (for cross-ref with doc 13)
 

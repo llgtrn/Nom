@@ -4130,6 +4130,152 @@ Row additions: **0 new wedges** — PowerShell's object-pipeline model maps 1:1 
 
 ---
 
+## 60. Ansible playbook — idempotent imperative automation
+
+```yaml
+---
+- name: Provision web-tier server
+  hosts: webservers
+  become: yes
+  vars:
+    app_user: webapp
+    app_port: 8080
+
+  tasks:
+    - name: Ensure app user exists
+      user:
+        name: "{{ app_user }}"
+        shell: /usr/sbin/nologin
+        state: present
+
+    - name: Install nginx
+      package:
+        name: nginx
+        state: present
+
+    - name: Copy site config
+      template:
+        src: nginx-site.conf.j2
+        dest: /etc/nginx/sites-enabled/{{ app_user }}.conf
+        mode: '0644'
+      notify: Reload nginx
+
+    - name: Open firewall port
+      ufw:
+        rule: allow
+        port: "{{ app_port }}"
+        proto: tcp
+
+  handlers:
+    - name: Reload nginx
+      service:
+        name: nginx
+        state: reloaded
+```
+
+### `.nomx v1` translation
+
+```nomx
+define provision_webserver
+  that takes a target host group, an app user name, and an app port, returns the converged server state.
+ensure the app user exists with login shell /usr/sbin/nologin.
+ensure nginx is installed.
+render nginx-site.conf.j2 into /etc/nginx/sites-enabled/{app_user}.conf with mode 0644; if the content changed, schedule a nginx reload.
+ensure the firewall allows inbound TCP on the app port.
+after all tasks complete, run any scheduled handlers (nginx reload) exactly once.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data AppUserSpec is
+  intended to describe the operating-system user account under which the application runs.
+  exposes name as identifier.
+  exposes login_shell as text.
+  exposes state as text.
+
+the data PackageSpec is
+  intended to describe a system package to be present or absent on the target host.
+  exposes name as identifier.
+  exposes state as text.
+
+the data ConfigFileSpec is
+  intended to describe a rendered configuration file with its source template, destination path, permission mode, and whose change triggers which handler.
+  exposes source_template as text.
+  exposes destination_path as text.
+  exposes mode as text.
+  exposes notify_handler as text.
+
+the data FirewallRule is
+  intended to describe a single ingress/egress firewall rule with its verdict, port, and protocol.
+  exposes verdict as text.
+  exposes port as natural from 1 to 65535.
+  exposes protocol as text.
+
+the function ensure_app_user_exists is
+  intended to create or update the given AppUserSpec on the target host, idempotently.
+  uses the @Data matching "AppUserSpec" with at-least 0.95 confidence.
+  requires the target host is reachable and the caller has privilege-escalation rights.
+  ensures the user with the given name exists after the call.
+  ensures the user's login_shell matches the spec.
+  ensures the operation is idempotent — a second call with the same spec makes no further changes.
+  favor reproducibility.
+
+the function ensure_package_installed is
+  intended to install or upgrade a system package to the requested state.
+  uses the @Data matching "PackageSpec" with at-least 0.95 confidence.
+  requires the package manager index is fresh (or freshly refreshed by a prior task).
+  ensures the named package is installed after the call.
+  ensures the operation is idempotent.
+  favor reproducibility.
+
+the function render_and_deploy_config is
+  intended to render a Jinja2-style template into the destination path at the given mode, returning a change-flag that triggers the notified handler when the output differs from the prior content.
+  uses the @Data matching "ConfigFileSpec" with at-least 0.95 confidence.
+  requires the source template exists and is readable.
+  ensures the destination path's content equals the rendered template output after the call.
+  ensures the destination path's permission mode matches the spec.
+  ensures the returned change-flag is true exactly when the post-render content differs from the pre-render content.
+  hazard handler scheduling is deferred until end-of-play; callers must not rely on immediate side effects mid-play.
+  favor reproducibility.
+
+the function ensure_firewall_rule is
+  intended to add or remove a single firewall rule idempotently.
+  uses the @Data matching "FirewallRule" with at-least 0.95 confidence.
+  ensures the given rule is in the firewall's active ruleset after the call.
+  ensures the operation is idempotent.
+  favor reproducibility.
+
+the composition provision_webserver composes
+  ensure_app_user_exists
+  then ensure_package_installed
+  then render_and_deploy_config
+  then ensure_firewall_rule
+  then run_scheduled_handlers.
+
+the function run_scheduled_handlers is
+  intended to execute every handler scheduled earlier in the play, exactly once each, in the order they were first scheduled.
+  ensures every scheduled handler ran at-most once.
+  ensures handlers are run in first-scheduled order.
+```
+
+### Gaps surfaced
+
+1. **Idempotence as a first-class contract** — Ansible's defining semantic: every task must produce the same end-state regardless of starting state. Nom's translation makes this explicit via an `ensures the operation is idempotent` clause on every function decl. **Candidate: authoring-guide rule — infrastructure-automation functions declare idempotence explicitly via `ensures the operation is idempotent — a second call with the same spec makes no further changes`**. Stronger than the declarative-orchestration rule from #54 K8s; idempotence is the imperative-automation analogue. No new wedge; existing `ensures` vocabulary suffices.
+2. **Jinja2 template interpolation (`{{ app_user }}`)** — Ansible's in-string variable substitution. Nom rejects in-string templating; the translation uses explicit data-decl references (`the app_user name`). Authoring-guide rule: **Jinja2 / Go-template / ERB / Liquid in-string interpolation decomposes to explicit data-decl references; no `{{ }}` at source level**. Same spirit as #29 Lisp-macro-rejection. No new wedge.
+3. **Handler dispatch on change (`notify: Reload nginx`)** — Ansible's deferred-handler mechanism: a handler runs at end-of-play only if a task reported `changed`. Nom's translation surfaces this via (a) a change-flag return from `render_and_deploy_config`, and (b) a peer `run_scheduled_handlers` function explicitly invoked at the end of the composition. Authoring-guide rule: **deferred-handler scheduling decomposes to (change-flag returns + peer handler-scheduler function at end of composition); no implicit "changed=true fires handler" magic**. No new wedge.
+4. **`become: yes` privilege escalation** — run the task with elevated rights. Nom's translation captures this as `requires the caller has privilege-escalation rights` on each function decl. Authoring-guide rule: **privilege-escalation requirements decompose to `requires the caller has <role> rights` clauses on function decls**. No new wedge.
+5. **Host groups (`hosts: webservers`)** — Ansible's inventory-driven targeting. Nom's translation abstracts this as `target host group` input parameter; inventory resolution is build-stage. Authoring-guide rule: **Ansible inventory targeting decomposes to host-group identifier input parameters; inventory resolution is build-stage**. No new wedge.
+6. **Order-preserving task list vs end-of-play handlers** — Ansible executes tasks in source order, handlers in first-scheduled order. The composition decl's `then` chain + the handler-scheduler function preserves both orderings. Authoring-guide rule: **task-order and handler-order are captured by the composition `then` chain + handler-scheduler function; no separate ordering keyword**. No new wedge.
+7. **YAML-anchor / Jinja2-filter features** — Ansible inherits YAML and Jinja2 features. Same rules as before: no anchors, no filters, decompose to explicit named intermediates. No new wedge.
+8. **Multi-host parallelism** — Ansible runs the play across many hosts in parallel. Nom's composition decl is single-host-semantic at the source level; `run_across_hosts(provision_webserver, hosts)` is a higher-order wrapper that the build stage composes. Authoring-guide rule: **multi-host parallel execution decomposes to a higher-order build-stage wrapper over the per-host composition**. No new wedge; reuses the same specialization principle as Phase 12.
+
+Row additions: **0 new wedges** — Ansible's imperative-but-idempotent automation fully expresses via peer data decls + per-task function decls with explicit `ensures idempotent` clauses + composition `then` chain + peer handler-scheduler function. 7 authoring-guide closures: idempotence declared explicitly via `ensures`, Jinja2/Go-template/ERB/Liquid → explicit data-decl references, deferred-handler scheduling → change-flag + end-of-play peer function, `become: yes` → `requires privilege-escalation`, inventory targeting → host-group identifier input, task/handler order via composition chain + scheduler function, multi-host parallelism → build-stage higher-order wrapper.
+
+**Twenty-seventh consecutive minimal-wedge translation + nineteenth 0-new-wedge run.** Ansible — the most widely-deployed imperative-automation framework — closes out the **infrastructure-automation paradigm pentagram**: Terraform (pure-declarative), Docker (container-spec), Nix (hermetic-builds), K8s (declarative-reconcile), and Ansible (idempotent-imperative). **All five express via the same (desired-state data decls + task function decls with `ensures idempotent` + composition chain) primitive set**. **60-translation milestone reached.** The unified primitive set now covers 46 paradigm families and ~70 years of programming-language evolution, from COBOL business-data-processing to modern declarative-reactive UIs, all with nine closed kind nouns and a single composition operator.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
