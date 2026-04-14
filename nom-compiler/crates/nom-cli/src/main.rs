@@ -1018,6 +1018,61 @@ enum GrammarCmd {
         /// Path to the SQL file to execute against the registry.
         sql_file: PathBuf,
     },
+    /// Add a single row to the `kinds` table. Use for extending the
+    /// closed kind set one row at a time without hand-writing SQL.
+    AddKind {
+        /// Kind name — unique. Must be a lowercase identifier.
+        name: String,
+        /// One-line description of what this kind models.
+        #[arg(long, default_value = "")]
+        description: String,
+        /// Optional JSON list of allowed clause names (e.g.
+        /// `["intent","requires","ensures"]`). Leave empty if the
+        /// rows in `clause_shapes` are the source of truth.
+        #[arg(long)]
+        allowed_clauses: Option<String>,
+        /// Optional JSON list of allowed `@Kind` reference kinds.
+        #[arg(long)]
+        allowed_refs: Option<String>,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Add a single row to the `keyword_synonyms` table. S1 consults
+    /// this table at lex time; each synonym is rewritten to its
+    /// canonical form before S2 runs.
+    AddSynonym {
+        /// Alternative phrasing the author may type.
+        synonym: String,
+        /// Canonical keyword the synonym rewrites to. Must be a row
+        /// in the `keywords` table.
+        #[arg(long)]
+        canonical: String,
+        /// Free-form note for traceability (e.g. doc reference).
+        #[arg(long, default_value = "")]
+        notes: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Add a single row to the `quality_names` table. S5b rejects any
+    /// `favor X` clause whose name is not registered here.
+    AddQuality {
+        /// Canonical quality name (e.g. `forward_compatibility`).
+        name: String,
+        /// Axis this quality belongs to (free-form grouping).
+        #[arg(long)]
+        axis: String,
+        /// Cardinality rule (e.g. `any`, `exactly_one_per_app`).
+        #[arg(long, default_value = "any")]
+        cardinality: String,
+        /// Where this quality is required (scope hint).
+        #[arg(long, default_value = "")]
+        required_at: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1397,6 +1452,15 @@ fn main() {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
             GrammarCmd::Import { path, sql_file } => cmd_grammar_import(path.as_deref(), &sql_file),
+            GrammarCmd::AddKind { name, description, allowed_clauses, allowed_refs, path } => {
+                cmd_grammar_add_kind(path.as_deref(), &name, &description, allowed_clauses.as_deref(), allowed_refs.as_deref())
+            }
+            GrammarCmd::AddSynonym { synonym, canonical, notes, path } => {
+                cmd_grammar_add_synonym(path.as_deref(), &synonym, &canonical, &notes)
+            }
+            GrammarCmd::AddQuality { name, axis, cardinality, required_at, path } => {
+                cmd_grammar_add_quality(path.as_deref(), &name, &axis, &cardinality, &required_at)
+            }
         },
     };
     process::exit(exit_code);
@@ -1482,6 +1546,128 @@ fn cmd_grammar_import(db_path: Option<&Path>, sql_file: &Path) -> i32 {
         counts.patterns
     );
     0
+}
+
+fn open_grammar_rw(path: Option<&Path>) -> Result<(PathBuf, rusqlite::Connection), String> {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    if !p.exists() {
+        return Err(format!(
+            "{} does not exist — run `nom grammar init` first.",
+            p.display()
+        ));
+    }
+    rusqlite::Connection::open(&p)
+        .map(|c| (p.clone(), c))
+        .map_err(|e| format!("opening {}: {e}", p.display()))
+}
+
+fn cmd_grammar_add_kind(
+    path: Option<&Path>,
+    name: &str,
+    description: &str,
+    allowed_clauses: Option<&str>,
+    allowed_refs: Option<&str>,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-kind: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO kinds \
+               (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![
+            name,
+            description,
+            allowed_clauses.unwrap_or(""),
+            allowed_refs.unwrap_or(""),
+            "cli-add-kind",
+            "",
+        ],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-kind: {} ({} row{} inserted into {})",
+                name,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-kind: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_add_synonym(
+    path: Option<&Path>,
+    synonym: &str,
+    canonical: &str,
+    notes: &str,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-synonym: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO keyword_synonyms \
+               (synonym, canonical_keyword, source_ref, shipped_commit, notes) \
+               VALUES (?1, ?2, ?3, ?4, ?5)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![synonym, canonical, "cli-add-synonym", "cli-add-synonym", notes],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-synonym: {} → {} ({} row{} inserted into {})",
+                synonym,
+                canonical,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-synonym: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_add_quality(
+    path: Option<&Path>,
+    name: &str,
+    axis: &str,
+    cardinality: &str,
+    required_at: &str,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-quality: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO quality_names \
+               (name, axis, metric_function, cardinality, required_at, source_ref, notes) \
+               VALUES (?1, ?2, NULL, ?3, ?4, ?5, ?6)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![name, axis, cardinality, required_at, "cli-add-quality", ""],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-quality: {} ({} row{} inserted into {})",
+                name,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-quality: {e}"); 1 }
+    }
 }
 
 fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {

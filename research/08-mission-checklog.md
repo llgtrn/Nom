@@ -39,8 +39,10 @@ anything load-bearing.
   every `favor X` clause. S4 + S6 still use the hardcoded path;
   the cross-stage required-clause-presence validator is queued.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
-  `nom grammar status` (shipped). Per-row `add-*` subcommands are
-  queued under Phase C.
+  `nom grammar status`, `nom grammar add-kind`, `nom grammar
+  add-synonym`, `nom grammar add-quality` (shipped). Remaining
+  row-level subcommands (add-keyword, add-clause-shape, add-pattern)
+  queued.
 - Phase E proofs — 5 of 7 shipped: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
   (100-run Debug-equality on curated inputs), P4 strictness property
