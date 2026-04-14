@@ -401,18 +401,24 @@
 | 384 | Inline formatting specifiers (`:0:2`, `printf "%.2f"`) → prose `ensures formatted to N decimal places` / `ensures left-aligned in M columns` | authoring-guide rule | ✅ closed (doc 14 #79) |
 | 385 | Imperative output (writeln/print/puts/console.log) → pure function returning text; runtime write at single top-level entry point | authoring-guide rule | ✅ closed (doc 14 #79) |
 | 386 | Pascal `begin`/`end` block structure invisible at Nom source; nesting depth is build-stage concern | authoring-guide rule | ✅ closed (doc 14 #79) |
+| 387 | Datalog rules with same head → one function decl returning a relation; each rule body → one `ensures` clause; disjunction = union of ensured members (reuses #28 Prolog) | authoring-guide rule | ✅ closed (doc 14 #80) |
+| 388 | EDB (base facts) → input-parameter `list of DataDecl`; IDB (derived relations) → function return type `list of DataDecl` | authoring-guide rule | ✅ closed (doc 14 #80) |
+| 389 | Datalog negation-as-failure → explicit `ensures P is false exactly when no witness exists`; no open-world/closed-world toggle at Nom source | authoring-guide rule | ✅ closed (doc 14 #80) |
+| 390 | Datalog point queries → peer point-query function decls consuming relation-building fn output, returning boolean or witness | authoring-guide rule | ✅ closed (doc 14 #80) |
+| 391 | Guaranteed termination (Datalog stratified / Idris total) → explicit `ensures terminates on every finite input`; build-stage picks evaluation strategy | authoring-guide rule | ✅ closed (doc 14 #80; reuses #73 Idris totality) |
+| 392 | Polynomial-time evaluation guarantee → `favor performance` + `ensures at-most polynomial-time in input size`; build-stage picks semi-naive evaluation | authoring-guide rule | ✅ closed (doc 14 #80) |
 
-Totals by destination (after doc 14 #79 Pascal structured-programming translation — **thirty-eighth 0-new-wedge translation in a row**; 7 authoring-guide closures; **structured-imperative paradigm family exhaustively covered**: Pascal + Ada + COBOL + C + C++):
+Totals by destination (after doc 14 #80 Datalog logic-programming translation — **thirty-ninth 0-new-wedge translation in a row** + **80-translation milestone reached**; 6 authoring-guide closures; **logic-programming paradigm family fully covered**: Prolog + Datalog + Rego + SQL CTE):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **336**
+- ✅ Closed: **342**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 406 rows. Closure rate 83% (336/406). **79 translations** in doc 14. Forty-sixth consecutive minimal-wedge, **thirty-eighth 0-new-wedge**. **Backlog closure crosses 83%.** **Structured-imperative paradigm family exhaustively covered across 5 exemplars** (Pascal + Ada + COBOL + C + C++).
+Backlog size: 412 rows. Closure rate 83% (342/412). **80 translations** in doc 14 — **80-translation milestone**. Forty-seventh consecutive minimal-wedge, **thirty-ninth 0-new-wedge**. **Logic-programming paradigm family fully covered across 4 exemplars** (Prolog general + Datalog pure-Horn + Rego policy + SQL CTE relational-fixed-point).
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**

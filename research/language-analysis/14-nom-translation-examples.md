@@ -6134,6 +6134,92 @@ Row additions: **0 new wedges** — Pascal's fixed-size arrays + records + proce
 
 ---
 
+## 80. Datalog — pure Horn-clause relational logic programming
+
+```datalog
+// Base relations (EDB = extensional database).
+edge(a, b).
+edge(b, c).
+edge(c, d).
+edge(d, b).
+
+// Derived relations (IDB = intensional database).
+path(X, Y) :- edge(X, Y).
+path(X, Y) :- edge(X, Z), path(Z, Y).
+
+// Strongly connected components.
+scc(X, Y) :- path(X, Y), path(Y, X).
+
+// Query.
+?- scc("a", "d").
+```
+
+### `.nomx v1` translation
+
+```nomx
+define compute_strongly_connected_components
+  that takes a directed graph as a list of edges, returns every pair (X, Y) such that X reaches Y and Y reaches X through the edge relation.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data DirectedEdge is
+  intended to describe one directed edge of the input graph.
+  exposes source as identifier.
+  exposes target as identifier.
+
+the data ReachabilityPair is
+  intended to describe an ordered pair of nodes (X, Y) such that a directed path from X to Y exists in the input graph.
+  exposes source as identifier.
+  exposes target as identifier.
+
+the data SameComponentPair is
+  intended to describe an ordered pair of nodes (X, Y) such that both directions X-to-Y and Y-to-X are reachable — X and Y lie in the same strongly-connected component.
+  exposes node_a as identifier.
+  exposes node_b as identifier.
+
+the function reachable_pairs is
+  intended to return the transitive closure of a directed-edge list — every (X, Y) ordered pair for which a directed path from X to Y exists.
+  uses the @Data matching "DirectedEdge" with at-least 0.95 confidence.
+  uses the @Data matching "ReachabilityPair" with at-least 0.95 confidence.
+  ensures every returned ReachabilityPair has some directed path of one or more edges from source to target.
+  ensures every pair of nodes for which a directed path exists appears in the returned list exactly once.
+  ensures the computation terminates on every finite input — there is no non-terminating branch regardless of cycles in the input.
+  favor correctness.
+
+the function same_component_pairs is
+  intended to return every ordered pair (X, Y) such that X reaches Y and Y reaches X; these are the pairs of nodes in the same strongly-connected component.
+  uses the @Function matching "reachable_pairs" with at-least 0.95 confidence.
+  uses the @Data matching "SameComponentPair" with at-least 0.95 confidence.
+  ensures every returned SameComponentPair has node_a reaching node_b and node_b reaching node_a per reachable_pairs.
+  ensures every pair of nodes belonging to the same strongly-connected component appears in the returned list.
+  ensures the returned list is sorted by (node_a, node_b) ascending.
+  favor correctness.
+
+the function is_in_same_component is
+  intended to answer the query "are nodes X and Y in the same strongly-connected component?" — a true/false witness derived from same_component_pairs.
+  uses the @Function matching "same_component_pairs" with at-least 0.95 confidence.
+  ensures the result is true exactly when same_component_pairs contains a SameComponentPair with node_a equal to X and node_b equal to Y.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Pure Horn-clause rules (`path(X, Y) :- edge(X, Y). path(X, Y) :- edge(X, Z), path(Z, Y).`)** — Datalog's defining form: head `:- body` where body is a conjunction of positive literals. Nom's translation collapses each rule-head into a function decl whose `ensures` clauses capture the disjunction-of-rule-bodies pattern. Authoring-guide rule: **Datalog rules with the same head → one function decl returning a relation (list of tuples); each rule body becomes an `ensures` clause describing one path-of-derivation; the disjunction of all rules with the same head is the union of the ensured-members**. No new wedge; reuses #28 Prolog rule-to-list-returning-function pattern.
+2. **EDB (base facts) vs IDB (derived relations)** — Datalog's core distinction. Nom's translation uses data decls for both (`DirectedEdge` for EDB rows, `ReachabilityPair` for IDB rows) and function decls for IDB computation. Authoring-guide rule: **EDB base facts → input-parameter `list of DataDecl`; IDB derived relations → function return types producing `list of DataDecl`**. No new wedge.
+3. **Recursion via `path(X, Y) :- edge(X, Z), path(Z, Y)`** — the fixed-point operator implicit in Datalog semantics. Nom's translation states the closure property via `ensures every pair for which a directed path exists appears in the returned list` + `ensures the computation terminates on every finite input`. Same pattern as #43 SQL CTE fixed-point. No new wedge.
+4. **Negation-as-failure (Datalog¬ extension; not exercised here)** — closed-world-assumption negation. When encountered, Nom's translation uses `ensures P is false exactly when no witness of P exists in the relation`. Authoring-guide rule: **Datalog negation-as-failure → explicit `ensures P is false exactly when no witness exists` clauses; no open-world/closed-world toggle at Nom source level**. No new wedge.
+5. **Query form (`?- scc("a", "d")`)** — Datalog's way of posing a true/false question. Nom's translation separates the relation-building function (`same_component_pairs`) from the point-query function (`is_in_same_component`). Authoring-guide rule: **Datalog point queries → peer point-query function decls that consume the relation-building function's output and return boolean (or a witness)**. No new wedge.
+6. **Termination by stratified recursion** — Datalog guarantees termination on finite inputs via stratified negation + no unification-in-head. Nom's `ensures the computation terminates on every finite input` captures the author-level intent; the build stage proves the guarantee via semi-naive evaluation or magic-set rewriting. Authoring-guide rule: **guaranteed termination → explicit `ensures terminates on every finite input` clause; build stage picks evaluation strategy that honors the guarantee**. No new wedge; reuses #73 Idris totality rule.
+7. **Polynomial-time evaluation guarantee** — Datalog's complexity-theoretic claim. Authoring-guide rule: **polynomial-time evaluation guarantee → `favor performance` + `ensures at-most polynomial-time in the size of the input relation` on the derived-relation function; build-stage picks semi-naive evaluation to honor the bound**. No new wedge.
+
+Row additions: **0 new wedges** — Datalog's pure Horn clauses + EDB/IDB + recursion + point queries + termination all decompose to (input-relation data decls + output-relation data decls + function decls with union-of-derivation `ensures` + termination `ensures` + peer point-query function). 6 authoring-guide closures: Datalog rules → function decl with union-of-derivation `ensures` (reuses #28 Prolog), EDB/IDB → input-param vs return-type, recursion → fixed-point `ensures` (reuses #43 SQL CTE), negation-as-failure → `ensures P false when no witness`, point queries → peer point-query function, termination → `ensures terminates on finite input` (reuses #73 Idris totality), polynomial-time → `ensures at-most polynomial-time` + build-stage semi-naive evaluation.
+
+**Forty-seventh consecutive minimal-wedge translation + thirty-ninth 0-new-wedge run.** Datalog — the canonical logic-programming DSL for program analysis, graph reachability, and static verification — decomposes cleanly into Nom's primitives. Combined with Prolog (#28 general logic programming), Rego (#46 policy-DSL), and SQL CTE (#43 recursive queries), **the logic-programming paradigm family is fully covered**: Prolog brings unification + backtracking, Datalog brings pure-Horn + termination, Rego brings policy rules, SQL CTE brings relational fixed-points. All four reduce to the same (relation-building function decls + `ensures` quantifiers + peer point-query functions). **80-translation milestone reached.**
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
