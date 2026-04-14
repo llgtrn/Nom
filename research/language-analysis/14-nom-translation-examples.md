@@ -2930,6 +2930,104 @@ Row additions: **0 new wedges** — parameterized module systems (ML functors, R
 
 ---
 
+## 46. Rego (OPA policy) — declarative authorization DSL
+
+```rego
+package authz
+
+default allow := false
+
+allow if {
+    input.method == "GET"
+    input.path == ["api", "public", _]
+}
+
+allow if {
+    input.method in {"GET", "POST"}
+    some user in data.users
+    user.id == input.user_id
+    "admin" in user.roles
+}
+
+deny_reason[msg] if {
+    input.method == "DELETE"
+    not is_admin(input.user_id)
+    msg := sprintf("user %v cannot DELETE without admin role", [input.user_id])
+}
+
+is_admin(user_id) if {
+    some user in data.users
+    user.id == user_id
+    "admin" in user.roles
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define authorize_request
+  that takes an http request and a users directory, returns an authorization decision with an explanation.
+the decision starts as deny.
+when the request method is GET and the path begins with api/public, the decision becomes allow.
+when the request method is GET or POST and the user_id identifies a user whose roles contain "admin", the decision becomes allow.
+when the request method is DELETE and the user_id does not identify an admin, include a deny reason naming the user and the missing role.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data HttpRequest is
+  intended to describe the subset of an HTTP request used for authorization decisions.
+  exposes method as text.
+  exposes path as list of text.
+  exposes user_id as identifier.
+
+the data UserRecord is
+  intended to describe a user entry in the authorization directory with their id and granted roles.
+  exposes id as identifier.
+  exposes roles as list of text.
+
+the data AuthDecision is
+  intended to describe the outcome of an authorization check plus any deny-reason explanations.
+  exposes allowed as boolean.
+  exposes deny_reasons as list of text.
+
+the function is_admin is
+  intended to return true exactly when the given user_id identifies a user whose roles include "admin".
+  uses the @Data matching "UserRecord" with at-least 0.95 confidence.
+  ensures the result is true exactly when some user with a matching id has "admin" among their roles.
+  favor correctness.
+
+the function authorize_request is
+  intended to compute the AuthDecision for a given HttpRequest against a users directory, applying the allow-list rules first and recording deny reasons for denied DELETE attempts.
+  uses the @Data matching "HttpRequest" with at-least 0.95 confidence.
+  uses the @Data matching "UserRecord" with at-least 0.95 confidence.
+  uses the @Data matching "AuthDecision" with at-least 0.95 confidence.
+  uses the @Function matching "is_admin" with at-least 0.95 confidence.
+  ensures the result allowed is true when the method is GET and the path's first segment is "api" and its second segment is "public".
+  ensures the result allowed is true when the method is GET or POST and the request's user_id identifies an admin in the users directory.
+  ensures the result allowed is false by default when no allow rule matches.
+  ensures the deny_reasons include a message naming the user and missing role when the method is DELETE and the request's user_id does not identify an admin.
+  favor correctness.
+  favor auditability.
+```
+
+### Gaps surfaced
+
+1. **Default values (`default allow := false`)** — Rego's way of specifying the fallback rule. Nom's v2 translation makes this explicit via an `ensures the result allowed is false by default when no allow rule matches` clause. Authoring-guide rule: **policy defaults decompose to an explicit `ensures … by default when no … rule matches` clause, not a separate `default` keyword**. No new wedge; existing `ensures` vocabulary suffices.
+2. **Multiple rule bodies for the same name (disjunctive definition)** — Rego's `allow if { ... }` can appear multiple times; the rule matches if any body matches. Nom's translation collapses all bodies into one function with multiple `ensures` clauses joined by OR semantics. Authoring-guide rule: **disjunctive rule bodies collapse to one function with multiple `ensures` clauses — each an independent positive condition**. Consistent with the existing `ensures` semantics (each clause is independently assertable).
+3. **`input` and `data` as implicit globals** — Rego pulls request data from `input` and directory data from `data` as implicit globals. Nom rejects implicit globals entirely: `HttpRequest` and `UserRecord` are explicit parameters on the function decl. Authoring-guide rule: **implicit globals (`input`, `data`, `env`, `ctx`) decompose to explicit typed parameters on the function decl**. Same as #38 Solidity `msg.sender` rule.
+4. **`some user in data.users` existential** — Rego's existential quantifier binding. Nom's `ensures the result is true exactly when some user with a matching id has "admin" among their roles` uses the same word `some` as the existential. Authoring-guide rule: **existential quantification in ensure/require clauses uses the word `some` followed by an identifier** — a closed-vocabulary primitive. **Candidate: W49 quantifier-vocabulary lock** — minor: enumerate the allowed quantifier words (`every`, `no`, `some`, `at-least N`, `at-most N`, `exactly N`) so the parser recognizes them as quantifier tokens. Narrow wedge, high pay-off (disambiguates ensure-clause parsing across multiple paradigm translations: Prolog #28, SQL CTE #43, Rego #46).
+5. **Set-membership (`"admin" in user.roles`, `input.method in {"GET", "POST"}`)** — Rego uses `in` for list/set membership. Nom's v2 writes `has "admin" among their roles` / `the method is GET or POST` in prose. Authoring-guide rule: **membership checks use prose `has X among …` for collections and `is X or Y or Z` for small closed sets — no `in` operator**. Consistent with Nom's non-symbol discipline.
+6. **Helper rules (`is_admin(user_id) if { ... }`)** — parameterized sub-rules. Nom's translation is a peer function decl. No new wedge.
+7. **Policy composition (`allow if X; allow if Y; …`)** — Rego's collecting-multiple-bodies pattern is one way of composing rules; an alternative is calling peer rules explicitly. Both shapes reduce to the disjunctive-ensures pattern from item 2. No new wedge.
+
+Row additions: **W49 quantifier-vocabulary lock** (new wedge, narrow: enumerate `every`/`no`/`some`/`at-least N`/`at-most N`/`exactly N` as reserved quantifier tokens — a payoff wedge that clarifies ensure-clause parsing across multiple paradigm translations). 6 authoring-guide closures: policy defaults via `ensures … by default when no rule matches`, disjunctive rule bodies collapse to multiple `ensures` clauses, implicit globals decompose to explicit parameters, existential `some X` convention, membership checks as prose `has X among`/`is X or Y`, helper rules as peer function decls, policy composition = disjunctive-ensures.
+
+**Thirteenth consecutive minimal-wedge translation.** Rego's policy-evaluation model — declarative rules over a shared `input`+`data` context — decomposes cleanly: the `ensures` clause vocabulary already carries the assertion semantics Rego's `if { ... }` conveys. The one new wedge (W49 quantifier-vocabulary lock) is a **retroactive payoff wedge** that clarifies ensure-clause parsing across ALL the translations that use `every`/`some`/`no`/`at-least N` (Prolog #28, SQL CTE #43, Rego #46, property tests #33, and about 15 others). Small grammar change, wide benefit.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

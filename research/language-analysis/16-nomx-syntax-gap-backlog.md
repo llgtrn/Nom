@@ -167,18 +167,25 @@
 | 150 | Signature constraints on functor parameters = `uses @Data` typed-slot matches against signature data decl | authoring-guide rule | ✅ closed (doc 14 #45) |
 | 151 | Nested modules lift to peer top-level module decls (flat-namespace preference) | authoring-guide rule | ✅ closed (doc 14 #45; same pattern as #30/#34) |
 | 152 | Higher-kinded types are compile-time; authors write concrete module instances; resolver elides repetition via typed-slot matching | authoring-guide rule | ✅ closed (doc 14 #45; matches Phase 12 specialization) |
+| 153 | Policy defaults decompose to explicit `ensures … by default when no … rule matches` clause | authoring-guide rule | ✅ closed (doc 14 #46) |
+| 154 | Disjunctive rule bodies collapse to one function with multiple independent `ensures` clauses (OR semantics) | authoring-guide rule | ✅ closed (doc 14 #46) |
+| 155 | Implicit globals (`input`, `data`, `env`, `ctx`) decompose to explicit typed parameters | authoring-guide rule | ✅ closed (doc 14 #46; same rule as #38 Solidity) |
+| 156 | Quantifier-vocabulary lock (`every`/`no`/`some`/`at-least N`/`at-most N`/`exactly N` as reserved quantifier tokens) | **W49** grammar rule (retroactive payoff across Prolog/SQL-CTE/Rego/Hypothesis/…) | ⏳ queued (doc 14 #46) |
+| 157 | Membership checks as prose `has X among Y` / `is X or Y or Z` — no `in` operator | authoring-guide rule | ✅ closed (doc 14 #46; non-symbol discipline) |
+| 158 | Helper rules decompose to peer function decls | authoring-guide rule | ✅ closed (doc 14 #46) |
+| 159 | Policy composition = disjunctive-ensures pattern; no separate composition keyword | authoring-guide rule | ✅ closed (doc 14 #46) |
 
-Totals by destination (after doc 14 #45 OCaml functor translation — **sixth 0-new-wedge translation**; 6 authoring-guide closures; closes the major abstraction-paradigm quadrant: macros + generics + typeclasses + functors all translate without a new grammar wedge):
+Totals by destination (after doc 14 #46 Rego policy-DSL translation surfaced W49 quantifier-vocabulary-lock — a **retroactive payoff wedge** clarifying ensure-clause parsing across 15+ prior translations):
 
-- ⏳ Wedge queued: **41** (unchanged)
+- ⏳ Wedge queued: **42** (+W49 quantifier-vocabulary)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **106**
+- ✅ Closed: **112**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 158 rows. Closure rate 67% (106/158). **45 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + **parameterized-modules (ML functors; generalizes to Rust generics / C++ templates / Scala HKT)**. Twelfth consecutive minimal-wedge translation, sixth 0-new-wedge. **Abstraction-paradigm quadrant fully closed: macros + generics + typeclasses + functors.**
+Backlog size: 166 rows. Closure rate 67% (112/166). **46 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + **policy-DSL (Rego/OPA)**. Thirteenth consecutive minimal-wedge translation.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -206,6 +213,7 @@ Backlog size: 158 rows. Closure rate 67% (106/158). **45 translations** in doc 1
 - **W46:** `scenario` top-level kind declaration — expands closed kind set 8→9 nouns (8th was W41 `property`). Asserted-behavior claim: named precondition/action/postcondition triple. Covers Gherkin, RSpec behavior blocks, Playwright test descriptions. Orthogonal to function/data/concept/property.
 - **W47:** Scenario-clause grammar — closed 3-keyword set `given`/`when`/`then`; each clause is a prose sentence. Ships paired with W46. Keyword repeats on every clause (no `and`-continuation).
 - **W48:** Clock-domain clause — `at every rising edge of CLOCK` / `at every falling edge of CLOCK` attaches to synchronous-logic function decls. Expresses temporal contracts without adding a new kind; sits alongside `requires`/`ensures`. Narrow closed vocabulary.
+- **W49:** Quantifier-vocabulary lock — reserve `every`/`no`/`some`/`at-least N`/`at-most N`/`exactly N` as quantifier tokens inside `requires`/`ensures` clauses. Retroactive payoff wedge: disambiguates ensure-clause parsing across 15+ prior paradigm translations (Prolog/SQL-CTE/Rego/Hypothesis/property-tests/…).
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 
