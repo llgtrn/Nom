@@ -276,18 +276,25 @@
 | 259 | Implicit-typing conventions rejected; every Nom value has an explicit type via `exposes` or prose range | authoring-guide rule | ✅ closed (doc 14 #61) |
 | 260 | Fortran PARAMETER constants → data-decl fields on a dedicated policy data decl (like PayrollPolicy in #58) | authoring-guide rule | ✅ closed (doc 14 #61) |
 | 261 | Fortran PROGRAM/SUBROUTINE/FUNCTION distinctions collapse to plain Nom function decls; entry-point status is build-stage configuration | authoring-guide rule | ✅ closed (doc 14 #61) |
+| 262 | Push-subscription functions → callbacks data decl + subscribe fn with per-callback `ensures` + unsubscribe-handle return | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 263 | Observable/Rx callback triples (`next`/`error`/`complete`) → callbacks data decl with 3 `reference to function` fields | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 264 | GraphQL operation variables (`$channelId`) → Nom function parameters with explicit types; no `$` prefix at source | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 265 | Delivery-ordering scope (per-channel/per-key/global) declared as explicit `hazard` clause on subscription functions | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 266 | Transport-layer silent-disconnect is standard `hazard` on persistent-connection functions; callers own heartbeat+reconnect logic | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 267 | Persistent-subscription functions return unsubscribe handle as primary return (matches #12 event-listener pattern) | authoring-guide rule | ✅ closed (doc 14 #62) |
+| 268 | Message-delivery semantics (at-most-once / exactly-once / at-least-once) stated explicitly via W49 quantifiers in `ensures` clauses | authoring-guide rule | ✅ closed (doc 14 #62; reinforces W49 payoff) |
 
-Totals by destination (after doc 14 #61 Fortran scientific-computing translation — **twentieth 0-new-wedge translation in a row**; 7 authoring-guide closures; **scientific-computing paradigm family** (Fortran + NumPy + R + SQL-CTE) all reduce to stencil-as-prose + quantified `ensures` + explicit stability conditions):
+Totals by destination (after doc 14 #62 GraphQL subscription translation — **twenty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **event-driven paradigm family** (GraphQL-sub #62 + TS-event #12 + Elixir-GenServer #27 + XState #32) all specifiable via W49-quantified `ensures` clauses):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **211**
+- ✅ Closed: **218**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
 
-Backlog size: 275 rows. Closure rate 77% (211/275). **61 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + **scientific-computing-with-array-sections (Fortran)**. **Backlog closure crosses 77%.** Twenty-eighth consecutive minimal-wedge translation, twentieth 0-new-wedge.
+Backlog size: 282 rows. Closure rate 77% (218/282). **62 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + **push-subscription (GraphQL subscription)**. Twenty-ninth consecutive minimal-wedge translation, twenty-first 0-new-wedge. **Event-driven paradigm family fully specifiable via W49 quantifiers in `ensures` clauses.**
 
 ## Wedge master index (for cross-ref with doc 13)
 

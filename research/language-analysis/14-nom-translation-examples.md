@@ -4374,6 +4374,99 @@ Row additions: **0 new wedges** — Fortran's scientific-computing-with-array-se
 
 ---
 
+## 62. GraphQL subscription — event-push real-time query
+
+```graphql
+subscription OnMessagePosted($channelId: ID!) {
+  messagePosted(channelId: $channelId) {
+    id
+    author {
+      id
+      displayName
+    }
+    body
+    postedAt
+  }
+}
+```
+
+```javascript
+const unsubscribe = client.subscribe(
+  OnMessagePosted,
+  { channelId: "general" },
+  {
+    next: (msg) => appendToUi(msg),
+    error: (err) => reportError(err),
+    complete: () => reconnect(),
+  }
+);
+```
+
+### `.nomx v1` translation
+
+```nomx
+define subscribe_to_messages
+  that takes a channel id and three callback handlers (on-message, on-error, on-complete), returns an unsubscribe handle.
+open a server-push subscription against the messagePosted topic for the given channel.
+whenever a new message arrives, call on-message with its id, author id, author displayName, body, and postedAt timestamp.
+if the subscription errors, call on-error with the error.
+if the subscription completes, call on-complete and reconnect.
+return an unsubscribe handle the caller can invoke to end the subscription.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data MessageAuthor is
+  intended to identify the user who authored a posted message.
+  exposes id as identifier.
+  exposes display_name as text.
+
+the data PostedMessage is
+  intended to describe one chat message delivered through the messagePosted push-subscription.
+  exposes id as identifier.
+  exposes author as reference to MessageAuthor.
+  exposes body as text.
+  exposes posted_at as timestamp.
+
+the data SubscriptionCallbacks is
+  intended to group the three callbacks the subscriber supplies for a GraphQL push subscription — per-message, per-error, per-completion.
+  exposes on_message as reference to function taking PostedMessage returning nothing.
+  exposes on_error as reference to function taking text returning nothing.
+  exposes on_complete as reference to function taking nothing returning nothing.
+
+the function subscribe_to_messages is
+  intended to open a server-push subscription that invokes the supplied callbacks for each delivered message, any transport error, and the subscription's completion; returns an unsubscribe handle.
+  uses the @Data matching "PostedMessage" with at-least 0.95 confidence.
+  uses the @Data matching "SubscriptionCallbacks" with at-least 0.95 confidence.
+  requires the channel_id refers to a channel the caller is authorized to read.
+  ensures on_message is invoked exactly once per delivered PostedMessage, in arrival order.
+  ensures on_error is invoked at-most once; if invoked, no further on_message calls follow until resubscription.
+  ensures on_complete is invoked exactly zero or one time, always after any on_message or on_error calls.
+  ensures the returned unsubscribe handle, when invoked, prevents any further callback invocations for this subscription.
+  hazard messages may be delivered out of order across independent subscriptions on different channels; only same-channel ordering is guaranteed.
+  hazard the subscription may stop delivering messages without error (silent disconnect); callers should implement heartbeat + reconnect at the transport layer.
+  favor correctness.
+  favor responsiveness.
+```
+
+### Gaps surfaced
+
+1. **Push-based delivery semantics** — GraphQL subscription inverts the usual request-response model: the server pushes N messages per subscription. Nom's translation captures this via `ensures on_message is invoked exactly once per delivered PostedMessage, in arrival order` — the function's contract describes a stream, not a single return. Authoring-guide rule: **push-subscription functions decompose to a function that takes callback data + returns unsubscribe handle, with per-callback `ensures` clauses quantifying delivery guarantees**. No new wedge; the `reference to function` field + per-callback `ensures` is enough.
+2. **Three-callback protocol (next/error/complete)** — the Observable / Rx pattern. Nom's `SubscriptionCallbacks` data decl groups the three callbacks as peer fields. Authoring-guide rule: **Observable/Rx callback triples decompose to a callbacks data decl with three `reference to function` fields (on_message/on_error/on_complete); per-callback invariants stated as separate `ensures` clauses**. No new wedge.
+3. **Variable binding (`$channelId: ID!`)** — GraphQL's way of parameterizing operations. Nom's translation treats the variable as a plain function parameter (`channel_id`). Authoring-guide rule: **GraphQL operation variables → Nom function parameters with explicit types; no `$` prefix at source level**. No new wedge.
+4. **Non-null type suffix (`!` and unmarked optional)** — GraphQL's optionality marker. Nom uses `perhaps T` for optional, bare `T` for required — same semantics, clearer reading. Authoring-guide rule: **GraphQL `!` → required field is default; fields without `!` → `perhaps T`**. Same rule as #17 GraphQL query translation (already shipped). No new wedge.
+5. **Delivery-ordering guarantee** — same-channel ordered vs cross-channel unordered. Nom surfaces this as a `hazard` clause. Authoring-guide rule: **delivery-ordering scope (per-channel/per-key/global) declared as an explicit `hazard` clause on subscription functions**. No new wedge.
+6. **Transport silent-disconnect hazard** — a real-world operational concern that many subscription clients miss. Nom surfaces it explicitly. Authoring-guide rule: **transport-layer silent-disconnect is a standard `hazard` on any persistent connection function; callers must own heartbeat + reconnect logic**. No new wedge.
+7. **Unsubscribe handle as return value** — returning a first-class cancellation token. Matches the event-listener pattern from #12 TS editor-event translation. Authoring-guide rule: **persistent-subscription functions return an unsubscribe handle as their primary return; the handle's invocation is a separate function decl in the data decl's exposes**. No new wedge.
+8. **At-most-once vs exactly-once vs at-least-once delivery semantics** — the three fundamental message-delivery guarantees. Nom's `ensures` clauses can state all three explicitly (see `exactly once per delivered PostedMessage` + `at-most once` for on_error). Authoring-guide rule: **message-delivery semantics stated explicitly via quantifier vocabulary (W49 `exactly`/`at-most N`/`at-least N`) in `ensures` clauses; no implicit defaults**. Reinforces W49 payoff. No new wedge.
+
+Row additions: **0 new wedges** — GraphQL push subscriptions fully express via (callbacks data decl + subscribe function with per-callback `ensures` + unsubscribe-handle return + `hazard` clauses for ordering/disconnect). 7 authoring-guide closures: push-subscription decomposition, Observable/Rx callback triples → callbacks data decl, operation variables → function params, GraphQL `!` semantics = #17 rule, delivery-ordering scope in `hazard`, transport silent-disconnect as standard `hazard`, unsubscribe handle as primary return, delivery-semantics via W49 quantifiers.
+
+**Twenty-ninth consecutive minimal-wedge translation + twenty-first 0-new-wedge run.** GraphQL subscriptions — along with TS editor-event (#12), Elixir GenServer (#27 actor messaging), and XState (#32 state transitions) — all belong to the **event-driven paradigm family**. Combined with Nom's `ensures at-most once` / `ensures exactly once per delivered X` vocabulary from W49, **the event-ordering + delivery-guarantee contract surface is now fully specifiable** in Nom without any event-specific grammar additions.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
