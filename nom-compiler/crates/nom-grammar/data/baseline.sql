@@ -963,6 +963,233 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 2 — security + testing
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'content-signature-verification',
+  'verify a blob carries a matching signature from a trusted key before use',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to reject any blob whose signature does not match a trusted public key.\n  uses the @Data matching "trusted key set" with at-least 0.9 confidence.\n  requires the signature to cover the full blob and no separator ambiguity to exist.\n  ensures only blobs with a valid signature by a currently-trusted key return ok.\n  hazard accepting a signature over a prefix while using the suffix leaks forgery.\n  favor auditability.',
+  '["signature-over-prefix forgery","trust set drift","algorithm downgrade"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'password-hash-storage',
+  'store a user secret as a salted slow-hash digest, never in recoverable form',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to persist a user secret only as a per-record salted slow-hash digest.\n  uses the @Data matching "slow hash parameters" with at-least 0.9 confidence.\n  requires a fresh random salt per record and a tuned work factor.\n  ensures the stored row never contains the original secret nor a fast-hash of it.\n  hazard reusing salts or using a fast hash collapses offline cracking cost.\n  favor auditability.',
+  '["salt reuse","fast-hash shortcut","work factor too low"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'rate-limit-per-principal',
+  'cap the request arrival rate per authenticated caller over a sliding window',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to reject requests from a principal that exceed a configured rate over a sliding window.\n  uses the @Data matching "per-principal counter window" with at-least 0.9 confidence.\n  requires the principal identity to be verified before the counter is consulted.\n  ensures a principal cannot exceed the configured budget within any window of the configured span.\n  hazard keying the counter by network address instead of principal lets shared clients starve each other.\n  favor availability.',
+  '["wrong key dimension","window boundary burst","counter skew across replicas"]',
+  '["availability","auditability"]',
+  '[]'
+),
+(
+  'input-sanitization-boundary',
+  'parse and validate untrusted input at a single boundary before it enters the domain',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to convert untrusted bytes into a typed domain value or a structured rejection.\n  uses the @Data matching "validated domain value" with at-least 0.9 confidence.\n  requires every untrusted source to pass through this boundary exactly once.\n  ensures no downstream consumer receives bytes that have not been parsed and range-checked here.\n  hazard re-entering unsanitized input on a secondary path bypasses the boundary entirely.\n  favor correctness.',
+  '["secondary unsanitized path","double-decode confusion","late validation"]',
+  '["correctness","auditability"]',
+  '[]'
+),
+(
+  'secret-rotation-window',
+  'rotate a long-lived secret on a schedule with a bounded dual-acceptance window',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to replace an active secret with a freshly generated one on a fixed schedule.\n  uses the @Data matching "active and previous secret pair" with at-least 0.9 confidence.\n  requires both the new and previous secret to be accepted for a bounded overlap window.\n  ensures after the overlap expires only the new secret is accepted anywhere.\n  hazard leaving the previous secret accepted beyond the overlap defeats the rotation.\n  favor auditability.',
+  '["unbounded overlap","rotation skipped on failure","previous secret leaked during overlap"]',
+  '["auditability","availability"]',
+  '[]'
+),
+(
+  'audit-trail-append-only',
+  'record every sensitive action to a log that admits appends but not edits or deletes',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to append an immutable record describing a sensitive action, its actor, and its time.\n  uses the @Data matching "append-only log segment" with at-least 0.9 confidence.\n  requires each record to carry a hash chained to the previous record.\n  ensures a later modification of any record breaks the chain and is detectable.\n  hazard permitting in-place edits or truncation silently erases evidence.\n  favor auditability.',
+  '["in-place edit","truncation","chain gap on crash"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'capability-token-scoped',
+  'issue a token that names exactly the actions and resources it grants, nothing more',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to mint a token whose payload enumerates the actions and resources it permits.\n  uses the @Data matching "scoped capability token" with at-least 0.9 confidence.\n  requires every downstream check to verify the action and resource are within the token scope.\n  ensures a token cannot authorize any action or resource outside its stated scope.\n  hazard ambient identity checks that ignore the scope collapse the capability into a bearer key.\n  favor auditability.',
+  '["ambient identity override","scope widening on refresh","wildcard scope"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'time-bounded-credential',
+  'issue a credential that carries its own expiry and is rejected after it',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to mint a credential whose payload states a not-after timestamp.\n  uses the @Data matching "time-bounded credential" with at-least 0.9 confidence.\n  requires every verifier to read a trusted clock and compare against the not-after field.\n  ensures a credential presented after its not-after is rejected everywhere.\n  hazard trusting a clock supplied by the caller lets an expired credential be replayed forever.\n  favor auditability.',
+  '["caller-supplied clock","clock skew tolerance too wide","missing not-after"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'encrypted-at-rest-data',
+  'store persistent data only under a key managed outside the storage layer',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to write persistent records only after encryption under a key held outside the storage layer.\n  uses the @Data matching "data encryption key handle" with at-least 0.9 confidence.\n  requires the key handle to be resolvable only by authorized callers at read time.\n  ensures a raw read of the storage medium yields ciphertext that is useless without the key.\n  hazard caching the plaintext key inside the storage process defeats the separation.\n  favor auditability.',
+  '["key co-location with ciphertext","plaintext cache in storage process","unencrypted backup path"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'cross-origin-request-gating',
+  'accept cross-origin calls only from an allow-listed origin set with explicit methods',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to accept a cross-origin call only if its origin and method appear on an allow list.\n  uses the @Data matching "origin allow list" with at-least 0.9 confidence.\n  requires the allow list to enumerate exact origins and exact methods with no wildcards.\n  ensures a call from an origin or method not on the list is refused before any side effect.\n  hazard reflecting the caller-supplied origin into the allow response turns the gate into a pass-through.\n  favor auditability.',
+  '["origin reflection","wildcard allow","preflight bypass"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'unit-test-assertion',
+  'single deterministic claim that one input shape produces one expected output shape',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Function","@Data"]',
+  'the scenario <name> is\n  intended to pin one observable fact about the subject under a fixed input.\n  given the @Data matching "prepared input fixture" with at-least 0.9 confidence.\n  when the @Function matching "subject under test" with at-least 0.9 confidence runs against that input.\n  then the result equals the expected value exactly.\n  favor correctness.',
+  '["assertion phrased as vague approximate match","multiple unrelated claims hidden in one scenario","shared mutable state leaking between runs"]',
+  '["correctness","determinism","clarity"]',
+  '[]'
+),
+(
+  'golden-snapshot-comparison',
+  'compare current output byte-for-byte against a previously approved reference artifact',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Function","@Media","@Data"]',
+  'the scenario <name> is\n  intended to catch silent drift in stable serialised outputs.\n  given the @Media matching "approved reference artifact pinned at known revision" with at-least 0.95 confidence.\n  when the @Function matching "deterministic renderer under test" with at-least 0.9 confidence produces a fresh artifact from fixed inputs.\n  then the fresh artifact is byte-identical to the reference artifact.\n  favor reproducibility.',
+  '["rubber-stamped regeneration of reference after every run","nondeterministic fields like timestamps embedded in output","reference drift unreviewed across long periods"]',
+  '["reproducibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'property-based-shrinking-test',
+  'claim holds over a generated input space and counterexamples shrink to a minimal witness',
+  '["property"]',
+  '["intended","generator","uses","requires","ensures","favor"]',
+  '["@Function","@Data"]',
+  'the property <name> is\n  intended to defend a universal invariant of the subject across a broad input space.\n  generator the @Data matching "structured random input within declared bounds" with at-least 0.9 confidence.\n  uses the @Function matching "subject under property test" with at-least 0.9 confidence.\n  requires each generated input to lie inside the declared domain.\n  ensures any failing input is reducible to a minimal witness that still fails.\n  favor correctness.',
+  '["generator too narrow to exercise real edge cases","shrinker loses the failing condition and returns green","claim secretly conditions on the generator distribution"]',
+  '["correctness","statistical_rigor","reproducibility"]',
+  '[]'
+),
+(
+  'mutation-test-survivor',
+  'detect assertions that fail to catch small semantic perturbations of the subject',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Function","@Data"]',
+  'the scenario <name> is\n  intended to expose test suites that pass even when the subject is silently altered.\n  given the @Function matching "subject with one small semantic perturbation injected" with at-least 0.9 confidence.\n  when the existing assertion battery runs unchanged against the perturbed subject.\n  then at least one assertion fails and names the perturbation it caught.\n  favor correctness.',
+  '["perturbation equivalent to original and therefore uncatchable","flaky assertion masks genuine survival","runtime explosion from unbounded perturbation set"]',
+  '["correctness","auditability","clarity"]',
+  '[]'
+),
+(
+  'integration-test-fixture',
+  'exercise several collaborating components against a controlled shared environment',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Module","@Data"]',
+  'the scenario <name> is\n  intended to verify that several real components cooperate over a shared boundary.\n  given the @Data matching "isolated fixture seeded with known records" with at-least 0.9 confidence.\n  when the @Module matching "collaborating component set under test" with at-least 0.9 confidence exchanges messages through the real boundary.\n  then each observable side effect matches the declared expectation exactly.\n  favor correctness.',
+  '["fixture shared between unrelated runs","hidden reliance on wall-clock ordering","mocked boundary that hides the integration under test"]',
+  '["correctness","reproducibility","auditability"]',
+  '[]'
+),
+(
+  'end-to-end-flow-test',
+  'walk a full user-visible flow from entry screen through to final outcome',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Screen","@Event","@Function"]',
+  'the scenario <name> is\n  intended to confirm a real user path reaches its declared outcome across every layer.\n  given the @Screen matching "entry screen in initial state" with at-least 0.9 confidence.\n  when the user issues the @Event matching "ordered interaction sequence for target flow" with at-least 0.9 confidence.\n  then the final screen shows the declared outcome and every intermediate @Function matching "step handler along the flow" with at-least 0.85 confidence has recorded success.\n  favor correctness.',
+  '["flakiness from animation or network timing","cross-test pollution via shared account state","outcome checked only on the last screen, hiding mid-flow defects"]',
+  '["correctness","responsiveness","reproducibility"]',
+  '[]'
+),
+(
+  'performance-regression-benchmark',
+  'detect a statistically meaningful slowdown of a subject against a pinned baseline',
+  '["property"]',
+  '["intended","generator","uses","requires","ensures","favor"]',
+  '["@Function","@Data"]',
+  'the property <name> is\n  intended to catch performance loss before it reaches production.\n  generator the @Data matching "representative workload drawn from recorded traffic" with at-least 0.9 confidence.\n  uses the @Function matching "subject whose timing is measured" with at-least 0.9 confidence.\n  requires the measurement harness to pin the workload, the host class, and the warm-up budget.\n  ensures the median latency of the subject stays within the declared tolerance of the pinned baseline.\n  favor performance.',
+  '["noisy host masks real regressions","baseline quietly refreshed so slowdowns vanish","warm-up too short so cold-start dominates the sample"]',
+  '["performance","latency","reproducibility"]',
+  '[]'
+),
+(
+  'fuzz-test-corpus',
+  'feed a growing corpus of mutated inputs and flag any crash, hang, or invariant break',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Function","@Data"]',
+  'the scenario <name> is\n  intended to harden the subject against adversarial and malformed inputs.\n  given the @Data matching "corpus of seed inputs plus coverage-guided mutations" with at-least 0.9 confidence.\n  when the @Function matching "subject under fuzz harness" with at-least 0.9 confidence consumes each input under a bounded time and memory budget.\n  then no input causes a crash, hang, or declared invariant break, and any finding is minimised and added to the corpus.\n  favor correctness.',
+  '["coverage plateau hides unreached branches","oracle too weak to notice silent corruption","minimised finding stored without a pinned reproduction seed"]',
+  '["correctness","auditability","reproducibility"]',
+  '[]'
+),
+(
+  'chaos-injection-test',
+  'inject a realistic environmental fault and confirm the system degrades within declared bounds',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Module","@Event"]',
+  'the scenario <name> is\n  intended to verify graceful degradation under a named environmental fault.\n  given the @Module matching "target system under steady-state load" with at-least 0.9 confidence.\n  when the @Event matching "single injected fault drawn from the declared fault catalogue" with at-least 0.9 confidence is applied for a bounded window.\n  then user-visible success rate, latency, and data integrity stay within the declared degradation envelope and the system returns to steady state after the window closes.\n  favor availability.',
+  '["injection scope leaks beyond the declared window","degradation envelope drawn loosely enough that any behaviour passes","fault catalogue untested against real historical incidents"]',
+  '["availability","correctness","auditability"]',
+  '[]'
+),
+(
+  'contract-test-provider-consumer',
+  'pin a shared boundary so provider and consumer stay compatible across independent releases',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Module","@Data"]',
+  'the scenario <name> is\n  intended to prevent drift across independently released sides of a shared boundary.\n  given the @Data matching "pinned contract document co-owned by both sides" with at-least 0.95 confidence.\n  when the @Module matching "provider implementation under test" with at-least 0.9 confidence replays every interaction declared in the contract and the @Module matching "consumer implementation under test" with at-least 0.9 confidence replays every expectation declared in the contract.\n  then every provider response satisfies the contract shape and every consumer expectation is met by the contract.\n  favor forward_compatibility.',
+  '["contract edited by one side without the other noticing","optional fields read as required on the consumer side","contract version not pinned inside the recorded interaction"]',
+  '["forward_compatibility","correctness","auditability"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
