@@ -3848,6 +3848,59 @@ Row additions: **0 new wedges** — Elm's pure-FRP architecture is the cleanest 
 
 ---
 
+## 56. Rust macro_rules! — token-tree declarative macro
+
+```rust
+macro_rules! vec_of {
+    () => { Vec::new() };
+    ($($elem:expr),+ $(,)?) => {{
+        let mut v = Vec::new();
+        $( v.push($elem); )+
+        v
+    }};
+}
+
+let empty: Vec<i32> = vec_of!();
+let nums = vec_of![1, 2, 3];
+let strings = vec_of!["alpha", "beta", "gamma",];
+```
+
+### `.nomx v1` translation
+
+```nomx
+define build_list
+  that takes zero or more values of any type, returns a list containing those values in order.
+when no values are given, return the empty list.
+when one or more values are given, start from the empty list and append each value in order.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the function build_list is
+  intended to return a list containing the given values in order; the empty input yields the empty list.
+  requires every input value has the same type.
+  ensures the returned list has length equal to the number of input values.
+  ensures the ith element of the returned list equals the ith input value for every valid i.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Token-tree pattern matching (`$($elem:expr),+`)** — `macro_rules!`'s signature: the macro body is a template that matches against the literal source tokens at use-site. Nom rejects macro-level source transformation entirely — every Nom function is invoked with evaluated values, never unparsed tokens. Authoring-guide rule: **Rust `macro_rules!` and procedural macros are no-op in Nom translations; variadic-input macros become variadic function decls (`zero or more values`) that operate on the evaluated argument list, not on source tokens**. No new wedge; reinforces the #29 Lisp-macro-rejection rule.
+2. **Variadic arguments via repetition (`$($elem:expr),+`)** — macro_rules! captures a comma-separated sequence. Nom's prose `zero or more values` + `the ith element of the returned list equals the ith input value` expresses this at the value level, not the token level. Authoring-guide rule: **variadic-input functions decompose to `takes zero or more values` + indexed positional post-conditions** instead of token-level repetition. No new wedge.
+3. **Trailing-comma handling (`$(,)?`)** — a syntactic nicety in macro_rules!. Nom has no distinction between trailing-comma and no-trailing-comma because functions never see source commas — the elaborated argument list is a plain list. Authoring-guide rule: **syntactic-niceties at source-token level (trailing commas, optional semicolons, ...) are invisible in Nom translations**. No new wedge.
+4. **Hygienic scoping** — `macro_rules!` creates fresh variable bindings per expansion to avoid capture. Because Nom's functions are first-class and don't expand at call sites, hygiene is automatic. Authoring-guide rule: **macro hygiene is vacuous in Nom — no call-site expansion means no capture hazard**. Reinforces the closure-lifting discipline (#29 + doc 19 D2). No new wedge.
+5. **Type-level generics via macro** — macro_rules! is sometimes used as a poor-person's generics (`vec_of![1,2,3]` works for any element type). Nom's typed-slot resolver + `reference to function` fields (#45 functors) handles this natively. Authoring-guide rule: **macros-as-generics decompose to typed-slot parameters in function decls**, same shape as #45 OCaml-functor sig parameters. No new wedge.
+6. **Procedural macros (derive, attribute)** — a separate Rust macro flavor that runs at compile time against a TokenStream. Nom builds compile-time derivations differently: the build-stage verifier + MECE validator (doc 08) + strict validator (W4-A3) consume source and emit derived artifacts. Authoring-guide rule: **procedural-macro semantics (`#[derive(Serialize)]` etc.) map to build-stage transformations authored as Nom function decls consumed by the build pipeline, not as source-level annotations**. No new wedge; the build stage is the procedural-macro equivalent.
+7. **`concat_idents!` / paste! / symbol-manipulating macros** — macros that build new identifier names from input tokens. Nom forbids identifier-synthesis at source time; the feature-stack naming discipline (MEMORY.md roadmap) handles compound names explicitly at authoring time. Authoring-guide rule: **identifier-manipulating macros are rejected; feature-stack identifiers are authored explicitly**. No new wedge.
+
+Row additions: **0 new wedges** — Rust `macro_rules!` (and procedural macros) fall entirely under the existing macro-rejection + closure-lifting + typed-slot-generics + build-stage-derivation framework. 6 authoring-guide closures: variadic macros → variadic function decls, trailing-comma etc are source-token niceties invisible in Nom, macro hygiene is vacuous, macros-as-generics = typed-slot params (reuses #45), procedural macros = build-stage transformations, identifier-synthesizing macros rejected (feature-stack names authored explicitly).
+
+**Twenty-third consecutive minimal-wedge translation + fifteenth 0-new-wedge run.** Rust's macro system — the reason many Rust projects look dense and token-heavy — has **no separate Nom translation surface**. Combined with Lisp-macro-rejection (#29, closure lifting) and the metaprogramming-decomposition rule from there, **every macro-based metaprogramming idiom in every major language has been reduced to one of four existing Nom mechanisms**: (a) closure-lifting for template-like macros, (b) variadic function decls for repetition-capturing macros, (c) typed-slot params for generics-via-macro, (d) build-stage transformations for derivation-style procedural macros.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

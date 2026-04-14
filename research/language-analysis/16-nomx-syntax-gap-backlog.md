@@ -235,18 +235,24 @@
 | 218 | Elm `case of` exhaustive pattern match → `when … otherwise …` prose + `ensures exactly one branch fires` (W40) | authoring-guide rule | ✅ closed (doc 14 #55) |
 | 219 | Purity is Nom's default stance — boundary-crossing effects flagged via `hazard`; no extra marker needed | authoring-guide rule | ✅ closed (doc 14 #55) |
 | 220 | Event-handler bindings in reactive UIs → prose `emits CounterMessage when tapped` inside screen decl layout | authoring-guide rule | ✅ closed (doc 14 #55; same as #39 SwiftUI callback props) |
+| 221 | Variadic-input macros → variadic function decls (`takes zero or more values`) + indexed positional post-conditions | authoring-guide rule | ✅ closed (doc 14 #56; reinforces #29 Lisp-macro rejection) |
+| 222 | Syntactic-niceties at source-token level (trailing commas, optional semicolons) are invisible in Nom translations | authoring-guide rule | ✅ closed (doc 14 #56) |
+| 223 | Macro hygiene is vacuous in Nom — no call-site expansion means no capture hazard (reinforces closure-lifting #29 + D2) | authoring-guide rule | ✅ closed (doc 14 #56) |
+| 224 | Macros-as-generics → typed-slot parameters in function decls (same shape as #45 OCaml-functor sig params) | authoring-guide rule | ✅ closed (doc 14 #56) |
+| 225 | Procedural macros (`#[derive(X)]`) → build-stage transformations authored as Nom function decls consumed by build pipeline, not source annotations | authoring-guide rule | ✅ closed (doc 14 #56) |
+| 226 | Identifier-synthesizing macros rejected; feature-stack identifiers authored explicitly | authoring-guide rule | ✅ closed (doc 14 #56; matches MEMORY.md feature-stack roadmap) |
 
-Totals by destination (after doc 14 #55 Elm pure-FRP translation — **fourteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **reactive-UI paradigm closed across three concrete frameworks** XState/SwiftUI/Elm with zero per-framework adaptation):
+Totals by destination (after doc 14 #56 Rust macro_rules! translation — **fifteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **metaprogramming fully reduced to 4 existing Nom mechanisms** — closure-lifting + variadic functions + typed-slot generics + build-stage transformations):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **170**
+- ✅ Closed: **176**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **7** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability QualityNames)
 
-Backlog size: 231 rows. Closure rate 74% (170/231). **55 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + **pure-FRP-Model-Update-View (Elm)**. Twenty-second consecutive minimal-wedge translation, fourteenth 0-new-wedge. **The Elm Architecture officially named as Nom's unified reactive-decomposition pattern.**
+Backlog size: 237 rows. Closure rate 74% (176/237). **56 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + **token-tree-macros (Rust `macro_rules!`)**. Twenty-third consecutive minimal-wedge translation, fifteenth 0-new-wedge. **All macro-based metaprogramming idioms across every major language reduce to 4 existing Nom mechanisms: closure-lifting + variadic functions + typed-slot generics + build-stage transformations.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
