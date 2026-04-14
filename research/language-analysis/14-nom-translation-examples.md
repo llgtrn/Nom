@@ -6420,6 +6420,101 @@ Row additions: **0 new wedges** — Tcl's "everything is a string" + command sub
 
 ---
 
+## 83. Io — prototype-based OO with delegation (no classes)
+
+```io
+Account := Object clone do(
+    owner ::= ""
+    balance ::= 0
+
+    deposit := method(amount,
+        balance = balance + amount
+        self
+    )
+
+    withdraw := method(amount,
+        if(amount > balance, Exception raise("insufficient funds"))
+        balance = balance - amount
+        self
+    )
+)
+
+SavingsAccount := Account clone do(
+    interestRate ::= 0.0
+    applyInterest := method(
+        balance = balance * (1 + interestRate)
+        self
+    )
+)
+
+alice := SavingsAccount clone setOwner("alice") setBalance(1000) setInterestRate(0.05)
+alice applyInterest
+alice balance // 1050
+```
+
+### `.nomx v1` translation
+
+```nomx
+define create_account
+  that takes an owner name and an opening balance, returns a new account.
+
+define create_savings_account
+  that takes an owner name, opening balance, and interest rate, returns a savings account.
+
+define deposit_to_account
+  that takes an account and a positive amount, returns the updated account.
+
+define apply_interest_to_savings
+  that takes a savings account, returns the account with balance multiplied by (1 + interest rate).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Account is
+  intended to describe one bank account with an owner identity and a current ledger balance.
+  exposes owner as text.
+  exposes balance as real from 0 to 1e15.
+
+the data SavingsAccount is
+  intended to describe a savings-class account that extends Account with an interest-rate field; SavingsAccount is structurally a superset of Account with exactly one additional field.
+  exposes owner as text.
+  exposes balance as real from 0 to 1e15.
+  exposes interest_rate as real from 0 to 1.
+
+the function deposit_to_account is
+  intended to return a new Account with balance increased by a positive deposit amount; the original account is unchanged.
+  uses the @Data matching "Account" with at-least 0.95 confidence.
+  requires amount is strictly positive.
+  ensures the returned Account has balance equal to prior balance plus amount, and owner unchanged.
+  favor correctness.
+
+the function apply_interest_to_savings is
+  intended to return a new SavingsAccount with balance compounded by one period's interest.
+  uses the @Data matching "SavingsAccount" with at-least 0.95 confidence.
+  requires the prior interest_rate is in range 0 to 1 inclusive.
+  ensures the returned account has balance equal to prior balance times (1 plus interest_rate), rounded to 2 decimal places.
+  ensures the returned account has owner and interest_rate unchanged.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Prototype-based inheritance (`SavingsAccount := Account clone`)** — Io's signature feature: objects delegate missing slots to their prototype. Nom rejects delegation-based inheritance; instead, Nom uses **structural-superset data decls**: SavingsAccount's `exposes` list includes every field from Account plus the new ones. Authoring-guide rule: **prototype-based delegation (Io, JavaScript prototypes, Self) → structural-superset data decls where the child's `exposes` list repeats every parent field verbatim; no delegation chain at Nom source level**. No new wedge.
+2. **`::=` slot-declaration + auto-generated setters (`setOwner`, `setBalance`)** — Io's way of declaring a slot with a default value and auto-generated accessor/setter. Nom's `exposes owner as text` handles both; no setter functions are needed because data decls are immutable (mutations return fresh instances per #50 Dafny / #55 Elm / #69 Smalltalk rules). Authoring-guide rule: **auto-generated setters/getters (Io `setX`, C# auto-properties, Kotlin `var`) → `exposes` fields only; construction and update handled by returning fresh instances**. No new wedge.
+3. **Dynamic slot addition** — in Io, any object can gain new slots at runtime. Nom rejects dynamic typing: the data decl defines the complete field set at authoring time. Authoring-guide rule: **dynamic slot addition (Io, Lua, JavaScript) → data decl with fixed `exposes` field set; new fields require a new data decl**. No new wedge.
+4. **Message-chaining (`alice applyInterest balance`)** — Io's whitespace-delimited message sequence. Nom's translation uses named intermediates + explicit function calls. Authoring-guide rule: **Io message chains → named-intermediate prose with explicit function applications (reuses doc 17 §I8 + #23 Ruby chain rule + #57 jq pipe rule)**. No new wedge.
+5. **`clone` as the object-creation mechanism** — Io's way of creating a new object from a prototype. Nom's translation uses `create_*` functions that return a data-decl instance with specific field values. Authoring-guide rule: **prototype-clone object creation → `create_X` function decls that construct a fresh data-decl instance with named-parameter field values; no `clone` operator at Nom source level**. No new wedge.
+6. **`self` as the implicit receiver** — Io's way of referencing the current object inside a method. Nom rejects implicit receivers; the receiver is always the first named parameter. Authoring-guide rule: **Io `self` / JavaScript `this` / Python `self` → explicit first parameter named for the receiver type (reuses #23 Ruby + #69 Smalltalk + #38 Solidity rules)**. No new wedge.
+7. **Exception-as-object (`Exception raise(...)`)** — Io's exception mechanism. Nom replaces exception-propagation with tagged-variant error data decls + short-circuit `ensures` (reuses #25 Haskell Either + #67 Zig error-union + #38 Solidity typed-errors). Authoring-guide rule: **prototype-based exceptions (Io, JavaScript throw Error) → tagged-variant error data decls + per-variant `ensures` clauses; no throw/raise at Nom source level**. No new wedge.
+8. **Meta-programming via prototype manipulation** — Io exposes the meta-level (objects as first-class). Nom rejects meta-level authoring entirely; prototype manipulation becomes build-stage code generation authored as ordinary Nom function decls. Authoring-guide rule: **prototype-chain meta-manipulation → build-stage code-gen authored as ordinary Nom function decls; no runtime reflection surface at authoring level (reuses #29 Lisp-macro + #56 Rust-macro rejections)**. No new wedge.
+
+Row additions: **0 new wedges** — Io's prototype-based OO + delegation + dynamic slots + message chains + exception-as-object + meta-programming all decompose to (structural-superset data decls + `create_*` functions + named-intermediate prose + tagged-variant errors + build-stage code-gen). 7 authoring-guide closures: prototype delegation → structural-superset data decls, auto-setters elided, dynamic slots rejected, message chains → named intermediates, `clone` → `create_*` functions, `self` → explicit first param (reuses #23/#69/#38), exceptions → tagged-variant errors (reuses #25/#67/#38), meta-programming → build-stage code-gen (reuses #29/#56).
+
+**Fiftieth consecutive minimal-wedge translation + forty-second 0-new-wedge run.** Io — the canonical prototype-based OO language (2002) — decomposes cleanly into Nom's primitives despite its radical "no-classes, only-objects" model. Combined with Smalltalk (#69 class-based message-passing), Java (#21 class-based), Kotlin (#22 class-based sealed), Ruby (#23 class-based method), Swift (#39 class-based via SwiftUI), Solidity (#38 contract-oriented), Elixir (#27 actor-based message-passing), and now Io (#83 prototype-based), **the OO paradigm family now has 8 exemplars unified across 4 variants**: class-based (Java/Kotlin/Ruby/Swift), message-passing (Smalltalk/Elixir), contract-oriented (Solidity), and prototype-based (Io). All reduce to the same (data decl + first-param-receiver function decls + tagged-variant errors) shape.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

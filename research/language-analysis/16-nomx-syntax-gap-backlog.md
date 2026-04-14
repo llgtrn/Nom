@@ -420,18 +420,25 @@
 | 403 | File-handle lifecycle management (open/read/close, RAII, `with`/`using` blocks) → build-stage implementation concern; authoring expresses "read file as text" via `requires UTF-8 readable` | authoring-guide rule | ✅ closed (doc 14 #82) |
 | 404 | Imperative loop continue/break → declarative `ensures every X that SKIP-CONDITION is excluded` clauses (reuses #43 + #57 filter rules) | authoring-guide rule | ✅ closed (doc 14 #82) |
 | 405 | Hidden type-shimmering (Tcl dual-rep, JavaScript implicit coercion) rejected at Nom source; every value has explicit type | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 406 | Prototype-based delegation (Io, JS prototypes, Self) → structural-superset data decls; child's `exposes` repeats parent fields verbatim; no delegation chain at Nom source | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 407 | Auto-generated setters/getters (Io `setX`, C# auto-props, Kotlin `var`) → `exposes` fields only; construction/update via fresh instances | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 408 | Dynamic slot addition (Io, Lua, JavaScript) → fixed-`exposes` data decls; new fields require new data decl | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 409 | Io message chains → named-intermediate prose + explicit function applications (reuses doc 17 §I8 + #23 + #57) | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 410 | Prototype-clone object creation → `create_X` function decls with named-param field values; no `clone` operator at Nom source | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 411 | Prototype-based exceptions (Io, JS `throw Error`) → tagged-variant error data decls + per-variant `ensures` (reuses #25 + #67 + #38) | authoring-guide rule | ✅ closed (doc 14 #83) |
+| 412 | Prototype-chain meta-manipulation → build-stage code-gen authored as ordinary Nom function decls; no runtime reflection at authoring level (reuses #29 + #56) | authoring-guide rule | ✅ closed (doc 14 #83) |
 
-Totals by destination (after doc 14 #82 Tcl string-oriented scripting translation — **forty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **script-language paradigm family now has 5 exemplars unified**: Bash + Perl + PowerShell + jq + Tcl):
+Totals by destination (after doc 14 #83 Io prototype-based-OO translation — **forty-second 0-new-wedge translation in a row**; 7 authoring-guide closures; **OO paradigm family now has 8 exemplars unified across 4 variants**: class-based (Java/Kotlin/Ruby/Swift) + message-passing (Smalltalk/Elixir) + contract-oriented (Solidity) + prototype-based (Io)):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **356**
+- ✅ Closed: **363**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 426 rows. Closure rate 84% (356/426). **82 translations** in doc 14. Forty-ninth consecutive minimal-wedge, **forty-first 0-new-wedge**. **Backlog closure crosses 84%.** **Script-language family now has 5 exemplars unified** (Bash + Perl + PowerShell + jq + Tcl).
+Backlog size: 433 rows. Closure rate 84% (363/433). **83 translations** in doc 14. Fiftieth consecutive minimal-wedge, **forty-second 0-new-wedge**. **OO paradigm family now has 8 exemplars unified across 4 variants** (class-based + message-passing + contract-oriented + prototype-based).
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
