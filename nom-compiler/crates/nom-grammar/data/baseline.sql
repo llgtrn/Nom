@@ -2765,6 +2765,343 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 8 -- IoT + bioinformatics + robotics
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'sensor-sample-debounce',
+  'periodically sample a noisy input line and emit a stable reading only after the signal has held its new state for a minimum dwell window',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to produce a stable boolean reading from a bouncing input line.\n  uses the @Data matching "rolling sample window with monotonic timestamp" with at-least 0.9 confidence.\n  requires dwell window to be shorter than the fastest legitimate edge interval.\n  ensures no transition is reported until the raw reading has held for at least the dwell window.\n  hazard spurious transitions when the dwell window is tuned below physical bounce duration.\n  favor determinism.',
+  '["spurious transition","sampling aliasing"]',
+  '["determinism","numerical_stability"]',
+  '[]'
+),
+(
+  'interrupt-service-routine',
+  'respond to a hardware event with a minimal routine that acknowledges the source and defers heavier work',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Event","@Data"]',
+  'the function <name> is\n  intended to acknowledge a hardware edge and hand off a timestamped record to a deferred worker.\n  uses the @Event matching "edge-triggered line assertion" with at-least 0.95 confidence.\n  requires the handler to avoid blocking calls, heap allocation, and unbounded loops.\n  ensures the interrupt source is cleared before return and exactly one record is enqueued per edge.\n  hazard priority inversion when the handler shares a lock with a lower-priority task.\n  favor latency.',
+  '["priority inversion","missed edge"]',
+  '["latency","determinism"]',
+  '[]'
+),
+(
+  'low-power-sleep-mode',
+  'enter the deepest power state consistent with the next scheduled obligation',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to minimize average current by selecting the deepest sleep state whose wake sources still honor the next deadline.\n  uses the @Data matching "scheduled wake obligation with earliest deadline" with at-least 0.9 confidence.\n  requires all pending writes to be flushed and all wake sources to be armed before entry.\n  ensures the device resumes no later than the earliest pending deadline.\n  hazard missed wake when a required source is gated by the chosen sleep state.\n  favor minimum_cost.',
+  '["missed wake","stale state on resume"]',
+  '["minimum_cost","determinism"]',
+  '[]'
+),
+(
+  'over-the-air-firmware-update',
+  'receive, verify, stage, atomically swap, and roll back firmware images under network delivery',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Function","@Data","@Event"]',
+  'the concept <name> is\n  intended to replace the running image with a verified candidate and roll back automatically if the new image fails to confirm health.\n  uses the @Data matching "signed image manifest with version and digest" with at-least 0.95 confidence.\n  composes the @Function matching "download-verify-stage-swap-health_confirm" with at-least 0.9 confidence.\n  requires a backup slot large enough for the full image and a persistent boot-selector.\n  ensures the device never boots an unverified image and reverts to the prior image if health is not confirmed within a bounded window.\n  hazard bricked device when the boot-selector is written non-atomically.\n  favor auditability.',
+  '["bricked device","unverified image","rollback loop"]',
+  '["auditability","correctness","availability"]',
+  '[]'
+),
+(
+  'watchdog-timer-reset',
+  'periodically prove liveness to an independent timer so a stuck path forces a clean reset',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to refresh an independent liveness timer from the main supervisory loop at a cadence shorter than the timer period.\n  uses the @Data matching "supervisory loop heartbeat counter" with at-least 0.9 confidence.\n  requires the refresh site to be reachable only when all critical subsystems have reported progress this cycle.\n  ensures a stalled or diverged firmware path triggers a reset within one timer period.\n  hazard masked faults when the refresh is moved into an interrupt that keeps firing despite the main loop being stuck.\n  favor availability.',
+  '["masked fault","reset loop"]',
+  '["availability","determinism"]',
+  '[]'
+),
+(
+  'telemetry-batch-upload',
+  'accumulate measurement records locally and upload them in bounded batches on a duty cycle',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to upload accumulated records in one link wake whenever the batch is full or the oldest record has aged past the staleness bound.\n  uses the @Data matching "append-only local record buffer with per-record timestamp" with at-least 0.9 confidence.\n  requires the buffer to be persisted across resets and the upload to be idempotent under retry.\n  ensures every record is delivered at most once and no later than the staleness bound.\n  hazard unbounded buffer growth when the link is unavailable longer than the staleness bound allows.\n  favor minimum_cost.',
+  '["buffer overflow","duplicate delivery"]',
+  '["minimum_cost","reproducibility"]',
+  '[]'
+),
+(
+  'device-twin-state-sync',
+  'reconcile local authoritative state with a mirrored remote representation under intermittent connectivity',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Data","@Function","@Event"]',
+  'the concept <name> is\n  intended to keep the device observed state and its remote mirror convergent under intermittent connectivity.\n  uses the @Data matching "per-field version vector with monotonic clock" with at-least 0.9 confidence.\n  composes the @Function matching "local-apply and remote-publish and remote-accept" with at-least 0.9 confidence.\n  requires every field update to carry a monotonic version and an originator identity.\n  ensures after a quiescent interval the device and mirror agree field-by-field on the highest-version value.\n  hazard clock skew producing field-level regression when two originators race.\n  favor correctness.',
+  '["clock skew","write loss","convergence stall"]',
+  '["correctness","auditability"]',
+  '[]'
+),
+(
+  'ring-buffer-bounded-producer',
+  'hand records from a fast producer to a slower consumer through a fixed-capacity circular buffer',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Function"]',
+  'the data <name> is\n  intended to carry records from one producer to one consumer in first-in first-out order within a fixed memory footprint.\n  exposes push and pop and length and is-full operations with constant time and no heap allocation.\n  favor determinism.',
+  '["drop on full","overwrite on full","torn read"]',
+  '["determinism","latency","performance"]',
+  '[]'
+),
+(
+  'critical-section-lock-irq',
+  'protect a short shared-state update against a specific interrupt by masking it for the minimum span',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to execute a short shared-state update atomically with respect to a specific interrupt source.\n  uses the @Data matching "prior interrupt mask state saved on entry" with at-least 0.95 confidence.\n  requires the guarded span to contain no blocking call, no allocation, and no nested mask of a lower-priority source.\n  ensures the mask is restored to its prior state on every exit path including panic and early return.\n  hazard lost interrupts when the masked span exceeds the source minimum reassertion interval.\n  favor determinism.',
+  '["lost interrupt","priority inversion","deadlock"]',
+  '["determinism","latency"]',
+  '[]'
+),
+(
+  'real-time-deadline-scheduler',
+  'dispatch a declared set of periodic tasks so that each completes before its deadline',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the concept <name> is\n  intended to run a declared set of periodic tasks so each task finishes before its deadline on every release.\n  uses the @Data matching "task set with period and worst-case execution time and deadline per task" with at-least 0.95 confidence.\n  composes the @Function matching "admission-release-preempt" with at-least 0.9 confidence.\n  requires each task worst-case execution time to be measured not estimated and the aggregate utilization to pass the admission test.\n  ensures no admitted task misses its deadline under the declared task set.\n  hazard deadline miss when a task actual execution time exceeds its declared worst case.\n  favor determinism.',
+  '["deadline miss","starvation","priority inversion"]',
+  '["determinism","latency","correctness"]',
+  '[]'
+),
+(
+  'sequence-read-quality-trim',
+  'trim low-quality bases from sequencing reads using a sliding-window quality threshold',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to remove low-quality tail bases from a sequencing read.\n  uses the @Data matching "quality score array" with at-least 0.9 confidence.\n  requires every score to be a non-negative integer and the window size to divide evenly.\n  ensures the trimmed read preserves five-prime ordering and reports the cut index.\n  hazard over-trimming destroys variant-supporting bases near adapter boundaries.\n  favor statistical_rigor.',
+  '["over trim","adapter contamination"]',
+  '["statistical_rigor","correctness"]',
+  '[]'
+),
+(
+  'reference-alignment-score',
+  'score a read-to-reference alignment using match, mismatch, and affine-gap penalties',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to compute an affine-gap alignment score between a read and a reference window.\n  uses the @Data matching "scoring matrix" with at-least 0.9 confidence.\n  requires the gap-open penalty to be strictly greater than the gap-extend penalty.\n  ensures the returned score is deterministic for equal inputs and bounded by read length times max-match.\n  hazard integer overflow on very long reads when using narrow accumulators.\n  favor numerical_stability.',
+  '["overflow","asymmetric penalty"]',
+  '["numerical_stability","determinism"]',
+  '[]'
+),
+(
+  'variant-call-evidence-filter',
+  'filter candidate variants by depth, allele frequency, and strand-bias evidence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to retain variant calls whose evidence exceeds configured depth and balance thresholds.\n  uses the @Data matching "pileup column with forward and reverse counts" with at-least 0.9 confidence.\n  requires total depth to equal the sum of per-strand observations.\n  ensures filtered variants carry a recorded rejection reason or a pass flag.\n  hazard strand-bias thresholds tuned to one chemistry silently drop real low-frequency calls on another.\n  favor statistical_rigor.',
+  '["chemistry bias","threshold brittleness"]',
+  '["statistical_rigor","auditability"]',
+  '[]'
+),
+(
+  'gene-expression-count-normalize',
+  'normalize raw expression counts to length-and-depth-scaled values for cross-sample comparison',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to scale raw per-feature counts by effective length and library size.\n  uses the @Data matching "count matrix with rows as features and columns as samples" with at-least 0.9 confidence.\n  requires every effective length to be strictly positive.\n  ensures column sums after normalization match the configured target depth within rounding.\n  hazard zero-count features inflate variance when pseudocounts are omitted.\n  favor statistical_rigor.',
+  '["zero inflation","length zero"]',
+  '["statistical_rigor","reproducibility"]',
+  '[]'
+),
+(
+  'kmer-hash-index',
+  'build a hashed k-mer index over a reference for constant-time seed lookup',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to map each canonical k-mer to the list of reference positions where it occurs.\n  exposes a lookup taking a k-mer and returning a position slice.\n  favor performance.',
+  '["hash collision","memory blowup"]',
+  '["performance","discoverability"]',
+  '[]'
+),
+(
+  'pairwise-alignment-traceback',
+  'reconstruct the optimal alignment path from a filled score matrix',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to walk a filled score matrix from the highest-scoring cell back to an origin cell.\n  uses the @Data matching "score and direction matrices" with at-least 0.9 confidence.\n  requires the direction matrix to record exactly one predecessor per cell.\n  ensures the returned path corresponds to the reported score under the same penalty table.\n  hazard tie-breaking between equal-scoring predecessors yields non-deterministic paths across runs.\n  favor determinism.',
+  '["tie nondeterminism","off by one"]',
+  '["determinism","correctness"]',
+  '[]'
+),
+(
+  'phylogenetic-tree-distance',
+  'compute a patristic distance between two taxa on a rooted branch-length tree',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to sum branch lengths along the path between two leaves through their lowest common ancestor.\n  uses the @Data matching "rooted tree with branch lengths" with at-least 0.9 confidence.\n  requires every branch length to be non-negative and finite.\n  ensures the distance is symmetric and zero when both taxa are the same leaf.\n  hazard negative or missing branch lengths silently produce misleading distances.\n  favor correctness.',
+  '["missing branch","non ultrametric"]',
+  '["correctness","numerical_stability"]',
+  '[]'
+),
+(
+  'motif-pattern-search',
+  'search a sequence for occurrences of a degenerate motif expressed as position weights',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to report all positions where a sequence matches a position-weight motif above a score cutoff.\n  uses the @Data matching "position weight matrix" with at-least 0.9 confidence.\n  requires the motif columns to sum to a finite positive value per position.\n  ensures reported positions include both strand and score for each hit.\n  hazard low-complexity regions produce dense spurious hits that flood downstream analysis.\n  favor statistical_rigor.',
+  '["low-complexity flood","cutoff sensitivity"]',
+  '["statistical_rigor","clarity"]',
+  '[]'
+),
+(
+  'biochemical-reaction-stoichiometry',
+  'balance a biochemical reaction by checking element and charge conservation',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to verify that atom counts and net charge match on both sides of a reaction.\n  uses the @Data matching "reaction with stoichiometric coefficients" with at-least 0.9 confidence.\n  requires every coefficient to be a positive rational number.\n  ensures a balanced reaction reports zero residual per element and a residual charge of zero.\n  hazard implicit protons or water molecules absent from the record cause false imbalance reports.\n  favor correctness.',
+  '["implicit proton","implicit water"]',
+  '["correctness","auditability"]',
+  '[]'
+),
+(
+  'molecular-structure-bond-record',
+  'represent a small-molecule structure as atoms with coordinates and typed covalent bonds',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to store atoms with three-dimensional coordinates and the typed bonds that connect them.\n  exposes queries for atom neighborhoods and bond-order lookups.\n  favor clarity.',
+  '["bond order ambiguity","stereochemistry loss"]',
+  '["clarity","reproducibility"]',
+  '[]'
+),
+(
+  'pid-controller-closed-loop',
+  'compute actuator command from setpoint error using proportional integral derivative terms',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to drive measured state toward setpoint via weighted error terms.\n  uses the @Data matching "controller gains" with at-least 0.9 confidence.\n  requires the sample interval to be positive and the gains to be finite.\n  ensures output saturates within actuator limits and the integral term is anti-windup clamped.\n  hazard integral windup amplifies overshoot when the actuator saturates.\n  favor numerical_stability.',
+  '["integral windup","derivative noise amplification"]',
+  '["numerical_stability","determinism","latency"]',
+  '[]'
+),
+(
+  'motion-planner-collision-free',
+  'produce a waypoint sequence from start to goal avoiding all known obstacles',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return an ordered waypoint sequence reaching the goal without intersecting obstacles.\n  uses the @Data matching "occupancy map" with at-least 0.9 confidence.\n  requires start and goal to lie in free space.\n  ensures consecutive waypoints maintain clearance above the declared safety margin.\n  hazard narrow passages cause the planner to time out without reporting infeasibility.\n  favor correctness.',
+  '["timeout without infeasibility signal","stale map"]',
+  '["correctness","totality","determinism"]',
+  '[]'
+),
+(
+  'inverse-kinematics-solver',
+  'solve joint configuration that places the end effector at a target pose',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to find joint angles placing the end effector within tolerance of a target pose.\n  uses the @Data matching "kinematic chain" with at-least 0.9 confidence.\n  requires the target pose to lie within the reachable workspace.\n  ensures the returned configuration respects joint limits and reports singularity proximity.\n  hazard gimbal-aligned configurations produce an ill-conditioned jacobian.\n  favor numerical_stability.',
+  '["singularity","multi-solution ambiguity"]',
+  '["numerical_stability","correctness","determinism"]',
+  '[]'
+),
+(
+  'sensor-fusion-kalman-filter',
+  'fuse noisy sensor streams into a minimum-variance state estimate',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to combine prediction and measurement into a posterior state and covariance.\n  uses the @Data matching "process and measurement noise" with at-least 0.9 confidence.\n  requires the noise covariances to be positive semidefinite.\n  ensures the posterior covariance remains symmetric and positive semidefinite after update.\n  hazard numerical drift breaks covariance symmetry over long horizons.\n  favor numerical_stability.',
+  '["covariance drift","mismodeled noise"]',
+  '["numerical_stability","statistical_rigor","reproducibility"]',
+  '[]'
+),
+(
+  'trajectory-spline-interpolate',
+  'interpolate a smooth time-parameterized trajectory through given waypoints',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to produce continuous position velocity and acceleration through waypoints.\n  uses the @Data matching "waypoint sequence" with at-least 0.9 confidence.\n  requires waypoint timestamps to be strictly increasing.\n  ensures the resulting curve is twice-differentiable and respects velocity bounds.\n  hazard high-degree splines oscillate between closely spaced waypoints.\n  favor numerical_stability.',
+  '["spline oscillation","velocity bound violation"]',
+  '["numerical_stability","clarity","determinism"]',
+  '[]'
+),
+(
+  'obstacle-avoidance-potential-field',
+  'compute a steering vector from attractive goal and repulsive obstacle fields',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to sum attractive gradient toward the goal and repulsive gradients from obstacles.\n  uses the @Data matching "obstacle positions" with at-least 0.9 confidence.\n  requires the repulsive radius to be smaller than the inter-obstacle spacing.\n  ensures the returned vector magnitude is bounded by the maximum steer.\n  hazard symmetric obstacle arrangements produce local minima trapping the agent.\n  favor responsiveness.',
+  '["local minimum trap","oscillation near obstacle"]',
+  '["responsiveness","latency","determinism"]',
+  '[]'
+),
+(
+  'localization-particle-filter',
+  'estimate a pose distribution from a motion model and observation likelihood',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to propagate particles by the motion model and reweight by observation likelihood.\n  uses the @Data matching "particle set" with at-least 0.9 confidence.\n  requires the particle count to be above the minimum effective sample size.\n  ensures resampling triggers when the effective sample size falls below the threshold.\n  hazard particle deprivation collapses belief onto the wrong mode.\n  favor statistical_rigor.',
+  '["particle deprivation","sample impoverishment"]',
+  '["statistical_rigor","reproducibility","correctness"]',
+  '[]'
+),
+(
+  'actuator-torque-limit',
+  'clamp commanded torque to the actuator safe operating envelope',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to reduce commanded torque to within the rated envelope and report saturation.\n  uses the @Data matching "actuator limits" with at-least 0.9 confidence.\n  requires the limit envelope parameters to be non-negative and finite.\n  ensures the returned torque magnitude does not exceed the rated maximum and the saturation flag is set accurately.\n  hazard silent clamping hides control-law divergence from upstream observers.\n  favor auditability.',
+  '["silent saturation","thermal envelope ignored"]',
+  '["auditability","correctness","determinism"]',
+  '[]'
+),
+(
+  'emergency-stop-latch',
+  'latch a safe-state output when the stop signal asserts and hold until explicitly cleared',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to transition to the safe state on stop assertion and hold regardless of further inputs.\n  uses the @Data matching "latch state" with at-least 0.9 confidence.\n  requires the clear signal to originate from an authorized reset path only.\n  ensures once latched the output remains safe until an explicit cleared transition is observed.\n  hazard a glitch on the clear line may prematurely release the latch.\n  favor determinism.',
+  '["glitch release","missed assertion"]',
+  '["determinism","auditability","correctness"]',
+  '[]'
+),
+(
+  'closed-loop-feedback-setpoint',
+  'drive a measured output to a reference setpoint via a feedback correction law',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to compute a correction from the error between setpoint and measurement each cycle.\n  uses the @Data matching "loop configuration" with at-least 0.9 confidence.\n  requires the loop period to be shorter than the plant dominant time constant.\n  ensures the steady-state error converges below tolerance for a step reference.\n  hazard sensor delay exceeding the loop period induces limit-cycle oscillation.\n  favor latency.',
+  '["sensor delay oscillation","reference jump saturation"]',
+  '["latency","numerical_stability","determinism"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
