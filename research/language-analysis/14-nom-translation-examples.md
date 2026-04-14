@@ -5322,6 +5322,119 @@ Row additions: **0 new wedges** — Ada's safety-critical strong-typing + taskin
 
 ---
 
+## 71. Clojure — immutable data + software transactional memory
+
+```clojure
+(ns bank.core
+  (:require [clojure.set :as set]))
+
+(def accounts (ref {}))
+
+(defn open-account [name opening-balance]
+  (dosync
+    (let [id (java.util.UUID/randomUUID)]
+      (alter accounts assoc id {:owner name :balance opening-balance})
+      id)))
+
+(defn transfer [from-id to-id amount]
+  (dosync
+    (let [from-account (@accounts from-id)
+          to-account   (@accounts to-id)]
+      (when (or (nil? from-account) (nil? to-account))
+        (throw (ex-info "unknown account" {:from from-id :to to-id})))
+      (when (< (:balance from-account) amount)
+        (throw (ex-info "insufficient balance" {:from from-id :needed amount})))
+      (alter accounts assoc from-id
+        (update from-account :balance - amount))
+      (alter accounts assoc to-id
+        (update to-account :balance + amount))
+      amount)))
+
+(defn total-balance []
+  (dosync
+    (reduce + (map :balance (vals @accounts)))))
+```
+
+### `.nomx v1` translation
+
+```nomx
+define open_account
+  that takes an owner name and an opening balance, returns a freshly-allocated account id atomically associated with the new account in the global accounts map.
+
+define transfer_funds
+  that takes a source account id, a destination account id, and a transfer amount, returns the transferred amount on success.
+atomically within one transaction, look up both accounts, verify existence and sufficient source balance, then subtract from the source and add to the destination.
+on missing accounts or insufficient balance, raise an appropriate error without applying any change.
+
+define total_balance
+  that takes no input, returns the sum of balances across every account, observed as of a single transaction snapshot.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Account is
+  intended to describe one bank account with an owner name and a current balance.
+  exposes owner as text.
+  exposes balance as real from 0 to 1e15.
+
+the data AccountsLedger is
+  intended to describe the global accounts registry as a map from account id to Account, such that all read and write operations observe a single consistent snapshot per transaction.
+  exposes entries as list of (identifier, reference to Account) pair.
+
+the data TransferFailure is
+  intended to enumerate the distinct failure modes of a funds transfer so each is raised as a typed variant rather than a free-form exception.
+  exposes source_account_missing at tag 0.
+  exposes destination_account_missing at tag 1.
+  exposes insufficient_source_balance at tag 2.
+
+the function open_account is
+  intended to atomically allocate a fresh account id, add a new Account for the given owner at the given opening balance into the AccountsLedger, and return the id.
+  uses the @Data matching "Account" with at-least 0.95 confidence.
+  uses the @Data matching "AccountsLedger" with at-least 0.95 confidence.
+  requires opening_balance is at-least 0.
+  ensures the returned AccountsLedger contains every entry of the prior ledger plus a new entry whose id is fresh (not previously present) and whose Account has owner equal to the given name and balance equal to opening_balance.
+  ensures the returned pair (new_id, new_ledger) has new_id equal to the newly-added entry's key.
+  ensures the allocation appears atomic — no partial-update state is visible to concurrent transactions.
+  favor correctness.
+
+the function transfer_funds is
+  intended to atomically debit the source account and credit the destination account by the given amount, returning an updated AccountsLedger on success or a TransferFailure otherwise.
+  uses the @Data matching "AccountsLedger" with at-least 0.95 confidence.
+  uses the @Data matching "TransferFailure" with at-least 0.95 confidence.
+  ensures when source_id is not in the ledger, the result is TransferFailure.source_account_missing and the ledger is unchanged.
+  ensures when destination_id is not in the ledger, the result is TransferFailure.destination_account_missing and the ledger is unchanged.
+  ensures when source balance is strictly less than amount, the result is TransferFailure.insufficient_source_balance and the ledger is unchanged.
+  ensures when all preconditions hold, the returned ledger differs from the prior ledger only in that source.balance is reduced by amount and destination.balance is increased by amount.
+  ensures all observed reads and writes appear as a single atomic group from concurrent transactions' perspectives.
+  hazard the STM implementation retries transactions under contention; long-lived transactions touching hot accounts may starve — callers should keep transaction bodies short.
+  favor correctness.
+
+the function total_balance is
+  intended to return the sum of balances across every entry of the AccountsLedger, observed at a single transaction snapshot so concurrent transfers cannot fractionally influence the total.
+  uses the @Data matching "AccountsLedger" with at-least 0.95 confidence.
+  ensures the returned total equals the sum of balance across every entry of the ledger at the transaction's snapshot time.
+  ensures concurrent transfer_funds calls either fully contribute or fully do not contribute to the returned total — never fractionally.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Refs + dosync + alter (STM primitive trio)** — Clojure's software-transactional-memory core. Nom's translation surfaces STM semantics via `ensures all observed reads and writes appear as a single atomic group from concurrent transactions' perspectives` + `ensures concurrent X either fully contribute or fully do not contribute — never fractionally`. Authoring-guide rule: **STM transactions decompose to function decls with explicit atomic-group `ensures` + concurrency-fairness `ensures`; the underlying STM is a build-stage concern implemented via the target runtime's atomicity primitive (locks, MVCC, CAS loop, etc.)**. Reuses #63 Redis atomic-group rule + #69 Smalltalk cross-aggregate rule. No new wedge.
+2. **`@` deref + `alter` vs `ref-set`** — Clojure's ref-access operators. Nom's translation elides these at source level; every read is `the prior ledger`, every write is `the returned ledger`. Authoring-guide rule: **ref/atom/agent dereference and update operators → prose `prior X` and `returned X` on function decls; no `@` or `alter` or `swap!` at Nom source level**. No new wedge.
+3. **Immutable map + `update`/`assoc` for "modification"** — Clojure's defining feature. Nom's translation captures the semantics: `the returned AccountsLedger contains every entry of the prior ledger plus a new entry …` (an ensures clause describing a new value, not a mutation). Authoring-guide rule: **immutable-map modifications (Clojure `assoc`/`dissoc`/`update`, ImmutableJS, persistent trees) → `ensures` clauses describing the returned collection's contents relative to the prior collection; no in-place-update at Nom source level**. Reinforces #55 Elm record-update elided in prose + #69 Smalltalk return-fresh-instance. No new wedge.
+4. **`ex-info` exceptions with attached data** — Clojure's convention for structured errors. Nom's translation uses a tagged-variant data decl (TransferFailure) with per-variant `ensures` clauses rather than free-form exceptions + attached maps. Authoring-guide rule: **free-form exceptions with attached payloads (`ex-info`, Python `raise X(msg, data)`, Go `fmt.Errorf("... %w", err)`) → tagged-variant error data decls with per-variant fields carrying the payload**. Same rule as #38 Solidity + #67 Zig + #69 Smalltalk. No new wedge.
+5. **Keyword keys (`:owner`, `:balance`)** — Clojure's interned keyword convention for map keys. Nom's `exposes owner` / `exposes balance` directly names the keys as fields. Authoring-guide rule: **Clojure keyword keys → data-decl `exposes` fields; the colon prefix is a source convention, not a semantic element**. No new wedge.
+6. **Namespaces (`ns bank.core`, `:require [clojure.set :as set]`)** — Clojure's module/import system. Nom's `.nomtu` file organization + `uses @Module` + composition index handles this. Authoring-guide rule: **Clojure namespaces → `.nomtu` modules + `uses @Module` / `uses @Data` references in concept decls**. No new wedge.
+7. **`reduce` + `map` + `vals` higher-order composition** — Clojure's standard-library seq operations. Nom's prose `the sum of balance across every entry` collapses the three-operator pipeline into one declarative phrase. Authoring-guide rule: **Clojure `reduce`/`map`/`filter`/`vals` pipelines → single-sentence declarative `ensures` clauses (reuses #11 bash-pipes + #52 R-pipes + #57 jq pipes → named-intermediate or direct declarative)**. No new wedge.
+8. **`dosync` as the transaction-boundary marker** — Clojure's way of delimiting an STM transaction. Nom's function decl IS the transaction boundary: every function declared to observe `ensures all observed reads and writes appear as a single atomic group` is implicitly a single transaction. Authoring-guide rule: **transaction-boundary markers (`dosync`, `BEGIN`/`COMMIT`, `@transactional`) collapse to the function-decl boundary when the function carries an atomic-group `ensures`**. No new wedge.
+
+Row additions: **0 new wedges** — Clojure's STM + immutable data + keyword-keyed maps + ex-info exceptions + namespace system all decompose to (data decls + function decls with atomic-group `ensures` + tagged-variant error decls + prose collection-modification semantics). 7 authoring-guide closures: STM → atomic-group `ensures` + concurrency-fairness `ensures` (reuses #63 + #69), ref/atom/agent ops elided in prose, immutable-map modifications → `ensures describing returned contents` (reuses #55 + #69), `ex-info` → tagged-variant error data decl (reuses #38 + #67 + #69), Clojure keyword keys → data-decl `exposes`, Clojure namespaces → `.nomtu` modules + `uses` refs, `reduce`/`map`/`vals` pipelines → single-sentence declarative `ensures`, transaction-boundary markers → function-decl boundary.
+
+**Thirty-eighth consecutive minimal-wedge translation + thirtieth 0-new-wedge run.** Clojure — the canonical JVM-functional-Lisp with immutable data structures + STM + core.async — decomposes cleanly into Nom's primitives. **30 consecutive 0-new-wedge translations in a row** is a remarkable stability result: the last 30 distinct paradigms have all translated via the same (data decls + function decls + `requires`/`ensures`/`hazard`) primitive set. The **STM transactions as atomic-group `ensures`** rule generalizes to Haskell's STM monad, Scala's Akka transactions, and any future transactional-memory system.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
