@@ -121,6 +121,31 @@ anything load-bearing.
   148 nom-concept lib tests green (142 + 6 new). Solver-backed
   contract checks (B.requires ⇐ A.ensures), entity-typed-slot
   resolution, and effect propagation queued for later T2.x slices.
+- T2.2 first slice — agent_classify_smoke
+  (`nom-intent/tests/agent_classify_smoke.rs`). End-to-end ReAct loop
+  drives `DictTools::query` then `DictTools::render` to a
+  `Rendered { target, bytes_hash }` observation with a 64-char hex
+  SHA-256 plan hash, then propagates the LLM's terminal `Answer`.
+  Second case locks the tool-error-vs-bounded-Reject distinction:
+  rendering an unknown uid surfaces `Observation::Error` rather than
+  rewriting it as a Reject. 63 nom-intent lib + 2 integration tests
+  green. Real bytecode-linking + binary emission ship in slice-3c-full
+  when the nom-llvm dependency is wired through.
+- T3.1 — `nom-resolver::intent` module: `IntentResolver` trait +
+  `JaccardOverIntents` deterministic impl + `SemanticEmbedding` stub.
+  Same scoring shape as `nom-grammar::search_patterns` so retrieval
+  ranking stays aligned across resolver / CLI / LSP / CI surfaces.
+  Stable hash tie-break for byte-equal-across-runs ordering. Stub
+  always returns `Err(Unavailable)` — production wiring already has
+  a typed slot for the future model-backed backend (T4.2 gate). 58
+  nom-resolver lib tests (52 prior + 6 new).
+- T3.2 — `entry_scores` extended to 11 quality dimensions. New
+  columns: `quality`, `maintenance`, `accessibility` (all REAL,
+  nullable). Mirrored across both schema sources (lib.rs single-DB
+  path + dict.rs ENTITIES_SCHEMA_SQL split-DB path) so the dict-split
+  migration stays in sync. Two indexes added for the new query-hot
+  columns. Schema only — population pipeline lands with the corpus
+  pilot (T4.1). 64 nom-dict lib tests (62 prior + 2 new).
 
 ## In flight
 
