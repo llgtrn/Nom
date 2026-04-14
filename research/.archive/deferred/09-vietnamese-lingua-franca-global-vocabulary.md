@@ -1,5 +1,13 @@
 # Part 9: Vietnamese as Lingua Franca, Global Vocabulary as Surface
 
+> **Archive snapshot — finalized 2026-04-14.** deferred — foreign-language content, superseded by no-foreign-names invariant.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **How Novel can treat Vietnamese as the lingua-franca grammar of programming while allowing vocabulary, aliases, scripts, and learning surfaces from any world language without fragmenting meaning or disrespecting culture.**
 
 Research conducted: 2026-04-11

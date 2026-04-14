@@ -1,5 +1,10 @@
 # Comprehensive 50-Language Analysis for Nom
 
+> **Archive snapshot — finalized 2026-04-14.** Live mission state
+> lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> This doc is preserved as the historical paradigm-survey record
+> (the source that drove the closed 9-kind proof at corpus 68/88).
+
 **Research date:** 2026-04-12
 **Last verified against codebase:** 2026-04-14 (grammar-shelf audit)
 **Claims tagged:** ✅ SHIPPED (file:line or commit SHA cited), ⏳ PLANNED (phase noted), ❌ ASPIRATIONAL (no near-term plan)

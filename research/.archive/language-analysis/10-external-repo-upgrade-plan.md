@@ -1,5 +1,13 @@
 # 10 — External-repo upgrade plan (GitNexus-mined, 2026-04-14)
 
+> **Archive snapshot — finalized 2026-04-14.** GitNexus-mined external repo plan; findings landed in doc 14 + baseline.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **Method**: five reference repos were indexed with `npx gitnexus analyze --skip-git` and queried via MCP Cypher + symbol context. Three subagents synthesized findings into per-crate upgrade plans. All patterns below cite the external repo's exact symbol + file path so implementers can open the source directly.
 
 Ref | Repo | Indexed (nodes / edges / flows) | Nom target

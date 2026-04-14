@@ -1,5 +1,13 @@
 # Natural-Language Syntax (≥95%) — Grammar Redesign Proposal
 
+> **Archive snapshot — finalized 2026-04-14.** grammar redesign proposal; v2 format shipped.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 > **Last verified against codebase: 2026-04-14, HEAD `a3c95f3`.**
 > `.nomx v1` (this doc's grammar) and `.nomx v2 (keyed)` (doc 07's grammar) **coexist**.
 > Doc 07 v2 is fully shipped per commits `97c836f` + `c405d2a` + `853e70b` + `c9d1835`.

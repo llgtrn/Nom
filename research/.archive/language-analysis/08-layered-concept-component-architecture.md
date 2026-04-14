@@ -1,5 +1,13 @@
 # 08 — Layered Concept / Module / Entity Architecture
 
+> **Archive snapshot — finalized 2026-04-14.** layered concept/module/entity architecture; shipped.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 > **Last verified against codebase: 2026-04-14, HEAD `64b3058`.**
 
 **Status: ~82% implemented as of 2026-04-14.** Filed 2026-04-13. Builds on docs 02-07; resolves the three open tensions in [07-keyed-similarity-syntax-proposal.md §6](07-keyed-similarity-syntax-proposal.md). Reality gains since original filing: M2 acceptance preservation, M4 three-tier recursive ingest, M5 layered dreaming (a+b+c), M7 MECE CE-check (a+c) — see doc 09 for the consolidated shipped inventory.

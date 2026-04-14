@@ -1,5 +1,13 @@
 # Keyed-Similarity Syntax & Philosophy — A Nom Redesign (SHIPPED 2026-04-13, HEAD `afc6228`)
 
+> **Archive snapshot — finalized 2026-04-14.** keyed similarity typed-slot syntax; shipped.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 > **Last verified against codebase: 2026-04-13, HEAD `afc6228`.**
 
 **Status: ~98% implemented as of 2026-04-13, HEAD `afc6228`.**

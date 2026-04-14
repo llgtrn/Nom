@@ -1,5 +1,13 @@
 # Nom — Next Phases Plan (v2)
 
+> **Archive snapshot — finalized 2026-04-14.** next-phases plan; A1-A4-A6 shipped, Phase C+D+E shipped.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 > **STATUS BANNER** — Last verified against codebase: 2026-04-13, HEAD `afc6228`. This is a planning document with mixed shipped/planned scope. Claims tagged ✅ SHIPPED, ⏳ PLANNED, or ❌ ASPIRATIONAL inline near each subsystem heading. Evidence cites file:line refs and commit SHAs. Aspirational claims (no code, multi-quarter scope) are marked ❌ ASPIRATIONAL but retained verbatim per the doc's planning role.
 
 **Date:** 2026-04-12 (end of Phase 3)

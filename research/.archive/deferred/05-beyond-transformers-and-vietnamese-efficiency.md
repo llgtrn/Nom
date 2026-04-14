@@ -1,5 +1,13 @@
 # Part 5: Beyond Transformers — Vietnamese Linguistic Efficiency as Computational Architecture
 
+> **Archive snapshot — finalized 2026-04-14.** deferred — foreign-language content, superseded by no-foreign-names invariant.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **How Vietnamese resolves massive ambiguity at zero cost, compresses more meaning
 into fewer syllables than almost any language, and what this teaches Novel about
 building the most efficient programming language possible.**

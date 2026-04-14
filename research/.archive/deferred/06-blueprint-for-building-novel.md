@@ -1,5 +1,13 @@
 # Part 6: Blueprint for Building Novel
 
+> **Archive snapshot — finalized 2026-04-14.** deferred blueprint; canonical blueprint is the grammar plan.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **How to turn the research into an actual programming language, what the world's languages still have not solved, and how to compose a new language without repeating old mistakes.**
 
 Research conducted: 2026-04-11

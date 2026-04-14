@@ -1,5 +1,13 @@
 # Adversarial review of 04-next-phases-plan.md
 
+> **Archive snapshot — finalized 2026-04-14.** adversarial review of doc 04; superseded by shipped phases.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **Reviewer:** Claude (opus-4-6-1m), with critic subagent dispatch and 6 empirical probe iterations.
 **Date:** 2026-04-12.
 **Last verified against codebase:** 2026-04-13, HEAD `afc6228`. Risk statuses updated inline below.

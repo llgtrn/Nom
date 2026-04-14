@@ -1,5 +1,13 @@
 # Part 12: Universal Knowledge Composition — Physics, Chemistry, Biology, and Every Field
 
+> **Archive snapshot — finalized 2026-04-14.** deferred aspirational; Phase 11 continuation.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **145 Vietnamese morphemes generate ALL scientific vocabulary. Novel's Nom dictionary
 does the same for ALL computable knowledge. This is where the language becomes universal.**
 

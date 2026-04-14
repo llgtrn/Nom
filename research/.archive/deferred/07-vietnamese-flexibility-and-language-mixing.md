@@ -1,5 +1,13 @@
 # Part 7: Vietnamese Flexibility, Language Mixing, and Tolerant Syntax Design
 
+> **Archive snapshot — finalized 2026-04-14.** deferred — foreign-language content, superseded by no-foreign-names invariant.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **How Vietnamese preserves meaning with discourse-flexible grammar, why multilingual mixing remains understandable, and what this teaches Novel about building a more tolerant and easier-to-learn syntax.**
 
 Research conducted: 2026-04-11

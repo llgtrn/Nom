@@ -1,5 +1,13 @@
 # Nom Self-Hosting Roadmap
 
+> **Archive snapshot — finalized 2026-04-14.** historical self-hosting-roadmap snapshot.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **Goal:** Rewrite the Nom compiler (~13,000 LOC Rust) in Nom itself, achieving self-compilation within 18-24 months.
 
 **Last verified against codebase:** 2026-04-13, HEAD `afc6228`

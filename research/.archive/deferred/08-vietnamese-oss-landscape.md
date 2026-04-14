@@ -1,5 +1,13 @@
 # Part 8: Vietnamese OSS Landscape for LLMs and NLP
 
+> **Archive snapshot — finalized 2026-04-14.** deferred — foreign-language content, superseded by no-foreign-names invariant.
+> Live mission state lives in [`research/08-mission-checklog.md`](../../08-mission-checklog.md).
+> See also the grammar blueprint plan at
+> `C:\Users\trngh\.claude\plans\mighty-jumping-snowglobe.md`
+> and corpus closure proof at 68/88 (77%) via
+> `nom-compiler/crates/nom-concept/tests/closure_against_archive.rs`.
+
+
 **A practical scan of open-source Vietnamese LLM and NLP projects, cloned and analyzed for relevance to Novel.**
 
 Research conducted: 2026-04-11
