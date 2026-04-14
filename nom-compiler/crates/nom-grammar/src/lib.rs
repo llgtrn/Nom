@@ -272,6 +272,58 @@ pub fn quality_names_row_count(conn: &Connection) -> Result<u64> {
     Ok(n as u64)
 }
 
+/// Stopwords stripped before [`fuzzy_tokens`] tokenization. Closed
+/// list, never reordered, so the same input always produces the same
+/// token set across runs and machines. Shared by the CLI's
+/// `nom grammar pattern-search` and the CI test
+/// `every_pattern_intent_pair_jaccard_below_threshold` so both use
+/// the exact same backend.
+pub const FUZZY_STOPWORDS: &[&str] = &[
+    "a","the","of","to","and","or","with","for","in","on","as","an","is",
+    "into","from","by","that","this","its","at","be","are","it","one","two",
+    "each","every","any","all","no","not","then","than","only","also","same",
+];
+
+/// Tokenize a free-form intent string into a normalized set of domain
+/// words for Jaccard-similarity comparison. Lowercase, alphabetic-only,
+/// length ≥ 3, not in [`FUZZY_STOPWORDS`]. Deterministic — the same
+/// input always produces the same set in the same order.
+pub fn fuzzy_tokens(intent: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut cur = String::new();
+    let lower = intent.to_lowercase();
+    for ch in lower.chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_alphabetic() {
+            cur.push(ch);
+        } else {
+            if cur.len() >= 3 && !FUZZY_STOPWORDS.contains(&cur.as_str()) {
+                out.insert(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    out
+}
+
+/// Jaccard similarity between two token sets — `|a ∩ b| / |a ∪ b|`.
+/// Returns `0.0` when either set is empty (avoids div-by-zero). Used
+/// by the catalog uniqueness test and by `nom grammar pattern-search`.
+pub fn jaccard(
+    a: &std::collections::BTreeSet<String>,
+    b: &std::collections::BTreeSet<String>,
+) -> f64 {
+    if a.is_empty() || b.is_empty() {
+        return 0.0;
+    }
+    let inter = a.intersection(b).count();
+    let union = a.union(b).count();
+    if union == 0 {
+        return 0.0;
+    }
+    inter as f64 / union as f64
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -507,6 +559,36 @@ mod tests {
         assert!(is_known_quality(&conn, "auditability").unwrap());
         assert!(!is_known_quality(&conn, "totality").unwrap()); // unrelated
         assert_eq!(quality_names_row_count(&conn).unwrap(), 1);
+    }
+
+    #[test]
+    fn fuzzy_tokens_normalizes_lowercase_alpha_and_strips_stopwords() {
+        let toks = fuzzy_tokens("The Quick brown-fox JUMPS over the lazy dog");
+        // 'the' is a stopword; case-folded; non-alpha splits; len >= 3.
+        assert!(toks.contains("quick"));
+        assert!(toks.contains("brown"));
+        assert!(toks.contains("fox"));
+        assert!(toks.contains("jumps"));
+        assert!(toks.contains("over"));
+        assert!(toks.contains("lazy"));
+        assert!(toks.contains("dog"));
+        assert!(!toks.contains("the"));
+    }
+
+    #[test]
+    fn jaccard_known_values() {
+        let a = fuzzy_tokens("cache pure function results");
+        let b = fuzzy_tokens("cache pure function results");
+        assert!((jaccard(&a, &b) - 1.0).abs() < 1e-9);
+
+        let c = fuzzy_tokens("totally unrelated subject matter here");
+        let j_ac = jaccard(&a, &c);
+        assert!(j_ac >= 0.0 && j_ac < 0.2, "got {j_ac}");
+
+        // Empty side returns 0.
+        let empty = std::collections::BTreeSet::new();
+        assert_eq!(jaccard(&empty, &a), 0.0);
+        assert_eq!(jaccard(&a, &empty), 0.0);
     }
 
     #[test]

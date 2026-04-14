@@ -2197,34 +2197,6 @@ fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
     0
 }
 
-/// Stopwords stripped before Jaccard tokenization. Mirrors the closed
-/// list in `nom-concept/tests/pattern_examples_parse.rs` so the
-/// CLI search uses the exact same backend the CI uniqueness test
-/// enforces — same words → same matches.
-const FUZZY_STOPWORDS: &[&str] = &[
-    "a","the","of","to","and","or","with","for","in","on","as","an","is",
-    "into","from","by","that","this","its","at","be","are","it","one","two",
-    "each","every","any","all","no","not","then","than","only","also","same",
-];
-
-fn fuzzy_tokens(prose: &str) -> std::collections::BTreeSet<String> {
-    let mut out = std::collections::BTreeSet::new();
-    let mut cur = String::new();
-    let lower = prose.to_lowercase();
-    for ch in lower.chars().chain(std::iter::once(' ')) {
-        if ch.is_ascii_alphabetic() {
-            cur.push(ch);
-        } else {
-            if cur.len() >= 3 && !FUZZY_STOPWORDS.contains(&cur.as_str()) {
-                out.insert(std::mem::take(&mut cur));
-            } else {
-                cur.clear();
-            }
-        }
-    }
-    out
-}
-
 fn cmd_grammar_pattern_search(
     path: Option<&Path>,
     prose: &str,
@@ -2241,7 +2213,7 @@ fn cmd_grammar_pattern_search(
         Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
     };
 
-    let query_tokens = fuzzy_tokens(prose);
+    let query_tokens = nom_grammar::fuzzy_tokens(prose);
     if query_tokens.is_empty() {
         eprintln!("nom grammar pattern search: prose has no domain words after stopword filter");
         return 1;
@@ -2261,16 +2233,8 @@ fn cmd_grammar_pattern_search(
 
     let mut scored: Vec<(f64, String, String)> = Vec::new();
     for (id, intent) in &rows {
-        let row_tokens = fuzzy_tokens(intent);
-        if row_tokens.is_empty() {
-            continue;
-        }
-        let inter = query_tokens.intersection(&row_tokens).count();
-        let union = query_tokens.union(&row_tokens).count();
-        if union == 0 {
-            continue;
-        }
-        let jacc = inter as f64 / union as f64;
+        let row_tokens = nom_grammar::fuzzy_tokens(intent);
+        let jacc = nom_grammar::jaccard(&query_tokens, &row_tokens);
         if jacc >= threshold {
             scored.push((jacc, id.clone(), intent.clone()));
         }

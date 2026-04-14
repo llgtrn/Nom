@@ -111,37 +111,6 @@ fn every_pattern_intent_is_distinct() {
     );
 }
 
-/// Stopwords stripped before Jaccard tokenization. Anything below the
-/// register of "carries domain meaning" gets filtered. Deterministic
-/// (closed set, never reordered) so the test result is stable across
-/// runs and machines.
-const FUZZY_STOPWORDS: &[&str] = &[
-    "a","the","of","to","and","or","with","for","in","on","as","an","is",
-    "into","from","by","that","this","its","at","be","are","it","one","two",
-    "each","every","any","all","no","not","then","than","only","also","same",
-];
-
-/// Tokenize an intent string into a normalized set of domain words for
-/// Jaccard-similarity comparison. Lowercase, alphabetic-only, ≥3 chars,
-/// not in `FUZZY_STOPWORDS`.
-fn fuzzy_tokens(intent: &str) -> std::collections::BTreeSet<String> {
-    let mut out = std::collections::BTreeSet::new();
-    let mut cur = String::new();
-    let lower = intent.to_lowercase();
-    for ch in lower.chars().chain(std::iter::once(' ')) {
-        if ch.is_ascii_alphabetic() {
-            cur.push(ch);
-        } else {
-            if cur.len() >= 3 && !FUZZY_STOPWORDS.contains(&cur.as_str()) {
-                out.insert(std::mem::take(&mut cur));
-            } else {
-                cur.clear();
-            }
-        }
-    }
-    out
-}
-
 #[test]
 fn every_pattern_intent_pair_jaccard_below_threshold() {
     // Fuzzy semantic-similarity tightening of the uniqueness bar:
@@ -171,7 +140,7 @@ fn every_pattern_intent_pair_jaccard_below_threshold() {
         .expect("query")
         .map(|r| {
             let (id, intent) = r.expect("row");
-            let toks = fuzzy_tokens(&intent);
+            let toks = nom_grammar::fuzzy_tokens(&intent);
             (id, intent, toks)
         })
         .collect();
@@ -181,15 +150,7 @@ fn every_pattern_intent_pair_jaccard_below_threshold() {
         for j in (i + 1)..rows.len() {
             let (ref a_id, ref a_text, ref a_set) = rows[i];
             let (ref b_id, ref b_text, ref b_set) = rows[j];
-            if a_set.is_empty() || b_set.is_empty() {
-                continue;
-            }
-            let inter = a_set.intersection(b_set).count();
-            let union = a_set.union(b_set).count();
-            if union == 0 {
-                continue;
-            }
-            let jacc = inter as f64 / union as f64;
+            let jacc = nom_grammar::jaccard(a_set, b_set);
             if jacc >= THRESHOLD {
                 hits.push((jacc, a_id.clone(), b_id.clone(), a_text.clone(), b_text.clone()));
             }
