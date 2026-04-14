@@ -123,6 +123,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status);
 
 CREATE TABLE IF NOT EXISTS entry_scores (
     id                   TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    -- Eight original quality dimensions:
     security             REAL,
     reliability          REAL,
     performance          REAL,
@@ -131,10 +132,18 @@ CREATE TABLE IF NOT EXISTS entry_scores (
     portability          REAL,
     composability        REAL,
     maturity             REAL,
+    -- T3.2 (doc 02 §5.10): three additional canonical dimensions
+    -- so the score vector matches the planner's quality model. Schema
+    -- only — the population pipeline lands with the corpus pilot (T4.1).
+    quality              REAL,
+    maintenance          REAL,
+    accessibility        REAL,
     overall_score        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_scores_overall ON entry_scores(overall_score);
 CREATE INDEX IF NOT EXISTS idx_scores_security ON entry_scores(security);
+CREATE INDEX IF NOT EXISTS idx_scores_quality ON entry_scores(quality);
+CREATE INDEX IF NOT EXISTS idx_scores_accessibility ON entry_scores(accessibility);
 
 CREATE TABLE IF NOT EXISTS entry_meta (
     id                   TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
@@ -574,6 +583,76 @@ mod tests {
         assert!(!table_exists(&d.entities, "concept_defs"));
         assert!(!table_exists(&d.entities, "concept_members"));
         assert!(!table_exists(&d.entities, "required_axes"));
+    }
+
+    /// T3.2: assert the three new score dimensions (quality,
+    /// maintenance, accessibility) land alongside the original eight.
+    /// Schema-only check — population pipeline lands with the corpus
+    /// pilot per the approved plan.
+    #[test]
+    fn entry_scores_has_t3_2_extended_dimensions() {
+        let d = Dict::open_in_memory().unwrap();
+        let mut stmt = d
+            .entities
+            .prepare("PRAGMA table_info(entry_scores)")
+            .unwrap();
+        let cols: Vec<String> = stmt
+            .query_map([], |r| r.get::<_, String>(1))
+            .unwrap()
+            .filter_map(Result::ok)
+            .collect();
+        for required in [
+            "security",
+            "reliability",
+            "performance",
+            "readability",
+            "testability",
+            "portability",
+            "composability",
+            "maturity",
+            "quality",
+            "maintenance",
+            "accessibility",
+            "overall_score",
+        ] {
+            assert!(
+                cols.iter().any(|c| c == required),
+                "entry_scores missing column {required}; have {cols:?}"
+            );
+        }
+    }
+
+    /// T3.2 follow-on: the new columns are nullable so existing
+    /// inserts that skip them still succeed. Locks the no-population
+    /// invariant — schema only, no required defaults.
+    #[test]
+    fn entry_scores_t3_2_columns_are_nullable() {
+        let d = Dict::open_in_memory().unwrap();
+        // Insert a parent row in entries first (entry_scores.id FK).
+        d.entities
+            .execute(
+                "INSERT INTO entries (id, word, kind, language, status) \
+                 VALUES ('h_test', 'test', 'function', 'nom', 'partial')",
+                [],
+            )
+            .unwrap();
+        // Insert into entry_scores using only the original columns.
+        d.entities
+            .execute(
+                "INSERT INTO entry_scores (id, security, reliability) \
+                 VALUES ('h_test', 0.5, 0.7)",
+                [],
+            )
+            .unwrap();
+        let (q, m, a): (Option<f64>, Option<f64>, Option<f64>) = d
+            .entities
+            .query_row(
+                "SELECT quality, maintenance, accessibility FROM entry_scores WHERE id = 'h_test'",
+                [],
+                |r| Ok((r.get(0)?, r.get(1)?, r.get(2)?)),
+            )
+            .unwrap();
+        assert!(q.is_none() && m.is_none() && a.is_none());
     }
 
     #[test]

@@ -61,6 +61,7 @@ CREATE INDEX IF NOT EXISTS idx_entries_status ON entries(status);
 
 CREATE TABLE IF NOT EXISTS entry_scores (
     id                   TEXT PRIMARY KEY REFERENCES entries(id) ON DELETE CASCADE,
+    -- Eight original quality dimensions:
     security             REAL,
     reliability          REAL,
     performance          REAL,
@@ -69,10 +70,18 @@ CREATE TABLE IF NOT EXISTS entry_scores (
     portability          REAL,
     composability        REAL,
     maturity             REAL,
+    -- T3.2 (doc 02 §5.10): three additional canonical dimensions so
+    -- the score vector matches the planner's quality model. Schema
+    -- only — the population pipeline lands with the corpus pilot (T4.1).
+    quality              REAL,
+    maintenance          REAL,
+    accessibility        REAL,
     overall_score        REAL
 );
 CREATE INDEX IF NOT EXISTS idx_scores_overall ON entry_scores(overall_score);
 CREATE INDEX IF NOT EXISTS idx_scores_security ON entry_scores(security);
+CREATE INDEX IF NOT EXISTS idx_scores_quality ON entry_scores(quality);
+CREATE INDEX IF NOT EXISTS idx_scores_accessibility ON entry_scores(accessibility);
 
 CREATE TABLE IF NOT EXISTS entry_meta (
     id                   TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
