@@ -645,31 +645,20 @@ pub fn stage4_contract_bind(shaped: &ShapedStream) -> Result<ContractedStream, S
             }
             let verb_pos = body_slice[i].pos;
             let prose_start = i + 1;
-            // Find next Tok::Dot, but fail strict if we cross another
-            // top-level clause keyword first (another Requires/Ensures,
-            // Favor, Benefit, Hazard, Uses, Exposes). That indicates
-            // the author wrote an unclosed contract.
+            // Scan to the clause-terminating `.`. Every non-dot token is
+            // tolerated as prose filler — contract clauses frequently
+            // contain English verbs whose spelling matches a clause
+            // opener (e.g. "the environment **exposes** no ambient state"
+            // inside a `requires` clause in corpus block #40). The
+            // strict clause-crossing guard was over-aggressive; the
+            // only unrecoverable case is an actually-missing period,
+            // handled below by the `dot_idx_opt.is_none()` branch.
             let verb_name = if is_requires { "requires" } else { "ensures" };
             let mut dot_idx_opt: Option<usize> = None;
             for j in prose_start..body_slice.len() {
-                match &body_slice[j].tok {
-                    Tok::Dot => {
-                        dot_idx_opt = Some(j);
-                        break;
-                    }
-                    Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit
-                    | Tok::Hazard | Tok::Uses | Tok::Exposes => {
-                        return Err(StageFailure::new(
-                            StageId::ContractBind,
-                            body_slice[j].pos,
-                            "unterminated-contract",
-                            format!(
-                                "`{verb_name}` clause in block `{}` crosses into another clause at `{:?}` without a closing `.`",
-                                b.name, body_slice[j].tok
-                            ),
-                        ));
-                    }
-                    _ => {}
+                if matches!(body_slice[j].tok, Tok::Dot) {
+                    dot_idx_opt = Some(j);
+                    break;
                 }
             }
             let dot_idx = match dot_idx_opt {
@@ -1664,18 +1653,16 @@ the function f is given x, returns y.
         assert_eq!(contracted.blocks[0].contracts.len(), 0);
     }
 
-    /// a4c11: unterminated contract clause (missing `.`) rejects with
-    /// NOMX-S4-unterminated-contract.
+    /// a4c11: a genuinely-unterminated contract (no closing dot
+    /// anywhere in the remaining stream) still rejects with
+    /// NOMX-S4-unterminated-contract. The relaxation in 2026-04-14
+    /// removed the over-aggressive clause-crossing guard (prose inside
+    /// `requires` / `ensures` routinely contains English verbs lexed
+    /// as Tok::Exposes, Tok::Uses, etc.) but kept the no-dot branch
+    /// as the final safety net.
     #[test]
-    fn a4c11_unterminated_contract_rejected() {
-        // Block ends at the next top-level `the`, but our `requires`
-        // line here has no dot before the concept body ends. Since
-        // S2's end_tok heuristic relies on seeing a dot first, we
-        // construct a minimal case: no trailing dot at all.
-        let src = r#"the concept broken is
-  intended to surface the failure.
-  requires something important
-  favor correctness."#;
+    fn a4c11_unterminated_contract_rejected_when_no_dot_at_all() {
+        let src = "the concept broken is\n  intended to surface the failure.\n  requires something important";
         let stream = stage1_tokenize(src).expect("S1");
         let classified = stage2_kind_classify(&stream).expect("S2");
         let shaped = stage3_shape_extract(&classified).expect("S3");
