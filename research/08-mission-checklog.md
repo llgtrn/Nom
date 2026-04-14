@@ -60,14 +60,17 @@ anything load-bearing.
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
   0 → 4 keyword_synonyms (proof→property, composition→module,
   row→data, diagram→screen — corpus-idiomatic vocabulary rewritten
-  to the canonical 9-kind set at S1). S5 hazard/benefit scanner
-  relaxed to tolerate non-Word filler tokens. Closure pass rate
-  progression: 0/89 → 42/88 → 60/88 → 68/88 → 75/88 (85%).
-  Remaining 13 failures: S2=4 (instance binding `the X for the Y`,
-  `diagram` block with other shape gaps), S4=3 (unterminated-contract
-  in multi-line blocks — mirrors the S5 fix; scoped next wedge),
-  S5=3 (malformed corpus blocks with unterminated hazard), S6=3
-  (mixed-concept-and-entity authoring).
+  to the canonical 9-kind set at S1). S5 hazard/benefit scanner +
+  S4 contract scanner both relaxed to tolerate prose verbs that
+  happen to lex as clause-opener tokens (corpus sentences like "the
+  build environment **exposes** no ambient state" inside `requires`).
+  The no-dot-anywhere branch remains as the safety net for genuine
+  malformed contracts. Closure pass rate progression:
+  0/89 → 42/88 → 60/88 → 68/88 → 75/88 → 77/88 (87.5%).
+  Remaining 11 failures: S2=4 (instance binding `the X for the Y`,
+  `diagram` shape gaps), S5=3 (malformed corpus blocks with
+  unterminated hazard), S6=4 (mixed-concept-and-entity authoring —
+  corpus issue, not parser).
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
