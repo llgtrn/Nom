@@ -4691,6 +4691,120 @@ Row additions: **0 new wedges** — gRPC bidirectional-streaming RPCs fully expr
 
 ---
 
+## 65. LaTeX article — typography-and-document-structure DSL
+
+```latex
+\documentclass[11pt,a4paper]{article}
+\usepackage{amsmath}
+\usepackage[utf8]{inputenc}
+
+\title{A Short Note on Euler's Identity}
+\author{T.\ Author}
+\date{\today}
+
+\begin{document}
+\maketitle
+
+\section{Introduction}
+Euler's identity links five fundamental constants.
+
+\begin{equation}
+  e^{i\pi} + 1 = 0
+  \label{eq:euler}
+\end{equation}
+
+Equation \eqref{eq:euler} is often called the most beautiful equation
+in mathematics.
+
+\section{Derivation Sketch}
+Starting from Euler's formula $e^{ix} = \cos(x) + i\sin(x)$
+and substituting $x = \pi$:
+\begin{align}
+  e^{i\pi} &= \cos(\pi) + i\sin(\pi) \\
+           &= -1 + 0 \\
+           &= -1.
+\end{align}
+Adding $1$ to both sides yields Equation~\eqref{eq:euler}.
+
+\end{document}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define article_on_eulers_identity
+  that takes no input, returns a rendered two-section article about Euler's identity.
+the article has an 11-point body, A4 paper size, and is UTF-8 encoded.
+the title is "A Short Note on Euler's Identity", the author is "T. Author", the date is today.
+section 1 introduces Euler's identity as linking five fundamental constants.
+equation euler displays: e^(i·π) + 1 = 0.
+prose after the equation calls it the most beautiful equation in mathematics.
+section 2 sketches the derivation: start from e^(ix) = cos(x) + i·sin(x), substitute x = π, and simplify.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data DocumentFormat is
+  intended to describe the output page format and body-text settings for a rendered document.
+  exposes body_point_size as natural from 8 to 24.
+  exposes page_format as text.
+  exposes text_encoding as text.
+
+the data DocumentMetadata is
+  intended to carry the document's title, author, and date for title-page rendering.
+  exposes title as text.
+  exposes author as text.
+  exposes date as text.
+
+the data Equation is
+  intended to describe a single displayed equation with a stable label for cross-referencing from prose.
+  exposes label as identifier.
+  exposes body as text.
+
+the data Section is
+  intended to describe one numbered section of a document, carrying its heading and ordered prose-plus-equation contents.
+  exposes heading as text.
+  exposes contents as list of text.
+
+the screen euler_article is
+  intended to render a two-section article about Euler's identity as an 11-point A4 PDF with UTF-8 text, including a title page, two numbered sections, and two labeled equations.
+  uses the @Data matching "DocumentFormat" with at-least 0.95 confidence.
+  uses the @Data matching "DocumentMetadata" with at-least 0.95 confidence.
+  uses the @Data matching "Equation" with at-least 0.95 confidence.
+  uses the @Data matching "Section" with at-least 0.95 confidence.
+  the format is 11-point A4 UTF-8.
+  the title is "A Short Note on Euler's Identity" by T. Author, dated today.
+  section 1 is "Introduction" containing one prose paragraph ending in the displayed equation labeled euler: e raised to (i times pi) plus 1 equals 0.
+  section 2 is "Derivation Sketch" containing a short derivation displayed as a three-line aligned equation block, referencing equation euler by label.
+  every `\eqref{LABEL}` prose reference resolves to the equation-number of the declared equation with that label at rendering time.
+  favor clarity.
+  favor accessibility.
+
+the function check_cross_references is
+  intended to validate that every equation/figure/section label referenced in prose is actually declared somewhere in the document, producing a list of unresolved-reference diagnostics.
+  uses the @Screen matching "euler_article" with at-least 0.9 confidence.
+  ensures every returned diagnostic names exactly one undeclared label.
+  ensures the returned list is empty when every referenced label is declared.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Typesetting as a `screen` — not a data decl or function** — LaTeX documents are rendered artifacts. Nom's generalized `screen` kind (from #39 SwiftUI + #49 Mermaid) is the right home: `screen` is not UI-specific, it's **any rendered-artifact spec** (interactive UI, diagram, or typeset document). Authoring-guide rule: **typeset documents (LaTeX, Typst, Pandoc, AsciiDoc) decompose to `screen` decls with layout prose inside the body**; cross-references to equations/figures/sections are typed-slot references. Reinforces the `screen` generalization from #49 (row #174). No new wedge.
+2. **Math-as-literal content (`e^{i\pi} + 1 = 0`)** — LaTeX embeds math expressions directly in source. Nom's translation stores each equation in a data decl's `body as text` field + surfaces in prose. Authoring-guide rule: **math content stays as text fields on `Equation` data decls; semantic math (Lean #26) is a separate kind and goes in `the property` or `the concept` decls for theorem-claim translations**. No new wedge.
+3. **Label-based cross-references (`\label{eq:euler}` / `\eqref{eq:euler}`)** — the authoring-side way of linking prose to equations. Nom's translation uses prose `every \eqref{LABEL} prose reference resolves to the equation-number of the declared equation with that label at rendering time` + a peer validation function `check_cross_references`. **Candidate: authoring-guide rule — cross-reference resolution is a build-stage concern declared via `ensures every referenced label is declared` or by a peer validation function**. Prevents dead-link errors at authoring time. No new wedge.
+4. **`\usepackage{...}` module imports** — LaTeX's way of enabling features. Nom's translation elides these; the document's feature set is implicit in what the `screen` body demands. Authoring-guide rule: **LaTeX `\usepackage` directives are no-op in Nom translations; the rendering engine provides the full feature set as a build-stage target selection**. No new wedge.
+5. **Math-mode toggles (`$...$`, `\(...\)`, `\[...\]`, `align`, `equation`)** — LaTeX's many math-mode environments. Nom's translation distinguishes via prose context (`inline equation` vs `displayed equation` vs `aligned equation block`) and stores the raw math body in the Equation data decl. Authoring-guide rule: **LaTeX math-mode environments collapse to prose context on the screen decl's layout description; no verbatim environment tokens at Nom source level**. No new wedge.
+6. **`\today` macro for dates** — a tiny piece of computed content. Nom's translation treats the date as a string field with build-time substitution. Authoring-guide rule: **build-time content macros (`\today`, `\pagenumber`, `\thepage`) decompose to data-decl fields populated by build-stage render-time injection**. No new wedge.
+7. **Accessibility as a QualityName** — `favor accessibility` is an important production-quality axis for documents (alt-text, semantic markup, screen-reader compatibility). Authoring-corpus seed: **`accessibility`** QualityName. Accumulates with 8 existing seeds → 9. **Approaching the 10-seed threshold for formalization wedge.**
+
+Row additions: **0 new wedges** — LaTeX/typesetting fully expresses via `screen` decl (generalized from #39 + #49) + peer data decls for format/metadata/equations/sections + prose layout description + peer validation function for cross-references. 6 authoring-guide closures: typeset documents as `screen` decls, math content as text on `Equation` data decls, cross-reference validation via peer function or `ensures`, `\usepackage` no-op in Nom, math-mode environments → prose context, build-time content macros → build-stage injection. 1 QualityName seed: **accessibility**.
+
+**Thirty-second consecutive minimal-wedge translation + twenty-fourth 0-new-wedge run.** LaTeX — the de-facto academic/technical typesetting system for 40+ years — joins Mermaid (#49), SwiftUI (#39), and arbitrary Nom UI screens under the **unified `screen` kind generalization**. The `screen` kind is now proven across **three rendered-artifact domains**: interactive UIs, internal diagrams, and typeset documents. No separate document-kind wedge is needed; `screen` is the universal surface for "here is something a human will see as rendered output".
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

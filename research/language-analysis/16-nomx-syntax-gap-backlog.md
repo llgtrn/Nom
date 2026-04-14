@@ -296,18 +296,25 @@
 | 279 | Long-lived server-streaming RPCs declare resumability guidance as `hazard` with cursor advice; caller owns resume logic | authoring-guide rule | ✅ closed (doc 14 #64) |
 | 280 | Transport-layer reordering on bidi-streams → application-level sequence tracking delegated to callers via explicit `hazard` | authoring-guide rule | ✅ closed (doc 14 #64) |
 | 281 | RPC deadlines and cancellation tokens → `requires` (deadline-bound on caller) + `hazard` (cancellation may surface mid-stream) | authoring-guide rule | ✅ closed (doc 14 #64) |
+| 282 | Typeset documents (LaTeX/Typst/Pandoc/AsciiDoc) → `screen` decls with layout prose; cross-references as typed-slot references | authoring-guide rule | ✅ closed (doc 14 #65; reinforces #49 screen generalization) |
+| 283 | Math content stays as text fields on `Equation` data decls; semantic math goes in `property`/`concept` decls (#26 Lean pattern) | authoring-guide rule | ✅ closed (doc 14 #65) |
+| 284 | Cross-reference resolution via build-stage `ensures every referenced label is declared` or peer validation function | authoring-guide rule | ✅ closed (doc 14 #65; prevents dead-link errors at authoring time) |
+| 285 | LaTeX `\usepackage` directives are no-op in Nom; rendering engine provides full feature set as build-stage target selection | authoring-guide rule | ✅ closed (doc 14 #65) |
+| 286 | LaTeX math-mode environments (`$...$`/`\[...\]`/`align`/`equation`) → prose context on screen decl's layout description | authoring-guide rule | ✅ closed (doc 14 #65) |
+| 287 | Build-time content macros (`\today`/`\pagenumber`/`\thepage`) → data-decl fields populated by build-stage render-time injection | authoring-guide rule | ✅ closed (doc 14 #65) |
+| 288 | `accessibility` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #65; accumulates to 9 seeds — approaching 10-seed formalization threshold) |
 
-Totals by destination (after doc 14 #64 gRPC bidirectional-streaming translation — **twenty-third 0-new-wedge translation in a row**; 6 authoring-guide closures; **networked-API paradigm family fully closed**: HTTP REST (#53 OpenAPI) + RPC (#64 gRPC) + query (#17 GraphQL) + subscription (#62 GraphQL-sub) all share @Route + callbacks + ensures-quantifier semantics):
+Totals by destination (after doc 14 #65 LaTeX typography translation — **twenty-fourth 0-new-wedge translation in a row**; 6 authoring-guide closures + accessibility seed; **`screen` kind now proven across 3 rendered-artifact domains**: interactive UI + internal diagrams + typeset documents):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **231**
+- ✅ Closed: **238**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **8** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability QualityNames)
+- 🌱 Authoring-corpus seed: **9** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability + accessibility QualityNames) — **9/10 threshold for QualityName-registration formalization wedge**.
 
-Backlog size: 296 rows. Closure rate 78% (231/296). **64 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + **bidirectional-streaming-RPC (gRPC)**. Thirty-first consecutive minimal-wedge translation, twenty-third 0-new-wedge. **Networked-API paradigm family fully closed** (HTTP REST + RPC + query + subscription all share Nom primitives).
+Backlog size: 304 rows. Closure rate 78% (238/304). **65 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + **typeset-document (LaTeX)**. Thirty-second consecutive minimal-wedge translation, twenty-fourth 0-new-wedge. **`screen` kind now proven across 3 rendered-artifact domains** (UI + diagrams + documents).
 
 ## Wedge master index (for cross-ref with doc 13)
 
