@@ -1864,6 +1864,343 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 5 -- audio + business + compiler
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'audio-sample-buffer',
+  'hold a contiguous window of audio samples for streaming and processing',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to hold a fixed-capacity ring of audio samples shared between producer and consumer.\n  exposes a channel-interleaved frame slice for read access.\n  favor latency.',
+  '["wrap-around overwrites unread frames when consumer stalls","tearing when read and write indices cross without atomic publish"]',
+  '["latency","determinism"]',
+  '[]'
+),
+(
+  'fixed-time-step-synthesizer',
+  'render audio in fixed-size frame blocks at a deterministic cadence',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to compute the next block of synthesized samples at a fixed step.\n  uses the @Data matching "voice state and modulation snapshot" with at-least 0.9 confidence.\n  requires the @Event matching "block boundary tick" with at-least 0.95 confidence.\n  ensures every step yields exactly one block of equal frame count.\n  hazard control changes applied mid-block produce zipper artifacts.\n  favor determinism.',
+  '["denormal sample values stall the inner loop","control updates aliased to block rate cause audible stepping"]',
+  '["determinism","latency","numerical_stability"]',
+  '[]'
+),
+(
+  'frequency-domain-transform',
+  'convert a windowed time-domain block into spectral coefficients',
+  '["function"]',
+  '["intended","uses","requires","ensures","favor"]',
+  '["@Data","@Function"]',
+  'the function <name> is\n  intended to project a windowed sample block into a complex spectrum.\n  uses the @Data matching "windowed real sample block of power-of-two length" with at-least 0.95 confidence.\n  requires the @Function matching "analysis window taper" with at-least 0.9 confidence.\n  ensures output bin count matches half the block length plus one for real input.\n  favor numerical_stability.',
+  '["spectral leakage when window taper is omitted","loss of precision accumulating across long block sizes in single precision"]',
+  '["numerical_stability","correctness","performance"]',
+  '[]'
+),
+(
+  'resampling-rate-converter',
+  'convert a stream from one sample rate to another while preserving spectral content',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to map an input frame stream at one rate to an output stream at another rate.\n  uses the @Function matching "polyphase low-pass kernel" with at-least 0.9 confidence.\n  requires the @Data matching "rational input-to-output rate ratio" with at-least 0.95 confidence.\n  ensures output band-limit stays below the lower of the two Nyquist limits.\n  hazard aliasing folds back into audible band when low-pass cutoff is set above target Nyquist.\n  favor numerical_stability.',
+  '["aliasing from insufficient stop-band attenuation","group delay drift across long streams when fractional phase is not tracked"]',
+  '["numerical_stability","correctness","latency"]',
+  '[]'
+),
+(
+  'loudness-normalization-pass',
+  'adjust gain so a signal matches a target perceived loudness',
+  '["function"]',
+  '["intended","uses","requires","ensures","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to scale a signal so its integrated perceived loudness meets a target level.\n  uses the @Function matching "perceptual loudness meter" with at-least 0.9 confidence.\n  requires the @Data matching "target loudness in loudness units" with at-least 0.95 confidence.\n  ensures the post-gain measurement is within tolerance of the target.\n  favor reproducibility.',
+  '["true-peak overshoot after gain even when integrated loudness is correct","short transients dominate measurement on very brief inputs"]',
+  '["reproducibility","correctness","auditability"]',
+  '[]'
+),
+(
+  'lossy-compression-codec',
+  'encode an audio stream into a smaller representation by discarding inaudible content',
+  '["concept"]',
+  '["intended","uses","composes","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to compress an audio stream by removing components masked by the perceptual model.\n  uses the @Function matching "psychoacoustic masking model" with at-least 0.9 confidence.\n  composes the @Function matching "frequency-domain transform" with at-least 0.9 confidence.\n  ensures decoded output bit-rate stays within the configured budget.\n  hazard repeated encode-decode cycles compound spectral hole artifacts.\n  favor performance.',
+  '["pre-echo on sharp transients near block boundaries","tandem coding loss when chained with another lossy stage"]',
+  '["performance","portability","correctness"]',
+  '[]'
+),
+(
+  'real-time-audio-mixer',
+  'sum multiple input streams into a shared output bus within a real-time deadline',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to sum gain-scaled input streams into one output bus per audio callback.\n  uses the @Data matching "per-channel gain envelope" with at-least 0.9 confidence.\n  requires the @Event matching "audio callback deadline" with at-least 0.95 confidence.\n  ensures the callback returns before the deadline for every block.\n  hazard lock acquisition or memory allocation inside the callback can miss the deadline.\n  favor latency.',
+  '["priority inversion when worker thread holds a lock the callback waits on","clipping when summed buses exceed full-scale without headroom"]',
+  '["latency","determinism","responsiveness"]',
+  '[]'
+),
+(
+  'envelope-generator-adsr',
+  'shape a control signal through attack, decay, sustain, and release segments',
+  '["function"]',
+  '["intended","uses","requires","ensures","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to produce a per-sample amplitude curve following four ordered segments.\n  uses the @Data matching "segment durations and sustain level" with at-least 0.95 confidence.\n  requires the @Event matching "note-on and note-off triggers" with at-least 0.95 confidence.\n  ensures the curve is continuous across segment transitions.\n  favor determinism.',
+  '["click on retrigger when current level is not used as the new attack start","floating-point drift causes sustain level to wander on long held notes"]',
+  '["determinism","numerical_stability","responsiveness"]',
+  '[]'
+),
+(
+  'spatial-audio-panning',
+  'position a mono source within a multi-channel sound field by computing per-channel gains',
+  '["function"]',
+  '["intended","uses","requires","ensures","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to derive per-output-channel gains placing a source at a target position.\n  uses the @Data matching "listener position and orientation" with at-least 0.9 confidence.\n  requires the @Data matching "speaker layout description" with at-least 0.95 confidence.\n  ensures the sum of squared per-channel gains is preserved across positions.\n  favor numerical_stability.',
+  '["amplitude dip at the midpoint when linear pan law is used instead of equal-power","phantom image collapse when listener leaves the sweet spot"]',
+  '["numerical_stability","accessibility","correctness"]',
+  '[]'
+),
+(
+  'audio-playback-latency-budget',
+  'bound the end-to-end delay from sample submission to audible output',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '["@Data","@Event"]',
+  'the scenario <name> is\n  intended to verify the path from buffer submission to driver hand-off stays under a stated bound.\n  given the @Data matching "configured block size and sample rate" with at-least 0.95 confidence.\n  when the @Event matching "buffer submitted to output stage" with at-least 0.95 confidence.\n  then the elapsed time to driver hand-off is below the budgeted threshold for every measured block.\n  favor latency.',
+  '["measurement skew when timestamps come from different clocks","budget met on average but violated at the tail percentile"]',
+  '["latency","responsiveness","reproducibility"]',
+  '[]'
+),
+(
+  'shopping-cart-line-item',
+  'represent a single line entry in a shopping cart with quantity and unit price',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to record one purchasable unit within a cart at the moment of selection.\n  exposes quantity as integer.\n  exposes unit_price as real.\n  favor auditability.',
+  '["non-positive quantity collapses subtotal","unit price drift between cart and checkout"]',
+  '["auditability","correctness"]',
+  '[]'
+),
+(
+  'order-state-machine',
+  'transition an order through its allowed lifecycle states',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to advance an order from one state to the next allowed state.\n  uses the @Data matching "order state" with at-least 0.9 confidence.\n  requires the source state and the target state to form a permitted edge.\n  ensures every accepted transition emits the @Event matching "order state changed" with at-least 0.9 confidence.\n  hazard skipping intermediate states erases audit trail.\n  favor determinism.',
+  '["illegal transition","skipped state","duplicate event emission"]',
+  '["determinism","auditability","correctness"]',
+  '[]'
+),
+(
+  'invoice-line-tax-calculation',
+  'compute tax for one invoice line given jurisdiction and rate',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to derive the tax amount owed on a single invoice line.\n  uses the @Data matching "tax rate table" with at-least 0.9 confidence.\n  requires the line subtotal and the jurisdiction code to be present.\n  ensures the returned amount is rounded by the jurisdiction rounding rule.\n  hazard floating-point drift in cumulative tax across many lines.\n  favor numerical_stability.',
+  '["rounding mode mismatch","missing jurisdiction","compounded float error"]',
+  '["numerical_stability","auditability","correctness"]',
+  '[]'
+),
+(
+  'inventory-stock-ledger',
+  'append-only ledger of stock movements per warehouse and item',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","exposes","favor"]',
+  '["@Data","@Event"]',
+  'the concept <name> is\n  intended to record every increment and decrement of on-hand quantity as immutable rows.\n  uses the @Data matching "stock movement" with at-least 0.9 confidence.\n  composes the @Event matching "stock adjusted" with at-least 0.9 confidence.\n  requires every movement to carry a signed quantity and a source reference.\n  ensures the running balance for a warehouse-item pair equals the sum of its movements.\n  hazard mutating a past row breaks reconciliation.\n  exposes a current balance view.\n  favor auditability.',
+  '["row mutation","missing source ref","negative balance without backorder flag"]',
+  '["auditability","reproducibility","correctness"]',
+  '[]'
+),
+(
+  'subscription-billing-cycle',
+  'generate the next billing period for an active subscription',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to produce the next period boundary and charge entry for a subscription.\n  uses the @Data matching "subscription plan" with at-least 0.9 confidence.\n  requires the previous period end and the plan interval to be known.\n  ensures the new period start equals the previous period end and emits the @Event matching "cycle advanced" with at-least 0.9 confidence.\n  hazard double-advancing on retry produces duplicate charges.\n  favor determinism.',
+  '["double advance on retry","clock skew at period boundary","timezone drift"]',
+  '["determinism","auditability","correctness"]',
+  '[]'
+),
+(
+  'refund-with-reason',
+  'issue a refund against a prior charge with a recorded reason code',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to reverse part or all of a prior charge while recording why.\n  uses the @Data matching "charge record" with at-least 0.9 confidence.\n  requires the refund amount to be at most the unrefunded balance of the charge.\n  ensures a refund row is written and the @Event matching "refund issued" with at-least 0.9 confidence is emitted.\n  hazard refunding more than the charge through concurrent partial refunds.\n  favor auditability.',
+  '["over-refund race","missing reason code","orphan refund without charge"]',
+  '["auditability","correctness","determinism"]',
+  '[]'
+),
+(
+  'double-entry-journal',
+  'post a balanced journal entry across two or more accounts',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to commit a set of debits and credits as one atomic accounting transaction.\n  uses the @Data matching "chart of accounts" with at-least 0.9 confidence.\n  requires the sum of debits to equal the sum of credits in the entry currency.\n  ensures the entry is rejected when the sums diverge by more than the rounding tolerance.\n  hazard partial posting leaves the ledger out of balance.\n  favor auditability.',
+  '["unbalanced entry","partial commit","mixed currency without conversion"]',
+  '["auditability","correctness","determinism"]',
+  '[]'
+),
+(
+  'approval-workflow-reviewer',
+  'route a request through ordered reviewers until approved or rejected',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","exposes","favor"]',
+  '["@Function","@Event"]',
+  'the concept <name> is\n  intended to drive a request through a sequence of reviewers each holding veto power.\n  uses the @Function matching "assign next reviewer" with at-least 0.9 confidence.\n  composes the @Event matching "decision recorded" with at-least 0.9 confidence.\n  requires the reviewer order and the quorum rule to be defined before routing begins.\n  ensures the request reaches a terminal state of approved or rejected within the configured deadline.\n  hazard a reviewer acting outside their delegated scope.\n  exposes a workflow completed event.\n  favor auditability.',
+  '["scope violation","stalled queue","self-approval"]',
+  '["auditability","correctness","accessibility"]',
+  '[]'
+),
+(
+  'price-currency-conversion',
+  'convert a price from one currency to another at a stated rate and time',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to restate an amount in a target currency using a dated exchange rate.\n  uses the @Data matching "exchange rate snapshot" with at-least 0.9 confidence.\n  requires the source currency, the target currency, and the rate timestamp to be present.\n  ensures the result records both the rate value and the rate timestamp alongside the converted amount.\n  hazard silent re-conversion with a stale rate distorts reported revenue.\n  favor reproducibility.',
+  '["stale rate","missing timestamp","rounding asymmetry on round-trip"]',
+  '["reproducibility","numerical_stability","auditability"]',
+  '[]'
+),
+(
+  'discount-code-redemption',
+  'apply a discount code to an order subject to validity and usage limits',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to reduce an order total when a valid code is presented within its limits.\n  uses the @Data matching "discount code" with at-least 0.9 confidence.\n  requires the code to be active, within its date window, and below its max-use count.\n  ensures the redemption is recorded and the @Event matching "code redeemed" with at-least 0.9 confidence is emitted exactly once per order.\n  hazard concurrent redemptions exceed the usage cap.\n  favor correctness.',
+  '["over-redemption race","expired code accepted","stacking beyond policy"]',
+  '["correctness","auditability","determinism"]',
+  '[]'
+),
+(
+  'lexer-tokenize-pass',
+  'split source text into a stream of typed tokens with span information',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to convert source text into a token stream.\n  uses the @Data matching "source buffer and token kind table" with at-least 0.9 confidence.\n  requires the source buffer to be valid utf-8.\n  ensures every byte of the source is covered by exactly one token or skipped trivia.\n  hazard ambiguous prefix between numeric literal and identifier may misclassify tokens.\n  favor determinism.',
+  '["ambiguous prefix misclassification"]',
+  '["determinism","correctness"]',
+  '[]'
+),
+(
+  'parser-grammar-production',
+  'reduce a token sequence into a typed syntax node according to a grammar production',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to build a syntax node from matched tokens.\n  uses the @Data matching "token cursor and production rule" with at-least 0.9 confidence.\n  requires the cursor head to match the first symbol of the production rule.\n  ensures the returned node spans a contiguous token range and the cursor advances past it.\n  hazard left-recursive productions without memoization may not terminate.\n  favor totality.',
+  '["non terminating left recursion"]',
+  '["totality","determinism"]',
+  '[]'
+),
+(
+  'typed-intermediate-representation',
+  'represent a program as typed instructions over named values for later analysis',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to hold typed instructions and value definitions for a program unit.\n  exposes function_table as list.\n  exposes value_type_map as record.\n  exposes instruction_stream as list.\n  favor clarity.',
+  '["type map drift from instructions"]',
+  '["clarity","correctness"]',
+  '[]'
+),
+(
+  'control-flow-graph-basic-block',
+  'partition instructions into maximal straight-line blocks linked by control edges',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to expose basic blocks and their successor edges for one function.\n  exposes block_table as list.\n  exposes successor_edges as list.\n  exposes entry_block_id as identifier.\n  favor determinism.',
+  '["unreachable block left in table"]',
+  '["determinism","correctness"]',
+  '[]'
+),
+(
+  'single-static-assignment-form',
+  'rewrite a typed intermediate so each value is assigned exactly once',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to convert a typed intermediate into single-assignment form.\n  uses the @Data matching "typed ir module with control flow and dominator tree" with at-least 0.9 confidence.\n  requires the control flow graph to have a single entry block reachable from all blocks.\n  ensures every value name is the target of exactly one definition and every use is dominated by its definition.\n  hazard misplaced merge nodes at join points may shadow earlier definitions.\n  favor correctness.',
+  '["misplaced merge at join"]',
+  '["correctness","determinism"]',
+  '[]'
+),
+(
+  'dominator-tree-analysis',
+  'compute, for each block, the set of blocks that must execute before it',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to produce the dominator tree of a control flow graph.\n  uses the @Data matching "control flow graph with reverse postorder" with at-least 0.9 confidence.\n  requires every block to be reachable from the entry block.\n  ensures the result is a tree rooted at the entry block where each node parent is its immediate dominator.\n  hazard unreachable blocks left in the input produce undefined parent pointers.\n  favor correctness.',
+  '["unreachable block undefined parent"]',
+  '["correctness","determinism"]',
+  '[]'
+),
+(
+  'dead-code-elimination-pass',
+  'remove instructions whose results have no observable effect on program output',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to drop instructions whose values are never used and that have no side effects.\n  uses the @Data matching "typed ir module with use count and side effect tables" with at-least 0.9 confidence.\n  requires the use count table to be consistent with the current instruction stream.\n  ensures the program observable behavior on every input is unchanged.\n  hazard treating an instruction with hidden effects as pure may delete required work.\n  favor correctness.',
+  '["hidden side effect treated as pure"]',
+  '["correctness","determinism"]',
+  '[]'
+),
+(
+  'constant-folding-rewrite',
+  'replace operations on known constant operands with their computed result',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to evaluate operations whose operands are all known at translation time.\n  uses the @Data matching "typed ir module with constant value table and operation semantics" with at-least 0.9 confidence.\n  requires the operation semantics to match the runtime semantics for every folded operation.\n  ensures the rewritten program produces the same value as the original for every input.\n  hazard folding under different rounding or overflow rules than the runtime may diverge.\n  favor numerical_stability.',
+  '["rounding or overflow divergence"]',
+  '["numerical_stability","correctness"]',
+  '[]'
+),
+(
+  'register-allocation-assignment',
+  'assign a finite set of physical locations to the values of a function',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to map each live value to a physical register or spill slot.\n  uses the @Data matching "typed ir module with interference graph and register file" with at-least 0.9 confidence.\n  requires the interference graph to contain an edge between every pair of values live at the same point.\n  ensures no two values that interfere share the same physical register.\n  hazard missing interference edges produce silent value corruption at runtime.\n  favor correctness.',
+  '["missing interference edge"]',
+  '["correctness","performance"]',
+  '[]'
+),
+(
+  'source-position-span',
+  'attach a half-open source byte range to a syntax or intermediate node',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to record the source byte range a node was produced from.\n  exposes source_file_id as identifier.\n  exposes start_byte_offset as integer.\n  exposes end_byte_offset as integer.\n  favor auditability.',
+  '["span drifts after source rewrite"]',
+  '["auditability","clarity"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
