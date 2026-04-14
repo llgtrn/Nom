@@ -1006,6 +1006,16 @@ enum GrammarCmd {
         #[arg(long)]
         json: bool,
     },
+    /// P4+P5 seed: migrate doc 16 markdown + hardcoded kinds/QualityNames
+    /// into the registry. Idempotent; re-run after doc edits.
+    Seed {
+        /// Path to grammar.sqlite (default: ~/.nom/grammar.sqlite)
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+        /// Path to doc 16 markdown source (default: research/language-analysis/16-nomx-syntax-gap-backlog.md)
+        #[arg(long)]
+        doc16: Option<PathBuf>,
+    },
 }
 
 #[derive(Subcommand)]
@@ -1384,6 +1394,7 @@ fn main() {
         Commands::Grammar { action } => match action {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
+            GrammarCmd::Seed { path, doc16 } => cmd_grammar_seed(path.as_deref(), doc16.as_deref()),
         },
     };
     process::exit(exit_code);
@@ -1412,6 +1423,44 @@ fn cmd_grammar_init(path: Option<&Path>) -> i32 {
         }
         Err(e) => {
             eprintln!("nom grammar init: {e}");
+            1
+        }
+    }
+}
+
+fn cmd_grammar_seed(path: Option<&Path>, doc16_path: Option<&Path>) -> i32 {
+    let p = match path {
+        Some(p) => p.to_path_buf(),
+        None => default_grammar_path(),
+    };
+    let conn = match nom_grammar::init_at(&p) {
+        Ok(c) => c,
+        Err(e) => {
+            eprintln!("nom grammar seed: init failed: {e}");
+            return 1;
+        }
+    };
+    let doc16 = match doc16_path {
+        Some(p) => p.to_path_buf(),
+        None => PathBuf::from("research/language-analysis/16-nomx-syntax-gap-backlog.md"),
+    };
+    let md = match std::fs::read_to_string(&doc16) {
+        Ok(s) => s,
+        Err(e) => {
+            eprintln!("nom grammar seed: reading {}: {e}", doc16.display());
+            return 1;
+        }
+    };
+    match nom_grammar::seed::seed_all_from_doc16(&conn, &md) {
+        Ok((kinds, qualities, rules)) => {
+            println!(
+                "nom grammar seed: seeded {kinds} kinds, {qualities} quality_names, {rules} authoring_rules at {}",
+                p.display()
+            );
+            0
+        }
+        Err(e) => {
+            eprintln!("nom grammar seed: {e}");
             1
         }
     }

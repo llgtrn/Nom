@@ -7,6 +7,8 @@
 //!
 //! P1 scope: schema-only. Later phases populate from nom-concept + doc 16.
 
+pub mod seed;
+
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
 use std::path::Path;
