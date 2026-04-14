@@ -2599,6 +2599,100 @@ Row additions: **W48 clock-domain clause** (new wedge, narrow — `at every risi
 
 ---
 
+## 42. Nix derivation — purely-functional package spec with content-addressed output
+
+```nix
+{ stdenv, fetchurl, gcc, pkg-config, zlib }:
+
+stdenv.mkDerivation rec {
+  pname = "mytool";
+  version = "1.2.3";
+
+  src = fetchurl {
+    url = "https://example.org/mytool-${version}.tar.gz";
+    sha256 = "0hash0hash0hash0hash0hash0hash0hash0hash0hash0hash00";
+  };
+
+  nativeBuildInputs = [ pkg-config ];
+  buildInputs = [ gcc zlib ];
+
+  configurePhase = "./configure --prefix=$out";
+  buildPhase = "make -j$NIX_BUILD_CORES";
+  installPhase = "make install";
+
+  meta = {
+    description = "Small CLI tool";
+    license = stdenv.lib.licenses.mit;
+    platforms = stdenv.lib.platforms.unix;
+  };
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define build_mytool
+  that takes a source archive and a build environment, returns a content-addressed artifact path.
+fetch the source tarball from the pinned URL, verify its sha256.
+provide gcc, pkg-config, and zlib in the build environment; mark pkg-config as native-only.
+configure with prefix set to the output path.
+build with parallelism equal to the build environment's core count.
+install to the output path.
+the returned artifact path is the content hash of (source + inputs + build commands + output layout).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data MyToolSource is
+  intended to pin the exact source tarball for mytool by URL and sha256, making the fetch reproducible.
+  exposes url as text.
+  exposes sha256 as text.
+  exposes version as text.
+
+the data MyToolBuildInputs is
+  intended to list the exact package dependencies required to build mytool, distinguishing build-time-only tools from run-time libraries.
+  exposes native_inputs as list of identifier.
+  exposes runtime_inputs as list of identifier.
+
+the data MyToolMeta is
+  intended to record descriptive metadata about the mytool package for downstream catalog/search consumers.
+  exposes description as text.
+  exposes license as identifier.
+  exposes platforms as list of identifier.
+
+the function build_mytool is
+  intended to produce a reproducible, content-addressed build artifact of mytool from a pinned source and a pinned dependency closure.
+  uses the @Data matching "MyToolSource" with at-least 0.95 confidence.
+  uses the @Data matching "MyToolBuildInputs" with at-least 0.95 confidence.
+  uses the @Data matching "MyToolMeta" with at-least 0.95 confidence.
+  requires every input is pinned to a specific hash — no floating version ranges.
+  requires the build environment exposes no ambient state (no PATH inheritance, no network access after the pinned fetch).
+  ensures identical (source sha256, input closure hashes, configure + build + install commands) produce a byte-identical output directory.
+  ensures the returned artifact path is the content hash of (source sha256 + input closure hashes + build commands + output layout).
+  hazard any unpinned system dependency leaks ambient state into the output and breaks reproducibility.
+  hazard impure build steps (network, clock, random) silently diverge across rebuilds.
+  favor reproducibility.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Content-addressed output** — Nix's core guarantee: identical inputs produce a byte-identical output directory, referenced by its content hash. **This is exactly the Nom fixpoint discipline** (doc 04 §10.3.1) applied to external packages. The v2 translation's `ensures identical (...) produce a byte-identical output directory` captures this directly. Authoring-guide rule: **external builds declared in Nom inherit Nom's fixpoint discipline; unpinned inputs are rejected at build time, not silently honored**. No new wedge; reuses the existing fixpoint-locked-input model.
+2. **Pinned fetches (`fetchurl { sha256 = ... }`)** — content-addressed source acquisition. Nom's `name@hash` lock (doc 08) is the analogous mechanism for Nom entities; external sources use the same shape via `requires every input is pinned to a specific hash`. Authoring-guide rule: **external source fetches declare their expected hash in `requires` clauses; the build rejects if the actual hash diverges**. No new wedge.
+3. **Hermetic-build discipline (no PATH inheritance, no network after fetch)** — Nix's sandbox guarantees. Nom's v2 makes this explicit: `requires the build environment exposes no ambient state`. **Candidate: authoring-guide rule — reproducible-build functions must declare their hermetic discipline via explicit `requires no ambient state` clause**. No new wedge; it's a `requires` convention.
+4. **Lazy evaluation (Nix functions are lazy by default)** — deferred computation until a derivation's output is actually referenced. Nom's translation is eager; laziness is a build-time specialization (Phase 12) concern. Authoring-guide rule: **Nix laziness decomposes to eager prose in Nom; the compiler/build graph evaluates on demand at build time**. No new wedge.
+5. **Recursive attrset (`rec { pname = ...; version = ...; src = ...}` with self-reference)** — Nix's way of letting fields reference other fields in the same record. Nom's v2 splits this into three peer data decls (`MyToolSource`, `MyToolBuildInputs`, `MyToolMeta`) — cross-references become `uses @Data` clauses, not in-record references. Authoring-guide rule: **recursive attrsets decompose to peer data decls with explicit `uses` references, not self-referential single records**. No new wedge.
+6. **`buildInputs` vs `nativeBuildInputs` distinction** — run-time vs build-time-only dependency classes. Nom's v2 captures this via two separate `exposes` fields on `MyToolBuildInputs`. Authoring-guide rule: **dependency classes (native/runtime/dev/test) decompose to separate list-typed fields on a build-inputs data decl, not to tagged-union single-list with classifier**. Keeps typed-slot resolution clean.
+7. **`configurePhase` / `buildPhase` / `installPhase` as shell strings** — Nix embeds shell-script snippets as strings. Nom rejects embedded shell: each phase decomposes to a **named function decl** invoked in the composition. Authoring-guide rule: **build phases decompose to named function decls composed in order — `configure then build then install`** — never embed shell strings inside data decls. Reuses composition `then` chain (#33 / a4c33).
+8. **Reproducibility as a QualityName** — already registered from #34 Terraform (`favor reproducibility`). No new seed; reuses existing QualityName.
+
+Row additions: **0 new wedges** — package specification + content-addressing + hermetic builds all express with existing Nom primitives (data decls + composition + `uses` clauses + `requires`/`ensures`/`hazard` + `name@hash` locks). 7 authoring-guide closures: external builds inherit Nom fixpoint discipline, external source fetches declare expected hash in `requires`, reproducible-build hermetic discipline via `requires no ambient state`, Nix laziness decomposes to eager prose, recursive attrsets = peer data decls + `uses`, dependency classes = separate list fields on build-inputs data decl, build phases = named function decls composed in order. No QualityName seed needed (reuses `reproducibility`).
+
+**Ninth consecutive minimal-wedge translation + third 0-new-wedge run.** Nix — the exemplar of "functional package manager" — is the purest validation yet that **Nom's fixpoint + composition + content-addressing discipline IS the Nix model applied to source-level authoring**. No grammar additions required; every Nix guarantee is expressed through existing Nom primitives.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

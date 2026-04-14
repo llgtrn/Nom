@@ -143,18 +143,25 @@
 | 126 | Multi-edge triggers decompose to peer transition functions + explicit precedence | authoring-guide rule | ✅ closed (doc 14 #41) |
 | 127 | Verilog `module` → Nom composition decl with input/output data decls + transition function | authoring-guide rule | ✅ closed (doc 14 #41; same shape as #32/#38/#39) |
 | 128 | `synthesizability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #41; accumulates to 4 seeds) |
+| 129 | External builds declared in Nom inherit Nom's fixpoint discipline; unpinned inputs rejected at build time | authoring-guide rule | ✅ closed (doc 14 #42; reuses doc 04 §10.3.1) |
+| 130 | External source fetches declare expected hash in `requires` clauses; build rejects on hash divergence | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 131 | Reproducible-build functions declare hermetic discipline via explicit `requires no ambient state` | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 132 | Nix-style laziness decomposes to eager prose in Nom; compiler/build-graph evaluates on demand at build time | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 133 | Recursive attrsets decompose to peer data decls with explicit `uses` references, not self-referential single records | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 134 | Dependency classes (native/runtime/dev/test) decompose to separate list-typed fields on build-inputs data decl | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 135 | Build phases decompose to named function decls composed in order (`configure then build then install`) — never embedded shell strings inside data | authoring-guide rule | ✅ closed (doc 14 #42) |
 
-Totals by destination (after doc 14 #41 Verilog hardware-description translation surfaced W48 clock-domain + 5 authoring-guide closures + synthesizability seed; the (state-data, transition-fn, composition) pattern is now proven across 5 traditionally-separate domains):
+Totals by destination (after doc 14 #42 Nix derivation translation — **third 0-new-wedge translation**; 7 authoring-guide closures; reuses existing `reproducibility` QualityName; confirms Nom's fixpoint + composition + content-addressing discipline IS the Nix model applied to source-level authoring):
 
-- ⏳ Wedge queued: **41** (+W48 clock-domain)
+- ⏳ Wedge queued: **41** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **82**
+- ✅ Closed: **89**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 132 rows. Closure rate 62% (82/132). **41 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + **hardware-description-RTL (Verilog)**. Eighth consecutive minimal-wedge translation. Unified decomposition pattern (state-data, transition-fn, composition) proven across state-machines + reactive-UIs + smart-contracts + hardware-RTL + test-scenarios.
+Backlog size: 139 rows. Closure rate 64% (89/139). **42 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + **purely-functional-package-spec (Nix)**. Ninth consecutive minimal-wedge translation, third 0-new-wedge. **Nom's fixpoint + composition + content-addressing IS the Nix model applied to source-level authoring.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
