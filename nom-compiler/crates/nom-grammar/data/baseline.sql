@@ -244,6 +244,61 @@ INSERT OR IGNORE INTO patterns (
   '[]',
   '["correctness","availability"]',
   '["doc 14 — standard concept composition pattern"]'
+),
+(
+  'property-quantified-claim',
+  'a universally-quantified claim over a generator; the substrate for theorem-proving and property-based tests',
+  '["property"]',
+  '["intended","generator","uses","requires","ensures","favor"]',
+  '["@Function"]',
+  'the property <name> is\n  intended to assert <prose-claim>.\n  generator <prose-domain>.\n  uses the @Function matching "<peer-lemma>" with at-least 0.9 confidence.\n  requires <domain-precondition>.\n  ensures for every <x> in the generator, <claim-about-x>.\n  favor correctness.',
+  '[]',
+  '["correctness","totality"]',
+  '["doc 14 block 24 — proof add_comm","formal-methods paradigm family"]'
+),
+(
+  'scenario-given-when-then',
+  'a behavior-driven scenario asserting a specific observable outcome under a specific setup',
+  '["scenario"]',
+  '["intended","given","when","then","favor"]',
+  '[]',
+  'the scenario <name> is\n  intended to describe <prose>.\n  given <prose-setup>.\n  when <prose-action>.\n  then <prose-outcome>.\n  favor correctness.',
+  '[]',
+  '["correctness","clarity"]',
+  '["W46/W47 — BDD acceptance pattern"]'
+),
+(
+  'event-quantified-delivery',
+  'a named event signal with quantified delivery semantics (at-least-once, at-most-once, exactly-once)',
+  '["event"]',
+  '["intended","exposes","ensures","favor"]',
+  '[]',
+  'the event <name> is\n  intended to <prose>.\n  exposes <field> as <type>.\n  ensures delivery is <quantifier> to every subscriber.\n  favor availability.',
+  '["duplicate delivery when quantifier is at-least-once"]',
+  '["availability","auditability"]',
+  '["doc 04 — event quantifier clause"]'
+),
+(
+  'screen-exposes-surface',
+  'a rendered user-facing surface — UI screen, diagram, typeset document — with typed slots for its content',
+  '["screen"]',
+  '["intended","uses","exposes","favor"]',
+  '["@Data","@Function"]',
+  'the screen <name> is\n  intended to <prose>.\n  uses the @Data matching "<model>" with at-least 0.9 confidence.\n  exposes <surface-field> as <type>.\n  favor accessibility.',
+  '[]',
+  '["accessibility","responsiveness"]',
+  '["doc 14 — screen kind generalized to UI/diagram/typography"]'
+),
+(
+  'supervised-process-tree',
+  'a fault-tolerant concept composing supervised children with restart policies',
+  '["concept","data","function"]',
+  '["intended","uses","composes","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <supervisor> is\n  intended to supervise a set of child processes with lifecycle policies.\n  uses the @Data matching "child spec" with at-least 0.9 confidence.\n  composes <child-a> then <child-b>.\n  hazard a supervisor cascade can restart otherwise-healthy children.\n  favor availability.',
+  '["restart storms","hidden cascade failures"]',
+  '["availability","auditability"]',
+  '["doc 14 block ~85 — supervised-process paradigm"]'
 );
 
 -- ── Schema version stamp ────────────────────────────────────────────
