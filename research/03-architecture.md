@@ -28,9 +28,13 @@
   scheduled for deletion), `entry_scores`, `entry_meta`, `entry_signatures`,
   `entry_security_findings`, `entry_refs`, `entry_graph_edges`,
   `entry_translations`, `entities` (canonical), `dict_meta`.
-- `grammar.sqlite` — language registry. Tables: `schema_meta`, `keywords`,
-  `clause_shapes`, `kinds`, `quality_names`, `patterns`. AI clients query
-  this to determine intent → synthesis without reading any markdown.
+- `grammar.sqlite` — language registry. Tables: `schema_meta`,
+  `keywords`, `keyword_synonyms`, `clause_shapes`, `kinds`,
+  `quality_names`, `patterns`. AI clients query this to determine
+  intent → synthesis without reading any markdown. Canonical baseline
+  ships at `nom-compiler/crates/nom-grammar/data/baseline.sql`
+  (9 kinds + 20 quality_names + 43 keywords + 7 keyword_synonyms +
+  43 clause_shapes + 258 patterns).
 
 The artifact store at `~/.nom/store/<hash>/` is a filesystem tree (not
 SQLite). Each leaf is the compiled body for one entity, content-addressed.
