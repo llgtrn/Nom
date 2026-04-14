@@ -405,6 +405,86 @@ pub fn count_entities(d: &Dict) -> Result<i64> {
     Ok(n)
 }
 
+// ── S3b: 5 more dict-API free functions ─────────────────────────────
+// Per the doc 22 dict-split migration, this batch picks the next
+// high-value query helpers. Each mirrors a `NomDict` method on the
+// same name routed to the appropriate tier (concepts vs entities) of
+// the new `Dict { concepts, entities }` shape. Legacy `NomDict`
+// equivalents stay until the final dict-split slice deletes them.
+
+/// Total count of rows in `concept_defs` on the concepts tier.
+/// Mirrors `NomDict::count_concept_defs` per doc 22 §3.2.
+pub fn count_concept_defs(d: &Dict) -> Result<i64> {
+    let n: i64 = d
+        .concepts
+        .query_row("SELECT COUNT(*) FROM concept_defs", [], |row| row.get(0))?;
+    Ok(n)
+}
+
+/// Total count of rows in `required_axes` on the concepts tier
+/// (M7a per-scope MECE registry). Zero until at least one axis
+/// is registered via `nom corpus register-axis`.
+/// Mirrors `NomDict::count_required_axes` per doc 22 §3.2.
+pub fn count_required_axes(d: &Dict) -> Result<i64> {
+    let n: i64 = d
+        .concepts
+        .query_row("SELECT COUNT(*) FROM required_axes", [], |row| row.get(0))?;
+    Ok(n)
+}
+
+/// Histogram of `body_kind` values across the entities tier.
+/// Returns `(kind_or_untagged, count)` pairs sorted by count desc
+/// then kind alpha. The NULL-bucket surfaces as `"(untagged)"` so
+/// every result is a uniform `(String, usize)`. Used by
+/// `nom store stats` and other diagnostic surfaces.
+pub fn body_kind_histogram(d: &Dict) -> Result<Vec<(String, usize)>> {
+    let mut stmt = d.entities.prepare(
+        "SELECT COALESCE(body_kind, '(untagged)') AS k, COUNT(*) AS n \
+         FROM entities GROUP BY body_kind ORDER BY n DESC, k ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Resolve a hash prefix to a single full hash on the entities tier.
+/// Returns the full hash if exactly one row matches; errors if zero
+/// or multiple match. Mirrors `NomDict::resolve_prefix` per doc 22
+/// §3.2 — used by every CLI subcommand that accepts a hash prefix
+/// (status, info, why-this-nom, etc.).
+pub fn resolve_prefix(d: &Dict, prefix: &str) -> Result<String> {
+    if prefix.is_empty() {
+        anyhow::bail!("resolve_prefix: empty prefix");
+    }
+    let pat = format!("{}%", prefix);
+    let mut stmt = d
+        .entities
+        .prepare("SELECT hash FROM entities WHERE hash LIKE ?1 LIMIT 2")?;
+    let hashes: Vec<String> = stmt
+        .query_map(rusqlite::params![pat], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    match hashes.len() {
+        0 => anyhow::bail!("no entity hash matches prefix `{prefix}`"),
+        1 => Ok(hashes.into_iter().next().unwrap()),
+        _ => anyhow::bail!(
+            "ambiguous prefix `{prefix}` — multiple entity hashes match"
+        ),
+    }
+}
+
+/// Total count of rows in `dict_meta` on the entities tier — a
+/// quick liveness check that the schema applied. Mirrors what
+/// `NomDict` exposes implicitly through other helpers.
+pub fn count_entities_meta(d: &Dict) -> Result<i64> {
+    let n: i64 = d
+        .entities
+        .query_row("SELECT COUNT(*) FROM dict_meta", [], |row| row.get(0))?;
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -667,5 +747,93 @@ mod tests {
         let dir = tempdir().unwrap();
         let d = Dict::open_dir(dir.path()).unwrap();
         assert_eq!(d.root(), dir.path());
+    }
+
+    // ── S3b: tests for the next batch of free-function dict APIs ────
+
+    #[test]
+    fn count_concept_defs_starts_zero_and_grows_after_insert() {
+        let d = Dict::open_in_memory().unwrap();
+        assert_eq!(count_concept_defs(&d).unwrap(), 0);
+        d.concepts
+            .execute(
+                "INSERT INTO concept_defs \
+                 (name, repo_id, intent, index_into_db2, exposes, acceptance, objectives, \
+                  src_path, src_hash, body_hash, created_at, updated_at) \
+                 VALUES ('demo_concept', 'r1', 'i', '[]', '', '', '', '', '', '', \
+                 '2026-04-14T00:00:00Z', '2026-04-14T00:00:00Z')",
+                [],
+            )
+            .unwrap();
+        assert_eq!(count_concept_defs(&d).unwrap(), 1);
+    }
+
+    #[test]
+    fn count_required_axes_starts_zero() {
+        let d = Dict::open_in_memory().unwrap();
+        assert_eq!(count_required_axes(&d).unwrap(), 0);
+    }
+
+    #[test]
+    fn body_kind_histogram_groups_with_untagged_bucket() {
+        let d = Dict::open_in_memory().unwrap();
+        // Two bc, one untagged (NULL body_kind).
+        for (h, kind) in [
+            ("h1", Some("bc")),
+            ("h2", Some("bc")),
+            ("h3", None::<&str>),
+        ] {
+            d.entities
+                .execute(
+                    "INSERT INTO entities (hash, word, kind, body_kind) \
+                     VALUES (?1, 'w', 'function', ?2)",
+                    rusqlite::params![h, kind],
+                )
+                .unwrap();
+        }
+        let h = body_kind_histogram(&d).unwrap();
+        // 'bc' bucket first (count 2), then '(untagged)' (count 1).
+        assert_eq!(h, vec![("bc".to_string(), 2), ("(untagged)".to_string(), 1)]);
+    }
+
+    #[test]
+    fn resolve_prefix_returns_full_hash_when_unique() {
+        let d = Dict::open_in_memory().unwrap();
+        d.entities
+            .execute(
+                "INSERT INTO entities (hash, word, kind) VALUES ('abcdef1234', 'w', 'function')",
+                [],
+            )
+            .unwrap();
+        let h = resolve_prefix(&d, "abc").unwrap();
+        assert_eq!(h, "abcdef1234");
+    }
+
+    #[test]
+    fn resolve_prefix_errors_when_no_match() {
+        let d = Dict::open_in_memory().unwrap();
+        let err = resolve_prefix(&d, "zzz").unwrap_err();
+        assert!(err.to_string().contains("no entity hash matches"));
+    }
+
+    #[test]
+    fn resolve_prefix_errors_when_ambiguous() {
+        let d = Dict::open_in_memory().unwrap();
+        for h in ["abc1", "abc2"] {
+            d.entities
+                .execute(
+                    "INSERT INTO entities (hash, word, kind) VALUES (?1, 'w', 'function')",
+                    rusqlite::params![h],
+                )
+                .unwrap();
+        }
+        let err = resolve_prefix(&d, "abc").unwrap_err();
+        assert!(err.to_string().contains("ambiguous prefix"));
+    }
+
+    #[test]
+    fn count_entities_meta_starts_zero() {
+        let d = Dict::open_in_memory().unwrap();
+        assert_eq!(count_entities_meta(&d).unwrap(), 0);
     }
 }
