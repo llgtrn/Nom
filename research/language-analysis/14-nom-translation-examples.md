@@ -4921,6 +4921,88 @@ Row additions: **0 new wedges** — Julia's multiple-dispatch + abstract types +
 
 ---
 
+## 67. Zig — comptime + error-union systems language
+
+```zig
+const std = @import("std");
+
+const ParseError = error{ EmptyInput, NotADigit, Overflow };
+
+fn parsePositiveInt(s: []const u8) ParseError!u32 {
+    if (s.len == 0) return ParseError.EmptyInput;
+    var value: u32 = 0;
+    for (s) |ch| {
+        if (ch < '0' or ch > '9') return ParseError.NotADigit;
+        const digit: u32 = ch - '0';
+        value = @mulWithOverflow(value, 10)[0];
+        const add_result = @addWithOverflow(value, digit);
+        if (add_result[1] == 1) return ParseError.Overflow;
+        value = add_result[0];
+    }
+    return value;
+}
+
+fn comptime_power_of_two(comptime n: u32) u32 {
+    return 1 << n;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define parse_positive_int
+  that takes a byte sequence, returns either an unsigned 32-bit integer or one of three parse errors: empty, not a digit, overflow.
+when the input is empty, fail with empty input.
+starting from zero, for each byte, reject non-digit bytes, multiply the running total by 10 and add the digit, detecting overflow at every step.
+return the final unsigned 32-bit integer on success.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ParseFailure is
+  intended to enumerate the three distinct failure modes of parsing a byte sequence as a positive 32-bit integer.
+  exposes empty_input at tag 0.
+  exposes not_a_digit at tag 1.
+  exposes overflow at tag 2.
+
+the function parse_positive_int is
+  intended to parse a UTF-8 byte sequence representing a positive decimal integer, returning the 32-bit unsigned value on success or one of three ParseFailure variants on failure.
+  uses the @Data matching "ParseFailure" with at-least 0.95 confidence.
+  requires the input byte sequence has length at-most 10 for inputs that fit in 32 bits.
+  ensures the result is a 32-bit unsigned integer equal to the decimal value of the input when every byte is an ASCII digit and the value fits in 32 bits.
+  ensures the result is a ParseFailure of variant empty_input when the input length is zero.
+  ensures the result is a ParseFailure of variant not_a_digit when any input byte is outside the ASCII range '0' to '9' inclusive.
+  ensures the result is a ParseFailure of variant overflow when all bytes are digits but the cumulative value exceeds 2^32 - 1 at any point.
+  hazard parsers that accept leading zeros (e.g. "007") should document that "007" parses identically to "7"; this implementation treats leading zeros as valid.
+  favor correctness.
+
+the function comptime_power_of_two is
+  intended to return 2 raised to the power n, where n is known at build time, so the result is a compile-time constant.
+  requires n is an unsigned 32-bit integer with value at-most 31 to avoid shift-overflow.
+  ensures the returned value equals 2 raised to the power n.
+  ensures the returned value is a build-time constant available for inlining and further constant folding.
+  favor performance.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Error unions (`ParseError!u32`)** — Zig's signature feature: a return type that's either a success value or one of a declared error set. Nom's translation **decomposes this into a return-either-success-or-variant** pattern: a `ParseFailure` data decl with tagged variants + per-variant `ensures` clauses describing when each is returned. Authoring-guide rule: **Zig error-union return types (`Err!T`) decompose to a named failure-data-decl (tagged-variant) + multiple `ensures` clauses specifying exactly when each failure variant is returned; the success branch is a single `ensures` with no variant**. Same shape as the #38 Solidity typed-errors pattern. No new wedge.
+2. **Declared error sets (`error { EmptyInput, NotADigit, Overflow }`)** — Zig's way of enumerating allowed errors per function. Nom's tagged-variant data decl IS the error-set enumeration. Authoring-guide rule: **Zig declared error sets → named data decls with tagged variants; the set membership is the decl's `exposes` field list**. No new wedge.
+3. **`comptime` keyword** — Zig's compile-time execution. Nom's translation surfaces this as `ensures the returned value is a build-time constant available for inlining and further constant folding` — a contract on the compiler, not a keyword. Authoring-guide rule: **Zig `comptime` parameters and values → `ensures the returned value is a build-time constant` clause on the function, supplemented by `favor performance`**. No new wedge; the build stage honors the contract.
+4. **Explicit overflow handling (`@mulWithOverflow`, `@addWithOverflow`)** — Zig's no-hidden-integer-overflow discipline: arithmetic must be `+` (assumed to not overflow, UB if it does in ReleaseFast) or the explicit overflow-aware intrinsic. Nom's translation surfaces overflow as an explicit `ensures` variant (the `overflow` case). Authoring-guide rule: **integer arithmetic that may overflow must declare the overflow branch as an explicit `ensures` variant + `hazard` clause describing the overflow behavior (wrap/saturate/trap)**. Reinforces #51 WAT + #41 Verilog fixed-width rules. No new wedge.
+5. **No hidden control flow** — Zig's runtime-only explicit semantics. Nom's function-decl-with-explicit-ensures model matches this precisely. Authoring-guide rule: **"no hidden control flow" invariant is satisfied by default in Nom: every control-flow branch is an `ensures` clause; no exceptions or hidden jumps**. No new wedge.
+6. **Slice type (`[]const u8`)** — Zig's length-carrying pointer. Nom's `byte sequence` + `input length` prose captures the slice semantics. Authoring-guide rule: **Zig slices (`[]T`) → `list of T` or `byte sequence` with an implicit length reference; caller carries the length**. No new wedge.
+7. **Unsigned integer types (`u32`)** — explicit-width unsigned. Same range-typed natural rule as #41 Verilog + #51 WAT + #58 COBOL + #66 Julia. No new wedge.
+8. **Explicit `return` in error branches** — Zig requires explicit returns for all paths. Nom's `ensures` clauses enumerate all paths at the function level. Authoring-guide rule: **exhaustive path coverage stated at function-decl level via multiple `ensures` variants; return statements don't exist at Nom source level**. No new wedge.
+
+Row additions: **0 new wedges** — Zig's error-unions + comptime + no-hidden-overflow + slices all decompose to (tagged-variant data decls + per-variant `ensures` clauses + build-time-constant `ensures` + range-typed naturals). 7 authoring-guide closures: error-union returns → named failure data decl + multi-variant ensures, declared error sets → tagged-variant data decls, `comptime` → `ensures build-time constant`, explicit overflow → `ensures overflow variant` + `hazard`, no-hidden-control-flow = default Nom discipline, slices → list of T with length, exhaustive path coverage → multi-variant `ensures`.
+
+**Thirty-fourth consecutive minimal-wedge translation + twenty-sixth 0-new-wedge run.** Zig — a relatively young language with several unique features (error unions, comptime, no hidden overflow, no hidden allocator) — decomposes cleanly into Nom's primitives. Combined with Rust (#01), C (#04), C++ (#05), Go (#06), and others, **the systems-programming paradigm family is now extensively covered**: all express via range-typed naturals + tagged-variant data decls for errors + explicit `ensures` for control-flow branches + `hazard` for undefined-behavior corners. The error-union-as-tagged-variant rule generalizes to Haskell `Either` (#25), Rust `Result`, and Swift `throws` with zero adjustment.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

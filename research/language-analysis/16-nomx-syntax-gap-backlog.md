@@ -309,18 +309,25 @@
 | 292 | Julia `sum(fn, xs)` higher-order → explicit prose `sum of every element's contribution` with per-variant `ensures`; function-as-first-arg elided | authoring-guide rule | ✅ closed (doc 14 #66) |
 | 293 | Unicode identifiers (Julia `π`/`α`/`∑`) → English prose names; no non-ASCII at Nom source level (reinforces MEMORY.md English-vocabulary invariant) | authoring-guide rule | ✅ closed (doc 14 #66) |
 | 294 | Julia per-type method specialization → Nom Phase 12 closure-level specialization (reinforces existing principle) | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 295 | Zig error-union return types (`Err!T`) → named failure-data-decl (tagged-variant) + multi-variant `ensures` clauses specifying exactly when each variant returns | authoring-guide rule | ✅ closed (doc 14 #67; same shape as #38 Solidity typed-errors) |
+| 296 | Zig declared error sets → named data decls with tagged variants; error-set membership is the decl's `exposes` field list | authoring-guide rule | ✅ closed (doc 14 #67) |
+| 297 | Zig `comptime` parameters/values → `ensures the returned value is a build-time constant` clause + `favor performance`; no `comptime` keyword at Nom source | authoring-guide rule | ✅ closed (doc 14 #67) |
+| 298 | Integer arithmetic that may overflow declares the overflow branch as explicit `ensures` variant + `hazard` (wrap/saturate/trap) | authoring-guide rule | ✅ closed (doc 14 #67; reinforces #51 WAT + #41 Verilog) |
+| 299 | "No hidden control flow" invariant satisfied by default in Nom: every control-flow branch is an `ensures` clause; no exceptions or hidden jumps | authoring-guide rule | ✅ closed (doc 14 #67) |
+| 300 | Zig slices (`[]T`) → `list of T` or `byte sequence` with implicit length reference; caller carries the length | authoring-guide rule | ✅ closed (doc 14 #67) |
+| 301 | Exhaustive path coverage stated at function-decl level via multiple `ensures` variants; no `return` statements at Nom source level | authoring-guide rule | ✅ closed (doc 14 #67) |
 
-Totals by destination (after doc 14 #66 Julia multiple-dispatch translation — **twenty-fifth 0-new-wedge translation in a row**; 6 authoring-guide closures; **25-consecutive-0-new-wedge streak** spanning Dafny → WAT → R → OpenAPI → K8s → Elm → Rust-macros → jq → COBOL → PowerShell → Ansible → Fortran → GraphQL-sub → Redis → gRPC → LaTeX → Julia):
+Totals by destination (after doc 14 #67 Zig comptime+error-union systems translation — **twenty-sixth 0-new-wedge translation in a row**; 7 authoring-guide closures; **systems-programming paradigm family extensively covered**: Rust + C + C++ + Go + Zig + …):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **244**
+- ✅ Closed: **251**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **9** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability + accessibility QualityNames) — **9/10 threshold**
+- 🌱 Authoring-corpus seed: **9** (9/10 threshold unchanged)
 
-Backlog size: 311 rows. Closure rate 78% (244/311). **66 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + **multiple-dispatch-scientific (Julia)**. Thirty-third consecutive minimal-wedge translation, **twenty-fifth 0-new-wedge in a row** — unified primitive set is remarkably stable across 25 consecutive paradigm translations.
+Backlog size: 318 rows. Closure rate 79% (251/318). **67 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + **comptime-error-union-systems (Zig)**. Thirty-fourth consecutive minimal-wedge translation, **twenty-sixth 0-new-wedge in a row**. **Error-union-as-tagged-variant rule generalizes to Haskell Either / Rust Result / Swift throws / Zig error-unions with zero adjustment.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
