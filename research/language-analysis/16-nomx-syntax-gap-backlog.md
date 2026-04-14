@@ -150,18 +150,24 @@
 | 133 | Recursive attrsets decompose to peer data decls with explicit `uses` references, not self-referential single records | authoring-guide rule | ✅ closed (doc 14 #42) |
 | 134 | Dependency classes (native/runtime/dev/test) decompose to separate list-typed fields on build-inputs data decl | authoring-guide rule | ✅ closed (doc 14 #42) |
 | 135 | Build phases decompose to named function decls composed in order (`configure then build then install`) — never embedded shell strings inside data | authoring-guide rule | ✅ closed (doc 14 #42) |
+| 136 | Recursive-relation fixed-points decompose to three `ensures` clauses (base case, inductive step, depth/count bound); compiler chooses evaluation strategy | authoring-guide rule | ✅ closed (doc 14 #43) |
+| 137 | SQL `UNION ALL` inside recursive CTEs is implicit in two-ensures decomposition; authors never name the set operator | authoring-guide rule | ✅ closed (doc 14 #43) |
+| 138 | Recursion depth bounds live in an `ensures` clause, not a separate `limit` or `depth_cap` field | authoring-guide rule | ✅ closed (doc 14 #43) |
+| 139 | CTEs lift to peer top-level decls — no local-scope CTE form in Nom | authoring-guide rule | ✅ closed (doc 14 #43; consistent with flat-namespace preference) |
+| 140 | Relation-oriented functions specify post-conditions over the full result set (universal quantifiers), never per-row procedural steps | authoring-guide rule | ✅ closed (doc 14 #43; matches pure-functional discipline) |
+| 141 | SQL `ORDER BY` / `GROUP BY` clauses map to `ensures the output is sorted by …` / `ensures the output is grouped by …` | authoring-guide rule | ✅ closed (doc 14 #43) |
 
-Totals by destination (after doc 14 #42 Nix derivation translation — **third 0-new-wedge translation**; 7 authoring-guide closures; reuses existing `reproducibility` QualityName; confirms Nom's fixpoint + composition + content-addressing discipline IS the Nix model applied to source-level authoring):
+Totals by destination (after doc 14 #43 recursive SQL CTE translation — **fourth 0-new-wedge translation**; 6 authoring-guide closures; recursive relation traversal fully expresses via existing `ensures` clause vocabulary):
 
 - ⏳ Wedge queued: **41** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **89**
+- ✅ Closed: **95**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 139 rows. Closure rate 64% (89/139). **42 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + **purely-functional-package-spec (Nix)**. Ninth consecutive minimal-wedge translation, third 0-new-wedge. **Nom's fixpoint + composition + content-addressing IS the Nix model applied to source-level authoring.**
+Backlog size: 145 rows. Closure rate 66% (95/145). **43 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + **recursive-relational-query (SQL CTE)**. Tenth consecutive minimal-wedge translation, fourth 0-new-wedge. Authors declare post-conditions via `ensures`; compiler chooses execution strategy — same shape as NumPy (#35).
 
 ## Wedge master index (for cross-ref with doc 13)
 

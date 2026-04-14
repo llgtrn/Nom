@@ -2693,6 +2693,79 @@ Row additions: **0 new wedges** — package specification + content-addressing +
 
 ---
 
+## 43. Recursive SQL CTE — set-based tree/graph traversal
+
+```sql
+WITH RECURSIVE org_chart (employee_id, manager_id, employee_name, depth) AS (
+    SELECT id, manager_id, name, 0
+    FROM employees
+    WHERE manager_id IS NULL
+    UNION ALL
+    SELECT e.id, e.manager_id, e.name, oc.depth + 1
+    FROM employees e
+    JOIN org_chart oc ON e.manager_id = oc.employee_id
+    WHERE oc.depth < 10
+)
+SELECT employee_id, employee_name, depth
+FROM org_chart
+ORDER BY depth, employee_name;
+```
+
+### `.nomx v1` translation
+
+```nomx
+define org_chart_with_depth
+  that takes no input, returns a list of (employee_id, employee_name, depth) sorted by depth then name.
+start with every employee whose manager_id is null at depth 0.
+for each known employee, include each employee whose manager_id matches a known employee's id at one greater depth.
+stop when depth reaches 10.
+sort the result by depth, then by name.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Employee is
+  intended to represent one row in the employees relation carrying identity, name, and manager reference.
+  exposes id as identifier.
+  exposes manager_id as perhaps identifier.
+  exposes name as text.
+
+the data OrgChartEntry is
+  intended to represent one node in the org-chart traversal output, combining the employee with their computed depth from a root.
+  exposes employee_id as identifier.
+  exposes employee_name as text.
+  exposes depth as natural from 0 to 10.
+
+the function org_chart_with_depth is
+  intended to compute the transitive reporting tree from the employees relation, annotating each node with its depth from the nearest root (an employee with no manager).
+  uses the @Data matching "Employee" with at-least 0.95 confidence.
+  uses the @Data matching "OrgChartEntry" with at-least 0.95 confidence.
+  requires the employees relation is well-formed (every non-null manager_id references an existing employee's id).
+  ensures every employee with manager_id null appears in the output at depth 0.
+  ensures every employee whose manager appears at depth d appears at depth d+1, for d less than 10.
+  ensures no employee appears at depth greater than 10 (traversal stops before cycles or over-deep chains).
+  ensures the output is sorted by depth ascending, then by employee_name ascending within each depth.
+  hazard cyclic manager references (data integrity violations) cause the traversal to cap at depth 10 rather than loop infinitely; callers should repair the source data rather than rely on the depth cap.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Recursion-over-a-relation as a declarative set operation** — SQL's `WITH RECURSIVE` computes a fixed-point over a base case plus an inductive step. Nom's v2 translates this to **three `ensures` clauses** that declaratively specify (base case, inductive step, termination bound). No loop, no `for each` iteration in the intent — the function is specified by its post-conditions. Authoring-guide rule: **recursive-relation fixed-points decompose to three `ensures` clauses (base case, inductive step, depth/count bound); the compiler's evaluator chooses iteration order and worklist/join strategy**. No new wedge; existing `ensures` vocabulary suffices for the declarative shape.
+2. **`UNION ALL` as the inductive step combinator** — SQL's recursive CTE glue. Nom's translation avoids naming the combinator; the two `ensures` (base-case + inductive-step) together imply union-all semantics. Authoring-guide rule: **SQL's `UNION ALL` inside recursive CTEs is implicit in Nom's two-ensures decomposition; authors never name the set operator**. Simpler by construction.
+3. **Depth-bound termination (`WHERE oc.depth < 10`)** — the user-provided recursion limit. Nom's v2 states it as an `ensures no employee appears at depth greater than 10`. Authoring-guide rule: **recursion depth bounds live in an `ensures` clause, not in a separate `limit` or `depth_cap` field**. Keeps contracts uniform.
+4. **`WITH` clause as local scoping** — SQL's CTE defines a name visible only inside the enclosing SELECT. Nom makes the CTE a **peer data decl + peer function decl** with module-level visibility; naming hygiene handles scoping via feature-stack identifiers. Authoring-guide rule: **CTEs lift to peer top-level decls; there is no local-scope CTE form in Nom**. Consistent with the flat-namespace preference (#30 Protobuf, #34 Terraform).
+5. **Cycle-detection implicit in depth cap** — if the data has cycles, the depth cap prevents infinite recursion. The hazard clause surfaces this caveat: callers shouldn't rely on the cap to mask data-integrity bugs. No new wedge; existing `hazard` clause handles it.
+6. **Set-at-a-time semantics vs row-at-a-time** — SQL operates on sets; imperative translations operate on rows. Nom's `ensures` clauses specify post-conditions at the set level (`every employee …`), never per-row. Authoring-guide rule: **relation-oriented functions specify post-conditions over the full result set, using universal quantifiers (`every`, `no`), not per-row procedural steps**. Matches the pure-functional discipline (#25 Haskell, #35 NumPy, #42 Nix).
+7. **Window functions / ORDER BY / GROUP BY** — SQL's declarative sort/group. Nom's translation uses `ensures the output is sorted by X ascending, then by Y ascending`. Authoring-guide rule: **SQL ORDER BY / GROUP BY clauses map to `ensures the output is sorted by …` / `ensures the output is grouped by …`**. Existing `ensures` clause handles it.
+
+Row additions: **0 new wedges** — recursive relation traversal fully expresses via existing `ensures` clause vocabulary (base case, inductive step, termination bound) + peer data/function decls + prose sorting/grouping specifications. 6 authoring-guide closures: fixed-points as three `ensures` clauses, `UNION ALL` implicit in two-ensures decomposition, depth bounds in `ensures`, CTEs lift to peer top-level decls, cycle-detection via existing `hazard`, set-at-a-time over universal quantifiers, ORDER BY / GROUP BY as `ensures`.
+
+**Tenth consecutive minimal-wedge translation + fourth 0-new-wedge run.** Recursive set-based queries — traditionally a signature feature of SQL that's awkward in imperative languages — map directly to Nom's **contract-specified post-conditions** over a typed relation. The author specifies WHAT the output must satisfy; the compiler's evaluator chooses HOW (iterative worklist, semi-naïve evaluation, parallel joins, etc.). This is the **same shape as the NumPy translation (#35) where vectorization is a compiler concern**: authors declare post-conditions, the compiler chooses execution.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
