@@ -113,9 +113,8 @@ fn archive_corpus_does_not_panic_the_parser() {
     let blocks = extract_v2_blocks(&archive);
     let (_dir, conn) = open_baseline_grammar();
     for (i, block) in blocks.iter().enumerate() {
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            run_pipeline_with_grammar(block, &conn)
-        }));
+        let result =
+            std::panic::catch_unwind(AssertUnwindSafe(|| run_pipeline_with_grammar(block, &conn)));
         assert!(
             result.is_ok(),
             "parser panicked on v2 block #{i}: {block:?}"
@@ -160,7 +159,9 @@ fn archive_corpus_sweep_dashboard() {
         match run_pipeline_with_grammar(block, &conn) {
             Ok(_) => passed += 1,
             Err(err) => {
-                *failed_by_stage.entry(err.stage.code().to_string()).or_insert(0) += 1;
+                *failed_by_stage
+                    .entry(err.stage.code().to_string())
+                    .or_insert(0) += 1;
             }
         }
     }

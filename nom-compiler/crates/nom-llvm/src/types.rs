@@ -32,7 +32,9 @@ pub fn resolve_type<'ctx>(
             Ok(mc.context.struct_type(&fields, false).into())
         }
         TypeExpr::Ref { .. } => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
-        TypeExpr::Function { .. } => Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into()),
+        TypeExpr::Function { .. } => {
+            Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).into())
+        }
     }
 }
 

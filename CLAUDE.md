@@ -1,7 +1,7 @@
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Nom** (5947 symbols, 13743 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Nom** (6098 symbols, 15340 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -12,25 +12,6 @@ This project is indexed by GitNexus as **Nom** (5947 symbols, 13743 relationship
 - **MUST warn the user** if impact analysis returns HIGH or CRITICAL risk before proceeding with edits.
 - When exploring unfamiliar code, use `gitnexus_query({query: "concept"})` to find execution flows instead of grepping. It returns process-grouped results ranked by relevance.
 - When you need full context on a specific symbol — callers, callees, which execution flows it participates in — use `gitnexus_context({name: "symbolName"})`.
-
-## How To Use GitNexus MCP
-
-- **Always pass `repo: "Nom"` in tool calls.** `Novelos` is also indexed, so being explicit avoids accidental cross-repo lookups.
-- This repo's MCP config launches `scripts/gitnexus-mcp.js`, which prefers `GITNEXUS_CLI`, falls back to the local GitNexus checkout at `C:\Users\trngh\Documents\APP\GitNexus-main\gitnexus\dist\cli\index.js`, and forwards LLM settings from `~/.gitnexus/config.json` into the MCP process.
-- Start read-only orientation with `READ gitnexus://repo/Nom/context` and `READ gitnexus://repo/Nom/processes`.
-- Use `gitnexus_query({repo: "Nom", query: "...", goal: "..."})` for subsystem discovery and concept lookup.
-- Use `gitnexus_context({repo: "Nom", name: "...", file_path: "..."})` for symbol inspection. If the result is ambiguous, retry with the returned `uid` or a more specific `file_path`.
-- Use `gitnexus_cypher({repo: "Nom", query: "MATCH ..."})` for structural questions GitNexus search cannot answer directly.
-- For `File` nodes in Cypher, use `filePath`, not `path`. Example: `MATCH (f:File) RETURN f.filePath AS path LIMIT 5`.
-- Before trusting the index for a substantial task, run `npx gitnexus status`. If it is stale, run `npx gitnexus analyze`.
-- Prefer MCP tools for analysis and navigation. Prefer the CLI for operational tasks such as `status`, `analyze`, `list`, `clean`, and `mcp`.
-
-### Known-Good Examples
-
-- Parser entrypoint: `gitnexus_context({repo: "Nom", name: "parse_source", file_path: "nom-compiler/crates/nom-parser/src/lib.rs"})`
-- Typed-slot lookup: `gitnexus_context({repo: "Nom", name: "find_words_v2_by_kind", file_path: "nom-compiler/crates/nom-dict/src/lib.rs"})`
-- App dreaming surface: `gitnexus_context({repo: "Nom", name: "LayeredDreamReport", file_path: "nom-compiler/crates/nom-app/src/lib.rs"})`
-- Locale-pack rewrite path: `gitnexus_context({repo: "Nom", name: "apply_locale", file_path: "nom-compiler/crates/nom-locale/src/lib.rs"})`
 
 ## When Debugging
 
@@ -79,7 +60,6 @@ This project is indexed by GitNexus as **Nom** (5947 symbols, 13743 relationship
 | `gitnexus://repo/Nom/clusters` | All functional areas |
 | `gitnexus://repo/Nom/processes` | All execution flows |
 | `gitnexus://repo/Nom/process/{name}` | Step-by-step execution trace |
-| `gitnexus://repo/Nom/schema` | Cypher schema reference and available labels/edges |
 
 ## Self-Check Before Finishing
 

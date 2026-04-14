@@ -5,7 +5,7 @@
 //! with `NOMX-S2-empty-registry`, confirming that Rust holds no
 //! fallback grammar data.
 
-use nom_concept::stages::{run_pipeline_with_grammar, StageId};
+use nom_concept::stages::{StageId, run_pipeline_with_grammar};
 
 #[test]
 fn empty_grammar_rejects_any_non_empty_block_source() {
@@ -18,7 +18,11 @@ fn empty_grammar_rejects_any_non_empty_block_source() {
     let result = run_pipeline_with_grammar(src, &conn);
 
     let err = result.expect_err("empty grammar must fail, not succeed");
-    assert_eq!(err.stage, StageId::KindClassify, "failure must come from S2");
+    assert_eq!(
+        err.stage,
+        StageId::KindClassify,
+        "failure must come from S2"
+    );
     assert_eq!(err.diag_id(), "NOMX-S2-empty-registry");
 }
 
@@ -32,7 +36,10 @@ fn empty_grammar_accepts_empty_source_trivially() {
     let conn = nom_grammar::init_at(&db).expect("init schema");
 
     let result = run_pipeline_with_grammar("", &conn);
-    assert!(result.is_ok(), "empty source + empty grammar should succeed vacuously");
+    assert!(
+        result.is_ok(),
+        "empty source + empty grammar should succeed vacuously"
+    );
 }
 
 #[test]

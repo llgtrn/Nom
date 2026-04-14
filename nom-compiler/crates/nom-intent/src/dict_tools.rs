@@ -20,6 +20,7 @@
 //!   `Candidates` list could swamp the LLM's context.
 
 use nom_dict::EntityRow;
+use nom_dict::dict::{find_entities_by_kind, find_entity};
 use sha2::{Digest, Sha256};
 
 use crate::react::{AgentTools, Observation};
@@ -78,7 +79,10 @@ fn format_entry_summary(row: &EntityRow, depth: usize) -> String {
         .body_size
         .map(|n| format!(" size={n}"))
         .unwrap_or_default();
-    let base = format!("{}@{}: kind={}{}{}", row.word, uid_short, row.kind, body, size);
+    let base = format!(
+        "{}@{}: kind={}{}{}",
+        row.word, uid_short, row.kind, body, size
+    );
     if depth == 0 {
         return base;
     }
@@ -87,7 +91,9 @@ fn format_entry_summary(row: &EntityRow, depth: usize) -> String {
         _ => "\n  signature: <none>".into(),
     };
     let contracts = match &row.contracts {
-        Some(c) if !c.is_empty() && c != "[]" => format!("\n  contracts: present ({} bytes)", c.len()),
+        Some(c) if !c.is_empty() && c != "[]" => {
+            format!("\n  contracts: present ({} bytes)", c.len())
+        }
         _ => "\n  contracts: <none>".into(),
     };
     let origin = match &row.authored_in {
@@ -100,7 +106,7 @@ fn format_entry_summary(row: &EntityRow, depth: usize) -> String {
 /// Production impl of `AgentTools` backed by a live `nom-dict` connection.
 /// Slice-3a ships `query` only; other methods are explicit stubs.
 pub struct DictTools<'a> {
-    dict: &'a nom_dict::NomDict,
+    dict: &'a nom_dict::Dict,
     /// Max candidate UIDs returned from `query()`. Higher = more LLM
     /// context cost; lower = risks missing the right answer. Default 50
     /// per CRAG retrieval budgets in doc 11 §2.
@@ -108,8 +114,11 @@ pub struct DictTools<'a> {
 }
 
 impl<'a> DictTools<'a> {
-    pub fn new(dict: &'a nom_dict::NomDict) -> Self {
-        Self { dict, max_results: 50 }
+    pub fn new(dict: &'a nom_dict::Dict) -> Self {
+        Self {
+            dict,
+            max_results: 50,
+        }
     }
 
     pub fn with_max_results(mut self, max: usize) -> Self {
@@ -132,14 +141,13 @@ impl<'a> DictTools<'a> {
     /// (InstrumentedTools glass-box) can reuse the walk.
     pub fn compute_closure(&self, root_uid: &str) -> Result<Vec<(String, String)>, String> {
         let mut visited = std::collections::BTreeSet::<String>::new();
-        let mut queue: std::collections::VecDeque<String> =
-            std::collections::VecDeque::new();
+        let mut queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
         queue.push_back(root_uid.to_string());
         while let Some(uid) = queue.pop_front() {
             if visited.contains(&uid) {
                 continue;
             }
-            let row = match self.dict.find_entity(&uid) {
+            let row = match find_entity(self.dict, &uid) {
                 Ok(Some(r)) => r,
                 Ok(None) => continue, // unresolved ref — skip, don't fail
                 Err(e) => return Err(format!("dict error on {uid}: {e}")),
@@ -161,10 +169,8 @@ impl<'a> DictTools<'a> {
         let mut out: Vec<(String, String)> = visited
             .into_iter()
             .filter_map(|uid| {
-                self.dict.find_entity(&uid).ok().flatten().map(|row| {
-                    let body_kind = row
-                        .body_kind
-                        .unwrap_or_else(|| "<no-body>".to_string());
+                find_entity(self.dict, &uid).ok().flatten().map(|row| {
+                    let body_kind = row.body_kind.unwrap_or_else(|| "<no-body>".to_string());
                     (row.hash, body_kind)
                 })
             })
@@ -176,7 +182,7 @@ impl<'a> DictTools<'a> {
     pub fn lookup_candidates(&self, subject: &str, kind: Option<&str>) -> Vec<String> {
         // Hash-exact match: `subject` may be a 64-hex UID.
         if subject.len() == 64 && subject.chars().all(|c| c.is_ascii_hexdigit()) {
-            if let Ok(Some(row)) = self.dict.find_entity(subject) {
+            if let Ok(Some(row)) = find_entity(self.dict, subject) {
                 return vec![row.hash];
             }
             return Vec::new();
@@ -190,7 +196,7 @@ impl<'a> DictTools<'a> {
             // reason about why.
             return Vec::new();
         };
-        let rows = match self.dict.find_entities_by_kind(kind) {
+        let rows = match find_entities_by_kind(self.dict, kind) {
             Ok(rows) => rows,
             Err(_) => return Vec::new(),
         };
@@ -223,19 +229,15 @@ impl<'a> AgentTools for DictTools<'a> {
         // candidates — never invents a symbol not in context. Matches
         // slice-1 bounded-output discipline.
         if context.is_empty() {
-            return Observation::Proposal(crate::NomIntent::Reject(
-                crate::Reason::UnknownSymbol,
-            ));
+            return Observation::Proposal(crate::NomIntent::Reject(crate::Reason::UnknownSymbol));
         }
         let prose_tokens = tokenize(prose);
         if prose_tokens.is_empty() {
-            return Observation::Proposal(crate::NomIntent::Reject(
-                crate::Reason::Unparseable,
-            ));
+            return Observation::Proposal(crate::NomIntent::Reject(crate::Reason::Unparseable));
         }
         let mut best: Option<(usize, String, String)> = None; // (score, word, kind)
         for uid in context {
-            if let Ok(Some(row)) = self.dict.find_entity(uid) {
+            if let Ok(Some(row)) = find_entity(self.dict, uid) {
                 let word_tokens = tokenize(&row.word);
                 let score = token_overlap(&prose_tokens, &word_tokens);
                 if score == 0 {
@@ -247,8 +249,7 @@ impl<'a> AgentTools for DictTools<'a> {
                     // for deterministic output — same discipline as
                     // slice-1 find_entities_by_kind.
                     Some((b_score, b_word, _)) => {
-                        score > *b_score
-                            || (score == *b_score && row.word < *b_word)
+                        score > *b_score || (score == *b_score && row.word < *b_word)
                     }
                 };
                 if replace {
@@ -270,9 +271,7 @@ impl<'a> AgentTools for DictTools<'a> {
                 };
                 Observation::Proposal(intent)
             }
-            None => Observation::Proposal(crate::NomIntent::Reject(
-                crate::Reason::UnknownSymbol,
-            )),
+            None => Observation::Proposal(crate::NomIntent::Reject(crate::Reason::UnknownSymbol)),
         }
     }
 
@@ -288,7 +287,7 @@ impl<'a> AgentTools for DictTools<'a> {
                 "DictTools::verify: target {target:?} is not a 64-char hex hash"
             ));
         }
-        let row = match self.dict.find_entity(target) {
+        let row = match find_entity(self.dict, target) {
             Ok(Some(r)) => r,
             Ok(None) => {
                 return Observation::Error(format!(
@@ -405,9 +404,7 @@ impl<'a> AgentTools for DictTools<'a> {
             Err(msg) => return Observation::Error(msg),
         };
         if closure.is_empty() {
-            return Observation::Error(format!(
-                "DictTools::render: uid {uid} not found in dict"
-            ));
+            return Observation::Error(format!("DictTools::render: uid {uid} not found in dict"));
         }
         let plan_hash = hash_closure(&closure);
         Observation::Rendered {
@@ -425,7 +422,7 @@ impl<'a> AgentTools for DictTools<'a> {
                 "DictTools::explain: uid {uid:?} is not a 64-char hex hash"
             ));
         }
-        match self.dict.find_entity(uid) {
+        match find_entity(self.dict, uid) {
             Ok(Some(row)) => {
                 let summary = format_entry_summary(&row, depth);
                 Observation::Explanation { summary }
@@ -441,22 +438,26 @@ impl<'a> AgentTools for DictTools<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_dict::{NomDict, EntityRow};
+    use nom_dict::dict::upsert_entity;
+    use nom_dict::{Dict, EntityRow};
 
-    fn seed_word(d: &NomDict, hash: &str, word: &str, kind: &str) {
-        d.upsert_entity(&EntityRow {
-            hash: hash.into(),
-            word: word.into(),
-            kind: kind.into(),
-            signature: None,
-            contracts: None,
-            body_kind: None,
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: None,
-        })
+    fn seed_word(d: &Dict, hash: &str, word: &str, kind: &str) {
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: hash.into(),
+                word: word.into(),
+                kind: kind.into(),
+                signature: None,
+                contracts: None,
+                body_kind: None,
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: None,
+            },
+        )
         .unwrap();
     }
 
@@ -467,7 +468,7 @@ mod tests {
 
     #[test]
     fn query_by_hash_returns_exact_match() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs = tools.query(HASH_ADD, None, 0);
@@ -481,7 +482,7 @@ mod tests {
 
     #[test]
     fn query_by_kind_substring_matches_word_field() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         seed_word(&d, HASH_MUL, "multiply", "function");
         seed_word(
@@ -505,7 +506,7 @@ mod tests {
 
     #[test]
     fn query_with_no_kind_and_non_hash_subject_returns_empty() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs = tools.query("add", None, 0);
@@ -517,7 +518,7 @@ mod tests {
 
     #[test]
     fn compose_empty_context_returns_reject_unknown_symbol() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         match tools.compose("add two numbers", &[]) {
             Observation::Proposal(crate::NomIntent::Reject(crate::Reason::UnknownSymbol)) => {
@@ -529,7 +530,7 @@ mod tests {
 
     #[test]
     fn compose_token_overlap_picks_best_candidate() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         seed_word(&d, HASH_MUL, "multiply", "function");
         let tools = DictTools::new(&d);
@@ -546,7 +547,7 @@ mod tests {
 
     #[test]
     fn compose_no_overlap_returns_reject() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         // prose has no overlap with "add"
@@ -561,20 +562,23 @@ mod tests {
 
     #[test]
     fn compose_maps_concept_kind_to_intent_kind() {
-        let d = NomDict::open_in_memory().unwrap();
-        d.upsert_entity(&EntityRow {
-            hash: HASH_ADD.into(),
-            word: "auth".into(),
-            kind: "concept".into(),
-            signature: None,
-            contracts: None,
-            body_kind: None,
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: Some(format!("[\"{HASH_MUL}\"]")),
-        })
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_ADD.into(),
+                word: "auth".into(),
+                kind: "concept".into(),
+                signature: None,
+                contracts: None,
+                body_kind: None,
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: Some(format!("[\"{HASH_MUL}\"]")),
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         let ctx = vec![HASH_ADD.to_string()];
@@ -586,7 +590,7 @@ mod tests {
 
     #[test]
     fn compose_deterministic_alphabetical_tiebreak_on_equal_score() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         // Both candidates match "handler" exactly once.
         seed_word(&d, HASH_ADD, "zeta_handler", "function");
         seed_word(&d, HASH_MUL, "alpha_handler", "function");
@@ -595,7 +599,10 @@ mod tests {
         let ctx = vec![HASH_ADD.to_string(), HASH_MUL.to_string()];
         match tools.compose("handler", &ctx) {
             Observation::Proposal(crate::NomIntent::Symbol(w)) => {
-                assert_eq!(w, "alpha_handler", "alphabetical tiebreak must be deterministic");
+                assert_eq!(
+                    w, "alpha_handler",
+                    "alphabetical tiebreak must be deterministic"
+                );
             }
             other => panic!("expected Symbol, got {other:?}"),
         }
@@ -603,7 +610,7 @@ mod tests {
 
     #[test]
     fn compose_empty_prose_returns_reject_unparseable() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let ctx = vec![HASH_ADD.to_string()];
@@ -617,27 +624,37 @@ mod tests {
 
     #[test]
     fn verify_passes_on_well_formed_function_entry() {
-        let d = NomDict::open_in_memory().unwrap();
-        d.upsert_entity(&EntityRow {
-            hash: HASH_ADD.into(),
-            word: "add".into(),
-            kind: "function".into(),
-            signature: Some("fn add(a: i64, b: i64) -> i64".into()),
-            contracts: None,
-            body_kind: Some("llvm-bc".into()),
-            body_size: Some(1024),
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: Some("examples/arith.nom".into()),
-            composed_of: None,
-        })
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_ADD.into(),
+                word: "add".into(),
+                kind: "function".into(),
+                signature: Some("fn add(a: i64, b: i64) -> i64".into()),
+                contracts: None,
+                body_kind: Some("llvm-bc".into()),
+                body_size: Some(1024),
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: Some("examples/arith.nom".into()),
+                composed_of: None,
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         match tools.verify(HASH_ADD) {
-            Observation::Verdict { passed, failures, warnings } => {
+            Observation::Verdict {
+                passed,
+                failures,
+                warnings,
+            } => {
                 assert!(passed, "well-formed entry must pass; failures={failures:?}");
                 assert!(failures.is_empty());
-                assert!(warnings.is_empty(), "no warnings expected, got {warnings:?}");
+                assert!(
+                    warnings.is_empty(),
+                    "no warnings expected, got {warnings:?}"
+                );
             }
             other => panic!("expected Verdict, got {other:?}"),
         }
@@ -645,24 +662,29 @@ mod tests {
 
     #[test]
     fn verify_fails_on_empty_composite() {
-        let d = NomDict::open_in_memory().unwrap();
-        d.upsert_entity(&EntityRow {
-            hash: HASH_MUL.into(),
-            word: "math".into(),
-            kind: "module".into(),
-            signature: None,
-            contracts: None,
-            body_kind: None,
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: Some("[]".into()),
-        })
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_MUL.into(),
+                word: "math".into(),
+                kind: "module".into(),
+                signature: None,
+                contracts: None,
+                body_kind: None,
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: Some("[]".into()),
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         match tools.verify(HASH_MUL) {
-            Observation::Verdict { passed, failures, .. } => {
+            Observation::Verdict {
+                passed, failures, ..
+            } => {
                 assert!(!passed);
                 assert!(
                     failures.iter().any(|f| f.contains("empty composed_of")),
@@ -675,25 +697,35 @@ mod tests {
 
     #[test]
     fn verify_warns_on_function_without_signature() {
-        let d = NomDict::open_in_memory().unwrap();
-        d.upsert_entity(&EntityRow {
-            hash: HASH_ADD.into(),
-            word: "x".into(),
-            kind: "function".into(),
-            signature: None,
-            contracts: None,
-            body_kind: Some("llvm-bc".into()),
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: None,
-        })
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_ADD.into(),
+                word: "x".into(),
+                kind: "function".into(),
+                signature: None,
+                contracts: None,
+                body_kind: Some("llvm-bc".into()),
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: None,
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         match tools.verify(HASH_ADD) {
-            Observation::Verdict { passed, failures, warnings } => {
-                assert!(passed, "function with body_kind but no signature passes + warns");
+            Observation::Verdict {
+                passed,
+                failures,
+                warnings,
+            } => {
+                assert!(
+                    passed,
+                    "function with body_kind but no signature passes + warns"
+                );
                 assert!(failures.is_empty());
                 assert!(
                     warnings.iter().any(|w| w.contains("no signature")),
@@ -706,20 +738,23 @@ mod tests {
 
     #[test]
     fn verify_warns_on_kind_body_kind_mismatch() {
-        let d = NomDict::open_in_memory().unwrap();
-        d.upsert_entity(&EntityRow {
-            hash: HASH_ADD.into(),
-            word: "weird".into(),
-            kind: "module".into(),
-            signature: None,
-            contracts: None,
-            body_kind: Some("llvm-bc".into()), // module with llvm-bc = mis-tag
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: Some(format!("[\"{HASH_MUL}\"]")),
-        })
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_ADD.into(),
+                word: "weird".into(),
+                kind: "module".into(),
+                signature: None,
+                contracts: None,
+                body_kind: Some("llvm-bc".into()), // module with llvm-bc = mis-tag
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: Some(format!("[\"{HASH_MUL}\"]")),
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         match tools.verify(HASH_ADD) {
@@ -735,7 +770,7 @@ mod tests {
 
     #[test]
     fn verify_rejects_bad_uid() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         match tools.verify("not-a-hash") {
             Observation::Error(msg) => assert!(msg.contains("not a 64-char hex hash")),
@@ -745,7 +780,7 @@ mod tests {
 
     #[test]
     fn verify_missing_uid_reports_not_found() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         match tools.verify(HASH_ADD) {
             Observation::Error(msg) => assert!(msg.contains("not found in dict")),
@@ -755,7 +790,7 @@ mod tests {
 
     #[test]
     fn render_leaf_uid_produces_single_entry_plan_hash() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs = tools.render(HASH_ADD, "llvm-native");
@@ -771,7 +806,7 @@ mod tests {
 
     #[test]
     fn render_is_deterministic_across_calls() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs1 = tools.render(HASH_ADD, "llvm-native");
@@ -787,15 +822,21 @@ mod tests {
 
     #[test]
     fn render_target_tag_round_trips_without_affecting_hash() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let native = tools.render(HASH_ADD, "llvm-native");
         let wasm = tools.render(HASH_ADD, "wasm");
         match (&native, &wasm) {
             (
-                Observation::Rendered { target: t1, bytes_hash: h1 },
-                Observation::Rendered { target: t2, bytes_hash: h2 },
+                Observation::Rendered {
+                    target: t1,
+                    bytes_hash: h1,
+                },
+                Observation::Rendered {
+                    target: t2,
+                    bytes_hash: h2,
+                },
             ) => {
                 assert_eq!(t1, "llvm-native");
                 assert_eq!(t2, "wasm");
@@ -809,30 +850,37 @@ mod tests {
 
     #[test]
     fn render_walks_composed_of_and_differs_on_extra_child() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         // Seed a leaf and a composite entry whose composed_of references it.
         seed_word(&d, HASH_ADD, "add", "function");
-        d.upsert_entity(&EntityRow {
-            hash: HASH_MUL.into(),
-            word: "arith".into(),
-            kind: "module".into(),
-            signature: None,
-            contracts: None,
-            body_kind: Some("module".into()),
-            body_size: None,
-            origin_ref: None,
-            bench_ids: None,
-            authored_in: None,
-            composed_of: Some(format!("[\"{HASH_ADD}\"]")),
-        })
+        upsert_entity(
+            &d,
+            &EntityRow {
+                hash: HASH_MUL.into(),
+                word: "arith".into(),
+                kind: "module".into(),
+                signature: None,
+                contracts: None,
+                body_kind: Some("module".into()),
+                body_size: None,
+                origin_ref: None,
+                bench_ids: None,
+                authored_in: None,
+                composed_of: Some(format!("[\"{HASH_ADD}\"]")),
+            },
+        )
         .unwrap();
         let tools = DictTools::new(&d);
         let leaf = tools.render(HASH_ADD, "t");
         let composite = tools.render(HASH_MUL, "t");
         match (&leaf, &composite) {
             (
-                Observation::Rendered { bytes_hash: h_leaf, .. },
-                Observation::Rendered { bytes_hash: h_comp, .. },
+                Observation::Rendered {
+                    bytes_hash: h_leaf, ..
+                },
+                Observation::Rendered {
+                    bytes_hash: h_comp, ..
+                },
             ) => {
                 assert_ne!(
                     h_leaf, h_comp,
@@ -845,7 +893,7 @@ mod tests {
 
     #[test]
     fn render_rejects_bad_uid() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         match tools.render("not-a-hash", "llvm-native") {
             Observation::Error(msg) => assert!(msg.contains("not a 64-char hex hash")),
@@ -855,7 +903,7 @@ mod tests {
 
     #[test]
     fn render_missing_uid_reports_not_found() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         match tools.render(HASH_ADD, "t") {
             Observation::Error(msg) => assert!(msg.contains("not found in dict")),
@@ -865,7 +913,7 @@ mod tests {
 
     #[test]
     fn explain_by_hash_emits_summary() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs = tools.explain(HASH_ADD, 0);
@@ -880,7 +928,7 @@ mod tests {
 
     #[test]
     fn explain_depth_1_adds_signature_contracts_origin() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         let obs = tools.explain(HASH_ADD, 1);
@@ -896,7 +944,7 @@ mod tests {
 
     #[test]
     fn explain_rejects_bad_uid() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         let obs = tools.explain("not-a-hash", 0);
         match obs {
@@ -907,7 +955,7 @@ mod tests {
 
     #[test]
     fn explain_missing_uid_reports_not_found() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         let tools = DictTools::new(&d);
         // Valid hex, but no row seeded.
         let obs = tools.explain(HASH_ADD, 0);
@@ -919,7 +967,7 @@ mod tests {
 
     #[test]
     fn max_results_truncates_result_set() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         // Seed 5 words of the same kind, all containing "foo".
         for i in 0..5 {
             let hash = format!("{:0>64}", format!("{i:x}"));
@@ -937,7 +985,7 @@ mod tests {
 
     #[test]
     fn invalid_hash_length_falls_through_to_kind_search() {
-        let d = NomDict::open_in_memory().unwrap();
+        let d = Dict::open_in_memory().unwrap();
         seed_word(&d, HASH_ADD, "add", "function");
         let tools = DictTools::new(&d);
         // 63 hex chars — not a valid 64-char hash, treat as kind search needle.

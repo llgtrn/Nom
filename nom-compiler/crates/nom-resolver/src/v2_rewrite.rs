@@ -16,13 +16,12 @@
 //! warranted; for now a minimal, reversible prefix is sufficient.
 
 use nom_ast::{
-    BlockStmt, CallExpr, Declaration, Expr, IfExpr, Identifier, MatchArm, MatchExpr, NomRef,
-    SourceFile, Statement, Block, FlowStep, FlowChain, BranchBlock, BranchArm,
-    LetStmt, AssignStmt, ForStmt, WhileStmt, NeedStmt, RequireStmt, Constraint,
-    FnDef, DescribeStmt, ContractStmt, ImplBlock, TraitDef, AgentReceiveStmt,
-    AgentScheduleStmt, FlowStmt, GraphQueryStmt, GraphQueryExpr, GraphTraverseExpr,
-    GraphSetExpr, GraphConstraintStmt, TestGivenStmt, TestWhenStmt, TestThenStmt,
-    TestAndStmt,
+    AgentReceiveStmt, AgentScheduleStmt, AssignStmt, Block, BlockStmt, BranchArm, BranchBlock,
+    CallExpr, Constraint, ContractStmt, Declaration, DescribeStmt, Expr, FlowChain, FlowStep,
+    FlowStmt, FnDef, ForStmt, GraphConstraintStmt, GraphQueryExpr, GraphQueryStmt, GraphSetExpr,
+    GraphTraverseExpr, Identifier, IfExpr, ImplBlock, LetStmt, MatchArm, MatchExpr, NeedStmt,
+    NomRef, RequireStmt, SourceFile, Statement, TestAndStmt, TestGivenStmt, TestThenStmt,
+    TestWhenStmt, TraitDef, WhileStmt,
 };
 
 use crate::v2::ResolutionTable;
@@ -46,7 +45,11 @@ fn rewrite_declaration(decl: &mut Declaration, t: &ResolutionTable) {
 
 fn rewrite_statement(stmt: &mut Statement, t: &ResolutionTable) {
     match stmt {
-        Statement::Need(NeedStmt { reference, constraint, .. }) => {
+        Statement::Need(NeedStmt {
+            reference,
+            constraint,
+            ..
+        }) => {
             rewrite_nom_ref(reference, t);
             if let Some(c) = constraint {
                 rewrite_constraint(c, t);
@@ -56,7 +59,11 @@ fn rewrite_statement(stmt: &mut Statement, t: &ResolutionTable) {
         Statement::Effects(_) => {}
         Statement::Flow(FlowStmt { chain, .. }) => rewrite_flow_chain(chain, t),
         Statement::Describe(DescribeStmt { .. }) => {}
-        Statement::Contract(ContractStmt { preconditions, postconditions, .. }) => {
+        Statement::Contract(ContractStmt {
+            preconditions,
+            postconditions,
+            ..
+        }) => {
             for e in preconditions {
                 rewrite_expr(e, t);
             }
@@ -76,9 +83,8 @@ fn rewrite_statement(stmt: &mut Statement, t: &ResolutionTable) {
         Statement::GraphNode(_) | Statement::GraphEdge(_) => {}
         Statement::GraphQuery(GraphQueryStmt { expr, .. }) => rewrite_graph_query(expr, t),
         Statement::GraphConstraint(GraphConstraintStmt { expr, .. }) => rewrite_expr(expr, t),
-        Statement::AgentCapability(_)
-        | Statement::AgentSupervise(_)
-        | Statement::AgentState(_) => {}
+        Statement::AgentCapability(_) | Statement::AgentSupervise(_) | Statement::AgentState(_) => {
+        }
         Statement::AgentReceive(AgentReceiveStmt { chain, .. }) => rewrite_flow_chain(chain, t),
         Statement::AgentSchedule(AgentScheduleStmt { action, .. }) => {
             rewrite_flow_chain(action, t);
@@ -93,7 +99,9 @@ fn rewrite_statement(stmt: &mut Statement, t: &ResolutionTable) {
             rewrite_expr(iterable, t);
             rewrite_block(body, t);
         }
-        Statement::While(WhileStmt { condition, body, .. }) => {
+        Statement::While(WhileStmt {
+            condition, body, ..
+        }) => {
             rewrite_expr(condition, t);
             rewrite_block(body, t);
         }
@@ -136,7 +144,9 @@ fn rewrite_block_stmt(s: &mut BlockStmt, t: &ResolutionTable) {
             rewrite_expr(iterable, t);
             rewrite_block(body, t);
         }
-        BlockStmt::While(WhileStmt { condition, body, .. }) => {
+        BlockStmt::While(WhileStmt {
+            condition, body, ..
+        }) => {
             rewrite_expr(condition, t);
             rewrite_block(body, t);
         }
@@ -188,7 +198,12 @@ fn rewrite_flow_chain(chain: &mut FlowChain, t: &ResolutionTable) {
 fn rewrite_graph_query(q: &mut GraphQueryExpr, t: &ResolutionTable) {
     match q {
         GraphQueryExpr::Ref(r) => rewrite_nom_ref(r, t),
-        GraphQueryExpr::Traverse(GraphTraverseExpr { source, edge, target, .. }) => {
+        GraphQueryExpr::Traverse(GraphTraverseExpr {
+            source,
+            edge,
+            target,
+            ..
+        }) => {
             rewrite_graph_query(source, t);
             rewrite_nom_ref(edge, t);
             rewrite_graph_query(target, t);
@@ -242,9 +257,7 @@ fn rewrite_expr(e: &mut Expr, t: &ResolutionTable) {
                 rewrite_expr(i, t);
             }
         }
-        Expr::Await(inner) | Expr::Cast(inner, _) | Expr::Try(inner) => {
-            rewrite_expr(inner, t)
-        }
+        Expr::Await(inner) | Expr::Cast(inner, _) | Expr::Try(inner) => rewrite_expr(inner, t),
         Expr::StructInit { fields, .. } => {
             for (_, v) in fields {
                 rewrite_expr(v, t);
@@ -270,8 +283,11 @@ fn pin_ident(id: &mut Identifier, t: &ResolutionTable) {
 mod tests {
     use super::*;
     use crate::v2::resolve_use_statements;
-    use nom_dict::NomDict;
-    use nom_parser::parse_source;
+    use nom_ast::{
+        CallExpr, Classifier, Declaration, Expr, Identifier, LetStmt, Literal, SourceFile, Span,
+        Statement, UseImport, UseStmt,
+    };
+    use nom_dict::{Dict, dict::upsert_entry};
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
     fn make_entry(id: &str, word: &str) -> Entry {
@@ -297,16 +313,50 @@ mod tests {
         }
     }
 
+    fn ident(name: &str) -> Identifier {
+        Identifier::new(name, Span::default())
+    }
+
+    fn parse_src_with_use_and_call(use_name: &str) -> SourceFile {
+        SourceFile {
+            path: None,
+            locale: None,
+            declarations: vec![Declaration {
+                classifier: Classifier::System,
+                name: ident("main"),
+                statements: vec![
+                    Statement::Use(UseStmt {
+                        path: Vec::new(),
+                        imports: UseImport::Single(ident(use_name)),
+                        hash: None,
+                        span: Span::default(),
+                    }),
+                    Statement::Let(LetStmt {
+                        name: ident("x"),
+                        mutable: false,
+                        type_ann: None,
+                        value: Expr::Call(CallExpr {
+                            callee: ident(use_name),
+                            args: vec![Expr::Literal(Literal::Integer(1))],
+                            span: Span::default(),
+                        }),
+                        span: Span::default(),
+                    }),
+                ],
+                span: Span::default(),
+            }],
+        }
+    }
+
     #[test]
     fn rewrite_pins_call_site_in_body() {
         // Seed a dict with entry A named `a`.
         let a_id = "a".repeat(64);
-        let dict = NomDict::open_in_memory().unwrap();
-        dict.upsert_entry(&make_entry(&a_id, "a")).unwrap();
+        let dict = Dict::open_in_memory().unwrap();
+        upsert_entry(&dict, &make_entry(&a_id, "a")).unwrap();
 
         // Entry B's body calls `a(1)`.
-        let src = "system main\n  use a\n  let x = a(1)\n";
-        let sf = parse_source(src).unwrap();
+        let sf = parse_src_with_use_and_call("a");
         let table = resolve_use_statements(&sf, &dict).unwrap();
 
         let rewritten = rewrite_with_hashes(&sf, &table);
@@ -330,10 +380,9 @@ mod tests {
     #[test]
     fn rewrite_is_pure_and_idempotent() {
         let a_id = "b".repeat(64);
-        let dict = NomDict::open_in_memory().unwrap();
-        dict.upsert_entry(&make_entry(&a_id, "a")).unwrap();
-        let src = "system main\n  use a\n  let x = a(1)\n";
-        let sf = parse_source(src).unwrap();
+        let dict = Dict::open_in_memory().unwrap();
+        upsert_entry(&dict, &make_entry(&a_id, "a")).unwrap();
+        let sf = parse_src_with_use_and_call("a");
         let table = resolve_use_statements(&sf, &dict).unwrap();
 
         // Pure: input not mutated after rewrite.

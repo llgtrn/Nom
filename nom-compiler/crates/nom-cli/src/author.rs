@@ -131,7 +131,11 @@ pub fn cmd_author_translate(
         });
         println!("{}", serde_json::to_string_pretty(&doc).unwrap_or_default());
     } else {
-        println!("author translate: {} → {}", input.display(), target.as_str());
+        println!(
+            "author translate: {} → {}",
+            input.display(),
+            target.as_str()
+        );
         println!("  prose lines:    {}", stats.prose);
         println!("  nom-ish lines:  {}", stats.nom_ish);
         println!("  progression:    {}%", stats.progression_pct());
@@ -139,7 +143,10 @@ pub fn cmd_author_translate(
         if !proposals.is_empty() {
             println!("  proposals ({} nomtu candidate(s)):", proposals.len());
             for p in &proposals {
-                println!("    - word={} kind={} concept={}", p.word, p.kind, p.concept);
+                println!(
+                    "    - word={} kind={} concept={}",
+                    p.word, p.kind, p.concept
+                );
                 println!("      from: {}", p.source_phrase);
             }
             println!();
@@ -195,7 +202,10 @@ fn extract_prose_proposals(text: &str) -> Vec<TranslateProposal> {
         if looks_nom_ish(line) {
             continue;
         }
-        let phrase = line.trim_start_matches("- ").trim_start_matches("* ").trim();
+        let phrase = line
+            .trim_start_matches("- ")
+            .trim_start_matches("* ")
+            .trim();
         if phrase.split_whitespace().count() < 2 {
             continue;
         }
@@ -226,7 +236,9 @@ fn write_proposals_to_dict(
     proposals: &[TranslateProposal],
     dict_path: &Path,
 ) -> Result<usize, String> {
-    use nom_dict::{Concept, NomDict};
+    use nom_dict::{
+        Concept, Dict, NomDict, add_concept_member, upsert_concept, upsert_entry_if_new,
+    };
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
     // Mirror corpus.rs resolve_db_path: treat .db path as file, else
@@ -239,11 +251,76 @@ fn write_proposals_to_dict(
     if let Some(parent) = resolved.parent() {
         let _ = std::fs::create_dir_all(parent);
     }
-    let dict = NomDict::open_in_place(&resolved)
-        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
 
     let now = chrono_like_now();
     let mut written = 0usize;
+
+    // Try Dict first (new split-DB path); fall back to NomDict for backward compatibility.
+    if let Ok(d) = Dict::try_open_from_nomdict_path(&resolved) {
+        for p in proposals {
+            // Concept — id deterministic from name; idempotent.
+            let concept_id = Concept::id_for(&p.concept);
+            upsert_concept(
+                &d,
+                &Concept {
+                    id: concept_id.clone(),
+                    name: p.concept.clone(),
+                    describe: Some(format!("auto-created from prose translation")),
+                    created_at: now.clone(),
+                    updated_at: None,
+                },
+            )
+            .map_err(|e| format!("upsert concept {}: {e}", p.concept))?;
+
+            // Entry — id = sha256(word + concept). Partial status; LLM
+            // lifts to Complete by authoring the body.
+            use sha2::{Digest, Sha256};
+            let id = {
+                let mut h = Sha256::new();
+                h.update(p.word.as_bytes());
+                h.update(b"|");
+                h.update(p.concept.as_bytes());
+                format!("{:x}", h.finalize())
+            };
+
+            let entry = Entry {
+                id: id.clone(),
+                word: p.word.clone(),
+                variant: None,
+                kind: EntryKind::Function,
+                language: "nom".to_string(),
+                describe: Some(format!("TODO: {}", p.source_phrase)),
+                concept: Some(p.concept.clone()),
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract::default(),
+                status: EntryStatus::Partial,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: now.clone(),
+                updated_at: None,
+            };
+
+            // upsert_entry_if_new: true iff a new row was inserted.
+            if upsert_entry_if_new(&d, &entry)
+                .map_err(|e| format!("upsert entry {}: {e}", p.word))?
+            {
+                written += 1;
+            }
+
+            // Link entry → concept.
+            add_concept_member(&d, &concept_id, &id)
+                .map_err(|e| format!("add_concept_member: {e}"))?;
+        }
+        return Ok(written);
+    }
+
+    // Fallback to NomDict (legacy single-file).
+    let dict = NomDict::open_in_place(&resolved)
+        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
 
     for p in proposals {
         // Concept — id deterministic from name; idempotent.
@@ -347,14 +424,12 @@ fn translate_next_step(stats: &LineStats, target: TranslateTarget) -> String {
         );
     }
     match target {
-        TranslateTarget::App => {
-            "rename to .nom; run `nom check`; then `nom app dream <manifest> \
+        TranslateTarget::App => "rename to .nom; run `nom check`; then `nom app dream <manifest> \
              --target web` until app_score ≥ 95 (EPIC threshold). \
              Natural-language alternative: save as .nomx, parse with \
              `nom author check foo.nomx`, translate with the type system once \
              it lands."
-                .to_string()
-        }
+            .to_string(),
         TranslateTarget::Video => {
             "rename to .nom; compile to AV1 body bytes; use `nom store add-media` \
              to canonicalize into body_kind=av1"
@@ -370,9 +445,7 @@ fn translate_next_step(stats: &LineStats, target: TranslateTarget) -> String {
 
 pub fn cmd_author_start(name: &str, out_dir: Option<&Path>) -> i32 {
     if !is_valid_name(name) {
-        eprintln!(
-            "nom author start: invalid name `{name}` (ascii alnum + underscore only)"
-        );
+        eprintln!("nom author start: invalid name `{name}` (ascii alnum + underscore only)");
         return 1;
     }
     let dir = out_dir
@@ -384,7 +457,10 @@ pub fn cmd_author_start(name: &str, out_dir: Option<&Path>) -> i32 {
     }
     let file = dir.join(format!("{name}.md"));
     if file.exists() {
-        eprintln!("nom author start: {} already exists (refusing to overwrite)", file.display());
+        eprintln!(
+            "nom author start: {} already exists (refusing to overwrite)",
+            file.display()
+        );
         return 1;
     }
     let body = SCRATCH_TEMPLATE.replace("{name}", name);
@@ -393,7 +469,10 @@ pub fn cmd_author_start(name: &str, out_dir: Option<&Path>) -> i32 {
         return 1;
     }
     println!("seeded {}", file.display());
-    println!("  edit intent + sketch, then `nom author check {}`", file.display());
+    println!(
+        "  edit intent + sketch, then `nom author check {}`",
+        file.display()
+    );
     0
 }
 
@@ -459,7 +538,11 @@ pub fn cmd_author_check(file: &Path, json: bool) -> i32 {
     let stats = classify_lines(&text);
     if ext == "nom" {
         if stats.prose == 0 {
-            println!("{}: pure Nom ({} non-comment line(s))", file.display(), stats.nom_ish);
+            println!(
+                "{}: pure Nom ({} non-comment line(s))",
+                file.display(),
+                stats.nom_ish
+            );
             0
         } else {
             eprintln!(
@@ -546,8 +629,8 @@ fn classify_lines(text: &str) -> LineStats {
 
 fn looks_nom_ish(line: &str) -> bool {
     const KEYWORDS: &[&str] = &[
-        "use ", "fn ", "let ", "return ", "if ", "else", "match ", "for ",
-        "while ", "struct ", "enum ", "trait ", "impl ", "type ",
+        "use ", "fn ", "let ", "return ", "if ", "else", "match ", "for ", "while ", "struct ",
+        "enum ", "trait ", "impl ", "type ",
     ];
     for kw in KEYWORDS {
         if line.starts_with(kw) || line.contains(&format!(" {kw}")) {
@@ -559,10 +642,7 @@ fn looks_nom_ish(line: &str) -> bool {
 }
 
 fn is_valid_name(name: &str) -> bool {
-    !name.is_empty()
-        && name
-            .chars()
-            .all(|c| c.is_ascii_alphanumeric() || c == '_')
+    !name.is_empty() && name.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
 }
 
 #[cfg(test)]
@@ -606,7 +686,10 @@ random words without syntax
     #[test]
     fn prose_to_word_sanitizes_and_joins() {
         assert_eq!(prose_to_word("Hello World Foo Bar"), "hello_world_foo");
-        assert_eq!(prose_to_word("Render the user's dashboard"), "render_the_users");
+        assert_eq!(
+            prose_to_word("Render the user's dashboard"),
+            "render_the_users"
+        );
         assert_eq!(prose_to_word("..."), "");
     }
 
@@ -702,21 +785,38 @@ fn already_nom() -> integer { return 0 }
     #[test]
     fn translate_target_from_str_and_back() {
         assert_eq!(TranslateTarget::from_str("app"), Some(TranslateTarget::App));
-        assert_eq!(TranslateTarget::from_str("video"), Some(TranslateTarget::Video));
-        assert_eq!(TranslateTarget::from_str("image"), Some(TranslateTarget::Image));
+        assert_eq!(
+            TranslateTarget::from_str("video"),
+            Some(TranslateTarget::Video)
+        );
+        assert_eq!(
+            TranslateTarget::from_str("image"),
+            Some(TranslateTarget::Image)
+        );
         assert_eq!(TranslateTarget::from_str("garbage"), None);
         assert_eq!(TranslateTarget::App.as_str(), "app");
     }
 
     #[test]
     fn translate_next_step_pivots_on_prose_vs_target() {
-        let all_prose = LineStats { comment: 0, nom_ish: 0, prose: 3 };
+        let all_prose = LineStats {
+            comment: 0,
+            nom_ish: 0,
+            prose: 3,
+        };
         let s = translate_next_step(&all_prose, TranslateTarget::App);
         assert!(s.contains("query dict"), "expected dict-query prompt: {s}");
 
-        let all_nom = LineStats { comment: 0, nom_ish: 5, prose: 0 };
+        let all_nom = LineStats {
+            comment: 0,
+            nom_ish: 5,
+            prose: 0,
+        };
         let app = translate_next_step(&all_nom, TranslateTarget::App);
-        assert!(app.contains("nom app dream"), "expected dream prompt: {app}");
+        assert!(
+            app.contains("nom app dream"),
+            "expected dream prompt: {app}"
+        );
         let vid = translate_next_step(&all_nom, TranslateTarget::Video);
         assert!(vid.contains("av1"), "expected av1 prompt: {vid}");
         let img = translate_next_step(&all_nom, TranslateTarget::Image);
@@ -747,18 +847,30 @@ fn already_nom() -> integer { return 0 }
         );
         let concepts: std::collections::HashSet<&str> =
             proposals.iter().map(|p| p.concept.as_str()).collect();
-        assert!(concepts.contains("sketch"), "expected `sketch` concept: {concepts:?}");
-        assert!(concepts.contains("intent"), "expected `intent` concept: {concepts:?}");
+        assert!(
+            concepts.contains("sketch"),
+            "expected `sketch` concept: {concepts:?}"
+        );
+        assert!(
+            concepts.contains("intent"),
+            "expected `intent` concept: {concepts:?}"
+        );
 
         // Words should be clean [a-z0-9_] identifiers — verifies the
         // prose_to_word sanitizer ran against every phrase.
         for p in &proposals {
             assert!(
-                p.word.chars().all(|c| c.is_ascii_alphanumeric() || c == '_'),
+                p.word
+                    .chars()
+                    .all(|c| c.is_ascii_alphanumeric() || c == '_'),
                 "word `{}` has non-identifier chars",
                 p.word
             );
-            assert!(!p.word.is_empty(), "empty word from phrase `{}`", p.source_phrase);
+            assert!(
+                !p.word.is_empty(),
+                "empty word from phrase `{}`",
+                p.source_phrase
+            );
         }
     }
 
@@ -769,7 +881,12 @@ fn already_nom() -> integer { return 0 }
         // regressions where the extractor silently drops bullets or
         // mis-handles multi-section layouts.
         let manifest_dir = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"));
-        let root = manifest_dir.parent().unwrap().parent().unwrap().to_path_buf();
+        let root = manifest_dir
+            .parent()
+            .unwrap()
+            .parent()
+            .unwrap()
+            .to_path_buf();
         let counts: Vec<usize> = ["draft_sentence.md", "draft_paragraph.md", "draft_essay.md"]
             .iter()
             .map(|name| {

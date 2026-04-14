@@ -228,7 +228,9 @@ mod tests {
         let rs = rows();
         let r = JaccardOverIntents { rows: &rs };
         // Query that hits multiple intents.
-        let hits = r.rank("two numbers and return", Some("function"), 1).unwrap();
+        let hits = r
+            .rank("two numbers and return", Some("function"), 1)
+            .unwrap();
         assert!(hits.len() <= 1, "limit must cap result vec length");
     }
 }

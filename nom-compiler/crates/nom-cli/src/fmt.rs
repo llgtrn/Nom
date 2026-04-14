@@ -80,7 +80,11 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
                 None => "",
             };
             let effects: Vec<&str> = e.effects.iter().map(|id| id.name.as_str()).collect();
-            out.push_str(&format!("{pad}effects {}[{}]\n", modifier, effects.join(" ")));
+            out.push_str(&format!(
+                "{pad}effects {}[{}]\n",
+                modifier,
+                effects.join(" ")
+            ));
         }
         Statement::Flow(f) => {
             let qualifier = match f.qualifier {
@@ -102,11 +106,19 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
             out.push_str(&format!("{pad}contract\n"));
             let inner = "  ".repeat(indent + 1);
             for input in &c.inputs {
-                let typ = input.typ.as_ref().map(|t| format!("({})", t.name)).unwrap_or_default();
+                let typ = input
+                    .typ
+                    .as_ref()
+                    .map(|t| format!("({})", t.name))
+                    .unwrap_or_default();
                 out.push_str(&format!("{inner}in {}{}\n", input.name.name, typ));
             }
             for output in &c.outputs {
-                let typ = output.typ.as_ref().map(|t| format!("({})", t.name)).unwrap_or_default();
+                let typ = output
+                    .typ
+                    .as_ref()
+                    .map(|t| format!("({})", t.name))
+                    .unwrap_or_default();
                 out.push_str(&format!("{inner}out {}{}\n", output.name.name, typ));
             }
             if !c.effects.is_empty() {
@@ -189,10 +201,7 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
             } else {
                 format!(" {}", params.join(" "))
             };
-            out.push_str(&format!(
-                "{pad}supervise {}{params_str}\n",
-                s.strategy.name
-            ));
+            out.push_str(&format!("{pad}supervise {}{params_str}\n", s.strategy.name));
         }
         Statement::AgentReceive(r) => {
             out.push_str(&format!("{pad}receive {}\n", fmt_flow_chain(&r.chain)));
@@ -268,7 +277,12 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
             out.push_str(&format!("{pad}{}\n", fmt_expr(e)));
         }
         Statement::Use(u) => {
-            let path_str = u.path.iter().map(|p| p.name.as_str()).collect::<Vec<_>>().join("::");
+            let path_str = u
+                .path
+                .iter()
+                .map(|p| p.name.as_str())
+                .collect::<Vec<_>>()
+                .join("::");
             let import_str = match &u.imports {
                 nom_ast::UseImport::Single(name) => name.name.clone(),
                 nom_ast::UseImport::Multiple(names) => {
@@ -296,7 +310,10 @@ fn emit_statement(out: &mut String, stmt: &Statement, indent: usize) {
         }
         Statement::ImplBlock(i) => {
             if let Some(ref trait_name) = i.trait_name {
-                out.push_str(&format!("{pad}impl {} for {} {{\n", trait_name.name, i.target_type.name));
+                out.push_str(&format!(
+                    "{pad}impl {} for {} {{\n",
+                    trait_name.name, i.target_type.name
+                ));
             } else {
                 out.push_str(&format!("{pad}impl {} {{\n", i.target_type.name));
             }
@@ -543,11 +560,7 @@ fn fmt_literal(lit: &Literal) -> String {
     match lit {
         Literal::Number(f) => {
             let s = f.to_string();
-            if s.contains('.') {
-                s
-            } else {
-                format!("{s}.0")
-            }
+            if s.contains('.') { s } else { format!("{s}.0") }
         }
         Literal::Integer(n) => n.to_string(),
         Literal::Text(s) => format!("\"{}\"", escape_str(s)),
@@ -592,9 +605,7 @@ fn fmt_flow_step(step: &FlowStep) -> String {
                     let cond = match arm.condition {
                         BranchCondition::IfTrue => "iftrue",
                         BranchCondition::IfFalse => "iffalse",
-                        BranchCondition::Named => {
-                            arm.label.as_deref().unwrap_or("_")
-                        }
+                        BranchCondition::Named => arm.label.as_deref().unwrap_or("_"),
                     };
                     format!("{} -> {}", cond, fmt_flow_chain(&arm.chain))
                 })

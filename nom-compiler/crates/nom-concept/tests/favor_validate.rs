@@ -1,9 +1,8 @@
 //! Phase B4 — S5b favor-clause validator against grammar.sqlite.quality_names.
 
 use nom_concept::stages::{
-    run_pipeline_with_grammar, stage1_tokenize, stage2_kind_classify,
-    stage3_shape_extract, stage4_contract_bind, stage5_effect_bind,
-    stage5b_favor_validate,
+    run_pipeline_with_grammar, stage1_tokenize, stage2_kind_classify, stage3_shape_extract,
+    stage4_contract_bind, stage5_effect_bind, stage5b_favor_validate,
 };
 
 const SRC_FAVOR: &str = r#"the function login_user is intended to verify a user's credentials.

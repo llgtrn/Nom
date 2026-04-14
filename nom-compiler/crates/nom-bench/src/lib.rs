@@ -152,7 +152,9 @@ mod tests {
     /// parallel, and the global registry is process-wide.
     fn test_lock() -> std::sync::MutexGuard<'static, ()> {
         static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(())).lock().unwrap_or_else(|p| p.into_inner())
+        LOCK.get_or_init(|| Mutex::new(()))
+            .lock()
+            .unwrap_or_else(|p| p.into_inner())
     }
 
     #[test]
@@ -190,18 +192,33 @@ mod tests {
         });
         let got = list();
         assert_eq!(got.len(), 1);
-        assert_eq!(got[0].workload_keys, vec!["small".to_string(), "large".to_string()]);
+        assert_eq!(
+            got[0].workload_keys,
+            vec!["small".to_string(), "large".to_string()]
+        );
     }
 
     #[test]
     fn register_preserves_insertion_order_for_distinct_names() {
         let _g = test_lock();
         _clear_registry_for_tests();
-        register(BenchFamily { name: "a.x".into(), workload_keys: vec![] });
-        register(BenchFamily { name: "b.y".into(), workload_keys: vec![] });
-        register(BenchFamily { name: "c.z".into(), workload_keys: vec![] });
+        register(BenchFamily {
+            name: "a.x".into(),
+            workload_keys: vec![],
+        });
+        register(BenchFamily {
+            name: "b.y".into(),
+            workload_keys: vec![],
+        });
+        register(BenchFamily {
+            name: "c.z".into(),
+            workload_keys: vec![],
+        });
         let got = list();
-        assert_eq!(got.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(), vec!["a.x", "b.y", "c.z"]);
+        assert_eq!(
+            got.iter().map(|f| f.name.as_str()).collect::<Vec<_>>(),
+            vec!["a.x", "b.y", "c.z"]
+        );
     }
 
     #[test]

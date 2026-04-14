@@ -109,13 +109,18 @@ fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str, preserve
         args.push("--preserve-format");
     }
     let (code, stdout, stderr) = run_nom(&args);
-    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+    assert_eq!(
+        code, 0,
+        "add-media exit={code}\nstdout={stdout}\nstderr={stderr}"
+    );
 
     // Step 2: parse id
-    let id = parse_id_line(&stdout)
-        .unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
+    let id = parse_id_line(&stdout).unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
     assert_eq!(id.len(), 64, "id must be 64 hex chars, got {id:?}");
-    assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "id not hex: {id}");
+    assert!(
+        id.chars().all(|c| c.is_ascii_hexdigit()),
+        "id not hex: {id}"
+    );
 
     // Step 3: get-entry and verify fields
     let (gcode, gout, gerr) = run_nom(&["store", "get", &id, "--dict", &dict]);
@@ -128,8 +133,8 @@ fn assert_add_media_roundtrip(fixture: &Path, expected_body_kind: &str, preserve
         "body_kind mismatch: expected {expected_body_kind}, got {body_kind}"
     );
 
-    let kind = parse_kind_line(&gout)
-        .unwrap_or_else(|| panic!("no kind: line in get output:\n{gout}"));
+    let kind =
+        parse_kind_line(&gout).unwrap_or_else(|| panic!("no kind: line in get output:\n{gout}"));
     assert_eq!(kind, "media_unit", "kind must be media_unit, got {kind}");
 }
 
@@ -162,11 +167,13 @@ fn assert_body_bytes_stored(fixture: &Path, expected_body_kind: &str, preserve_f
         args.push(&preserve_format_str);
     }
     let (code, stdout, stderr) = run_nom(&args);
-    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+    assert_eq!(
+        code, 0,
+        "add-media exit={code}\nstdout={stdout}\nstderr={stderr}"
+    );
 
     // Step 2: parse id
-    let id = parse_id_line(&stdout)
-        .unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
+    let id = parse_id_line(&stdout).unwrap_or_else(|| panic!("no id: line in output:\n{stdout}"));
 
     // Step 3: open dict directly, call get_entry_bytes
     // NomDict::open expects a root dir that contains data/nomdict.db.
@@ -195,14 +202,20 @@ fn body_bytes_stored_png_preserve_format() {
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_png_roundtrip_preserve_format() {
     // Per-format track: --preserve-format keeps PNG→PNG.
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "png", true);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_jpeg_roundtrip_preserve_format() {
     // Per-format track: --preserve-format keeps JPEG→JPEG.
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "jpeg", true);
@@ -220,21 +233,30 @@ fn body_bytes_stored_png_canonical_avif() {
 
 /// PNG input with default track → body_kind="avif".
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_png_canonical_avif() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.png"), "avif", false);
 }
 
 /// JPEG input with default track → body_kind="avif".
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_jpeg_canonical_avif() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.jpg"), "avif", false);
 }
 
 /// AVIF input with default track → body_kind="avif" (ImageStill canonical).
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_avif_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.avif"), "avif", false);
 }
@@ -242,44 +264,65 @@ fn add_media_avif_roundtrip() {
 // ── Tests — non-image formats (unaffected by preserve_format) ─────────
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_flac_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.flac"), "flac", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_opus_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.opus"), "opus", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_aac_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.aac"), "aac", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_av1_roundtrip() {
     // The fixture uses the .av1.ivf double-extension; extract just the "ivf" ext.
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.av1.ivf"), "av1", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_webm_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.webm"), "webm", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_mp4_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.mp4"), "mp4", false);
 }
 
 #[test]
-#[cfg_attr(windows, ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    windows,
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn add_media_hevc_roundtrip() {
     assert_add_media_roundtrip(&fixtures_dir().join("tiny.hevc"), "hevc", false);
 }

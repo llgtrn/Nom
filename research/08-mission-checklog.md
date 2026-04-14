@@ -14,7 +14,10 @@ anything load-bearing.
   artifact store at `~/.nom/store/<hash>/body.{bc,avif,...}`.
 - `Dict { concepts, entities }` struct with per-tier connections.
   Constructors: `open_dir`, `open_paths`, `open_in_memory`.
-- Thirty free functions on `&Dict` across both tiers. Entities
+- Forty-eight public free functions on `&Dict` are now live (`44`
+  migration-surface helpers once infra constructors are excluded).
+  Of the legacy `NomDict` migration target, `41` methods now have
+  split-aware free-function parity and `8` remain. Entities
   tier read-only: S3a (5) `upsert_entity` / `find_entity` /
   `find_entities_by_word` / `find_entities_by_kind` / `count_entities`;
   S3b (5) `count_concept_defs` / `count_required_axes` /
@@ -33,6 +36,15 @@ anything load-bearing.
   re-emit of the legacy `NomDict::*` SQL with `&self.conn` swapped
   for `&d.entities` or `&d.concepts`. Legacy methods stay live until
   the last replacement ships, per the no-legacy rule.
+  S8 slice A (5) landed earlier on the concepts tier:
+  `upsert_concept_def` / `find_concept_def` /
+  `list_concept_defs_in_repo` / `register_required_axis` /
+  `list_required_axes`. S8 slice B (9) lands this cycle:
+  `upsert_concept` / `get_concept_by_name` / `list_concepts` /
+  `remove_concept_member` / `get_concept_members` /
+  `count_concept_members` / `unregister_required_axis` /
+  `seed_standard_axes` / `add_concept_members_by_filter`.
+  `nom-dict` tests moved 89 → 94 while the workspace stayed green.
 - Per-tier specialised schemas: `CONCEPTS_SCHEMA_SQL` and
   `ENTITIES_SCHEMA_SQL`; cross-file foreign keys absent per the
   no-cross-file-FK invariant.
@@ -51,9 +63,10 @@ anything load-bearing.
 - Grammar-aware pipeline `run_pipeline_with_grammar`: S1 consults
   `keyword_synonyms` for canonicalization; S2 consults `kinds` for
   strict kind validation; S3 consults `clause_shapes` for the
-  per-kind empty-registry guard; S5b consults `quality_names` for
-  every `favor X` clause. S4 + S6 still use the hardcoded path;
-  the cross-stage required-clause-presence validator is queued.
+  per-kind empty-registry guard plus required-clause-presence
+  validation for every `is_required = 1` clause; S5b consults
+  `quality_names` for every `favor X` clause. S4 + S6 still use the
+  hardcoded path.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
   `nom grammar status`, `nom grammar add-{kind,synonym,quality,
   keyword,clause-shape,pattern}` (Phase C — six row-level adds),
@@ -169,19 +182,54 @@ anything load-bearing.
   `nom grammar add-kind`, `nom grammar add-clause-shape`,
   `nom grammar add-quality`, `nom grammar add-pattern`, plus
   `nom grammar import <sql-file>` for batch population. None shipped.
-- **Dict-split S3b–S8** — port the remaining ~35 nom-dict functions
-  to free functions on `&Dict`; delete legacy `NomDict` struct, legacy
-  `entries` table, legacy `concepts` + `concept_members` tables, and
-  V2/V3/V4/V5_SCHEMA_SQL constants in the same commit as native
-  replacements ship.
+- **Dict-split follow-through** — Cycle 1: All 9 concept-tier DB1 helpers ported
+  to free functions on `&Dict`. Cycle 2: Consumer bridge implemented for
+  `nom-cli` concept-tier read-only commands (`cmd_concept_list_filtered`,
+  `cmd_concept_show`, `cmd_concept_delete`). Cycle 3: All 8 entities-tier methods
+  ported to free functions: `upsert_entry`, `upsert_entry_if_new`, `get_entry`,
+  `find_entries`, `bulk_upsert`, `add_graph_edge`, `add_translation`, `bulk_set_scores`.
+  Free function exports added to `nom-dict` lib.rs. Consumer bridge completed:
+  `nom-cli` author.rs, store/commands.rs, and mcp.rs refactored to use dual-path
+  pattern (try Dict via `try_open_from_nomdict_path`, fall back to NomDict).
+  Follow-up bridge landed this cycle for `nom-cli` concept commands
+  (`cmd_concept_new`, `cmd_concept_add`, `cmd_concept_add_by`) and
+  `nom store sync`, both now opening `Dict` directly and calling
+  split-aware free functions instead of legacy methods. The corpus
+  axis-management commands (`register-axis`, `seed-standard-axes`,
+  `list-axes`) also now use `Dict` directly. The core `nom-corpus`
+  ingest/clone entry points (`ingest_directory`, `ingest_parent`,
+  `clone_and_ingest`, `clone_batch`, `ingest_pypi_top`) now also take
+  `&Dict` and preserve their per-repo transaction behavior on
+  `entities.sqlite`. Remaining consumer bridges are now concentrated in
+  `nom-app`,
+  a few CLI fallback paths (`extract` / `score` / `stats` / `coverage`),
+  and test-only legacy fixtures. Legacy `NomDict` deletion and
+  schema-constant cleanup stay coupled to the eventual atomic no-legacy cut.
+  Current audit shows `52` free functions ported (concept-tier + entities-tier);
+  9 NomDict methods remain for cleanup phase after all consumers bridge.
 - **`.nomx` v1 + v2 merge** — single canonical source format; v1 vs v2
   parser-path distinction deleted.
+- **CLI parser rollback for repo health** — `nom store add` stays on the
+  `nom-concept` S1-S6 pipeline, but the broader `nom-cli` parse/build/check/
+  report/fmt path is back on `nom-parser` for now. A temporary AST bridge was
+  dropping statement bodies, which made the migration look farther along than
+  the executable CLI reality. The bridge remains a future helper surface, not
+  the current default execution path.
 - **`quality_names.metric_function`** — currently nullable awaiting
   `nom corpus register-axis` CLI.
 - **Embedding index** — `nom corpus embed` populates per-kind
   embeddings for the resolver's semantic re-rank, replacing the
   alphabetical-smallest stub.
 - **Real planner-in-Nom** — replaces stubbed planner.
+
+- **Archive mission re-verification** — completed as a repo-wide audit.
+  Outputs:
+  - root executive summary: [`Gap.md`](../Gap.md)
+  - detailed archive audit: [`research/.archive/gap-audit-2026-04-14.md`](./.archive/gap-audit-2026-04-14.md)
+  - pending mission ledger: [`research/.archive/pending-missions-2026-04-14.md`](./.archive/pending-missions-2026-04-14.md)
+  Key conclusion: `.archive` is a live documentation-management store,
+  not dead history, but multiple archived mission/status docs are stale
+  and need explicit re-verification or historical banners.
 
 ## Planned
 
@@ -224,6 +272,18 @@ anything load-bearing.
   the 10-doc ceiling rule.
 - Foreign-language names absent from every doc, every commit message
   going forward, every DB row.
+- GitNexus + local verification now confirm current live truth at
+  `HEAD 98bef38`: workspace is 31 crates, `cargo check --workspace`
+  passes, and targeted tests for `nom-concept`, `nom-lsp`,
+  `nom-grammar`, `nom-intent`, and `nom-graph` are green. Earlier
+  archive text that still described `nom-lsp` or `nom-grammar` as
+  nonexistent/draft-only is now officially treated as stale-doc state,
+  not code state.
+- Dict-split progress corrected to code truth: `dict.rs` now exposes
+  48 public free functions total, 44 migration-surface helpers, and
+  41 legacy-surface parity ports. Only 8 legacy `NomDict` methods are
+  left. “Last 3–5 methods” is still inaccurate, but the finish line is
+  now real and visible.
 
 ## Blockers / open
 

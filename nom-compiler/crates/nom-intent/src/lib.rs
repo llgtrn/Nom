@@ -11,10 +11,10 @@
 //! Slice-2 (2026-04-14): the `react` module adds a ReAct-shaped loop over M8. See
 //! docs/superpowers/specs/2026-04-14-graph-rag-agentic-design.md for the full design.
 
-pub mod react;
+pub mod adapters;
 pub mod dict_tools;
 pub mod instrumented;
-pub mod adapters;
+pub mod react;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;
@@ -50,7 +50,10 @@ pub struct IntentCtx {
 
 impl Default for IntentCtx {
     fn default() -> Self {
-        Self { candidate_budget: 50, confidence_threshold: 0.7 }
+        Self {
+            candidate_budget: 50,
+            confidence_threshold: 0.7,
+        }
     }
 }
 

@@ -109,8 +109,8 @@ mod tests {
     fn agent_demo_src() -> PathBuf {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         manifest
-            .join("..")  // crates
-            .join("..")  // nom-compiler
+            .join("..") // crates
+            .join("..") // nom-compiler
             .join("examples")
             .join("agent_demo")
     }
@@ -139,7 +139,10 @@ mod tests {
         let (rc, ro, re) = run_report(&repo_dir, &dict_dir, "json", None, None);
 
         // Exit 1 because there are MECE violations and/or unresolved slots.
-        assert_eq!(rc, 1, "expected exit 1 (NeedsAttention): stderr={re}\nstdout={ro}");
+        assert_eq!(
+            rc, 1,
+            "expected exit 1 (NeedsAttention): stderr={re}\nstdout={ro}"
+        );
 
         // Must parse as JSON.
         let v: serde_json::Value =
@@ -167,7 +170,10 @@ mod tests {
                 .map(|a| !a.is_empty())
                 .unwrap_or(false)
         });
-        assert!(has_mece, "expected at least one MECE ME collision in the report");
+        assert!(
+            has_mece,
+            "expected at least one MECE ME collision in the report"
+        );
 
         // OverallVerdict::NeedsAttention
         let overall_kind = v["overall"]["kind"].as_str().unwrap_or("");
@@ -177,7 +183,9 @@ mod tests {
         );
 
         // overall.reasons must be non-empty
-        let reasons = v["overall"]["reasons"].as_array().expect("reasons must be array");
+        let reasons = v["overall"]["reasons"]
+            .as_array()
+            .expect("reasons must be array");
         assert!(
             !reasons.is_empty(),
             "expected at least one reason in overall.reasons"
@@ -196,7 +204,10 @@ mod tests {
         let (rc, ro, re) = run_report(&repo_dir, &dict_dir, "human", None, None);
 
         // Exit 1 (same as JSON).
-        assert_eq!(rc, 1, "expected exit 1 (human format): stderr={re}\nstdout={ro}");
+        assert_eq!(
+            rc, 1,
+            "expected exit 1 (human format): stderr={re}\nstdout={ro}"
+        );
 
         // Must contain "═══ concept"
         assert!(
@@ -233,8 +244,7 @@ mod tests {
         let (repo_dir, dict_dir) = setup();
 
         let out_file = dict_dir.join("report.json");
-        let (rc, ro, re) =
-            run_report(&repo_dir, &dict_dir, "json", Some(&out_file), None);
+        let (rc, ro, re) = run_report(&repo_dir, &dict_dir, "json", Some(&out_file), None);
 
         // Exit 1 (MECE violations).
         assert_eq!(rc, 1, "expected exit 1: stderr={re}\nstdout={ro}");
@@ -251,8 +261,7 @@ mod tests {
             "report.json must exist after --out write"
         );
 
-        let content =
-            std::fs::read_to_string(&out_file).expect("read report.json");
+        let content = std::fs::read_to_string(&out_file).expect("read report.json");
         let v: serde_json::Value =
             serde_json::from_str(&content).expect("report.json must be valid JSON");
 

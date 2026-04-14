@@ -18,7 +18,9 @@
 //! `no_foreign_names_audit.rs`, and `no_rust_seed_audit.rs`, this
 //! file completes the seven-proof Phase E set.
 
-use nom_concept::stages::{run_pipeline, run_pipeline_with_grammar, stage1_tokenize, stage1_tokenize_with_synonyms};
+use nom_concept::stages::{
+    run_pipeline, run_pipeline_with_grammar, stage1_tokenize, stage1_tokenize_with_synonyms,
+};
 
 const SOURCE_WITH_SYNONYM: &str = r#"the function login_user is intended to verify a user's credentials and issue a session.
 expects credentials are non-empty.
@@ -43,8 +45,8 @@ fn synonym_round_trip_at_pipeline_level() {
     // tokenize+grammar version produces the SAME outcome as the
     // synonym-less tokenize since there's no row to apply.
     let raw_no_grammar = stage1_tokenize(SOURCE_WITH_SYNONYM).expect("S1 raw");
-    let raw_with_empty_grammar = stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn)
-        .expect("S1 with empty grammar");
+    let raw_with_empty_grammar =
+        stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn).expect("S1 with empty grammar");
     assert_eq!(
         raw_no_grammar.toks.len(),
         raw_with_empty_grammar.toks.len(),
@@ -62,8 +64,8 @@ fn synonym_round_trip_at_pipeline_level() {
     // Step 3: the synonym-aware tokenize now produces a token stream
     // EQUAL to the one produced from the canonical-source variant.
     let canonical_tokens = stage1_tokenize(SOURCE_CANONICAL).expect("canonical S1");
-    let rewritten_tokens = stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn)
-        .expect("synonym-rewritten S1");
+    let rewritten_tokens =
+        stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn).expect("synonym-rewritten S1");
 
     let canon_kinds: Vec<String> = canonical_tokens
         .toks
@@ -84,8 +86,8 @@ fn synonym_round_trip_at_pipeline_level() {
     // Step 4: drop the row → behaviour reverts to step 1.
     conn.execute("DELETE FROM keyword_synonyms WHERE synonym = 'expects'", [])
         .expect("delete row");
-    let after_delete = stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn)
-        .expect("S1 after delete");
+    let after_delete =
+        stage1_tokenize_with_synonyms(SOURCE_WITH_SYNONYM, &conn).expect("S1 after delete");
     let after_delete_kinds: Vec<String> = after_delete
         .toks
         .iter()

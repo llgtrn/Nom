@@ -11,8 +11,8 @@
 
 use nom_ast::{
     BinOp, Block, BlockStmt, EnumDef, Expr, FnDef, ForStmt, GraphQueryExpr, GraphSetExpr,
-    GraphSetOp, GraphTraverseExpr, IfExpr, Literal, MatchExpr, Pattern, Statement,
-    StructDef, TypeExpr, UnaryOp, WhileStmt,
+    GraphSetOp, GraphTraverseExpr, IfExpr, Literal, MatchExpr, Pattern, Statement, StructDef,
+    TypeExpr, UnaryOp, WhileStmt,
 };
 use nom_planner::{
     AgentMetadataPlan, CompositionPlan, ConcurrencyStrategy, FlowPlan, GraphConstraintPlan,
@@ -2401,7 +2401,10 @@ fn generate_enum_rust(edef: &EnumDef, indent: usize) -> String {
     );
     for variant in &edef.variants {
         if variant.fields.is_empty() {
-            out.push_str(&format!("{pad}    {},\n", sanitize_ident(&variant.name.name)));
+            out.push_str(&format!(
+                "{pad}    {},\n",
+                sanitize_ident(&variant.name.name)
+            ));
         } else {
             let fields: Vec<String> = variant.fields.iter().map(type_expr_to_rust).collect();
             out.push_str(&format!(
@@ -2417,10 +2420,7 @@ fn generate_enum_rust(edef: &EnumDef, indent: usize) -> String {
 
 fn generate_if_rust(ifexpr: &IfExpr, indent: usize) -> String {
     let pad = "    ".repeat(indent);
-    let mut out = format!(
-        "{pad}if {} {{\n",
-        expr_to_rust(&ifexpr.condition)
-    );
+    let mut out = format!("{pad}if {} {{\n", expr_to_rust(&ifexpr.condition));
     out.push_str(&generate_block_rust(&ifexpr.then_body, indent + 1));
     out.push_str(&format!("{pad}}}"));
 
@@ -2453,10 +2453,7 @@ fn generate_for_rust(forstmt: &ForStmt, indent: usize) -> String {
 
 fn generate_while_rust(whilestmt: &WhileStmt, indent: usize) -> String {
     let pad = "    ".repeat(indent);
-    let mut out = format!(
-        "{pad}while {} {{\n",
-        expr_to_rust(&whilestmt.condition)
-    );
+    let mut out = format!("{pad}while {} {{\n", expr_to_rust(&whilestmt.condition));
     out.push_str(&generate_block_rust(&whilestmt.body, indent + 1));
     out.push_str(&format!("{pad}}}\n"));
     out
@@ -2464,10 +2461,7 @@ fn generate_while_rust(whilestmt: &WhileStmt, indent: usize) -> String {
 
 fn generate_match_rust(matchexpr: &MatchExpr, indent: usize) -> String {
     let pad = "    ".repeat(indent);
-    let mut out = format!(
-        "{pad}match {} {{\n",
-        expr_to_rust(&matchexpr.subject)
-    );
+    let mut out = format!("{pad}match {} {{\n", expr_to_rust(&matchexpr.subject));
     for arm in &matchexpr.arms {
         out.push_str(&format!(
             "{pad}    {} => {{\n",
@@ -2494,7 +2488,10 @@ fn generate_block_rust(block: &Block, indent: usize) -> String {
                     .map(|t| format!(": {}", type_expr_to_rust(t)))
                     .unwrap_or_default();
                 let val = expr_to_rust(&letstmt.value);
-                out.push_str(&format!("{pad}let {mutk}{}{ty} = {val};\n", letstmt.name.name));
+                out.push_str(&format!(
+                    "{pad}let {mutk}{}{ty} = {val};\n",
+                    letstmt.name.name
+                ));
             }
             BlockStmt::Assign(assign) => {
                 out.push_str(&format!(
@@ -2550,7 +2547,11 @@ fn type_expr_to_rust(ty: &TypeExpr) -> String {
         }
         TypeExpr::Function { params, ret } => {
             let params_str: Vec<String> = params.iter().map(type_expr_to_rust).collect();
-            format!("fn({}) -> {}", params_str.join(", "), type_expr_to_rust(ret))
+            format!(
+                "fn({}) -> {}",
+                params_str.join(", "),
+                type_expr_to_rust(ret)
+            )
         }
         TypeExpr::Tuple(types) => {
             let inner: Vec<String> = types.iter().map(type_expr_to_rust).collect();

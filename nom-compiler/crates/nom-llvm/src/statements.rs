@@ -1,5 +1,5 @@
-use crate::context::ModuleCompiler;
 use crate::LlvmError;
+use crate::context::ModuleCompiler;
 use inkwell::types::BasicType;
 use inkwell::values::BasicValueEnum;
 use nom_ast::{Block, BlockStmt, Expr, ForStmt, IfExpr, MatchExpr, Pattern};
@@ -43,7 +43,9 @@ pub fn compile_block_stmt<'ctx>(
             Ok(mc.context.i8_type().const_zero().into())
         }
         BlockStmt::Break => {
-            let (_cond_bb, end_bb) = mc.loop_stack.last()
+            let (_cond_bb, end_bb) = mc
+                .loop_stack
+                .last()
                 .ok_or_else(|| LlvmError::Compilation("break outside loop".into()))?;
             mc.builder
                 .build_unconditional_branch(*end_bb)
@@ -51,7 +53,9 @@ pub fn compile_block_stmt<'ctx>(
             Ok(mc.context.i8_type().const_zero().into())
         }
         BlockStmt::Continue => {
-            let (cond_bb, _end_bb) = mc.loop_stack.last()
+            let (cond_bb, _end_bb) = mc
+                .loop_stack
+                .last()
                 .ok_or_else(|| LlvmError::Compilation("continue outside loop".into()))?;
             mc.builder
                 .build_unconditional_branch(*cond_bb)
@@ -88,7 +92,8 @@ fn compile_let<'ctx>(
         val.get_type()
     };
 
-    let alloca = mc.builder
+    let alloca = mc
+        .builder
         .build_alloca(llvm_ty, name)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
@@ -246,7 +251,9 @@ fn compile_assign<'ctx>(
         _ => return Err(LlvmError::Unsupported("non-ident assignment target".into())),
     };
 
-    let (ptr, _ty) = mc.named_values.get(name.as_str())
+    let (ptr, _ty) = mc
+        .named_values
+        .get(name.as_str())
         .ok_or_else(|| LlvmError::Compilation(format!("undefined variable: {}", name)))?;
 
     mc.builder
@@ -286,10 +293,14 @@ pub fn compile_if_expr_value<'ctx>(
             )
             .map_err(|e| LlvmError::Compilation(e.to_string()))?
     } else {
-        return Err(LlvmError::Type("if condition must be numeric or bool".into()));
+        return Err(LlvmError::Type(
+            "if condition must be numeric or bool".into(),
+        ));
     };
 
-    let function = mc.builder.get_insert_block()
+    let function = mc
+        .builder
+        .get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
@@ -306,8 +317,12 @@ pub fn compile_if_expr_value<'ctx>(
     // diverts elsewhere, in which case the block is NOT a PHI incoming.
     mc.builder.position_at_end(then_bb);
     let then_val = compile_block(mc, &if_expr.then_body)?;
-    let then_flows_to_merge =
-        mc.builder.get_insert_block().unwrap().get_terminator().is_none();
+    let then_flows_to_merge = mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none();
     if then_flows_to_merge {
         mc.builder
             .build_unconditional_branch(merge_bb)
@@ -327,7 +342,8 @@ pub fn compile_if_expr_value<'ctx>(
     // Collect the incoming (value, basic_block) pairs from every branch
     // (then, each else-if, and the final else) that actually reaches the
     // merge block. We build them as we go.
-    let mut incoming: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> = Vec::new();
+    let mut incoming: Vec<(BasicValueEnum<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
+        Vec::new();
     if then_flows_to_merge {
         incoming.push((then_val, then_end_bb));
     }
@@ -361,7 +377,13 @@ pub fn compile_if_expr_value<'ctx>(
         // Then half of the else-if.
         mc.builder.position_at_end(ei_then_bb);
         let ei_val = compile_block(mc, body)?;
-        if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        if mc
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
             let ei_end = mc.builder.get_insert_block().unwrap();
             mc.builder
                 .build_unconditional_branch(merge_bb)
@@ -379,8 +401,12 @@ pub fn compile_if_expr_value<'ctx>(
     } else {
         mc.context.f64_type().const_float(0.0).into()
     };
-    let else_flows_to_merge =
-        mc.builder.get_insert_block().unwrap().get_terminator().is_none();
+    let else_flows_to_merge = mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none();
     if else_flows_to_merge {
         mc.builder
             .build_unconditional_branch(merge_bb)
@@ -420,8 +446,13 @@ pub fn compile_if_expr_value<'ctx>(
                 .builder
                 .build_phi(ty, "iftmp")
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-            let incoming_ref: Vec<(&dyn inkwell::values::BasicValue<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)> =
-                incoming.iter().map(|(v, bb)| (v as &dyn inkwell::values::BasicValue<'ctx>, *bb)).collect();
+            let incoming_ref: Vec<(
+                &dyn inkwell::values::BasicValue<'ctx>,
+                inkwell::basic_block::BasicBlock<'ctx>,
+            )> = incoming
+                .iter()
+                .map(|(v, bb)| (v as &dyn inkwell::values::BasicValue<'ctx>, *bb))
+                .collect();
             phi.add_incoming(&incoming_ref);
             Ok(phi.as_basic_value())
         }
@@ -432,7 +463,9 @@ fn compile_while<'ctx>(
     mc: &mut ModuleCompiler<'ctx>,
     while_stmt: &nom_ast::WhileStmt,
 ) -> Result<(), LlvmError> {
-    let function = mc.builder.get_insert_block()
+    let function = mc
+        .builder
+        .get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
@@ -462,7 +495,9 @@ fn compile_while<'ctx>(
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?
         }
     } else {
-        return Err(LlvmError::Type("while condition must be integer/bool".into()));
+        return Err(LlvmError::Type(
+            "while condition must be integer/bool".into(),
+        ));
     };
 
     mc.builder
@@ -474,7 +509,13 @@ fn compile_while<'ctx>(
     mc.loop_stack.push((loop_bb, end_bb));
     compile_block(mc, &while_stmt.body)?;
     mc.loop_stack.pop();
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+    if mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none()
+    {
         mc.builder
             .build_unconditional_branch(loop_bb)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
@@ -485,11 +526,10 @@ fn compile_while<'ctx>(
     Ok(())
 }
 
-fn compile_for<'ctx>(
-    mc: &mut ModuleCompiler<'ctx>,
-    for_stmt: &ForStmt,
-) -> Result<(), LlvmError> {
-    let function = mc.builder.get_insert_block()
+fn compile_for<'ctx>(mc: &mut ModuleCompiler<'ctx>, for_stmt: &ForStmt) -> Result<(), LlvmError> {
+    let function = mc
+        .builder
+        .get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
@@ -502,11 +542,10 @@ fn compile_for<'ctx>(
     // index loop that calls `nom_list_get` each iteration.
     if let Expr::Ident(id) = &for_stmt.iterable {
         if let Some(elem_ty_expr) = mc.list_elem_types.get(&id.name).cloned() {
-            let (list_ptr, _) = mc
-                .named_values
-                .get(&id.name)
-                .copied()
-                .ok_or_else(|| LlvmError::Compilation(format!("undefined list: {}", id.name)))?;
+            let (list_ptr, _) =
+                mc.named_values.get(&id.name).copied().ok_or_else(|| {
+                    LlvmError::Compilation(format!("undefined list: {}", id.name))
+                })?;
             return compile_for_list(mc, for_stmt, list_ptr, &elem_ty_expr);
         }
     }
@@ -527,7 +566,8 @@ fn compile_for<'ctx>(
     let i64_type = mc.context.i64_type();
 
     // Allocate loop counter
-    let counter_alloca = mc.builder
+    let counter_alloca = mc
+        .builder
         .build_alloca(i64_type, &for_stmt.binding.name)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
@@ -550,11 +590,13 @@ fn compile_for<'ctx>(
 
     // Condition block: i < n
     mc.builder.position_at_end(cond_bb);
-    let cur = mc.builder
+    let cur = mc
+        .builder
         .build_load(i64_type, counter_alloca, "cur")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?
         .into_int_value();
-    let cmp = mc.builder
+    let cmp = mc
+        .builder
         .build_int_compare(inkwell::IntPredicate::SLT, cur, n_int, "forcmp")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
@@ -568,12 +610,20 @@ fn compile_for<'ctx>(
     mc.loop_stack.pop();
 
     // Increment counter
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
-        let cur_after = mc.builder
+    if mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none()
+    {
+        let cur_after = mc
+            .builder
             .build_load(i64_type, counter_alloca, "cur_after")
             .map_err(|e| LlvmError::Compilation(e.to_string()))?
             .into_int_value();
-        let next = mc.builder
+        let next = mc
+            .builder
             .build_int_add(cur_after, i64_type.const_int(1, false), "next")
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         mc.builder
@@ -618,8 +668,10 @@ fn compile_for_list<'ctx>(
         .builder
         .build_alloca(elem_llvm_ty, &for_stmt.binding.name)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-    mc.named_values
-        .insert(for_stmt.binding.name.clone(), (binding_alloca, elem_llvm_ty));
+    mc.named_values.insert(
+        for_stmt.binding.name.clone(),
+        (binding_alloca, elem_llvm_ty),
+    );
 
     let cond_bb = mc.context.append_basic_block(function, "for_list_cond");
     let body_bb = mc.context.append_basic_block(function, "for_list_body");
@@ -698,7 +750,13 @@ fn compile_for_list<'ctx>(
     mc.loop_stack.pop();
 
     // Increment index.
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+    if mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none()
+    {
         let cur_idx_inc = mc
             .builder
             .build_load(i64_ty, counter_alloca, "cur_idx_inc")
@@ -725,7 +783,9 @@ fn compile_for_array<'ctx>(
     for_stmt: &ForStmt,
     elements: &[Expr],
 ) -> Result<(), LlvmError> {
-    let function = mc.builder.get_insert_block()
+    let function = mc
+        .builder
+        .get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
@@ -747,7 +807,8 @@ fn compile_for_array<'ctx>(
 
     // Allocate array on stack and store elements
     let array_type = elem_ty.array_type(len as u32);
-    let array_alloca = mc.builder
+    let array_alloca = mc
+        .builder
         .build_alloca(array_type, "for_arr")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
@@ -755,7 +816,12 @@ fn compile_for_array<'ctx>(
         let idx = i64_type.const_int(i as u64, false);
         let elem_ptr = unsafe {
             mc.builder
-                .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), idx], &format!("arr_elem_{}", i))
+                .build_in_bounds_gep(
+                    array_type,
+                    array_alloca,
+                    &[i64_type.const_int(0, false), idx],
+                    &format!("arr_elem_{}", i),
+                )
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?
         };
         mc.builder
@@ -764,7 +830,8 @@ fn compile_for_array<'ctx>(
     }
 
     // Allocate index counter
-    let counter_alloca = mc.builder
+    let counter_alloca = mc
+        .builder
         .build_alloca(i64_type, "for_idx")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
@@ -772,13 +839,12 @@ fn compile_for_array<'ctx>(
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
     // Allocate binding variable
-    let binding_alloca = mc.builder
+    let binding_alloca = mc
+        .builder
         .build_alloca(elem_ty, &for_stmt.binding.name)
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-    mc.named_values.insert(
-        for_stmt.binding.name.clone(),
-        (binding_alloca, elem_ty),
-    );
+    mc.named_values
+        .insert(for_stmt.binding.name.clone(), (binding_alloca, elem_ty));
 
     let cond_bb = mc.context.append_basic_block(function, "for_arr_cond");
     let body_bb = mc.context.append_basic_block(function, "for_arr_body");
@@ -790,12 +856,19 @@ fn compile_for_array<'ctx>(
 
     // Condition: idx < len
     mc.builder.position_at_end(cond_bb);
-    let cur_idx = mc.builder
+    let cur_idx = mc
+        .builder
         .build_load(i64_type, counter_alloca, "cur_idx")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?
         .into_int_value();
-    let cmp = mc.builder
-        .build_int_compare(inkwell::IntPredicate::SLT, cur_idx, i64_type.const_int(len, false), "arrcmp")
+    let cmp = mc
+        .builder
+        .build_int_compare(
+            inkwell::IntPredicate::SLT,
+            cur_idx,
+            i64_type.const_int(len, false),
+            "arrcmp",
+        )
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
         .build_conditional_branch(cmp, body_bb, end_bb)
@@ -803,16 +876,23 @@ fn compile_for_array<'ctx>(
 
     // Body: load element, bind, execute body
     mc.builder.position_at_end(body_bb);
-    let cur_idx_body = mc.builder
+    let cur_idx_body = mc
+        .builder
         .build_load(i64_type, counter_alloca, "cur_idx_body")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?
         .into_int_value();
     let elem_ptr = unsafe {
         mc.builder
-            .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), cur_idx_body], "arr_elem_ptr")
+            .build_in_bounds_gep(
+                array_type,
+                array_alloca,
+                &[i64_type.const_int(0, false), cur_idx_body],
+                "arr_elem_ptr",
+            )
             .map_err(|e| LlvmError::Compilation(e.to_string()))?
     };
-    let elem_val = mc.builder
+    let elem_val = mc
+        .builder
         .build_load(elem_ty, elem_ptr, "arr_elem_val")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     mc.builder
@@ -824,12 +904,20 @@ fn compile_for_array<'ctx>(
     mc.loop_stack.pop();
 
     // Increment index
-    if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
-        let cur_idx_inc = mc.builder
+    if mc
+        .builder
+        .get_insert_block()
+        .unwrap()
+        .get_terminator()
+        .is_none()
+    {
+        let cur_idx_inc = mc
+            .builder
             .build_load(i64_type, counter_alloca, "cur_idx_inc")
             .map_err(|e| LlvmError::Compilation(e.to_string()))?
             .into_int_value();
-        let next_idx = mc.builder
+        let next_idx = mc
+            .builder
             .build_int_add(cur_idx_inc, i64_type.const_int(1, false), "next_idx")
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         mc.builder
@@ -853,29 +941,37 @@ pub fn compile_match_value<'ctx>(
     // If the subject is an enum (registered struct type whose name is in
     // `enum_variants`), stash it in an alloca so arms can GEP to the tag
     // and payload fields. Non-enum subjects remain value-only.
-    let subject_enum: Option<(String, inkwell::types::StructType<'ctx>, inkwell::values::PointerValue<'ctx>)> =
-        if subject_val.is_struct_value() {
-            let sv = subject_val.into_struct_value();
-            let sty = sv.get_type();
-            let enum_name = sty.get_name().and_then(|n| n.to_str().ok()).map(|s| s.to_owned());
-            match enum_name {
-                Some(nm) if mc.enum_variants.contains_key(&nm) => {
-                    let slot = mc
-                        .builder
-                        .build_alloca(sty, "subj_slot")
-                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-                    mc.builder
-                        .build_store(slot, sv)
-                        .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-                    Some((nm, sty, slot))
-                }
-                _ => None,
+    let subject_enum: Option<(
+        String,
+        inkwell::types::StructType<'ctx>,
+        inkwell::values::PointerValue<'ctx>,
+    )> = if subject_val.is_struct_value() {
+        let sv = subject_val.into_struct_value();
+        let sty = sv.get_type();
+        let enum_name = sty
+            .get_name()
+            .and_then(|n| n.to_str().ok())
+            .map(|s| s.to_owned());
+        match enum_name {
+            Some(nm) if mc.enum_variants.contains_key(&nm) => {
+                let slot = mc
+                    .builder
+                    .build_alloca(sty, "subj_slot")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                mc.builder
+                    .build_store(slot, sv)
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                Some((nm, sty, slot))
             }
-        } else {
-            None
-        };
+            _ => None,
+        }
+    } else {
+        None
+    };
 
-    let function = mc.builder.get_insert_block()
+    let function = mc
+        .builder
+        .get_insert_block()
         .and_then(|bb| bb.get_parent())
         .ok_or_else(|| LlvmError::Compilation("no current function".into()))?;
 
@@ -886,24 +982,33 @@ pub fn compile_match_value<'ctx>(
     // type (integer, float, or struct). Variant patterns may produce int or
     // float results, so hard-coding f64 (as the legacy code did) was a bug
     // for integer-returning matches.
-    let mut result_slot: Option<(inkwell::values::PointerValue<'ctx>, inkwell::types::BasicTypeEnum<'ctx>)> = None;
+    let mut result_slot: Option<(
+        inkwell::values::PointerValue<'ctx>,
+        inkwell::types::BasicTypeEnum<'ctx>,
+    )> = None;
 
     let mut arm_blocks = Vec::new();
 
     // Create basic blocks for each arm test and body
     for (i, _arm) in match_expr.arms.iter().enumerate() {
-        let test_bb = mc.context.append_basic_block(function, &format!("match_test_{}", i));
-        let body_bb = mc.context.append_basic_block(function, &format!("match_arm_{}", i));
+        let test_bb = mc
+            .context
+            .append_basic_block(function, &format!("match_test_{}", i));
+        let body_bb = mc
+            .context
+            .append_basic_block(function, &format!("match_arm_{}", i));
         arm_blocks.push((test_bb, body_bb));
     }
 
     // Branch to the first test block
     if let Some((first_test, _)) = arm_blocks.first() {
-        mc.builder.build_unconditional_branch(*first_test)
+        mc.builder
+            .build_unconditional_branch(*first_test)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     } else {
         // No arms at all — just branch to merge
-        mc.builder.build_unconditional_branch(merge_bb)
+        mc.builder
+            .build_unconditional_branch(merge_bb)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
     }
 
@@ -927,30 +1032,33 @@ pub fn compile_match_value<'ctx>(
         match &arm.pattern {
             Pattern::Wildcard => {
                 // Always matches — branch directly to body
-                mc.builder.build_unconditional_branch(body_bb)
+                mc.builder
+                    .build_unconditional_branch(body_bb)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Pattern::Literal(lit) => {
-                let lit_val = crate::expressions::compile_expr(
-                    mc,
-                    &nom_ast::Expr::Literal(lit.clone()),
-                )?;
+                let lit_val =
+                    crate::expressions::compile_expr(mc, &nom_ast::Expr::Literal(lit.clone()))?;
                 let is_str_subject = crate::expressions::is_string_value_pub(mc, &subject_val);
                 let is_str_pat = crate::expressions::is_string_value_pub(mc, &lit_val);
                 let matches = if subject_val.is_float_value() && lit_val.is_float_value() {
-                    mc.builder.build_float_compare(
-                        inkwell::FloatPredicate::OEQ,
-                        subject_val.into_float_value(),
-                        lit_val.into_float_value(),
-                        "match_cmp",
-                    ).map_err(|e| LlvmError::Compilation(e.to_string()))?
+                    mc.builder
+                        .build_float_compare(
+                            inkwell::FloatPredicate::OEQ,
+                            subject_val.into_float_value(),
+                            lit_val.into_float_value(),
+                            "match_cmp",
+                        )
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?
                 } else if subject_val.is_int_value() && lit_val.is_int_value() {
-                    mc.builder.build_int_compare(
-                        inkwell::IntPredicate::EQ,
-                        subject_val.into_int_value(),
-                        lit_val.into_int_value(),
-                        "match_cmp",
-                    ).map_err(|e| LlvmError::Compilation(e.to_string()))?
+                    mc.builder
+                        .build_int_compare(
+                            inkwell::IntPredicate::EQ,
+                            subject_val.into_int_value(),
+                            lit_val.into_int_value(),
+                            "match_cmp",
+                        )
+                        .map_err(|e| LlvmError::Compilation(e.to_string()))?
                 } else if is_str_subject && is_str_pat {
                     // String match arm: dispatch to `nom_string_eq` and
                     // coerce the i32 (0 / non-zero) result to i1.
@@ -969,7 +1077,9 @@ pub fn compile_match_value<'ctx>(
                     let result = call
                         .try_as_basic_value()
                         .left()
-                        .ok_or_else(|| LlvmError::Compilation("nom_string_eq returned void".into()))?
+                        .ok_or_else(|| {
+                            LlvmError::Compilation("nom_string_eq returned void".into())
+                        })?
                         .into_int_value();
                     mc.builder
                         .build_int_compare(
@@ -980,21 +1090,28 @@ pub fn compile_match_value<'ctx>(
                         )
                         .map_err(|e| LlvmError::Compilation(e.to_string()))?
                 } else {
-                    return Err(LlvmError::Type("match: incompatible subject and pattern types".into()));
+                    return Err(LlvmError::Type(
+                        "match: incompatible subject and pattern types".into(),
+                    ));
                 };
-                mc.builder.build_conditional_branch(matches, body_bb, fallthrough_bb)
+                mc.builder
+                    .build_conditional_branch(matches, body_bb, fallthrough_bb)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Pattern::Binding(ident) => {
                 // Bind subject to a name, then unconditionally enter body
                 let ty = subject_val.get_type();
-                let alloca = mc.builder.build_alloca(ty, &ident.name)
+                let alloca = mc
+                    .builder
+                    .build_alloca(ty, &ident.name)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-                mc.builder.build_store(alloca, subject_val)
+                mc.builder
+                    .build_store(alloca, subject_val)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 mc.named_values.insert(ident.name.clone(), (alloca, ty));
                 arm_bound_names.push(ident.name.clone());
-                mc.builder.build_unconditional_branch(body_bb)
+                mc.builder
+                    .build_unconditional_branch(body_bb)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Pattern::Variant(qualified_ident, sub_patterns) => {
@@ -1002,17 +1119,16 @@ pub fn compile_match_value<'ctx>(
                 let qualified = qualified_ident.name.as_str();
                 let (enum_name, enum_ty, subj_slot) = match &subject_enum {
                     Some(triple) => triple.clone(),
-                    None => return Err(LlvmError::Type(
-                        "variant pattern requires enum-typed subject".into(),
-                    )),
+                    None => {
+                        return Err(LlvmError::Type(
+                            "variant pattern requires enum-typed subject".into(),
+                        ));
+                    }
                 };
                 let (disc, payload_tys) = {
-                    let variants = mc
-                        .enum_variants
-                        .get(&enum_name)
-                        .ok_or_else(|| LlvmError::Compilation(format!(
-                            "unknown enum in match: {}", enum_name,
-                        )))?;
+                    let variants = mc.enum_variants.get(&enum_name).ok_or_else(|| {
+                        LlvmError::Compilation(format!("unknown enum in match: {}", enum_name,))
+                    })?;
                     // Accept both `Enum::Variant` and bare `Variant` spellings.
                     let short = qualified.rsplit("::").next().unwrap_or(qualified);
                     variants
@@ -1020,9 +1136,12 @@ pub fn compile_match_value<'ctx>(
                         .enumerate()
                         .find(|(_, (n, _))| n == short)
                         .map(|(i, (_, tys))| (i, tys.clone()))
-                        .ok_or_else(|| LlvmError::Compilation(format!(
-                            "unknown variant in match: {}", qualified,
-                        )))?
+                        .ok_or_else(|| {
+                            LlvmError::Compilation(format!(
+                                "unknown variant in match: {}",
+                                qualified,
+                            ))
+                        })?
                 };
 
                 // Tag GEP + compare.
@@ -1080,8 +1199,7 @@ pub fn compile_match_value<'ctx>(
                     if payload_tys.len() == 1 {
                         // Single-field payload: reinterpret the byte slot as
                         // the field's LLVM type and load directly.
-                        let field_llvm_ty =
-                            crate::types::resolve_type(mc, &payload_tys[0])?;
+                        let field_llvm_ty = crate::types::resolve_type(mc, &payload_tys[0])?;
                         if let Pattern::Binding(ident) = &sub_patterns[0] {
                             let loaded = mc
                                 .builder
@@ -1135,11 +1253,7 @@ pub fn compile_match_value<'ctx>(
                                 Pattern::Binding(ident) => {
                                     let field_val = mc
                                         .builder
-                                        .build_extract_value(
-                                            tup_val,
-                                            idx as u32,
-                                            &ident.name,
-                                        )
+                                        .build_extract_value(tup_val, idx as u32, &ident.name)
                                         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                                     let field_ty = field_val.get_type();
                                     let alloca = mc
@@ -1163,7 +1277,8 @@ pub fn compile_match_value<'ctx>(
                     }
                 }
 
-                mc.builder.build_unconditional_branch(body_bb)
+                mc.builder
+                    .build_unconditional_branch(body_bb)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
         }
@@ -1173,7 +1288,13 @@ pub fn compile_match_value<'ctx>(
         let body_val = compile_block(mc, &arm.body)?;
 
         // Store result if block didn't terminate (e.g., return)
-        if mc.builder.get_insert_block().unwrap().get_terminator().is_none() {
+        if mc
+            .builder
+            .get_insert_block()
+            .unwrap()
+            .get_terminator()
+            .is_none()
+        {
             // Lazy-initialize the result slot to the body value's LLVM type.
             let (slot, slot_ty) = match result_slot {
                 Some(pair) => pair,
@@ -1205,10 +1326,12 @@ pub fn compile_match_value<'ctx>(
             // Only store if the body value matches the slot type — skip
             // heterogeneous arms (caller shouldn't mix types, but stay safe).
             if body_val.get_type() == slot_ty {
-                mc.builder.build_store(slot, body_val)
+                mc.builder
+                    .build_store(slot, body_val)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
-            mc.builder.build_unconditional_branch(merge_bb)
+            mc.builder
+                .build_unconditional_branch(merge_bb)
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         }
 
@@ -1221,7 +1344,9 @@ pub fn compile_match_value<'ctx>(
 
     mc.builder.position_at_end(merge_bb);
     if let Some((slot, ty)) = result_slot {
-        let result = mc.builder.build_load(ty, slot, "match_val")
+        let result = mc
+            .builder
+            .build_load(ty, slot, "match_val")
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         Ok(result)
     } else {
@@ -1295,8 +1420,16 @@ mod tests {
         mc.builder.build_return(Some(&val)).unwrap();
 
         let ir = mc.module.print_to_string().to_string();
-        assert!(ir.contains("alloca"), "IR should contain alloca for let, got:\n{}", ir);
-        assert!(ir.contains("store"), "IR should contain store for let, got:\n{}", ir);
+        assert!(
+            ir.contains("alloca"),
+            "IR should contain alloca for let, got:\n{}",
+            ir
+        );
+        assert!(
+            ir.contains("store"),
+            "IR should contain store for let, got:\n{}",
+            ir
+        );
     }
 
     #[test]
@@ -1341,21 +1474,27 @@ mod tests {
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(1.0)),
                             body: Block {
-                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(10.0))))],
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(
+                                    Literal::Number(10.0),
+                                )))],
                                 span: Span::default(),
                             },
                         },
                         MatchArm {
                             pattern: Pattern::Literal(Literal::Number(2.0)),
                             body: Block {
-                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(20.0))))],
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(
+                                    Literal::Number(20.0),
+                                )))],
                                 span: Span::default(),
                             },
                         },
                         MatchArm {
                             pattern: Pattern::Wildcard,
                             body: Block {
-                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(Literal::Number(0.0))))],
+                                stmts: vec![BlockStmt::Return(Some(Expr::Literal(
+                                    Literal::Number(0.0),
+                                )))],
                                 span: Span::default(),
                             },
                         },
@@ -1424,7 +1563,10 @@ mod tests {
                     BlockStmt::Let(LetStmt {
                         name: Identifier::new("sum", Span::default()),
                         mutable: true,
-                        type_ann: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+                        type_ann: Some(TypeExpr::Named(Identifier::new(
+                            "integer",
+                            Span::default(),
+                        ))),
                         value: Expr::Literal(Literal::Integer(0)),
                         span: Span::default(),
                     }),
@@ -1432,17 +1574,15 @@ mod tests {
                         binding: Identifier::new("i", Span::default()),
                         iterable: Expr::Ident(Identifier::new("n", Span::default())),
                         body: Block {
-                            stmts: vec![
-                                BlockStmt::Assign(AssignStmt {
-                                    target: Expr::Ident(Identifier::new("sum", Span::default())),
-                                    value: Expr::BinaryOp(
-                                        Box::new(Expr::Ident(Identifier::new("sum", Span::default()))),
-                                        BinOp::Add,
-                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
-                                    ),
-                                    span: Span::default(),
-                                }),
-                            ],
+                            stmts: vec![BlockStmt::Assign(AssignStmt {
+                                target: Expr::Ident(Identifier::new("sum", Span::default())),
+                                value: Expr::BinaryOp(
+                                    Box::new(Expr::Ident(Identifier::new("sum", Span::default()))),
+                                    BinOp::Add,
+                                    Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                ),
+                                span: Span::default(),
+                            })],
                             span: Span::default(),
                         },
                         span: Span::default(),
@@ -1521,7 +1661,10 @@ mod tests {
                     BlockStmt::Let(LetStmt {
                         name: Identifier::new("i", Span::default()),
                         mutable: true,
-                        type_ann: Some(TypeExpr::Named(Identifier::new("integer", Span::default()))),
+                        type_ann: Some(TypeExpr::Named(Identifier::new(
+                            "integer",
+                            Span::default(),
+                        ))),
                         value: Expr::Literal(Literal::Integer(0)),
                         span: Span::default(),
                     }),
@@ -1531,7 +1674,10 @@ mod tests {
                             stmts: vec![
                                 BlockStmt::If(IfExpr {
                                     condition: Box::new(Expr::BinaryOp(
-                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                        Box::new(Expr::Ident(Identifier::new(
+                                            "i",
+                                            Span::default(),
+                                        ))),
                                         BinOp::Gt,
                                         Box::new(Expr::Literal(Literal::Integer(5))),
                                     )),
@@ -1546,7 +1692,10 @@ mod tests {
                                 BlockStmt::Assign(AssignStmt {
                                     target: Expr::Ident(Identifier::new("i", Span::default())),
                                     value: Expr::BinaryOp(
-                                        Box::new(Expr::Ident(Identifier::new("i", Span::default()))),
+                                        Box::new(Expr::Ident(Identifier::new(
+                                            "i",
+                                            Span::default(),
+                                        ))),
                                         BinOp::Add,
                                         Box::new(Expr::Literal(Literal::Integer(1))),
                                     ),

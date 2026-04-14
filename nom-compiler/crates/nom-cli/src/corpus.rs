@@ -5,6 +5,8 @@
 //! `ingest` — walks a local directory, hashes each file, and upserts one
 //!            v2 Entry per file into the nomdict (§5.17 source ingestion).
 
+use nom_dict::Dict;
+use nom_dict::dict::{list_required_axes, register_required_axis, seed_standard_axes};
 use std::path::Path;
 
 // ── cmd_corpus_scan ──────────────────────────────────────────────────────────
@@ -18,10 +20,7 @@ pub fn cmd_corpus_scan(path: &Path, json: bool) -> i32 {
         }
     };
     if json {
-        println!(
-            "{}",
-            serde_json::to_string(&report).unwrap_or_default()
-        );
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
     } else {
         println!("corpus scan: {}", report.root);
         println!("  total files:  {}", report.total_files);
@@ -45,7 +44,7 @@ pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
     // Open (or create) the dict at the given path.
     // Follow the same .db-file convention as store::open_dict.
     let db_path = resolve_db_path(dict);
-    let dict_db = match nom_dict::NomDict::open_in_place(&db_path) {
+    let dict_db = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: cannot open dict {}: {e}", db_path.display());
@@ -62,10 +61,7 @@ pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
     };
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string(&report).unwrap_or_default()
-        );
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
     } else {
         println!("corpus ingest: {}", report.root);
         println!("  files ingested:  {}", report.files_ingested);
@@ -86,7 +82,12 @@ pub fn cmd_corpus_ingest(path: &Path, dict: &Path, json: bool) -> i32 {
 
 // ── cmd_corpus_ingest_parent ─────────────────────────────────────────────────
 
-pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, reset_checkpoint: bool, json: bool) -> i32 {
+pub fn cmd_corpus_ingest_parent(
+    path: &Path,
+    dict: &Path,
+    reset_checkpoint: bool,
+    json: bool,
+) -> i32 {
     let db_path = resolve_db_path(dict);
     let report = match nom_corpus::ingest_parent(path, &db_path, reset_checkpoint) {
         Ok(r) => r,
@@ -97,10 +98,7 @@ pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, reset_checkpoint: bool
     };
 
     if json {
-        println!(
-            "{}",
-            serde_json::to_string(&report).unwrap_or_default()
-        );
+        println!("{}", serde_json::to_string(&report).unwrap_or_default());
     } else {
         println!("corpus ingest-parent: {}", report.parent);
         println!("  repos ingested:  {}", report.repos.len());
@@ -125,7 +123,7 @@ pub fn cmd_corpus_ingest_parent(path: &Path, dict: &Path, reset_checkpoint: bool
 
 pub fn cmd_corpus_clone_ingest(url: &str, dict: &Path, json: bool) -> i32 {
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: open dict {}: {e}", db_path.display());
@@ -166,11 +164,14 @@ pub fn cmd_corpus_clone_batch(list_path: &Path, dict: &Path, json: bool) -> i32 
         .map(|l| l.to_string())
         .collect();
     if urls.is_empty() {
-        eprintln!("nom: no URLs in {} (lines starting with # are ignored)", list_path.display());
+        eprintln!(
+            "nom: no URLs in {} (lines starting with # are ignored)",
+            list_path.display()
+        );
         return 1;
     }
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: open dict {}: {e}", db_path.display());
@@ -193,12 +194,16 @@ pub fn cmd_corpus_clone_batch(list_path: &Path, dict: &Path, json: bool) -> i32 
             }
         }
     }
-    if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
+    if report.failed > 0 && report.succeeded == 0 {
+        1
+    } else {
+        0
+    }
 }
 
 pub fn cmd_corpus_ingest_pypi(top: usize, dict: &Path, json: bool) -> i32 {
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: open dict {}: {e}", db_path.display());
@@ -226,7 +231,11 @@ pub fn cmd_corpus_ingest_pypi(top: usize, dict: &Path, json: bool) -> i32 {
             }
         }
     }
-    if report.failed > 0 && report.succeeded == 0 { 1 } else { 0 }
+    if report.failed > 0 && report.succeeded == 0 {
+        1
+    } else {
+        0
+    }
 }
 
 // ── cmd_corpus_register_axis ─────────────────────────────────────────────────
@@ -239,14 +248,14 @@ pub fn cmd_corpus_register_axis(
     dict: &Path,
 ) -> i32 {
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: cannot open dict {}: {e}", db_path.display());
             return 1;
         }
     };
-    match d.register_required_axis(repo_id, scope, axis, cardinality) {
+    match register_required_axis(&d, repo_id, scope, axis, cardinality) {
         Ok(()) => {
             let axis_norm = axis.trim().to_ascii_lowercase();
             println!(
@@ -268,21 +277,19 @@ pub fn cmd_corpus_register_axis(
 /// Idempotent — replays without duplication.
 pub fn cmd_corpus_seed_standard_axes(repo_id: &str, dict: &Path, json: bool) -> i32 {
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: cannot open dict {}: {e}", db_path.display());
             return 1;
         }
     };
-    match d.seed_standard_axes(repo_id) {
+    match seed_standard_axes(&d, repo_id) {
         Ok(seeded) => {
             if json {
                 let payload: Vec<_> = seeded
                     .iter()
-                    .map(|(s, a, c)| {
-                        serde_json::json!({"scope": s, "axis": a, "cardinality": c})
-                    })
+                    .map(|(s, a, c)| serde_json::json!({"scope": s, "axis": a, "cardinality": c}))
                     .collect();
                 println!(
                     "{}",
@@ -292,7 +299,10 @@ pub fn cmd_corpus_seed_standard_axes(repo_id: &str, dict: &Path, json: bool) -> 
                     .unwrap_or_default()
                 );
             } else {
-                println!("seeded {} standard axes for repo_id={repo_id}:", seeded.len());
+                println!(
+                    "seeded {} standard axes for repo_id={repo_id}:",
+                    seeded.len()
+                );
                 for (scope, axis, cardinality) in &seeded {
                     println!("  scope={scope} axis={axis} cardinality={cardinality}");
                 }
@@ -310,17 +320,20 @@ pub fn cmd_corpus_seed_standard_axes(repo_id: &str, dict: &Path, json: bool) -> 
 
 pub fn cmd_corpus_list_axes(scope: &str, repo_id: &str, dict: &Path) -> i32 {
     let db_path = resolve_db_path(dict);
-    let d = match nom_dict::NomDict::open_in_place(&db_path) {
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: cannot open dict {}: {e}", db_path.display());
             return 1;
         }
     };
-    match d.list_required_axes(repo_id, scope) {
+    match list_required_axes(&d, repo_id, scope) {
         Ok(axes) => {
             for ax in &axes {
-                println!("{}\t{}\t{}\t{}", ax.scope, ax.axis, ax.cardinality, ax.registered_at);
+                println!(
+                    "{}\t{}\t{}\t{}",
+                    ax.scope, ax.axis, ax.cardinality, ax.registered_at
+                );
             }
             0
         }

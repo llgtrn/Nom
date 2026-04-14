@@ -125,8 +125,7 @@ the concept authentication_jwt_basic is
     fn sync_nomtu_with_entities_and_composition() {
         let repo_dir = make_tmpdir("nomtu");
         let dict_dir = make_tmpdir("nomtu-d");
-        std::fs::write(repo_dir.join("auth_flow.nomtu"), AUTH_FLOW_NOMTU)
-            .expect("write fixture");
+        std::fs::write(repo_dir.join("auth_flow.nomtu"), AUTH_FLOW_NOMTU).expect("write fixture");
 
         let (code, stdout, stderr) = run_sync(&repo_dir, &dict_dir);
 
@@ -153,7 +152,11 @@ the concept authentication_jwt_basic is
         let jwt_rows = dict
             .find_entities_by_word("validate_token_jwt_hmac_sha256")
             .expect("find jwt");
-        assert_eq!(jwt_rows.len(), 1, "expected 1 row for validate_token_jwt_hmac_sha256");
+        assert_eq!(
+            jwt_rows.len(),
+            1,
+            "expected 1 row for validate_token_jwt_hmac_sha256"
+        );
         let authored = jwt_rows[0].authored_in.as_deref().unwrap_or("");
         assert!(
             authored.ends_with("auth_flow.nomtu"),
@@ -164,7 +167,10 @@ the concept authentication_jwt_basic is
             .find_entities_by_word("auth_flow_compose")
             .expect("find comp");
         assert_eq!(comp_rows.len(), 1, "expected 1 row for auth_flow_compose");
-        assert_eq!(comp_rows[0].kind, "module", "composition kind must be 'module'");
+        assert_eq!(
+            comp_rows[0].kind, "module",
+            "composition kind must be 'module'"
+        );
     }
 
     // ── Test 3: single .nom with one concept ──────────────────────────
@@ -198,11 +204,17 @@ the concept authentication_jwt_basic is
 
         let objectives: Vec<String> =
             serde_json::from_str(&row.objectives).expect("objectives is valid JSON array");
-        assert!(!objectives.is_empty(), "objectives array should not be empty");
+        assert!(
+            !objectives.is_empty(),
+            "objectives array should not be empty"
+        );
 
         let acceptance: Vec<String> =
             serde_json::from_str(&row.acceptance).expect("acceptance is valid JSON array");
-        assert!(!acceptance.is_empty(), "acceptance array should not be empty");
+        assert!(
+            !acceptance.is_empty(),
+            "acceptance array should not be empty"
+        );
     }
 
     // ── Test 4: idempotency ───────────────────────────────────────────
@@ -235,12 +247,10 @@ the concept authentication_jwt_basic is
         let repo_dir = make_tmpdir("skip");
         let dict_dir = make_tmpdir("skip-d");
 
-        let real_fixture =
-            "the function real_business_logic is\n  given input, returns output.\n";
+        let real_fixture = "the function real_business_logic is\n  given input, returns output.\n";
         std::fs::write(repo_dir.join("real.nomtu"), real_fixture).expect("write real");
 
-        let ignored_fixture =
-            "the function ignored_internal_build is\n  given x, returns y.\n";
+        let ignored_fixture = "the function ignored_internal_build is\n  given x, returns y.\n";
         for name in &["target", ".git", "node_modules", "dist", "build"] {
             let dir = repo_dir.join(name);
             std::fs::create_dir_all(&dir).expect("mkdir skip");
@@ -259,6 +269,9 @@ the concept authentication_jwt_basic is
         let ignored = dict
             .find_entities_by_word("ignored_internal_build")
             .expect("find ignored");
-        assert!(ignored.is_empty(), "ignored_internal_build must not be indexed");
+        assert!(
+            ignored.is_empty(),
+            "ignored_internal_build must not be indexed"
+        );
     }
 }

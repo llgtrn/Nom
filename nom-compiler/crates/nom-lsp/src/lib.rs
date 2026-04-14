@@ -360,22 +360,37 @@ fn handle_why_this_nom(id: RequestId, params: ExecuteCommandParams) -> Response 
 /// or unreadable → keyword-only (slice-1 behaviour).
 pub const ENV_GRAMMAR_DB: &str = "NOM_GRAMMAR_DB";
 
-fn handle_completion(
-    id: RequestId,
-    _params: lsp_types::CompletionParams,
-) -> Response {
+fn handle_completion(id: RequestId, _params: lsp_types::CompletionParams) -> Response {
     const KEYWORDS: &[(&str, &str)] = &[
-        ("define", "declare a function: `define X that takes Y and returns Z:`"),
-        ("to", "one-liner: `to greet someone, respond with \"hi, \" + name.`"),
-        ("record", "declare a record: `record Point holds x is a number, y is a number.`"),
-        ("choice", "declare a choice: `choice Color is one of: red, green, blue.`"),
-        ("when", "conditional branch: `when <cond>, <then>. otherwise, <else>.`"),
+        (
+            "define",
+            "declare a function: `define X that takes Y and returns Z:`",
+        ),
+        (
+            "to",
+            "one-liner: `to greet someone, respond with \"hi, \" + name.`",
+        ),
+        (
+            "record",
+            "declare a record: `record Point holds x is a number, y is a number.`",
+        ),
+        (
+            "choice",
+            "declare a choice: `choice Color is one of: red, green, blue.`",
+        ),
+        (
+            "when",
+            "conditional branch: `when <cond>, <then>. otherwise, <else>.`",
+        ),
         ("unless", "negated conditional: `unless <cond>, <then>.`"),
         ("for", "for-each loop: `for each x in xs, <body>.`"),
         ("while", "while loop: `while <cond>, <body>.`"),
         ("require", "precondition contract: `require <predicate>.`"),
         ("ensure", "postcondition contract: `ensure <predicate>.`"),
-        ("throughout", "invariant contract: `throughout <predicate>.`"),
+        (
+            "throughout",
+            "invariant contract: `throughout <predicate>.`",
+        ),
     ];
     let mut items: Vec<CompletionItem> = KEYWORDS
         .iter()
@@ -452,8 +467,13 @@ mod tests {
             caps.hover_provider,
             Some(HoverProviderCapability::Simple(true))
         ));
-        assert!(caps.completion_provider.is_some(), "completion_provider must be on");
-        let ec = caps.execute_command_provider.expect("execute_command_provider must be on");
+        assert!(
+            caps.completion_provider.is_some(),
+            "completion_provider must be on"
+        );
+        let ec = caps
+            .execute_command_provider
+            .expect("execute_command_provider must be on");
         assert!(
             ec.commands.iter().any(|c| c == CMD_WHY_THIS_NOM),
             "nom.whyThisNom must be advertised; got {:?}",
@@ -538,7 +558,10 @@ mod tests {
                     text_document: lsp_types::TextDocumentIdentifier {
                         uri: lsp_types::Url::parse("file:///tmp/fake.nomx").unwrap(),
                     },
-                    position: lsp_types::Position { line: 0, character: 0 },
+                    position: lsp_types::Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
@@ -591,7 +614,9 @@ mod tests {
         // Edition-2024 marks env mutation unsafe; the test runner
         // serializes tests within one binary, so the race window is
         // bounded.
-        unsafe { std::env::set_var(ENV_GRAMMAR_DB, db.to_string_lossy().into_owned()); }
+        unsafe {
+            std::env::set_var(ENV_GRAMMAR_DB, db.to_string_lossy().into_owned());
+        }
 
         let req = Request::new(
             RequestId::from(11),
@@ -601,7 +626,10 @@ mod tests {
                     text_document: lsp_types::TextDocumentIdentifier {
                         uri: lsp_types::Url::parse("file:///tmp/fake.nomx").unwrap(),
                     },
-                    position: lsp_types::Position { line: 0, character: 0 },
+                    position: lsp_types::Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 work_done_progress_params: Default::default(),
                 partial_result_params: Default::default(),
@@ -648,7 +676,10 @@ mod tests {
                     text_document: lsp_types::TextDocumentIdentifier {
                         uri: lsp_types::Url::parse("file:///tmp/fake.nom").unwrap(),
                     },
-                    position: lsp_types::Position { line: 0, character: 0 },
+                    position: lsp_types::Position {
+                        line: 0,
+                        character: 0,
+                    },
                 },
                 work_done_progress_params: Default::default(),
             },
@@ -661,7 +692,10 @@ mod tests {
             HoverContents::Markup(m) => m.value,
             _ => panic!("expected markup hover"),
         };
-        assert!(body.contains(SERVER_NAME), "hover body must name server: {body}");
+        assert!(
+            body.contains(SERVER_NAME),
+            "hover body must name server: {body}"
+        );
     }
 
     #[test]

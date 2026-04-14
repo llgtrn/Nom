@@ -21,7 +21,10 @@
 use std::collections::HashMap;
 
 use nom_ast::{SourceFile, Span, Statement, UseStmt};
-use nom_dict::NomDict;
+use nom_dict::{
+    Dict,
+    dict::{find_by_word, get_entry, get_meta},
+};
 use thiserror::Error;
 
 /// Errors surfaced by [`resolve_use_statements`].
@@ -68,7 +71,7 @@ pub type ResolutionTable = HashMap<String, String>;
 /// they are treated as a no-op (skipped).
 pub fn resolve_use_statements(
     src: &SourceFile,
-    dict: &NomDict,
+    dict: &Dict,
 ) -> Result<ResolutionTable, ResolveError> {
     let mut table: ResolutionTable = HashMap::new();
     for decl in &src.declarations {
@@ -85,7 +88,7 @@ pub fn resolve_use_statements(
 /// the local binding name from the `Single` import kind.
 fn resolve_one_use(
     u: &UseStmt,
-    dict: &NomDict,
+    dict: &Dict,
     table: &mut ResolutionTable,
 ) -> Result<(), ResolveError> {
     let local_name = match &u.imports {
@@ -109,10 +112,8 @@ fn resolve_one_use(
 }
 
 /// Resolve a bare (unpinned) `use <name>` by consulting `dict.find_by_word`.
-fn resolve_bare(name: &str, dict: &NomDict, span: Span) -> Result<String, ResolveError> {
-    let entries = dict
-        .find_by_word(name)
-        .map_err(|e| internal_lookup_error(name, span, &e))?;
+fn resolve_bare(name: &str, dict: &Dict, span: Span) -> Result<String, ResolveError> {
+    let entries = find_by_word(dict, name).map_err(|e| internal_lookup_error(name, span, &e))?;
     match entries.len() {
         0 => Err(ResolveError::NotFound {
             name: name.to_string(),
@@ -124,8 +125,7 @@ fn resolve_bare(name: &str, dict: &NomDict, span: Span) -> Result<String, Resolv
                 .iter()
                 .map(|e| {
                     // meta(key=source_path) may not exist; fall back to empty string.
-                    let source = dict
-                        .get_meta(&e.id)
+                    let source = get_meta(dict, &e.id)
                         .ok()
                         .and_then(|rows| {
                             rows.into_iter()
@@ -148,13 +148,10 @@ fn resolve_bare(name: &str, dict: &NomDict, span: Span) -> Result<String, Resolv
 
 /// Resolve a `#<hex>` pin. Accepts a full 64-char id or any prefix
 /// ≥ 1 char — the DB lookup decides uniqueness.
-fn resolve_hash_pin(hex: &str, dict: &NomDict, span: Span) -> Result<String, ResolveError> {
+fn resolve_hash_pin(hex: &str, dict: &Dict, span: Span) -> Result<String, ResolveError> {
     // Fast path: full-length id lookup via get_entry.
     if hex.len() == 64 {
-        return match dict
-            .get_entry(hex)
-            .map_err(|e| internal_lookup_error(hex, span, &e))?
-        {
+        return match get_entry(dict, hex).map_err(|e| internal_lookup_error(hex, span, &e))? {
             Some(entry) => Ok(entry.id),
             None => Err(ResolveError::UnknownHash {
                 hash: hex.to_string(),
@@ -165,7 +162,7 @@ fn resolve_hash_pin(hex: &str, dict: &NomDict, span: Span) -> Result<String, Res
     // Prefix path: scan ids with a LIKE query.
     let pattern = format!("{hex}%");
     let mut stmt = dict
-        .connection()
+        .entities
         .prepare_cached("SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id")
         .map_err(|e| internal_lookup_error(hex, span, &e))?;
     let ids: Vec<String> = stmt
@@ -202,7 +199,10 @@ fn internal_lookup_error(hex_or_name: &str, span: Span, _e: &impl std::fmt::Debu
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_parser::parse_source;
+    use nom_ast::{
+        Classifier, Declaration, Identifier, SourceFile, Span, Statement, UseImport, UseStmt,
+    };
+    use nom_dict::dict::{add_ref, closure, upsert_entry};
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
     fn make_entry(id: &str, word: &str) -> Entry {
@@ -228,16 +228,49 @@ mod tests {
         }
     }
 
-    fn seeded_dict(entries: &[Entry]) -> NomDict {
-        let d = NomDict::open_in_memory().unwrap();
+    fn seeded_dict(entries: &[Entry]) -> Dict {
+        let d = Dict::open_in_memory().unwrap();
         for e in entries {
-            d.upsert_entry(e).unwrap();
+            upsert_entry(&d, e).unwrap();
         }
         d
     }
 
+    fn ident(name: &str) -> Identifier {
+        Identifier::new(name, Span::default())
+    }
+
     fn parse_src(src: &str) -> SourceFile {
-        parse_source(src).expect("parse ok")
+        let use_line = src
+            .lines()
+            .find_map(|line| line.trim().strip_prefix("use "))
+            .expect("expected a use line in test source")
+            .trim();
+
+        let (hash, name) = if let Some(pinned) = use_line.strip_prefix('#') {
+            let (hash, name) = pinned
+                .split_once('@')
+                .expect("expected #hash@name test syntax");
+            (Some(hash.to_string()), name.to_string())
+        } else {
+            (None, use_line.to_string())
+        };
+
+        SourceFile {
+            path: None,
+            locale: None,
+            declarations: vec![Declaration {
+                classifier: Classifier::System,
+                name: ident("main"),
+                statements: vec![Statement::Use(UseStmt {
+                    path: Vec::new(),
+                    imports: UseImport::Single(ident(&name)),
+                    hash,
+                    span: Span::default(),
+                })],
+                span: Span::default(),
+            }],
+        }
     }
 
     #[test]
@@ -277,7 +310,9 @@ mod tests {
         let sf = parse_src("system main\n  use greet\n");
         let err = resolve_use_statements(&sf, &dict).unwrap_err();
         match err {
-            ResolveError::Ambiguous { name, candidates, .. } => {
+            ResolveError::Ambiguous {
+                name, candidates, ..
+            } => {
                 assert_eq!(name, "greet");
                 assert_eq!(candidates.len(), 2);
                 // ordered by id
@@ -316,14 +351,14 @@ mod tests {
         let a = format!("{}{}", "a", "0".repeat(63));
         let b = format!("{}{}", "b", "0".repeat(63));
         let c = format!("{}{}", "c", "0".repeat(63));
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         for (id, word) in [(&a, "a"), (&b, "b"), (&c, "c")] {
-            dict.upsert_entry(&make_entry(id, word)).unwrap();
+            upsert_entry(&dict, &make_entry(id, word)).unwrap();
         }
-        dict.add_ref(&a, &b).unwrap();
-        dict.add_ref(&b, &c).unwrap();
+        add_ref(&dict, &a, &b).unwrap();
+        add_ref(&dict, &b, &c).unwrap();
 
-        let closure = dict.closure(&a).unwrap();
+        let closure = closure(&dict, &a).unwrap();
         // Set semantics: every node reachable from A, once.
         let set: std::collections::HashSet<_> = closure.iter().cloned().collect();
         assert_eq!(set.len(), 3);

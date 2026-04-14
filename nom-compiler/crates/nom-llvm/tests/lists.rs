@@ -74,9 +74,7 @@ nom listlen
 fn test_list_push_and_get() {
     // Build the AST directly to sidestep parser quirks with bare assignment
     // vs method-call statements at the block level.
-    use nom_ast::{
-        Block, BlockStmt, Expr, FnDef, Identifier, LetStmt, Literal, Span, TypeExpr,
-    };
+    use nom_ast::{Block, BlockStmt, Expr, FnDef, Identifier, LetStmt, Literal, Span, TypeExpr};
 
     fn lst_t() -> TypeExpr {
         TypeExpr::Generic(

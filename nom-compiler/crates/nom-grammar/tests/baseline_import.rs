@@ -25,8 +25,15 @@ fn baseline_sql_imports_into_fresh_db() {
 
     // Concrete canonical numbers — drift catches regressions.
     assert_eq!(counts.kinds, 9, "9 closed kinds in baseline");
-    assert_eq!(counts.quality_names, 20, "10 founding + 10 corpus-driven qualities");
-    assert!(counts.keywords >= 40, "≥40 reserved tokens, got {}", counts.keywords);
+    assert_eq!(
+        counts.quality_names, 20,
+        "10 founding + 10 corpus-driven qualities"
+    );
+    assert!(
+        counts.keywords >= 40,
+        "≥40 reserved tokens, got {}",
+        counts.keywords
+    );
     assert!(
         counts.clause_shapes >= 40,
         "≥40 per-kind clause rows, got {}",
@@ -71,10 +78,28 @@ fn baseline_sql_has_no_foreign_language_names() {
     // Sample of the most-likely-offender names from the no-foreign-names memory.
     // The full list lives in C:\Users\trngh\.claude\projects\...\memory\feedback_no_foreign_language_in_db.md
     for banned in [
-        " rust ", " python ", " java ", " erlang ", " elixir ", " coq ",
-        " ocaml ", " haskell ", " kotlin ", " elm ", " idris ", " dafny ",
-        " pony ", " smalltalk ", " forth ", " perl ", " lua ", " ruby ",
-        " swift ", " scala ", " clojure ", " lisp ",
+        " rust ",
+        " python ",
+        " java ",
+        " erlang ",
+        " elixir ",
+        " coq ",
+        " ocaml ",
+        " haskell ",
+        " kotlin ",
+        " elm ",
+        " idris ",
+        " dafny ",
+        " pony ",
+        " smalltalk ",
+        " forth ",
+        " perl ",
+        " lua ",
+        " ruby ",
+        " swift ",
+        " scala ",
+        " clojure ",
+        " lisp ",
     ] {
         assert!(
             !lower.contains(banned),

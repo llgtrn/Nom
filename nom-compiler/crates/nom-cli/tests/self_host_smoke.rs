@@ -25,8 +25,8 @@ fn self_host_dir() -> PathBuf {
 #[test]
 fn every_self_host_nom_file_parses() {
     let dir = self_host_dir();
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
 
     let mut nom_files: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())

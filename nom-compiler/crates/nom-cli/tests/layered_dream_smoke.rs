@@ -34,37 +34,37 @@ mod tests {
     #[test]
     fn tier_app_json_contains_tier_field() {
         let fake_hash = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
-        let (code, stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "app",
-            "--json",
-        ]);
+        let (code, stdout, stderr) =
+            run_nom(&["app", "dream", fake_hash, "--tier", "app", "--json"]);
         // Non-epic (empty dict) exits 2; that's fine.
         assert!(
             code == 0 || code == 2,
             "expected exit 0 or 2 for tier=app, got {code}\nstdout={stdout}\nstderr={stderr}"
         );
-        let v: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("--json output must be valid JSON");
-        assert_eq!(
-            v["tier"], "app",
-            "JSON must contain tier=app, got: {v}"
-        );
+        let v: serde_json::Value =
+            serde_json::from_str(&stdout).expect("--json output must be valid JSON");
+        assert_eq!(v["tier"], "app", "JSON must contain tier=app, got: {v}");
         // Verify shape of a LayeredDreamReport.
         assert!(v["leaf"].is_object(), "must have a 'leaf' object");
-        assert!(v["child_reports"].is_array(), "must have 'child_reports' array");
-        assert!(v["pareto_front"].is_array(), "must have 'pareto_front' array");
+        assert!(
+            v["child_reports"].is_array(),
+            "must have 'child_reports' array"
+        );
+        assert!(
+            v["pareto_front"].is_array(),
+            "must have 'pareto_front' array"
+        );
     }
 
     /// `nom app dream <hash> --tier concept` (no --target-id) → exit 1 + error message.
     #[test]
     fn tier_concept_without_target_id_exits_1() {
         let fake_hash = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
-        let (code, _stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "concept",
-        ]);
-        assert_eq!(code, 1, "expected exit 1 for missing --target-id\nstderr={stderr}");
+        let (code, _stdout, stderr) = run_nom(&["app", "dream", fake_hash, "--tier", "concept"]);
+        assert_eq!(
+            code, 1,
+            "expected exit 1 for missing --target-id\nstderr={stderr}"
+        );
         assert!(
             stderr.contains("--target-id required for tier=concept"),
             "expected --target-id error in stderr, got: {stderr}"
@@ -76,9 +76,13 @@ mod tests {
     fn tier_module_exits_2_with_not_yet_implemented() {
         let fake_hash = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
         let (code, _stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "module",
-            "--target-id", fake_hash,
+            "app",
+            "dream",
+            fake_hash,
+            "--tier",
+            "module",
+            "--target-id",
+            fake_hash,
         ]);
         assert_eq!(code, 2, "expected exit 2 for module tier\nstderr={stderr}");
         assert!(
@@ -95,10 +99,7 @@ mod tests {
     #[test]
     fn tier_bogus_exits_1_with_unknown_tier_error() {
         let fake_hash = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
-        let (code, _stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "bogus",
-        ]);
+        let (code, _stdout, stderr) = run_nom(&["app", "dream", fake_hash, "--tier", "bogus"]);
         assert_eq!(code, 1, "expected exit 1 for unknown tier\nstderr={stderr}");
         assert!(
             stderr.contains("unknown dream tier"),
@@ -124,22 +125,24 @@ mod tests {
     fn repo_id_with_unknown_repo_returns_empty_child_reports() {
         let fake_hash = "eeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeeee";
         let (code, stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "app",
-            "--repo-id", "nonexistent_repo_xyz",
+            "app",
+            "dream",
+            fake_hash,
+            "--tier",
+            "app",
+            "--repo-id",
+            "nonexistent_repo_xyz",
             "--json",
         ]);
         assert!(
             code == 0 || code == 2,
             "expected exit 0 or 2 for tier=app with unknown repo-id, got {code}\nstdout={stdout}\nstderr={stderr}"
         );
-        let v: serde_json::Value = serde_json::from_str(&stdout)
-            .expect("--json output must be valid JSON");
-        assert_eq!(
-            v["tier"], "app",
-            "JSON must contain tier=app, got: {v}"
-        );
-        let child_reports = v["child_reports"].as_array()
+        let v: serde_json::Value =
+            serde_json::from_str(&stdout).expect("--json output must be valid JSON");
+        assert_eq!(v["tier"], "app", "JSON must contain tier=app, got: {v}");
+        let child_reports = v["child_reports"]
+            .as_array()
             .expect("child_reports must be an array");
         assert!(
             child_reports.is_empty(),
@@ -178,11 +181,8 @@ mod tests {
     #[test]
     fn pareto_front_flag_prints_pareto_section() {
         let fake_hash = "ffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff";
-        let (code, stdout, stderr) = run_nom(&[
-            "app", "dream", fake_hash,
-            "--tier", "app",
-            "--pareto-front",
-        ]);
+        let (code, stdout, stderr) =
+            run_nom(&["app", "dream", fake_hash, "--tier", "app", "--pareto-front"]);
         assert_eq!(
             code, 2,
             "expected exit 2 (non-epic with empty dict), got {code}\nstdout={stdout}\nstderr={stderr}"

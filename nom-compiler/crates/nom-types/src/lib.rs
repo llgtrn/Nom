@@ -969,11 +969,8 @@ pub mod self_host_tags {
     pub const EDGE_KIND_CONSTRAINS: &str = "constrains";
 
     /// All three edge-kind tags the planner emits.
-    pub const EDGE_KINDS_ALL: &[&str] = &[
-        EDGE_KIND_CALLS,
-        EDGE_KIND_DEPENDS_ON,
-        EDGE_KIND_CONSTRAINS,
-    ];
+    pub const EDGE_KINDS_ALL: &[&str] =
+        &[EDGE_KIND_CALLS, EDGE_KIND_DEPENDS_ON, EDGE_KIND_CONSTRAINS];
 
     // codegen.nom
     pub const RUST_TY_I64: &str = "i64";
@@ -1186,7 +1183,11 @@ mod v2_tests {
 
     #[test]
     fn entry_status_roundtrip() {
-        for s in [EntryStatus::Complete, EntryStatus::Partial, EntryStatus::Opaque] {
+        for s in [
+            EntryStatus::Complete,
+            EntryStatus::Partial,
+            EntryStatus::Opaque,
+        ] {
             assert_eq!(EntryStatus::from_str(s.as_str()), s);
         }
     }
@@ -1232,6 +1233,11 @@ mod v2_tests {
     #[test]
     fn contract_default_is_empty() {
         let c = Contract::default();
-        assert!(c.input_type.is_none() && c.output_type.is_none() && c.pre.is_none() && c.post.is_none());
+        assert!(
+            c.input_type.is_none()
+                && c.output_type.is_none()
+                && c.pre.is_none()
+                && c.post.is_none()
+        );
     }
 }

@@ -21,17 +21,24 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
 
     // nom_print_int(value: i64) -> void
     let print_int_type = void_type.fn_type(&[i64_type.into()], false);
-    let print_int_fn = mc.module.add_function("nom_print_int", print_int_type, None);
+    let print_int_fn = mc
+        .module
+        .add_function("nom_print_int", print_int_type, None);
     mc.functions.insert("nom_print_int".into(), print_int_fn);
 
     // nom_print_float(value: f64) -> void
     let print_float_type = void_type.fn_type(&[f64_type.into()], false);
-    let print_float_fn = mc.module.add_function("nom_print_float", print_float_type, None);
-    mc.functions.insert("nom_print_float".into(), print_float_fn);
+    let print_float_fn = mc
+        .module
+        .add_function("nom_print_float", print_float_type, None);
+    mc.functions
+        .insert("nom_print_float".into(), print_float_fn);
 
     // nom_print_bool(value: i8) -> void
     let print_bool_type = void_type.fn_type(&[i8_type.into()], false);
-    let print_bool_fn = mc.module.add_function("nom_print_bool", print_bool_type, None);
+    let print_bool_fn = mc
+        .module
+        .add_function("nom_print_bool", print_bool_type, None);
     mc.functions.insert("nom_print_bool".into(), print_bool_fn);
 
     // nom_alloc(size: i64) -> *mut i8
@@ -48,31 +55,50 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
     // Returns the NomString struct by value.
     let nom_str_ty = mc.nom_string_type();
     let string_concat_type = nom_str_ty.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], false);
-    let string_concat_fn = mc.module.add_function("nom_string_concat", string_concat_type, None);
-    mc.functions.insert("nom_string_concat".into(), string_concat_fn);
+    let string_concat_fn = mc
+        .module
+        .add_function("nom_string_concat", string_concat_type, None);
+    mc.functions
+        .insert("nom_string_concat".into(), string_concat_fn);
 
     // nom_string_eq(a: *const NomString, b: *const NomString) -> i32
     let string_eq_type = i32_type.fn_type(&[i8_ptr_type.into(), i8_ptr_type.into()], false);
-    let string_eq_fn = mc.module.add_function("nom_string_eq", string_eq_type, None);
+    let string_eq_fn = mc
+        .module
+        .add_function("nom_string_eq", string_eq_type, None);
     mc.functions.insert("nom_string_eq".into(), string_eq_fn);
 
     // nom_string_slice(s: *const NomString, lo: i64, hi: i64) -> NomString
-    let string_slice_type =
-        nom_str_ty.fn_type(&[i8_ptr_type.into(), i64_type.into(), i64_type.into()], false);
-    let string_slice_fn = mc.module.add_function("nom_string_slice", string_slice_type, None);
-    mc.functions.insert("nom_string_slice".into(), string_slice_fn);
+    let string_slice_type = nom_str_ty.fn_type(
+        &[i8_ptr_type.into(), i64_type.into(), i64_type.into()],
+        false,
+    );
+    let string_slice_fn = mc
+        .module
+        .add_function("nom_string_slice", string_slice_type, None);
+    mc.functions
+        .insert("nom_string_slice".into(), string_slice_fn);
 
     // nom_read_file(path: *const i8, path_len: i64) -> NomString (ptr)
     let read_file_type = i8_ptr_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
-    let read_file_fn = mc.module.add_function("nom_read_file", read_file_type, None);
+    let read_file_fn = mc
+        .module
+        .add_function("nom_read_file", read_file_type, None);
     mc.functions.insert("nom_read_file".into(), read_file_fn);
 
     // nom_write_file(path: *const i8, path_len: i64, data: *const i8, data_len: i64) -> i32
     let write_file_type = i32_type.fn_type(
-        &[i8_ptr_type.into(), i64_type.into(), i8_ptr_type.into(), i64_type.into()],
+        &[
+            i8_ptr_type.into(),
+            i64_type.into(),
+            i8_ptr_type.into(),
+            i64_type.into(),
+        ],
         false,
     );
-    let write_file_fn = mc.module.add_function("nom_write_file", write_file_type, None);
+    let write_file_fn = mc
+        .module
+        .add_function("nom_write_file", write_file_type, None);
     mc.functions.insert("nom_write_file".into(), write_file_fn);
 
     // nom_panic(msg: *const i8, msg_len: i64) -> void
@@ -82,13 +108,18 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
 
     // nom_parse_int(s: *const NomString) -> i64
     let parse_int_type = i64_type.fn_type(&[i8_ptr_type.into()], false);
-    let parse_int_fn = mc.module.add_function("nom_parse_int", parse_int_type, None);
+    let parse_int_fn = mc
+        .module
+        .add_function("nom_parse_int", parse_int_type, None);
     mc.functions.insert("nom_parse_int".into(), parse_int_fn);
 
     // nom_parse_float(s: *const NomString) -> f64
     let parse_float_type = f64_type.fn_type(&[i8_ptr_type.into()], false);
-    let parse_float_fn = mc.module.add_function("nom_parse_float", parse_float_type, None);
-    mc.functions.insert("nom_parse_float".into(), parse_float_fn);
+    let parse_float_fn = mc
+        .module
+        .add_function("nom_parse_float", parse_float_type, None);
+    mc.functions
+        .insert("nom_parse_float".into(), parse_float_fn);
 
     // nom_chr(byte: i64) -> NomString (struct by value)
     let chr_type = nom_str_ty.fn_type(&[i64_type.into()], false);
@@ -107,15 +138,20 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
 
     // nom_list_with_capacity(elem_size: i64, cap: i64) -> NomList
     let list_wc_type = nom_list_ty.fn_type(&[i64_type.into(), i64_type.into()], false);
-    let list_wc_fn = mc.module.add_function("nom_list_with_capacity", list_wc_type, None);
-    mc.functions.insert("nom_list_with_capacity".into(), list_wc_fn);
+    let list_wc_fn = mc
+        .module
+        .add_function("nom_list_with_capacity", list_wc_type, None);
+    mc.functions
+        .insert("nom_list_with_capacity".into(), list_wc_fn);
 
     // nom_list_push(list: *mut NomList, elem: *const i8, elem_size: i64) -> void
     let list_push_type = void_type.fn_type(
         &[i8_ptr_type.into(), i8_ptr_type.into(), i64_type.into()],
         false,
     );
-    let list_push_fn = mc.module.add_function("nom_list_push", list_push_type, None);
+    let list_push_fn = mc
+        .module
+        .add_function("nom_list_push", list_push_type, None);
     mc.functions.insert("nom_list_push".into(), list_push_fn);
 
     // nom_list_get(list: *const NomList, idx: i64, elem_size: i64) -> *mut i8
@@ -133,6 +169,9 @@ pub fn declare_runtime_functions(mc: &mut ModuleCompiler) {
 
     // nom_list_free_sized(list: *mut NomList, elem_size: i64) -> void
     let list_free_type = void_type.fn_type(&[i8_ptr_type.into(), i64_type.into()], false);
-    let list_free_fn = mc.module.add_function("nom_list_free_sized", list_free_type, None);
-    mc.functions.insert("nom_list_free_sized".into(), list_free_fn);
+    let list_free_fn = mc
+        .module
+        .add_function("nom_list_free_sized", list_free_type, None);
+    mc.functions
+        .insert("nom_list_free_sized".into(), list_free_fn);
 }

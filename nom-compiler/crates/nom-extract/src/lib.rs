@@ -77,7 +77,15 @@ pub fn supported_languages() -> &'static [&'static str] {
 
 /// Languages with tree-sitter grammars (parsing + extraction works for these).
 pub fn parseable_languages() -> &'static [&'static str] {
-    let mut langs = vec!["rust", "typescript", "javascript", "python", "c", "cpp", "go"];
+    let mut langs = vec![
+        "rust",
+        "typescript",
+        "javascript",
+        "python",
+        "c",
+        "cpp",
+        "go",
+    ];
 
     #[cfg(feature = "tree-sitter-java")]
     langs.push("java");
@@ -248,7 +256,6 @@ pub fn language_for(name: &str) -> Result<Language> {
         "groovy" => Ok(tree_sitter_groovy::LANGUAGE.into()),
         // svelte: removed, tree-sitter-svelte 0.10 uses old tree-sitter API
         // vue: removed, tree-sitter-vue 0.0.3 uses old tree-sitter API
-
         other => bail!("no tree-sitter grammar for language: {other}"),
     }
 }

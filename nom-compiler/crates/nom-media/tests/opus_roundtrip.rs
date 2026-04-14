@@ -9,7 +9,6 @@
 ///     the encoder is deterministic at fixed settings).
 ///  4. `ingest_opus` rejects garbage input.
 ///  5. `ingest_opus` body_kind constant is "opus" and is a known kind.
-
 use nom_media::{ingest_opus, verify_opus_roundtrip};
 use nom_types::body_kind;
 

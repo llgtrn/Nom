@@ -101,7 +101,10 @@ mod tests {
         let e = mk_entry("add", "function", Some("deadbeef"));
         let uid = compute_node_uid(&e);
         assert_eq!(uid.len(), 64);
-        assert!(uid.chars().all(|c| c.is_ascii_hexdigit() && !c.is_uppercase()));
+        assert!(
+            uid.chars()
+                .all(|c| c.is_ascii_hexdigit() && !c.is_uppercase())
+        );
     }
 
     #[test]
@@ -136,8 +139,7 @@ mod tests {
     fn uid_with_no_body_hashes_sentinel_stably() {
         let no_body1 = compute_node_uid(&mk_entry("x", "function", None));
         let no_body2 = compute_node_uid(&mk_entry("x", "function", None));
-        let with_body =
-            compute_node_uid(&mk_entry("x", "function", Some(NO_BODY_SENTINEL)));
+        let with_body = compute_node_uid(&mk_entry("x", "function", Some(NO_BODY_SENTINEL)));
         // Two no-body entries produce the same uid …
         assert_eq!(no_body1, no_body2);
         // … and that uid equals an entry explicitly hashing the sentinel.

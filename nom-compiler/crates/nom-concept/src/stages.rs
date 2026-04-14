@@ -40,7 +40,7 @@
 use crate::lex::{Spanned, Tok};
 use crate::{
     CompositionDecl, ConceptDecl, ContractClause, EffectClause, EffectValence, EntityDecl,
-    EntityRef, IndexClause, NomFile, NomtuFile, NomtuItem, KINDS,
+    EntityRef, IndexClause, KINDS, NomFile, NomtuFile, NomtuItem,
 };
 
 /// Which stage of the annotator pipeline a failure came from.
@@ -70,24 +70,24 @@ impl StageId {
     /// returns the `S<N>` prefix.
     pub fn code(&self) -> &'static str {
         match self {
-            StageId::Tokenize     => "S1",
+            StageId::Tokenize => "S1",
             StageId::KindClassify => "S2",
             StageId::ShapeExtract => "S3",
             StageId::ContractBind => "S4",
-            StageId::EffectBind   => "S5",
-            StageId::RefResolve   => "S6",
+            StageId::EffectBind => "S5",
+            StageId::RefResolve => "S6",
         }
     }
 
     /// Long-form stage name for authoring-tool UIs. Stable across versions.
     pub fn label(&self) -> &'static str {
         match self {
-            StageId::Tokenize     => "tokenize",
+            StageId::Tokenize => "tokenize",
             StageId::KindClassify => "kind_classify",
             StageId::ShapeExtract => "shape_extract",
             StageId::ContractBind => "contract_bind",
-            StageId::EffectBind   => "effect_bind",
-            StageId::RefResolve   => "ref_resolve",
+            StageId::EffectBind => "effect_bind",
+            StageId::RefResolve => "ref_resolve",
         }
     }
 }
@@ -150,7 +150,9 @@ pub fn stage1_tokenize_with_synonyms(
                             "multitoken-synonym",
                             format!(
                                 "synonym '{}' maps to canonical keyword '{}' which lexes to {} tokens; canonical must be a single keyword",
-                                surface, canonical, canon_toks.len()
+                                surface,
+                                canonical,
+                                canon_toks.len()
                             ),
                         ));
                     }
@@ -174,7 +176,10 @@ pub fn stage1_tokenize_with_synonyms(
             out.push(spanned);
         }
     }
-    Ok(TokenStream { toks: out, source_len: raw.source_len })
+    Ok(TokenStream {
+        toks: out,
+        source_len: raw.source_len,
+    })
 }
 
 /// Stage-attributed failure variant.  Carries the stage id plus a
@@ -198,7 +203,12 @@ pub struct StageFailure {
 
 impl StageFailure {
     /// Build a failure tagged with the given stage + reason.
-    pub fn new(stage: StageId, position: usize, reason: &'static str, detail: impl Into<String>) -> Self {
+    pub fn new(
+        stage: StageId,
+        position: usize,
+        reason: &'static str,
+        detail: impl Into<String>,
+    ) -> Self {
         Self {
             stage,
             position,
@@ -282,13 +292,17 @@ pub fn stage2_kind_classify(stream: &TokenStream) -> Result<ClassifiedStream, St
 
                 // Next must be Tok::Kind(k).
                 let kind = match toks.get(i) {
-                    None => return Err(StageFailure::new(
-                        StageId::KindClassify,
-                        toks.last().map(|t| t.pos).unwrap_or(0),
-                        "truncated-block-header",
-                        "source ended after `the` without a kind noun",
-                    )),
-                    Some(Spanned { tok: Tok::Kind(k), .. }) => {
+                    None => {
+                        return Err(StageFailure::new(
+                            StageId::KindClassify,
+                            toks.last().map(|t| t.pos).unwrap_or(0),
+                            "truncated-block-header",
+                            "source ended after `the` without a kind noun",
+                        ));
+                    }
+                    Some(Spanned {
+                        tok: Tok::Kind(k), ..
+                    }) => {
                         if !KINDS.contains(&k.as_str()) {
                             return Err(StageFailure::new(
                                 StageId::KindClassify,
@@ -299,7 +313,10 @@ pub fn stage2_kind_classify(stream: &TokenStream) -> Result<ClassifiedStream, St
                         }
                         k.clone()
                     }
-                    Some(Spanned { tok: Tok::Word(w), pos }) => {
+                    Some(Spanned {
+                        tok: Tok::Word(w),
+                        pos,
+                    }) => {
                         return Err(StageFailure::new(
                             StageId::KindClassify,
                             *pos,
@@ -307,30 +324,38 @@ pub fn stage2_kind_classify(stream: &TokenStream) -> Result<ClassifiedStream, St
                             format!("`the {w}` — {w} is not in the closed kind set"),
                         ));
                     }
-                    Some(other) => return Err(StageFailure::new(
-                        StageId::KindClassify,
-                        other.pos,
-                        "expected-kind-noun",
-                        "top-level `the` must be followed by a kind noun",
-                    )),
+                    Some(other) => {
+                        return Err(StageFailure::new(
+                            StageId::KindClassify,
+                            other.pos,
+                            "expected-kind-noun",
+                            "top-level `the` must be followed by a kind noun",
+                        ));
+                    }
                 };
                 i += 1;
 
                 // Next must be Tok::Word(name).
                 let name = match toks.get(i) {
-                    None => return Err(StageFailure::new(
-                        StageId::KindClassify,
-                        toks.last().map(|t| t.pos).unwrap_or(0),
-                        "truncated-block-header",
-                        format!("source ended after `the {kind}` without a name"),
-                    )),
-                    Some(Spanned { tok: Tok::Word(w), .. }) => w.clone(),
-                    Some(other) => return Err(StageFailure::new(
-                        StageId::KindClassify,
-                        other.pos,
-                        "expected-block-name",
-                        format!("`the {kind}` must be followed by an identifier"),
-                    )),
+                    None => {
+                        return Err(StageFailure::new(
+                            StageId::KindClassify,
+                            toks.last().map(|t| t.pos).unwrap_or(0),
+                            "truncated-block-header",
+                            format!("source ended after `the {kind}` without a name"),
+                        ));
+                    }
+                    Some(Spanned {
+                        tok: Tok::Word(w), ..
+                    }) => w.clone(),
+                    Some(other) => {
+                        return Err(StageFailure::new(
+                            StageId::KindClassify,
+                            other.pos,
+                            "expected-block-name",
+                            format!("`the {kind}` must be followed by an identifier"),
+                        ));
+                    }
                 };
                 i += 1;
 
@@ -460,7 +485,9 @@ pub fn stage3_shape_extract(classified: &ClassifiedStream) -> Result<ShapedStrea
     for b in &classified.blocks {
         let body_slice = &toks[b.start_tok..b.end_tok];
         // Find `Intended` token index (relative to body_slice).
-        let intended_idx = body_slice.iter().position(|s| matches!(s.tok, Tok::Intended));
+        let intended_idx = body_slice
+            .iter()
+            .position(|s| matches!(s.tok, Tok::Intended));
         let intended_rel = match intended_idx {
             Some(i) => i,
             None => {
@@ -511,7 +538,10 @@ pub fn stage3_shape_extract(classified: &ClassifiedStream) -> Result<ShapedStrea
                     StageId::ShapeExtract,
                     body_slice.last().map(|s| s.pos).unwrap_or(b.start_byte),
                     "unterminated-intent",
-                    format!("`intended` at end of block `{}` with no following `to`", b.name),
+                    format!(
+                        "`intended` at end of block `{}` with no following `to`",
+                        b.name
+                    ),
                 ));
             }
         }
@@ -527,10 +557,7 @@ pub fn stage3_shape_extract(classified: &ClassifiedStream) -> Result<ShapedStrea
             None => {
                 return Err(StageFailure::new(
                     StageId::ShapeExtract,
-                    body_slice
-                        .last()
-                        .map(|s| s.pos)
-                        .unwrap_or(b.start_byte),
+                    body_slice.last().map(|s| s.pos).unwrap_or(b.start_byte),
                     "unterminated-intent",
                     format!("`intended to …` has no closing `.` in block `{}`", b.name),
                 ));
@@ -638,7 +665,7 @@ pub fn stage4_contract_bind(shaped: &ShapedStream) -> Result<ContractedStream, S
 
         while i < body_slice.len() {
             let is_requires = matches!(body_slice[i].tok, Tok::Requires);
-            let is_ensures  = matches!(body_slice[i].tok, Tok::Ensures);
+            let is_ensures = matches!(body_slice[i].tok, Tok::Ensures);
             if !is_requires && !is_ensures {
                 i += 1;
                 continue;
@@ -809,7 +836,10 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                     StageId::EffectBind,
                     verb_pos,
                     "unterminated-effect",
-                    format!("`{verb_name}` clause in block `{}` has no closing `.`", b.name),
+                    format!(
+                        "`{verb_name}` clause in block `{}` has no closing `.`",
+                        b.name
+                    ),
                 ));
             }
             if names.is_empty() {
@@ -817,7 +847,10 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                     StageId::EffectBind,
                     verb_pos,
                     "empty-effect",
-                    format!("`{verb_name}` clause in block `{}` has no effect names", b.name),
+                    format!(
+                        "`{verb_name}` clause in block `{}` has no effect names",
+                        b.name
+                    ),
                 ));
             }
             effects.push(EffectClause {
@@ -947,7 +980,10 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
 /// Each segment between `Composes`/`Then` and the next separator is
 /// parsed by the same partial-ref extractor used for `uses` clauses.
 fn extract_composition_refs(body_slice: &[Spanned]) -> Vec<EntityRef> {
-    let composes_idx = match body_slice.iter().position(|s| matches!(s.tok, Tok::Composes)) {
+    let composes_idx = match body_slice
+        .iter()
+        .position(|s| matches!(s.tok, Tok::Composes))
+    {
         Some(i) => i,
         None => return Vec::new(),
     };
@@ -965,8 +1001,16 @@ fn extract_composition_refs(body_slice: &[Spanned]) -> Vec<EntityRef> {
                 seg_start = i + 1;
                 i += 1;
             }
-            Tok::Dot | Tok::Requires | Tok::Ensures | Tok::Favor | Tok::Benefit | Tok::Hazard
-            | Tok::With | Tok::Uses | Tok::Exposes | Tok::Intended => {
+            Tok::Dot
+            | Tok::Requires
+            | Tok::Ensures
+            | Tok::Favor
+            | Tok::Benefit
+            | Tok::Hazard
+            | Tok::With
+            | Tok::Uses
+            | Tok::Exposes
+            | Tok::Intended => {
                 flush(&body_slice[seg_start..i], &mut out);
                 return out;
             }
@@ -999,8 +1043,15 @@ fn extract_entity_signature(body_slice: &[Spanned]) -> String {
     let mut out = Vec::new();
     for s in &body_slice[is_idx + 1..] {
         match &s.tok {
-            Tok::Dot | Tok::Requires | Tok::Ensures | Tok::Benefit | Tok::Hazard
-            | Tok::Favor | Tok::Uses | Tok::Exposes | Tok::Intended => break,
+            Tok::Dot
+            | Tok::Requires
+            | Tok::Ensures
+            | Tok::Benefit
+            | Tok::Hazard
+            | Tok::Favor
+            | Tok::Uses
+            | Tok::Exposes
+            | Tok::Intended => break,
             other => {
                 let piece = tok_prose_repr(other);
                 if !piece.is_empty() {
@@ -1113,9 +1164,16 @@ fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
 
     // Optional `matching "phrase"` clause.
     let mut cursor = after_idx;
-    if let Some(Spanned { tok: Tok::Matching, .. }) = clause.get(cursor) {
+    if let Some(Spanned {
+        tok: Tok::Matching, ..
+    }) = clause.get(cursor)
+    {
         cursor += 1;
-        if let Some(Spanned { tok: Tok::Quoted(q), .. }) = clause.get(cursor) {
+        if let Some(Spanned {
+            tok: Tok::Quoted(q),
+            ..
+        }) = clause.get(cursor)
+        {
             base.matching = Some(q.clone());
             cursor += 1;
         }
@@ -1125,9 +1183,17 @@ fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
     if base.typed_slot {
         if let Some(Spanned { tok: Tok::With, .. }) = clause.get(cursor) {
             if let (
-                Some(Spanned { tok: Tok::AtLeast, .. }),
-                Some(Spanned { tok: Tok::NumberLit(n), .. }),
-                Some(Spanned { tok: Tok::Word(conf), .. }),
+                Some(Spanned {
+                    tok: Tok::AtLeast, ..
+                }),
+                Some(Spanned {
+                    tok: Tok::NumberLit(n),
+                    ..
+                }),
+                Some(Spanned {
+                    tok: Tok::Word(conf),
+                    ..
+                }),
             ) = (
                 clause.get(cursor + 1),
                 clause.get(cursor + 2),
@@ -1292,18 +1358,17 @@ pub fn stage5b_favor_validate(
 /// parser refuses to validate the block — surfacing the un-populated
 /// state with NOMX-S3-empty-clause-shapes-for-kind.
 ///
-/// This first-cut Phase B3 ships only the empty-registry guard. The
-/// per-required-clause-presence check (every is_required=1 clause
-/// must appear in the body) lives in a future cross-stage validator
-/// once S4/S5 report the full clause inventory back.
+/// This Phase B3 guard also enforces that every `is_required = 1`
+/// clause declared in `grammar.sqlite.clause_shapes` is present in the
+/// block body before the pipeline advances to downstream stages.
 pub fn stage3_shape_extract_with_grammar(
     classified: &ClassifiedStream,
     grammar: &rusqlite::Connection,
 ) -> Result<ShapedStream, StageFailure> {
     // Pre-flight: every block's kind has at least one clause_shapes row.
     for block in &classified.blocks {
-        let n = nom_grammar::clause_shapes_row_count_for_kind(grammar, &block.kind)
-            .map_err(|e| {
+        let n =
+            nom_grammar::clause_shapes_row_count_for_kind(grammar, &block.kind).map_err(|e| {
                 StageFailure::new(
                     StageId::ShapeExtract,
                     block.start_byte,
@@ -1323,9 +1388,63 @@ pub fn stage3_shape_extract_with_grammar(
                 ),
             ));
         }
+
+        let required =
+            nom_grammar::required_clauses_for_kind(grammar, &block.kind).map_err(|e| {
+                StageFailure::new(
+                    StageId::ShapeExtract,
+                    block.start_byte,
+                    "required-clauses-query-failed",
+                    format!("DB query against clause_shapes failed: {e}"),
+                )
+            })?;
+        let present = present_clause_names(&classified.toks[block.start_tok..block.end_tok]);
+        if let Some(missing) = required
+            .into_iter()
+            .find(|clause| !present.iter().any(|present| present == clause))
+        {
+            return Err(StageFailure::new(
+                StageId::ShapeExtract,
+                block.start_byte,
+                "missing-required-clause",
+                format!(
+                    "kind `{}` block `{}` is missing required clause `{}`",
+                    block.kind, block.name, missing
+                ),
+            ));
+        }
     }
     // Run the existing S3 to extract intent + body spans per block.
     stage3_shape_extract(classified)
+}
+
+fn present_clause_names(body: &[Spanned]) -> Vec<String> {
+    let mut clauses = Vec::new();
+    for tok in body {
+        let Some(name) = clause_name_for_token(&tok.tok) else {
+            continue;
+        };
+        if !clauses.iter().any(|seen| seen == name) {
+            clauses.push(name.to_string());
+        }
+    }
+    clauses
+}
+
+fn clause_name_for_token(tok: &Tok) -> Option<&'static str> {
+    match tok {
+        Tok::Intended => Some("intended"),
+        Tok::Requires => Some("requires"),
+        Tok::Ensures => Some("ensures"),
+        Tok::Benefit => Some("benefit"),
+        Tok::Hazard => Some("hazard"),
+        Tok::Uses => Some("uses"),
+        Tok::Extends => Some("extends"),
+        Tok::Exposes => Some("exposes"),
+        Tok::Favor => Some("favor"),
+        Tok::Composes => Some("composes"),
+        _ => None,
+    }
 }
 
 /// S2 with grammar-driven kind validation per Phase B2 blueprint.
@@ -1406,15 +1525,26 @@ mod tests {
     #[test]
     fn a4b01_stage_codes_are_unique() {
         let all = [
-            StageId::Tokenize, StageId::KindClassify, StageId::ShapeExtract,
-            StageId::ContractBind, StageId::EffectBind, StageId::RefResolve,
+            StageId::Tokenize,
+            StageId::KindClassify,
+            StageId::ShapeExtract,
+            StageId::ContractBind,
+            StageId::EffectBind,
+            StageId::RefResolve,
         ];
         let codes: Vec<&str> = all.iter().map(|s| s.code()).collect();
         assert_eq!(codes, ["S1", "S2", "S3", "S4", "S5", "S6"]);
         let labels: Vec<&str> = all.iter().map(|s| s.label()).collect();
         assert_eq!(
             labels,
-            ["tokenize", "kind_classify", "shape_extract", "contract_bind", "effect_bind", "ref_resolve"]
+            [
+                "tokenize",
+                "kind_classify",
+                "shape_extract",
+                "contract_bind",
+                "effect_bind",
+                "ref_resolve"
+            ]
         );
     }
 
@@ -1571,7 +1701,10 @@ the function f is given x, returns y.
         let shaped = stage3_shape_extract(&classified).expect("S3 must accept");
         assert_eq!(shaped.blocks.len(), 1);
         assert_eq!(shaped.blocks[0].kind, "function");
-        assert_eq!(shaped.blocks[0].intent, "", "entity without intent has empty intent");
+        assert_eq!(
+            shaped.blocks[0].intent, "",
+            "entity without intent has empty intent"
+        );
     }
 
     /// a4c31: CONCEPT without `intended to` is still rejected —
@@ -1807,8 +1940,7 @@ the concept beta is
         let legacy = parse_nom(src).expect("legacy parser must succeed");
         let pipeline = run_pipeline(src).expect("pipeline must succeed");
 
-        let legacy_names: Vec<String> =
-            legacy.concepts.iter().map(|c| c.name.clone()).collect();
+        let legacy_names: Vec<String> = legacy.concepts.iter().map(|c| c.name.clone()).collect();
         let pipeline_names: Vec<String> = match pipeline {
             PipelineOutput::Nom(f) => f.concepts.iter().map(|c| c.name.clone()).collect(),
             PipelineOutput::Nomtu(_) => panic!("expected Nom output"),
@@ -2016,7 +2148,8 @@ the function write_file is
         match out {
             PipelineOutput::Nomtu(f) => {
                 let j = serde_json::to_string(&f).expect("NomtuFile serializes");
-                let back: crate::NomtuFile = serde_json::from_str(&j).expect("NomtuFile deserializes");
+                let back: crate::NomtuFile =
+                    serde_json::from_str(&j).expect("NomtuFile deserializes");
                 assert_eq!(f, back, "NomtuFile must round-trip unchanged");
             }
             _ => panic!("expected Nomtu"),
@@ -2079,10 +2212,16 @@ the function write_file is
 
         assert_eq!(legacy_composes_len, 3, "legacy expected 3 refs");
         assert_eq!(pipeline_composes.len(), 3, "pipeline expected 3 refs");
-        for (i, expected_match) in ["parse input", "run step", "emit result"].iter().enumerate() {
+        for (i, expected_match) in ["parse input", "run step", "emit result"]
+            .iter()
+            .enumerate()
+        {
             assert!(pipeline_composes[i].typed_slot);
             assert_eq!(pipeline_composes[i].kind.as_deref(), Some("function"));
-            assert_eq!(pipeline_composes[i].matching.as_deref(), Some(*expected_match));
+            assert_eq!(
+                pipeline_composes[i].matching.as_deref(),
+                Some(*expected_match)
+            );
         }
     }
 
@@ -2288,7 +2427,9 @@ the concept routing is
                 if let Some(IndexClause::Uses(refs)) = c.index.first() {
                     if let Some(r) = refs.first() {
                         // range violation → threshold not populated
-                        assert!(r.confidence_threshold.is_none() || r.confidence_threshold != Some(1.5));
+                        assert!(
+                            r.confidence_threshold.is_none() || r.confidence_threshold != Some(1.5)
+                        );
                     }
                 }
             }
@@ -2356,8 +2497,7 @@ the concept routing is
             PipelineOutput::Nom(f) => f.concepts.iter().map(|c| c.index.len()).collect(),
             _ => panic!("expected Nom"),
         };
-        let legacy_index_lens: Vec<usize> =
-            legacy.concepts.iter().map(|c| c.index.len()).collect();
+        let legacy_index_lens: Vec<usize> = legacy.concepts.iter().map(|c| c.index.len()).collect();
         assert_eq!(
             legacy_index_lens, pipeline_index_lens,
             "pipeline and parse_nom must agree on per-concept index length"
@@ -2442,10 +2582,16 @@ the concept c_two is
         assert_eq!(contracted.blocks.len(), 2);
         // c_one has exactly one Requires, no Ensures.
         assert_eq!(contracted.blocks[0].contracts.len(), 1);
-        assert!(matches!(&contracted.blocks[0].contracts[0], ContractClause::Requires(_)));
+        assert!(matches!(
+            &contracted.blocks[0].contracts[0],
+            ContractClause::Requires(_)
+        ));
         // c_two has exactly one Ensures, no Requires.
         assert_eq!(contracted.blocks[1].contracts.len(), 1);
-        assert!(matches!(&contracted.blocks[1].contracts[0], ContractClause::Ensures(_)));
+        assert!(matches!(
+            &contracted.blocks[1].contracts[0],
+            ContractClause::Ensures(_)
+        ));
     }
 
     /// a4c08: two concepts, each with its own intent, yield two

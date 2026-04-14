@@ -59,11 +59,7 @@ mod tests {
         (code, stdout, stderr)
     }
 
-    fn run_status(
-        repo: &Path,
-        dict_root: &Path,
-        write_locks: bool,
-    ) -> (i32, String, String) {
+    fn run_status(repo: &Path, dict_root: &Path, write_locks: bool) -> (i32, String, String) {
         let mut args = vec![
             "build".to_string(),
             "status".to_string(),
@@ -152,7 +148,14 @@ mod tests {
         assert_eq!(policy_row.name, "agent_safety_policy");
 
         // 6 entities rows — one per entity in the three tool .nomtu files.
-        for word in &["read_file", "write_file", "list_dir", "fetch_url", "search_web", "run_command"] {
+        for word in &[
+            "read_file",
+            "write_file",
+            "list_dir",
+            "fetch_url",
+            "search_web",
+            "run_command",
+        ] {
             let rows = dict
                 .find_entities_by_word(word)
                 .unwrap_or_else(|e| panic!("find_entities_by_word({word}) error: {e}"));
@@ -162,7 +165,10 @@ mod tests {
         // ── Step 2: build status (no --write-locks) ───────────────────────────
         // MECE-ME violation is present (security + speed shared), so exit 1.
         let (bc, bo, be) = run_status(&repo_dir, &dict_dir, false);
-        assert_eq!(bc, 1, "expected exit 1 due to MECE-ME violation: stderr={be}\nstdout={bo}");
+        assert_eq!(
+            bc, 1,
+            "expected exit 1 due to MECE-ME violation: stderr={be}\nstdout={bo}"
+        );
         assert!(
             bo.contains("minimal_safe_agent"),
             "expected minimal_safe_agent mentioned: {bo}"
@@ -182,12 +188,14 @@ mod tests {
         // Count how many alternative lines appear — must be at least 5 (6 candidates - 1 picked).
         let alt_lines = bo
             .lines()
-            .filter(|l| l.trim_start().starts_with("fetch_url@")
-                || l.trim_start().starts_with("list_dir@")
-                || l.trim_start().starts_with("read_file@")
-                || l.trim_start().starts_with("run_command@")
-                || l.trim_start().starts_with("search_web@")
-                || l.trim_start().starts_with("write_file@"))
+            .filter(|l| {
+                l.trim_start().starts_with("fetch_url@")
+                    || l.trim_start().starts_with("list_dir@")
+                    || l.trim_start().starts_with("read_file@")
+                    || l.trim_start().starts_with("run_command@")
+                    || l.trim_start().starts_with("search_web@")
+                    || l.trim_start().starts_with("write_file@")
+            })
             .count();
         assert!(
             alt_lines >= 5,
@@ -196,8 +204,7 @@ mod tests {
 
         // ── Step 3: agent.nom must NOT have @hash yet ─────────────────────────
         let agent_nom_path = repo_dir.join("agent.nom");
-        let agent_nom_before = std::fs::read_to_string(&agent_nom_path)
-            .expect("read agent.nom");
+        let agent_nom_before = std::fs::read_to_string(&agent_nom_path).expect("read agent.nom");
         assert!(
             !agent_nom_before.contains("read_file@"),
             "agent.nom must not have @hash before --write-locks: {agent_nom_before}"
@@ -206,7 +213,10 @@ mod tests {
         // ── Step 4: build status --write-locks ───────────────────────────────
         // Exits 1 due to MECE-ME violation; write-locks still applied.
         let (wc, wo, we) = run_status(&repo_dir, &dict_dir, true);
-        assert_eq!(wc, 1, "expected exit 1 (MECE violation) from --write-locks: stderr={we}\nstdout={wo}");
+        assert_eq!(
+            wc, 1,
+            "expected exit 1 (MECE violation) from --write-locks: stderr={we}\nstdout={wo}"
+        );
         assert!(
             wo.contains("Wrote") && wo.contains("hash lock"),
             "expected 'Wrote N hash lock' in output: {wo}"
@@ -230,8 +240,8 @@ mod tests {
         );
 
         // ── Step 5: agent.nom MUST have read_file@<64-hex> ───────────────────
-        let agent_nom_after = std::fs::read_to_string(&agent_nom_path)
-            .expect("read agent.nom after write-locks");
+        let agent_nom_after =
+            std::fs::read_to_string(&agent_nom_path).expect("read agent.nom after write-locks");
         let at_pos = agent_nom_after.find("read_file@");
         assert!(
             at_pos.is_some(),
@@ -239,7 +249,11 @@ mod tests {
         );
         let after_at = &agent_nom_after[at_pos.unwrap() + "read_file@".len()..];
         let hash_part: String = after_at.chars().take(64).collect();
-        assert_eq!(hash_part.len(), 64, "hash must be 64 chars: got `{hash_part}`");
+        assert_eq!(
+            hash_part.len(),
+            64,
+            "hash must be 64 chars: got `{hash_part}`"
+        );
         assert!(
             hash_part.chars().all(|c| c.is_ascii_hexdigit()),
             "hash must be hex: `{hash_part}`"
@@ -252,7 +266,10 @@ mod tests {
         let (bc2, bo2, be2) = run_status(&repo_dir, &dict_dir, false);
         // MECE-ME violation: minimal_safe_agent composes agent_safety_policy and
         // both declare "security" and "speed" → exit 1.
-        assert_eq!(bc2, 1, "expected exit 1 due to MECE-ME violation: {be2}\n{bo2}");
+        assert_eq!(
+            bc2, 1,
+            "expected exit 1 due to MECE-ME violation: {be2}\n{bo2}"
+        );
         assert!(
             bo2.contains("MECE"),
             "expected 'MECE' in status output: {bo2}"
@@ -277,9 +294,12 @@ mod tests {
         // Running --write-locks again must be idempotent (no additional insertions).
         let (wc2, wo2, we2) = run_status(&repo_dir, &dict_dir, true);
         // MECE violation still present → exit 1.
-        assert_eq!(wc2, 1, "expected exit 1 from --write-locks due to MECE violation: {we2}\n{wo2}");
-        let agent_nom_second = std::fs::read_to_string(&agent_nom_path)
-            .expect("read agent.nom second time");
+        assert_eq!(
+            wc2, 1,
+            "expected exit 1 from --write-locks due to MECE violation: {we2}\n{wo2}"
+        );
+        let agent_nom_second =
+            std::fs::read_to_string(&agent_nom_path).expect("read agent.nom second time");
         assert_eq!(
             agent_nom_after, agent_nom_second,
             "second --write-locks must not modify already-locked file"

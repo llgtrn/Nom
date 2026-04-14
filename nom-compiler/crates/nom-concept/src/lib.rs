@@ -11,25 +11,32 @@ use thiserror::Error;
 
 pub mod acceptance;
 pub use acceptance::{
-    PredicateBinding, PredicateRewording, PreservationReport,
-    bindings_for_concept, check_preservation, has_violations,
-    jaccard_similarity, normalize_predicate, predicate_text_hash,
+    PredicateBinding, PredicateRewording, PreservationReport, bindings_for_concept,
+    check_preservation, has_violations, jaccard_similarity, normalize_predicate,
+    predicate_text_hash,
 };
 
 pub mod closure;
 pub use closure::{ClosureError, ConceptClosure, ConceptGraph, UnresolvedRef};
 
 pub mod mece;
-pub use mece::{MeceReport, MeCollision, ObjectiveBinding, check_mece, check_mece_with_required_axes, stub_axis_of};
+pub use mece::{
+    MeCollision, MeceReport, ObjectiveBinding, check_mece, check_mece_with_required_axes,
+    stub_axis_of,
+};
 
 pub mod strict;
-pub use strict::{StrictWarning, validate_nom as validate_nom_strict, validate_nomtu as validate_nomtu_strict};
+pub use strict::{
+    StrictWarning, validate_nom as validate_nom_strict, validate_nomtu as validate_nomtu_strict,
+};
 
 pub mod stages;
-pub use stages::{StageId, StageFailure, TokenStream, stage1_tokenize};
+pub use stages::{StageFailure, StageId, TokenStream, stage1_tokenize};
 
 pub mod flow_edge;
-pub use flow_edge::{FlowEdgeFinding, check_nom_file as check_flow_edges, check_nomtu_file as check_nomtu_flow_edges};
+pub use flow_edge::{
+    FlowEdgeFinding, check_nom_file as check_flow_edges, check_nomtu_file as check_nomtu_flow_edges,
+};
 
 /// Closed kind set per doc 08 §8.1.
 ///
@@ -40,8 +47,7 @@ pub use flow_edge::{FlowEdgeFinding, check_nom_file as check_flow_edges, check_n
 /// The long-term direction is to remove this const once every caller
 /// consults the DB; for now it's a correctness-not-style mirror.
 pub const KINDS: &[&str] = &[
-    "function", "module", "concept", "screen", "data", "event", "media",
-    "property", "scenario",
+    "function", "module", "concept", "screen", "data", "event", "media", "property", "scenario",
 ];
 
 /// `.nom` file: 1..N concept declarations.
@@ -303,13 +309,15 @@ mod lex {
 
     impl<'a> Lexer<'a> {
         pub fn new(src: &'a str) -> Self {
-            Lexer { src, pos: 0, pending: Vec::new() }
+            Lexer {
+                src,
+                pos: 0,
+                pending: Vec::new(),
+            }
         }
 
         fn skip_whitespace(&mut self) {
-            while self.pos < self.src.len()
-                && self.src.as_bytes()[self.pos].is_ascii_whitespace()
-            {
+            while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_whitespace() {
                 self.pos += 1;
             }
         }
@@ -330,11 +338,17 @@ mod lex {
             // Single-char tokens
             if b == b'.' {
                 self.pos += 1;
-                return Some(Spanned { tok: Tok::Dot, pos: start });
+                return Some(Spanned {
+                    tok: Tok::Dot,
+                    pos: start,
+                });
             }
             if b == b',' {
                 self.pos += 1;
-                return Some(Spanned { tok: Tok::Comma, pos: start });
+                return Some(Spanned {
+                    tok: Tok::Comma,
+                    pos: start,
+                });
             }
             if b == b'@' {
                 self.pos += 1;
@@ -354,9 +368,15 @@ mod lex {
                         }
                     }
                     let kind_name = self.src[kind_start..self.pos].to_string();
-                    return Some(Spanned { tok: Tok::AtKind(kind_name), pos: start });
+                    return Some(Spanned {
+                        tok: Tok::AtKind(kind_name),
+                        pos: start,
+                    });
                 }
-                return Some(Spanned { tok: Tok::At, pos: start });
+                return Some(Spanned {
+                    tok: Tok::At,
+                    pos: start,
+                });
             }
 
             // Double-quoted string
@@ -370,7 +390,10 @@ mod lex {
                 if self.pos < self.src.len() {
                     self.pos += 1; // skip closing "
                 }
-                return Some(Spanned { tok: Tok::Quoted(content), pos: start });
+                return Some(Spanned {
+                    tok: Tok::Quoted(content),
+                    pos: start,
+                });
             }
 
             // Decimal number literal: `[0-9]+(.[0-9]+)?`
@@ -385,16 +408,23 @@ mod lex {
                 if self.pos < self.src.len() && self.src.as_bytes()[self.pos] == b'.' {
                     // Peek one byte further to check for a digit (avoids consuming a
                     // trailing `.` that terminates a statement).
-                    if self.pos + 1 < self.src.len() && self.src.as_bytes()[self.pos + 1].is_ascii_digit() {
+                    if self.pos + 1 < self.src.len()
+                        && self.src.as_bytes()[self.pos + 1].is_ascii_digit()
+                    {
                         self.pos += 1; // consume `.`
-                        while self.pos < self.src.len() && self.src.as_bytes()[self.pos].is_ascii_digit() {
+                        while self.pos < self.src.len()
+                            && self.src.as_bytes()[self.pos].is_ascii_digit()
+                        {
                             self.pos += 1;
                         }
                     }
                 }
                 let num_str = &self.src[num_start..self.pos];
                 let value: f64 = num_str.parse().unwrap_or(0.0);
-                return Some(Spanned { tok: Tok::NumberLit(value), pos: start });
+                return Some(Spanned {
+                    tok: Tok::NumberLit(value),
+                    pos: start,
+                });
             }
 
             // Bare word / keyword token.
@@ -422,22 +452,22 @@ mod lex {
                 let word = &self.src[word_start..self.pos];
                 let tok = match word {
                     // ── English keywords ─────────────────────────────────────
-                    "the"      => Tok::The,
-                    "is"       => Tok::Is,
+                    "the" => Tok::The,
+                    "is" => Tok::Is,
                     "composes" => Tok::Composes,
-                    "then"     => Tok::Then,
-                    "with"     => Tok::With,
+                    "then" => Tok::Then,
+                    "with" => Tok::With,
                     "requires" => Tok::Requires,
-                    "ensures"  => Tok::Ensures,
+                    "ensures" => Tok::Ensures,
                     "matching" => Tok::Matching,
                     "intended" => Tok::Intended,
-                    "to"       => Tok::To,
-                    "uses"     => Tok::Uses,
-                    "extends"  => Tok::Extends,
-                    "adding"   => Tok::Adding,
+                    "to" => Tok::To,
+                    "uses" => Tok::Uses,
+                    "extends" => Tok::Extends,
+                    "adding" => Tok::Adding,
                     "removing" => Tok::Removing,
-                    "exposes"  => Tok::Exposes,
-                    "this"     => Tok::This,
+                    "exposes" => Tok::Exposes,
+                    "this" => Tok::This,
                     // ── `at-least` compound keyword (doc 07 §6.3) ────────────
                     // When the word `at` is followed immediately by the byte
                     // sequence `-least` (hyphen then the word `least`), consume
@@ -480,23 +510,22 @@ mod lex {
                             Tok::Word("at".to_string())
                         }
                     }
-                    "works"    => Tok::Works,
-                    "when"     => Tok::When,
-                    "favor"    => Tok::Favor,
+                    "works" => Tok::Works,
+                    "when" => Tok::When,
+                    "favor" => Tok::Favor,
                     // ── Effect valence keywords (English only) ───────────────
-                    "benefit"  => Tok::Benefit,   // canonical positive
-                    "boon"     => Tok::Benefit,   // English synonym
-                    "hazard"   => Tok::Hazard,    // canonical negative
-                    "bane"     => Tok::Hazard,    // English synonym
+                    "benefit" => Tok::Benefit, // canonical positive
+                    "boon" => Tok::Benefit,    // English synonym
+                    "hazard" => Tok::Hazard,   // canonical negative
+                    "bane" => Tok::Hazard,     // English synonym
                     // ── Kind nouns (English) ─────────────────────────────────
                     // Must stay in sync with KINDS const at crate root and with
                     // baseline.sql's `kinds` table. The P7 no-Rust-bundled-data
                     // rule forbids grammar DATA in Rust but ALLOWS the closed
                     // lexer token set since it's a lexical recognition layer.
-                    "function" | "module" | "concept" | "screen"
-                    | "data"   | "event"  | "media"
+                    "function" | "module" | "concept" | "screen" | "data" | "event" | "media"
                     | "property" | "scenario" => Tok::Kind(word.to_string()),
-                    _             => Tok::Word(word.to_string()),
+                    _ => Tok::Word(word.to_string()),
                 };
                 return Some(Spanned { tok, pos: start });
             }
@@ -592,36 +621,36 @@ mod parse {
 
     fn tok_display(tok: &Tok) -> String {
         match tok {
-            Tok::The        => "`the`".into(),
-            Tok::Is         => "`is`".into(),
-            Tok::Composes   => "`composes`".into(),
-            Tok::Then       => "`then`".into(),
-            Tok::With       => "`with`".into(),
-            Tok::Requires   => "`requires`".into(),
-            Tok::Ensures    => "`ensures`".into(),
-            Tok::Matching   => "`matching`".into(),
-            Tok::Benefit    => "`benefit`".into(),
-            Tok::Hazard     => "`hazard`".into(),
-            Tok::Intended   => "`intended`".into(),
-            Tok::To         => "`to`".into(),
-            Tok::Uses       => "`uses`".into(),
-            Tok::Extends    => "`extends`".into(),
-            Tok::Adding     => "`adding`".into(),
-            Tok::Removing   => "`removing`".into(),
-            Tok::Exposes    => "`exposes`".into(),
-            Tok::This       => "`this`".into(),
-            Tok::Works      => "`works`".into(),
-            Tok::When       => "`when`".into(),
-            Tok::Favor      => "`favor`".into(),
-            Tok::At         => "`@`".into(),
-            Tok::Dot        => "`.`".into(),
-            Tok::Comma      => "`,`".into(),
-            Tok::AtLeast    => "`at-least`".into(),
+            Tok::The => "`the`".into(),
+            Tok::Is => "`is`".into(),
+            Tok::Composes => "`composes`".into(),
+            Tok::Then => "`then`".into(),
+            Tok::With => "`with`".into(),
+            Tok::Requires => "`requires`".into(),
+            Tok::Ensures => "`ensures`".into(),
+            Tok::Matching => "`matching`".into(),
+            Tok::Benefit => "`benefit`".into(),
+            Tok::Hazard => "`hazard`".into(),
+            Tok::Intended => "`intended`".into(),
+            Tok::To => "`to`".into(),
+            Tok::Uses => "`uses`".into(),
+            Tok::Extends => "`extends`".into(),
+            Tok::Adding => "`adding`".into(),
+            Tok::Removing => "`removing`".into(),
+            Tok::Exposes => "`exposes`".into(),
+            Tok::This => "`this`".into(),
+            Tok::Works => "`works`".into(),
+            Tok::When => "`when`".into(),
+            Tok::Favor => "`favor`".into(),
+            Tok::At => "`@`".into(),
+            Tok::Dot => "`.`".into(),
+            Tok::Comma => "`,`".into(),
+            Tok::AtLeast => "`at-least`".into(),
             Tok::NumberLit(n) => format!("`{n}`"),
-            Tok::Kind(k)    => format!("`{k}`"),
-            Tok::Word(w)    => format!("`{w}`"),
-            Tok::Quoted(q)  => format!("`\"{q}\"`"),
-            Tok::AtKind(k)  => format!("`@{k}`"),
+            Tok::Kind(k) => format!("`{k}`"),
+            Tok::Word(w) => format!("`{w}`"),
+            Tok::Quoted(q) => format!("`\"{q}\"`"),
+            Tok::AtKind(k) => format!("`@{k}`"),
         }
     }
 
@@ -634,7 +663,11 @@ mod parse {
                 if std::mem::discriminant(&s.tok) == std::mem::discriminant(want) {
                     Ok(s.pos)
                 } else {
-                    Err(err_expected(&tok_display(want), &tok_display(&s.tok), s.pos))
+                    Err(err_expected(
+                        &tok_display(want),
+                        &tok_display(&s.tok),
+                        s.pos,
+                    ))
                 }
             }
         }
@@ -675,7 +708,8 @@ mod parse {
                     if !w.is_ascii() {
                         Err(ConceptError::ParseError {
                             expected: "an ASCII identifier (function/entity names must be ASCII; \
-                                       Vietnamese diacritics are for keywords only)".to_string(),
+                                       Vietnamese diacritics are for keywords only)"
+                                .to_string(),
                             found: format!("`{w}` (contains non-ASCII characters)"),
                             position: s.pos,
                         })
@@ -734,7 +768,10 @@ mod parse {
             }
             if let Some(s) = lex.next() {
                 match &s.tok {
-                    Tok::Dot => { /* should not happen given peek above */ break }
+                    Tok::Dot => {
+                        /* should not happen given peek above */
+                        break;
+                    }
                     _ => parts.push(tok_surface(&s.tok)),
                 }
             }
@@ -765,36 +802,36 @@ mod parse {
 
     fn tok_surface(tok: &Tok) -> String {
         match tok {
-            Tok::The        => "the".to_string(),
-            Tok::Is         => "is".to_string(),
-            Tok::Composes   => "composes".to_string(),
-            Tok::Then       => "then".to_string(),
-            Tok::With       => "with".to_string(),
-            Tok::Requires   => "requires".to_string(),
-            Tok::Ensures    => "ensures".to_string(),
-            Tok::Matching   => "matching".to_string(),
-            Tok::Benefit    => "benefit".to_string(),
-            Tok::Hazard     => "hazard".to_string(),
-            Tok::Intended   => "intended".to_string(),
-            Tok::To         => "to".to_string(),
-            Tok::Uses       => "uses".to_string(),
-            Tok::Extends    => "extends".to_string(),
-            Tok::Adding     => "adding".to_string(),
-            Tok::Removing   => "removing".to_string(),
-            Tok::Exposes    => "exposes".to_string(),
-            Tok::This       => "this".to_string(),
-            Tok::Works      => "works".to_string(),
-            Tok::When       => "when".to_string(),
-            Tok::Favor      => "favor".to_string(),
-            Tok::At         => "@".to_string(),
-            Tok::Comma      => ",".to_string(),
-            Tok::AtLeast    => "at-least".to_string(),
+            Tok::The => "the".to_string(),
+            Tok::Is => "is".to_string(),
+            Tok::Composes => "composes".to_string(),
+            Tok::Then => "then".to_string(),
+            Tok::With => "with".to_string(),
+            Tok::Requires => "requires".to_string(),
+            Tok::Ensures => "ensures".to_string(),
+            Tok::Matching => "matching".to_string(),
+            Tok::Benefit => "benefit".to_string(),
+            Tok::Hazard => "hazard".to_string(),
+            Tok::Intended => "intended".to_string(),
+            Tok::To => "to".to_string(),
+            Tok::Uses => "uses".to_string(),
+            Tok::Extends => "extends".to_string(),
+            Tok::Adding => "adding".to_string(),
+            Tok::Removing => "removing".to_string(),
+            Tok::Exposes => "exposes".to_string(),
+            Tok::This => "this".to_string(),
+            Tok::Works => "works".to_string(),
+            Tok::When => "when".to_string(),
+            Tok::Favor => "favor".to_string(),
+            Tok::At => "@".to_string(),
+            Tok::Comma => ",".to_string(),
+            Tok::AtLeast => "at-least".to_string(),
             Tok::NumberLit(n) => n.to_string(),
-            Tok::Kind(k)    => k.clone(),
-            Tok::Word(w)    => w.clone(),
-            Tok::Quoted(q)  => format!("\"{}\"", q),
-            Tok::Dot        => ".".to_string(),
-            Tok::AtKind(k)  => format!("@{k}"),
+            Tok::Kind(k) => k.clone(),
+            Tok::Word(w) => w.clone(),
+            Tok::Quoted(q) => format!("\"{}\"", q),
+            Tok::Dot => ".".to_string(),
+            Tok::AtKind(k) => format!("@{k}"),
         }
     }
 
@@ -809,7 +846,7 @@ mod parse {
         lex: &mut Lexer<'_>,
     ) -> Result<(Vec<ContractClause>, Vec<EffectClause>), ConceptError> {
         let mut contracts = Vec::new();
-        let mut effects   = Vec::new();
+        let mut effects = Vec::new();
         loop {
             match lex.peek() {
                 Some(Tok::Requires) => {
@@ -843,7 +880,10 @@ mod parse {
                         }
                     }
                     expect_dot(lex)?;
-                    effects.push(EffectClause { valence, effects: effect_names });
+                    effects.push(EffectClause {
+                        valence,
+                        effects: effect_names,
+                    });
                 }
                 _ => break,
             }
@@ -885,17 +925,21 @@ mod parse {
                     match lex.next() {
                         Some(s) => match s.tok {
                             Tok::Quoted(q) => Some(q),
-                            other => return Err(err_expected(
-                                "a quoted string after `matching`",
-                                &tok_display(&other),
-                                s.pos,
-                            )),
+                            other => {
+                                return Err(err_expected(
+                                    "a quoted string after `matching`",
+                                    &tok_display(&other),
+                                    s.pos,
+                                ));
+                            }
                         },
-                        None => return Err(err_expected(
-                            "a quoted string after `matching`",
-                            "end of input",
-                            pos2,
-                        )),
+                        None => {
+                            return Err(err_expected(
+                                "a quoted string after `matching`",
+                                "end of input",
+                                pos2,
+                            ));
+                        }
                     }
                 } else {
                     None
@@ -909,33 +953,41 @@ mod parse {
                     let pos3 = lex.position();
                     match lex.next() {
                         Some(s) if s.tok == Tok::AtLeast => {}
-                        Some(s) => return Err(err_expected(
-                            "`at-least` after `with` in confidence clause",
-                            &tok_display(&s.tok),
-                            s.pos,
-                        )),
-                        None => return Err(err_expected(
-                            "`at-least` after `with` in confidence clause",
-                            "end of input",
-                            pos3,
-                        )),
+                        Some(s) => {
+                            return Err(err_expected(
+                                "`at-least` after `with` in confidence clause",
+                                &tok_display(&s.tok),
+                                s.pos,
+                            ));
+                        }
+                        None => {
+                            return Err(err_expected(
+                                "`at-least` after `with` in confidence clause",
+                                "end of input",
+                                pos3,
+                            ));
+                        }
                     }
                     // Next must be a number literal
                     let pos4 = lex.position();
                     let n = match lex.next() {
                         Some(s) => match s.tok {
                             Tok::NumberLit(n) => n,
-                            other => return Err(err_expected(
-                                "a number in [0.0, 1.0] after `at-least`",
-                                &tok_display(&other),
-                                s.pos,
-                            )),
+                            other => {
+                                return Err(err_expected(
+                                    "a number in [0.0, 1.0] after `at-least`",
+                                    &tok_display(&other),
+                                    s.pos,
+                                ));
+                            }
                         },
-                        None => return Err(err_expected(
-                            "a number in [0.0, 1.0] after `at-least`",
-                            "end of input",
-                            pos4,
-                        )),
+                        None => {
+                            return Err(err_expected(
+                                "a number in [0.0, 1.0] after `at-least`",
+                                "end of input",
+                                pos4,
+                            ));
+                        }
                     };
                     // Range check: [0.0, 1.0]
                     if !(0.0..=1.0).contains(&n) {
@@ -950,17 +1002,21 @@ mod parse {
                     match lex.next() {
                         Some(s) => match s.tok {
                             Tok::Word(ref w) if w == "confidence" => {}
-                            other => return Err(err_expected(
-                                "`confidence` after threshold value",
-                                &tok_display(&other),
-                                s.pos,
-                            )),
+                            other => {
+                                return Err(err_expected(
+                                    "`confidence` after threshold value",
+                                    &tok_display(&other),
+                                    s.pos,
+                                ));
+                            }
                         },
-                        None => return Err(err_expected(
-                            "`confidence` after threshold value",
-                            "end of input",
-                            pos5,
-                        )),
+                        None => {
+                            return Err(err_expected(
+                                "`confidence` after threshold value",
+                                "end of input",
+                                pos5,
+                            ));
+                        }
                     }
                     Some(n)
                 } else {
@@ -999,15 +1055,34 @@ mod parse {
             match lex.next() {
                 Some(s) => match s.tok {
                     Tok::Quoted(q) => Some(q),
-                    other => return Err(err_expected("a quoted string after `matching`", &tok_display(&other), s.pos)),
+                    other => {
+                        return Err(err_expected(
+                            "a quoted string after `matching`",
+                            &tok_display(&other),
+                            s.pos,
+                        ));
+                    }
                 },
-                None => return Err(err_expected("a quoted string after `matching`", "end of input", pos2)),
+                None => {
+                    return Err(err_expected(
+                        "a quoted string after `matching`",
+                        "end of input",
+                        pos2,
+                    ));
+                }
             }
         } else {
             None
         };
 
-        Ok(EntityRef { kind: Some(kind), word, hash, matching, typed_slot: false, confidence_threshold: None })
+        Ok(EntityRef {
+            kind: Some(kind),
+            word,
+            hash,
+            matching,
+            typed_slot: false,
+            confidence_threshold: None,
+        })
     }
 
     /// Parse `"the" Kind Word ("@" Hash)? ("matching" Phrase)?`
@@ -1022,7 +1097,11 @@ mod parse {
     /// Parse `"the" Kind Word "is" SignatureBody ContractClause* EffectClause* "."`
     /// (the leading `the` has already been consumed by the dispatch in
     ///  `parse_entity_or_composition`).
-    fn parse_entity_decl(lex: &mut Lexer<'_>, kind: String, word: String) -> Result<EntityDecl, ConceptError> {
+    fn parse_entity_decl(
+        lex: &mut Lexer<'_>,
+        kind: String,
+        word: String,
+    ) -> Result<EntityDecl, ConceptError> {
         expect_is(lex)?;
         // Collect signature prose; stops before `.` or a contract/effect keyword.
         let signature = collect_prose(lex).trim().to_string();
@@ -1032,13 +1111,22 @@ mod parse {
         let (contracts, effects) = parse_contract_or_effect_clauses(lex)?;
         // No additional closing `.` — the last clause's `.` (or the signature's
         // `.` when there are no clauses) already terminated the declaration.
-        Ok(EntityDecl { kind, word, signature, contracts, effects })
+        Ok(EntityDecl {
+            kind,
+            word,
+            signature,
+            contracts,
+            effects,
+        })
     }
 
     // ── composition decl ─────────────────────────────────────────────────────
 
     /// Parse composition after we've already consumed `the module Word composes`.
-    fn parse_composition_decl(lex: &mut Lexer<'_>, word: String) -> Result<CompositionDecl, ConceptError> {
+    fn parse_composition_decl(
+        lex: &mut Lexer<'_>,
+        word: String,
+    ) -> Result<CompositionDecl, ConceptError> {
         // First entity ref
         let first_ref = parse_entity_ref(lex)?;
         let mut composes = vec![first_ref];
@@ -1062,7 +1150,11 @@ mod parse {
                             _ => unreachable!(),
                         }
                     } else {
-                        return Err(err_expected("glue string after `with`", "end of input", pos));
+                        return Err(err_expected(
+                            "glue string after `with`",
+                            "end of input",
+                            pos,
+                        ));
                     }
                 }
                 _ => {
@@ -1081,7 +1173,13 @@ mod parse {
             expect_dot(lex)?;
         }
 
-        Ok(CompositionDecl { word, composes, glue, contracts, effects })
+        Ok(CompositionDecl {
+            word,
+            composes,
+            glue,
+            contracts,
+            effects,
+        })
     }
 
     // ── top-level dispatch ───────────────────────────────────────────────────
@@ -1093,7 +1191,13 @@ mod parse {
         // Peek at the kind token
         let pos_after_the = lex.position();
         let kind_or_err = match lex.next() {
-            None => return Err(err_expected("a kind keyword", "end of input", pos_after_the)),
+            None => {
+                return Err(err_expected(
+                    "a kind keyword",
+                    "end of input",
+                    pos_after_the,
+                ));
+            }
             Some(s) => match s.tok {
                 Tok::Kind(k) => Ok((k, s.pos)),
                 Tok::Word(w) => Err((w, s.pos)),
@@ -1134,11 +1238,7 @@ mod parse {
     fn is_concept_clause_start(tok: &Tok) -> bool {
         matches!(
             tok,
-            Tok::Uses
-            | Tok::Extends
-            | Tok::Exposes
-            | Tok::This
-            | Tok::Favor
+            Tok::Uses | Tok::Extends | Tok::Exposes | Tok::This | Tok::Favor
         )
     }
 
@@ -1211,7 +1311,9 @@ mod parse {
                 match lex.next() {
                     Some(s) => match s.tok {
                         Tok::Kind(ref k) if k == "concept" => {}
-                        other => return Err(err_expected("`concept`", &tok_display(&other), s.pos)),
+                        other => {
+                            return Err(err_expected("`concept`", &tok_display(&other), s.pos));
+                        }
                     },
                     None => return Err(err_expected("`concept`", "end of input", pos2)),
                 }
@@ -1228,7 +1330,10 @@ mod parse {
                 Ok(IndexClause::Extends { base, change_set })
             }
             other => {
-                let found = other.as_ref().map(tok_display).unwrap_or_else(|| "end of input".into());
+                let found = other
+                    .as_ref()
+                    .map(tok_display)
+                    .unwrap_or_else(|| "end of input".into());
                 Err(err_expected("`uses` or `extends`", &found, pos))
             }
         }
@@ -1294,7 +1399,11 @@ mod parse {
         }
         if index.is_empty() {
             let pos3 = lex.position();
-            return Err(err_expected("`uses` or `extends` (at least one index clause required)", "none", pos3));
+            return Err(err_expected(
+                "`uses` or `extends` (at least one index clause required)",
+                "none",
+                pos3,
+            ));
         }
 
         // Optional exposes clause
@@ -1355,7 +1464,14 @@ mod parse {
             Vec::new()
         };
 
-        Ok(ConceptDecl { name, intent, index, exposes, acceptance, objectives })
+        Ok(ConceptDecl {
+            name,
+            intent,
+            index,
+            exposes,
+            acceptance,
+            objectives,
+        })
     }
 
     // ── .nom public entry point ──────────────────────────────────────────────
@@ -1379,7 +1495,9 @@ mod parse {
                     match lex.next() {
                         Some(s) => match s.tok {
                             Tok::Kind(ref k) if k == "concept" => {}
-                            other => return Err(err_expected("`concept`", &tok_display(&other), s.pos)),
+                            other => {
+                                return Err(err_expected("`concept`", &tok_display(&other), s.pos));
+                            }
                         },
                         None => return Err(err_expected("`concept`", "end of input", pos)),
                     }
@@ -1501,8 +1619,8 @@ mod tests {
     fn closed_kind_set_has_nine_members() {
         assert_eq!(KINDS.len(), 9);
         for k in [
-            "function", "module", "concept", "screen", "data", "event", "media",
-            "property", "scenario",
+            "function", "module", "concept", "screen", "data", "event", "media", "property",
+            "scenario",
         ] {
             assert!(is_known_kind(k));
         }
@@ -1518,11 +1636,15 @@ mod tests {
             signature: "given a token of text, returns yes or no".to_string(),
             contracts: vec![
                 ContractClause::Requires("the token is non-empty".to_string()),
-                ContractClause::Ensures("the result reflects whether the signature verifies".to_string()),
+                ContractClause::Ensures(
+                    "the result reflects whether the signature verifies".to_string(),
+                ),
             ],
             effects: vec![],
         };
-        let nomtu = NomtuFile { items: vec![NomtuItem::Entity(entity.clone())] };
+        let nomtu = NomtuFile {
+            items: vec![NomtuItem::Entity(entity.clone())],
+        };
         let json = serde_json::to_string(&nomtu).unwrap();
         let back: NomtuFile = serde_json::from_str(&json).unwrap();
         assert_eq!(nomtu, back);
@@ -1547,7 +1669,9 @@ mod tests {
             ],
             objectives: vec!["security".to_string(), "speed".to_string()],
         };
-        let nom = NomFile { concepts: vec![concept] };
+        let nom = NomFile {
+            concepts: vec![concept],
+        };
         let json = serde_json::to_string(&nom).unwrap();
         let back: NomFile = serde_json::from_str(&json).unwrap();
         assert_eq!(nom, back);
@@ -1576,7 +1700,10 @@ the module auth_jwt_session_compose composes
     #[test]
     fn t01_empty_input_is_error() {
         assert!(matches!(parse_nomtu(""), Err(ConceptError::EmptyInput)));
-        assert!(matches!(parse_nomtu("   \n  "), Err(ConceptError::EmptyInput)));
+        assert!(matches!(
+            parse_nomtu("   \n  "),
+            Err(ConceptError::EmptyInput)
+        ));
     }
 
     /// Test 2: the full doc 08 §6.3 fixture parses to 2 entities + 1 composition.
@@ -1710,7 +1837,10 @@ the module search_pipeline composes
         let src = "the function do_thing is performs an action";
         match parse_nomtu(src) {
             Err(ConceptError::ParseError { expected, .. }) => {
-                assert!(expected.contains('.'), "error should mention `.`, got: {expected}");
+                assert!(
+                    expected.contains('.'),
+                    "error should mention `.`, got: {expected}"
+                );
             }
             other => panic!("expected ParseError, got {:?}", other),
         }
@@ -1720,7 +1850,10 @@ the module search_pipeline composes
     #[test]
     fn parse_empty_inputs_return_empty_input_error() {
         assert!(matches!(parse_nom(""), Err(ConceptError::EmptyInput)));
-        assert!(matches!(parse_nom("   \n  "), Err(ConceptError::EmptyInput)));
+        assert!(matches!(
+            parse_nom("   \n  "),
+            Err(ConceptError::EmptyInput)
+        ));
         assert!(matches!(parse_nomtu(""), Err(ConceptError::EmptyInput)));
     }
 
@@ -1748,7 +1881,10 @@ the concept authentication_jwt_basic is
     #[test]
     fn n01_empty_input_is_error() {
         assert!(matches!(parse_nom(""), Err(ConceptError::EmptyInput)));
-        assert!(matches!(parse_nom("   \n  "), Err(ConceptError::EmptyInput)));
+        assert!(matches!(
+            parse_nom("   \n  "),
+            Err(ConceptError::EmptyInput)
+        ));
     }
 
     /// n02: the doc 08 §6.3 fixture parses to exactly the specified shape.
@@ -1777,12 +1913,23 @@ the concept authentication_jwt_basic is
         }
 
         // exposes
-        assert_eq!(c.exposes, vec!["auth_jwt_session_compose", "logout_session_invalidate_all"]);
+        assert_eq!(
+            c.exposes,
+            vec!["auth_jwt_session_compose", "logout_session_invalidate_all"]
+        );
 
         // acceptance
         assert_eq!(c.acceptance.len(), 2);
-        assert!(c.acceptance[0].contains("valid tokens reach the dashboard"), "got: {}", c.acceptance[0]);
-        assert!(c.acceptance[1].contains("invalid tokens are rejected"), "got: {}", c.acceptance[1]);
+        assert!(
+            c.acceptance[0].contains("valid tokens reach the dashboard"),
+            "got: {}",
+            c.acceptance[0]
+        );
+        assert!(
+            c.acceptance[1].contains("invalid tokens are rejected"),
+            "got: {}",
+            c.acceptance[1]
+        );
 
         // objectives
         assert_eq!(c.objectives, vec!["security", "speed"]);
@@ -2044,7 +2191,10 @@ the concept minimal_safe_agent is
             NomtuItem::Entity(e) => {
                 assert_eq!(e.effects.len(), 1);
                 assert_eq!(e.effects[0].valence, EffectValence::Benefit);
-                assert_eq!(e.effects[0].effects, vec!["cache_hit", "load_balanced", "auto_scaled"]);
+                assert_eq!(
+                    e.effects[0].effects,
+                    vec!["cache_hit", "load_balanced", "auto_scaled"]
+                );
             }
             _ => panic!("expected Entity"),
         }
@@ -2249,7 +2399,10 @@ the concept bad_ref is
 "#;
         match parse_nom(src) {
             Err(ConceptError::UnknownKind(k)) => {
-                assert!(k.contains("Banana"), "error should mention `Banana`, got: {k}");
+                assert!(
+                    k.contains("Banana"),
+                    "error should mention `Banana`, got: {k}"
+                );
             }
             other => panic!("expected UnknownKind for @Banana, got {:?}", other),
         }
@@ -2350,7 +2503,10 @@ the concept serde_slot is
         // Spot-check typed_slot survived.
         match &back.concepts[0].index[0] {
             IndexClause::Uses(refs) => {
-                assert!(refs[0].typed_slot, "typed_slot must survive JSON round-trip");
+                assert!(
+                    refs[0].typed_slot,
+                    "typed_slot must survive JSON round-trip"
+                );
                 assert_eq!(refs[0].kind.as_deref(), Some("module"));
                 assert_eq!(refs[0].matching.as_deref(), Some("authentication pipeline"));
             }
@@ -2367,12 +2523,12 @@ the concept serde_slot is
         // We just lex the @Kind tokens directly.
         let kind_tokens = [
             ("@Function", "Function"),
-            ("@Module",   "Module"),
-            ("@Concept",  "Concept"),
-            ("@Screen",   "Screen"),
-            ("@Data",     "Data"),
-            ("@Event",    "Event"),
-            ("@Media",    "Media"),
+            ("@Module", "Module"),
+            ("@Concept", "Concept"),
+            ("@Screen", "Screen"),
+            ("@Data", "Data"),
+            ("@Event", "Event"),
+            ("@Media", "Media"),
         ];
 
         for (input, expected_name) in &kind_tokens {
@@ -2388,17 +2544,23 @@ the concept serde_slot is
 
         // Also verify that each validates against KINDS (no UnknownKind error).
         let concept_template = |kind_str: &str| -> String {
-            format!(r#"
+            format!(
+                r#"
 the concept ck_{lc} is
   intended to test at-kind {lc}.
 
   uses the @{k}.
 
   favor correctness.
-"#, lc = kind_str.to_lowercase(), k = kind_str)
+"#,
+                lc = kind_str.to_lowercase(),
+                k = kind_str
+            )
         };
 
-        for kind in &["Function", "Module", "Concept", "Screen", "Data", "Event", "Media"] {
+        for kind in &[
+            "Function", "Module", "Concept", "Screen", "Data", "Event", "Media",
+        ] {
             let src = concept_template(kind);
             parse_nom(&src).unwrap_or_else(|e| panic!("@{kind} should parse, got: {:?}", e));
         }
@@ -2437,21 +2599,28 @@ the concept ct01 is
     #[test]
     fn ct02_threshold_zero_and_one_inclusive() {
         for (value_str, expected) in [("0.0", 0.0_f64), ("1.0", 1.0_f64)] {
-            let src = format!(r#"
+            let src = format!(
+                r#"
 the concept ct02_{label} is
   intended to test edge threshold.
 
   uses the @Function matching "x" with at-least {value_str} confidence.
 
   favor correctness.
-"#, label = if expected == 0.0 { "zero" } else { "one" });
+"#,
+                label = if expected == 0.0 { "zero" } else { "one" }
+            );
             let nom_file = parse_nom(&src)
                 .unwrap_or_else(|e| panic!("threshold {value_str} should parse, got: {e:?}"));
             match &nom_file.concepts[0].index[0] {
                 IndexClause::Uses(refs) => {
-                    let t = refs[0].confidence_threshold.expect("threshold must be Some");
-                    assert!((t - expected).abs() < 1e-10,
-                        "threshold {value_str}: expected {expected}, got {t}");
+                    let t = refs[0]
+                        .confidence_threshold
+                        .expect("threshold must be Some");
+                    assert!(
+                        (t - expected).abs() < 1e-10,
+                        "threshold {value_str}: expected {expected}, got {t}"
+                    );
                 }
                 _ => panic!("expected Uses"),
             }
@@ -2526,21 +2695,21 @@ the concept ct05 is
             confidence_threshold: Some(0.85),
         };
         let nomtu = NomtuFile {
-            items: vec![NomtuItem::Composition(
-                crate::CompositionDecl {
-                    word: "test_compose".to_string(),
-                    composes: vec![eref],
-                    glue: None,
-                    contracts: vec![],
-                    effects: vec![],
-                }
-            )],
+            items: vec![NomtuItem::Composition(crate::CompositionDecl {
+                word: "test_compose".to_string(),
+                composes: vec![eref],
+                glue: None,
+                contracts: vec![],
+                effects: vec![],
+            })],
         };
         let json = serde_json::to_string(&nomtu).expect("serialize");
         let back: NomtuFile = serde_json::from_str(&json).expect("deserialize");
         match &back.items[0] {
             NomtuItem::Composition(c) => {
-                let t = c.composes[0].confidence_threshold.expect("threshold must survive round-trip");
+                let t = c.composes[0]
+                    .confidence_threshold
+                    .expect("threshold must survive round-trip");
                 assert!((t - 0.85).abs() < 1e-10, "threshold must be 0.85, got {t}");
             }
             _ => panic!("expected Composition"),
@@ -2558,12 +2727,20 @@ the concept ct05 is
         // `at` not followed by `-least` → Word("at")
         let mut l = Lexer::new("at");
         let tok = l.next().expect("should produce a token");
-        assert_eq!(tok.tok, Tok::Word("at".to_string()), "bare `at` must remain Word(\"at\")");
+        assert_eq!(
+            tok.tok,
+            Tok::Word("at".to_string()),
+            "bare `at` must remain Word(\"at\")"
+        );
 
         // `at_most` (underscore, not hyphen) → Word("at_most")
         let mut l2 = Lexer::new("at_most");
         let tok2 = l2.next().expect("should produce a token");
-        assert_eq!(tok2.tok, Tok::Word("at_most".to_string()), "`at_most` must be Word");
+        assert_eq!(
+            tok2.tok,
+            Tok::Word("at_most".to_string()),
+            "`at_most` must be Word"
+        );
 
         // `at-least` (compound) → AtLeast
         let mut l3 = Lexer::new("at-least");
@@ -2577,20 +2754,22 @@ the concept ct05 is
         use super::lex::{Lexer, Tok};
 
         let cases: &[(&str, f64)] = &[
-            ("0",    0.0),
-            ("1",    1.0),
-            ("0.5",  0.5),
+            ("0", 0.0),
+            ("1", 1.0),
+            ("0.5", 0.5),
             ("0.85", 0.85),
-            ("0.0",  0.0),
-            ("1.0",  1.0),
+            ("0.0", 0.0),
+            ("1.0", 1.0),
         ];
         for (input, expected) in cases {
             let mut l = Lexer::new(input);
             let tok = l.next().expect("should produce a token");
             match tok.tok {
                 Tok::NumberLit(n) => {
-                    assert!((n - expected).abs() < 1e-10,
-                        "input `{input}`: expected {expected}, got {n}");
+                    assert!(
+                        (n - expected).abs() < 1e-10,
+                        "input `{input}`: expected {expected}, got {n}"
+                    );
                 }
                 other => panic!("input `{input}`: expected NumberLit, got {:?}", other),
             }
@@ -2645,13 +2824,13 @@ the concept ct05 is
         // single-char Word (uppercase letters fall through), and that's
         // fine — it will fail the parser's grammar check downstream.
         let cases: &[(&str, Tok)] = &[
-            ("With",       Tok::With),
-            ("WITH",       Tok::With),
+            ("With", Tok::With),
+            ("WITH", Tok::With),
             ("Confidence", Tok::Word("confidence".to_string())), // `Confidence` must not fool the parser's `Word if w == "confidence"` check
-            ("The",        Tok::The),
-            ("THE",        Tok::The),
-            ("IS",         Tok::Is),
-            ("Is",         Tok::Is),
+            ("The", Tok::The),
+            ("THE", Tok::The),
+            ("IS", Tok::Is),
+            ("Is", Tok::Is),
         ];
         for (input, forbidden) in cases {
             let mut l = Lexer::new(input);
@@ -2662,11 +2841,7 @@ the concept ct05 is
             );
         }
         // Sanity: lowercase promotions work.
-        for (input, expected) in &[
-            ("with",       Tok::With),
-            ("the",        Tok::The),
-            ("is",         Tok::Is),
-        ] {
+        for (input, expected) in &[("with", Tok::With), ("the", Tok::The), ("is", Tok::Is)] {
             let mut l = Lexer::new(input);
             assert_eq!(&l.next().expect("token").tok, expected);
         }
@@ -2735,17 +2910,15 @@ the concept ct05 is
     fn ct09e_kind_nouns_are_lowercase_exact() {
         use super::lex::{Lexer, Tok};
         for variant in &[
-            "Function", "FUNCTION", "Module", "Concept", "Screen", "DATA",
-            "Event", "Media",
+            "Function", "FUNCTION", "Module", "Concept", "Screen", "DATA", "Event", "Media",
         ] {
             let mut l = Lexer::new(variant);
             let tok = l.next().expect("should produce a token");
             matches!(tok.tok, Tok::Word(_))
                 .then_some(())
-                .unwrap_or_else(|| panic!(
-                    "`{variant}` must lex as Word, not Kind — got {:?}",
-                    tok.tok
-                ));
+                .unwrap_or_else(|| {
+                    panic!("`{variant}` must lex as Word, not Kind — got {:?}", tok.tok)
+                });
         }
         // Sanity: lowercase promotes.
         for canonical in &[
@@ -2754,9 +2927,7 @@ the concept ct05 is
             let mut l = Lexer::new(canonical);
             match l.next().expect("token").tok {
                 Tok::Kind(ref w) if w == canonical => {}
-                other => panic!(
-                    "`{canonical}` must lex as Kind({canonical}), got {other:?}"
-                ),
+                other => panic!("`{canonical}` must lex as Kind({canonical}), got {other:?}"),
             }
         }
     }
@@ -2920,14 +3091,12 @@ the concept ct11 is
     fn ct14_sum_return_at_v1_parses() {
         let src = r#"the function try_lock is given a resource, returns a guard or a lock_error.
   ensures the lock is held on success."#;
-        let parsed = parse_nomtu(src)
-            .expect("sum-return `returns A or B` at v1 must parse");
+        let parsed = parse_nomtu(src).expect("sum-return `returns A or B` at v1 must parse");
         let json = serde_json::to_string(&parsed).expect("must serialize");
         // The signature prose must survive; the parser doesn't yet
         // split it into a typed @Union, but it's preserved verbatim.
         assert!(
-            json.contains("guard or a lock_error")
-                || json.contains("lock_error"),
+            json.contains("guard or a lock_error") || json.contains("lock_error"),
             "sum-return prose must survive in signature; json = {json}"
         );
     }
@@ -2946,7 +3115,7 @@ the concept ct11 is
     /// materializer doesn't drop or reorder tokens.
     #[test]
     fn a4a02_materialize_matches_lexer_sequential() {
-        use super::lex::{collect_all_tokens, Lexer};
+        use super::lex::{Lexer, collect_all_tokens};
         let src = r#"the function fetch_url is given a url, returns text.
   requires the url scheme is https.
   benefit cache_hit."#;

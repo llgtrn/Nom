@@ -24,7 +24,6 @@
 /// No ffmpeg or PyAV was available; the fixture was hand-computed from the
 /// H.265 §7.3.2.2.1 SPS RBSP layout and verified by decoding the packed
 /// bits back to profile_idc=1, width=16, height=16.
-
 use nom_media::{ingest_hevc, verify_hevc_roundtrip};
 use nom_types::body_kind;
 
@@ -32,7 +31,8 @@ static TINY_HEVC: &[u8] = include_bytes!("fixtures/tiny.hevc");
 
 #[test]
 fn ingest_hevc_returns_correct_nal_count() {
-    let result = ingest_hevc(TINY_HEVC).expect("ingest_hevc should succeed on a valid Annex-B fixture");
+    let result =
+        ingest_hevc(TINY_HEVC).expect("ingest_hevc should succeed on a valid Annex-B fixture");
     assert_eq!(
         result.nal_unit_count, 5,
         "expected 5 NAL units (VPS+SPS+PPS+2 slices)"
@@ -44,7 +44,10 @@ fn ingest_hevc_returns_correct_dimensions_and_profile() {
     let result = ingest_hevc(TINY_HEVC).expect("ingest_hevc should succeed");
     assert_eq!(result.width, 16, "expected width=16");
     assert_eq!(result.height, 16, "expected height=16");
-    assert_eq!(result.profile_idc, 1, "expected profile_idc=1 (Main Profile)");
+    assert_eq!(
+        result.profile_idc, 1,
+        "expected profile_idc=1 (Main Profile)"
+    );
 }
 
 #[test]
@@ -58,8 +61,7 @@ fn ingest_hevc_canonical_bytes_are_identity_copy() {
 
 #[test]
 fn verify_hevc_roundtrip_passes_on_valid_fixture() {
-    verify_hevc_roundtrip(TINY_HEVC)
-        .expect("round-trip gate should pass on a valid HEVC fixture");
+    verify_hevc_roundtrip(TINY_HEVC).expect("round-trip gate should pass on a valid HEVC fixture");
 }
 
 #[test]

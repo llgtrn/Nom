@@ -54,7 +54,11 @@ pub enum AgentAction {
     /// Retrieve candidate UIDs by subject; optionally filter by kind or
     /// expand to `depth` graph hops. Covers nom-dict + nom-concept +
     /// nom-graph + nom-search.
-    Query { subject: String, kind: Option<String>, depth: usize },
+    Query {
+        subject: String,
+        kind: Option<String>,
+        depth: usize,
+    },
     /// Propose a Nom from prose plus retrieved context UIDs. Covers
     /// nom-intent::classify + nom-extract + nom-concept MECE pre-check.
     Compose { prose: String, context: Vec<String> },
@@ -122,8 +126,7 @@ impl Default for ReActBudget {
 /// LLM closure that, given prose + current transcript, returns the next
 /// step. Tests pass deterministic closures; production wires to
 /// Claude/OpenAI/etc. via a thin adapter.
-pub type ReActLlmFn =
-    Box<dyn Fn(&str, &[ReActStep]) -> Result<ReActStep, IntentError>>;
+pub type ReActLlmFn = Box<dyn Fn(&str, &[ReActStep]) -> Result<ReActStep, IntentError>>;
 
 /// Slice-5b-trait: the polymorphic adapter role. Any concrete LLM
 /// backend (nom-compiler itself, MCP stdio server, OpenAI,
@@ -144,11 +147,7 @@ pub type ReActLlmFn =
 /// MUST use registered `NomIntent` variants. Reject-on-invalid is
 /// enforced per slice-1 discipline.
 pub trait ReActAdapter {
-    fn next_step(
-        &self,
-        prose: &str,
-        transcript: &[ReActStep],
-    ) -> Result<ReActStep, IntentError>;
+    fn next_step(&self, prose: &str, transcript: &[ReActStep]) -> Result<ReActStep, IntentError>;
 }
 
 /// Blanket impl: any `Fn(&str, &[ReActStep]) -> Result<_, _>` IS a
@@ -161,11 +160,7 @@ impl<F> ReActAdapter for F
 where
     F: Fn(&str, &[ReActStep]) -> Result<ReActStep, IntentError>,
 {
-    fn next_step(
-        &self,
-        prose: &str,
-        transcript: &[ReActStep],
-    ) -> Result<ReActStep, IntentError> {
+    fn next_step(&self, prose: &str, transcript: &[ReActStep]) -> Result<ReActStep, IntentError> {
         self(prose, transcript)
     }
 }
@@ -231,9 +226,11 @@ impl AgentTools for StubTools {
 /// Factored out so it is unit-testable independent of the loop.
 pub fn dispatch_action(action: &AgentAction, tools: &dyn AgentTools) -> Observation {
     match action {
-        AgentAction::Query { subject, kind, depth } => {
-            tools.query(subject, kind.as_deref(), *depth)
-        }
+        AgentAction::Query {
+            subject,
+            kind,
+            depth,
+        } => tools.query(subject, kind.as_deref(), *depth),
         AgentAction::Compose { prose, context } => tools.compose(prose, context),
         AgentAction::Verify { target } => tools.verify(target),
         AgentAction::Render { uid, target } => tools.render(uid, target),
@@ -344,8 +341,7 @@ mod tests {
         let llm = llm_returning(ReActStep::Answer(NomIntent::Kind("app".into())));
         let tools = StubTools::default();
         let out =
-            classify_with_react("add two numbers", &ReActBudget::default(), &llm, &tools)
-                .unwrap();
+            classify_with_react("add two numbers", &ReActBudget::default(), &llm, &tools).unwrap();
         assert_eq!(out.len(), 1, "single-step answer must produce 1 entry");
         assert!(matches!(out[0], ReActStep::Answer(NomIntent::Kind(_))));
     }
@@ -354,13 +350,7 @@ mod tests {
     fn classify_with_react_terminates_on_reject() {
         let llm = llm_returning(ReActStep::Reject(Reason::Unparseable));
         let tools = StubTools::default();
-        let out = classify_with_react(
-            "gibberish",
-            &ReActBudget::default(),
-            &llm,
-            &tools,
-        )
-        .unwrap();
+        let out = classify_with_react("gibberish", &ReActBudget::default(), &llm, &tools).unwrap();
         assert_eq!(out.len(), 1);
         assert!(matches!(out[0], ReActStep::Reject(Reason::Unparseable)));
     }
@@ -384,14 +374,23 @@ mod tests {
         });
         let tools = StubTools::default();
         let out =
-            classify_with_react("add two numbers", &ReActBudget::default(), &llm, &tools)
-                .unwrap();
-        assert_eq!(tools.query_calls.get(), 1, "query tool must be invoked once");
+            classify_with_react("add two numbers", &ReActBudget::default(), &llm, &tools).unwrap();
+        assert_eq!(
+            tools.query_calls.get(),
+            1,
+            "query tool must be invoked once"
+        );
         // Transcript shape: Thought, Action, Observation, Answer
         assert_eq!(out.len(), 4);
         assert!(matches!(out[0], ReActStep::Thought(_)));
-        assert!(matches!(out[1], ReActStep::Action(AgentAction::Query { .. })));
-        assert!(matches!(out[2], ReActStep::Observation(Observation::Candidates(_))));
+        assert!(matches!(
+            out[1],
+            ReActStep::Action(AgentAction::Query { .. })
+        ));
+        assert!(matches!(
+            out[2],
+            ReActStep::Observation(Observation::Candidates(_))
+        ));
         assert!(matches!(out[3], ReActStep::Answer(_)));
     }
 
@@ -514,9 +513,7 @@ mod tests {
         // is now a ReActAdapter via the blanket impl. This test locks the
         // zero-breaking-change guarantee: existing closure-based tests
         // don't need to be rewritten.
-        let adapter = |_p: &str, _t: &[ReActStep]| {
-            Ok(ReActStep::Reject(Reason::Unparseable))
-        };
+        let adapter = |_p: &str, _t: &[ReActStep]| Ok(ReActStep::Reject(Reason::Unparseable));
         let step = adapter.next_step("anything", &[]).unwrap();
         assert!(matches!(step, ReActStep::Reject(Reason::Unparseable)));
     }
@@ -526,7 +523,10 @@ mod tests {
         let thought = "one two three four five six seven eight nine ten eleven";
         let truncated = truncate_thought(thought, 3);
         assert!(truncated.starts_with("one two three"));
-        assert!(truncated.ends_with('…'), "truncated thought must end with ellipsis");
+        assert!(
+            truncated.ends_with('…'),
+            "truncated thought must end with ellipsis"
+        );
         // Short thoughts pass through unchanged.
         let short = truncate_thought("short one", 10);
         assert_eq!(short, "short one");

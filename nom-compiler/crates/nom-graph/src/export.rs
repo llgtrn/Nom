@@ -74,7 +74,10 @@ pub fn export_to_dir(
 ) -> Result<ExportSummary, ExportError> {
     if out_dir.exists() {
         let non_empty = fs::read_dir(out_dir)
-            .map_err(|e| ExportError::Io { path: out_dir.into(), source: e })?
+            .map_err(|e| ExportError::Io {
+                path: out_dir.into(),
+                source: e,
+            })?
             .next()
             .is_some();
         if non_empty && !force {
@@ -95,8 +98,7 @@ pub fn export_to_dir(
     files_written.push(nodes_path);
 
     // Edges CSVs — one per EdgeType variant used by this graph. Phase 3b.
-    let (edges_written, edges_skipped) =
-        write_edges_csvs(graph, out_dir, &mut files_written)?;
+    let (edges_written, edges_skipped) = write_edges_csvs(graph, out_dir, &mut files_written)?;
 
     // Import script (schema + LOAD FROM for nodes + all emitted edge kinds).
     let import_path = out_dir.join("import.cypher");
@@ -117,10 +119,8 @@ pub fn export_to_dir(
 fn build_endpoint_resolver(
     graph: &NomtuGraph,
 ) -> std::collections::HashMap<(String, Option<String>), Option<String>> {
-    let mut resolver: std::collections::HashMap<
-        (String, Option<String>),
-        Option<String>,
-    > = std::collections::HashMap::new();
+    let mut resolver: std::collections::HashMap<(String, Option<String>), Option<String>> =
+        std::collections::HashMap::new();
     for ((word, _kind, variant), uid) in &graph.word_variant_index {
         let key = (word.clone(), variant.clone());
         resolver
@@ -186,12 +186,17 @@ fn write_edges_csvs(
             source: e,
         })?;
         for (from, to, conf) in &rows {
-            writeln!(w, "{},{},{:.6}", csv_escape(from), csv_escape(to), conf).map_err(
-                |e| ExportError::Io { path: path.clone(), source: e },
-            )?;
+            writeln!(w, "{},{},{:.6}", csv_escape(from), csv_escape(to), conf).map_err(|e| {
+                ExportError::Io {
+                    path: path.clone(),
+                    source: e,
+                }
+            })?;
         }
-        w.flush()
-            .map_err(|e| ExportError::Io { path: path.clone(), source: e })?;
+        w.flush().map_err(|e| ExportError::Io {
+            path: path.clone(),
+            source: e,
+        })?;
         summary.push((type_name, rows.len()));
         files_written.push(path);
     }
@@ -228,17 +233,19 @@ fn write_nodes_csv(graph: &NomtuGraph, path: &Path) -> Result<(), ExportError> {
             csv_escape(&node.kind),
             csv_escape_opt(node.body_hash.as_deref()),
         )
-        .map_err(|e| ExportError::Io { path: path.into(), source: e })?;
+        .map_err(|e| ExportError::Io {
+            path: path.into(),
+            source: e,
+        })?;
     }
-    w.flush()
-        .map_err(|e| ExportError::Io { path: path.into(), source: e })?;
+    w.flush().map_err(|e| ExportError::Io {
+        path: path.into(),
+        source: e,
+    })?;
     Ok(())
 }
 
-fn write_import_cypher(
-    path: &Path,
-    edges: &[(String, usize)],
-) -> Result<(), ExportError> {
+fn write_import_cypher(path: &Path, edges: &[(String, usize)]) -> Result<(), ExportError> {
     let mut script = String::from(
         r#"// nom-graph export — LadybugDB LOAD FROM script (Phase 3a+3b).
 //
@@ -315,11 +322,7 @@ mod tests {
     }
 
     fn tmp_dir(label: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!(
-            "nom_export_{}_{}",
-            label,
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("nom_export_{}_{}", label, std::process::id()));
         let _ = fs::remove_dir_all(&d);
         d
     }
@@ -416,7 +419,10 @@ mod tests {
         let dir = tmp_dir("skipped");
         let summary = export_to_dir(&g, &dir, false).unwrap();
         assert_eq!(summary.edges_skipped, 1);
-        assert!(summary.edges_written.is_empty(), "no CSV for unresolved-only edge type");
+        assert!(
+            summary.edges_written.is_empty(),
+            "no CSV for unresolved-only edge type"
+        );
         // edges_Calls.csv must NOT exist (no rows emitted).
         assert!(!dir.join("edges_Calls.csv").exists());
         fs::remove_dir_all(&dir).ok();

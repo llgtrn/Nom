@@ -855,15 +855,27 @@ fn expr_to_string(expr: &Expr) -> String {
         }
         Expr::Index(base, idx) => format!("{}[{}]", expr_to_string(base), expr_to_string(idx)),
         Expr::MethodCall(obj, method, args) => {
-            let args_str = args.iter().map(expr_to_string).collect::<Vec<_>>().join(", ");
+            let args_str = args
+                .iter()
+                .map(expr_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("{}.{}({args_str})", expr_to_string(obj), method.name)
         }
         Expr::Array(items) => {
-            let inner = items.iter().map(expr_to_string).collect::<Vec<_>>().join(", ");
+            let inner = items
+                .iter()
+                .map(expr_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("[{inner}]")
         }
         Expr::TupleExpr(items) => {
-            let inner = items.iter().map(expr_to_string).collect::<Vec<_>>().join(", ");
+            let inner = items
+                .iter()
+                .map(expr_to_string)
+                .collect::<Vec<_>>()
+                .join(", ");
             format!("({inner})")
         }
         Expr::Await(inner) => format!("{}.await", expr_to_string(inner)),
@@ -1199,12 +1211,7 @@ mod tests {
 
     #[test]
     fn single_node_infers_stack() {
-        let flow = make_test_flow(
-            "single",
-            vec![make_plan_node(0, "a")],
-            vec![],
-            vec![],
-        );
+        let flow = make_test_flow("single", vec![make_plan_node(0, "a")], vec![], vec![]);
         assert_eq!(infer_memory_strategy(&flow), MemoryStrategy::Stack);
     }
 }

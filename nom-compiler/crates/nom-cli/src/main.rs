@@ -30,7 +30,8 @@ mod store;
 
 use clap::{Parser, Subcommand};
 use nom_codegen::{CodegenOptions, collect_dependencies, generate};
-use nom_dict::NomDict;
+use nom_dict::Dict;
+use nom_dict::dict::list_required_axes;
 use nom_extract;
 use nom_graph::NomtuGraph;
 use nom_score;
@@ -1301,7 +1302,12 @@ enum LocaleCmd {
 fn main() {
     let cli = Cli::parse();
     let exit_code = match cli.command {
-        Commands::Run { file, dict, target, no_prelude } => cmd_run(&file, &dict, &target, no_prelude),
+        Commands::Run {
+            file,
+            dict,
+            target,
+            no_prelude,
+        } => cmd_run(&file, &dict, &target, no_prelude),
         Commands::Build { action } => match action {
             BuildCmd::Compile {
                 file,
@@ -1312,39 +1318,55 @@ fn main() {
                 release,
                 target,
                 no_prelude,
-            } => cmd_build(&file, output.as_deref(), &dict, emit_rust, compile, release, &target, no_prelude),
-            BuildCmd::Status { repo, dict, concept, write_locks } => {
-                build::cmd_build_status(&repo, &dict, concept.as_deref(), write_locks)
+            } => cmd_build(
+                &file,
+                output.as_deref(),
+                &dict,
+                emit_rust,
+                compile,
+                release,
+                &target,
+                no_prelude,
+            ),
+            BuildCmd::Status {
+                repo,
+                dict,
+                concept,
+                write_locks,
+            } => build::cmd_build_status(&repo, &dict, concept.as_deref(), write_locks),
+            BuildCmd::Manifest {
+                repo,
+                dict,
+                concept,
+                out,
+                pretty,
+            } => {
+                build::cmd_build_manifest(&repo, &dict, concept.as_deref(), out.as_deref(), pretty)
             }
-            BuildCmd::Manifest { repo, dict, concept, out, pretty } => {
-                build::cmd_build_manifest(
-                    &repo,
-                    &dict,
-                    concept.as_deref(),
-                    out.as_deref(),
-                    pretty,
-                )
+            BuildCmd::Report {
+                repo,
+                dict,
+                concept,
+                out,
+                format,
+            } => {
+                report::cmd_build_report(&repo, &dict, concept.as_deref(), out.as_deref(), &format)
             }
-            BuildCmd::Report { repo, dict, concept, out, format } => {
-                report::cmd_build_report(
-                    &repo,
-                    &dict,
-                    concept.as_deref(),
-                    out.as_deref(),
-                    &format,
-                )
-            }
-            BuildCmd::VerifyAcceptance { repo, dict, prior, concept } => {
-                build::cmd_build_verify_acceptance(
-                    &repo,
-                    &dict,
-                    &prior,
-                    concept.as_deref(),
-                )
-            }
+            BuildCmd::VerifyAcceptance {
+                repo,
+                dict,
+                prior,
+                concept,
+            } => build::cmd_build_verify_acceptance(&repo, &dict, &prior, concept.as_deref()),
         },
         Commands::Check { file, dict } => cmd_check(&file, &dict),
-        Commands::Test { file, dict, filter, execute, property } => {
+        Commands::Test {
+            file,
+            dict,
+            filter,
+            execute,
+            property,
+        } => {
             if property {
                 cmd_property_test(&file)
             } else {
@@ -1420,34 +1442,48 @@ fn main() {
             StoreCmd::Add { path, dict, json } => store::cmd_store_add(&path, &dict, json),
             StoreCmd::Get { hash, dict, json } => store::cmd_store_get(&hash, &dict, json),
             StoreCmd::Closure { hash, dict, json } => store::cmd_store_closure(&hash, &dict, json),
-            StoreCmd::Verify { hash, dict, strict } => store::cmd_store_verify(&hash, &dict, strict),
+            StoreCmd::Verify { hash, dict, strict } => {
+                store::cmd_store_verify(&hash, &dict, strict)
+            }
             StoreCmd::Gc { dict, dry_run } => store::cmd_store_gc(&dict, dry_run),
             StoreCmd::Stats { dict, json } => store::cmd_store_stats(&dict, json),
-            StoreCmd::List { dict, body_kind, language, status, kind, limit, json } => {
-                store::cmd_store_list(
-                    &dict,
-                    body_kind.as_deref(),
-                    language.as_deref(),
-                    status.as_deref(),
-                    kind.as_deref(),
-                    limit,
-                    json,
-                )
-            }
+            StoreCmd::List {
+                dict,
+                body_kind,
+                language,
+                status,
+                kind,
+                limit,
+                json,
+            } => store::cmd_store_list(
+                &dict,
+                body_kind.as_deref(),
+                language.as_deref(),
+                status.as_deref(),
+                kind.as_deref(),
+                limit,
+                json,
+            ),
             StoreCmd::Sync { repo, dict } => store::cmd_store_sync(&repo, &dict),
-            StoreCmd::AddMedia { path, dict, json, preserve_format } => store::cmd_store_add_media(&path, &dict, json, preserve_format),
+            StoreCmd::AddMedia {
+                path,
+                dict,
+                json,
+                preserve_format,
+            } => store::cmd_store_add_media(&path, &dict, json, preserve_format),
         },
         Commands::Media { action } => match action {
             MediaCmd::Import { path, json } => media::cmd_media_import(&path, json),
         },
         Commands::Corpus { action } => match action {
             CorpusCmd::Scan { path, json } => corpus::cmd_corpus_scan(&path, json),
-            CorpusCmd::Ingest { path, dict, json } => {
-                corpus::cmd_corpus_ingest(&path, &dict, json)
-            }
-            CorpusCmd::IngestParent { path, dict, reset_checkpoint, json } => {
-                corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json)
-            }
+            CorpusCmd::Ingest { path, dict, json } => corpus::cmd_corpus_ingest(&path, &dict, json),
+            CorpusCmd::IngestParent {
+                path,
+                dict,
+                reset_checkpoint,
+                json,
+            } => corpus::cmd_corpus_ingest_parent(&path, &dict, reset_checkpoint, json),
             CorpusCmd::CloneIngest { url, dict, json } => {
                 corpus::cmd_corpus_clone_ingest(&url, &dict, json)
             }
@@ -1457,15 +1493,23 @@ fn main() {
             CorpusCmd::IngestPypi { top, dict, json } => {
                 corpus::cmd_corpus_ingest_pypi(top, &dict, json)
             }
-            CorpusCmd::RegisterAxis { axis, scope, cardinality, repo_id, dict } => {
-                corpus::cmd_corpus_register_axis(&axis, &scope, &cardinality, &repo_id, &dict)
-            }
-            CorpusCmd::ListAxes { scope, repo_id, dict } => {
-                corpus::cmd_corpus_list_axes(&scope, &repo_id, &dict)
-            }
-            CorpusCmd::SeedStandardAxes { repo_id, dict, json } => {
-                corpus::cmd_corpus_seed_standard_axes(&repo_id, &dict, json)
-            }
+            CorpusCmd::RegisterAxis {
+                axis,
+                scope,
+                cardinality,
+                repo_id,
+                dict,
+            } => corpus::cmd_corpus_register_axis(&axis, &scope, &cardinality, &repo_id, &dict),
+            CorpusCmd::ListAxes {
+                scope,
+                repo_id,
+                dict,
+            } => corpus::cmd_corpus_list_axes(&scope, &repo_id, &dict),
+            CorpusCmd::SeedStandardAxes {
+                repo_id,
+                dict,
+                json,
+            } => corpus::cmd_corpus_seed_standard_axes(&repo_id, &dict, json),
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
         Commands::Lsp { action } => match action {
@@ -1478,17 +1522,25 @@ fn main() {
             },
         },
         Commands::Agent { action } => match action {
-            AgentCmd::Classify { prose, dict, max_iters, adapter, json } => {
-                cmd_agent_classify(&prose, &dict, max_iters, &adapter, json)
-            }
+            AgentCmd::Classify {
+                prose,
+                dict,
+                max_iters,
+                adapter,
+                json,
+            } => cmd_agent_classify(&prose, &dict, max_iters, &adapter, json),
         },
         Commands::Concept { action } => match action {
-            ConceptCmd::New { name, describe, dict } => {
-                concept::cmd_concept_new(&name, describe.as_deref(), &dict)
-            }
-            ConceptCmd::Add { concept, entry, dict } => {
-                concept::cmd_concept_add(&concept, &entry, &dict)
-            }
+            ConceptCmd::New {
+                name,
+                describe,
+                dict,
+            } => concept::cmd_concept_new(&name, describe.as_deref(), &dict),
+            ConceptCmd::Add {
+                concept,
+                entry,
+                dict,
+            } => concept::cmd_concept_add(&concept, &entry, &dict),
             ConceptCmd::AddBy {
                 concept,
                 language,
@@ -1511,33 +1563,75 @@ fn main() {
             ConceptCmd::List { json, empty, dict } => {
                 concept::cmd_concept_list_filtered(json, &dict, empty)
             }
-            ConceptCmd::Show { name, limit, json, dict } => {
-                concept::cmd_concept_show(&name, limit, json, &dict)
-            }
+            ConceptCmd::Show {
+                name,
+                limit,
+                json,
+                dict,
+            } => concept::cmd_concept_show(&name, limit, json, &dict),
             ConceptCmd::Delete { name, dict } => concept::cmd_concept_delete(&name, &dict),
         },
         Commands::Author { action } => match action {
             AuthorCmd::Start { name, out } => author::cmd_author_start(&name, out.as_deref()),
             AuthorCmd::Check { file, json } => author::cmd_author_check(&file, json),
-            AuthorCmd::Translate { input, target, json, write } => {
-                match author::TranslateTarget::from_str(&target) {
-                    Some(t) => author::cmd_author_translate(&input, t, json, write.as_deref()),
-                    None => {
-                        eprintln!(
-                            "nom author translate: unknown target `{target}` (expected app|video|image)"
-                        );
-                        1
-                    }
+            AuthorCmd::Translate {
+                input,
+                target,
+                json,
+                write,
+            } => match author::TranslateTarget::from_str(&target) {
+                Some(t) => author::cmd_author_translate(&input, t, json, write.as_deref()),
+                None => {
+                    eprintln!(
+                        "nom author translate: unknown target `{target}` (expected app|video|image)"
+                    );
+                    1
                 }
-            }
+            },
         },
         Commands::App { action } => match action {
-            AppCmd::Build { manifest_hash, name, target, root, includes, dict, out } => {
-                cmd_app_build(&manifest_hash, &name, &target, &root, &includes, &dict, &out)
-            }
-            AppCmd::Dream { manifest_hash, name, target, root, includes, dict, json, tier, target_id, repo_id, pareto_front } => {
-                cmd_app_dream(&manifest_hash, &name, &target, &root, &includes, &dict, json, &tier, target_id.as_deref(), repo_id.as_deref(), pareto_front)
-            }
+            AppCmd::Build {
+                manifest_hash,
+                name,
+                target,
+                root,
+                includes,
+                dict,
+                out,
+            } => cmd_app_build(
+                &manifest_hash,
+                &name,
+                &target,
+                &root,
+                &includes,
+                &dict,
+                &out,
+            ),
+            AppCmd::Dream {
+                manifest_hash,
+                name,
+                target,
+                root,
+                includes,
+                dict,
+                json,
+                tier,
+                target_id,
+                repo_id,
+                pareto_front,
+            } => cmd_app_dream(
+                &manifest_hash,
+                &name,
+                &target,
+                &root,
+                &includes,
+                &dict,
+                json,
+                &tier,
+                target_id.as_deref(),
+                repo_id.as_deref(),
+                pareto_front,
+            ),
         },
         Commands::Locale { action } => match action {
             LocaleCmd::List => locale::cmd_locale_list(),
@@ -1564,10 +1658,7 @@ fn main() {
                                     )
                                 })
                                 .collect();
-                            println!(
-                                r#"{{"result":"confusable","pairs":[{}]}}"#,
-                                items.join(",")
-                            );
+                            println!(r#"{{"result":"confusable","pairs":[{}]}}"#, items.join(","));
                             2
                         }
                         nom_locale::ConfusableResult::Deferred => {
@@ -1588,7 +1679,10 @@ fn main() {
                         nom_locale::ConfusableResult::Confusable { pairs } => {
                             eprintln!("confusable: {} pair(s) overlap", pairs.len());
                             for (x, y) in pairs {
-                                eprintln!("  {x:?} ≈ {y:?} (U+{:04X} ≈ U+{:04X})", x as u32, y as u32);
+                                eprintln!(
+                                    "  {x:?} ≈ {y:?} (U+{:04X} ≈ U+{:04X})",
+                                    x as u32, y as u32
+                                );
                             }
                             2
                         }
@@ -1599,53 +1693,127 @@ fn main() {
                     }
                 }
             }
-            LocaleCmd::Apply { tag, file, from_canonical, write, json } => {
-                locale::cmd_locale_apply(&tag, &file, from_canonical, write, json)
-            }
+            LocaleCmd::Apply {
+                tag,
+                file,
+                from_canonical,
+                write,
+                json,
+            } => locale::cmd_locale_apply(&tag, &file, from_canonical, write, json),
         },
         Commands::Grammar { action } => match action {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
             GrammarCmd::Import { path, sql_file } => cmd_grammar_import(path.as_deref(), &sql_file),
-            GrammarCmd::AddKind { name, description, allowed_clauses, allowed_refs, path } => {
-                cmd_grammar_add_kind(path.as_deref(), &name, &description, allowed_clauses.as_deref(), allowed_refs.as_deref())
-            }
-            GrammarCmd::AddSynonym { synonym, canonical, notes, path } => {
-                cmd_grammar_add_synonym(path.as_deref(), &synonym, &canonical, &notes)
-            }
-            GrammarCmd::AddQuality { name, axis, cardinality, required_at, path } => {
-                cmd_grammar_add_quality(path.as_deref(), &name, &axis, &cardinality, &required_at)
-            }
-            GrammarCmd::AddKeyword { token, role, kind_scope, notes, path } => {
-                cmd_grammar_add_keyword(path.as_deref(), &token, &role, &kind_scope, &notes)
-            }
+            GrammarCmd::AddKind {
+                name,
+                description,
+                allowed_clauses,
+                allowed_refs,
+                path,
+            } => cmd_grammar_add_kind(
+                path.as_deref(),
+                &name,
+                &description,
+                allowed_clauses.as_deref(),
+                allowed_refs.as_deref(),
+            ),
+            GrammarCmd::AddSynonym {
+                synonym,
+                canonical,
+                notes,
+                path,
+            } => cmd_grammar_add_synonym(path.as_deref(), &synonym, &canonical, &notes),
+            GrammarCmd::AddQuality {
+                name,
+                axis,
+                cardinality,
+                required_at,
+                path,
+            } => cmd_grammar_add_quality(path.as_deref(), &name, &axis, &cardinality, &required_at),
+            GrammarCmd::AddKeyword {
+                token,
+                role,
+                kind_scope,
+                notes,
+                path,
+            } => cmd_grammar_add_keyword(path.as_deref(), &token, &role, &kind_scope, &notes),
             GrammarCmd::AddClauseShape {
-                kind, clause_name, position, required, one_of_group,
-                grammar_shape, min_occurrences, max_occurrences, notes, path,
+                kind,
+                clause_name,
+                position,
+                required,
+                one_of_group,
+                grammar_shape,
+                min_occurrences,
+                max_occurrences,
+                notes,
+                path,
             } => cmd_grammar_add_clause_shape(
-                path.as_deref(), &kind, &clause_name, position, required,
-                one_of_group.as_deref(), &grammar_shape, min_occurrences,
-                max_occurrences, &notes,
+                path.as_deref(),
+                &kind,
+                &clause_name,
+                position,
+                required,
+                one_of_group.as_deref(),
+                &grammar_shape,
+                min_occurrences,
+                max_occurrences,
+                &notes,
             ),
             GrammarCmd::AddPattern {
-                pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
-                example_shape, hazards, favors, source_doc_refs, path,
+                pattern_id,
+                intent,
+                nom_kinds,
+                nom_clauses,
+                typed_slot_refs,
+                example_shape,
+                hazards,
+                favors,
+                source_doc_refs,
+                path,
             } => cmd_grammar_add_pattern(
-                path.as_deref(), &pattern_id, &intent, &nom_kinds, &nom_clauses,
-                &typed_slot_refs, &example_shape, &hazards, &favors, &source_doc_refs,
+                path.as_deref(),
+                &pattern_id,
+                &intent,
+                &nom_kinds,
+                &nom_clauses,
+                &typed_slot_refs,
+                &example_shape,
+                &hazards,
+                &favors,
+                &source_doc_refs,
             ),
-            GrammarCmd::PatternList { intent_contains, kind, favor, limit, json, path } => {
-                cmd_grammar_pattern_list(path.as_deref(), &intent_contains, &kind, &favor, limit, json)
-            }
-            GrammarCmd::PatternShow { pattern_id, json, path } => {
-                cmd_grammar_pattern_show(path.as_deref(), &pattern_id, json)
-            }
+            GrammarCmd::PatternList {
+                intent_contains,
+                kind,
+                favor,
+                limit,
+                json,
+                path,
+            } => cmd_grammar_pattern_list(
+                path.as_deref(),
+                &intent_contains,
+                &kind,
+                &favor,
+                limit,
+                json,
+            ),
+            GrammarCmd::PatternShow {
+                pattern_id,
+                json,
+                path,
+            } => cmd_grammar_pattern_show(path.as_deref(), &pattern_id, json),
             GrammarCmd::PatternStats { json, path } => {
                 cmd_grammar_pattern_stats(path.as_deref(), json)
             }
-            GrammarCmd::PatternSearch { prose, limit, threshold, json, path } => {
-                cmd_grammar_pattern_search(path.as_deref(), &prose, limit, threshold, json)
-            }
+            GrammarCmd::PatternSearch {
+                prose,
+                limit,
+                threshold,
+                json,
+                path,
+            } => cmd_grammar_pattern_search(path.as_deref(), &prose, limit, threshold, json),
         },
     };
     process::exit(exit_code);
@@ -1669,7 +1837,11 @@ fn cmd_grammar_init(path: Option<&Path>) -> i32 {
     match nom_grammar::init_at(&p) {
         Ok(conn) => {
             let version = nom_grammar::schema_version(&conn).unwrap_or(0);
-            println!("nom grammar init: ready at {} (schema_version {})", p.display(), version);
+            println!(
+                "nom grammar init: ready at {} (schema_version {})",
+                p.display(),
+                version
+            );
             0
         }
         Err(e) => {
@@ -1694,10 +1866,7 @@ fn cmd_grammar_import(db_path: Option<&Path>, sql_file: &Path) -> i32 {
             }
         },
         Err(e) => {
-            eprintln!(
-                "nom grammar import: {}. Run `nom grammar init` first.",
-                e
-            );
+            eprintln!("nom grammar import: {}. Run `nom grammar init` first.", e);
             return 1;
         }
     };
@@ -1758,7 +1927,10 @@ fn cmd_grammar_add_kind(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-kind: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-kind: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO kinds \
                (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
@@ -1785,7 +1957,10 @@ fn cmd_grammar_add_kind(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-kind: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-kind: {e}");
+            1
+        }
     }
 }
 
@@ -1797,14 +1972,23 @@ fn cmd_grammar_add_synonym(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-synonym: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-synonym: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO keyword_synonyms \
                (synonym, canonical_keyword, source_ref, shipped_commit, notes) \
                VALUES (?1, ?2, ?3, ?4, ?5)";
     let res = conn.execute(
         sql,
-        rusqlite::params![synonym, canonical, "cli-add-synonym", "cli-add-synonym", notes],
+        rusqlite::params![
+            synonym,
+            canonical,
+            "cli-add-synonym",
+            "cli-add-synonym",
+            notes
+        ],
     );
     match res {
         Ok(n) => {
@@ -1818,7 +2002,10 @@ fn cmd_grammar_add_synonym(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-synonym: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-synonym: {e}");
+            1
+        }
     }
 }
 
@@ -1831,7 +2018,10 @@ fn cmd_grammar_add_quality(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-quality: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-quality: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO quality_names \
                (name, axis, metric_function, cardinality, required_at, source_ref, notes) \
@@ -1851,7 +2041,10 @@ fn cmd_grammar_add_quality(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-quality: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-quality: {e}");
+            1
+        }
     }
 }
 
@@ -1864,14 +2057,24 @@ fn cmd_grammar_add_keyword(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-keyword: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-keyword: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO keywords \
                (token, role, kind_scope, source_ref, shipped_commit, notes) \
                VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
     let res = conn.execute(
         sql,
-        rusqlite::params![token, role, kind_scope, "cli-add-keyword", "cli-add-keyword", notes],
+        rusqlite::params![
+            token,
+            role,
+            kind_scope,
+            "cli-add-keyword",
+            "cli-add-keyword",
+            notes
+        ],
     );
     match res {
         Ok(n) => {
@@ -1884,7 +2087,10 @@ fn cmd_grammar_add_keyword(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-keyword: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-keyword: {e}");
+            1
+        }
     }
 }
 
@@ -1902,7 +2108,10 @@ fn cmd_grammar_add_clause_shape(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-clause-shape: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-clause-shape: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO clause_shapes \
                (kind, clause_name, is_required, one_of_group, position, grammar_shape, \
@@ -1936,7 +2145,10 @@ fn cmd_grammar_add_clause_shape(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-clause-shape: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-clause-shape: {e}");
+            1
+        }
     }
 }
 
@@ -1954,7 +2166,10 @@ fn cmd_grammar_add_pattern(
 ) -> i32 {
     let (p, conn) = match open_grammar_rw(path) {
         Ok(x) => x,
-        Err(e) => { eprintln!("nom grammar add-pattern: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar add-pattern: {e}");
+            return 1;
+        }
     };
     let sql = "INSERT OR IGNORE INTO patterns \
                (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
@@ -1963,8 +2178,15 @@ fn cmd_grammar_add_pattern(
     let res = conn.execute(
         sql,
         rusqlite::params![
-            pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
-            example_shape, hazards, favors, source_doc_refs,
+            pattern_id,
+            intent,
+            nom_kinds,
+            nom_clauses,
+            typed_slot_refs,
+            example_shape,
+            hazards,
+            favors,
+            source_doc_refs,
         ],
     );
     match res {
@@ -1978,7 +2200,10 @@ fn cmd_grammar_add_pattern(
             );
             0
         }
-        Err(e) => { eprintln!("nom grammar add-pattern: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar add-pattern: {e}");
+            1
+        }
     }
 }
 
@@ -1996,7 +2221,10 @@ fn cmd_grammar_pattern_list(
     };
     let conn = match nom_grammar::open_readonly(&p) {
         Ok(c) => c,
-        Err(e) => { eprintln!("nom grammar pattern list: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern list: {e}");
+            return 1;
+        }
     };
 
     // Build dynamic WHERE clause + parameter list. SQLite's named-
@@ -2020,7 +2248,10 @@ fn cmd_grammar_pattern_list(
     );
     let mut stmt = match conn.prepare(&sql) {
         Ok(s) => s,
-        Err(e) => { eprintln!("nom grammar pattern list: prepare: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern list: prepare: {e}");
+            return 1;
+        }
     };
     let mut bound: Vec<&dyn rusqlite::ToSql> =
         params.iter().map(|s| s as &dyn rusqlite::ToSql).collect();
@@ -2052,7 +2283,10 @@ fn cmd_grammar_pattern_list(
             }
             0
         }
-        Err(e) => { eprintln!("nom grammar pattern list: query: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar pattern list: query: {e}");
+            1
+        }
     }
 }
 
@@ -2063,7 +2297,10 @@ fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str, json: bool) -
     };
     let conn = match nom_grammar::open_readonly(&p) {
         Ok(c) => c,
-        Err(e) => { eprintln!("nom grammar pattern show: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern show: {e}");
+            return 1;
+        }
     };
     let sql = "SELECT pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
                       example_shape, hazards, favors, source_doc_refs \
@@ -2116,7 +2353,10 @@ fn cmd_grammar_pattern_show(path: Option<&Path>, pattern_id: &str, json: bool) -
             eprintln!("nom grammar pattern show: no pattern with id '{pattern_id}'");
             1
         }
-        Err(e) => { eprintln!("nom grammar pattern show: {e}"); 1 }
+        Err(e) => {
+            eprintln!("nom grammar pattern show: {e}");
+            1
+        }
     }
 }
 
@@ -2127,7 +2367,10 @@ fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
     };
     let conn = match nom_grammar::open_readonly(&p) {
         Ok(c) => c,
-        Err(e) => { eprintln!("nom grammar pattern stats: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern stats: {e}");
+            return 1;
+        }
     };
 
     let total: i64 = conn
@@ -2136,8 +2379,7 @@ fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
 
     // Per-kind tally — count patterns whose nom_kinds JSON references each kind.
     let kinds = [
-        "function", "module", "concept", "screen", "data",
-        "event", "media", "property", "scenario",
+        "function", "module", "concept", "screen", "data", "event", "media", "property", "scenario",
     ];
     let mut by_kind: Vec<(String, i64)> = Vec::new();
     for k in kinds {
@@ -2154,11 +2396,26 @@ fn cmd_grammar_pattern_stats(path: Option<&Path>, json: bool) -> i32 {
 
     // Top-favored qualities — count patterns whose favors JSON references each.
     let qualities = [
-        "correctness", "determinism", "auditability", "reproducibility",
-        "performance", "latency", "responsiveness", "availability",
-        "numerical_stability", "statistical_rigor", "clarity", "accessibility",
-        "discoverability", "documentation", "portability", "totality",
-        "minimum_cost", "forward_compatibility", "synthesizability", "gas_efficiency",
+        "correctness",
+        "determinism",
+        "auditability",
+        "reproducibility",
+        "performance",
+        "latency",
+        "responsiveness",
+        "availability",
+        "numerical_stability",
+        "statistical_rigor",
+        "clarity",
+        "accessibility",
+        "discoverability",
+        "documentation",
+        "portability",
+        "totality",
+        "minimum_cost",
+        "forward_compatibility",
+        "synthesizability",
+        "gas_efficiency",
     ];
     let mut by_favor: Vec<(String, i64)> = Vec::new();
     for q in qualities {
@@ -2210,20 +2467,28 @@ fn cmd_grammar_pattern_search(
     };
     let conn = match nom_grammar::open_readonly(&p) {
         Ok(c) => c,
-        Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern search: {e}");
+            return 1;
+        }
     };
 
     let scored = match nom_grammar::search_patterns(&conn, prose, threshold, limit) {
         Ok(s) => s,
-        Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
+        Err(e) => {
+            eprintln!("nom grammar pattern search: {e}");
+            return 1;
+        }
     };
 
     if json {
         let arr: Vec<serde_json::Value> = scored
             .iter()
-            .map(|m| serde_json::json!({
-                "score": m.score, "pattern_id": m.pattern_id, "intent": m.intent
-            }))
+            .map(|m| {
+                serde_json::json!({
+                    "score": m.score, "pattern_id": m.pattern_id, "intent": m.intent
+                })
+            })
             .collect();
         println!("{}", serde_json::to_string_pretty(&arr).unwrap_or_default());
     } else {
@@ -2305,8 +2570,10 @@ fn cmd_app_dream(
     };
 
     // tier=concept|module require --target-id.
-    if matches!(dream_tier, nom_app::DreamTier::Concept | nom_app::DreamTier::Module)
-        && target_id.is_none()
+    if matches!(
+        dream_tier,
+        nom_app::DreamTier::Concept | nom_app::DreamTier::Module
+    ) && target_id.is_none()
     {
         eprintln!("nom: --target-id required for tier={tier}");
         return 1;
@@ -2314,12 +2581,14 @@ fn cmd_app_dream(
 
     // module tier is deferred to M5c.
     if matches!(dream_tier, nom_app::DreamTier::Module) {
-        eprintln!("nom dream: not yet implemented (module-tier deferred — M5b landed recursion for concepts; module-tier needs the CompositionDecl walker)");
+        eprintln!(
+            "nom dream: not yet implemented (module-tier deferred — M5b landed recursion for concepts; module-tier needs the CompositionDecl walker)"
+        );
         return 2;
     }
 
     let dict = if dict_path.exists() {
-        match NomDict::open_in_place(dict_path) {
+        match Dict::try_open_from_nomdict_path(dict_path) {
             Ok(d) => d,
             Err(e) => {
                 eprintln!("open dict {}: {e}", dict_path.display());
@@ -2327,7 +2596,7 @@ fn cmd_app_dream(
             }
         }
     } else {
-        NomDict::open_in_memory().unwrap()
+        Dict::open_in_memory().unwrap()
     };
 
     // Optionally materialize the concept graph when --repo-id is provided.
@@ -2347,7 +2616,7 @@ fn cmd_app_dream(
     // Fetch the required-axes registry for the repo when --repo-id is provided.
     // Used by the recursive variants for M7c MECE CE-check.
     let required_axes: Vec<(String, String)> = if let Some(rid) = repo_id {
-        dict.list_required_axes(rid, "concept")
+        list_required_axes(&dict, rid, "concept")
             .unwrap_or_default()
             .into_iter()
             .map(|row| (row.axis, row.cardinality))
@@ -2363,7 +2632,11 @@ fn cmd_app_dream(
                 Some(graph) => {
                     let mut seen = std::collections::HashSet::new();
                     nom_app::layered_dream_concept_recursive(
-                        word, &dict, graph, &mut seen, &required_axes,
+                        word,
+                        &dict,
+                        graph,
+                        &mut seen,
+                        &required_axes,
                     )
                 }
                 None => nom_app::layered_dream_concept(word, &dict),
@@ -2386,7 +2659,11 @@ fn cmd_app_dream(
                     layered.leaf.proposals.len()
                 );
                 if !layered.child_reports.is_empty() {
-                    let epic_count = layered.child_reports.iter().filter(|r| r.leaf.is_epic).count();
+                    let epic_count = layered
+                        .child_reports
+                        .iter()
+                        .filter(|r| r.leaf.is_epic)
+                        .count();
                     let below = layered.child_reports.len() - epic_count;
                     println!(
                         "└─ {} child concept(s) dreamed ({} epic, {} below threshold)",
@@ -2418,7 +2695,10 @@ fn cmd_app_dream(
                 if layered.pareto_front.is_empty() {
                     println!("Pareto front: empty (no children to compare).");
                 } else {
-                    println!("Pareto front ({} candidate(s)):", layered.pareto_front.len());
+                    println!(
+                        "Pareto front ({} candidate(s)):",
+                        layered.pareto_front.len()
+                    );
                     for (i, entry) in layered.pareto_front.iter().enumerate() {
                         println!("  {}. {}", i + 1, entry);
                     }
@@ -2438,9 +2718,9 @@ fn cmd_app_dream(
                 settings: serde_json::Value::Null,
             };
             let layered = match &maybe_graph {
-                Some(graph) => nom_app::layered_dream_app_recursive(
-                    &manifest, &dict, graph, &required_axes,
-                ),
+                Some(graph) => {
+                    nom_app::layered_dream_app_recursive(&manifest, &dict, graph, &required_axes)
+                }
                 None => nom_app::layered_dream_app(&manifest, &dict),
             };
             let report = &layered.leaf;
@@ -2470,7 +2750,11 @@ fn cmd_app_dream(
                     }
                 }
                 if !layered.child_reports.is_empty() {
-                    let epic_count = layered.child_reports.iter().filter(|r| r.leaf.is_epic).count();
+                    let epic_count = layered
+                        .child_reports
+                        .iter()
+                        .filter(|r| r.leaf.is_epic)
+                        .count();
                     let below = layered.child_reports.len() - epic_count;
                     println!(
                         "└─ {} child concept(s) dreamed ({} epic, {} below threshold)",
@@ -2504,7 +2788,10 @@ fn cmd_app_dream(
                 if layered.pareto_front.is_empty() {
                     println!("Pareto front: empty (no children to compare).");
                 } else {
-                    println!("Pareto front ({} candidate(s)):", layered.pareto_front.len());
+                    println!(
+                        "Pareto front ({} candidate(s)):",
+                        layered.pareto_front.len()
+                    );
                     for (i, entry) in layered.pareto_front.iter().enumerate() {
                         println!("  {}. {}", i + 1, entry);
                     }
@@ -2536,7 +2823,7 @@ fn cmd_app_build(
         settings: serde_json::Value::Null,
     };
     let artifacts_result = if dict_path.exists() {
-        match NomDict::open_in_place(dict_path) {
+        match Dict::try_open_from_nomdict_path(dict_path) {
             Ok(d) => nom_app::compile_app_to_artifacts_with_dict(&manifest, &d),
             Err(e) => {
                 eprintln!("open dict {} failed: {e}", dict_path.display());
@@ -2565,7 +2852,11 @@ fn cmd_app_build(
         }
         println!("{:?} → {}", art.aspect, path.display());
     }
-    println!("emitted {} aspect file(s) under {}", artifacts.len(), out.display());
+    println!(
+        "emitted {} aspect file(s) under {}",
+        artifacts.len(),
+        out.display()
+    );
     0
 }
 
@@ -2662,7 +2953,10 @@ fn cmd_run_llvm(file: &PathBuf, dict: &PathBuf) -> i32 {
     let ll_path = temp_dir.join("program.ll");
     let _ = std::fs::write(&ll_path, &llvm_out.ir_text);
 
-    println!("nom: compiled to LLVM IR ({} bytes bitcode)", llvm_out.bitcode.len());
+    println!(
+        "nom: compiled to LLVM IR ({} bytes bitcode)",
+        llvm_out.bitcode.len()
+    );
 
     // Strategy 1: try lli (LLVM bitcode interpreter) - fastest path
     if let Ok(status) = process::Command::new("lli").arg(&bc_path).status() {
@@ -2732,7 +3026,9 @@ fn load_prelude(file: &Path) -> Vec<nom_ast::Declaration> {
         // Relative to the current working directory
         Some(PathBuf::from("stdlib/prelude.nom")),
         // Relative to the executable
-        std::env::current_exe().ok().and_then(|p| p.parent().map(|d| d.join("stdlib/prelude.nom"))),
+        std::env::current_exe()
+            .ok()
+            .and_then(|p| p.parent().map(|d| d.join("stdlib/prelude.nom"))),
     ];
 
     for candidate in candidates.iter().flatten() {
@@ -2743,7 +3039,10 @@ fn load_prelude(file: &Path) -> Vec<nom_ast::Declaration> {
                     return sf.declarations;
                 }
                 Err(e) => {
-                    eprintln!("nom: warning: failed to parse prelude {}: {e}", candidate.display());
+                    eprintln!(
+                        "nom: warning: failed to parse prelude {}: {e}",
+                        candidate.display()
+                    );
                     return Vec::new();
                 }
             }
@@ -2785,16 +3084,13 @@ fn cmd_build(
                         eprintln!("nom: write temp file error: {e}");
                         return 1;
                     }
-                    println!("nom: materialized {} closure entries to {}", closure.len(), tmp_file.display());
+                    println!(
+                        "nom: materialized {} closure entries to {}",
+                        closure.len(),
+                        tmp_file.display()
+                    );
                     return cmd_build(
-                        &tmp_file,
-                        output,
-                        dict,
-                        emit_rust,
-                        compile,
-                        release,
-                        target,
-                        no_prelude,
+                        &tmp_file, output, dict, emit_rust, compile, release, target, no_prelude,
                     );
                 }
             }
@@ -3275,7 +3571,9 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
 
     // Require constraints?
     let has_require = parsed.declarations.iter().any(|d| {
-        d.statements.iter().any(|s| matches!(s, Statement::Require(_)))
+        d.statements
+            .iter()
+            .any(|s| matches!(s, Statement::Require(_)))
     });
     if has_require {
         strengths.push("require constraints set (quality thresholds enforced)".to_owned());
@@ -3285,11 +3583,16 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
     }
 
     // Where constraints on needs?
-    let needs_with_where = parsed.declarations.iter().flat_map(|d| &d.statements).filter(|s| {
-        matches!(s, Statement::Need(n) if n.constraint.is_some())
-    }).count();
+    let needs_with_where = parsed
+        .declarations
+        .iter()
+        .flat_map(|d| &d.statements)
+        .filter(|s| matches!(s, Statement::Need(n) if n.constraint.is_some()))
+        .count();
     if needs_with_where > 0 {
-        strengths.push(format!("{needs_with_where}/{need_count} needs have 'where' quality constraints"));
+        strengths.push(format!(
+            "{needs_with_where}/{need_count} needs have 'where' quality constraints"
+        ));
     } else if need_count > 0 {
         score -= 10;
         issues.push("needs without 'where' constraints — add 'where security>0.9' etc.".to_owned());
@@ -3304,21 +3607,27 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
         let warnings = vresult.warning_count();
 
         // Separate resolver errors (missing dictionary) from semantic errors
-        let resolver_errors = vresult.findings.iter().filter(|f| {
-            matches!(&f.error, nom_verifier::VerifyError::Resolver(_))
-        }).count();
+        let resolver_errors = vresult
+            .findings
+            .iter()
+            .filter(|f| matches!(&f.error, nom_verifier::VerifyError::Resolver(_)))
+            .count();
         let semantic_errors = errors.saturating_sub(resolver_errors);
 
         if semantic_errors == 0 && resolver_errors == 0 {
             strengths.push("verification passed (0 errors)".to_owned());
         } else if semantic_errors == 0 && resolver_errors > 0 {
             strengths.push("verification passed (0 semantic errors)".to_owned());
-            issues.push(format!("{resolver_errors} unresolved word(s) — populate nomdict or run 'nom import'"));
+            issues.push(format!(
+                "{resolver_errors} unresolved word(s) — populate nomdict or run 'nom import'"
+            ));
             // Don't penalize heavily for missing dictionary
             score -= (resolver_errors as i32).min(5);
         } else {
             score -= semantic_errors as i32 * 10;
-            issues.push(format!("{semantic_errors} verification error(s) — run 'nom check' for details"));
+            issues.push(format!(
+                "{semantic_errors} verification error(s) — run 'nom check' for details"
+            ));
         }
         if warnings > 0 {
             issues.push(format!("{warnings} verification warning(s)"));
@@ -3331,7 +3640,10 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
             if let Statement::Implement(impl_stmt) = stmt {
                 let findings = scan_body(&impl_stmt.code, &impl_stmt.language);
                 if findings.is_empty() {
-                    strengths.push(format!("implement block in '{}' passes security scan", decl.name.name));
+                    strengths.push(format!(
+                        "implement block in '{}' passes security scan",
+                        decl.name.name
+                    ));
                 } else {
                     let max_sev = findings.iter().map(|f| &f.severity).max();
                     score -= findings.len() as i32 * 5;
@@ -3418,16 +3730,10 @@ fn cmd_property_test(file: &PathBuf) -> i32 {
                     println!("    {} {}", "●", test.name);
                     println!("      {}", test.description);
                     if !test.input_constraints.is_empty() {
-                        println!(
-                            "      inputs:  {}",
-                            test.input_constraints.join("; ")
-                        );
+                        println!("      inputs:  {}", test.input_constraints.join("; "));
                     }
                     if !test.expected_postconditions.is_empty() {
-                        println!(
-                            "      expect:  {}",
-                            test.expected_postconditions.join("; ")
-                        );
+                        println!("      expect:  {}", test.expected_postconditions.join("; "));
                     }
                 }
                 total += tests.len();
@@ -3504,12 +3810,16 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
         for stmt in &test.statements {
             match stmt {
                 Statement::Then(then_stmt) => {
-                    if let Err(reason) = eval_assertion(&then_stmt.assertion, resolver.as_ref(), test) {
+                    if let Err(reason) =
+                        eval_assertion(&then_stmt.assertion, resolver.as_ref(), test)
+                    {
                         test_errors.push(format!("then: {reason}"));
                     }
                 }
                 Statement::And(and_stmt) => {
-                    if let Err(reason) = eval_assertion(&and_stmt.assertion, resolver.as_ref(), test) {
+                    if let Err(reason) =
+                        eval_assertion(&and_stmt.assertion, resolver.as_ref(), test)
+                    {
                         test_errors.push(format!("and: {reason}"));
                     }
                 }
@@ -3570,7 +3880,9 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
                                 .canonicalize()
                                 .unwrap_or_else(|_| PathBuf::from("."));
 
-                            let build_dir = parent_dir.join(".nom-out").join(format!("{file_stem}_test"));
+                            let build_dir = parent_dir
+                                .join(".nom-out")
+                                .join(format!("{file_stem}_test"));
                             let src_dir = build_dir.join("src");
 
                             if let Err(e) = std::fs::create_dir_all(&src_dir) {
@@ -3586,7 +3898,8 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
                                     src
                                 };
 
-                                if let Err(e) = std::fs::write(src_dir.join("main.rs"), &test_main) {
+                                if let Err(e) = std::fs::write(src_dir.join("main.rs"), &test_main)
+                                {
                                     eprintln!("  exec: write error: {e}");
                                 } else {
                                     // Generate Cargo.toml
@@ -3595,10 +3908,13 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
                                         "[workspace]\n\n[package]\nname = \"{file_stem}_test\"\nversion = \"0.1.0\"\nedition = \"2021\"\n\n[dependencies]\n"
                                     );
                                     for dep in &deps {
-                                        cargo_toml.push_str(&format!("{} = {}\n", dep.name, dep.spec));
+                                        cargo_toml
+                                            .push_str(&format!("{} = {}\n", dep.name, dep.spec));
                                     }
 
-                                    if let Err(e) = std::fs::write(build_dir.join("Cargo.toml"), &cargo_toml) {
+                                    if let Err(e) =
+                                        std::fs::write(build_dir.join("Cargo.toml"), &cargo_toml)
+                                    {
                                         eprintln!("  exec: write Cargo.toml error: {e}");
                                     } else {
                                         // Build and run
@@ -3611,7 +3927,10 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
                                                 println!("  exec: all flows executed successfully");
                                             }
                                             Ok(status) => {
-                                                eprintln!("  exec: flow execution failed (exit {})", status.code().unwrap_or(-1));
+                                                eprintln!(
+                                                    "  exec: flow execution failed (exit {})",
+                                                    status.code().unwrap_or(-1)
+                                                );
                                                 failed += 1;
                                             }
                                             Err(e) => {
@@ -3662,7 +3981,11 @@ fn eval_assertion(
         Expr::BinaryOp(left, op, right) => {
             // Find the test subject from `given` statements
             let subject = test.statements.iter().find_map(|s| {
-                if let Statement::Given(g) = s { Some(&g.subject) } else { None }
+                if let Statement::Given(g) = s {
+                    Some(&g.subject)
+                } else {
+                    None
+                }
             });
 
             // Try to resolve the subject to get its scores
@@ -3691,7 +4014,9 @@ fn eval_assertion(
                         BinOp::Neq => (l - r).abs() >= 1e-9,
                         _ => return Err(format!("unsupported operator in assertion: {op:?}")),
                     };
-                    if pass { Ok(()) } else {
+                    if pass {
+                        Ok(())
+                    } else {
                         Err(format!("{l:.4} {op:?} {r:.4} is false"))
                     }
                 }
@@ -3724,10 +4049,7 @@ fn eval_assertion(
 }
 
 /// Resolve a numeric value from an expression, optionally using a resolved word entry's scores.
-fn eval_numeric(
-    expr: &nom_ast::Expr,
-    entry: Option<&nom_resolver::WordEntry>,
-) -> Option<f64> {
+fn eval_numeric(expr: &nom_ast::Expr, entry: Option<&nom_resolver::WordEntry>) -> Option<f64> {
     use nom_ast::{Expr, Literal};
     match expr {
         Expr::Literal(Literal::Number(n)) => Some(*n),
@@ -4432,9 +4754,7 @@ fn cmd_precompile(
                         rusqlite::params![bytes, hash_hex, bc_size, row_id],
                     ) {
                         Ok(_) => backfilled += 1,
-                        Err(e) => eprintln!(
-                            "  backfill warn: UPDATE failed for id={row_id}: {e}"
-                        ),
+                        Err(e) => eprintln!("  backfill warn: UPDATE failed for id={row_id}: {e}"),
                     }
                 }
                 Err(e) => {
@@ -4642,10 +4962,7 @@ fn cmd_precompile(
                         // violate invariant 15 (body_kind='bc' ⇒ body_bytes
                         // IS NOT NULL). Leave the row unchanged; the next
                         // precompile run will re-attempt.
-                        eprintln!(
-                            "  warn: could not read {}: {e}",
-                            bc_path.display()
-                        );
+                        eprintln!("  warn: could not read {}: {e}", bc_path.display());
                     }
                 }
             }
@@ -4958,9 +5275,9 @@ fn cmd_extract(dir: &PathBuf, dict: &PathBuf, limit: usize) -> i32 {
         return 1;
     }
 
-    // Open NomDict — use the dict path's parent as root (NomDict adds data/nomdict.db)
+    // Open Dict
     // If dict is "nomdict.db" we use the current dir's parent as root.
-    let nomdict = match open_nomdict(dict) {
+    let nomdict = match open_nomdict_legacy(dict) {
         Some(d) => d,
         None => return 1,
     };
@@ -5065,7 +5382,7 @@ fn cmd_extract(dir: &PathBuf, dict: &PathBuf, limit: usize) -> i32 {
 }
 
 fn cmd_score(dict: &PathBuf) -> i32 {
-    let nomdict = match open_nomdict(dict) {
+    let nomdict = match open_nomdict_legacy(dict) {
         Some(d) => d,
         None => return 1,
     };
@@ -5142,7 +5459,7 @@ fn cmd_score(dict: &PathBuf) -> i32 {
 }
 
 fn cmd_stats(dict: &PathBuf) -> i32 {
-    let nomdict = match open_nomdict(dict) {
+    let nomdict = match open_nomdict_legacy(dict) {
         Some(d) => d,
         None => return 1,
     };
@@ -5255,7 +5572,7 @@ fn cmd_coverage(dir: &PathBuf, dict: &PathBuf) -> i32 {
         return 1;
     }
 
-    let nomdict = match open_nomdict(dict) {
+    let nomdict = match open_nomdict_legacy(dict) {
         Some(d) => d,
         None => return 1,
     };
@@ -5333,22 +5650,16 @@ fn cmd_coverage(dir: &PathBuf, dict: &PathBuf) -> i32 {
     0
 }
 
-/// Open a NomDict from the --dict path.
-/// The NomDict::open expects a root directory and creates data/nomdict.db inside it.
-/// If the --dict points directly to a .db file, we use its parent as the root.
-fn open_nomdict(dict: &PathBuf) -> Option<NomDict> {
-    // If dict path ends with nomdict.db, use the grandparent dir as root
-    // because NomDict stores at <root>/data/nomdict.db
+/// Open a legacy NomDict for atom-level extract/score/stats/coverage commands
+/// that still depend on the old atom store API.
+fn open_nomdict_legacy(dict: &PathBuf) -> Option<nom_dict::NomDict> {
+    use nom_dict::NomDict;
+    // If dict path ends with a .db file, use current dir as root.
     let root = if dict.extension().is_some_and(|e| e == "db") {
-        // dict points to a .db file, e.g. "nomdict.db" or "data/nomdict.db"
-        // NomDict::open creates data/nomdict.db so root should be parent of parent
-        // But the existing convention is --dict nomdict.db at the project root,
-        // so we just use current directory as root.
         PathBuf::from(".")
     } else {
         dict.clone()
     };
-
     match NomDict::open(&root) {
         Ok(d) => Some(d),
         Err(e) => {
@@ -5472,9 +5783,7 @@ fn cmd_translate(
         None
     };
 
-    for (i, (_id, word, variant, lang, body, concept, kind)) in
-        entries.iter().enumerate()
-    {
+    for (i, (_id, word, variant, lang, body, concept, kind)) in entries.iter().enumerate() {
         let result = nom_translate::translate(body, lang);
 
         // Track confidence distribution
@@ -5772,10 +6081,13 @@ fn cmd_agent_classify(
     use nom_intent::react::{ReActAdapter, ReActStep};
 
     // Open the dict for DictTools' query + explain methods.
-    let d = match nom_dict::NomDict::open_in_place(dict) {
+    let d = match nom_dict::Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("nom agent classify: cannot open dict {}: {e}", dict.display());
+            eprintln!(
+                "nom agent classify: cannot open dict {}: {e}",
+                dict.display()
+            );
             return 1;
         }
     };
@@ -5799,9 +6111,7 @@ fn cmd_agent_classify(
             Box::new(StubAdapter)
         }
         other => {
-            eprintln!(
-                "nom agent classify: unknown adapter {other:?}; use one of: nom-cli, stub"
-            );
+            eprintln!("nom agent classify: unknown adapter {other:?}; use one of: nom-cli, stub");
             return 1;
         }
     };
@@ -5810,17 +6120,15 @@ fn cmd_agent_classify(
     // trait object in a closure using the blanket impl's reverse
     // direction — `move |p, t| adapter.next_step(p, t)` gives a Fn
     // that satisfies the ReActLlmFn signature.
-    let llm: nom_intent::react::ReActLlmFn = Box::new(move |prose, transcript| {
-        adapter.next_step(prose, transcript)
-    });
+    let llm: nom_intent::react::ReActLlmFn =
+        Box::new(move |prose, transcript| adapter.next_step(prose, transcript));
 
     let budget = nom_intent::react::ReActBudget {
         max_iterations: max_iters,
         ..Default::default()
     };
 
-    let transcript = match nom_intent::react::classify_with_react(prose, &budget, &llm, &tools)
-    {
+    let transcript = match nom_intent::react::classify_with_react(prose, &budget, &llm, &tools) {
         Ok(t) => t,
         Err(e) => {
             eprintln!("nom agent classify: loop error: {e}");
@@ -5837,8 +6145,11 @@ fn cmd_agent_classify(
             }
         }
     } else {
-        println!("nom agent classify — transcript ({} step{})", transcript.len(),
-            if transcript.len() == 1 { "" } else { "s" });
+        println!(
+            "nom agent classify — transcript ({} step{})",
+            transcript.len(),
+            if transcript.len() == 1 { "" } else { "s" }
+        );
         for (i, step) in transcript.iter().enumerate() {
             println!("  [{}] {:?}", i, step);
         }

@@ -45,16 +45,17 @@ fn nom_grammar_src_has_no_seed_const_arrays() {
             // Heuristic: does this const declare a slice or array
             // (contains `&[` or `[`) holding tuples or structs? That's
             // the shape of a seed table.
-            let looks_like_collection = trimmed.contains("&[(")
-                || trimmed.contains(": &[")
-                || trimmed.contains(": [");
+            let looks_like_collection =
+                trimmed.contains("&[(") || trimmed.contains(": &[") || trimmed.contains(": [");
             if !looks_like_collection {
                 continue;
             }
 
             // Primitive slice types are still allowed (e.g. &[u8]).
             // A seed array carries tuples (&str, &str, …) or structs.
-            if trimmed.contains(": &[u8]") || trimmed.contains(": &[&str]") && !trimmed.contains("(") {
+            if trimmed.contains(": &[u8]")
+                || trimmed.contains(": &[&str]") && !trimmed.contains("(")
+            {
                 continue;
             }
 

@@ -89,13 +89,19 @@ fn avif_ingest_png_to_avif() {
         "--dict",
         &dict_str,
     ]);
-    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+    assert_eq!(
+        code, 0,
+        "add-media exit={code}\nstdout={stdout}\nstderr={stderr}"
+    );
 
     // ── 2. Parse id from output
     let id = parse_id_line(&stdout)
         .unwrap_or_else(|| panic!("no id: line in add-media output:\n{stdout}"));
     assert_eq!(id.len(), 64, "id must be 64 hex chars: {id:?}");
-    assert!(id.chars().all(|c| c.is_ascii_hexdigit()), "id not hex: {id}");
+    assert!(
+        id.chars().all(|c| c.is_ascii_hexdigit()),
+        "id not hex: {id}"
+    );
 
     // ── 3. Open dict directly; assert body_kind="avif", body_bytes>0
     let conn = Connection::open(&dict_path).expect("open dict");
@@ -123,10 +129,7 @@ fn avif_ingest_png_to_avif() {
         body_bytes_len > 0,
         "body_bytes must be non-empty after avif ingest"
     );
-    assert!(
-        !body_bytes.is_empty(),
-        "body_bytes blob must not be empty"
-    );
+    assert!(!body_bytes.is_empty(), "body_bytes blob must not be empty");
 
     // ── 4. sha256(body_bytes) == id  (§4.4.6 invariant 15)
     let actual_hash = format!("{:x}", Sha256::digest(&body_bytes));
@@ -139,10 +142,7 @@ fn avif_ingest_png_to_avif() {
     let png_bytes = std::fs::read(&fixture).expect("read fixture");
     let psnr = verify_avif_roundtrip(&png_bytes, &body_bytes)
         .expect("verify_avif_roundtrip must pass on stored AVIF");
-    assert!(
-        psnr >= 30.0,
-        "PSNR {psnr:.2} dB is below 30 dB threshold"
-    );
+    assert!(psnr >= 30.0, "PSNR {psnr:.2} dB is below 30 dB threshold");
 
     // ── 6. Invariant gate: no avif rows with NULL/empty body_bytes
     let null_avif_count: i64 = conn
@@ -194,10 +194,12 @@ fn avif_ingest_preserve_format_keeps_png() {
         &dict_str,
         "--preserve-format",
     ]);
-    assert_eq!(code, 0, "add-media exit={code}\nstdout={stdout}\nstderr={stderr}");
+    assert_eq!(
+        code, 0,
+        "add-media exit={code}\nstdout={stdout}\nstderr={stderr}"
+    );
 
-    let id = parse_id_line(&stdout)
-        .unwrap_or_else(|| panic!("no id: line:\n{stdout}"));
+    let id = parse_id_line(&stdout).unwrap_or_else(|| panic!("no id: line:\n{stdout}"));
 
     let conn = Connection::open(&dict_path).expect("open dict");
     let body_kind: String = conn

@@ -1,7 +1,10 @@
 use crate::context::ModuleCompiler;
 use nom_ast::StructDef;
 
-pub fn compile_struct(mc: &mut ModuleCompiler, struct_def: &StructDef) -> Result<(), crate::LlvmError> {
+pub fn compile_struct(
+    mc: &mut ModuleCompiler,
+    struct_def: &StructDef,
+) -> Result<(), crate::LlvmError> {
     let name = &struct_def.name.name;
     let mut field_types = Vec::new();
     let mut field_names = Vec::new();

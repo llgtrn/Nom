@@ -61,8 +61,7 @@ fn bumpalo_scan_detects_rust_files() {
     if !corpus_available() {
         return;
     }
-    let report = nom_corpus::scan_directory(&bumpalo_path())
-        .expect("scan must succeed on bumpalo");
+    let report = nom_corpus::scan_directory(&bumpalo_path()).expect("scan must succeed on bumpalo");
     let rust_stats = report
         .languages
         .get("rust")
@@ -82,8 +81,7 @@ fn bumpalo_scan_prunes_target_dir() {
     if !corpus_available() {
         return;
     }
-    let report = nom_corpus::scan_directory(&bumpalo_path())
-        .expect("scan must succeed");
+    let report = nom_corpus::scan_directory(&bumpalo_path()).expect("scan must succeed");
     // Any file path returned should not be inside `target/`. The
     // ScanReport doesn't expose paths directly, but total_bytes cap
     // checks that we didn't accidentally slurp GB of build output.

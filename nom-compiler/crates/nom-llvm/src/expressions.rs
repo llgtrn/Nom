@@ -1,5 +1,5 @@
-use crate::context::ModuleCompiler;
 use crate::LlvmError;
+use crate::context::ModuleCompiler;
 use inkwell::types::{BasicType, BasicTypeEnum};
 use inkwell::values::BasicValueEnum;
 use nom_ast::{BinOp, Expr, Literal, UnaryOp};
@@ -140,12 +140,9 @@ fn compile_struct_init<'ctx>(
 
     for (field_ident, value_expr) in fields {
         let fname = &field_ident.name;
-        let idx = field_names
-            .iter()
-            .position(|f| f == fname)
-            .ok_or_else(|| {
-                LlvmError::Compilation(format!("struct '{}' has no field '{}'", name, fname))
-            })?;
+        let idx = field_names.iter().position(|f| f == fname).ok_or_else(|| {
+            LlvmError::Compilation(format!("struct '{}' has no field '{}'", name, fname))
+        })?;
         if assigned[idx] {
             return Err(LlvmError::Compilation(format!(
                 "duplicate field '{}' in struct literal",
@@ -155,7 +152,12 @@ fn compile_struct_init<'ctx>(
         let val = compile_expr(mc, value_expr)?;
         let field_ptr = mc
             .builder
-            .build_struct_gep(struct_ty, alloca, idx as u32, &format!("{}.{}.init", name, fname))
+            .build_struct_gep(
+                struct_ty,
+                alloca,
+                idx as u32,
+                &format!("{}.{}.init", name, fname),
+            )
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         mc.builder
             .build_store(field_ptr, val)
@@ -184,14 +186,14 @@ fn compile_literal<'ctx>(
     match lit {
         Literal::Number(n) => Ok(mc.context.f64_type().const_float(*n).into()),
         Literal::Integer(i) => Ok(mc.context.i64_type().const_int(*i as u64, true).into()),
-        Literal::Bool(b) => {
-            Ok(mc.context.bool_type().const_int(*b as u64, false).into())
-        }
+        Literal::Bool(b) => Ok(mc.context.bool_type().const_int(*b as u64, false).into()),
         Literal::Text(s) => {
             // Emit the bytes as a private global constant (with trailing NUL,
             // but length tracked separately) and materialize a NomString
             // struct value: { data: &bytes, len: <literal len> }.
-            let global = mc.builder.build_global_string_ptr(s, "str")
+            let global = mc
+                .builder
+                .build_global_string_ptr(s, "str")
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             let data_ptr = global.as_pointer_value();
             let len = mc.context.i64_type().const_int(s.len() as u64, false);
@@ -218,9 +220,15 @@ fn compile_ident<'ctx>(
         if let Some(enum_name) = mc.variant_to_enum.get(name).cloned() {
             return compile_enum_variant_ctor(mc, &enum_name, name, &[]);
         }
-        Err(LlvmError::Compilation(format!("undefined variable: {}", name)))
+        Err(LlvmError::Compilation(format!(
+            "undefined variable: {}",
+            name
+        )))
     } else {
-        Err(LlvmError::Compilation(format!("undefined variable: {}", name)))
+        Err(LlvmError::Compilation(format!(
+            "undefined variable: {}",
+            name
+        )))
     }
 }
 
@@ -303,39 +311,45 @@ fn compile_binary_op<'ctx>(
             BinOp::Div => mc.builder.build_float_div(lf, rf, "fdiv"),
             BinOp::Mod => mc.builder.build_float_rem(lf, rf, "frem"),
             BinOp::Gt => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::OGT, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::OGT, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Lt => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::OLT, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::OLT, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Gte => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::OGE, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::OGE, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Lte => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::OLE, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::OLE, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Eq => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::OEQ, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::OEQ, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Neq => {
-                let cmp = mc.builder.build_float_compare(
-                    inkwell::FloatPredicate::ONE, lf, rf, "fcmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_float_compare(inkwell::FloatPredicate::ONE, lf, rf, "fcmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             _ => return Err(LlvmError::Unsupported(format!("float op {:?}", op))),
@@ -360,39 +374,45 @@ fn compile_binary_op<'ctx>(
             BinOp::BitAnd => mc.builder.build_and(li, ri, "bitand"),
             BinOp::BitOr => mc.builder.build_or(li, ri, "bitor"),
             BinOp::Gt => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::SGT, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SGT, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Lt => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::SLT, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLT, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Gte => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::SGE, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SGE, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Lte => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::SLE, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::SLE, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Eq => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::EQ, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::EQ, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
             BinOp::Neq => {
-                let cmp = mc.builder.build_int_compare(
-                    inkwell::IntPredicate::NE, li, ri, "icmp"
-                ).map_err(|e| LlvmError::Compilation(e.to_string()))?;
+                let cmp = mc
+                    .builder
+                    .build_int_compare(inkwell::IntPredicate::NE, li, ri, "icmp")
+                    .map_err(|e| LlvmError::Compilation(e.to_string()))?;
                 return Ok(cmp.into());
             }
         };
@@ -439,9 +459,7 @@ fn compile_unary_op<'ctx>(
                 Err(LlvmError::Type("not requires bool/int type".into()))
             }
         }
-        UnaryOp::Ref | UnaryOp::RefMut => {
-            Err(LlvmError::Unsupported("ref/refmut unary op".into()))
-        }
+        UnaryOp::Ref | UnaryOp::RefMut => Err(LlvmError::Unsupported("ref/refmut unary op".into())),
     }
 }
 
@@ -467,7 +485,11 @@ fn compile_call<'ctx>(
     if matches!(fn_name, "print" | "println") && call.args.len() == 1 {
         let arg_val = compile_expr(mc, &call.args[0])?;
         if is_string_value(mc, &arg_val) {
-            let rt_name = if fn_name == "print" { "nom_print" } else { "nom_println" };
+            let rt_name = if fn_name == "print" {
+                "nom_print"
+            } else {
+                "nom_println"
+            };
             let rt_fn = mc
                 .functions
                 .get(rt_name)
@@ -535,7 +557,11 @@ fn compile_call<'ctx>(
 
     // Builtins that take a *const NomString argument: parse_int, parse_float.
     if matches!(fn_name, "parse_int" | "parse_float") && call.args.len() == 1 {
-        let rt_name = if fn_name == "parse_int" { "nom_parse_int" } else { "nom_parse_float" };
+        let rt_name = if fn_name == "parse_int" {
+            "nom_parse_int"
+        } else {
+            "nom_parse_float"
+        };
         let rt_fn = mc
             .functions
             .get(rt_name)
@@ -587,7 +613,10 @@ fn compile_call<'ctx>(
             .ok_or_else(|| LlvmError::Compilation("nom_chr returned void".into()));
     }
 
-    let function = mc.functions.get(fn_name).copied()
+    let function = mc
+        .functions
+        .get(fn_name)
+        .copied()
         .or_else(|| mc.module.get_function(fn_name))
         .ok_or_else(|| LlvmError::Compilation(format!("undefined function: {}", fn_name)))?;
 
@@ -597,12 +626,14 @@ fn compile_call<'ctx>(
         args.push(val.into());
     }
 
-    let call_val = mc.builder
+    let call_val = mc
+        .builder
         .build_call(function, &args, "call")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
     // If the function returns void, return an i8 zero as a placeholder
-    call_val.try_as_basic_value()
+    call_val
+        .try_as_basic_value()
         .left()
         .ok_or_else(|| LlvmError::Compilation("void return".into()))
         .or_else(|_| Ok(mc.context.i8_type().const_zero().into()))
@@ -619,10 +650,7 @@ fn is_string_value<'ctx>(mc: &ModuleCompiler<'ctx>, val: &BasicValueEnum<'ctx>) 
 
 /// Public wrapper used by `statements::compile_match_*` so match arms can
 /// detect string subjects without re-implementing the layout check.
-pub fn is_string_value_pub<'ctx>(
-    mc: &ModuleCompiler<'ctx>,
-    val: &BasicValueEnum<'ctx>,
-) -> bool {
+pub fn is_string_value_pub<'ctx>(mc: &ModuleCompiler<'ctx>, val: &BasicValueEnum<'ctx>) -> bool {
     is_string_value(mc, val)
 }
 
@@ -640,7 +668,13 @@ pub fn materialize_string_ptr_pub<'ctx>(
 fn extract_string_parts<'ctx>(
     mc: &ModuleCompiler<'ctx>,
     val: BasicValueEnum<'ctx>,
-) -> Result<(inkwell::values::PointerValue<'ctx>, inkwell::values::IntValue<'ctx>), LlvmError> {
+) -> Result<
+    (
+        inkwell::values::PointerValue<'ctx>,
+        inkwell::values::IntValue<'ctx>,
+    ),
+    LlvmError,
+> {
     let sv = val.into_struct_value();
     let data = mc
         .builder
@@ -679,7 +713,11 @@ fn resolve_list_ident<'ctx>(
     mc: &ModuleCompiler<'ctx>,
     expr: &Expr,
 ) -> Option<(inkwell::values::PointerValue<'ctx>, nom_ast::TypeExpr)> {
-    let name = if let Expr::Ident(id) = expr { &id.name } else { return None };
+    let name = if let Expr::Ident(id) = expr {
+        &id.name
+    } else {
+        return None;
+    };
     let elem_ty = mc.list_elem_types.get(name)?.clone();
     let (ptr, _ty) = mc.named_values.get(name)?;
     Some((*ptr, elem_ty))
@@ -824,12 +862,14 @@ fn compile_index<'ctx>(
             .get("nom_string_slice")
             .copied()
             .or_else(|| mc.module.get_function("nom_string_slice"))
-            .ok_or_else(|| {
-                LlvmError::Compilation("nom_string_slice runtime fn missing".into())
-            })?;
+            .ok_or_else(|| LlvmError::Compilation("nom_string_slice runtime fn missing".into()))?;
         let call = mc
             .builder
-            .build_call(slice_fn, &[str_ptr.into(), lo_i.into(), hi_i.into()], "str_slice")
+            .build_call(
+                slice_fn,
+                &[str_ptr.into(), lo_i.into(), hi_i.into()],
+                "str_slice",
+            )
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         return call
             .try_as_basic_value()
@@ -961,41 +1001,61 @@ fn compile_field_access<'ctx>(
     // Determine the variable name from the object expression
     let var_name = match obj {
         Expr::Ident(ident) => &ident.name,
-        _ => return Err(LlvmError::Unsupported("field access on non-ident expression".into())),
+        _ => {
+            return Err(LlvmError::Unsupported(
+                "field access on non-ident expression".into(),
+            ));
+        }
     };
 
     // Look up the struct type name for this variable
-    let struct_type_name = mc.value_types.get(var_name.as_str())
-        .ok_or_else(|| LlvmError::Compilation(format!(
-            "unknown struct type for variable '{}'", var_name
-        )))?
+    let struct_type_name = mc
+        .value_types
+        .get(var_name.as_str())
+        .ok_or_else(|| {
+            LlvmError::Compilation(format!("unknown struct type for variable '{}'", var_name))
+        })?
         .clone();
 
     // Find the field index
-    let field_names = mc.struct_fields.get(&struct_type_name)
-        .ok_or_else(|| LlvmError::Compilation(format!(
-            "no field info for struct '{}'", struct_type_name
-        )))?;
+    let field_names = mc.struct_fields.get(&struct_type_name).ok_or_else(|| {
+        LlvmError::Compilation(format!("no field info for struct '{}'", struct_type_name))
+    })?;
 
-    let field_index = field_names.iter().position(|f| f == &field.name)
-        .ok_or_else(|| LlvmError::Compilation(format!(
-            "struct '{}' has no field '{}'", struct_type_name, field.name
-        )))?;
+    let field_index = field_names
+        .iter()
+        .position(|f| f == &field.name)
+        .ok_or_else(|| {
+            LlvmError::Compilation(format!(
+                "struct '{}' has no field '{}'",
+                struct_type_name, field.name
+            ))
+        })?;
 
     // Get the pointer to the struct variable
-    let (struct_ptr, _struct_ty) = mc.named_values.get(var_name.as_str())
+    let (struct_ptr, _struct_ty) = mc
+        .named_values
+        .get(var_name.as_str())
         .ok_or_else(|| LlvmError::Compilation(format!("undefined variable: {}", var_name)))?;
 
-    let struct_llvm_ty = mc.struct_types.get(&struct_type_name)
-        .ok_or_else(|| LlvmError::Compilation(format!("unknown struct type: {}", struct_type_name)))?;
+    let struct_llvm_ty = mc.struct_types.get(&struct_type_name).ok_or_else(|| {
+        LlvmError::Compilation(format!("unknown struct type: {}", struct_type_name))
+    })?;
 
     // GEP to the field
-    let field_ptr = mc.builder
-        .build_struct_gep(*struct_llvm_ty, *struct_ptr, field_index as u32, &format!("{}.{}.ptr", var_name, field.name))
+    let field_ptr = mc
+        .builder
+        .build_struct_gep(
+            *struct_llvm_ty,
+            *struct_ptr,
+            field_index as u32,
+            &format!("{}.{}.ptr", var_name, field.name),
+        )
         .map_err(|e| LlvmError::Compilation(format!("struct GEP failed: {}", e)))?;
 
     // Determine the field type and load it
-    let field_ty = struct_llvm_ty.get_field_type_at_index(field_index as u32)
+    let field_ty = struct_llvm_ty
+        .get_field_type_at_index(field_index as u32)
         .ok_or_else(|| LlvmError::Compilation(format!("invalid field index {}", field_index)))?;
 
     mc.builder
@@ -1041,9 +1101,7 @@ fn compile_enum_variant_ctor<'ctx>(
         .enumerate()
         .find(|(_, (n, _))| n == variant_name)
         .map(|(i, (_, tys))| (i, tys.clone()))
-        .ok_or_else(|| {
-            LlvmError::Compilation(format!("unknown variant: {}", qualified))
-        })?;
+        .ok_or_else(|| LlvmError::Compilation(format!("unknown variant: {}", qualified)))?;
 
     // Arg count check: error out on mismatch; helps catch parser/codegen
     // bugs early rather than silently miscompiling.
@@ -1170,7 +1228,12 @@ fn compile_tuple<'ctx>(
     for (i, val) in compiled.iter().enumerate() {
         let next = mc
             .builder
-            .build_insert_value(agg.into_struct_value(), *val, i as u32, &format!("tup{}", i))
+            .build_insert_value(
+                agg.into_struct_value(),
+                *val,
+                i as u32,
+                &format!("tup{}", i),
+            )
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
         // build_insert_value returns an AggregateValueEnum; convert back.
         agg = match next {
@@ -1187,7 +1250,11 @@ fn compile_array<'ctx>(
 ) -> Result<BasicValueEnum<'ctx>, LlvmError> {
     if elements.is_empty() {
         // Return a null pointer for empty arrays
-        return Ok(mc.context.ptr_type(inkwell::AddressSpace::default()).const_null().into());
+        return Ok(mc
+            .context
+            .ptr_type(inkwell::AddressSpace::default())
+            .const_null()
+            .into());
     }
 
     // Compile all elements
@@ -1201,7 +1268,8 @@ fn compile_array<'ctx>(
     let array_type = elem_ty.array_type(compiled.len() as u32);
 
     // Allocate array on stack
-    let array_alloca = mc.builder
+    let array_alloca = mc
+        .builder
         .build_alloca(array_type, "arr")
         .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
@@ -1210,7 +1278,12 @@ fn compile_array<'ctx>(
         let idx = i64_type.const_int(i as u64, false);
         let elem_ptr = unsafe {
             mc.builder
-                .build_in_bounds_gep(array_type, array_alloca, &[i64_type.const_int(0, false), idx], &format!("arr_{}", i))
+                .build_in_bounds_gep(
+                    array_type,
+                    array_alloca,
+                    &[i64_type.const_int(0, false), idx],
+                    &format!("arr_{}", i),
+                )
                 .map_err(|e| LlvmError::Compilation(e.to_string()))?
         };
         mc.builder
@@ -1271,17 +1344,29 @@ mod tests {
         // Use variables so LLVM doesn't constant-fold
         let f64_ty = compiler.context.f64_type();
         let alloca_a = mc.builder.build_alloca(f64_ty, "a").unwrap();
-        mc.builder.build_store(alloca_a, f64_ty.const_float(1.0)).unwrap();
-        mc.named_values.insert("a".into(), (alloca_a, f64_ty.into()));
+        mc.builder
+            .build_store(alloca_a, f64_ty.const_float(1.0))
+            .unwrap();
+        mc.named_values
+            .insert("a".into(), (alloca_a, f64_ty.into()));
 
         let alloca_b = mc.builder.build_alloca(f64_ty, "b").unwrap();
-        mc.builder.build_store(alloca_b, f64_ty.const_float(2.0)).unwrap();
-        mc.named_values.insert("b".into(), (alloca_b, f64_ty.into()));
+        mc.builder
+            .build_store(alloca_b, f64_ty.const_float(2.0))
+            .unwrap();
+        mc.named_values
+            .insert("b".into(), (alloca_b, f64_ty.into()));
 
         let expr = Expr::BinaryOp(
-            Box::new(Expr::Ident(nom_ast::Identifier::new("a", nom_ast::Span::default()))),
+            Box::new(Expr::Ident(nom_ast::Identifier::new(
+                "a",
+                nom_ast::Span::default(),
+            ))),
             BinOp::Add,
-            Box::new(Expr::Ident(nom_ast::Identifier::new("b", nom_ast::Span::default()))),
+            Box::new(Expr::Ident(nom_ast::Identifier::new(
+                "b",
+                nom_ast::Span::default(),
+            ))),
         );
         let val = compile_expr(&mut mc, &expr).unwrap();
         assert!(val.is_float_value());
@@ -1323,12 +1408,18 @@ mod tests {
             fields: vec![
                 nom_ast::StructField {
                     name: nom_ast::Identifier::new("x", nom_ast::Span::default()),
-                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default())),
+                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new(
+                        "number",
+                        nom_ast::Span::default(),
+                    )),
                     is_pub: false,
                 },
                 nom_ast::StructField {
                     name: nom_ast::Identifier::new("y", nom_ast::Span::default()),
-                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default())),
+                    type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new(
+                        "number",
+                        nom_ast::Span::default(),
+                    )),
                     is_pub: false,
                 },
             ],
@@ -1342,13 +1433,22 @@ mod tests {
             name: nom_ast::Identifier::new("get_x", nom_ast::Span::default()),
             params: vec![nom_ast::FnParam {
                 name: nom_ast::Identifier::new("p", nom_ast::Span::default()),
-                type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new("Point", nom_ast::Span::default())),
+                type_ann: nom_ast::TypeExpr::Named(nom_ast::Identifier::new(
+                    "Point",
+                    nom_ast::Span::default(),
+                )),
             }],
-            return_type: Some(nom_ast::TypeExpr::Named(nom_ast::Identifier::new("number", nom_ast::Span::default()))),
+            return_type: Some(nom_ast::TypeExpr::Named(nom_ast::Identifier::new(
+                "number",
+                nom_ast::Span::default(),
+            ))),
             body: nom_ast::Block {
                 stmts: vec![nom_ast::BlockStmt::Return(Some(
                     nom_ast::Expr::FieldAccess(
-                        Box::new(nom_ast::Expr::Ident(nom_ast::Identifier::new("p", nom_ast::Span::default()))),
+                        Box::new(nom_ast::Expr::Ident(nom_ast::Identifier::new(
+                            "p",
+                            nom_ast::Span::default(),
+                        ))),
                         nom_ast::Identifier::new("x", nom_ast::Span::default()),
                     ),
                 ))],

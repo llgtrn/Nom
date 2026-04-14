@@ -1,11 +1,8 @@
-use crate::context::ModuleCompiler;
 use crate::LlvmError;
+use crate::context::ModuleCompiler;
 use nom_ast::FnDef;
 
-pub fn compile_fn<'ctx>(
-    mc: &mut ModuleCompiler<'ctx>,
-    fn_def: &FnDef,
-) -> Result<(), LlvmError> {
+pub fn compile_fn<'ctx>(mc: &mut ModuleCompiler<'ctx>, fn_def: &FnDef) -> Result<(), LlvmError> {
     let name = &fn_def.name.name;
 
     // Resolve parameter types
@@ -48,11 +45,13 @@ pub fn compile_fn<'ctx>(
     for (i, param) in fn_def.params.iter().enumerate() {
         let param_name = &param.name.name;
         let param_ty = crate::types::resolve_type(mc, &param.type_ann)?;
-        let alloca = mc.builder
+        let alloca = mc
+            .builder
             .build_alloca(param_ty, param_name)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
 
-        let arg_val = function.get_nth_param(i as u32)
+        let arg_val = function
+            .get_nth_param(i as u32)
             .ok_or_else(|| LlvmError::Compilation(format!("missing param {}", i)))?;
 
         // Set parameter name in IR for readability
@@ -61,12 +60,14 @@ pub fn compile_fn<'ctx>(
         mc.builder
             .build_store(alloca, arg_val)
             .map_err(|e| LlvmError::Compilation(e.to_string()))?;
-        mc.named_values.insert(param_name.clone(), (alloca, param_ty));
+        mc.named_values
+            .insert(param_name.clone(), (alloca, param_ty));
 
         // Track struct type for field access
         if let nom_ast::TypeExpr::Named(ident) = &param.type_ann {
             if mc.struct_types.contains_key(&ident.name) {
-                mc.value_types.insert(param_name.clone(), ident.name.clone());
+                mc.value_types
+                    .insert(param_name.clone(), ident.name.clone());
             }
         }
 
@@ -94,33 +95,40 @@ pub fn compile_fn<'ctx>(
     if current_bb.get_terminator().is_none() {
         match ret_type {
             Some(inkwell::types::BasicTypeEnum::FloatType(ft)) => {
-                mc.builder.build_return(Some(&ft.const_float(0.0)))
+                mc.builder
+                    .build_return(Some(&ft.const_float(0.0)))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(inkwell::types::BasicTypeEnum::IntType(it)) => {
-                mc.builder.build_return(Some(&it.const_zero()))
+                mc.builder
+                    .build_return(Some(&it.const_zero()))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(inkwell::types::BasicTypeEnum::PointerType(pt)) => {
-                mc.builder.build_return(Some(&pt.const_null()))
+                mc.builder
+                    .build_return(Some(&pt.const_null()))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(inkwell::types::BasicTypeEnum::StructType(st)) => {
                 let zero = st.const_zero();
-                mc.builder.build_return(Some(&zero))
+                mc.builder
+                    .build_return(Some(&zero))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(inkwell::types::BasicTypeEnum::ArrayType(at)) => {
                 let zero = at.const_zero();
-                mc.builder.build_return(Some(&zero))
+                mc.builder
+                    .build_return(Some(&zero))
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             Some(_) => {
-                mc.builder.build_return(None)
+                mc.builder
+                    .build_return(None)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
             None => {
-                mc.builder.build_return(None)
+                mc.builder
+                    .build_return(None)
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?;
             }
         }
@@ -205,6 +213,10 @@ mod tests {
             ir
         );
         assert!(ir.contains("fadd"), "IR should contain fadd, got:\n{}", ir);
-        assert!(ir.contains("ret double"), "IR should contain ret double, got:\n{}", ir);
+        assert!(
+            ir.contains("ret double"),
+            "IR should contain ret double, got:\n{}",
+            ir
+        );
     }
 }

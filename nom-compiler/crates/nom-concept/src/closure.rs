@@ -150,10 +150,8 @@ impl<'g> Walker<'g> {
             Color::Gray => {
                 // Back-edge → cycle. Build path string.
                 let idx = self.gray_path.iter().position(|n| n == name).unwrap_or(0);
-                let cycle_names: Vec<&str> = self.gray_path[idx..]
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect();
+                let cycle_names: Vec<&str> =
+                    self.gray_path[idx..].iter().map(|s| s.as_str()).collect();
                 let path = format!("{} -> {}", cycle_names.join(" -> "), name);
                 return Err(ClosureError::Cycle { path });
             }
@@ -222,10 +220,8 @@ impl<'g> Walker<'g> {
             Color::Black => return Ok(()),
             Color::Gray => {
                 let idx = self.gray_path.iter().position(|n| n == name).unwrap_or(0);
-                let cycle_names: Vec<&str> = self.gray_path[idx..]
-                    .iter()
-                    .map(|s| s.as_str())
-                    .collect();
+                let cycle_names: Vec<&str> =
+                    self.gray_path[idx..].iter().map(|s| s.as_str()).collect();
                 let path = format!("{} -> {}", cycle_names.join(" -> "), name);
                 return Err(ClosureError::Cycle { path });
             }
@@ -275,8 +271,7 @@ impl<'g> Walker<'g> {
                         .copied()
                         .ok_or_else(|| ClosureError::UnknownConcept(base.clone()))?;
                     let base_clauses: Vec<IndexClause> = base_decl.index.clone();
-                    let mut base_refs =
-                        Self::compute_effective_refs(concept_index, &base_clauses)?;
+                    let mut base_refs = Self::compute_effective_refs(concept_index, &base_clauses)?;
 
                     // Apply removing.
                     let removing_words: HashSet<&str> = change_set
@@ -393,7 +388,9 @@ impl ConceptGraph {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{ChangeSet, CompositionDecl, ConceptDecl, EntityRef, IndexClause, NomtuFile, NomtuItem};
+    use crate::{
+        ChangeSet, CompositionDecl, ConceptDecl, EntityRef, IndexClause, NomtuFile, NomtuItem,
+    };
 
     // ── helpers ──────────────────────────────────────────────────────────────
 
@@ -544,8 +541,10 @@ mod tests {
         let result = graph.closure("a");
         match result {
             Err(ClosureError::Cycle { path }) => {
-                assert!(path.contains('a') && path.contains('b'),
-                    "Expected path to mention both a and b, got: {path}");
+                assert!(
+                    path.contains('a') && path.contains('b'),
+                    "Expected path to mention both a and b, got: {path}"
+                );
             }
             other => panic!("expected Cycle error, got: {other:?}"),
         }
@@ -581,10 +580,22 @@ mod tests {
 
         let closure = graph.closure("b").unwrap();
 
-        assert!(closure.word_hashes.contains(&"h1".to_string()), "should contain h1 (x)");
-        assert!(closure.word_hashes.contains(&"h3".to_string()), "should contain h3 (z)");
-        assert!(closure.word_hashes.contains(&"h4".to_string()), "should contain h4 (w)");
-        assert!(!closure.word_hashes.contains(&"h2".to_string()), "should NOT contain h2 (y)");
+        assert!(
+            closure.word_hashes.contains(&"h1".to_string()),
+            "should contain h1 (x)"
+        );
+        assert!(
+            closure.word_hashes.contains(&"h3".to_string()),
+            "should contain h3 (z)"
+        );
+        assert!(
+            closure.word_hashes.contains(&"h4".to_string()),
+            "should contain h4 (w)"
+        );
+        assert!(
+            !closure.word_hashes.contains(&"h2".to_string()),
+            "should NOT contain h2 (y)"
+        );
 
         // Both A and B should be in concepts; A before B.
         assert!(closure.concepts.contains(&"a".to_string()));
@@ -628,8 +639,14 @@ mod tests {
         let c1 = graph.closure("root").unwrap();
         let c2 = graph.closure("root").unwrap();
 
-        assert_eq!(c1.word_hashes, c2.word_hashes, "word_hashes must be identical across calls");
-        assert_eq!(c1.concepts, c2.concepts, "concepts must be identical across calls");
+        assert_eq!(
+            c1.word_hashes, c2.word_hashes,
+            "word_hashes must be identical across calls"
+        );
+        assert_eq!(
+            c1.concepts, c2.concepts,
+            "concepts must be identical across calls"
+        );
     }
 
     // ── test 8: three-tier recursive descent (M4) ─────────────────────────────
@@ -690,8 +707,16 @@ mod tests {
         assert!(closure.concepts.contains(&"root".to_string()));
 
         // Post-order: concept_b before concept_a, concept_a before root.
-        let pos_b = closure.concepts.iter().position(|c| c == "concept_b").unwrap();
-        let pos_a = closure.concepts.iter().position(|c| c == "concept_a").unwrap();
+        let pos_b = closure
+            .concepts
+            .iter()
+            .position(|c| c == "concept_b")
+            .unwrap();
+        let pos_a = closure
+            .concepts
+            .iter()
+            .position(|c| c == "concept_a")
+            .unwrap();
         let pos_r = closure.concepts.iter().position(|c| c == "root").unwrap();
         assert!(pos_b < pos_a, "concept_b must come before concept_a");
         assert!(pos_a < pos_r, "concept_a must come before root");
@@ -701,9 +726,18 @@ mod tests {
         let pos_h2 = closure.word_hashes.iter().position(|h| h == "h2").unwrap();
         let pos_hb = closure.word_hashes.iter().position(|h| h == "hb").unwrap();
         let pos_ha = closure.word_hashes.iter().position(|h| h == "ha").unwrap();
-        assert!(pos_h1 < pos_hb, "atom h1 must come before concept_b hash hb");
-        assert!(pos_h2 < pos_hb, "atom h2 must come before concept_b hash hb");
-        assert!(pos_hb < pos_ha, "concept_b hash hb must come before concept_a hash ha");
+        assert!(
+            pos_h1 < pos_hb,
+            "atom h1 must come before concept_b hash hb"
+        );
+        assert!(
+            pos_h2 < pos_hb,
+            "atom h2 must come before concept_b hash hb"
+        );
+        assert!(
+            pos_hb < pos_ha,
+            "concept_b hash hb must come before concept_a hash ha"
+        );
     }
 
     // ── test 9: cycle detection across nested concepts (M4) ───────────────────
@@ -806,7 +840,11 @@ mod tests {
         let graph = empty_graph(vec![concept_a, concept_b, root]);
         let closure = graph.closure("root").unwrap();
 
-        let count_hx = closure.word_hashes.iter().filter(|h| h.as_str() == "hx").count();
+        let count_hx = closure
+            .word_hashes
+            .iter()
+            .filter(|h| h.as_str() == "hx")
+            .count();
         assert_eq!(
             count_hx, 1,
             "hx must appear exactly once in word_hashes, got {count_hx}: {:?}",

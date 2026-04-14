@@ -28,8 +28,14 @@ mod tests {
     fn locale_list_exits_zero_and_contains_both_packs() {
         let (code, stdout, stderr) = run(&["locale", "list"]);
         assert_eq!(code, 0, "expected exit 0, stderr={stderr}");
-        assert!(stdout.contains("vi-VN"), "expected vi-VN in list output: {stdout}");
-        assert!(stdout.contains("en-US"), "expected en-US in list output: {stdout}");
+        assert!(
+            stdout.contains("vi-VN"),
+            "expected vi-VN in list output: {stdout}"
+        );
+        assert!(
+            stdout.contains("en-US"),
+            "expected en-US in list output: {stdout}"
+        );
     }
 
     #[test]
@@ -59,8 +65,7 @@ mod tests {
             .duration_since(std::time::UNIX_EPOCH)
             .map(|d| d.subsec_nanos())
             .unwrap_or(0);
-        let tmp_path = std::env::temp_dir()
-            .join(format!("nom-locale-apply-{pid}-{nanos}.nom"));
+        let tmp_path = std::env::temp_dir().join(format!("nom-locale-apply-{pid}-{nanos}.nom"));
         {
             let mut f = std::fs::File::create(&tmp_path).expect("create temp file");
             write!(f, "the function is").expect("write fixture");
@@ -79,7 +84,10 @@ mod tests {
     fn locale_check_confusable_equal_exits_zero() {
         let (code, stdout, _stderr) = run(&["locale", "check-confusable", "hello", "hello"]);
         assert_eq!(code, 0);
-        assert!(stdout.contains("equal"), "expected 'equal' in output: {stdout}");
+        assert!(
+            stdout.contains("equal"),
+            "expected 'equal' in output: {stdout}"
+        );
     }
 
     #[test]
@@ -99,7 +107,10 @@ mod tests {
         let spoofed = "\u{0440}\u{0430}ypal";
         let legit = "paypal";
         let (code, _stdout, stderr) = run(&["locale", "check-confusable", spoofed, legit]);
-        assert_eq!(code, 2, "expected exit 2 for confusable pair, stderr={stderr}");
+        assert_eq!(
+            code, 2,
+            "expected exit 2 for confusable pair, stderr={stderr}"
+        );
         assert!(
             stderr.contains("confusable"),
             "expected 'confusable' in stderr: {stderr}"
@@ -110,30 +121,23 @@ mod tests {
     fn locale_check_confusable_json_confusable_pairs() {
         let spoofed = "\u{0430}pple"; // Cyrillic а + Latin pple
         let legit = "apple";
-        let (code, stdout, _stderr) = run(&[
-            "locale",
-            "check-confusable",
-            spoofed,
-            legit,
-            "--json",
-        ]);
+        let (code, stdout, _stderr) =
+            run(&["locale", "check-confusable", spoofed, legit, "--json"]);
         assert_eq!(code, 2);
         assert!(
             stdout.contains(r#""result":"confusable""#),
             "expected confusable JSON: {stdout}"
         );
-        assert!(stdout.contains(r#""pairs":"#), "expected pairs field: {stdout}");
+        assert!(
+            stdout.contains(r#""pairs":"#),
+            "expected pairs field: {stdout}"
+        );
     }
 
     #[test]
     fn locale_check_confusable_json_equal_exits_zero() {
-        let (code, stdout, _stderr) = run(&[
-            "locale",
-            "check-confusable",
-            "hello",
-            "hello",
-            "--json",
-        ]);
+        let (code, stdout, _stderr) =
+            run(&["locale", "check-confusable", "hello", "hello", "--json"]);
         assert_eq!(code, 0);
         assert!(
             stdout.contains(r#""result":"equal""#),

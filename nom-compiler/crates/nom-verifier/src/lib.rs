@@ -14,8 +14,8 @@
 use nom_ast::{
     BinOp, BranchArm, BranchBlock, BranchCondition, Classifier, CompareOp, Constraint,
     ContractStmt, Declaration, EffectModifier, Expr, FlowChain, FlowStep, GraphQueryExpr,
-    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, RangeConstraint,
-    SourceFile, Statement, UnaryOp,
+    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Literal, NomRef, RangeConstraint, SourceFile,
+    Statement, UnaryOp,
 };
 use nom_resolver::{Resolver, ResolverError, WordEntry};
 use thiserror::Error;
@@ -233,8 +233,14 @@ impl<'r> Verifier<'r> {
 
         // Check: nom declarations with functions should have describe
         if decl.classifier == Classifier::Nom {
-            let has_fn = decl.statements.iter().any(|s| matches!(s, Statement::FnDef(_)));
-            let has_describe = decl.statements.iter().any(|s| matches!(s, Statement::Describe(_)));
+            let has_fn = decl
+                .statements
+                .iter()
+                .any(|s| matches!(s, Statement::FnDef(_)));
+            let has_describe = decl
+                .statements
+                .iter()
+                .any(|s| matches!(s, Statement::Describe(_)));
             if has_fn && !has_describe {
                 result.push(
                     name,
@@ -617,7 +623,11 @@ pub fn generate_contract_tests(contract: &ContractStmt) -> Vec<PropertyTest> {
     // 2. For each postcondition, generate a universal property test
     for (i, post) in contract.postconditions.iter().enumerate() {
         let post_str = expr_to_string(post);
-        let pre_strs: Vec<String> = contract.preconditions.iter().map(|p| expr_to_string(p)).collect();
+        let pre_strs: Vec<String> = contract
+            .preconditions
+            .iter()
+            .map(|p| expr_to_string(p))
+            .collect();
 
         tests.push(PropertyTest {
             name: format!("postcondition_holds_{}", i),
@@ -700,15 +710,9 @@ fn extract_boundary_test(pre: &Expr, postconditions: &[Expr]) -> Option<Property
 
             Some(PropertyTest {
                 name: format!("boundary_{}", sanitize_name(&left_str)),
-                description: format!(
-                    "When {}, all postconditions must hold",
-                    boundary_desc
-                ),
+                description: format!("When {}, all postconditions must hold", boundary_desc),
                 input_constraints: vec![boundary_constraint],
-                expected_postconditions: postconditions
-                    .iter()
-                    .map(|p| expr_to_string(p))
-                    .collect(),
+                expected_postconditions: postconditions.iter().map(|p| expr_to_string(p)).collect(),
             })
         }
         _ => None,
@@ -747,7 +751,12 @@ fn expr_to_string(expr: &Expr) -> String {
                 BinOp::BitAnd => "&",
                 BinOp::BitOr => "|",
             };
-            format!("{} {} {}", expr_to_string(left), op_s, expr_to_string(right))
+            format!(
+                "{} {} {}",
+                expr_to_string(left),
+                op_s,
+                expr_to_string(right)
+            )
         }
         Expr::Call(call) => {
             let args: Vec<String> = call.args.iter().map(|a| expr_to_string(a)).collect();
@@ -764,7 +773,12 @@ fn expr_to_string(expr: &Expr) -> String {
         }
         Expr::MethodCall(obj, method, args) => {
             let args_s: Vec<String> = args.iter().map(|a| expr_to_string(a)).collect();
-            format!("{}.{}({})", expr_to_string(obj), method.name, args_s.join(", "))
+            format!(
+                "{}.{}({})",
+                expr_to_string(obj),
+                method.name,
+                args_s.join(", ")
+            )
         }
         Expr::Index(obj, idx) => {
             format!("{}[{}]", expr_to_string(obj), expr_to_string(idx))
@@ -776,7 +790,13 @@ fn expr_to_string(expr: &Expr) -> String {
 /// Sanitize an expression string into a valid test name component.
 fn sanitize_name(s: &str) -> String {
     s.chars()
-        .map(|c| if c.is_alphanumeric() || c == '_' { c } else { '_' })
+        .map(|c| {
+            if c.is_alphanumeric() || c == '_' {
+                c
+            } else {
+                '_'
+            }
+        })
         .collect()
 }
 
@@ -929,8 +949,8 @@ mod tests {
     use super::*;
     use nom_ast::{
         AgentReceiveStmt, AgentScheduleStmt, Classifier, Declaration, GraphQueryExpr,
-        GraphQueryStmt, GraphSetExpr, GraphSetOp, Identifier, NomRef, RangeConstraint,
-        SourceFile, Span, Statement, TypedParam,
+        GraphQueryStmt, GraphSetExpr, GraphSetOp, Identifier, NomRef, RangeConstraint, SourceFile,
+        Span, Statement, TypedParam,
     };
     use nom_resolver::{Resolver, WordEntry};
 
@@ -1211,7 +1231,10 @@ mod tests {
             violation.description
         );
         assert!(
-            violation.expected_postconditions.iter().any(|p| p.contains("rejected")),
+            violation
+                .expected_postconditions
+                .iter()
+                .any(|p| p.contains("rejected")),
             "violation test should expect rejection"
         );
     }
@@ -1236,14 +1259,20 @@ mod tests {
     fn postcondition_test_includes_all_preconditions() {
         let contract = make_hash_contract();
         let tests = generate_contract_tests(&contract);
-        let post_test = tests.iter().find(|t| t.name.contains("postcondition_holds")).unwrap();
+        let post_test = tests
+            .iter()
+            .find(|t| t.name.contains("postcondition_holds"))
+            .unwrap();
         // The postcondition test should list all preconditions as input constraints
         assert!(
             !post_test.input_constraints.is_empty(),
             "postcondition test should have input constraints from preconditions"
         );
         assert!(
-            post_test.input_constraints.iter().any(|c| c.contains("data.length")),
+            post_test
+                .input_constraints
+                .iter()
+                .any(|c| c.contains("data.length")),
             "input constraints should reference data.length"
         );
     }
@@ -1396,7 +1425,11 @@ mod tests {
             },
         ];
         let warnings = validate_range_constraints(&constraints);
-        assert!(warnings.is_empty(), "expected no warnings, got: {:?}", warnings);
+        assert!(
+            warnings.is_empty(),
+            "expected no warnings, got: {:?}",
+            warnings
+        );
     }
 
     #[test]

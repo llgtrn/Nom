@@ -27,10 +27,12 @@ fn self_host_dir() -> PathBuf {
 
 fn pipeline_compile(source: &str) -> Result<Vec<u8>, String> {
     let sf = nom_parser::parse_source(source).map_err(|e| format!("parse: {e}"))?;
-    let resolver = nom_resolver::Resolver::open_in_memory()
-        .map_err(|e| format!("resolver: {e}"))?;
+    let resolver =
+        nom_resolver::Resolver::open_in_memory().map_err(|e| format!("resolver: {e}"))?;
     let planner = nom_planner::Planner::new(&resolver);
-    let plan = planner.plan_unchecked(&sf).map_err(|e| format!("plan: {e}"))?;
+    let plan = planner
+        .plan_unchecked(&sf)
+        .map_err(|e| format!("plan: {e}"))?;
     let output = nom_llvm::compile(&plan).map_err(|e| format!("codegen: {e}"))?;
     Ok(output.bitcode)
 }
@@ -38,8 +40,8 @@ fn pipeline_compile(source: &str) -> Result<Vec<u8>, String> {
 #[test]
 fn every_self_host_nom_file_compiles_to_bc() {
     let dir = self_host_dir();
-    let entries = std::fs::read_dir(&dir)
-        .unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
+    let entries =
+        std::fs::read_dir(&dir).unwrap_or_else(|e| panic!("cannot read {}: {e}", dir.display()));
 
     let mut nom_files: Vec<PathBuf> = entries
         .filter_map(|e| e.ok())

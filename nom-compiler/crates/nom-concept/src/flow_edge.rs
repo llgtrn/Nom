@@ -19,9 +19,7 @@
 //! are not in S6's current scope; this slice ships what's checkable
 //! with only the [`PipelineOutput`] in hand.
 
-use crate::{
-    CompositionDecl, ConceptDecl, EntityRef, IndexClause, NomFile, NomtuFile, NomtuItem,
-};
+use crate::{CompositionDecl, ConceptDecl, EntityRef, IndexClause, NomFile, NomtuFile, NomtuItem};
 
 /// One structural finding from the flow-edge verifier. Pure data —
 /// callers turn this into diagnostics, LSP markers, or warnings.
@@ -87,8 +85,7 @@ fn check_composition(comp: &CompositionDecl, out: &mut Vec<FlowEdgeFinding>) {
 /// declaration so callers can group findings by source decl.
 fn walk_chain(decl_name: &str, chain: &[EntityRef], out: &mut Vec<FlowEdgeFinding>) {
     // Track first occurrence of each entity word for loop detection.
-    let mut first_seen: std::collections::HashMap<&str, usize> =
-        std::collections::HashMap::new();
+    let mut first_seen: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
 
     for (i, eref) in chain.iter().enumerate() {
         let word = eref.word.as_str();
@@ -187,17 +184,14 @@ mod tests {
         let c = concept_with_uses("pipeline", vec![eref("a"), eref("a"), eref("b")]);
         let file = NomFile { concepts: vec![c] };
         let findings = check_nom_file(&file);
-        assert!(findings
-            .iter()
-            .any(|f| matches!(f, FlowEdgeFinding::ConsecutiveDuplicate { entity, .. } if entity == "a")));
+        assert!(findings.iter().any(
+            |f| matches!(f, FlowEdgeFinding::ConsecutiveDuplicate { entity, .. } if entity == "a")
+        ));
     }
 
     #[test]
     fn loop_reference_flagged_only_when_non_adjacent() {
-        let c = concept_with_uses(
-            "pipeline",
-            vec![eref("a"), eref("b"), eref("a")],
-        );
+        let c = concept_with_uses("pipeline", vec![eref("a"), eref("b"), eref("a")]);
         let file = NomFile { concepts: vec![c] };
         let findings = check_nom_file(&file);
         // Loop finding fires for the non-adjacent repeat of `a`.
@@ -207,9 +201,9 @@ mod tests {
             if entity == "a"
         )));
         // No consecutive-duplicate for `a` because positions 0 and 2 are not adjacent.
-        assert!(!findings
-            .iter()
-            .any(|f| matches!(f, FlowEdgeFinding::ConsecutiveDuplicate { entity, .. } if entity == "a")));
+        assert!(!findings.iter().any(
+            |f| matches!(f, FlowEdgeFinding::ConsecutiveDuplicate { entity, .. } if entity == "a")
+        ));
     }
 
     #[test]

@@ -21,6 +21,6 @@ proc-macro2 = "1"
 swc_common = "21"
 swc_ecma_ast = "23"
 swc_ecma_parser = { version = "38", features = ["typescript"] }
+rusqlite = { workspace = true }
 
 [dev-dependencies]
-rusqlite = { workspace = true }

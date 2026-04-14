@@ -9,14 +9,14 @@
 //! See `init_schema()` for the full CREATE TABLE statement.
 //!
 //! Phase 4 B2 adds the [`v2`] module: a hash-identity resolver that
-//! operates against [`nom_dict::NomDict`] instead of the legacy schema.
+//! operates against [`nom_dict::Dict`] instead of the legacy schema.
 //! The two resolvers coexist; Task C will route new CLI commands to v2.
 
+pub mod intent;
 pub mod v2;
 pub mod v2_rewrite;
-pub mod intent;
 
-use nom_ast::NomRef;
+use nom_ast::{Classifier, Declaration, Identifier, NomRef, SourceFile, Span};
 pub use nom_types::NomtuEntry;
 use rusqlite::{Connection, OptionalExtension, params};
 use std::collections::HashMap;
@@ -216,54 +216,54 @@ impl Resolver {
                 deprecated_by=excluded.deprecated_by,
                 updated_at=excluded.updated_at",
             params![
-                entry.word,                 // 1
-                entry.variant,              // 2
-                entry.kind,                 // 3
-                entry.hash,                 // 4
-                entry.body_hash,            // 5
-                entry.describe,             // 6
-                entry.concept,              // 7
-                labels_json,                // 8
-                entry.input_type,           // 9
-                entry.output_type,          // 10
-                effects_json,               // 11
-                entry.pre,                  // 12
-                entry.post,                 // 13
-                entry.signature,            // 14
-                depends_on_json,            // 15
-                entry.security,             // 16
-                entry.reliability,          // 17
-                entry.performance,          // 18
-                entry.readability,          // 19
-                entry.testability,          // 20
-                entry.portability,          // 21
-                entry.composability,        // 22
-                entry.maturity,             // 23
-                entry.overall_score,        // 24
-                entry.audit_passed,         // 25
-                entry.audit_max_severity,   // 26
-                entry.audit_findings,       // 27
-                entry.language,             // 28
-                entry.body,                 // 29
-                entry.body_kind,            // 30
-                entry.rust_body,            // 31
-                entry.translate_confidence, // 32
-                entry.community_id,         // 33
-                entry.callers_count,        // 34
-                entry.callees_count,        // 35
-                entry.is_entry_point,       // 36
-                entry.bc_path,              // 37
-                entry.bc_hash,              // 38
-                entry.bc_size,              // 39
-                entry.body_bytes.as_deref(),// 40
-                entry.capabilities,         // 41
-                entry.supervision,          // 42
-                entry.schedule,             // 43
-                entry.version,              // 44
-                entry.tests,                // 45
-                entry.is_canonical,         // 46
-                entry.deprecated_by,        // 47
-                entry.updated_at,           // 48
+                entry.word,                  // 1
+                entry.variant,               // 2
+                entry.kind,                  // 3
+                entry.hash,                  // 4
+                entry.body_hash,             // 5
+                entry.describe,              // 6
+                entry.concept,               // 7
+                labels_json,                 // 8
+                entry.input_type,            // 9
+                entry.output_type,           // 10
+                effects_json,                // 11
+                entry.pre,                   // 12
+                entry.post,                  // 13
+                entry.signature,             // 14
+                depends_on_json,             // 15
+                entry.security,              // 16
+                entry.reliability,           // 17
+                entry.performance,           // 18
+                entry.readability,           // 19
+                entry.testability,           // 20
+                entry.portability,           // 21
+                entry.composability,         // 22
+                entry.maturity,              // 23
+                entry.overall_score,         // 24
+                entry.audit_passed,          // 25
+                entry.audit_max_severity,    // 26
+                entry.audit_findings,        // 27
+                entry.language,              // 28
+                entry.body,                  // 29
+                entry.body_kind,             // 30
+                entry.rust_body,             // 31
+                entry.translate_confidence,  // 32
+                entry.community_id,          // 33
+                entry.callers_count,         // 34
+                entry.callees_count,         // 35
+                entry.is_entry_point,        // 36
+                entry.bc_path,               // 37
+                entry.bc_hash,               // 38
+                entry.bc_size,               // 39
+                entry.body_bytes.as_deref(), // 40
+                entry.capabilities,          // 41
+                entry.supervision,           // 42
+                entry.schedule,              // 43
+                entry.version,               // 44
+                entry.tests,                 // 45
+                entry.is_canonical,          // 46
+                entry.deprecated_by,         // 47
+                entry.updated_at,            // 48
             ],
         )?;
         Ok(())
@@ -492,14 +492,22 @@ impl Resolver {
         let sig = sig.trim();
 
         if let Some((left, right)) = sig.split_once("->") {
-            let input = left.trim().strip_prefix("in:").unwrap_or(left.trim()).trim();
+            let input = left
+                .trim()
+                .strip_prefix("in:")
+                .unwrap_or(left.trim())
+                .trim();
             let output = right
                 .trim()
                 .strip_prefix("out:")
                 .unwrap_or(right.trim())
                 .trim();
 
-            let input = if input.is_empty() { None } else { Some(input.to_owned()) };
+            let input = if input.is_empty() {
+                None
+            } else {
+                Some(input.to_owned())
+            };
             let output = if output.is_empty() {
                 None
             } else {
@@ -872,7 +880,11 @@ const ORDER_CLAUSE: &str = "is_canonical DESC, \
 #[derive(Debug, Clone)]
 pub enum DictQuery {
     /// Single attribute comparison: security > 0.9
-    Comparison { field: String, op: String, value: String },
+    Comparison {
+        field: String,
+        op: String,
+        value: String,
+    },
     /// Logical AND of sub-queries
     And(Vec<DictQuery>),
     /// Logical OR of sub-queries
@@ -889,7 +901,9 @@ pub fn parse_dict_query(query: &str) -> Result<DictQuery, ResolverError> {
     for part in parts {
         let part = part.trim();
         if let Some(rest) = part.strip_prefix("not ") {
-            conditions.push(DictQuery::Not(Box::new(parse_single_condition(rest.trim())?)));
+            conditions.push(DictQuery::Not(Box::new(parse_single_condition(
+                rest.trim(),
+            )?)));
         } else {
             conditions.push(parse_single_condition(part)?);
         }
@@ -965,13 +979,10 @@ pub fn infer_flow_contracts(
     let mut contracts: Vec<ContractShape> = chain
         .iter()
         .map(|name| {
-            known_contracts
-                .get(name)
-                .cloned()
-                .unwrap_or(ContractShape {
-                    input_type: None,
-                    output_type: None,
-                })
+            known_contracts.get(name).cloned().unwrap_or(ContractShape {
+                input_type: None,
+                output_type: None,
+            })
         })
         .collect();
 
@@ -998,7 +1009,9 @@ pub fn infer_flow_contracts(
         .iter()
         .enumerate()
         .map(|(i, name)| {
-            let was_known = known_contracts.get(name).is_some_and(|k| *k == contracts[i]);
+            let was_known = known_contracts
+                .get(name)
+                .is_some_and(|k| *k == contracts[i]);
             InferredContract {
                 node: name.clone(),
                 contract: contracts[i].clone(),
@@ -1074,24 +1087,24 @@ impl ModuleResolver {
     pub fn load_module(&mut self, path: &[String]) -> Result<&nom_ast::SourceFile, ResolverError> {
         let key = path.join("::");
         if !self.modules.contains_key(&key) {
-            let file_path = self.resolve_module_path(path).ok_or_else(|| {
-                ResolverError::NotFound {
-                    word: format!("module {}", key),
-                    variant: None,
-                }
-            })?;
-            let source = std::fs::read_to_string(&file_path).map_err(|e| {
-                ResolverError::NotFound {
+            let file_path =
+                self.resolve_module_path(path)
+                    .ok_or_else(|| ResolverError::NotFound {
+                        word: format!("module {}", key),
+                        variant: None,
+                    })?;
+            let source =
+                std::fs::read_to_string(&file_path).map_err(|e| ResolverError::NotFound {
                     word: format!("failed to read {}: {}", file_path.display(), e),
                     variant: None,
-                }
-            })?;
-            let sf = nom_parser::parse_source(&source).map_err(|e| {
-                ResolverError::NotFound {
-                    word: format!("parse error in {}: {:?}", file_path.display(), e),
-                    variant: None,
-                }
-            })?;
+                })?;
+            let sf =
+                parse_module_stub(&source, Some(file_path.display().to_string())).map_err(|e| {
+                    ResolverError::NotFound {
+                        word: format!("parse error in {}: {:?}", file_path.display(), e),
+                        variant: None,
+                    }
+                })?;
             self.modules.insert(key.clone(), sf);
         }
         Ok(&self.modules[&key])
@@ -1106,6 +1119,40 @@ impl ModuleResolver {
     pub fn root(&self) -> &PathBuf {
         &self.root
     }
+}
+
+fn parse_module_stub(source: &str, path: Option<String>) -> Result<SourceFile, String> {
+    let header = source
+        .lines()
+        .find_map(|line| {
+            let trimmed = line.trim();
+            (!trimmed.is_empty()).then_some(trimmed)
+        })
+        .ok_or_else(|| "module source is empty".to_string())?;
+
+    let mut parts = header.split_whitespace();
+    let classifier_name = parts
+        .next()
+        .ok_or_else(|| "missing declaration classifier".to_string())?;
+    let name = parts
+        .next()
+        .ok_or_else(|| "missing declaration name".to_string())?;
+    let classifier = Classifier::from_str(classifier_name)
+        .ok_or_else(|| format!("unknown declaration classifier `{classifier_name}`"))?;
+
+    Ok(SourceFile {
+        path,
+        locale: None,
+        declarations: vec![Declaration {
+            classifier,
+            name: Identifier {
+                name: name.to_string(),
+                span: Span::default(),
+            },
+            statements: Vec::new(),
+            span: Span::default(),
+        }],
+    })
 }
 
 #[cfg(test)]
@@ -1448,26 +1495,10 @@ mod tests {
     fn get_by_language() {
         let resolver = Resolver::open_in_memory().unwrap();
         resolver
-            .import_nomtu(
-                "fmt",
-                None,
-                "rust",
-                "fn fmt() {}",
-                None,
-                Some("rs1"),
-                0.80,
-            )
+            .import_nomtu("fmt", None, "rust", "fn fmt() {}", None, Some("rs1"), 0.80)
             .unwrap();
         resolver
-            .import_nomtu(
-                "fmt",
-                None,
-                "go",
-                "func fmt() {}",
-                None,
-                Some("go1"),
-                0.90,
-            )
+            .import_nomtu("fmt", None, "go", "func fmt() {}", None, Some("go1"), 0.90)
             .unwrap();
 
         let go_impl = resolver
@@ -1619,8 +1650,20 @@ mod tests {
         // Infer: B must accept "bytes" and produce "bytes"
         let chain = vec!["A".into(), "B".into(), "C".into()];
         let mut known = std::collections::HashMap::new();
-        known.insert("A".into(), ContractShape { input_type: None, output_type: Some("bytes".into()) });
-        known.insert("C".into(), ContractShape { input_type: Some("bytes".into()), output_type: None });
+        known.insert(
+            "A".into(),
+            ContractShape {
+                input_type: None,
+                output_type: Some("bytes".into()),
+            },
+        );
+        known.insert(
+            "C".into(),
+            ContractShape {
+                input_type: Some("bytes".into()),
+                output_type: None,
+            },
+        );
 
         let result = infer_flow_contracts(&chain, &known);
         let b = result.iter().find(|r| r.node == "B").unwrap();
@@ -1636,7 +1679,13 @@ mod tests {
         // Infer: B input is "text", but output and C's input remain unknown
         let chain = vec!["A".into(), "B".into(), "C".into()];
         let mut known = std::collections::HashMap::new();
-        known.insert("A".into(), ContractShape { input_type: None, output_type: Some("text".into()) });
+        known.insert(
+            "A".into(),
+            ContractShape {
+                input_type: None,
+                output_type: Some("text".into()),
+            },
+        );
 
         let result = infer_flow_contracts(&chain, &known);
         let b = result.iter().find(|r| r.node == "B").unwrap();
@@ -1650,7 +1699,13 @@ mod tests {
         // Infer: B must output "hash"
         let chain = vec!["A".into(), "B".into(), "C".into()];
         let mut known = std::collections::HashMap::new();
-        known.insert("C".into(), ContractShape { input_type: Some("hash".into()), output_type: None });
+        known.insert(
+            "C".into(),
+            ContractShape {
+                input_type: Some("hash".into()),
+                output_type: None,
+            },
+        );
 
         let result = infer_flow_contracts(&chain, &known);
         let b = result.iter().find(|r| r.node == "B").unwrap();
@@ -1667,7 +1722,13 @@ mod tests {
     fn single_node_uses_known_contract() {
         let chain = vec!["A".into()];
         let mut known = std::collections::HashMap::new();
-        known.insert("A".into(), ContractShape { input_type: Some("bytes".into()), output_type: Some("hash".into()) });
+        known.insert(
+            "A".into(),
+            ContractShape {
+                input_type: Some("bytes".into()),
+                output_type: Some("hash".into()),
+            },
+        );
 
         let result = infer_flow_contracts(&chain, &known);
         assert_eq!(result.len(), 1);
@@ -1702,7 +1763,7 @@ mod tests {
     fn parses_not_condition() {
         let q = parse_dict_query("not deprecated").unwrap();
         match q {
-            DictQuery::Not(_) => {},
+            DictQuery::Not(_) => {}
             _ => panic!("expected Not"),
         }
     }
@@ -1723,30 +1784,54 @@ mod tests {
 
     #[test]
     fn exact_type_match_is_compatible() {
-        let producer = ContractShape { input_type: None, output_type: Some("bytes".into()) };
-        let consumer = ContractShape { input_type: Some("bytes".into()), output_type: None };
+        let producer = ContractShape {
+            input_type: None,
+            output_type: Some("bytes".into()),
+        };
+        let consumer = ContractShape {
+            input_type: Some("bytes".into()),
+            output_type: None,
+        };
         assert!(contracts_compatible(&producer, &consumer));
     }
 
     #[test]
     fn different_types_incompatible() {
-        let producer = ContractShape { input_type: None, output_type: Some("text".into()) };
-        let consumer = ContractShape { input_type: Some("number".into()), output_type: None };
+        let producer = ContractShape {
+            input_type: None,
+            output_type: Some("text".into()),
+        };
+        let consumer = ContractShape {
+            input_type: Some("number".into()),
+            output_type: None,
+        };
         assert!(!contracts_compatible(&producer, &consumer));
     }
 
     #[test]
     fn unspecified_type_is_compatible() {
-        let producer = ContractShape { input_type: None, output_type: None };
-        let consumer = ContractShape { input_type: Some("bytes".into()), output_type: None };
+        let producer = ContractShape {
+            input_type: None,
+            output_type: None,
+        };
+        let consumer = ContractShape {
+            input_type: Some("bytes".into()),
+            output_type: None,
+        };
         assert!(contracts_compatible(&producer, &consumer));
     }
 
     #[test]
     fn prefix_subtype_is_compatible() {
         // "hash_bytes" starts with "hash" — compatible
-        let producer = ContractShape { input_type: None, output_type: Some("hash_bytes".into()) };
-        let consumer = ContractShape { input_type: Some("hash".into()), output_type: None };
+        let producer = ContractShape {
+            input_type: None,
+            output_type: Some("hash_bytes".into()),
+        };
+        let consumer = ContractShape {
+            input_type: Some("hash".into()),
+            output_type: None,
+        };
         assert!(contracts_compatible(&producer, &consumer));
     }
 
@@ -1758,7 +1843,11 @@ mod tests {
         let dir = std::env::temp_dir().join("nom_test_resolve_module");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("math.nom"), "system math\n  describe \"math module\"\n").unwrap();
+        std::fs::write(
+            dir.join("math.nom"),
+            "system math\n  describe \"math module\"\n",
+        )
+        .unwrap();
 
         let resolver = ModuleResolver::new(dir.clone());
         let result = resolver.resolve_module_path(&["math".to_string()]);
@@ -1775,7 +1864,11 @@ mod tests {
         let dir = std::env::temp_dir().join("nom_test_resolve_dir_module");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("math")).unwrap();
-        std::fs::write(dir.join("math").join("lib.nom"), "system math\n  describe \"math lib\"\n").unwrap();
+        std::fs::write(
+            dir.join("math").join("lib.nom"),
+            "system math\n  describe \"math lib\"\n",
+        )
+        .unwrap();
 
         let resolver = ModuleResolver::new(dir.clone());
         let result = resolver.resolve_module_path(&["math".to_string()]);
@@ -1790,7 +1883,11 @@ mod tests {
         let dir = std::env::temp_dir().join("nom_test_resolve_nested");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("math")).unwrap();
-        std::fs::write(dir.join("math").join("trig.nom"), "system trig\n  describe \"trig\"\n").unwrap();
+        std::fs::write(
+            dir.join("math").join("trig.nom"),
+            "system trig\n  describe \"trig\"\n",
+        )
+        .unwrap();
 
         let resolver = ModuleResolver::new(dir.clone());
         let result = resolver.resolve_module_path(&["math".to_string(), "trig".to_string()]);
@@ -1818,7 +1915,11 @@ mod tests {
         let dir = std::env::temp_dir().join("nom_test_load_module");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("utils.nom"), "system utils\n  describe \"utilities\"\n").unwrap();
+        std::fs::write(
+            dir.join("utils.nom"),
+            "system utils\n  describe \"utilities\"\n",
+        )
+        .unwrap();
 
         let mut resolver = ModuleResolver::new(dir.clone());
         let sf = resolver.load_module(&["utils".to_string()]).unwrap();
@@ -1837,7 +1938,11 @@ mod tests {
         let dir = std::env::temp_dir().join("nom_test_module_exists");
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
-        std::fs::write(dir.join("present.nom"), "system present\n  describe \"here\"\n").unwrap();
+        std::fs::write(
+            dir.join("present.nom"),
+            "system present\n  describe \"here\"\n",
+        )
+        .unwrap();
 
         let resolver = ModuleResolver::new(dir.clone());
         assert!(resolver.module_exists(&["present".to_string()]));

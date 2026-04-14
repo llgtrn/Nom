@@ -23,7 +23,6 @@
 /// The IVF container is valid; the AV1 OBU payload is syntactically minimal
 /// (not a semantically complete bitstream). The IVF parser accepts it, which
 /// is sufficient for metadata extraction and the identity-mapped round-trip.
-
 use nom_media::{ingest_av1, verify_av1_roundtrip};
 
 /// 3-frame AV1-IVF fixture: DKIF signature, AV01 codec, 16×16, 2fps, 3 frames

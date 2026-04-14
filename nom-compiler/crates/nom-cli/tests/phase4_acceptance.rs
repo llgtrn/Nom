@@ -96,28 +96,60 @@ fn test_phase4_closure_demo() {
 
     // format.nom: no deps — must succeed and produce a 64-hex id.
     let (code, stdout, stderr) = run_nom(&[
-        "store", "add", format_nom.to_str().unwrap(), "--dict", &dict,
+        "store",
+        "add",
+        format_nom.to_str().unwrap(),
+        "--dict",
+        &dict,
     ]);
     assert_eq!(code, 0, "store add format.nom failed: {stderr}");
-    let f_hash = stdout.lines().next().expect("id on stdout").trim().to_string();
-    assert_eq!(f_hash.len(), 64, "format hash must be 64 hex chars: {f_hash:?}");
-    assert!(f_hash.chars().all(|c| c.is_ascii_hexdigit()), "not hex: {f_hash}");
+    let f_hash = stdout
+        .lines()
+        .next()
+        .expect("id on stdout")
+        .trim()
+        .to_string();
+    assert_eq!(
+        f_hash.len(),
+        64,
+        "format hash must be 64 hex chars: {f_hash:?}"
+    );
+    assert!(
+        f_hash.chars().all(|c| c.is_ascii_hexdigit()),
+        "not hex: {f_hash}"
+    );
 
     // greet.nom: depends on format_number — ingested after format, so it resolves.
-    let (code, stdout, stderr) = run_nom(&[
-        "store", "add", greet_nom.to_str().unwrap(), "--dict", &dict,
-    ]);
+    let (code, stdout, stderr) =
+        run_nom(&["store", "add", greet_nom.to_str().unwrap(), "--dict", &dict]);
     assert_eq!(code, 0, "store add greet.nom failed: {stderr}");
-    let g_hash = stdout.lines().next().expect("id on stdout").trim().to_string();
-    assert_eq!(g_hash.len(), 64, "greet hash must be 64 hex chars: {g_hash:?}");
+    let g_hash = stdout
+        .lines()
+        .next()
+        .expect("id on stdout")
+        .trim()
+        .to_string();
+    assert_eq!(
+        g_hash.len(),
+        64,
+        "greet hash must be 64 hex chars: {g_hash:?}"
+    );
 
     // main.nom: depends on greet.
-    let (code, stdout, stderr) = run_nom(&[
-        "store", "add", main_nom.to_str().unwrap(), "--dict", &dict,
-    ]);
+    let (code, stdout, stderr) =
+        run_nom(&["store", "add", main_nom.to_str().unwrap(), "--dict", &dict]);
     assert_eq!(code, 0, "store add main.nom failed: {stderr}");
-    let m_hash = stdout.lines().next().expect("id on stdout").trim().to_string();
-    assert_eq!(m_hash.len(), 64, "main hash must be 64 hex chars: {m_hash:?}");
+    let m_hash = stdout
+        .lines()
+        .next()
+        .expect("id on stdout")
+        .trim()
+        .to_string();
+    assert_eq!(
+        m_hash.len(),
+        64,
+        "main hash must be 64 hex chars: {m_hash:?}"
+    );
 
     // All three hashes must be distinct.
     assert_ne!(f_hash, g_hash, "format and greet hashes must differ");
@@ -145,32 +177,49 @@ fn test_phase4_closure_demo() {
 
     // format has no refs.
     let f_refs = d.get_refs(&f_hash).expect("get_refs(format_number)");
-    assert!(f_refs.is_empty(), "format_number should have no refs: {f_refs:?}");
+    assert!(
+        f_refs.is_empty(),
+        "format_number should have no refs: {f_refs:?}"
+    );
 
     drop(d);
 
     // ── D3: Closure walk returns exactly 3 ids ────────────────────────────────
 
-    let (code, stdout, stderr) = run_nom(&[
-        "store", "closure", &m_hash, "--dict", &dict,
-    ]);
+    let (code, stdout, stderr) = run_nom(&["store", "closure", &m_hash, "--dict", &dict]);
     assert_eq!(code, 0, "store closure failed: {stderr}");
-    let closure_ids: Vec<&str> = stdout.lines().map(|l| l.trim()).filter(|l| !l.is_empty()).collect();
+    let closure_ids: Vec<&str> = stdout
+        .lines()
+        .map(|l| l.trim())
+        .filter(|l| !l.is_empty())
+        .collect();
     assert_eq!(
-        closure_ids.len(), 3,
-        "closure from main must have 3 entries, got {:?}", closure_ids
+        closure_ids.len(),
+        3,
+        "closure from main must have 3 entries, got {:?}",
+        closure_ids
     );
-    assert!(closure_ids.contains(&f_hash.as_str()), "closure missing format: {f_hash}");
-    assert!(closure_ids.contains(&g_hash.as_str()), "closure missing greet: {g_hash}");
-    assert!(closure_ids.contains(&m_hash.as_str()), "closure missing main: {m_hash}");
+    assert!(
+        closure_ids.contains(&f_hash.as_str()),
+        "closure missing format: {f_hash}"
+    );
+    assert!(
+        closure_ids.contains(&g_hash.as_str()),
+        "closure missing greet: {g_hash}"
+    );
+    assert!(
+        closure_ids.contains(&m_hash.as_str()),
+        "closure missing main: {m_hash}"
+    );
 
     // ── D4: Verify reports zero broken refs ───────────────────────────────────
 
-    let (code, stdout, _) = run_nom(&[
-        "store", "verify", &m_hash, "--dict", &dict,
-    ]);
+    let (code, stdout, _) = run_nom(&["store", "verify", &m_hash, "--dict", &dict]);
     assert_eq!(code, 0, "store verify exit non-zero: {stdout}");
-    assert!(stdout.contains("broken:  0"), "expected broken: 0, got: {stdout}");
+    assert!(
+        stdout.contains("broken:  0"),
+        "expected broken: 0, got: {stdout}"
+    );
 
     // ── D5: Build from hash (LLVM target) ────────────────────────────────────
     // We attempt `nom build <M> --target llvm`. The expected success path:
@@ -183,7 +232,13 @@ fn test_phase4_closure_demo() {
     // which confirms hash-prefix resolution and closure materialization work.
 
     let (build_code, build_stdout, build_stderr) = run_nom(&[
-        "build", &m_hash, "--dict", &dict, "--no-prelude", "--target", "llvm",
+        "build",
+        &m_hash,
+        "--dict",
+        &dict,
+        "--no-prelude",
+        "--target",
+        "llvm",
     ]);
     let combined = format!("{build_stdout}\n{build_stderr}");
     assert!(
@@ -198,7 +253,8 @@ fn test_phase4_closure_demo() {
             .join(format!("nom_{}.bc", &m_hash[..8]));
         assert!(
             bc_file.exists(),
-            "build succeeded but .bc not found at {}", bc_file.display()
+            "build succeeded but .bc not found at {}",
+            bc_file.display()
         );
     }
     // If build_code != 0, LLVM was absent or the build failed downstream.

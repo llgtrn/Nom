@@ -5,7 +5,7 @@ use std::path::Path;
 use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 use sha2::{Digest, Sha256};
 
-use super::{chrono_like_now, open_dict};
+use super::chrono_like_now;
 
 /// `nom store add-media <file> [--dict <path>] [--json] [--preserve-format]`
 ///
@@ -57,7 +57,11 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool, preserve_format
         .chars()
         .filter(|c| c.is_ascii_alphanumeric())
         .collect::<String>();
-    let word = if word.is_empty() { "media".to_string() } else { word };
+    let word = if word.is_empty() {
+        "media".to_string()
+    } else {
+        word
+    };
 
     // variant = the extension (lets multiple encodings of same word coexist).
     let variant = Some(ext.clone());
@@ -85,12 +89,15 @@ pub fn cmd_store_add_media(path: &Path, dict: &Path, json: bool, preserve_format
         updated_at: None,
     };
 
-    let dict_db = match open_dict(dict) {
-        Some(d) => d,
-        None => return 1,
+    let dict_db = match nom_dict::Dict::try_open_from_nomdict_path(dict) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: dict error: {e}");
+            return 1;
+        }
     };
 
-    if let Err(e) = dict_db.upsert_entry(&entry) {
+    if let Err(e) = nom_dict::upsert_entry(&dict_db, &entry) {
         eprintln!("nom: upsert error for {id}: {e}");
         return 1;
     }

@@ -57,11 +57,7 @@ mod tests {
         (code, stdout, stderr)
     }
 
-    fn run_status(
-        repo: &Path,
-        dict_root: &Path,
-        write_locks: bool,
-    ) -> (i32, String, String) {
+    fn run_status(repo: &Path, dict_root: &Path, write_locks: bool) -> (i32, String, String) {
         let mut args = vec![
             "build".to_string(),
             "status".to_string(),
@@ -153,7 +149,11 @@ mod tests {
         let validate_rows = dict
             .find_entities_by_word("validate_token_demo")
             .expect("find validate_token_demo");
-        assert_eq!(validate_rows.len(), 1, "expected 1 row for validate_token_demo");
+        assert_eq!(
+            validate_rows.len(),
+            1,
+            "expected 1 row for validate_token_demo"
+        );
 
         let issue_rows = dict
             .find_entities_by_word("issue_session_demo")
@@ -163,7 +163,11 @@ mod tests {
         let compose_rows = dict
             .find_entities_by_word("auth_session_compose_demo")
             .expect("find auth_session_compose_demo");
-        assert_eq!(compose_rows.len(), 1, "expected 1 row for auth_session_compose_demo");
+        assert_eq!(
+            compose_rows.len(),
+            1,
+            "expected 1 row for auth_session_compose_demo"
+        );
 
         // ── Step 2: build status (no --write-locks) ───────────────────────────
         let (bc, bo, be) = run_status(&repo_dir, &dict_dir, false);
@@ -175,8 +179,7 @@ mod tests {
 
         // ── Step 3: auth.nom must NOT have @hash yet ──────────────────────────
         let auth_nom_path = repo_dir.join("auth").join("auth.nom");
-        let auth_nom_before = std::fs::read_to_string(&auth_nom_path)
-            .expect("read auth/auth.nom");
+        let auth_nom_before = std::fs::read_to_string(&auth_nom_path).expect("read auth/auth.nom");
         assert!(
             !auth_nom_before.contains("auth_session_compose_demo@"),
             "auth.nom must not have @hash before --write-locks: {auth_nom_before}"
@@ -184,15 +187,18 @@ mod tests {
 
         // ── Step 4: build status --write-locks ───────────────────────────────
         let (wc, wo, we) = run_status(&repo_dir, &dict_dir, true);
-        assert_eq!(wc, 0, "build status --write-locks failed: stderr={we}\nstdout={wo}");
+        assert_eq!(
+            wc, 0,
+            "build status --write-locks failed: stderr={we}\nstdout={wo}"
+        );
         assert!(
             wo.contains("Wrote") && wo.contains("hash lock"),
             "expected 'Wrote N hash lock' in output: {wo}"
         );
 
         // ── Step 5: auth.nom MUST have auth_session_compose_demo@<64-hex> ─────
-        let auth_nom_after = std::fs::read_to_string(&auth_nom_path)
-            .expect("read auth/auth.nom after write-locks");
+        let auth_nom_after =
+            std::fs::read_to_string(&auth_nom_path).expect("read auth/auth.nom after write-locks");
         // Find the @ followed by exactly 64 hex characters.
         let at_pos = auth_nom_after.find("auth_session_compose_demo@");
         assert!(
@@ -201,7 +207,11 @@ mod tests {
         );
         let after_at = &auth_nom_after[at_pos.unwrap() + "auth_session_compose_demo@".len()..];
         let hash_part: String = after_at.chars().take(64).collect();
-        assert_eq!(hash_part.len(), 64, "hash must be 64 chars: got `{hash_part}`");
+        assert_eq!(
+            hash_part.len(),
+            64,
+            "hash must be 64 chars: got `{hash_part}`"
+        );
         assert!(
             hash_part.chars().all(|c| c.is_ascii_hexdigit()),
             "hash must be hex: `{hash_part}`"
@@ -223,8 +233,8 @@ mod tests {
         let (wc2, wo2, we2) = run_status(&repo_dir, &dict_dir, true);
         assert_eq!(wc2, 0, "second --write-locks failed: {we2}\n{wo2}");
         // "Wrote 0 hash lock(s)" is acceptable — nothing new to write.
-        let auth_nom_second = std::fs::read_to_string(&auth_nom_path)
-            .expect("read auth/auth.nom second time");
+        let auth_nom_second =
+            std::fs::read_to_string(&auth_nom_path).expect("read auth/auth.nom second time");
         assert_eq!(
             auth_nom_after, auth_nom_second,
             "second --write-locks must not modify already-locked file"

@@ -66,29 +66,24 @@ fn test_store_add_round_trip() {
     write_file(&file, HELLO_SRC);
     let dict = dict_flag(&root);
 
-    let (code, stdout, stderr) = run_nom(&[
-        "store",
-        "add",
-        file.to_str().unwrap(),
-        "--dict",
-        &dict,
-    ]);
+    let (code, stdout, stderr) =
+        run_nom(&["store", "add", file.to_str().unwrap(), "--dict", &dict]);
     assert_eq!(code, 0, "add exit: {code}, stderr={stderr}");
     let id = stdout.lines().next().expect("id on stdout").trim();
     assert_eq!(id.len(), 64, "id must be 64 hex chars, got {id:?}");
     assert!(id.chars().all(|c| c.is_ascii_hexdigit()));
 
     // Round-trip via get (non-JSON).
-    let (code, stdout, _) = run_nom(&[
-        "store",
-        "get",
-        id,
-        "--dict",
-        &dict,
-    ]);
+    let (code, stdout, _) = run_nom(&["store", "get", id, "--dict", &dict]);
     assert_eq!(code, 0);
-    assert!(stdout.contains("hello_world"), "body missing word: {stdout}");
-    assert!(stdout.contains("flow hello_world"), "body_nom missing: {stdout}");
+    assert!(
+        stdout.contains("hello_world"),
+        "body missing word: {stdout}"
+    );
+    assert!(
+        stdout.contains("flow hello_world"),
+        "body_nom missing: {stdout}"
+    );
 }
 
 #[test]
@@ -139,13 +134,7 @@ fn test_store_closure_three_entries() {
     d.add_ref(&b, &c).unwrap();
     drop(d);
 
-    let (code, stdout, stderr) = run_nom(&[
-        "store",
-        "closure",
-        &a,
-        "--dict",
-        &dict,
-    ]);
+    let (code, stdout, stderr) = run_nom(&["store", "closure", &a, "--dict", &dict]);
     assert_eq!(code, 0, "closure exit: {code}, stderr={stderr}");
     let lines: Vec<&str> = stdout.lines().collect();
     assert_eq!(lines.len(), 3, "expected 3 lines, got {lines:?}");
@@ -206,13 +195,7 @@ fn test_store_verify_broken_ref() {
         .unwrap();
     drop(d);
 
-    let (code, stdout, _) = run_nom(&[
-        "store",
-        "verify",
-        &a,
-        "--dict",
-        &dict,
-    ]);
+    let (code, stdout, _) = run_nom(&["store", "verify", &a, "--dict", &dict]);
     assert_eq!(code, 2, "expected exit 2 for broken ref, stdout={stdout}");
     assert!(stdout.contains("broken"), "stdout missing broken: {stdout}");
 }
@@ -253,15 +236,12 @@ fn test_store_gc_dry_run() {
 
     // With no roots file, gc --dry-run should mark both as removable
     // and keep 0. Ensure no warnings turn into non-zero exit.
-    let (code, stdout, _stderr) = run_nom(&[
-        "store",
-        "gc",
-        "--dict",
-        &dict,
-        "--dry-run",
-    ]);
+    let (code, stdout, _stderr) = run_nom(&["store", "gc", "--dict", &dict, "--dry-run"]);
     assert_eq!(code, 0, "gc dry-run exit: stdout={stdout}");
-    assert!(stdout.contains("would remove"), "stdout missing label: {stdout}");
+    assert!(
+        stdout.contains("would remove"),
+        "stdout missing label: {stdout}"
+    );
     // Confirm the DB still contains both entries after dry-run.
     let d2 = NomDict::open(&root).unwrap();
     assert_eq!(d2.count().unwrap(), 2, "dry-run must not delete rows");
@@ -300,15 +280,12 @@ fn test_store_get_prefix_match() {
     drop(d);
 
     // 8-char unique prefix should resolve.
-    let (code, stdout, _) = run_nom(&[
-        "store",
-        "get",
-        "ab12cd34",
-        "--dict",
-        &dict,
-    ]);
+    let (code, stdout, _) = run_nom(&["store", "get", "ab12cd34", "--dict", &dict]);
     assert_eq!(code, 0);
-    assert!(stdout.contains(&id), "full id missing from output: {stdout}");
+    assert!(
+        stdout.contains(&id),
+        "full id missing from output: {stdout}"
+    );
 }
 
 #[test]
@@ -346,13 +323,7 @@ fn test_store_get_ambiguous_prefix() {
     }
     drop(d);
 
-    let (code, _stdout, stderr) = run_nom(&[
-        "store",
-        "get",
-        "abcdef00",
-        "--dict",
-        &dict,
-    ]);
+    let (code, _stdout, stderr) = run_nom(&["store", "get", "abcdef00", "--dict", &dict]);
     assert_ne!(code, 0, "ambiguous prefix must not return success");
     assert!(
         stderr.contains("ambiguous") || stderr.contains("candidates"),
@@ -397,13 +368,7 @@ fn test_nom_build_by_hash() {
     // produces the "materialized N closure entries" banner. The full
     // build pipeline may still error on stubs like missing dict
     // entries — that's downstream of this task's contract.
-    let (_code, stdout, stderr) = run_nom(&[
-        "build",
-        &id,
-        "--dict",
-        &dict,
-        "--no-prelude",
-    ]);
+    let (_code, stdout, stderr) = run_nom(&["build", &id, "--dict", &dict, "--no-prelude"]);
     let combined = format!("{stdout}\n{stderr}");
     assert!(
         combined.contains("materialized") && combined.contains("closure entries"),
@@ -428,7 +393,10 @@ fn test_store_add_json_format() {
     ]);
     assert_eq!(code, 0, "json add exit: {code}, stderr={stderr}");
     let line = stdout.trim();
-    assert!(line.starts_with('{') && line.ends_with('}'), "not JSON: {line:?}");
+    assert!(
+        line.starts_with('{') && line.ends_with('}'),
+        "not JSON: {line:?}"
+    );
     assert!(line.contains("\"id\""), "missing id field: {line}");
     assert!(line.contains("\"status\""), "missing status field: {line}");
 }

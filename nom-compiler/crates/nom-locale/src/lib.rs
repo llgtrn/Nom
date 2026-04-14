@@ -73,7 +73,13 @@ impl LocaleTag {
             let len = subtag.len();
 
             // Extension / private-use singleton: single ASCII letter or digit.
-            if len == 1 && subtag.chars().next().map(|c| c.is_ascii_alphanumeric()).unwrap_or(false) {
+            if len == 1
+                && subtag
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_alphanumeric())
+                    .unwrap_or(false)
+            {
                 in_extension = true;
                 unsupported_parts.push(subtag.to_string());
                 continue;
@@ -86,7 +92,10 @@ impl LocaleTag {
             }
 
             // Script subtag: exactly 4 ASCII alpha (title-case canonical).
-            if script.is_none() && region.is_none() && variants.is_empty() && len == 4
+            if script.is_none()
+                && region.is_none()
+                && variants.is_empty()
+                && len == 4
                 && subtag.chars().all(|c| c.is_ascii_alphabetic())
             {
                 let mut s = subtag.to_ascii_lowercase();
@@ -99,7 +108,8 @@ impl LocaleTag {
             }
 
             // Region subtag: 2 ASCII alpha OR 3 ASCII digits.
-            if region.is_none() && variants.is_empty()
+            if region.is_none()
+                && variants.is_empty()
                 && ((len == 2 && subtag.chars().all(|c| c.is_ascii_alphabetic()))
                     || (len == 3 && subtag.chars().all(|c| c.is_ascii_digit())))
             {
@@ -115,7 +125,11 @@ impl LocaleTag {
 
             // Also accept 4-char variant starting with a digit (BCP 47 allows this).
             if len == 4
-                && subtag.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+                && subtag
+                    .chars()
+                    .next()
+                    .map(|c| c.is_ascii_digit())
+                    .unwrap_or(false)
                 && subtag.chars().all(|c| c.is_ascii_alphanumeric())
             {
                 variants.push(subtag.to_ascii_lowercase());
@@ -311,37 +325,37 @@ pub enum ConfusableResult {
 /// Sources: UTS #39 §2.1 "homoglyph attacks", common phishing cases.
 const COMMON_CONFUSABLES: &[(char, char)] = &[
     // Cyrillic → Latin (most common attack vector).
-    ('а', 'a'),  // U+0430 CYRILLIC SMALL LETTER A vs U+0061
-    ('е', 'e'),  // U+0435 vs U+0065
-    ('о', 'o'),  // U+043E vs U+006F
-    ('р', 'p'),  // U+0440 vs U+0070
-    ('с', 'c'),  // U+0441 vs U+0063
-    ('у', 'y'),  // U+0443 vs U+0079
-    ('х', 'x'),  // U+0445 vs U+0078
-    ('А', 'A'),  // U+0410 vs U+0041
-    ('В', 'B'),  // U+0412 vs U+0042
-    ('Е', 'E'),  // U+0415 vs U+0045
-    ('К', 'K'),  // U+041A vs U+004B
-    ('М', 'M'),  // U+041C vs U+004D
-    ('Н', 'H'),  // U+041D vs U+0048
-    ('О', 'O'),  // U+041E vs U+004F
-    ('Р', 'P'),  // U+0420 vs U+0050
-    ('С', 'C'),  // U+0421 vs U+0043
-    ('Т', 'T'),  // U+0422 vs U+0054
-    ('Х', 'X'),  // U+0425 vs U+0058
+    ('а', 'a'), // U+0430 CYRILLIC SMALL LETTER A vs U+0061
+    ('е', 'e'), // U+0435 vs U+0065
+    ('о', 'o'), // U+043E vs U+006F
+    ('р', 'p'), // U+0440 vs U+0070
+    ('с', 'c'), // U+0441 vs U+0063
+    ('у', 'y'), // U+0443 vs U+0079
+    ('х', 'x'), // U+0445 vs U+0078
+    ('А', 'A'), // U+0410 vs U+0041
+    ('В', 'B'), // U+0412 vs U+0042
+    ('Е', 'E'), // U+0415 vs U+0045
+    ('К', 'K'), // U+041A vs U+004B
+    ('М', 'M'), // U+041C vs U+004D
+    ('Н', 'H'), // U+041D vs U+0048
+    ('О', 'O'), // U+041E vs U+004F
+    ('Р', 'P'), // U+0420 vs U+0050
+    ('С', 'C'), // U+0421 vs U+0043
+    ('Т', 'T'), // U+0422 vs U+0054
+    ('Х', 'X'), // U+0425 vs U+0058
     // Greek → Latin
-    ('α', 'a'),  // U+03B1 vs U+0061
-    ('ο', 'o'),  // U+03BF vs U+006F
-    ('ν', 'v'),  // U+03BD vs U+0076
-    ('Α', 'A'),  // U+0391 vs U+0041
-    ('Β', 'B'),  // U+0392 vs U+0042
-    ('Ε', 'E'),  // U+0395 vs U+0045
-    ('Ζ', 'Z'),  // U+0396 vs U+005A
-    ('Ι', 'I'),  // U+0399 vs U+0049
-    ('Κ', 'K'),  // U+039A vs U+004B
-    ('Μ', 'M'),  // U+039C vs U+004D
-    ('Ν', 'N'),  // U+039D vs U+004E
-    ('Ο', 'O'),  // U+039F vs U+004F
+    ('α', 'a'), // U+03B1 vs U+0061
+    ('ο', 'o'), // U+03BF vs U+006F
+    ('ν', 'v'), // U+03BD vs U+0076
+    ('Α', 'A'), // U+0391 vs U+0041
+    ('Β', 'B'), // U+0392 vs U+0042
+    ('Ε', 'E'), // U+0395 vs U+0045
+    ('Ζ', 'Z'), // U+0396 vs U+005A
+    ('Ι', 'I'), // U+0399 vs U+0049
+    ('Κ', 'K'), // U+039A vs U+004B
+    ('Μ', 'M'), // U+039C vs U+004D
+    ('Ν', 'N'), // U+039D vs U+004E
+    ('Ο', 'O'), // U+039F vs U+004F
 ];
 
 /// Lookup a confusable pair in the baked table. Symmetric: returns true
@@ -449,12 +463,11 @@ pub struct ApplyReport {
 pub fn apply_locale(source: &str, pack: &LocalePack, direction: ApplyDirection) -> ApplyReport {
     // Build the lookup map for the requested direction.
     let lookup: BTreeMap<&str, &str> = match direction {
-        ApplyDirection::ToCanonical => {
-            pack.keyword_aliases
-                .iter()
-                .map(|(k, v)| (k.as_str(), v.as_str()))
-                .collect()
-        }
+        ApplyDirection::ToCanonical => pack
+            .keyword_aliases
+            .iter()
+            .map(|(k, v)| (k.as_str(), v.as_str()))
+            .collect(),
         ApplyDirection::FromCanonical => {
             // Invert: canonical → first (diacritic-preferred) localized alias.
             // We use the original const order which puts diacritics first.
@@ -485,9 +498,7 @@ pub fn apply_locale(source: &str, pack: &LocalePack, direction: ApplyDirection) 
 
     while pos < len {
         // ── Line comments: # or // ────────────────────────────────────────────
-        if bytes[pos] == b'#'
-            || (bytes[pos] == b'/' && pos + 1 < len && bytes[pos + 1] == b'/')
-        {
+        if bytes[pos] == b'#' || (bytes[pos] == b'/' && pos + 1 < len && bytes[pos + 1] == b'/') {
             // Copy everything to end of line unchanged.
             let comment_start = pos;
             while pos < len && bytes[pos] != b'\n' {
@@ -775,7 +786,12 @@ mod tests {
         let result = is_confusable("раypal", "paypal");
         match result {
             ConfusableResult::Confusable { pairs } => {
-                assert_eq!(pairs.len(), 2, "expected 2 confusable pairs, got: {:?}", pairs);
+                assert_eq!(
+                    pairs.len(),
+                    2,
+                    "expected 2 confusable pairs, got: {:?}",
+                    pairs
+                );
                 // Both (Cyr-р/p) and (Cyr-а/a) must appear (order may vary).
                 let has_cyr_r_p = pairs.iter().any(|&(ca, cb)| {
                     (ca == '\u{0440}' && cb == 'p') || (ca == 'p' && cb == '\u{0440}')
@@ -796,11 +812,18 @@ mod tests {
         let result = is_confusable("αpple", "apple");
         match result {
             ConfusableResult::Confusable { pairs } => {
-                assert_eq!(pairs.len(), 1, "expected 1 confusable pair, got: {:?}", pairs);
+                assert_eq!(
+                    pairs.len(),
+                    1,
+                    "expected 1 confusable pair, got: {:?}",
+                    pairs
+                );
                 let (ca, cb) = pairs[0];
                 assert!(
                     (ca == 'α' && cb == 'a') || (ca == 'a' && cb == 'α'),
-                    "unexpected pair ({:?}, {:?})", ca, cb
+                    "unexpected pair ({:?}, {:?})",
+                    ca,
+                    cb
                 );
             }
             other => panic!("expected Confusable, got {:?}", other),
@@ -823,11 +846,16 @@ mod tests {
         let fwd = is_confusable("аpple", "apple");
         let rev = is_confusable("apple", "аpple");
         match (fwd, rev) {
-            (ConfusableResult::Confusable { pairs: mut p1 }, ConfusableResult::Confusable { pairs: mut p2 }) => {
+            (
+                ConfusableResult::Confusable { pairs: mut p1 },
+                ConfusableResult::Confusable { pairs: mut p2 },
+            ) => {
                 // Normalize each pair to (min, max) by char value for comparison.
                 let normalize = |p: &mut Vec<(char, char)>| {
                     for pair in p.iter_mut() {
-                        if pair.0 > pair.1 { std::mem::swap(&mut pair.0, &mut pair.1); }
+                        if pair.0 > pair.1 {
+                            std::mem::swap(&mut pair.0, &mut pair.1);
+                        }
                     }
                     p.sort();
                 };

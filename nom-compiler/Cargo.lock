@@ -1435,9 +1435,11 @@ dependencies = [
  "lsp-server",
  "lsp-types",
  "nom-dict",
+ "nom-grammar",
  "nom-intent",
  "serde",
  "serde_json",
+ "tempfile",
  "thiserror 2.0.18",
 ]
 
@@ -1464,6 +1466,7 @@ name = "nom-parser"
 version = "0.1.0"
 dependencies = [
  "nom-ast",
+ "nom-concept",
  "nom-diagnostics",
  "nom-lexer",
  "thiserror 2.0.18",
@@ -1488,8 +1491,8 @@ name = "nom-resolver"
 version = "0.1.0"
 dependencies = [
  "nom-ast",
+ "nom-concept",
  "nom-dict",
- "nom-parser",
  "nom-types",
  "rusqlite",
  "serde",

@@ -14,7 +14,8 @@
 
 use std::path::Path;
 
-use nom_dict::NomDict;
+use nom_dict::Dict;
+use nom_dict::dict::find_entity;
 use serde::{Deserialize, Serialize};
 
 use crate::manifest::{self, MeceViolationRecord};
@@ -106,7 +107,9 @@ pub struct EffectsAggregate {
 pub enum OverallVerdict {
     /// Zero unresolved, zero MECE collisions, zero threshold failures.
     Clean,
-    NeedsAttention { reasons: Vec<String> },
+    NeedsAttention {
+        reasons: Vec<String>,
+    },
 }
 
 // ── Core pipeline ─────────────────────────────────────────────────────────────
@@ -121,7 +124,7 @@ pub enum OverallVerdict {
 /// Per-slot resolver failures surface as `SlotOutcome::Unresolved`, not errors.
 pub fn build_report(
     repo: &Path,
-    dict: &NomDict,
+    dict: &Dict,
     concept_filter: Option<&str>,
 ) -> Result<ReportBundle, String> {
     let repo_path = repo.to_string_lossy().into_owned();
@@ -157,7 +160,7 @@ pub fn build_report(
                 // The picked_word is the word from BuildItem; for typed-slot items
                 // the word is empty so we re-derive from the hash via the dict.
                 let picked_word = if item.word.is_empty() {
-                    dict.find_entity(hash)
+                    find_entity(dict, hash)
                         .ok()
                         .flatten()
                         .map(|r| r.word)
@@ -209,9 +212,9 @@ pub fn build_report(
         // they are covered above; this loop is a safety net for future changes).
         for uref in &cm.unresolved {
             // Avoid duplicating entries already present as hash=None items above.
-            let already_present = slots.iter().any(|s| {
-                s.word == uref.word && s.kind.as_deref() == uref.kind.as_deref()
-            });
+            let already_present = slots
+                .iter()
+                .any(|s| s.word == uref.word && s.kind.as_deref() == uref.kind.as_deref());
             if !already_present {
                 slots.push(SlotResolution {
                     source_line: None,
@@ -269,10 +272,7 @@ pub fn build_report(
             ));
         }
         if mece_count > 0 {
-            overall_reasons.push(format!(
-                "{}: {} MECE ME collision(s)",
-                cm.name, mece_count
-            ));
+            overall_reasons.push(format!("{}: {} MECE ME collision(s)", cm.name, mece_count));
         }
 
         concept_reports.push(ConceptReport {
@@ -364,12 +364,8 @@ pub fn render_report_human(bundle: &ReportBundle) -> String {
                             .as_deref()
                             .map(|m| format!(" matching \"{m}\""))
                             .unwrap_or_default();
-                        out.push_str(&format!(
-                            "  \u{2713} the {word_display}{matching_str}\n"
-                        ));
-                        out.push_str(&format!(
-                            "    resolved: {picked_word}@{hash_short}\n"
-                        ));
+                        out.push_str(&format!("  \u{2713} the {word_display}{matching_str}\n"));
+                        out.push_str(&format!("    resolved: {picked_word}@{hash_short}\n"));
                     } else {
                         let alt_count = alternatives.len();
                         out.push_str(&format!(
@@ -409,9 +405,7 @@ pub fn render_report_human(bundle: &ReportBundle) -> String {
                         .as_deref()
                         .map(|m| format!(" matching \"{m}\""))
                         .unwrap_or_default();
-                    out.push_str(&format!(
-                        "  \u{2717} the {word_display}{matching_str}\n"
-                    ));
+                    out.push_str(&format!("  \u{2717} the {word_display}{matching_str}\n"));
                     out.push_str(&format!("    UNRESOLVED: {reason}\n"));
                     if candidates_considered.is_empty() {
                         out.push_str("    candidates considered: (none)\n");
@@ -577,13 +571,8 @@ pub fn cmd_build_report(
     exit_code
 }
 
-fn open_dict_in_place(dict: &Path) -> Option<NomDict> {
-    let result = if dict.extension().is_some_and(|e| e == "db") {
-        NomDict::open_in_place(dict)
-    } else {
-        NomDict::open(dict)
-    };
-    match result {
+fn open_dict_in_place(dict: &Path) -> Option<Dict> {
+    match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => Some(d),
         Err(e) => {
             eprintln!("nom: cannot open dict at {}: {e}", dict.display());
@@ -715,13 +704,22 @@ mod tests {
 
     #[test]
     fn render_human_resolved_slot_shows_checkmark() {
-        let slot = resolved_slot("login_user", "a1b2c3d4e5f60000a1b2c3d4e5f60000a1b2c3d4e5f60000a1b2c3d4e5f60000");
+        let slot = resolved_slot(
+            "login_user",
+            "a1b2c3d4e5f60000a1b2c3d4e5f60000a1b2c3d4e5f60000a1b2c3d4e5f60000",
+        );
         let cr = make_concept_report("c1", vec![slot], vec![]);
         let bundle = make_bundle(vec![cr], OverallVerdict::Clean);
         let rendered = render_report_human(&bundle);
         // Unicode checkmark ✓
-        assert!(rendered.contains('\u{2713}'), "resolved slot must show ✓: {rendered}");
-        assert!(rendered.contains("login_user"), "must show word: {rendered}");
+        assert!(
+            rendered.contains('\u{2713}'),
+            "resolved slot must show ✓: {rendered}"
+        );
+        assert!(
+            rendered.contains("login_user"),
+            "must show word: {rendered}"
+        );
     }
 
     #[test]
@@ -736,8 +734,14 @@ mod tests {
         );
         let rendered = render_report_human(&bundle);
         // Unicode cross ✗
-        assert!(rendered.contains('\u{2717}'), "unresolved slot must show ✗: {rendered}");
-        assert!(rendered.contains("UNRESOLVED"), "must contain UNRESOLVED: {rendered}");
+        assert!(
+            rendered.contains('\u{2717}'),
+            "unresolved slot must show ✗: {rendered}"
+        );
+        assert!(
+            rendered.contains("UNRESOLVED"),
+            "must contain UNRESOLVED: {rendered}"
+        );
     }
 
     #[test]
@@ -745,7 +749,10 @@ mod tests {
         let cr = make_concept_report("c3", vec![], vec![]);
         let bundle = make_bundle(vec![cr], OverallVerdict::Clean);
         let rendered = render_report_human(&bundle);
-        assert!(rendered.contains("MECE:"), "must contain MECE section: {rendered}");
+        assert!(
+            rendered.contains("MECE:"),
+            "must contain MECE section: {rendered}"
+        );
         assert!(
             rendered.contains("CE check deferred to Phase 9"),
             "must contain CE note: {rendered}"
@@ -757,9 +764,18 @@ mod tests {
         let cr = make_concept_report("c4", vec![], vec![]);
         let bundle = make_bundle(vec![cr], OverallVerdict::Clean);
         let rendered = render_report_human(&bundle);
-        assert!(rendered.contains("effects:"), "must contain effects section: {rendered}");
-        assert!(rendered.contains("cache_hit"), "must contain benefit name: {rendered}");
-        assert!(rendered.contains("timeout"), "must contain hazard name: {rendered}");
+        assert!(
+            rendered.contains("effects:"),
+            "must contain effects section: {rendered}"
+        );
+        assert!(
+            rendered.contains("cache_hit"),
+            "must contain benefit name: {rendered}"
+        );
+        assert!(
+            rendered.contains("timeout"),
+            "must contain hazard name: {rendered}"
+        );
     }
 
     // ── JSON round-trip ───────────────────────────────────────────────────────

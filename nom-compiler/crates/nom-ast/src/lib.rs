@@ -554,7 +554,10 @@ pub enum TypeExpr {
     /// Generic type: `list[text]`, `map[text, number]`, `option[text]`
     Generic(Identifier, Vec<TypeExpr>),
     /// Function type: `fn(text, number) -> bool`
-    Function { params: Vec<TypeExpr>, ret: Box<TypeExpr> },
+    Function {
+        params: Vec<TypeExpr>,
+        ret: Box<TypeExpr>,
+    },
     /// Tuple type: `(text, number)`
     Tuple(Vec<TypeExpr>),
     /// Reference type: `&text`, `&mut text`

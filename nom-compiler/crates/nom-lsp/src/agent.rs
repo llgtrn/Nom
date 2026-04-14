@@ -7,7 +7,7 @@
 //!
 //! Pipeline:
 //!
-//! 1. Open `NomDict::open_in_place(dict_path)`
+//! 1. Open `Dict::open_in_place(dict_path)`
 //! 2. Wrap `DictTools::new(&dict)` in `InstrumentedTools` (log every call)
 //! 3. Run `classify_with_react(prose, budget, nom_cli_adapter, tools)`
 //! 4. Format transcript + instrumentation log as markdown
@@ -26,9 +26,7 @@ use lsp_types::{MarkupContent, MarkupKind};
 use nom_intent::adapters::NomCliAdapter;
 use nom_intent::dict_tools::DictTools;
 use nom_intent::instrumented::{InstrumentedTools, LogEntry};
-use nom_intent::react::{
-    classify_with_react, ReActAdapter, ReActBudget, ReActLlmFn, ReActStep,
-};
+use nom_intent::react::{ReActAdapter, ReActBudget, ReActLlmFn, ReActStep, classify_with_react};
 
 /// Errors returned by `render_agent_transcript`. Structured so callers
 /// (LSP handlers, `nom lsp why` CLI in slice-6c) can match variants
@@ -52,17 +50,18 @@ pub fn render_agent_transcript(
     dict_path: &Path,
     budget: &ReActBudget,
 ) -> Result<MarkupContent, AgentError> {
-    let dict =
-        nom_dict::NomDict::open_in_place(dict_path).map_err(|e| AgentError::OpenDict {
+    let dict = nom_dict::Dict::try_open_from_nomdict_path(dict_path).map_err(|e| {
+        AgentError::OpenDict {
             path: dict_path.display().to_string(),
             message: e.to_string(),
-        })?;
+        }
+    })?;
     let dict_tools = DictTools::new(&dict);
     let instrumented = InstrumentedTools::new(&dict_tools);
     let adapter = NomCliAdapter::new();
     let llm: ReActLlmFn = Box::new(move |p, t| adapter.next_step(p, t));
-    let transcript = classify_with_react(prose, budget, &llm, &instrumented)
-        .map_err(AgentError::Loop)?;
+    let transcript =
+        classify_with_react(prose, budget, &llm, &instrumented).map_err(AgentError::Loop)?;
     let log = instrumented.entries();
     Ok(MarkupContent {
         kind: MarkupKind::Markdown,
@@ -91,11 +90,7 @@ pub fn render_agent_transcript(
 /// Separated out so slice-6b's request handler + slice-6c's CLI can
 /// share the formatter. `pub(crate)` not `pub` because future slices
 /// may iterate the markdown shape without breaking external callers.
-pub(crate) fn format_markdown(
-    prose: &str,
-    transcript: &[ReActStep],
-    log: &[LogEntry],
-) -> String {
+pub(crate) fn format_markdown(prose: &str, transcript: &[ReActStep], log: &[LogEntry]) -> String {
     let mut md = String::new();
     md.push_str("# Why this Nom?\n\n");
     md.push_str(&format!("Prose: `{}`\n\n", prose.replace('`', "\\`")));
@@ -127,10 +122,7 @@ fn format_step(step: &ReActStep) -> String {
     match step {
         ReActStep::Thought(t) => format!("**Thought** — {}", shorten(t, 120)),
         ReActStep::Action(a) => format!("**Action** — `{}`", format_action(a)),
-        ReActStep::Observation(o) => format!(
-            "**Observation** — `{}`",
-            format_observation_brief(o)
-        ),
+        ReActStep::Observation(o) => format!("**Observation** — `{}`", format_observation_brief(o)),
         ReActStep::Answer(intent) => {
             format!("**Answer** — `{}`", format_intent(intent))
         }
@@ -141,10 +133,11 @@ fn format_step(step: &ReActStep) -> String {
 fn format_action(action: &nom_intent::react::AgentAction) -> String {
     use nom_intent::react::AgentAction as A;
     match action {
-        A::Query { subject, kind, depth } => format!(
-            "query(subject={subject:?}, kind={:?}, depth={depth})",
-            kind
-        ),
+        A::Query {
+            subject,
+            kind,
+            depth,
+        } => format!("query(subject={subject:?}, kind={:?}, depth={depth})", kind),
         A::Compose { prose, context } => format!(
             "compose(prose={:?}, context=[{} uids])",
             shorten(prose, 40),
@@ -161,7 +154,11 @@ fn format_observation_brief(obs: &nom_intent::react::Observation) -> String {
     match obs {
         O::Candidates(c) => format!("Candidates[{}]", c.len()),
         O::Proposal(i) => format!("Proposal({})", format_intent(i)),
-        O::Verdict { passed, failures, warnings } => format!(
+        O::Verdict {
+            passed,
+            failures,
+            warnings,
+        } => format!(
             "Verdict{{passed={passed}, failures={}, warnings={}}}",
             failures.len(),
             warnings.len()
@@ -190,10 +187,11 @@ fn format_intent(intent: &nom_intent::NomIntent) -> String {
 fn format_call(call: &nom_intent::instrumented::CallKind) -> String {
     use nom_intent::instrumented::CallKind as C;
     match call {
-        C::Query { subject, kind, depth } => format!(
-            "query({subject:?}, kind={:?}, depth={depth})",
-            kind
-        ),
+        C::Query {
+            subject,
+            kind,
+            depth,
+        } => format!("query({subject:?}, kind={:?}, depth={depth})", kind),
         C::Compose { prose, context } => format!(
             "compose({:?}, [{} uids])",
             shorten(prose, 40),
@@ -219,7 +217,7 @@ fn shorten(s: &str, max: usize) -> String {
 mod tests {
     use super::*;
     use nom_intent::react::Observation;
-    use nom_intent::{instrumented::CallKind, NomIntent, Reason};
+    use nom_intent::{NomIntent, Reason, instrumented::CallKind};
 
     #[test]
     fn format_markdown_has_why_this_nom_header() {

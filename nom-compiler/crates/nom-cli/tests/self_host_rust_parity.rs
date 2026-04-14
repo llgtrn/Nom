@@ -28,8 +28,7 @@ fn self_host_file(name: &str) -> String {
         .unwrap()
         .join("stdlib/self_host")
         .join(name);
-    std::fs::read_to_string(&path)
-        .unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
+    std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("read {}: {e}", path.display()))
 }
 
 fn assert_returns_literal(src: &str, value: &str, where_from: &str) {
@@ -45,8 +44,16 @@ fn planner_canonical_tags_match_rust_consts() {
     let src = self_host_file("planner.nom");
     assert_returns_literal(&src, tags::DEFAULT_ON_FAIL, "planner.nom::default_on_fail");
     assert_returns_literal(&src, tags::EDGE_KIND_CALLS, "planner.nom::edge_kind_calls");
-    assert_returns_literal(&src, tags::EDGE_KIND_DEPENDS_ON, "planner.nom::edge_kind_depends_on");
-    assert_returns_literal(&src, tags::EDGE_KIND_CONSTRAINS, "planner.nom::edge_kind_constrains");
+    assert_returns_literal(
+        &src,
+        tags::EDGE_KIND_DEPENDS_ON,
+        "planner.nom::edge_kind_depends_on",
+    );
+    assert_returns_literal(
+        &src,
+        tags::EDGE_KIND_CONSTRAINS,
+        "planner.nom::edge_kind_constrains",
+    );
 }
 
 #[test]
@@ -55,7 +62,11 @@ fn codegen_canonical_tags_match_rust_consts() {
     assert_returns_literal(&src, tags::RUST_TY_I64, "codegen.nom::rust_ty_i64");
     assert_returns_literal(&src, tags::RUST_TY_STRING, "codegen.nom::rust_ty_string");
     assert_returns_literal(&src, tags::RUST_TY_BOOL, "codegen.nom::rust_ty_bool");
-    assert_returns_literal(&src, tags::DEFAULT_ENTRY_SYMBOL, "codegen.nom::default_entry_symbol");
+    assert_returns_literal(
+        &src,
+        tags::DEFAULT_ENTRY_SYMBOL,
+        "codegen.nom::default_entry_symbol",
+    );
 }
 
 #[test]
@@ -74,7 +85,11 @@ fn parser_classifier_tags_match_rust_consts() {
     assert_returns_literal(&src, tags::CLASSIFIER_FLOW, "parser.nom::flow_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_STORE, "parser.nom::store_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_GRAPH, "parser.nom::graph_classifier");
-    assert_returns_literal(&src, tags::CLASSIFIER_SYSTEM, "parser.nom::system_classifier");
+    assert_returns_literal(
+        &src,
+        tags::CLASSIFIER_SYSTEM,
+        "parser.nom::system_classifier",
+    );
     assert_returns_literal(&src, tags::CLASSIFIER_AGENT, "parser.nom::agent_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_TEST, "parser.nom::test_classifier");
     assert_returns_literal(&src, tags::CLASSIFIER_GATE, "parser.nom::gate_classifier");
@@ -99,10 +114,7 @@ fn classifiers_all_covers_each_individual_const() {
         tags::CLASSIFIER_POOL,
         tags::CLASSIFIER_VIEW,
     ] {
-        assert!(
-            CLASSIFIERS_ALL.contains(c),
-            "CLASSIFIERS_ALL missing {c}"
-        );
+        assert!(CLASSIFIERS_ALL.contains(c), "CLASSIFIERS_ALL missing {c}");
     }
     assert_eq!(CLASSIFIERS_ALL.len(), 10);
 }
@@ -114,7 +126,10 @@ fn edge_kinds_all_covers_each_individual_const() {
         tags::EDGE_KIND_DEPENDS_ON,
         tags::EDGE_KIND_CONSTRAINS,
     ] {
-        assert!(tags::EDGE_KINDS_ALL.contains(c), "EDGE_KINDS_ALL missing {c}");
+        assert!(
+            tags::EDGE_KINDS_ALL.contains(c),
+            "EDGE_KINDS_ALL missing {c}"
+        );
     }
     assert_eq!(tags::EDGE_KINDS_ALL.len(), 3);
 }
@@ -147,7 +162,10 @@ fn decl_kinds_all_covers_each_individual_const() {
         tags::DECL_KIND_STRUCT,
         tags::DECL_KIND_ENUM,
     ] {
-        assert!(tags::DECL_KINDS_ALL.contains(c), "DECL_KINDS_ALL missing {c}");
+        assert!(
+            tags::DECL_KINDS_ALL.contains(c),
+            "DECL_KINDS_ALL missing {c}"
+        );
     }
     assert_eq!(tags::DECL_KINDS_ALL.len(), 3);
 }
@@ -159,7 +177,10 @@ fn prim_types_all_covers_each_individual_const() {
         tags::PRIM_TYPE_TEXT,
         tags::PRIM_TYPE_BOOL,
     ] {
-        assert!(tags::PRIM_TYPES_ALL.contains(c), "PRIM_TYPES_ALL missing {c}");
+        assert!(
+            tags::PRIM_TYPES_ALL.contains(c),
+            "PRIM_TYPES_ALL missing {c}"
+        );
     }
     assert_eq!(tags::PRIM_TYPES_ALL.len(), 3);
 }

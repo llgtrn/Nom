@@ -10,11 +10,41 @@
 use std::path::PathBuf;
 
 const BANNED: &[&str] = &[
-    "rust", "python", "java", "erlang", "elixir", "coq", "ocaml",
-    "haskell", "kotlin", "elm", "idris", "dafny", "pony", "smalltalk",
-    "forth", "perl", "lua", "ruby", "swift", "scala", "clojure", "lisp",
-    "javascript", "typescript", "golang", "fortran", "cobol", "pascal",
-    "prolog", "scheme", "racket", "crystal", "nim", "zig", "julia",
+    "rust",
+    "python",
+    "java",
+    "erlang",
+    "elixir",
+    "coq",
+    "ocaml",
+    "haskell",
+    "kotlin",
+    "elm",
+    "idris",
+    "dafny",
+    "pony",
+    "smalltalk",
+    "forth",
+    "perl",
+    "lua",
+    "ruby",
+    "swift",
+    "scala",
+    "clojure",
+    "lisp",
+    "javascript",
+    "typescript",
+    "golang",
+    "fortran",
+    "cobol",
+    "pascal",
+    "prolog",
+    "scheme",
+    "racket",
+    "crystal",
+    "nim",
+    "zig",
+    "julia",
 ];
 
 /// Whole-word check: `banned` is contained in `haystack` only when it
@@ -64,12 +94,75 @@ fn baseline_grammar_has_no_foreign_language_names_in_any_row() {
 
     let audits: &[(&str, &[&str])] = &[
         ("schema_meta", &["key", "value"]),
-        ("keywords", &["token", "role", "kind_scope", "source_ref", "shipped_commit", "notes"]),
-        ("keyword_synonyms", &["synonym", "canonical_keyword", "source_ref", "shipped_commit", "notes"]),
-        ("kinds", &["name", "description", "allowed_clauses", "allowed_refs", "shipped_commit", "notes"]),
-        ("clause_shapes", &["kind", "clause_name", "one_of_group", "grammar_shape", "source_ref", "notes"]),
-        ("quality_names", &["name", "axis", "metric_function", "cardinality", "required_at", "source_ref", "notes"]),
-        ("patterns", &["pattern_id", "intent", "nom_kinds", "nom_clauses", "typed_slot_refs", "example_shape", "hazards", "favors", "source_doc_refs"]),
+        (
+            "keywords",
+            &[
+                "token",
+                "role",
+                "kind_scope",
+                "source_ref",
+                "shipped_commit",
+                "notes",
+            ],
+        ),
+        (
+            "keyword_synonyms",
+            &[
+                "synonym",
+                "canonical_keyword",
+                "source_ref",
+                "shipped_commit",
+                "notes",
+            ],
+        ),
+        (
+            "kinds",
+            &[
+                "name",
+                "description",
+                "allowed_clauses",
+                "allowed_refs",
+                "shipped_commit",
+                "notes",
+            ],
+        ),
+        (
+            "clause_shapes",
+            &[
+                "kind",
+                "clause_name",
+                "one_of_group",
+                "grammar_shape",
+                "source_ref",
+                "notes",
+            ],
+        ),
+        (
+            "quality_names",
+            &[
+                "name",
+                "axis",
+                "metric_function",
+                "cardinality",
+                "required_at",
+                "source_ref",
+                "notes",
+            ],
+        ),
+        (
+            "patterns",
+            &[
+                "pattern_id",
+                "intent",
+                "nom_kinds",
+                "nom_clauses",
+                "typed_slot_refs",
+                "example_shape",
+                "hazards",
+                "favors",
+                "source_doc_refs",
+            ],
+        ),
     ];
 
     let mut hits: Vec<(String, String, String, String)> = Vec::new();

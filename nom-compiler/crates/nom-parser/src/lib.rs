@@ -35,13 +35,12 @@ use nom_ast::{
     AgentCapabilityStmt, AgentReceiveStmt, AgentScheduleStmt, AgentStateStmt, AgentSuperviseStmt,
     AssignStmt, Block, BlockStmt, BranchArm, BranchBlock, BranchCondition, CallExpr, Classifier,
     CompareOp, Constraint, ContractStmt, Declaration, DescribeStmt, EffectModifier, EffectsStmt,
-    EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam, ForStmt,
-    ImplBlock, ModStmt, OnFailStrategy,
-    GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
-    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplementStmt, LetStmt,
-    Literal, MatchArm, MatchExpr, NeedStmt, NomRef, Pattern, RequireStmt, SourceFile, Span,
-    Statement, StructDef, StructField, TestAndStmt, TestGivenStmt, TestThenStmt, TestWhenStmt,
-    TraitDef, TypeExpr, TypedParam, UseImport, UseStmt, WhileStmt,
+    EnumDef, EnumVariant, Expr, FlowChain, FlowQualifier, FlowStep, FlowStmt, FnDef, FnParam,
+    ForStmt, GraphConstraintStmt, GraphEdgeStmt, GraphNodeStmt, GraphQueryExpr, GraphQueryStmt,
+    GraphSetExpr, GraphSetOp, GraphTraverseExpr, Identifier, IfExpr, ImplBlock, ImplementStmt,
+    LetStmt, Literal, MatchArm, MatchExpr, ModStmt, NeedStmt, NomRef, OnFailStrategy, Pattern,
+    RequireStmt, SourceFile, Span, Statement, StructDef, StructField, TestAndStmt, TestGivenStmt,
+    TestThenStmt, TestWhenStmt, TraitDef, TypeExpr, TypedParam, UseImport, UseStmt, WhileStmt,
 };
 use nom_lexer::{SpannedToken, Token};
 use thiserror::Error;
@@ -243,9 +242,7 @@ impl Parser {
     /// does not print to stderr — callers get the full list of
     /// recovered-from errors for programmatic inspection (CI probes,
     /// LSP diagnostic streams).
-    fn parse_source_file_with_warnings(
-        &mut self,
-    ) -> ParseResult<(SourceFile, Vec<ParseError>)> {
+    fn parse_source_file_with_warnings(&mut self) -> ParseResult<(SourceFile, Vec<ParseError>)> {
         let mut declarations = Vec::new();
         let mut errors: Vec<ParseError> = Vec::new();
         self.consume_blanks();
@@ -282,7 +279,9 @@ impl Parser {
                     break;
                 }
                 tok if is_classifier(tok) => break, // Don't consume the classifier
-                _ => { self.advance(); }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -297,7 +296,9 @@ impl Parser {
                     break;
                 }
                 tok if is_classifier(tok) || is_statement_keyword(tok) => break,
-                _ => { self.advance(); }
+                _ => {
+                    self.advance();
+                }
             }
         }
     }
@@ -672,9 +673,15 @@ impl Parser {
         if matches!(self.peek(), Token::Ampersand) {
             self.advance();
             let mutable = matches!(self.peek(), Token::Mut);
-            if mutable { self.advance(); }
+            if mutable {
+                self.advance();
+            }
             let expr = self.parse_unary_expr()?;
-            let op = if mutable { nom_ast::UnaryOp::RefMut } else { nom_ast::UnaryOp::Ref };
+            let op = if mutable {
+                nom_ast::UnaryOp::RefMut
+            } else {
+                nom_ast::UnaryOp::Ref
+            };
             return Ok(Expr::UnaryOp(op, Box::new(expr)));
         }
         // Array literal: [expr, expr, ...]
@@ -683,9 +690,13 @@ impl Parser {
             let mut items = Vec::new();
             while !matches!(self.peek(), Token::RBracket | Token::Eof) {
                 items.push(self.parse_expr()?);
-                if matches!(self.peek(), Token::Comma) { self.advance(); }
+                if matches!(self.peek(), Token::Comma) {
+                    self.advance();
+                }
             }
-            if matches!(self.peek(), Token::RBracket) { self.advance(); }
+            if matches!(self.peek(), Token::RBracket) {
+                self.advance();
+            }
             return Ok(Expr::Array(items));
         }
         self.parse_postfix_expr()
@@ -740,9 +751,13 @@ impl Parser {
                         let mut args = Vec::new();
                         while !matches!(self.peek(), Token::RParen | Token::Eof) {
                             args.push(self.parse_expr()?);
-                            if matches!(self.peek(), Token::Comma) { self.advance(); }
+                            if matches!(self.peek(), Token::Comma) {
+                                self.advance();
+                            }
                         }
-                        if matches!(self.peek(), Token::RParen) { self.advance(); }
+                        if matches!(self.peek(), Token::RParen) {
+                            self.advance();
+                        }
                         expr = Expr::MethodCall(Box::new(expr), field, args);
                     } else {
                         expr = Expr::FieldAccess(Box::new(expr), field);
@@ -759,7 +774,9 @@ impl Parser {
                     } else {
                         lo
                     };
-                    if matches!(self.peek(), Token::RBracket) { self.advance(); }
+                    if matches!(self.peek(), Token::RBracket) {
+                        self.advance();
+                    }
                     expr = Expr::Index(Box::new(expr), Box::new(index));
                 }
                 Token::LParen if matches!(&expr, Expr::Ident(_)) => {
@@ -768,9 +785,13 @@ impl Parser {
                     let mut args = Vec::new();
                     while !matches!(self.peek(), Token::RParen | Token::Eof) {
                         args.push(self.parse_expr()?);
-                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                        if matches!(self.peek(), Token::Comma) {
+                            self.advance();
+                        }
                     }
-                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                    if matches!(self.peek(), Token::RParen) {
+                        self.advance();
+                    }
                     if let Expr::Ident(id) = expr {
                         expr = Expr::Call(CallExpr {
                             callee: id,
@@ -988,9 +1009,7 @@ impl Parser {
                 // false positives in contexts where `Ident { ... }` happens
                 // to precede a block (not common in Nom's grammar but kept
                 // conservative for safety).
-                if matches!(self.peek(), Token::LBrace)
-                    && self.looks_like_struct_literal_body()
-                {
+                if matches!(self.peek(), Token::LBrace) && self.looks_like_struct_literal_body() {
                     return self.parse_struct_literal(id);
                 }
                 Ok(Expr::Ident(id))
@@ -2047,19 +2066,30 @@ impl Parser {
             Token::Ampersand => {
                 self.advance();
                 let mutable = matches!(self.peek(), Token::Mut);
-                if mutable { self.advance(); }
+                if mutable {
+                    self.advance();
+                }
                 let inner = self.parse_type_expr()?;
-                Ok(TypeExpr::Ref { mutable, inner: Box::new(inner) })
+                Ok(TypeExpr::Ref {
+                    mutable,
+                    inner: Box::new(inner),
+                })
             }
             Token::Fn => {
                 self.advance(); // 'fn'
-                if matches!(self.peek(), Token::LParen) { self.advance(); }
+                if matches!(self.peek(), Token::LParen) {
+                    self.advance();
+                }
                 let mut params = Vec::new();
                 while !matches!(self.peek(), Token::RParen | Token::Eof) {
                     params.push(self.parse_type_expr()?);
-                    if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    if matches!(self.peek(), Token::Comma) {
+                        self.advance();
+                    }
                 }
-                if matches!(self.peek(), Token::RParen) { self.advance(); }
+                if matches!(self.peek(), Token::RParen) {
+                    self.advance();
+                }
                 let ret = if matches!(self.peek(), Token::Arrow) {
                     self.advance();
                     Box::new(self.parse_type_expr()?)
@@ -2077,7 +2107,9 @@ impl Parser {
                         self.advance();
                         args.push(self.parse_type_expr()?);
                     }
-                    if matches!(self.peek(), Token::RBracket) { self.advance(); }
+                    if matches!(self.peek(), Token::RBracket) {
+                        self.advance();
+                    }
                     Ok(TypeExpr::Generic(name, args))
                 } else {
                     Ok(TypeExpr::Named(name))
@@ -2103,7 +2135,9 @@ impl Parser {
         let mut stmts = Vec::new();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
             self.skip_whitespace();
-            if matches!(self.peek(), Token::RBrace | Token::Eof) { break; }
+            if matches!(self.peek(), Token::RBrace | Token::Eof) {
+                break;
+            }
 
             let bs = self.parse_block_stmt()?;
             stmts.push(bs);
@@ -2115,8 +2149,13 @@ impl Parser {
         }
 
         let end = self.peek_span();
-        if matches!(self.peek(), Token::RBrace) { self.advance(); }
-        Ok(Block { stmts, span: Span::new(start.start, end.end, start.line, start.col) })
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+        Ok(Block {
+            stmts,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
     }
 
     fn parse_block_stmt(&mut self) -> ParseResult<BlockStmt> {
@@ -2129,14 +2168,23 @@ impl Parser {
             Token::Return => {
                 self.advance(); // 'return'
                 self.skip_whitespace();
-                if matches!(self.peek(), Token::Semicolon | Token::RBrace | Token::Newline | Token::Eof) {
+                if matches!(
+                    self.peek(),
+                    Token::Semicolon | Token::RBrace | Token::Newline | Token::Eof
+                ) {
                     Ok(BlockStmt::Return(None))
                 } else {
                     Ok(BlockStmt::Return(Some(self.parse_expr()?)))
                 }
             }
-            Token::Break => { self.advance(); Ok(BlockStmt::Break) }
-            Token::Continue => { self.advance(); Ok(BlockStmt::Continue) }
+            Token::Break => {
+                self.advance();
+                Ok(BlockStmt::Break)
+            }
+            Token::Continue => {
+                self.advance();
+                Ok(BlockStmt::Continue)
+            }
             _ => {
                 let expr = self.parse_expr()?;
                 // Check for assignment: expr = value
@@ -2144,7 +2192,11 @@ impl Parser {
                     self.advance();
                     let value = self.parse_expr()?;
                     let span = Span::default();
-                    Ok(BlockStmt::Assign(AssignStmt { target: expr, value, span }))
+                    Ok(BlockStmt::Assign(AssignStmt {
+                        target: expr,
+                        value,
+                        span,
+                    }))
                 } else {
                     Ok(BlockStmt::Expr(expr))
                 }
@@ -2157,7 +2209,9 @@ impl Parser {
         let start = self.peek_span();
         self.advance(); // 'let'
         let mutable = matches!(self.peek(), Token::Mut);
-        if mutable { self.advance(); }
+        if mutable {
+            self.advance();
+        }
         let name = self.expect_ident()?;
         let type_ann = if matches!(self.peek(), Token::Colon) {
             self.advance();
@@ -2268,9 +2322,13 @@ impl Parser {
         let mut arms = Vec::new();
         while !matches!(self.peek(), Token::RBrace | Token::Eof) {
             self.skip_whitespace();
-            if matches!(self.peek(), Token::RBrace) { break; }
+            if matches!(self.peek(), Token::RBrace) {
+                break;
+            }
             let pattern = self.parse_pattern()?;
-            if matches!(self.peek(), Token::FatArrow) { self.advance(); }
+            if matches!(self.peek(), Token::FatArrow) {
+                self.advance();
+            }
             self.skip_whitespace();
             // Arm body: either a `{ ... }` block (statement list) or a single
             // expression (the common `pat => expr,` ergonomic form used in
@@ -2304,14 +2362,23 @@ impl Parser {
             };
             arms.push(MatchArm { pattern, body });
             // skip commas and whitespace between arms
-            while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+            while matches!(
+                self.peek_raw(),
+                Token::Comma | Token::Newline | Token::Semicolon
+            ) {
                 self.advance();
             }
         }
 
         let end = self.peek_span();
-        if matches!(self.peek(), Token::RBrace) { self.advance(); }
-        Ok(MatchExpr { subject, arms, span: Span::new(start.start, end.end, start.line, start.col) })
+        if matches!(self.peek(), Token::RBrace) {
+            self.advance();
+        }
+        Ok(MatchExpr {
+            subject,
+            arms,
+            span: Span::new(start.start, end.end, start.line, start.col),
+        })
     }
 
     fn parse_pattern(&mut self) -> ParseResult<Pattern> {
@@ -2356,9 +2423,13 @@ impl Parser {
                     let mut sub = Vec::new();
                     while !matches!(self.peek(), Token::RParen | Token::Eof) {
                         sub.push(self.parse_pattern()?);
-                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                        if matches!(self.peek(), Token::Comma) {
+                            self.advance();
+                        }
                     }
-                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                    if matches!(self.peek(), Token::RParen) {
+                        self.advance();
+                    }
                     Ok(Pattern::Variant(name, sub))
                 } else if name.name.contains("::") {
                     // `E::B` with no parens — still a variant (unit variant).
@@ -2374,7 +2445,10 @@ impl Parser {
     fn parse_return_stmt(&mut self) -> ParseResult<Statement> {
         self.advance(); // 'return'
         self.skip_whitespace();
-        if matches!(self.peek(), Token::Semicolon | Token::Newline | Token::BlankLine | Token::Eof | Token::RBrace) {
+        if matches!(
+            self.peek(),
+            Token::Semicolon | Token::Newline | Token::BlankLine | Token::Eof | Token::RBrace
+        ) {
             Ok(Statement::Return(None))
         } else {
             Ok(Statement::Return(Some(self.parse_expr()?)))
@@ -2385,7 +2459,9 @@ impl Parser {
     fn parse_fn_def(&mut self, is_pub: bool) -> ParseResult<FnDef> {
         let start = self.peek_span();
         let is_async = matches!(self.peek(), Token::Async);
-        if is_async { self.advance(); }
+        if is_async {
+            self.advance();
+        }
 
         self.advance(); // 'fn'
         let name = self.expect_ident()?;
@@ -2401,17 +2477,31 @@ impl Parser {
                     self.advance(); // consume 'self'
                     let pname = Identifier::new("self", span);
                     let ptype = TypeExpr::Named(Identifier::new("Self", span));
-                    params.push(FnParam { name: pname, type_ann: ptype });
-                    if matches!(self.peek(), Token::Comma) { self.advance(); }
+                    params.push(FnParam {
+                        name: pname,
+                        type_ann: ptype,
+                    });
+                    if matches!(self.peek(), Token::Comma) {
+                        self.advance();
+                    }
                     continue;
                 }
                 let pname = self.expect_ident()?;
-                if matches!(self.peek(), Token::Colon) { self.advance(); }
+                if matches!(self.peek(), Token::Colon) {
+                    self.advance();
+                }
                 let ptype = self.parse_type_expr()?;
-                params.push(FnParam { name: pname, type_ann: ptype });
-                if matches!(self.peek(), Token::Comma) { self.advance(); }
+                params.push(FnParam {
+                    name: pname,
+                    type_ann: ptype,
+                });
+                if matches!(self.peek(), Token::Comma) {
+                    self.advance();
+                }
             }
-            if matches!(self.peek(), Token::RParen) { self.advance(); }
+            if matches!(self.peek(), Token::RParen) {
+                self.advance();
+            }
         }
 
         // Return type
@@ -2426,7 +2516,10 @@ impl Parser {
         let body = if matches!(self.peek(), Token::LBrace) {
             self.parse_block()?
         } else {
-            Block { stmts: vec![], span: Span::default() }
+            Block {
+                stmts: vec![],
+                span: Span::default(),
+            }
         };
 
         let end = self.peek_span();
@@ -2453,18 +2546,33 @@ impl Parser {
             self.skip_whitespace();
             while !matches!(self.peek(), Token::RBrace | Token::Eof) {
                 self.skip_whitespace();
-                if matches!(self.peek(), Token::RBrace) { break; }
+                if matches!(self.peek(), Token::RBrace) {
+                    break;
+                }
                 let field_pub = matches!(self.peek(), Token::Pub);
-                if field_pub { self.advance(); }
+                if field_pub {
+                    self.advance();
+                }
                 let fname = self.expect_ident()?;
-                if matches!(self.peek(), Token::Colon) { self.advance(); }
+                if matches!(self.peek(), Token::Colon) {
+                    self.advance();
+                }
                 let ftype = self.parse_type_expr()?;
-                fields.push(StructField { name: fname, type_ann: ftype, is_pub: field_pub });
-                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                fields.push(StructField {
+                    name: fname,
+                    type_ann: ftype,
+                    is_pub: field_pub,
+                });
+                while matches!(
+                    self.peek_raw(),
+                    Token::Comma | Token::Newline | Token::Semicolon
+                ) {
                     self.advance();
                 }
             }
-            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+            if matches!(self.peek(), Token::RBrace) {
+                self.advance();
+            }
         }
 
         let end = self.peek_span();
@@ -2488,23 +2596,37 @@ impl Parser {
             self.skip_whitespace();
             while !matches!(self.peek(), Token::RBrace | Token::Eof) {
                 self.skip_whitespace();
-                if matches!(self.peek(), Token::RBrace) { break; }
+                if matches!(self.peek(), Token::RBrace) {
+                    break;
+                }
                 let vname = self.expect_ident()?;
                 let mut vfields = Vec::new();
                 if matches!(self.peek(), Token::LParen) {
                     self.advance(); // '('
                     while !matches!(self.peek(), Token::RParen | Token::Eof) {
                         vfields.push(self.parse_type_expr()?);
-                        if matches!(self.peek(), Token::Comma) { self.advance(); }
+                        if matches!(self.peek(), Token::Comma) {
+                            self.advance();
+                        }
                     }
-                    if matches!(self.peek(), Token::RParen) { self.advance(); }
+                    if matches!(self.peek(), Token::RParen) {
+                        self.advance();
+                    }
                 }
-                variants.push(EnumVariant { name: vname, fields: vfields });
-                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                variants.push(EnumVariant {
+                    name: vname,
+                    fields: vfields,
+                });
+                while matches!(
+                    self.peek_raw(),
+                    Token::Comma | Token::Newline | Token::Semicolon
+                ) {
                     self.advance();
                 }
             }
-            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+            if matches!(self.peek(), Token::RBrace) {
+                self.advance();
+            }
         }
 
         let end = self.peek_span();
@@ -2530,11 +2652,15 @@ impl Parser {
             self.skip_whitespace();
             while !matches!(self.peek(), Token::RBrace | Token::Eof) {
                 self.skip_whitespace();
-                if matches!(self.peek(), Token::RBrace) { break; }
+                if matches!(self.peek(), Token::RBrace) {
+                    break;
+                }
                 // Parse method signatures: fn name(params) -> type { body }?
                 // Methods may or may not have bodies (abstract vs default)
                 let method_pub = matches!(self.peek(), Token::Pub);
-                if method_pub { self.advance(); }
+                if method_pub {
+                    self.advance();
+                }
                 if matches!(self.peek(), Token::Fn) {
                     methods.push(self.parse_fn_def(method_pub)?);
                 } else {
@@ -2542,11 +2668,16 @@ impl Parser {
                     self.advance();
                 }
                 // consume optional separators
-                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                while matches!(
+                    self.peek_raw(),
+                    Token::Comma | Token::Newline | Token::Semicolon
+                ) {
                     self.advance();
                 }
             }
-            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+            if matches!(self.peek(), Token::RBrace) {
+                self.advance();
+            }
         }
 
         let end = self.peek_span();
@@ -2579,19 +2710,28 @@ impl Parser {
             self.skip_whitespace();
             while !matches!(self.peek(), Token::RBrace | Token::Eof) {
                 self.skip_whitespace();
-                if matches!(self.peek(), Token::RBrace) { break; }
+                if matches!(self.peek(), Token::RBrace) {
+                    break;
+                }
                 let method_pub = matches!(self.peek(), Token::Pub);
-                if method_pub { self.advance(); }
+                if method_pub {
+                    self.advance();
+                }
                 if matches!(self.peek(), Token::Fn) {
                     methods.push(self.parse_fn_def(method_pub)?);
                 } else {
                     self.advance();
                 }
-                while matches!(self.peek_raw(), Token::Comma | Token::Newline | Token::Semicolon) {
+                while matches!(
+                    self.peek_raw(),
+                    Token::Comma | Token::Newline | Token::Semicolon
+                ) {
                     self.advance();
                 }
             }
-            if matches!(self.peek(), Token::RBrace) { self.advance(); }
+            if matches!(self.peek(), Token::RBrace) {
+                self.advance();
+            }
         }
 
         let end = self.peek_span();
@@ -3189,7 +3329,11 @@ mod tests {
         let src = "nom math\n  kind Point {\n    x: number,\n    y: number\n  }\n  choice Color {\n    Red,\n    Blue\n  }\n  define add(a: number, b: number) -> number {\n    take result = a + b\n    give result\n  }\n";
         let sf = parse_ok(src);
         let stmts = &sf.declarations[0].statements;
-        assert_eq!(stmts.len(), 3, "expected 3 statements: kind, choice, define");
+        assert_eq!(
+            stmts.len(),
+            3,
+            "expected 3 statements: kind, choice, define"
+        );
         match &stmts[0] {
             Statement::StructDef(s) => assert_eq!(s.name.name, "Point"),
             other => panic!("expected StructDef from 'kind', got {other:?}"),
@@ -3242,7 +3386,10 @@ mod tests {
                 }
                 // valid = !false — unary not
                 if let BlockStmt::Let(let_stmt) = &f.body.stmts[3] {
-                    assert!(matches!(&let_stmt.value, Expr::UnaryOp(nom_ast::UnaryOp::Not, _)));
+                    assert!(matches!(
+                        &let_stmt.value,
+                        Expr::UnaryOp(nom_ast::UnaryOp::Not, _)
+                    ));
                 } else {
                     panic!("expected let with unary not");
                 }
@@ -3320,12 +3467,10 @@ mod tests {
         let src = "system test\n  flow request->hash->store onfail restart_from hash\n";
         let sf = parse_ok(src);
         match &sf.declarations[0].statements[0] {
-            Statement::Flow(f) => {
-                match &f.on_fail {
-                    OnFailStrategy::RestartFrom(id) => assert_eq!(id.name, "hash"),
-                    other => panic!("expected RestartFrom, got {other:?}"),
-                }
-            }
+            Statement::Flow(f) => match &f.on_fail {
+                OnFailStrategy::RestartFrom(id) => assert_eq!(id.name, "hash"),
+                other => panic!("expected RestartFrom, got {other:?}"),
+            },
             other => panic!("expected Flow, got {other:?}"),
         }
     }
@@ -3473,7 +3618,10 @@ mod tests {
         match stmt {
             Statement::Use(u) => {
                 assert!(u.hash.is_none(), "expected no hash on bare use");
-                assert!(u.path.is_empty(), "expected empty path for bare `use greet`");
+                assert!(
+                    u.path.is_empty(),
+                    "expected empty path for bare `use greet`"
+                );
                 match &u.imports {
                     UseImport::Single(name) => assert_eq!(name.name, "greet"),
                     other => panic!("expected Single import, got {other:?}"),
@@ -3522,7 +3670,9 @@ mod tests {
                 // The let statement's value should be a Try wrapping a Call
                 match &fndef.body.stmts[0] {
                     BlockStmt::Let(let_stmt) => {
-                        assert!(matches!(&let_stmt.value, Expr::Try(inner) if matches!(&**inner, Expr::Call(_))));
+                        assert!(
+                            matches!(&let_stmt.value, Expr::Try(inner) if matches!(&**inner, Expr::Call(_)))
+                        );
                     }
                     other => panic!("expected Let, got {other:?}"),
                 }
@@ -3589,7 +3739,10 @@ mod tests {
                 assert_eq!(t.methods[0].name.name, "display");
                 assert_eq!(t.methods[0].params.len(), 1);
                 assert_eq!(t.methods[0].params[0].name.name, "self");
-                assert!(t.methods[0].body.stmts.is_empty(), "abstract method should have empty body");
+                assert!(
+                    t.methods[0].body.stmts.is_empty(),
+                    "abstract method should have empty body"
+                );
             }
             other => panic!("expected TraitDef, got {other:?}"),
         }
@@ -3672,7 +3825,10 @@ mod tests {
             Statement::TraitDef(t) => {
                 assert_eq!(t.name.name, "Greet");
                 assert_eq!(t.methods.len(), 1);
-                assert!(!t.methods[0].body.stmts.is_empty(), "default method should have body");
+                assert!(
+                    !t.methods[0].body.stmts.is_empty(),
+                    "default method should have body"
+                );
             }
             other => panic!("expected TraitDef, got {other:?}"),
         }

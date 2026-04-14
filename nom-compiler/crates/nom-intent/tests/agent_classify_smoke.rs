@@ -19,7 +19,8 @@
 //!   4. The transcript ends with `Answer(Symbol("add"))`, proving the
 //!      driver propagates the LLM's terminal step through.
 
-use nom_dict::{EntityRow, NomDict};
+use nom_dict::dict::upsert_entity;
+use nom_dict::{Dict, EntityRow};
 use nom_intent::dict_tools::DictTools;
 use nom_intent::react::{
     AgentAction, Observation, ReActBudget, ReActLlmFn, ReActStep, classify_with_react,
@@ -28,20 +29,23 @@ use nom_intent::{IntentError, NomIntent};
 
 const HASH_ADD: &str = "a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0a0";
 
-fn seed_add(d: &NomDict) {
-    d.upsert_entity(&EntityRow {
-        hash: HASH_ADD.into(),
-        word: "add".into(),
-        kind: "function".into(),
-        signature: None,
-        contracts: None,
-        body_kind: None,
-        body_size: None,
-        origin_ref: None,
-        bench_ids: None,
-        authored_in: None,
-        composed_of: None,
-    })
+fn seed_add(d: &Dict) {
+    upsert_entity(
+        d,
+        &EntityRow {
+            hash: HASH_ADD.into(),
+            word: "add".into(),
+            kind: "function".into(),
+            signature: None,
+            contracts: None,
+            body_kind: None,
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: None,
+        },
+    )
     .unwrap();
 }
 
@@ -52,29 +56,31 @@ fn seed_add(d: &NomDict) {
 /// Observation. After three iterations the LLM emits Answer.
 fn scripted_llm() -> ReActLlmFn {
     let counter = std::cell::Cell::new(0usize);
-    Box::new(move |_prose, _transcript| -> Result<ReActStep, IntentError> {
-        let n = counter.get();
-        counter.set(n + 1);
-        Ok(match n {
-            0 => ReActStep::Thought("look up add-like functions".into()),
-            1 => ReActStep::Action(AgentAction::Query {
-                subject: HASH_ADD.into(),
-                kind: None,
-                depth: 0,
-            }),
-            2 => ReActStep::Thought("render the resolved closure".into()),
-            3 => ReActStep::Action(AgentAction::Render {
-                uid: HASH_ADD.into(),
-                target: "llvm-native".into(),
-            }),
-            _ => ReActStep::Answer(NomIntent::Symbol("add".into())),
-        })
-    })
+    Box::new(
+        move |_prose, _transcript| -> Result<ReActStep, IntentError> {
+            let n = counter.get();
+            counter.set(n + 1);
+            Ok(match n {
+                0 => ReActStep::Thought("look up add-like functions".into()),
+                1 => ReActStep::Action(AgentAction::Query {
+                    subject: HASH_ADD.into(),
+                    kind: None,
+                    depth: 0,
+                }),
+                2 => ReActStep::Thought("render the resolved closure".into()),
+                3 => ReActStep::Action(AgentAction::Render {
+                    uid: HASH_ADD.into(),
+                    target: "llvm-native".into(),
+                }),
+                _ => ReActStep::Answer(NomIntent::Symbol("add".into())),
+            })
+        },
+    )
 }
 
 #[test]
 fn classify_with_react_drives_dict_tools_render_to_completion() {
-    let d = NomDict::open_in_memory().unwrap();
+    let d = Dict::open_in_memory().unwrap();
     seed_add(&d);
     let tools = DictTools::new(&d);
     let llm = scripted_llm();
@@ -88,7 +94,11 @@ fn classify_with_react_drives_dict_tools_render_to_completion() {
     // Transcript shape after two Thought+Action+Observation pairs + Answer.
     // 0: Thought, 1: Action(Query), 2: Observation(Candidates),
     // 3: Thought, 4: Action(Render), 5: Observation(Rendered), 6: Answer
-    assert_eq!(transcript.len(), 7, "transcript shape mismatch: {transcript:#?}");
+    assert_eq!(
+        transcript.len(),
+        7,
+        "transcript shape mismatch: {transcript:#?}"
+    );
 
     // Render observation must be Rendered { target, bytes_hash } with a
     // valid SHA-256 hex hash. Rejects the error path explicitly.
@@ -115,7 +125,7 @@ fn classify_with_react_drives_dict_tools_render_to_completion() {
 /// expected to handle the Error in its next Thought.
 #[test]
 fn classify_with_react_render_of_unknown_uid_surfaces_error_observation() {
-    let d = NomDict::open_in_memory().unwrap();
+    let d = Dict::open_in_memory().unwrap();
     // No seeding — the dict is empty, so any render must fail at lookup.
     let tools = DictTools::new(&d);
     let counter = std::cell::Cell::new(0usize);

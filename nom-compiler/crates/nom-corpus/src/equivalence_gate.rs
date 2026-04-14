@@ -52,7 +52,9 @@ pub enum GateError {
 }
 
 /// Shared post-translation step: compute sha256 from items, return Lifted or PartialRejected.
-fn lift_from_translator(result: Result<Vec<TranslatedItem>, translators::TranslationError>) -> GateOutcome {
+fn lift_from_translator(
+    result: Result<Vec<TranslatedItem>, translators::TranslationError>,
+) -> GateOutcome {
     match result {
         Ok(items) if items.is_empty() => GateOutcome::PartialRejected {
             reason: "translator produced no translatable items".into(),
@@ -66,7 +68,11 @@ fn lift_from_translator(result: Result<Vec<TranslatedItem>, translators::Transla
             }
             let nom_source_id = format!("{:x}", h.finalize());
             let nom_body = items[0].nom_body.as_bytes().to_vec();
-            GateOutcome::Lifted { nom_source_id, nom_body, items }
+            GateOutcome::Lifted {
+                nom_source_id,
+                nom_body,
+                items,
+            }
         }
         Err(translators::TranslationError::Parse(r))
         | Err(translators::TranslationError::Unsupported(r)) => {
@@ -95,9 +101,9 @@ pub fn run_gate(
     let _ = body_kind; // caller provides for future use
     match language {
         "rust" => Ok(lift_from_translator(translators::rust::translate(source))),
-        "typescript" => {
-            Ok(lift_from_translator(translators::typescript::translate(source)))
-        }
+        "typescript" => Ok(lift_from_translator(translators::typescript::translate(
+            source,
+        ))),
         _ => Ok(GateOutcome::NotYetImplemented {
             language: language.to_string(),
         }),
@@ -122,7 +128,11 @@ mod tests {
         let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
         match out {
-            GateOutcome::Lifted { nom_source_id, nom_body, items } => {
+            GateOutcome::Lifted {
+                nom_source_id,
+                nom_body,
+                items,
+            } => {
                 assert_eq!(nom_source_id.len(), 64); // sha256 hex
                 assert!(!nom_body.is_empty());
                 assert_eq!(items.len(), 1);
@@ -138,7 +148,10 @@ mod tests {
         let out = run_gate("h", "rust_source", b"struct Foo;", "rust").unwrap();
         match out {
             GateOutcome::PartialRejected { reason } => {
-                assert!(!reason.is_empty(), "expected non-empty reject reason, got empty")
+                assert!(
+                    !reason.is_empty(),
+                    "expected non-empty reject reason, got empty"
+                )
             }
             other => panic!("expected PartialRejected, got {other:?}"),
         }
@@ -160,9 +173,14 @@ mod tests {
         let src = b"fn add(a: i64, b: i64) -> i64 { a + b }";
         let out = run_gate("hash_x", "rust_source", src, "rust").unwrap();
         match out {
-            GateOutcome::Lifted { nom_source_id, nom_body, items } => {
+            GateOutcome::Lifted {
+                nom_source_id,
+                nom_body,
+                items,
+            } => {
                 assert_eq!(nom_source_id.len(), 64);
-                let body_str = std::str::from_utf8(&nom_body).expect("nom_body must be valid UTF-8");
+                let body_str =
+                    std::str::from_utf8(&nom_body).expect("nom_body must be valid UTF-8");
                 assert!(!body_str.trim().is_empty(), "nom_body must be non-empty");
                 assert!(!items.is_empty());
             }

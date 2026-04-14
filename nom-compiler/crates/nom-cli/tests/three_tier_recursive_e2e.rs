@@ -137,8 +137,7 @@ mod tests {
         assert_eq!(mc, 0, "manifest failed: stderr={me}\nstdout={mo}");
 
         // Step 3: parse and assert.
-        let v: serde_json::Value =
-            serde_json::from_str(&mo).expect("stdout must be valid JSON");
+        let v: serde_json::Value = serde_json::from_str(&mo).expect("stdout must be valid JSON");
 
         let concepts = v["concepts"].as_array().expect("concepts must be array");
 
@@ -176,7 +175,11 @@ mod tests {
         );
 
         // All three must have non-null, non-empty hashes (they were synced).
-        for word in &["validate_token_demo", "issue_session_demo", "auth_session_compose_demo"] {
+        for word in &[
+            "validate_token_demo",
+            "issue_session_demo",
+            "auth_session_compose_demo",
+        ] {
             let item = build_order
                 .iter()
                 .find(|b| b["word"].as_str() == Some(word))
@@ -186,13 +189,26 @@ mod tests {
                 !hash.is_empty(),
                 "{word} must have a non-empty hash in build_order; got: {item:?}"
             );
-            assert_eq!(hash.len(), 64, "{word} hash must be 64 hex chars; got: {hash}");
+            assert_eq!(
+                hash.len(),
+                64,
+                "{word} hash must be 64 hex chars; got: {hash}"
+            );
         }
 
         // Post-order: atomic entities must come before the composition module.
-        let pos_validate = words.iter().position(|w| *w == "validate_token_demo").unwrap();
-        let pos_issue = words.iter().position(|w| *w == "issue_session_demo").unwrap();
-        let pos_compose = words.iter().position(|w| *w == "auth_session_compose_demo").unwrap();
+        let pos_validate = words
+            .iter()
+            .position(|w| *w == "validate_token_demo")
+            .unwrap();
+        let pos_issue = words
+            .iter()
+            .position(|w| *w == "issue_session_demo")
+            .unwrap();
+        let pos_compose = words
+            .iter()
+            .position(|w| *w == "auth_session_compose_demo")
+            .unwrap();
 
         assert!(
             pos_validate < pos_compose,
@@ -204,7 +220,11 @@ mod tests {
         );
 
         // Each word must appear exactly once (deduplication).
-        for word in &["validate_token_demo", "issue_session_demo", "auth_session_compose_demo"] {
+        for word in &[
+            "validate_token_demo",
+            "issue_session_demo",
+            "auth_session_compose_demo",
+        ] {
             let count = words.iter().filter(|w| **w == *word).count();
             assert_eq!(
                 count, 1,

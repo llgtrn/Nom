@@ -12,6 +12,10 @@ use nom_concept::stages::{
 const SRC_FUNCTION: &str = r#"the function greet is intended to print a greeting.
 "#;
 
+const SRC_FUNCTION_WITH_ENSURES: &str = r#"the function greet is intended to print a greeting.
+ensures the result is a greeting.
+"#;
+
 fn fresh_grammar_with_function_kind() -> (tempfile::TempDir, rusqlite::Connection) {
     let dir = tempfile::tempdir().unwrap();
     let db = dir.path().join("grammar.sqlite");
@@ -67,6 +71,36 @@ fn populated_clause_shapes_allow_extraction() {
     let s2 = stage2_kind_classify_with_grammar(&s1, &conn).expect("S2 ok");
     let s3 = stage3_shape_extract_with_grammar(&s2, &conn)
         .expect("populated clause_shapes → S3 must accept");
+    assert_eq!(s3.blocks.len(), 1);
+}
+
+#[test]
+fn missing_required_clause_rejects_block() {
+    let (_dir, conn) = fresh_grammar_with_function_kind();
+    insert_clause_shape(&conn, "function", "intended", 1, 1);
+    insert_clause_shape(&conn, "function", "ensures", 1, 2);
+
+    let s1 = stage1_tokenize(SRC_FUNCTION).unwrap();
+    let s2 = stage2_kind_classify_with_grammar(&s1, &conn).expect("S2 ok");
+    let err = stage3_shape_extract_with_grammar(&s2, &conn)
+        .expect_err("missing required clause must reject");
+    assert_eq!(err.reason, "missing-required-clause");
+    assert!(
+        err.detail.contains("ensures"),
+        "diagnostic must name the missing clause: {}",
+        err.detail
+    );
+}
+
+#[test]
+fn all_required_clauses_present_allows_pipeline() {
+    let (_dir, conn) = fresh_grammar_with_function_kind();
+    insert_clause_shape(&conn, "function", "intended", 1, 1);
+    insert_clause_shape(&conn, "function", "ensures", 1, 2);
+
+    let s1 = stage1_tokenize(SRC_FUNCTION_WITH_ENSURES).unwrap();
+    let s2 = stage2_kind_classify_with_grammar(&s1, &conn).expect("S2 ok");
+    let s3 = stage3_shape_extract_with_grammar(&s2, &conn).expect("all required clauses present");
     assert_eq!(s3.blocks.len(), 1);
 }
 

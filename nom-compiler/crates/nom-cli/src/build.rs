@@ -17,7 +17,8 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use nom_dict::NomDict;
+use nom_dict::Dict;
+use nom_dict::dict::{find_entity, list_required_axes};
 
 use crate::store::{ResolvedRef, materialize_concept_graph_from_db, resolve_closure};
 
@@ -63,15 +64,10 @@ pub fn cmd_build_status(
 
     // ── apply --concept filter ────────────────────────────────────────────────
     let concepts_in_scope: Vec<&nom_concept::ConceptDecl> = if let Some(name) = concept_filter {
-        let filtered: Vec<&nom_concept::ConceptDecl> = graph
-            .concepts
-            .iter()
-            .filter(|c| c.name == name)
-            .collect();
+        let filtered: Vec<&nom_concept::ConceptDecl> =
+            graph.concepts.iter().filter(|c| c.name == name).collect();
         if filtered.is_empty() {
-            eprintln!(
-                "nom build status: concept `{name}` not found in repo `{repo_id}`."
-            );
+            eprintln!("nom build status: concept `{name}` not found in repo `{repo_id}`.");
             eprintln!("  Available concepts:");
             for c in &graph.concepts {
                 eprintln!("    {}", c.name);
@@ -115,10 +111,7 @@ pub fn cmd_build_status(
         let total_words = closure.word_hashes.len() + stats.resolved + stats.still_unresolved;
 
         println!("concept: {}", concept.name);
-        println!(
-            "  words resolved: {}/{total_words}",
-            stats.resolved
-        );
+        println!("  words resolved: {}/{total_words}", stats.resolved);
         println!("  word hashes in closure: {}", closure.word_hashes.len());
 
         if stats.ambiguous > 0 {
@@ -139,18 +132,15 @@ pub fn cmd_build_status(
 
         // Per doc 07 §3.3: typed-slot diagnostic — show alternatives when N>1.
         // Only fires for typed-slot refs (kind set, word empty, alternatives non-empty).
-        for rref in resolved.iter().filter(|r| {
-            r.kind.is_some() && r.word.is_empty() && !r.alternatives.is_empty()
-        }) {
+        for rref in resolved
+            .iter()
+            .filter(|r| r.kind.is_some() && r.word.is_empty() && !r.alternatives.is_empty())
+        {
             let kind_display = capitalize(rref.kind.as_deref().unwrap_or(""));
             let matching_display = rref.matching.as_deref().unwrap_or("");
             println!();
-            println!(
-                "  slot @{} matching \"{}\"",
-                kind_display, matching_display
-            );
-            let picked_word = dict_db
-                .find_entity(&rref.hash)
+            println!("  slot @{} matching \"{}\"", kind_display, matching_display);
+            let picked_word = find_entity(&dict_db, &rref.hash)
                 .ok()
                 .flatten()
                 .map(|row| row.word)
@@ -162,7 +152,7 @@ pub fn cmd_build_status(
             );
             for alt_hash in &rref.alternatives {
                 // Look up the alternative's word in entities for nicer output.
-                match dict_db.find_entity(alt_hash) {
+                match find_entity(&dict_db, alt_hash) {
                     Ok(Some(row)) => println!("      {}@{}", row.word, alt_hash),
                     _ => println!("      <unknown>@{}", alt_hash),
                 }
@@ -212,13 +202,14 @@ pub fn cmd_build_status(
                 .collect();
 
             // Use registry-aware CE check when the dict has registered axes.
-            let required_axes: Vec<(String, String)> = dict_db
-                .list_required_axes(repo_id, "concept")
-                .unwrap_or_default()
-                .into_iter()
-                .map(|ax| (ax.axis, ax.cardinality))
-                .collect();
-            let mece = nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
+            let required_axes: Vec<(String, String)> =
+                list_required_axes(&dict_db, repo_id, "concept")
+                    .unwrap_or_default()
+                    .into_iter()
+                    .map(|ax| (ax.axis, ax.cardinality))
+                    .collect();
+            let mece =
+                nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
 
             // Print the objectives union.
             let union_str: Vec<String> = mece
@@ -277,10 +268,7 @@ pub fn cmd_build_status(
                     .unwrap_or_default();
 
                 if !source_file.is_empty() {
-                    file_resolved
-                        .entry(source_file)
-                        .or_default()
-                        .push(rref);
+                    file_resolved.entry(source_file).or_default().push(rref);
                 }
             }
         }
@@ -481,9 +469,10 @@ pub fn cmd_build_manifest(
     }
 
     // Exit 1 if any concept has unresolved refs or MECE violations (mirrors `status`).
-    let any_issue = manifest.concepts.iter().any(|c| {
-        !c.unresolved.is_empty() || !c.mece_violations.is_empty()
-    });
+    let any_issue = manifest
+        .concepts
+        .iter()
+        .any(|c| !c.unresolved.is_empty() || !c.mece_violations.is_empty());
 
     if any_issue { 1 } else { 0 }
 }
@@ -503,8 +492,8 @@ pub fn cmd_build_verify_acceptance(
     prior_bundle: &Path,
     concept: Option<&str>,
 ) -> i32 {
-    use nom_concept::{bindings_for_concept, check_preservation, has_violations};
     use crate::report::ReportBundle;
+    use nom_concept::{bindings_for_concept, check_preservation, has_violations};
 
     // ── load prior bundle ─────────────────────────────────────────────────────
     let prior_json = match std::fs::read_to_string(prior_bundle) {
@@ -561,7 +550,11 @@ pub fn cmd_build_verify_acceptance(
 
     // ── build current predicate bindings ─────────────────────────────────────
     let current_concepts: Vec<&crate::report::ConceptReport> = if let Some(name) = concept {
-        current_bundle.concepts.iter().filter(|c| c.name == name).collect()
+        current_bundle
+            .concepts
+            .iter()
+            .filter(|c| c.name == name)
+            .collect()
     } else {
         current_bundle.concepts.iter().collect()
     };
@@ -623,15 +616,8 @@ fn capitalize(s: &str) -> String {
     }
 }
 
-fn open_dict_in_place(dict: &Path) -> Option<NomDict> {
-    // If dict points directly at a .db file, use open_in_place; otherwise
-    // open the directory root (same logic as store::open_dict).
-    let result = if dict.extension().is_some_and(|e| e == "db") {
-        NomDict::open_in_place(dict)
-    } else {
-        NomDict::open(dict)
-    };
-    match result {
+fn open_dict_in_place(dict: &Path) -> Option<Dict> {
+    match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => Some(d),
         Err(e) => {
             eprintln!("nom: cannot open dict at {}: {e}", dict.display());
@@ -680,9 +666,8 @@ mod tests {
     #[test]
     fn apply_hash_locks_is_idempotent() {
         let hash = "abcdef1234567890abcdef1234567890abcdef1234567890abcdef1234567890";
-        let source = format!(
-            "  uses the module auth_session_compose_demo@{hash} matching \"x\".\n"
-        );
+        let source =
+            format!("  uses the module auth_session_compose_demo@{hash} matching \"x\".\n");
         let refs = vec![make_ref("auth_session_compose_demo", hash)];
         let (patched, count) = apply_hash_locks(&source, &refs);
         assert_eq!(count, 0, "already-pinned ref must not be modified");
@@ -696,8 +681,14 @@ mod tests {
         let refs = vec![make_ref("baz", hash)];
         let (patched, count) = apply_hash_locks(source, &refs);
         assert_eq!(count, 1);
-        assert!(patched.contains("the concept foo is"), "other lines preserved");
-        assert!(patched.contains("intended to do bar"), "other lines preserved");
+        assert!(
+            patched.contains("the concept foo is"),
+            "other lines preserved"
+        );
+        assert!(
+            patched.contains("intended to do bar"),
+            "other lines preserved"
+        );
         assert!(patched.contains(&format!("the function baz@{hash}")));
     }
 

@@ -11,8 +11,9 @@
 use std::path::Path;
 
 use nom_media::{
-    ingest_aac, ingest_av1, ingest_avif, ingest_flac, ingest_hevc, ingest_image_still_to_avif,
-    ingest_jpeg, ingest_mp4, ingest_opus, ingest_png, ingest_webm, modality_from_ext, Modality,
+    Modality, ingest_aac, ingest_av1, ingest_avif, ingest_flac, ingest_hevc,
+    ingest_image_still_to_avif, ingest_jpeg, ingest_mp4, ingest_opus, ingest_png, ingest_webm,
+    modality_from_ext,
 };
 use nom_types::body_kind;
 
@@ -74,10 +75,7 @@ pub fn ingest_by_extension(
             let r = ingest_png(bytes).map_err(|e| format!("PNG ingest failed: {e}"))?;
             Ok(IngestSummary {
                 body_kind_tag: body_kind::PNG,
-                describe: format!(
-                    "png image, {}x{}, {}",
-                    r.width, r.height, r.color_type
-                ),
+                describe: format!("png image, {}x{}, {}", r.width, r.height, r.color_type),
                 canonical_bytes: r.canonical_bytes,
             })
         }
@@ -85,10 +83,7 @@ pub fn ingest_by_extension(
             let r = ingest_jpeg(bytes).map_err(|e| format!("JPEG ingest failed: {e}"))?;
             Ok(IngestSummary {
                 body_kind_tag: body_kind::JPEG,
-                describe: format!(
-                    "jpeg image, {}x{}, {}",
-                    r.width, r.height, r.color_type
-                ),
+                describe: format!("jpeg image, {}x{}, {}", r.width, r.height, r.color_type),
                 canonical_bytes: r.canonical_bytes,
             })
         }
@@ -96,10 +91,7 @@ pub fn ingest_by_extension(
             let r = ingest_avif(bytes).map_err(|e| format!("AVIF ingest failed: {e}"))?;
             Ok(IngestSummary {
                 body_kind_tag: body_kind::AVIF,
-                describe: format!(
-                    "avif image, {}x{}, {}",
-                    r.width, r.height, r.color_type
-                ),
+                describe: format!("avif image, {}x{}, {}", r.width, r.height, r.color_type),
                 canonical_bytes: r.canonical_bytes,
             })
         }
@@ -163,7 +155,10 @@ pub fn ingest_by_extension(
             let track_count = r.tracks.len();
             Ok(IngestSummary {
                 body_kind_tag: body_kind::WEBM,
-                describe: format!("webm container, {} tracks, {}ms", track_count, r.duration_ms),
+                describe: format!(
+                    "webm container, {} tracks, {}ms",
+                    track_count, r.duration_ms
+                ),
                 canonical_bytes: r.canonical_bytes,
             })
         }

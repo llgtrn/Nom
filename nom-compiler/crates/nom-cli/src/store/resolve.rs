@@ -1,7 +1,8 @@
 //! `resolve_closure` — stub resolver for unresolved refs in a `ConceptClosure`.
 
 use nom_concept::{ConceptClosure, UnresolvedRef};
-use nom_dict::{NomDict, EntityRow};
+use nom_dict::dict::{find_entities_by_kind, find_entities_by_word};
+use nom_dict::{Dict, EntityRow};
 
 /// Statistics produced by `resolve_closure`.
 #[derive(Debug, Default)]
@@ -59,7 +60,7 @@ pub struct ResolvedRef {
 /// # TODO: Phase 9 — replace with per-kind embedding index (doc 08 §5.3)
 pub fn resolve_closure(
     closure: &ConceptClosure,
-    dict: &NomDict,
+    dict: &Dict,
 ) -> (Vec<ResolvedRef>, Vec<UnresolvedRef>, ResolveStats) {
     let mut resolved_refs: Vec<ResolvedRef> = Vec::new();
     let mut still_unresolved: Vec<UnresolvedRef> = Vec::new();
@@ -71,7 +72,7 @@ pub fn resolve_closure(
             // .nomx v2 keyed: lookup by kind alone; word is empty.
             // TODO Phase 9: re-rank by `uref.matching` semantic similarity.
             match &uref.kind {
-                Some(k) => match dict.find_entities_by_kind(k) {
+                Some(k) => match find_entities_by_kind(dict, k) {
                     Ok(rows) => rows,
                     Err(e) => {
                         eprintln!("nom: resolve_closure: db error for kind `{k}`: {e}");
@@ -89,7 +90,7 @@ pub fn resolve_closure(
             }
         } else {
             // v1: word name lookup, optional kind filter.
-            let mut rows = match dict.find_entities_by_word(&uref.word) {
+            let mut rows = match find_entities_by_word(dict, &uref.word) {
                 Ok(rows) => rows,
                 Err(e) => {
                     eprintln!("nom: resolve_closure: db error for `{}`: {e}", uref.word);
@@ -149,7 +150,8 @@ pub fn resolve_closure(
 #[cfg(test)]
 mod tests {
     use nom_concept::{ConceptClosure, UnresolvedRef};
-    use nom_dict::{NomDict, EntityRow};
+    use nom_dict::dict::upsert_entity;
+    use nom_dict::{Dict, EntityRow};
 
     use super::resolve_closure;
 
@@ -211,10 +213,10 @@ mod tests {
         }
     }
 
-    fn open_dict_with_rows(rows: &[EntityRow]) -> NomDict {
-        let d = NomDict::open_in_memory().expect("in-memory dict");
+    fn open_dict_with_rows(rows: &[EntityRow]) -> Dict {
+        let d = Dict::open_in_memory().expect("in-memory dict");
         for r in rows {
-            d.upsert_entity(r).expect("upsert");
+            upsert_entity(&d, r).expect("upsert");
         }
         d
     }
@@ -232,7 +234,7 @@ mod tests {
         assert_eq!(resolved.len(), 1);
         let r = &resolved[0];
         assert_eq!(r.hash, "aaa111");
-        assert_eq!(r.word, "");  // typed-slot: word stays empty
+        assert_eq!(r.word, ""); // typed-slot: word stays empty
         assert_eq!(r.kind.as_deref(), Some("function"));
         assert!(r.alternatives.is_empty());
     }

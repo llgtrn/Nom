@@ -18,9 +18,9 @@
 
 #[cfg(not(windows))]
 mod tests {
+    use sha2::{Digest, Sha256};
     use std::path::PathBuf;
     use std::process::Command;
-    use sha2::{Digest, Sha256};
 
     /// SHA-256 of examples/run_lexer.bc produced by the current compiler.
     ///
@@ -53,12 +53,10 @@ mod tests {
         // Compile to a temp copy of the source so we don't clobber the
         // checked-in examples/run_lexer.bc (which is git-ignored but
         // present as a reference artifact).
-        let tmp_dir = std::env::temp_dir()
-            .join(format!("nom-m10b-{}", std::process::id()));
+        let tmp_dir = std::env::temp_dir().join(format!("nom-m10b-{}", std::process::id()));
         std::fs::create_dir_all(&tmp_dir).expect("create temp dir");
         let tmp_source = tmp_dir.join("run_lexer.nom");
-        std::fs::copy(&source, &tmp_source)
-            .unwrap_or_else(|e| panic!("copy source to tmp: {e}"));
+        std::fs::copy(&source, &tmp_source).unwrap_or_else(|e| panic!("copy source to tmp: {e}"));
 
         let bin = env!("CARGO_BIN_EXE_nom");
         // CLI form: `nom build compile --target llvm <file>`
@@ -82,8 +80,8 @@ mod tests {
 
         // The compiler writes the .bc next to the source file.
         let bc_path = tmp_source.with_extension("bc");
-        let bytes = std::fs::read(&bc_path)
-            .unwrap_or_else(|e| panic!("read {}: {e}", bc_path.display()));
+        let bytes =
+            std::fs::read(&bc_path).unwrap_or_else(|e| panic!("read {}: {e}", bc_path.display()));
 
         let mut hasher = Sha256::new();
         hasher.update(&bytes);

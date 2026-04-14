@@ -56,7 +56,12 @@ fn rustc_can_emit_bc() -> bool {
     let bc = tmp.join("probe.bc");
     std::fs::write(&rs, "pub fn probe() {}").ok();
     let status = Command::new("rustc")
-        .args(["--emit=llvm-bc", "--crate-type=cdylib", "--edition=2021", "-o"])
+        .args([
+            "--emit=llvm-bc",
+            "--crate-type=cdylib",
+            "--edition=2021",
+            "-o",
+        ])
         .arg(&bc)
         .arg(&rs)
         .stdout(std::process::Stdio::null())
@@ -122,9 +127,12 @@ fn bc_body_round_trip() {
     // ── 2. Run nom precompile ─────────────────────────────────────────────────
     let (code, stdout, stderr) = run_nom(&[
         "precompile",
-        "--dict", &dict_str,
-        "--output-dir", &bc_dir_str,
-        "--word", "add_two",
+        "--dict",
+        &dict_str,
+        "--output-dir",
+        &bc_dir_str,
+        "--word",
+        "add_two",
     ]);
     assert_eq!(
         code, 0,
@@ -135,8 +143,12 @@ fn bc_body_round_trip() {
     use rusqlite::Connection;
     let conn = Connection::open(&dict_path).expect("open dict after precompile");
 
-    let (body_bytes, bc_hash_db, artifact_path_opt): (Option<Vec<u8>>, Option<String>, Option<String>) =
-        conn.query_row(
+    let (body_bytes, bc_hash_db, artifact_path_opt): (
+        Option<Vec<u8>>,
+        Option<String>,
+        Option<String>,
+    ) = conn
+        .query_row(
             "SELECT body_bytes, bc_hash, artifact_path FROM nomtu WHERE word = 'add_two'",
             [],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
@@ -160,8 +172,8 @@ fn bc_body_round_trip() {
     // ── 5. body_bytes == on-disk .bc file ────────────────────────────────────
     if let Some(ref path) = artifact_path_opt {
         if Path::new(path).exists() {
-            let disk_bytes = std::fs::read(path)
-                .unwrap_or_else(|e| panic!("read artifact_path {path}: {e}"));
+            let disk_bytes =
+                std::fs::read(path).unwrap_or_else(|e| panic!("read artifact_path {path}: {e}"));
             assert_eq!(
                 bytes, disk_bytes,
                 "body_bytes in DB does not match on-disk .bc file at {path}"
@@ -203,13 +215,9 @@ fn load_bc_bytes_unit() {
     resolver.upsert(&entry).expect("upsert");
 
     // Resolve it back to get the integer id.
-    let resolved = resolver
-        .resolve_exact("test_bc", None)
-        .expect("resolve");
+    let resolved = resolver.resolve_exact("test_bc", None).expect("resolve");
 
     // load_bc_bytes should return the stored bytes.
-    let loaded = resolver
-        .load_bc_bytes(resolved.id)
-        .expect("load_bc_bytes");
+    let loaded = resolver.load_bc_bytes(resolved.id).expect("load_bc_bytes");
     assert_eq!(loaded, test_bytes, "load_bc_bytes must return stored bytes");
 }

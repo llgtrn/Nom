@@ -88,7 +88,10 @@ pub(super) fn resolve_prefix(dict: &NomDict, hash: &str) -> Result<String, Strin
         0 => Err(format!("nom: no entry matching prefix {hash}")),
         1 => Ok(ids.into_iter().next().unwrap()),
         _ => {
-            let mut msg = format!("nom: hash prefix {hash} is ambiguous ({} candidates):", ids.len());
+            let mut msg = format!(
+                "nom: hash prefix {hash} is ambiguous ({} candidates):",
+                ids.len()
+            );
             for id in &ids {
                 msg.push_str(&format!("\n  {id}"));
             }

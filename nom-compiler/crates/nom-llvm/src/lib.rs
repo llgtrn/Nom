@@ -4,12 +4,12 @@
 //! directly to LLVM IR bitcode (.bc). No Rust middle layer.
 
 mod context;
+mod enums;
 mod expressions;
 mod functions;
 mod runtime;
 mod statements;
 mod structs;
-mod enums;
 mod types;
 
 use nom_planner::CompositionPlan;
@@ -44,7 +44,7 @@ pub fn compile(plan: &CompositionPlan) -> Result<LlvmOutput, LlvmError> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_planner::{CompositionPlan, FlowPlan, MemoryStrategy, ConcurrencyStrategy};
+    use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy};
 
     #[test]
     fn compile_geometry_program() {
@@ -60,8 +60,7 @@ nom geometry
 "#;
 
         // Step 1: Parse the source
-        let parsed = nom_parser::parse_source(source)
-            .expect("should parse geometry program");
+        let parsed = nom_parser::parse_source(source).expect("should parse geometry program");
 
         // Step 2: Extract imperative statements (FnDef, StructDef, EnumDef)
         let mut imperative_stmts = Vec::new();
@@ -121,10 +120,7 @@ nom geometry
             "IR should contain fadd (float addition), got:\n{}",
             output.ir_text
         );
-        assert!(
-            !output.bitcode.is_empty(),
-            "bitcode should be non-empty"
-        );
+        assert!(!output.bitcode.is_empty(), "bitcode should be non-empty");
 
         // Verify struct was compiled by re-compiling and checking struct_types map
         let compiler = crate::context::NomCompiler::new();
@@ -153,6 +149,10 @@ nom geometry
             "struct_types should contain Point after compilation"
         );
         let point_ty = mc.struct_types.get("Point").unwrap();
-        assert_eq!(point_ty.count_fields(), 2, "Point should have 2 fields (x, y)");
+        assert_eq!(
+            point_ty.count_fields(),
+            2,
+            "Point should have 2 fields (x, y)"
+        );
     }
 }

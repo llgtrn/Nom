@@ -266,7 +266,12 @@ pub fn tokenize_nomx_with_spans(source: &str) -> Vec<SpannedNomxToken> {
                 } else if is_article(word) {
                     // Stripped per §4.8.
                 } else {
-                    push(&mut out, NomxToken::Identifier(word.to_string()), tok_start, i);
+                    push(
+                        &mut out,
+                        NomxToken::Identifier(word.to_string()),
+                        tok_start,
+                        i,
+                    );
                 }
             }
             _ => {
@@ -366,7 +371,9 @@ mod tests {
 
     #[test]
     fn when_otherwise_branches_tokenize() {
-        let toks = tokenize_nomx("when the user is logged in, show the dashboard. otherwise, show the landing page.");
+        let toks = tokenize_nomx(
+            "when the user is logged in, show the dashboard. otherwise, show the landing page.",
+        );
         assert!(toks.contains(&NomxToken::When));
         assert!(toks.contains(&NomxToken::Otherwise));
         assert!(toks.contains(&NomxToken::Period));
@@ -420,7 +427,10 @@ mod tests {
         assert!(matches!(&toks[idx_define + 7], Identifier(n) if n == "greeting"));
         assert_eq!(toks[idx_define + 8], Colon);
         // Body contains the string literal and the `is` linking verb.
-        assert!(toks.iter().any(|t| matches!(t, StringLit(s) if s == "hello ")));
+        assert!(
+            toks.iter()
+                .any(|t| matches!(t, StringLit(s) if s == "hello "))
+        );
         assert!(toks.contains(&Is));
     }
 
@@ -430,7 +440,10 @@ mod tests {
         let spanned = tokenize_nomx_with_spans(src);
         // Find Define + Identifier; their spans must slice to the
         // matching substrings in the original source.
-        let define_tok = spanned.iter().find(|s| s.token == NomxToken::Define).unwrap();
+        let define_tok = spanned
+            .iter()
+            .find(|s| s.token == NomxToken::Define)
+            .unwrap();
         assert_eq!(&src[define_tok.span.start..define_tok.span.end], "define");
         let ident = spanned
             .iter()
@@ -492,12 +505,7 @@ mod tests {
             (NomxToken::Eof, NomxRole::Eof),
         ];
         for (tok, expected) in &cases {
-            assert_eq!(
-                tok.role(),
-                *expected,
-                "role mismatch for {:?}",
-                tok
-            );
+            assert_eq!(tok.role(), *expected, "role mismatch for {:?}", tok);
         }
     }
 
@@ -534,9 +542,6 @@ mod tests {
     fn comment_line_is_skipped() {
         let toks = tokenize_nomx("# a comment\ndefine x");
         use NomxToken::*;
-        assert_eq!(
-            toks,
-            vec![Define, Identifier("x".to_string()), Eof]
-        );
+        assert_eq!(toks, vec![Define, Identifier("x".to_string()), Eof]);
     }
 }

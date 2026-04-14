@@ -44,11 +44,26 @@ pub struct LogEntry {
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub enum CallKind {
-    Query { subject: String, kind: Option<String>, depth: usize },
-    Compose { prose: String, context: Vec<String> },
-    Verify { target: String },
-    Render { uid: String, target: String },
-    Explain { uid: String, depth: usize },
+    Query {
+        subject: String,
+        kind: Option<String>,
+        depth: usize,
+    },
+    Compose {
+        prose: String,
+        context: Vec<String>,
+    },
+    Verify {
+        target: String,
+    },
+    Render {
+        uid: String,
+        target: String,
+    },
+    Explain {
+        uid: String,
+        depth: usize,
+    },
 }
 
 /// Wraps any `AgentTools` impl and records every call + result.
@@ -139,7 +154,9 @@ impl<'a> AgentTools for InstrumentedTools<'a> {
         let start = std::time::Instant::now();
         let obs = self.inner.verify(target);
         self.record(
-            CallKind::Verify { target: target.to_string() },
+            CallKind::Verify {
+                target: target.to_string(),
+            },
             obs.clone(),
             start.elapsed(),
         );
@@ -193,7 +210,11 @@ mod tests {
         assert_eq!(inst.call_count(), 1);
         let entry = &inst.entries()[0];
         match &entry.call {
-            CallKind::Query { subject, kind, depth } => {
+            CallKind::Query {
+                subject,
+                kind,
+                depth,
+            } => {
                 assert_eq!(subject, "add");
                 assert_eq!(kind.as_deref(), Some("function"));
                 assert_eq!(*depth, 1);

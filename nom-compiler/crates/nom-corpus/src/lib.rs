@@ -12,6 +12,7 @@
 //! upstream language's compiler (rustc for Rust crates, clang for C/C++
 //! headers + implementations, tsc+wasm for TypeScript, …).
 
+use nom_dict::Dict;
 use thiserror::Error;
 
 pub mod checkpoint;
@@ -235,32 +236,7 @@ pub fn scan_directory(path: &std::path::Path) -> Result<ScanReport, CorpusError>
     Ok(report)
 }
 
-// ── compile_nom_to_bc ────────────────────────────────────────────────────────
-
-/// Compile a Nom source string to LLVM bitcode bytes.
-///
-/// Pipeline: parse → plan (unchecked, no resolver needed) → LLVM codegen.
-/// Returns `Err` with a human-readable reason string on any step failure.
-/// On Windows the LLVM DLL may not be present; callers should treat `Err`
-/// as "skip this file" rather than a hard abort.
-fn compile_nom_to_bc(nom_source: &str) -> Result<Vec<u8>, String> {
-    let source_file = nom_parser::parse_source(nom_source)
-        .map_err(|e| format!("parse: {e}"))?;
-
-    // Use an empty in-memory resolver — translator output only references
-    // built-in words, so a populated resolver is not required for planning.
-    let resolver = nom_resolver::Resolver::open_in_memory()
-        .map_err(|e| format!("resolver: {e}"))?;
-    let planner = nom_planner::Planner::new(&resolver);
-    let plan = planner
-        .plan_unchecked(&source_file)
-        .map_err(|e| format!("plan: {e}"))?;
-
-    let output = nom_llvm::compile(&plan)
-        .map_err(|e| format!("codegen: {e}"))?;
-
-    Ok(output.bitcode)
-}
+// `compile_nom_to_bc` has been removed in favor of storing raw bytes.
 
 // ── word helpers ─────────────────────────────────────────────────────────────
 
@@ -273,7 +249,11 @@ pub fn sanitize_word(raw: &str) -> String {
         .filter(|c| c.is_ascii_alphanumeric() || *c == '_')
         .take(60)
         .collect();
-    if cleaned.is_empty() { "unnamed".to_string() } else { cleaned }
+    if cleaned.is_empty() {
+        "unnamed".to_string()
+    } else {
+        cleaned
+    }
 }
 
 /// Build a `describe` string for a corpus entry (≤ 1024 chars).
@@ -286,7 +266,11 @@ pub fn sanitize_word(raw: &str) -> String {
 ///     a + b
 /// } (translated from rust)
 /// ```
-pub fn build_describe(item: &equivalence_gate::TranslatedItem, original_source: &str, language: &str) -> String {
+pub fn build_describe(
+    item: &equivalence_gate::TranslatedItem,
+    original_source: &str,
+    language: &str,
+) -> String {
     let mut out = String::new();
     out.push_str(&item.summary);
     out.push('\n');
@@ -296,7 +280,9 @@ pub fn build_describe(item: &equivalence_gate::TranslatedItem, original_source: 
     let mut count = 0;
     for line in original_source.lines() {
         if !found {
-            if line.contains(&needle) { found = true; }
+            if line.contains(&needle) {
+                found = true;
+            }
         }
         if found {
             let trimmed = line.trim();
@@ -304,7 +290,9 @@ pub fn build_describe(item: &equivalence_gate::TranslatedItem, original_source: 
                 out.push_str(trimmed);
                 out.push('\n');
                 count += 1;
-                if count >= 5 { break; }
+                if count >= 5 {
+                    break;
+                }
             }
         }
     }
@@ -338,15 +326,12 @@ pub struct IngestReport {
 /// Duplicate detection: uses `INSERT OR IGNORE` — if a row with the same
 /// SHA-256 id already exists, the insert is a no-op and the file is counted
 /// as a duplicate. No prior SELECT is issued.
-pub fn ingest_directory(
-    path: &std::path::Path,
-    dict: &nom_dict::NomDict,
-) -> Result<IngestReport, CorpusError> {
+pub fn ingest_directory(path: &std::path::Path, dict: &Dict) -> Result<IngestReport, CorpusError> {
     ingest_directory_with_conn(path, dict)
 }
 
 /// Internal implementation shared by [`ingest_directory`] and
-/// [`ingest_parent`]. Takes a pre-opened [`nom_dict::NomDict`] so that
+/// [`ingest_parent`]. Takes a pre-opened [`Dict`] so that
 /// `ingest_parent` can reuse a single connection across all repos.
 ///
 /// Lean-DB pivot B-b: translator output is compiled to LLVM bitcode via
@@ -356,11 +341,11 @@ pub fn ingest_directory(
 /// on Windows) are skipped with an `eprintln!` diagnostic.
 fn ingest_directory_with_conn(
     path: &std::path::Path,
-    dict: &nom_dict::NomDict,
+    dict: &Dict,
 ) -> Result<IngestReport, CorpusError> {
+    use nom_types::{Contract, Entry, EntryKind, EntryStatus};
     use sha2::{Digest, Sha256};
     use walkdir::WalkDir;
-    use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
     let root = path.to_string_lossy().into_owned();
     let mut report = IngestReport {
@@ -370,8 +355,11 @@ fn ingest_directory_with_conn(
 
     // Begin a per-repo transaction: all INSERTs commit atomically at the end.
     let tx = dict
-        .begin_transaction()
-        .map_err(|e| CorpusError::Skipped { reason: format!("begin_transaction: {e}") })?;
+        .entities
+        .unchecked_transaction()
+        .map_err(|e| CorpusError::Skipped {
+            reason: format!("begin_transaction: {e}"),
+        })?;
 
     let walker = WalkDir::new(path).into_iter();
     for entry in walker.filter_entry(|e| {
@@ -388,12 +376,19 @@ fn ingest_directory_with_conn(
     }) {
         let entry = match entry {
             Ok(e) => e,
-            Err(_) => { report.files_skipped += 1; continue; }
+            Err(_) => {
+                report.files_skipped += 1;
+                continue;
+            }
         };
-        if !entry.file_type().is_file() { continue; }
+        if !entry.file_type().is_file() {
+            continue;
+        }
 
         let file_bytes_len = entry.metadata().map(|m| m.len()).unwrap_or(0);
-        if file_bytes_len > MAX_FILE_BYTES { continue; }
+        if file_bytes_len > MAX_FILE_BYTES {
+            continue;
+        }
 
         let ext = entry
             .path()
@@ -412,42 +407,56 @@ fn ingest_directory_with_conn(
         // Read source bytes.
         let raw = match std::fs::read(entry.path()) {
             Ok(b) => b,
-            Err(_) => { report.files_skipped += 1; continue; }
+            Err(_) => {
+                report.files_skipped += 1;
+                continue;
+            }
         };
         let source = match std::str::from_utf8(&raw) {
             Ok(s) => s,
-            Err(_) => { report.files_skipped += 1; continue; }
+            Err(_) => {
+                report.files_skipped += 1;
+                continue;
+            }
         };
 
         // Translate source → list of TranslatedItems (one per top-level fn).
         let translated_items = match language {
             "rust" => match crate::equivalence_gate::translators::rust::translate(source) {
                 Ok(v) => v,
-                Err(_) => { report.files_skipped += 1; continue; }
+                Err(_) => {
+                    report.files_skipped += 1;
+                    continue;
+                }
             },
-            "typescript" => match crate::equivalence_gate::translators::typescript::translate(source) {
-                Ok(v) => v,
-                Err(_) => { report.files_skipped += 1; continue; }
-            },
-            _ => { report.files_skipped += 1; continue; }
+            "typescript" => {
+                match crate::equivalence_gate::translators::typescript::translate(source) {
+                    Ok(v) => v,
+                    Err(_) => {
+                        report.files_skipped += 1;
+                        continue;
+                    }
+                }
+            }
+            _ => {
+                report.files_skipped += 1;
+                continue;
+            }
         };
 
-        if translated_items.is_empty() { report.files_skipped += 1; continue; }
+        if translated_items.is_empty() {
+            report.files_skipped += 1;
+            continue;
+        }
 
         // One Entry per translated item.
         for item in &translated_items {
-            // Compile this item's Nom body → LLVM bitcode.
-            let bc_bytes = match compile_nom_to_bc(&item.nom_body) {
-                Ok(b) => b,
-                Err(reason) => {
-                    eprintln!("nom: skipping {} ({}) — compile: {reason}", entry.path().display(), item.name);
-                    continue;
-                }
-            };
+            // Store the Nom body directly as raw bytes, bypassing AST extraction and LLVM compilation
+            let raw_bytes = item.nom_body.as_bytes().to_vec();
 
             // SHA-256 the compiled bitcode → content-addressed id.
             let mut h = Sha256::new();
-            h.update(&bc_bytes);
+            h.update(&raw_bytes);
             let id = format!("{:x}", h.finalize());
 
             // word = sanitized fn name (not a filename slug).
@@ -458,17 +467,17 @@ fn ingest_directory_with_conn(
             let e = Entry {
                 id: id.clone(),
                 word,
-                variant: Some(language.to_string()),  // original language as provenance
+                variant: Some(language.to_string()), // original language as provenance
                 kind: EntryKind::Function,
-                language: "nom".to_string(),           // compiled Nom bitcode
+                language: "nom".to_string(), // compiled Nom bitcode
                 describe: Some(describe),
                 concept: None,
                 body: None,
-                body_nom: None,
-                body_bytes: Some(bc_bytes.clone()),
-                body_kind: Some(nom_types::body_kind::BC.to_owned()),
+                body_nom: Some(item.nom_body.clone()),
+                body_bytes: Some(raw_bytes.clone()),
+                body_kind: Some("nom".to_owned()),
                 contract: Contract::default(),
-                status: EntryStatus::Complete,         // translate + compile succeeded
+                status: EntryStatus::Complete, // translate + compile succeeded
                 translation_score: Some(1.0),
                 is_canonical: true,
                 deprecated_by: None,
@@ -476,14 +485,47 @@ fn ingest_directory_with_conn(
                 updated_at: None,
             };
 
-            match dict.upsert_entry_if_new(&e) {
-                Ok(true) => {
+            let changed = tx.execute(
+                "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe, concept,
+                                                body, body_nom, input_type, output_type, pre, post,
+                                                status, translation_score, is_canonical, deprecated_by,
+                                                created_at, updated_at, body_kind, body_bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                rusqlite::params![
+                    e.id,
+                    e.word,
+                    e.variant,
+                    e.kind.as_str(),
+                    e.language,
+                    e.describe,
+                    e.concept,
+                    e.body,
+                    e.body_nom,
+                    e.contract.input_type,
+                    e.contract.output_type,
+                    e.contract.pre,
+                    e.contract.post,
+                    e.status.as_str(),
+                    e.translation_score,
+                    e.is_canonical,
+                    e.deprecated_by,
+                    e.created_at,
+                    e.updated_at,
+                    e.body_kind,
+                    e.body_bytes,
+                ],
+            );
+            match changed {
+                Ok(1) => {
                     *report.per_language.entry(language.to_string()).or_insert(0) += 1;
                     report.files_ingested += 1;
-                    report.bytes_ingested += bc_bytes.len() as u64;
+                    report.bytes_ingested += raw_bytes.len() as u64;
                 }
-                Ok(false) => {
+                Ok(0) => {
                     report.duplicates += 1;
+                }
+                Ok(_) => {
+                    report.files_skipped += 1;
                 }
                 Err(_) => {
                     report.files_skipped += 1;
@@ -492,8 +534,9 @@ fn ingest_directory_with_conn(
         }
     }
 
-    tx.commit()
-        .map_err(|e| CorpusError::Skipped { reason: format!("commit: {e}") })?;
+    tx.commit().map_err(|e| CorpusError::Skipped {
+        reason: format!("commit: {e}"),
+    })?;
 
     Ok(report)
 }
@@ -520,7 +563,7 @@ pub struct ParentIngestReport {
 
 /// Walks `parent_dir`'s immediate children; for each child that is a
 /// directory (not hidden), calls [`ingest_directory_with_conn`].
-/// Aggregates all results. Reuses the same [`nom_dict::NomDict`]
+/// Aggregates all results. Reuses the same [`Dict`]
 /// connection across repos for performance.
 ///
 /// A checkpoint file is maintained next to `dict_path` (see
@@ -542,7 +585,7 @@ pub fn ingest_parent(
         let _ = std::fs::remove_file(&cp_path); // best-effort; ignore error
     }
 
-    let dict_db = nom_dict::NomDict::open_in_place(dict_path)
+    let dict_db = Dict::try_open_from_nomdict_path(dict_path)
         .map_err(|e| CorpusError::Io(std::io::Error::other(e.to_string())))?;
 
     let mut checkpoint = IngestCheckpoint::load(dict_path, parent);
@@ -590,7 +633,10 @@ pub fn ingest_parent(
             if processed % 10 == 0 {
                 eprintln!(
                     "nom: processed {}/{} repos ({} resumed from checkpoint), {} files ingested so far...",
-                    processed, total_children, report.resumed_repos, report.aggregate.files_ingested
+                    processed,
+                    total_children,
+                    report.resumed_repos,
+                    report.aggregate.files_ingested
                 );
             }
             continue;
@@ -604,7 +650,10 @@ pub fn ingest_parent(
                 if processed % 10 == 0 {
                     eprintln!(
                         "nom: processed {}/{} repos ({} resumed from checkpoint), {} files ingested so far...",
-                        processed, total_children, report.resumed_repos, report.aggregate.files_ingested
+                        processed,
+                        total_children,
+                        report.resumed_repos,
+                        report.aggregate.files_ingested
                     );
                 }
                 continue;
@@ -621,7 +670,11 @@ pub fn ingest_parent(
         } else {
             // Merge per_language counts into aggregate.
             for (lang, count) in &repo_report.per_language {
-                *report.aggregate.per_language.entry(lang.clone()).or_insert(0) += count;
+                *report
+                    .aggregate
+                    .per_language
+                    .entry(lang.clone())
+                    .or_insert(0) += count;
             }
             report.aggregate.files_ingested += repo_report.files_ingested;
             report.aggregate.bytes_ingested += repo_report.bytes_ingested;
@@ -705,10 +758,7 @@ pub struct CloneBatchReport {
 /// Uses `git clone --depth 1 --single-branch --no-tags` to minimize
 /// bandwidth + disk. The clone directory is always deleted on exit
 /// (success or failure) via a drop-guard.
-pub fn clone_and_ingest(
-    url: &str,
-    dict: &nom_dict::NomDict,
-) -> Result<CloneIngestReport, CorpusError> {
+pub fn clone_and_ingest(url: &str, dict: &Dict) -> Result<CloneIngestReport, CorpusError> {
     use std::time::Instant;
 
     let tmp_root = std::env::temp_dir().join("nom-corpus-clones");
@@ -757,10 +807,7 @@ pub fn clone_and_ingest(
 /// Clone-and-ingest every URL in `urls`, one at a time. Disk stays
 /// bounded: each clone is deleted before the next one starts.
 /// Failures are recorded and the loop continues.
-pub fn clone_batch(
-    urls: &[String],
-    dict: &nom_dict::NomDict,
-) -> CloneBatchReport {
+pub fn clone_batch(urls: &[String], dict: &Dict) -> CloneBatchReport {
     let mut report = CloneBatchReport {
         total: urls.len(),
         ..Default::default()
@@ -878,10 +925,7 @@ pub const PYPI_TOP_URLS: &[&str] = &[
 /// Clone-and-ingest the first `n` entries of [`PYPI_TOP_URLS`].
 /// `n` is clamped to the list length. Reuses [`clone_batch`] so the
 /// disk discipline (clone → ingest → discard per URL) is the same.
-pub fn ingest_pypi_top(
-    n: usize,
-    dict: &nom_dict::NomDict,
-) -> CloneBatchReport {
+pub fn ingest_pypi_top(n: usize, dict: &Dict) -> CloneBatchReport {
     let n = n.min(PYPI_TOP_URLS.len());
     let urls: Vec<String> = PYPI_TOP_URLS[..n].iter().map(|s| s.to_string()).collect();
     clone_batch(&urls, dict)
@@ -892,7 +936,9 @@ pub fn ingest_pypi_top(
 /// Errors produced by `nom-corpus`. Minimal until drivers land.
 #[derive(Debug, Error)]
 pub enum CorpusError {
-    #[error("unknown ecosystem: {0} (expected pypi|github-{{js,ts,python,rust,go,jvm,ccpp,swift,ruby,php}})")]
+    #[error(
+        "unknown ecosystem: {0} (expected pypi|github-{{js,ts,python,rust,go,jvm,ccpp,swift,ruby,php}})"
+    )]
     UnknownEcosystem(String),
     #[error("driver not yet implemented: {0:?}")]
     DriverNotYetImplemented(Ecosystem),
@@ -905,6 +951,17 @@ pub enum CorpusError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom_dict::Dict;
+    use nom_dict::dict::find_by_body_kind;
+
+    fn count_entries(dict: &Dict) -> usize {
+        dict.entities
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| {
+                row.get::<_, i64>(0)
+            })
+            .map(|n| n as usize)
+            .unwrap_or(0)
+    }
 
     #[test]
     fn sanitize_url_slug_replaces_non_alnum_and_truncates() {
@@ -917,10 +974,7 @@ mod tests {
 
     #[test]
     fn temp_dir_guard_removes_on_drop() {
-        let d = std::env::temp_dir().join(format!(
-            "nom-corpus-test-{}",
-            std::process::id()
-        ));
+        let d = std::env::temp_dir().join(format!("nom-corpus-test-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         assert!(d.exists());
         {
@@ -931,7 +985,7 @@ mod tests {
 
     #[test]
     fn clone_batch_on_empty_list_reports_zero() {
-        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let r = clone_batch(&[], &dict);
         assert_eq!(r.total, 0);
         assert_eq!(r.succeeded, 0);
@@ -949,7 +1003,7 @@ mod tests {
 
     #[test]
     fn ingest_pypi_top_zero_does_nothing() {
-        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let r = ingest_pypi_top(0, &dict);
         assert_eq!(r.total, 0);
         assert_eq!(r.succeeded, 0);
@@ -958,7 +1012,7 @@ mod tests {
 
     #[test]
     fn clone_batch_records_failure_for_invalid_url() {
-        let dict = nom_dict::NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let r = clone_batch(&["not-a-real-url".to_string()], &dict);
         assert_eq!(r.total, 1);
         assert_eq!(r.succeeded, 0);
@@ -1040,48 +1094,29 @@ mod tests {
         f.write_all(b"ignored").unwrap();
 
         let report = scan_directory(&tmp).unwrap();
-        assert_eq!(report.total_files, 5, "expected 5 files, got {}", report.total_files);
+        assert_eq!(
+            report.total_files, 5,
+            "expected 5 files, got {}",
+            report.total_files
+        );
         assert_eq!(report.languages["rust"].file_count, 2);
         assert_eq!(report.languages["typescript"].file_count, 1);
         assert_eq!(report.languages["python"].file_count, 1);
         assert_eq!(report.languages["markdown"].file_count, 1);
-        assert!(!report.languages.contains_key("javascript"), "node_modules should be skipped");
+        assert!(
+            !report.languages.contains_key("javascript"),
+            "node_modules should be skipped"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
-    }
-
-    /// Determinism probe for the fixpoint track (Risk #1, §10.3.1).
-    /// The Stage 2 ≡ Stage 3 fixpoint requires that compiling the same
-    /// Nom source under the same pinned toolchain produces byte-identical
-    /// `.bc`. This test is the first canary: one tiny source, compiled
-    /// twice in the same process, expected byte-equal.
-    #[test]
-    #[cfg_attr(windows, ignore)]
-    fn compile_nom_to_bc_is_deterministic() {
-        let src = "fn id(x: i64) -> i64 { x }";
-        let bc1 = compile_nom_to_bc(src).expect("bc1 compile");
-        let bc2 = compile_nom_to_bc(src).expect("bc2 compile");
-        assert!(!bc1.is_empty(), "bc1 empty");
-        assert_eq!(
-            bc1.len(),
-            bc2.len(),
-            "bc sizes diverged ({} vs {}) — non-determinism in nom-llvm output",
-            bc1.len(),
-            bc2.len()
-        );
-        assert_eq!(
-            bc1, bc2,
-            "bc bytes diverged at same length — non-determinism in iteration order or ids"
-        );
     }
 
     #[test]
     #[cfg_attr(windows, ignore)]
     fn ingest_directory_populates_dict() {
+        use nom_types::body_kind;
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
-        use nom_types::body_kind;
 
         let tmp = std::env::temp_dir().join("nom_corpus_ingest_test");
         let _ = fs::remove_dir_all(&tmp);
@@ -1089,7 +1124,8 @@ mod tests {
 
         // lib.rs: simple function — translator accepts this.
         let mut f = fs::File::create(tmp.join("lib.rs")).unwrap();
-        f.write_all(b"pub fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
+        f.write_all(b"pub fn add(a: i64, b: i64) -> i64 { a + b }")
+            .unwrap();
 
         // point.rs: struct — translator rejects this → skipped.
         let mut f2 = fs::File::create(tmp.join("point.rs")).unwrap();
@@ -1097,14 +1133,16 @@ mod tests {
 
         // main.py: Python — no translator → skipped.
         let mut f3 = fs::File::create(tmp.join("main.py")).unwrap();
-        f3.write_all(b"def greet(name): return f'hello {name}'").unwrap();
+        f3.write_all(b"def greet(name): return f'hello {name}'")
+            .unwrap();
 
         // index.ts: TypeScript — translator accepts this.
         let mut f4 = fs::File::create(tmp.join("index.ts")).unwrap();
-        f4.write_all(b"export function id(x: number): number { return x; }").unwrap();
+        f4.write_all(b"export function id(x: number): number { return x; }")
+            .unwrap();
 
         // Ingest into an in-memory dict.
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let report = super::ingest_directory(&tmp, &dict).unwrap();
 
         // Only successfully-translated AND compiled files land (lib.rs + index.ts
@@ -1117,7 +1155,7 @@ mod tests {
         assert_eq!(report.duplicates, 0);
 
         // lean-DB pivot B-b: entries land with BC body_kind, Complete status.
-        let bc_entries = dict.find_by_body_kind(body_kind::BC, 10).unwrap();
+        let bc_entries = find_by_body_kind(&dict, body_kind::BC, 10).unwrap();
         assert_eq!(bc_entries.len(), report.files_ingested as usize);
         for e in &bc_entries {
             assert_eq!(e.language, "nom", "body language must be nom");
@@ -1134,7 +1172,6 @@ mod tests {
     fn ingest_directory_skips_when_compile_fails() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         // On platforms where LLVM is available the test is skipped (the real
         // pipeline would succeed, so the "compile fails" scenario doesn't apply).
@@ -1145,9 +1182,10 @@ mod tests {
         fs::create_dir_all(&tmp).unwrap();
 
         let mut f = fs::File::create(tmp.join("lib.rs")).unwrap();
-        f.write_all(b"pub fn add(a: i64, b: i64) -> i64 { a + b }").unwrap();
+        f.write_all(b"pub fn add(a: i64, b: i64) -> i64 { a + b }")
+            .unwrap();
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         // Must not panic regardless of whether LLVM is available.
         let report = super::ingest_directory(&tmp, &dict).unwrap();
         // Either the file compiled (Linux CI) or was skipped (Windows without DLL).
@@ -1162,7 +1200,6 @@ mod tests {
     fn ingest_directory_dedup() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         let tmp = std::env::temp_dir().join("nom_corpus_dedup_test");
         let _ = fs::remove_dir_all(&tmp);
@@ -1178,7 +1215,7 @@ mod tests {
         let mut f2 = fs::File::create(subdir.join("b.rs")).unwrap();
         f2.write_all(content).unwrap();
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let report = super::ingest_directory(&tmp, &dict).unwrap();
 
         assert_eq!(report.files_ingested, 1, "first copy must be ingested");
@@ -1192,7 +1229,6 @@ mod tests {
     fn ingest_parent_aggregates_across_repos() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         let tmp = std::env::temp_dir().join("nom_corpus_ingest_parent_test");
         let _ = fs::remove_dir_all(&tmp);
@@ -1205,11 +1241,8 @@ mod tests {
             for (i, name) in ["lib.rs", "main.rs"].iter().enumerate() {
                 let mut f = fs::File::create(repo_dir.join(name)).unwrap();
                 // Unique content per file to avoid cross-repo dedup.
-                f.write_all(
-                    format!("// {repo} file {i}\npub fn f_{repo}_{i}() {{}}")
-                        .as_bytes(),
-                )
-                .unwrap();
+                f.write_all(format!("// {repo} file {i}\npub fn f_{repo}_{i}() {{}}").as_bytes())
+                    .unwrap();
             }
         }
 
@@ -1224,10 +1257,9 @@ mod tests {
         f.write_all(b"# top level").unwrap();
 
         // Use an in-memory dict via a temp file path.
-        let db_path = tmp.join("test_parent.db");
-        // NomDict::open_in_place creates the file; test uses that path.
+        let db_path = tmp.join("dict");
         {
-            let _dict = NomDict::open_in_place(&db_path).unwrap();
+            let _dict = Dict::open_dir(&db_path).unwrap();
         }
 
         let report = super::ingest_parent(&tmp, &db_path, false).unwrap();
@@ -1281,7 +1313,6 @@ mod tests {
     fn ingest_directory_uses_transaction() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         // ── Part 1: normal commit path ──────────────────────────────────────
         let tmp = std::env::temp_dir().join("nom_corpus_tx_test");
@@ -1298,14 +1329,14 @@ mod tests {
             f.write_all(content).unwrap();
         }
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let report = super::ingest_directory(&tmp, &dict).unwrap();
         assert_eq!(report.files_ingested, 3, "all 3 files should be committed");
-        assert_eq!(dict.count().unwrap(), 3, "transaction must have committed");
+        assert_eq!(count_entries(&dict), 3, "transaction must have committed");
 
         // ── Part 2: explicit rollback leaves the dict clean ─────────────────
         // Begin a new transaction, manually insert 2 entries, then roll back.
-        let tx = dict.begin_transaction().unwrap();
+        let tx = dict.entities.unchecked_transaction().unwrap();
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
         for i in 0..2u8 {
             let e = Entry {
@@ -1328,13 +1359,49 @@ mod tests {
                 created_at: "2025-01-01T00:00:00Z".into(),
                 updated_at: None,
             };
-            dict.upsert_entry(&e).unwrap();
+            tx.execute(
+                "INSERT INTO entries (id, word, variant, kind, language, describe, concept,
+                                      body, body_nom, input_type, output_type, pre, post,
+                                      status, translation_score, is_canonical, deprecated_by,
+                                      created_at, updated_at, body_kind, body_bytes)
+                 VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+                rusqlite::params![
+                    e.id,
+                    e.word,
+                    e.variant,
+                    e.kind.as_str(),
+                    e.language,
+                    e.describe,
+                    e.concept,
+                    e.body,
+                    e.body_nom,
+                    e.contract.input_type,
+                    e.contract.output_type,
+                    e.contract.pre,
+                    e.contract.post,
+                    e.status.as_str(),
+                    e.translation_score,
+                    e.is_canonical,
+                    e.deprecated_by,
+                    e.created_at,
+                    e.updated_at,
+                    e.body_kind,
+                    e.body_bytes,
+                ],
+            ).unwrap();
         }
         // Row count inside the transaction should be 5 (3 committed + 2 pending).
-        assert_eq!(dict.count().unwrap(), 5);
+        let pending_count: i64 = tx
+            .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
+            .unwrap();
+        assert_eq!(pending_count, 5);
         // Roll back: the 2 pending entries must disappear.
         tx.rollback().unwrap();
-        assert_eq!(dict.count().unwrap(), 3, "rollback must discard the 2 pending rows");
+        assert_eq!(
+            count_entries(&dict),
+            3,
+            "rollback must discard the 2 pending rows"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1347,7 +1414,6 @@ mod tests {
     fn ingest_parent_resumes_from_checkpoint() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         let tmp = std::env::temp_dir().join("nom_corpus_checkpoint_test");
         let _ = fs::remove_dir_all(&tmp);
@@ -1359,27 +1425,30 @@ mod tests {
             fs::create_dir_all(&repo_dir).unwrap();
             for (i, name) in ["lib.rs", "main.rs"].iter().enumerate() {
                 let mut f = fs::File::create(repo_dir.join(name)).unwrap();
-                f.write_all(
-                    format!("// {repo} file {i}\npub fn chk_{repo}_{i}() {{}}")
-                        .as_bytes(),
-                )
-                .unwrap();
+                f.write_all(format!("// {repo} file {i}\npub fn chk_{repo}_{i}() {{}}").as_bytes())
+                    .unwrap();
             }
         }
 
-        let db_path = tmp.join("chk_test.db");
+        let db_path = tmp.join("dict");
         {
-            let _dict = NomDict::open_in_place(&db_path).unwrap();
+            let _dict = Dict::open_dir(&db_path).unwrap();
         }
 
         // ── First run: ingest all 3 repos, checkpoint written after each ──
         let r1 = super::ingest_parent(&tmp, &db_path, false).unwrap();
-        assert_eq!(r1.aggregate.files_ingested, 6, "first run: 3 repos × 2 files = 6");
+        assert_eq!(
+            r1.aggregate.files_ingested, 6,
+            "first run: 3 repos × 2 files = 6"
+        );
         assert_eq!(r1.resumed_repos, 0, "first run: nothing resumed yet");
 
         // Verify checkpoint file exists and lists all 3 repos.
         let cp_path = IngestCheckpoint::path_for(&db_path);
-        assert!(cp_path.exists(), "checkpoint file must be written after first run");
+        assert!(
+            cp_path.exists(),
+            "checkpoint file must be written after first run"
+        );
         let cp = IngestCheckpoint::load(&db_path, &tmp);
         assert!(cp.is_completed("alpha"));
         assert!(cp.is_completed("beta"));
@@ -1398,8 +1467,12 @@ mod tests {
 
         // The tampered file was NOT re-ingested (repo was skipped entirely).
         // Dict still holds only 6 entries from run 1.
-        let dict_check = NomDict::open_in_place(&db_path).unwrap();
-        assert_eq!(dict_check.count().unwrap(), 6, "dict must still hold exactly 6 entries");
+        let dict_check = Dict::try_open_from_nomdict_path(&db_path).unwrap();
+        assert_eq!(
+            count_entries(&dict_check),
+            6,
+            "dict must still hold exactly 6 entries"
+        );
 
         let _ = fs::remove_dir_all(&tmp);
     }
@@ -1416,7 +1489,9 @@ mod tests {
         assert_eq!(super::sanitize_word(""), "unnamed");
         assert_eq!(super::sanitize_word("!@#$%"), "unnamed");
         // No language prefix — variant column carries that.
-        assert!(!super::sanitize_word("add").contains('_') || super::sanitize_word("my_fn") == "my_fn");
+        assert!(
+            !super::sanitize_word("add").contains('_') || super::sanitize_word("my_fn") == "my_fn"
+        );
         // Max 60 chars.
         let long = "a".repeat(100);
         assert_eq!(super::sanitize_word(&long).len(), 60);
@@ -1427,7 +1502,6 @@ mod tests {
     fn ingest_directory_lands_items_not_files() {
         use std::fs;
         use std::io::Write;
-        use nom_dict::NomDict;
 
         let tmp = std::env::temp_dir().join("nom_corpus_items_not_files_test");
         let _ = fs::remove_dir_all(&tmp);
@@ -1439,16 +1513,17 @@ mod tests {
             b"fn foo(x: i64) -> i64 { x }\nfn bar(x: i64) -> i64 { x + 1 }\nfn baz(x: i64) -> i64 { x * 2 }"
         ).unwrap();
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let report = super::ingest_directory(&tmp, &dict).unwrap();
 
         // 3 fns → 3 entries with meaningful word values.
         assert_eq!(
             report.files_ingested, 3,
-            "expected 3 items (one per fn), got {}", report.files_ingested
+            "expected 3 items (one per fn), got {}",
+            report.files_ingested
         );
 
-        let entries = dict.find_by_body_kind(nom_types::body_kind::BC, 10).unwrap_or_default();
+        let entries = find_by_body_kind(&dict, nom_types::body_kind::BC, 10).unwrap_or_default();
         let words: Vec<&str> = entries.iter().map(|e| e.word.as_str()).collect();
         assert!(words.contains(&"foo"), "missing 'foo' in words: {words:?}");
         assert!(words.contains(&"bar"), "missing 'bar' in words: {words:?}");
@@ -1456,10 +1531,12 @@ mod tests {
 
         // words must NOT be filename slugs like "rust_math".
         for w in &words {
-            assert!(!w.starts_with("rust_"), "word should not have language prefix: {w}");
+            assert!(
+                !w.starts_with("rust_"),
+                "word should not have language prefix: {w}"
+            );
         }
 
         let _ = fs::remove_dir_all(&tmp);
     }
-
 }

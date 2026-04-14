@@ -90,11 +90,7 @@ pub fn validate_nomtu(file: &NomtuFile) -> Vec<StrictWarning> {
     out
 }
 
-fn collect_typed_slot_warnings(
-    refs: &[EntityRef],
-    loc_prefix: &str,
-    out: &mut Vec<StrictWarning>,
-) {
+fn collect_typed_slot_warnings(refs: &[EntityRef], loc_prefix: &str, out: &mut Vec<StrictWarning>) {
     for r in refs {
         if r.typed_slot && r.confidence_threshold.is_none() {
             let kind = r.kind.as_deref().unwrap_or("");

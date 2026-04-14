@@ -12,9 +12,7 @@ pub fn compile_enum(mc: &mut ModuleCompiler, enum_def: &EnumDef) -> Result<(), c
             let llvm_ty = crate::types::resolve_type(mc, field_ty)?;
             let field_size = match llvm_ty {
                 inkwell::types::BasicTypeEnum::FloatType(_) => 8,
-                inkwell::types::BasicTypeEnum::IntType(t) => {
-                    (t.get_bit_width() as u32 + 7) / 8
-                }
+                inkwell::types::BasicTypeEnum::IntType(t) => (t.get_bit_width() as u32 + 7) / 8,
                 inkwell::types::BasicTypeEnum::PointerType(_) => 8,
                 inkwell::types::BasicTypeEnum::StructType(t) => t.count_fields() * 8,
                 _ => 8,
@@ -103,6 +101,10 @@ mod tests {
         assert!(mc.struct_types.contains_key("Shape"));
         let shape_ty = mc.struct_types.get("Shape").unwrap();
         // tag (i8) + payload array = 2 fields
-        assert_eq!(shape_ty.count_fields(), 2, "Shape should have 2 fields (tag + payload)");
+        assert_eq!(
+            shape_ty.count_fields(),
+            2,
+            "Shape should have 2 fields (tag + payload)"
+        );
     }
 }

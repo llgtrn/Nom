@@ -6,15 +6,15 @@
 //! - Memory allocation
 //! - File I/O
 
-mod string;
-mod print;
 mod alloc;
 mod io;
 mod list;
+mod print;
+mod string;
 
 // Re-export all extern "C" functions
-pub use string::*;
-pub use print::*;
 pub use alloc::*;
 pub use io::*;
 pub use list::*;
+pub use print::*;
+pub use string::*;

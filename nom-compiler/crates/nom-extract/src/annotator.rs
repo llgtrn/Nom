@@ -34,9 +34,15 @@ use thiserror::Error;
 #[derive(Debug, Error)]
 pub enum AnnotatorError {
     #[error("required key {key:?} missing (annotator {annotator} declared requires=[..,{key}])")]
-    MissingRequirement { annotator: &'static str, key: &'static str },
+    MissingRequirement {
+        annotator: &'static str,
+        key: &'static str,
+    },
     #[error("annotator {annotator} failed: {reason}")]
-    Failed { annotator: &'static str, reason: String },
+    Failed {
+        annotator: &'static str,
+        reason: String,
+    },
 }
 
 pub type AnnotatorResult = Result<(), AnnotatorError>;
@@ -200,17 +206,18 @@ impl Annotator for ParseAndExtractAnnotator {
             annotator: self.name(),
             reason: format!("language is not valid UTF-8: {e}"),
         })?;
-        let file_path = std::str::from_utf8(file_path_bytes).map_err(|e| {
-            AnnotatorError::Failed {
+        let file_path =
+            std::str::from_utf8(file_path_bytes).map_err(|e| AnnotatorError::Failed {
                 annotator: self.name(),
                 reason: format!("file_path is not valid UTF-8: {e}"),
-            }
-        })?;
+            })?;
 
-        let entities = crate::extract::parse_and_extract(source, file_path, language)
-            .map_err(|e| AnnotatorError::Failed {
-                annotator: self.name(),
-                reason: format!("parse_and_extract: {e:#}"),
+        let entities =
+            crate::extract::parse_and_extract(source, file_path, language).map_err(|e| {
+                AnnotatorError::Failed {
+                    annotator: self.name(),
+                    reason: format!("parse_and_extract: {e:#}"),
+                }
             })?;
 
         let encoded = serde_json::to_vec(&entities).map_err(|e| AnnotatorError::Failed {
@@ -333,7 +340,9 @@ mod tests {
         // No "source" → tokenize can't run.
         let mut p = AnnotationPipeline::new();
         p.add(Box::new(TokenizeAnnotator));
-        let err = p.run(&mut ann).expect_err("must fail with missing requirement");
+        let err = p
+            .run(&mut ann)
+            .expect_err("must fail with missing requirement");
         match err {
             AnnotatorError::MissingRequirement { annotator, key } => {
                 assert_eq!(annotator, "tokenize");
@@ -440,10 +449,15 @@ mod tests {
         p.add(Box::new(ScanDirectoryAnnotator));
         p.run(&mut ann).expect("scan_directory should succeed");
 
-        let files_bytes = ann.get("source_files").expect("source_files key must be set");
+        let files_bytes = ann
+            .get("source_files")
+            .expect("source_files key must be set");
         let files: Vec<String> = serde_json::from_slice(files_bytes).unwrap();
         assert!(files.iter().any(|f| f.ends_with("greet.rs")));
-        assert!(!files.iter().any(|f| f.ends_with("notes.txt")), "txt must be skipped");
+        assert!(
+            !files.iter().any(|f| f.ends_with("notes.txt")),
+            "txt must be skipped"
+        );
 
         std::fs::remove_dir_all(&tmp).ok();
     }
@@ -451,21 +465,26 @@ mod tests {
     #[test]
     fn parse_and_extract_annotator_emits_entities_json() {
         let mut ann = Annotation::new();
-        ann.set("source", b"fn greet(name: &str) -> String { name.to_string() }".to_vec());
+        ann.set(
+            "source",
+            b"fn greet(name: &str) -> String { name.to_string() }".to_vec(),
+        );
         ann.set("language", b"rust".to_vec());
         ann.set("file_path", b"greet.rs".to_vec());
 
         let mut p = AnnotationPipeline::new();
         p.add(Box::new(ParseAndExtractAnnotator));
-        p.run(&mut ann).expect("parse_and_extract should succeed on valid Rust");
+        p.run(&mut ann)
+            .expect("parse_and_extract should succeed on valid Rust");
 
-        let entities_bytes = ann
-            .get("entities")
-            .expect("entities key must be written");
+        let entities_bytes = ann.get("entities").expect("entities key must be written");
         let parsed: serde_json::Value =
             serde_json::from_slice(entities_bytes).expect("entities must be JSON");
         let arr = parsed.as_array().expect("entities must be a JSON array");
-        assert!(!arr.is_empty(), "greet() should produce at least one entity");
+        assert!(
+            !arr.is_empty(),
+            "greet() should produce at least one entity"
+        );
         assert_eq!(ann.ran(), &["parse_and_extract"]);
     }
 }

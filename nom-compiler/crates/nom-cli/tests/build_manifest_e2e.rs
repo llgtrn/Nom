@@ -135,11 +135,13 @@ mod tests {
         let (mc, mo, me) = run_manifest(&repo_dir, &dict_dir, None, false);
 
         // Exit 1 because MECE-ME violations are present.
-        assert_eq!(mc, 1, "expected exit 1 (MECE violations): stderr={me}\nstdout={mo}");
+        assert_eq!(
+            mc, 1,
+            "expected exit 1 (MECE violations): stderr={me}\nstdout={mo}"
+        );
 
         // JSON must parse.
-        let v: serde_json::Value =
-            serde_json::from_str(&mo).expect("stdout must be valid JSON");
+        let v: serde_json::Value = serde_json::from_str(&mo).expect("stdout must be valid JSON");
 
         // ── Structural assertions ─────────────────────────────────────────────
 
@@ -183,7 +185,11 @@ mod tests {
             "expected >= 6 function items in build_order, got {fn_count}: {:?}",
             build_order
                 .iter()
-                .map(|b| format!("{}:{}", b["kind"].as_str().unwrap_or("?"), b["word"].as_str().unwrap_or("?")))
+                .map(|b| format!(
+                    "{}:{}",
+                    b["kind"].as_str().unwrap_or("?"),
+                    b["word"].as_str().unwrap_or("?")
+                ))
                 .collect::<Vec<_>>()
         );
 
@@ -197,7 +203,11 @@ mod tests {
             "agent_safety_policy must appear as a concept in build_order: {:?}",
             build_order
                 .iter()
-                .map(|b| format!("{}:{}", b["kind"].as_str().unwrap_or("?"), b["word"].as_str().unwrap_or("?")))
+                .map(|b| format!(
+                    "{}:{}",
+                    b["kind"].as_str().unwrap_or("?"),
+                    b["word"].as_str().unwrap_or("?")
+                ))
                 .collect::<Vec<_>>()
         );
 
@@ -212,8 +222,7 @@ mod tests {
 
         // ── Step 3: re-run with --pretty --out manifest.json ──────────────────
         let out_file = dict_dir.join("manifest.json");
-        let (mc2, mo2, me2) =
-            run_manifest(&repo_dir, &dict_dir, Some(&out_file), true);
+        let (mc2, mo2, me2) = run_manifest(&repo_dir, &dict_dir, Some(&out_file), true);
 
         // Still exit 1 (same MECE violations).
         assert_eq!(
@@ -291,10 +300,12 @@ mod tests {
         // Step 2: manifest.
         let (mc, mo, me) = run_manifest(&repo_dir, &dict_dir, None, false);
         // Exit 1 due to MECE violations — same as primary test.
-        assert_eq!(mc, 1, "expected exit 1 (MECE violations): stderr={me}\nstdout={mo}");
+        assert_eq!(
+            mc, 1,
+            "expected exit 1 (MECE violations): stderr={me}\nstdout={mo}"
+        );
 
-        let v: serde_json::Value =
-            serde_json::from_str(&mo).expect("stdout must be valid JSON");
+        let v: serde_json::Value = serde_json::from_str(&mo).expect("stdout must be valid JSON");
 
         let concepts = v["concepts"].as_array().expect("concepts must be array");
 

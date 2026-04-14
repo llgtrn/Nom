@@ -60,8 +60,7 @@ fn is_valid_diag_id(id: &str) -> bool {
         return false;
     }
     let reason = &id[8..];
-    !reason.is_empty()
-        && reason.chars().all(|c| c.is_ascii_lowercase() || c == '-')
+    !reason.is_empty() && reason.chars().all(|c| c.is_ascii_lowercase() || c == '-')
 }
 
 fn open_baseline_grammar() -> (tempfile::TempDir, rusqlite::Connection) {

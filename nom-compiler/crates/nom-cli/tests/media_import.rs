@@ -60,61 +60,91 @@ fn import_exit_code(path: &std::path::Path) -> i32 {
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_png() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.png")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_jpeg() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.jpg")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_avif() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.avif")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_flac() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.flac")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_opus() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.opus")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_aac() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.aac")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_av1() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.av1.ivf")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_webm() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.webm")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_mp4() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.mp4")), 0);
 }
 
 #[test]
-#[cfg_attr(target_os = "windows", ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS")]
+#[cfg_attr(
+    target_os = "windows",
+    ignore = "STATUS_DLL_NOT_FOUND on Windows — run on Linux/macOS"
+)]
 fn import_hevc() {
     assert_eq!(import_exit_code(&fixtures_dir().join("tiny.hevc")), 0);
 }

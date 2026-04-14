@@ -22,7 +22,6 @@
 ///   - adts_buffer_fullness = 0x7FF (VBR)
 /// Each frame bytes: FF F1 50 80 01 1F FC 00
 /// Expected duration: 3 × 1024 × 1000 / 44100 = 69 ms.
-
 use nom_media::{ingest_aac, verify_aac_roundtrip};
 use nom_types::body_kind;
 
@@ -42,7 +41,10 @@ fn ingest_aac_returns_correct_metadata() {
         "canonical_bytes must not be empty"
     );
     // ADTS stream must start with syncword 0xFF, 0xF? (12-bit 0xFFF).
-    assert_eq!(result.canonical_bytes[0], 0xFF, "canonical_bytes[0] must be 0xFF (ADTS syncword)");
+    assert_eq!(
+        result.canonical_bytes[0], 0xFF,
+        "canonical_bytes[0] must be 0xFF (ADTS syncword)"
+    );
     assert_eq!(
         result.canonical_bytes[1] & 0xF0,
         0xF0,
@@ -52,8 +54,7 @@ fn ingest_aac_returns_correct_metadata() {
 
 #[test]
 fn verify_aac_roundtrip_passes() {
-    verify_aac_roundtrip(TINY_AAC)
-        .expect("round-trip metadata should match (identity mapping)");
+    verify_aac_roundtrip(TINY_AAC).expect("round-trip metadata should match (identity mapping)");
 }
 
 #[test]

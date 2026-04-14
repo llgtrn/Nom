@@ -30,7 +30,7 @@
 
 use nom_types::NomtuEntry;
 
-use crate::uid::{compute_node_uid, NodeUid};
+use crate::uid::{NodeUid, compute_node_uid};
 use crate::{NomtuGraph, NomtuNode};
 
 /// Result of an `upsert_entry` call. Every variant carries the uid(s)
@@ -58,9 +58,7 @@ impl UpsertOutcome {
     /// target. For `Unchanged` this is the prior uid.
     pub fn current_uid(&self) -> &NodeUid {
         match self {
-            Self::Unchanged { uid }
-            | Self::Created { uid }
-            | Self::Updated { uid } => uid,
+            Self::Unchanged { uid } | Self::Created { uid } | Self::Updated { uid } => uid,
             Self::Renamed { to, .. } => to,
         }
     }
@@ -81,7 +79,11 @@ impl NomtuGraph {
     /// Never matched → Created.
     pub fn upsert_entry(&mut self, entry: &NomtuEntry) -> UpsertOutcome {
         let new_uid = compute_node_uid(entry);
-        let key = (entry.word.clone(), entry.kind.clone(), entry.variant.clone());
+        let key = (
+            entry.word.clone(),
+            entry.kind.clone(),
+            entry.variant.clone(),
+        );
         let node = NomtuNode {
             word: entry.word.clone(),
             variant: entry.variant.clone(),
@@ -97,9 +99,7 @@ impl NomtuGraph {
                 // uid changing (variant is not part of uid; language isn't
                 // either by design). Treat language drift as Updated.
                 if let Some(existing) = self.uid_nodes.get(&new_uid) {
-                    if existing.language == node.language
-                        && existing.body_hash == node.body_hash
-                    {
+                    if existing.language == node.language && existing.body_hash == node.body_hash {
                         return UpsertOutcome::Unchanged { uid: new_uid };
                     }
                 }
@@ -118,7 +118,10 @@ impl NomtuGraph {
                 self.uid_nodes.remove(&prior_uid);
                 self.uid_nodes.insert(new_uid.clone(), node);
                 self.word_variant_index.insert(key, new_uid.clone());
-                UpsertOutcome::Renamed { from: prior_uid, to: new_uid }
+                UpsertOutcome::Renamed {
+                    from: prior_uid,
+                    to: new_uid,
+                }
             }
         } else {
             self.uid_nodes.insert(new_uid.clone(), node);

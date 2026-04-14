@@ -1,10 +1,9 @@
 //! `materialize_concept_graph_from_db` — rebuild a `ConceptGraph` from DB rows.
 
 use nom_concept::{
-    CompositionDecl, ConceptDecl, ConceptGraph, EntityRef, IndexClause,
-    NomtuFile, NomtuItem,
+    CompositionDecl, ConceptDecl, ConceptGraph, EntityRef, IndexClause, NomtuFile, NomtuItem,
 };
-use nom_dict::NomDict;
+use nom_dict::dict::{find_entity, list_concept_defs_in_repo};
 
 /// Rebuild a `ConceptGraph` from the rows already stored in `dict` for
 /// `repo_id`.
@@ -20,12 +19,11 @@ use nom_dict::NomDict;
 /// `EntityRef`s inside concept index clauses, so they need no separate
 /// `NomtuFile` entry.
 pub fn materialize_concept_graph_from_db(
-    dict: &NomDict,
+    dict: &nom_dict::Dict,
     repo_id: &str,
 ) -> Result<ConceptGraph, String> {
     // ── 1. Load concept rows ──────────────────────────────────────────
-    let concept_rows = dict
-        .list_concept_defs_in_repo(repo_id)
+    let concept_rows = list_concept_defs_in_repo(dict, repo_id)
         .map_err(|e| format!("list_concept_defs_in_repo: {e}"))?;
 
     let mut concepts: Vec<ConceptDecl> = Vec::with_capacity(concept_rows.len());
@@ -33,12 +31,9 @@ pub fn materialize_concept_graph_from_db(
         let index: Vec<IndexClause> = serde_json::from_str(&row.index_into_db2)
             .map_err(|e| format!("concept `{}` index_into_db2 JSON: {e}", row.name))?;
 
-        let exposes: Vec<String> = serde_json::from_str(&row.exposes)
-            .unwrap_or_default();
-        let acceptance: Vec<String> = serde_json::from_str(&row.acceptance)
-            .unwrap_or_default();
-        let objectives: Vec<String> = serde_json::from_str(&row.objectives)
-            .unwrap_or_default();
+        let exposes: Vec<String> = serde_json::from_str(&row.exposes).unwrap_or_default();
+        let acceptance: Vec<String> = serde_json::from_str(&row.acceptance).unwrap_or_default();
+        let objectives: Vec<String> = serde_json::from_str(&row.objectives).unwrap_or_default();
 
         concepts.push(ConceptDecl {
             name: row.name.clone(),
@@ -63,10 +58,8 @@ pub fn materialize_concept_graph_from_db(
     // and walking `composed_of` transitively.  For the status command this is
     // sufficient — we only need the compositions the concepts actually reference.
     let mut modules: Vec<NomtuFile> = Vec::new();
-    let mut visited_hashes: std::collections::HashSet<String> =
-        std::collections::HashSet::new();
-    let mut hash_queue: std::collections::VecDeque<String> =
-        std::collections::VecDeque::new();
+    let mut visited_hashes: std::collections::HashSet<String> = std::collections::HashSet::new();
+    let mut hash_queue: std::collections::VecDeque<String> = std::collections::VecDeque::new();
 
     // Seed queue from all resolved EntityRef hashes in concept index clauses.
     for concept in &concepts {
@@ -77,7 +70,7 @@ pub fn materialize_concept_graph_from_db(
         if !visited_hashes.insert(hash.clone()) {
             continue;
         }
-        let row = match dict.find_entity(&hash) {
+        let row = match find_entity(dict, &hash) {
             Ok(Some(r)) => r,
             Ok(None) => continue,
             Err(e) => {

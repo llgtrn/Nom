@@ -11,7 +11,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
-use nom_dict::NomDict;
+use nom_dict::Dict;
+use nom_dict::dict::{find_entities_by_word, find_entity, list_required_axes};
+use nom_concept::stages::{PipelineOutput, run_pipeline};
 use serde::{Deserialize, Serialize};
 
 use crate::store::{materialize_concept_graph_from_db, resolve_closure};
@@ -174,9 +176,13 @@ fn collect_effects_recurse(dir: &Path, map: &mut HashMap<String, Vec<EffectRecor
                 Ok(s) => s,
                 Err(_) => continue,
             };
-            let nomtu_file = match nom_concept::parse_nomtu(&src) {
-                Ok(f) => f,
+            let pipeline = match run_pipeline(&src) {
+                Ok(p) => p,
                 Err(_) => continue,
+            };
+            let nomtu_file = match pipeline {
+                PipelineOutput::Nomtu(f) => f,
+                PipelineOutput::Nom(_) => continue,
             };
             for item in &nomtu_file.items {
                 let (word, effect_clauses) = match item {
@@ -212,7 +218,7 @@ fn collect_effects_recurse(dir: &Path, map: &mut HashMap<String, Vec<EffectRecor
 /// `unresolved` entries, not errors.
 pub fn build_manifest(
     repo: &Path,
-    dict: &NomDict,
+    dict: &Dict,
     concept_filter: Option<&str>,
 ) -> Result<RepoManifest, String> {
     let repo_path = repo.to_string_lossy().into_owned();
@@ -235,15 +241,10 @@ pub fn build_manifest(
 
     // ── apply concept filter ──────────────────────────────────────────────────
     let concepts_in_scope: Vec<&nom_concept::ConceptDecl> = if let Some(name) = concept_filter {
-        let filtered: Vec<&nom_concept::ConceptDecl> = graph
-            .concepts
-            .iter()
-            .filter(|c| c.name == name)
-            .collect();
+        let filtered: Vec<&nom_concept::ConceptDecl> =
+            graph.concepts.iter().filter(|c| c.name == name).collect();
         if filtered.is_empty() {
-            return Err(format!(
-                "concept `{name}` not found in repo `{repo_id}`"
-            ));
+            return Err(format!("concept `{name}` not found in repo `{repo_id}`"));
         }
         filtered
     } else {
@@ -329,7 +330,7 @@ pub fn build_manifest(
 
         // First: resolved word hashes (entities + modules).
         for hash in &closure.word_hashes {
-            let row = dict.find_entity(hash).ok().flatten();
+            let row = find_entity(dict, hash).ok().flatten();
             let composed_of: Vec<String> = row
                 .as_ref()
                 .and_then(|r| r.composed_of.as_deref())
@@ -363,7 +364,7 @@ pub fn build_manifest(
         for concept_name in &closure.concepts {
             // Look up the concept hash from resolved_map or from entities by word.
             let hash = resolved_map.get(concept_name).cloned().or_else(|| {
-                dict.find_entities_by_word(concept_name)
+                find_entities_by_word(dict, concept_name)
                     .ok()
                     .and_then(|rows| rows.into_iter().next().map(|r| r.hash))
             });
@@ -436,13 +437,13 @@ pub fn build_manifest(
                 .collect();
 
             // Use registry-aware CE check.
-            let required_axes: Vec<(String, String)> = dict
-                .list_required_axes(repo_id, "concept")
+            let required_axes: Vec<(String, String)> = list_required_axes(dict, repo_id, "concept")
                 .unwrap_or_default()
                 .into_iter()
                 .map(|ax| (ax.axis, ax.cardinality))
                 .collect();
-            let mece = nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
+            let mece =
+                nom_concept::check_mece_with_required_axes(concept, &child_decls, &required_axes);
 
             // Collect stub notes (deduplicate across concepts).
             for note in &mece.stub_notes {
@@ -514,8 +515,8 @@ pub fn build_manifest(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_dict::NomDict;
-    use nom_dict::ConceptRow;
+    use nom_dict::Dict;
+    use nom_dict::dict::upsert_concept_def;
     use std::path::Path;
 
     /// Minimal in-memory dict + one synthetic concept → build_manifest returns
@@ -532,11 +533,11 @@ mod tests {
         ));
         std::fs::create_dir_all(&tmp).expect("create tmp");
 
-        let dict = NomDict::open(&tmp).expect("open dict");
+        let dict = Dict::open_in_memory().expect("open dict");
 
         // No concepts in DB → empty graph → empty concepts list.
-        let manifest = build_manifest(Path::new("/nonexistent/myrepo"), &dict, None)
-            .expect("build_manifest");
+        let manifest =
+            build_manifest(Path::new("/nonexistent/myrepo"), &dict, None).expect("build_manifest");
 
         assert_eq!(manifest.manifest_version, 1);
         assert!(manifest.concepts.is_empty());
@@ -554,7 +555,8 @@ mod tests {
         ));
         std::fs::create_dir_all(&tmp).expect("create tmp");
 
-        let dict = NomDict::open(&tmp).expect("open dict");
+        let dict = Dict::open_in_memory().expect("open dict");
+        use nom_dict::ConceptRow;
 
         // Insert one concept_def for repo_id "myrepo".
         let row = ConceptRow {
@@ -569,7 +571,7 @@ mod tests {
             src_hash: "abc".to_string(),
             body_hash: None,
         };
-        dict.upsert_concept_def(&row).expect("upsert concept");
+        upsert_concept_def(&dict, &row).expect("upsert concept");
 
         let manifest =
             build_manifest(Path::new("/some/path/myrepo"), &dict, None).expect("build_manifest");
@@ -597,7 +599,7 @@ mod tests {
                 .unwrap_or(0),
         ));
         std::fs::create_dir_all(&tmp).expect("create tmp");
-        let dict = NomDict::open(&tmp).expect("open dict");
+        let dict = Dict::open_in_memory().expect("open dict");
 
         let result = build_manifest(
             Path::new("/some/path/myrepo"),
@@ -642,7 +644,11 @@ mod tests {
 
         // fetch_url has 2 effect groups (benefit + hazard).
         let fetch_effects = map.get("fetch_url").expect("fetch_url must be in map");
-        assert_eq!(fetch_effects.len(), 2, "expected 2 effect groups for fetch_url");
+        assert_eq!(
+            fetch_effects.len(),
+            2,
+            "expected 2 effect groups for fetch_url"
+        );
 
         let benefit = fetch_effects
             .iter()

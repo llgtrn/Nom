@@ -105,8 +105,8 @@ pub fn init_at(path: impl AsRef<Path>) -> Result<Connection> {
         std::fs::create_dir_all(parent)
             .with_context(|| format!("creating parent dir for {:?}", path))?;
     }
-    let conn = Connection::open(path)
-        .with_context(|| format!("opening grammar.sqlite at {:?}", path))?;
+    let conn =
+        Connection::open(path).with_context(|| format!("opening grammar.sqlite at {:?}", path))?;
     conn.execute_batch(SCHEMA_SQL)
         .context("applying grammar schema")?;
     conn.execute(
@@ -173,12 +173,11 @@ pub fn counts(conn: &Connection) -> Result<RegistryCounts> {
 ///
 /// This is the read API S1 (tokenize) calls during synonym resolution.
 pub fn resolve_synonym(conn: &Connection, surface: &str) -> Result<Option<String>> {
-    let row = conn
-        .query_row(
-            "SELECT canonical_keyword FROM keyword_synonyms WHERE synonym = ?1",
-            params![surface],
-            |r| r.get::<_, String>(0),
-        );
+    let row = conn.query_row(
+        "SELECT canonical_keyword FROM keyword_synonyms WHERE synonym = ?1",
+        params![surface],
+        |r| r.get::<_, String>(0),
+    );
     match row {
         Ok(canonical) => Ok(Some(canonical)),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
@@ -194,11 +193,10 @@ pub fn resolve_synonym(conn: &Connection, surface: &str) -> Result<Option<String
 /// reject every block, surfacing the empty-registry condition rather
 /// than silently passing.
 pub fn is_known_kind(conn: &Connection, kind: &str) -> Result<bool> {
-    let row: Result<i64, rusqlite::Error> = conn.query_row(
-        "SELECT 1 FROM kinds WHERE name = ?1",
-        params![kind],
-        |r| r.get(0),
-    );
+    let row: Result<i64, rusqlite::Error> =
+        conn.query_row("SELECT 1 FROM kinds WHERE name = ?1", params![kind], |r| {
+            r.get(0)
+        });
     match row {
         Ok(_) => Ok(true),
         Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
@@ -279,9 +277,9 @@ pub fn quality_names_row_count(conn: &Connection) -> Result<u64> {
 /// `every_pattern_intent_pair_jaccard_below_threshold` so both use
 /// the exact same backend.
 pub const FUZZY_STOPWORDS: &[&str] = &[
-    "a","the","of","to","and","or","with","for","in","on","as","an","is",
-    "into","from","by","that","this","its","at","be","are","it","one","two",
-    "each","every","any","all","no","not","then","than","only","also","same",
+    "a", "the", "of", "to", "and", "or", "with", "for", "in", "on", "as", "an", "is", "into",
+    "from", "by", "that", "this", "its", "at", "be", "are", "it", "one", "two", "each", "every",
+    "any", "all", "no", "not", "then", "than", "only", "also", "same",
 ];
 
 /// Tokenize a free-form intent string into a normalized set of domain
@@ -382,7 +380,11 @@ pub fn search_patterns(
             let row = fuzzy_tokens(&intent);
             let s = jaccard(&q, &row);
             if s >= threshold {
-                Some(PatternMatch { score: s, pattern_id: id, intent })
+                Some(PatternMatch {
+                    score: s,
+                    pattern_id: id,
+                    intent,
+                })
             } else {
                 None
             }
@@ -522,11 +524,8 @@ mod tests {
         );
 
         // Step 3: delete the row → resolution returns None again
-        conn.execute(
-            "DELETE FROM keyword_synonyms WHERE synonym = 'assumes'",
-            [],
-        )
-        .unwrap();
+        conn.execute("DELETE FROM keyword_synonyms WHERE synonym = 'assumes'", [])
+            .unwrap();
         assert_eq!(resolve_synonym(&conn, "assumes").unwrap(), None);
     }
 
@@ -561,7 +560,10 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = dir.path().join("g.sqlite");
         let conn = init_at(&db).unwrap();
-        assert_eq!(clause_shapes_row_count_for_kind(&conn, "function").unwrap(), 0);
+        assert_eq!(
+            clause_shapes_row_count_for_kind(&conn, "function").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -585,9 +587,18 @@ mod tests {
              VALUES ('property', 'generator', 1, 1, 'generator <prose>.', 'phaseB3-test')",
             [],
         ).unwrap();
-        assert_eq!(clause_shapes_row_count_for_kind(&conn, "function").unwrap(), 2);
-        assert_eq!(clause_shapes_row_count_for_kind(&conn, "property").unwrap(), 1);
-        assert_eq!(clause_shapes_row_count_for_kind(&conn, "scenario").unwrap(), 0);
+        assert_eq!(
+            clause_shapes_row_count_for_kind(&conn, "function").unwrap(),
+            2
+        );
+        assert_eq!(
+            clause_shapes_row_count_for_kind(&conn, "property").unwrap(),
+            1
+        );
+        assert_eq!(
+            clause_shapes_row_count_for_kind(&conn, "scenario").unwrap(),
+            0
+        );
     }
 
     #[test]
@@ -612,7 +623,11 @@ mod tests {
         let required = required_clauses_for_kind(&conn, "scenario").unwrap();
         assert_eq!(required, vec!["intended", "given", "when", "then"]);
         // Other kinds have no required clauses
-        assert!(required_clauses_for_kind(&conn, "function").unwrap().is_empty());
+        assert!(
+            required_clauses_for_kind(&conn, "function")
+                .unwrap()
+                .is_empty()
+        );
     }
 
     #[test]

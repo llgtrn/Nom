@@ -4,7 +4,7 @@ use swc_ecma_ast::{
     BinaryOp, Decl, Expr, Lit, ModuleItem, Pat, Stmt, TsKeywordTypeKind, TsType, TsTypeAnn,
     VarDeclKind,
 };
-use swc_ecma_parser::{lexer::Lexer, Parser, StringInput, Syntax, TsSyntax};
+use swc_ecma_parser::{Parser, StringInput, Syntax, TsSyntax, lexer::Lexer};
 
 /// Translate a TypeScript source string to a list of `TranslatedItem`s, one
 /// per translatable top-level function or arrow-function declaration.
@@ -21,7 +21,9 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
     );
 
     let lexer = Lexer::new(
-        Syntax::Typescript(TsSyntax { ..Default::default() }),
+        Syntax::Typescript(TsSyntax {
+            ..Default::default()
+        }),
         Default::default(),
         StringInput::from(&*fm),
         None,
@@ -52,7 +54,11 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
                 let name = fn_decl.ident.sym.as_str().to_string();
                 if let Ok(body) = translate_function(&name, func) {
                     let sig_line = fn_signature_line(&name, func);
-                    items.push(TranslatedItem { name, summary: sig_line, nom_body: body });
+                    items.push(TranslatedItem {
+                        name,
+                        summary: sig_line,
+                        nom_body: body,
+                    });
                 }
                 // else: skip at item level
             }
@@ -76,7 +82,11 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
                 if let Expr::Arrow(arrow) = init {
                     if let Ok(body) = translate_arrow(&name, arrow) {
                         let sig_line = arrow_signature_line(&name, arrow);
-                        items.push(TranslatedItem { name, summary: sig_line, nom_body: body });
+                        items.push(TranslatedItem {
+                            name,
+                            summary: sig_line,
+                            nom_body: body,
+                        });
                     }
                     // else: skip at item level
                 }
@@ -92,13 +102,20 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
 
 /// Build a human-readable signature line for a `function` decl.
 fn fn_signature_line(name: &str, func: &swc_ecma_ast::Function) -> String {
-    let params: Vec<String> = func.params.iter()
+    let params: Vec<String> = func
+        .params
+        .iter()
         .filter_map(|p| {
-            if let Ok((pname, ty)) = extract_param(&p.pat) { Some(format!("{pname}: {ty}")) }
-            else { None }
+            if let Ok((pname, ty)) = extract_param(&p.pat) {
+                Some(format!("{pname}: {ty}"))
+            } else {
+                None
+            }
         })
         .collect();
-    let ret = func.return_type.as_ref()
+    let ret = func
+        .return_type
+        .as_ref()
         .and_then(|a| ts_type_to_nom(a).ok())
         .unwrap_or_else(|| "unit".to_string());
     format!("fn {name}({}) -> {ret}", params.join(", "))
@@ -106,13 +123,20 @@ fn fn_signature_line(name: &str, func: &swc_ecma_ast::Function) -> String {
 
 /// Build a human-readable signature line for an arrow-function decl.
 fn arrow_signature_line(name: &str, arrow: &swc_ecma_ast::ArrowExpr) -> String {
-    let params: Vec<String> = arrow.params.iter()
+    let params: Vec<String> = arrow
+        .params
+        .iter()
         .filter_map(|p| {
-            if let Ok((pname, ty)) = extract_param(p) { Some(format!("{pname}: {ty}")) }
-            else { None }
+            if let Ok((pname, ty)) = extract_param(p) {
+                Some(format!("{pname}: {ty}"))
+            } else {
+                None
+            }
         })
         .collect();
-    let ret = arrow.return_type.as_ref()
+    let ret = arrow
+        .return_type
+        .as_ref()
         .and_then(|a| ts_type_to_nom(a).ok())
         .unwrap_or_else(|| "unit".to_string());
     format!("fn {name}({}) -> {ret}", params.join(", "))
@@ -204,7 +228,7 @@ fn extract_param(pat: &Pat) -> Result<(String, String), TranslationError> {
                 None => {
                     return Err(TranslationError::Unsupported(format!(
                         "param `{pname}` missing type annotation"
-                    )))
+                    )));
                 }
             };
             Ok((pname, ty))
@@ -253,7 +277,7 @@ fn block_to_nom(
                     _ => {
                         return Err(TranslationError::Unsupported(
                             "destructuring in local let/const".into(),
-                        ))
+                        ));
                     }
                 };
                 let rhs = d.init.as_deref().ok_or_else(|| {
@@ -280,7 +304,7 @@ fn block_to_nom(
             _ => {
                 return Err(TranslationError::Unsupported(
                     "statement kind not supported".into(),
-                ))
+                ));
             }
         }
     }
@@ -334,7 +358,11 @@ mod tests {
         let items = translate(src).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "add");
-        assert!(items[0].summary.contains("fn add(a: integer, b: integer) -> integer"));
+        assert!(
+            items[0]
+                .summary
+                .contains("fn add(a: integer, b: integer) -> integer")
+        );
         assert!(items[0].nom_body.contains("return (a + b)"));
     }
 
@@ -344,7 +372,11 @@ mod tests {
         let items = translate(src).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "double");
-        assert!(items[0].summary.contains("fn double(x: integer) -> integer"));
+        assert!(
+            items[0]
+                .summary
+                .contains("fn double(x: integer) -> integer")
+        );
     }
 
     #[test]
@@ -372,7 +404,11 @@ mod tests {
             function sub(a: number, b: number): number { return a - b; }
         "#;
         let items = translate(src).unwrap();
-        assert_eq!(items.len(), 2, "expected 2 items (class skipped), got {items:?}");
+        assert_eq!(
+            items.len(),
+            2,
+            "expected 2 items (class skipped), got {items:?}"
+        );
         let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
         assert!(names.contains(&"add"), "missing 'add'");
         assert!(names.contains(&"sub"), "missing 'sub'");

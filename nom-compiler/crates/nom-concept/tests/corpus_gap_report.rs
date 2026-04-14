@@ -91,7 +91,10 @@ fn print_first_failures_per_stage() {
         for (idx, reason, detail, head) in hits {
             println!(
                 "  block #{idx}  reason={reason}\n    detail={detail}\n    head:\n{}",
-                head.lines().map(|l| format!("      {l}")).collect::<Vec<_>>().join("\n")
+                head.lines()
+                    .map(|l| format!("      {l}"))
+                    .collect::<Vec<_>>()
+                    .join("\n")
             );
         }
     }

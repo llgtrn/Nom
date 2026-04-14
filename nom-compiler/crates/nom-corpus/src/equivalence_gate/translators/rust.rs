@@ -1,7 +1,7 @@
 use super::{TranslatedItem, TranslationError};
 use syn::{
-    parse_file, Block, BinOp, Expr, FnArg, Item, ItemFn, Lit, Pat, PathSegment, ReturnType, Stmt,
-    Type, UnOp,
+    BinOp, Block, Expr, FnArg, Item, ItemFn, Lit, Pat, PathSegment, ReturnType, Stmt, Type, UnOp,
+    parse_file,
 };
 
 /// Translate a Rust source string to a list of `TranslatedItem`s, one per
@@ -17,8 +17,12 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
     for item in file.items {
         if let Item::Fn(ItemFn { sig, block, .. }) = item {
             // Item-level reject: skip (don't Err) unsupported fns.
-            if !sig.generics.params.is_empty() { continue; }
-            if sig.asyncness.is_some() { continue; }
+            if !sig.generics.params.is_empty() {
+                continue;
+            }
+            if sig.asyncness.is_some() {
+                continue;
+            }
 
             let name = sig.ident.to_string();
 
@@ -27,20 +31,31 @@ pub fn translate(source: &str) -> Result<Vec<TranslatedItem>, TranslationError> 
             let mut ok = true;
             for arg in &sig.inputs {
                 match arg {
-                    FnArg::Receiver(_) => { ok = false; break; }
+                    FnArg::Receiver(_) => {
+                        ok = false;
+                        break;
+                    }
                     FnArg::Typed(pt) => {
                         let arg_name = match &*pt.pat {
                             Pat::Ident(pi) => pi.ident.to_string(),
-                            _ => { ok = false; break; }
+                            _ => {
+                                ok = false;
+                                break;
+                            }
                         };
                         match type_to_nom(&pt.ty) {
                             Ok(ty) => params.push(format!("{arg_name}: {ty}")),
-                            Err(_) => { ok = false; break; }
+                            Err(_) => {
+                                ok = false;
+                                break;
+                            }
                         }
                     }
                 }
             }
-            if !ok { continue; }
+            if !ok {
+                continue;
+            }
 
             let ret = match &sig.output {
                 ReturnType::Default => "unit".to_string(),
@@ -113,16 +128,12 @@ fn block_to_nom(block: &Block, indent: usize) -> Result<String, TranslationError
                     _ => {
                         return Err(TranslationError::Unsupported(
                             "let with non-ident pattern".into(),
-                        ))
+                        ));
                     }
                 };
                 let rhs = match &local.init {
                     Some(init) => expr_to_nom(&init.expr)?,
-                    None => {
-                        return Err(TranslationError::Unsupported(
-                            "uninitialized let".into(),
-                        ))
-                    }
+                    None => return Err(TranslationError::Unsupported("uninitialized let".into())),
                 };
                 out.push_str(&format!("{pad}let {name} = {rhs}\n"));
             }
@@ -201,7 +212,11 @@ mod tests {
         let items = translate(src).unwrap();
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].name, "add");
-        assert!(items[0].summary.contains("fn add(a: integer, b: integer) -> integer"));
+        assert!(
+            items[0]
+                .summary
+                .contains("fn add(a: integer, b: integer) -> integer")
+        );
         assert!(items[0].nom_body.contains("return (a + b)"));
     }
 
@@ -280,7 +295,11 @@ mod tests {
             fn sub(a: i64, b: i64) -> i64 { a - b }
         "#;
         let items = translate(src).unwrap();
-        assert_eq!(items.len(), 2, "expected 2 items (struct skipped), got {items:?}");
+        assert_eq!(
+            items.len(),
+            2,
+            "expected 2 items (struct skipped), got {items:?}"
+        );
         let names: Vec<&str> = items.iter().map(|i| i.name.as_str()).collect();
         assert!(names.contains(&"add"), "missing 'add'");
         assert!(names.contains(&"sub"), "missing 'sub'");

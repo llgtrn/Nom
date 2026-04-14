@@ -29,9 +29,7 @@
 //! The adapter doesn't know about `AgentTools` — the ReAct driver wires
 //! those separately. It purely turns transcript state into next step.
 
-use crate::react::{
-    AgentAction, Observation, ReActAdapter, ReActStep,
-};
+use crate::react::{AgentAction, Observation, ReActAdapter, ReActStep};
 use crate::{IntentError, NomIntent, Reason};
 
 /// Nom-compiler-as-oracle adapter. Deterministic state machine over
@@ -52,11 +50,7 @@ impl Default for NomCliAdapter {
 }
 
 impl ReActAdapter for NomCliAdapter {
-    fn next_step(
-        &self,
-        prose: &str,
-        transcript: &[ReActStep],
-    ) -> Result<ReActStep, IntentError> {
+    fn next_step(&self, prose: &str, transcript: &[ReActStep]) -> Result<ReActStep, IntentError> {
         let Some(last) = transcript.last() else {
             // Empty transcript: seed the loop with a Thought.
             return Ok(ReActStep::Thought(format!(
@@ -79,17 +73,17 @@ impl ReActAdapter for NomCliAdapter {
                         }))
                     }
                     // After a Proposal that wasn't Reject → verify.
-                    Some(ReActStep::Observation(Observation::Proposal(
-                        intent,
-                    ))) if !matches!(intent, NomIntent::Reject(_)) => {
-                        let uid = symbol_or_kind_value(intent)
-                            .unwrap_or_else(|| "unknown".to_string());
+                    Some(ReActStep::Observation(Observation::Proposal(intent)))
+                        if !matches!(intent, NomIntent::Reject(_)) =>
+                    {
+                        let uid =
+                            symbol_or_kind_value(intent).unwrap_or_else(|| "unknown".to_string());
                         Ok(ReActStep::Action(AgentAction::Verify { target: uid }))
                     }
                     // Default: initial Query.
                     _ => {
-                        let subject = first_content_token(prose)
-                            .unwrap_or_else(|| prose.to_string());
+                        let subject =
+                            first_content_token(prose).unwrap_or_else(|| prose.to_string());
                         Ok(ReActStep::Action(AgentAction::Query {
                             subject,
                             kind: None,
@@ -100,9 +94,9 @@ impl ReActAdapter for NomCliAdapter {
             }
             ReActStep::Observation(obs) => match obs {
                 // Empty candidates → give up (CRAG signal: retrieval was weak).
-                Observation::Candidates(c) if c.is_empty() => Ok(ReActStep::Reject(
-                    Reason::UnknownSymbol,
-                )),
+                Observation::Candidates(c) if c.is_empty() => {
+                    Ok(ReActStep::Reject(Reason::UnknownSymbol))
+                }
                 // Got candidates → think about composing next.
                 Observation::Candidates(_) => Ok(ReActStep::Thought(
                     "compose a Nom from retrieved candidates".into(),
@@ -115,18 +109,14 @@ impl ReActAdapter for NomCliAdapter {
                     )),
                 },
                 // Verdict passed → answer. Look back for the last Proposal.
-                Observation::Verdict { passed: true, .. } => {
-                    match last_proposal(transcript) {
-                        Some(intent) => Ok(ReActStep::Answer(intent)),
-                        None => Ok(ReActStep::Reject(
-                            Reason::BelowConfidenceThreshold,
-                        )),
-                    }
-                }
+                Observation::Verdict { passed: true, .. } => match last_proposal(transcript) {
+                    Some(intent) => Ok(ReActStep::Answer(intent)),
+                    None => Ok(ReActStep::Reject(Reason::BelowConfidenceThreshold)),
+                },
                 // Verdict failed → reject (CRAG signal).
-                Observation::Verdict { passed: false, .. } => Ok(ReActStep::Reject(
-                    Reason::UnknownSymbol,
-                )),
+                Observation::Verdict { passed: false, .. } => {
+                    Ok(ReActStep::Reject(Reason::UnknownSymbol))
+                }
                 // Other observations (Rendered, Explanation, Error) default to
                 // terminating — nom-cli state machine doesn't chain them.
                 _ => Ok(ReActStep::Reject(Reason::BelowConfidenceThreshold)),
@@ -138,9 +128,7 @@ impl ReActAdapter for NomCliAdapter {
             // Action without following observation = wait state; shouldn't
             // happen because the ReAct driver appends Observation after
             // every Action. Defensive: emit Reject to terminate.
-            ReActStep::Action(_) => Ok(ReActStep::Reject(
-                Reason::BelowConfidenceThreshold,
-            )),
+            ReActStep::Action(_) => Ok(ReActStep::Reject(Reason::BelowConfidenceThreshold)),
         }
     }
 }
@@ -160,8 +148,8 @@ fn first_content_token(prose: &str) -> Option<String> {
     // words that won't match dict entries cleanly. Mirrors CRAG-style
     // narrowing: pick the most discriminating word.
     const STOP: &[&str] = &[
-        "a", "an", "the", "to", "of", "for", "and", "or", "is", "are",
-        "this", "that", "with", "add", "make", "do", "get",
+        "a", "an", "the", "to", "of", "for", "and", "or", "is", "are", "this", "that", "with",
+        "add", "make", "do", "get",
     ];
     prose
         .split(|c: char| !c.is_ascii_alphanumeric())
@@ -171,18 +159,13 @@ fn first_content_token(prose: &str) -> Option<String> {
         .or_else(|| {
             // Fallback: if every token is a stop word, take the first
             // one anyway (better than no query).
-            prose
-                .split_whitespace()
-                .next()
-                .map(|s| s.to_lowercase())
+            prose.split_whitespace().next().map(|s| s.to_lowercase())
         })
 }
 
 fn symbol_or_kind_value(intent: &NomIntent) -> Option<String> {
     match intent {
-        NomIntent::Kind(s) | NomIntent::Symbol(s) | NomIntent::Flow(s) => {
-            Some(s.clone())
-        }
+        NomIntent::Kind(s) | NomIntent::Symbol(s) | NomIntent::Flow(s) => Some(s.clone()),
         NomIntent::Reject(_) => None,
     }
 }
@@ -220,11 +203,7 @@ impl<R: std::io::Read, W: std::io::Write> McpAdapter<R, W> {
 }
 
 impl<R: std::io::Read, W: std::io::Write> ReActAdapter for McpAdapter<R, W> {
-    fn next_step(
-        &self,
-        prose: &str,
-        transcript: &[ReActStep],
-    ) -> Result<ReActStep, IntentError> {
+    fn next_step(&self, prose: &str, transcript: &[ReActStep]) -> Result<ReActStep, IntentError> {
         use std::io::BufRead;
 
         let id = self.next_id.get();
@@ -253,9 +232,9 @@ impl<R: std::io::Read, W: std::io::Write> ReActAdapter for McpAdapter<R, W> {
             writer.write_all(b"\n").map_err(|e| {
                 IntentError::RetrievalFailed(format!("McpAdapter: write newline: {e}"))
             })?;
-            writer.flush().map_err(|e| {
-                IntentError::RetrievalFailed(format!("McpAdapter: flush: {e}"))
-            })?;
+            writer
+                .flush()
+                .map_err(|e| IntentError::RetrievalFailed(format!("McpAdapter: flush: {e}")))?;
         }
 
         // Read response.
@@ -329,9 +308,7 @@ mod tests {
     #[test]
     fn empty_transcript_produces_opening_thought() {
         let adapter = NomCliAdapter::new();
-        let step = adapter
-            .next_step("add two numbers", &[])
-            .unwrap();
+        let step = adapter.next_step("add two numbers", &[]).unwrap();
         match step {
             ReActStep::Thought(t) => assert!(t.contains("query")),
             other => panic!("expected Thought, got {other:?}"),
@@ -391,10 +368,7 @@ mod tests {
     fn compose_thought_after_candidates_produces_compose_action() {
         let adapter = NomCliAdapter::new();
         let transcript = vec![
-            ReActStep::Observation(Observation::Candidates(vec![
-                "uid1".into(),
-                "uid2".into(),
-            ])),
+            ReActStep::Observation(Observation::Candidates(vec!["uid1".into(), "uid2".into()])),
             ReActStep::Thought("compose …".into()),
         ];
         let step = adapter.next_step("add two numbers", &transcript).unwrap();
@@ -448,7 +422,9 @@ mod tests {
         let adapter = NomCliAdapter::new();
         let transcript = vec![
             ReActStep::Observation(Observation::Proposal(NomIntent::Symbol("add".into()))),
-            ReActStep::Action(AgentAction::Verify { target: "add".into() }),
+            ReActStep::Action(AgentAction::Verify {
+                target: "add".into(),
+            }),
             ReActStep::Observation(Observation::Verdict {
                 passed: true,
                 failures: vec![],
@@ -481,10 +457,7 @@ mod tests {
             Some("two")
         );
         // All stop words → fallback to first token.
-        assert_eq!(
-            first_content_token("add the").as_deref(),
-            Some("add")
-        );
+        assert_eq!(first_content_token("add the").as_deref(), Some("add"));
         // Empty input → None.
         assert_eq!(first_content_token(""), None);
     }
@@ -524,7 +497,8 @@ mod tests {
 
     #[test]
     fn mcp_adapter_reports_remote_error() {
-        let resp = r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"LLM unavailable"}}"#;
+        let resp =
+            r#"{"jsonrpc":"2.0","id":1,"error":{"code":-32603,"message":"LLM unavailable"}}"#;
         let adapter = mcp_with_response(resp);
         let err = adapter.next_step("x", &[]).expect_err("must fail");
         match err {

@@ -32,17 +32,16 @@ fn main() {
 
     // Compile the target initialization wrapper
     // This is needed because LLVM target init functions are inline in the C headers
-    let include_dir = if std::path::Path::new(&format!("{}\\llvm-c\\Target.h", llvm_include_dir))
-        .exists()
-    {
-        llvm_include_dir.clone()
-    } else if std::path::Path::new(&format!("{}\\llvm-c\\Target.h", local_include)).exists() {
-        local_include
-    } else {
-        // Fallback: skip target wrapper compilation
-        println!("cargo:warning=LLVM-C headers not found, skipping target wrapper compilation");
-        return;
-    };
+    let include_dir =
+        if std::path::Path::new(&format!("{}\\llvm-c\\Target.h", llvm_include_dir)).exists() {
+            llvm_include_dir.clone()
+        } else if std::path::Path::new(&format!("{}\\llvm-c\\Target.h", local_include)).exists() {
+            local_include
+        } else {
+            // Fallback: skip target wrapper compilation
+            println!("cargo:warning=LLVM-C headers not found, skipping target wrapper compilation");
+            return;
+        };
 
     cc::Build::new()
         .file("wrappers/target.c")

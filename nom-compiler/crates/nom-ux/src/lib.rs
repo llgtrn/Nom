@@ -30,8 +30,7 @@ impl Platform {
     /// Every platform in a stable order. Mirrors
     /// [`nom_media::Modality::ALL`] and [`nom_types::body_kind::ALL`]
     /// for consistent enumeration across the scaffolded crates.
-    pub const ALL: &'static [Platform] =
-        &[Platform::Web, Platform::Desktop, Platform::Mobile];
+    pub const ALL: &'static [Platform] = &[Platform::Web, Platform::Desktop, Platform::Mobile];
 
     /// The word name of the `ui_runtime_launch` specialization for
     /// this platform. The resolver walks `Specializes` edges from the
@@ -93,10 +92,7 @@ mod tests {
 
     #[test]
     fn platform_maps_to_runtime_launch_word() {
-        assert_eq!(
-            Platform::Web.runtime_launch_word(),
-            "ui_runtime_launch_web"
-        );
+        assert_eq!(Platform::Web.runtime_launch_word(), "ui_runtime_launch_web");
         assert_eq!(
             Platform::Desktop.runtime_launch_word(),
             "ui_runtime_launch_desktop"

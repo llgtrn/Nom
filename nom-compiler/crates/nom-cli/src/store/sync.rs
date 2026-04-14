@@ -2,14 +2,11 @@
 
 use std::path::Path;
 
-use nom_concept::{
-    NomtuItem, parse_nom as concept_parse_nom, parse_nomtu,
-};
-use nom_dict::{ConceptRow, NomDict, EntityRow};
+use nom_concept::NomtuItem;
+use nom_concept::stages::{PipelineOutput, run_pipeline};
+use nom_dict::{ConceptRow, Dict, EntityRow, upsert_concept_def, upsert_entity};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
-
-use super::open_dict;
 
 /// Statistics returned by `sync_repo`.
 #[derive(Debug, Default)]
@@ -38,10 +35,7 @@ const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "build"];
 /// and be called here instead.
 /// TODO: replace `serde_json` hash with a proper deterministic canonicaliser
 /// once `nom-concept::canonical_bytes()` is implemented (doc 08 §5.1).
-pub fn sync_repo(
-    repo: &Path,
-    dict: &NomDict,
-) -> (SyncStats, Vec<String>) {
+pub fn sync_repo(repo: &Path, dict: &Dict) -> (SyncStats, Vec<String>) {
     let mut stats = SyncStats::default();
     let mut errors: Vec<String> = Vec::new();
 
@@ -87,10 +81,18 @@ pub fn sync_repo(
                     }
                 };
 
-                let nomtu = match parse_nomtu(&src) {
-                    Ok(f) => f,
+                let pipeline = match run_pipeline(&src) {
+                    Ok(out) => out,
                     Err(e) => {
-                        errors.push(format!("{rel}: parse error: {e}"));
+                        errors.push(format!("{rel}: pipeline error: {:?}", e));
+                        continue;
+                    }
+                };
+
+                let nomtu = match pipeline {
+                    PipelineOutput::Nomtu(f) => f,
+                    PipelineOutput::Nom(_) => {
+                        errors.push(format!("{rel}: expected nomtu output, got nom output"));
                         continue;
                     }
                 };
@@ -98,9 +100,6 @@ pub fn sync_repo(
                 for item in &nomtu.items {
                     match item {
                         NomtuItem::Entity(entity) => {
-                            // TODO: replace with nom-concept canonical_bytes once
-                            // implemented (doc 08 §5.1); serde_json is deterministic
-                            // for simple structs but not guaranteed across versions.
                             let canon = match serde_json::to_vec(entity) {
                                 Ok(b) => b,
                                 Err(e) => {
@@ -123,17 +122,14 @@ pub fn sync_repo(
                                 contracts: contracts_json,
                                 body_kind: None,
                                 body_size: None,
-                                origin_ref: None,
+                                origin_ref: Some(rel.clone()),
                                 bench_ids: None,
                                 authored_in: Some(rel.clone()),
                                 composed_of: None,
                             };
 
-                            if let Err(e) = dict.upsert_entity(&row) {
-                                errors.push(format!(
-                                    "{rel}: upsert entity `{}`: {e}",
-                                    entity.word
-                                ));
+                            if let Err(e) = upsert_entity(dict, &row) {
+                                errors.push(format!("{rel}: upsert entity `{}`: {e}", entity.word));
                                 continue;
                             }
                             stats.entities += 1;
@@ -150,14 +146,12 @@ pub fn sync_repo(
                             };
                             let hash = format!("{:x}", Sha256::digest(&canon));
 
-                            // Collect resolved hashes from EntityRefs where available.
                             let composes_hashes: Vec<String> = comp
                                 .composes
                                 .iter()
                                 .filter_map(|r| r.hash.clone())
                                 .collect();
                             let composed_of = if composes_hashes.is_empty() {
-                                // Store word refs instead so the row isn't empty.
                                 let words: Vec<String> =
                                     comp.composes.iter().map(|r| r.word.clone()).collect();
                                 serde_json::to_string(&words).ok()
@@ -173,13 +167,13 @@ pub fn sync_repo(
                                 contracts: None,
                                 body_kind: None,
                                 body_size: None,
-                                origin_ref: None,
+                                origin_ref: Some(rel.clone()),
                                 bench_ids: None,
                                 authored_in: Some(rel.clone()),
                                 composed_of,
                             };
 
-                            if let Err(e) = dict.upsert_entity(&row) {
+                            if let Err(e) = upsert_entity(dict, &row) {
                                 errors.push(format!(
                                     "{rel}: upsert composition `{}`: {e}",
                                     comp.word
@@ -202,10 +196,18 @@ pub fn sync_repo(
                     }
                 };
 
-                let nom_file = match concept_parse_nom(&src) {
-                    Ok(f) => f,
+                let pipeline = match run_pipeline(&src) {
+                    Ok(out) => out,
                     Err(e) => {
-                        errors.push(format!("{rel}: parse error: {e}"));
+                        errors.push(format!("{rel}: pipeline error: {:?}", e));
+                        continue;
+                    }
+                };
+
+                let nom_file = match pipeline {
+                    PipelineOutput::Nom(f) => f,
+                    PipelineOutput::Nomtu(_) => {
+                        errors.push(format!("{rel}: expected nom output, got nomtu output"));
                         continue;
                     }
                 };
@@ -213,8 +215,8 @@ pub fn sync_repo(
                 let src_hash = format!("{:x}", Sha256::digest(src.as_bytes()));
 
                 for concept in &nom_file.concepts {
-                    let index_json = serde_json::to_string(&concept.index)
-                        .unwrap_or_else(|_| "[]".to_string());
+                    let index_json =
+                        serde_json::to_string(&concept.index).unwrap_or_else(|_| "[]".to_string());
                     let exposes_json = serde_json::to_string(&concept.exposes)
                         .unwrap_or_else(|_| "[]".to_string());
                     let acceptance_json = serde_json::to_string(&concept.acceptance)
@@ -235,11 +237,8 @@ pub fn sync_repo(
                         body_hash: None,
                     };
 
-                    if let Err(e) = dict.upsert_concept_def(&row) {
-                        errors.push(format!(
-                            "{rel}: upsert concept `{}`: {e}",
-                            concept.name
-                        ));
+                    if let Err(e) = upsert_concept_def(dict, &row) {
+                        errors.push(format!("{rel}: upsert concept `{}`: {e}", concept.name));
                         continue;
                     }
                     stats.concepts += 1;
@@ -258,9 +257,12 @@ pub fn sync_repo(
 
 /// CLI entry point: `nom store sync <repo>`.
 pub fn cmd_store_sync(repo: &Path, dict: &Path) -> i32 {
-    let dict_db = match open_dict(dict) {
-        Some(d) => d,
-        None => return 1,
+    let dict_db = match Dict::try_open_from_nomdict_path(dict) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open split dict at {}: {e}", dict.display());
+            return 1;
+        }
     };
 
     let (stats, errors) = sync_repo(repo, &dict_db);

@@ -295,18 +295,59 @@ impl Dict {
     pub fn root(&self) -> &Path {
         &self.root
     }
+
+    /// Returns the path to the equivalent nomdict.db file for compatibility
+    /// with NomDict::db_path(). Returns the directory containing the split files.
+    pub fn path(&self) -> PathBuf {
+        self.root.clone()
+    }
+
+    /// Try to open Dict from a nomdict.db path or directory.
+    /// Bridges from the legacy NomDict single-file layout to the split two-file layout.
+    /// If `path` points to a file, uses its parent directory.
+    /// If `path` points to a directory, uses it directly.
+    /// Returns Err if Dict files don't exist at the target location.
+    pub fn try_open_from_nomdict_path(path: &Path) -> Result<Self> {
+        // Determine the target directory:
+        // - if path is a file, use its parent
+        // - if path is a directory, use it directly
+        let target_dir = if path.is_dir() {
+            path.to_path_buf()
+        } else if let Some(parent) = path.parent() {
+            parent.to_path_buf()
+        } else {
+            anyhow::bail!("Cannot infer directory from path: {}", path.display())
+        };
+
+        // Check that both files exist before attempting to open
+        let concepts_file = target_dir.join(CONCEPTS_FILENAME);
+        let entities_file = target_dir.join(ENTITIES_FILENAME);
+
+        if !concepts_file.exists() {
+            anyhow::bail!("concepts tier not found at {}", concepts_file.display());
+        }
+        if !entities_file.exists() {
+            anyhow::bail!("entities tier not found at {}", entities_file.display());
+        }
+
+        Self::open_dir(&target_dir)
+    }
 }
 
 fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
     if let Some(parent) = path.parent() {
         if !parent.as_os_str().is_empty() {
-            std::fs::create_dir_all(parent)
-                .with_context(|| format!("creating parent dir for {} tier at {}", label, path.display()))?;
+            std::fs::create_dir_all(parent).with_context(|| {
+                format!(
+                    "creating parent dir for {} tier at {}",
+                    label,
+                    path.display()
+                )
+            })?;
         }
     }
-    let conn = Connection::open(path).with_context(|| {
-        format!("opening {} tier at {}", label, path.display())
-    })?;
+    let conn = Connection::open(path)
+        .with_context(|| format!("opening {} tier at {}", label, path.display()))?;
     conn.pragma_update(None, "journal_mode", "WAL")?;
     conn.pragma_update(None, "synchronous", "NORMAL")?;
     conn.pragma_update(None, "cache_size", "-64000")?;
@@ -324,8 +365,12 @@ fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
 // taking &Dict; `NomDict` methods stay in place as single-file fallback until
 // S8 removes them.
 
-use crate::{EntityRow, row_to_entity, row_to_entry};
-use nom_types::{Entry, EntryScores, EntrySignature, SecurityFinding, Severity};
+use crate::{
+    Concept, ConceptRow, EntityRow, EntryFilter, RequiredAxis, row_to_entity, row_to_entry,
+};
+use nom_types::{
+    Entry, EntryScores, EntrySignature, GraphEdge, SecurityFinding, Severity, Translation,
+};
 use rusqlite::{OptionalExtension, params};
 
 /// Insert-or-update a row in `entities` on the entities tier.
@@ -479,9 +524,7 @@ pub fn resolve_prefix(d: &Dict, prefix: &str) -> Result<String> {
     match hashes.len() {
         0 => anyhow::bail!("no entity hash matches prefix `{prefix}`"),
         1 => Ok(hashes.into_iter().next().unwrap()),
-        _ => anyhow::bail!(
-            "ambiguous prefix `{prefix}` — multiple entity hashes match"
-        ),
+        _ => anyhow::bail!("ambiguous prefix `{prefix}` — multiple entity hashes match"),
     }
 }
 
@@ -544,9 +587,7 @@ pub fn list_partial_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
             "SELECT id FROM entries WHERE status = 'partial' ORDER BY id LIMIT {}",
             n
         ),
-        None => {
-            "SELECT id FROM entries WHERE status = 'partial' ORDER BY id".to_string()
-        }
+        None => "SELECT id FROM entries WHERE status = 'partial' ORDER BY id".to_string(),
     };
     let mut stmt = d.entities.prepare(&sql)?;
     let rows = stmt
@@ -558,9 +599,9 @@ pub fn list_partial_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
 /// Read every (key, value) row in `entry_meta` for an entry, ordered
 /// for deterministic iteration. Mirrors `NomDict::get_meta`.
 pub fn get_meta(d: &Dict, id: &str) -> Result<Vec<(String, String)>> {
-    let mut stmt = d.entities.prepare_cached(
-        "SELECT key, value FROM entry_meta WHERE id = ?1 ORDER BY key, value",
-    )?;
+    let mut stmt = d
+        .entities
+        .prepare_cached("SELECT key, value FROM entry_meta WHERE id = ?1 ORDER BY key, value")?;
     let rows = stmt
         .query_map(rusqlite::params![id], |row| {
             Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -572,9 +613,9 @@ pub fn get_meta(d: &Dict, id: &str) -> Result<Vec<(String, String)>> {
 /// List the structural refs out of an entry, ordered by target id.
 /// Mirrors `NomDict::get_refs`.
 pub fn get_refs(d: &Dict, id: &str) -> Result<Vec<String>> {
-    let mut stmt = d.entities.prepare_cached(
-        "SELECT to_id FROM entry_refs WHERE from_id = ?1 ORDER BY to_id",
-    )?;
+    let mut stmt = d
+        .entities
+        .prepare_cached("SELECT to_id FROM entry_refs WHERE from_id = ?1 ORDER BY to_id")?;
     let rows = stmt
         .query_map(rusqlite::params![id], |row| row.get::<_, String>(0))?
         .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -672,6 +713,163 @@ pub fn add_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Result<
     Ok(changed == 1)
 }
 
+/// Insert or replace a `concept_defs` row on the concepts tier.
+/// Mirrors `NomDict::upsert_concept_def`.
+pub fn upsert_concept_def(d: &Dict, row: &ConceptRow) -> Result<()> {
+    d.concepts.execute(
+        "INSERT INTO concept_defs
+             (name, repo_id, intent, index_into_db2, exposes, acceptance,
+              objectives, src_path, src_hash, body_hash, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, datetime('now'), NULL)
+         ON CONFLICT(name) DO UPDATE SET
+             repo_id        = excluded.repo_id,
+             intent         = excluded.intent,
+             index_into_db2 = excluded.index_into_db2,
+             exposes        = excluded.exposes,
+             acceptance     = excluded.acceptance,
+             objectives     = excluded.objectives,
+             src_path       = excluded.src_path,
+             src_hash       = excluded.src_hash,
+             body_hash      = excluded.body_hash,
+             updated_at     = datetime('now')",
+        params![
+            row.name,
+            row.repo_id,
+            row.intent,
+            row.index_into_db2,
+            row.exposes,
+            row.acceptance,
+            row.objectives,
+            row.src_path,
+            row.src_hash,
+            row.body_hash,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Fetch one `concept_defs` row by its primary key (`name`).
+/// Mirrors `NomDict::find_concept_def`.
+pub fn find_concept_def(d: &Dict, name: &str) -> Result<Option<ConceptRow>> {
+    let row = d
+        .concepts
+        .query_row(
+            "SELECT name, repo_id, intent, index_into_db2, exposes, acceptance,
+                    objectives, src_path, src_hash, body_hash
+             FROM concept_defs WHERE name = ?1",
+            rusqlite::params![name],
+            |row| {
+                Ok(ConceptRow {
+                    name: row.get(0)?,
+                    repo_id: row.get(1)?,
+                    intent: row.get(2)?,
+                    index_into_db2: row.get(3)?,
+                    exposes: row.get(4)?,
+                    acceptance: row.get(5)?,
+                    objectives: row.get(6)?,
+                    src_path: row.get(7)?,
+                    src_hash: row.get(8)?,
+                    body_hash: row.get(9)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Return all `concept_defs` rows for a given `repo_id`, ordered by name.
+/// Mirrors `NomDict::list_concept_defs_in_repo`.
+pub fn list_concept_defs_in_repo(d: &Dict, repo_id: &str) -> Result<Vec<ConceptRow>> {
+    let mut stmt = d.concepts.prepare_cached(
+        "SELECT name, repo_id, intent, index_into_db2, exposes, acceptance,
+                objectives, src_path, src_hash, body_hash
+         FROM concept_defs WHERE repo_id = ?1 ORDER BY name",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![repo_id], |row| {
+            Ok(ConceptRow {
+                name: row.get(0)?,
+                repo_id: row.get(1)?,
+                intent: row.get(2)?,
+                index_into_db2: row.get(3)?,
+                exposes: row.get(4)?,
+                acceptance: row.get(5)?,
+                objectives: row.get(6)?,
+                src_path: row.get(7)?,
+                src_hash: row.get(8)?,
+                body_hash: row.get(9)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Register or replace a required axis row on the concepts tier.
+/// Mirrors `NomDict::register_required_axis`.
+pub fn register_required_axis(
+    d: &Dict,
+    repo_id: &str,
+    scope: &str,
+    axis: &str,
+    cardinality: &str,
+) -> rusqlite::Result<()> {
+    if !matches!(scope, "app" | "concept" | "module") {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "unknown scope '{scope}': must be app, concept, or module"
+        )));
+    }
+    if !matches!(cardinality, "at_least_one" | "exactly_one") {
+        return Err(rusqlite::Error::InvalidParameterName(format!(
+            "unknown cardinality '{cardinality}': must be at_least_one or exactly_one"
+        )));
+    }
+    let axis_norm = axis.trim().to_ascii_lowercase();
+    let registered_at = format!(
+        "epoch-{}",
+        std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_secs())
+            .unwrap_or(0)
+    );
+    d.concepts.execute(
+        "INSERT INTO required_axes (axis, scope, cardinality, repo_id, registered_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(repo_id, scope, axis) DO UPDATE SET
+             cardinality   = excluded.cardinality,
+             registered_at = excluded.registered_at",
+        rusqlite::params![axis_norm, scope, cardinality, repo_id, registered_at],
+    )?;
+    Ok(())
+}
+
+/// Return all `required_axes` rows for a given `repo_id` + `scope`,
+/// ordered by axis for deterministic iteration.
+/// Mirrors `NomDict::list_required_axes`.
+pub fn list_required_axes(
+    d: &Dict,
+    repo_id: &str,
+    scope: &str,
+) -> rusqlite::Result<Vec<RequiredAxis>> {
+    let mut stmt = d.concepts.prepare_cached(
+        "SELECT repo_id, scope, axis, cardinality, registered_at
+         FROM required_axes
+         WHERE repo_id = ?1 AND scope = ?2
+         ORDER BY axis",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![repo_id, scope], |row| {
+            Ok(RequiredAxis {
+                repo_id: row.get(0)?,
+                scope: row.get(1)?,
+                axis: row.get(2)?,
+                cardinality: row.get(3)?,
+                registered_at: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 // ── S6 dict-split: 5 entries-tier mutators ────────────────────────────
 //
 // Faithful re-emit of the legacy `NomDict::*` setter SQL with
@@ -681,6 +879,214 @@ pub fn add_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Result<
 // accessibility) are populated by a different code path (the corpus
 // pilot) and remain NULL through this setter.
 
+/// Insert or replace a concept row on the concepts tier.
+/// Mirrors `NomDict::upsert_concept`.
+pub fn upsert_concept(d: &Dict, concept: &Concept) -> Result<()> {
+    d.concepts.execute(
+        "INSERT INTO concepts (id, name, describe, created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5)
+         ON CONFLICT(id) DO UPDATE SET
+             name       = excluded.name,
+             describe   = COALESCE(excluded.describe, concepts.describe),
+             updated_at = datetime('now')",
+        params![
+            concept.id,
+            concept.name,
+            concept.describe,
+            concept.created_at,
+            concept.updated_at,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Look up a concept by its human-readable name.
+/// Mirrors `NomDict::get_concept_by_name`.
+pub fn get_concept_by_name(d: &Dict, name: &str) -> Result<Option<Concept>> {
+    let row = d
+        .concepts
+        .query_row(
+            "SELECT id, name, describe, created_at, updated_at
+             FROM concepts WHERE name = ?1",
+            params![name.trim()],
+            |row| {
+                Ok(Concept {
+                    id: row.get(0)?,
+                    name: row.get(1)?,
+                    describe: row.get(2)?,
+                    created_at: row.get(3)?,
+                    updated_at: row.get(4)?,
+                })
+            },
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Return all concepts ordered alphabetically by name.
+/// Mirrors `NomDict::list_concepts`.
+pub fn list_concepts(d: &Dict) -> Result<Vec<Concept>> {
+    let mut stmt = d.concepts.prepare_cached(
+        "SELECT id, name, describe, created_at, updated_at FROM concepts ORDER BY name",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok(Concept {
+                id: row.get(0)?,
+                name: row.get(1)?,
+                describe: row.get(2)?,
+                created_at: row.get(3)?,
+                updated_at: row.get(4)?,
+            })
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Remove one entry from a concept (no-op if it was not a member).
+/// Mirrors `NomDict::remove_concept_member`.
+pub fn remove_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Result<()> {
+    d.concepts.execute(
+        "DELETE FROM concept_members WHERE concept_id = ?1 AND entry_id = ?2",
+        params![concept_id, entry_id],
+    )?;
+    Ok(())
+}
+
+/// Fetch all entries belonging to a concept, ordered by entry id.
+/// Mirrors `NomDict::get_concept_members`.
+pub fn get_concept_members(d: &Dict, concept_id: &str) -> Result<Vec<Entry>> {
+    let mut member_stmt = d.concepts.prepare_cached(
+        "SELECT entry_id FROM concept_members WHERE concept_id = ?1 ORDER BY entry_id",
+    )?;
+    let entry_ids = member_stmt
+        .query_map(params![concept_id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let mut rows = Vec::with_capacity(entry_ids.len());
+    let mut entry_stmt = d.entities.prepare_cached(
+        "SELECT id, word, variant, kind, language, describe, concept,
+                body, body_nom, input_type, output_type, pre, post,
+                status, translation_score, is_canonical, deprecated_by,
+                created_at, updated_at, body_kind, body_bytes
+         FROM entries
+         WHERE id = ?1",
+    )?;
+    for entry_id in entry_ids {
+        if let Some(entry) = entry_stmt
+            .query_row(params![entry_id], row_to_entry)
+            .optional()?
+        {
+            rows.push(entry);
+        }
+    }
+    Ok(rows)
+}
+
+/// Return the count of members in a concept.
+/// Mirrors `NomDict::count_concept_members`.
+pub fn count_concept_members(d: &Dict, concept_id: &str) -> Result<usize> {
+    let n: i64 = d.concepts.query_row(
+        "SELECT COUNT(*) FROM concept_members WHERE concept_id = ?1",
+        params![concept_id],
+        |row| row.get(0),
+    )?;
+    Ok(n as usize)
+}
+
+/// Delete a `required_axes` row and report whether anything changed.
+/// Mirrors `NomDict::unregister_required_axis`.
+pub fn unregister_required_axis(
+    d: &Dict,
+    repo_id: &str,
+    scope: &str,
+    axis: &str,
+) -> rusqlite::Result<bool> {
+    let axis_norm = axis.trim().to_ascii_lowercase();
+    let n = d.concepts.execute(
+        "DELETE FROM required_axes WHERE repo_id = ?1 AND scope = ?2 AND axis = ?3",
+        params![repo_id, scope, axis_norm],
+    )?;
+    Ok(n > 0)
+}
+
+/// Seed the canonical app-scope axis set.
+/// Mirrors `NomDict::seed_standard_axes`.
+pub fn seed_standard_axes(
+    d: &Dict,
+    repo_id: &str,
+) -> rusqlite::Result<Vec<(String, String, String)>> {
+    const STANDARD: &[(&str, &str, &str)] = &[
+        ("app", "correctness", "at_least_one"),
+        ("app", "safety", "at_least_one"),
+        ("app", "performance", "at_least_one"),
+        ("app", "dependency", "at_least_one"),
+        ("app", "documentation", "at_least_one"),
+    ];
+    let mut seeded = Vec::with_capacity(STANDARD.len());
+    for (scope, axis, cardinality) in STANDARD {
+        register_required_axis(d, repo_id, scope, axis, cardinality)?;
+        seeded.push((scope.to_string(), axis.to_string(), cardinality.to_string()));
+    }
+    Ok(seeded)
+}
+
+/// Bulk-add every entry matching `filter` to the concept identified by `concept_id`.
+/// Mirrors `NomDict::add_concept_members_by_filter`.
+pub fn add_concept_members_by_filter(
+    d: &Dict,
+    concept_id: &str,
+    filter: &EntryFilter,
+) -> Result<usize> {
+    let mut sql = String::from(
+        "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                input_type, output_type, pre, post, status, translation_score,
+                is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes
+         FROM entries WHERE 1=1",
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(k) = &filter.body_kind {
+        sql.push_str(" AND body_kind = ?");
+        params_vec.push(Box::new(k.clone()) as Box<dyn rusqlite::ToSql>);
+    }
+    if let Some(l) = &filter.language {
+        sql.push_str(" AND language = ?");
+        params_vec.push(Box::new(l.clone()) as Box<dyn rusqlite::ToSql>);
+    }
+    if let Some(s) = filter.status {
+        sql.push_str(" AND status = ?");
+        params_vec.push(Box::new(s.as_str().to_string()) as Box<dyn rusqlite::ToSql>);
+    }
+    if let Some(k) = filter.kind {
+        sql.push_str(" AND kind = ?");
+        params_vec.push(Box::new(k.as_str().to_string()) as Box<dyn rusqlite::ToSql>);
+    }
+    sql.push_str(&format!(" ORDER BY id LIMIT {}", filter.limit.max(1)));
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = d.entities.prepare(&sql)?;
+    let entries = stmt
+        .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+
+    let tx = d.concepts.unchecked_transaction()?;
+    let mut added = 0usize;
+    {
+        let mut insert_stmt = tx.prepare_cached(
+            "INSERT OR IGNORE INTO concept_members (concept_id, entry_id) VALUES (?1, ?2)",
+        )?;
+        for entry in &entries {
+            let changed = insert_stmt.execute(params![concept_id, entry.id])?;
+            if changed == 1 {
+                added += 1;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(added)
+}
+
+/// Insert or replace a concept row on the concepts tier.
+/// Mirrors `NomDict::upsert_concept`.
 /// Insert or replace an entry's score row. Updates the legacy 8
 /// dimensions; the T3.2-extended `quality`, `maintenance`,
 /// `accessibility` columns are left untouched (NULL or whatever the
@@ -789,8 +1195,7 @@ pub fn add_ref(d: &Dict, from_id: &str, to_id: &str) -> Result<()> {
 // the SELECT lists are byte-identical with the legacy version so
 // callers swap by pure rename.
 
-const ENTRY_SELECT: &str =
-    "SELECT id, word, variant, kind, language, describe, concept, body, body_nom, \
+const ENTRY_SELECT: &str = "SELECT id, word, variant, kind, language, describe, concept, body, body_nom, \
      input_type, output_type, pre, post, status, translation_score, \
      is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes \
      FROM entries";
@@ -889,6 +1294,267 @@ pub fn get_findings(d: &Dict, id: &str) -> Result<Vec<SecurityFinding>> {
     Ok(rows)
 }
 
+/// Add a graph edge between two entries. Mirrors `NomDict::add_graph_edge`.
+pub fn add_graph_edge(d: &Dict, edge: &GraphEdge) -> Result<()> {
+    d.entities.execute(
+        "INSERT INTO entry_graph_edges (from_id, to_id, edge_type, confidence)
+         VALUES (?1, ?2, ?3, ?4)",
+        params![
+            edge.from_id,
+            edge.to_id,
+            edge.edge_type.as_str(),
+            edge.confidence,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Append a translation (unique per (id, target_language, translator_version)).
+/// Mirrors `NomDict::add_translation`.
+pub fn add_translation(d: &Dict, t: &Translation) -> Result<()> {
+    d.entities.execute(
+        "INSERT OR IGNORE INTO entry_translations
+             (id, target_language, body, confidence, translator_version, created_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+        params![
+            t.id,
+            t.target_language,
+            t.body,
+            t.confidence,
+            t.translator_version,
+            t.created_at,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Bulk-set quality scores for entries in a transaction.
+/// Mirrors `NomDict::bulk_set_scores`.
+pub fn bulk_set_scores(d: &Dict, scores: &[EntryScores]) -> Result<()> {
+    let tx = d.entities.unchecked_transaction()?;
+    {
+        let mut stmt = tx.prepare_cached(
+            "INSERT OR REPLACE INTO entry_scores
+                 (id, security, reliability, performance, readability, testability,
+                  portability, composability, maturity, overall_score)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+        )?;
+        for s in scores {
+            stmt.execute(params![
+                s.id,
+                s.security,
+                s.reliability,
+                s.performance,
+                s.readability,
+                s.testability,
+                s.portability,
+                s.composability,
+                s.maturity,
+                s.overall_score,
+            ])?;
+        }
+    }
+    tx.commit()?;
+    Ok(())
+}
+
+/// Fetch a single entry by id. Mirrors `NomDict::get_entry`.
+pub fn get_entry(d: &Dict, id: &str) -> Result<Option<Entry>> {
+    let row = d
+        .entities
+        .query_row(
+            "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                    input_type, output_type, pre, post, status, translation_score,
+                    is_canonical, deprecated_by, created_at, updated_at, body_kind,
+                    body_bytes
+             FROM entries WHERE id = ?1",
+            params![id],
+            row_to_entry,
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Bulk INSERT OR IGNORE entries in a transaction.
+/// Returns the count of rows actually inserted (duplicates ignored).
+/// Mirrors `NomDict::bulk_upsert`.
+pub fn bulk_upsert(d: &Dict, entries: &[Entry]) -> Result<usize> {
+    let tx = d.entities.unchecked_transaction()?;
+    let mut inserted = 0;
+    {
+        let mut stmt = tx.prepare_cached(
+            "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe,
+                                            concept, body, body_nom, input_type, output_type,
+                                            pre, post, status, translation_score, is_canonical,
+                                            deprecated_by, created_at, updated_at, body_kind,
+                                            body_bytes)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+        )?;
+        for e in entries {
+            let rows = stmt.execute(params![
+                e.id,
+                e.word,
+                e.variant,
+                e.kind.as_str(),
+                e.language,
+                e.describe,
+                e.concept,
+                e.body,
+                e.body_nom,
+                e.contract.input_type,
+                e.contract.output_type,
+                e.contract.pre,
+                e.contract.post,
+                e.status.as_str(),
+                e.translation_score,
+                e.is_canonical,
+                e.deprecated_by,
+                e.created_at,
+                e.updated_at,
+                e.body_kind,
+                e.body_bytes,
+            ])?;
+            if rows > 0 {
+                inserted += 1;
+            }
+        }
+    }
+    tx.commit()?;
+    Ok(inserted)
+}
+
+/// Insert-or-update an entry with selective COALESCE-based field merging.
+/// On conflict (same id): replaces unconditional fields (word, variant, kind, etc.),
+/// but only updates optional fields (describe, concept, body, etc.) if the new
+/// value is NOT NULL (using COALESCE to preserve existing values if new is NULL).
+/// Mirrors `NomDict::upsert_entry`.
+pub fn upsert_entry(d: &Dict, entry: &Entry) -> Result<String> {
+    d.entities.execute(
+        "INSERT INTO entries (id, word, variant, kind, language, describe, concept,
+                              body, body_nom, input_type, output_type, pre, post,
+                              status, translation_score, is_canonical, deprecated_by,
+                              created_at, updated_at, body_kind, body_bytes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)
+         ON CONFLICT(id) DO UPDATE SET
+             word              = excluded.word,
+             variant           = excluded.variant,
+             kind              = excluded.kind,
+             language          = excluded.language,
+             describe          = COALESCE(excluded.describe, entries.describe),
+             concept           = COALESCE(excluded.concept, entries.concept),
+             body              = COALESCE(excluded.body, entries.body),
+             body_nom          = COALESCE(excluded.body_nom, entries.body_nom),
+             body_kind         = COALESCE(excluded.body_kind, entries.body_kind),
+             body_bytes        = COALESCE(excluded.body_bytes, entries.body_bytes),
+             status            = excluded.status,
+             translation_score = COALESCE(excluded.translation_score, entries.translation_score),
+             is_canonical      = excluded.is_canonical,
+             deprecated_by     = COALESCE(excluded.deprecated_by, entries.deprecated_by),
+             updated_at        = datetime('now')",
+        params![
+            entry.id,
+            entry.word,
+            entry.variant,
+            entry.kind.as_str(),
+            entry.language,
+            entry.describe,
+            entry.concept,
+            entry.body,
+            entry.body_nom,
+            entry.contract.input_type,
+            entry.contract.output_type,
+            entry.contract.pre,
+            entry.contract.post,
+            entry.status.as_str(),
+            entry.translation_score,
+            entry.is_canonical,
+            entry.deprecated_by,
+            entry.created_at,
+            entry.updated_at,
+            entry.body_kind,
+            entry.body_bytes,
+        ],
+    )?;
+    Ok(entry.id.clone())
+}
+
+/// Try-insert an entry without a prior existence check (corpus-ingest path).
+/// Returns `true` if the row was newly inserted, `false` if the id existed
+/// and the INSERT was skipped (no-op).
+/// Unlike `upsert_entry`, this does NOT replace on conflict — the existing
+/// row is preserved. Designed for corpus deduplication without SELECT overhead.
+/// Mirrors `NomDict::upsert_entry_if_new`.
+pub fn upsert_entry_if_new(d: &Dict, entry: &Entry) -> Result<bool> {
+    let changed = d.entities.execute(
+        "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe, concept,
+                                        body, body_nom, input_type, output_type, pre, post,
+                                        status, translation_score, is_canonical, deprecated_by,
+                                        created_at, updated_at, body_kind, body_bytes)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, ?17, ?18, ?19, ?20, ?21)",
+        params![
+            entry.id,
+            entry.word,
+            entry.variant,
+            entry.kind.as_str(),
+            entry.language,
+            entry.describe,
+            entry.concept,
+            entry.body,
+            entry.body_nom,
+            entry.contract.input_type,
+            entry.contract.output_type,
+            entry.contract.pre,
+            entry.contract.post,
+            entry.status.as_str(),
+            entry.translation_score,
+            entry.is_canonical,
+            entry.deprecated_by,
+            entry.created_at,
+            entry.updated_at,
+            entry.body_kind,
+            entry.body_bytes,
+        ],
+    )?;
+    Ok(changed == 1)
+}
+
+/// Unified filter query for entries: each present field in the filter
+/// adds an AND clause. Results ordered by id for determinism.
+/// An empty filter returns the first `limit` entries (default 50).
+/// Mirrors `NomDict::find_entries`.
+pub fn find_entries(d: &Dict, f: &EntryFilter) -> Result<Vec<Entry>> {
+    let mut sql = String::from(
+        "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
+                input_type, output_type, pre, post, status, translation_score,
+                is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes
+         FROM entries WHERE 1=1",
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    if let Some(k) = &f.body_kind {
+        sql.push_str(" AND body_kind = ?");
+        params_vec.push(Box::new(k.clone()));
+    }
+    if let Some(l) = &f.language {
+        sql.push_str(" AND language = ?");
+        params_vec.push(Box::new(l.clone()));
+    }
+    if let Some(s) = f.status {
+        sql.push_str(" AND status = ?");
+        params_vec.push(Box::new(s.as_str().to_string()));
+    }
+    if let Some(k) = f.kind {
+        sql.push_str(" AND kind = ?");
+        params_vec.push(Box::new(k.as_str().to_string()));
+    }
+    sql.push_str(&format!(" ORDER BY id LIMIT {}", f.limit.max(1)));
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = d.entities.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -925,10 +1591,7 @@ mod tests {
     fn open_in_memory_has_both_connections() {
         let d = Dict::open_in_memory().unwrap();
         // Both connections respond to a trivial query — confirms schema applied.
-        let a: i64 = d
-            .concepts
-            .query_row("SELECT 1", [], |r| r.get(0))
-            .unwrap();
+        let a: i64 = d.concepts.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
         let b: i64 = d.entities.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
         assert_eq!(a, 1);
         assert_eq!(b, 1);
@@ -1114,11 +1777,9 @@ mod tests {
             .unwrap();
         let got_kind: String = d
             .entities
-            .query_row(
-                "SELECT kind FROM entities WHERE hash = 'abc123'",
-                [],
-                |r| r.get(0),
-            )
+            .query_row("SELECT kind FROM entities WHERE hash = 'abc123'", [], |r| {
+                r.get(0)
+            })
             .unwrap();
         assert_eq!(got_kind, "function");
     }
@@ -1212,7 +1873,10 @@ mod tests {
                 |_| Ok(true),
             )
             .unwrap_or(false);
-        assert!(!concepts_has_table, "concepts tier should have no entities table");
+        assert!(
+            !concepts_has_table,
+            "concepts tier should have no entities table"
+        );
         assert_eq!(count_entities(&d).unwrap(), 1);
     }
 
@@ -1252,11 +1916,7 @@ mod tests {
     fn body_kind_histogram_groups_with_untagged_bucket() {
         let d = Dict::open_in_memory().unwrap();
         // Two bc, one untagged (NULL body_kind).
-        for (h, kind) in [
-            ("h1", Some("bc")),
-            ("h2", Some("bc")),
-            ("h3", None::<&str>),
-        ] {
+        for (h, kind) in [("h1", Some("bc")), ("h2", Some("bc")), ("h3", None::<&str>)] {
             d.entities
                 .execute(
                     "INSERT INTO entities (hash, word, kind, body_kind) \
@@ -1267,7 +1927,10 @@ mod tests {
         }
         let h = body_kind_histogram(&d).unwrap();
         // 'bc' bucket first (count 2), then '(untagged)' (count 1).
-        assert_eq!(h, vec![("bc".to_string(), 2), ("(untagged)".to_string(), 1)]);
+        assert_eq!(
+            h,
+            vec![("bc".to_string(), 2), ("(untagged)".to_string(), 1)]
+        );
     }
 
     #[test]
@@ -1396,6 +2059,21 @@ mod tests {
             .unwrap();
     }
 
+    fn make_concept_row(name: &str, repo_id: &str) -> ConceptRow {
+        ConceptRow {
+            name: name.to_string(),
+            repo_id: repo_id.to_string(),
+            intent: format!("intent of {name}"),
+            index_into_db2: r#"[{"hash":"abc","label":"foo"}]"#.to_string(),
+            exposes: "[]".to_string(),
+            acceptance: "[]".to_string(),
+            objectives: "[]".to_string(),
+            src_path: format!("src/{name}.nom"),
+            src_hash: "deadbeef".to_string(),
+            body_hash: None,
+        }
+    }
+
     #[test]
     fn closure_walks_entry_refs_in_bfs_order_and_skips_cycles() {
         let d = Dict::open_in_memory().unwrap();
@@ -1466,11 +2144,170 @@ mod tests {
         delete_concept(&d, "missing").unwrap();
     }
 
+    #[test]
+    fn concept_def_round_trip_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        let row = ConceptRow {
+            name: "auth_system".to_string(),
+            repo_id: "repo-abc".to_string(),
+            intent: "Validates JWT tokens for API access".to_string(),
+            index_into_db2: r#"[{"hash":"cafebabe","label":"validate_token_jwt"}]"#.to_string(),
+            exposes: r#"["validate_token_jwt"]"#.to_string(),
+            acceptance: r#"[{"given":"valid jwt","expect":"true"}]"#.to_string(),
+            objectives: r#"["security","reliability"]"#.to_string(),
+            src_path: "src/auth.nom".to_string(),
+            src_hash: "0011223344556677".to_string(),
+            body_hash: Some("aabbccdd".to_string()),
+        };
+        upsert_concept_def(&d, &row).unwrap();
+
+        let fetched = find_concept_def(&d, "auth_system").unwrap().unwrap();
+        assert_eq!(fetched, row);
+    }
+
+    #[test]
+    fn concept_def_upsert_overwrites_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        let mut row = make_concept_row("payments", "repo-pay");
+        upsert_concept_def(&d, &row).unwrap();
+
+        let original = find_concept_def(&d, "payments").unwrap().unwrap();
+        assert_eq!(original.intent, "intent of payments");
+
+        row.intent = "Process Stripe + PayPal transactions".to_string();
+        upsert_concept_def(&d, &row).unwrap();
+
+        let updated = find_concept_def(&d, "payments").unwrap().unwrap();
+        assert_eq!(updated.intent, "Process Stripe + PayPal transactions");
+
+        let all = list_concept_defs_in_repo(&d, "repo-pay").unwrap();
+        assert_eq!(all.len(), 1);
+    }
+
+    #[test]
+    fn register_and_list_roundtrip_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        register_required_axis(&d, "repo-a", "concept", "security", "at_least_one").unwrap();
+        register_required_axis(&d, "repo-a", "concept", "safety", "exactly_one").unwrap();
+
+        let axes = list_required_axes(&d, "repo-a", "concept").unwrap();
+        assert_eq!(axes.len(), 2, "expected 2 axes, got: {axes:?}");
+        assert_eq!(axes[0].axis, "safety");
+        assert_eq!(axes[0].cardinality, "exactly_one");
+        assert_eq!(axes[1].axis, "security");
+        assert_eq!(axes[1].cardinality, "at_least_one");
+    }
+
+    #[test]
+    fn register_required_axis_rejects_unknown_scope_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        let err = register_required_axis(&d, "repo-x", "planet", "correctness", "at_least_one")
+            .unwrap_err();
+        let msg = err.to_string();
+        assert!(
+            msg.contains("planet") || msg.contains("scope"),
+            "error must mention invalid scope: {msg}"
+        );
+    }
+
+    #[test]
+    fn register_required_axis_normalizes_axis_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        register_required_axis(&d, "repo-b", "module", " Security ", "at_least_one").unwrap();
+        register_required_axis(&d, "repo-b", "module", "SECURITY", "exactly_one").unwrap();
+        let axes = list_required_axes(&d, "repo-b", "module").unwrap();
+        assert_eq!(axes.len(), 1);
+        assert_eq!(axes[0].axis, "security");
+        assert_eq!(axes[0].cardinality, "exactly_one");
+    }
+
+    #[test]
+    fn concept_round_trip_free_fns() {
+        let d = Dict::open_in_memory().unwrap();
+        let concept = Concept {
+            id: "cid_crypto".to_string(),
+            name: "cryptography".to_string(),
+            describe: Some("Hashing, signing, encryption".to_string()),
+            created_at: "2026-04-14T00:00:00Z".to_string(),
+            updated_at: None,
+        };
+        upsert_concept(&d, &concept).unwrap();
+
+        let fetched = get_concept_by_name(&d, "cryptography").unwrap().unwrap();
+        assert_eq!(fetched.id, concept.id);
+        assert_eq!(fetched.name, concept.name);
+        assert_eq!(fetched.describe, concept.describe);
+
+        let listed = list_concepts(&d).unwrap();
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].name, "cryptography");
+    }
+
+    #[test]
+    fn concept_member_remove_and_count_free_fns() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "cid", "math");
+        seed_full_entry(&d, "entry_a", "add", None, None);
+        seed_full_entry(&d, "entry_b", "mul", None, None);
+
+        assert!(add_concept_member(&d, "cid", "entry_a").unwrap());
+        assert!(add_concept_member(&d, "cid", "entry_b").unwrap());
+        assert_eq!(count_concept_members(&d, "cid").unwrap(), 2);
+
+        let members = get_concept_members(&d, "cid").unwrap();
+        let ids: Vec<&str> = members.iter().map(|e| e.id.as_str()).collect();
+        assert_eq!(ids, vec!["entry_a", "entry_b"]);
+
+        remove_concept_member(&d, "cid", "entry_a").unwrap();
+        assert_eq!(count_concept_members(&d, "cid").unwrap(), 1);
+    }
+
+    #[test]
+    fn unregister_required_axis_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        register_required_axis(&d, "repo-z", "app", "performance", "at_least_one").unwrap();
+        assert!(unregister_required_axis(&d, "repo-z", "app", "performance").unwrap());
+        assert!(!unregister_required_axis(&d, "repo-z", "app", "performance").unwrap());
+    }
+
+    #[test]
+    fn seed_standard_axes_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        let seeded = seed_standard_axes(&d, "app-seed").unwrap();
+        assert_eq!(seeded.len(), 5);
+        let listed = list_required_axes(&d, "app-seed", "app").unwrap();
+        assert_eq!(listed.len(), 5);
+    }
+
+    #[test]
+    fn add_concept_members_by_filter_free_fn() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_concept(&d, "cid", "services");
+        seed_full_entry(&d, "e1", "auth", Some("module"), Some("Auth module"));
+        seed_full_entry(&d, "e2", "cache", Some("module"), Some("Cache module"));
+        seed_full_entry(&d, "e3", "log", Some("function"), Some("Log helper"));
+
+        let filter = EntryFilter {
+            body_kind: Some("module".to_string()),
+            limit: 50,
+            ..EntryFilter::default()
+        };
+        let added = add_concept_members_by_filter(&d, "cid", &filter).unwrap();
+        assert_eq!(added, 2);
+        assert_eq!(count_concept_members(&d, "cid").unwrap(), 2);
+    }
+
     // ── S6 port tests ──────────────────────────────────────────────
 
     // ── S7 port tests ──────────────────────────────────────────────
 
-    fn seed_full_entry(d: &Dict, id: &str, word: &str, body_kind: Option<&str>, describe: Option<&str>) {
+    fn seed_full_entry(
+        d: &Dict,
+        id: &str,
+        word: &str,
+        body_kind: Option<&str>,
+        describe: Option<&str>,
+    ) {
         d.entities
             .execute(
                 "INSERT INTO entries (id, word, kind, language, status, body_kind, describe) \
@@ -1590,9 +2427,11 @@ mod tests {
         set_scores(&d, "h_s", &updated).unwrap();
         let n: i64 = d
             .entities
-            .query_row("SELECT COUNT(*) FROM entry_scores WHERE id = 'h_s'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM entry_scores WHERE id = 'h_s'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 1);
         let overall: Option<f32> = d
@@ -1616,9 +2455,11 @@ mod tests {
         add_meta(&d, "h_m", "tag", "beta").unwrap();
         let n: i64 = d
             .entities
-            .query_row("SELECT COUNT(*) FROM entry_meta WHERE id = 'h_m'", [], |r| {
-                r.get(0)
-            })
+            .query_row(
+                "SELECT COUNT(*) FROM entry_meta WHERE id = 'h_m'",
+                [],
+                |r| r.get(0),
+            )
             .unwrap();
         assert_eq!(n, 2, "two distinct (key, value) tuples expected");
     }

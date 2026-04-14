@@ -63,9 +63,8 @@ fn pipeline_never_panics_on_any_example_shape() {
     let (_dir, conn) = open_baseline();
     let rows = fetch_example_shapes(&conn);
     for (id, shape) in &rows {
-        let result = std::panic::catch_unwind(AssertUnwindSafe(|| {
-            run_pipeline_with_grammar(shape, &conn)
-        }));
+        let result =
+            std::panic::catch_unwind(AssertUnwindSafe(|| run_pipeline_with_grammar(shape, &conn)));
         assert!(
             result.is_ok(),
             "parser panicked on pattern '{id}' example_shape: {shape:?}"
@@ -101,7 +100,13 @@ fn every_pattern_intent_is_distinct() {
         )
         .expect("prepare");
     let dupes: Vec<(String, i64, String)> = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, i64>(1)?, r.get::<_, String>(2)?)))
+        .query_map([], |r| {
+            Ok((
+                r.get::<_, String>(0)?,
+                r.get::<_, i64>(1)?,
+                r.get::<_, String>(2)?,
+            ))
+        })
         .expect("query")
         .map(|r| r.expect("row"))
         .collect();
@@ -152,7 +157,13 @@ fn every_pattern_intent_pair_jaccard_below_threshold() {
             let (ref b_id, ref b_text, ref b_set) = rows[j];
             let jacc = nom_grammar::jaccard(a_set, b_set);
             if jacc >= THRESHOLD {
-                hits.push((jacc, a_id.clone(), b_id.clone(), a_text.clone(), b_text.clone()));
+                hits.push((
+                    jacc,
+                    a_id.clone(),
+                    b_id.clone(),
+                    a_text.clone(),
+                    b_text.clone(),
+                ));
             }
         }
     }
@@ -182,7 +193,9 @@ fn pattern_example_shapes_dashboard() {
         match run_pipeline_with_grammar(shape, &conn) {
             Ok(_) => passed += 1,
             Err(err) => {
-                *failed_by_stage.entry(err.stage.code().to_string()).or_insert(0) += 1;
+                *failed_by_stage
+                    .entry(err.stage.code().to_string())
+                    .or_insert(0) += 1;
             }
         }
     }

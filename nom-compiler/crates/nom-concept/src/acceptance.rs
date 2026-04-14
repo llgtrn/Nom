@@ -8,8 +8,8 @@
 //! Doc 08 §9.1: "every iteration that swaps a child must re-evaluate ALL of
 //! the parent's predicates and refuse swaps that drop or weaken any."
 
-use std::collections::hash_map::DefaultHasher;
 use std::collections::HashSet;
+use std::collections::hash_map::DefaultHasher;
 use std::hash::{Hash, Hasher};
 
 use serde::{Deserialize, Serialize};
@@ -245,7 +245,10 @@ mod tests {
     fn hash_stable_across_formatting() {
         let h1 = predicate_text_hash("users reach dashboard within 200 ms");
         let h2 = predicate_text_hash("  Users Reach Dashboard  Within  200 ms  ");
-        assert_eq!(h1, h2, "hashes must match despite whitespace/case differences");
+        assert_eq!(
+            h1, h2,
+            "hashes must match despite whitespace/case differences"
+        );
     }
 
     // 4. clean when sets match
@@ -326,8 +329,16 @@ mod tests {
             "expected one rewording: {:?}",
             report
         );
-        assert_eq!(report.dropped.len(), 0, "drop list must be empty for a rewording");
-        assert_eq!(report.added.len(), 0, "add list must be empty for a rewording");
+        assert_eq!(
+            report.dropped.len(),
+            0,
+            "drop list must be empty for a rewording"
+        );
+        assert_eq!(
+            report.added.len(),
+            0,
+            "add list must be empty for a rewording"
+        );
         assert!(!has_violations(&report));
         assert!(
             report.reworded[0].similarity > 0.5,

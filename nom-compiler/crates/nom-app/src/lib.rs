@@ -12,6 +12,9 @@
 //! + ingestion of real apps arrives incrementally; the kinds and
 //! builder shapes below define the surface.
 
+use nom_dict::dict::{
+    closure as compute_closure, find_by_word, get_entry, get_findings, search_describe,
+};
 use thiserror::Error;
 
 /// Composition kind tags for app-layer entries.
@@ -181,7 +184,7 @@ pub struct Artifact {
 /// Compile an app manifest into a fan-out of per-aspect artifacts.
 ///
 /// Scaffold form — returns one empty `Artifact` per aspect. Use
-/// [`compile_app_to_artifacts_with_dict`] when a [`nom_dict::NomDict`]
+/// [`compile_app_to_artifacts_with_dict`] when a [`nom_dict::Dict`]
 /// is available; that path populates aspects from real dictionary
 /// state (closure walk, security findings, etc.).
 pub fn compile_app_to_artifacts(manifest: &AppManifest) -> Result<Vec<Artifact>, AppError> {
@@ -221,7 +224,7 @@ fn manifest_roots(manifest: &AppManifest) -> Vec<String> {
 ///   message, line}]}` ordered by (severity DESC, entry_id ASC).
 pub fn compile_app_to_artifacts_with_dict(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<Artifact>, AppError> {
     let target = manifest.default_target_platform();
     let mut out = Vec::with_capacity(OutputAspect::ALL.len());
@@ -249,13 +252,13 @@ pub fn compile_app_to_artifacts_with_dict(
 
 fn build_security_aspect(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<u8>, AppError> {
     use std::collections::BTreeSet;
 
     let mut closure: BTreeSet<String> = BTreeSet::new();
     for root in manifest_roots(manifest) {
-        match dict.closure(&root) {
+        match compute_closure(dict, &root) {
             Ok(ids) => closure.extend(ids),
             Err(_) => {
                 // Treat missing-root as not-in-dict; the app build is
@@ -277,7 +280,7 @@ fn build_security_aspect(
 
     let mut all: Vec<nom_types::SecurityFinding> = Vec::new();
     for id in &closure {
-        match dict.get_findings(id) {
+        match get_findings(dict, id) {
             Ok(mut fs) => all.append(&mut fs),
             Err(_) => {}
         }
@@ -309,15 +312,12 @@ fn build_security_aspect(
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
 
-fn build_ux_aspect(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Result<Vec<u8>, AppError> {
+fn build_ux_aspect(manifest: &AppManifest, dict: &nom_dict::Dict) -> Result<Vec<u8>, AppError> {
     use std::collections::BTreeSet;
 
     let mut closure: BTreeSet<String> = BTreeSet::new();
     for root in manifest_roots(manifest) {
-        if let Ok(ids) = dict.closure(&root) {
+        if let Ok(ids) = compute_closure(dict, &root) {
             closure.extend(ids);
         }
     }
@@ -337,7 +337,7 @@ fn build_ux_aspect(
 
     let mut entries: Vec<nom_types::Entry> = Vec::new();
     for id in &closure {
-        if let Ok(Some(e)) = dict.get_entry(id) {
+        if let Ok(Some(e)) = get_entry(dict, id) {
             entries.push(e);
         }
     }
@@ -373,30 +373,24 @@ fn build_ux_aspect(
 
 /// Collect the full closure + fetch every entry. Shared helper for
 /// aspect populators that need more than just ids.
-fn closure_entries(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Vec<nom_types::Entry> {
+fn closure_entries(manifest: &AppManifest, dict: &nom_dict::Dict) -> Vec<nom_types::Entry> {
     use std::collections::BTreeSet;
     let mut ids: BTreeSet<String> = BTreeSet::new();
     for root in manifest_roots(manifest) {
-        if let Ok(c) = dict.closure(&root) {
+        if let Ok(c) = compute_closure(dict, &root) {
             ids.extend(c);
         }
     }
     let mut out = Vec::with_capacity(ids.len());
     for id in &ids {
-        if let Ok(Some(e)) = dict.get_entry(id) {
+        if let Ok(Some(e)) = get_entry(dict, id) {
             out.push(e);
         }
     }
     out
 }
 
-fn build_env_aspect(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Result<Vec<u8>, AppError> {
+fn build_env_aspect(manifest: &AppManifest, dict: &nom_dict::Dict) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     let data_sources: Vec<&nom_types::Entry> = entries
         .iter()
@@ -441,7 +435,7 @@ fn build_env_aspect(
 
 fn build_bizlogic_aspect(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     #[derive(serde::Serialize)]
@@ -480,10 +474,7 @@ fn build_bizlogic_aspect(
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
 
-fn build_bench_aspect(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Result<Vec<u8>, AppError> {
+fn build_bench_aspect(manifest: &AppManifest, dict: &nom_dict::Dict) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     #[derive(serde::Serialize)]
     struct Row<'a> {
@@ -510,7 +501,7 @@ fn build_bench_aspect(
 
 fn build_response_aspect(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     #[derive(serde::Serialize)]
@@ -545,10 +536,7 @@ fn build_response_aspect(
     Ok(serde_json::to_vec_pretty(&doc)?)
 }
 
-fn build_flow_aspect(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Result<Vec<u8>, AppError> {
+fn build_flow_aspect(manifest: &AppManifest, dict: &nom_dict::Dict) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     #[derive(serde::Serialize)]
     struct Row<'a> {
@@ -575,7 +563,7 @@ fn build_flow_aspect(
 
 fn build_criteria_aspect(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
     let total = entries.len();
@@ -663,7 +651,7 @@ pub struct DictHint {
 fn collect_proposals(
     manifest: &AppManifest,
     entries: &[nom_types::Entry],
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Vec<Proposal> {
     let mut out: Vec<Proposal> = Vec::new();
 
@@ -682,7 +670,7 @@ fn collect_proposals(
 
     // Manifest roots that don't resolve in the dict.
     for root in manifest_roots(manifest) {
-        if dict.get_entry(&root).ok().flatten().is_none() {
+        if get_entry(dict, &root).ok().flatten().is_none() {
             out.push(Proposal {
                 kind: "missing_root".into(),
                 rationale: format!(
@@ -764,10 +752,7 @@ fn collect_proposals(
 }
 
 /// Public entry point for the MCP `criteria_proposals` tool.
-pub fn criteria_proposals(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Vec<Proposal> {
+pub fn criteria_proposals(manifest: &AppManifest, dict: &nom_dict::Dict) -> Vec<Proposal> {
     let entries = closure_entries(manifest, dict);
     let mut proposals = collect_proposals(manifest, &entries, dict);
     attach_dict_hints(&mut proposals, dict);
@@ -783,17 +768,19 @@ pub fn criteria_proposals(
 /// Sorted desc by score, ties broken by entry_id asc. Silently keeps
 /// hints empty on query failure; dreaming mode must tolerate a
 /// partially-populated dict.
-fn attach_dict_hints(proposals: &mut [Proposal], dict: &nom_dict::NomDict) {
+fn attach_dict_hints(proposals: &mut [Proposal], dict: &nom_dict::Dict) {
     use std::collections::HashMap;
 
     for p in proposals.iter_mut() {
-        let Some(word) = p.suggested_word.clone() else { continue };
+        let Some(word) = p.suggested_word.clone() else {
+            continue;
+        };
         if word.is_empty() {
             continue;
         }
 
         let mut scored: HashMap<String, (u8, DictHint)> = HashMap::new();
-        if let Ok(rows) = dict.find_by_word(&word) {
+        if let Ok(rows) = find_by_word(dict, &word) {
             for e in rows {
                 let score = if e.word == word { 3 } else { 2 };
                 scored
@@ -824,7 +811,7 @@ fn attach_dict_hints(proposals: &mut [Proposal], dict: &nom_dict::NomDict) {
                     ));
             }
         }
-        if let Ok(rows) = dict.search_describe(&word, 10) {
+        if let Ok(rows) = search_describe(dict, &word, 10) {
             for e in rows {
                 scored.entry(e.id.clone()).or_insert((
                     1,
@@ -875,7 +862,7 @@ pub struct DreamReport {
 
 /// Compute a DreamReport for the manifest — the single source of
 /// truth for both Criteria-aspect scoring and the dream CLI.
-pub fn dream_report(manifest: &AppManifest, dict: &nom_dict::NomDict) -> DreamReport {
+pub fn dream_report(manifest: &AppManifest, dict: &nom_dict::Dict) -> DreamReport {
     let entries = closure_entries(manifest, dict);
     let mut proposals = collect_proposals(manifest, &entries, dict);
     attach_dict_hints(&mut proposals, dict);
@@ -962,10 +949,7 @@ fn compute_app_score(
 /// The BOM fixes what would be linked + in what order. The `body_bytes`
 /// themselves stay in the dict (content-addressed) rather than being
 /// copied into the BOM — keeps output small even for big apps.
-fn build_core_aspect(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> Result<Vec<u8>, AppError> {
+fn build_core_aspect(manifest: &AppManifest, dict: &nom_dict::Dict) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
 
     #[derive(serde::Serialize)]
@@ -1002,7 +986,7 @@ fn build_core_aspect(
 
 fn build_optimize_aspect(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
 ) -> Result<Vec<u8>, AppError> {
     let entries = closure_entries(manifest, dict);
 
@@ -1032,8 +1016,10 @@ fn build_optimize_aspect(
         .collect();
 
     // Per-language byte totals for platform specialization planning.
-    let mut per_language: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
-    let mut per_body_kind: std::collections::BTreeMap<String, u64> = std::collections::BTreeMap::new();
+    let mut per_language: std::collections::BTreeMap<String, u64> =
+        std::collections::BTreeMap::new();
+    let mut per_body_kind: std::collections::BTreeMap<String, u64> =
+        std::collections::BTreeMap::new();
     let mut total_bytes: u64 = 0;
     for s in &sized {
         *per_language.entry(s.language.to_string()).or_insert(0) += s.body_bytes as u64;
@@ -1045,7 +1031,11 @@ fn build_optimize_aspect(
 
     // Top-10 largest — specialization candidates.
     let mut top: Vec<&SizedEntry> = sized.iter().collect();
-    top.sort_by(|a, b| b.body_bytes.cmp(&a.body_bytes).then(a.entry_id.cmp(b.entry_id)));
+    top.sort_by(|a, b| {
+        b.body_bytes
+            .cmp(&a.body_bytes)
+            .then(a.entry_id.cmp(b.entry_id))
+    });
     top.truncate(10);
 
     // Score summary — which entries are gold-standard vs need translator work.
@@ -1144,10 +1134,7 @@ pub struct LayeredDreamReport {
 /// Compute a `LayeredDreamReport` at the App tier. Wraps the existing
 /// `dream_report` — identical semantics, richer envelope. `child_reports`
 /// and `pareto_front` are empty in this M5a wedge.
-pub fn layered_dream_app(
-    manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
-) -> LayeredDreamReport {
+pub fn layered_dream_app(manifest: &AppManifest, dict: &nom_dict::Dict) -> LayeredDreamReport {
     let leaf = dream_report(manifest, dict);
     LayeredDreamReport {
         tier: DreamTier::App,
@@ -1166,11 +1153,8 @@ pub fn layered_dream_app(
 /// synthetic single-entry `AppManifest` rooted at the first matching entry and
 /// delegates to `dream_report`. If the word is not in the dict, returns a
 /// zero-score leaf with a descriptive `next_instruction`.
-pub fn layered_dream_concept(
-    concept_word: &str,
-    dict: &nom_dict::NomDict,
-) -> LayeredDreamReport {
-    let entries = dict.find_by_word(concept_word).unwrap_or_default();
+pub fn layered_dream_concept(concept_word: &str, dict: &nom_dict::Dict) -> LayeredDreamReport {
+    let entries = find_by_word(dict, concept_word).unwrap_or_default();
     let leaf = if let Some(entry) = entries.into_iter().next() {
         let manifest = AppManifest {
             manifest_hash: entry.id.clone(),
@@ -1255,7 +1239,7 @@ fn direct_child_concepts(decl: &nom_concept::ConceptDecl) -> Vec<String> {
 /// as `layered_dream_concept` on miss.
 pub fn layered_dream_app_recursive(
     manifest: &AppManifest,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
     graph: &nom_concept::ConceptGraph,
     required_axes: &[(String, String)],
 ) -> LayeredDreamReport {
@@ -1299,7 +1283,7 @@ pub fn layered_dream_app_recursive(
 /// dict-only path (score determined by dict lookup alone).
 pub fn layered_dream_concept_recursive(
     concept_word: &str,
-    dict: &nom_dict::NomDict,
+    dict: &nom_dict::Dict,
     graph: &nom_concept::ConceptGraph,
     seen: &mut std::collections::HashSet<String>,
     required_axes: &[(String, String)],
@@ -1315,9 +1299,7 @@ pub fn layered_dream_concept_recursive(
             partial: 0,
             test_cases: 0,
             proposals: vec![],
-            next_instruction: format!(
-                "cycle detected at {concept_word}; child dream skipped"
-            ),
+            next_instruction: format!("cycle detected at {concept_word}; child dream skipped"),
         };
         return LayeredDreamReport {
             tier: DreamTier::Concept,
@@ -1425,8 +1407,7 @@ pub fn pareto_front_of(candidates: &[LayeredDreamReport]) -> Vec<String> {
         .map(|r| Axes {
             score: r.leaf.app_score,
             complete: r.leaf.complete,
-            low_partial: 1.0
-                - (r.leaf.partial as f32 / r.leaf.closure_size.max(1) as f32),
+            low_partial: 1.0 - (r.leaf.partial as f32 / r.leaf.closure_size.max(1) as f32),
         })
         .collect();
 
@@ -1499,6 +1480,7 @@ pub enum AppError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom_dict::dict::{add_finding, upsert_entry};
 
     #[test]
     fn app_kind_is_known_recognizes_all_variants() {
@@ -1544,7 +1526,10 @@ mod tests {
         assert_eq!(OutputAspect::Core.extension(Some(Platform::Mobile)), "apk");
         assert_eq!(OutputAspect::Core.extension(Some(Platform::Desktop)), "bin");
         assert_eq!(OutputAspect::Core.extension(None), "bin");
-        assert_eq!(OutputAspect::Security.extension(Some(Platform::Web)), "json");
+        assert_eq!(
+            OutputAspect::Security.extension(Some(Platform::Web)),
+            "json"
+        );
     }
 
     #[test]
@@ -1561,20 +1546,24 @@ mod tests {
         };
         let artifacts = compile_app_to_artifacts(&m).unwrap();
         assert_eq!(artifacts.len(), OutputAspect::ALL.len());
-        let core = artifacts.iter().find(|a| a.aspect == OutputAspect::Core).unwrap();
+        let core = artifacts
+            .iter()
+            .find(|a| a.aspect == OutputAspect::Core)
+            .unwrap();
         assert_eq!(core.path, "app.wasm");
-        let sec = artifacts.iter().find(|a| a.aspect == OutputAspect::Security).unwrap();
+        let sec = artifacts
+            .iter()
+            .find(|a| a.aspect == OutputAspect::Security)
+            .unwrap();
         assert_eq!(sec.path, "app.security.json");
     }
 
     #[test]
     fn security_aspect_serializes_findings_from_closure() {
-        use nom_dict::NomDict;
-        use nom_types::{
-            Contract, Entry, EntryKind, EntryStatus, SecurityFinding, Severity,
-        };
+        use nom_dict::Dict;
+        use nom_types::{Contract, Entry, EntryKind, EntryStatus, SecurityFinding, Severity};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let make = |id: &str, word: &str| Entry {
             id: id.into(),
             word: word.into(),
@@ -1595,9 +1584,10 @@ mod tests {
             created_at: "2026-04-13T00:00:00Z".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&make("root", "root_page")).unwrap();
-        dict.upsert_entry(&make("act1", "act")).unwrap();
-        dict.add_finding(
+        upsert_entry(&dict, &make("root", "root_page")).unwrap();
+        upsert_entry(&dict, &make("act1", "act")).unwrap();
+        add_finding(
+            &dict,
             "root",
             &SecurityFinding {
                 finding_id: 0,
@@ -1612,7 +1602,8 @@ mod tests {
             },
         )
         .unwrap();
-        dict.add_finding(
+        add_finding(
+            &dict,
             "act1",
             &SecurityFinding {
                 finding_id: 0,
@@ -1639,7 +1630,10 @@ mod tests {
             settings: serde_json::Value::Null,
         };
         let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
-        let sec = arts.iter().find(|a| a.aspect == OutputAspect::Security).unwrap();
+        let sec = arts
+            .iter()
+            .find(|a| a.aspect == OutputAspect::Security)
+            .unwrap();
         let doc: serde_json::Value = serde_json::from_slice(&sec.bytes).unwrap();
         assert_eq!(doc["app"], "demo");
         assert_eq!(doc["closure_size"], 2);
@@ -1653,10 +1647,10 @@ mod tests {
 
     #[test]
     fn ux_aspect_serializes_screens_and_pages_from_closure() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let make = |id: &str, word: &str, kind: EntryKind| Entry {
             id: id.into(),
             word: word.into(),
@@ -1677,10 +1671,10 @@ mod tests {
             created_at: "2026-04-13T00:00:00Z".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&make("home", "home", EntryKind::Page)).unwrap();
-        dict.upsert_entry(&make("login", "login", EntryKind::Screen)).unwrap();
-        dict.upsert_entry(&make("signup", "signup_flow", EntryKind::UserFlow)).unwrap();
-        dict.upsert_entry(&make("btn_pat", "primary_btn", EntryKind::UxPattern)).unwrap();
+        upsert_entry(&dict, &make("home", "home", EntryKind::Page)).unwrap();
+        upsert_entry(&dict, &make("login", "login", EntryKind::Screen)).unwrap();
+        upsert_entry(&dict, &make("signup", "signup_flow", EntryKind::UserFlow)).unwrap();
+        upsert_entry(&dict, &make("btn_pat", "primary_btn", EntryKind::UxPattern)).unwrap();
 
         let manifest = AppManifest {
             manifest_hash: "m".into(),
@@ -1706,10 +1700,10 @@ mod tests {
 
     #[test]
     fn all_populators_emit_valid_json_for_populated_aspects() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let mk_kind = |id: &str, kind: EntryKind| Entry {
             id: id.into(),
             word: id.into(),
@@ -1735,13 +1729,13 @@ mod tests {
             created_at: "2026-04-13T00:00:00Z".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&mk_kind("root", EntryKind::Page)).unwrap();
-        dict.upsert_entry(&mk_kind("ds", EntryKind::DataSource)).unwrap();
-        dict.upsert_entry(&mk_kind("av", EntryKind::AppVariable)).unwrap();
-        dict.upsert_entry(&mk_kind("bench", EntryKind::BenchmarkRun)).unwrap();
-        dict.upsert_entry(&mk_kind("api", EntryKind::ApiEndpoint)).unwrap();
-        dict.upsert_entry(&mk_kind("flow", EntryKind::FlowArtifact)).unwrap();
-        dict.upsert_entry(&mk_kind("test", EntryKind::TestCase)).unwrap();
+        upsert_entry(&dict, &mk_kind("root", EntryKind::Page)).unwrap();
+        upsert_entry(&dict, &mk_kind("ds", EntryKind::DataSource)).unwrap();
+        upsert_entry(&dict, &mk_kind("av", EntryKind::AppVariable)).unwrap();
+        upsert_entry(&dict, &mk_kind("bench", EntryKind::BenchmarkRun)).unwrap();
+        upsert_entry(&dict, &mk_kind("api", EntryKind::ApiEndpoint)).unwrap();
+        upsert_entry(&dict, &mk_kind("flow", EntryKind::FlowArtifact)).unwrap();
+        upsert_entry(&dict, &mk_kind("test", EntryKind::TestCase)).unwrap();
 
         let manifest = AppManifest {
             manifest_hash: "m".into(),
@@ -1761,92 +1755,143 @@ mod tests {
         };
 
         assert_eq!(parse(OutputAspect::Env)["target_platform"], "desktop");
-        assert_eq!(parse(OutputAspect::Env)["data_sources"].as_array().unwrap().len(), 1);
-        assert_eq!(parse(OutputAspect::Env)["app_variables"].as_array().unwrap().len(), 1);
-        assert_eq!(parse(OutputAspect::BizLogic)["rules"].as_array().unwrap().len(), 7);
-        assert_eq!(parse(OutputAspect::Bench)["benchmark_runs"].as_array().unwrap().len(), 1);
-        assert_eq!(parse(OutputAspect::Response)["endpoints"].as_array().unwrap().len(), 1);
-        assert_eq!(parse(OutputAspect::Flow)["flow_artifacts"].as_array().unwrap().len(), 1);
-        assert_eq!(parse(OutputAspect::Criteria)["test_cases"].as_array().unwrap().len(), 1);
+        assert_eq!(
+            parse(OutputAspect::Env)["data_sources"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse(OutputAspect::Env)["app_variables"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse(OutputAspect::BizLogic)["rules"]
+                .as_array()
+                .unwrap()
+                .len(),
+            7
+        );
+        assert_eq!(
+            parse(OutputAspect::Bench)["benchmark_runs"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse(OutputAspect::Response)["endpoints"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse(OutputAspect::Flow)["flow_artifacts"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
+        assert_eq!(
+            parse(OutputAspect::Criteria)["test_cases"]
+                .as_array()
+                .unwrap()
+                .len(),
+            1
+        );
         assert_eq!(parse(OutputAspect::Criteria)["closure_size"], 7);
     }
 
     #[test]
     fn criteria_proposals_surface_weird_gaps() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         // Complete entry — no proposal.
-        dict.upsert_entry(&Entry {
-            id: "good".into(),
-            word: "fine".into(),
-            variant: None,
-            kind: EntryKind::Function,
-            language: "nom".into(),
-            describe: None,
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: None,
-            body_kind: None,
-            contract: Contract::default(),
-            status: EntryStatus::Complete,
-            translation_score: None,
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: "t".into(),
-            updated_at: None,
-        })
+        upsert_entry(
+            &dict,
+            &Entry {
+                id: "good".into(),
+                word: "fine".into(),
+                variant: None,
+                kind: EntryKind::Function,
+                language: "nom".into(),
+                describe: None,
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract::default(),
+                status: EntryStatus::Complete,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: "t".into(),
+                updated_at: None,
+            },
+        )
         .unwrap();
         // Partial entry — should produce a partial_entry proposal.
-        dict.upsert_entry(&Entry {
-            id: "half".into(),
-            word: "rough".into(),
-            variant: None,
-            kind: EntryKind::Function,
-            language: "nom".into(),
-            describe: None,
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: None,
-            body_kind: None,
-            contract: Contract::default(),
-            status: EntryStatus::Partial,
-            translation_score: None,
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: "t".into(),
-            updated_at: None,
-        })
+        upsert_entry(
+            &dict,
+            &Entry {
+                id: "half".into(),
+                word: "rough".into(),
+                variant: None,
+                kind: EntryKind::Function,
+                language: "nom".into(),
+                describe: None,
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract::default(),
+                status: EntryStatus::Partial,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: "t".into(),
+                updated_at: None,
+            },
+        )
         .unwrap();
         // Entry with pre but no post — unbalanced contract.
-        dict.upsert_entry(&Entry {
-            id: "lopsided".into(),
-            word: "needs_post".into(),
-            variant: None,
-            kind: EntryKind::Function,
-            language: "nom".into(),
-            describe: None,
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: None,
-            body_kind: None,
-            contract: Contract {
-                input_type: None,
-                output_type: None,
-                pre: Some("x > 0".into()),
-                post: None,
+        upsert_entry(
+            &dict,
+            &Entry {
+                id: "lopsided".into(),
+                word: "needs_post".into(),
+                variant: None,
+                kind: EntryKind::Function,
+                language: "nom".into(),
+                describe: None,
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract {
+                    input_type: None,
+                    output_type: None,
+                    pre: Some("x > 0".into()),
+                    post: None,
+                },
+                status: EntryStatus::Complete,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: "t".into(),
+                updated_at: None,
             },
-            status: EntryStatus::Complete,
-            translation_score: None,
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: "t".into(),
-            updated_at: None,
-        })
+        )
         .unwrap();
 
         let manifest = AppManifest {
@@ -1862,14 +1907,26 @@ mod tests {
 
         let proposals = criteria_proposals(&manifest, &dict);
         let kinds: Vec<&str> = proposals.iter().map(|p| p.kind.as_str()).collect();
-        assert!(kinds.contains(&"missing_root"), "expected missing_root for ghost: {kinds:?}");
-        assert!(kinds.contains(&"partial_entry"), "expected partial_entry for half: {kinds:?}");
-        assert!(kinds.contains(&"unbalanced_contract"), "expected unbalanced: {kinds:?}");
+        assert!(
+            kinds.contains(&"missing_root"),
+            "expected missing_root for ghost: {kinds:?}"
+        );
+        assert!(
+            kinds.contains(&"partial_entry"),
+            "expected partial_entry for half: {kinds:?}"
+        );
+        assert!(
+            kinds.contains(&"unbalanced_contract"),
+            "expected unbalanced: {kinds:?}"
+        );
         assert!(kinds.contains(&"no_tests"), "expected no_tests: {kinds:?}");
 
         // Also exercised via Criteria aspect.
         let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
-        let crit = arts.iter().find(|a| a.aspect == OutputAspect::Criteria).unwrap();
+        let crit = arts
+            .iter()
+            .find(|a| a.aspect == OutputAspect::Criteria)
+            .unwrap();
         let doc: serde_json::Value = serde_json::from_slice(&crit.bytes).unwrap();
         assert_eq!(doc["is_epic"], false);
         assert!(doc["proposals"].as_array().unwrap().len() >= 4);
@@ -1881,10 +1938,10 @@ mod tests {
 
     #[test]
     fn dream_report_scores_zero_for_empty_and_high_for_clean() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let manifest_empty = AppManifest {
             manifest_hash: "m".into(),
             name: "e".into(),
@@ -1923,11 +1980,10 @@ mod tests {
         };
         for i in 0..8 {
             let id = format!("ok{i}");
-            dict.upsert_entry(&mk(&id, EntryKind::Function, EntryStatus::Complete))
-                .unwrap();
+            upsert_entry(&dict, &mk(&id, EntryKind::Function, EntryStatus::Complete)).unwrap();
         }
-        dict.upsert_entry(&mk("t1", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
-        dict.upsert_entry(&mk("t2", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
+        upsert_entry(&dict, &mk("t1", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
+        upsert_entry(&dict, &mk("t2", EntryKind::TestCase, EntryStatus::Complete)).unwrap();
         let manifest_epic = AppManifest {
             manifest_hash: "m2".into(),
             name: "epic".into(),
@@ -1946,10 +2002,10 @@ mod tests {
 
     #[test]
     fn optimize_aspect_reports_sizes_and_top_candidates() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let mk = |id: &str, lang: &str, bc_size: usize, score: Option<f32>| Entry {
             id: id.into(),
             word: id.into(),
@@ -1970,9 +2026,9 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&mk("a", "rust", 1000, Some(0.9))).unwrap();
-        dict.upsert_entry(&mk("b", "rust", 500, Some(0.7))).unwrap();
-        dict.upsert_entry(&mk("c", "typescript", 200, None)).unwrap();
+        upsert_entry(&dict, &mk("a", "rust", 1000, Some(0.9))).unwrap();
+        upsert_entry(&dict, &mk("b", "rust", 500, Some(0.7))).unwrap();
+        upsert_entry(&dict, &mk("c", "typescript", 200, None)).unwrap();
 
         let manifest = AppManifest {
             manifest_hash: "m".into(),
@@ -1985,7 +2041,10 @@ mod tests {
             settings: serde_json::Value::Null,
         };
         let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
-        let opt = arts.iter().find(|x| x.aspect == OutputAspect::Optimize).unwrap();
+        let opt = arts
+            .iter()
+            .find(|x| x.aspect == OutputAspect::Optimize)
+            .unwrap();
         let doc: serde_json::Value = serde_json::from_slice(&opt.bytes).unwrap();
         assert_eq!(doc["closure_size"], 3);
         assert_eq!(doc["total_bytes"], 1700);
@@ -2001,10 +2060,10 @@ mod tests {
 
     #[test]
     fn dict_hints_surface_exact_word_match() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         // Seed dict with entries matching a word we'll suggest.
         let mk = |id: &str, word: &str, describe: Option<&str>| Entry {
             id: id.into(),
@@ -2026,35 +2085,43 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&mk("e1", "needs_post", Some("exact word match"))).unwrap();
-        dict.upsert_entry(&mk("e2", "something_else", Some("contains needs_post here"))).unwrap();
+        upsert_entry(&dict, &mk("e1", "needs_post", Some("exact word match"))).unwrap();
+        upsert_entry(
+            &dict,
+            &mk("e2", "something_else", Some("contains needs_post here")),
+        )
+        .unwrap();
 
         // Trigger unbalanced_contract proposal via an entry with pre-only.
-        dict.upsert_entry(&Entry {
-            id: "lopsided".into(),
-            word: "needs_post".into(),
-            variant: None,
-            kind: EntryKind::Function,
-            language: "nom".into(),
-            describe: None,
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: None,
-            body_kind: None,
-            contract: Contract {
-                input_type: None,
-                output_type: None,
-                pre: Some("x>0".into()),
-                post: None,
+        upsert_entry(
+            &dict,
+            &Entry {
+                id: "lopsided".into(),
+                word: "needs_post".into(),
+                variant: None,
+                kind: EntryKind::Function,
+                language: "nom".into(),
+                describe: None,
+                concept: None,
+                body: None,
+                body_nom: None,
+                body_bytes: None,
+                body_kind: None,
+                contract: Contract {
+                    input_type: None,
+                    output_type: None,
+                    pre: Some("x>0".into()),
+                    post: None,
+                },
+                status: EntryStatus::Complete,
+                translation_score: None,
+                is_canonical: true,
+                deprecated_by: None,
+                created_at: "t".into(),
+                updated_at: None,
             },
-            status: EntryStatus::Complete,
-            translation_score: None,
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: "t".into(),
-            updated_at: None,
-        }).unwrap();
+        )
+        .unwrap();
 
         let manifest = AppManifest {
             manifest_hash: "m".into(),
@@ -2072,7 +2139,10 @@ mod tests {
             .iter()
             .filter(|p| !p.dict_hints.is_empty())
             .collect();
-        assert!(!hinted.is_empty(), "expected at least one proposal with hints");
+        assert!(
+            !hinted.is_empty(),
+            "expected at least one proposal with hints"
+        );
         let first = &hinted[0];
         // exact word match should be top-scored (3)
         assert_eq!(first.dict_hints[0].match_score, 3);
@@ -2081,10 +2151,10 @@ mod tests {
 
     #[test]
     fn core_aspect_emits_bom_v0_with_bc_entries_only() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let mk = |id: &str, kind_tag: Option<&str>, size: usize| Entry {
             id: id.into(),
             word: id.into(),
@@ -2105,10 +2175,10 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&mk("a", Some("bc"), 1000)).unwrap();
-        dict.upsert_entry(&mk("b", Some("bc"), 500)).unwrap();
+        upsert_entry(&dict, &mk("a", Some("bc"), 1000)).unwrap();
+        upsert_entry(&dict, &mk("b", Some("bc"), 500)).unwrap();
         // Non-BC entry (png) should NOT appear in Core BOM.
-        dict.upsert_entry(&mk("img", Some("png"), 2048)).unwrap();
+        upsert_entry(&dict, &mk("img", Some("png"), 2048)).unwrap();
 
         let manifest = AppManifest {
             manifest_hash: "m".into(),
@@ -2121,7 +2191,10 @@ mod tests {
             settings: serde_json::Value::Null,
         };
         let arts = compile_app_to_artifacts_with_dict(&manifest, &dict).unwrap();
-        let core = arts.iter().find(|x| x.aspect == OutputAspect::Core).unwrap();
+        let core = arts
+            .iter()
+            .find(|x| x.aspect == OutputAspect::Core)
+            .unwrap();
         assert_eq!(core.path, "app.bin");
         let doc: serde_json::Value = serde_json::from_slice(&core.bytes).unwrap();
         assert_eq!(doc["format"], "nom-bom-v0");
@@ -2141,10 +2214,10 @@ mod tests {
         // §10.3.1 fixpoint track — if `nom app build` has hidden
         // non-determinism (HashMap iteration order, timestamps, etc.)
         // the whole-compiler fixpoint can't possibly hold.
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus, SecurityFinding, Severity};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         // Seed a non-trivial closure: mixed kinds, varying sizes,
         // findings, partial + complete status.
         let mk = |id: &str, kind: EntryKind, status: EntryStatus, bc_size: usize| Entry {
@@ -2172,11 +2245,28 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&mk("a", EntryKind::Page, EntryStatus::Complete, 1000)).unwrap();
-        dict.upsert_entry(&mk("b", EntryKind::DataSource, EntryStatus::Complete, 500)).unwrap();
-        dict.upsert_entry(&mk("c", EntryKind::Function, EntryStatus::Partial, 200)).unwrap();
-        dict.upsert_entry(&mk("t1", EntryKind::TestCase, EntryStatus::Complete, 100)).unwrap();
-        dict.add_finding(
+        upsert_entry(
+            &dict,
+            &mk("a", EntryKind::Page, EntryStatus::Complete, 1000),
+        )
+        .unwrap();
+        upsert_entry(
+            &dict,
+            &mk("b", EntryKind::DataSource, EntryStatus::Complete, 500),
+        )
+        .unwrap();
+        upsert_entry(
+            &dict,
+            &mk("c", EntryKind::Function, EntryStatus::Partial, 200),
+        )
+        .unwrap();
+        upsert_entry(
+            &dict,
+            &mk("t1", EntryKind::TestCase, EntryStatus::Complete, 100),
+        )
+        .unwrap();
+        add_finding(
+            &dict,
             "a",
             &SecurityFinding {
                 finding_id: 0,
@@ -2240,9 +2330,9 @@ mod tests {
 
     #[test]
     fn layered_dream_app_wraps_existing_report() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let manifest = AppManifest {
             manifest_hash: "test_hash".into(),
             name: "my_app".into(),
@@ -2282,15 +2372,17 @@ mod tests {
 
     #[test]
     fn layered_dream_concept_unknown_word_returns_empty_leaf() {
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
         let report = layered_dream_concept("totally_unknown_word_xyz", &dict);
         assert_eq!(report.tier, DreamTier::Concept);
         assert_eq!(report.label, "totally_unknown_word_xyz");
         assert_eq!(report.leaf.app_score, 0);
-        assert!(!report.leaf.next_instruction.is_empty(),
-            "next_instruction must explain why the concept wasn't found");
+        assert!(
+            !report.leaf.next_instruction.is_empty(),
+            "next_instruction must explain why the concept wasn't found"
+        );
         assert!(report.child_reports.is_empty());
         assert!(report.pareto_front.is_empty());
     }
@@ -2301,11 +2393,14 @@ mod tests {
     /// identical to the non-recursive variant.
     #[test]
     fn layered_dream_app_recursive_with_no_concepts_returns_empty_children() {
-        use nom_dict::NomDict;
         use nom_concept::ConceptGraph;
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
-        let graph = ConceptGraph { concepts: vec![], modules: vec![] };
+        let dict = Dict::open_in_memory().unwrap();
+        let graph = ConceptGraph {
+            concepts: vec![],
+            modules: vec![],
+        };
         let manifest = AppManifest {
             manifest_hash: "m1".into(),
             name: "empty_app".into(),
@@ -2321,8 +2416,10 @@ mod tests {
 
         assert_eq!(recursive.tier, DreamTier::App);
         assert_eq!(recursive.label, "empty_app");
-        assert!(recursive.child_reports.is_empty(),
-            "expected empty child_reports for empty graph");
+        assert!(
+            recursive.child_reports.is_empty(),
+            "expected empty child_reports for empty graph"
+        );
         assert!(recursive.pareto_front.is_empty());
         // leaf score must match the non-recursive variant.
         assert_eq!(recursive.leaf.app_score, flat.leaf.app_score);
@@ -2332,10 +2429,10 @@ mod tests {
     /// and B's report has empty children (since B has no children).
     #[test]
     fn layered_dream_concept_recursive_walks_one_level() {
-        use nom_dict::NomDict;
         use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         let concept_b = ConceptDecl {
             name: "concept_b".to_string(),
@@ -2366,13 +2463,22 @@ mod tests {
 
         assert_eq!(report.tier, DreamTier::Concept);
         assert_eq!(report.label, "concept_a");
-        assert_eq!(report.child_reports.len(), 1,
+        assert_eq!(
+            report.child_reports.len(),
+            1,
             "expected 1 child report (concept_b), got {:?}",
-            report.child_reports.iter().map(|r| &r.label).collect::<Vec<_>>());
+            report
+                .child_reports
+                .iter()
+                .map(|r| &r.label)
+                .collect::<Vec<_>>()
+        );
         let child = &report.child_reports[0];
         assert_eq!(child.label, "concept_b");
-        assert!(child.child_reports.is_empty(),
-            "concept_b has no children, expected empty child_reports");
+        assert!(
+            child.child_reports.is_empty(),
+            "concept_b has no children, expected empty child_reports"
+        );
     }
 
     /// Graph with A→B→A (cycle): dreaming A from a fresh seen set produces
@@ -2380,10 +2486,10 @@ mod tests {
     /// "cycle" and score 0.
     #[test]
     fn layered_dream_concept_recursive_breaks_cycles() {
-        use nom_dict::NomDict;
         use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         let concept_a = ConceptDecl {
             name: "cycle_a".to_string(),
@@ -2420,16 +2526,23 @@ mod tests {
         let b_report = &report.child_reports[0];
         assert_eq!(b_report.label, "cycle_b");
         // B's child reports must contain the cycle stub for A.
-        assert_eq!(b_report.child_reports.len(), 1,
-            "cycle_b should have one child (stub for cycle_a)");
+        assert_eq!(
+            b_report.child_reports.len(),
+            1,
+            "cycle_b should have one child (stub for cycle_a)"
+        );
         let stub = &b_report.child_reports[0];
         assert_eq!(stub.label, "cycle_a");
         assert_eq!(stub.leaf.app_score, 0, "cycle stub must have score 0");
-        assert!(stub.leaf.next_instruction.contains("cycle"),
+        assert!(
+            stub.leaf.next_instruction.contains("cycle"),
             "cycle stub next_instruction must mention 'cycle', got: {}",
-            stub.leaf.next_instruction);
-        assert!(stub.child_reports.is_empty(),
-            "cycle stub must not recurse further");
+            stub.leaf.next_instruction
+        );
+        assert!(
+            stub.child_reports.is_empty(),
+            "cycle stub must not recurse further"
+        );
     }
 
     // ── M5c: Pareto-front tests ───────────────────────────────────────────────
@@ -2448,7 +2561,13 @@ mod tests {
         }
     }
 
-    fn make_candidate(label: &str, score: u32, complete: usize, partial: usize, closure_size: usize) -> LayeredDreamReport {
+    fn make_candidate(
+        label: &str,
+        score: u32,
+        complete: usize,
+        partial: usize,
+        closure_size: usize,
+    ) -> LayeredDreamReport {
         LayeredDreamReport {
             tier: DreamTier::Concept,
             label: label.to_string(),
@@ -2482,25 +2601,37 @@ mod tests {
     fn pareto_front_of_dominated_pair_returns_one() {
         // A dominates B on all three axes: higher score, more complete, less partial.
         let a = make_candidate("dominated_winner", 80, 8, 1, 10);
-        let b = make_candidate("dominated_loser",  60, 5, 3, 10);
+        let b = make_candidate("dominated_loser", 60, 5, 3, 10);
         let front = pareto_front_of(&[a, b]);
-        assert_eq!(front.len(), 1, "expected only 1 non-dominated candidate, got {front:?}");
-        assert!(front[0].contains("dominated_winner"), "wrong candidate survived: {:?}", front[0]);
+        assert_eq!(
+            front.len(),
+            1,
+            "expected only 1 non-dominated candidate, got {front:?}"
+        );
+        assert!(
+            front[0].contains("dominated_winner"),
+            "wrong candidate survived: {:?}",
+            front[0]
+        );
     }
 
     #[test]
     fn pareto_front_of_incomparable_pair_returns_both() {
         // A wins on score; B wins on completeness — neither dominates the other.
-        let a = make_candidate("high_score",     80, 3, 1, 10);
+        let a = make_candidate("high_score", 80, 3, 1, 10);
         let b = make_candidate("high_completeness", 50, 9, 1, 10);
         let front = pareto_front_of(&[a, b]);
-        assert_eq!(front.len(), 2, "both incomparable candidates should be on the front, got {front:?}");
+        assert_eq!(
+            front.len(),
+            2,
+            "both incomparable candidates should be on the front, got {front:?}"
+        );
     }
 
     #[test]
     fn populate_pareto_fronts_descends_recursively() {
         use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
-        use nom_dict::NomDict;
+        use nom_dict::Dict;
 
         // Build a 2-level concept tree: parent → [child_x, child_y]
         // child_x → [grandchild_g] (so child_x.child_reports.len() == 1)
@@ -2510,7 +2641,9 @@ mod tests {
             name: "grandchild_g".to_string(),
             intent: String::new(),
             index: vec![],
-            exposes: vec![], acceptance: vec![], objectives: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
         };
         let decl_child_x = ConceptDecl {
             name: "child_x".to_string(),
@@ -2519,13 +2652,17 @@ mod tests {
                 base: "grandchild_g".to_string(),
                 change_set: ChangeSet::default(),
             }],
-            exposes: vec![], acceptance: vec![], objectives: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
         };
         let decl_child_y = ConceptDecl {
             name: "child_y".to_string(),
             intent: String::new(),
             index: vec![],
-            exposes: vec![], acceptance: vec![], objectives: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
         };
         let decl_parent = ConceptDecl {
             name: "parent_concept".to_string(),
@@ -2540,17 +2677,20 @@ mod tests {
                     change_set: ChangeSet::default(),
                 },
             ],
-            exposes: vec![], acceptance: vec![], objectives: vec![],
+            exposes: vec![],
+            acceptance: vec![],
+            objectives: vec![],
         };
         let graph = ConceptGraph {
             concepts: vec![decl_grandchild, decl_child_x, decl_child_y, decl_parent],
             modules: vec![],
         };
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         // Use the recursive variant which calls populate_pareto_fronts internally.
         let mut seen = std::collections::HashSet::new();
-        let report = layered_dream_concept_recursive("parent_concept", &dict, &graph, &mut seen, &[]);
+        let report =
+            layered_dream_concept_recursive("parent_concept", &dict, &graph, &mut seen, &[]);
 
         // Parent has 2 children → pareto_front.len() <= 2 (may be 1 if one dominates).
         assert!(
@@ -2560,10 +2700,14 @@ mod tests {
         );
 
         // child_x has 1 grandchild → its pareto_front.len() == 1.
-        let child_x = report.child_reports.iter().find(|r| r.label == "child_x")
+        let child_x = report
+            .child_reports
+            .iter()
+            .find(|r| r.label == "child_x")
             .expect("child_x must be in child_reports");
         assert_eq!(
-            child_x.pareto_front.len(), 1,
+            child_x.pareto_front.len(),
+            1,
             "child_x has 1 child (grandchild_g), its pareto_front must have 1 entry, got {:?}",
             child_x.pareto_front
         );
@@ -2575,11 +2719,11 @@ mod tests {
     /// and the penalized leaf.app_score is strictly less than without collision.
     #[test]
     fn layered_dream_concept_recursive_me_collision_penalizes_score() {
-        use nom_dict::NomDict;
         use nom_concept::{ChangeSet, ConceptDecl, ConceptGraph, IndexClause};
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         // Seed the dict with an entry for "fast_parent" so that
         // layered_dream_concept produces a non-zero base score.
@@ -2603,7 +2747,7 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&seed_entry).unwrap();
+        upsert_entry(&dict, &seed_entry).unwrap();
 
         // Both parent and child declare "speed" → ME collision on "speed".
         let child = ConceptDecl {
@@ -2632,9 +2776,8 @@ mod tests {
 
         // With collision.
         let mut seen_with = std::collections::HashSet::new();
-        let report_with = layered_dream_concept_recursive(
-            "fast_parent", &dict, &graph, &mut seen_with, &[],
-        );
+        let report_with =
+            layered_dream_concept_recursive("fast_parent", &dict, &graph, &mut seen_with, &[]);
 
         // Without collision: parent has no objectives.
         let parent_no_obj = ConceptDecl {
@@ -2662,18 +2805,24 @@ mod tests {
         };
         let mut seen_without = std::collections::HashSet::new();
         let report_without = layered_dream_concept_recursive(
-            "fast_parent", &dict, &graph_no_collision, &mut seen_without, &[],
+            "fast_parent",
+            &dict,
+            &graph_no_collision,
+            &mut seen_without,
+            &[],
         );
 
         assert_eq!(
-            report_with.me_collisions.len(), 1,
+            report_with.me_collisions.len(),
+            1,
             "expected 1 ME collision for shared 'speed' axis, got {:?}",
             report_with.me_collisions
         );
         assert!(
             report_with.leaf.app_score < report_without.leaf.app_score,
             "score with collision ({}) must be strictly less than without ({})",
-            report_with.leaf.app_score, report_without.leaf.app_score
+            report_with.leaf.app_score,
+            report_without.leaf.app_score
         );
         // Even if pre-penalty score would have been >= 95, the collision must flip is_epic.
         assert!(
@@ -2687,11 +2836,11 @@ mod tests {
     /// parent nor children declare "safety" → ce_unmet.len() == 1 and score is penalized.
     #[test]
     fn layered_dream_concept_recursive_ce_unmet_penalizes_score() {
-        use nom_dict::NomDict;
         use nom_concept::{ConceptDecl, ConceptGraph};
+        use nom_dict::Dict;
         use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         // Seed the dict with an entry for "unsafe_concept" so the base score > 0.
         let seed_entry = Entry {
@@ -2714,7 +2863,7 @@ mod tests {
             created_at: "t".into(),
             updated_at: None,
         };
-        dict.upsert_entry(&seed_entry).unwrap();
+        upsert_entry(&dict, &seed_entry).unwrap();
 
         let parent = ConceptDecl {
             name: "unsafe_concept".to_string(),
@@ -2724,21 +2873,33 @@ mod tests {
             acceptance: vec![],
             objectives: vec!["speed".to_string()], // no safety
         };
-        let graph = ConceptGraph { concepts: vec![parent], modules: vec![] };
+        let graph = ConceptGraph {
+            concepts: vec![parent],
+            modules: vec![],
+        };
 
         let required_axes = vec![("safety".to_string(), "at_least_one".to_string())];
         let mut seen_with = std::collections::HashSet::new();
         let report_with = layered_dream_concept_recursive(
-            "unsafe_concept", &dict, &graph, &mut seen_with, &required_axes,
+            "unsafe_concept",
+            &dict,
+            &graph,
+            &mut seen_with,
+            &required_axes,
         );
 
         let mut seen_without = std::collections::HashSet::new();
         let report_without = layered_dream_concept_recursive(
-            "unsafe_concept", &dict, &graph, &mut seen_without, &[],
+            "unsafe_concept",
+            &dict,
+            &graph,
+            &mut seen_without,
+            &[],
         );
 
         assert_eq!(
-            report_with.ce_unmet.len(), 1,
+            report_with.ce_unmet.len(),
+            1,
             "expected 1 CE violation for missing 'safety' axis, got {:?}",
             report_with.ce_unmet
         );
@@ -2750,17 +2911,18 @@ mod tests {
         assert!(
             report_with.leaf.app_score < report_without.leaf.app_score,
             "score with CE violation ({}) must be strictly less than without ({})",
-            report_with.leaf.app_score, report_without.leaf.app_score
+            report_with.leaf.app_score,
+            report_without.leaf.app_score
         );
     }
 
     /// Empty required_axes → ce_unmet is empty and score is not penalized by CE.
     #[test]
     fn layered_dream_concept_recursive_empty_required_axes_no_ce_effect() {
-        use nom_dict::NomDict;
         use nom_concept::{ConceptDecl, ConceptGraph};
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
+        let dict = Dict::open_in_memory().unwrap();
 
         let parent = ConceptDecl {
             name: "any_concept".to_string(),
@@ -2770,12 +2932,13 @@ mod tests {
             acceptance: vec![],
             objectives: vec!["speed".to_string()],
         };
-        let graph = ConceptGraph { concepts: vec![parent], modules: vec![] };
+        let graph = ConceptGraph {
+            concepts: vec![parent],
+            modules: vec![],
+        };
 
         let mut seen = std::collections::HashSet::new();
-        let report = layered_dream_concept_recursive(
-            "any_concept", &dict, &graph, &mut seen, &[],
-        );
+        let report = layered_dream_concept_recursive("any_concept", &dict, &graph, &mut seen, &[]);
 
         assert!(
             report.ce_unmet.is_empty(),
@@ -2793,16 +2956,23 @@ mod tests {
     /// Unknown concept (not in graph) → returns report with empty me_collisions / ce_unmet.
     #[test]
     fn layered_dream_concept_recursive_unknown_concept_returns_empty_mece() {
-        use nom_dict::NomDict;
         use nom_concept::ConceptGraph;
+        use nom_dict::Dict;
 
-        let dict = NomDict::open_in_memory().unwrap();
-        let graph = ConceptGraph { concepts: vec![], modules: vec![] };
+        let dict = Dict::open_in_memory().unwrap();
+        let graph = ConceptGraph {
+            concepts: vec![],
+            modules: vec![],
+        };
         let required_axes = vec![("safety".to_string(), "at_least_one".to_string())];
 
         let mut seen = std::collections::HashSet::new();
         let report = layered_dream_concept_recursive(
-            "totally_unknown_concept_xyz", &dict, &graph, &mut seen, &required_axes,
+            "totally_unknown_concept_xyz",
+            &dict,
+            &graph,
+            &mut seen,
+            &required_axes,
         );
 
         assert!(

@@ -97,36 +97,36 @@ pub enum Token {
     Await,    // await
 
     // ── Operators ────────────────────────────────────────────────────────────
-    Arrow,      // ->
-    FatArrow,   // =>
-    ColCol,     // ::
-    Plus,       // +
-    Minus,      // -
-    Star,       // *
-    Slash,      // /
-    Dot,        // .
-    DotDot,     // ..
-    Gt,         // >
-    Lt,         // <
-    Gte,        // >=
-    Lte,        // <=
-    Eq,         // =
-    EqEq,       // ==
-    Neq,        // !=
-    Colon,      // :
-    Semicolon,  // ;
-    Ampersand,  // &
-    Pipe,       // |
-    Bang,       // !
-    Question,   // ?
-    Percent,    // %
-    LBrace,     // {
-    RBrace,     // }
-    LBracket,   // [
-    RBracket,   // ]
-    LParen,     // (
-    RParen,     // )
-    Comma,      // ,
+    Arrow,     // ->
+    FatArrow,  // =>
+    ColCol,    // ::
+    Plus,      // +
+    Minus,     // -
+    Star,      // *
+    Slash,     // /
+    Dot,       // .
+    DotDot,    // ..
+    Gt,        // >
+    Lt,        // <
+    Gte,       // >=
+    Lte,       // <=
+    Eq,        // =
+    EqEq,      // ==
+    Neq,       // !=
+    Colon,     // :
+    Semicolon, // ;
+    Ampersand, // &
+    Pipe,      // |
+    Bang,      // !
+    Question,  // ?
+    Percent,   // %
+    LBrace,    // {
+    RBrace,    // }
+    LBracket,  // [
+    RBracket,  // ]
+    LParen,    // (
+    RParen,    // )
+    Comma,     // ,
 
     // ── Literals ─────────────────────────────────────────────────────────────
     /// An integer literal, e.g. `42`
@@ -638,7 +638,6 @@ impl<'src> Lexer<'src> {
                         ));
                     }
                 }
-
 
                 '>' => {
                     self.advance();

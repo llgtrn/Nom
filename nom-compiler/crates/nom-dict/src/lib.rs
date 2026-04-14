@@ -10,7 +10,47 @@
 pub mod dict;
 pub mod freshness;
 
-pub use dict::{CONCEPTS_FILENAME, Dict, ENTITIES_FILENAME};
+pub use dict::{
+    CONCEPTS_FILENAME,
+    Dict,
+    ENTITIES_FILENAME,
+    // Free functions on &Dict (Dict-split migration S3a-S8)
+    add_concept_member,
+    add_concept_members_by_filter,
+    add_finding,
+    add_graph_edge,
+    add_meta,
+    add_ref,
+    add_translation,
+    bulk_set_scores,
+    bulk_upsert,
+    closure,
+    count_concept_members,
+    count_entities,
+    delete_concept,
+    find_by_word,
+    find_entities_by_kind,
+    find_entity,
+    find_entries,
+    get_concept_by_name,
+    get_concept_members,
+    get_entry,
+    get_entry_bytes,
+    get_findings,
+    get_meta,
+    get_scores,
+    list_concepts,
+    register_required_axis,
+    resolve_prefix,
+    search_describe,
+    seed_standard_axes,
+    set_signature,
+    upsert_concept,
+    upsert_concept_def,
+    upsert_entity,
+    upsert_entry,
+    upsert_entry_if_new,
+};
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -279,15 +319,18 @@ impl NomDict {
         // ALTER TABLE RENAME TO is safe since 3.25. If the old tables don't
         // exist these are harmless no-ops (CREATE IF NOT EXISTS below handles
         // fresh DBs).
-        let _ = self.conn
+        let _ = self
+            .conn
             .execute_batch("ALTER TABLE drafts RENAME TO concepts");
-        let _ = self.conn
+        let _ = self
+            .conn
             .execute_batch("ALTER TABLE draft_members RENAME TO concept_members");
         self.conn.execute_batch(V2_SCHEMA_SQL)?;
         // Best-effort migration: add body_bytes to pre-existing DBs that were
         // created before this column was part of V2_SCHEMA_SQL. SQLite returns
         // "duplicate column name" when it already exists — ignore that error.
-        let _ = self.conn
+        let _ = self
+            .conn
             .execute_batch("ALTER TABLE entries ADD COLUMN body_bytes BLOB");
         // Additive V3 tables: concept_defs (DB1) + entities (DB2-v2).
         // CREATE TABLE IF NOT EXISTS makes this idempotent.
@@ -365,7 +408,9 @@ impl NomDict {
              ORDER BY n DESC, k ASC",
         )?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -382,7 +427,9 @@ impl NomDict {
              ORDER BY n DESC, s ASC",
         )?;
         let rows = stmt
-            .query_map([], |row| Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize)))?
+            .query_map([], |row| {
+                Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+            })?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
@@ -712,8 +759,7 @@ impl NomDict {
             params_vec.push(Box::new(k.as_str().to_string()));
         }
         sql.push_str(&format!(" ORDER BY id LIMIT {}", f.limit.max(1)));
-        let param_refs: Vec<&dyn rusqlite::ToSql> =
-            params_vec.iter().map(|b| b.as_ref()).collect();
+        let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
         let mut stmt = self.conn.prepare(&sql)?;
         let rows = stmt
             .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entry)?
@@ -753,9 +799,9 @@ impl NomDict {
             bail!("not a valid hex prefix: {hash}");
         }
         let pattern = format!("{hash}%");
-        let mut stmt = self.conn.prepare_cached(
-            "SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id",
-        )?;
+        let mut stmt = self
+            .conn
+            .prepare_cached("SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id")?;
         let ids: Vec<String> = stmt
             .query_map([pattern], |row| row.get::<_, String>(0))?
             .collect::<rusqlite::Result<Vec<_>>>()?;
@@ -763,8 +809,15 @@ impl NomDict {
             0 => bail!("no entry matching prefix {hash}"),
             1 => Ok(ids.into_iter().next().unwrap()),
             _ => {
-                let candidates = ids.iter().map(|s| s.as_str()).collect::<Vec<_>>().join(", ");
-                bail!("hash prefix {hash} is ambiguous ({} candidates): {candidates}", ids.len())
+                let candidates = ids
+                    .iter()
+                    .map(|s| s.as_str())
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                bail!(
+                    "hash prefix {hash} is ambiguous ({} candidates): {candidates}",
+                    ids.len()
+                )
             }
         }
     }
@@ -789,9 +842,9 @@ impl NomDict {
 
     /// Fetch all (key, value) metadata rows for an entry.
     pub fn get_meta(&self, id: &str) -> Result<Vec<(String, String)>> {
-        let mut stmt = self
-            .conn
-            .prepare_cached("SELECT key, value FROM entry_meta WHERE id = ?1 ORDER BY key, value")?;
+        let mut stmt = self.conn.prepare_cached(
+            "SELECT key, value FROM entry_meta WHERE id = ?1 ORDER BY key, value",
+        )?;
         let rows = stmt
             .query_map(params![id], |row| {
                 Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
@@ -991,10 +1044,8 @@ impl NomDict {
     /// Delete a concept (and cascade-delete its membership rows).
     /// The referenced entries are NOT deleted — only the grouping is removed.
     pub fn delete_concept(&self, name: &str) -> Result<()> {
-        self.conn.execute(
-            "DELETE FROM concepts WHERE name = ?1",
-            params![name.trim()],
-        )?;
+        self.conn
+            .execute("DELETE FROM concepts WHERE name = ?1", params![name.trim()])?;
         Ok(())
     }
 
@@ -1348,8 +1399,9 @@ impl NomDict {
 
     /// Total count of rows in `entities`.
     pub fn count_entities(&self) -> Result<i64> {
-        let n: i64 =
-            self.conn.query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0))?;
+        let n: i64 = self
+            .conn
+            .query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0))?;
         Ok(n)
     }
 
@@ -1618,7 +1670,10 @@ pub struct StoreResult {
 impl NomDict {
     /// Legacy: insert a slice of v1 atoms. No-op until Task B migrates callers.
     pub fn store_atoms(&self, _atoms: &[Atom]) -> Result<StoreResult> {
-        Ok(StoreResult { stored: 0, skipped: 0 })
+        Ok(StoreResult {
+            stored: 0,
+            skipped: 0,
+        })
     }
 
     /// Legacy: return every v1 atom. Empty until Task B migrates callers.
@@ -1731,7 +1786,10 @@ mod tests {
             found.insert(k, v);
         }
         assert_eq!(found.get("quantum_safe").map(String::as_str), Some("true"));
-        assert_eq!(found.get("wasm_target").map(String::as_str), Some("wasi-p2"));
+        assert_eq!(
+            found.get("wasm_target").map(String::as_str),
+            Some("wasi-p2")
+        );
     }
 
     #[test]
@@ -1830,16 +1888,25 @@ mod tests {
         let d = NomDict::open_in_memory().unwrap();
 
         let a = make_entry("id-a", "alpha");
-        assert!(d.upsert_entry_if_new(&a).unwrap(), "first insert must return true");
+        assert!(
+            d.upsert_entry_if_new(&a).unwrap(),
+            "first insert must return true"
+        );
         assert_eq!(d.count().unwrap(), 1);
 
         // Same id again — INSERT OR IGNORE is a no-op.
-        assert!(!d.upsert_entry_if_new(&a).unwrap(), "duplicate id must return false");
+        assert!(
+            !d.upsert_entry_if_new(&a).unwrap(),
+            "duplicate id must return false"
+        );
         assert_eq!(d.count().unwrap(), 1, "row count unchanged after duplicate");
 
         // Different id — fresh insert.
         let b = make_entry("id-b", "beta");
-        assert!(d.upsert_entry_if_new(&b).unwrap(), "distinct id must return true");
+        assert!(
+            d.upsert_entry_if_new(&b).unwrap(),
+            "distinct id must return true"
+        );
         assert_eq!(d.count().unwrap(), 2);
     }
 
@@ -1903,8 +1970,7 @@ mod tests {
         let hist = d.body_kind_histogram().unwrap();
         // Sorted by count desc: bc (2), avif (1), (untagged) (1).
         // Tiebreak: (untagged) before avif alphabetically.
-        let as_map: std::collections::HashMap<String, usize> =
-            hist.iter().cloned().collect();
+        let as_map: std::collections::HashMap<String, usize> = hist.iter().cloned().collect();
         assert_eq!(as_map.get(body_kind::BC), Some(&2));
         assert_eq!(as_map.get(body_kind::AVIF), Some(&1));
         assert_eq!(as_map.get("(untagged)"), Some(&1));
@@ -1973,88 +2039,116 @@ mod tests {
         d.upsert_entry(&e3).unwrap();
 
         // --- filter by language ---
-        let rust_entries = d.find_entries(&EntryFilter {
-            language: Some("rust".into()),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let rust_entries = d
+            .find_entries(&EntryFilter {
+                language: Some("rust".into()),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(rust_entries.len(), 1);
         assert_eq!(rust_entries[0].word, "parse_input");
 
-        let ts_entries = d.find_entries(&EntryFilter {
-            language: Some("typescript".into()),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let ts_entries = d
+            .find_entries(&EntryFilter {
+                language: Some("typescript".into()),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(ts_entries.len(), 1);
         assert_eq!(ts_entries[0].word, "ui_module");
 
         // --- filter by status ---
-        let partial_entries = d.find_entries(&EntryFilter {
-            status: Some(EntryStatus::Partial),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let partial_entries = d
+            .find_entries(&EntryFilter {
+                status: Some(EntryStatus::Partial),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(partial_entries.len(), 1);
         assert_eq!(partial_entries[0].word, "ui_module");
 
-        let opaque_entries = d.find_entries(&EntryFilter {
-            status: Some(EntryStatus::Opaque),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let opaque_entries = d
+            .find_entries(&EntryFilter {
+                status: Some(EntryStatus::Opaque),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(opaque_entries.len(), 1);
         assert_eq!(opaque_entries[0].word, "helper_fn");
 
         // --- filter by kind ---
-        let fn_entries = d.find_entries(&EntryFilter {
-            kind: Some(EntryKind::Function),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let fn_entries = d
+            .find_entries(&EntryFilter {
+                kind: Some(EntryKind::Function),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(fn_entries.len(), 2);
 
-        let mod_entries = d.find_entries(&EntryFilter {
-            kind: Some(EntryKind::Module),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let mod_entries = d
+            .find_entries(&EntryFilter {
+                kind: Some(EntryKind::Module),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(mod_entries.len(), 1);
         assert_eq!(mod_entries[0].word, "ui_module");
 
         // --- filter by body_kind ---
-        let bc_entries = d.find_entries(&EntryFilter {
-            body_kind: Some(body_kind::BC.to_owned()),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let bc_entries = d
+            .find_entries(&EntryFilter {
+                body_kind: Some(body_kind::BC.to_owned()),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(bc_entries.len(), 2); // e1 (parse_input) + e2 (ui_module) both BC
 
         // --- combined: language + status ---
-        let rust_complete = d.find_entries(&EntryFilter {
-            language: Some("rust".into()),
-            status: Some(EntryStatus::Complete),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let rust_complete = d
+            .find_entries(&EntryFilter {
+                language: Some("rust".into()),
+                status: Some(EntryStatus::Complete),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(rust_complete.len(), 1);
         assert_eq!(rust_complete[0].word, "parse_input");
 
         // Combined: language + status that matches nothing
-        let rust_partial = d.find_entries(&EntryFilter {
-            language: Some("rust".into()),
-            status: Some(EntryStatus::Partial),
-            limit: 50,
-            ..EntryFilter::default()
-        }).unwrap();
+        let rust_partial = d
+            .find_entries(&EntryFilter {
+                language: Some("rust".into()),
+                status: Some(EntryStatus::Partial),
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert!(rust_partial.is_empty());
 
         // --- no filter = all 3 entries ---
-        let all = d.find_entries(&EntryFilter { limit: 50, ..EntryFilter::default() }).unwrap();
+        let all = d
+            .find_entries(&EntryFilter {
+                limit: 50,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(all.len(), 3);
 
         // --- limit is respected ---
-        let capped = d.find_entries(&EntryFilter { limit: 2, ..EntryFilter::default() }).unwrap();
+        let capped = d
+            .find_entries(&EntryFilter {
+                limit: 2,
+                ..EntryFilter::default()
+            })
+            .unwrap();
         assert_eq!(capped.len(), 2);
     }
 
@@ -2112,7 +2206,10 @@ mod tests {
         let fetched = d.get_concept_by_name("cryptography").unwrap().unwrap();
         assert_eq!(fetched.id, concept.id);
         assert_eq!(fetched.name, "cryptography");
-        assert_eq!(fetched.describe.as_deref(), Some("Hashing, signing, and encryption entries"));
+        assert_eq!(
+            fetched.describe.as_deref(),
+            Some("Hashing, signing, and encryption entries")
+        );
 
         let all = d.list_concepts().unwrap();
         assert_eq!(all.len(), 1);
@@ -2193,12 +2290,16 @@ mod tests {
             limit: 50,
             ..EntryFilter::default()
         };
-        let added = d.add_concept_members_by_filter(&concept.id, &filter).unwrap();
+        let added = d
+            .add_concept_members_by_filter(&concept.id, &filter)
+            .unwrap();
         assert_eq!(added, 2, "two rust entries should be added");
         assert_eq!(d.count_concept_members(&concept.id).unwrap(), 2);
 
         // Running again must not double-count.
-        let added2 = d.add_concept_members_by_filter(&concept.id, &filter).unwrap();
+        let added2 = d
+            .add_concept_members_by_filter(&concept.id, &filter)
+            .unwrap();
         assert_eq!(added2, 0, "re-run must add 0 (all already members)");
         assert_eq!(d.count_concept_members(&concept.id).unwrap(), 2);
     }
@@ -2266,7 +2367,9 @@ mod tests {
         let d = NomDict::open_in_memory().unwrap();
         // init_schema is called inside open_in_memory; calling it a second time
         // via execute_batch of the same SQL must be a no-op (CREATE IF NOT EXISTS).
-        d.connection().execute_batch(V3_SCHEMA_ADDITIONS_SQL).unwrap();
+        d.connection()
+            .execute_batch(V3_SCHEMA_ADDITIONS_SQL)
+            .unwrap();
     }
 
     /// Test 3: insert a ConceptRow and read it back identically.
@@ -2349,9 +2452,12 @@ mod tests {
     fn find_entities_by_word_filters_correctly() {
         let d = NomDict::open_in_memory().unwrap();
 
-        d.upsert_entity(&make_word_v2_row("hash-jwt-1", "validate_token_jwt")).unwrap();
-        d.upsert_entity(&make_word_v2_row("hash-jwt-2", "validate_token_jwt")).unwrap();
-        d.upsert_entity(&make_word_v2_row("hash-other", "other")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-jwt-1", "validate_token_jwt"))
+            .unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-jwt-2", "validate_token_jwt"))
+            .unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-other", "other"))
+            .unwrap();
 
         let jwt_rows = d.find_entities_by_word("validate_token_jwt").unwrap();
         assert_eq!(jwt_rows.len(), 2, "expected 2 rows for validate_token_jwt");
@@ -2372,14 +2478,21 @@ mod tests {
         let d = NomDict::open_in_memory().unwrap();
 
         // Two rows with kind="function" (default from make_word_v2_row), one with kind="screen".
-        d.upsert_entity(&make_word_v2_row("hash-fn-a", "auth_user")).unwrap();
-        d.upsert_entity(&make_word_v2_row("hash-fn-b", "validate_token")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-fn-a", "auth_user"))
+            .unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-fn-b", "validate_token"))
+            .unwrap();
         let mut screen_row = make_word_v2_row("hash-sc-1", "login_screen");
         screen_row.kind = "screen".to_string();
         d.upsert_entity(&screen_row).unwrap();
 
         let fn_rows = d.find_entities_by_kind("Function").unwrap();
-        assert_eq!(fn_rows.len(), 2, "expected 2 rows for kind=Function, got {}", fn_rows.len());
+        assert_eq!(
+            fn_rows.len(),
+            2,
+            "expected 2 rows for kind=Function, got {}",
+            fn_rows.len()
+        );
         assert!(fn_rows.iter().all(|r| r.kind == "Function"));
 
         let sc_rows = d.find_entities_by_kind("screen").unwrap();
@@ -2401,21 +2514,22 @@ mod tests {
         let d = NomDict::open_in_memory().unwrap();
 
         // Insert via the existing high-level API to confirm nothing broke.
-        d.upsert_entry(&make_entry("entry-legacy-001", "old_fn")).unwrap();
+        d.upsert_entry(&make_entry("entry-legacy-001", "old_fn"))
+            .unwrap();
 
         // Also confirm via raw SQL count.
         let count: i64 = d
             .connection()
             .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))
             .unwrap();
-        assert_eq!(count, 1, "entries table must still work after additive schema additions");
+        assert_eq!(
+            count, 1,
+            "entries table must still work after additive schema additions"
+        );
 
         // And the new tables start empty.
         assert_eq!(d.count_entities().unwrap(), 0);
-        assert_eq!(
-            d.list_concept_defs_in_repo("any-repo").unwrap().len(),
-            0
-        );
+        assert_eq!(d.list_concept_defs_in_repo("any-repo").unwrap().len(), 0);
     }
 
     // ── M7a required_axes tests ───────────────────────────────────────
@@ -2424,8 +2538,10 @@ mod tests {
     #[test]
     fn register_and_list_roundtrips() {
         let d = NomDict::open_in_memory().unwrap();
-        d.register_required_axis("repo-a", "concept", "security", "at_least_one").unwrap();
-        d.register_required_axis("repo-a", "concept", "safety", "exactly_one").unwrap();
+        d.register_required_axis("repo-a", "concept", "security", "at_least_one")
+            .unwrap();
+        d.register_required_axis("repo-a", "concept", "safety", "exactly_one")
+            .unwrap();
 
         let axes = d.list_required_axes("repo-a", "concept").unwrap();
         assert_eq!(axes.len(), 2, "expected 2 axes, got: {axes:?}");
@@ -2477,16 +2593,22 @@ mod tests {
     #[test]
     fn register_normalizes_axis_to_lowercase_and_trim() {
         let d = NomDict::open_in_memory().unwrap();
-        d.register_required_axis("repo-b", "module", " Security ", "at_least_one").unwrap();
+        d.register_required_axis("repo-b", "module", " Security ", "at_least_one")
+            .unwrap();
 
         let axes = d.list_required_axes("repo-b", "module").unwrap();
         assert_eq!(axes.len(), 1);
         assert_eq!(axes[0].axis, "security", "axis must be stored in lowercase");
 
         // Re-register with different casing + new cardinality → same row updated.
-        d.register_required_axis("repo-b", "module", "SECURITY", "exactly_one").unwrap();
+        d.register_required_axis("repo-b", "module", "SECURITY", "exactly_one")
+            .unwrap();
         let axes2 = d.list_required_axes("repo-b", "module").unwrap();
-        assert_eq!(axes2.len(), 1, "must still be exactly one row after re-registration");
+        assert_eq!(
+            axes2.len(),
+            1,
+            "must still be exactly one row after re-registration"
+        );
         assert_eq!(axes2[0].cardinality, "exactly_one");
     }
 
@@ -2494,15 +2616,22 @@ mod tests {
     #[test]
     fn unregister_returns_false_for_missing_row() {
         let d = NomDict::open_in_memory().unwrap();
-        let deleted = d.unregister_required_axis("repo-z", "app", "nonexistent").unwrap();
+        let deleted = d
+            .unregister_required_axis("repo-z", "app", "nonexistent")
+            .unwrap();
         assert!(!deleted, "must return false when no row matches");
 
         // Register then unregister → true, then false.
-        d.register_required_axis("repo-z", "app", "performance", "at_least_one").unwrap();
-        let deleted2 = d.unregister_required_axis("repo-z", "app", "performance").unwrap();
+        d.register_required_axis("repo-z", "app", "performance", "at_least_one")
+            .unwrap();
+        let deleted2 = d
+            .unregister_required_axis("repo-z", "app", "performance")
+            .unwrap();
         assert!(deleted2, "must return true after deleting existing row");
 
-        let deleted3 = d.unregister_required_axis("repo-z", "app", "performance").unwrap();
+        let deleted3 = d
+            .unregister_required_axis("repo-z", "app", "performance")
+            .unwrap();
         assert!(!deleted3, "second delete must return false");
     }
 
@@ -2516,9 +2645,13 @@ mod tests {
 
         let axes: std::collections::HashSet<&str> =
             seeded.iter().map(|(_, a, _)| a.as_str()).collect();
-        for expected in
-            ["correctness", "safety", "performance", "dependency", "documentation"]
-        {
+        for expected in [
+            "correctness",
+            "safety",
+            "performance",
+            "dependency",
+            "documentation",
+        ] {
             assert!(axes.contains(expected), "missing {expected} in seeded set");
         }
 

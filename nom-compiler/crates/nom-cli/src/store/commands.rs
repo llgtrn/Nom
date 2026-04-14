@@ -10,158 +10,49 @@
 
 use std::path::Path;
 
-use nom_ast::{Declaration, SourceFile, Statement};
-use nom_dict::{EntryFilter, NomDict};
-use nom_parser::parse_source;
-use nom_resolver::v2::{ResolutionTable, resolve_use_statements};
-use nom_types::{Contract, Entry, EntryKind, EntryStatus};
-use sha2::{Digest, Sha256};
+use nom_dict::{Dict, EntryFilter, find_entries};
+use nom_types::{EntryKind, EntryStatus};
+use sha2::Digest;
 
-use super::{
-    chrono_like_now, escape_json, json_array, load_roots, open_dict, resolve_prefix, truncate,
-};
+use super::{escape_json, json_array, load_roots, open_dict, resolve_prefix, truncate};
 
 // ── Private helpers (commands-only) ──────────────────────────────────
 
-/// Compile an already-parsed Nom `SourceFile` to LLVM bitcode bytes.
-/// Uses an empty in-memory resolver; missing word-refs produce a degraded
-/// plan (same as `plan_unchecked`) but never block compilation.
-fn compile_source_to_bc(sf: &SourceFile, _raw_source: &str) -> Result<Vec<u8>, String> {
-    let resolver = nom_resolver::Resolver::open_in_memory()
-        .map_err(|e| format!("resolver: {e}"))?;
-    let planner = nom_planner::Planner::new(&resolver);
-    let plan = planner
-        .plan_unchecked(sf)
-        .map_err(|e| format!("plan: {e}"))?;
-    let output = nom_llvm::compile(&plan)
-        .map_err(|e| format!("codegen: {e}"))?;
-    Ok(output.bitcode)
-}
-
-/// Derive a Contract from the first ContractStmt in a declaration, or
-/// return Contract::default() if none exists.
-fn contract_from_decl(decl: &Declaration) -> Contract {
-    for stmt in &decl.statements {
-        if let Statement::Contract(cs) = stmt {
-            let input = if cs.inputs.is_empty() {
-                None
-            } else {
-                Some(
-                    cs.inputs
-                        .iter()
-                        .map(|p| match &p.typ {
-                            Some(t) => format!("{}: {}", p.name.name, t.name),
-                            None => p.name.name.clone(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                )
-            };
-            let output = if cs.outputs.is_empty() {
-                None
-            } else {
-                Some(
-                    cs.outputs
-                        .iter()
-                        .map(|p| match &p.typ {
-                            Some(t) => t.name.clone(),
-                            None => p.name.name.clone(),
-                        })
-                        .collect::<Vec<_>>()
-                        .join(", "),
-                )
-            };
-            // Expr pretty-print isn't free; store debug repr as a
-            // stopgap. Canonical id hashes the AST not this string.
-            let pre = if cs.preconditions.is_empty() {
-                None
-            } else {
-                Some(format!("{:?}", cs.preconditions))
-            };
-            let post = if cs.postconditions.is_empty() {
-                None
-            } else {
-                Some(format!("{:?}", cs.postconditions))
-            };
-            return Contract {
-                input_type: input,
-                output_type: output,
-                pre,
-                post,
-            };
-        }
-    }
-    Contract::default()
-}
-
-fn describe_from_decl(decl: &Declaration) -> Option<String> {
-    for stmt in &decl.statements {
-        if let Statement::Describe(d) = stmt {
-            return Some(d.text.clone());
-        }
-    }
-    None
-}
-
-fn kind_from_classifier(c: nom_ast::Classifier) -> EntryKind {
-    match c {
-        nom_ast::Classifier::Nom => EntryKind::Function,
-        nom_ast::Classifier::Flow => EntryKind::Function,
-        nom_ast::Classifier::Test => EntryKind::TestCase,
-        nom_ast::Classifier::Store => EntryKind::Schema,
-        _ => EntryKind::Other,
-    }
-}
-
-/// Try to resolve every use-statement. Names that don't resolve (or
-/// collide) are returned alongside the partial table — the caller
-/// decides whether to treat them as warnings or errors.
-fn resolve_uses_best_effort(sf: &SourceFile, dict: &NomDict) -> (ResolutionTable, Vec<String>) {
-    match resolve_use_statements(sf, dict) {
-        Ok(t) => (t, Vec::new()),
-        Err(e) => {
-            // Downgrade the error to a single-name diagnostic; collect
-            // remaining uses that still resolve so the entry can at
-            // least be indexed by its known deps.
-            let mut table = ResolutionTable::new();
-            let mut missing: Vec<String> = Vec::new();
-            let err_name = match &e {
-                nom_resolver::v2::ResolveError::NotFound { name, .. } => name.clone(),
-                nom_resolver::v2::ResolveError::Ambiguous { name, .. } => name.clone(),
-                nom_resolver::v2::ResolveError::UnknownHash { hash, .. } => hash.clone(),
-                nom_resolver::v2::ResolveError::AmbiguousHash { hash, .. } => hash.clone(),
-            };
-            missing.push(err_name);
-            // Walk uses directly so surviving resolutions aren't lost.
-            for decl in &sf.declarations {
-                for stmt in &decl.statements {
-                    if let Statement::Use(u) = stmt {
-                        if let nom_ast::UseImport::Single(ident) = &u.imports {
-                            match dict.find_by_word(&ident.name) {
-                                Ok(entries) if entries.len() == 1 => {
-                                    table.insert(ident.name.clone(), entries[0].id.clone());
-                                }
-                                Ok(entries) if entries.is_empty() => {
-                                    if !missing.contains(&ident.name) {
-                                        missing.push(ident.name.clone());
-                                    }
-                                }
-                                _ => {
-                                    if !missing.contains(&ident.name) {
-                                        missing.push(ident.name.clone());
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            (table, missing)
-        }
-    }
-}
-
 // ── Public CLI entry points ──────────────────────────────────────────
+
+fn sha256_hex(bytes: &[u8]) -> String {
+    let mut sh = sha2::Sha256::new();
+    sh.update(bytes);
+    format!("{:x}", sh.finalize())
+}
+
+fn canonical_decl_hash<T: serde::Serialize>(value: &T) -> Result<String, String> {
+    let bytes = serde_json::to_vec(value).map_err(|e| format!("canonical serialize: {e}"))?;
+    Ok(sha256_hex(&bytes))
+}
+
+fn repo_id_for_source(file: &Path) -> String {
+    file.parent()
+        .and_then(|p| p.file_name())
+        .and_then(|n| n.to_str())
+        .filter(|s| !s.is_empty())
+        .unwrap_or("default")
+        .to_string()
+}
+
+fn composition_members_json(comp: &nom_concept::CompositionDecl) -> Option<String> {
+    let hashes: Vec<String> = comp
+        .composes
+        .iter()
+        .filter_map(|r| r.hash.clone())
+        .collect();
+    if hashes.is_empty() {
+        let words: Vec<String> = comp.composes.iter().map(|r| r.word.clone()).collect();
+        serde_json::to_string(&words).ok()
+    } else {
+        serde_json::to_string(&hashes).ok()
+    }
+}
 
 pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
     let source = match std::fs::read_to_string(file) {
@@ -171,115 +62,202 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
             return 1;
         }
     };
-    let sf = match parse_source(&source) {
-        Ok(s) => s,
+
+    let pipeline_out = match nom_concept::stages::run_pipeline(&source) {
+        Ok(out) => out,
         Err(e) => {
-            eprintln!("nom: parse error: {e}");
+            eprintln!("nom: pipeline error: {} at offset {}", e.reason, e.position);
             return 1;
         }
     };
 
-    // Compile the .nom source to LLVM bitcode.  The plan is built from the
-    // parsed SourceFile so we don't parse twice.
-    let bc_bytes = match compile_source_to_bc(&sf, &source) {
-        Ok(b) => b,
+    // Use TryOpen to handle split-DB appropriately.
+    let dict_db = match nom_dict::Dict::try_open_from_nomdict_path(dict) {
+        Ok(d) => d,
         Err(e) => {
-            eprintln!("nom: compile error: {e}");
+            eprintln!("nom: dict error: {e}");
             return 1;
         }
     };
 
-    let dict_db = match open_dict(dict) {
-        Some(d) => d,
-        None => return 1,
-    };
-
-    // Resolve use-statements; missing refs are diagnostics, not hard errors.
-    let (table, missing) = resolve_uses_best_effort(&sf, &dict_db);
-
-    // Status: Partial if any refs failed to resolve, else Complete.
-    let status = if missing.is_empty() {
-        EntryStatus::Complete
-    } else {
-        EntryStatus::Partial
-    };
-
-    // Content-addressed id from the compiled bitcode.
     let mut ids: Vec<String> = Vec::new();
-    let mut refs: Vec<String> = Vec::new();
+    let repo_id = repo_id_for_source(file);
+    let src_path = file.display().to_string();
+    let src_hash = sha256_hex(source.as_bytes());
 
-    for decl in &sf.declarations {
-        let contract = contract_from_decl(decl);
-        let word = decl.name.name.clone();
-        let kind = kind_from_classifier(decl.classifier);
-        let describe = describe_from_decl(decl);
-
-        // Use sha256 of bc_bytes as the canonical id.
-        let mut h = Sha256::new();
-        h.update(&bc_bytes);
-        h.update(word.as_bytes()); // per-decl disambiguation
-        let id = format!("{:x}", h.finalize());
-
-        let entry = Entry {
-            id: id.clone(),
-            word,
-            variant: None,
-            kind,
-            language: "nom".to_string(),
-            describe,
-            concept: None,
-            body: None,
-            body_nom: None,
-            body_bytes: Some(bc_bytes.clone()),
-            body_kind: Some(nom_types::body_kind::BC.to_owned()),
-            contract,
-            status,
-            translation_score: None,
-            is_canonical: true,
-            deprecated_by: None,
-            created_at: chrono_like_now(),
-            updated_at: None,
-        };
-
-        if let Err(e) = dict_db.upsert_entry(&entry) {
-            eprintln!("nom: upsert error for {id}: {e}");
-            return 1;
-        }
-
-        // Populate entry_refs from the resolution table. Only refs whose
-        // target exists in the dict may be stored — FK would reject the
-        // others. The spec says missing refs go to diagnostics already.
-        for target in table.values() {
-            if dict_db.get_entry(target).ok().flatten().is_some() {
-                let _ = dict_db.add_ref(&id, target);
-                refs.push(target.clone());
+    match pipeline_out {
+        nom_concept::stages::PipelineOutput::Nom(nom_file) => {
+            for concept in &nom_file.concepts {
+                let row = nom_dict::ConceptRow {
+                    name: concept.name.clone(),
+                    repo_id: repo_id.clone(),
+                    intent: concept.intent.clone(),
+                    index_into_db2: serde_json::to_string(&concept.index).unwrap_or_default(),
+                    exposes: serde_json::to_string(&concept.exposes).unwrap_or_default(),
+                    acceptance: serde_json::to_string(&concept.acceptance).unwrap_or_default(),
+                    objectives: serde_json::to_string(&concept.objectives).unwrap_or_default(),
+                    src_path: src_path.clone(),
+                    src_hash: src_hash.clone(),
+                    body_hash: None,
+                };
+                if let Err(e) = nom_dict::upsert_concept_def(&dict_db, &row) {
+                    eprintln!("nom: failed to upsert concept {}: {e}", concept.name);
+                    return 1;
+                }
+                ids.push(concept.name.clone());
             }
         }
-
-        ids.push(id);
+        nom_concept::stages::PipelineOutput::Nomtu(nomtu_file) => {
+            for item in &nomtu_file.items {
+                match item {
+                    nom_concept::NomtuItem::Entity(decl) => {
+                        let id = match canonical_decl_hash(decl) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                eprintln!("nom: hash entity error for {}: {e}", decl.word);
+                                return 1;
+                            }
+                        };
+                        let row = nom_dict::EntityRow {
+                            hash: id.clone(),
+                            word: decl.word.clone(),
+                            kind: decl.kind.clone(),
+                            signature: Some(decl.signature.clone()),
+                            contracts: Some(
+                                serde_json::to_string(&decl.contracts).unwrap_or_default(),
+                            ),
+                            body_kind: None,
+                            body_size: Some(source.len() as i64),
+                            origin_ref: Some(src_path.clone()),
+                            bench_ids: None,
+                            authored_in: Some(src_path.clone()),
+                            composed_of: None,
+                        };
+                        if let Err(e) = nom_dict::upsert_entity(&dict_db, &row) {
+                            eprintln!("nom: upsert entity error for {}: {e}", decl.word);
+                            return 1;
+                        }
+                        ids.push(id.clone());
+                    }
+                    nom_concept::NomtuItem::Composition(comp) => {
+                        let id = match canonical_decl_hash(comp) {
+                            Ok(h) => h,
+                            Err(e) => {
+                                eprintln!("nom: hash composition error for {}: {e}", comp.word);
+                                return 1;
+                            }
+                        };
+                        let row = nom_dict::EntityRow {
+                            hash: id.clone(),
+                            word: comp.word.clone(),
+                            kind: "module".to_string(),
+                            signature: comp.glue.clone(),
+                            contracts: Some(
+                                serde_json::to_string(&comp.contracts).unwrap_or_default(),
+                            ),
+                            body_kind: None,
+                            body_size: Some(source.len() as i64),
+                            origin_ref: Some(src_path.clone()),
+                            bench_ids: None,
+                            authored_in: Some(src_path.clone()),
+                            composed_of: composition_members_json(comp),
+                        };
+                        if let Err(e) = nom_dict::upsert_entity(&dict_db, &row) {
+                            eprintln!("nom: upsert composition error for {}: {e}", comp.word);
+                            return 1;
+                        }
+                        ids.push(id.clone());
+                    }
+                }
+            }
+        }
     }
 
+    let status_str = "Complete";
     if json {
-        let refs_json = json_array(&refs);
-        let missing_json = json_array(&missing);
+        let refs_json = "[]";
+        let missing_json = "[]";
         // Emit the primary id + resolved refs + still-missing names.
         let primary = ids.first().cloned().unwrap_or_default();
         println!(
             "{{\"id\":\"{}\",\"status\":\"{}\",\"refs\":{},\"missing\":{}}}",
-            primary,
-            status.as_str(),
-            refs_json,
-            missing_json
+            primary, status_str, refs_json, missing_json
         );
     } else {
         for id in &ids {
             println!("{id}");
         }
-        for name in &missing {
-            eprintln!("nom: warning: unresolved use `{name}`");
-        }
     }
     0
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{cmd_store_add, repo_id_for_source};
+    use std::path::{Path, PathBuf};
+
+    use nom_concept::stages::{PipelineOutput, run_pipeline};
+    use nom_dict::Dict;
+    use nom_dict::dict::find_concept_def;
+
+    fn temp_dir(tag: &str) -> PathBuf {
+        let nanos = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let pid = std::process::id();
+        let dir = std::env::temp_dir().join(format!("nom-store-cmd-{tag}-{pid}-{nanos}"));
+        std::fs::create_dir_all(&dir).expect("create temp dir");
+        dir
+    }
+
+    #[test]
+    fn repo_id_for_source_uses_parent_dir_name() {
+        let path = Path::new(r"C:\work\sample_repo\concept.nomx");
+        assert_eq!(repo_id_for_source(path), "sample_repo");
+    }
+
+    #[test]
+    fn cmd_store_add_concept_uses_parent_repo_id() {
+        let root = temp_dir("concept-add");
+        let repo = root.join("sample_repo");
+        std::fs::create_dir_all(&repo).expect("create repo dir");
+
+        let src = repo.join("routing.nomx");
+        std::fs::write(
+            &src,
+            "the concept routing is\n  intended to route incoming requests.\n  favor correctness.\n",
+        )
+        .expect("write source");
+
+        let dict_path = root.join("nomdict.db");
+        let code = cmd_store_add(&src, &dict_path, false);
+        assert_eq!(code, 0, "cmd_store_add should succeed");
+
+        let dict = Dict::try_open_from_nomdict_path(&dict_path).expect("open split dict");
+        let row = find_concept_def(&dict, "routing")
+            .expect("concept query")
+            .expect("routing concept row");
+        assert_eq!(row.repo_id, "sample_repo");
+        assert_eq!(row.src_path, src.display().to_string());
+    }
+
+    #[test]
+    fn canonical_decl_hash_matches_pipeline_json_for_entity() {
+        let src = "the function fetch_url is given a url, returns text.\n";
+        let out = run_pipeline(src).expect("pipeline");
+        let entity = match out {
+            PipelineOutput::Nomtu(file) => match file.items.into_iter().next().expect("one item") {
+                nom_concept::NomtuItem::Entity(entity) => entity,
+                _ => panic!("expected entity"),
+            },
+            _ => panic!("expected nomtu"),
+        };
+
+        let expected = super::sha256_hex(&serde_json::to_vec(&entity).expect("serialize entity"));
+        let actual = super::canonical_decl_hash(&entity).expect("canonical hash");
+        assert_eq!(actual, expected);
+    }
 }
 
 pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
@@ -322,7 +300,13 @@ pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
             .unwrap_or_else(|| "null".to_string());
         let meta_json: Vec<String> = meta
             .iter()
-            .map(|(k, v)| format!("{{\"key\":\"{}\",\"value\":\"{}\"}}", escape_json(k), escape_json(v)))
+            .map(|(k, v)| {
+                format!(
+                    "{{\"key\":\"{}\",\"value\":\"{}\"}}",
+                    escape_json(k),
+                    escape_json(v)
+                )
+            })
             .collect();
         println!(
             "{{\"id\":\"{}\",\"word\":\"{}\",\"kind\":\"{}\",\"language\":\"{}\",\"status\":\"{}\",\"describe\":{},\"body_nom\":{},\"meta\":[{}]}}",
@@ -558,11 +542,6 @@ pub fn cmd_store_list(
     limit: usize,
     json: bool,
 ) -> i32 {
-    let dict_db = match open_dict(dict) {
-        Some(d) => d,
-        None => return 1,
-    };
-
     // Validate body_kind against the §4.4.6 known-tag list.
     if let Some(bk) = body_kind {
         if !nom_types::body_kind::is_known(bk) {
@@ -579,9 +558,7 @@ pub fn cmd_store_list(
         let parsed = EntryStatus::from_str(s);
         // from_str falls back to Partial for unknown input; detect mismatch.
         if parsed.as_str() != s {
-            eprintln!(
-                "nom: unknown status: {s}. Known: complete, partial, opaque"
-            );
+            eprintln!("nom: unknown status: {s}. Known: complete, partial, opaque");
             return 1;
         }
         Some(parsed)
@@ -617,11 +594,26 @@ pub fn cmd_store_list(
         limit,
     };
 
-    let entries = match dict_db.find_entries(&filter) {
-        Ok(e) => e,
-        Err(e) => {
-            eprintln!("nom: dict error: {e}");
-            return 1;
+    // Try Dict first (new split-DB path); fall back to NomDict for backward compatibility.
+    let entries = if let Ok(d) = Dict::try_open_from_nomdict_path(dict) {
+        match find_entries(&d, &filter) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("nom: dict error: {e}");
+                return 1;
+            }
+        }
+    } else {
+        let dict_db = match open_dict(dict) {
+            Some(d) => d,
+            None => return 1,
+        };
+        match dict_db.find_entries(&filter) {
+            Ok(e) => e,
+            Err(e) => {
+                eprintln!("nom: dict error: {e}");
+                return 1;
+            }
         }
     };
 

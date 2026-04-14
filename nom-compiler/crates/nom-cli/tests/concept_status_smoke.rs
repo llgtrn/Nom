@@ -130,8 +130,7 @@ the concept empty_concept is
         let dict_dir = make_tmpdir("t2-d");
 
         // 1. Sync the .nomtu so the hash lands in entities.
-        let nomtu_src =
-            "the function foo_compute is\n  given x of text, returns y of text.\n";
+        let nomtu_src = "the function foo_compute is\n  given x of text, returns y of text.\n";
         std::fs::write(repo_dir.join("util.nomtu"), nomtu_src).expect("write nomtu");
 
         let (sc, _, se) = run_sync(&repo_dir, &dict_dir);
@@ -162,10 +161,7 @@ the concept compute_concept is
         let (code, stdout, stderr) = run_status(&repo_dir, &dict_dir, None);
         // The resolved hash is already in word_hashes (closure walker puts it
         // directly into word_hashes, not unresolved).  Status should report clean.
-        assert_eq!(
-            code, 0,
-            "expected exit 0, stderr={stderr}\nstdout={stdout}"
-        );
+        assert_eq!(code, 0, "expected exit 0, stderr={stderr}\nstdout={stdout}");
         assert!(
             stdout.contains("compute_concept"),
             "expected compute_concept in output: {stdout}"
@@ -184,8 +180,7 @@ the concept compute_concept is
         let dict_dir = make_tmpdir("t3-d");
 
         // 1. Sync .nomtu so `login_verify` is in entities.
-        let nomtu_src =
-            "the function login_verify is\n  given credentials, returns yes or no.\n";
+        let nomtu_src = "the function login_verify is\n  given credentials, returns yes or no.\n";
         std::fs::write(repo_dir.join("login.nomtu"), nomtu_src).expect("write nomtu");
 
         let (sc, _, se) = run_sync(&repo_dir, &dict_dir);
@@ -213,10 +208,7 @@ the concept auth_concept is
             stdout.contains("auth_concept"),
             "expected auth_concept: {stdout}"
         );
-        assert!(
-            stdout.contains("all clear"),
-            "expected all clear: {stdout}"
-        );
+        assert!(stdout.contains("all clear"), "expected all clear: {stdout}");
         // Exactly 1 word resolved (no alternatives).
         assert!(
             stdout.contains("words resolved: 1"),
@@ -274,10 +266,7 @@ the concept ambiguous_concept is
             stdout.contains("ambiguous"),
             "expected 'ambiguous' in output to surface alternatives: {stdout}"
         );
-        assert!(
-            stdout.contains("all clear"),
-            "expected all clear: {stdout}"
-        );
+        assert!(stdout.contains("all clear"), "expected all clear: {stdout}");
     }
 
     // ── Test 5: unknown concept name → exit 1 ────────────────────────────────

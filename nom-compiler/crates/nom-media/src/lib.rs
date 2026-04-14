@@ -24,8 +24,8 @@ use std::io::Cursor;
 use flacenc::component::BitRepr;
 use flacenc::error::Verify;
 use image::{
-    codecs::png::{CompressionType, FilterType, PngEncoder},
     ColorType, ExtendedColorType, ImageEncoder, ImageReader,
+    codecs::png::{CompressionType, FilterType, PngEncoder},
 };
 use ravif::Encoder as AvifEncoder;
 use rgb::RGBA8;
@@ -215,12 +215,11 @@ pub fn verify_png_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
 
     // Compare raw pixel bytes — pixel-equality, not byte-equality of
     // the compressed stream.
-    let original_pixels = image_to_rgba8(&image::ImageReader::with_format(
-        Cursor::new(bytes),
-        image::ImageFormat::Png,
-    )
-    .decode()
-    .map_err(|e| MediaError::Png(e.to_string()))?);
+    let original_pixels = image_to_rgba8(
+        &image::ImageReader::with_format(Cursor::new(bytes), image::ImageFormat::Png)
+            .decode()
+            .map_err(|e| MediaError::Png(e.to_string()))?,
+    );
 
     let roundtripped_pixels = image_to_rgba8(&roundtripped);
 
@@ -401,10 +400,12 @@ pub fn verify_jpeg_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
     let original_pixels = image_to_rgba8(&original);
 
     // Decode canonical bytes back to RGBA8.
-    let roundtripped =
-        ImageReader::with_format(Cursor::new(&ingested.canonical_bytes), image::ImageFormat::Jpeg)
-            .decode()
-            .map_err(|e| MediaError::Jpeg(format!("round-trip decode failed: {e}")))?;
+    let roundtripped = ImageReader::with_format(
+        Cursor::new(&ingested.canonical_bytes),
+        image::ImageFormat::Jpeg,
+    )
+    .decode()
+    .map_err(|e| MediaError::Jpeg(format!("round-trip decode failed: {e}")))?;
     let roundtripped_pixels = image_to_rgba8(&roundtripped);
 
     let score = psnr_rgba8(&original_pixels, &roundtripped_pixels);
@@ -627,12 +628,7 @@ fn rgba8_slice_from_bytes(pixels: &[u8]) -> &[RGBA8] {
     // SAFETY: RGBA8 = rgb::RGBA<u8> is repr(C) with alignment 1 and size 4.
     // The pointer cast is valid because the source slice has the same element
     // size (1) × 4, so the resulting slice has the correct byte count.
-    unsafe {
-        std::slice::from_raw_parts(
-            pixels.as_ptr() as *const RGBA8,
-            pixels.len() / 4,
-        )
-    }
+    unsafe { std::slice::from_raw_parts(pixels.as_ptr() as *const RGBA8, pixels.len() / 4) }
 }
 
 /// Compute the Peak Signal-to-Noise Ratio between two RGBA8 pixel buffers.
@@ -646,7 +642,11 @@ fn rgba8_slice_from_bytes(pixels: &[u8]) -> &[RGBA8] {
 ///
 /// Returns `f64::INFINITY` if the inputs are identical (MSE = 0).
 fn psnr_rgba8(a: &[u8], b: &[u8]) -> f64 {
-    assert_eq!(a.len(), b.len(), "psnr_rgba8: buffers must have equal length");
+    assert_eq!(
+        a.len(),
+        b.len(),
+        "psnr_rgba8: buffers must have equal length"
+    );
     let mse: f64 = a
         .iter()
         .zip(b.iter())
@@ -760,7 +760,11 @@ fn parse_opus_metadata(bytes: &[u8]) -> Result<(u32, u8, u64), MediaError> {
         }
     }
 
-    let output_rate = if sample_rate == 0 { 48000u64 } else { sample_rate as u64 };
+    let output_rate = if sample_rate == 0 {
+        48000u64
+    } else {
+        sample_rate as u64
+    };
     let duration_ms = if last_granule > pre_skip {
         (last_granule - pre_skip) * 1000 / output_rate
     } else {
@@ -809,9 +813,9 @@ fn decode_opus_pcm(bytes: &[u8]) -> Result<Vec<i16>, MediaError> {
     };
 
     // Skip OpusTags.
-    reader.read_packet_expected().map_err(|e| {
-        MediaError::Opus(format!("Opus PCM decode: failed to read comment: {e}"))
-    })?;
+    reader
+        .read_packet_expected()
+        .map_err(|e| MediaError::Opus(format!("Opus PCM decode: failed to read comment: {e}")))?;
 
     let mut decoder = OpusDecoder::new(output_rate, channels)
         .map_err(|e| MediaError::Opus(format!("OpusDecoder::new failed: {e}")))?;
@@ -846,9 +850,7 @@ fn decode_opus_pcm(bytes: &[u8]) -> Result<Vec<i16>, MediaError> {
 ///
 /// Returns `(sample_rate, channels, bits_per_sample, pcm_samples)` where
 /// `pcm_samples` is interleaved across all channels in sample order.
-fn decode_flac_pcm(
-    bytes: &[u8],
-) -> Result<(u32, u8, u8, Vec<i32>), MediaError> {
+fn decode_flac_pcm(bytes: &[u8]) -> Result<(u32, u8, u8, Vec<i32>), MediaError> {
     let cursor = Cursor::new(bytes);
     let mut reader =
         claxon::FlacReader::new(cursor).map_err(|e| MediaError::Flac(e.to_string()))?;
@@ -1030,10 +1032,7 @@ pub fn ingest_image_still_to_avif(
 /// - `stored_avif` is not a valid AVIF container,
 /// - the platform has no AVIF pixel decoder (Windows without C toolchain), or
 /// - PSNR computation encounters mismatched image dimensions.
-pub fn verify_avif_roundtrip(
-    original_bytes: &[u8],
-    stored_avif: &[u8],
-) -> Result<f64, MediaError> {
+pub fn verify_avif_roundtrip(original_bytes: &[u8], stored_avif: &[u8]) -> Result<f64, MediaError> {
     // On Windows the original_bytes are unused (no AVIF pixel decoder).
     // Suppress the warning explicitly so the API signature stays symmetric.
     #[cfg(windows)]
@@ -1085,7 +1084,6 @@ pub fn verify_avif_roundtrip(
             .to_owned(),
     ))
 }
-
 
 // ── AV1 video codec (§5.16.13 order #6 — §4.4.6 canonical video) ─────
 
@@ -1347,7 +1345,11 @@ pub fn verify_webm_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
             rt_tracks.len(),
         )));
     }
-    let orig_types: Vec<&str> = ingested.tracks.iter().map(|t| t.track_type.as_str()).collect();
+    let orig_types: Vec<&str> = ingested
+        .tracks
+        .iter()
+        .map(|t| t.track_type.as_str())
+        .collect();
     let rt_types: Vec<&str> = rt_tracks.iter().map(|t| t.track_type.as_str()).collect();
     if orig_types != rt_types {
         return Err(MediaError::Webm(format!(
@@ -1495,15 +1497,22 @@ fn parse_ivf_metadata(bytes: &[u8]) -> Result<(u32, u32, u32, u64), MediaError> 
     let mut offset = FILE_HEADER;
     let mut counted = 0u32;
     while offset + 12 <= bytes.len() {
-        let frame_size =
-            u32::from_le_bytes([bytes[offset], bytes[offset + 1], bytes[offset + 2], bytes[offset + 3]])
-                as usize;
+        let frame_size = u32::from_le_bytes([
+            bytes[offset],
+            bytes[offset + 1],
+            bytes[offset + 2],
+            bytes[offset + 3],
+        ]) as usize;
         offset += 12 + frame_size;
         counted += 1;
     }
 
     // Use counted if the file header says 0 (some encoders leave it unset).
-    let effective_count = if frame_count == 0 { counted } else { frame_count };
+    let effective_count = if frame_count == 0 {
+        counted
+    } else {
+        frame_count
+    };
 
     Ok((width, height, effective_count, duration_ms))
 }
@@ -1598,9 +1607,8 @@ fn parse_adts_metadata(bytes: &[u8]) -> Result<(u32, u8, u64), MediaError> {
 
         // aac_frame_length: bits [1:0] of b3 | b4 | bits [7:5] of b5
         // (bits 12..0 of a 13-bit field across b3..b5).
-        let frame_length = (((b3 & 0x03) as usize) << 11)
-            | ((b4 as usize) << 3)
-            | (((b5 >> 5) & 0x07) as usize);
+        let frame_length =
+            (((b3 & 0x03) as usize) << 11) | ((b4 as usize) << 3) | (((b5 >> 5) & 0x07) as usize);
 
         if frame_length < header_len {
             return Err(MediaError::Aac(format!(
@@ -1783,14 +1791,14 @@ fn parse_webm_metadata(bytes: &[u8]) -> Result<(u64, Vec<WebmTrack>), MediaError
     let mut tracks: Vec<WebmTrack> = Vec::new();
 
     while pos < total {
-        let (id, id_len) = read_element_id(bytes, pos)
-            .map_err(|e| MediaError::Webm(e.to_owned()))?;
+        let (id, id_len) =
+            read_element_id(bytes, pos).map_err(|e| MediaError::Webm(e.to_owned()))?;
         pos += id_len;
         if pos >= total {
             break;
         }
-        let (data_size, ds_len) = read_vint(bytes, pos)
-            .map_err(|e| MediaError::Webm(e.to_owned()))?;
+        let (data_size, ds_len) =
+            read_vint(bytes, pos).map_err(|e| MediaError::Webm(e.to_owned()))?;
         pos += ds_len;
 
         // 0xFF...FF sizes = "unknown size" (master elements that run to
@@ -1860,7 +1868,8 @@ fn parse_webm_metadata(bytes: &[u8]) -> Result<(u64, Vec<WebmTrack>), MediaError
                                             let secs = read_float(bytes, ipos, sz);
                                             // Duration in Matroska is in timecode-scale units.
                                             // duration_s = duration_value × timecode_scale_ns / 1e9
-                                            let scale_s = timecode_scale_ns as f64 / 1_000_000_000.0;
+                                            let scale_s =
+                                                timecode_scale_ns as f64 / 1_000_000_000.0;
                                             duration_ms = (secs * scale_s * 1000.0) as u64;
                                         }
                                     }
@@ -1908,7 +1917,8 @@ fn parse_webm_metadata(bytes: &[u8]) -> Result<(u64, Vec<WebmTrack>), MediaError
                                                 track_num = read_uint(bytes, epos, eend - epos);
                                             }
                                             ID_TRACK_TYPE => {
-                                                track_type_code = read_uint(bytes, epos, eend - epos);
+                                                track_type_code =
+                                                    read_uint(bytes, epos, eend - epos);
                                             }
                                             ID_CODEC_ID => {
                                                 codec_id = read_utf8(bytes, epos, eend - epos);
@@ -2050,7 +2060,11 @@ pub fn verify_mp4_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
             rt_tracks.len(),
         )));
     }
-    let orig_handlers: Vec<&str> = ingested.tracks.iter().map(|t| t.handler_type.as_str()).collect();
+    let orig_handlers: Vec<&str> = ingested
+        .tracks
+        .iter()
+        .map(|t| t.handler_type.as_str())
+        .collect();
     let rt_handlers: Vec<&str> = rt_tracks.iter().map(|t| t.handler_type.as_str()).collect();
     if orig_handlers != rt_handlers {
         return Err(MediaError::Mp4(format!(
@@ -2097,7 +2111,12 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
         if pos + 4 > data.len() {
             return Err("truncated u32");
         }
-        Ok(u32::from_be_bytes([data[pos], data[pos+1], data[pos+2], data[pos+3]]))
+        Ok(u32::from_be_bytes([
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+        ]))
     }
 
     /// Read a big-endian u64 from `data[pos..]`.
@@ -2106,8 +2125,14 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
             return Err("truncated u64");
         }
         Ok(u64::from_be_bytes([
-            data[pos], data[pos+1], data[pos+2], data[pos+3],
-            data[pos+4], data[pos+5], data[pos+6], data[pos+7],
+            data[pos],
+            data[pos + 1],
+            data[pos + 2],
+            data[pos + 3],
+            data[pos + 4],
+            data[pos + 5],
+            data[pos + 6],
+            data[pos + 7],
         ]))
     }
 
@@ -2116,22 +2141,21 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
         if pos + 4 > data.len() {
             return Err("truncated fourcc");
         }
-        Ok([data[pos], data[pos+1], data[pos+2], data[pos+3]])
+        Ok([data[pos], data[pos + 1], data[pos + 2], data[pos + 3]])
     }
 
     /// Decode a fourcc to a lossy ASCII string (non-ASCII → '?').
     fn fourcc_str(cc: [u8; 4]) -> String {
-        cc.iter().map(|&b| if b.is_ascii() { b as char } else { '?' }).collect()
+        cc.iter()
+            .map(|&b| if b.is_ascii() { b as char } else { '?' })
+            .collect()
     }
 
     /// Read one box header from `data[pos..]`.
     /// Returns `(fourcc, payload_start, box_end)`.
     /// `payload_start` is the offset of the first payload byte
     /// (after any largesize field).
-    fn read_box_header(
-        data: &[u8],
-        pos: usize,
-    ) -> Result<([u8; 4], usize, usize), &'static str> {
+    fn read_box_header(data: &[u8], pos: usize) -> Result<([u8; 4], usize, usize), &'static str> {
         if pos + 8 > data.len() {
             return Err("truncated box header");
         }
@@ -2163,8 +2187,7 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
     if bytes.len() < 8 {
         return Err(MediaError::Mp4("file too short to be MP4".to_owned()));
     }
-    let first_fourcc = read_fourcc(bytes, 4)
-        .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+    let first_fourcc = read_fourcc(bytes, 4).map_err(|e| MediaError::Mp4(e.to_owned()))?;
     if first_fourcc != *b"ftyp" && first_fourcc != *b"moov" {
         return Err(MediaError::Mp4(format!(
             "not an MP4: first box is '{}', expected 'ftyp' or 'moov'",
@@ -2196,15 +2219,18 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
                     // version 1: creation(8)+modification(8)+timescale(4)+duration(8)
                     let (timescale, dur_raw) = if version == 0 {
                         let ts = read_u32(bytes, p + 8)
-                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))?
+                            as u64;
                         let dr = read_u32(bytes, p + 12)
-                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))?
+                            as u64;
                         (ts, dr)
                     } else {
                         let ts = read_u32(bytes, p + 16)
-                            .map_err(|e| MediaError::Mp4(e.to_owned()))? as u64;
-                        let dr = read_u64(bytes, p + 20)
-                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))?
+                            as u64;
+                        let dr =
+                            read_u64(bytes, p + 20).map_err(|e| MediaError::Mp4(e.to_owned()))?;
                         (ts, dr)
                     };
                     if timescale > 0 {
@@ -2218,8 +2244,8 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
 
                     let mut tpos = mp_start;
                     while tpos + 8 <= m_end {
-                        let (tfcc, tp_start, t_end) =
-                            read_box_header(bytes, tpos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                        let (tfcc, tp_start, t_end) = read_box_header(bytes, tpos)
+                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
 
                         if tfcc == *b"tkhd" {
                             // FullBox: version(1)+flags(3)
@@ -2234,8 +2260,8 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
                             // ── Walk mdia children ────────────────────
                             let mut dpos = tp_start;
                             while dpos + 8 <= t_end {
-                                let (dfcc, dp_start, d_end) =
-                                    read_box_header(bytes, dpos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                let (dfcc, dp_start, d_end) = read_box_header(bytes, dpos)
+                                    .map_err(|e| MediaError::Mp4(e.to_owned()))?;
 
                                 if dfcc == *b"hdlr" {
                                     // FullBox: version(1)+flags(3)+pre_defined(4)+handler_type(4)
@@ -2249,15 +2275,17 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
                                     // ── Walk minf → stbl ─────────────
                                     let mut ipos = dp_start;
                                     while ipos + 8 <= d_end {
-                                        let (ifcc, ip_start, i_end) =
-                                            read_box_header(bytes, ipos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                        let (ifcc, ip_start, i_end) = read_box_header(bytes, ipos)
+                                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
 
                                         if ifcc == *b"stbl" {
                                             // ── Walk stbl → stsd ─────
                                             let mut spos = ip_start;
                                             while spos + 8 <= i_end {
                                                 let (sfcc, sp_start, s_end) =
-                                                    read_box_header(bytes, spos).map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                                    read_box_header(bytes, spos).map_err(|e| {
+                                                        MediaError::Mp4(e.to_owned())
+                                                    })?;
 
                                                 if sfcc == *b"stsd" {
                                                     // FullBox: version(1)+flags(3)+entry_count(4)
@@ -2265,34 +2293,52 @@ fn parse_mp4_metadata(bytes: &[u8]) -> Result<(u64, Vec<Mp4Track>), MediaError> 
                                                     // First sample entry: size(4)+fourcc(4)+...
                                                     if ep + 8 <= s_end {
                                                         let cc = read_fourcc(bytes, ep + 4)
-                                                            .map_err(|e| MediaError::Mp4(e.to_owned()))?;
+                                                            .map_err(|e| {
+                                                                MediaError::Mp4(e.to_owned())
+                                                            })?;
                                                         codec = fourcc_str(cc);
                                                     }
                                                 }
-                                                if spos == s_end { break; }
+                                                if spos == s_end {
+                                                    break;
+                                                }
                                                 spos = s_end;
                                             }
                                         }
-                                        if ipos == i_end { break; }
+                                        if ipos == i_end {
+                                            break;
+                                        }
                                         ipos = i_end;
                                     }
                                 }
-                                if dpos == d_end { break; }
+                                if dpos == d_end {
+                                    break;
+                                }
                                 dpos = d_end;
                             }
                         }
-                        if tpos == t_end { break; }
+                        if tpos == t_end {
+                            break;
+                        }
                         tpos = t_end;
                     }
 
-                    tracks.push(Mp4Track { track_id, handler_type, codec });
+                    tracks.push(Mp4Track {
+                        track_id,
+                        handler_type,
+                        codec,
+                    });
                 }
-                if mpos == m_end { break; }
+                if mpos == m_end {
+                    break;
+                }
                 mpos = m_end;
             }
         }
 
-        if pos == box_end { break; }
+        if pos == box_end {
+            break;
+        }
         pos = box_end;
     }
 
@@ -2377,8 +2423,7 @@ pub fn verify_hevc_roundtrip(bytes: &[u8]) -> Result<(), MediaError> {
         return Err(MediaError::Hevc(format!(
             "SPS metadata mismatch after round-trip: \
              original=({},{},p{}) canonical=({},{},p{})",
-            ingested.width, ingested.height, ingested.profile_idc,
-            rt_w, rt_h, rt_p
+            ingested.width, ingested.height, ingested.profile_idc, rt_w, rt_h, rt_p
         )));
     }
     Ok(())
@@ -2431,11 +2476,16 @@ fn parse_hevc_annexb(bytes: &[u8]) -> Result<(u32, u32, u32, u8), MediaError> {
             // We don't know if it was 3- or 4-byte; scan backwards.
             let next = nal_starts[idx + 1];
             // Determine start code length preceding next NAL.
-            if next >= 4 && bytes[next - 4] == 0x00 && bytes[next - 3] == 0x00
-                && bytes[next - 2] == 0x00 && bytes[next - 1] == 0x01
+            if next >= 4
+                && bytes[next - 4] == 0x00
+                && bytes[next - 3] == 0x00
+                && bytes[next - 2] == 0x00
+                && bytes[next - 1] == 0x01
             {
                 next - 4
-            } else if next >= 3 && bytes[next - 3] == 0x00 && bytes[next - 2] == 0x00
+            } else if next >= 3
+                && bytes[next - 3] == 0x00
+                && bytes[next - 2] == 0x00
                 && bytes[next - 1] == 0x01
             {
                 next - 3
@@ -2522,7 +2572,11 @@ struct BitReader<'a> {
 
 impl<'a> BitReader<'a> {
     fn new(data: &'a [u8]) -> Self {
-        BitReader { data, byte_pos: 0, bit_pos: 0 }
+        BitReader {
+            data,
+            byte_pos: 0,
+            bit_pos: 0,
+        }
     }
 
     /// Read `n` bits as a u32. Returns `None` if insufficient data.
@@ -2593,11 +2647,15 @@ fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
     let mut r = BitReader::new(rbsp);
 
     // sps_video_parameter_set_id (u4)
-    r.read_bits(4).ok_or("truncated: sps_video_parameter_set_id")?;
+    r.read_bits(4)
+        .ok_or("truncated: sps_video_parameter_set_id")?;
     // sps_max_sub_layers_minus1 (u3)
-    let max_sub_layers_minus1 = r.read_bits(3).ok_or("truncated: sps_max_sub_layers_minus1")?;
+    let max_sub_layers_minus1 = r
+        .read_bits(3)
+        .ok_or("truncated: sps_max_sub_layers_minus1")?;
     // sps_temporal_id_nesting_flag (u1)
-    r.read_bits(1).ok_or("truncated: sps_temporal_id_nesting_flag")?;
+    r.read_bits(1)
+        .ok_or("truncated: sps_temporal_id_nesting_flag")?;
 
     // profile_tier_level(maxNumSubLayersMinus1)
     // general_profile_space (u2), general_tier_flag (u1)
@@ -2605,12 +2663,15 @@ fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
     // general_profile_idc (u5)
     let profile_idc = r.read_bits(5).ok_or("truncated: general_profile_idc")? as u8;
     // general_profile_compatibility_flag[32] (u32)
-    r.read_bits(32).ok_or("truncated: profile_compatibility_flag")?;
+    r.read_bits(32)
+        .ok_or("truncated: profile_compatibility_flag")?;
     // progressive(1) + interlaced(1) + non_packed(1) + frame_only(1) (u4)
     r.read_bits(4).ok_or("truncated: source flags")?;
     // general_reserved_zero_43bits (u43) + general_inbld_flag (u1) = 44 bits total
-    r.read_bits(32).ok_or("truncated: constraint bits [0..31]")?;
-    r.read_bits(12).ok_or("truncated: constraint bits [32..43] + inbld")?;
+    r.read_bits(32)
+        .ok_or("truncated: constraint bits [0..31]")?;
+    r.read_bits(12)
+        .ok_or("truncated: constraint bits [32..43] + inbld")?;
     // general_level_idc (u8)
     r.read_bits(8).ok_or("truncated: general_level_idc")?;
 
@@ -2620,7 +2681,10 @@ fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
     let mut sub_profile_present = [false; 8];
     let mut sub_level_present = [false; 8];
     for i in 0..max_sub_layers_minus1 as usize {
-        sub_profile_present[i] = r.read_bits(1).ok_or("truncated: sub_layer_profile_present")? != 0;
+        sub_profile_present[i] = r
+            .read_bits(1)
+            .ok_or("truncated: sub_layer_profile_present")?
+            != 0;
         sub_level_present[i] = r.read_bits(1).ok_or("truncated: sub_layer_level_present")? != 0;
     }
     // If maxNumSubLayersMinus1 > 0, read reserved_zero_2bits padding for each i from
@@ -2633,9 +2697,12 @@ fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
         for i in 0..max_sub_layers_minus1 as usize {
             if sub_profile_present[i] {
                 // profile_space(2)+tier(1)+idc(5)+compat(32)+4 source flags+44 constraint = 88 bits
-                r.read_bits(32).ok_or("truncated: sub_layer profile body [0]")?;
-                r.read_bits(32).ok_or("truncated: sub_layer profile body [1]")?;
-                r.read_bits(24).ok_or("truncated: sub_layer profile body [2]")?;
+                r.read_bits(32)
+                    .ok_or("truncated: sub_layer profile body [0]")?;
+                r.read_bits(32)
+                    .ok_or("truncated: sub_layer profile body [1]")?;
+                r.read_bits(24)
+                    .ok_or("truncated: sub_layer profile body [2]")?;
             }
             if sub_level_present[i] {
                 r.read_bits(8).ok_or("truncated: sub_layer_level_idc")?;
@@ -2648,7 +2715,8 @@ fn decode_sps_fields(rbsp: &[u8]) -> Result<(u8, u32, u32), &'static str> {
     // chroma_format_idc ue(v)
     let chroma_format_idc = r.read_ue().ok_or("truncated: chroma_format_idc")?;
     if chroma_format_idc == 3 {
-        r.read_bits(1).ok_or("truncated: separate_colour_plane_flag")?;
+        r.read_bits(1)
+            .ok_or("truncated: separate_colour_plane_flag")?;
     }
     // pic_width_in_luma_samples ue(v)
     let width = r.read_ue().ok_or("truncated: pic_width_in_luma_samples")?;

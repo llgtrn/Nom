@@ -33,7 +33,10 @@ fn exchange(
 ) -> serde_json::Value {
     writeln!(stdin, "{payload}").expect("write to mcp stdin");
     stdin.flush().expect("flush");
-    let line = stdout_lines.next().expect("expected response line").expect("io");
+    let line = stdout_lines
+        .next()
+        .expect("expected response line")
+        .expect("io");
     serde_json::from_str(&line).expect("response is valid JSON")
 }
 
@@ -66,7 +69,10 @@ fn mcp_initialize_handshake() {
         resp["result"]["protocolVersion"], "2024-11-05",
         "protocol version"
     );
-    assert_eq!(resp["result"]["serverInfo"]["name"], "nom-mcp", "server name");
+    assert_eq!(
+        resp["result"]["serverInfo"]["name"], "nom-mcp",
+        "server name"
+    );
 
     // ── tools/list ────────────────────────────────────────────────────
     let resp2 = exchange(
@@ -77,10 +83,7 @@ fn mcp_initialize_handshake() {
     assert_eq!(resp2["id"], 2, "echoed id for tools/list");
     let tools = resp2["result"]["tools"].as_array().expect("tools array");
     assert_eq!(tools.len(), 3, "exactly 3 tools");
-    let names: Vec<&str> = tools
-        .iter()
-        .filter_map(|t| t["name"].as_str())
-        .collect();
+    let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"list_nomtu"), "list_nomtu present");
     assert!(names.contains(&"get_nomtu"), "get_nomtu present");
     assert!(names.contains(&"search_nomtu"), "search_nomtu present");
@@ -96,10 +99,7 @@ fn mcp_initialize_handshake() {
     let text = resp3["result"]["content"][0]["text"]
         .as_str()
         .expect("content text");
-    assert!(
-        text.contains("0 entries matched"),
-        "empty dict: {text}"
-    );
+    assert!(text.contains("0 entries matched"), "empty dict: {text}");
 
     // ── search_nomtu on empty dict ────────────────────────────────────
     let resp4 = exchange(
@@ -111,7 +111,10 @@ fn mcp_initialize_handshake() {
     let text4 = resp4["result"]["content"][0]["text"]
         .as_str()
         .expect("content text");
-    assert!(text4.contains("0 entries matched"), "empty dict search: {text4}");
+    assert!(
+        text4.contains("0 entries matched"),
+        "empty dict search: {text4}"
+    );
 
     // ── get_nomtu with unknown hash ───────────────────────────────────
     let resp5 = exchange(
@@ -122,10 +125,11 @@ fn mcp_initialize_handshake() {
     assert_eq!(resp5["id"], 5);
     // Expect an error result (entry not found or prefix too short)
     assert!(
-        resp5.get("error").is_some() || resp5["result"]["content"][0]["text"]
-            .as_str()
-            .unwrap_or("")
-            .is_empty(),
+        resp5.get("error").is_some()
+            || resp5["result"]["content"][0]["text"]
+                .as_str()
+                .unwrap_or("")
+                .is_empty(),
         "should error on unknown hash"
     );
 

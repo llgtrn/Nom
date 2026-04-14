@@ -78,11 +78,7 @@ mod tests {
         )
     }
 
-    fn run_verify_acceptance(
-        repo: &Path,
-        dict_root: &Path,
-        prior: &Path,
-    ) -> (i32, String, String) {
+    fn run_verify_acceptance(repo: &Path, dict_root: &Path, prior: &Path) -> (i32, String, String) {
         let out = Command::new(nom_bin())
             .args([
                 "build",
@@ -120,8 +116,8 @@ mod tests {
     fn agent_demo_src() -> PathBuf {
         let manifest = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
         manifest
-            .join("..")   // crates/
-            .join("..")   // nom-compiler/
+            .join("..") // crates/
+            .join("..") // nom-compiler/
             .join("examples")
             .join("agent_demo")
     }
@@ -152,10 +148,7 @@ mod tests {
         let (rc, _ro, re) = run_build_report(&repo_dir, &dict_dir, &baseline);
         // Exit 1 is OK here (agent_demo has MECE violations); we just need the
         // JSON file to exist and be parseable.
-        assert!(
-            rc == 0 || rc == 1,
-            "build report exited {rc}: stderr={re}"
-        );
+        assert!(rc == 0 || rc == 1, "build report exited {rc}: stderr={re}");
         assert!(
             baseline.exists(),
             "baseline.json must exist after --out write"
@@ -185,7 +178,10 @@ mod tests {
 
         // Re-sync after modification so the DB reflects the current source.
         let (sc2, so2, se2) = run_sync(&repo_dir, &dict_dir);
-        assert_eq!(sc2, 0, "re-sync after modification failed: stderr={se2}\nstdout={so2}");
+        assert_eq!(
+            sc2, 0,
+            "re-sync after modification failed: stderr={se2}\nstdout={so2}"
+        );
 
         // ── Step 4: verify-acceptance must exit 1 ────────────────────────────
         let (vc, vo, ve) = run_verify_acceptance(&repo_dir, &dict_dir, &baseline);
@@ -209,7 +205,10 @@ mod tests {
 
         // Re-sync after revert.
         let (sc3, so3, se3) = run_sync(&repo_dir, &dict_dir);
-        assert_eq!(sc3, 0, "re-sync after revert failed: stderr={se3}\nstdout={so3}");
+        assert_eq!(
+            sc3, 0,
+            "re-sync after revert failed: stderr={se3}\nstdout={so3}"
+        );
 
         // ── Step 7: verify-acceptance must exit 0 ────────────────────────────
         let (vc2, vo2, ve2) = run_verify_acceptance(&repo_dir, &dict_dir, &baseline);

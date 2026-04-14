@@ -34,15 +34,28 @@ impl IngestCheckpoint {
         let expected = expected_parent.to_string_lossy().into_owned();
         let bytes = match std::fs::read(&path) {
             Ok(b) => b,
-            Err(_) => return Self { parent: expected, ..Default::default() },
+            Err(_) => {
+                return Self {
+                    parent: expected,
+                    ..Default::default()
+                };
+            }
         };
         let mut c: IngestCheckpoint = match serde_json::from_slice(&bytes) {
             Ok(c) => c,
-            Err(_) => return Self { parent: expected, ..Default::default() },
+            Err(_) => {
+                return Self {
+                    parent: expected,
+                    ..Default::default()
+                };
+            }
         };
         if c.parent != expected {
             // Different parent directory — don't reuse state.
-            c = Self { parent: expected, ..Default::default() };
+            c = Self {
+                parent: expected,
+                ..Default::default()
+            };
         }
         c
     }

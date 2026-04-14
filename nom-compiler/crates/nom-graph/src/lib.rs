@@ -22,7 +22,7 @@ pub mod export;
 pub mod uid;
 pub mod upsert;
 
-pub use export::{export_to_dir, ExportError, ExportSummary};
+pub use export::{ExportError, ExportSummary, export_to_dir};
 pub use upsert::UpsertOutcome;
 
 use std::collections::{HashMap, HashSet, VecDeque};

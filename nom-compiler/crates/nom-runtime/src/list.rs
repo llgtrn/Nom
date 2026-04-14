@@ -51,11 +51,21 @@ pub extern "C" fn nom_list_new(elem_size: i64) -> NomList {
 #[unsafe(no_mangle)]
 pub extern "C" fn nom_list_with_capacity(elem_size: i64, cap: i64) -> NomList {
     if cap <= 0 {
-        return NomList { data: ptr::null_mut(), len: 0, cap: 0 };
+        return NomList {
+            data: ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        };
     }
     let layout = match layout_for(elem_size, cap) {
         Some(l) => l,
-        None => return NomList { data: ptr::null_mut(), len: 0, cap: 0 },
+        None => {
+            return NomList {
+                data: ptr::null_mut(),
+                len: 0,
+                cap: 0,
+            };
+        }
     };
     let data = unsafe { alloc::alloc(layout) };
     if data.is_null() {
@@ -261,7 +271,11 @@ mod tests {
 
     #[test]
     fn push_into_zero_cap_grows_to_initial() {
-        let mut l = NomList { data: std::ptr::null_mut(), len: 0, cap: 0 };
+        let mut l = NomList {
+            data: std::ptr::null_mut(),
+            len: 0,
+            cap: 0,
+        };
         let v: i64 = 7;
         nom_list_push(&mut l as *mut _, &v as *const i64 as *const u8, 8);
         assert_eq!(nom_list_len(&l as *const _), 1);

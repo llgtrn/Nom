@@ -13,14 +13,19 @@
 //!   get_nomtu     — fetch one entry by id or ≥8-char hex prefix
 //!   search_nomtu  — substring search on the `describe` field
 
-use nom_dict::{Concept, EntryFilter, NomDict};
+use nom_dict::dict::{
+    body_kind_histogram, count_concept_members, count_entities, find_entries, get_concept_by_name,
+    get_concept_members, get_entry, list_concepts, resolve_prefix, search_describe,
+    status_histogram,
+};
+use nom_dict::{Concept, Dict, EntryFilter};
 use nom_types::{EntryKind, EntryStatus};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use std::io::{BufRead, Write};
 use std::path::Path;
 
 pub fn cmd_mcp_serve(dict_path: &Path) -> i32 {
-    let dict = match NomDict::open_in_place(dict_path) {
+    let dict = match Dict::try_open_from_nomdict_path(dict_path) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom mcp: cannot open dict at {}: {e}", dict_path.display());
@@ -58,7 +63,7 @@ pub fn cmd_mcp_serve(dict_path: &Path) -> i32 {
     0
 }
 
-fn handle_request(dict: &NomDict, req: &Value) -> Option<String> {
+fn handle_request(dict: &Dict, req: &Value) -> Option<String> {
     let id = req.get("id").cloned().unwrap_or(Value::Null);
     let method = req.get("method").and_then(|v| v.as_str()).unwrap_or("");
     match method {
@@ -68,7 +73,11 @@ fn handle_request(dict: &NomDict, req: &Value) -> Option<String> {
         "tools/list" => Some(tools_list_response(id)),
         "tools/call" => Some(tools_call_response(dict, id, req.get("params"))),
         "ping" => Some(ok_response(id, json!({}))),
-        other => Some(err_response(id, -32601, &format!("method not found: {other}"))),
+        other => Some(err_response(
+            id,
+            -32601,
+            &format!("method not found: {other}"),
+        )),
     }
 }
 
@@ -236,7 +245,7 @@ fn tools_list_response(id: Value) -> String {
 
 // ── Tool dispatch ─────────────────────────────────────────────────────
 
-fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> String {
+fn tools_call_response(dict: &Dict, id: Value, params: Option<&Value>) -> String {
     let params = match params {
         Some(p) => p,
         None => return err_response(id, -32602, "missing params"),
@@ -256,7 +265,7 @@ fn tools_call_response(dict: &NomDict, id: Value, params: Option<&Value>) -> Str
     }
 }
 
-fn call_list_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_list_nomtu(dict: &Dict, id: Value, args: &Value) -> String {
     let filter = EntryFilter {
         body_kind: args
             .get("body_kind")
@@ -274,12 +283,9 @@ fn call_list_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
             .get("kind")
             .and_then(|v| v.as_str())
             .map(EntryKind::from_str),
-        limit: args
-            .get("limit")
-            .and_then(|v| v.as_u64())
-            .unwrap_or(50) as usize,
+        limit: args.get("limit").and_then(|v| v.as_u64()).unwrap_or(50) as usize,
     };
-    let entries = match dict.find_entries(&filter) {
+    let entries = match find_entries(&dict, &filter) {
         Ok(e) => e,
         Err(e) => return err_response(id, -32000, &format!("query failed: {e}")),
     };
@@ -310,7 +316,7 @@ fn call_list_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_get_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_get_nomtu(dict: &Dict, id: Value, args: &Value) -> String {
     let hash = match args.get("hash").and_then(|v| v.as_str()) {
         Some(h) => h,
         None => return err_response(id, -32602, "missing required argument: hash"),
@@ -320,13 +326,13 @@ fn call_get_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
     let full_id = if hash.len() == 64 && hash.chars().all(|c| c.is_ascii_hexdigit()) {
         hash.to_string()
     } else {
-        match dict.resolve_prefix(hash) {
+        match resolve_prefix(&dict, hash) {
             Ok(fid) => fid,
             Err(e) => return err_response(id, -32000, &format!("{e}")),
         }
     };
 
-    let entry = match dict.get_entry(&full_id) {
+    let entry = match get_entry(&dict, &full_id) {
         Ok(Some(e)) => e,
         Ok(None) => return err_response(id, -32000, &format!("entry not found: {full_id}")),
         Err(e) => return err_response(id, -32000, &format!("lookup failed: {e}")),
@@ -357,17 +363,14 @@ fn call_get_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_search_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_search_nomtu(dict: &Dict, id: Value, args: &Value) -> String {
     let query = match args.get("query").and_then(|v| v.as_str()) {
         Some(q) => q,
         None => return err_response(id, -32602, "missing required argument: query"),
     };
-    let limit = args
-        .get("limit")
-        .and_then(|v| v.as_u64())
-        .unwrap_or(20) as usize;
+    let limit = args.get("limit").and_then(|v| v.as_u64()).unwrap_or(20) as usize;
 
-    let entries = match dict.search_describe(query, limit) {
+    let entries = match search_describe(&dict, query, limit) {
         Ok(e) => e,
         Err(e) => return err_response(id, -32000, &format!("search failed: {e}")),
     };
@@ -396,15 +399,15 @@ fn call_search_nomtu(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_list_concepts(dict: &NomDict, id: Value) -> String {
-    let concepts = match dict.list_concepts() {
+fn call_list_concepts(dict: &Dict, id: Value) -> String {
+    let concepts = match list_concepts(&dict) {
         Ok(v) => v,
         Err(e) => return err_response(id, -32000, &format!("query failed: {e}")),
     };
     let items: Vec<Value> = concepts
         .iter()
         .map(|c| {
-            let count = dict.count_concept_members(&c.id).unwrap_or(0);
+            let count = count_concept_members(&dict, &c.id).unwrap_or(0);
             json!({
                 "id": c.id,
                 "name": c.name,
@@ -425,17 +428,17 @@ fn call_list_concepts(dict: &NomDict, id: Value) -> String {
     )
 }
 
-fn call_get_concept(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_get_concept(dict: &Dict, id: Value, args: &Value) -> String {
     let name = match args.get("name").and_then(|v| v.as_str()) {
         Some(n) => n,
         None => return err_response(id, -32602, "missing required argument: name"),
     };
-    let concept: Concept = match dict.get_concept_by_name(name) {
+    let concept: Concept = match get_concept_by_name(&dict, name) {
         Ok(Some(c)) => c,
         Ok(None) => return err_response(id, -32000, &format!("concept not found: {name}")),
         Err(e) => return err_response(id, -32000, &format!("lookup failed: {e}")),
     };
-    let mut members = match dict.get_concept_members(&concept.id) {
+    let mut members = match get_concept_members(&dict, &concept.id) {
         Ok(m) => m,
         Err(e) => return err_response(id, -32000, &format!("member query failed: {e}")),
     };
@@ -480,7 +483,7 @@ fn call_get_concept(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
+fn call_criteria_proposals(dict: &Dict, id: Value, args: &Value) -> String {
     let manifest_hash = args
         .get("manifest_hash")
         .and_then(|v| v.as_str())
@@ -555,10 +558,10 @@ fn call_criteria_proposals(dict: &NomDict, id: Value, args: &Value) -> String {
     )
 }
 
-fn call_dict_stats(dict: &NomDict, id: Value) -> String {
-    let total = dict.count().unwrap_or(0);
-    let body_hist = dict.body_kind_histogram().unwrap_or_default();
-    let status_hist = dict.status_histogram().unwrap_or_default();
+fn call_dict_stats(dict: &Dict, id: Value) -> String {
+    let total = count_entities(&dict).unwrap_or(0);
+    let body_hist = body_kind_histogram(&dict).unwrap_or_default();
+    let status_hist = status_histogram(&dict).unwrap_or_default();
 
     let partial_count = status_hist
         .iter()
@@ -605,12 +608,9 @@ fn call_dict_stats(dict: &NomDict, id: Value) -> String {
 }
 
 fn call_parse_nomx(id: Value, args: &Value) -> String {
-    use nom_concept::stages::{run_pipeline, PipelineOutput};
+    use nom_concept::stages::{PipelineOutput, run_pipeline};
 
-    let source = args
-        .get("source")
-        .and_then(|v| v.as_str())
-        .unwrap_or("");
+    let source = args.get("source").and_then(|v| v.as_str()).unwrap_or("");
     if source.is_empty() {
         return err_response(id, -32602, "missing required argument: source");
     }
@@ -642,7 +642,12 @@ fn call_parse_nomx(id: Value, args: &Value) -> String {
             )
         }
         Err(e) => {
-            let msg = format!("Parse error at byte {} ({}): {}", e.position, e.diag_id(), e.detail);
+            let msg = format!(
+                "Parse error at byte {} ({}): {}",
+                e.position,
+                e.diag_id(),
+                e.detail
+            );
             ok_response(
                 id,
                 json!({

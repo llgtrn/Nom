@@ -1,8 +1,8 @@
 use crate::runtime::declare_runtime_functions;
 use crate::{LlvmError, LlvmOutput};
+use inkwell::builder::Builder;
 use inkwell::context::Context;
 use inkwell::module::Module;
-use inkwell::builder::Builder;
 use inkwell::values::FunctionValue;
 use nom_ast::Statement;
 use nom_planner::{CompositionPlan, FlowPlan};
@@ -16,7 +16,13 @@ pub struct ModuleCompiler<'ctx> {
     pub context: &'ctx Context,
     pub module: Module<'ctx>,
     pub builder: Builder<'ctx>,
-    pub named_values: HashMap<String, (inkwell::values::PointerValue<'ctx>, inkwell::types::BasicTypeEnum<'ctx>)>,
+    pub named_values: HashMap<
+        String,
+        (
+            inkwell::values::PointerValue<'ctx>,
+            inkwell::types::BasicTypeEnum<'ctx>,
+        ),
+    >,
     pub struct_types: HashMap<String, inkwell::types::StructType<'ctx>>,
     pub functions: HashMap<String, FunctionValue<'ctx>>,
     /// Maps variable name -> struct type name (e.g. "p" -> "Point")
@@ -25,7 +31,10 @@ pub struct ModuleCompiler<'ctx> {
     pub struct_fields: HashMap<String, Vec<String>>,
     /// Stack of loop context for break/continue support.
     /// Each entry is (condition_block, end_block).
-    pub loop_stack: Vec<(inkwell::basic_block::BasicBlock<'ctx>, inkwell::basic_block::BasicBlock<'ctx>)>,
+    pub loop_stack: Vec<(
+        inkwell::basic_block::BasicBlock<'ctx>,
+        inkwell::basic_block::BasicBlock<'ctx>,
+    )>,
     /// Maps enum type name -> ordered variant info:
     /// (variant_name, field_type_annotations). The variant's position in the
     /// vector is its runtime discriminant index (stored as the i8 tag field
@@ -80,7 +89,9 @@ impl NomCompiler {
         // If there's a user-defined main, wrap it for C main() convention (i32 return)
         self.generate_entry_point(&mut mc)?;
 
-        mc.module.verify().map_err(|e| LlvmError::Verification(e.to_string()))?;
+        mc.module
+            .verify()
+            .map_err(|e| LlvmError::Verification(e.to_string()))?;
 
         let ir_text = mc.module.print_to_string().to_string();
         let bitcode = mc.module.write_bitcode_to_memory().as_slice().to_vec();
@@ -127,11 +138,7 @@ impl NomCompiler {
         if let Some(ret_val) = call.try_as_basic_value().left() {
             let i32_val = if ret_val.is_float_value() {
                 mc.builder
-                    .build_float_to_signed_int(
-                        ret_val.into_float_value(),
-                        i32_type,
-                        "to_i32",
-                    )
+                    .build_float_to_signed_int(ret_val.into_float_value(), i32_type, "to_i32")
                     .map_err(|e| LlvmError::Compilation(e.to_string()))?
             } else if ret_val.is_int_value() {
                 let int_val = ret_val.into_int_value();
@@ -230,7 +237,7 @@ impl<'ctx> ModuleCompiler<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_planner::{CompositionPlan, FlowPlan, MemoryStrategy, ConcurrencyStrategy};
+    use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy};
 
     #[test]
     fn empty_plan_produces_valid_ir() {

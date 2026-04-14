@@ -15,8 +15,7 @@
 /// 6. `verify_avif_roundtrip` passes (PSNR ≥ 30 dB gate).
 /// 7. Encode twice → byte-identical (determinism).
 /// 8. 64×64 gradient (generated programmatically) → AVIF; asserts PSNR ≥ 30 dB.
-
-use nom_media::{ingest_avif, ingest_image_still_to_avif, verify_avif_roundtrip, Modality};
+use nom_media::{Modality, ingest_avif, ingest_image_still_to_avif, verify_avif_roundtrip};
 use nom_types::body_kind;
 
 /// Emit a `#[test]` that is ignored on Windows with the standard AVIF reason.
@@ -137,8 +136,8 @@ fn ingest_image_still_to_avif_from_png_produces_avif_bytes() {
 #[test]
 fn ingest_image_still_to_avif_body_kind_is_avif() {
     // Verify the caller uses the correct body_kind constant for this codec.
-    let result = ingest_image_still_to_avif(TINY_PNG, Modality::ImageStill)
-        .expect("ingest should succeed");
+    let result =
+        ingest_image_still_to_avif(TINY_PNG, Modality::ImageStill).expect("ingest should succeed");
     // The modality-canonical output is tagged avif in the dict.
     // Verify the constant matches.
     assert_eq!(body_kind::AVIF, "avif");

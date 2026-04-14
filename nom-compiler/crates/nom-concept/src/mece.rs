@@ -189,10 +189,7 @@ pub fn check_mece_with_required_axes(
 
     for (req_axis, cardinality) in required_axes {
         let req_axis_norm = req_axis.trim().to_ascii_lowercase();
-        let count = union
-            .iter()
-            .filter(|b| b.axis == req_axis_norm)
-            .count();
+        let count = union.iter().filter(|b| b.axis == req_axis_norm).count();
 
         match cardinality.as_str() {
             "at_least_one" => {
@@ -273,7 +270,10 @@ mod tests {
         let axes: Vec<&str> = report.union.iter().map(|b| b.axis.as_str()).collect();
         assert!(axes.contains(&"security"));
         assert!(axes.contains(&"readability"));
-        assert!(report.me_collisions.is_empty(), "expected 0 collisions: {report:?}");
+        assert!(
+            report.me_collisions.is_empty(),
+            "expected 0 collisions: {report:?}"
+        );
     }
 
     // ── test 3 ────────────────────────────────────────────────────────────────
@@ -285,15 +285,29 @@ mod tests {
         let report = check_mece(&parent, &[&child]);
 
         assert_eq!(report.union.len(), 4);
-        assert_eq!(report.me_collisions.len(), 1, "expected exactly 1 collision: {report:?}");
+        assert_eq!(
+            report.me_collisions.len(),
+            1,
+            "expected exactly 1 collision: {report:?}"
+        );
 
         let collision = &report.me_collisions[0];
         assert_eq!(collision.axis, "security");
         assert_eq!(collision.bindings.len(), 2);
 
-        let sources: Vec<&str> = collision.bindings.iter().map(|b| b.source_concept.as_str()).collect();
-        assert!(sources.contains(&"agent"), "agent must be in collision sources");
-        assert!(sources.contains(&"policy"), "policy must be in collision sources");
+        let sources: Vec<&str> = collision
+            .bindings
+            .iter()
+            .map(|b| b.source_concept.as_str())
+            .collect();
+        assert!(
+            sources.contains(&"agent"),
+            "agent must be in collision sources"
+        );
+        assert!(
+            sources.contains(&"policy"),
+            "policy must be in collision sources"
+        );
     }
 
     // ── test 4 ────────────────────────────────────────────────────────────────
@@ -305,7 +319,11 @@ mod tests {
         let report = check_mece(&parent, &[&child]);
 
         assert_eq!(report.union.len(), 2);
-        assert_eq!(report.me_collisions.len(), 1, "Security and security must collide: {report:?}");
+        assert_eq!(
+            report.me_collisions.len(),
+            1,
+            "Security and security must collide: {report:?}"
+        );
 
         let collision = &report.me_collisions[0];
         assert_eq!(collision.axis, "security");
@@ -318,7 +336,10 @@ mod tests {
         // Mirrors the agent_demo example:
         //   minimal_safe_agent: security, composability, speed
         //   agent_safety_policy: security, privacy, speed
-        let parent = concept("minimal_safe_agent", &["security", "composability", "speed"]);
+        let parent = concept(
+            "minimal_safe_agent",
+            &["security", "composability", "speed"],
+        );
         let child = concept("agent_safety_policy", &["security", "privacy", "speed"]);
         let report = check_mece(&parent, &[&child]);
 
@@ -329,7 +350,11 @@ mod tests {
             "expected 2 collisions (security + speed): {report:?}"
         );
 
-        let axes: Vec<&str> = report.me_collisions.iter().map(|c| c.axis.as_str()).collect();
+        let axes: Vec<&str> = report
+            .me_collisions
+            .iter()
+            .map(|c| c.axis.as_str())
+            .collect();
         assert!(axes.contains(&"security"), "security collision expected");
         assert!(axes.contains(&"speed"), "speed collision expected");
 
@@ -434,7 +459,11 @@ mod tests {
         );
 
         // ME collision also fires for speed.
-        let me_axes: Vec<&str> = report.me_collisions.iter().map(|c| c.axis.as_str()).collect();
+        let me_axes: Vec<&str> = report
+            .me_collisions
+            .iter()
+            .map(|c| c.axis.as_str())
+            .collect();
         assert!(
             me_axes.contains(&"speed"),
             "ME collision must also fire for speed: {:?}",
@@ -449,11 +478,7 @@ mod tests {
         // Single concept, no children.
         let parent = concept("any", &[]);
         let report = check_mece(&parent, &[]);
-        assert_eq!(
-            report.stub_notes.len(),
-            1,
-            "exactly one stub note expected"
-        );
+        assert_eq!(report.stub_notes.len(), 1, "exactly one stub note expected");
         assert!(
             report.stub_notes[0].contains("CE check deferred"),
             "stub note must mention CE check: {}",

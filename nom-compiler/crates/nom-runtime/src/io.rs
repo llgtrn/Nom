@@ -1,6 +1,6 @@
+use super::string::NomString;
 use std::fs;
 use std::slice;
-use super::string::NomString;
 
 /// Read an entire file into a NomString.
 /// Returns a NomString with len=-1 on error.
@@ -10,7 +10,12 @@ pub extern "C" fn nom_read_file(path_data: *const u8, path_len: i64) -> NomStrin
         let path_bytes = slice::from_raw_parts(path_data, path_len as usize);
         let path = match std::str::from_utf8(path_bytes) {
             Ok(s) => s,
-            Err(_) => return NomString { data: std::ptr::null(), len: -1 },
+            Err(_) => {
+                return NomString {
+                    data: std::ptr::null(),
+                    len: -1,
+                };
+            }
         };
         match fs::read(path) {
             Ok(contents) => {
@@ -19,7 +24,10 @@ pub extern "C" fn nom_read_file(path_data: *const u8, path_len: i64) -> NomStrin
                 std::mem::forget(contents);
                 NomString { data: ptr, len }
             }
-            Err(_) => NomString { data: std::ptr::null(), len: -1 },
+            Err(_) => NomString {
+                data: std::ptr::null(),
+                len: -1,
+            },
         }
     }
 }
@@ -27,8 +35,10 @@ pub extern "C" fn nom_read_file(path_data: *const u8, path_len: i64) -> NomStrin
 /// Write a NomString to a file. Returns 0 on success, -1 on error.
 #[unsafe(no_mangle)]
 pub extern "C" fn nom_write_file(
-    path_data: *const u8, path_len: i64,
-    content_data: *const u8, content_len: i64,
+    path_data: *const u8,
+    path_len: i64,
+    content_data: *const u8,
+    content_len: i64,
 ) -> i32 {
     unsafe {
         let path_bytes = slice::from_raw_parts(path_data, path_len as usize);

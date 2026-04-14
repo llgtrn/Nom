@@ -3,13 +3,17 @@
 //! a valid Nom syntax token, addressable via `use <concept>@<hash>` in
 //! .nom source.
 
-use nom_dict::{Concept, EntryFilter, NomDict};
+use nom_dict::dict::{
+    add_concept_member, add_concept_members_by_filter, count_concept_members, delete_concept,
+    get_concept_by_name, get_concept_members, list_concepts, resolve_prefix, search_describe,
+};
+use nom_dict::{Concept, Dict, EntryFilter, upsert_concept, upsert_entry};
 use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 use serde_json::json;
 use std::path::Path;
 
 pub fn cmd_concept_new(name: &str, describe: Option<&str>, dict: &Path) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept new: cannot open dict: {e}");
@@ -23,7 +27,7 @@ pub fn cmd_concept_new(name: &str, describe: Option<&str>, dict: &Path) -> i32 {
         created_at: chrono_now(),
         updated_at: None,
     };
-    if let Err(e) = d.upsert_concept(&concept) {
+    if let Err(e) = upsert_concept(&d, &concept) {
         eprintln!("nom concept new: {e}");
         return 1;
     }
@@ -50,23 +54,27 @@ pub fn cmd_concept_new(name: &str, describe: Option<&str>, dict: &Path) -> i32 {
         body_kind: None,
         body_bytes: None,
     };
-    if let Err(e) = d.upsert_entry(&entry) {
+    if let Err(e) = upsert_entry(&d, &entry) {
         eprintln!("nom concept new: entry upsert failed: {e}");
         return 1;
     }
-    println!("concept '{}' created (id {})", concept.name, &concept.id[..16]);
+    println!(
+        "concept '{}' created (id {})",
+        concept.name,
+        &concept.id[..16]
+    );
     0
 }
 
 pub fn cmd_concept_add(concept_name: &str, entry_spec: &str, dict: &Path) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept add: cannot open dict: {e}");
             return 1;
         }
     };
-    let concept = match d.get_concept_by_name(concept_name) {
+    let concept = match get_concept_by_name(&d, concept_name) {
         Ok(Some(c)) => c,
         Ok(None) => {
             eprintln!("nom concept add: concept '{concept_name}' not found");
@@ -81,7 +89,7 @@ pub fn cmd_concept_add(concept_name: &str, entry_spec: &str, dict: &Path) -> i32
     let entry_id = if entry_spec.len() == 64 && entry_spec.chars().all(|c| c.is_ascii_hexdigit()) {
         entry_spec.to_string()
     } else {
-        match d.resolve_prefix(entry_spec) {
+        match resolve_prefix(&d, entry_spec) {
             Ok(id) => id,
             Err(e) => {
                 eprintln!("nom concept add: {e}");
@@ -89,7 +97,7 @@ pub fn cmd_concept_add(concept_name: &str, entry_spec: &str, dict: &Path) -> i32
             }
         }
     };
-    match d.add_concept_member(&concept.id, &entry_id) {
+    match add_concept_member(&d, &concept.id, &entry_id) {
         Ok(true) => {
             println!("added {} to concept '{}'", &entry_id[..16], concept_name);
             0
@@ -116,14 +124,14 @@ pub fn cmd_concept_add_by(
     limit: usize,
     dict: &Path,
 ) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept add-by: cannot open dict: {e}");
             return 1;
         }
     };
-    let concept = match d.get_concept_by_name(concept_name) {
+    let concept = match get_concept_by_name(&d, concept_name) {
         Ok(Some(c)) => c,
         Ok(None) => {
             eprintln!("nom concept add-by: concept '{concept_name}' not found");
@@ -154,7 +162,7 @@ pub fn cmd_concept_add_by(
     {
         // describe_like only path.
         let q = describe_like.unwrap();
-        let entries = match d.search_describe(q, limit) {
+        let entries = match search_describe(&d, q, limit) {
             Ok(e) => e,
             Err(e) => {
                 eprintln!("nom concept add-by: search failed: {e}");
@@ -163,7 +171,7 @@ pub fn cmd_concept_add_by(
         };
         let mut count = 0usize;
         for e in &entries {
-            match d.add_concept_member(&concept.id, &e.id) {
+            match add_concept_member(&d, &concept.id, &e.id) {
                 Ok(true) => count += 1,
                 Ok(false) => {}
                 Err(e) => {
@@ -181,7 +189,7 @@ pub fn cmd_concept_add_by(
             status: status.map(EntryStatus::from_str),
             limit,
         };
-        match d.add_concept_members_by_filter(&concept.id, &filter) {
+        match add_concept_members_by_filter(&d, &concept.id, &filter) {
             Ok(n) => n,
             Err(e) => {
                 eprintln!("nom concept add-by: {e}");
@@ -200,14 +208,14 @@ pub fn cmd_concept_add_by(
 /// later moved to another concept, or when a user runs
 /// `concept delete` on the last entry without pruning the concept.
 pub fn cmd_concept_list_filtered(json: bool, dict: &Path, only_empty: bool) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept list: cannot open dict: {e}");
             return 1;
         }
     };
-    let concepts = match d.list_concepts() {
+    let concepts = match list_concepts(&d) {
         Ok(v) => v,
         Err(e) => {
             eprintln!("nom concept list: {e}");
@@ -218,7 +226,7 @@ pub fn cmd_concept_list_filtered(json: bool, dict: &Path, only_empty: bool) -> i
     // Pair each concept with its member count in one pass.
     let rows: Vec<(&nom_dict::Concept, usize)> = concepts
         .iter()
-        .map(|c| (c, d.count_concept_members(&c.id).unwrap_or(0)))
+        .map(|c| (c, count_concept_members(&d, &c.id).unwrap_or(0)))
         .filter(|(_, n)| !only_empty || *n == 0)
         .collect();
 
@@ -235,7 +243,10 @@ pub fn cmd_concept_list_filtered(json: bool, dict: &Path, only_empty: bool) -> i
                 })
             })
             .collect();
-        println!("{}", serde_json::to_string_pretty(&json_rows).unwrap_or_default());
+        println!(
+            "{}",
+            serde_json::to_string_pretty(&json_rows).unwrap_or_default()
+        );
     } else if rows.is_empty() {
         if only_empty {
             println!("no empty concepts");
@@ -258,14 +269,14 @@ pub fn cmd_concept_list_filtered(json: bool, dict: &Path, only_empty: bool) -> i
 }
 
 pub fn cmd_concept_show(name: &str, limit: usize, json: bool, dict: &Path) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept show: cannot open dict: {e}");
             return 1;
         }
     };
-    let concept = match d.get_concept_by_name(name) {
+    let concept = match get_concept_by_name(&d, name) {
         Ok(Some(c)) => c,
         Ok(None) => {
             eprintln!("nom concept show: concept '{name}' not found");
@@ -276,7 +287,7 @@ pub fn cmd_concept_show(name: &str, limit: usize, json: bool, dict: &Path) -> i3
             return 1;
         }
     };
-    let mut members = match d.get_concept_members(&concept.id) {
+    let mut members = match get_concept_members(&d, &concept.id) {
         Ok(m) => m,
         Err(e) => {
             eprintln!("nom concept show: {e}");
@@ -325,14 +336,14 @@ pub fn cmd_concept_show(name: &str, limit: usize, json: bool, dict: &Path) -> i3
 }
 
 pub fn cmd_concept_delete(name: &str, dict: &Path) -> i32 {
-    let d = match NomDict::open_in_place(dict) {
+    let d = match Dict::try_open_from_nomdict_path(dict) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom concept delete: cannot open dict: {e}");
             return 1;
         }
     };
-    match d.get_concept_by_name(name) {
+    match get_concept_by_name(&d, name) {
         Ok(None) => {
             eprintln!("nom concept delete: concept '{name}' not found");
             return 1;
@@ -343,7 +354,7 @@ pub fn cmd_concept_delete(name: &str, dict: &Path) -> i32 {
         }
         Ok(Some(_)) => {}
     }
-    if let Err(e) = d.delete_concept(name) {
+    if let Err(e) = delete_concept(&d, name) {
         eprintln!("nom concept delete: {e}");
         return 1;
     }
@@ -386,7 +397,18 @@ fn days_to_ymd(mut days: u64) -> (u64, u64, u64) {
     }
     let leap = is_leap(year);
     let month_days: [u64; 12] = [
-        31, if leap { 29 } else { 28 }, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31,
+        31,
+        if leap { 29 } else { 28 },
+        31,
+        30,
+        31,
+        30,
+        31,
+        31,
+        30,
+        31,
+        30,
+        31,
     ];
     let mut month = 1u64;
     for &md in &month_days {

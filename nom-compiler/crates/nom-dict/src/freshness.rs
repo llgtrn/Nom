@@ -32,17 +32,26 @@ pub const SOURCE_HASH_KEY: &str = "dict_last_source_hash";
 /// hash anything that could end up in DB2, not build outputs. The set
 /// stays in this crate (not `nom-extract`) to avoid a cycle.
 const HASHED_EXTENSIONS: &[&str] = &[
-    "nom", "nomx", "nomtu", "rs", "py", "ts", "tsx", "js", "jsx",
-    "go", "c", "cpp", "cc", "h", "hpp", "java", "kt", "rb", "php",
-    "swift", "scala", "lua", "sh", "md", "toml", "yaml", "yml", "json",
+    "nom", "nomx", "nomtu", "rs", "py", "ts", "tsx", "js", "jsx", "go", "c", "cpp", "cc", "h",
+    "hpp", "java", "kt", "rb", "php", "swift", "scala", "lua", "sh", "md", "toml", "yaml", "yml",
+    "json",
 ];
 
 /// Directory names skipped when walking `repo_root`. Must stay in sync
 /// with `nom-extract::scan::IGNORED_DIRS`; a mismatch would hash files
 /// that never get ingested or skip files that do.
 const IGNORED_DIRS: &[&str] = &[
-    ".git", "node_modules", "target", ".next", "__pycache__",
-    ".mypy_cache", ".pytest_cache", "dist", "build", ".omc", ".claude",
+    ".git",
+    "node_modules",
+    "target",
+    ".next",
+    "__pycache__",
+    ".mypy_cache",
+    ".pytest_cache",
+    "dist",
+    "build",
+    ".omc",
+    ".claude",
     ".gitnexus",
 ];
 
@@ -128,12 +137,14 @@ impl NomDict {
         let mut stmt = self
             .conn
             .prepare_cached("SELECT value FROM dict_meta WHERE key = ?1")?;
-        stmt.query_row(rusqlite::params![SOURCE_HASH_KEY], |row| row.get::<_, String>(0))
-            .map(Some)
-            .or_else(|e| match e {
-                rusqlite::Error::QueryReturnedNoRows => Ok(None),
-                other => Err(other),
-            })
+        stmt.query_row(rusqlite::params![SOURCE_HASH_KEY], |row| {
+            row.get::<_, String>(0)
+        })
+        .map(Some)
+        .or_else(|e| match e {
+            rusqlite::Error::QueryReturnedNoRows => Ok(None),
+            other => Err(other),
+        })
     }
 
     /// Upsert `hash` as the dict's marked source-tree hash. Sets
@@ -176,11 +187,8 @@ mod tests {
     use super::*;
 
     fn tmp_repo(name: &str) -> PathBuf {
-        let root = std::env::temp_dir().join(format!(
-            "nom_freshness_{}_{}",
-            name,
-            std::process::id()
-        ));
+        let root =
+            std::env::temp_dir().join(format!("nom_freshness_{}_{}", name, std::process::id()));
         let _ = fs::remove_dir_all(&root);
         fs::create_dir_all(&root).unwrap();
         root
@@ -218,7 +226,10 @@ mod tests {
         d.mark_source_hash(&h).unwrap();
         // Edit the file → hash diverges.
         fs::write(root.join("a.rs"), "fn a() { /* edit */ }").unwrap();
-        assert!(d.is_stale(&root).unwrap(), "edited source must report stale");
+        assert!(
+            d.is_stale(&root).unwrap(),
+            "edited source must report stale"
+        );
         fs::remove_dir_all(&root).ok();
     }
 
