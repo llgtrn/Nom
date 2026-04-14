@@ -2201,6 +2201,233 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 6 -- ML + game engine
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'training-loop-minibatch',
+  'iterate a training loop over minibatches with gradient updates',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to update parameters across all minibatches once.\n  uses the @Data matching "data loader with fixed-shape batches" with at-least 0.9 confidence.\n  requires the optimizer to hold the current parameter set.\n  ensures every sample contributes exactly one gradient step per epoch.\n  hazard stale gradients if the optimizer is not zeroed between steps.\n  favor reproducibility.',
+  '["stale gradients if optimizer not zeroed between steps","nondeterministic batch order without seeded shuffle"]',
+  '["reproducibility","determinism","numerical_stability"]',
+  '[]'
+),
+(
+  'inference-batch-scheduler',
+  'coalesce incoming requests into batches for throughput-bound inference',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to group pending requests into a batch bounded by size and wait budget.\n  uses the @Data matching "request queue with max batch size" with at-least 0.9 confidence.\n  requires the wait budget to be finite.\n  ensures each accepted request either joins a batch within the wait budget or fails fast.\n  hazard head-of-line blocking if a single slow request stalls batch dispatch.\n  favor latency.',
+  '["head-of-line blocking from slow requests","tail latency spike when wait budget exceeds deadline"]',
+  '["latency","performance","availability"]',
+  '[]'
+),
+(
+  'embedding-vector-store',
+  'store dense vectors keyed by id with approximate nearest neighbor lookup',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","exposes","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to persist embedding vectors and retrieve nearest neighbors by cosine distance.\n  uses the @Data matching "vector index with payload table" with at-least 0.9 confidence.\n  composes the @Function matching "insert-query-rebuild" with at-least 0.9 confidence.\n  requires all vectors to share a fixed dimension and unit norm.\n  ensures a k-nearest query returns k results ordered by distance with a documented recall bound.\n  exposes query and insert operations.\n  favor performance.',
+  '["dimension mismatch on insert silently corrupts index","recall collapses when unit-norm invariant is violated"]',
+  '["performance","correctness","reproducibility"]',
+  '[]'
+),
+(
+  'tokenizer-subword-split',
+  'split raw text into subword units using a learned merge table',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to convert a string into a sequence of subword ids.\n  uses the @Data matching "merge table with vocabulary" with at-least 0.9 confidence.\n  requires the merge table to be sorted by merge rank and the vocabulary to cover all base bytes.\n  ensures every input byte maps to at least one id and decoding round-trips to the original string.\n  hazard silent id drift if the merge table version differs between train and serve.\n  favor determinism.',
+  '["merge-table version drift between train and serve","round-trip failure on unnormalized input"]',
+  '["determinism","reproducibility","correctness"]',
+  '[]'
+),
+(
+  'attention-score-softmax',
+  'compute normalized attention weights from query-key scores',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to turn raw query-key scores into a probability distribution over keys.\n  uses the @Data matching "score tensor with mask and scale" with at-least 0.9 confidence.\n  requires the score shape to match the mask shape and the scale to be positive.\n  ensures output rows sum to one and masked positions contribute zero weight.\n  hazard overflow when scores are not shifted by row max before exponentiation.\n  favor numerical_stability.',
+  '["exp overflow without max-shift","nan propagation from fully masked rows"]',
+  '["numerical_stability","correctness","determinism"]',
+  '[]'
+),
+(
+  'learning-rate-warmup-schedule',
+  'ramp learning rate from zero to target then decay',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to return the learning rate for a given training step under a warmup-then-decay policy.\n  uses the @Data matching "step with warmup and total steps and peak rate" with at-least 0.9 confidence.\n  requires the warmup steps to be less than total steps and the peak rate to be positive.\n  ensures the returned rate is zero at step zero, equals the peak at the warmup boundary, and is non-negative thereafter.\n  hazard divergence if the peak is reached before gradient statistics have stabilized.\n  favor numerical_stability.',
+  '["divergence from too-short warmup","step-counter desync across resumed runs"]',
+  '["numerical_stability","reproducibility","determinism"]',
+  '[]'
+),
+(
+  'checkpoint-snapshot-resume',
+  'persist and restore full training state for fault-tolerant resume',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","exposes","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to capture parameters, optimizer state, step counter, and data-loader position so training can resume bit-identically.\n  uses the @Data matching "snapshot storage with serializer" with at-least 0.9 confidence.\n  composes the @Function matching "save-load-verify snapshot" with at-least 0.9 confidence.\n  requires the serializer to be deterministic and the storage to support atomic replace.\n  ensures a resumed run produces the same next step as an uninterrupted run from the same snapshot.\n  exposes save and load operations.\n  favor reproducibility.',
+  '["partial write leaves corrupt snapshot without atomic replace","loader position lost so samples are revisited or skipped"]',
+  '["reproducibility","determinism","auditability"]',
+  '[]'
+),
+(
+  'dataset-stream-shard',
+  'stream a sharded dataset across workers without duplication',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to yield samples assigned to one worker from a globally sharded dataset.\n  uses the @Data matching "shard list with worker id and world size and seed" with at-least 0.9 confidence.\n  requires the worker id to be less than the world size and the shard count to be divisible by the world size or padded.\n  ensures every sample is visited by exactly one worker per epoch under a fixed seed.\n  hazard sample duplication when the world size changes mid-epoch without re-sharding.\n  favor determinism.',
+  '["sample duplication on world-size change","skew when shard sizes differ and no padding is applied"]',
+  '["determinism","reproducibility","performance"]',
+  '[]'
+),
+(
+  'model-quantization-reduce',
+  'reduce parameter precision from float to lower-bit integer representation',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to map float parameters to lower-bit integers with per-tensor or per-channel scales.\n  uses the @Data matching "weight tensor with bit-width and policy" with at-least 0.9 confidence.\n  requires the bit-width to be in the supported set and the weights to contain no nan or inf.\n  ensures dequantized weights stay within a documented error bound of the originals.\n  hazard accuracy collapse when outlier channels are not handled by per-channel scales.\n  favor performance.',
+  '["outlier-channel accuracy collapse","silent saturation when calibration range is too tight"]',
+  '["performance","numerical_stability","portability"]',
+  '[]'
+),
+(
+  'feature-normalization-standardize',
+  'standardize input features to zero mean and unit variance using training statistics',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to rescale features using mean and variance computed on the training split.\n  uses the @Data matching "mean and variance with epsilon" with at-least 0.9 confidence.\n  requires the mean and variance to share the shape of a feature row and the epsilon to be positive.\n  ensures output features have zero mean and unit variance on the training split up to the epsilon tolerance.\n  hazard train-serve skew if the statistics are recomputed on serving data.\n  favor statistical_rigor.',
+  '["train-serve skew from recomputed stats at serving","division-by-zero when epsilon is omitted on constant features"]',
+  '["statistical_rigor","numerical_stability","reproducibility"]',
+  '[]'
+),
+(
+  'game-frame-fixed-timestep',
+  'advance simulation in fixed-size ticks while rendering at display rate',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Event"]',
+  'the function <name> is\n  intended to drain accumulated wall time into discrete simulation ticks.\n  uses the @Data matching "tick accumulator in seconds" with at-least 0.9 confidence.\n  uses the @Event matching "frame boundary reached" with at-least 0.9 confidence.\n  requires the fixed step size to be positive and constant across a run.\n  ensures the number of simulation steps is a deterministic function of elapsed wall time.\n  hazard unbounded catch-up on long pauses spirals into a death loop.\n  favor determinism.',
+  '["death-spiral under long stalls","render interpolation drift if residual not exposed"]',
+  '["determinism","reproducibility"]',
+  '[]'
+),
+(
+  'entity-component-system-query',
+  'iterate entities matching a component signature in archetype-packed order',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to yield entity handles whose components satisfy a required signature.\n  uses the @Data matching "archetype storage table with signature mask" with at-least 0.9 confidence.\n  requires the signature mask to reference only registered component kinds.\n  ensures iteration visits each matching entity exactly once per pass.\n  hazard mutating the component set during iteration invalidates archetype pointers.\n  favor performance.',
+  '["archetype invalidation mid-iteration","false sharing across worker lanes"]',
+  '["performance","determinism"]',
+  '[]'
+),
+(
+  'rigid-body-integration-step',
+  'integrate linear and angular state of a rigid body over one fixed step',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to update position, orientation, and velocities from accumulated forces and torques.\n  uses the @Data matching "rigid body state with force and torque accumulator" with at-least 0.9 confidence.\n  requires inverse mass and inverse inertia tensor to be finite and non-negative.\n  ensures the step is symplectic and clears the force accumulator before returning.\n  hazard explicit Euler with large step sizes accumulates energy and destabilizes stacks.\n  favor numerical_stability.',
+  '["energy drift under explicit Euler","tunneling at high velocity"]',
+  '["numerical_stability","determinism"]',
+  '[]'
+),
+(
+  'collision-broad-phase-prune',
+  'reduce candidate collision pairs to those with overlapping bounding volumes',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to emit candidate pairs whose axis-aligned bounds currently overlap.\n  uses the @Data matching "bounding volume table with sweep axis endpoints" with at-least 0.9 confidence.\n  requires bounding volumes to fully enclose their underlying shape each tick.\n  ensures every truly colliding pair appears in the output set.\n  hazard loose bounds inflate the pair count and swamp the narrow phase.\n  favor performance.',
+  '["loose bounds over-generate pairs","sort instability across ticks breaks determinism"]',
+  '["performance","determinism"]',
+  '[]'
+),
+(
+  'spatial-hash-grid-partition',
+  'bucket moving objects into a uniform grid for neighbor lookup',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to assign each object to every grid cell its bounds overlap.\n  uses the @Data matching "spatial hash cell table with object bounds" with at-least 0.9 confidence.\n  requires the chosen cell size to be larger than the typical object radius.\n  ensures a neighbor query visits only cells overlapping the query region.\n  hazard cell size far from object size either over-populates buckets or balloons occupancy lists.\n  favor performance.',
+  '["hash collisions in dense regions","cell-size mismatch degrades to linear scan"]',
+  '["performance","determinism"]',
+  '[]'
+),
+(
+  'input-action-binding',
+  'translate raw device signals into named gameplay actions',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Event","@Data"]',
+  'the function <name> is\n  intended to map raw device events to a named gameplay action with a value.\n  uses the @Event matching "raw device input event" with at-least 0.9 confidence.\n  uses the @Data matching "action binding table" with at-least 0.9 confidence.\n  requires each binding to reference an action declared in the binding table.\n  ensures an action fires at most once per input event per frame.\n  hazard unresolved rebinds during play can strand the player in an unreachable state.\n  favor accessibility.',
+  '["rebind races drop inputs","chorded bindings mask single-key actions"]',
+  '["accessibility","responsiveness"]',
+  '[]'
+),
+(
+  'asset-load-budget',
+  'admit asset load jobs only while a per-frame time budget remains',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to dispatch pending asset loads until the frame budget is exhausted.\n  uses the @Data matching "asset load job queue with frame budget" with at-least 0.9 confidence.\n  requires the budget to be positive and less than the frame interval.\n  ensures admitted job cost estimates sum below the remaining budget for the frame.\n  hazard underestimated job cost overruns the budget and causes a visible hitch.\n  favor responsiveness.',
+  '["cost-estimate drift causes hitches","starvation of low-priority assets"]',
+  '["responsiveness","availability"]',
+  '[]'
+),
+(
+  'sprite-atlas-packing',
+  'pack sprite rectangles into a single texture atlas with no overlap',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Media","@Data"]',
+  'the function <name> is\n  intended to place each sprite rectangle into atlas coordinates without overlap.\n  uses the @Media matching "sprite source image" with at-least 0.9 confidence.\n  uses the @Data matching "atlas free rectangle list" with at-least 0.9 confidence.\n  requires every sprite rectangle to fit inside the atlas dimensions.\n  ensures the packed rectangles are pairwise non-overlapping and in-bounds.\n  hazard tight packing without padding bleeds neighboring texels under bilinear sampling.\n  favor performance.',
+  '["texel bleed without padding","rotation choices break deterministic layouts"]',
+  '["performance","reproducibility"]',
+  '[]'
+),
+(
+  'camera-frustum-culling',
+  'discard scene objects whose bounds lie fully outside the view frustum',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to retain only objects whose bounds intersect the camera frustum.\n  uses the @Data matching "camera frustum plane set with scene object bounds" with at-least 0.9 confidence.\n  requires the six frustum planes to have inward-pointing unit normals.\n  ensures any visible object survives the cull.\n  hazard conservative plane tests retain objects slightly beyond the edge but must never drop visible ones.\n  favor correctness.',
+  '["plane-normal sign flip drops visible objects","reversed-Z depth confuses near-plane test"]',
+  '["correctness","performance"]',
+  '[]'
+),
+(
+  'scene-graph-world-transform',
+  'compose world transforms from parent chains in a scene graph',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data"]',
+  'the function <name> is\n  intended to derive each node world transform from its local transform and ancestors.\n  uses the @Data matching "scene graph parent chain with local transforms" with at-least 0.9 confidence.\n  requires the scene graph to contain no cycles.\n  ensures each node is updated after all its ancestors in the pass.\n  hazard stale world transforms persist when a parent reparents mid-frame without re-marking descendants.\n  favor determinism.',
+  '["reparent leaves dirty descendants","non-uniform scale cascades skew normals"]',
+  '["determinism","correctness"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');

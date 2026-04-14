@@ -34,7 +34,7 @@ fn baseline_sql_imports_into_fresh_db() {
     );
     // keyword_synonyms carries corpus-driven rewrites; patterns carries
     // the canonical authoring shapes extracted from doc 14.
-    assert_eq!(counts.patterns, 178, "178 canonical patterns");
+    assert_eq!(counts.patterns, 198, "198 canonical patterns");
     assert_eq!(counts.keyword_synonyms, 7, "7 corpus-driven synonyms");
 }
 
