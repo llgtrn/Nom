@@ -50,8 +50,14 @@ archived research must appear here; none may be silently dropped.
   novel-kind authoring), 1 is a malformed corpus block. Saturated
   against the closed kind set.
 - **Read-only pattern explorer** — `nom grammar pattern-list`,
-  `pattern-show`, `pattern-stats` shipped (each with `--json`).
-  AI clients can query the catalog without writing SQL.
+  `pattern-show`, `pattern-stats`, and `pattern-search <prose>`
+  shipped (each with `--json`). The search subcommand uses a
+  deterministic Jaccard backend (`nom_grammar::fuzzy_tokens` +
+  `nom_grammar::jaccard`) over normalized domain-word sets — the
+  same backend the CI catalog uniqueness test enforces, so identical
+  query → identical matches across CLI and CI. AI clients can query
+  the catalog without writing SQL and without depending on an
+  embedding model.
 - **Dict-split S3b–S8** — port the remaining ~35 nom-dict functions
   to free functions on `&Dict`; delete the legacy `NomDict` struct, the
   legacy `entries` table, the legacy `concepts` table, and the

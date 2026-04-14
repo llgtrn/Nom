@@ -30,10 +30,16 @@ time/calendar, geospatial, IoT/embedded, bioinformatics, robotics).
 No `seed_patterns()` function exists in Rust source; bundling data
 inside the binary is forbidden by the awareness-only rule.
 
-Read-only exploration is available via `nom grammar pattern-list
-[--intent-contains TEXT] [--kind K] [--favor Q] [--limit N] [--json]`,
-`nom grammar pattern-show <id> [--json]`, and `nom grammar
-pattern-stats [--json]` (per-kind tallies + by-favor leaderboard).
+Read-only exploration is available via four CLI subcommands:
+`nom grammar pattern-list [--intent-contains TEXT] [--kind K]
+[--favor Q] [--limit N] [--json]`, `nom grammar pattern-show <id>
+[--json]`, `nom grammar pattern-stats [--json]` (per-kind tallies +
+by-favor leaderboard), and `nom grammar pattern-search <prose>
+[--limit N] [--threshold T] [--json]`. The search backend is a
+deterministic Jaccard token-overlap (`nom_grammar::fuzzy_tokens` +
+`nom_grammar::jaccard`) — the same backend the CI catalog
+uniqueness test enforces, so the same query returns the same
+matches in CLI and CI.
 
 ## Target state
 

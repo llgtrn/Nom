@@ -41,9 +41,13 @@ anything load-bearing.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
   `nom grammar status`, `nom grammar add-{kind,synonym,quality,
   keyword,clause-shape,pattern}` (Phase C — six row-level adds),
-  plus `nom grammar pattern-list [--intent-contains TEXT] [--kind K]
-  [--limit N]` and `nom grammar pattern-show <pattern_id>` for
-  read-only exploration of the 258-pattern catalog.
+  plus four read-only explorers over the 258-pattern catalog:
+  `pattern-list [--intent-contains TEXT] [--kind K] [--favor Q]
+  [--limit N] [--json]`, `pattern-show <id> [--json]`, `pattern-stats
+  [--json]`, and `pattern-search <prose> [--limit N] [--threshold T]
+  [--json]`. The search backend (`nom_grammar::fuzzy_tokens` +
+  `nom_grammar::jaccard`) is deterministic — same query yields same
+  matches across CLI and the CI uniqueness test that enforces it.
 - Phase E proofs — **7 of 7 shipped**: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
   (100-run Debug-equality on curated inputs), P3 closure-against-
