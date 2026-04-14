@@ -14,15 +14,19 @@ anything load-bearing.
   artifact store at `~/.nom/store/<hash>/body.{bc,avif,...}`.
 - `Dict { concepts, entities }` struct with per-tier connections.
   Constructors: `open_dir`, `open_paths`, `open_in_memory`.
-- Fifteen `entities`-tier free functions on `&Dict`. S3a (5):
-  `upsert_entity`, `find_entity`, `find_entities_by_word`,
-  `find_entities_by_kind`, `count_entities`. S3b (5):
-  `count_concept_defs`, `count_required_axes`, `body_kind_histogram`,
-  `resolve_prefix`, `count_entities_meta`. S4 (5): `status_histogram`,
-  `get_entry_bytes`, `list_partial_ids`, `get_meta`, `get_refs`.
-  Each is a faithful re-emit of the legacy `NomDict::*` SQL with
-  `&self.conn` swapped for `&d.entities`. Legacy methods stay live
-  until the last replacement ships, per the no-legacy rule.
+- Twenty free functions on `&Dict` across both tiers. Entities-tier:
+  S3a (5) `upsert_entity` / `find_entity` / `find_entities_by_word` /
+  `find_entities_by_kind` / `count_entities`; S3b (5)
+  `count_concept_defs` / `count_required_axes` / `body_kind_histogram`
+  / `resolve_prefix` / `count_entities_meta`; S4 (5) `status_histogram`
+  / `get_entry_bytes` / `list_partial_ids` / `get_meta` / `get_refs`.
+  S5 mixes tiers (5): `closure` (entities-tier BFS over `entry_refs`),
+  plus four concept-tier ports — `get_concept_id_by_name` /
+  `list_concept_ids` / `delete_concept` / `add_concept_member`. Each
+  free fn is a faithful re-emit of the legacy `NomDict::*` SQL with
+  `&self.conn` swapped for `&d.entities` or `&d.concepts`. Legacy
+  methods stay live until the last replacement ships, per the
+  no-legacy rule.
 - Per-tier specialised schemas: `CONCEPTS_SCHEMA_SQL` and
   `ENTITIES_SCHEMA_SQL`; cross-file foreign keys absent per the
   no-cross-file-FK invariant.
