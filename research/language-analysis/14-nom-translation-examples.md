@@ -5207,6 +5207,121 @@ Row additions: **0 new wedges** — Smalltalk pure-OO message-passing fully expr
 
 ---
 
+## 70. Ada — safety-critical strong-typing + tasking
+
+```ada
+with Ada.Text_IO;
+
+package body Flight_Control is
+
+  subtype Altitude_Meters is Integer range 0 .. 20_000;
+  subtype Vertical_Speed_MPS is Integer range -100 .. 100;
+
+  procedure Adjust_Altitude
+    (Current : in     Altitude_Meters;
+     Target  : in     Altitude_Meters;
+     Rate    : in     Vertical_Speed_MPS;
+     Result  :    out Altitude_Meters)
+  is
+  begin
+    if abs (Target - Current) < abs (Rate) then
+      Result := Target;
+    elsif Target > Current then
+      Result := Current + Rate;
+    else
+      Result := Current - Rate;
+    end if;
+  end Adjust_Altitude;
+
+  task type Altitude_Monitor is
+    entry Observe (Reading : in Altitude_Meters);
+    entry Alert_If_Dangerous;
+  end Altitude_Monitor;
+
+end Flight_Control;
+```
+
+### `.nomx v1` translation
+
+```nomx
+define adjust_altitude
+  that takes a current altitude, a target altitude, and a climb-or-descent rate, returns the new altitude one tick later.
+if the remaining distance to target is smaller than the magnitude of the rate, return target exactly.
+otherwise step toward target by the rate (positive or negative as appropriate).
+clamp the returned altitude to the valid range [0, 20_000] meters.
+
+define altitude_monitor
+  that maintains the last observed altitude and surfaces an alert when a dangerous condition is met.
+observes accept new altitude readings one at a time.
+alert_if_dangerous returns whether a dangerous condition was observed since the last alert.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Altitude is
+  intended to describe an aircraft's altitude above mean sea level in meters; the range matches the operational envelope of civil aviation (0 to 20 km).
+  exposes meters as integer from 0 to 20000.
+
+the data VerticalSpeed is
+  intended to describe a per-tick climb or descent rate in meters per second; the range covers both ascents and descents.
+  exposes mps as integer from -100 to 100.
+
+the data AltitudeMonitorState is
+  intended to hold the most recent observed altitude for a monitor task along with a flag indicating whether a dangerous condition has been detected since the last alert.
+  exposes last_reading as reference to Altitude.
+  exposes dangerous_condition_pending as boolean.
+
+the function adjust_altitude is
+  intended to compute the altitude one tick after the current reading when the vehicle is moving toward a target at a fixed vertical speed, stopping exactly at the target when the remaining distance is less than one tick's step.
+  uses the @Data matching "Altitude" with at-least 0.95 confidence.
+  uses the @Data matching "VerticalSpeed" with at-least 0.95 confidence.
+  requires current.meters is in range 0 to 20000.
+  requires target.meters is in range 0 to 20000.
+  requires rate.mps is in range -100 to 100.
+  ensures when the absolute distance (target.meters minus current.meters) is strictly less than the absolute magnitude of rate.mps, the returned altitude equals target.
+  ensures when target.meters is strictly greater than current.meters and the remaining distance is at-least the magnitude of rate.mps, the returned altitude has meters equal to current.meters plus the magnitude of rate.mps.
+  ensures when target.meters is strictly less than current.meters and the remaining distance is at-least the magnitude of rate.mps, the returned altitude has meters equal to current.meters minus the magnitude of rate.mps.
+  ensures the returned altitude's meters is always in range 0 to 20000 (clamped at the operational envelope).
+  hazard runtime clamping at the envelope boundaries masks integration errors; safety-critical callers should surface envelope-boundary events as explicit faults rather than silently clipping.
+  favor correctness.
+  favor auditability.
+
+the function observe_altitude is
+  intended to accept one altitude reading into an AltitudeMonitorState, updating last_reading and re-evaluating whether the reading is outside the safe envelope.
+  uses the @Data matching "AltitudeMonitorState" with at-least 0.95 confidence.
+  uses the @Data matching "Altitude" with at-least 0.95 confidence.
+  ensures the returned state has last_reading equal to the given reading.
+  ensures the returned state has dangerous_condition_pending equal to true when the reading.meters is less than 150 (below the terrain-avoidance floor) or greater than 15000 (above the cruise ceiling); false otherwise.
+  favor responsiveness.
+
+the function alert_if_dangerous is
+  intended to return whether a dangerous condition is currently pending and atomically clear the pending flag.
+  uses the @Data matching "AltitudeMonitorState" with at-least 0.95 confidence.
+  ensures the returned pair (alert, new_state) has alert equal to the input state's dangerous_condition_pending.
+  ensures the returned new_state has dangerous_condition_pending equal to false.
+  ensures the read-and-clear occurs as a single atomic group from concurrent observers' perspectives.
+  hazard between observe_altitude setting the flag and alert_if_dangerous reading it, a second observation may re-raise the flag; callers must not assume one-to-one correspondence between dangerous readings and alerts.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Subtypes with explicit range constraints (`subtype Altitude_Meters is Integer range 0 .. 20_000`)** — Ada's signature safety feature: integer types that carry runtime-checked ranges. Nom's `integer from 0 to 20000` on the data decl's `exposes` field is the direct analogue. Authoring-guide rule: **Ada subtype range constraints → range-typed integers/naturals on `exposes` fields + `requires` clauses; runtime checks become build-stage static checks where decidable, runtime checks otherwise**. Reuses range-typed-integer rule (#41 Verilog + #51 WAT + #58 COBOL + #66 Julia). No new wedge.
+2. **`in`/`out`/`in out` parameter modes** — Ada's explicit input/output/mutated parameter marking. Nom's function decls are pure: every output is in the return type, no `out` parameters. Authoring-guide rule: **Ada `out` parameters decompose to additional fields on the return data decl; `in out` parameters decompose to (take-by-value + return fresh instance) — no mutable-parameter passing at Nom source level**. No new wedge.
+3. **`task type` + entries** — Ada's built-in concurrency primitive: a task is a first-class thread with named rendezvous entries. Nom's translation treats each task entry as a separate function on the task's state data decl; task concurrency is a build-stage scheduling concern. Authoring-guide rule: **Ada task types decompose to state-carrying data decls + per-entry function decls; task-scheduling semantics (rendezvous, select, terminate) are build-stage specialization**. Same decomposition pattern as #27 Elixir GenServer + #32 XState. No new wedge.
+4. **`begin...end` block structure with `if ... elsif ... else ... end if`** — Ada's block-structured control flow. Nom's `when X … when Y … otherwise …` prose is the direct analogue. Authoring-guide rule: **Ada `if/elsif/else/end if` → `when X … when Y … otherwise …` prose (reuses #50 Dafny pattern)**. No new wedge.
+5. **Clamping at range boundaries as silent behavior** — the `integer from X to Y` constraint might silently clamp at boundaries. Nom's translation surfaces this as an explicit `hazard` advising safety-critical callers to surface envelope events as faults. Authoring-guide rule: **range-typed boundary-clamping is an explicit `hazard` on safety-critical functions; callers may opt into fault-on-boundary via a peer verification function rather than silent clipping**. No new wedge.
+6. **`package body` + separate specification** — Ada's interface/implementation split. Nom collapses this: `.nomtu` files already have both the declaration surface and composition. Authoring-guide rule: **Ada `package body` vs package spec → collapses to single `.nomtu` file in Nom; the separation is a build-stage concern (e.g., generating an interface header)**. No new wedge.
+7. **Run-time constraint checks** — Ada's defining runtime safety. Nom's build-stage verification (doc 04 §10.3.1 fixpoint + strict validator W4-A3 + MECE validator) catches most of these at authoring time. Authoring-guide rule: **Ada run-time constraint checks map to Nom build-stage static checks (preferred) plus runtime-check fallback for undecidable cases**. No new wedge.
+8. **Auditability for safety-critical domains** — Ada's raison d'être. Nom's `favor auditability` QualityName (seeded at #58 COBOL) applies directly. Reuses existing seed; no new QualityName needed.
+
+Row additions: **0 new wedges** — Ada's safety-critical strong-typing + tasking fully expresses via range-typed integers + per-task-entry function decls on state-carrying data decls + range-boundary hazard + build-stage constraint checking. 7 authoring-guide closures: Ada subtypes → range-typed integers on `exposes` (reuses existing rule), `out`/`in out` → return-fresh-instance (no mutable params), task types → state data decl + per-entry functions (reuses #27 + #32), `if/elsif/else` → `when/when/otherwise`, range-clamp → explicit `hazard`, `package body` → `.nomtu` file, runtime constraints → build-stage static checks + fallback.
+
+**Thirty-seventh consecutive minimal-wedge translation + twenty-ninth 0-new-wedge run.** Ada — the canonical safety-critical programming language (defense, aviation, rail) — decomposes cleanly into Nom's existing primitives. Combined with Dafny (#50 verified-imperative), Zig (#67 systems with explicit overflow), and Rust (#01), **the safety-critical-systems paradigm family is fully covered**: all express via range-typed integers + explicit precondition `requires` + explicit postcondition `ensures` + explicit `hazard` for boundary/overflow/undefined-behavior cases. The key insight is that **Nom's authoring-time contract vocabulary IS the Ada/SPARK/Dafny runtime-check vocabulary, just moved up the dependency stack**: from runtime to build-time to authoring-time.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
