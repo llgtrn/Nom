@@ -36,7 +36,7 @@ fn baseline_sql_imports_into_fresh_db() {
     // corpus-driven seed (proof -> property, composition -> module)
     // so the archived doc 14 captures parse under the canonical set.
     assert_eq!(counts.patterns, 0);
-    assert_eq!(counts.keyword_synonyms, 4, "4 corpus-driven synonyms");
+    assert_eq!(counts.keyword_synonyms, 7, "7 corpus-driven synonyms");
 }
 
 #[test]
