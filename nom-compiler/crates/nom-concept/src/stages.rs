@@ -116,6 +116,67 @@ pub fn stage1_tokenize(src: &str) -> Result<TokenStream, StageFailure> {
     })
 }
 
+/// S1 with grammar-driven synonym resolution per Phase B blueprint.
+///
+/// Tokenizes the source, then walks every `Tok::Word(surface)` and
+/// queries `grammar.sqlite.keyword_synonyms` for a canonical
+/// keyword. When a row is found, the surface word's span is replaced
+/// in-place with the lex of the canonical keyword text — yielding the
+/// proper variant token (e.g., `Tok::Word("expects")` →
+/// `Tok::Requires` when the row `("expects", "requires", ...)` exists).
+///
+/// Position metadata is preserved from the surface span so downstream
+/// diagnostics still point at the original byte offset.
+///
+/// When the canonical text re-lexes to multiple tokens, the function
+/// rejects with `NOMX-S1-multitoken-synonym` — synonyms must map to
+/// single-keyword canonical forms.
+pub fn stage1_tokenize_with_synonyms(
+    src: &str,
+    grammar: &rusqlite::Connection,
+) -> Result<TokenStream, StageFailure> {
+    let raw = stage1_tokenize(src)?;
+    let mut out = Vec::with_capacity(raw.toks.len());
+    for spanned in raw.toks {
+        if let crate::lex::Tok::Word(ref surface) = spanned.tok {
+            match nom_grammar::resolve_synonym(grammar, surface) {
+                Ok(Some(canonical)) => {
+                    // Re-lex the canonical text to produce the canonical Tok variant.
+                    let canon_toks = crate::lex::collect_all_tokens(&canonical);
+                    if canon_toks.len() != 1 {
+                        return Err(StageFailure::new(
+                            StageId::Tokenize,
+                            spanned.pos,
+                            "multitoken-synonym",
+                            format!(
+                                "synonym '{}' maps to canonical keyword '{}' which lexes to {} tokens; canonical must be a single keyword",
+                                surface, canonical, canon_toks.len()
+                            ),
+                        ));
+                    }
+                    let canon_tok = canon_toks.into_iter().next().unwrap();
+                    out.push(crate::lex::Spanned {
+                        tok: canon_tok.tok,
+                        pos: spanned.pos,
+                    });
+                }
+                Ok(None) => out.push(spanned),
+                Err(e) => {
+                    return Err(StageFailure::new(
+                        StageId::Tokenize,
+                        spanned.pos,
+                        "synonym-lookup-failed",
+                        format!("DB query against keyword_synonyms failed: {e}"),
+                    ));
+                }
+            }
+        } else {
+            out.push(spanned);
+        }
+    }
+    Ok(TokenStream { toks: out, source_len: raw.source_len })
+}
+
 /// Stage-attributed failure variant.  Carries the stage id plus a
 /// human-readable reason; callers (editor diagnostics, `nom parse`
 /// CLI, LSP) can format this for surface rendering.
@@ -1126,6 +1187,22 @@ fn parse_uses_clause_refs(clause: &[Spanned]) -> Vec<EntityRef> {
 /// parser path (`parse_nom` / `parse_nomtu`) is unchanged.
 pub fn run_pipeline(src: &str) -> Result<PipelineOutput, StageFailure> {
     let s1 = stage1_tokenize(src)?;
+    let s2 = stage2_kind_classify(&s1)?;
+    let s3 = stage3_shape_extract(&s2)?;
+    let s4 = stage4_contract_bind(&s3)?;
+    let s5 = stage5_effect_bind(&s4)?;
+    stage6_ref_resolve(&s5)
+}
+
+/// Phase B variant: drive the full pipeline with grammar-driven
+/// synonym resolution at S1. The grammar connection is consulted
+/// only by S1 today; later phases extend the DB consultation to
+/// S2 (kinds), S3 (clause_shapes), and S5 (quality_names).
+pub fn run_pipeline_with_grammar(
+    src: &str,
+    grammar: &rusqlite::Connection,
+) -> Result<PipelineOutput, StageFailure> {
+    let s1 = stage1_tokenize_with_synonyms(src, grammar)?;
     let s2 = stage2_kind_classify(&s1)?;
     let s3 = stage3_shape_extract(&s2)?;
     let s4 = stage4_contract_bind(&s3)?;
