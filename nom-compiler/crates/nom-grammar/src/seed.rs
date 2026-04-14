@@ -1,9 +1,20 @@
-//! Seeding functions per doc 21 phases P4 + P5 (kinds + QualityNames + authoring_rules).
+//! Seeding functions for the grammar registry.
 //!
-//! This module carries the data that migrates "grammar in doc files" into the
-//! grammar.sqlite registry so AI clients can query it deterministically. Each
-//! seed fn is idempotent (INSERT OR REPLACE) so re-running after doc edits
-//! brings the DB back in sync.
+//! **NON-NEGOTIABLE (2026-04-14):** No foreign-programming-language names may
+//! appear in any seeded row. Nom is self-defined. Foreign languages belong in
+//! research prose (research/language-analysis/*.md) as cautionary tales, never
+//! as runtime DB content. The earlier `seed_authoring_rules_from_doc16` was
+//! wrong and has been removed — doc 16 contains foreign-to-Nom mappings that
+//! must stay in research prose, not grammar.sqlite.
+//!
+//! What this module ships:
+//! - `seed_kinds`: the 9 closed kinds with Nom-native descriptions
+//! - `seed_quality_names`: 10 seed QualityNames (axis + cardinality only)
+//! - `seed_keywords`: the 45-row closed keyword vocabulary
+//! - `seed_clause_shapes`: per-kind clause grammar
+//! - `seed_authoring_idioms`: placeholder for future Nom-native authoring patterns
+//!
+//! Each seed fn is idempotent (INSERT OR REPLACE).
 
 use anyhow::{Context, Result};
 use rusqlite::{Connection, params};
@@ -31,12 +42,12 @@ pub const KINDS_SEED: &[(&str, &str, &str)] = &[
     ),
     (
         "screen",
-        "User-facing UI / rendered artifact / internal architecture diagram. Generalised by doc 14 #39 + #49.",
+        "User-facing UI surface / rendered artifact / architectural diagram. Authored via `uses @Composition` slots over data + media + event refs.",
         "a04b91e",
     ),
     (
         "data",
-        "Structural type / tagged variant / schema-IDL. Covers Kotlin-sealed, Elm Msg, Protobuf, Solidity tagged errors.",
+        "Structural type / tagged variant. Holds `exposes` field declarations with payload types; closed variant set is the totality surface for W40 exhaustiveness.",
         "a04b91e",
     ),
     (
@@ -418,144 +429,26 @@ pub fn seed_quality_names(conn: &Connection) -> Result<usize> {
     Ok(inserted)
 }
 
-// ── P4: parse doc 16 markdown table → authoring_rules rows ──────────
-
-#[derive(Debug, PartialEq)]
-pub struct DocRuleRow {
-    pub row_id: i64,
-    pub gap_summary: String,
-    pub destination: String,
-    pub status: String,
-    pub closed_in: Option<String>,
-}
-
-/// Parse lines shaped like `| 419 | Behavioral-module ... | authoring-guide rule | ✅ closed (doc 14 #85) |`
-/// from doc 16's markdown source. Header lines, divider lines, and narrative
-/// text are silently skipped. Returns one DocRuleRow per table row.
-pub fn parse_doc16_rules(md_source: &str) -> Vec<DocRuleRow> {
-    let mut rows = Vec::new();
-    for raw in md_source.lines() {
-        let line = raw.trim();
-        // Require a numeric-leading table row: `| <n> | ... | ... | ... |`
-        if !line.starts_with("| ") {
-            continue;
-        }
-        let cells: Vec<&str> = line.split('|').map(str::trim).collect();
-        // A well-formed row has 6 split-pieces: "" | id | gap | dest | status | ""
-        if cells.len() < 5 {
-            continue;
-        }
-        let id_cell = cells[1];
-        let row_id: i64 = match id_cell.parse() {
-            Ok(n) => n,
-            Err(_) => continue,
-        };
-        let gap_summary = cells[2].to_string();
-        let destination = cells[3].to_string();
-        let status_cell = cells[4].to_string();
-        let (status, closed_in) = split_status_and_ref(&status_cell);
-        rows.push(DocRuleRow {
-            row_id,
-            gap_summary,
-            destination,
-            status,
-            closed_in,
-        });
-    }
-    rows
-}
-
-/// Split a status cell like "✅ closed (doc 14 #85)" into ("closed", Some("doc 14 #85")).
-/// Leaves free-form statuses like "⏳ queued" → ("queued", None).
-fn split_status_and_ref(cell: &str) -> (String, Option<String>) {
-    // Strip leading emoji + whitespace.
-    let stripped = cell
-        .chars()
-        .skip_while(|c| !c.is_ascii_alphabetic())
-        .collect::<String>();
-    // Look for "(...)" ref suffix.
-    if let Some(paren_idx) = stripped.find('(') {
-        let (head, tail) = stripped.split_at(paren_idx);
-        let status = head.trim().to_string();
-        let closed_in = tail
-            .trim_start_matches('(')
-            .trim_end_matches(')')
-            .trim()
-            .to_string();
-        (status, if closed_in.is_empty() { None } else { Some(closed_in) })
-    } else {
-        (stripped.trim().to_string(), None)
-    }
-}
-
-/// Heuristic split of a doc-16 gap_summary into (source_paradigm, nom_shape)
-/// on the " → " arrow convention. Most doc 16 rows follow one of:
-///   "Source-paradigm-name → Nom shape prose"
-///   "Concept from lang X (reuses #N) → Nom shape"
-/// If no arrow is present, source_paradigm is left empty and the full text
-/// lands in gap_summary (preserving the existing column's content).
-pub fn split_gap_summary(gap: &str) -> (String, String, String) {
-    // Returns (source_paradigm, gap_summary_kept, nom_shape)
-    // The original gap_summary is preserved in full to avoid information loss.
-    if let Some(idx) = gap.find(" → ") {
-        let (head, tail) = gap.split_at(idx);
-        let shape = tail.trim_start_matches(" → ").trim();
-        (head.trim().to_string(), gap.to_string(), shape.to_string())
-    } else {
-        (String::new(), gap.to_string(), String::new())
-    }
-}
-
-pub fn seed_authoring_rules(conn: &Connection, rows: &[DocRuleRow]) -> Result<usize> {
-    let mut inserted = 0;
-    for row in rows {
-        let (paradigm, full_gap, shape) = split_gap_summary(&row.gap_summary);
-        conn.execute(
-            "INSERT OR REPLACE INTO authoring_rules \
-             (row_id, source_paradigm, gap_summary, nom_shape, reuses_rows, destination, status, closed_in, source_doc_ref) \
-             VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8)",
-            params![
-                row.row_id,
-                paradigm,
-                full_gap,
-                shape,
-                row.destination,
-                row.status,
-                row.closed_in,
-                format!("doc 16 row {}", row.row_id),
-            ],
-        )?;
-        inserted += 1;
-    }
-    Ok(inserted)
-}
-
-/// One-shot summary counts from a full seed run.
+/// Counts from a full seed run.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
 pub struct SeedCounts {
     pub kinds: usize,
     pub quality_names: usize,
     pub keywords: usize,
     pub clause_shapes: usize,
-    pub authoring_rules: usize,
 }
 
-/// One-shot convenience: seed kinds + quality_names + keywords (P2) + clause_shapes
-/// (P3) + parse+insert all rows from the given doc-16 markdown source (P4).
-/// Callable from the CLI `nom grammar seed`.
-pub fn seed_all_from_doc16(conn: &Connection, doc16_md: &str) -> Result<SeedCounts> {
+/// Seed every grammar table with native Nom content. Idempotent.
+pub fn seed_all(conn: &Connection) -> Result<SeedCounts> {
     let kinds = seed_kinds(conn).context("seeding kinds")?;
     let quality_names = seed_quality_names(conn).context("seeding quality_names")?;
     let keywords = seed_keywords(conn).context("seeding keywords")?;
     let clause_shapes = seed_clause_shapes(conn).context("seeding clause_shapes")?;
-    let rows = parse_doc16_rules(doc16_md);
-    let authoring_rules = seed_authoring_rules(conn, &rows).context("seeding authoring_rules")?;
     Ok(SeedCounts {
         kinds,
         quality_names,
         keywords,
         clause_shapes,
-        authoring_rules,
     })
 }
 
@@ -640,58 +533,6 @@ mod tests {
     }
 
     #[test]
-    fn gap_summary_split_on_arrow_populates_source_paradigm_and_nom_shape() {
-        let (p, g, s) = split_gap_summary("Erlang OTP supervisor → concept decl + FIFO mailbox + serialized invocation");
-        assert_eq!(p, "Erlang OTP supervisor");
-        assert!(g.contains(" → "));
-        assert_eq!(s, "concept decl + FIFO mailbox + serialized invocation");
-    }
-
-    #[test]
-    fn gap_summary_split_preserves_full_text_when_no_arrow() {
-        let (p, g, s) = split_gap_summary("Some legacy prose without an arrow");
-        assert_eq!(p, "");
-        assert_eq!(g, "Some legacy prose without an arrow");
-        assert_eq!(s, "");
-    }
-
-    #[test]
-    fn authoring_rules_have_split_paradigm_when_arrow_present() {
-        let dir = tempdir().unwrap();
-        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
-        let md = "\
-| 419 | Behavioral-module declarations → structural typed-slots | authoring-guide rule | ✅ closed (doc 14 #85) |
-| 999 | Legacy row without arrow | W-wedge | ⏳ queued |
-";
-        let rows = parse_doc16_rules(md);
-        seed_authoring_rules(&conn, &rows).unwrap();
-        let paradigm_419: String = conn
-            .query_row(
-                "SELECT source_paradigm FROM authoring_rules WHERE row_id = 419",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(paradigm_419, "Behavioral-module declarations");
-        let shape_419: String = conn
-            .query_row(
-                "SELECT nom_shape FROM authoring_rules WHERE row_id = 419",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(shape_419, "structural typed-slots");
-        let paradigm_999: String = conn
-            .query_row(
-                "SELECT source_paradigm FROM authoring_rules WHERE row_id = 999",
-                [],
-                |r| r.get(0),
-            )
-            .unwrap();
-        assert_eq!(paradigm_999, "");
-    }
-
-    #[test]
     fn seeding_kinds_is_idempotent() {
         let dir = tempdir().unwrap();
         let conn = init_at(dir.path().join("g.sqlite")).unwrap();
@@ -712,63 +553,14 @@ mod tests {
     }
 
     #[test]
-    fn parses_closed_row_with_ref() {
-        let md = "\
-| 419 | Behavioral-module declarations | authoring-guide rule | ✅ closed (doc 14 #85) |
-";
-        let rows = parse_doc16_rules(md);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].row_id, 419);
-        assert_eq!(rows[0].gap_summary, "Behavioral-module declarations");
-        assert_eq!(rows[0].destination, "authoring-guide rule");
-        assert_eq!(rows[0].status, "closed");
-        assert_eq!(rows[0].closed_in.as_deref(), Some("doc 14 #85"));
-    }
-
-    #[test]
-    fn parses_queued_row_without_ref() {
-        let md = "\
-| 5 | Format-string interpolation | **W5** grammar rule | ⏳ queued |
-";
-        let rows = parse_doc16_rules(md);
-        assert_eq!(rows.len(), 1);
-        assert_eq!(rows[0].row_id, 5);
-        assert_eq!(rows[0].status, "queued");
-        assert_eq!(rows[0].closed_in, None);
-    }
-
-    #[test]
-    fn ignores_header_and_divider_lines() {
-        let md = "\
-# Title
-## Triage format
-| # | Gap | Destination | Status |
-|--:|-----|-------------|--------|
-| 1 | First | W-wedge | ⏳ queued |
-Narrative text here.
-| 2 | Second | authoring-guide rule | ✅ closed (doc 14 #42) |
-";
-        let rows = parse_doc16_rules(md);
-        assert_eq!(rows.len(), 2);
-        assert_eq!(rows[0].row_id, 1);
-        assert_eq!(rows[1].row_id, 2);
-    }
-
-    #[test]
-    fn seed_all_from_doc16_populates_all_five_tables() {
+    fn seed_all_populates_every_table() {
         let dir = tempdir().unwrap();
         let conn = init_at(dir.path().join("g.sqlite")).unwrap();
-        let md = "\
-| 1 | First gap | authoring-guide rule | ✅ closed (doc 14 #1) |
-| 2 | Second gap | W-wedge | ⏳ queued |
-| 3 | Third gap | design deferred | 🔒 blocked |
-";
-        let c = seed_all_from_doc16(&conn, md).unwrap();
+        let c = seed_all(&conn).unwrap();
         assert_eq!(c.kinds, 9);
         assert_eq!(c.quality_names, 10);
-        assert!(c.keywords >= 40, "expected ≥40 keyword rows, got {}", c.keywords);
-        assert!(c.clause_shapes >= 40, "expected ≥40 clause_shape rows, got {}", c.clause_shapes);
-        assert_eq!(c.authoring_rules, 3);
+        assert!(c.keywords >= 40);
+        assert!(c.clause_shapes >= 40);
     }
 
     #[test]
@@ -886,26 +678,4 @@ Narrative text here.
         assert_eq!(count as usize, n1); // INSERT OR REPLACE
     }
 
-    #[test]
-    fn doc16_row_count_matches_repo_file() {
-        // Smoke test: parse the actual doc 16 shipped in the repo and confirm row
-        // count matches the expected 450 at the current HEAD.
-        let md = match std::fs::read_to_string(concat!(
-            env!("CARGO_MANIFEST_DIR"),
-            "/../../../research/language-analysis/16-nomx-syntax-gap-backlog.md"
-        )) {
-            Ok(s) => s,
-            Err(_) => {
-                // Skip test if the doc is not at the expected relative path
-                // (e.g. when running from a tarball without research/).
-                return;
-            }
-        };
-        let rows = parse_doc16_rules(&md);
-        assert!(
-            rows.len() >= 400,
-            "expected ≥400 rows from doc 16, got {}",
-            rows.len()
-        );
-    }
 }

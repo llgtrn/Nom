@@ -44,21 +44,6 @@ CREATE TABLE IF NOT EXISTS clause_shapes (
   PRIMARY KEY (kind, clause_name, position)
 );
 
-CREATE TABLE IF NOT EXISTS authoring_rules (
-  row_id          INTEGER PRIMARY KEY,
-  source_paradigm TEXT NOT NULL,
-  gap_summary     TEXT NOT NULL,
-  nom_shape       TEXT NOT NULL,
-  reuses_rows     TEXT,
-  destination     TEXT NOT NULL,
-  status          TEXT NOT NULL,
-  closed_in       TEXT,
-  source_doc_ref  TEXT NOT NULL
-);
-
-CREATE INDEX IF NOT EXISTS idx_authoring_rules_paradigm
-  ON authoring_rules(source_paradigm);
-
 CREATE TABLE IF NOT EXISTS quality_names (
   name            TEXT PRIMARY KEY,
   axis            TEXT NOT NULL,
@@ -126,7 +111,6 @@ pub fn schema_version(conn: &Connection) -> Result<u32> {
 pub struct RegistryCounts {
     pub keywords: u64,
     pub clause_shapes: u64,
-    pub authoring_rules: u64,
     pub quality_names: u64,
     pub kinds: u64,
 }
@@ -140,7 +124,6 @@ pub fn counts(conn: &Connection) -> Result<RegistryCounts> {
     Ok(RegistryCounts {
         keywords: count_of("keywords")?,
         clause_shapes: count_of("clause_shapes")?,
-        authoring_rules: count_of("authoring_rules")?,
         quality_names: count_of("quality_names")?,
         kinds: count_of("kinds")?,
     })
@@ -180,7 +163,6 @@ mod tests {
             RegistryCounts {
                 keywords: 0,
                 clause_shapes: 0,
-                authoring_rules: 0,
                 quality_names: 0,
                 kinds: 0,
             }

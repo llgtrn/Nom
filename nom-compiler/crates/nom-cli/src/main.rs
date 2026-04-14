@@ -375,7 +375,7 @@ enum Commands {
 
     /// Grammar registry — AI-retrievable basic-syntax store per doc 21.
     /// P1: `nom grammar init <path>` creates an empty grammar.sqlite with
-    /// schema tables for keywords, clause_shapes, authoring_rules,
+    /// schema tables for keywords, clause_shapes,
     /// quality_names, and kinds. Later phases populate from the parser
     /// and from doc 16.
     Grammar {
@@ -1006,15 +1006,12 @@ enum GrammarCmd {
         #[arg(long)]
         json: bool,
     },
-    /// P4+P5 seed: migrate doc 16 markdown + hardcoded kinds/QualityNames
-    /// into the registry. Idempotent; re-run after doc edits.
+    /// Populate the registry tables with native Nom content (kinds + quality
+    /// names + keywords + clause shapes). Idempotent.
     Seed {
         /// Path to grammar.sqlite (default: ~/.nom/grammar.sqlite)
         #[arg(short, long)]
         path: Option<PathBuf>,
-        /// Path to doc 16 markdown source (default: research/language-analysis/16-nomx-syntax-gap-backlog.md)
-        #[arg(long)]
-        doc16: Option<PathBuf>,
     },
 }
 
@@ -1394,7 +1391,7 @@ fn main() {
         Commands::Grammar { action } => match action {
             GrammarCmd::Init { path } => cmd_grammar_init(path.as_deref()),
             GrammarCmd::Status { path, json } => cmd_grammar_status(path.as_deref(), json),
-            GrammarCmd::Seed { path, doc16 } => cmd_grammar_seed(path.as_deref(), doc16.as_deref()),
+            GrammarCmd::Seed { path } => cmd_grammar_seed(path.as_deref()),
         },
     };
     process::exit(exit_code);
@@ -1428,7 +1425,7 @@ fn cmd_grammar_init(path: Option<&Path>) -> i32 {
     }
 }
 
-fn cmd_grammar_seed(path: Option<&Path>, doc16_path: Option<&Path>) -> i32 {
+fn cmd_grammar_seed(path: Option<&Path>) -> i32 {
     let p = match path {
         Some(p) => p.to_path_buf(),
         None => default_grammar_path(),
@@ -1440,26 +1437,14 @@ fn cmd_grammar_seed(path: Option<&Path>, doc16_path: Option<&Path>) -> i32 {
             return 1;
         }
     };
-    let doc16 = match doc16_path {
-        Some(p) => p.to_path_buf(),
-        None => PathBuf::from("research/language-analysis/16-nomx-syntax-gap-backlog.md"),
-    };
-    let md = match std::fs::read_to_string(&doc16) {
-        Ok(s) => s,
-        Err(e) => {
-            eprintln!("nom grammar seed: reading {}: {e}", doc16.display());
-            return 1;
-        }
-    };
-    match nom_grammar::seed::seed_all_from_doc16(&conn, &md) {
+    match nom_grammar::seed::seed_all(&conn) {
         Ok(c) => {
             println!(
-                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes, {} authoring_rules at {}",
+                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes at {}",
                 c.kinds,
                 c.quality_names,
                 c.keywords,
                 c.clause_shapes,
-                c.authoring_rules,
                 p.display()
             );
             0
@@ -1504,7 +1489,6 @@ fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {
         println!("  schema_version: {}", version);
         println!("  keywords:       {}", counts.keywords);
         println!("  clause_shapes:  {}", counts.clause_shapes);
-        println!("  authoring_rules:{}", counts.authoring_rules);
         println!("  quality_names:  {}", counts.quality_names);
         println!("  kinds:          {}", counts.kinds);
     }
