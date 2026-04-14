@@ -415,34 +415,41 @@ pub fn cmd_author_check(file: &Path, json: bool) -> i32 {
     };
     let ext = file.extension().and_then(|e| e.to_str()).unwrap_or("");
 
-    // .nomx branch: parse via the natural-language prototype per
-    // proposal 05. Reports declaration count on success, span-carrying
-    // diagnostic on failure.
+    // .nomx branch: route through the merged strict-grammar pipeline (the
+    // S1-S6 staged passes in nom-concept). The legacy v1-only prose parser
+    // has been deleted per the .nomx merge; the merged surface accepts the
+    // typed-slot strict form.
     if ext == "nomx" {
-        match nom_parser::nomx::parse_nomx(&text) {
-            Ok(decls) => {
+        match nom_concept::stages::run_pipeline(&text) {
+            Ok(out) => {
+                let (surface, count) = match &out {
+                    nom_concept::stages::PipelineOutput::Nom(f) => ("concept", f.concepts.len()),
+                    nom_concept::stages::PipelineOutput::Nomtu(f) => ("module", f.items.len()),
+                };
                 if json {
                     println!(
-                        "{{\"file\":\"{}\",\"extension\":\"nomx\",\"declarations\":{}}}",
+                        "{{\"file\":\"{}\",\"extension\":\"nomx\",\"surface\":\"{}\",\"declarations\":{}}}",
                         file.display(),
-                        decls.len()
+                        surface,
+                        count
                     );
                 } else {
                     println!(
-                        "{}: {} .nomx declaration(s) parsed",
+                        "{}: {} {} declaration(s) parsed",
                         file.display(),
-                        decls.len()
+                        count,
+                        surface
                     );
                 }
                 return 0;
             }
             Err(e) => {
                 eprintln!(
-                    "{}: parse error at {}..{}: {}",
+                    "{}: parse error at byte {} ({}): {}",
                     file.display(),
-                    e.span.start,
-                    e.span.end,
-                    e.message
+                    e.position,
+                    e.diag_id(),
+                    e.detail
                 );
                 return 1;
             }

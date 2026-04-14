@@ -3,10 +3,12 @@
 //! Consumes a flat `Vec<SpannedToken>` from the lexer and produces a
 //! [`nom_ast::SourceFile`] containing typed [`Declaration`]s.
 //!
-//! See also [`nomx`] — the experimental parser for the ≥95%-prose
-//! grammar track (research/language-analysis/05-natural-language-syntax.md).
-//! The two live side-by-side; `parse_source` uses only the C-like
-//! grammar for now.
+//! The merged `.nomx` strict-grammar surface lives in `nom-concept`'s
+//! S1-S6 staged pipeline (`nom_concept::stages::run_pipeline`). The
+//! prose-only experimental parser previously here was deleted in the
+//! .nomx merge per the no-legacy rule. `parse_source` is the legacy
+//! flow-style entry-format parser scheduled for deletion as the .nom /
+//! .nomtu pipeline absorbs its remaining callers.
 //!
 //! # Grammar sketch
 //!
@@ -28,8 +30,6 @@
 //! contract_stmt ::= "contract" (statement)*
 //! implement_stmt::= "implement" IDENT "{" ... "}"
 //! ```
-
-pub mod nomx;
 
 use nom_ast::{
     AgentCapabilityStmt, AgentReceiveStmt, AgentScheduleStmt, AgentStateStmt, AgentSuperviseStmt,

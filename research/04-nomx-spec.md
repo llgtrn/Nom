@@ -1,10 +1,11 @@
 # 04 — `.nomx` Source Format Spec
 
-`.nomx` is the single Nom source format. Two earlier surface variants (the
-prose form and the typed-slot form) are scheduled to merge into one
-canonical surface combining prose readability with typed-slot precision.
-Until the merge ships, both are accepted by the parser; afterwards, only
-the merged form is accepted and the legacy parser path is deleted.
+`.nomx` is the **single** Nom source format. The merged grammar combines
+prose-readable decl shape with typed-slot strict references. Earlier
+parallel parsers (the prose-only experimental parser and the typed-slot
+parser) have collapsed to one strict S1-S6 staged pipeline in
+`nom-concept` per the no-legacy rule; the legacy v1-only prose parser
+file has been deleted.
 
 ## Top-level decl shape
 

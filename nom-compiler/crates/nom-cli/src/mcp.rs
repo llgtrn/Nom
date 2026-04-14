@@ -605,7 +605,7 @@ fn call_dict_stats(dict: &NomDict, id: Value) -> String {
 }
 
 fn call_parse_nomx(id: Value, args: &Value) -> String {
-    use nom_parser::nomx::{NomxDecl, NomxStatement, parse_nomx};
+    use nom_concept::stages::{run_pipeline, PipelineOutput};
 
     let source = args
         .get("source")
@@ -615,48 +615,15 @@ fn call_parse_nomx(id: Value, args: &Value) -> String {
         return err_response(id, -32602, "missing required argument: source");
     }
 
-    match parse_nomx(source) {
-        Ok(decls) => {
-            let summaries: Vec<Value> = decls
-                .iter()
-                .map(|d| match d {
-                    NomxDecl::Define { name, body, .. } => {
-                        let when_count = body
-                            .iter()
-                            .filter(|s| matches!(s, NomxStatement::When { .. }))
-                            .count();
-                        let binding_count = body.len() - when_count;
-                        json!({
-                            "kind": "define",
-                            "name": name,
-                            "body_binding_count": binding_count,
-                            "body_when_count": when_count,
-                        })
-                    }
-                    NomxDecl::Record { name, fields, .. } => json!({
-                        "kind": "record",
-                        "name": name,
-                        "field_count": fields.len(),
-                    }),
-                    NomxDecl::Choice { name, variants, .. } => json!({
-                        "kind": "choice",
-                        "name": name,
-                        "variant_count": variants.len(),
-                    }),
-                })
-                .collect();
+    match run_pipeline(source) {
+        Ok(out) => {
+            let (surface, count) = match &out {
+                PipelineOutput::Nom(f) => ("concept", f.concepts.len()),
+                PipelineOutput::Nomtu(f) => ("module", f.items.len()),
+            };
             let summary = format!(
-                "Parsed {} declaration(s): {}",
-                decls.len(),
-                decls
-                    .iter()
-                    .map(|d| match d {
-                        NomxDecl::Define { name, .. } => format!("define {name}"),
-                        NomxDecl::Record { name, .. } => format!("record {name}"),
-                        NomxDecl::Choice { name, .. } => format!("choice {name}"),
-                    })
-                    .collect::<Vec<_>>()
-                    .join(", ")
+                "Parsed {} {} declaration(s) via merged .nomx pipeline",
+                count, surface
             );
             ok_response(
                 id,
@@ -666,8 +633,8 @@ fn call_parse_nomx(id: Value, args: &Value) -> String {
                         {
                             "type": "text",
                             "text": serde_json::to_string_pretty(&json!({
-                                "decls": summaries,
-                                "decl_count": decls.len(),
+                                "surface": surface,
+                                "decl_count": count,
                             })).unwrap_or_default()
                         }
                     ]
@@ -675,10 +642,7 @@ fn call_parse_nomx(id: Value, args: &Value) -> String {
             )
         }
         Err(e) => {
-            let msg = format!(
-                "Parse error at {}..{}: {}",
-                e.span.start, e.span.end, e.message
-            );
+            let msg = format!("Parse error at byte {} ({}): {}", e.position, e.diag_id(), e.detail);
             ok_response(
                 id,
                 json!({
@@ -687,8 +651,9 @@ fn call_parse_nomx(id: Value, args: &Value) -> String {
                         {
                             "type": "text",
                             "text": serde_json::to_string_pretty(&json!({
-                                "error": e.message,
-                                "span": {"start": e.span.start, "end": e.span.end},
+                                "error": e.detail,
+                                "diag_id": e.diag_id(),
+                                "position": e.position,
                             })).unwrap_or_default()
                         }
                     ],
