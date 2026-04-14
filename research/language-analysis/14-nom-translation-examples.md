@@ -6754,6 +6754,79 @@ Row additions: **0 new wedges** — Coq tactic-driven theorem-proving decomposes
 
 ---
 
+## 87. K framework — term-rewriting operational semantics
+
+```k
+module ARITH
+  syntax Exp ::= Int | Exp "+" Exp [left]
+               | Exp "-" Exp [left]
+               | "(" Exp ")" [bracket]
+
+  rule I1:Int + I2:Int => I1 +Int I2
+  rule I1:Int - I2:Int => I1 -Int I2
+
+  configuration <k> $PGM:Exp </k>
+endmodule
+```
+
+### `.nomx v1` translation
+
+```nomx
+define arith_small_step
+  that describes a small-step reduction relation on arithmetic expressions: each step picks an innermost integer-operand subterm and replaces it with the resulting integer.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ArithExp is
+  intended to enumerate the syntactic forms of a small arithmetic-expression language: integer literals, addition nodes, subtraction nodes, and bracket groupings.
+  exposes int_literal at tag 0 with payload value as whole_number.
+  exposes add_node at tag 1 with payload left as ArithExp and right as ArithExp.
+  exposes sub_node at tag 2 with payload left as ArithExp and right as ArithExp.
+  exposes bracket_node at tag 3 with payload inner as ArithExp.
+
+the function arith_step is
+  intended to perform one small-step reduction on an ArithExp: find the leftmost innermost redex (a binary operator whose operands are both int_literal) and replace it with an int_literal of the computed value; return the rewritten expression.
+  uses the @Data matching "ArithExp" with at-least 0.95 confidence.
+  requires the input expression contains at-least one redex (i.e., is not already an int_literal).
+  ensures the returned expression has the same syntactic shape as the input, except the chosen redex is replaced by an int_literal whose value is the integer result of applying the redex's operator to its two operand values.
+  ensures add_node(int_literal(a), int_literal(b)) reduces to int_literal(a + b).
+  ensures sub_node(int_literal(a), int_literal(b)) reduces to int_literal(a - b).
+  ensures bracket_node(int_literal(v)) reduces to int_literal(v).
+  ensures at-most one redex is reduced per call; the function is a one-step reducer, not a full evaluator.
+  ensures redex selection is leftmost-innermost: if multiple redexes exist, the one whose leftmost-innermost position in the expression tree is chosen.
+  hazard integer overflow during reduction of add_node or sub_node is not caught at the authoring level; callers that need overflow detection must use a sibling function with range-typed operands.
+  favor totality.
+  favor auditability.
+
+the property arith_evaluator_converges is
+  intended to assert that repeated application of arith_step to any ArithExp whose literal values fit within the whole_number range eventually reaches an int_literal.
+  generator ArithExp values with at-most 6 binary nodes and int_literal operands in 0..1000.
+  uses the @Function matching "arith_step" with at-least 0.95 confidence.
+  uses the @Data matching "ArithExp" with at-least 0.95 confidence.
+  ensures for every generated ArithExp e, the sequence e, arith_step(e), arith_step(arith_step(e)), ... terminates at an int_literal within at-most (number of binary and bracket nodes in e) steps.
+  ensures the final int_literal equals the standard mathematical value of e under integer + and - semantics.
+  favor totality.
+```
+
+### Gaps surfaced
+
+1. **`syntax Exp ::= ...` BNF-as-source** — K's way of declaring a language's abstract syntax by a BNF grammar with associativity and bracket annotations. Nom rejects BNF-as-source: the `ArithExp` data decl enumerates variants via `exposes X at tag N with payload ...` — the same Kotlin-sealed / Elm-Msg / OCaml-variant pattern used in translations #22 / #55 / #84. Authoring-guide rule: **BNF-as-source syntax declarations (K, Antlr, Yacc) → tagged-variant data decls with one variant per BNF alternative; associativity and bracket annotations move to the parser's build-stage concern (not authoring surface)**. No new wedge; reuses #22 + #55 + #84.
+2. **`rule LHS => RHS` rewriting rules** — K's primitive: a rewriting rule that matches a pattern in the configuration and replaces it with another pattern. Nom's translation inlines all rewriting rules into the function's `ensures` clauses, one `ensures LHS-shape reduces to RHS-shape` per rule. Authoring-guide rule: **rewriting-rule sets (K, Maude, Stratego) → `ensures X-shape reduces to Y-shape` clauses on a single step-function decl; each rule is one ensures; the rule-set is the contract's totality**. No new wedge.
+3. **Variable binding with sort annotations (`I1:Int`)** — K's way of binding a pattern variable with a sort (type) restriction. Nom captures this via the `payload value as whole_number` clause on the data decl's variant, with pattern-matching resolved at function call sites via the `ensures X(int_literal(a), int_literal(b)) reduces to Y` clause. Authoring-guide rule: **sort-annotated pattern variables (K's `I1:Int`, ML's `n:int`) → data-decl payload-type declarations + ensures-clause destructuring; authoring level uses data-decl fields as the sort surface, no separate pattern-language**. No new wedge.
+4. **Built-in operators on primitive sorts (`+Int`, `-Int`)** — K's way of calling "the real" addition/subtraction on primitive integers after pattern-matching has extracted the operand values. Nom treats these as ordinary function calls on `whole_number` — no special marker needed because the type system distinguishes primitive integers from the user's `ArithExp` data decl. Authoring-guide rule: **primitive-sort operators vs. user-language operators → distinguished at Nom source by argument types, not by naming convention; authoring never needs `+Int` vs `+UserLang` prefixes**. No new wedge.
+5. **`configuration <k> $PGM:Exp </k>` (the K "cell" model)** — K's way of declaring a stateful evaluation context with named cells. Nom rejects the cell model as a separate surface: the function's signature (input type + output type + `ensures`) is the full evaluation context; no named-cell scaffolding. Authoring-guide rule: **named-cell evaluation contexts (K configurations, mcrl2 states) → function signatures + `ensures` clauses; authoring never uses named cells; build-stage backends may introduce cells internally for implementation**. No new wedge.
+6. **Small-step reduction vs. big-step evaluation** — K's explicit choice of modeling operational semantics via single-step reductions. Nom translates the small-step model into a step-function + a peer property asserting convergence under repeated application. Authoring-guide rule: **small-step operational semantics → step-function decl with one-redex `ensures` + peer property asserting convergence via `ensures the sequence e, step(e), step(step(e)), ... terminates at X within at-most N steps`; big-step evaluation collapses to a direct recursive function decl (covered by #25 Haskell/Coq #86 patterns)**. No new wedge.
+7. **Redex-selection strategy (leftmost-innermost, outermost-innermost, etc.)** — K's implicit convention on which redex a step picks when multiple exist. Nom makes this an explicit `ensures redex selection is leftmost-innermost: if multiple redexes exist, ...` clause so the contract pins the strategy; dreaming can swap strategies by swapping function bodies without breaking downstream callers that pinned a stronger claim. Authoring-guide rule: **rewriting-strategy conventions (leftmost-innermost, call-by-need, etc.) → explicit `ensures redex selection is X: Y` clause; the strategy is part of the contract, not a library-level default**. No new wedge.
+8. **Termination witness (the `ensures at-most N steps` clause)** — K leaves termination to a sort-theoretic induction, which Nom mirrors via an explicit step-count bound in the convergence property. Authoring-guide rule: **termination witnesses for rewriting systems → `ensures ... terminates at X within at-most N steps` clause with N bounded by a structural measure (number of redex-bearing nodes); dreaming can swap the bound if a stricter measure is proven**. No new wedge.
+
+Row additions: **0 new wedges** — K framework term-rewriting decomposes cleanly into (tagged-variant ArithExp data decl + step-function with per-rule `ensures reduces-to` clauses + peer property asserting convergence + explicit redex-selection-strategy and step-bound `ensures`). 8 authoring-guide closures covering BNF-as-source elision, rewriting-rule-as-ensures, sort-annotated-variable-as-payload, primitive-operator-type-distinguished, named-cell elision, small-step / big-step decomposition, redex-selection-strategy explicit, and termination-witness explicit.
+
+**Fifty-fourth consecutive minimal-wedge translation + forty-sixth 0-new-wedge run** (Dafny #50 through K-framework #87 — 38-member streak, all 0-new-wedge). K framework — the most influential formal-semantics framework in academic PL research, used to produce verified semantics for C (KernelC), Java (K-Java), JavaScript (KJS), and the KEVM (Ethereum) — decomposes cleanly into Nom's (tagged-variant + function + per-rule `ensures reduces-to` + peer property for convergence) primitives. **Formal-methods paradigm family now has 7 exemplars**: generative-testing (#33) + temporal-logic-model-checking (#47) + AI-planning (#48) + verified-imperative (#50) + dependent-types (#73) + tactic-theorem-proving (#86) + **term-rewriting operational-semantics (#87 K)**. The unifying insight: **formal-semantics frameworks, theorem provers, model checkers, and testing frameworks all reduce to the same Nom surface**: named properties with generators over data decls, cited peer functions/properties via typed slots, and `ensures` clauses that describe the observable claim. What varies across exemplars is purely the `ensures` vocabulary (reduces-to for rewriting, satisfies-LTL for model-checking, proof-discharged-by for tactic-proofs, holds-for-all-generated-inputs for testing) — the structural skeleton is identical. Eight authoring-guide closures land in doc 16.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
