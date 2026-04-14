@@ -6599,6 +6599,95 @@ Row additions: **0 new wedges** — OCaml algebraic effects + handlers + continu
 
 ---
 
+## 85. Erlang OTP supervisor tree — hierarchical fault-tolerance
+
+```erlang
+-module(my_sup).
+-behaviour(supervisor).
+-export([start_link/0, init/1]).
+
+start_link() ->
+    supervisor:start_link({local, ?MODULE}, ?MODULE, []).
+
+init([]) ->
+    SupFlags = #{strategy => one_for_one,
+                 intensity => 5,
+                 period => 10},
+    ChildSpecs = [
+        #{id => db_worker,
+          start => {db_worker, start_link, []},
+          restart => permanent,
+          shutdown => 5000,
+          type => worker},
+        #{id => cache_worker,
+          start => {cache_worker, start_link, []},
+          restart => transient,
+          shutdown => 2000,
+          type => worker}
+    ],
+    {ok, {SupFlags, ChildSpecs}}.
+```
+
+### `.nomx v1` translation
+
+```nomx
+define my_sup
+  that supervises a db_worker and a cache_worker using the one-for-one restart strategy, tolerating up to 5 crashes within any 10-second window before giving up and propagating the failure upward.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ChildSpec is
+  intended to describe the lifecycle contract for one supervised child process — its identity, how to start it, when it should be restarted, and how long a graceful shutdown may take.
+  exposes id as text.
+  exposes start_module as text.
+  exposes restart_policy as one of: permanent, transient, temporary.
+  exposes shutdown_ms as whole_number.
+  exposes kind as one of: worker, supervisor.
+
+the data SupervisorPolicy is
+  intended to describe how a supervisor reacts when one of its children crashes.
+  exposes strategy as one of: one_for_one, one_for_all, rest_for_one, simple_one_for_one.
+  exposes max_restarts_per_window as whole_number.
+  exposes window_seconds as whole_number.
+
+the concept my_sup is
+  intended to coordinate the lifecycle of a db_worker and a cache_worker as peer children under a one-for-one supervision strategy with a 5-crashes-per-10-seconds fault budget.
+  uses the @Data matching "ChildSpec" with at-least 0.95 confidence.
+  uses the @Data matching "SupervisorPolicy" with at-least 0.95 confidence.
+  uses the @Function matching "db_worker_start" with at-least 0.9 confidence.
+  uses the @Function matching "cache_worker_start" with at-least 0.9 confidence.
+  ensures at concept start, each child listed in its children set is launched in the declared order.
+  ensures when any single child crashes, only that child is restarted (one-for-one strategy), not its siblings.
+  ensures at-most 5 restart attempts are performed within any rolling 10-second window; the 6th crash within the window causes the concept itself to exit and the failure to propagate to its own parent.
+  ensures db_worker uses restart_policy = permanent: it is always restarted on any exit, including normal exit.
+  ensures cache_worker uses restart_policy = transient: it is only restarted on abnormal exit, never on normal exit.
+  ensures on supervisor shutdown, each child is given at-most its declared shutdown_ms milliseconds to exit gracefully before being forcibly terminated.
+  ensures child startup order is: db_worker first, then cache_worker (matches declaration order).
+  hazard a child whose start function synchronously blocks longer than the supervisor's boot timeout causes the supervisor itself to fail to start — all sibling children are also terminated; callers must ensure each child's start function returns promptly.
+  hazard a transient child whose crash reason matches normal shutdown semantics is NOT restarted — loads of subtle test flakiness arise when a child treats a recoverable error as a normal exit.
+  favor availability.
+  favor auditability.
+```
+
+### Gaps surfaced
+
+1. **`-behaviour(supervisor)` declaration** — Erlang's way of declaring that a module implements the supervisor behavioral callback protocol. Nom's translation makes the contract explicit via two `@Data` typed slots + two `@Function` typed slots on the concept; the "behaviour" is replaced by the structural requirement that the concept uses `ChildSpec` + `SupervisorPolicy` + startable child functions. Authoring-guide rule: **behavioral-module declarations (`-behaviour(X)`) → structural requirements expressed as `uses @Data matching "X"` + `uses @Function matching "Y"` typed slots on the concept; the callback protocol is the typed-slot surface**. No new wedge.
+2. **`start_link/0` callback** — Erlang supervisors export a start_link/0 function that wires the module to the supervisor-library boot sequence. Nom rejects boot-sequence-coupling as a language feature: the concept's `ensures at concept start, each child ... is launched in the declared order` IS the boot semantics. Authoring-guide rule: **boot-sequence coupling via exported callbacks → `ensures at concept start, X` clauses describing what the concept does at first-activation; no separate exported-function surface**. No new wedge.
+3. **`init/1` callback returning `{SupFlags, ChildSpecs}`** — Erlang's indirect way of declaring what to supervise. Nom's translation inlines the declaration directly into the concept body via typed-slot references. Authoring-guide rule: **callback-return-value configuration (init/1 returning structured data) → direct inline `uses @Data` typed slots in the concept; configuration IS the concept's uses-slot declaration**. No new wedge.
+4. **Restart strategies (`one_for_one`, `one_for_all`, `rest_for_one`, `simple_one_for_one`)** — Erlang's fault-isolation lattice. Nom captures these as a closed variant of the `SupervisorPolicy.strategy` data decl + the `ensures when any single child crashes, only that child is restarted` clause binding the chosen strategy to an observable restart pattern. Authoring-guide rule: **fault-isolation strategy enums → closed data-decl variant + `ensures when X crashes, Y is restarted` clauses that bind each strategy-value to its observable restart pattern; the variant is the vocabulary and the `ensures` is the semantics**. No new wedge.
+5. **Restart intensity window (`intensity => 5, period => 10`)** — Erlang's crash-rate-limiting contract. Nom's `ensures at-most 5 restart attempts are performed within any rolling 10-second window` clause makes this a first-class quantified contract using the W49 quantifier vocabulary. Authoring-guide rule: **rolling-window rate-limit contracts → `ensures at-most N events within any rolling T-second window` clause using W49 quantifiers; crash-budgets, API-rate-limits, and I/O-retry-caps share this surface**. No new wedge; extends W49.
+6. **Restart policies (`permanent` / `transient` / `temporary`)** — Erlang's per-child restart-trigger vocabulary. Nom captures these as closed variants on `ChildSpec.restart_policy` + per-variant `ensures` clauses describing the trigger semantics. Authoring-guide rule: **per-child lifecycle-policy enums → closed data-decl variants + per-variant `ensures X uses restart_policy = Y: it is V` clauses; each variant binds to a concrete observable lifecycle rule**. No new wedge; reuses #22 Kotlin-sealed pattern.
+7. **Graceful-shutdown timeout (`shutdown => 5000`)** — Erlang's bounded cleanup contract. Nom's `ensures on supervisor shutdown, each child is given at-most its declared shutdown_ms milliseconds to exit gracefully before being forcibly terminated` clause binds the timeout to an observable cleanup pattern. Authoring-guide rule: **bounded-cleanup timeouts → `ensures on X shutdown, each Y is given at-most Z milliseconds ... before being forcibly terminated` clause using W49 at-most quantifier; the bound is part of the contract, not a tuning knob**. No new wedge.
+8. **Hierarchical supervision (supervisor-of-supervisors)** — Erlang's composition pattern. Nom's `concept` kind allows supervisor concepts to use other supervisor concepts as children via `uses @Concept matching "X"` — the hierarchy is an existing composition, not a new kind. Authoring-guide rule: **hierarchical-supervision trees → nested `uses @Concept matching "X"` typed slots where each nested concept carries its own SupervisorPolicy; the hierarchy is plain concept composition**. No new wedge.
+
+Row additions: **0 new wedges** — Erlang OTP supervisor trees decompose cleanly into (ChildSpec data decl + SupervisorPolicy data decl + concept with typed-slot `uses` + W49-quantified `ensures` for fault-budget + per-variant `ensures` for restart/shutdown semantics). 8 authoring-guide closures covering behavioral-modules, boot-sequence coupling, callback-return configuration, fault-isolation strategies, rolling-window rate limits, per-child lifecycle policies, bounded-cleanup timeouts, and hierarchical supervision.
+
+**Fifty-second consecutive minimal-wedge translation + forty-fourth 0-new-wedge run** (Dafny #50 through Erlang-OTP #85 — 36-member streak, all 0-new-wedge). Erlang's OTP supervisor tree — the most influential fault-tolerance pattern in practical concurrent-system engineering — decomposes cleanly into Nom's (data decl + concept + typed-slot `uses` + W49-quantified `ensures`) primitives. **Fault-tolerance paradigm family now has 3 exemplars**: Elixir GenServer state machines (#27) + Go-style cancel-context (retry-policy wedge candidates) + Erlang OTP supervisor trees (#85). The unifying insight: **fault-tolerance is the observable behavior of a coordinating concept under child-crash hypotheses, not a built-in language feature**; the `ensures` clause describes what restart/shutdown/rate-limit behavior the concept exhibits, and the `hazard` clause surfaces the subtle cases (boot-timeout cascade, transient-vs-normal-exit confusion) that cause real outages in production. Eight authoring-guide closures land in doc 16.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
