@@ -44,16 +44,18 @@ anything load-bearing.
   plus `nom grammar pattern-list [--intent-contains TEXT] [--kind K]
   [--limit N]` and `nom grammar pattern-show <pattern_id>` for
   read-only exploration of the 258-pattern catalog.
-- Phase E proofs — 6 of 7 shipped: P1 schema-completeness
+- Phase E proofs — **7 of 7 shipped**: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
   (100-run Debug-equality on curated inputs), P3 closure-against-
-  archive (89 v2 blocks from doc 14 extracted + parsed + row-count-
-  stable; dashboard passes 42/89 end-to-end after baseline extension),
-  P4 strictness property (256 random bytes, zero panics, well-formed
-  `NOMX-S<N>-<reason>`, deterministic failure tuples), P6 no-foreign-
-  names audit (whole-word match over every text column after baseline
-  import), P7 no-Rust-bundled-data audit. P5 synonym round-trip is
-  already covered by `synonym_round_trip.rs`.
+  archive (88 v2 blocks from doc 14 extracted + parsed + row-count-
+  stable; dashboard passes 84/88 = 95.5% end-to-end), P4 strictness
+  property (256 random bytes, zero panics, well-formed
+  `NOMX-S<N>-<reason>`, deterministic failure tuples), P5 synonym
+  round-trip (open empty DB → insert row → expect canonical-equivalent
+  token stream → delete row → expect pre-insert behaviour, plus three
+  cross-reference tests), P6 no-foreign-names audit (whole-word match
+  over every text column after baseline import), P7 no-Rust-bundled-
+  data audit. Phase E complete.
 - Corpus dashboard: three layers of kind-noun drift fixed in sync
   (baseline.sql already had 9; KINDS const 7 → 9; lexer kind-noun
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +

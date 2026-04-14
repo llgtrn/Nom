@@ -1,10 +1,22 @@
-//! P5 proof — synonym round-trip at the full pipeline level.
+//! P5 proof (Phase E of the blueprint) — synonym round-trip at the
+//! full pipeline level.
 //!
-//! Adding a row to grammar.sqlite.keyword_synonyms changes the parser's
-//! behaviour without recompiling. Removing the row reverts the
-//! behaviour. No code change in between. This is the operational proof
-//! that the parser is genuinely DB-driven, not falling back to
-//! hardcoded rules.
+//! Blueprint claim: a synonym registered in `keyword_synonyms` is
+//! accepted by the parser; removing the row makes the parser reject
+//! again, with no code change. Step-for-step coverage of the P5 spec
+//! lives in `synonym_round_trip_at_pipeline_level` below: open empty
+//! DB → insert row → expect canonical-equivalent token stream → delete
+//! row → expect pre-insert behaviour. The other three tests in this
+//! file extend the proof: the grammar-aware pipeline matches the
+//! baseline pipeline once the DB is populated; the strict empty-DB
+//! reject fires at S2 (P1 cross-reference); a malformed multi-token
+//! canonical is rejected with `multitoken-synonym` at S1.
+//!
+//! Together with the six tests in `nom-grammar/tests/baseline_import.rs`,
+//! `closure_against_archive.rs`, `schema_completeness.rs`,
+//! `determinism_property.rs`, `strictness_property.rs`,
+//! `no_foreign_names_audit.rs`, and `no_rust_seed_audit.rs`, this
+//! file completes the seven-proof Phase E set.
 
 use nom_concept::stages::{run_pipeline, run_pipeline_with_grammar, stage1_tokenize, stage1_tokenize_with_synonyms};
 
