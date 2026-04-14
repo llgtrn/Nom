@@ -69,13 +69,22 @@ shipped. Each needs design + spec + parser/test work:
 
 - The catalog has crossed the original 100-150 target and now sits
   at **258 rows** spanning 22 themes. Both halves of the completion
-  bar are **enforced**: the test
-  `nom-concept/tests/pattern_examples_parse.rs` reports
-  **258/258 example_shapes parse end-to-end** through the DB-driven
-  pipeline (no panics, no row growth), AND **258 distinct intents
-  across 258 rows** — zero exact-string duplicates. The fuzzy
-  semantic-similarity tightening of the uniqueness check is queued
-  for the cycle that lands embedding-driven resolver re-rank.
+  bar are **enforced**, and the uniqueness half is enforced at two
+  layers (exact-string + fuzzy):
+  - `every_pattern_intent_is_distinct` — exact-string distinct
+    (258 distinct intents across 258 rows)
+  - `every_pattern_intent_pair_jaccard_below_threshold` — fuzzy
+    token-overlap distinct (every pair of normalized domain-word sets
+    shares less than 50% of their union; the catalog's observed max
+    is 0.273 against a 0.5 threshold, so there is ~2× headroom)
+  - `pipeline_never_panics_on_any_example_shape` +
+    `pattern_example_shapes_dashboard` — every `example_shape` parses
+    end-to-end (258/258)
+  The fuzzy check uses a deterministic Jaccard backend (no embedding
+  model, no network, no nondeterministic dependency) so the result
+  is byte-stable across runs and machines. When embedding-driven
+  re-rank lands later, a parallel test with a semantic backend can
+  run alongside; the Jaccard test stays as the deterministic floor.
 
 ## Bench + flow
 

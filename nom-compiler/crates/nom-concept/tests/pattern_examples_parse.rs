@@ -91,11 +91,8 @@ fn parsing_example_shapes_does_not_grow_grammar() {
 #[test]
 fn every_pattern_intent_is_distinct() {
     // First-cut enforcement of the doc 09 'intent uniquely matches'
-    // half of the catalog completion bar. Two patterns with the same
-    // intent are a redundancy bug — either the catalog is duplicating
-    // a shape or one of the rows is mis-named. Exact-string distinct
-    // is a coarse but real bar; future cycles can tighten to a fuzzy
-    // semantic-similarity check once the resolver embedding lands.
+    // half of the catalog completion bar. Exact-string distinct is
+    // the coarse layer; the fuzzy layer below tightens it.
     let (_dir, conn) = open_baseline();
     let mut stmt = conn
         .prepare(
@@ -111,6 +108,97 @@ fn every_pattern_intent_is_distinct() {
     assert!(
         dupes.is_empty(),
         "patterns with duplicate intent strings: {dupes:#?}"
+    );
+}
+
+/// Stopwords stripped before Jaccard tokenization. Anything below the
+/// register of "carries domain meaning" gets filtered. Deterministic
+/// (closed set, never reordered) so the test result is stable across
+/// runs and machines.
+const FUZZY_STOPWORDS: &[&str] = &[
+    "a","the","of","to","and","or","with","for","in","on","as","an","is",
+    "into","from","by","that","this","its","at","be","are","it","one","two",
+    "each","every","any","all","no","not","then","than","only","also","same",
+];
+
+/// Tokenize an intent string into a normalized set of domain words for
+/// Jaccard-similarity comparison. Lowercase, alphabetic-only, ≥3 chars,
+/// not in `FUZZY_STOPWORDS`.
+fn fuzzy_tokens(intent: &str) -> std::collections::BTreeSet<String> {
+    let mut out = std::collections::BTreeSet::new();
+    let mut cur = String::new();
+    let lower = intent.to_lowercase();
+    for ch in lower.chars().chain(std::iter::once(' ')) {
+        if ch.is_ascii_alphabetic() {
+            cur.push(ch);
+        } else {
+            if cur.len() >= 3 && !FUZZY_STOPWORDS.contains(&cur.as_str()) {
+                out.insert(std::mem::take(&mut cur));
+            } else {
+                cur.clear();
+            }
+        }
+    }
+    out
+}
+
+#[test]
+fn every_pattern_intent_pair_jaccard_below_threshold() {
+    // Fuzzy semantic-similarity tightening of the uniqueness bar:
+    // closes the doc 09 open question that was previously queued for
+    // the cycle that lands embedding-driven resolver re-rank.
+    //
+    // The bar uses a deterministic token-overlap (Jaccard) similarity
+    // over normalized domain-word sets — no embedding model, no
+    // network, no nondeterministic dependency. Two patterns whose
+    // domain-word sets share more than half their union are almost
+    // certainly redundant; the threshold 0.5 is set with ~2× margin
+    // over the current catalog's observed maximum (0.273 on the
+    // staged-release-channel vs approval-workflow-reviewer pair, which
+    // share "route"/"ordered" but are semantically distinct).
+    //
+    // Future tightening: once embeddings ship, a parallel test with a
+    // semantic-similarity backend can run alongside this one. The
+    // Jaccard test stays as the deterministic floor.
+    const THRESHOLD: f64 = 0.5;
+
+    let (_dir, conn) = open_baseline();
+    let mut stmt = conn
+        .prepare("SELECT pattern_id, intent FROM patterns ORDER BY pattern_id")
+        .expect("prepare");
+    let rows: Vec<(String, String, std::collections::BTreeSet<String>)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .expect("query")
+        .map(|r| {
+            let (id, intent) = r.expect("row");
+            let toks = fuzzy_tokens(&intent);
+            (id, intent, toks)
+        })
+        .collect();
+
+    let mut hits: Vec<(f64, String, String, String, String)> = Vec::new();
+    for i in 0..rows.len() {
+        for j in (i + 1)..rows.len() {
+            let (ref a_id, ref a_text, ref a_set) = rows[i];
+            let (ref b_id, ref b_text, ref b_set) = rows[j];
+            if a_set.is_empty() || b_set.is_empty() {
+                continue;
+            }
+            let inter = a_set.intersection(b_set).count();
+            let union = a_set.union(b_set).count();
+            if union == 0 {
+                continue;
+            }
+            let jacc = inter as f64 / union as f64;
+            if jacc >= THRESHOLD {
+                hits.push((jacc, a_id.clone(), b_id.clone(), a_text.clone(), b_text.clone()));
+            }
+        }
+    }
+
+    assert!(
+        hits.is_empty(),
+        "patterns with intent Jaccard >= {THRESHOLD}: {hits:#?}"
     );
 }
 
