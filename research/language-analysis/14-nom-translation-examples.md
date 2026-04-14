@@ -5435,6 +5435,95 @@ Row additions: **0 new wedges** — Clojure's STM + immutable data + keyword-key
 
 ---
 
+## 72. Perl — text processing + CPAN regex + context-sensitive evaluation
+
+```perl
+#!/usr/bin/perl
+use strict;
+use warnings;
+
+sub parse_log_line {
+    my ($line) = @_;
+    return undef unless $line =~
+        /^(\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z)\s+\[(\w+)\]\s+(\S+)\s+-\s+(.+)$/;
+    return {
+        timestamp => $1,
+        level     => $2,
+        component => $3,
+        message   => $4,
+    };
+}
+
+sub summarize_log {
+    my ($lines_ref) = @_;
+    my %by_level;
+    for my $line (@$lines_ref) {
+        my $parsed = parse_log_line($line) or next;
+        $by_level{$parsed->{level}}++;
+    }
+    return \%by_level;
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define parse_log_line
+  that takes one log line, returns a parsed record with timestamp, level, component, and message; or nothing when the line does not match the expected shape.
+
+define summarize_log
+  that takes a list of log lines, returns a histogram mapping each observed level to its count across parseable lines.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data LogEntry is
+  intended to describe one parsed log line with its ISO-8601 timestamp, severity level, source component, and free-form message text.
+  exposes timestamp as text.
+  exposes level as text.
+  exposes component as text.
+  exposes message as text.
+
+the data LogLinePattern is
+  intended to specify the canonical shape of a parseable log line consumed by parse_log_line.
+  matches text of the shape `ISO-8601 timestamp followed by whitespace then bracketed level followed by whitespace then non-whitespace component followed by space-dash-space then free-form message`, anchored at start and end.
+
+the function parse_log_line is
+  intended to parse one candidate log line into a LogEntry when it matches the LogLinePattern, or return nothing otherwise.
+  uses the @Data matching "LogEntry" with at-least 0.95 confidence.
+  uses the @Data matching "LogLinePattern" with at-least 0.95 confidence.
+  ensures when the input matches the LogLinePattern, the returned value is some LogEntry whose fields correspond to the four capture groups of the match.
+  ensures when the input does not match the LogLinePattern, the returned value is nothing.
+  hazard timestamps outside the ISO-8601 range are rejected; callers handling heterogeneous log formats must run additional parsers as alternatives.
+  favor correctness.
+
+the function summarize_log is
+  intended to return a histogram mapping each observed severity level to the count of parseable log lines at that level, ignoring lines that fail parse_log_line.
+  uses the @Function matching "parse_log_line" with at-least 0.95 confidence.
+  ensures every entry of the returned histogram has a key equal to some parsed LogEntry's level and a count equal to the number of input lines whose parse returned that level.
+  ensures unparseable input lines do not contribute to any histogram entry.
+  ensures parseable lines contribute exactly once each to their respective histogram entry.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Sigils (`$scalar`, `@array`, `%hash`, `\%ref`)** — Perl's context-encoding-via-prefix discipline. Nom rejects sigils; every variable is a named identifier without prefix. Authoring-guide rule: **Perl sigils (`$`/`@`/`%`/`\@`/`\%`) → plain named identifiers on function parameters; type information carried by the parameter's type annotation or prose description**. No new wedge.
+2. **Implicit variables (`$_`, `@_`, `$1`…`$9`)** — Perl's per-context default names. Nom rejects all implicit names. Authoring-guide rule: **implicit context variables (`$_`, `@_`, `$1`…`$9`, awk's `$0`) → explicit named parameters and explicit capture-group names**. Same as #59 PowerShell `$_` rule + #46 Rego implicit-globals. No new wedge.
+3. **Regex with embedded capture groups (`/^(\d{4})...(\w+)...$/`)** — Perl's defining idiom. Nom's translation uses the existing W39 pattern-shape-clause approach (#31 regex): the LogLinePattern data decl describes the shape in prose, and the function body references captures by name via the LogEntry data decl. Authoring-guide rule: **Perl regex with named-or-numbered capture groups → pattern-shape clause on a dedicated data decl + the data decl's `exposes` fields name each capture; function references captures by field name (reuses #31 pattern-shape rule + W39 wedge)**. No new wedge.
+4. **List/scalar context sensitivity (`wantarray`, `scalar @list`)** — Perl functions return different things depending on caller context. Nom rejects context-dependent returns; every function has exactly one typed return. Authoring-guide rule: **context-sensitive return behavior decomposes to distinct function decls (`get_user_scalar` returning one, `get_user_list` returning many) — no single function with caller-context-dependent return shape at Nom source level**. Same rule as #68 MATLAB string-flag-variants. No new wedge.
+5. **`or next` / `or die` postfix control flow** — Perl's idiomatic short-circuit control. Nom's `when X is … otherwise …` + explicit `requires`/`ensures` captures the same flow declaratively. Authoring-guide rule: **Perl postfix `or`/`unless`/`if` modifiers → `when X is … otherwise …` prose or `requires`/`ensures` at function-decl level**. No new wedge.
+6. **`use strict; use warnings;` safety pragmas** — Perl's opt-in strictness. Nom's strictness is default (W4-A3 strict validator). Authoring-guide rule: **opt-in strictness pragmas (`use strict`, `"use strict";` in JS, `--strict` compiler flags) are no-op in Nom — strictness is always-on**. No new wedge.
+7. **Hash / array references (`\%by_level`, `@$lines_ref`)** — Perl's explicit-reference discipline. Nom's translation uses plain parameters; no reference-vs-value distinction at source level. Authoring-guide rule: **Perl reference operators (`\`, `->`, `$$ref`, `@$ref`) → plain named parameters; the build stage handles value-vs-reference based on type size**. No new wedge.
+8. **One-liner reputation** — Perl's terse-golf tradition. Nom's translation is deliberately verbose, matching the "terse-language → verbose-Nom" principle established by Forth (#44). Authoring-guide rule: **cross-referenced — terse/golf-style idioms decompose to verbose multi-clause `ensures`; readability is favored over brevity at all translation densities**. Reinforces #44 Forth density-inversion principle.
+
+Row additions: **0 new wedges** — Perl's sigils + implicit variables + regex + context-sensitivity + references + pragmas all decompose to (named parameters + pattern-shape data decls + distinct functions for context variants + default-strict + prose control flow). 7 authoring-guide closures: sigils → plain identifiers, implicit variables → explicit names (reuses #59 + #46), regex captures → W39 pattern-shape + data-decl `exposes`, context-sensitive returns → distinct functions (reuses #68), postfix `or`/`unless` → prose control flow, opt-in strictness pragmas no-op in always-strict Nom, reference operators → plain parameters.
+
+**Thirty-ninth consecutive minimal-wedge translation + thirty-first 0-new-wedge run.** Perl — the canonical text-processing + CPAN regex language (1987) — decomposes cleanly into Nom's primitives despite being one of the most syntactically distinctive languages ever mainstream. Combined with Python's #13 async, Ruby's #23 methods, Bash's #11 pipes, PowerShell's #59 typed pipeline, and Perl's terse regex, **the "script language" paradigm family is fully unified**: all reduce to the same (data decls + function decls + pattern-shape clauses + prose control flow). The density-inversion principle (Forth #44: terse-language → verbose Nom; verbose-language → compact Nom) now has a second concrete exemplar in Perl.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

@@ -347,18 +347,25 @@
 | 330 | Clojure namespaces → `.nomtu` modules + `uses @Module`/`uses @Data` references in concept decls | authoring-guide rule | ✅ closed (doc 14 #71) |
 | 331 | Clojure `reduce`/`map`/`vals` pipelines → single-sentence declarative `ensures` clauses (reuses #11/#52/#57 pipeline rules) | authoring-guide rule | ✅ closed (doc 14 #71) |
 | 332 | Transaction-boundary markers (`dosync`, `BEGIN`/`COMMIT`, `@transactional`) collapse to function-decl boundary when fn carries atomic-group `ensures` | authoring-guide rule | ✅ closed (doc 14 #71) |
+| 333 | Perl sigils (`$`/`@`/`%`/`\@`/`\%`) → plain named identifiers; type info carried by parameter annotation or prose | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 334 | Implicit context variables (`$_`, `@_`, `$1`…`$9`, awk's `$0`) → explicit named parameters + explicit capture-group names (reuses #59 + #46) | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 335 | Perl regex with capture groups → pattern-shape data decl (W39) + `exposes` fields naming each capture; function references captures by field name | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 336 | Context-sensitive return behavior (`wantarray`/`scalar`) → distinct function decls for each context variant (reuses #68 MATLAB string-flag rule) | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 337 | Perl postfix `or`/`unless`/`if` modifiers → `when X is … otherwise …` prose or `requires`/`ensures` at function-decl level | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 338 | Opt-in strictness pragmas (`use strict`, JS `"use strict"`, `--strict` flags) are no-op in Nom — strictness is always-on via W4-A3 | authoring-guide rule | ✅ closed (doc 14 #72) |
+| 339 | Perl reference operators (`\`, `->`, `$$ref`, `@$ref`) → plain named parameters; value-vs-reference is build-stage decision | authoring-guide rule | ✅ closed (doc 14 #72) |
 
-Totals by destination (after doc 14 #71 Clojure STM + immutable-data translation — **thirtieth 0-new-wedge translation in a row**; 8 authoring-guide closures; **30-consecutive-0-new-wedge milestone reached**):
+Totals by destination (after doc 14 #72 Perl text-processing translation — **thirty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **script-language paradigm family unified** via the density-inversion principle):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **283**
+- ✅ Closed: **290**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **9** (9/10 threshold unchanged)
 
-Backlog size: 351 rows. Closure rate 81% (283/351). **71 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + matrix-oriented-scientific + pure-message-passing-OO + safety-critical-strong-typing-tasking + **STM-immutable-data (Clojure)**. **Backlog closure crosses 81% (283/351).** Thirty-eighth consecutive minimal-wedge translation, **thirtieth 0-new-wedge in a row** — 30-consecutive-streak milestone reached. **The last 30 distinct paradigms have all translated via the same (data decls + function decls + `requires`/`ensures`/`hazard`) primitive set.**
+Backlog size: 358 rows. Closure rate 81% (290/358). **72 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + matrix-oriented-scientific + pure-message-passing-OO + safety-critical-strong-typing-tasking + STM-immutable-data + **text-processing-regex-sigils (Perl)**. Thirty-ninth consecutive minimal-wedge translation, **thirty-first 0-new-wedge in a row**.
 
 ## Wedge master index (for cross-ref with doc 13)
 
