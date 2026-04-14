@@ -37,7 +37,20 @@ INSERT OR IGNORE INTO quality_names (name, axis, metric_function, cardinality, r
 ('availability',          'ops',                NULL, 'exactly_one_per_app',  'app', 'doc 08', NULL),
 ('auditability',          'ops',                NULL, 'any',                  NULL,  'doc 08', NULL),
 ('accessibility',         'ops',                NULL, 'exactly_one_per_app',  'app', 'doc 08', NULL),
-('totality',              'proofs',             NULL, 'any',                  NULL,  'doc 08', NULL);
+('totality',              'proofs',             NULL, 'any',                  NULL,  'doc 08', NULL),
+-- Corpus-driven extensions: qualities referenced by the archived doc 14
+-- translation corpus but absent from the founding 10. Adding them here
+-- is what lets the closure proof's parse rate climb above zero.
+('correctness',           'semantics',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('determinism',           'semantics',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('clarity',               'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('documentation',         'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('discoverability',       'authoring',          NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('reproducibility',       'ops',                NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('portability',           'ops',                NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('responsiveness',        'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('latency',               'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL),
+('performance',           'performance',        NULL, 'any',                  NULL,  'doc 14 corpus', NULL);
 
 -- ── Keywords (reserved tokens recognized by the lexer) ──────────────
 

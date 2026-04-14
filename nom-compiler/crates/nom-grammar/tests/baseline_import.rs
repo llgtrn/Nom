@@ -25,7 +25,7 @@ fn baseline_sql_imports_into_fresh_db() {
 
     // Concrete canonical numbers — drift catches regressions.
     assert_eq!(counts.kinds, 9, "9 closed kinds in baseline");
-    assert_eq!(counts.quality_names, 10, "10 founding qualities");
+    assert_eq!(counts.quality_names, 20, "10 founding + 10 corpus-driven qualities");
     assert!(counts.keywords >= 40, "≥40 reserved tokens, got {}", counts.keywords);
     assert!(
         counts.clause_shapes >= 40,
