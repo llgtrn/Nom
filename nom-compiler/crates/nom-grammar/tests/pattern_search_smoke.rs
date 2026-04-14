@@ -28,53 +28,16 @@ fn open_baseline() -> (tempfile::TempDir, rusqlite::Connection) {
     (dir, conn)
 }
 
-/// Run the same algorithm `nom grammar pattern-search` uses and return
-/// the top-K matches above `threshold`, sorted by score desc then id asc.
-fn search(
-    conn: &rusqlite::Connection,
-    query: &str,
-    threshold: f64,
-    limit: usize,
-) -> Vec<(f64, String, String)> {
-    let q = nom_grammar::fuzzy_tokens(query);
-    let mut stmt = conn
-        .prepare("SELECT pattern_id, intent FROM patterns")
-        .expect("prepare");
-    let rows: Vec<(String, String)> = stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-        .expect("query")
-        .map(|r| r.expect("row"))
-        .collect();
-    let mut scored: Vec<(f64, String, String)> = rows
-        .into_iter()
-        .filter_map(|(id, intent)| {
-            let row = nom_grammar::fuzzy_tokens(&intent);
-            let s = nom_grammar::jaccard(&q, &row);
-            if s >= threshold {
-                Some((s, id, intent))
-            } else {
-                None
-            }
-        })
-        .collect();
-    scored.sort_by(|a, b| {
-        b.0.partial_cmp(&a.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.cmp(&b.1))
-    });
-    scored.truncate(limit);
-    scored
-}
-
-/// Assert that `expected_id` appears in the top-3 matches of `query`.
-/// Threshold 0.15 is set with empirical headroom for the morphology
-/// friction Jaccard hits without stemming (results vs result;
-/// supervise vs supervised). The catalog's natural overlap among
-/// unrelated patterns is ~0.005 mean / ~0.27 max, so 0.15 still
+/// Assert that `expected_id` appears in the top-3 matches of `query`
+/// via `nom_grammar::search_patterns` (the canonical backend the CLI
+/// also calls). Threshold 0.15 is set with empirical headroom for
+/// the morphology friction Jaccard hits without stemming (results vs
+/// result; supervise vs supervised). The catalog's natural overlap
+/// among unrelated patterns is ~0.005 mean / ~0.27 max, so 0.15 still
 /// rejects unrelated noise comfortably.
 fn assert_top3_contains(conn: &rusqlite::Connection, query: &str, expected_id: &str) {
-    let hits = search(conn, query, 0.15, 3);
-    let ids: Vec<&str> = hits.iter().map(|(_, id, _)| id.as_str()).collect();
+    let hits = nom_grammar::search_patterns(conn, query, 0.15, 3).expect("search");
+    let ids: Vec<&str> = hits.iter().map(|m| m.pattern_id.as_str()).collect();
     assert!(
         ids.contains(&expected_id),
         "query {query:?} expected {expected_id} in top-3, got {ids:?} (full: {hits:#?})"
@@ -124,7 +87,7 @@ fn validate_form_fields_finds_form_validation_pattern() {
 #[test]
 fn empty_after_stopword_filter_returns_no_matches() {
     let (_dir, conn) = open_baseline();
-    let hits = search(&conn, "the of a to", 0.10, 10);
+    let hits = nom_grammar::search_patterns(&conn, "the of a to", 0.10, 10).expect("search");
     assert!(
         hits.is_empty(),
         "all-stopword query should return no matches; got {hits:#?}"

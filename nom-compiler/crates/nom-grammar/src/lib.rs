@@ -324,6 +324,65 @@ pub fn jaccard(
     inter as f64 / union as f64
 }
 
+/// One row in a pattern-search result: similarity score, pattern id,
+/// intent prose. Sorted by `score` descending then `pattern_id`
+/// ascending — stable across runs and machines.
+#[derive(Debug, Clone, PartialEq)]
+pub struct PatternMatch {
+    pub score: f64,
+    pub pattern_id: String,
+    pub intent: String,
+}
+
+/// Search the patterns table by free-form prose. Returns up to
+/// `limit` matches whose Jaccard similarity (over [`fuzzy_tokens`]
+/// of the query and each row's intent) is at least `threshold`,
+/// sorted by score descending then `pattern_id` ascending.
+///
+/// This is the canonical backend the CLI's `nom grammar pattern-
+/// search` calls; consumers (LSP, resolver, dream loop, tests) can
+/// call it directly instead of duplicating the loop. Deterministic —
+/// the same query against the same DB always returns the same Vec.
+pub fn search_patterns(
+    conn: &Connection,
+    query: &str,
+    threshold: f64,
+    limit: usize,
+) -> Result<Vec<PatternMatch>> {
+    let q = fuzzy_tokens(query);
+    if q.is_empty() {
+        return Ok(Vec::new());
+    }
+    let mut stmt = conn
+        .prepare("SELECT pattern_id, intent FROM patterns")
+        .context("preparing pattern-search query")?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .context("querying patterns")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("collecting pattern rows")?;
+    let mut scored: Vec<PatternMatch> = rows
+        .into_iter()
+        .filter_map(|(id, intent)| {
+            let row = fuzzy_tokens(&intent);
+            let s = jaccard(&q, &row);
+            if s >= threshold {
+                Some(PatternMatch { score: s, pattern_id: id, intent })
+            } else {
+                None
+            }
+        })
+        .collect();
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+            .then_with(|| a.pattern_id.cmp(&b.pattern_id))
+    });
+    scored.truncate(limit);
+    Ok(scored)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -573,6 +632,45 @@ mod tests {
         assert!(toks.contains("lazy"));
         assert!(toks.contains("dog"));
         assert!(!toks.contains("the"));
+    }
+
+    #[test]
+    fn search_patterns_basic_ordering_and_threshold() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        // Seed three minimal patterns.
+        for (id, intent) in [
+            ("alpha-cache", "cache pure function results"),
+            ("beta-supervise", "supervise child processes with restart"),
+            ("gamma-unrelated", "render typeset glyphs along baseline"),
+        ] {
+            conn.execute(
+                "INSERT INTO patterns \
+                 (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
+                  example_shape, hazards, favors, source_doc_refs) \
+                 VALUES (?1, ?2, '[]', '[]', '[]', '', '[]', '[]', '[]')",
+                rusqlite::params![id, intent],
+            )
+            .unwrap();
+        }
+
+        // Strong cache query → alpha-cache must be top hit.
+        let hits = search_patterns(&conn, "cache pure function results", 0.1, 10).unwrap();
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].pattern_id, "alpha-cache");
+
+        // Threshold rejects below: a query with zero overlap returns empty.
+        let none = search_patterns(&conn, "moose elk antelope", 0.1, 10).unwrap();
+        assert!(none.is_empty());
+
+        // limit truncates.
+        let one = search_patterns(&conn, "function results child render", 0.0001, 1).unwrap();
+        assert_eq!(one.len(), 1);
+
+        // empty query (all stopwords) returns empty.
+        let empty = search_patterns(&conn, "the of a to", 0.0, 10).unwrap();
+        assert!(empty.is_empty());
     }
 
     #[test]

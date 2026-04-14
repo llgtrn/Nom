@@ -2213,52 +2213,24 @@ fn cmd_grammar_pattern_search(
         Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
     };
 
-    let query_tokens = nom_grammar::fuzzy_tokens(prose);
-    if query_tokens.is_empty() {
-        eprintln!("nom grammar pattern search: prose has no domain words after stopword filter");
-        return 1;
-    }
-
-    let mut stmt = match conn.prepare("SELECT pattern_id, intent FROM patterns") {
+    let scored = match nom_grammar::search_patterns(&conn, prose, threshold, limit) {
         Ok(s) => s,
-        Err(e) => { eprintln!("nom grammar pattern search: prepare: {e}"); return 1; }
+        Err(e) => { eprintln!("nom grammar pattern search: {e}"); return 1; }
     };
-    let rows: Vec<(String, String)> = match stmt
-        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
-        .and_then(|it| it.collect::<rusqlite::Result<Vec<_>>>())
-    {
-        Ok(rs) => rs,
-        Err(e) => { eprintln!("nom grammar pattern search: query: {e}"); return 1; }
-    };
-
-    let mut scored: Vec<(f64, String, String)> = Vec::new();
-    for (id, intent) in &rows {
-        let row_tokens = nom_grammar::fuzzy_tokens(intent);
-        let jacc = nom_grammar::jaccard(&query_tokens, &row_tokens);
-        if jacc >= threshold {
-            scored.push((jacc, id.clone(), intent.clone()));
-        }
-    }
-    // Stable ordering: by score descending, then pattern_id ascending.
-    scored.sort_by(|a, b| {
-        b.0.partial_cmp(&a.0)
-            .unwrap_or(std::cmp::Ordering::Equal)
-            .then_with(|| a.1.cmp(&b.1))
-    });
-    scored.truncate(limit);
 
     if json {
         let arr: Vec<serde_json::Value> = scored
             .iter()
-            .map(|(s, id, intent)| serde_json::json!({
-                "score": s, "pattern_id": id, "intent": intent
+            .map(|m| serde_json::json!({
+                "score": m.score, "pattern_id": m.pattern_id, "intent": m.intent
             }))
             .collect();
         println!("{}", serde_json::to_string_pretty(&arr).unwrap_or_default());
     } else {
-        for (s, id, intent) in &scored {
-            println!("{:.3}  {:48}  {}", s, id, intent);
+        for m in &scored {
+            println!("{:.3}  {:48}  {}", m.score, m.pattern_id, m.intent);
         }
+        let query_tokens = nom_grammar::fuzzy_tokens(prose);
         eprintln!(
             "\n{} match{} (threshold {threshold}, limit {limit}, query tokens: {:?})",
             scored.len(),
