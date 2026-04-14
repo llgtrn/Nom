@@ -9,7 +9,7 @@ mutable state.
 | Pass | Concern | Output |
 |------|---------|--------|
 | S1 tokenize | Surface lexing — recognize keyword tokens, identifier tokens, string + numeric literals, punctuation | TokenStream |
-| S2 kind_classify | For every block, identify the declared kind (`function` / `module` / `concept` / etc.) | ClassifiedStream |
+| S2 kind_classify | For every block, identify the declared kind. The grammar-aware pass `stage2_kind_classify_with_grammar` validates each kind name against `grammar.sqlite.kinds` and rejects with NOMX-S2-empty-registry on an empty table or NOMX-S2-unknown-kind on a kind name absent from the registry. | ClassifiedStream |
 | S3 shape_extract | Pull out the structural shape (signature, exposes fields, generator) per kind | ShapedStream |
 | S4 contract_bind | Pull `requires` / `ensures` clauses and bind them to the surrounding decl | ContractedStream |
 | S5 effect_bind | Pull `hazard` / `favor` clauses (effect valence) | EffectedStream |

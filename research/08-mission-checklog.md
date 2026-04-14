@@ -23,8 +23,14 @@ anything load-bearing.
 - `grammar.sqlite` schema for seven tables: `schema_meta`,
   `keywords`, `keyword_synonyms`, `clause_shapes`, `kinds`,
   `quality_names`, `patterns`. The Rust crate ships only the schema +
-  connection helpers + query API + read-only `resolve_synonym`
-  helper; data is the user's responsibility.
+  connection helpers + query API + read-only `resolve_synonym` /
+  `is_known_kind` / `kinds_row_count` helpers; data is the user's
+  responsibility.
+- Grammar-aware pipeline `run_pipeline_with_grammar`: S1 consults
+  `keyword_synonyms` for canonicalization; S2 consults `kinds` for
+  strict kind validation. S3-S6 still use the hardcoded path; later
+  Phase B sub-steps will route them through `clause_shapes` and
+  `quality_names`.
 - CLI: `nom grammar init` (creates the file + applies schema),
   `nom grammar status` (counts rows per table; supports `--json`).
 - Annotator-style staged pipeline (S1–S6) shipped.

@@ -1195,19 +1195,90 @@ pub fn run_pipeline(src: &str) -> Result<PipelineOutput, StageFailure> {
 }
 
 /// Phase B variant: drive the full pipeline with grammar-driven
-/// synonym resolution at S1. The grammar connection is consulted
-/// only by S1 today; later phases extend the DB consultation to
-/// S2 (kinds), S3 (clause_shapes), and S5 (quality_names).
+/// synonym resolution at S1 and kind validation against the `kinds`
+/// table at S2. The grammar connection is consulted by S1 + S2
+/// today; later phases extend the DB consultation to S3
+/// (clause_shapes) and S5 (quality_names).
 pub fn run_pipeline_with_grammar(
     src: &str,
     grammar: &rusqlite::Connection,
 ) -> Result<PipelineOutput, StageFailure> {
     let s1 = stage1_tokenize_with_synonyms(src, grammar)?;
-    let s2 = stage2_kind_classify(&s1)?;
+    let s2 = stage2_kind_classify_with_grammar(&s1, grammar)?;
     let s3 = stage3_shape_extract(&s2)?;
     let s4 = stage4_contract_bind(&s3)?;
     let s5 = stage5_effect_bind(&s4)?;
     stage6_ref_resolve(&s5)
+}
+
+/// S2 with grammar-driven kind validation per Phase B2 blueprint.
+///
+/// Invariant: every block's kind name MUST exist as a row in
+/// `grammar.sqlite.kinds`. An empty `kinds` table forces every block
+/// to fail with `NOMX-S2-empty-registry`, surfacing the un-populated
+/// state instead of silently passing.
+///
+/// When the table has rows but the source's kind isn't among them,
+/// the stage emits `NOMX-S2-unknown-kind` (same diag id as the
+/// hardcoded variant for backward-compat in tooling).
+pub fn stage2_kind_classify_with_grammar(
+    stream: &TokenStream,
+    grammar: &rusqlite::Connection,
+) -> Result<ClassifiedStream, StageFailure> {
+    // Pre-flight: an empty kinds table is a hard fail. The user must
+    // have populated grammar.sqlite at least with the closed kind set
+    // before parsing.
+    let row_count = nom_grammar::kinds_row_count(grammar).map_err(|e| {
+        StageFailure::new(
+            StageId::KindClassify,
+            0,
+            "kinds-query-failed",
+            format!("DB query against kinds failed: {e}"),
+        )
+    })?;
+    if row_count == 0 && !stream.toks.is_empty() {
+        return Err(StageFailure::new(
+            StageId::KindClassify,
+            stream.toks[0].pos,
+            "empty-registry",
+            "grammar.sqlite.kinds is empty; no kind names are recognized. Populate via `nom grammar add-kind` or import a baseline.sql.",
+        ));
+    }
+
+    // Run the existing classifier first to get the candidate blocks.
+    let mut classified = stage2_kind_classify(stream)?;
+
+    // Per-block strict validation: every classified.kind MUST resolve
+    // against the grammar table. The hardcoded `KINDS` const accepts
+    // 7 names; the DB may carry more (e.g., property + scenario from
+    // wedges) or fewer (a deliberately-restricted profile).
+    for block in &classified.blocks {
+        let known = nom_grammar::is_known_kind(grammar, &block.kind).map_err(|e| {
+            StageFailure::new(
+                StageId::KindClassify,
+                block.start_byte,
+                "kinds-query-failed",
+                format!("DB query against kinds failed: {e}"),
+            )
+        })?;
+        if !known {
+            return Err(StageFailure::new(
+                StageId::KindClassify,
+                block.start_byte,
+                "unknown-kind",
+                format!(
+                    "`the {} {}` — `{}` has no row in grammar.sqlite.kinds",
+                    block.kind, block.name, block.kind
+                ),
+            ));
+        }
+    }
+
+    // No mutation needed; the classifier already produced the blocks.
+    // We re-emit the same value to honour the "in-place enrichment"
+    // discipline (each pass adds, never throws away).
+    classified.blocks.shrink_to_fit();
+    Ok(classified)
 }
 
 #[cfg(test)]

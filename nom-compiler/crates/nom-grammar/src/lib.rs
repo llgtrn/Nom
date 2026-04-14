@@ -186,6 +186,34 @@ pub fn resolve_synonym(conn: &Connection, surface: &str) -> Result<Option<String
     }
 }
 
+/// Returns true if the given kind name has a row in the `kinds` table.
+/// This is the read API S2 (kind_classify) calls during the strict
+/// kind-validation pass.
+///
+/// An empty `kinds` table → every kind check returns false → S2 will
+/// reject every block, surfacing the empty-registry condition rather
+/// than silently passing.
+pub fn is_known_kind(conn: &Connection, kind: &str) -> Result<bool> {
+    let row: Result<i64, rusqlite::Error> = conn.query_row(
+        "SELECT 1 FROM kinds WHERE name = ?1",
+        params![kind],
+        |r| r.get(0),
+    );
+    match row {
+        Ok(_) => Ok(true),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Returns the count of rows in the `kinds` table. Useful for the
+/// schema-completeness proof — an empty table means S2 cannot accept
+/// any source.
+pub fn kinds_row_count(conn: &Connection) -> Result<u64> {
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM kinds", [], |r| r.get(0))?;
+    Ok(n as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -316,6 +344,32 @@ mod tests {
         )
         .unwrap();
         assert_eq!(resolve_synonym(&conn, "assumes").unwrap(), None);
+    }
+
+    #[test]
+    fn is_known_kind_returns_false_when_table_empty() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        assert!(!is_known_kind(&conn, "function").unwrap());
+        assert!(!is_known_kind(&conn, "anything").unwrap());
+        assert_eq!(kinds_row_count(&conn).unwrap(), 0);
+    }
+
+    #[test]
+    fn is_known_kind_returns_true_after_row_inserted() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        conn.execute(
+            "INSERT INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
+             VALUES ('function', 'a verb', '[]', '[]', 'phaseB-test', NULL)",
+            [],
+        )
+        .unwrap();
+        assert!(is_known_kind(&conn, "function").unwrap());
+        assert!(!is_known_kind(&conn, "concept").unwrap()); // unrelated row absent
+        assert_eq!(kinds_row_count(&conn).unwrap(), 1);
     }
 
     #[test]

@@ -93,18 +93,50 @@ fn synonym_round_trip_at_pipeline_level() {
 }
 
 #[test]
-fn synonym_aware_pipeline_is_a_pure_extension_when_grammar_empty() {
-    // run_pipeline_with_grammar against an empty grammar must produce
-    // the same PipelineOutput as run_pipeline (proves backward compat).
+fn synonym_aware_pipeline_matches_baseline_when_grammar_populated() {
+    // The grammar-aware pipeline produces the SAME PipelineOutput as the
+    // baseline pipeline once the grammar tables carry the rules
+    // downstream stages need. With ONLY the kinds rows populated (S2's
+    // requirement), the pipeline succeeds end-to-end on a canonical
+    // source that the baseline also accepts.
+    //
+    // Note: an EMPTY grammar.sqlite would correctly fail S2 with
+    // NOMX-S2-empty-registry — that is the strict invariant from the
+    // blueprint; the grammar-aware pipeline is NOT a "pure extension"
+    // in that sense. Rather, it is a strict gate that requires the DB
+    // to be populated before parsing.
     let dir = tempfile::tempdir().expect("tempdir");
     let db = dir.path().join("grammar.sqlite");
     let conn = nom_grammar::init_at(&db).expect("init");
+
+    // Populate only the kinds row that S2 needs for SOURCE_CANONICAL.
+    conn.execute(
+        "INSERT INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
+         VALUES ('function', '', '[]', '[]', 'B2-test', NULL)",
+        [],
+    )
+    .expect("seed kind");
 
     let baseline = run_pipeline(SOURCE_CANONICAL).expect("baseline");
     let with_grammar = run_pipeline_with_grammar(SOURCE_CANONICAL, &conn).expect("with grammar");
 
     // Compare via debug formatting (no PartialEq on PipelineOutput today).
     assert_eq!(format!("{baseline:?}"), format!("{with_grammar:?}"));
+}
+
+#[test]
+fn empty_grammar_correctly_rejects_in_strict_mode() {
+    // The strict invariant from the blueprint: an empty grammar.sqlite
+    // forces the pipeline to fail at S2's empty-registry check. This
+    // proves the grammar-aware pipeline is genuinely DB-driven, not
+    // falling back to hardcoded rules.
+    let dir = tempfile::tempdir().expect("tempdir");
+    let db = dir.path().join("grammar.sqlite");
+    let conn = nom_grammar::init_at(&db).expect("init");
+
+    let result = run_pipeline_with_grammar(SOURCE_CANONICAL, &conn);
+    let err = result.expect_err("empty grammar must reject");
+    assert_eq!(err.reason, "empty-registry");
 }
 
 #[test]
