@@ -494,6 +494,92 @@ pub fn count_entities_meta(d: &Dict) -> Result<i64> {
     Ok(n)
 }
 
+// ── S4 dict-split: 5 more read-only ports ────────────────────────────
+//
+// Each function is a faithful re-emit of the corresponding `NomDict::*`
+// method with `&self.conn` swapped for `&d.entities`. Same SQL, same
+// determinism, same result semantics. Tests below verify the wire
+// behaviour matches the legacy surface so callers can switch over by
+// pure rename when the dict-split migration completes.
+
+/// Group `entries` by `status`, descending by count then ascending by
+/// label for stable iteration. Mirrors `NomDict::status_histogram`.
+pub fn status_histogram(d: &Dict) -> Result<Vec<(String, usize)>> {
+    let mut stmt = d.entities.prepare(
+        "SELECT status AS s, COUNT(*) AS n
+         FROM entries
+         GROUP BY status
+         ORDER BY n DESC, s ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Return the raw `body_bytes` blob for an entry. `Ok(None)` for both
+/// "row missing" and "row exists but body_bytes is NULL"; callers that
+/// need to distinguish must combine with [`find_entity`].
+pub fn get_entry_bytes(d: &Dict, id: &str) -> Result<Option<Vec<u8>>> {
+    let result: Option<Option<Vec<u8>>> = d
+        .entities
+        .query_row(
+            "SELECT body_bytes FROM entries WHERE id = ?1",
+            rusqlite::params![id],
+            |row| row.get(0),
+        )
+        .optional()?;
+    Ok(result.flatten())
+}
+
+/// Ids of entries with `status = 'partial'`, ordered by id for
+/// deterministic batch-resumption. `max = None` returns all rows;
+/// `max = Some(n)` caps at `n`. Same shape as `NomDict::list_partial_ids`.
+pub fn list_partial_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
+    let sql = match max {
+        Some(n) => format!(
+            "SELECT id FROM entries WHERE status = 'partial' ORDER BY id LIMIT {}",
+            n
+        ),
+        None => {
+            "SELECT id FROM entries WHERE status = 'partial' ORDER BY id".to_string()
+        }
+    };
+    let mut stmt = d.entities.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Read every (key, value) row in `entry_meta` for an entry, ordered
+/// for deterministic iteration. Mirrors `NomDict::get_meta`.
+pub fn get_meta(d: &Dict, id: &str) -> Result<Vec<(String, String)>> {
+    let mut stmt = d.entities.prepare_cached(
+        "SELECT key, value FROM entry_meta WHERE id = ?1 ORDER BY key, value",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![id], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, String>(1)?))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// List the structural refs out of an entry, ordered by target id.
+/// Mirrors `NomDict::get_refs`.
+pub fn get_refs(d: &Dict, id: &str) -> Result<Vec<String>> {
+    let mut stmt = d.entities.prepare_cached(
+        "SELECT to_id FROM entry_refs WHERE from_id = ?1 ORDER BY to_id",
+    )?;
+    let rows = stmt
+        .query_map(rusqlite::params![id], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -914,5 +1000,100 @@ mod tests {
     fn count_entities_meta_starts_zero() {
         let d = Dict::open_in_memory().unwrap();
         assert_eq!(count_entities_meta(&d).unwrap(), 0);
+    }
+
+    // ── S4 port tests ──────────────────────────────────────────────
+
+    fn seed_entry(d: &Dict, id: &str, status: &str) {
+        d.entities
+            .execute(
+                "INSERT INTO entries (id, word, kind, language, status, body_bytes) \
+                 VALUES (?1, ?2, 'function', 'nom', ?3, x'aabbcc')",
+                rusqlite::params![id, id, status],
+            )
+            .unwrap();
+    }
+
+    #[test]
+    fn status_histogram_groups_by_status_count_then_label() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "a", "partial");
+        seed_entry(&d, "b", "partial");
+        seed_entry(&d, "c", "complete");
+        let h = status_histogram(&d).unwrap();
+        // partial=2, complete=1 — partial first (higher count), then complete
+        assert_eq!(h, vec![("partial".into(), 2), ("complete".into(), 1)]);
+    }
+
+    #[test]
+    fn get_entry_bytes_returns_blob_or_none_consistently() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_one", "partial");
+        let bytes = get_entry_bytes(&d, "h_one").unwrap();
+        assert_eq!(bytes, Some(vec![0xaa, 0xbb, 0xcc]));
+        assert!(get_entry_bytes(&d, "missing").unwrap().is_none());
+    }
+
+    #[test]
+    fn list_partial_ids_filters_and_caps() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "a", "partial");
+        seed_entry(&d, "b", "complete");
+        seed_entry(&d, "c", "partial");
+        seed_entry(&d, "d", "partial");
+        // Without cap — all three partials in id order.
+        assert_eq!(
+            list_partial_ids(&d, None).unwrap(),
+            vec!["a".to_string(), "c".into(), "d".into()]
+        );
+        // With cap of 2.
+        assert_eq!(
+            list_partial_ids(&d, Some(2)).unwrap(),
+            vec!["a".to_string(), "c".into()]
+        );
+    }
+
+    #[test]
+    fn get_meta_orders_by_key_then_value() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "h_meta", "partial");
+        for (k, v) in [("ax", "2"), ("ax", "1"), ("zz", "0")] {
+            d.entities
+                .execute(
+                    "INSERT INTO entry_meta (id, key, value) VALUES (?1, ?2, ?3)",
+                    rusqlite::params!["h_meta", k, v],
+                )
+                .unwrap();
+        }
+        let m = get_meta(&d, "h_meta").unwrap();
+        assert_eq!(
+            m,
+            vec![
+                ("ax".into(), "1".into()),
+                ("ax".into(), "2".into()),
+                ("zz".into(), "0".into()),
+            ]
+        );
+    }
+
+    #[test]
+    fn get_refs_orders_by_target_id() {
+        let d = Dict::open_in_memory().unwrap();
+        seed_entry(&d, "from_id", "partial");
+        seed_entry(&d, "to_b", "partial");
+        seed_entry(&d, "to_a", "partial");
+        for to_id in ["to_b", "to_a"] {
+            d.entities
+                .execute(
+                    "INSERT INTO entry_refs (from_id, to_id) VALUES (?1, ?2)",
+                    rusqlite::params!["from_id", to_id],
+                )
+                .unwrap();
+        }
+        // Sorted by to_id ascending.
+        assert_eq!(
+            get_refs(&d, "from_id").unwrap(),
+            vec!["to_a".to_string(), "to_b".into()]
+        );
     }
 }
