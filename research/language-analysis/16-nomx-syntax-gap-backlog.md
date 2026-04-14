@@ -241,18 +241,25 @@
 | 224 | Macros-as-generics → typed-slot parameters in function decls (same shape as #45 OCaml-functor sig params) | authoring-guide rule | ✅ closed (doc 14 #56) |
 | 225 | Procedural macros (`#[derive(X)]`) → build-stage transformations authored as Nom function decls consumed by build pipeline, not source annotations | authoring-guide rule | ✅ closed (doc 14 #56) |
 | 226 | Identifier-synthesizing macros rejected; feature-stack identifiers authored explicitly | authoring-guide rule | ✅ closed (doc 14 #56; matches MEMORY.md feature-stack roadmap) |
+| 227 | jq pipe operators decompose to named intermediate prose (reuses doc 17 §I8 + R-pipe rule from #52) | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 228 | jq path expressions → prose positional phrases; source data decl `exposes` fields provide type surface | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 229 | jq `select(P)` → `for each X where P …` prose OR two-sided `ensures` set-equality (same as #46 Rego / #43 SQL CTE) | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 230 | jq inline object constructors → named data decls with prose-extraction (flat-namespace per #34/#54) | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 231 | jq stream-generator semantics → explicit list-returning functions with two-sided `ensures` set-equality | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 232 | Iteration vs indexing distinguished in prose (`for each X in …` vs `the Nth X in …`); never via bracket syntax | authoring-guide rule | ✅ closed (doc 14 #57) |
+| 233 | jq null-on-missing-path → `perhaps T` at schema level (same as #55 Elm optionality discipline) | authoring-guide rule | ✅ closed (doc 14 #57) |
 
-Totals by destination (after doc 14 #56 Rust macro_rules! translation — **fifteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **metaprogramming fully reduced to 4 existing Nom mechanisms** — closure-lifting + variadic functions + typed-slot generics + build-stage transformations):
+Totals by destination (after doc 14 #57 jq JSON-transformation translation — **sixteenth 0-new-wedge translation in a row**; 7 authoring-guide closures; **data-transformation paradigm family has six exemplars unified**: Bash pipes + Haskell composition + R %>% + SQL CTE + jq JSON + tidyverse all reduce to same Nom primitives):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **176**
+- ✅ Closed: **183**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **7** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability QualityNames)
 
-Backlog size: 237 rows. Closure rate 74% (176/237). **56 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + **token-tree-macros (Rust `macro_rules!`)**. Twenty-third consecutive minimal-wedge translation, fifteenth 0-new-wedge. **All macro-based metaprogramming idioms across every major language reduce to 4 existing Nom mechanisms: closure-lifting + variadic functions + typed-slot generics + build-stage transformations.**
+Backlog size: 245 rows. Closure rate 75% (183/245). **57 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + **JSON-transformation-DSL (jq)**. **Backlog closure crosses 75%.** Twenty-fourth consecutive minimal-wedge translation, sixteenth 0-new-wedge. **Data-transformation paradigm family has six exemplars all reducing to named-intermediate prose + two-sided `ensures` set-equality.**
 
 ## Wedge master index (for cross-ref with doc 13)
 

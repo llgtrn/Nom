@@ -3901,6 +3901,70 @@ Row additions: **0 new wedges** — Rust `macro_rules!` (and procedural macros) 
 
 ---
 
+## 57. jq — JSON transformation pipeline DSL
+
+```bash
+# Extract all active users older than 25, sorted by name, with their emails.
+cat users.json | jq '[
+  .users[]
+  | select(.active == true and .age > 25)
+  | { name: .name, email: .contact.email }
+] | sort_by(.name)'
+```
+
+### `.nomx v1` translation
+
+```nomx
+define extract_active_adult_contacts
+  that takes a users document, returns a list of (name, email) records sorted by name.
+for each user in document.users, keep only those with active=true and age>25.
+for each kept user, extract a record with the user's name and contact email.
+return the list sorted by name ascending.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data UserRecord is
+  intended to describe one user entry in the source document with activity status, age, and nested contact information.
+  exposes name as text.
+  exposes active as boolean.
+  exposes age as natural from 0 to 150.
+  exposes contact_email as text.
+
+the data NameEmailPair is
+  intended to describe the name-plus-email pair emitted for each qualifying user.
+  exposes name as text.
+  exposes email as text.
+
+the function extract_active_adult_contacts is
+  intended to return every active user over 25 years old as a (name, email) pair, sorted by name ascending.
+  uses the @Data matching "UserRecord" with at-least 0.95 confidence.
+  uses the @Data matching "NameEmailPair" with at-least 0.95 confidence.
+  requires the users list is well-formed per UserRecord.
+  ensures every returned pair corresponds to some input user with active equal to true and age greater than 25.
+  ensures every input user with active equal to true and age greater than 25 has exactly one corresponding output pair.
+  ensures the output pairs are sorted by name ascending; ties retain input order.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Pipeline operator (`|`)** — jq's stream-combinator. Same rule as R `%>%` (#52) and tidyverse pipelines: decompose to **named-intermediate prose expressions**. Authoring-guide rule: **jq pipe operators decompose to named intermediate prose (reuses doc 17 §I8 + R-pipe rule)**. No new wedge.
+2. **Path expressions (`.users[]`, `.contact.email`)** — jq's way of traversing nested JSON. Nom's prose `for each user in document.users` + `the user's contact email` captures paths directly. Authoring-guide rule: **jq path expressions decompose to prose positional phrases — `the document's users`, `the user's contact email` — with the source data decl's `exposes` fields providing the type surface**. No new wedge.
+3. **Filter via `select(...)`** — predicate-based filtering. Nom's `keep only those with active=true and age>25` captures the intent. Authoring-guide rule: **jq `select(P)` decomposes to `for each X where P, …` prose or two `ensures` clauses specifying membership both ways**. Same shape as #46 Rego and #43 SQL CTE. No new wedge.
+4. **Object construction (`{ name: .name, email: .contact.email }`)** — inline record-building. Nom's `NameEmailPair` data decl + `for each kept user, extract a record with …` keeps the record schema explicit. Authoring-guide rule: **jq inline object constructors decompose to named data decls with prose-extraction in the function body**. Matches #34 Terraform + #54 K8s flat-namespace pattern. No new wedge.
+5. **Array-constructing bracket (`[ ... ]`)** — jq gathers a stream into an array. Nom's function-returns-list convention handles this implicitly via the return type being `list of NameEmailPair`. No new wedge.
+6. **Generator semantics (pipelines produce streams, not arrays)** — jq's signature subtlety: a pipe stage may yield zero or many values per input. Nom's translation rejects lazy streaming in favor of explicit collection semantics: the translation says "returns a list" and two `ensures` clauses explain the set equality. The `covers` clause from #33 (property-based testing) handles cases where a stream never terminates. Authoring-guide rule: **jq stream-generator semantics decompose to explicit list-returning functions with two-sided `ensures` set-equality clauses**. No new wedge.
+7. **Multi-valued path traversal (`.users[]` iterates all users)** — distinguished from `.users[0]` (first user). Nom's prose `for each user in document.users` + `the first user of document.users` disambiguates by word choice. Authoring-guide rule: **iteration vs indexing is distinguished in prose (`for each X in …` vs `the Nth X in …`) — never via bracket syntax at source level**. No new wedge.
+8. **Error modes (null-path, type-mismatch)** — jq defaults to null-on-missing-path. Nom forbids implicit nulls; every `exposes` field is either typed or `perhaps T`. Authoring-guide rule: **null-on-missing-path behavior is a no-op in Nom translations — missing fields are `perhaps T` at the schema level**. Same as the Elm optionality discipline (#55). No new wedge.
+
+Row additions: **0 new wedges** — jq JSON-transformation pipelines fully express via named intermediates + filter-as-ensures + record-extraction + list-returning functions + `perhaps T` for optional fields. 7 authoring-guide closures: jq pipes = named intermediates (reuses R-pipe rule), path expressions → prose positional phrases, `select(P)` → `for each X where P` or two-sided ensures, inline object constructors → named data decls, array-constructing brackets implicit in list-returning convention, stream-generator semantics → two-sided ensures set-equality, iteration-vs-indexing disambiguated by prose word choice, null-on-missing-path = `perhaps T` at schema.
+
+**Twenty-fourth consecutive minimal-wedge translation + sixteenth 0-new-wedge run.** jq — the de-facto JSON transformation DSL — joins the family of data-transformation paradigms that decompose to **named-intermediate prose + typed list-returning functions + two-sided `ensures` clauses**. Combined with R tidyverse (#52), Haskell function composition (#25), and SQL CTE (#43), **the data-transformation paradigm family now has four exemplars all reducing to the same Nom primitives**: Bash pipes (#11), Haskell pure composition, R %>% dataframes, SQL relation operators, jq JSON streams — all **six concrete paradigms** share the same named-intermediate + ensures-set-equality decomposition.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
