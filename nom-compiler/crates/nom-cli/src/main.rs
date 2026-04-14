@@ -1454,10 +1454,11 @@ fn cmd_grammar_seed(path: Option<&Path>, doc16_path: Option<&Path>) -> i32 {
     match nom_grammar::seed::seed_all_from_doc16(&conn, &md) {
         Ok(c) => {
             println!(
-                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} authoring_rules at {}",
+                "nom grammar seed: seeded {} kinds, {} quality_names, {} keywords, {} clause_shapes, {} authoring_rules at {}",
                 c.kinds,
                 c.quality_names,
                 c.keywords,
+                c.clause_shapes,
                 c.authoring_rules,
                 p.display()
             );

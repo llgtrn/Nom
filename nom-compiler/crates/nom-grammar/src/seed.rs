@@ -75,6 +75,156 @@ pub fn seed_kinds(conn: &Connection) -> Result<usize> {
     Ok(inserted)
 }
 
+// ── P3: per-kind clause shape registry (from stages.rs S3+S4+S5+S6 invariants) ──
+
+/// One row in the `clause_shapes` table. Describes which clauses each kind
+/// accepts, in what canonical authoring order, and whether they are required.
+#[derive(Debug, Clone, Copy)]
+pub struct ClauseShapeSeed {
+    pub kind: &'static str,
+    pub clause_name: &'static str,
+    pub is_required: i32, // 0=optional, 1=required, 2=one-of group
+    pub one_of_group: Option<&'static str>,
+    pub position: i32,
+    pub grammar_shape: &'static str,
+    pub min_occurrences: i32,
+    pub max_occurrences: Option<i32>,
+    pub source_ref: &'static str,
+    pub notes: Option<&'static str>,
+}
+
+/// Per-kind clause shapes. Derived from nom-concept/src/stages.rs S3+S4+S5+S6
+/// pass invariants and the doc 21 §2 + doc 08 + W41/W42/W46/W47/W49 specs.
+pub const CLAUSE_SHAPES_SEED: &[ClauseShapeSeed] = &[
+    // ── function ──
+    s("function",  "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                        1, Some(1), "doc 05 §3"),
+    s("function",  "uses",     0, 2,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2 §6"),
+    s("function",  "requires", 0, 3,  "'requires' <prose-precondition> '.'",                        0, None, "doc 05 §3"),
+    sreq_any("function", "ensures", 4, "'ensures' <prose-postcondition> '.'",                       1, None, "doc 05 §3"),
+    s("function",  "hazard",   0, 5,  "'hazard' <prose-hazard-note> '.'",                           0, None, "doc 05 §3"),
+    s("function",  "favor",    0, 6,  "'favor' <QualityName> '.'",                                  0, None, "doc 08 §7"),
+    // ── data ──
+    s("data",      "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    sreq_any("data", "exposes", 2,    "'exposes' <field-name> ('at tag' <int>)? 'as' <type-name> ('with payload' <field-list>)? '.'", 1, None, "doc 08 §2"),
+    s("data",      "favor",    0, 3,  "'favor' <QualityName> '.'",                                  0, None, "doc 08 §7"),
+    // ── concept ──
+    s("concept",   "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    s("concept",   "uses",     0, 2,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2"),
+    s("concept",   "composes", 0, 3,  "'composes' <entity-ref> ('then' <entity-ref>)* '.'",         0, None, "doc 08 §1"),
+    s("concept",   "requires", 0, 4,  "'requires' <prose-precondition> '.'",                         0, None, "doc 05 §3"),
+    s("concept",   "ensures",  0, 5,  "'ensures' <prose-postcondition> '.'",                         0, None, "doc 05 §3"),
+    s("concept",   "hazard",   0, 6,  "'hazard' <prose-hazard-note> '.'",                            0, None, "doc 05 §3"),
+    s("concept",   "favor",    0, 7,  "'favor' <QualityName> '.'",                                   0, None, "doc 08 §7"),
+    s("concept",   "exposes",  0, 8,  "'exposes' <name-list> '.'",                                   0, None, "doc 08 §2 (concept-as-export surface)"),
+    // ── module ──
+    s("module",    "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    s("module",    "uses",     0, 2,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2"),
+    s("module",    "composes", 0, 3,  "'composes' <entity-ref> ('then' <entity-ref>)* '.'",         0, None, "doc 08 §1 Tier 1"),
+    s("module",    "favor",    0, 4,  "'favor' <QualityName> '.'",                                  0, None, "doc 08 §7"),
+    // ── property ── (W41 + W42 generator)
+    s("property",  "intended", 1, 1,  "'intended to assert' <prose-claim> '.'",                     1, Some(1), "W41"),
+    s("property",  "generator",1, 2,  "'generator' <prose-domain-descriptor> '.'",                   1, Some(1), "W42"),
+    s("property",  "uses",     0, 3,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2"),
+    s("property",  "requires", 0, 4,  "'requires' <prose-precondition> '.'",                         0, None, "doc 05 §3"),
+    sreq_any("property", "ensures", 5, "'ensures' <prose-universal-claim> '.'",                     1, None, "W41 (property decl requires ≥1 ensures)"),
+    s("property",  "favor",    0, 6,  "'favor' <QualityName> '.'",                                  0, None, "doc 08 §7"),
+    // ── scenario ── (W46 kind, W47 clause grammar)
+    s("scenario",  "intended", 1, 1,  "'intended to describe' <prose-scenario-summary> '.'",         1, Some(1), "W46"),
+    s("scenario",  "given",    1, 2,  "'given' <prose-precondition> '.'",                            1, None, "W47"),
+    s("scenario",  "when",     1, 3,  "'when' <prose-action> '.'",                                   1, None, "W47"),
+    s("scenario",  "then",     1, 4,  "'then' <prose-postcondition> '.'",                            1, None, "W47"),
+    s("scenario",  "favor",    0, 5,  "'favor' <QualityName> '.'",                                   0, None, "doc 08 §7"),
+    // ── screen ── (user-facing UI + diagrams + typeset docs per doc 14 #39/#49)
+    s("screen",    "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    s("screen",    "uses",     0, 2,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2"),
+    s("screen",    "exposes",  0, 3,  "'exposes' <field-name> 'as' <type-name> '.'",                 0, None, "doc 08 §2"),
+    s("screen",    "favor",    0, 4,  "'favor' <QualityName> '.'",                                   0, None, "doc 08 §7"),
+    // ── event ──
+    s("event",     "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    s("event",     "exposes",  0, 2,  "'exposes' <field-name> 'as' <type-name> '.'",                 0, None, "doc 08 §2"),
+    s("event",     "ensures",  0, 3,  "'ensures' <W49-quantified prose> '.'",                        0, None, "W49 (event delivery semantics)"),
+    s("event",     "favor",    0, 4,  "'favor' <QualityName> '.'",                                   0, None, "doc 08 §7"),
+    // ── media ──
+    s("media",     "intended", 1, 1,  "'intended to' <prose-sentence> '.'",                         1, Some(1), "doc 05 §3"),
+    s("media",     "uses",     0, 2,  "'uses the' '@' Kind 'matching' <quoted-prose> 'with at-least' <f32 in 0..1> 'confidence' '.'", 0, None, "doc 07 v2"),
+    s("media",     "favor",    0, 3,  "'favor' <QualityName> '.'",                                   0, None, "doc 08 §7"),
+];
+
+const fn s(
+    kind: &'static str,
+    clause_name: &'static str,
+    is_required: i32,
+    position: i32,
+    grammar_shape: &'static str,
+    min_occurrences: i32,
+    max_occurrences: Option<i32>,
+    source_ref: &'static str,
+) -> ClauseShapeSeed {
+    ClauseShapeSeed {
+        kind,
+        clause_name,
+        is_required,
+        one_of_group: None,
+        position,
+        grammar_shape,
+        min_occurrences,
+        max_occurrences,
+        source_ref,
+        notes: None,
+    }
+}
+
+/// Shortcut for "required-at-least-one-of-this-kind" clauses (e.g. function
+/// requires ≥1 ensures; data requires ≥1 exposes).
+const fn sreq_any(
+    kind: &'static str,
+    clause_name: &'static str,
+    position: i32,
+    grammar_shape: &'static str,
+    min_occurrences: i32,
+    max_occurrences: Option<i32>,
+    source_ref: &'static str,
+) -> ClauseShapeSeed {
+    ClauseShapeSeed {
+        kind,
+        clause_name,
+        is_required: 2,
+        one_of_group: None,
+        position,
+        grammar_shape,
+        min_occurrences,
+        max_occurrences,
+        source_ref,
+        notes: None,
+    }
+}
+
+pub fn seed_clause_shapes(conn: &Connection) -> Result<usize> {
+    let mut inserted = 0;
+    for shape in CLAUSE_SHAPES_SEED {
+        conn.execute(
+            "INSERT OR REPLACE INTO clause_shapes \
+             (kind, clause_name, is_required, one_of_group, position, grammar_shape, \
+              min_occurrences, max_occurrences, source_ref, notes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)",
+            params![
+                shape.kind,
+                shape.clause_name,
+                shape.is_required,
+                shape.one_of_group,
+                shape.position,
+                shape.grammar_shape,
+                shape.min_occurrences,
+                shape.max_occurrences,
+                shape.source_ref,
+                shape.notes,
+            ],
+        )?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
 // ── P2: closed keyword vocabulary (docs 05 / 06 / 07 v2 / W4 / W49 / W41 / W46 / W50) ──
 
 /// One row in the `keywords` table. `role` + `kind_scope` describe where the
@@ -324,22 +474,25 @@ pub struct SeedCounts {
     pub kinds: usize,
     pub quality_names: usize,
     pub keywords: usize,
+    pub clause_shapes: usize,
     pub authoring_rules: usize,
 }
 
-/// One-shot convenience: seed kinds + quality_names + keywords (P2) + parse+insert
-/// all rows from the given doc-16 markdown source (P4). Callable from the CLI
-/// `nom grammar seed`.
+/// One-shot convenience: seed kinds + quality_names + keywords (P2) + clause_shapes
+/// (P3) + parse+insert all rows from the given doc-16 markdown source (P4).
+/// Callable from the CLI `nom grammar seed`.
 pub fn seed_all_from_doc16(conn: &Connection, doc16_md: &str) -> Result<SeedCounts> {
     let kinds = seed_kinds(conn).context("seeding kinds")?;
     let quality_names = seed_quality_names(conn).context("seeding quality_names")?;
     let keywords = seed_keywords(conn).context("seeding keywords")?;
+    let clause_shapes = seed_clause_shapes(conn).context("seeding clause_shapes")?;
     let rows = parse_doc16_rules(doc16_md);
     let authoring_rules = seed_authoring_rules(conn, &rows).context("seeding authoring_rules")?;
     Ok(SeedCounts {
         kinds,
         quality_names,
         keywords,
+        clause_shapes,
         authoring_rules,
     })
 }
@@ -426,7 +579,7 @@ Narrative text here.
     }
 
     #[test]
-    fn seed_all_from_doc16_populates_all_four_tables() {
+    fn seed_all_from_doc16_populates_all_five_tables() {
         let dir = tempdir().unwrap();
         let conn = init_at(dir.path().join("g.sqlite")).unwrap();
         let md = "\
@@ -438,7 +591,79 @@ Narrative text here.
         assert_eq!(c.kinds, 9);
         assert_eq!(c.quality_names, 10);
         assert!(c.keywords >= 40, "expected ≥40 keyword rows, got {}", c.keywords);
+        assert!(c.clause_shapes >= 40, "expected ≥40 clause_shape rows, got {}", c.clause_shapes);
         assert_eq!(c.authoring_rules, 3);
+    }
+
+    #[test]
+    fn seeds_clause_shapes_for_all_nine_kinds() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let n = seed_clause_shapes(&conn).unwrap();
+        assert!(n >= 40, "expected ≥40 clause shapes seeded, got {n}");
+        // Every closed kind MUST have at least one clause_shape row.
+        for k in [
+            "function", "module", "concept", "screen", "data", "event", "media",
+            "property", "scenario",
+        ] {
+            let count: i64 = conn
+                .query_row(
+                    "SELECT COUNT(*) FROM clause_shapes WHERE kind = ?1",
+                    [k],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert!(count >= 1, "kind {k} has zero clause_shape rows");
+        }
+    }
+
+    #[test]
+    fn required_clauses_marked_correctly() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let _ = seed_clause_shapes(&conn).unwrap();
+        // Spot-check: 'intended' is required on every kind
+        let intended_required: i64 = conn
+            .query_row(
+                "SELECT COUNT(*) FROM clause_shapes WHERE clause_name = 'intended' AND is_required = 1",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(intended_required, 9);
+        // Spot-check: scenario has given/when/then all required
+        for c in ["given", "when", "then"] {
+            let req: i64 = conn
+                .query_row(
+                    "SELECT is_required FROM clause_shapes WHERE kind = 'scenario' AND clause_name = ?1",
+                    [c],
+                    |r| r.get(0),
+                )
+                .unwrap();
+            assert_eq!(req, 1, "scenario.{c} should be required");
+        }
+        // Spot-check: property.generator is required
+        let prop_gen: i64 = conn
+            .query_row(
+                "SELECT is_required FROM clause_shapes WHERE kind = 'property' AND clause_name = 'generator'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(prop_gen, 1);
+    }
+
+    #[test]
+    fn clause_shape_seeding_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let n1 = seed_clause_shapes(&conn).unwrap();
+        let n2 = seed_clause_shapes(&conn).unwrap();
+        assert_eq!(n1, n2);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM clause_shapes", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count as usize, n1);
     }
 
     #[test]
