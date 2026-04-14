@@ -111,6 +111,16 @@ anything load-bearing.
 - LSP slices 1–6: stdio server, classify CLI, agentic-RAG markdown
   rendering, executeCommand handler, ReAct adapter trait with stub +
   MCP + NomCli concrete impls.
+- LSP slice 7a: pattern-driven completion items emitted by the
+  canonical `search_patterns` backend; 17 dispatch tests green.
+- T2.1 first slice — flow-edge verifier
+  (`nom_concept::flow_edge`). Pure-data findings for three structural
+  smells in `composes` / `Uses` chains: `ConsecutiveDuplicate`,
+  `LoopReference`, `SelfReference`. No solver / dictionary lookup
+  required; ships as soon as S6 emits a `NomFile` / `NomtuFile`.
+  148 nom-concept lib tests green (142 + 6 new). Solver-backed
+  contract checks (B.requires ⇐ A.ensures), entity-typed-slot
+  resolution, and effect propagation queued for later T2.x slices.
 
 ## In flight
 
