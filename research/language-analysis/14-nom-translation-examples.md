@@ -3446,6 +3446,90 @@ Row additions: **0 new wedges** — WAT fully expresses via existing primitives 
 
 ---
 
+## 52. R statistical regression — dataframe + formula interface
+
+```r
+library(dplyr)
+library(tidyr)
+
+model <- lm(mpg ~ hp + wt + factor(cyl), data = mtcars)
+
+summary(model)
+
+preds <- mtcars %>%
+  mutate(predicted_mpg = predict(model, mtcars)) %>%
+  select(mpg, predicted_mpg, hp, wt, cyl)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define mpg_regression_model
+  that takes the mtcars dataset, returns a fitted linear-regression model predicting mpg from hp, wt, and cyl treated as a factor.
+
+define summarize_mpg_regression
+  that takes a fitted mpg regression model, returns its coefficient table with standard errors, t-statistics, and p-values.
+
+define predict_mpg_for_each_row
+  that takes the mtcars dataset and a fitted model, returns a new dataset with a predicted_mpg column added alongside the observed mpg and the predictors hp, wt, cyl.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data MtcarsRow is
+  intended to represent one observation from the mtcars dataset.
+  exposes mpg as real.
+  exposes hp as real.
+  exposes wt as real.
+  exposes cyl as natural from 3 to 12.
+
+the data LinearRegressionCoefficients is
+  intended to describe the fitted coefficients of a linear-regression model with standard errors and significance statistics per predictor.
+  exposes predictor_name as list of text.
+  exposes estimate as list of real.
+  exposes standard_error as list of real.
+  exposes t_statistic as list of real.
+  exposes p_value as list of real.
+
+the function fit_mpg_regression is
+  intended to fit an ordinary-least-squares linear regression predicting mpg from hp, wt, and the categorical variable cyl (treated as a factor with indicator variables per level).
+  uses the @Data matching "MtcarsRow" with at-least 0.95 confidence.
+  uses the @Data matching "LinearRegressionCoefficients" with at-least 0.95 confidence.
+  requires the dataset has at least one observation per cyl level used as a factor.
+  ensures the returned coefficients include one intercept and separate estimates for hp, wt, and each non-baseline cyl level.
+  ensures every returned p_value is in the interval [0, 1] inclusive.
+  hazard multicollinearity among predictors inflates standard errors; callers should report a condition number alongside the fit.
+  favor correctness.
+  favor statistical_rigor.
+
+the function predict_mpg_for_each_row is
+  intended to append a predicted_mpg column to each row of the input dataset using the fitted regression model.
+  uses the @Data matching "MtcarsRow" with at-least 0.95 confidence.
+  uses the @Data matching "LinearRegressionCoefficients" with at-least 0.95 confidence.
+  uses the @Function matching "fit_mpg_regression" with at-least 0.95 confidence.
+  ensures each returned row has predicted_mpg equal to the model's linear combination of intercept plus coefficient-times-predictor sums for that row.
+  ensures the row order is preserved.
+  favor correctness.
+  favor performance.
+```
+
+### Gaps surfaced
+
+1. **Formula DSL (`mpg ~ hp + wt + factor(cyl)`)** — R's compact formula notation for regression models. Nom's translation rejects the inline symbolic DSL and decomposes the formula into **two parts**: the outcome variable (named in the intent prose) and a list of predictor data-decl references via `uses @Data`. Authoring-guide rule: **regression formulas decompose to prose listing the outcome plus `exposes` fields of the predictor data decl; `factor(cyl)` categorical treatment is stated explicitly in the fit function's `intended to` clause**. No new wedge; keeps the model-as-function shape.
+2. **`%>%` pipe operator** — tidyverse's ubiquitous chaining operator. Nom rejects symbolic pipes; it decomposes each pipe stage into a named intermediate per doc 17 §I8 (pipelines → named intermediates). Authoring-guide rule: **R/tidyverse `%>%` chains decompose to named intermediate values in prose**. No new wedge; same rule as #7 pipelines.
+3. **Dataframe as a first-class datatype** — R's `data.frame` / tibble. Nom's translation treats a dataframe as **a list of rows, each row a data decl**. The row-schema is the data decl; the dataframe is a `list of MtcarsRow`. Authoring-guide rule: **dataframes decompose to `list of T` where T is a row-schema data decl; columns are fields on T, not separate first-class objects**. Same pattern as #43 SQL CTE row-as-data-decl. No new wedge.
+4. **Statistical summary outputs (coefficients + SE + t + p)** — `summary()` returns a structured object. Nom exposes each summary field explicitly as `list of real` on a `LinearRegressionCoefficients` data decl. Authoring-guide rule: **statistical-model outputs decompose to data decls with parallel list fields (one list per output column)**. No new wedge.
+5. **Categorical factor variables (`factor(cyl)`)** — R's mechanism for treating an integer or string column as categorical with indicator-variable expansion. Nom's translation names the factor treatment in the `intended to` prose (`cyl treated as a factor`). Authoring-guide rule: **categorical factor treatment is declared in the fit function's `intended to` sentence; the build stage's statistical runtime handles indicator-variable expansion**. No new wedge.
+6. **Statistical rigor as a QualityName** — `favor statistical_rigor` surfaces another objective axis. Authoring-corpus seed: **`statistical_rigor`** QualityName. Accumulates with the 5 existing seeds → 6.
+7. **Lazy evaluation + non-standard evaluation (R's NSE via `bquote`, `substitute`)** — R's signature misfeature: functions capture their argument expressions unevaluated for later substitution. Nom rejects NSE entirely — every argument is a named evaluated value. Authoring-guide rule: **R's non-standard evaluation is a no-op in Nom translations; capture the intended computation as an explicit function or data decl rather than an unevaluated expression**. No new wedge; eliminates a whole R bug-class.
+
+Row additions: **0 new wedges** — statistical/dataframe computing fully expresses via existing `list of T` (dataframes), data decls (row schemas + coefficient tables), function decls (fit + predict), `uses @Data` references, and prose factor-variable declaration. 6 authoring-guide closures: regression formulas decompose to prose, `%>%` pipes → named intermediates (reuses doc 17 §I8), dataframes as `list of row-T`, statistical summaries as parallel-list data decls, categorical factor treatment in `intended to` prose, R NSE rejected. 1 QualityName seed: **statistical_rigor**.
+
+**Nineteenth consecutive minimal-wedge translation + twelfth 0-new-wedge run.** Statistical-computing translations — R's signature paradigm — decompose cleanly into Nom's dataframe-as-`list of T` + model-fit-as-function + summary-as-parallel-list-data-decl pattern. The **lm / glm / mixed-models surface is reduced to three primitives** (row-data, coefficient-data, fit-function). Combined with NumPy (#35) + SQL (#15, #43) this completes the **data-science triad**: array ops + relational queries + regression. All three paradigms unified under identical Nom primitives.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

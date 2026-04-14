@@ -207,18 +207,25 @@
 | 190 | Fixed-width integer overflow behavior declared explicitly as `hazard` (wrap/saturate/trap are 3 distinct semantics, must be chosen not defaulted) | authoring-guide rule | ✅ closed (doc 14 #51) |
 | 191 | WAT exports/imports map to Nom composition index references; no separate export keyword needed | authoring-guide rule | ✅ closed (doc 14 #51; reuses doc 08 composition index) |
 | 192 | WAT text/binary as authoring-vs-build artifact; `.nomtu` → WASM binary is plausible Phase-12 specialization target without grammar extension | authoring-guide rule | ✅ closed (doc 14 #51) |
+| 193 | Regression formulas (`y ~ x1 + x2 + factor(z)`) decompose to prose listing outcome + predictor `exposes` fields; `factor()` treatment stated in `intended to` | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 194 | R/tidyverse `%>%` pipe chains decompose to named intermediate values (reuses doc 17 §I8) | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 195 | Dataframes decompose to `list of T` where T is a row-schema data decl; columns are fields on T (same pattern as #43 SQL CTE) | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 196 | Statistical-model outputs decompose to data decls with parallel list fields (one list per output column) | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 197 | Categorical factor treatment declared in fit function's `intended to` sentence; build-stage handles indicator-variable expansion | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 198 | `statistical_rigor` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #52; accumulates to 6 seeds) |
+| 199 | R non-standard evaluation is a no-op in Nom; capture the intended computation as explicit function/data decl | authoring-guide rule | ✅ closed (doc 14 #52) |
 
-Totals by destination (after doc 14 #51 WebAssembly-text translation — **eleventh 0-new-wedge translation in a row**; 6 authoring-guide closures; integer-width handling now fully unified across Forth/Verilog/WAT via a single rule):
+Totals by destination (after doc 14 #52 R statistical-computing translation — **twelfth 0-new-wedge translation in a row**; 6 authoring-guide closures + statistical_rigor seed; **data-science triad (array ops + relational queries + regression) now unified under identical Nom primitives**):
 
 - ⏳ Wedge queued: **42** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **144**
+- ✅ Closed: **150**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **5** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost QualityNames)
+- 🌱 Authoring-corpus seed: **6** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor QualityNames)
 
-Backlog size: 199 rows. Closure rate 72% (144/199). **51 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + **portable-binary-target (WebAssembly text)**. Eighteenth consecutive minimal-wedge translation, eleventh 0-new-wedge. **Nom's hash-pinned composition index maps naturally onto WAT's export/import table — `.nomtu` → WASM binary is a plausible Phase-12 target without grammar extension.**
+Backlog size: 207 rows. Closure rate 72% (150/207). **52 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + **statistical-computing (R)**. Nineteenth consecutive minimal-wedge translation, twelfth 0-new-wedge. **Data-science triad (array ops + relational queries + regression) now unified under identical Nom primitives.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
