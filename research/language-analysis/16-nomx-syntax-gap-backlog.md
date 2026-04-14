@@ -316,18 +316,26 @@
 | 299 | "No hidden control flow" invariant satisfied by default in Nom: every control-flow branch is an `ensures` clause; no exceptions or hidden jumps | authoring-guide rule | ✅ closed (doc 14 #67) |
 | 300 | Zig slices (`[]T`) → `list of T` or `byte sequence` with implicit length reference; caller carries the length | authoring-guide rule | ✅ closed (doc 14 #67) |
 | 301 | Exhaustive path coverage stated at function-decl level via multiple `ensures` variants; no `return` statements at Nom source level | authoring-guide rule | ✅ closed (doc 14 #67) |
+| 302 | MATLAB matrices → shape-carrying data decl with rows/columns fields + nested-list cells; shape constraints in per-op `requires`/`ensures` | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 303 | Multi-value returns → bundled data-decl returns; destructuring is caller-side per doc 17 §I10 | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 304 | Output-shape constraints stated via `ensures` clauses referencing named input fields (e.g., `A.rows`) | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 305 | MATLAB slicing (`A(:, 1:k)` etc.) → prose positional descriptions (`the first k rows/columns/top-left block`) — reuses #61 Fortran | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 306 | String-flag function variants (MATLAB `'econ'`/`'full'`) → distinct Nom function decls; prevents typo-caused runtime errors | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 307 | MATLAB `assert(P, msg)` → `requires P` at function-decl; build stage checks statically where possible, runtime where necessary | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 308 | Matrix transposes decomposed to prose (`the transpose of X`); no operator at Nom source | authoring-guide rule | ✅ closed (doc 14 #68) |
+| 309 | Shape-query functions (`size(A)`) → direct field access on shape-carrying data decl | authoring-guide rule | ✅ closed (doc 14 #68) |
 
-Totals by destination (after doc 14 #67 Zig comptime+error-union systems translation — **twenty-sixth 0-new-wedge translation in a row**; 7 authoring-guide closures; **systems-programming paradigm family extensively covered**: Rust + C + C++ + Go + Zig + …):
+Totals by destination (after doc 14 #68 MATLAB matrix-oriented scientific-computing translation — **twenty-seventh 0-new-wedge translation in a row**; 8 authoring-guide closures; **six-exemplar scientific-computing paradigm family** fully closed (Fortran + NumPy + R + SQL-CTE + Julia + MATLAB)):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **251**
+- ✅ Closed: **260**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **9** (9/10 threshold unchanged)
 
-Backlog size: 318 rows. Closure rate 79% (251/318). **67 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + **comptime-error-union-systems (Zig)**. Thirty-fourth consecutive minimal-wedge translation, **twenty-sixth 0-new-wedge in a row**. **Error-union-as-tagged-variant rule generalizes to Haskell Either / Rust Result / Swift throws / Zig error-unions with zero adjustment.**
+Backlog size: 327 rows. Closure rate 80% (260/327). **68 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + multiple-dispatch-scientific + comptime-error-union-systems + **matrix-oriented-scientific (MATLAB)**. **Backlog closure crosses 80% (260/327).** Thirty-fifth consecutive minimal-wedge translation, **twenty-seventh 0-new-wedge in a row**. **Six-exemplar scientific-computing paradigm family fully closed.**
 
 ## Wedge master index (for cross-ref with doc 13)
 

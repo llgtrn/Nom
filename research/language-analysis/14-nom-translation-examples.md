@@ -5003,6 +5003,90 @@ Row additions: **0 new wedges** — Zig's error-unions + comptime + no-hidden-ov
 
 ---
 
+## 68. MATLAB — matrix-oriented numerical computing
+
+```matlab
+function [U, S, V, error_norm] = truncated_svd(A, k)
+  % Compute rank-k truncated SVD of A and return the approximation error.
+  % Inputs:
+  %   A - m-by-n real matrix
+  %   k - target rank (must be <= min(m, n))
+  % Outputs:
+  %   U, S, V     - rank-k SVD factors such that A ≈ U * S * V'
+  %   error_norm  - Frobenius norm of the residual A - U*S*V'
+
+  [m, n] = size(A);
+  assert(k >= 1 && k <= min(m, n), 'rank k out of range');
+
+  [U_full, S_full, V_full] = svd(A, 'econ');
+
+  U = U_full(:, 1:k);
+  S = S_full(1:k, 1:k);
+  V = V_full(:, 1:k);
+
+  residual = A - U * S * V';
+  error_norm = norm(residual, 'fro');
+end
+```
+
+### `.nomx v1` translation
+
+```nomx
+define truncated_svd
+  that takes a real matrix A and a target rank k, returns the rank-k SVD factors (U, S, V) along with the Frobenius-norm error of the approximation.
+assert k is between 1 and min(rows(A), cols(A)) inclusive.
+compute the full economy-size SVD, take the first k columns of U, the top-left k-by-k block of S, and the first k columns of V.
+the error norm is the Frobenius norm of (A minus U*S*V transposed).
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data RealMatrix is
+  intended to describe a dense 2D matrix of real numbers with an explicit shape.
+  exposes rows as natural from 1 to 1000000.
+  exposes columns as natural from 1 to 1000000.
+  exposes cells as list of list of real.
+
+the data TruncatedSvdFactors is
+  intended to hold the three rank-k factor matrices of a truncated singular-value decomposition along with the approximation's Frobenius-norm error.
+  exposes left_factor as reference to RealMatrix.
+  exposes singular_values as reference to RealMatrix.
+  exposes right_factor as reference to RealMatrix.
+  exposes error_norm as real from 0 to 1e300.
+
+the function truncated_svd is
+  intended to compute the rank-k truncated singular-value decomposition of a real matrix, returning the three factors and the Frobenius-norm approximation error in one bundled result.
+  uses the @Data matching "RealMatrix" with at-least 0.95 confidence.
+  uses the @Data matching "TruncatedSvdFactors" with at-least 0.95 confidence.
+  requires k is at-least 1 and at-most the smaller of rows(A) and columns(A).
+  ensures the returned left_factor has rows equal to A.rows and columns equal to k.
+  ensures the returned singular_values is a square k-by-k matrix with non-negative entries on the diagonal, zero off-diagonal, and diagonal entries sorted in descending order.
+  ensures the returned right_factor has rows equal to A.columns and columns equal to k.
+  ensures the returned error_norm equals the Frobenius norm of A minus (left_factor times singular_values times the transpose of right_factor).
+  ensures the returned error_norm is non-negative.
+  hazard for ill-conditioned matrices, singular values near zero introduce amplification of floating-point rounding error in the reconstruction; callers needing rank-revealing numerical robustness should use randomized SVD or pivoted QR instead.
+  favor numerical_stability.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Matrix as a first-class datatype with shape-typed operations** — MATLAB's core affordance. Nom's `RealMatrix` data decl exposes shape explicitly + cells as nested list. Authoring-guide rule: **MATLAB matrices → `RealMatrix` (or similar) data decl with explicit rows/columns fields and nested-list cells; shape compatibility is stated in `requires`/`ensures` per-operation**. Same pattern as #35 NumPy + #41 Verilog range-typed naturals. No new wedge.
+2. **Multi-return from a single function (`[U, S, V, error_norm] = truncated_svd(...)`)** — MATLAB's native multi-value output. Nom bundles all outputs into a single `TruncatedSvdFactors` data decl, which the caller destructures via field access. Authoring-guide rule: **multi-value returns → bundled data-decl returns; destructuring is a caller-side concern, matching doc 17 §I10 destructuring idiom**. No new wedge.
+3. **Shape-dependent post-conditions** — `ensures left_factor has rows equal to A.rows and columns equal to k` ties the output shape to the input shape. **Candidate: authoring-guide rule — output shape constraints stated via `ensures` clauses that reference named input fields (e.g., `A.rows`)**; this is a very common pattern across scientific computing that deserves explicit documentation. No new wedge; existing `ensures` vocabulary covers it.
+4. **Slicing with colon (`A(:, 1:k)`)** — MATLAB's column/row slice. Nom's translation describes the slice semantically (`the first k columns of U`) rather than with slice-arithmetic. Authoring-guide rule: **MATLAB slicing (`A(:, 1:k)`, `A(1:k, :)`, `A(1:k, 1:k)`) → prose positional descriptions (`the first k rows`, `the first k columns`, `the top-left k-by-k block`)**. No new wedge; reuses #61 Fortran slicing rule.
+5. **`'econ'` + `'fro'` string flags** — MATLAB's way of selecting variants of a function's behavior via string arguments. Nom rejects magic-string flags; each variant is a distinct function. Authoring-guide rule: **MATLAB string-flag function variants decompose to distinct Nom function decls (e.g., `economy_svd` and `full_svd` are separate functions)**. Prevents a class of typo-caused runtime errors. No new wedge.
+6. **`assert` at runtime** — MATLAB's runtime assertion. Nom's `requires` clause is the authoring-time analogue. Authoring-guide rule: **MATLAB `assert(P, msg)` → `requires P` at function-decl level; the build stage checks the requires contract at every call site (static where possible, runtime where necessary)**. No new wedge.
+7. **Transpose (`V'`) as an operator** — MATLAB's postfix-quote transpose. Nom's prose `the transpose of right_factor` avoids operator overloading. Authoring-guide rule: **matrix transposes decomposed to prose (`the transpose of X`); no postfix/prefix operator at Nom source**. No new wedge.
+8. **`size(A)` as a query function** — MATLAB's shape query. Nom's translation accesses `A.rows` and `A.columns` directly as `exposes` fields. Authoring-guide rule: **shape-query functions decompose to direct field access on the shape-carrying data decl**. No new wedge.
+
+Row additions: **0 new wedges** — MATLAB's matrix-oriented numerical computing fully expresses via shape-carrying data decls + per-operation `requires`/`ensures` shape constraints + prose slicing + distinct functions for variant flags + bundled multi-return + direct field access for shape queries. 7 authoring-guide closures: matrix-as-data-decl with shape fields, multi-value returns → bundled data decl, shape-dependent post-conditions via `ensures` referencing input fields, MATLAB slicing → prose positional (reuses #61), string-flag variants → distinct function decls, `assert` → `requires`, transpose as prose, `size(A)` → direct field access.
+
+**Thirty-fifth consecutive minimal-wedge translation + twenty-seventh 0-new-wedge run.** MATLAB — the canonical matrix-oriented scientific computing language — completes the **six-exemplar scientific-computing paradigm family**: Fortran (#61) + NumPy (#35) + R (#52) + SQL-CTE (#43) + Julia (#66) + MATLAB (#68). All six decompose cleanly to the same primitives. The **string-flag-variant-as-distinct-functions rule** (MATLAB `'econ'` → `economy_svd` vs `full_svd`) is a particularly nice production-hygiene win — it moves a runtime typo class into authoring-time distinct-naming.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
