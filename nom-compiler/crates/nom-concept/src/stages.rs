@@ -791,6 +791,14 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                 EffectValence::Benefit => "benefit",
                 EffectValence::Hazard => "hazard",
             };
+            // Scan to the clause-terminating `.`, collecting every Word
+            // token as an effect name. Non-Word tokens (Is, As, Of, The,
+            // Comma, etc.) are tolerated as filler — the corpus includes
+            // both the tagged form `hazard X, Y.` and the free-prose
+            // form `hazard the body's side effects are skipped.`.
+            // Strict safety net: hitting a clause-opener (Requires,
+            // Ensures, Favor, Benefit, Hazard, Uses, Exposes) still
+            // reports unterminated-effect.
             let mut names: Vec<String> = Vec::new();
             let mut j = i + 1;
             let mut saw_dot = false;
@@ -799,9 +807,6 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                     Tok::Dot => {
                         saw_dot = true;
                         break;
-                    }
-                    Tok::Comma => {
-                        j += 1;
                     }
                     Tok::Word(w) => {
                         names.push(w.clone());
@@ -819,16 +824,8 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
                             ),
                         ));
                     }
-                    other => {
-                        return Err(StageFailure::new(
-                            StageId::EffectBind,
-                            body_slice[j].pos,
-                            "non-word-effect-name",
-                            format!(
-                                "`{verb_name}` in block `{}` expects comma-separated Word names; saw `{:?}`",
-                                b.name, other
-                            ),
-                        ));
+                    _ => {
+                        j += 1;
                     }
                 }
             }
