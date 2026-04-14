@@ -1195,10 +1195,10 @@ pub fn run_pipeline(src: &str) -> Result<PipelineOutput, StageFailure> {
 }
 
 /// Phase B variant: drive the full pipeline with grammar-driven
-/// synonym resolution at S1, kind validation at S2, and clause-shape
-/// presence guard at S3. The grammar connection is consulted by S1 +
-/// S2 + S3 today; later phases extend the DB consultation to S5
-/// (quality_names).
+/// synonym resolution at S1, kind validation at S2, clause-shape
+/// presence guard at S3, and quality-name validation at S5b. The
+/// grammar connection is consulted by S1 + S2 + S3 + S5b today; the
+/// remaining S4/S5/S6 stages still use their hardcoded paths.
 pub fn run_pipeline_with_grammar(
     src: &str,
     grammar: &rusqlite::Connection,
@@ -1208,7 +1208,117 @@ pub fn run_pipeline_with_grammar(
     let s3 = stage3_shape_extract_with_grammar(&s2, grammar)?;
     let s4 = stage4_contract_bind(&s3)?;
     let s5 = stage5_effect_bind(&s4)?;
-    stage6_ref_resolve(&s5)
+    let s5b = stage5b_favor_validate(&s5, grammar)?;
+    stage6_ref_resolve(&s5b)
+}
+
+/// S5b — Validate that every `favor X` clause in the source names a
+/// quality registered in `grammar.sqlite.quality_names`.
+///
+/// Walks the EffectedStream's token vector for every `Tok::Favor`,
+/// then collects the comma-separated `Tok::Word(name)` entries until
+/// `Tok::Dot`. Each name is validated via `is_known_quality`. The
+/// stage is a no-op when the source contains no `favor` clauses.
+///
+/// Pre-flight: if at least one `favor` appears in the source AND the
+/// `quality_names` table is empty → NOMX-S5-empty-quality-registry.
+/// This forces the user to populate the registry before authoring
+/// any `favor` clause; with no rows, no clause can resolve.
+///
+/// Per-name check: if a `favor X` appears with X not in the registry
+/// → NOMX-S5-unknown-quality-name with the offending name in the
+/// diagnostic.
+///
+/// Returns the EffectedStream unchanged on success — this stage is
+/// validation only, not mutation.
+pub fn stage5b_favor_validate(
+    effected: &EffectedStream,
+    grammar: &rusqlite::Connection,
+) -> Result<EffectedStream, StageFailure> {
+    use crate::lex::Tok;
+    let toks = &effected.toks;
+
+    // First pass: any `favor` keyword present?
+    let has_favor = toks.iter().any(|s| matches!(s.tok, Tok::Favor));
+    if !has_favor {
+        return Ok(effected.clone());
+    }
+
+    // Pre-flight: at least one favor → quality_names must be non-empty.
+    let total = nom_grammar::quality_names_row_count(grammar).map_err(|e| {
+        StageFailure::new(
+            StageId::EffectBind,
+            0,
+            "quality-names-query-failed",
+            format!("DB query against quality_names failed: {e}"),
+        )
+    })?;
+    if total == 0 {
+        let first_favor_pos = toks
+            .iter()
+            .find(|s| matches!(s.tok, Tok::Favor))
+            .map(|s| s.pos)
+            .unwrap_or(0);
+        return Err(StageFailure::new(
+            StageId::EffectBind,
+            first_favor_pos,
+            "empty-quality-registry",
+            "source contains a `favor` clause but grammar.sqlite.quality_names is empty",
+        ));
+    }
+
+    // Per-name validation: walk every `favor` clause, collect names,
+    // verify each one resolves.
+    let mut i = 0usize;
+    while i < toks.len() {
+        if !matches!(toks[i].tok, Tok::Favor) {
+            i += 1;
+            continue;
+        }
+        let favor_pos = toks[i].pos;
+        let mut j = i + 1;
+        // Optionally skip `then` keywords between names
+        while j < toks.len() {
+            match &toks[j].tok {
+                Tok::Dot => break,
+                Tok::Comma | Tok::Then => {
+                    j += 1;
+                }
+                Tok::Word(name) => {
+                    let known = nom_grammar::is_known_quality(grammar, name).map_err(|e| {
+                        StageFailure::new(
+                            StageId::EffectBind,
+                            toks[j].pos,
+                            "quality-names-query-failed",
+                            format!("DB query against quality_names failed: {e}"),
+                        )
+                    })?;
+                    if !known {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            toks[j].pos,
+                            "unknown-quality-name",
+                            format!(
+                                "`favor {}` — `{}` has no row in grammar.sqlite.quality_names",
+                                name, name
+                            ),
+                        ));
+                    }
+                    j += 1;
+                }
+                // Any other token before the closing dot is unexpected for a
+                // `favor` clause body but we don't reject here; the existing
+                // parsers (parse_nom / parse_nomtu) catch shape errors.
+                _ => {
+                    j += 1;
+                }
+            }
+        }
+        i = j.saturating_add(1).max(i + 1);
+        let _ = favor_pos; // currently used only on error; reserved for future
+    }
+
+    Ok(effected.clone())
 }
 
 /// S3 with grammar-driven clause-shape presence guard per Phase B3.

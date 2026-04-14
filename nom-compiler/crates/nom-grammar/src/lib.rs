@@ -248,6 +248,30 @@ pub fn required_clauses_for_kind(conn: &Connection, kind: &str) -> Result<Vec<St
     Ok(names)
 }
 
+/// Returns true if the given quality name has a row in the
+/// `quality_names` table. The S5b favor-validator calls this to
+/// reject any `favor X` clause whose X is not registered.
+pub fn is_known_quality(conn: &Connection, name: &str) -> Result<bool> {
+    let row: Result<i64, rusqlite::Error> = conn.query_row(
+        "SELECT 1 FROM quality_names WHERE name = ?1",
+        params![name],
+        |r| r.get(0),
+    );
+    match row {
+        Ok(_) => Ok(true),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(false),
+        Err(e) => Err(e.into()),
+    }
+}
+
+/// Returns the count of rows in the `quality_names` table. The S5b
+/// validator uses this to detect the empty-registry condition when
+/// the source contains at least one `favor` clause.
+pub fn quality_names_row_count(conn: &Connection) -> Result<u64> {
+    let n: i64 = conn.query_row("SELECT COUNT(*) FROM quality_names", [], |r| r.get(0))?;
+    Ok(n as u64)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -463,6 +487,26 @@ mod tests {
         assert_eq!(required, vec!["intended", "given", "when", "then"]);
         // Other kinds have no required clauses
         assert!(required_clauses_for_kind(&conn, "function").unwrap().is_empty());
+    }
+
+    #[test]
+    fn is_known_quality_round_trip() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        // Empty table — every name unknown
+        assert!(!is_known_quality(&conn, "auditability").unwrap());
+        assert_eq!(quality_names_row_count(&conn).unwrap(), 0);
+        // Insert a row
+        conn.execute(
+            "INSERT INTO quality_names (name, axis, cardinality, source_ref) \
+             VALUES ('auditability', 'ops', 'any', 'phaseB4-test')",
+            [],
+        )
+        .unwrap();
+        assert!(is_known_quality(&conn, "auditability").unwrap());
+        assert!(!is_known_quality(&conn, "totality").unwrap()); // unrelated
+        assert_eq!(quality_names_row_count(&conn).unwrap(), 1);
     }
 
     #[test]

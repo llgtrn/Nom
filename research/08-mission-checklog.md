@@ -29,9 +29,9 @@ anything load-bearing.
 - Grammar-aware pipeline `run_pipeline_with_grammar`: S1 consults
   `keyword_synonyms` for canonicalization; S2 consults `kinds` for
   strict kind validation; S3 consults `clause_shapes` for the
-  per-kind empty-registry guard. S4-S6 still use the hardcoded path;
-  later Phase B sub-steps will route S5 through `quality_names` and
-  add the cross-stage required-clause-presence validator.
+  per-kind empty-registry guard; S5b consults `quality_names` for
+  every `favor X` clause. S4 + S6 still use the hardcoded path;
+  the cross-stage required-clause-presence validator is queued.
 - CLI: `nom grammar init` (creates the file + applies schema),
   `nom grammar status` (counts rows per table; supports `--json`).
 - Annotator-style staged pipeline (S1–S6) shipped.

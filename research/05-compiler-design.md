@@ -12,7 +12,7 @@ mutable state.
 | S2 kind_classify | For every block, identify the declared kind. The grammar-aware pass `stage2_kind_classify_with_grammar` validates each kind name against `grammar.sqlite.kinds` and rejects with NOMX-S2-empty-registry on an empty table or NOMX-S2-unknown-kind on a kind name absent from the registry. | ClassifiedStream |
 | S3 shape_extract | Pull out the structural shape (signature, exposes fields, generator) per kind. The grammar-aware pass `stage3_shape_extract_with_grammar` first asserts every block's kind has at least one row in `grammar.sqlite.clause_shapes` and rejects with NOMX-S3-empty-clause-shapes-for-kind otherwise. The richer per-required-clause check (every is_required=1 clause present in the body) lives in a future cross-stage validator. | ShapedStream |
 | S4 contract_bind | Pull `requires` / `ensures` clauses and bind them to the surrounding decl | ContractedStream |
-| S5 effect_bind | Pull `hazard` / `favor` clauses (effect valence) | EffectedStream |
+| S5 effect_bind | Pull `hazard` / `favor` clauses (effect valence). The grammar-aware `run_pipeline_with_grammar` then runs a parallel S5b validator (`stage5b_favor_validate`) that walks the source for every `favor X` clause and verifies X has a row in `grammar.sqlite.quality_names`; any unregistered name rejects with NOMX-S5-unknown-quality-name. If at least one `favor` appears in the source AND the registry is empty, NOMX-S5-empty-quality-registry fires. | EffectedStream |
 | S6 ref_resolve | Rewrite every typed-slot ref against the dictionary; pin `name@hash` | PipelineOutput |
 
 ## Strictness lane (W4)
