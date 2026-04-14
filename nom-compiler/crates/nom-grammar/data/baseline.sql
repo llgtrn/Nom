@@ -200,6 +200,52 @@ INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, g
 ('media', 'uses',     0, 2, '''uses the'' ''@'' Kind ''matching'' ...', 'doc 04'),
 ('media', 'favor',    0, 3, '''favor'' <quality-name> ''.''', 'doc 08');
 
+-- ── Patterns (canonical authoring shapes extracted from doc 14 corpus) ──
+--
+-- Each row captures a shape that ≥N v2 translations conform to. AI
+-- clients query this table to find the canonical rendering for a
+-- given intent. Seed is minimal — three high-frequency shapes.
+-- Additional patterns are user-added via `nom grammar add-pattern`
+-- or future batch imports.
+
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'pure-function-contract',
+  'a named computation with contract clauses and quality favors',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to <prose>.\n  uses the @Function matching "<intent>" with at-least 0.9 confidence.\n  requires <pre>.\n  ensures <post>.\n  hazard <risk>.\n  favor correctness.',
+  '[]',
+  '["correctness"]',
+  '["doc 14 — majority shape across function translations"]'
+),
+(
+  'exposes-data-shape',
+  'a tagged record with named fields and their types',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '[]',
+  'the data <Name> is\n  intended to <prose>.\n  exposes <field> as <type>.\n  exposes <field> as <type>.\n  favor documentation.',
+  '[]',
+  '["documentation","clarity"]',
+  '["doc 14 — majority shape across data translations"]'
+),
+(
+  'concept-composition',
+  'a bundled concept composing supporting functions and data via typed-slot references',
+  '["concept","function","data"]',
+  '["intended","uses","composes","exposes","favor"]',
+  '["@Function","@Data","@Screen"]',
+  'the concept <name> is\n  intended to <prose>.\n  uses the @Function matching "<intent>" with at-least 0.9 confidence.\n  composes <ref> then <ref>.\n  exposes <surface>.\n  favor correctness.',
+  '[]',
+  '["correctness","availability"]',
+  '["doc 14 — standard concept composition pattern"]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
