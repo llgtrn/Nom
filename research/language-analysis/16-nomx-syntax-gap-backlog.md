@@ -414,8 +414,24 @@
 | 397 | Chisel `Mux`/`MuxLookup` → `when X is Y, the value is A; otherwise the value is B` prose in `ensures` | authoring-guide rule | ✅ closed (doc 14 #81) |
 | 398 | Chisel `when { ... }` synchronous update → `ensures the next state's FIELD changes exactly when CONDITION is true` in step function | authoring-guide rule | ✅ closed (doc 14 #81) |
 | 399 | Pointer-width calculations (`log2Ceil`, `ceil(log2(N))`) → conservatively-bounded range-typed natural; build-stage narrows | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 400 | Stringly-typed languages (Tcl/Awk/old-Perl) → typed data-decl representations; string-to-type shimmering becomes explicit parse/serialize functions | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 401 | Tcl command substitution (`[fn arg]`) → named-intermediate variable binding + explicit function call; no `[` substitution syntax at Nom source | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 402 | Dict-like built-in data structures (Tcl dict, Python dict, Ruby hash) → `list of (K, V) pair` on data decl with explicit insertion-order preservation | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 403 | File-handle lifecycle management (open/read/close, RAII, `with`/`using` blocks) → build-stage implementation concern; authoring expresses "read file as text" via `requires UTF-8 readable` | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 404 | Imperative loop continue/break → declarative `ensures every X that SKIP-CONDITION is excluded` clauses (reuses #43 + #57 filter rules) | authoring-guide rule | ✅ closed (doc 14 #82) |
+| 405 | Hidden type-shimmering (Tcl dual-rep, JavaScript implicit coercion) rejected at Nom source; every value has explicit type | authoring-guide rule | ✅ closed (doc 14 #82) |
 
-Totals by destination (after doc 14 #81 Chisel host-embedded-HDL translation — **fortieth 0-new-wedge translation in a row** + **40-consecutive-0-new-wedge milestone**; 7 authoring-guide closures; **hardware-description paradigm family fully covered across 3 exemplars**: traditional HDL (#41 Verilog) + assertions (#74 SVA) + host-embedded (#81 Chisel)):
+Totals by destination (after doc 14 #82 Tcl string-oriented scripting translation — **forty-first 0-new-wedge translation in a row**; 7 authoring-guide closures; **script-language paradigm family now has 5 exemplars unified**: Bash + Perl + PowerShell + jq + Tcl):
+
+- ⏳ Wedge queued: **44** (unchanged)
+- 🧪 Smoke-test todo: **1**
+- 📘 Authoring-guide doc-todo: **0**
+- ✅ Closed: **356**
+- 🧠 Design deferred (open): **0**
+- 🔒 Blocked: **2**
+- 🌱 Authoring-corpus seed: **10** (unchanged)
+
+Backlog size: 426 rows. Closure rate 84% (356/426). **82 translations** in doc 14. Forty-ninth consecutive minimal-wedge, **forty-first 0-new-wedge**. **Backlog closure crosses 84%.** **Script-language family now has 5 exemplars unified** (Bash + Perl + PowerShell + jq + Tcl).
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**

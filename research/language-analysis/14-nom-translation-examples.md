@@ -6336,6 +6336,90 @@ Row additions: **0 new wedges** — Chisel's host-embedded HDL model fully expre
 
 ---
 
+## 82. Tcl — "everything is a string" command-oriented scripting
+
+```tcl
+proc parse_config {filename} {
+    set fh [open $filename r]
+    set content [read $fh]
+    close $fh
+    set result [dict create]
+    foreach line [split $content "\n"] {
+        set line [string trim $line]
+        if {$line eq "" || [string index $line 0] eq "#"} continue
+        set parts [split $line "="]
+        if {[llength $parts] != 2} continue
+        set key [string trim [lindex $parts 0]]
+        set val [string trim [lindex $parts 1]]
+        dict set result $key $val
+    }
+    return $result
+}
+
+proc merge_configs {base override} {
+    set merged [dict merge $base $override]
+    return $merged
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define parse_config_file
+  that takes a file path, returns a key-value map parsed from newline-separated KEY=VALUE lines.
+skip blank lines and lines starting with #.
+lines without exactly one = are skipped.
+trim whitespace from both key and value.
+
+define merge_configs
+  that takes a base config map and an override config map, returns their merge with override winning on duplicate keys.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ConfigMap is
+  intended to describe a parsed configuration as an ordered map from trimmed identifier keys to trimmed text values.
+  exposes entries as list of (identifier, text) pair.
+
+the function parse_config_file is
+  intended to return the ConfigMap parsed from the contents of a file written as newline-separated KEY=VALUE lines, ignoring blank lines and comment lines that start with `#`.
+  uses the @Data matching "ConfigMap" with at-least 0.95 confidence.
+  requires the file at the given path is readable UTF-8 text.
+  ensures every returned entry corresponds to some line in the input that contains exactly one `=` after whitespace trimming, with the key being the prefix up to the first `=` and the value the suffix after it, both further trimmed.
+  ensures every input line whose trimmed content is empty is excluded from the result.
+  ensures every input line whose trimmed content begins with `#` is excluded from the result.
+  ensures every input line that contains zero or more than one `=` after trimming is excluded from the result.
+  ensures the returned entry order matches the source line order (first-occurrence-wins on duplicate keys).
+  hazard callers that read config-from-untrusted-source should additionally validate each value against an expected schema; parse_config_file does no value-shape checks.
+  favor correctness.
+
+the function merge_configs is
+  intended to return the union of two ConfigMaps, with the second map's value winning for any key that appears in both.
+  uses the @Data matching "ConfigMap" with at-least 0.95 confidence.
+  ensures every key present in the override map's entries appears in the returned map with the override map's value.
+  ensures every key present only in the base map's entries appears in the returned map with the base map's value.
+  ensures the returned map's key order is: every base-map key in its original order followed by every override-only key in its original order.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **"Everything is a string" semantics** — Tcl's defining feature: every value is internally a string (with shimmered type cache). Nom rejects stringly-typed semantics and uses typed data decls throughout. Authoring-guide rule: **stringly-typed languages (Tcl, Awk, old Perl) decompose to typed data-decl representations; string-to-type shimmering becomes explicit parsing/serialization functions at Nom source level**. No new wedge.
+2. **Command substitution (`[open $filename r]`)** — Tcl's way of invoking a subcommand and splicing its result. Nom's named-intermediate prose + function calls make this trivial. Authoring-guide rule: **Tcl command substitution → named-intermediate variable binding + explicit function call; no `[` substitution syntax at Nom source level (reuses doc 17 §I8 named-intermediate rule)**. No new wedge.
+3. **Variable interpolation (`$filename`, `${key}`)** — Tcl's inline string-variable expansion. Nom uses plain named-parameter references without sigils. Authoring-guide rule: **variable interpolation (`$var`, `${var}`, `%s %(var)s`) → plain named-parameter references at Nom source level (reuses #72 Perl sigils rule)**. No new wedge.
+4. **Procedure definition (`proc name {args} {body}`)** — Tcl's way of declaring a function using braced bodies. Nom's function decl is syntactically distinct but semantically identical. No new wedge.
+5. **Dict as first-class data structure (`dict create`, `dict set`, `dict merge`)** — Tcl's native associative-array support. Nom's ConfigMap data decl with `list of (identifier, text) pair` covers this. Authoring-guide rule: **dict-like built-in data structures (Tcl dict, Python dict, Ruby hash) → `list of (K, V) pair` on a data decl with explicit insertion-order preservation semantics**. No new wedge.
+6. **File-handle resource management (`open`/`read`/`close`)** — Tcl's imperative file-handle discipline. Nom's translation elides this: the function takes a file-path input and returns parsed content, with file-reading as a build-stage implementation concern. Authoring-guide rule: **file-handle lifecycle management (open/read/close, RAII, `with` blocks, `using` blocks) → build-stage implementation concern; authoring surface expresses "read file as text" via `requires the file at the given path is readable UTF-8 text`**. No new wedge.
+7. **`continue` and `if` expressions inside `foreach`** — Tcl's loop control. Nom's translation uses universal-quantifier `ensures every X satisfies P, is included` rather than imperative skip-semantics. Authoring-guide rule: **imperative loop continue/break → declarative `ensures every X that SKIP-CONDITION is excluded` clauses (reuses #43 SQL + #57 jq filter rules)**. No new wedge.
+8. **Shimmering cache (hidden type reclassification)** — Tcl's implementation detail where strings get cached parsed representations. Nom has no type-shimmer surface; every value has a typed data-decl reference at authoring time. Authoring-guide rule: **hidden type-shimmering (Tcl dual-rep, JavaScript implicit coercion) is rejected at Nom source level; every value has an explicit type via `exposes`/parameter annotations**. No new wedge.
+
+Row additions: **0 new wedges** — Tcl's "everything is a string" + command substitution + dict + file-handle discipline all decompose to (typed data decls + named-intermediate prose + declarative filter `ensures` + build-stage file-I/O + explicit-type-per-value). 7 authoring-guide closures: stringly-typed languages → typed data decls, command substitution → named-intermediate binding, variable interpolation → plain named-param refs, dict built-ins → `list of (K, V) pair`, file-handle lifecycle → build-stage implementation concern, imperative continue/break → declarative filter `ensures`, hidden type-shimmering → explicit-type-per-value.
+
+**Forty-ninth consecutive minimal-wedge translation + forty-first 0-new-wedge run.** Tcl — the canonical string-only scripting language (1988) — decomposes cleanly despite being one of the most distinctive type-systems ever shipped. Combined with Bash (#11), Perl (#72), PowerShell (#59), jq (#57), and Tcl, **the script-language paradigm family has 5 exemplars unified**: all reduce to (named-intermediate prose + typed data decls + declarative filter `ensures` + build-stage I/O). The explicit-type-per-value rule is a key Nom invariant — **no value in Nom source is untyped at the authoring layer**, regardless of the runtime representation's ability to erase or shimmer types.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
