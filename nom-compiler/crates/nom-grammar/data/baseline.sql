@@ -464,6 +464,61 @@ INSERT OR IGNORE INTO patterns (
   '["hidden resource dependencies discovered only at apply time"]',
   '["reproducibility","auditability"]',
   '["doc 14 — infrastructure-automation paradigm pentagram (5 exemplars)"]'
+),
+(
+  'structured-imperative-block',
+  'a sequence of imperative statements with lexical scope, declared local variables, and explicit control flow — the substrate for low-level systems authoring',
+  '["function"]',
+  '["intended","requires","ensures","favor"]',
+  '[]',
+  'the function <step> is\n  intended to execute a bounded sequence of imperative statements with declared local scope.\n  requires every local variable is initialized before use.\n  ensures every declared loop has a visible termination measure.\n  favor totality.',
+  '["uninitialized locals read before write","unbounded loops without declared variant"]',
+  '["totality","clarity"]',
+  '["doc 14 — structured-imperative paradigm family (5 exemplars)"]'
+),
+(
+  'logic-programming-rule',
+  'a head-and-body rule that derives new facts from existing ones under declared constraints; the substrate for rule engines and query engines',
+  '["property","data"]',
+  '["intended","generator","uses","requires","ensures","favor"]',
+  '["@Data"]',
+  'the property <rule> is\n  intended to assert that whenever the body conditions hold, the head fact is derivable.\n  generator tuples from the declared fact store.\n  uses the @Data matching "base fact" with at-least 0.9 confidence.\n  requires the rule terminates on any finite fact store.\n  ensures the derived fact set is closed under repeated application.\n  favor determinism.',
+  '["non-terminating recursion under unrestricted negation"]',
+  '["determinism","correctness"]',
+  '["doc 14 — logic-programming paradigm family (4 exemplars)"]'
+),
+(
+  'term-rewriting-semantics',
+  'operational semantics expressed as a set of term-rewriting rules over a concrete syntax; the substrate for formal language specification',
+  '["property","function","data"]',
+  '["intended","generator","uses","requires","ensures","favor"]',
+  '["@Data","@Function"]',
+  'the property <rewrite> is\n  intended to assert that the declared rewrite rule reduces a matching term to its normal form.\n  generator well-typed terms drawn from the declared concrete syntax.\n  uses the @Data matching "term shape" with at-least 0.9 confidence.\n  requires the rewrite system is confluent over the term domain.\n  ensures every accepted term reduces to a unique normal form in finitely many steps.\n  favor correctness.',
+  '["non-confluent rewrite rules producing divergent normal forms"]',
+  '["correctness","determinism"]',
+  '["doc 14 — formal-methods paradigm family (term-rewriting branch)"]'
+),
+(
+  'macro-expansion',
+  'a source-level shape that expands into a larger source pattern at authoring time, enabling syntactic abstraction without runtime cost',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <expand> is\n  intended to rewrite a compact authoring shape into a larger canonical source pattern at compile time.\n  uses the @Data matching "input shape" with at-least 0.9 confidence.\n  requires the expansion is hygiene-preserving over the enclosing scope.\n  ensures the expanded source parses cleanly under the same grammar.\n  hazard name capture in the expansion shadows names in the surrounding scope.\n  favor clarity.',
+  '["name capture","expansion that no longer parses"]',
+  '["clarity","correctness"]',
+  '["doc 14 — abstraction-quadrant paradigm family (macro branch)"]'
+),
+(
+  'dependent-type-indexed',
+  'a data shape whose type carries a value — a length, a tag, a proof — that the type system checks at authoring time',
+  '["data","property"]',
+  '["intended","exposes","generator","ensures","favor"]',
+  '[]',
+  'the data <Vec> is\n  intended to describe a collection whose element type and length are both part of its shape.\n  exposes element_type as identifier.\n  exposes length as natural.\n  exposes elements as list of reference to element_type.\n  favor totality.',
+  '["length mismatch silently zero-fills","value-in-type that diverges from a runtime value"]',
+  '["totality","correctness"]',
+  '["doc 14 — dependent-types paradigm family"]'
 );
 
 -- ── Schema version stamp ────────────────────────────────────────────
