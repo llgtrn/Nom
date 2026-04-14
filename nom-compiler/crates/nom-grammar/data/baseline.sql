@@ -570,6 +570,61 @@ INSERT OR IGNORE INTO patterns (
   '["double release","skipped release on rare failure paths"]',
   '["correctness","availability"]',
   '[]'
+),
+(
+  'event-sourced-state',
+  'a state machine whose current value is derived by replaying an append-only log of events; the log is the source of truth and projections are pure functions over it',
+  '["concept","event","data","function"]',
+  '["intended","uses","composes","ensures","hazard","favor"]',
+  '["@Event","@Data","@Function"]',
+  'the concept <ledger> is\n  intended to derive current state by folding an append-only log of events through a pure projection.\n  uses the @Event matching "recorded event" with at-least 0.9 confidence.\n  uses the @Function matching "apply event" with at-least 0.9 confidence.\n  composes <append> then <project>.\n  ensures the projection is deterministic over the declared log prefix.\n  hazard a projection that consults external state drifts silently from the log-derived truth.\n  favor auditability.',
+  '["projections reading outside state","lossy event compaction"]',
+  '["auditability","reproducibility"]',
+  '[]'
+),
+(
+  'circuit-breaker',
+  'a fault-isolation guard that short-circuits repeated calls to a failing downstream after a threshold is crossed, letting the downstream recover before traffic resumes',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <call> is\n  intended to protect callers from repeated failures of a downstream dependency.\n  uses the @Data matching "breaker state" with at-least 0.9 confidence.\n  uses the @Function matching "downstream" with at-least 0.9 confidence.\n  requires the breaker reads a monotonic clock for timeout decisions.\n  ensures while the breaker is open, downstream calls are refused without invocation.\n  hazard a breaker that never resets permanently strands a healed downstream.\n  favor availability.',
+  '["stuck-open breaker","flapping between open and closed under load"]',
+  '["availability","auditability"]',
+  '[]'
+),
+(
+  'cache-memoization',
+  'a pure-function result cache keyed on input equality; repeated calls with the same input return the stored result without re-executing the body',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <memoize> is\n  intended to return the cached result for a previously-seen input and compute-and-cache for a new input.\n  uses the @Data matching "cache store" with at-least 0.9 confidence.\n  uses the @Function matching "pure body" with at-least 0.9 confidence.\n  requires the wrapped function is referentially transparent.\n  ensures for every input, the cached and freshly-computed results are equal.\n  hazard wrapping a non-pure function silently returns stale results.\n  favor performance.',
+  '["wrapping non-pure functions","unbounded cache growth without eviction"]',
+  '["performance","determinism"]',
+  '[]'
+),
+(
+  'publish-subscribe-fanout',
+  'a topic-based event distribution where one publisher delivers to zero or more subscribers matching a declared filter, decoupling producers from consumers',
+  '["concept","event","function"]',
+  '["intended","uses","composes","ensures","hazard","favor"]',
+  '["@Event","@Function"]',
+  'the concept <topic> is\n  intended to deliver every published event to every subscriber whose filter matches.\n  uses the @Event matching "published" with at-least 0.9 confidence.\n  uses the @Function matching "subscriber filter" with at-least 0.9 confidence.\n  composes <publish> then <match> then <deliver>.\n  ensures delivery to each matching subscriber is at-least-once under normal operation.\n  hazard a slow subscriber back-pressures the whole topic without isolation.\n  favor availability.',
+  '["slow-subscriber back-pressure","duplicate delivery on retry"]',
+  '["availability","auditability"]',
+  '[]'
+),
+(
+  'scheduled-cron-task',
+  'a work unit fired on a declared time schedule — interval, cron expression, or clock event — with explicit semantics for missed and overlapping firings',
+  '["function","event","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <tick> is\n  intended to perform a bounded work unit on every scheduled firing.\n  uses the @Data matching "schedule spec" with at-least 0.9 confidence.\n  uses the @Function matching "work body" with at-least 0.9 confidence.\n  requires the schedule spec declares how missed firings are handled.\n  ensures two overlapping firings do not execute concurrently.\n  hazard a long work body silently drops subsequent firings under the missed-firing policy.\n  favor reproducibility.',
+  '["missed firings silently dropped","clock skew across executors"]',
+  '["reproducibility","auditability"]',
+  '[]'
 );
 -- ── Schema version stamp ────────────────────────────────────────────
 
