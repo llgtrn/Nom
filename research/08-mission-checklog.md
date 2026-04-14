@@ -45,15 +45,24 @@ anything load-bearing.
   complete; six row-level subcommands cover every grammar.sqlite
   table populated by a user (keywords + keyword_synonyms + kinds +
   clause_shapes + quality_names + patterns).
-- Phase E proofs — 5 of 7 shipped: P1 schema-completeness
+- Phase E proofs — 6 of 7 shipped: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
-  (100-run Debug-equality on curated inputs), P4 strictness property
-  (256 random bytes, zero panics, well-formed `NOMX-S<N>-<reason>`,
-  deterministic failure tuples), P6 no-foreign-names audit (whole-
-  word match over every text column after baseline import),
-  P7 no-Rust-bundled-data audit. P3 closure-against-archive and
-  P5 synonym round-trip (already covered by `synonym_round_trip.rs`)
-  remain queued.
+  (100-run Debug-equality on curated inputs), P3 closure-against-
+  archive (89 v2 blocks from doc 14 extracted + parsed + row-count-
+  stable; dashboard passes 42/89 end-to-end after baseline extension),
+  P4 strictness property (256 random bytes, zero panics, well-formed
+  `NOMX-S<N>-<reason>`, deterministic failure tuples), P6 no-foreign-
+  names audit (whole-word match over every text column after baseline
+  import), P7 no-Rust-bundled-data audit. P5 synonym round-trip is
+  already covered by `synonym_round_trip.rs`.
+- Corpus dashboard: baseline.sql extended from 10 → 20 quality_names
+  (added correctness / determinism / clarity / documentation /
+  discoverability / reproducibility / portability / responsiveness /
+  latency / performance); closure pass rate jumped 0/89 → 42/89.
+  Remaining 47 failures: S5=24 (parser state bug — hazard clause
+  absorbs following capitalized words), S2=20 (unknown-kind — corpus
+  uses `proof` + novel `data`-named declarations), S4=3 (unterminated-
+  contract in tightly-packed multi-line blocks).
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
