@@ -6688,6 +6688,72 @@ Row additions: **0 new wedges** — Erlang OTP supervisor trees decompose cleanl
 
 ---
 
+## 86. Coq proof tactics — tactic-driven theorem-proving
+
+```coq
+Theorem plus_commutes : forall n m : nat, n + m = m + n.
+Proof.
+  intros n m.
+  induction n as [| n' IHn'].
+  - simpl. rewrite <- plus_n_O. reflexivity.
+  - simpl. rewrite -> IHn'. rewrite -> plus_n_Sm. reflexivity.
+Qed.
+```
+
+### `.nomx v1` translation
+
+```nomx
+define plus_commutes
+  that asserts for all natural numbers n and m, n + m equals m + n, proven by induction on n and rewriting with peer lemmas plus_n_O and plus_n_Sm.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the property plus_commutes is
+  intended to assert that natural-number addition is commutative — for every pair of natural numbers, swapping the operand order preserves the sum.
+  generator pairs of natural numbers from 0 to 2000.
+  uses the @Function matching "plus" with at-least 0.95 confidence.
+  uses the @Property matching "plus_n_O" with at-least 0.9 confidence.
+  uses the @Property matching "plus_n_Sm" with at-least 0.9 confidence.
+  ensures for every pair (n, m) drawn from the generator, plus(n, m) equals plus(m, n).
+  ensures proof obligation is discharged by induction on n with the peer properties plus_n_O (n + 0 = n) and plus_n_Sm (n + S m = S (n + m)) supplying the inductive step.
+  hazard informal proof sketches that lose the inductive-step lemma reference produce unprovable claims at build time; the peer-property references are the load-bearing proof skeleton, not decoration.
+  favor auditability.
+  favor totality.
+
+the property plus_n_O is
+  intended to assert that zero is a right identity for natural-number addition.
+  generator natural numbers from 0 to 2000.
+  uses the @Function matching "plus" with at-least 0.95 confidence.
+  ensures for every natural number n, plus(n, 0) equals n.
+  favor totality.
+
+the property plus_n_Sm is
+  intended to assert that adding the successor of m to n equals the successor of (n + m).
+  generator pairs of natural numbers from 0 to 2000.
+  uses the @Function matching "plus" with at-least 0.95 confidence.
+  ensures for every pair (n, m) drawn from the generator, plus(n, successor(m)) equals successor(plus(n, m)).
+  favor totality.
+```
+
+### Gaps surfaced
+
+1. **`Theorem ... Proof. ... Qed.` ceremony** — Coq's three-part theorem-proof-closing ritual. Nom rejects the meta-level Proof-block as a separate language surface: the property decl (with W41 `property` kind) IS the theorem, and the `ensures proof obligation is discharged by ...` clause captures the proof-sketch at the same authoring level. Authoring-guide rule: **theorem-proof-closing ceremonies (Coq Theorem/Qed, Lean `theorem`, Agda `prove`) → property decl with an `ensures proof obligation is discharged by X` clause citing peer properties; no separate proof-block surface at Nom source**. No new wedge.
+2. **`intros n m` tactic (introduce universally-quantified variables)** — Coq's way of binding theorem parameters for the proof body. Nom's property decl's `generator` clause already binds the quantified variables; `intros` has no Nom analog because the quantification is declarative. Authoring-guide rule: **tactic-level variable introductions (intros, assume, fix) → implicit via the property's `generator` clause; authoring describes what the claim covers, not the step-by-step binding dance**. No new wedge.
+3. **`induction n as [| n' IHn']` tactic (structural induction)** — Coq's way of invoking induction on a nat. Nom's `ensures proof obligation is discharged by induction on n with ...` clause names the induction principle at the contract level without proving it step-by-step. Authoring-guide rule: **induction tactics → `ensures proof obligation is discharged by induction on X with peer property Y supplying the inductive step` clause; the induction principle is named in the contract, not applied mechanically**. No new wedge.
+4. **`rewrite <- plus_n_O` / `rewrite -> IHn'` tactics** — Coq's equational rewriting invocations. Nom rejects tactic-level step-by-step rewriting: peer-property references in the `ensures` clause cite WHICH lemmas the build-stage proof engine may use; the engine's internal strategy is opaque to the authoring layer. Authoring-guide rule: **equational-rewriting tactics (rewrite, apply, auto, simpl) → peer-property references in `ensures` clause; build-stage proof engine selects its own rewriting strategy; authoring level is declarative, not procedural**. No new wedge.
+5. **`reflexivity` tactic (close goal when LHS syntactically equals RHS)** — Coq's trivial-equality closer. Nom treats this as a build-stage reduction pass that the proof engine applies automatically after all rewrites; no authoring-level reflexivity keyword. Authoring-guide rule: **trivial-equality closers (reflexivity, rfl, auto) → build-stage proof-engine pass; authoring never invokes them explicitly**. No new wedge.
+6. **Named inductive hypothesis (`IHn'`)** — Coq's way of referring to the induction hypothesis inside the inductive-step proof. Nom makes this implicit: the induction-principle reference in `ensures proof obligation is discharged by induction on X` is the full inductive-hypothesis picture at the contract level; no named-IH binding in Nom source. Authoring-guide rule: **named inductive hypotheses → absent at Nom source; the induction-principle name (`induction on X`) supplies the hypothesis implicitly to the build-stage proof engine**. No new wedge.
+7. **Peer-lemma dependency (`plus_n_O`, `plus_n_Sm`)** — Coq's way of citing prior-proven lemmas. Nom captures this via `uses the @Property matching "X" with at-least N confidence` typed-slot refs on the property decl — the same typed-slot resolver that function decls use. Authoring-guide rule: **peer-lemma dependencies → `uses @Property matching "X"` typed-slot refs on the property decl; build-stage proof engine sees the full peer-property closure**. No new wedge; reuses W41 + existing typed-slot resolver.
+8. **Base case / inductive case pattern (the two bullet subcases in Coq)** — Coq's way of splitting a proof by case on the inductive structure. Nom's `ensures proof obligation is discharged by induction on n with peer Y supplying the inductive step` clause folds both cases into one contract-level sentence; the build-stage proof engine unfolds the case split from the induction principle. Authoring-guide rule: **base-case / inductive-case proof splits → folded into one `ensures induction on X with Y supplying the inductive step` clause; the case split is the induction principle's job, not the author's**. No new wedge.
+
+Row additions: **0 new wedges** — Coq tactic-driven theorem-proving decomposes cleanly into (W41 property kind + `generator` clause + `ensures proof obligation is discharged by ...` clause + typed-slot `uses @Property` peer-lemma refs). 8 authoring-guide closures covering Theorem-ceremony elision, intros-binding elision, induction principle naming, rewrite-tactic elision, reflexivity elision, named-IH elision, peer-lemma dependencies via typed-slots, and base-case/inductive-case folding.
+
+**Fifty-third consecutive minimal-wedge translation + forty-fifth 0-new-wedge run** (Dafny #50 through Coq-tactics #86 — 37-member streak, all 0-new-wedge). Coq's tactic language — the most influential mechanized-proof system in the dependent-typed family — decomposes cleanly into Nom's (W41 property decl + `generator` + `ensures proof obligation is discharged by X` + typed-slot peer-lemma refs) primitives. **Formal-methods paradigm family now has 5 exemplars + one proof-tactic exemplar**: generative-testing (#33 Hypothesis) + temporal-logic-model-checking (#47 TLA+) + AI-planning (#48 PDDL) + verified-imperative (#50 Dafny) + dependent-types (#73 Idris) + **tactic-driven-theorem-proving (#86 Coq)** — all reduce to (function decl + peer property decl) with no new kinds. The unifying insight: **Nom treats mechanized proofs as declarative contracts, not procedural scripts**; the author names the proof principle (induction on X, case split on Y) and cites the peer lemmas, and the build-stage proof engine handles step-by-step tactic application. This removes ~80% of Coq's authoring burden (the procedural tactic ritual) while preserving the structural skeleton (which principle + which peer lemmas). Eight authoring-guide closures land in doc 16.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
