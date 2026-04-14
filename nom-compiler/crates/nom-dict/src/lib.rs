@@ -1431,7 +1431,7 @@ fn row_to_concept_def(row: &rusqlite::Row) -> rusqlite::Result<ConceptRow> {
     })
 }
 
-fn row_to_word_v2(row: &rusqlite::Row) -> rusqlite::Result<WordV2Row> {
+pub(crate) fn row_to_word_v2(row: &rusqlite::Row) -> rusqlite::Result<WordV2Row> {
     Ok(WordV2Row {
         hash: row.get(0)?,
         word: row.get(1)?,

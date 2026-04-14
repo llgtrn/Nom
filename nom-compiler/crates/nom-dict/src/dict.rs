@@ -308,6 +308,103 @@ fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
     Ok(conn)
 }
 
+// ── S3a: words_v2 tier API as free functions on &Dict ───────────────
+//
+// These mirror the NomDict methods on the same names but route to the new
+// `words.sqlite` connection. Per doc 22 §3.2 the target API is free functions
+// taking &Dict; `NomDict` methods stay in place as single-file fallback until
+// S8 removes them.
+
+use crate::{WordV2Row, row_to_word_v2};
+use rusqlite::{OptionalExtension, params};
+
+/// Insert-or-update a row in `words_v2` on the words tier.
+pub fn upsert_word_v2(d: &Dict, row: &WordV2Row) -> Result<()> {
+    d.words.execute(
+        "INSERT INTO words_v2
+             (hash, word, kind, signature, contracts, body_kind, body_size,
+              origin_ref, bench_ids, authored_in, composed_of,
+              created_at, updated_at)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'), NULL)
+         ON CONFLICT(hash) DO UPDATE SET
+             word        = excluded.word,
+             kind        = excluded.kind,
+             signature   = excluded.signature,
+             contracts   = excluded.contracts,
+             body_kind   = excluded.body_kind,
+             body_size   = excluded.body_size,
+             origin_ref  = excluded.origin_ref,
+             bench_ids   = excluded.bench_ids,
+             authored_in = excluded.authored_in,
+             composed_of = excluded.composed_of,
+             updated_at  = datetime('now')",
+        params![
+            row.hash,
+            row.word,
+            row.kind,
+            row.signature,
+            row.contracts,
+            row.body_kind,
+            row.body_size,
+            row.origin_ref,
+            row.bench_ids,
+            row.authored_in,
+            row.composed_of,
+        ],
+    )?;
+    Ok(())
+}
+
+/// Fetch one `words_v2` row by hash PK, or `None` if missing.
+pub fn find_word_v2(d: &Dict, hash: &str) -> Result<Option<WordV2Row>> {
+    let row = d
+        .words
+        .query_row(
+            "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                    origin_ref, bench_ids, authored_in, composed_of
+             FROM words_v2 WHERE hash = ?1",
+            params![hash],
+            row_to_word_v2,
+        )
+        .optional()?;
+    Ok(row)
+}
+
+/// Return every `words_v2` row with the given `word` column, ordered by hash.
+pub fn find_words_v2_by_word(d: &Dict, word: &str) -> Result<Vec<WordV2Row>> {
+    let mut stmt = d.words.prepare_cached(
+        "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                origin_ref, bench_ids, authored_in, composed_of
+         FROM words_v2 WHERE word = ?1 ORDER BY hash",
+    )?;
+    let rows = stmt
+        .query_map(params![word], row_to_word_v2)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Return every `words_v2` row with the given `kind`, ordered by hash
+/// (§10.3.1 alphabetical-smallest tiebreak).
+pub fn find_words_v2_by_kind(d: &Dict, kind: &str) -> Result<Vec<WordV2Row>> {
+    let mut stmt = d.words.prepare_cached(
+        "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                origin_ref, bench_ids, authored_in, composed_of
+         FROM words_v2 WHERE kind = ?1 ORDER BY hash",
+    )?;
+    let rows = stmt
+        .query_map(params![kind], row_to_word_v2)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Total count of rows in `words_v2` on the words tier.
+pub fn count_words_v2(d: &Dict) -> Result<i64> {
+    let n: i64 = d
+        .words
+        .query_row("SELECT COUNT(*) FROM words_v2", [], |row| row.get(0))?;
+    Ok(n)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -470,6 +567,99 @@ mod tests {
             )
             .unwrap();
         assert_eq!(got_kind, "function");
+    }
+
+    fn sample_word(hash: &str, word: &str, kind: &str) -> WordV2Row {
+        WordV2Row {
+            hash: hash.to_string(),
+            word: word.to_string(),
+            kind: kind.to_string(),
+            signature: None,
+            contracts: None,
+            body_kind: None,
+            body_size: None,
+            origin_ref: None,
+            bench_ids: None,
+            authored_in: None,
+            composed_of: None,
+        }
+    }
+
+    #[test]
+    fn free_fn_upsert_word_v2_writes_to_words_tier() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_word_v2(&d, &sample_word("h1", "greet", "function")).unwrap();
+        let got = find_word_v2(&d, "h1").unwrap().expect("row");
+        assert_eq!(got.word, "greet");
+        assert_eq!(got.kind, "function");
+    }
+
+    #[test]
+    fn free_fn_upsert_word_v2_is_idempotent() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_word_v2(&d, &sample_word("h2", "a", "function")).unwrap();
+        // Same hash → UPDATE path.
+        upsert_word_v2(&d, &sample_word("h2", "a_v2", "module")).unwrap();
+        let got = find_word_v2(&d, "h2").unwrap().expect("row");
+        assert_eq!(got.word, "a_v2");
+        assert_eq!(got.kind, "module");
+        assert_eq!(count_words_v2(&d).unwrap(), 1);
+    }
+
+    #[test]
+    fn free_fn_find_words_v2_by_word_orders_by_hash() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_word_v2(&d, &sample_word("bbb", "shared", "function")).unwrap();
+        upsert_word_v2(&d, &sample_word("aaa", "shared", "function")).unwrap();
+        upsert_word_v2(&d, &sample_word("ccc", "shared", "data")).unwrap();
+        let rows = find_words_v2_by_word(&d, "shared").unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].hash, "aaa");
+        assert_eq!(rows[1].hash, "bbb");
+        assert_eq!(rows[2].hash, "ccc");
+    }
+
+    #[test]
+    fn free_fn_find_words_v2_by_kind_filters_and_orders() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_word_v2(&d, &sample_word("z", "a", "function")).unwrap();
+        upsert_word_v2(&d, &sample_word("m", "b", "function")).unwrap();
+        upsert_word_v2(&d, &sample_word("x", "c", "data")).unwrap();
+        let rows = find_words_v2_by_kind(&d, "function").unwrap();
+        assert_eq!(rows.len(), 2);
+        assert_eq!(rows[0].hash, "m");
+        assert_eq!(rows[1].hash, "z");
+    }
+
+    #[test]
+    fn free_fn_find_word_v2_returns_none_when_missing() {
+        let d = Dict::open_in_memory().unwrap();
+        assert!(find_word_v2(&d, "nonexistent").unwrap().is_none());
+    }
+
+    #[test]
+    fn free_fn_count_words_v2_starts_at_zero() {
+        let d = Dict::open_in_memory().unwrap();
+        assert_eq!(count_words_v2(&d).unwrap(), 0);
+        upsert_word_v2(&d, &sample_word("h", "w", "function")).unwrap();
+        assert_eq!(count_words_v2(&d).unwrap(), 1);
+    }
+
+    #[test]
+    fn concepts_tier_has_no_words_v2_so_writes_go_to_words_only() {
+        // Confirms the routing: upsert_word_v2 only touches d.words, not d.concepts.
+        let d = Dict::open_in_memory().unwrap();
+        upsert_word_v2(&d, &sample_word("h", "w", "function")).unwrap();
+        let concepts_has_table: bool = d
+            .concepts
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'words_v2'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        assert!(!concepts_has_table, "concepts tier should have no words_v2 table");
+        assert_eq!(count_words_v2(&d).unwrap(), 1);
     }
 
     #[test]
