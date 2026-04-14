@@ -441,18 +441,26 @@
 | 424 | Per-child lifecycle-policy enums (permanent / transient / temporary) → closed data-decl variants + per-variant `ensures X uses restart_policy = Y: it is V` clauses; each variant binds to observable lifecycle rule (reuses #22 Kotlin-sealed) | authoring-guide rule | ✅ closed (doc 14 #85) |
 | 425 | Bounded-cleanup timeouts (shutdown_ms, kill-after-grace-period) → `ensures on X shutdown, each Y is given at-most Z milliseconds before being forcibly terminated` using W49 at-most quantifier; bound is part of contract, not tuning knob | authoring-guide rule | ✅ closed (doc 14 #85) |
 | 426 | Hierarchical-supervision trees (supervisor-of-supervisors) → nested `uses @Concept matching "X"` typed slots where each nested concept carries its own SupervisorPolicy; hierarchy is plain concept composition | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 427 | Theorem-proof-closing ceremonies (Coq Theorem/Qed, Lean theorem, Agda prove) → property decl with `ensures proof obligation is discharged by X` clause citing peer properties; no separate proof-block surface at Nom source | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 428 | Tactic-level variable introductions (intros, assume, fix) → implicit via property's `generator` clause; authoring describes what the claim covers, not the step-by-step binding dance | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 429 | Induction tactics (induction n as [...]) → `ensures proof obligation is discharged by induction on X with peer property Y supplying the inductive step` clause; induction principle named in contract, not applied mechanically | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 430 | Equational-rewriting tactics (rewrite, apply, auto, simpl) → peer-property references in `ensures` clause; build-stage proof engine selects rewriting strategy; authoring level is declarative, not procedural | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 431 | Trivial-equality closers (reflexivity, rfl, auto) → build-stage proof-engine pass; authoring never invokes them explicitly | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 432 | Named inductive hypotheses (IHn') → absent at Nom source; induction-principle name (`induction on X`) supplies the hypothesis implicitly to the build-stage proof engine | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 433 | Peer-lemma dependencies (Coq prior-proven lemma citations) → `uses @Property matching "X"` typed-slot refs on property decl; build-stage proof engine sees full peer-property closure; reuses W41 + existing typed-slot resolver | authoring-guide rule | ✅ closed (doc 14 #86) |
+| 434 | Base-case / inductive-case proof splits → folded into one `ensures induction on X with Y supplying the inductive step` clause; case split is the induction principle's job, not the author's | authoring-guide rule | ✅ closed (doc 14 #86) |
 
-Totals by destination (after doc 14 #85 Erlang OTP supervisor tree translation — **forty-fourth 0-new-wedge translation in a row**; 8 authoring-guide closures; **fault-tolerance paradigm family now has 3 exemplars**: Elixir GenServer #27 + retry-policy W43 + Erlang OTP supervisor #85 — unifying insight: fault-tolerance is observable concept behavior under child-crash hypotheses, not a language feature):
+Totals by destination (after doc 14 #86 Coq proof-tactics translation — **forty-fifth 0-new-wedge translation in a row**; 8 authoring-guide closures; **formal-methods paradigm family now has 6 exemplars**: Hypothesis #33 + TLA+ #47 + PDDL #48 + Dafny #50 + Idris #73 + Coq #86 — unifying insight: Nom treats mechanized proofs as declarative contracts, not procedural scripts; author names the proof principle + peer lemmas, build-stage proof engine handles tactic application; ~80% of Coq authoring burden eliminated while preserving structural skeleton):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **377** (+8 from #85)
+- ✅ Closed: **385** (+8 from #86)
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 447 rows (+8). Closure rate 84.3% (377/447). **85 translations** in doc 14. Fifty-second consecutive minimal-wedge, **forty-fourth 0-new-wedge**. **Fault-tolerance family now 3 exemplars**. **Unifying insight**: fault-tolerance is observable concept behavior under child-crash hypotheses; `ensures` describes restart/shutdown/rate-limit behavior; `hazard` surfaces subtle cases (boot-timeout cascade, transient-vs-normal-exit confusion) that cause real outages.
+Backlog size: 455 rows (+8). Closure rate 84.6% (385/455). **86 translations** in doc 14. Fifty-third consecutive minimal-wedge, **forty-fifth 0-new-wedge**. **Formal-methods family now 6 exemplars**. **Unifying insight**: mechanized proofs as declarative contracts — author names induction principle + peer lemmas via @Property typed slots; build-stage proof engine handles step-by-step tactic application; removes procedural ritual while preserving structural skeleton.
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
