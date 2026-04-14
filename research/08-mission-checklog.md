@@ -41,8 +41,15 @@ anything load-bearing.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
   `nom grammar status` (shipped). Per-row `add-*` subcommands are
   queued under Phase C.
-- CLI: `nom grammar init` (creates the file + applies schema),
-  `nom grammar status` (counts rows per table; supports `--json`).
+- Phase E proofs — 5 of 7 shipped: P1 schema-completeness
+  (empty DB rejects every non-empty source at S2), P2 determinism
+  (100-run Debug-equality on curated inputs), P4 strictness property
+  (256 random bytes, zero panics, well-formed `NOMX-S<N>-<reason>`,
+  deterministic failure tuples), P6 no-foreign-names audit (whole-
+  word match over every text column after baseline import),
+  P7 no-Rust-bundled-data audit. P3 closure-against-archive and
+  P5 synonym round-trip (already covered by `synonym_round_trip.rs`)
+  remain queued.
 - Annotator-style staged pipeline (S1–S6) shipped.
 - Strictness lane: A1/A2/A3/A4/A6 closed.
 - Effect valence (boon / hazard) parsed and verified.
