@@ -407,18 +407,25 @@
 | 390 | Datalog point queries → peer point-query function decls consuming relation-building fn output, returning boolean or witness | authoring-guide rule | ✅ closed (doc 14 #80) |
 | 391 | Guaranteed termination (Datalog stratified / Idris total) → explicit `ensures terminates on every finite input`; build-stage picks evaluation strategy | authoring-guide rule | ✅ closed (doc 14 #80; reuses #73 Idris totality) |
 | 392 | Polynomial-time evaluation guarantee → `favor performance` + `ensures at-most polynomial-time in input size`; build-stage picks semi-naive evaluation | authoring-guide rule | ✅ closed (doc 14 #80) |
+| 393 | Host-language-embedded HDLs (Chisel/SpinalHDL/Bluespec/PyMTL) share #41 Verilog decomposition; host-metaprogramming is build-stage code-gen | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 394 | Parameterized-hardware modules → configuration data decl + function decls taking configuration as parameter (reuses #45 functor + #21 generics) | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 395 | Port-direction markers (Chisel `Input`/`Output`, Verilog `input`/`output`) → implicit from Nom signature: param-list = inputs, return-value = outputs | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 396 | Typed-length vectors (Chisel `Vec`, Verilog packed arrays) → `list of T` + length cross-referenced from configuration | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 397 | Chisel `Mux`/`MuxLookup` → `when X is Y, the value is A; otherwise the value is B` prose in `ensures` | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 398 | Chisel `when { ... }` synchronous update → `ensures the next state's FIELD changes exactly when CONDITION is true` in step function | authoring-guide rule | ✅ closed (doc 14 #81) |
+| 399 | Pointer-width calculations (`log2Ceil`, `ceil(log2(N))`) → conservatively-bounded range-typed natural; build-stage narrows | authoring-guide rule | ✅ closed (doc 14 #81) |
 
-Totals by destination (after doc 14 #80 Datalog logic-programming translation — **thirty-ninth 0-new-wedge translation in a row** + **80-translation milestone reached**; 6 authoring-guide closures; **logic-programming paradigm family fully covered**: Prolog + Datalog + Rego + SQL CTE):
+Totals by destination (after doc 14 #81 Chisel host-embedded-HDL translation — **fortieth 0-new-wedge translation in a row** + **40-consecutive-0-new-wedge milestone**; 7 authoring-guide closures; **hardware-description paradigm family fully covered across 3 exemplars**: traditional HDL (#41 Verilog) + assertions (#74 SVA) + host-embedded (#81 Chisel)):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **342**
+- ✅ Closed: **349**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 412 rows. Closure rate 83% (342/412). **80 translations** in doc 14 — **80-translation milestone**. Forty-seventh consecutive minimal-wedge, **thirty-ninth 0-new-wedge**. **Logic-programming paradigm family fully covered across 4 exemplars** (Prolog general + Datalog pure-Horn + Rego policy + SQL CTE relational-fixed-point).
+Backlog size: 419 rows. Closure rate 83% (349/419). **81 translations** in doc 14. Forty-eighth consecutive minimal-wedge, **fortieth 0-new-wedge — 40-consecutive streak milestone reached**. **Hardware-description paradigm family fully covered across 3 exemplars** (Verilog + SVA + Chisel).
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**

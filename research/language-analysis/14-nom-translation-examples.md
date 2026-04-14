@@ -6220,6 +6220,122 @@ Row additions: **0 new wedges** — Datalog's pure Horn clauses + EDB/IDB + recu
 
 ---
 
+## 81. Chisel — Scala-embedded hardware construction language
+
+```scala
+import chisel3._
+import chisel3.util._
+
+class FifoQueue(depth: Int, width: Int) extends Module {
+  val io = IO(new Bundle {
+    val enq_valid = Input(Bool())
+    val enq_data  = Input(UInt(width.W))
+    val enq_ready = Output(Bool())
+    val deq_valid = Output(Bool())
+    val deq_data  = Output(UInt(width.W))
+    val deq_ready = Input(Bool())
+  })
+
+  val mem      = Reg(Vec(depth, UInt(width.W)))
+  val head_ptr = RegInit(0.U(log2Ceil(depth).W))
+  val tail_ptr = RegInit(0.U(log2Ceil(depth).W))
+  val count    = RegInit(0.U(log2Ceil(depth + 1).W))
+
+  io.enq_ready := count < depth.U
+  io.deq_valid := count > 0.U
+  io.deq_data  := mem(head_ptr)
+
+  when (io.enq_valid && io.enq_ready) {
+    mem(tail_ptr) := io.enq_data
+    tail_ptr := Mux(tail_ptr === (depth - 1).U, 0.U, tail_ptr + 1.U)
+  }
+  when (io.deq_valid && io.deq_ready) {
+    head_ptr := Mux(head_ptr === (depth - 1).U, 0.U, head_ptr + 1.U)
+  }
+  count := count +
+    Mux(io.enq_valid && io.enq_ready, 1.U, 0.U) -
+    Mux(io.deq_valid && io.deq_ready, 1.U, 0.U)
+}
+```
+
+### `.nomx v1` translation
+
+```nomx
+define fifo_queue_module
+  that takes a depth (number of slots) and a width (bits per element), returns a FIFO-queue hardware module with handshake interfaces on both ends.
+the module carries an internal circular buffer of depth elements each of width bits, plus head and tail pointers and an occupancy counter.
+on a successful enqueue handshake, store the new element at the tail and advance the tail pointer modulo depth.
+on a successful dequeue handshake, advance the head pointer modulo depth.
+update the occupancy counter by +1 on successful enqueue and -1 on successful dequeue.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data FifoConfiguration is
+  intended to describe one FIFO-queue hardware module's compile-time-known shape parameters.
+  exposes depth as natural from 1 to 65536.
+  exposes width_bits as natural from 1 to 64.
+
+the data FifoHandshake is
+  intended to describe one side of the valid/ready handshake at either the enqueue or dequeue port of the FIFO.
+  exposes valid as boolean.
+  exposes ready as boolean.
+  exposes data as natural from 0 to 18446744073709551615.
+
+the data FifoInternalState is
+  intended to describe the storage and pointers of the FIFO module between clock edges.
+  exposes storage as list of natural from 0 to 18446744073709551615.
+  exposes head_index as natural from 0 to 65535.
+  exposes tail_index as natural from 0 to 65535.
+  exposes occupancy as natural from 0 to 65536.
+
+the function fifo_step is
+  intended to compute the FIFO's next internal state given the prior state, the current enqueue-handshake input, and the current dequeue-handshake input.
+  uses the @Data matching "FifoConfiguration" with at-least 0.95 confidence.
+  uses the @Data matching "FifoHandshake" with at-least 0.95 confidence.
+  uses the @Data matching "FifoInternalState" with at-least 0.95 confidence.
+  requires the prior occupancy is at-most the configured depth.
+  ensures the next state's storage at index tail_index equals the enqueue data exactly when the enqueue valid and ready are both true.
+  ensures the next state's tail_index advances by 1 modulo depth exactly when the enqueue valid and ready are both true.
+  ensures the next state's head_index advances by 1 modulo depth exactly when the dequeue valid and ready are both true.
+  ensures the next state's occupancy equals the prior occupancy plus (1 if enqueue succeeded else 0) minus (1 if dequeue succeeded else 0).
+  ensures the next state's occupancy remains in range 0 through depth inclusive.
+  favor correctness.
+  favor synthesizability.
+
+the function fifo_output is
+  intended to compute the FIFO's externally-visible handshake outputs from its current internal state and configuration.
+  uses the @Data matching "FifoConfiguration" with at-least 0.95 confidence.
+  uses the @Data matching "FifoInternalState" with at-least 0.95 confidence.
+  ensures the returned enqueue_ready is true exactly when the current occupancy is strictly less than depth.
+  ensures the returned dequeue_valid is true exactly when the current occupancy is strictly greater than zero.
+  ensures the returned dequeue_data equals the storage entry at head_index when dequeue_valid is true; the value is unspecified when dequeue_valid is false.
+  favor correctness.
+  favor synthesizability.
+
+the composition fifo_queue composes
+  fifo_output
+  then at every rising edge of CLOCK, fifo_step.
+```
+
+### Gaps surfaced
+
+1. **Scala-embedded HDL (metaprogramming Verilog)** — Chisel is a Scala library that emits Verilog. Nom rejects the Scala-host aspect entirely; the translation treats Chisel's output semantics (register+combinational logic + synchronous update) directly, using the same decomposition as #41 Verilog. Authoring-guide rule: **host-language-embedded HDLs (Chisel/SpinalHDL/Bluespec/PyMTL) → same decomposition as traditional HDLs (#41 Verilog): (state data decl, combinational-output function, clock-edge-triggered step function); the host-language metaprogramming layer is a build-stage code-generation concern**. Reuses #41 rule. No new wedge.
+2. **Parameterized module (`class FifoQueue(depth: Int, width: Int)`)** — Chisel's module-as-parameterized-Scala-class idiom. Nom's translation elevates depth/width to `exposes` fields on a FifoConfiguration data decl; the function decls take configuration as a parameter. Authoring-guide rule: **parameterized-hardware modules → configuration data decl + function decls that take configuration as a parameter; no first-class module-type at Nom source level (reuses #45 OCaml functor + #21 Java class generics rules)**. No new wedge.
+3. **`Input`/`Output` port direction (`Input(Bool())`)** — Chisel's direction markers. Nom's data decl `exposes` field per port direction is unmarked; direction is implicit from whether the port appears on the step function's parameter list (input) or return type (output). Authoring-guide rule: **port-direction markers (Chisel `Input`/`Output`, Verilog `input`/`output`, Bluespec `method`) → implicit from Nom function signature: parameter-list members are inputs, return-value members are outputs**. No new wedge.
+4. **`Reg`/`RegInit` flip-flop-backed state** — Chisel's way of declaring registers with initial values. Nom's FifoInternalState data decl + fifo_step transition function captures this. Authoring-guide rule: **register-backed state declarations → state data decl + transition function; initial-value semantics expressed via `ensures at cycle zero, the state equals the initial values`**. No new wedge; reuses #41 Verilog.
+5. **`Vec[depth]` typed-length vector** — Chisel's fixed-size array matching hardware RAM. Nom's `storage as list of … with length implicit in the FifoConfiguration.depth` captures the same semantic. Authoring-guide rule: **typed-length vectors (Chisel `Vec`, Verilog `logic [n-1:0][m-1:0]`, SystemVerilog packed arrays) → `list of T` on data decl + length cross-referenced from configuration**. No new wedge.
+6. **`Mux(cond, a, b)`** — Chisel's 2-to-1 combinational multiplexer. Nom's `when cond is true, the value is a; otherwise the value is b` prose is direct. Authoring-guide rule: **Chisel `Mux`/`Mux1H`/`MuxLookup` → `when X is Y, the value is A; otherwise … otherwise the value is B` prose in the `ensures` clause**. No new wedge.
+7. **Synchronous `when` blocks** — Chisel's conditional register update. Nom's `ensures the next state's X changes exactly when CONDITION is true` captures this synchronously. Authoring-guide rule: **Chisel `when { ... }` synchronous update → `ensures the next state's FIELD CHANGES exactly when CONDITION is true` in the step function's `ensures`**. No new wedge.
+8. **`log2Ceil(depth)` pointer-width calculation** — Chisel's compile-time width-calculation helper. Nom's `natural from 0 to 65535` (conservatively bounded) captures the run-time range; the build stage can narrow based on the actual depth parameter. Authoring-guide rule: **pointer-width calculations (`log2Ceil`, `ceil(log2(N))`) → conservatively-bounded range-typed natural; build-stage narrows based on the actual parameter value**. No new wedge.
+
+Row additions: **0 new wedges** — Chisel's host-embedded HDL model fully expresses via (configuration data decl + state data decl + combinational-output function + clock-edge-triggered step function + composition decl) — exactly the #41 Verilog decomposition with configuration-as-parameter. 7 authoring-guide closures: host-language-embedded HDLs share #41 decomposition (host-metaprogramming is build-stage), parameterized modules → configuration data decl + parameterized functions, port-direction markers implicit in Nom signature, register-backed state → state data decl + transition, typed-length vectors → `list of T` + length cross-ref, `Mux` → `when … otherwise …` prose, `when { ... }` synchronous update → `ensures CHANGES exactly when CONDITION` in step function, `log2Ceil` → conservatively-bounded range-typed natural.
+
+**Forty-eighth consecutive minimal-wedge translation + fortieth 0-new-wedge run.** Chisel — the leading modern HDL (used for SiFive RISC-V cores, UC Berkeley teaching, etc.) — decomposes cleanly into the same (state-data, combinational-output, clock-edge-step) primitives used for traditional Verilog (#41) and SVA (#74). The **hardware-description paradigm family is now fully covered across three exemplars** (traditional HDL + assertions + host-embedded HDL), all with zero grammar additions. The 40-consecutive-0-new-wedge milestone is reached.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
