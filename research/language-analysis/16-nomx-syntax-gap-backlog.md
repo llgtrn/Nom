@@ -433,18 +433,26 @@
 | 416 | Extensible effect-sum types → tagged-variant data decls; adding new effect variant is build-stage concern (reuses #22 + #55) | authoring-guide rule | ✅ closed (doc 14 #84) |
 | 417 | Effect-purity via handler substitution is default Nom stance: functions describe what they request, handlers describe what requests do | authoring-guide rule | ✅ closed (doc 14 #84) |
 | 418 | Unhandled-effect → `requires the caller provides a handler that resolves every emitted X_request` contract at function decl; build-stage enforces statically when possible | authoring-guide rule | ✅ closed (doc 14 #84) |
+| 419 | Behavioral-module declarations (`-behaviour(X)` in Erlang, Java interfaces, Rust traits) → structural requirements as `uses @Data matching "X"` + `uses @Function matching "Y"` typed slots on concept; callback protocol IS the typed-slot surface | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 420 | Boot-sequence coupling via exported callbacks (Erlang start_link/0, OCaml init) → `ensures at concept start, X` clauses describing first-activation behavior; no separate exported-function surface | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 421 | Callback-return-value configuration (Erlang init/1 returning `{SupFlags, ChildSpecs}`) → direct inline `uses @Data` typed slots in concept; configuration IS the uses-slot declaration | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 422 | Fault-isolation strategy enums (one_for_one / one_for_all / rest_for_one / simple_one_for_one) → closed data-decl variant + `ensures when X crashes, Y is restarted` clauses binding each strategy-value to its observable restart pattern | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 423 | Rolling-window rate-limit contracts (crash-budget, API-rate-limit, I/O-retry-cap) → `ensures at-most N events within any rolling T-second window` clause using W49 quantifiers; retroactive extension of W49 | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 424 | Per-child lifecycle-policy enums (permanent / transient / temporary) → closed data-decl variants + per-variant `ensures X uses restart_policy = Y: it is V` clauses; each variant binds to observable lifecycle rule (reuses #22 Kotlin-sealed) | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 425 | Bounded-cleanup timeouts (shutdown_ms, kill-after-grace-period) → `ensures on X shutdown, each Y is given at-most Z milliseconds before being forcibly terminated` using W49 at-most quantifier; bound is part of contract, not tuning knob | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 426 | Hierarchical-supervision trees (supervisor-of-supervisors) → nested `uses @Concept matching "X"` typed slots where each nested concept carries its own SupervisorPolicy; hierarchy is plain concept composition | authoring-guide rule | ✅ closed (doc 14 #85) |
 
-Totals by destination (after doc 14 #84 OCaml 5 algebraic-effects translation — **forty-third 0-new-wedge translation in a row**; 6 authoring-guide closures; **effect-handling paradigm family fully covered across 4 exemplars**: Haskell monads + F# computation expressions + Scheme call/cc + OCaml effects):
+Totals by destination (after doc 14 #85 Erlang OTP supervisor tree translation — **forty-fourth 0-new-wedge translation in a row**; 8 authoring-guide closures; **fault-tolerance paradigm family now has 3 exemplars**: Elixir GenServer #27 + retry-policy W43 + Erlang OTP supervisor #85 — unifying insight: fault-tolerance is observable concept behavior under child-crash hypotheses, not a language feature):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **369**
+- ✅ Closed: **377** (+8 from #85)
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 439 rows. Closure rate 84% (369/439). **84 translations** in doc 14. Fifty-first consecutive minimal-wedge, **forty-third 0-new-wedge**. **Effect-handling family fully covered across 4 exemplars**. **Unifying principle**: functions describe what they request; handlers describe what requests do.
+Backlog size: 447 rows (+8). Closure rate 84.3% (377/447). **85 translations** in doc 14. Fifty-second consecutive minimal-wedge, **forty-fourth 0-new-wedge**. **Fault-tolerance family now 3 exemplars**. **Unifying insight**: fault-tolerance is observable concept behavior under child-crash hypotheses; `ensures` describes restart/shutdown/rate-limit behavior; `hazard` surfaces subtle cases (boot-timeout cascade, transient-vs-normal-exit confusion) that cause real outages.
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
