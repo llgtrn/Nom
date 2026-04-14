@@ -303,18 +303,24 @@
 | 286 | LaTeX math-mode environments (`$...$`/`\[...\]`/`align`/`equation`) → prose context on screen decl's layout description | authoring-guide rule | ✅ closed (doc 14 #65) |
 | 287 | Build-time content macros (`\today`/`\pagenumber`/`\thepage`) → data-decl fields populated by build-stage render-time injection | authoring-guide rule | ✅ closed (doc 14 #65) |
 | 288 | `accessibility` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #65; accumulates to 9 seeds — approaching 10-seed formalization threshold) |
+| 289 | Multiple-dispatch → per-concrete-type named functions + dispatch function whose `ensures` enumerates each type's branch; no function-name overloading at Nom source | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 290 | Abstract-type hierarchies + subtyping (Julia `abstract type` + `<:`) → sum-type data decls with tagged variants (reuses #22 + #55) | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 291 | Parametric-type subtype bounds (`Vector{<:Shape}`) → `list of <tagged-union-data-decl>` | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 292 | Julia `sum(fn, xs)` higher-order → explicit prose `sum of every element's contribution` with per-variant `ensures`; function-as-first-arg elided | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 293 | Unicode identifiers (Julia `π`/`α`/`∑`) → English prose names; no non-ASCII at Nom source level (reinforces MEMORY.md English-vocabulary invariant) | authoring-guide rule | ✅ closed (doc 14 #66) |
+| 294 | Julia per-type method specialization → Nom Phase 12 closure-level specialization (reinforces existing principle) | authoring-guide rule | ✅ closed (doc 14 #66) |
 
-Totals by destination (after doc 14 #65 LaTeX typography translation — **twenty-fourth 0-new-wedge translation in a row**; 6 authoring-guide closures + accessibility seed; **`screen` kind now proven across 3 rendered-artifact domains**: interactive UI + internal diagrams + typeset documents):
+Totals by destination (after doc 14 #66 Julia multiple-dispatch translation — **twenty-fifth 0-new-wedge translation in a row**; 6 authoring-guide closures; **25-consecutive-0-new-wedge streak** spanning Dafny → WAT → R → OpenAPI → K8s → Elm → Rust-macros → jq → COBOL → PowerShell → Ansible → Fortran → GraphQL-sub → Redis → gRPC → LaTeX → Julia):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **238**
+- ✅ Closed: **244**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **9** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability + accessibility QualityNames) — **9/10 threshold for QualityName-registration formalization wedge**.
+- 🌱 Authoring-corpus seed: **9** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability + auditability + accessibility QualityNames) — **9/10 threshold**
 
-Backlog size: 304 rows. Closure rate 78% (238/304). **65 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + **typeset-document (LaTeX)**. Thirty-second consecutive minimal-wedge translation, twenty-fourth 0-new-wedge. **`screen` kind now proven across 3 rendered-artifact domains** (UI + diagrams + documents).
+Backlog size: 311 rows. Closure rate 78% (244/311). **66 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + pure-FRP + token-tree-macros + JSON-transformation-DSL + business-data-processing + object-pipeline-shell + idempotent-automation + scientific-computing + push-subscription + key-value-store + bidirectional-streaming-RPC + typeset-document + **multiple-dispatch-scientific (Julia)**. Thirty-third consecutive minimal-wedge translation, **twenty-fifth 0-new-wedge in a row** — unified primitive set is remarkably stable across 25 consecutive paradigm translations.
 
 ## Wedge master index (for cross-ref with doc 13)
 

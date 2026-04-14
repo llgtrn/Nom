@@ -4805,6 +4805,122 @@ Row additions: **0 new wedges** — LaTeX/typesetting fully expresses via `scree
 
 ---
 
+## 66. Julia — multiple-dispatch scientific language
+
+```julia
+abstract type Shape end
+
+struct Circle <: Shape
+    radius::Float64
+end
+
+struct Rectangle <: Shape
+    width::Float64
+    height::Float64
+end
+
+struct Triangle <: Shape
+    base::Float64
+    height::Float64
+end
+
+area(s::Circle)    = π * s.radius^2
+area(s::Rectangle) = s.width * s.height
+area(s::Triangle)  = 0.5 * s.base * s.height
+
+total_area(shapes::Vector{<:Shape}) = sum(area, shapes)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define area_of_shape
+  that takes a shape, returns its area.
+when the shape is a circle, the area is π times the radius squared.
+when the shape is a rectangle, the area is width times height.
+when the shape is a triangle, the area is half of base times height.
+
+define total_area
+  that takes a list of shapes, returns the sum of their individual areas.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data ShapeKind is
+  intended to enumerate the supported shape variants for area computation.
+  exposes circle at tag 0.
+  exposes rectangle at tag 1.
+  exposes triangle at tag 2.
+
+the data Circle is
+  intended to describe a circle by its radius, used for area and perimeter computations.
+  exposes radius as real from 0 to 1e12.
+
+the data Rectangle is
+  intended to describe an axis-aligned rectangle by its width and height.
+  exposes width as real from 0 to 1e12.
+  exposes height as real from 0 to 1e12.
+
+the data Triangle is
+  intended to describe a triangle by its base length and height; the area formula is agnostic to which edge is the base.
+  exposes base as real from 0 to 1e12.
+  exposes height as real from 0 to 1e12.
+
+the function area_of_circle is
+  intended to return the plane area of a circle with the given radius.
+  uses the @Data matching "Circle" with at-least 0.95 confidence.
+  requires radius is non-negative.
+  ensures the returned area equals pi times radius times radius.
+  ensures the returned area is non-negative.
+  favor numerical_stability.
+  favor correctness.
+
+the function area_of_rectangle is
+  intended to return the plane area of a rectangle with the given width and height.
+  uses the @Data matching "Rectangle" with at-least 0.95 confidence.
+  requires width is non-negative.
+  requires height is non-negative.
+  ensures the returned area equals width times height.
+  favor correctness.
+
+the function area_of_triangle is
+  intended to return the plane area of a triangle with the given base and height.
+  uses the @Data matching "Triangle" with at-least 0.95 confidence.
+  requires base is non-negative.
+  requires height is non-negative.
+  ensures the returned area equals one-half times base times height.
+  favor correctness.
+
+the function total_area is
+  intended to return the sum of areas of a mixed collection of shapes where each element's concrete shape kind determines which per-shape area function is applied.
+  uses the @Data matching "ShapeKind" with at-least 0.95 confidence.
+  uses the @Function matching "area_of_circle" with at-least 0.9 confidence.
+  uses the @Function matching "area_of_rectangle" with at-least 0.9 confidence.
+  uses the @Function matching "area_of_triangle" with at-least 0.9 confidence.
+  ensures for every circle in the input, its contribution equals area_of_circle applied to that circle.
+  ensures for every rectangle in the input, its contribution equals area_of_rectangle applied to that rectangle.
+  ensures for every triangle in the input, its contribution equals area_of_triangle applied to that triangle.
+  ensures the returned total equals the sum of every element's contribution.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Multiple-dispatch (`area(s::Circle)`, `area(s::Rectangle)`, `area(s::Triangle)`)** — Julia's defining feature: the same function name has different methods selected at call-site by argument types. Nom's translation uses **one named function per concrete shape** (`area_of_circle`, `area_of_rectangle`, `area_of_triangle`) + a **dispatch function** (`total_area`) that names each branch explicitly via `ensures for every X in the input, its contribution equals …`. Authoring-guide rule: **multiple-dispatch functions decompose to (one named function per concrete type) + a dispatch function whose `ensures` enumerates each type's branch; no function-name overloading at Nom source level**. Prevents the call-site-ambiguity class of bugs. No new wedge.
+2. **Abstract types (`abstract type Shape end`) and subtyping (`Circle <: Shape`)** — Julia's type hierarchy. Nom's `ShapeKind` tagged-union data decl captures the sum-type directly, same as #22 Kotlin sealed + #55 Elm Msg. Authoring-guide rule: **abstract-type hierarchies (Julia `abstract type` + `<:`) → sum-type data decls with tagged variants (matches #22 Kotlin sealed + #55 Elm Msg)**. No new wedge.
+3. **Parametric types with subtype bounds (`Vector{<:Shape}`)** — Julia's way of saying "a vector of anything-that-is-a-Shape". Nom's `list of ShapeKind` implicitly covers all variants via the tagged enumeration. Authoring-guide rule: **parametric-type subtype bounds (`Vector{<:Shape}`) → `list of <tagged-union-data-decl>`; the variants are the subtype closure**. No new wedge.
+4. **Higher-order functions (`sum(area, shapes)`)** — Julia's terse function-as-first-argument idiom. Nom's translation names the intermediate sum explicitly without an `area` function-value parameter; the dispatch is via the ShapeKind tag. Authoring-guide rule: **Julia `sum(fn, xs)` → explicit prose `sum of every element's contribution` with per-variant `ensures` clauses; function-as-first-argument elided**. No new wedge.
+5. **Unicode identifiers (`π`)** — Julia allows Unicode in identifiers. Nom's translation uses prose `pi times …`; Nom forbids non-ASCII identifiers (MEMORY.md English-vocabulary rule). Authoring-guide rule: **Julia Unicode identifiers (`π`, `α`, `∑`) decompose to English prose names (`pi`, `alpha`, `sum`); no non-ASCII at Nom source level**. Reinforces the English-only vocabulary invariant. No new wedge.
+6. **JIT compilation and specialization** — Julia's build-stage specialization of methods on concrete types matches Nom's Phase 12 specialization principle. Authoring-guide rule: **Julia's per-type method specialization maps to Nom's Phase 12 closure-level specialization — authors declare type-parameterized functions, the build stage specializes per concrete instantiation**. No new wedge; reinforces the existing Phase-12 principle.
+7. **Struct field types with explicit precision (`radius::Float64`)** — Julia's typed struct fields. Nom's `real from 0 to 1e12` captures both type and range — precision follows from the range. Authoring-guide rule: **Julia typed struct fields → `real from X to Y` / `integer from X to Y` / range-typed naturals**. Same rule as #41 Verilog bit-widths + #51 WAT typed locals + #58 COBOL fixed-point. No new wedge.
+
+Row additions: **0 new wedges** — Julia's multiple-dispatch + abstract types + parametric types + higher-order functions all decompose to (per-variant named functions + tagged-union data decls + dispatch function with per-branch `ensures`). 6 authoring-guide closures: multiple-dispatch → per-type named functions + enumerating dispatch, abstract-types/subtyping → sum-type data decls (reuses #22/#55), parametric subtype bounds → `list of <tagged-union>`, higher-order `sum(fn, xs)` → explicit prose with per-variant `ensures`, Unicode identifiers → English prose names, JIT specialization → Nom Phase 12 principle, typed struct fields → range-typed numerics (reuses #41/#51/#58).
+
+**Thirty-third consecutive minimal-wedge translation + twenty-fifth 0-new-wedge run.** Julia — among the most recent scientific-computing languages with a novel dispatch model — decomposes cleanly into Nom's primitives. The **multiple-dispatch → per-type-named-function + enumerating-dispatch-function** rule is a valuable new authoring pattern. **25 consecutive 0-new-wedge translations** spanning: Dafny → WAT → R → OpenAPI → K8s → Elm → Rust-macros → jq → COBOL → PowerShell → Ansible → Fortran → GraphQL-sub → Redis → gRPC → LaTeX → Julia. The unified primitive set is **remarkably stable across paradigms**: the last 25 consecutive translations have required **zero grammar additions**.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
