@@ -122,12 +122,59 @@ pub struct CompositionDecl {
     pub effects: Vec<EffectClause>,
 }
 
+/// Strict-typed view of an [`EntityRef`]'s kind position.
+///
+/// Closes the W4-A5 strictness wedge: rather than every downstream
+/// consumer (resolver, LSP, codegen) re-examining the
+/// `(kind: Option<String>, typed_slot: bool)` pair and inferring
+/// which surface form produced the ref, [`EntityRef::kind_slot`]
+/// returns one of three named cases up front. New code should branch
+/// on this enum; legacy code that still reads the raw fields keeps
+/// working unchanged.
+///
+/// The three cases mirror the surface forms defined on [`EntityRef`]:
+/// - [`Bare`](Self::Bare): `.nomx v1` reference like `the function
+///   login_user`. Carries the kind word verbatim.
+/// - [`TypedSlot`](Self::TypedSlot): `.nomx v2` typed-slot reference
+///   like `the @Function matching "..."`. Carries the kind word
+///   stripped of its `@` marker.
+/// - [`Untyped`](Self::Untyped): kind elided — e.g. a composition ref
+///   resolved purely by hash, or a `composes` ref where the kind is
+///   inferred from the source side.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum EntityKindSlot {
+    Bare(String),
+    TypedSlot(String),
+    Untyped,
+}
+
+impl EntityKindSlot {
+    /// Return the kind word, dropping the surface-form distinction.
+    /// Some consumers (closure walker, dictionary index) only care
+    /// "what kind to look up" and not which form produced it.
+    pub fn kind_word(&self) -> Option<&str> {
+        match self {
+            EntityKindSlot::Bare(k) | EntityKindSlot::TypedSlot(k) => Some(k.as_str()),
+            EntityKindSlot::Untyped => None,
+        }
+    }
+
+    /// True when the source used the `.nomx v2` typed-slot form.
+    pub fn is_typed_slot(&self) -> bool {
+        matches!(self, EntityKindSlot::TypedSlot(_))
+    }
+}
+
 /// Reference to an entity. After first build the resolver writes back `hash`.
 ///
 /// Two surface forms (doc 07 §3):
 ///   v1 (bare word): `the function login_user matching "..."` — `typed_slot = false`
 ///   v2 (typed slot): `the @Function matching "..."` — `typed_slot = true`, `word = ""`
 ///   v2 + threshold:  `the @Function matching "..." with at-least 0.85 confidence`
+///
+/// New consumers should call [`Self::kind_slot`] for a typed view of
+/// the kind position; the raw `kind: Option<String>` + `typed_slot:
+/// bool` fields stay public for legacy / serde compatibility.
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct EntityRef {
     pub kind: Option<String>,
@@ -145,6 +192,20 @@ pub struct EntityRef {
     /// Valid range: [0.0, 1.0]; enforced at parse time.
     #[serde(default)]
     pub confidence_threshold: Option<f64>,
+}
+
+impl EntityRef {
+    /// Strict-typed view of the kind position. Closes the W4-A5
+    /// wedge: callers branch on a named enum instead of repeating
+    /// the `(kind: Option<String>, typed_slot: bool)` interpretation
+    /// at every consumer.
+    pub fn kind_slot(&self) -> EntityKindSlot {
+        match (&self.kind, self.typed_slot) {
+            (Some(k), true) => EntityKindSlot::TypedSlot(k.clone()),
+            (Some(k), false) => EntityKindSlot::Bare(k.clone()),
+            (None, _) => EntityKindSlot::Untyped,
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -1387,6 +1448,51 @@ mod tests {
     use super::*;
 
     // ── pre-existing tests (unchanged) ───────────────────────────────────────
+
+    #[test]
+    fn entity_ref_kind_slot_returns_typed_slot_when_typed() {
+        let r = EntityRef {
+            kind: Some("function".into()),
+            word: String::new(),
+            hash: None,
+            matching: Some("compute".into()),
+            typed_slot: true,
+            confidence_threshold: None,
+        };
+        assert_eq!(r.kind_slot(), EntityKindSlot::TypedSlot("function".into()));
+        assert!(r.kind_slot().is_typed_slot());
+        assert_eq!(r.kind_slot().kind_word(), Some("function"));
+    }
+
+    #[test]
+    fn entity_ref_kind_slot_returns_bare_when_v1() {
+        let r = EntityRef {
+            kind: Some("function".into()),
+            word: "login_user".into(),
+            hash: None,
+            matching: None,
+            typed_slot: false,
+            confidence_threshold: None,
+        };
+        assert_eq!(r.kind_slot(), EntityKindSlot::Bare("function".into()));
+        assert!(!r.kind_slot().is_typed_slot());
+        assert_eq!(r.kind_slot().kind_word(), Some("function"));
+    }
+
+    #[test]
+    fn entity_ref_kind_slot_returns_untyped_when_kind_absent() {
+        let r = EntityRef {
+            kind: None,
+            word: "foo".into(),
+            hash: Some("abc".into()),
+            matching: None,
+            typed_slot: false,
+            confidence_threshold: None,
+        };
+        assert_eq!(r.kind_slot(), EntityKindSlot::Untyped);
+        assert!(!r.kind_slot().is_typed_slot());
+        assert_eq!(r.kind_slot().kind_word(), None);
+    }
 
     #[test]
     fn closed_kind_set_has_nine_members() {
