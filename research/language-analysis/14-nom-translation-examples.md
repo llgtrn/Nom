@@ -2836,6 +2836,100 @@ Row additions: **0 new wedges** — stack-based concatenative programming reject
 
 ---
 
+## 45. OCaml functor — parameterized module with signature constraint
+
+```ocaml
+module type ORDERED = sig
+  type t
+  val compare : t -> t -> int
+end
+
+module MakeSet (M : ORDERED) = struct
+  type elt = M.t
+  type t = elt list
+
+  let empty : t = []
+
+  let rec mem x = function
+    | [] -> false
+    | y :: ys -> if M.compare x y = 0 then true else mem x ys
+
+  let add x s = if mem x s then s else x :: s
+end
+
+module IntSet = MakeSet (struct
+  type t = int
+  let compare = Int.compare
+end)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define make_set_module
+  that takes an ordered element type, returns a set module for that element type.
+the set module provides empty, mem, and add operations, all parameterized over the element type's comparison.
+
+define int_set
+  that takes no input, returns a set module for integers.
+the int_set is make_set_module applied to the integer ordered-element spec.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data OrderedElementSpec is
+  intended to describe a type equipped with a total-order comparison function, parameterizing a set module.
+  exposes element_type as identifier.
+  exposes compare as reference to function taking (element, element) returning integer.
+
+the module make_set is
+  intended to construct a set-abstraction over any element type equipped with a total-order comparison.
+  uses the @Data matching "OrderedElementSpec" with at-least 0.95 confidence.
+  composes set_empty then set_mem then set_add.
+
+the function set_empty is
+  intended to return the empty set for the given element type.
+  uses the @Data matching "OrderedElementSpec" with at-least 0.95 confidence.
+  ensures the returned set contains zero elements.
+
+the function set_mem is
+  intended to return true exactly when a candidate element equals (under the spec's compare) an element already in the set.
+  uses the @Data matching "OrderedElementSpec" with at-least 0.95 confidence.
+  ensures the result is true exactly when some existing element's compare with the candidate returns zero.
+  favor correctness.
+
+the function set_add is
+  intended to return a set containing every element of the input set plus the new element, with duplicates collapsed under the spec's compare.
+  uses the @Data matching "OrderedElementSpec" with at-least 0.95 confidence.
+  uses the @Function matching "set_mem" with at-least 0.95 confidence.
+  ensures the returned set contains every element of the input set.
+  ensures the returned set contains the new element.
+  ensures the returned set has the same size as the input when the new element was already present, and one larger otherwise.
+  favor correctness.
+
+the module int_set is
+  intended to specialize make_set to integers using the standard integer comparison.
+  uses the @Module matching "make_set" with at-least 0.95 confidence.
+  uses the @Data matching "OrderedElementSpec" with at-least 0.95 confidence.
+```
+
+### Gaps surfaced
+
+1. **Module signatures (`module type ORDERED`)** — OCaml's way of specifying a module's interface abstractly before any concrete module satisfies it. Nom's **data decl** carries this role directly: `OrderedElementSpec` is a data type whose fields enumerate the required operations. Authoring-guide rule: **module signatures decompose to a data decl whose fields hold `reference to function` entries for each required operation**. No new wedge; the `reference to function` shape (#39 SwiftUI) already covers this.
+2. **Functor application (`MakeSet (IntOrd)`)** — OCaml's way of instantiating a parameterized module. Nom's translation is a peer `module` decl that `uses @Module matching "make_set" + uses @Data matching "OrderedElementSpec"`. The functor becomes a composition decl; the instance is a concrete reference to both pieces. Authoring-guide rule: **functor applications decompose to peer module decls whose `uses` clauses reference the abstract functor and its signature witness**. No new wedge.
+3. **Abstract types inside modules (`type elt = M.t`)** — OCaml's way of re-exposing the parameter's abstract type through the functor. Nom's translation treats element types as prose identifiers inside the data decl (`element_type as identifier`). Authoring-guide rule: **abstract type parameters of functors lift to `identifier`-typed fields on the signature's data decl**. No new wedge.
+4. **Type-level constraints (`M : ORDERED`)** — the signature-matching requirement. Nom's `uses @Data matching "OrderedElementSpec"` is the direct analogue. Authoring-guide rule: **signature constraints on functor parameters are expressed via `uses @Data` typed-slot matches against the signature's data decl**. No new wedge.
+5. **Nested modules** — OCaml allows modules inside modules. Nom maintains flat-namespace preference: nested modules lift to peer top-level module decls (#30 Protobuf pattern, #34 Terraform pattern). No new wedge.
+6. **`Int.compare` from the standard library** — standard-library typeclasses. Nom's feature-stack word discipline (`compare_int_total_order` or similar) resolves to the standard-library's comparison entry. Authoring-guide rule: **standard-library comparison functions resolve via the typed-slot resolver (`@Function matching "integer total order"`) against the corpus**. No new wedge; already how Nom works.
+7. **Higher-kinded types (`'a Set.t`, parameterized container types)** — OCaml's way of talking about set-of-T for any T. Nom expresses this implicitly: each concrete module instance (`int_set`, `string_set`) gets its own module decl; authors don't need to talk about "set-of-T generically" because the typed-slot resolver handles instantiation. Authoring-guide rule: **higher-kinded types are a compile-time detail; authors write concrete module instances; the resolver elides repetition via typed-slot matching**. Matches the Phase 12 specialization discipline.
+
+Row additions: **0 new wedges** — parameterized module systems (ML functors, Rust generics, C++ templates, Scala higher-kinded types) all decompose to `module` decls + `data` decls holding `reference to function` fields + `uses @Module`/`uses @Data` clauses. 6 authoring-guide closures (module signatures = data decl with `reference to function` fields, functor applications = peer module decls with `uses` references, abstract types = identifier fields, signature constraints = `uses @Data` typed-slot, nested modules lift to peer top-level, higher-kinded types are compile-time / authors write concrete instances).
+
+**Twelfth consecutive minimal-wedge translation + sixth 0-new-wedge run.** OCaml functors — one of the most powerful abstraction mechanisms in any type system — decompose cleanly into Nom's existing primitives. This **closes the major abstraction-paradigm quadrant**: macros (#29), generics (#21 class), typeclasses (#25), and functors (#45) all translate to Nom without a new grammar wedge. The typed-slot resolver + `reference to function` in data decls + composition decls is the **unified abstraction-machinery**.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

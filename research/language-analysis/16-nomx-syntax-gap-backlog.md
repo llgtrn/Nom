@@ -161,18 +161,24 @@
 | 144 | Concatenative composition decomposes to named-intermediate prose expressions (same rule as doc 17 §I8 pipelines) | authoring-guide rule | ✅ closed (doc 14 #44) |
 | 145 | No author-time `IMMEDIATE`/compile-time words in Nom; code-gen belongs in build-stage passes, never in source surface | authoring-guide rule | ✅ closed (doc 14 #44; matches #29 Lisp-macro rejection) |
 | 146 | Forth `IF/THEN/ELSE` → `when … otherwise …` with named values | authoring-guide rule | ✅ closed (doc 14 #44) |
+| 147 | Module signatures decompose to data decl with `reference to function` fields | authoring-guide rule | ✅ closed (doc 14 #45) |
+| 148 | Functor applications decompose to peer module decls with `uses` clauses referencing abstract functor and signature witness | authoring-guide rule | ✅ closed (doc 14 #45) |
+| 149 | Abstract type parameters of functors lift to `identifier`-typed fields on the signature's data decl | authoring-guide rule | ✅ closed (doc 14 #45) |
+| 150 | Signature constraints on functor parameters = `uses @Data` typed-slot matches against signature data decl | authoring-guide rule | ✅ closed (doc 14 #45) |
+| 151 | Nested modules lift to peer top-level module decls (flat-namespace preference) | authoring-guide rule | ✅ closed (doc 14 #45; same pattern as #30/#34) |
+| 152 | Higher-kinded types are compile-time; authors write concrete module instances; resolver elides repetition via typed-slot matching | authoring-guide rule | ✅ closed (doc 14 #45; matches Phase 12 specialization) |
 
-Totals by destination (after doc 14 #44 Forth stack-machine translation — **fifth 0-new-wedge translation**; 5 authoring-guide closures; verbose-but-explicit decomposition for all stack-implicit I/O):
+Totals by destination (after doc 14 #45 OCaml functor translation — **sixth 0-new-wedge translation**; 6 authoring-guide closures; closes the major abstraction-paradigm quadrant: macros + generics + typeclasses + functors all translate without a new grammar wedge):
 
 - ⏳ Wedge queued: **41** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **100**
+- ✅ Closed: **106**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
 
-Backlog size: 151 rows. Closure rate 66% (100/151). **44 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + **stack-based-concatenative (Forth)**. **Backlog crosses 100 closures (100/151 = 66%).** Eleventh consecutive minimal-wedge translation, fifth 0-new-wedge.
+Backlog size: 158 rows. Closure rate 67% (106/158). **45 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + **parameterized-modules (ML functors; generalizes to Rust generics / C++ templates / Scala HKT)**. Twelfth consecutive minimal-wedge translation, sixth 0-new-wedge. **Abstraction-paradigm quadrant fully closed: macros + generics + typeclasses + functors.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
