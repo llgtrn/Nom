@@ -425,8 +425,13 @@ mod lex {
                     "hazard"   => Tok::Hazard,    // canonical negative
                     "bane"     => Tok::Hazard,    // English synonym
                     // ── Kind nouns (English) ─────────────────────────────────
+                    // Must stay in sync with KINDS const at crate root and with
+                    // baseline.sql's `kinds` table. The P7 no-Rust-bundled-data
+                    // rule forbids grammar DATA in Rust but ALLOWS the closed
+                    // lexer token set since it's a lexical recognition layer.
                     "function" | "module" | "concept" | "screen"
-                    | "data"   | "event"  | "media"   => Tok::Kind(word.to_string()),
+                    | "data"   | "event"  | "media"
+                    | "property" | "scenario" => Tok::Kind(word.to_string()),
                     _             => Tok::Word(word.to_string()),
                 };
                 return Some(Spanned { tok, pos: start });
