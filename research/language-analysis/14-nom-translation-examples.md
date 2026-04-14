@@ -3106,6 +3106,105 @@ Row additions: **0 new wedges** — temporal-logic model-checking specifications
 
 ---
 
+## 48. PDDL — planning domain/problem specification
+
+```pddl
+(define (domain blocks-world)
+  (:requirements :strips :typing)
+  (:types block)
+  (:predicates
+    (on ?x - block ?y - block)
+    (clear ?x - block)
+    (on-table ?x - block)
+    (holding ?x - block)
+    (hand-empty))
+  (:action pick-up
+    :parameters (?x - block)
+    :precondition (and (clear ?x) (on-table ?x) (hand-empty))
+    :effect (and (holding ?x) (not (clear ?x)) (not (on-table ?x)) (not (hand-empty))))
+  (:action put-down
+    :parameters (?x - block)
+    :precondition (holding ?x)
+    :effect (and (on-table ?x) (clear ?x) (hand-empty) (not (holding ?x)))))
+
+(define (problem single-stack)
+  (:domain blocks-world)
+  (:objects a b c - block)
+  (:init (on-table a) (on-table b) (on-table c) (clear a) (clear b) (clear c) (hand-empty))
+  (:goal (and (on a b) (on b c) (on-table c))))
+```
+
+### `.nomx v1` translation
+
+```nomx
+define blocks_world_domain
+  that takes no input, returns a planning domain.
+the domain has one type, "block", and five predicates: on, clear, on_table, holding, and hand_empty.
+the action pick_up requires (clear x and on_table x and hand_empty) and produces (holding x and not clear x and not on_table x and not hand_empty).
+the action put_down requires (holding x) and produces (on_table x and clear x and hand_empty and not holding x).
+
+define single_stack_problem
+  that takes no input, returns a planning problem in the blocks_world domain.
+there are three blocks a, b, c; all on the table, all clear, hand is empty.
+the goal is: a on b, b on c, and c on the table.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data BlocksWorldState is
+  intended to describe a configuration of labeled blocks and a manipulator hand in the blocks-world planning domain.
+  exposes blocks as list of identifier.
+  exposes on_of as list of (block, block) pair meaning first block is directly on second.
+  exposes on_table as list of identifier.
+  exposes clear as list of identifier.
+  exposes holding as perhaps identifier.
+
+the function pick_up is
+  intended to transition a BlocksWorldState by picking up a single block x, removing it from the table and placing it in the (previously-empty) hand.
+  uses the @Data matching "BlocksWorldState" with at-least 0.95 confidence.
+  requires x is in clear.
+  requires x is in on_table.
+  requires holding is nothing.
+  ensures the returned state has holding equal to x.
+  ensures the returned state has x removed from clear and from on_table.
+  favor correctness.
+
+the function put_down is
+  intended to transition a BlocksWorldState by placing the currently-held block on the table.
+  uses the @Data matching "BlocksWorldState" with at-least 0.95 confidence.
+  requires holding is some block x.
+  ensures the returned state has x in on_table and in clear.
+  ensures the returned state has holding equal to nothing.
+  favor correctness.
+
+the property single_stack_plan_reachable is
+  intended to assert that from an initial state of three blocks (a, b, c) all on the table with the hand empty, some sequence of pick_up / put_down actions produces a state where a is on b, b is on c, and c is on the table.
+  uses the @Data matching "BlocksWorldState" with at-least 0.95 confidence.
+  uses the @Function matching "pick_up" with at-least 0.95 confidence.
+  uses the @Function matching "put_down" with at-least 0.95 confidence.
+  checks some finite sequence of actions from the initial state reaches a goal state where on_of contains (a, b) and (b, c) and on_table contains c.
+  covers plans with at-most 20 actions by default.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **Typed parameters (`?x - block`)** — PDDL's way of restricting a variable to a specific type. Nom's `requires x is in clear` + `BlocksWorldState.blocks as list of identifier` already carries the type constraint implicitly. Authoring-guide rule: **PDDL typed parameters decompose to `requires x is in <typed-list>` clauses on the action function**. No new wedge.
+2. **Predicates as relation constants** — PDDL's `(:predicates (on ?x ?y) ...)` declares named relations that the state satisfies/violates. Nom's translation exposes each predicate as a list field on the state data decl (`on_of as list of (block, block) pair`, `clear as list of identifier`, `on_table as list of identifier`). Authoring-guide rule: **PDDL predicates decompose to list-typed fields on the state data decl; each list holds the tuples for which the predicate is true**. No new wedge.
+3. **Action definition (`:action name :parameters :precondition :effect`)** — three-part action shape. Nom's function decl plus `requires` (precondition) plus `ensures` (effect) carries the same three parts. Authoring-guide rule: **PDDL actions decompose to plain function decls; `:precondition` becomes `requires`, `:effect` becomes `ensures`**. No new wedge — the (state-data, transition-function) pattern handles it, same as the 5 domains already using it (#32, #38, #39, #41, #47).
+4. **Negative preconditions (`(not (holding x))`)** — absence constraints. Nom's `requires holding is nothing` / `x is not in on_table` is prose-direct. Authoring-guide rule: **PDDL negation `(not P)` → prose `is not in …` / `is nothing` in requires clauses**. No new wedge.
+5. **Problem instances (`(:init ...) (:goal ...)`)** — initial-state + goal-state pair. Nom's property decl (`single_stack_plan_reachable`) encodes both: `from an initial state of … reaches a goal state where …`. The property becomes a reachability claim over the domain's action functions. Authoring-guide rule: **PDDL problem instances decompose to property decls that quantify existentially over action sequences**. Same shape as TLA+ liveness (#47).
+6. **`:requirements :strips :typing`** — PDDL feature flags declaring which language extensions the spec uses. Nom has no feature-flag surface; all translations use the same single grammar. Authoring-guide rule: **PDDL `:requirements` are a no-op in Nom — the uniform grammar covers STRIPS, ADL, fluents, temporal-actions, etc. without per-feature opt-in**. Simpler by construction.
+7. **Planner choice (Fast-Downward, FF, LAMA, ENHSP)** — same build-time tool-choice pattern as TLA+ model-checkers (#47). No new wedge.
+8. **Cost-optimal planning / metric-aware objectives** — PDDL 2.1+ supports numerical action costs. Nom's `favor minimum_cost` QualityName would be the analogue. Authoring-corpus seed: **`minimum_cost` QualityName** (for planning, path-finding, scheduling). Accumulates with the 4 existing seeds (forward_compatibility, numerical_stability, gas_efficiency, synthesizability) → 5.
+
+Row additions: **0 new wedges** — PDDL's action-and-predicate planning surface fully expresses via the existing (state-data, transition-function) decomposition + property decl for reachability claims. 6 authoring-guide closures: typed parameters via `requires x is in list`, predicates as list-typed data fields, actions as function decls with requires/ensures, negation as prose `is not in …`, problem instances as existential property decls, `:requirements` is a no-op, planner choice is build-time. 1 QualityName seed: **minimum_cost**.
+
+**Fifteenth consecutive minimal-wedge translation + eighth 0-new-wedge run.** PDDL — the foundational language for AI planning — decomposes cleanly into the same (state-data, transition-function, composition, property) primitives used across ~15 traditionally-separate paradigms. The **unified decomposition pattern now covers six domains** (state-machines + reactive-UIs + smart-contracts + hardware-RTL + test-scenarios + AI-planning), with property decls carrying reachability claims for both model-checking (TLA+) and planning (PDDL).
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

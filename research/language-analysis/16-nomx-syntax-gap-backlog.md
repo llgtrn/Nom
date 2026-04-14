@@ -181,18 +181,25 @@
 | 164 | Model-check depth bounds use existing `covers …` clause on the property (same as Hypothesis #33) | authoring-guide rule | ✅ closed (doc 14 #47) |
 | 165 | Kind-of-claim (invariant/safety/liveness) stated in `intended to` + `for every`/`some` quantifier — no separate keyword | authoring-guide rule | ✅ closed (doc 14 #47; keeps property decl surface uniform) |
 | 166 | Formal-methods tool choice (TLC/Apalache/Coq/Lean/Alloy) is build-stage specialization; source property decl is tool-agnostic | authoring-guide rule | ✅ closed (doc 14 #47) |
+| 167 | PDDL typed parameters (`?x - block`) → `requires x is in <typed-list>` clauses on the action function | authoring-guide rule | ✅ closed (doc 14 #48) |
+| 168 | PDDL predicates decompose to list-typed fields on state data decl; each list holds tuples for which predicate is true | authoring-guide rule | ✅ closed (doc 14 #48) |
+| 169 | PDDL actions (`:action :parameters :precondition :effect`) → function decl + `requires` + `ensures` | authoring-guide rule | ✅ closed (doc 14 #48; same state-data/transition-fn pattern as #32/#38/#39/#41/#47) |
+| 170 | PDDL negation `(not P)` → prose `is not in …` / `is nothing` in `requires` clauses | authoring-guide rule | ✅ closed (doc 14 #48) |
+| 171 | PDDL problem instances `(:init … :goal …)` → property decls quantifying existentially over action sequences | authoring-guide rule | ✅ closed (doc 14 #48; same shape as TLA+ liveness) |
+| 172 | PDDL `:requirements` feature-flags are no-op in Nom — uniform grammar covers STRIPS/ADL/fluents without per-feature opt-in | authoring-guide rule | ✅ closed (doc 14 #48) |
+| 173 | `minimum_cost` QualityName registration (for planning, path-finding, scheduling) | authoring-corpus seed | ⏳ queued (doc 14 #48; accumulates to 5 seeds) |
 
-Totals by destination (after doc 14 #47 TLA+ temporal-logic translation — **seventh 0-new-wedge translation**; 7 authoring-guide closures; validates `property` kind (W41) as universal claim surface for both generative testing AND temporal-logic model-checking):
+Totals by destination (after doc 14 #48 PDDL AI-planning translation — **eighth 0-new-wedge translation**; 6 authoring-guide closures + minimum_cost seed; unified (state-data, transition-fn, composition, property) decomposition now covers **6 traditionally-separate domains**):
 
 - ⏳ Wedge queued: **42** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **119**
+- ✅ Closed: **125**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
-- 🌱 Authoring-corpus seed: **4** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability QualityNames)
+- 🌱 Authoring-corpus seed: **5** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost QualityNames)
 
-Backlog size: 173 rows. Closure rate 69% (119/173). **47 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + **temporal-logic-model-checking (TLA+)**. Fourteenth consecutive minimal-wedge translation, seventh 0-new-wedge. **`property` kind now validated as the universal claim surface for generative testing + model-checking.**
+Backlog size: 180 rows. Closure rate 69% (125/180). **48 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + **AI-planning (PDDL)**. Fifteenth consecutive minimal-wedge translation, eighth 0-new-wedge. **Unified decomposition pattern now proven across 6 traditionally-separate domains.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
