@@ -24,11 +24,25 @@ archived research must appear here; none may be silently dropped.
 
 ## In-flight wedges
 
-- **Grammar-registry row-level CLI** — surface for the user to populate
-  grammar.sqlite tables directly. Targets: `nom grammar add-keyword`,
-  `nom grammar add-kind`, `nom grammar add-clause-shape`,
-  `nom grammar add-quality`, `nom grammar add-pattern`, plus
-  `nom grammar import <sql-file>` for batch SQL. None shipped yet.
+- **Grammar-registry row-level CLI** — shipped. All six `nom grammar
+  add-*` subcommands + `nom grammar import <sql-file>` + `nom grammar
+  init` + `nom grammar status` are in place. Every grammar.sqlite
+  table the user populates (keywords, keyword_synonyms, kinds,
+  clause_shapes, quality_names, patterns) has a matching add-*
+  subcommand using INSERT OR IGNORE for idempotency. Canonical
+  baseline shipped at `nom-compiler/crates/nom-grammar/data/baseline.sql`
+  (9 kinds + 20 quality_names + 43 keywords + 43 clause_shapes).
+- **Phase E proof tests** — 6 of 7 shipped (P1 schema-completeness,
+  P2 determinism, P3 closure-against-archive, P4 strictness property,
+  P6 no-foreign-names audit, P7 no-Rust-bundled-data audit).
+  P5 synonym round-trip already covered by `synonym_round_trip.rs`.
+- **Corpus closure dashboard** — 68/88 v2 blocks from archived doc 14
+  parse end-to-end (77%). Three parser-side fixes drove the progression
+  0 → 42 → 60 → 68: baseline quality_names 10 → 20, KINDS const 7 → 9,
+  S5 hazard scanner filler-tolerant. Remaining 20 failures are
+  legitimate grammar gaps (instance binding, `proof` / `composition`
+  as candidate 10th kinds, multi-line contract ambiguity) tracked as
+  future wedges, not parser bugs.
 - **Dict-split S3b–S8** — port the remaining ~35 nom-dict functions
   to free functions on `&Dict`; delete the legacy `NomDict` struct, the
   legacy `entries` table, the legacy `concepts` table, and the
