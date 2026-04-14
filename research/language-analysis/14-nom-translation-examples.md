@@ -5861,6 +5861,88 @@ Row additions: **0 new wedges** — F# computation expressions + Result + match-
 
 ---
 
+## 77. Scheme with call/cc — first-class continuations
+
+```scheme
+(define (find-first-even lst)
+  (call/cc
+    (lambda (return)
+      (for-each
+        (lambda (x)
+          (when (even? x) (return x)))
+        lst)
+      #f)))
+
+(define (generator-from-list lst)
+  (define saved-k #f)
+  (define (next)
+    (call/cc
+      (lambda (k)
+        (set! saved-k k)
+        (if (null? lst)
+            (k 'done)
+            (let ((head (car lst)))
+              (set! lst (cdr lst))
+              (k head))))))
+  next)
+```
+
+### `.nomx v1` translation
+
+```nomx
+define find_first_even
+  that takes a list of integers, returns the first even number or nothing when none exist.
+scan the list; on encountering the first even integer, return it immediately.
+if the scan completes without finding an even integer, return nothing.
+
+define list_generator
+  that takes a list, returns a generator that produces one element per invocation and signals completion when exhausted.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data GeneratorOutcome is
+  intended to enumerate the two possible outputs of a list-generator invocation: either the next value or a completion marker.
+  exposes next_value at tag 0.
+  exposes done at tag 1.
+
+the function find_first_even is
+  intended to return the first even integer in a list, or nothing if the list contains no even integers.
+  requires every list element is an integer.
+  ensures when some element is even, the returned value is some integer equal to the smallest-indexed even element.
+  ensures when no element is even, the returned value is nothing.
+  ensures the scan terminates early at the first even element — no list tail is examined after a hit.
+  favor performance.
+  favor correctness.
+
+the function list_generator is
+  intended to return a stateful generator function that yields one list element per invocation, returning GeneratorOutcome.done after the list is exhausted; the returned generator retains its position across calls.
+  uses the @Data matching "GeneratorOutcome" with at-least 0.95 confidence.
+  requires the input list has finite length.
+  ensures the returned generator, on its Nth invocation where N is at-most list length, yields GeneratorOutcome.next_value carrying the Nth list element.
+  ensures the returned generator, on any invocation after the list is exhausted, yields GeneratorOutcome.done.
+  ensures the generator's position is preserved across invocations (stateful behavior).
+  hazard the generator encapsulates mutable position state; concurrent invocations require caller-provided synchronization.
+  favor correctness.
+```
+
+### Gaps surfaced
+
+1. **`call/cc` (call-with-current-continuation)** — Scheme's most distinctive feature: exposing the rest-of-computation as a first-class value. Nom rejects first-class continuations — they are a form of "non-local control flow that the reader cannot predict from the prose". Authoring-guide rule: **Scheme `call/cc` patterns decompose to explicit named control-flow primitives: early-return (`ensures X terminates early at first hit`), generator (stateful function + GeneratorOutcome data decl), exception (tagged-variant error decl + short-circuit `ensures`), or coroutine (stateful function pair). No first-class continuation value at Nom source level**. The four most-common `call/cc` use-cases (early return, generator, exception, coroutine) each have a direct Nom decomposition. No new wedge.
+2. **Early-return via `call/cc`** — the simplest `call/cc` pattern, escaping a loop. Nom's `ensures the scan terminates early at the first even element — no list tail is examined after a hit` directly encodes the early-return contract. Authoring-guide rule: **early-return `call/cc` idiom → `ensures … terminates early at first matching X; no subsequent Y is examined` contract clause**. No new wedge.
+3. **Generator via saved continuation** — reifying a continuation to resume later. Nom's translation uses a stateful function (with an explicit `hazard` about concurrent invocation). Authoring-guide rule: **generator via saved continuation → stateful function + GeneratorOutcome tagged-variant data decl + explicit `hazard` on concurrent use**. No new wedge; same shape as Python async-iterators + #27 Elixir GenServer.
+4. **`set!` mutation on closed-over variable** — Scheme's imperative backdoor. Nom rejects mutation; the generator's position is described as a behavior contract (`the generator's position is preserved across invocations`) rather than as a mutable variable. Authoring-guide rule: **Scheme `set!` on closed variables → stateful-function `ensures the state is preserved across invocations` + `hazard` on concurrent access**. No new wedge; reinforces #55 Elm / #50 Dafny / #69 Smalltalk rules.
+5. **`lambda` anonymous functions** — Scheme's core combinator. Nom's named-function-only discipline + doc 19 D2 closure-lifting captures this. Authoring-guide rule: **Scheme `lambda` expressions → named function decls or closure-lifted per doc 19 D2; no inline anonymous functions at Nom source level**. No new wedge.
+6. **Tail-call optimization guarantee** — Scheme standards require TCO. Nom's build stage handles TCO as a per-function compiler concern. Authoring-guide rule: **tail-call optimization is build-stage responsibility; author may declare intent via `ensures constant stack usage regardless of input size` when the guarantee is load-bearing**. No new wedge.
+7. **Dynamic dispatch via `dynamic-wind`** — Scheme's try/finally analogue built on continuations. Nom's translation uses explicit `hazard` + `ensures cleanup ran even when an early-return occurred`. Authoring-guide rule: **`dynamic-wind` / try-finally semantics → `ensures cleanup ran under all paths` contract + cleanup in a peer function**. No new wedge.
+
+Row additions: **0 new wedges** — Scheme `call/cc` + generators + mutation + tail-calls all decompose to (stateful function decls + GeneratorOutcome tagged-variant + `ensures early-termination` + closure-lifting per D2 + build-stage TCO). 6 authoring-guide closures: `call/cc` decomposes to 4 named patterns (early-return, generator, exception, coroutine); early-return → `ensures terminates early`; generator via saved continuation → stateful function + tagged-variant outcome + `hazard` on concurrent use; `set!` on closed variables → stateful-function `ensures state preserved` + `hazard` on concurrent access; `lambda` → named function decls (reuses D2); TCO → build-stage responsibility; `dynamic-wind` → `ensures cleanup ran under all paths`.
+
+**Forty-fourth consecutive minimal-wedge translation + thirty-sixth 0-new-wedge run.** Scheme with `call/cc` — the language that most deeply exposes control flow as data — decomposes cleanly into Nom's primitives despite the translation deliberately rejecting first-class continuations. The key move: **`call/cc` is decomposed into four named patterns at authoring time** (early-return / generator / exception / coroutine), each with its own clear Nom shape. This is consistent with the broader Nom philosophy: **non-local control flow that the reader cannot predict from the prose is rejected** — every control path must be visible in the function's `ensures` clauses.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

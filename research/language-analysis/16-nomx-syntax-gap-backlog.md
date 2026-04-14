@@ -381,18 +381,24 @@
 | 364 | F# `match`/`with` on discriminated unions → `when X is Variant1 … when X is Variant2 … otherwise` prose + W40 exhaustiveness | authoring-guide rule | ✅ closed (doc 14 #76) |
 | 365 | Runtime interop (`Async.RunSynchronously`, JS top-level `await`, Python `asyncio.run`) is build-stage runtime-entry-point concern | authoring-guide rule | ✅ closed (doc 14 #76) |
 | 366 | Custom workflow-builders (F# `XxxBuilder`, Haskell `MonadTrans`) → build-stage lowerings; authoring surface is `ensures` contract only | authoring-guide rule | ✅ closed (doc 14 #76) |
+| 367 | Scheme `call/cc` decomposes to 4 named patterns at authoring time: early-return / generator / exception / coroutine; no first-class continuation value at Nom source | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 368 | Early-return `call/cc` idiom → `ensures … terminates early at first matching X; no subsequent Y is examined` contract clause | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 369 | Generator via saved continuation → stateful function + tagged-variant GeneratorOutcome data decl + `hazard` on concurrent use | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 370 | Scheme `set!` on closed variables → stateful-function `ensures state preserved across invocations` + `hazard` on concurrent access | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 371 | Tail-call optimization is build-stage responsibility; author-time intent expressible via `ensures constant stack usage regardless of input size` | authoring-guide rule | ✅ closed (doc 14 #77) |
+| 372 | `dynamic-wind` / try-finally semantics → `ensures cleanup ran under all paths` contract + cleanup in peer function | authoring-guide rule | ✅ closed (doc 14 #77) |
 
-Totals by destination (after doc 14 #76 F# computation-expressions translation — **thirty-fifth 0-new-wedge translation in a row**; 6 authoring-guide closures; **monadic-sugar paradigm family fully covered** — Python async + Scala for-yield + Haskell do-notation + F# `async {}` all reduce to function decls with awaited-behavior `ensures`):
+Totals by destination (after doc 14 #77 Scheme call/cc translation — **thirty-sixth 0-new-wedge translation in a row**; 6 authoring-guide closures; **control-flow paradigm family fully covered**: non-local control flow decomposes to 4 named patterns; every control path must be visible in the function's `ensures` clauses):
 
 - ⏳ Wedge queued: **44** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **316**
+- ✅ Closed: **322**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **10** (unchanged)
 
-Backlog size: 386 rows. Closure rate 82% (316/386). **76 translations** in doc 14. Forty-third consecutive minimal-wedge, **thirty-fifth 0-new-wedge**. **Monadic-sugar paradigm family fully covered** — authors never write `let!` / `<-` / `yield return` at Nom source level.
+Backlog size: 392 rows. Closure rate 82% (322/392). **77 translations** in doc 14. Forty-fourth consecutive minimal-wedge, **thirty-sixth 0-new-wedge**. **Key principle documented: non-local control flow that the reader cannot predict from the prose is rejected — every control path must be visible in the function's `ensures` clauses.**
 
 - ⏳ Wedge queued: **44** (+W51 QualityName-registration formalization wedge; see index below)
 - 🧪 Smoke-test todo: **1**
