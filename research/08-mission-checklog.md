@@ -60,10 +60,13 @@ anything load-bearing.
   pattern 7 → 9). baseline.sql extended 10 → 20 quality_names +
   0 → 7 keyword_synonyms (proof→property, composition→module,
   row→data, diagram→screen, participants→data, layout→screen,
-  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 68
+  format→data — corpus-idiomatic vocabulary rewritten) + 0 → 88
   canonical authoring patterns in the grammar.sqlite patterns
-  table (30 of the latest batch authored by 3 parallel subagents
-  covering concurrency, distributed-systems, and UI/UX themes) — AI clients can query for canonical renderings rather
+  table (50 of those via parallel-subagent batches: concurrency,
+  distributed-systems, UI/UX, security, testing — each subagent
+  given the schema + closed kind/clause/quality sets + the no-
+  foreign-names invariant; outputs merged sequentially into
+  baseline.sql) — AI clients can query for canonical renderings rather
   than parsing prose. Catalog:
   pure-function-contract, exposes-data-shape, concept-composition,
   property-quantified-claim, scenario-given-when-then,
