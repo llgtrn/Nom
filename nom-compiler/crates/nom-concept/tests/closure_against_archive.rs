@@ -45,19 +45,23 @@ fn baseline_sql_path() -> std::path::PathBuf {
 /// A block starts at a line whose previous non-blank line matches
 /// `.nomx v2` (i.e. a markdown header referencing v2) and the block
 /// is a ```nomx ... ``` fence.
+/// Extract `.nomx v2` fenced blocks from the archive doc. A valid
+/// v2 block is introduced by a markdown header line that begins with
+/// `###` and contains the literal token `v2`, followed (within a
+/// short window) by the next ```nomx fence. Lines mentioning `v2` in
+/// body prose do NOT qualify — the `###` prefix guards against
+/// grabbing the adjacent v1 blocks.
 fn extract_v2_blocks(markdown: &str) -> Vec<String> {
     let lines: Vec<&str> = markdown.lines().collect();
     let mut blocks = Vec::new();
     let mut i = 0usize;
     while i < lines.len() {
-        // A header line preceding the block must mention `v2`.
-        let looks_like_v2_header = lines[i].contains("v2");
-        if !looks_like_v2_header {
+        let l = lines[i].trim_start();
+        let is_v2_header = l.starts_with("###") && l.contains("v2");
+        if !is_v2_header {
             i += 1;
             continue;
         }
-        // Walk forward looking for the next ```nomx fence within a
-        // short window. If found, capture until closing fence.
         let mut j = i + 1;
         while j < lines.len() && j < i + 15 {
             if lines[j].trim_start().starts_with("```nomx") {

@@ -28,8 +28,9 @@ fn extract_v2_blocks(markdown: &str) -> Vec<String> {
     let mut blocks = Vec::new();
     let mut i = 0usize;
     while i < lines.len() {
-        let looks_like_v2_header = lines[i].contains("v2");
-        if !looks_like_v2_header {
+        let l = lines[i].trim_start();
+        let is_v2_header = l.starts_with("###") && l.contains("v2");
+        if !is_v2_header {
             i += 1;
             continue;
         }
@@ -78,7 +79,7 @@ fn print_first_failures_per_stage() {
             let stage = err.stage.code().to_string();
             let entry = samples.entry(stage).or_default();
             if entry.len() < 3 {
-                let head: String = block.lines().take(5).collect::<Vec<_>>().join("\n");
+                let head: String = block.lines().take(15).collect::<Vec<_>>().join("\n");
                 entry.push((idx, err.reason.to_string(), err.detail.clone(), head));
             }
         }

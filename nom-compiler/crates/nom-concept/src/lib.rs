@@ -29,8 +29,16 @@ pub mod stages;
 pub use stages::{StageId, StageFailure, TokenStream, stage1_tokenize};
 
 /// Closed kind set per doc 08 §8.1.
+///
+/// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by
+/// the closure proof — if this list drifts from the DB baseline, the
+/// hardcoded legacy path at `stage2_kind_classify` will reject inputs
+/// the DB-driven `stage2_kind_classify_with_grammar` would accept.
+/// The long-term direction is to remove this const once every caller
+/// consults the DB; for now it's a correctness-not-style mirror.
 pub const KINDS: &[&str] = &[
     "function", "module", "concept", "screen", "data", "event", "media",
+    "property", "scenario",
 ];
 
 /// `.nom` file: 1..N concept declarations.
@@ -1376,9 +1384,12 @@ mod tests {
     // ── pre-existing tests (unchanged) ───────────────────────────────────────
 
     #[test]
-    fn closed_kind_set_has_seven_members() {
-        assert_eq!(KINDS.len(), 7);
-        for k in ["function", "module", "concept", "screen", "data", "event", "media"] {
+    fn closed_kind_set_has_nine_members() {
+        assert_eq!(KINDS.len(), 9);
+        for k in [
+            "function", "module", "concept", "screen", "data", "event", "media",
+            "property", "scenario",
+        ] {
             assert!(is_known_kind(k));
         }
         assert!(!is_known_kind("class"));
