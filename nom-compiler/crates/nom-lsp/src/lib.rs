@@ -353,6 +353,13 @@ fn handle_why_this_nom(id: RequestId, params: ExecuteCommandParams) -> Response 
 ///
 /// The keyword set mirrors the shipped subset from doc 06 §1-§4
 /// (declaration + control + contract + linkers).
+/// Environment variable consulted by [`handle_completion`] to find the
+/// grammar.sqlite path. When set + readable, every `patterns.pattern_id`
+/// is appended to the completion item list as `CompletionItemKind::SNIPPET`
+/// so editor-side filtering narrows the catalog by typed prefix. Absent
+/// or unreadable → keyword-only (slice-1 behaviour).
+pub const ENV_GRAMMAR_DB: &str = "NOM_GRAMMAR_DB";
+
 fn handle_completion(
     id: RequestId,
     _params: lsp_types::CompletionParams,
@@ -370,7 +377,7 @@ fn handle_completion(
         ("ensure", "postcondition contract: `ensure <predicate>.`"),
         ("throughout", "invariant contract: `throughout <predicate>.`"),
     ];
-    let items: Vec<CompletionItem> = KEYWORDS
+    let mut items: Vec<CompletionItem> = KEYWORDS
         .iter()
         .map(|(label, detail)| CompletionItem {
             label: (*label).to_string(),
@@ -379,6 +386,28 @@ fn handle_completion(
             ..Default::default()
         })
         .collect();
+
+    // Pattern-catalog completion (slice-7a). When NOM_GRAMMAR_DB names a
+    // readable grammar.sqlite, every pattern_id surfaces as a snippet
+    // completion with its intent prose as the detail. Editors filter by
+    // typed prefix so the user sees only patterns matching what they
+    // type. Absent env var or unreadable DB → keyword-only fallback.
+    if let Ok(db_path) = std::env::var(ENV_GRAMMAR_DB) {
+        if let Ok(conn) = nom_grammar::open_readonly(&db_path) {
+            if let Ok(rows) = nom_grammar::list_pattern_intents(&conn) {
+                for (pid, intent) in rows {
+                    items.push(CompletionItem {
+                        label: pid.clone(),
+                        kind: Some(CompletionItemKind::SNIPPET),
+                        detail: Some(intent),
+                        insert_text: Some(pid),
+                        ..Default::default()
+                    });
+                }
+            }
+        }
+    }
+
     let response = CompletionResponse::Array(items);
     Response {
         id,
@@ -530,6 +559,83 @@ mod tests {
                 "completion response missing '{keyword}' (labels: {labels:?})"
             );
         }
+    }
+
+    #[test]
+    fn completion_appends_pattern_ids_when_grammar_db_env_set() {
+        // Slice-7a: when NOM_GRAMMAR_DB names a readable grammar.sqlite,
+        // every patterns.pattern_id surfaces as a snippet completion
+        // alongside the fixed keyword list.
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = nom_grammar::init_at(&db).unwrap();
+        conn.execute(
+            "INSERT INTO patterns \
+             (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
+              example_shape, hazards, favors, source_doc_refs) \
+             VALUES \
+             ('alpha-cache-pattern', 'cache pure function results', \
+              '[]', '[]', '[]', '', '[]', '[]', '[]'), \
+             ('beta-render-pattern', 'render typeset glyphs along baseline', \
+              '[]', '[]', '[]', '', '[]', '[]', '[]')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        // SAFETY: env mutation in tests races with parallel tests; the
+        // built-in test runner serializes tests within one binary by
+        // default, but to be safe we restore the var on every exit
+        // path even if the assertion fails.
+        let prior = std::env::var(ENV_GRAMMAR_DB).ok();
+        // Edition-2024 marks env mutation unsafe; the test runner
+        // serializes tests within one binary, so the race window is
+        // bounded.
+        unsafe { std::env::set_var(ENV_GRAMMAR_DB, db.to_string_lossy().into_owned()); }
+
+        let req = Request::new(
+            RequestId::from(11),
+            Completion::METHOD.to_string(),
+            lsp_types::CompletionParams {
+                text_document_position: lsp_types::TextDocumentPositionParams {
+                    text_document: lsp_types::TextDocumentIdentifier {
+                        uri: lsp_types::Url::parse("file:///tmp/fake.nomx").unwrap(),
+                    },
+                    position: lsp_types::Position { line: 0, character: 0 },
+                },
+                work_done_progress_params: Default::default(),
+                partial_result_params: Default::default(),
+                context: None,
+            },
+        );
+        let resp = dispatch_request(req);
+
+        // Restore env var before asserting so failures don't leak state.
+        unsafe {
+            match prior {
+                Some(v) => std::env::set_var(ENV_GRAMMAR_DB, v),
+                None => std::env::remove_var(ENV_GRAMMAR_DB),
+            }
+        }
+
+        assert!(resp.error.is_none());
+        let items: CompletionResponse =
+            serde_json::from_value(resp.result.expect("completion result set")).unwrap();
+        let labels: Vec<String> = match items {
+            CompletionResponse::Array(a) => a.into_iter().map(|i| i.label).collect(),
+            CompletionResponse::List(l) => l.items.into_iter().map(|i| i.label).collect(),
+        };
+        // Keyword still present.
+        assert!(labels.iter().any(|l| l == "define"));
+        // Both seeded pattern ids surface as completions.
+        assert!(
+            labels.iter().any(|l| l == "alpha-cache-pattern"),
+            "missing alpha-cache-pattern; labels: {labels:?}"
+        );
+        assert!(
+            labels.iter().any(|l| l == "beta-render-pattern"),
+            "missing beta-render-pattern; labels: {labels:?}"
+        );
     }
 
     #[test]

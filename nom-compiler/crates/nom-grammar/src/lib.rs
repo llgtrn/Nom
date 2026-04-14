@@ -334,6 +334,21 @@ pub struct PatternMatch {
     pub intent: String,
 }
 
+/// List every `(pattern_id, intent)` from the patterns table, sorted
+/// by `pattern_id`. Used by consumers (LSP completion, batch tooling)
+/// that want the full catalog without filtering by similarity.
+pub fn list_pattern_intents(conn: &Connection) -> Result<Vec<(String, String)>> {
+    let mut stmt = conn
+        .prepare("SELECT pattern_id, intent FROM patterns ORDER BY pattern_id")
+        .context("preparing pattern-intent list query")?;
+    let rows: Vec<(String, String)> = stmt
+        .query_map([], |r| Ok((r.get::<_, String>(0)?, r.get::<_, String>(1)?)))
+        .context("querying patterns")?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .context("collecting pattern rows")?;
+    Ok(rows)
+}
+
 /// Search the patterns table by free-form prose. Returns up to
 /// `limit` matches whose Jaccard similarity (over [`fuzzy_tokens`]
 /// of the query and each row's intent) is at least `threshold`,
