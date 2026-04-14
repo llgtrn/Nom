@@ -409,6 +409,61 @@ INSERT OR IGNORE INTO patterns (
   '["partial operations whose law only holds on a subdomain"]',
   '["correctness","totality"]',
   '["Phase 11 mathematics-as-language — algebraic-law substrate"]'
+),
+(
+  'monadic-do-sequence',
+  'a sequential composition of effectful steps where each step may fail or produce a value consumed by the next',
+  '["function"]',
+  '["intended","uses","composes","requires","ensures","favor"]',
+  '["@Function"]',
+  'the function <sequence> is\n  intended to perform a sequence of effectful steps where each step depends on the previous step''s value.\n  uses the @Function matching "lift step" with at-least 0.9 confidence.\n  composes <step-a> then <step-b> then <step-c>.\n  requires every step is total over its input type.\n  ensures a failure at any step short-circuits the remainder.\n  favor clarity.',
+  '["a step that forgets to propagate its failure breaks the short-circuit guarantee"]',
+  '["clarity","correctness"]',
+  '["doc 14 — monadic-sugar paradigm family (4 exemplars)"]'
+),
+(
+  'first-class-continuation',
+  'a function that captures its own remaining-computation as a first-class value that may be resumed later, enabling coroutines, non-determinism, or early exit',
+  '["function","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the function <capture> is\n  intended to snapshot the current continuation as a first-class value the caller may invoke later.\n  uses the @Data matching "continuation token" with at-least 0.9 confidence.\n  requires the captured continuation is resumed at most once.\n  ensures resuming yields the value the capture point would have returned.\n  hazard multi-resume of a once-continuation duplicates observable effects.\n  favor clarity.',
+  '["multi-resume duplicating observable effects","captured state that has since mutated"]',
+  '["clarity","correctness"]',
+  '["doc 14 — first-class-continuation paradigm (4 named patterns)"]'
+),
+(
+  'type-class-polymorphism',
+  'a uniform interface over several data kinds satisfied by a declared set of required operations; enables abstraction over unrelated types',
+  '["concept","function","data"]',
+  '["intended","uses","composes","requires","ensures","favor"]',
+  '["@Function","@Data"]',
+  'the concept <interface> is\n  intended to describe a uniform surface over any data kind that supplies the declared operations.\n  uses the @Function matching "required operation" with at-least 0.9 confidence.\n  composes <operation-a> then <operation-b>.\n  requires every implementing data kind supplies the declared operations.\n  ensures consumers depending on the interface compile against any conforming implementation.\n  favor correctness.',
+  '["silent conformance gap when a required operation is merely absent"]',
+  '["correctness","clarity"]',
+  '["doc 14 — abstraction-quadrant paradigm family (type-class branch)"]'
+),
+(
+  'stream-processing-window',
+  'a bounded aggregation over a stream of events grouped into tumbling, sliding, or session windows',
+  '["function","event","data"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Event","@Function","@Data"]',
+  'the function <aggregate> is\n  intended to produce a per-window aggregate over a stream of timestamped events.\n  uses the @Event matching "incoming event" with at-least 0.9 confidence.\n  uses the @Function matching "reduce" with at-least 0.9 confidence.\n  requires every event carries a timestamp suitable for window assignment.\n  ensures late-arriving events outside the watermark are excluded.\n  hazard missing watermarks cause unbounded in-memory state retention.\n  favor availability.',
+  '["missing watermarks","unbounded in-memory windows"]',
+  '["availability","auditability"]',
+  '["W44 watermark + W45 window-aggregation wedges"]'
+),
+(
+  'infrastructure-declaration',
+  'a declarative specification of infrastructure resources — compute, network, storage — with authored-time validation and apply-time convergence',
+  '["concept","data"]',
+  '["intended","uses","composes","requires","ensures","favor"]',
+  '["@Data"]',
+  'the concept <deployment> is\n  intended to describe a target infrastructure state as a set of named resources with declared relationships.\n  uses the @Data matching "resource spec" with at-least 0.9 confidence.\n  composes <network> then <compute> then <storage>.\n  requires every resource references only declared peers.\n  ensures a diff against live state yields a minimal convergent plan.\n  favor reproducibility.',
+  '["hidden resource dependencies discovered only at apply time"]',
+  '["reproducibility","auditability"]',
+  '["doc 14 — infrastructure-automation paradigm pentagram (5 exemplars)"]'
 );
 
 -- ── Schema version stamp ────────────────────────────────────────────
