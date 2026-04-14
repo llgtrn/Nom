@@ -75,6 +75,126 @@ pub fn seed_kinds(conn: &Connection) -> Result<usize> {
     Ok(inserted)
 }
 
+// ── P2: closed keyword vocabulary (docs 05 / 06 / 07 v2 / W4 / W49 / W41 / W46 / W50) ──
+
+/// One row in the `keywords` table. `role` + `kind_scope` describe where the
+/// token is valid; `source_ref` cites the research doc or parser line that
+/// introduced it.
+#[derive(Debug, Clone, Copy)]
+pub struct KeywordSeed {
+    pub token: &'static str,
+    pub role: &'static str,
+    pub kind_scope: Option<&'static str>, // JSON-encoded array, or None = any
+    pub source_ref: &'static str,
+    pub shipped_commit: &'static str,
+    pub notes: Option<&'static str>,
+}
+
+/// Closed keyword set shipped by the current parser, grouped by role:
+///
+/// - **determiner**: the single `the` opener on every top-level decl
+/// - **kind_noun**: the 9 prose-form kinds (v1 surface)
+/// - **kind_marker**: the `@Kind` typed-slot form (v2 surface) — 11 entries
+/// - **clause_opener**: the 12 recognized clause heads (requires/ensures/hazard/uses/exposes/favor/generator/composes/given/when/then/intended)
+/// - **ref_slot**: `matching`, `with`, `at-least`, `confidence` (typed-slot syntax per doc 07)
+/// - **quantifier**: W49-registered quantifier vocabulary (every/no/some/at-most/exactly)
+/// - **connective**: light prose connectives recognised for shape disambiguation
+pub const KEYWORDS_SEED: &[KeywordSeed] = &[
+    // determiner — doc 05 §3
+    KeywordSeed {
+        token: "the",
+        role: "determiner",
+        kind_scope: None,
+        source_ref: "doc 05 §3",
+        shipped_commit: "a04b91e",
+        notes: Some("every top-level decl opens with 'the' (v2) or 'define' (v1)"),
+    },
+    // v1 decl opener
+    KeywordSeed {
+        token: "define",
+        role: "decl_opener_v1",
+        kind_scope: None,
+        source_ref: "doc 05 §3",
+        shipped_commit: "a04b91e",
+        notes: Some("`.nomx v1` prose form; v2 uses `the` instead"),
+    },
+    // kind nouns (v1 surface)
+    KeywordSeed { token: "function",  role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "module",    role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "concept",   role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "screen",    role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "data",      role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "event",     role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "media",     role: "kind_noun", kind_scope: None, source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "property",  role: "kind_noun", kind_scope: None, source_ref: "W41", shipped_commit: "W41-ship-commit", notes: Some("added by W41") },
+    KeywordSeed { token: "scenario",  role: "kind_noun", kind_scope: None, source_ref: "W46", shipped_commit: "W46-ship-commit", notes: Some("added by W46") },
+    // kind markers (v2 typed-slot surface)
+    KeywordSeed { token: "@Function",    role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Module",      role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Concept",     role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Screen",      role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Data",        role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Event",       role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Media",       role: "kind_marker", kind_scope: None, source_ref: "doc 07 v2",  shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "@Property",    role: "kind_marker", kind_scope: None, source_ref: "W41",         shipped_commit: "W41-ship-commit", notes: None },
+    KeywordSeed { token: "@Scenario",    role: "kind_marker", kind_scope: None, source_ref: "W46",         shipped_commit: "W46-ship-commit", notes: None },
+    KeywordSeed { token: "@Composition", role: "kind_marker", kind_scope: None, source_ref: "doc 08 §1",  shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "@Route",       role: "kind_marker", kind_scope: None, source_ref: "W50",         shipped_commit: "W50-ship-commit", notes: Some("HTTP methods + paths / gRPC / CLI subcommands") },
+    // clause openers
+    KeywordSeed { token: "intended",  role: "clause_opener", kind_scope: None, source_ref: "doc 05 §3",  shipped_commit: "a04b91e", notes: Some("'intended to <prose>' — universal across kinds") },
+    KeywordSeed { token: "requires",  role: "clause_opener", kind_scope: Some(r#"["function","property","concept","scenario"]"#), source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "ensures",   role: "clause_opener", kind_scope: Some(r#"["function","property","concept","scenario"]"#), source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "hazard",    role: "clause_opener", kind_scope: Some(r#"["function","concept"]"#), source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "uses",      role: "clause_opener", kind_scope: Some(r#"["function","concept","property","scenario","module"]"#), source_ref: "doc 07 v2", shipped_commit: "97c836f", notes: Some("introduces typed-slot @Kind refs") },
+    KeywordSeed { token: "exposes",   role: "clause_opener", kind_scope: Some(r#"["data","concept"]"#), source_ref: "doc 08 §2", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "favor",     role: "clause_opener", kind_scope: None, source_ref: "doc 08 §7", shipped_commit: "a04b91e", notes: Some("pairs with QualityName registry") },
+    KeywordSeed { token: "generator", role: "clause_opener", kind_scope: Some(r#"["property"]"#), source_ref: "W42", shipped_commit: "W42-ship-commit", notes: Some("W41-property kind specific") },
+    KeywordSeed { token: "composes",  role: "clause_opener", kind_scope: Some(r#"["module","concept"]"#), source_ref: "doc 08 §1", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "given",     role: "clause_opener", kind_scope: Some(r#"["scenario"]"#), source_ref: "W47", shipped_commit: "W47-ship-commit", notes: None },
+    KeywordSeed { token: "when",      role: "clause_opener", kind_scope: Some(r#"["scenario"]"#), source_ref: "W47", shipped_commit: "W47-ship-commit", notes: None },
+    KeywordSeed { token: "then",      role: "clause_opener", kind_scope: Some(r#"["scenario"]"#), source_ref: "W47", shipped_commit: "W47-ship-commit", notes: None },
+    // ref slot vocabulary (doc 07 v2 typed-slot syntax)
+    KeywordSeed { token: "matching",   role: "ref_slot", kind_scope: None, source_ref: "doc 07 v2", shipped_commit: "97c836f", notes: Some("'uses the @Kind matching \"prose\"'") },
+    KeywordSeed { token: "with",       role: "ref_slot", kind_scope: None, source_ref: "doc 07 v2", shipped_commit: "97c836f", notes: Some("'with at-least N confidence'") },
+    KeywordSeed { token: "at-least",   role: "ref_slot", kind_scope: None, source_ref: "doc 07 v2", shipped_commit: "853e70b", notes: Some("confidence threshold — hyphenated compound") },
+    KeywordSeed { token: "confidence", role: "ref_slot", kind_scope: None, source_ref: "doc 07 v2", shipped_commit: "97c836f", notes: None },
+    // quantifier vocabulary (W49)
+    KeywordSeed { token: "every",    role: "quantifier", kind_scope: None, source_ref: "W49", shipped_commit: "W49-ship-commit", notes: Some("universal quantifier") },
+    KeywordSeed { token: "no",       role: "quantifier", kind_scope: None, source_ref: "W49", shipped_commit: "W49-ship-commit", notes: Some("negated existential") },
+    KeywordSeed { token: "some",     role: "quantifier", kind_scope: None, source_ref: "W49", shipped_commit: "W49-ship-commit", notes: Some("existential") },
+    KeywordSeed { token: "at-most",  role: "quantifier", kind_scope: None, source_ref: "W49", shipped_commit: "W49-ship-commit", notes: Some("bounded above — rolling-window rate limits") },
+    KeywordSeed { token: "exactly",  role: "quantifier", kind_scope: None, source_ref: "W49", shipped_commit: "W49-ship-commit", notes: Some("precise count") },
+    // connectives (prose shape)
+    KeywordSeed { token: "is",  role: "connective", kind_scope: None, source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: Some("copula after decl opener") },
+    KeywordSeed { token: "to",  role: "connective", kind_scope: None, source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: Some("'intended to X'") },
+    KeywordSeed { token: "as",  role: "connective", kind_scope: None, source_ref: "doc 08 §2", shipped_commit: "a04b91e", notes: Some("'exposes X as Y'") },
+    KeywordSeed { token: "of",  role: "connective", kind_scope: None, source_ref: "doc 07 v2", shipped_commit: "97c836f", notes: None },
+    KeywordSeed { token: "and", role: "connective", kind_scope: None, source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "or",  role: "connective", kind_scope: None, source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: None },
+    KeywordSeed { token: "that", role: "connective", kind_scope: None, source_ref: "doc 05 §3", shipped_commit: "a04b91e", notes: Some("v1 'define X that Y'") },
+];
+
+pub fn seed_keywords(conn: &Connection) -> Result<usize> {
+    let mut inserted = 0;
+    for kw in KEYWORDS_SEED {
+        conn.execute(
+            "INSERT OR REPLACE INTO keywords \
+             (token, role, kind_scope, source_ref, shipped_commit, notes) \
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6)",
+            params![
+                kw.token,
+                kw.role,
+                kw.kind_scope,
+                kw.source_ref,
+                kw.shipped_commit,
+                kw.notes,
+            ],
+        )?;
+        inserted += 1;
+    }
+    Ok(inserted)
+}
+
 // ── P5: 10 fixed QualityName seeds per MEMORY.md ────────────────────
 
 /// The 10 fixed seed QualityNames registered 2026-04-14 (doc 08 §7, W51).
@@ -198,14 +318,30 @@ pub fn seed_authoring_rules(conn: &Connection, rows: &[DocRuleRow]) -> Result<us
     Ok(inserted)
 }
 
-/// One-shot convenience: seed kinds + quality_names + parse+insert all rows from
-/// the given doc-16 markdown source. Callable from the CLI `nom grammar seed`.
-pub fn seed_all_from_doc16(conn: &Connection, doc16_md: &str) -> Result<(usize, usize, usize)> {
+/// One-shot summary counts from a full seed run.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+pub struct SeedCounts {
+    pub kinds: usize,
+    pub quality_names: usize,
+    pub keywords: usize,
+    pub authoring_rules: usize,
+}
+
+/// One-shot convenience: seed kinds + quality_names + keywords (P2) + parse+insert
+/// all rows from the given doc-16 markdown source (P4). Callable from the CLI
+/// `nom grammar seed`.
+pub fn seed_all_from_doc16(conn: &Connection, doc16_md: &str) -> Result<SeedCounts> {
     let kinds = seed_kinds(conn).context("seeding kinds")?;
-    let qualities = seed_quality_names(conn).context("seeding quality_names")?;
+    let quality_names = seed_quality_names(conn).context("seeding quality_names")?;
+    let keywords = seed_keywords(conn).context("seeding keywords")?;
     let rows = parse_doc16_rules(doc16_md);
-    let rules = seed_authoring_rules(conn, &rows).context("seeding authoring_rules")?;
-    Ok((kinds, qualities, rules))
+    let authoring_rules = seed_authoring_rules(conn, &rows).context("seeding authoring_rules")?;
+    Ok(SeedCounts {
+        kinds,
+        quality_names,
+        keywords,
+        authoring_rules,
+    })
 }
 
 #[cfg(test)]
@@ -290,7 +426,7 @@ Narrative text here.
     }
 
     #[test]
-    fn seed_all_from_doc16_populates_all_three_tables() {
+    fn seed_all_from_doc16_populates_all_four_tables() {
         let dir = tempdir().unwrap();
         let conn = init_at(dir.path().join("g.sqlite")).unwrap();
         let md = "\
@@ -298,10 +434,55 @@ Narrative text here.
 | 2 | Second gap | W-wedge | ⏳ queued |
 | 3 | Third gap | design deferred | 🔒 blocked |
 ";
-        let (kinds, qualities, rules) = seed_all_from_doc16(&conn, md).unwrap();
-        assert_eq!(kinds, 9);
-        assert_eq!(qualities, 10);
-        assert_eq!(rules, 3);
+        let c = seed_all_from_doc16(&conn, md).unwrap();
+        assert_eq!(c.kinds, 9);
+        assert_eq!(c.quality_names, 10);
+        assert!(c.keywords >= 40, "expected ≥40 keyword rows, got {}", c.keywords);
+        assert_eq!(c.authoring_rules, 3);
+    }
+
+    #[test]
+    fn seeds_closed_keyword_vocabulary() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let n = seed_keywords(&conn).unwrap();
+        assert!(n >= 40);
+        // Spot-check load-bearing tokens.
+        for (tok, role) in [
+            ("the", "determiner"),
+            ("matching", "ref_slot"),
+            ("at-least", "ref_slot"),
+            ("ensures", "clause_opener"),
+            ("hazard", "clause_opener"),
+            ("generator", "clause_opener"),
+            ("given", "clause_opener"),
+            ("@Property", "kind_marker"),
+            ("@Route", "kind_marker"),
+            ("at-most", "quantifier"),
+            ("every", "quantifier"),
+        ] {
+            let got: String = conn
+                .query_row(
+                    "SELECT role FROM keywords WHERE token = ?1",
+                    [tok],
+                    |r| r.get(0),
+                )
+                .unwrap_or_else(|_| panic!("token {tok} missing from keyword seed"));
+            assert_eq!(got, role, "role mismatch for {tok}");
+        }
+    }
+
+    #[test]
+    fn keyword_seeding_is_idempotent() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let n1 = seed_keywords(&conn).unwrap();
+        let n2 = seed_keywords(&conn).unwrap();
+        assert_eq!(n1, n2);
+        let count: i64 = conn
+            .query_row("SELECT COUNT(*) FROM keywords", [], |r| r.get(0))
+            .unwrap();
+        assert_eq!(count as usize, n1); // INSERT OR REPLACE
     }
 
     #[test]
