@@ -3751,6 +3751,103 @@ Row additions: **0 new wedges** — K8s declarative orchestration fully expresse
 
 ---
 
+## 55. Elm — The Elm Architecture (Model-Update-View pure FRP)
+
+```elm
+module Counter exposing (Model, Msg, init, update, view)
+
+import Html exposing (Html, button, div, text)
+import Html.Events exposing (onClick)
+
+type alias Model = { count : Int }
+
+type Msg = Increment | Decrement | Reset
+
+init : Model
+init = { count = 0 }
+
+update : Msg -> Model -> Model
+update msg model =
+    case msg of
+        Increment -> { model | count = model.count + 1 }
+        Decrement -> { model | count = model.count - 1 }
+        Reset     -> { model | count = 0 }
+
+view : Model -> Html Msg
+view model =
+    div []
+        [ button [ onClick Decrement ] [ text "-" ]
+        , text (String.fromInt model.count)
+        , button [ onClick Increment ] [ text "+" ]
+        , button [ onClick Reset ] [ text "reset" ]
+        ]
+```
+
+### `.nomx v1` translation
+
+```nomx
+define counter_app
+  that takes no input, returns a reactive counter application.
+the model holds a single integer count starting at 0.
+messages are Increment, Decrement, Reset.
+on Increment, the new count is the old count plus 1.
+on Decrement, the new count is the old count minus 1.
+on Reset, the new count is 0.
+the view shows three buttons (-, +, reset) wrapping the current count.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data CounterModel is
+  intended to hold the single integer count tracked by the counter application.
+  exposes count as integer.
+
+the data CounterMessage is
+  intended to enumerate the messages that can drive a CounterModel update.
+  exposes increment at tag 0.
+  exposes decrement at tag 1.
+  exposes reset at tag 2.
+
+the function counter_init is
+  intended to return the initial CounterModel for every fresh counter-app instance.
+  ensures the returned count equals 0.
+
+the function counter_update is
+  intended to compute the next CounterModel given the prior model and an incoming message, in a total and deterministic way.
+  uses the @Data matching "CounterModel" with at-least 0.95 confidence.
+  uses the @Data matching "CounterMessage" with at-least 0.95 confidence.
+  when the message is increment, the next count is the prior count plus 1.
+  when the message is decrement, the next count is the prior count minus 1.
+  when the message is reset, the next count is 0.
+  ensures exactly one branch fires per (model, message) pair.
+  favor correctness.
+
+the screen counter_view is
+  intended to render the counter as a horizontal row with three buttons (-, +, reset) surrounding the current count, each button emitting the corresponding CounterMessage.
+  uses the @Data matching "CounterModel" with at-least 0.95 confidence.
+  uses the @Data matching "CounterMessage" with at-least 0.95 confidence.
+  the layout is a horizontal row of (decrement-button, count-text, increment-button, reset-button).
+  each button emits its associated CounterMessage when tapped.
+```
+
+### Gaps surfaced
+
+1. **The Elm Architecture (Model + Update + View) as a pattern** — Elm's canonical shape is exactly Nom's (state-data + transition-function + screen decl) triple, now used for XState (#32), SwiftUI (#39), and Elm (#55). Authoring-guide rule: **The Elm Architecture IS the unified reactive decomposition pattern — Nom has been using it from the beginning**. Cross-reference existing doc 16 rows #71 + #109. No new wedge.
+2. **Algebraic Msg type (`type Msg = Increment | Decrement | Reset`)** — Elm's sum type for messages. Nom's `CounterMessage` data decl with `exposes variant at tag N` captures this; same shape as #22 Kotlin sealed class. Authoring-guide rule: **Elm algebraic types → data decls with multiple `exposes … at tag N` fields**. No new wedge.
+3. **Record update syntax (`{ model | count = model.count + 1 }`)** — Elm's immutable-update-by-field syntax. Nom's v2 never mentions the update syntax; it simply says `the next count is the prior count plus 1`. Authoring-guide rule: **record-update syntax is elided in prose — authors state what the new record's fields are, the build stage derives the update mechanics**. Consistent with the #50 Dafny rule (imperative loops decompose to prose invariant + compiler code-gen). No new wedge.
+4. **`case msg of` pattern matching** — Elm's exhaustive pattern match. Nom's `when … otherwise …` prose with `ensures exactly one branch fires per (model, message) pair` captures the exhaustiveness. Matches W40 exhaustiveness-check (#32). No new wedge.
+5. **Pure functions throughout** — Elm's strictness is the whole point. Nom's model is already pure (no mutation, no I/O in function decls; effects flagged explicitly via `hazard`). Authoring-guide rule: **Elm's purity discipline is the default Nom stance — no additional markers needed, only a `hazard` clause for any boundary-crossing effect**. No new wedge.
+6. **HTML constructor DSL (`div [] [...]`)** — Elm's typed HTML builders. Nom's `screen` decl with layout prose (`horizontal row of …`) replaces the builder API. Already covered by #39 SwiftUI layout-primitives rule (row #113). No new wedge.
+7. **`onClick` as an event-to-message binding** — Elm's way of wiring DOM events into the update loop. Nom's `each button emits its associated CounterMessage when tapped` is the direct prose analogue. Authoring-guide rule: **event-handler bindings in reactive UIs decompose to prose `emits CounterMessage when tapped` inside the screen decl's layout description**. Same shape as #39 SwiftUI callback props. No new wedge.
+8. **`module Counter exposing (...)` module-level visibility** — Elm's export list. Nom's composition decl + typed-slot `@Module` references already handle this. No new wedge.
+
+Row additions: **0 new wedges** — Elm's pure-FRP architecture is the cleanest concrete instance of Nom's (state-data, transition-function, screen) triple. 7 authoring-guide closures: TEA explicitly named as the unified reactive-decomposition pattern, Elm algebraic Msg → data decl with tagged variants, record-update syntax elided in prose, `case of` exhaustiveness via W40, purity as default Nom stance, HTML builders → layout prose, event-handler bindings → prose `emits X when Y`.
+
+**Twenty-second consecutive minimal-wedge translation + fourteenth 0-new-wedge run.** Elm — famous for its single-canonical-architecture (TEA) — confirms the claim from the SwiftUI translation (#39) that **Nom has been implementing The Elm Architecture from the beginning**, except the canonical shape wasn't originally named. The `screen` kind + `data` decls for model/message + `function` for update closes the reactive-UI paradigm cleanly across three concrete frameworks (XState, SwiftUI, Elm) with zero per-framework adaptation.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its

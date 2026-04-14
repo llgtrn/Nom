@@ -229,18 +229,24 @@
 | 212 | K8s probe kinds (readiness/liveness/startup) → peer data decls sharing common schema with `probe_kind` discriminator | authoring-guide rule | ✅ closed (doc 14 #54) |
 | 213 | Multi-resource YAML manifests → multi-decl `.nomtu` files (1 data + 1 reconcile fn per resource + 1 composition for rollout order) | authoring-guide rule | ✅ closed (doc 14 #54) |
 | 214 | `availability` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #54; accumulates to 7 seeds) |
+| 215 | The Elm Architecture IS Nom's unified (state-data, transition-function, screen) reactive-decomposition pattern — cross-ref with #71 + #109 | authoring-guide rule | ✅ closed (doc 14 #55) |
+| 216 | Elm algebraic Msg types → data decls with multiple `exposes … at tag N` fields (same as #22 Kotlin sealed) | authoring-guide rule | ✅ closed (doc 14 #55) |
+| 217 | Record-update syntax elided in prose — authors state new field values; build stage derives update mechanics | authoring-guide rule | ✅ closed (doc 14 #55; same shape as #50) |
+| 218 | Elm `case of` exhaustive pattern match → `when … otherwise …` prose + `ensures exactly one branch fires` (W40) | authoring-guide rule | ✅ closed (doc 14 #55) |
+| 219 | Purity is Nom's default stance — boundary-crossing effects flagged via `hazard`; no extra marker needed | authoring-guide rule | ✅ closed (doc 14 #55) |
+| 220 | Event-handler bindings in reactive UIs → prose `emits CounterMessage when tapped` inside screen decl layout | authoring-guide rule | ✅ closed (doc 14 #55; same as #39 SwiftUI callback props) |
 
-Totals by destination (after doc 14 #54 Kubernetes declarative-orchestration translation — **thirteenth 0-new-wedge translation in a row**; 7 authoring-guide closures + availability seed; **infrastructure/deployment paradigm quadrant** (Terraform #34 + Docker #19 + Nix #42 + K8s #54) **fully closed**):
+Totals by destination (after doc 14 #55 Elm pure-FRP translation — **fourteenth 0-new-wedge translation in a row**; 6 authoring-guide closures; **reactive-UI paradigm closed across three concrete frameworks** XState/SwiftUI/Elm with zero per-framework adaptation):
 
 - ⏳ Wedge queued: **43** (unchanged)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **164**
+- ✅ Closed: **170**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **7** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor + availability QualityNames)
 
-Backlog size: 224 rows. Closure rate 73% (164/224). **54 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + **container-orchestration (Kubernetes)**. Twenty-first consecutive minimal-wedge translation, thirteenth 0-new-wedge. **Infrastructure/deployment paradigm quadrant fully closed** (Terraform + Docker + Nix + K8s all reduce to desired-state-data + reconcile-function).
+Backlog size: 231 rows. Closure rate 74% (170/231). **55 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + HTTP-API-spec + container-orchestration + **pure-FRP-Model-Update-View (Elm)**. Twenty-second consecutive minimal-wedge translation, fourteenth 0-new-wedge. **The Elm Architecture officially named as Nom's unified reactive-decomposition pattern.**
 
 ## Wedge master index (for cross-ref with doc 13)
 
