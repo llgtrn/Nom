@@ -196,6 +196,14 @@ Mapping onto doc 09's "Actual remaining work" critical path:
 
 ---
 
+## Next actions — status snapshot 2026-04-14 (late)
+
+**New infrastructure landed late in the session (doc 21 + doc 22 + implementation):**
+- ✅ **`nom-grammar` crate shipped** — AI-retrievable basic-syntax registry per doc 21. P1 scaffold (`b53f74c`) + P4+P5 kinds/qualities/authoring_rules seed (`32a9502`) + P2 keywords (`ee37edd`) + P3 clause_shapes (`bfd2d05`). End-state: `grammar.sqlite` holds **9 kinds + 10 quality_names + 45 keywords + 46 clause_shapes + 450+ authoring_rules from doc 16**. CLI: `nom grammar {init,seed,status}`. 17/17 tests pass.
+- ✅ **Dict-split S1-S2 landed** per doc 22 — `Dict { concepts, words }` struct (`ff09fac`) + per-tier schemas `CONCEPTS_SCHEMA_SQL` + `WORDS_SCHEMA_SQL` (`dd91ff5`). Three physical SQLite files: `concepts.sqlite` + `words.sqlite` + `grammar.sqlite`. No cross-file FOREIGN KEYs per doc 22 §1.
+- ✅ **Dict-split S3a pilot** (`f90f009`) — 5 words_v2 functions ported to free functions on `&Dict` (upsert/find/find_by_word/find_by_kind/count). 7 new tests, 55/55 nom-dict tests pass. S3b-S3f (remaining ~35 functions) queued; S8 will remove deprecated NomDict methods.
+- ⚠️ **Open terminology question (2026-04-14 very-late)**: user flagged that `words_v2` (DB2 entities table) collides with `grammar.keywords` (grammar words). Correct name for DB2 rows is **entities / nomtu_entries**, not "words". Rename deferred until user decides between (1) rename-now pre-S3b, (2) document-only, (3) rename at S9 cleanup. Affects ~10 files if done now, ~40 if done at S9.
+
 ## Next actions — status snapshot 2026-04-14
 
 **Completed this session (105+ commits, 55+ code + doc wedges):**
