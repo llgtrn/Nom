@@ -20,10 +20,11 @@ anything load-bearing.
 - Per-tier specialised schemas: `CONCEPTS_SCHEMA_SQL` and
   `ENTITIES_SCHEMA_SQL`; cross-file foreign keys absent per the
   no-cross-file-FK invariant.
-- `grammar.sqlite` schema for six tables: `schema_meta`, `keywords`,
-  `clause_shapes`, `kinds`, `quality_names`, `patterns`. The Rust
-  crate ships only the schema + connection helpers + query API; data
-  is the user's responsibility.
+- `grammar.sqlite` schema for seven tables: `schema_meta`,
+  `keywords`, `keyword_synonyms`, `clause_shapes`, `kinds`,
+  `quality_names`, `patterns`. The Rust crate ships only the schema +
+  connection helpers + query API + read-only `resolve_synonym`
+  helper; data is the user's responsibility.
 - CLI: `nom grammar init` (creates the file + applies schema),
   `nom grammar status` (counts rows per table; supports `--json`).
 - Annotator-style staged pipeline (S1–S6) shipped.

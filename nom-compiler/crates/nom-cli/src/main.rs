@@ -1448,11 +1448,12 @@ fn cmd_grammar_status(path: Option<&Path>, json: bool) -> i32 {
         println!("nom grammar status:");
         println!("  path:           {}", p.display());
         println!("  schema_version: {}", version);
-        println!("  keywords:       {}", counts.keywords);
-        println!("  clause_shapes:  {}", counts.clause_shapes);
-        println!("  quality_names:  {}", counts.quality_names);
-        println!("  kinds:          {}", counts.kinds);
-        println!("  patterns:       {}", counts.patterns);
+        println!("  keywords:          {}", counts.keywords);
+        println!("  keyword_synonyms:  {}", counts.keyword_synonyms);
+        println!("  clause_shapes:     {}", counts.clause_shapes);
+        println!("  quality_names:     {}", counts.quality_names);
+        println!("  kinds:             {}", counts.kinds);
+        println!("  patterns:          {}", counts.patterns);
     }
     0
 }

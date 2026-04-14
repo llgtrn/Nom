@@ -52,12 +52,17 @@ split S8 commit.
 
 ## Grammar (registry)
 
-`grammar.sqlite` is the language registry. Six tables, all with
+`grammar.sqlite` is the language registry. Seven tables, all with
 schema-only support in Rust; data is user-populated:
 
 - `schema_meta` — `(key, value)` pairs stamping the schema version
 - `keywords` — every reserved token in `.nomx` source: `(token PK,
   role, kind_scope, source_ref, shipped_commit, notes)`
+- `keyword_synonyms` — alternative phrasings for each canonical
+  keyword, consulted by S1 tokenize: `(synonym PK,
+  canonical_keyword, source_ref, shipped_commit, notes)`. Equivalence
+  is rule-based (closed table), never learned. Same input + same DB
+  rows → same canonical token stream.
 - `clause_shapes` — per-kind grammar of which clauses each kind
   accepts: `(kind, clause_name, is_required, one_of_group, position,
   grammar_shape, min_occurrences, max_occurrences, source_ref, notes)`

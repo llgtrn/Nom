@@ -88,3 +88,17 @@ lock; no sidecar lockfile.
 A strict-mode validator flags typed-slot refs missing the `with at-least N
 confidence` clause. The intent threshold is mandatory in strict builds; the
 default parser still accepts the loose form for authoring drafts.
+
+## Synonym registry
+
+The author may write any registered alternative phrasing of a clause
+keyword (e.g., `expects X` or `assumes X` instead of `requires X`).
+S1 tokenize consults `grammar.sqlite.keyword_synonyms` and rewrites
+each surface synonym into its canonical keyword before S2 runs. From
+S2 onward the parser sees only canonical tokens — no ambiguity.
+
+The synonym set is closed and rule-based: a phrasing is accepted if
+and only if a row in `keyword_synonyms` maps it to a canonical
+keyword. There is no learned similarity, no fuzzy match, no
+stochastic decoding. Same source + same rows → same canonical token
+stream → same AST.

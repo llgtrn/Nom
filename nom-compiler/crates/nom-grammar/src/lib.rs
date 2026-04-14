@@ -28,6 +28,22 @@ CREATE TABLE IF NOT EXISTS keywords (
   notes          TEXT
 );
 
+-- Synonym registry. Maps every accepted alternative phrasing to a single
+-- canonical keyword. The S1 lexer pass consults this table and rewrites
+-- any matching surface token into its canonical form before the rest of
+-- the pipeline runs. Equivalence between phrasings is rule-based (closed
+-- table), never learned. Same input + same DB rows → same canonical
+-- token stream.
+CREATE TABLE IF NOT EXISTS keyword_synonyms (
+  synonym           TEXT PRIMARY KEY,
+  canonical_keyword TEXT NOT NULL,
+  source_ref        TEXT NOT NULL,
+  shipped_commit    TEXT NOT NULL,
+  notes             TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_keyword_synonyms_canonical
+  ON keyword_synonyms(canonical_keyword);
+
 CREATE TABLE IF NOT EXISTS clause_shapes (
   kind            TEXT NOT NULL,
   clause_name     TEXT NOT NULL,
@@ -127,6 +143,7 @@ pub fn schema_version(conn: &Connection) -> Result<u32> {
 #[derive(Debug, serde::Serialize, serde::Deserialize, PartialEq)]
 pub struct RegistryCounts {
     pub keywords: u64,
+    pub keyword_synonyms: u64,
     pub clause_shapes: u64,
     pub quality_names: u64,
     pub kinds: u64,
@@ -141,11 +158,32 @@ pub fn counts(conn: &Connection) -> Result<RegistryCounts> {
     };
     Ok(RegistryCounts {
         keywords: count_of("keywords")?,
+        keyword_synonyms: count_of("keyword_synonyms")?,
         clause_shapes: count_of("clause_shapes")?,
         quality_names: count_of("quality_names")?,
         kinds: count_of("kinds")?,
         patterns: count_of("patterns")?,
     })
+}
+
+/// Look up the canonical keyword for a surface token. Returns `Ok(None)` if
+/// the token is not registered as a synonym (callers treat as unchanged).
+/// Returns `Ok(Some(canonical))` if a row maps the surface token to a
+/// canonical keyword. Errors only on SQL failure.
+///
+/// This is the read API S1 (tokenize) calls during synonym resolution.
+pub fn resolve_synonym(conn: &Connection, surface: &str) -> Result<Option<String>> {
+    let row = conn
+        .query_row(
+            "SELECT canonical_keyword FROM keyword_synonyms WHERE synonym = ?1",
+            params![surface],
+            |r| r.get::<_, String>(0),
+        );
+    match row {
+        Ok(canonical) => Ok(Some(canonical)),
+        Err(rusqlite::Error::QueryReturnedNoRows) => Ok(None),
+        Err(e) => Err(e.into()),
+    }
 }
 
 #[cfg(test)]
@@ -181,6 +219,7 @@ mod tests {
             c,
             RegistryCounts {
                 keywords: 0,
+                keyword_synonyms: 0,
                 clause_shapes: 0,
                 quality_names: 0,
                 kinds: 0,
@@ -194,5 +233,104 @@ mod tests {
         let dir = tempdir().unwrap();
         let db = dir.path().join("nonexistent.sqlite");
         assert!(open_readonly(&db).is_err());
+    }
+
+    #[test]
+    fn keyword_synonyms_table_exists_after_init() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        // Schema fragment query: confirm table is present in sqlite_master
+        let exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'keyword_synonyms'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        assert!(exists);
+        // Confirm the canonical-keyword index is also present
+        let idx_exists: bool = conn
+            .query_row(
+                "SELECT 1 FROM sqlite_master WHERE type = 'index' AND name = 'idx_keyword_synonyms_canonical'",
+                [],
+                |_| Ok(true),
+            )
+            .unwrap_or(false);
+        assert!(idx_exists);
+    }
+
+    #[test]
+    fn resolve_synonym_returns_none_for_unregistered_surface() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        assert_eq!(resolve_synonym(&conn, "expects").unwrap(), None);
+    }
+
+    #[test]
+    fn resolve_synonym_returns_canonical_when_row_exists() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        conn.execute(
+            "INSERT INTO keyword_synonyms (synonym, canonical_keyword, source_ref, shipped_commit, notes) \
+             VALUES ('expects', 'requires', 'phaseA-test', 'test', NULL)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_synonym(&conn, "expects").unwrap(),
+            Some("requires".to_string())
+        );
+        // Other surface tokens still resolve to None
+        assert_eq!(resolve_synonym(&conn, "demands").unwrap(), None);
+    }
+
+    #[test]
+    fn synonym_round_trip_via_inserts_and_deletes() {
+        // P5 proof — pure DB round-trip without any grammar pipeline call.
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+
+        // Step 1: empty synonym table → no resolution
+        assert_eq!(resolve_synonym(&conn, "assumes").unwrap(), None);
+
+        // Step 2: insert a synonym row → resolution succeeds
+        conn.execute(
+            "INSERT INTO keyword_synonyms (synonym, canonical_keyword, source_ref, shipped_commit, notes) \
+             VALUES ('assumes', 'requires', 'P5-round-trip', 'test', NULL)",
+            [],
+        )
+        .unwrap();
+        assert_eq!(
+            resolve_synonym(&conn, "assumes").unwrap(),
+            Some("requires".to_string())
+        );
+
+        // Step 3: delete the row → resolution returns None again
+        conn.execute(
+            "DELETE FROM keyword_synonyms WHERE synonym = 'assumes'",
+            [],
+        )
+        .unwrap();
+        assert_eq!(resolve_synonym(&conn, "assumes").unwrap(), None);
+    }
+
+    #[test]
+    fn counts_includes_keyword_synonyms_field() {
+        let dir = tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = init_at(&db).unwrap();
+        conn.execute(
+            "INSERT INTO keyword_synonyms (synonym, canonical_keyword, source_ref, shipped_commit, notes) \
+             VALUES ('demands', 'requires', 'count-test', 'test', NULL)",
+            [],
+        )
+        .unwrap();
+        let c = counts(&conn).unwrap();
+        assert_eq!(c.keyword_synonyms, 1);
+        assert_eq!(c.keywords, 0); // unchanged
     }
 }
