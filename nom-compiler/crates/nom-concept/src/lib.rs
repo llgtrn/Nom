@@ -28,6 +28,9 @@ pub use strict::{StrictWarning, validate_nom as validate_nom_strict, validate_no
 pub mod stages;
 pub use stages::{StageId, StageFailure, TokenStream, stage1_tokenize};
 
+pub mod flow_edge;
+pub use flow_edge::{FlowEdgeFinding, check_nom_file as check_flow_edges, check_nomtu_file as check_nomtu_flow_edges};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by
