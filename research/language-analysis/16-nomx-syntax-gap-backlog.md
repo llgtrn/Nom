@@ -214,18 +214,25 @@
 | 197 | Categorical factor treatment declared in fit function's `intended to` sentence; build-stage handles indicator-variable expansion | authoring-guide rule | ✅ closed (doc 14 #52) |
 | 198 | `statistical_rigor` QualityName registration | authoring-corpus seed | ⏳ queued (doc 14 #52; accumulates to 6 seeds) |
 | 199 | R non-standard evaluation is a no-op in Nom; capture the intended computation as explicit function/data decl | authoring-guide rule | ✅ closed (doc 14 #52) |
+| 200 | OpenAPI type constraints (`minLength`/`maxLength`/`format`/`minimum`/`maximum`/`pattern`) → prose range descriptors on `exposes` fields | authoring-guide rule | ✅ closed (doc 14 #53) |
+| 201 | `@Route` typed-slot kind — extends @Kind vocabulary for HTTP/gRPC/event/CLI routing | **W50** grammar rule | ⏳ queued (doc 14 #53; narrow; ships gRPC + event-handler + CLI dispatch) |
+| 202 | HTTP status codes → prose outcome-class descriptors on `ensures` clauses; exact numeric codes are build-stage dispatch | authoring-guide rule | ✅ closed (doc 14 #53; keeps source HTTP-framework-agnostic) |
+| 203 | Request and response body schemas decompose to separate data decls — never merged via optional fields | authoring-guide rule | ✅ closed (doc 14 #53; prevents common OpenAPI schema-overloading mistake) |
+| 204 | Path/query/header parameters → `requires` clauses typed against function parameter list | authoring-guide rule | ✅ closed (doc 14 #53) |
+| 205 | Content-type specified via `ensures … serialized as <format>` when non-default; JSON is implicit default | authoring-guide rule | ✅ closed (doc 14 #53) |
+| 206 | Concept decl as route-map container (binds N route strings via `@Route` typed-slot to N function decls) | authoring-guide rule | ✅ closed (doc 14 #53; new idiom for doc 17) |
 
-Totals by destination (after doc 14 #52 R statistical-computing translation — **twelfth 0-new-wedge translation in a row**; 6 authoring-guide closures + statistical_rigor seed; **data-science triad (array ops + relational queries + regression) now unified under identical Nom primitives**):
+Totals by destination (after doc 14 #53 OpenAPI schema-first-API translation surfaced W50 `@Route` typed-slot (narrow, ships gRPC + event + CLI dispatch) + 7 authoring-guide closures + new concept-as-route-map idiom):
 
-- ⏳ Wedge queued: **42** (unchanged)
+- ⏳ Wedge queued: **43** (+W50 @Route)
 - 🧪 Smoke-test todo: **1**
 - 📘 Authoring-guide doc-todo: **0**
-- ✅ Closed: **150**
+- ✅ Closed: **157**
 - 🧠 Design deferred (open): **0**
 - 🔒 Blocked: **2**
 - 🌱 Authoring-corpus seed: **6** (forward_compatibility + numerical_stability + gas_efficiency + synthesizability + minimum_cost + statistical_rigor QualityNames)
 
-Backlog size: 207 rows. Closure rate 72% (150/207). **52 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + **statistical-computing (R)**. Nineteenth consecutive minimal-wedge translation, twelfth 0-new-wedge. **Data-science triad (array ops + relational queries + regression) now unified under identical Nom primitives.**
+Backlog size: 215 rows. Closure rate 73% (157/215). **53 translations** in doc 14. Paradigm coverage: imperative + OOP + async + concurrency + pure-functional + ADT + data + shell + build + container + editor-event + CI/CD + math-as-language + actor-model + logic-programming + metaprogramming + schema-IDL + pattern-DSL + state-machine-DSL + property-based-testing + infrastructure-as-code + array-programming + workflow-orchestration + stream-processing + smart-contract + declarative-reactive-UI + BDD-scenario + hardware-description-RTL + purely-functional-package-spec + recursive-relational-query + stack-based-concatenative + parameterized-modules + policy-DSL + temporal-logic-model-checking + AI-planning + visualization-as-code + verified-imperative-programming + portable-binary-target + statistical-computing + **HTTP-API-spec (OpenAPI)**. Twentieth consecutive minimal-wedge translation. Concept-as-route-map is a new idiom.
 
 ## Wedge master index (for cross-ref with doc 13)
 
@@ -254,6 +261,7 @@ Backlog size: 207 rows. Closure rate 72% (150/207). **52 translations** in doc 1
 - **W47:** Scenario-clause grammar — closed 3-keyword set `given`/`when`/`then`; each clause is a prose sentence. Ships paired with W46. Keyword repeats on every clause (no `and`-continuation).
 - **W48:** Clock-domain clause — `at every rising edge of CLOCK` / `at every falling edge of CLOCK` attaches to synchronous-logic function decls. Expresses temporal contracts without adding a new kind; sits alongside `requires`/`ensures`. Narrow closed vocabulary.
 - **W49:** Quantifier-vocabulary lock — reserve `every`/`no`/`some`/`at-least N`/`at-most N`/`exactly N` as quantifier tokens inside `requires`/`ensures` clauses. Retroactive payoff wedge: disambiguates ensure-clause parsing across 15+ prior paradigm translations (Prolog/SQL-CTE/Rego/Hypothesis/property-tests/…).
+- **W50:** `@Route` typed-slot kind — narrow extension to the @Kind vocabulary (currently `@Function`/`@Data`/`@Module`/`@Concept`/`@Composition`) for HTTP method+path routes, gRPC methods, event handlers, CLI subcommands. Uses the existing typed-slot resolver; `@Route matching "GET /todos"` syntax. Small wedge, broadly applicable.
 
 Existing lanes not duplicated here: W7 placeholder rows (doc 15 §2); W8 100-repo harness (doc 15 §3-§7).
 

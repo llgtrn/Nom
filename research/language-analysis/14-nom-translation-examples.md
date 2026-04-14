@@ -3530,6 +3530,123 @@ Row additions: **0 new wedges** — statistical/dataframe computing fully expres
 
 ---
 
+## 53. OpenAPI / Swagger — schema-first HTTP API specification
+
+```yaml
+openapi: 3.1.0
+info:
+  title: Todo API
+  version: 1.0.0
+paths:
+  /todos:
+    get:
+      summary: List all todos
+      parameters:
+        - name: completed
+          in: query
+          schema: { type: boolean }
+      responses:
+        '200':
+          description: OK
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/Todo' }
+    post:
+      summary: Create a todo
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/TodoCreate' }
+      responses:
+        '201': { description: Created }
+        '400': { description: Bad Request }
+components:
+  schemas:
+    Todo:
+      type: object
+      required: [id, title, completed]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string, minLength: 1, maxLength: 280 }
+        completed: { type: boolean }
+    TodoCreate:
+      type: object
+      required: [title]
+      properties:
+        title: { type: string, minLength: 1, maxLength: 280 }
+```
+
+### `.nomx v1` translation
+
+```nomx
+define list_todos
+  that takes an optional completed filter, returns a list of todos.
+on GET /todos, apply the completed filter if present, return the matching list as JSON with status 200.
+
+define create_todo
+  that takes a todo-create payload, returns the created todo or a 400 if the payload is malformed.
+on POST /todos with a body matching TodoCreate, create and return the new Todo with status 201; otherwise return 400.
+```
+
+### `.nomx v2` translation
+
+```nomx
+the data Todo is
+  intended to describe one todo-list item with its identity, title, and completion state.
+  exposes id as uuid.
+  exposes title as text of length 1 to 280.
+  exposes completed as boolean.
+
+the data TodoCreate is
+  intended to describe the subset of Todo fields the client provides to create a new item.
+  exposes title as text of length 1 to 280.
+
+the function list_todos is
+  intended to return every stored Todo, optionally filtered to only-completed or only-incomplete when the completed query parameter is provided.
+  uses the @Data matching "Todo" with at-least 0.95 confidence.
+  requires the completed parameter, when present, is a boolean.
+  ensures when completed is absent, every stored Todo appears in the result in a stable order.
+  ensures when completed is present and true, every Todo in the result has completed equal to true.
+  ensures when completed is present and false, every Todo in the result has completed equal to false.
+  favor correctness.
+
+the function create_todo is
+  intended to persist a new Todo from a TodoCreate payload, generating a fresh identity, and return the created Todo; rejects malformed or invalid payloads.
+  uses the @Data matching "Todo" with at-least 0.95 confidence.
+  uses the @Data matching "TodoCreate" with at-least 0.95 confidence.
+  requires the payload is a well-formed TodoCreate with title of length 1 to 280.
+  ensures when the payload is valid, the returned Todo has the payload's title, a fresh uuid identity, and completed equal to false.
+  ensures when the payload is invalid, the operation fails with a 400-equivalent diagnostic and no Todo is stored.
+  hazard concurrent creation must allocate distinct identities; callers should treat the uuid as the authoritative identity.
+  favor correctness.
+
+the concept TodoHttpApi is
+  intended to describe the HTTP surface of the todo service — which verbs and paths map to which functions, which status codes each branch returns.
+  index includes list_todos bound to the @Route matching "GET /todos" with at-least 0.95 confidence.
+  index includes create_todo bound to the @Route matching "POST /todos" with at-least 0.95 confidence.
+  exposes route_map as list of (method, path, function_name) triples.
+```
+
+### Gaps surfaced
+
+1. **Schema validation constraints (`minLength`, `maxLength`, `format: uuid`)** — OpenAPI's constraint vocabulary on types. Nom's `text of length 1 to 280` + `id as uuid` already carries the same constraints in prose form. Authoring-guide rule: **OpenAPI type constraints (`minLength`/`maxLength`/`format`/`minimum`/`maximum`/`pattern`) decompose to prose range descriptors on data decl `exposes` fields**. No new wedge; reuses the range-typed naturals rule (#41 Verilog) extended to text lengths.
+2. **Route-to-function binding (`GET /todos` → `list_todos`)** — HTTP method + path pattern + handler function. Nom's translation puts this in a `concept TodoHttpApi` whose index binds route strings to function decls via `@Route` typed-slot matches. **Candidate: W50 `@Route` typed-slot kind** — reuses the existing typed-slot resolver; narrow addition to the @Kind vocabulary. Small wedge, broadly applicable (same shape solves gRPC method dispatch, event-handler routing, CLI subcommand routing).
+3. **Status codes per response branch (`'200'`, `'201'`, `'400'`)** — per-outcome HTTP metadata. Nom's translation uses `ensures when invalid, the operation fails with a 400-equivalent diagnostic`. Authoring-guide rule: **HTTP status codes decompose to prose outcome-class descriptors on `ensures` clauses; exact numeric codes are build-stage dispatch, not authoring concerns**. Keeps source HTTP-framework-agnostic. No new wedge.
+4. **Request/response body schemas** — OpenAPI separates request-body schema from response-body schema. Nom's translation exposes each as a **separate data decl** (`Todo` vs `TodoCreate`) — the asymmetry is explicit. Authoring-guide rule: **request and response body schemas decompose to separate data decls; never merge them into a single shared type with optional fields**. Prevents the common OpenAPI mistake of overloading a single schema. No new wedge.
+5. **Path parameters (`/todos/{id}`)** — typed URL-path segments. Not exercised in this example but handled the same way as query parameters: prose `requires the id path parameter is a uuid`. Authoring-guide rule: **path/query/header parameters decompose to `requires` clauses typed against the function's parameter list**. No new wedge.
+6. **Content negotiation (`application/json`)** — OpenAPI can specify multiple content-types per response. Nom's translation defaults to JSON and notes non-JSON via explicit `ensures … serialized as <format>`. Authoring-guide rule: **content-type is an `ensures …serialized as…` clause when non-default; the default is JSON**. No new wedge.
+7. **Operation summary vs description** — OpenAPI's free-text metadata. Nom's function decl `intended to` clause carries the summary; longer descriptions go in the data decl's `intended to` as well. Same authoring-guide rule as docstring mapping (doc 17 §I6). No new wedge.
+8. **`$ref` for schema reuse** — OpenAPI's inline-reference to shared schemas. Nom's `uses @Data matching "…"` is the direct analogue. No new wedge.
+
+Row additions: **W50 `@Route` typed-slot kind** (new wedge, narrow — extends @Kind vocabulary with `@Route` for HTTP/gRPC/event/CLI routing). 7 authoring-guide closures: schema constraints as prose range descriptors, status codes as outcome-class ensures, request/response schemas always separate, path/query/header params as `requires` clauses, content-type via `ensures…serialized as…`, summary via `intended to` (reuses §I6), `$ref` via `uses @Data`.
+
+**Twentieth consecutive minimal-wedge translation.** OpenAPI/Swagger — the industry-standard HTTP API spec format — decomposes cleanly into (N data decls + N function decls + 1 concept decl with route index). The **W50 `@Route` typed-slot kind** is the one small grammar addition; it generalizes: same wedge ships gRPC method dispatch, event-handler routing (#40 XState events × routes), and CLI subcommand routing. **Concept decl as route-map container** is a new idiom worth flagging in doc 17.
+
+---
+
 ## Running gap list → migrated to doc 16
 
 As of commit following `370f96d`, the 35-gap list has been promoted to its
