@@ -40,9 +40,11 @@ anything load-bearing.
   the cross-stage required-clause-presence validator is queued.
 - CLI: `nom grammar init`, `nom grammar import <sql-file>`,
   `nom grammar status`, `nom grammar add-kind`, `nom grammar
-  add-synonym`, `nom grammar add-quality` (shipped). Remaining
-  row-level subcommands (add-keyword, add-clause-shape, add-pattern)
-  queued.
+  add-synonym`, `nom grammar add-quality`, `nom grammar add-keyword`,
+  `nom grammar add-clause-shape`, `nom grammar add-pattern` — Phase C
+  complete; six row-level subcommands cover every grammar.sqlite
+  table populated by a user (keywords + keyword_synonyms + kinds +
+  clause_shapes + quality_names + patterns).
 - Phase E proofs — 5 of 7 shipped: P1 schema-completeness
   (empty DB rejects every non-empty source at S2), P2 determinism
   (100-run Debug-equality on curated inputs), P4 strictness property

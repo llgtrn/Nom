@@ -1055,6 +1055,94 @@ enum GrammarCmd {
         #[arg(short, long)]
         path: Option<PathBuf>,
     },
+    /// Add a single row to the `keywords` table. S1 treats every row
+    /// here as a reserved token recognized by the lexer.
+    AddKeyword {
+        /// Canonical reserved token.
+        token: String,
+        /// Lexical role (e.g. `clause-opener`, `kind-marker`, `quantifier`).
+        #[arg(long)]
+        role: String,
+        /// Optional JSON list of kinds where this keyword is valid
+        /// (e.g. `["function","data"]`). Empty = global.
+        #[arg(long, default_value = "")]
+        kind_scope: String,
+        /// Free-form traceability note.
+        #[arg(long, default_value = "")]
+        notes: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Add a single row to the `clause_shapes` table. S3 consults this
+    /// table to validate that a block's required clauses are present
+    /// in canonical order.
+    AddClauseShape {
+        /// Kind the clause belongs to (must be a row in `kinds`).
+        kind: String,
+        /// Clause name (e.g. `intent`, `requires`, `ensures`).
+        clause_name: String,
+        /// Ordinal within the kind — defines canonical order.
+        #[arg(long)]
+        position: i64,
+        /// Whether S3 rejects the block when this clause is absent.
+        #[arg(long)]
+        required: bool,
+        /// Optional `one_of_group` tag — clauses sharing a tag are
+        /// mutually exclusive within the kind.
+        #[arg(long)]
+        one_of_group: Option<String>,
+        /// Grammar shape hint (free-form authoring reference).
+        #[arg(long, default_value = "")]
+        grammar_shape: String,
+        /// Minimum occurrences within a block (default 0).
+        #[arg(long, default_value_t = 0i64)]
+        min_occurrences: i64,
+        /// Maximum occurrences within a block (unset = unbounded).
+        #[arg(long)]
+        max_occurrences: Option<i64>,
+        /// Free-form traceability note.
+        #[arg(long, default_value = "")]
+        notes: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
+    /// Add a single row to the `patterns` table. Patterns are reusable
+    /// authoring shapes an AI client consults to find the canonical
+    /// Nom rendering for a given intent.
+    AddPattern {
+        /// Stable id — unique.
+        pattern_id: String,
+        /// One-line description of the intent.
+        #[arg(long)]
+        intent: String,
+        /// JSON list of kinds the pattern composes (e.g.
+        /// `["function","data"]`).
+        #[arg(long, default_value = "[]")]
+        nom_kinds: String,
+        /// JSON list of clause names the pattern uses.
+        #[arg(long, default_value = "[]")]
+        nom_clauses: String,
+        /// JSON list of typed-slot references the pattern carries.
+        #[arg(long, default_value = "[]")]
+        typed_slot_refs: String,
+        /// Parser-acceptable example shape (raw Nom source).
+        #[arg(long, default_value = "")]
+        example_shape: String,
+        /// JSON list of hazard tags the pattern mitigates.
+        #[arg(long, default_value = "[]")]
+        hazards: String,
+        /// JSON list of `favor` names the pattern optimizes for.
+        #[arg(long, default_value = "[]")]
+        favors: String,
+        /// JSON list of source doc refs for traceability.
+        #[arg(long, default_value = "[]")]
+        source_doc_refs: String,
+        /// Grammar DB path (default: ~/.nom/grammar.sqlite).
+        #[arg(short, long)]
+        path: Option<PathBuf>,
+    },
     /// Add a single row to the `quality_names` table. S5b rejects any
     /// `favor X` clause whose name is not registered here.
     AddQuality {
@@ -1461,6 +1549,24 @@ fn main() {
             GrammarCmd::AddQuality { name, axis, cardinality, required_at, path } => {
                 cmd_grammar_add_quality(path.as_deref(), &name, &axis, &cardinality, &required_at)
             }
+            GrammarCmd::AddKeyword { token, role, kind_scope, notes, path } => {
+                cmd_grammar_add_keyword(path.as_deref(), &token, &role, &kind_scope, &notes)
+            }
+            GrammarCmd::AddClauseShape {
+                kind, clause_name, position, required, one_of_group,
+                grammar_shape, min_occurrences, max_occurrences, notes, path,
+            } => cmd_grammar_add_clause_shape(
+                path.as_deref(), &kind, &clause_name, position, required,
+                one_of_group.as_deref(), &grammar_shape, min_occurrences,
+                max_occurrences, &notes,
+            ),
+            GrammarCmd::AddPattern {
+                pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+                example_shape, hazards, favors, source_doc_refs, path,
+            } => cmd_grammar_add_pattern(
+                path.as_deref(), &pattern_id, &intent, &nom_kinds, &nom_clauses,
+                &typed_slot_refs, &example_shape, &hazards, &favors, &source_doc_refs,
+            ),
         },
     };
     process::exit(exit_code);
@@ -1667,6 +1773,133 @@ fn cmd_grammar_add_quality(
             0
         }
         Err(e) => { eprintln!("nom grammar add-quality: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_add_keyword(
+    path: Option<&Path>,
+    token: &str,
+    role: &str,
+    kind_scope: &str,
+    notes: &str,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-keyword: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO keywords \
+               (token, role, kind_scope, source_ref, shipped_commit, notes) \
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![token, role, kind_scope, "cli-add-keyword", "cli-add-keyword", notes],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-keyword: {} ({} row{} inserted into {})",
+                token,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-keyword: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_add_clause_shape(
+    path: Option<&Path>,
+    kind: &str,
+    clause_name: &str,
+    position: i64,
+    required: bool,
+    one_of_group: Option<&str>,
+    grammar_shape: &str,
+    min_occurrences: i64,
+    max_occurrences: Option<i64>,
+    notes: &str,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-clause-shape: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO clause_shapes \
+               (kind, clause_name, is_required, one_of_group, position, grammar_shape, \
+                min_occurrences, max_occurrences, source_ref, notes) \
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![
+            kind,
+            clause_name,
+            if required { 1 } else { 0 },
+            one_of_group,
+            position,
+            grammar_shape,
+            min_occurrences,
+            max_occurrences,
+            "cli-add-clause-shape",
+            notes,
+        ],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-clause-shape: {}.{} @ {} ({} row{} inserted into {})",
+                kind,
+                clause_name,
+                position,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-clause-shape: {e}"); 1 }
+    }
+}
+
+fn cmd_grammar_add_pattern(
+    path: Option<&Path>,
+    pattern_id: &str,
+    intent: &str,
+    nom_kinds: &str,
+    nom_clauses: &str,
+    typed_slot_refs: &str,
+    example_shape: &str,
+    hazards: &str,
+    favors: &str,
+    source_doc_refs: &str,
+) -> i32 {
+    let (p, conn) = match open_grammar_rw(path) {
+        Ok(x) => x,
+        Err(e) => { eprintln!("nom grammar add-pattern: {e}"); return 1; }
+    };
+    let sql = "INSERT OR IGNORE INTO patterns \
+               (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
+                example_shape, hazards, favors, source_doc_refs) \
+               VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)";
+    let res = conn.execute(
+        sql,
+        rusqlite::params![
+            pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+            example_shape, hazards, favors, source_doc_refs,
+        ],
+    );
+    match res {
+        Ok(n) => {
+            println!(
+                "nom grammar add-pattern: {} ({} row{} inserted into {})",
+                pattern_id,
+                n,
+                if n == 1 { "" } else { "s" },
+                p.display()
+            );
+            0
+        }
+        Err(e) => { eprintln!("nom grammar add-pattern: {e}"); 1 }
     }
 }
 
