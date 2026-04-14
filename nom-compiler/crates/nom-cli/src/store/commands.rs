@@ -477,7 +477,7 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
     };
     let total = dict_db.count().unwrap_or(0);
     let concept_defs_count = dict_db.count_concept_defs().unwrap_or(0);
-    let words_v2_count = dict_db.count_words_v2().unwrap_or(0);
+    let entities_count = dict_db.count_entities().unwrap_or(0);
     let required_axes_count = dict_db.count_required_axes().unwrap_or(0);
     let body_hist = match dict_db.body_kind_histogram() {
         Ok(h) => h,
@@ -503,14 +503,14 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
             .map(|(s, n)| format!("{{\"status\":\"{}\",\"count\":{n}}}", escape_json(s)))
             .collect();
         println!(
-            "{{\"total\":{total},\"concept_defs\":{concept_defs_count},\"words_v2\":{words_v2_count},\"required_axes\":{required_axes_count},\"body_kind_histogram\":[{}],\"status_histogram\":[{}]}}",
+            "{{\"total\":{total},\"concept_defs\":{concept_defs_count},\"entities\":{entities_count},\"required_axes\":{required_axes_count},\"body_kind_histogram\":[{}],\"status_histogram\":[{}]}}",
             body_pairs.join(","),
             status_pairs.join(","),
         );
     } else {
         println!("total entries: {total}");
         println!("concept_defs (DB1):  {concept_defs_count}");
-        println!("words_v2 (DB2):      {words_v2_count}");
+        println!("entities (DB2):      {entities_count}");
         println!("required_axes (M7a): {required_axes_count}");
         println!();
         println!("body_kind histogram:");

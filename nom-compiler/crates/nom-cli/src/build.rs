@@ -109,7 +109,7 @@ pub fn cmd_build_status(
             }
         };
 
-        // Run the stub resolver against words_v2.
+        // Run the stub resolver against entities.
         let (resolved, still_unresolved, stats) = resolve_closure(&closure, &dict_db);
 
         let total_words = closure.word_hashes.len() + stats.resolved + stats.still_unresolved;
@@ -150,7 +150,7 @@ pub fn cmd_build_status(
                 kind_display, matching_display
             );
             let picked_word = dict_db
-                .find_word_v2(&rref.hash)
+                .find_entity(&rref.hash)
                 .ok()
                 .flatten()
                 .map(|row| row.word)
@@ -161,8 +161,8 @@ pub fn cmd_build_status(
                 rref.alternatives.len()
             );
             for alt_hash in &rref.alternatives {
-                // Look up the alternative's word in words_v2 for nicer output.
-                match dict_db.find_word_v2(alt_hash) {
+                // Look up the alternative's word in entities for nicer output.
+                match dict_db.find_entity(alt_hash) {
                     Ok(Some(row)) => println!("      {}@{}", row.word, alt_hash),
                     _ => println!("      <unknown>@{}", alt_hash),
                 }

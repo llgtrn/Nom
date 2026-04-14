@@ -8,7 +8,7 @@
 
 use std::path::PathBuf;
 
-use nom_dict::{NomDict, WordV2Row};
+use nom_dict::{NomDict, EntityRow};
 use nom_intent::adapters::NomCliAdapter;
 use nom_intent::dict_tools::DictTools;
 use nom_intent::react::{
@@ -47,7 +47,7 @@ fn classify_dispatches_query_to_dict_tools_against_seeded_row() {
     let d = NomDict::open_in_memory().unwrap();
     // Seed a row DictTools::query can find.
     let hash = "e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1e1";
-    d.upsert_word_v2(&WordV2Row {
+    d.upsert_entity(&EntityRow {
         hash: hash.into(),
         word: "greet".into(),
         kind: "function".into(),
@@ -110,7 +110,7 @@ fn nom_cli_adapter_drives_loop_to_completion_against_seeded_dict() {
     // machine, the agent should reach an Answer without external LLM.
     let d = NomDict::open_in_memory().unwrap();
     let hash = "f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3f3";
-    d.upsert_word_v2(&WordV2Row {
+    d.upsert_entity(&EntityRow {
         hash: hash.into(),
         // "two" is the first_content_token of "add two numbers" (stop
         // word "add" skipped); seed under the same kind the adapter

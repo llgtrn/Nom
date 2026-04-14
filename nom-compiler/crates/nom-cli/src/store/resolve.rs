@@ -1,7 +1,7 @@
 //! `resolve_closure` — stub resolver for unresolved refs in a `ConceptClosure`.
 
 use nom_concept::{ConceptClosure, UnresolvedRef};
-use nom_dict::{NomDict, WordV2Row};
+use nom_dict::{NomDict, EntityRow};
 
 /// Statistics produced by `resolve_closure`.
 #[derive(Debug, Default)]
@@ -12,7 +12,7 @@ pub struct ResolveStats {
     pub ambiguous: usize,
 }
 
-/// A single unresolved ref that was matched against `words_v2`.
+/// A single unresolved ref that was matched against `entities`.
 #[derive(Debug, Clone)]
 pub struct ResolvedRef {
     pub word: String,
@@ -30,17 +30,17 @@ pub struct ResolvedRef {
     pub matching: Option<String>,
 }
 
-/// Resolve unresolved refs from a closure against the DB's `words_v2` table.
+/// Resolve unresolved refs from a closure against the DB's `entities` table.
 ///
 /// Strategy (stub — Phase 9 will replace with deterministic per-kind embedding
 /// index per doc 08 §5.3):
 ///
 /// **v1 (word-based)**: `uref.typed_slot == false`
-/// - Query `find_words_v2_by_word(ref.word)`.
+/// - Query `find_entities_by_word(ref.word)`.
 /// - Filter by kind if `ref.kind` is `Some`.
 ///
 /// **v2 (typed-slot, `.nomx v2 keyed`)**: `uref.typed_slot == true`
-/// - Query `find_words_v2_by_kind(ref.kind)` — no word to anchor on.
+/// - Query `find_entities_by_kind(ref.kind)` — no word to anchor on.
 /// - All candidates from this query share the declared kind already, so no
 ///   additional kind-filter step is needed.
 /// - The `ResolvedRef` produced keeps `kind` set and `word` empty (the source
@@ -67,11 +67,11 @@ pub fn resolve_closure(
 
     for uref in &closure.unresolved {
         // Obtain candidates depending on ref form (v1 word-based vs v2 typed-slot).
-        let candidates: Vec<WordV2Row> = if uref.typed_slot {
+        let candidates: Vec<EntityRow> = if uref.typed_slot {
             // .nomx v2 keyed: lookup by kind alone; word is empty.
             // TODO Phase 9: re-rank by `uref.matching` semantic similarity.
             match &uref.kind {
-                Some(k) => match dict.find_words_v2_by_kind(k) {
+                Some(k) => match dict.find_entities_by_kind(k) {
                     Ok(rows) => rows,
                     Err(e) => {
                         eprintln!("nom: resolve_closure: db error for kind `{k}`: {e}");
@@ -89,7 +89,7 @@ pub fn resolve_closure(
             }
         } else {
             // v1: word name lookup, optional kind filter.
-            let mut rows = match dict.find_words_v2_by_word(&uref.word) {
+            let mut rows = match dict.find_entities_by_word(&uref.word) {
                 Ok(rows) => rows,
                 Err(e) => {
                     eprintln!("nom: resolve_closure: db error for `{}`: {e}", uref.word);
@@ -149,7 +149,7 @@ pub fn resolve_closure(
 #[cfg(test)]
 mod tests {
     use nom_concept::{ConceptClosure, UnresolvedRef};
-    use nom_dict::{NomDict, WordV2Row};
+    use nom_dict::{NomDict, EntityRow};
 
     use super::resolve_closure;
 
@@ -195,8 +195,8 @@ mod tests {
         }
     }
 
-    fn make_fn_row(hash: &str, word: &str) -> WordV2Row {
-        WordV2Row {
+    fn make_fn_row(hash: &str, word: &str) -> EntityRow {
+        EntityRow {
             hash: hash.to_string(),
             word: word.to_string(),
             kind: "function".to_string(),
@@ -211,10 +211,10 @@ mod tests {
         }
     }
 
-    fn open_dict_with_rows(rows: &[WordV2Row]) -> NomDict {
+    fn open_dict_with_rows(rows: &[EntityRow]) -> NomDict {
         let d = NomDict::open_in_memory().expect("in-memory dict");
         for r in rows {
-            d.upsert_word_v2(r).expect("upsert");
+            d.upsert_entity(r).expect("upsert");
         }
         d
     }

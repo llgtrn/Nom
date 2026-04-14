@@ -157,7 +157,7 @@ pub fn build_report(
                 // The picked_word is the word from BuildItem; for typed-slot items
                 // the word is empty so we re-derive from the hash via the dict.
                 let picked_word = if item.word.is_empty() {
-                    dict.find_word_v2(hash)
+                    dict.find_entity(hash)
                         .ok()
                         .flatten()
                         .map(|r| r.word)
@@ -185,7 +185,7 @@ pub fn build_report(
                             .unwrap_or(&item.kind)
                     )
                 } else {
-                    "no matching entry in words_v2".to_string()
+                    "no matching entry in entities".to_string()
                 };
                 SlotOutcome::Unresolved {
                     reason,
@@ -221,7 +221,7 @@ pub fn build_report(
                     typed_slot: uref.typed_slot,
                     threshold: uref.confidence_threshold,
                     outcome: SlotOutcome::Unresolved {
-                        reason: "no matching entry in words_v2".to_string(),
+                        reason: "no matching entry in entities".to_string(),
                         candidates_considered: vec![],
                     },
                 });

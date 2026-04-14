@@ -1,7 +1,7 @@
 //! M8 slice-3a: `DictTools` — real `AgentTools` impl backed by `nom-dict`.
 //!
 //! Wires the first of the 5 grouped tools (`query`) to production code:
-//! `find_word_v2` by hash, `find_words_v2_by_kind` by kind. The other 4
+//! `find_entity` by hash, `find_entities_by_kind` by kind. The other 4
 //! methods (compose/verify/render/explain) return `Observation::Error`
 //! with an explicit "not yet wired" message so the loop doesn't silently
 //! pretend to work — matches the discipline established in M8 slice-1.
@@ -19,7 +19,7 @@
 //!   default 50) per CRAG's "narrow before LLM" rule — without this the
 //!   `Candidates` list could swamp the LLM's context.
 
-use nom_dict::WordV2Row;
+use nom_dict::EntityRow;
 use sha2::{Digest, Sha256};
 
 use crate::react::{AgentTools, Observation};
@@ -67,7 +67,7 @@ fn hash_closure(pairs: &[(String, String)]) -> String {
 /// whether contracts exist + authoring origin. Glass-box-report level
 /// detail (LayeredDreamReport etc.) is out of scope until slice-3c-full
 /// wires nom-app's report module.
-fn format_entry_summary(row: &WordV2Row, depth: usize) -> String {
+fn format_entry_summary(row: &EntityRow, depth: usize) -> String {
     let uid_short = &row.hash[..12.min(row.hash.len())];
     let body = row
         .body_kind
@@ -139,7 +139,7 @@ impl<'a> DictTools<'a> {
             if visited.contains(&uid) {
                 continue;
             }
-            let row = match self.dict.find_word_v2(&uid) {
+            let row = match self.dict.find_entity(&uid) {
                 Ok(Some(r)) => r,
                 Ok(None) => continue, // unresolved ref — skip, don't fail
                 Err(e) => return Err(format!("dict error on {uid}: {e}")),
@@ -161,7 +161,7 @@ impl<'a> DictTools<'a> {
         let mut out: Vec<(String, String)> = visited
             .into_iter()
             .filter_map(|uid| {
-                self.dict.find_word_v2(&uid).ok().flatten().map(|row| {
+                self.dict.find_entity(&uid).ok().flatten().map(|row| {
                     let body_kind = row
                         .body_kind
                         .unwrap_or_else(|| "<no-body>".to_string());
@@ -176,7 +176,7 @@ impl<'a> DictTools<'a> {
     pub fn lookup_candidates(&self, subject: &str, kind: Option<&str>) -> Vec<String> {
         // Hash-exact match: `subject` may be a 64-hex UID.
         if subject.len() == 64 && subject.chars().all(|c| c.is_ascii_hexdigit()) {
-            if let Ok(Some(row)) = self.dict.find_word_v2(subject) {
+            if let Ok(Some(row)) = self.dict.find_entity(subject) {
                 return vec![row.hash];
             }
             return Vec::new();
@@ -190,7 +190,7 @@ impl<'a> DictTools<'a> {
             // reason about why.
             return Vec::new();
         };
-        let rows = match self.dict.find_words_v2_by_kind(kind) {
+        let rows = match self.dict.find_entities_by_kind(kind) {
             Ok(rows) => rows,
             Err(_) => return Vec::new(),
         };
@@ -235,7 +235,7 @@ impl<'a> AgentTools for DictTools<'a> {
         }
         let mut best: Option<(usize, String, String)> = None; // (score, word, kind)
         for uid in context {
-            if let Ok(Some(row)) = self.dict.find_word_v2(uid) {
+            if let Ok(Some(row)) = self.dict.find_entity(uid) {
                 let word_tokens = tokenize(&row.word);
                 let score = token_overlap(&prose_tokens, &word_tokens);
                 if score == 0 {
@@ -245,7 +245,7 @@ impl<'a> AgentTools for DictTools<'a> {
                     None => true,
                     // Higher score wins. Alphabetical tiebreak on word
                     // for deterministic output — same discipline as
-                    // slice-1 find_words_v2_by_kind.
+                    // slice-1 find_entities_by_kind.
                     Some((b_score, b_word, _)) => {
                         score > *b_score
                             || (score == *b_score && row.word < *b_word)
@@ -288,7 +288,7 @@ impl<'a> AgentTools for DictTools<'a> {
                 "DictTools::verify: target {target:?} is not a 64-char hex hash"
             ));
         }
-        let row = match self.dict.find_word_v2(target) {
+        let row = match self.dict.find_entity(target) {
             Ok(Some(r)) => r,
             Ok(None) => {
                 return Observation::Error(format!(
@@ -370,7 +370,7 @@ impl<'a> AgentTools for DictTools<'a> {
         // Defensive check — catches dict corruption mid-upsert.
         if row.hash != target {
             failures.push(format!(
-                "dict corruption: find_word_v2(\"{target}\") returned row with hash=\"{}\"",
+                "dict corruption: find_entity(\"{target}\") returned row with hash=\"{}\"",
                 row.hash
             ));
         }
@@ -425,7 +425,7 @@ impl<'a> AgentTools for DictTools<'a> {
                 "DictTools::explain: uid {uid:?} is not a 64-char hex hash"
             ));
         }
-        match self.dict.find_word_v2(uid) {
+        match self.dict.find_entity(uid) {
             Ok(Some(row)) => {
                 let summary = format_entry_summary(&row, depth);
                 Observation::Explanation { summary }
@@ -441,10 +441,10 @@ impl<'a> AgentTools for DictTools<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use nom_dict::{NomDict, WordV2Row};
+    use nom_dict::{NomDict, EntityRow};
 
     fn seed_word(d: &NomDict, hash: &str, word: &str, kind: &str) {
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: hash.into(),
             word: word.into(),
             kind: kind.into(),
@@ -562,7 +562,7 @@ mod tests {
     #[test]
     fn compose_maps_concept_kind_to_intent_kind() {
         let d = NomDict::open_in_memory().unwrap();
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_ADD.into(),
             word: "auth".into(),
             kind: "concept".into(),
@@ -618,7 +618,7 @@ mod tests {
     #[test]
     fn verify_passes_on_well_formed_function_entry() {
         let d = NomDict::open_in_memory().unwrap();
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_ADD.into(),
             word: "add".into(),
             kind: "function".into(),
@@ -646,7 +646,7 @@ mod tests {
     #[test]
     fn verify_fails_on_empty_composite() {
         let d = NomDict::open_in_memory().unwrap();
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_MUL.into(),
             word: "math".into(),
             kind: "module".into(),
@@ -676,7 +676,7 @@ mod tests {
     #[test]
     fn verify_warns_on_function_without_signature() {
         let d = NomDict::open_in_memory().unwrap();
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_ADD.into(),
             word: "x".into(),
             kind: "function".into(),
@@ -707,7 +707,7 @@ mod tests {
     #[test]
     fn verify_warns_on_kind_body_kind_mismatch() {
         let d = NomDict::open_in_memory().unwrap();
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_ADD.into(),
             word: "weird".into(),
             kind: "module".into(),
@@ -812,7 +812,7 @@ mod tests {
         let d = NomDict::open_in_memory().unwrap();
         // Seed a leaf and a composite entry whose composed_of references it.
         seed_word(&d, HASH_ADD, "add", "function");
-        d.upsert_word_v2(&WordV2Row {
+        d.upsert_entity(&EntityRow {
             hash: HASH_MUL.into(),
             word: "arith".into(),
             kind: "module".into(),

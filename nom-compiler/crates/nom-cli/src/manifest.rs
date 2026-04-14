@@ -63,7 +63,7 @@ pub struct BuildItem {
     pub word: String,
     /// None if unresolved (no hash pinned yet).
     pub hash: Option<String>,
-    /// "bc" | "avif" | etc. from words_v2; None if unknown.
+    /// "bc" | "avif" | etc. from entities; None if unknown.
     pub body_kind: Option<String>,
     pub body_size: Option<i64>,
     /// For kind=module/composition: the constituent entity hashes.
@@ -76,7 +76,7 @@ pub struct BuildItem {
 
     /// Effect declarations on this entity (motivation 02 §9 / motivation 10 §E #4).
     /// Empty for atomic Tier-0 entities ingested without effect annotations.
-    /// NOTE: Phase-5 follow-up — store effects in a JSON column in words_v2 during
+    /// NOTE: Phase-5 follow-up — store effects in a JSON column in entities during
     /// `nom store sync` (option a) so manifest generation does not need a source re-parse.
     #[serde(default)]
     pub effects: Vec<EffectRecord>,
@@ -138,9 +138,9 @@ pub struct UnresolvedRecord {
 /// supposed to be unique per doc 08 §6.5).
 ///
 /// # Phase-5 follow-up (option a)
-/// Store effects as a JSON column in `words_v2` during `nom store sync` so
+/// Store effects as a JSON column in `entities` during `nom store sync` so
 /// manifest generation does not need a source re-parse.  The column would be
-/// populated in the entity upsert loop and consumed here via `dict.find_word_v2`.
+/// populated in the entity upsert loop and consumed here via `dict.find_entity`.
 fn collect_effects_from_repo(repo: &Path) -> HashMap<String, Vec<EffectRecord>> {
     let mut map: HashMap<String, Vec<EffectRecord>> = HashMap::new();
 
@@ -227,7 +227,7 @@ pub fn build_manifest(
         .map(|d| d.as_secs())
         .unwrap_or(0);
 
-    // ── collect effects from source (option b — Phase-5 will migrate to words_v2 column) ──
+    // ── collect effects from source (option b — Phase-5 will migrate to entities column) ──
     let effects_map = collect_effects_from_repo(repo);
 
     // ── materialise graph from DB ─────────────────────────────────────────────
@@ -320,7 +320,7 @@ pub fn build_manifest(
         // the closure walker contract (§4.3 doc 08).  `closure.concepts` follows
         // the same topological order with the root at the end.
         //
-        // For each word hash in the closure, look up the words_v2 row for
+        // For each word hash in the closure, look up the entities row for
         // body_kind / body_size / composed_of.  Words that are referenced only
         // by prose (no hash yet) come from `closure.unresolved` — we map them
         // by word name.
@@ -329,7 +329,7 @@ pub fn build_manifest(
 
         // First: resolved word hashes (entities + modules).
         for hash in &closure.word_hashes {
-            let row = dict.find_word_v2(hash).ok().flatten();
+            let row = dict.find_entity(hash).ok().flatten();
             let composed_of: Vec<String> = row
                 .as_ref()
                 .and_then(|r| r.composed_of.as_deref())
@@ -361,9 +361,9 @@ pub fn build_manifest(
 
         // Then: concepts referenced in post-order (leaves first, root last).
         for concept_name in &closure.concepts {
-            // Look up the concept hash from resolved_map or from words_v2 by word.
+            // Look up the concept hash from resolved_map or from entities by word.
             let hash = resolved_map.get(concept_name).cloned().or_else(|| {
-                dict.find_words_v2_by_word(concept_name)
+                dict.find_entities_by_word(concept_name)
                     .ok()
                     .and_then(|rows| rows.into_iter().next().map(|r| r.hash))
             });
@@ -382,7 +382,7 @@ pub fn build_manifest(
         }
 
         // Then: resolved typed-slot refs (`@Kind matching "..."`).
-        // These were resolved by find_words_v2_by_kind (kind-only lookup).
+        // These were resolved by find_entities_by_kind (kind-only lookup).
         // word stays empty — the source line has no word token for @hash splicing
         // (doc 07 §3.5: typed-slot hash lives in manifest/DB only, not rewritten).
         for rref in resolved_refs.iter().filter(|r| r.word.is_empty()) {

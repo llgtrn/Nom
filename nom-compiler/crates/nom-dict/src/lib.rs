@@ -10,7 +10,7 @@
 pub mod dict;
 pub mod freshness;
 
-pub use dict::{CONCEPTS_FILENAME, Dict, WORDS_FILENAME};
+pub use dict::{CONCEPTS_FILENAME, Dict, ENTITIES_FILENAME};
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};
@@ -280,7 +280,7 @@ impl NomDict {
         // "duplicate column name" when it already exists — ignore that error.
         let _ = self.conn
             .execute_batch("ALTER TABLE entries ADD COLUMN body_bytes BLOB");
-        // Additive V3 tables: concept_defs (DB1) + words_v2 (DB2-v2).
+        // Additive V3 tables: concept_defs (DB1) + entities (DB2-v2).
         // CREATE TABLE IF NOT EXISTS makes this idempotent.
         self.conn.execute_batch(V3_SCHEMA_ADDITIONS_SQL)?;
         // Additive V4 tables: required_axes (M7a MECE CE-check registry).
@@ -1253,14 +1253,14 @@ impl NomDict {
         Ok(seeded)
     }
 
-    // ── words_v2 CRUD (DB2-v2 — doc 08 §2.2) ──────────────────────────
+    // ── entities CRUD (DB2-v2 — doc 08 §2.2) ──────────────────────────
 
-    /// Insert or replace a `words_v2` row. Idempotent: on conflict
+    /// Insert or replace a `entities` row. Idempotent: on conflict
     /// (`hash` PK) all mutable fields are overwritten and `updated_at` is
     /// bumped.
-    pub fn upsert_word_v2(&self, row: &WordV2Row) -> Result<()> {
+    pub fn upsert_entity(&self, row: &EntityRow) -> Result<()> {
         self.conn.execute(
-            "INSERT INTO words_v2
+            "INSERT INTO entities
                  (hash, word, kind, signature, contracts, body_kind, body_size,
                   origin_ref, bench_ids, authored_in, composed_of,
                   created_at, updated_at)
@@ -1294,53 +1294,53 @@ impl NomDict {
         Ok(())
     }
 
-    /// Fetch a `words_v2` row by its `hash` primary key.
-    pub fn find_word_v2(&self, hash: &str) -> Result<Option<WordV2Row>> {
+    /// Fetch a `entities` row by its `hash` primary key.
+    pub fn find_entity(&self, hash: &str) -> Result<Option<EntityRow>> {
         let row = self
             .conn
             .query_row(
                 "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                         origin_ref, bench_ids, authored_in, composed_of
-                 FROM words_v2 WHERE hash = ?1",
+                 FROM entities WHERE hash = ?1",
                 params![hash],
-                row_to_word_v2,
+                row_to_entity,
             )
             .optional()?;
         Ok(row)
     }
 
-    /// Return all `words_v2` rows whose `word` column equals `word`,
+    /// Return all `entities` rows whose `word` column equals `word`,
     /// ordered by hash for determinism.
-    pub fn find_words_v2_by_word(&self, word: &str) -> Result<Vec<WordV2Row>> {
+    pub fn find_entities_by_word(&self, word: &str) -> Result<Vec<EntityRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                     origin_ref, bench_ids, authored_in, composed_of
-             FROM words_v2 WHERE word = ?1 ORDER BY hash",
+             FROM entities WHERE word = ?1 ORDER BY hash",
         )?;
         let rows = stmt
-            .query_map(params![word], row_to_word_v2)?
+            .query_map(params![word], row_to_entity)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Return all `words_v2` rows whose `kind` column equals `kind`,
+    /// Return all `entities` rows whose `kind` column equals `kind`,
     /// ordered by hash for determinism (§10.3.1 alphabetical-smallest tiebreak).
-    pub fn find_words_v2_by_kind(&self, kind: &str) -> Result<Vec<WordV2Row>> {
+    pub fn find_entities_by_kind(&self, kind: &str) -> Result<Vec<EntityRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                     origin_ref, bench_ids, authored_in, composed_of
-             FROM words_v2 WHERE kind = ?1 ORDER BY hash",
+             FROM entities WHERE kind = ?1 ORDER BY hash",
         )?;
         let rows = stmt
-            .query_map(params![kind], row_to_word_v2)?
+            .query_map(params![kind], row_to_entity)?
             .collect::<rusqlite::Result<Vec<_>>>()?;
         Ok(rows)
     }
 
-    /// Total count of rows in `words_v2`.
-    pub fn count_words_v2(&self) -> Result<i64> {
+    /// Total count of rows in `entities`.
+    pub fn count_entities(&self) -> Result<i64> {
         let n: i64 =
-            self.conn.query_row("SELECT COUNT(*) FROM words_v2", [], |row| row.get(0))?;
+            self.conn.query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0))?;
         Ok(n)
     }
 
@@ -1431,8 +1431,8 @@ fn row_to_concept_def(row: &rusqlite::Row) -> rusqlite::Result<ConceptRow> {
     })
 }
 
-pub(crate) fn row_to_word_v2(row: &rusqlite::Row) -> rusqlite::Result<WordV2Row> {
-    Ok(WordV2Row {
+pub(crate) fn row_to_entity(row: &rusqlite::Row) -> rusqlite::Result<EntityRow> {
+    Ok(EntityRow {
         hash: row.get(0)?,
         word: row.get(1)?,
         kind: row.get(2)?,
@@ -1452,14 +1452,14 @@ pub use nom_types::EdgeType as __ReexportedEdgeType;
 #[allow(dead_code)]
 fn _compile_check(_: EdgeType) {}
 
-// ── V3 schema additions (additive — DB1 concept_defs + DB2 words_v2) ──
+// ── V3 schema additions (additive — DB1 concept_defs + DB2 entities) ──
 
 /// Additive SQL appended by `init_schema` after `V2_SCHEMA_SQL`.
 /// Does NOT modify any existing table. Uses `CREATE TABLE IF NOT EXISTS`
 /// so it is safe to call on a DB that already has these tables.
 ///
 /// `concept_defs` = DB1 (doc 08 §2.1): one row per `.nom` concept file.
-/// `words_v2`     = DB2-v2 (doc 08 §2.2): one row per nomtu hash.
+/// `entities`     = DB2-v2 (doc 08 §2.2): one row per nomtu hash.
 ///
 /// Note: the legacy `concepts` table (entry-grouping, id PK) is kept
 /// unchanged.  The new DB1 table is named `concept_defs` to avoid the
@@ -1482,7 +1482,7 @@ CREATE TABLE IF NOT EXISTS concept_defs (
 CREATE INDEX IF NOT EXISTS idx_concept_defs_repo ON concept_defs(repo_id);
 CREATE INDEX IF NOT EXISTS idx_concept_defs_src ON concept_defs(src_path);
 
-CREATE TABLE IF NOT EXISTS words_v2 (
+CREATE TABLE IF NOT EXISTS entities (
     hash          TEXT PRIMARY KEY,
     word          TEXT NOT NULL,
     kind          TEXT NOT NULL,
@@ -1497,9 +1497,9 @@ CREATE TABLE IF NOT EXISTS words_v2 (
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_words_v2_word ON words_v2(word);
-CREATE INDEX IF NOT EXISTS idx_words_v2_kind ON words_v2(kind);
-CREATE INDEX IF NOT EXISTS idx_words_v2_authored ON words_v2(authored_in);
+CREATE INDEX IF NOT EXISTS idx_entities_word ON entities(word);
+CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
+CREATE INDEX IF NOT EXISTS idx_entities_authored ON entities(authored_in);
 "#;
 
 // ── V4 schema additions (additive — M7a required_axes registry) ─────
@@ -1570,12 +1570,12 @@ pub struct ConceptRow {
     pub body_hash: Option<String>,
 }
 
-// ── WordV2Row (DB2-v2 — doc 08 §2.2) ────────────────────────────────
+// ── EntityRow (DB2-v2 — doc 08 §2.2) ────────────────────────────────
 
-/// One row in the `words_v2` table.
+/// One row in the `entities` table.
 /// All `Option` fields map to nullable SQL columns.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct WordV2Row {
+pub struct EntityRow {
     pub hash: String,
     pub word: String,
     pub kind: String,
@@ -2211,8 +2211,8 @@ mod tests {
         }
     }
 
-    fn make_word_v2_row(hash: &str, word: &str) -> WordV2Row {
-        WordV2Row {
+    fn make_word_v2_row(hash: &str, word: &str) -> EntityRow {
+        EntityRow {
             hash: hash.to_string(),
             word: word.to_string(),
             kind: "Function".to_string(),
@@ -2227,9 +2227,9 @@ mod tests {
         }
     }
 
-    /// Test 1: init_schema creates concept_defs and words_v2 tables.
+    /// Test 1: init_schema creates concept_defs and entities tables.
     #[test]
-    fn init_schema_creates_concept_defs_and_words_v2_tables() {
+    fn init_schema_creates_concept_defs_and_entities_tables() {
         let d = NomDict::open_in_memory().unwrap();
         let conn = d.connection();
 
@@ -2246,8 +2246,8 @@ mod tests {
             "concept_defs table must exist; got: {tables:?}"
         );
         assert!(
-            tables.contains(&"words_v2".to_string()),
-            "words_v2 table must exist; got: {tables:?}"
+            tables.contains(&"entities".to_string()),
+            "entities table must exist; got: {tables:?}"
         );
     }
 
@@ -2312,14 +2312,14 @@ mod tests {
         assert_eq!(all.len(), 1);
     }
 
-    /// Test 5: insert a WordV2Row with all fields populated; read back identically.
+    /// Test 5: insert a EntityRow with all fields populated; read back identically.
     #[test]
     fn word_v2_round_trip() {
         let d = NomDict::open_in_memory().unwrap();
         let row = make_word_v2_row("cafebabe1234", "validate_token_jwt");
-        d.upsert_word_v2(&row).unwrap();
+        d.upsert_entity(&row).unwrap();
 
-        let fetched = d.find_word_v2("cafebabe1234").unwrap().unwrap();
+        let fetched = d.find_entity("cafebabe1234").unwrap().unwrap();
         assert_eq!(fetched.hash, row.hash);
         assert_eq!(fetched.word, row.word);
         assert_eq!(fetched.kind, row.kind);
@@ -2332,58 +2332,58 @@ mod tests {
         assert_eq!(fetched.authored_in, row.authored_in);
         assert_eq!(fetched.composed_of, row.composed_of);
 
-        assert_eq!(d.count_words_v2().unwrap(), 1);
+        assert_eq!(d.count_entities().unwrap(), 1);
     }
 
-    /// Test 6: find_words_v2_by_word returns only rows matching the word.
+    /// Test 6: find_entities_by_word returns only rows matching the word.
     #[test]
-    fn find_words_v2_by_word_filters_correctly() {
+    fn find_entities_by_word_filters_correctly() {
         let d = NomDict::open_in_memory().unwrap();
 
-        d.upsert_word_v2(&make_word_v2_row("hash-jwt-1", "validate_token_jwt")).unwrap();
-        d.upsert_word_v2(&make_word_v2_row("hash-jwt-2", "validate_token_jwt")).unwrap();
-        d.upsert_word_v2(&make_word_v2_row("hash-other", "other")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-jwt-1", "validate_token_jwt")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-jwt-2", "validate_token_jwt")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-other", "other")).unwrap();
 
-        let jwt_rows = d.find_words_v2_by_word("validate_token_jwt").unwrap();
+        let jwt_rows = d.find_entities_by_word("validate_token_jwt").unwrap();
         assert_eq!(jwt_rows.len(), 2, "expected 2 rows for validate_token_jwt");
         assert!(jwt_rows.iter().all(|r| r.word == "validate_token_jwt"));
 
-        let other_rows = d.find_words_v2_by_word("other").unwrap();
+        let other_rows = d.find_entities_by_word("other").unwrap();
         assert_eq!(other_rows.len(), 1);
 
-        let missing = d.find_words_v2_by_word("nonexistent").unwrap();
+        let missing = d.find_entities_by_word("nonexistent").unwrap();
         assert!(missing.is_empty());
 
-        assert_eq!(d.count_words_v2().unwrap(), 3);
+        assert_eq!(d.count_entities().unwrap(), 3);
     }
 
-    /// Test 6b: find_words_v2_by_kind returns only rows matching the kind.
+    /// Test 6b: find_entities_by_kind returns only rows matching the kind.
     #[test]
-    fn find_words_v2_by_kind_filters_correctly() {
+    fn find_entities_by_kind_filters_correctly() {
         let d = NomDict::open_in_memory().unwrap();
 
         // Two rows with kind="function" (default from make_word_v2_row), one with kind="screen".
-        d.upsert_word_v2(&make_word_v2_row("hash-fn-a", "auth_user")).unwrap();
-        d.upsert_word_v2(&make_word_v2_row("hash-fn-b", "validate_token")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-fn-a", "auth_user")).unwrap();
+        d.upsert_entity(&make_word_v2_row("hash-fn-b", "validate_token")).unwrap();
         let mut screen_row = make_word_v2_row("hash-sc-1", "login_screen");
         screen_row.kind = "screen".to_string();
-        d.upsert_word_v2(&screen_row).unwrap();
+        d.upsert_entity(&screen_row).unwrap();
 
-        let fn_rows = d.find_words_v2_by_kind("Function").unwrap();
+        let fn_rows = d.find_entities_by_kind("Function").unwrap();
         assert_eq!(fn_rows.len(), 2, "expected 2 rows for kind=Function, got {}", fn_rows.len());
         assert!(fn_rows.iter().all(|r| r.kind == "Function"));
 
-        let sc_rows = d.find_words_v2_by_kind("screen").unwrap();
+        let sc_rows = d.find_entities_by_kind("screen").unwrap();
         assert_eq!(sc_rows.len(), 1, "expected 1 row for kind=screen");
 
-        let missing = d.find_words_v2_by_kind("nonexistent_kind").unwrap();
+        let missing = d.find_entities_by_kind("nonexistent_kind").unwrap();
         assert!(missing.is_empty());
 
         // Rows are ordered by hash for determinism.
         assert_eq!(fn_rows[0].hash, "hash-fn-a");
         assert_eq!(fn_rows[1].hash, "hash-fn-b");
 
-        assert_eq!(d.count_words_v2().unwrap(), 3);
+        assert_eq!(d.count_entities().unwrap(), 3);
     }
 
     /// Test 7: the legacy `entries` table is unaffected by the additive changes.
@@ -2402,7 +2402,7 @@ mod tests {
         assert_eq!(count, 1, "entries table must still work after additive schema additions");
 
         // And the new tables start empty.
-        assert_eq!(d.count_words_v2().unwrap(), 0);
+        assert_eq!(d.count_entities().unwrap(), 0);
         assert_eq!(
             d.list_concept_defs_in_repo("any-repo").unwrap().len(),
             0

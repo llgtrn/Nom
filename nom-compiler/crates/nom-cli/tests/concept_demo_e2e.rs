@@ -1,7 +1,7 @@
 //! End-to-end test for the concept_demo example.
 //!
 //! Exercises the full pipeline:
-//!   1. `nom store sync <tempdir>` — DB gets 2 concept_defs + 3 words_v2 rows.
+//!   1. `nom store sync <tempdir>` — DB gets 2 concept_defs + 3 entities rows.
 //!   2. `nom build status <tempdir>` — exit 0; auth_session_compose_demo resolved.
 //!   3. auth/auth.nom must NOT have @hash yet (--write-locks not used yet).
 //!   4. `nom build status <tempdir> --write-locks` — exit 0; "Wrote 1 hash lock".
@@ -149,19 +149,19 @@ mod tests {
             .expect("app_concept_demo must be in concept_defs");
         assert_eq!(app_row.name, "app_concept_demo");
 
-        // 3 words_v2 rows (validate_token_demo, issue_session_demo, auth_session_compose_demo).
+        // 3 entities rows (validate_token_demo, issue_session_demo, auth_session_compose_demo).
         let validate_rows = dict
-            .find_words_v2_by_word("validate_token_demo")
+            .find_entities_by_word("validate_token_demo")
             .expect("find validate_token_demo");
         assert_eq!(validate_rows.len(), 1, "expected 1 row for validate_token_demo");
 
         let issue_rows = dict
-            .find_words_v2_by_word("issue_session_demo")
+            .find_entities_by_word("issue_session_demo")
             .expect("find issue_session_demo");
         assert_eq!(issue_rows.len(), 1, "expected 1 row for issue_session_demo");
 
         let compose_rows = dict
-            .find_words_v2_by_word("auth_session_compose_demo")
+            .find_entities_by_word("auth_session_compose_demo")
             .expect("find auth_session_compose_demo");
         assert_eq!(compose_rows.len(), 1, "expected 1 row for auth_session_compose_demo");
 

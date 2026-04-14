@@ -5,7 +5,7 @@ use std::path::Path;
 use nom_concept::{
     NomtuItem, parse_nom as concept_parse_nom, parse_nomtu,
 };
-use nom_dict::{ConceptRow, NomDict, WordV2Row};
+use nom_dict::{ConceptRow, NomDict, EntityRow};
 use sha2::{Digest, Sha256};
 use walkdir::WalkDir;
 
@@ -25,7 +25,7 @@ pub struct SyncStats {
 const SKIP_DIRS: &[&str] = &["target", ".git", "node_modules", "dist", "build"];
 
 /// Core sync logic: walk `repo`, parse `.nom` and `.nomtu` files, upsert
-/// rows into DB1 (`concept_defs`) and DB2-v2 (`words_v2`) of `dict`.
+/// rows into DB1 (`concept_defs`) and DB2-v2 (`entities`) of `dict`.
 ///
 /// Parse errors are surfaced per-file (collected into `errors`) but do not
 /// abort the walk; the caller decides whether to treat them as fatal.
@@ -115,7 +115,7 @@ pub fn sync_repo(
                                 Err(_) => None,
                             };
 
-                            let row = WordV2Row {
+                            let row = EntityRow {
                                 hash,
                                 word: entity.word.clone(),
                                 kind: entity.kind.clone(),
@@ -129,7 +129,7 @@ pub fn sync_repo(
                                 composed_of: None,
                             };
 
-                            if let Err(e) = dict.upsert_word_v2(&row) {
+                            if let Err(e) = dict.upsert_entity(&row) {
                                 errors.push(format!(
                                     "{rel}: upsert entity `{}`: {e}",
                                     entity.word
@@ -165,7 +165,7 @@ pub fn sync_repo(
                                 serde_json::to_string(&composes_hashes).ok()
                             };
 
-                            let row = WordV2Row {
+                            let row = EntityRow {
                                 hash,
                                 word: comp.word.clone(),
                                 kind: "module".to_string(),
@@ -179,7 +179,7 @@ pub fn sync_repo(
                                 composed_of,
                             };
 
-                            if let Err(e) = dict.upsert_word_v2(&row) {
+                            if let Err(e) = dict.upsert_entity(&row) {
                                 errors.push(format!(
                                     "{rel}: upsert composition `{}`: {e}",
                                     comp.word

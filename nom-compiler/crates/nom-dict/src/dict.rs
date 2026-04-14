@@ -1,6 +1,6 @@
 //! S1 of the dict-split migration (doc 22).
 //!
-//! Introduces the target `Dict { concepts, words }` struct ALONGSIDE the existing
+//! Introduces the target `Dict { concepts, entities }` struct ALONGSIDE the existing
 //! single-file `NomDict`. No existing API is removed in S1 — this module stands up
 //! the two-file surface so subsequent stages can port methods over incrementally.
 //!
@@ -8,7 +8,7 @@
 //! ```text
 //! <dir>/
 //!   concepts.sqlite    ← DB1: concept_defs + concept-scoped entry_meta
-//!   words.sqlite       ← DB2: words_v2    + word-scoped    entry_meta
+//!   entities.sqlite       ← DB2: entities    + word-scoped    entry_meta
 //!   grammar.sqlite     ← registry (separate, owned by nom-grammar crate)
 //!   store/<hash>/...   ← artifact bytes (filesystem, not SQLite)
 //! ```
@@ -16,7 +16,7 @@
 //! S2 (this file) specialises each tier's schema:
 //! - `concepts.sqlite` carries only DB1 tables (concept_defs + concepts +
 //!   concept_members + required_axes + dict_meta).
-//! - `words.sqlite` carries only DB2 tables (entries + words_v2 + entry_* side
+//! - `entities.sqlite` carries only DB2 tables (entries + entities + entry_* side
 //!   tables + dict_meta).
 //!
 //! The `dict_meta` key-value table lives on BOTH tiers so each file can track
@@ -32,7 +32,7 @@ use anyhow::{Context, Result};
 use rusqlite::Connection;
 
 pub const CONCEPTS_FILENAME: &str = "concepts.sqlite";
-pub const WORDS_FILENAME: &str = "words.sqlite";
+pub const ENTITIES_FILENAME: &str = "entities.sqlite";
 
 /// Schema applied to `concepts.sqlite` — DB1 tier. No cross-file FKs.
 pub const CONCEPTS_SCHEMA_SQL: &str = r#"
@@ -45,7 +45,7 @@ CREATE TABLE IF NOT EXISTS concepts (
 );
 CREATE INDEX IF NOT EXISTS idx_concepts_name ON concepts(name);
 
--- concept_members.entry_id is a dangling hash reference into words.sqlite.
+-- concept_members.entry_id is a dangling hash reference into entities.sqlite.
 -- No FOREIGN KEY (cross-file FK unsupported by SQLite; Rust layer resolves).
 CREATE TABLE IF NOT EXISTS concept_members (
     concept_id  TEXT NOT NULL REFERENCES concepts(id) ON DELETE CASCADE,
@@ -89,8 +89,8 @@ CREATE TABLE IF NOT EXISTS dict_meta (
 );
 "#;
 
-/// Schema applied to `words.sqlite` — DB2 tier. No cross-file FKs.
-pub const WORDS_SCHEMA_SQL: &str = r#"
+/// Schema applied to `entities.sqlite` — DB2 tier. No cross-file FKs.
+pub const ENTITIES_SCHEMA_SQL: &str = r#"
 CREATE TABLE IF NOT EXISTS entries (
     id                   TEXT PRIMARY KEY,
     word                 TEXT NOT NULL,
@@ -200,7 +200,7 @@ CREATE TABLE IF NOT EXISTS entry_translations (
 CREATE INDEX IF NOT EXISTS idx_trans_entry ON entry_translations(id);
 CREATE INDEX IF NOT EXISTS idx_trans_target ON entry_translations(target_language);
 
-CREATE TABLE IF NOT EXISTS words_v2 (
+CREATE TABLE IF NOT EXISTS entities (
     hash          TEXT PRIMARY KEY,
     word          TEXT NOT NULL,
     kind          TEXT NOT NULL,
@@ -215,9 +215,9 @@ CREATE TABLE IF NOT EXISTS words_v2 (
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
-CREATE INDEX IF NOT EXISTS idx_words_v2_word ON words_v2(word);
-CREATE INDEX IF NOT EXISTS idx_words_v2_kind ON words_v2(kind);
-CREATE INDEX IF NOT EXISTS idx_words_v2_authored ON words_v2(authored_in);
+CREATE INDEX IF NOT EXISTS idx_entities_word ON entities(word);
+CREATE INDEX IF NOT EXISTS idx_entities_kind ON entities(kind);
+CREATE INDEX IF NOT EXISTS idx_entities_authored ON entities(authored_in);
 
 CREATE TABLE IF NOT EXISTS dict_meta (
     key        TEXT PRIMARY KEY,
@@ -232,7 +232,7 @@ CREATE TABLE IF NOT EXISTS dict_meta (
 /// cross-tier joins (DB1 concept → DB2 word hashes) happen in the Rust layer.
 pub struct Dict {
     pub concepts: Connection,
-    pub words: Connection,
+    pub entities: Connection,
     root: PathBuf,
 }
 
@@ -243,17 +243,17 @@ impl Dict {
         std::fs::create_dir_all(dir)
             .with_context(|| format!("creating dict directory {}", dir.display()))?;
         let concepts_path = dir.join(CONCEPTS_FILENAME);
-        let words_path = dir.join(WORDS_FILENAME);
-        Self::open_paths(&concepts_path, &words_path).map(|mut d| {
+        let entities_path = dir.join(ENTITIES_FILENAME);
+        Self::open_paths(&concepts_path, &entities_path).map(|mut d| {
             d.root = dir.to_path_buf();
             d
         })
     }
 
     /// Open or create at explicit paths (tests, migrations, split tooling).
-    pub fn open_paths(concepts_path: &Path, words_path: &Path) -> Result<Self> {
+    pub fn open_paths(concepts_path: &Path, entities_path: &Path) -> Result<Self> {
         let concepts = open_tier(concepts_path, "concepts", CONCEPTS_SCHEMA_SQL)?;
-        let words = open_tier(words_path, "words", WORDS_SCHEMA_SQL)?;
+        let entities = open_tier(entities_path, "entities", ENTITIES_SCHEMA_SQL)?;
         // Root is a best-guess parent dir; S7 migrate tool will set it explicitly.
         let root = concepts_path
             .parent()
@@ -261,7 +261,7 @@ impl Dict {
             .unwrap_or_else(|| PathBuf::from("."));
         Ok(Self {
             concepts,
-            words,
+            entities,
             root,
         })
     }
@@ -269,14 +269,14 @@ impl Dict {
     /// Open both tiers in memory — fastest, for tests.
     pub fn open_in_memory() -> Result<Self> {
         let concepts = Connection::open_in_memory()?;
-        let words = Connection::open_in_memory()?;
+        let entities = Connection::open_in_memory()?;
         concepts.pragma_update(None, "foreign_keys", "ON")?;
-        words.pragma_update(None, "foreign_keys", "ON")?;
+        entities.pragma_update(None, "foreign_keys", "ON")?;
         concepts.execute_batch(CONCEPTS_SCHEMA_SQL)?;
-        words.execute_batch(WORDS_SCHEMA_SQL)?;
+        entities.execute_batch(ENTITIES_SCHEMA_SQL)?;
         Ok(Self {
             concepts,
-            words,
+            entities,
             root: PathBuf::new(),
         })
     }
@@ -308,20 +308,20 @@ fn open_tier(path: &Path, label: &str, schema_sql: &str) -> Result<Connection> {
     Ok(conn)
 }
 
-// ── S3a: words_v2 tier API as free functions on &Dict ───────────────
+// ── S3a: entities tier API as free functions on &Dict ───────────────
 //
 // These mirror the NomDict methods on the same names but route to the new
-// `words.sqlite` connection. Per doc 22 §3.2 the target API is free functions
+// `entities.sqlite` connection. Per doc 22 §3.2 the target API is free functions
 // taking &Dict; `NomDict` methods stay in place as single-file fallback until
 // S8 removes them.
 
-use crate::{WordV2Row, row_to_word_v2};
+use crate::{EntityRow, row_to_entity};
 use rusqlite::{OptionalExtension, params};
 
-/// Insert-or-update a row in `words_v2` on the words tier.
-pub fn upsert_word_v2(d: &Dict, row: &WordV2Row) -> Result<()> {
-    d.words.execute(
-        "INSERT INTO words_v2
+/// Insert-or-update a row in `entities` on the entities tier.
+pub fn upsert_entity(d: &Dict, row: &EntityRow) -> Result<()> {
+    d.entities.execute(
+        "INSERT INTO entities
              (hash, word, kind, signature, contracts, body_kind, body_size,
               origin_ref, bench_ids, authored_in, composed_of,
               created_at, updated_at)
@@ -355,53 +355,53 @@ pub fn upsert_word_v2(d: &Dict, row: &WordV2Row) -> Result<()> {
     Ok(())
 }
 
-/// Fetch one `words_v2` row by hash PK, or `None` if missing.
-pub fn find_word_v2(d: &Dict, hash: &str) -> Result<Option<WordV2Row>> {
+/// Fetch one `entities` row by hash PK, or `None` if missing.
+pub fn find_entity(d: &Dict, hash: &str) -> Result<Option<EntityRow>> {
     let row = d
-        .words
+        .entities
         .query_row(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                     origin_ref, bench_ids, authored_in, composed_of
-             FROM words_v2 WHERE hash = ?1",
+             FROM entities WHERE hash = ?1",
             params![hash],
-            row_to_word_v2,
+            row_to_entity,
         )
         .optional()?;
     Ok(row)
 }
 
-/// Return every `words_v2` row with the given `word` column, ordered by hash.
-pub fn find_words_v2_by_word(d: &Dict, word: &str) -> Result<Vec<WordV2Row>> {
-    let mut stmt = d.words.prepare_cached(
+/// Return every `entities` row with the given `word` column, ordered by hash.
+pub fn find_entities_by_word(d: &Dict, word: &str) -> Result<Vec<EntityRow>> {
+    let mut stmt = d.entities.prepare_cached(
         "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                 origin_ref, bench_ids, authored_in, composed_of
-         FROM words_v2 WHERE word = ?1 ORDER BY hash",
+         FROM entities WHERE word = ?1 ORDER BY hash",
     )?;
     let rows = stmt
-        .query_map(params![word], row_to_word_v2)?
+        .query_map(params![word], row_to_entity)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
-/// Return every `words_v2` row with the given `kind`, ordered by hash
+/// Return every `entities` row with the given `kind`, ordered by hash
 /// (§10.3.1 alphabetical-smallest tiebreak).
-pub fn find_words_v2_by_kind(d: &Dict, kind: &str) -> Result<Vec<WordV2Row>> {
-    let mut stmt = d.words.prepare_cached(
+pub fn find_entities_by_kind(d: &Dict, kind: &str) -> Result<Vec<EntityRow>> {
+    let mut stmt = d.entities.prepare_cached(
         "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
                 origin_ref, bench_ids, authored_in, composed_of
-         FROM words_v2 WHERE kind = ?1 ORDER BY hash",
+         FROM entities WHERE kind = ?1 ORDER BY hash",
     )?;
     let rows = stmt
-        .query_map(params![kind], row_to_word_v2)?
+        .query_map(params![kind], row_to_entity)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
 
-/// Total count of rows in `words_v2` on the words tier.
-pub fn count_words_v2(d: &Dict) -> Result<i64> {
+/// Total count of rows in `entities` on the entities tier.
+pub fn count_entities(d: &Dict) -> Result<i64> {
     let n: i64 = d
-        .words
-        .query_row("SELECT COUNT(*) FROM words_v2", [], |row| row.get(0))?;
+        .entities
+        .query_row("SELECT COUNT(*) FROM entities", [], |row| row.get(0))?;
     Ok(n)
 }
 
@@ -415,7 +415,7 @@ mod tests {
         let dir = tempdir().unwrap();
         let _ = Dict::open_dir(dir.path()).unwrap();
         assert!(dir.path().join(CONCEPTS_FILENAME).exists());
-        assert!(dir.path().join(WORDS_FILENAME).exists());
+        assert!(dir.path().join(ENTITIES_FILENAME).exists());
     }
 
     #[test]
@@ -424,7 +424,7 @@ mod tests {
         let _ = Dict::open_dir(dir.path()).unwrap();
         let _ = Dict::open_dir(dir.path()).unwrap();
         assert!(dir.path().join(CONCEPTS_FILENAME).exists());
-        assert!(dir.path().join(WORDS_FILENAME).exists());
+        assert!(dir.path().join(ENTITIES_FILENAME).exists());
     }
 
     #[test]
@@ -445,7 +445,7 @@ mod tests {
             .concepts
             .query_row("SELECT 1", [], |r| r.get(0))
             .unwrap();
-        let b: i64 = d.words.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
+        let b: i64 = d.entities.query_row("SELECT 1", [], |r| r.get(0)).unwrap();
         assert_eq!(a, 1);
         assert_eq!(b, 1);
     }
@@ -470,7 +470,7 @@ mod tests {
         assert!(table_exists(&d.concepts, "dict_meta"));
         // DB2 tables absent on concepts tier.
         assert!(!table_exists(&d.concepts, "entries"));
-        assert!(!table_exists(&d.concepts, "words_v2"));
+        assert!(!table_exists(&d.concepts, "entities"));
         assert!(!table_exists(&d.concepts, "entry_meta"));
         assert!(!table_exists(&d.concepts, "entry_scores"));
     }
@@ -478,22 +478,22 @@ mod tests {
     #[test]
     fn words_tier_has_db2_tables_only() {
         let d = Dict::open_in_memory().unwrap();
-        // DB2 tables present on words tier.
-        assert!(table_exists(&d.words, "entries"));
-        assert!(table_exists(&d.words, "words_v2"));
-        assert!(table_exists(&d.words, "entry_meta"));
-        assert!(table_exists(&d.words, "entry_scores"));
-        assert!(table_exists(&d.words, "entry_signatures"));
-        assert!(table_exists(&d.words, "entry_refs"));
-        assert!(table_exists(&d.words, "entry_graph_edges"));
-        assert!(table_exists(&d.words, "entry_translations"));
-        assert!(table_exists(&d.words, "entry_security_findings"));
-        assert!(table_exists(&d.words, "dict_meta"));
-        // DB1 tables absent on words tier.
-        assert!(!table_exists(&d.words, "concepts"));
-        assert!(!table_exists(&d.words, "concept_defs"));
-        assert!(!table_exists(&d.words, "concept_members"));
-        assert!(!table_exists(&d.words, "required_axes"));
+        // DB2 tables present on entities tier.
+        assert!(table_exists(&d.entities, "entries"));
+        assert!(table_exists(&d.entities, "entities"));
+        assert!(table_exists(&d.entities, "entry_meta"));
+        assert!(table_exists(&d.entities, "entry_scores"));
+        assert!(table_exists(&d.entities, "entry_signatures"));
+        assert!(table_exists(&d.entities, "entry_refs"));
+        assert!(table_exists(&d.entities, "entry_graph_edges"));
+        assert!(table_exists(&d.entities, "entry_translations"));
+        assert!(table_exists(&d.entities, "entry_security_findings"));
+        assert!(table_exists(&d.entities, "dict_meta"));
+        // DB1 tables absent on entities tier.
+        assert!(!table_exists(&d.entities, "concepts"));
+        assert!(!table_exists(&d.entities, "concept_defs"));
+        assert!(!table_exists(&d.entities, "concept_members"));
+        assert!(!table_exists(&d.entities, "required_axes"));
     }
 
     #[test]
@@ -550,18 +550,18 @@ mod tests {
     }
 
     #[test]
-    fn words_v2_round_trip_on_split_tier() {
+    fn entities_round_trip_on_split_tier() {
         let d = Dict::open_in_memory().unwrap();
-        d.words
+        d.entities
             .execute(
-                "INSERT INTO words_v2 (hash, word, kind) VALUES (?1, ?2, ?3)",
+                "INSERT INTO entities (hash, word, kind) VALUES (?1, ?2, ?3)",
                 ["abc123", "login_user", "function"],
             )
             .unwrap();
         let got_kind: String = d
-            .words
+            .entities
             .query_row(
-                "SELECT kind FROM words_v2 WHERE hash = 'abc123'",
+                "SELECT kind FROM entities WHERE hash = 'abc123'",
                 [],
                 |r| r.get(0),
             )
@@ -569,8 +569,8 @@ mod tests {
         assert_eq!(got_kind, "function");
     }
 
-    fn sample_word(hash: &str, word: &str, kind: &str) -> WordV2Row {
-        WordV2Row {
+    fn sample_word(hash: &str, word: &str, kind: &str) -> EntityRow {
+        EntityRow {
             hash: hash.to_string(),
             word: word.to_string(),
             kind: kind.to_string(),
@@ -586,33 +586,33 @@ mod tests {
     }
 
     #[test]
-    fn free_fn_upsert_word_v2_writes_to_words_tier() {
+    fn free_fn_upsert_entity_writes_to_words_tier() {
         let d = Dict::open_in_memory().unwrap();
-        upsert_word_v2(&d, &sample_word("h1", "greet", "function")).unwrap();
-        let got = find_word_v2(&d, "h1").unwrap().expect("row");
+        upsert_entity(&d, &sample_word("h1", "greet", "function")).unwrap();
+        let got = find_entity(&d, "h1").unwrap().expect("row");
         assert_eq!(got.word, "greet");
         assert_eq!(got.kind, "function");
     }
 
     #[test]
-    fn free_fn_upsert_word_v2_is_idempotent() {
+    fn free_fn_upsert_entity_is_idempotent() {
         let d = Dict::open_in_memory().unwrap();
-        upsert_word_v2(&d, &sample_word("h2", "a", "function")).unwrap();
+        upsert_entity(&d, &sample_word("h2", "a", "function")).unwrap();
         // Same hash → UPDATE path.
-        upsert_word_v2(&d, &sample_word("h2", "a_v2", "module")).unwrap();
-        let got = find_word_v2(&d, "h2").unwrap().expect("row");
+        upsert_entity(&d, &sample_word("h2", "a_v2", "module")).unwrap();
+        let got = find_entity(&d, "h2").unwrap().expect("row");
         assert_eq!(got.word, "a_v2");
         assert_eq!(got.kind, "module");
-        assert_eq!(count_words_v2(&d).unwrap(), 1);
+        assert_eq!(count_entities(&d).unwrap(), 1);
     }
 
     #[test]
-    fn free_fn_find_words_v2_by_word_orders_by_hash() {
+    fn free_fn_find_entities_by_word_orders_by_hash() {
         let d = Dict::open_in_memory().unwrap();
-        upsert_word_v2(&d, &sample_word("bbb", "shared", "function")).unwrap();
-        upsert_word_v2(&d, &sample_word("aaa", "shared", "function")).unwrap();
-        upsert_word_v2(&d, &sample_word("ccc", "shared", "data")).unwrap();
-        let rows = find_words_v2_by_word(&d, "shared").unwrap();
+        upsert_entity(&d, &sample_word("bbb", "shared", "function")).unwrap();
+        upsert_entity(&d, &sample_word("aaa", "shared", "function")).unwrap();
+        upsert_entity(&d, &sample_word("ccc", "shared", "data")).unwrap();
+        let rows = find_entities_by_word(&d, "shared").unwrap();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].hash, "aaa");
         assert_eq!(rows[1].hash, "bbb");
@@ -620,46 +620,46 @@ mod tests {
     }
 
     #[test]
-    fn free_fn_find_words_v2_by_kind_filters_and_orders() {
+    fn free_fn_find_entities_by_kind_filters_and_orders() {
         let d = Dict::open_in_memory().unwrap();
-        upsert_word_v2(&d, &sample_word("z", "a", "function")).unwrap();
-        upsert_word_v2(&d, &sample_word("m", "b", "function")).unwrap();
-        upsert_word_v2(&d, &sample_word("x", "c", "data")).unwrap();
-        let rows = find_words_v2_by_kind(&d, "function").unwrap();
+        upsert_entity(&d, &sample_word("z", "a", "function")).unwrap();
+        upsert_entity(&d, &sample_word("m", "b", "function")).unwrap();
+        upsert_entity(&d, &sample_word("x", "c", "data")).unwrap();
+        let rows = find_entities_by_kind(&d, "function").unwrap();
         assert_eq!(rows.len(), 2);
         assert_eq!(rows[0].hash, "m");
         assert_eq!(rows[1].hash, "z");
     }
 
     #[test]
-    fn free_fn_find_word_v2_returns_none_when_missing() {
+    fn free_fn_find_entity_returns_none_when_missing() {
         let d = Dict::open_in_memory().unwrap();
-        assert!(find_word_v2(&d, "nonexistent").unwrap().is_none());
+        assert!(find_entity(&d, "nonexistent").unwrap().is_none());
     }
 
     #[test]
-    fn free_fn_count_words_v2_starts_at_zero() {
+    fn free_fn_count_entities_starts_at_zero() {
         let d = Dict::open_in_memory().unwrap();
-        assert_eq!(count_words_v2(&d).unwrap(), 0);
-        upsert_word_v2(&d, &sample_word("h", "w", "function")).unwrap();
-        assert_eq!(count_words_v2(&d).unwrap(), 1);
+        assert_eq!(count_entities(&d).unwrap(), 0);
+        upsert_entity(&d, &sample_word("h", "w", "function")).unwrap();
+        assert_eq!(count_entities(&d).unwrap(), 1);
     }
 
     #[test]
-    fn concepts_tier_has_no_words_v2_so_writes_go_to_words_only() {
-        // Confirms the routing: upsert_word_v2 only touches d.words, not d.concepts.
+    fn concepts_tier_has_no_entities_so_writes_go_to_words_only() {
+        // Confirms the routing: upsert_entity only touches d.entities, not d.concepts.
         let d = Dict::open_in_memory().unwrap();
-        upsert_word_v2(&d, &sample_word("h", "w", "function")).unwrap();
+        upsert_entity(&d, &sample_word("h", "w", "function")).unwrap();
         let concepts_has_table: bool = d
             .concepts
             .query_row(
-                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'words_v2'",
+                "SELECT 1 FROM sqlite_master WHERE type = 'table' AND name = 'entities'",
                 [],
                 |_| Ok(true),
             )
             .unwrap_or(false);
-        assert!(!concepts_has_table, "concepts tier should have no words_v2 table");
-        assert_eq!(count_words_v2(&d).unwrap(), 1);
+        assert!(!concepts_has_table, "concepts tier should have no entities table");
+        assert_eq!(count_entities(&d).unwrap(), 1);
     }
 
     #[test]

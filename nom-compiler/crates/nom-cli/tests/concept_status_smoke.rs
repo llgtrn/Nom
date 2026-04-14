@@ -129,7 +129,7 @@ the concept empty_concept is
         let repo_dir = make_tmpdir("t2");
         let dict_dir = make_tmpdir("t2-d");
 
-        // 1. Sync the .nomtu so the hash lands in words_v2.
+        // 1. Sync the .nomtu so the hash lands in entities.
         let nomtu_src =
             "the function foo_compute is\n  given x of text, returns y of text.\n";
         std::fs::write(repo_dir.join("util.nomtu"), nomtu_src).expect("write nomtu");
@@ -140,8 +140,8 @@ the concept empty_concept is
         // Retrieve the hash that was assigned.
         let dict = open_dict(&dict_dir);
         let rows = dict
-            .find_words_v2_by_word("foo_compute")
-            .expect("find words_v2");
+            .find_entities_by_word("foo_compute")
+            .expect("find entities");
         assert_eq!(rows.len(), 1, "expected 1 row for foo_compute");
         let foo_hash = &rows[0].hash;
 
@@ -183,7 +183,7 @@ the concept compute_concept is
         let repo_dir = make_tmpdir("t3");
         let dict_dir = make_tmpdir("t3-d");
 
-        // 1. Sync .nomtu so `login_verify` is in words_v2.
+        // 1. Sync .nomtu so `login_verify` is in entities.
         let nomtu_src =
             "the function login_verify is\n  given credentials, returns yes or no.\n";
         std::fs::write(repo_dir.join("login.nomtu"), nomtu_src).expect("write nomtu");
@@ -192,7 +192,7 @@ the concept compute_concept is
         assert_eq!(sc, 0, "sync nomtu failed: {se}");
 
         // 2. Write a .nom with an unresolved ref (no @hash) — the stub resolver
-        //    should find `login_verify` in words_v2 by word name.
+        //    should find `login_verify` in entities by word name.
         let nom_src = r#"
 the concept auth_concept is
   intended to verify user credentials.
@@ -244,8 +244,8 @@ the concept auth_concept is
         // Verify both landed.
         let dict = open_dict(&dict_dir);
         let rows = dict
-            .find_words_v2_by_word("login_ambiguous")
-            .expect("find words_v2");
+            .find_entities_by_word("login_ambiguous")
+            .expect("find entities");
         assert_eq!(rows.len(), 2, "expected 2 rows for login_ambiguous");
 
         // Write a .nom referencing `login_ambiguous` by name only.

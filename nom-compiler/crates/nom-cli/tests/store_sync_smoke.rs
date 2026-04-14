@@ -151,7 +151,7 @@ the concept authentication_jwt_basic is
         // Verify authored_in in DB.
         let dict = open_dict(&dict_dir);
         let jwt_rows = dict
-            .find_words_v2_by_word("validate_token_jwt_hmac_sha256")
+            .find_entities_by_word("validate_token_jwt_hmac_sha256")
             .expect("find jwt");
         assert_eq!(jwt_rows.len(), 1, "expected 1 row for validate_token_jwt_hmac_sha256");
         let authored = jwt_rows[0].authored_in.as_deref().unwrap_or("");
@@ -161,7 +161,7 @@ the concept authentication_jwt_basic is
         );
 
         let comp_rows = dict
-            .find_words_v2_by_word("auth_flow_compose")
+            .find_entities_by_word("auth_flow_compose")
             .expect("find comp");
         assert_eq!(comp_rows.len(), 1, "expected 1 row for auth_flow_compose");
         assert_eq!(comp_rows[0].kind, "module", "composition kind must be 'module'");
@@ -223,7 +223,7 @@ the concept authentication_jwt_basic is
 
         let dict = open_dict(&dict_dir);
         let rows = dict
-            .find_words_v2_by_word("hash_password_bcrypt")
+            .find_entities_by_word("hash_password_bcrypt")
             .expect("find");
         assert_eq!(rows.len(), 1, "upsert must not create duplicate rows");
     }
@@ -257,7 +257,7 @@ the concept authentication_jwt_basic is
 
         let dict = open_dict(&dict_dir);
         let ignored = dict
-            .find_words_v2_by_word("ignored_internal_build")
+            .find_entities_by_word("ignored_internal_build")
             .expect("find ignored");
         assert!(ignored.is_empty(), "ignored_internal_build must not be indexed");
     }

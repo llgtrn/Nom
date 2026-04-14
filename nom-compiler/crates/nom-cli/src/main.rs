@@ -841,7 +841,7 @@ enum StoreCmd {
         json: bool,
     },
     /// Walk a repo directory for `.nom` and `.nomtu` files and upsert
-    /// parsed rows into `concept_defs` (DB1) and `words_v2` (DB2-v2).
+    /// parsed rows into `concept_defs` (DB1) and `entities` (DB2-v2).
     /// Idempotent: re-running produces the same DB state.
     Sync {
         /// Path to the repo directory to walk

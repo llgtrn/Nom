@@ -63,7 +63,7 @@ pub enum ClosureError {
 
 /// An in-memory view over a set of parsed concepts and modules.
 ///
-/// Materialized by the caller (typically from `concept_defs` and `words_v2` in nom-dict).
+/// Materialized by the caller (typically from `concept_defs` and `entities` in nom-dict).
 /// This type does **not** depend on nom-dict or nom-cli.
 pub struct ConceptGraph {
     /// All concept declarations in scope.

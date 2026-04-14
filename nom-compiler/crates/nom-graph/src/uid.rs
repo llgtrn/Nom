@@ -22,7 +22,7 @@
 //! - Variant is NOT part of uid. Two entries with same word+kind+body
 //!   but different variant metadata have the same uid — variant is
 //!   surface decoration, not identity. Same spec decision as nom-dict
-//!   words_v2 where `hash` uses body content, not variant.
+//!   entities where `hash` uses body content, not variant.
 //!
 //! ## Why content-addressed?
 //!

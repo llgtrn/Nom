@@ -354,7 +354,7 @@ mod tests {
 
         // ── typed-slot item in build_order ────────────────────────────────────
         // Since the stub resolver now handles typed-slot refs via
-        // find_words_v2_by_kind, the @Function item must resolve to a hash
+        // find_entities_by_kind, the @Function item must resolve to a hash
         // (alphabetically-smallest among the 6 function entities synced from
         // agent_demo's tools/).  The source file is NOT rewritten (per doc 07
         // §3.5 typed-slot lines have no word anchor for @hash splicing).

@@ -1,7 +1,7 @@
 //! End-to-end test for the agent_demo example.
 //!
 //! Exercises the full pipeline:
-//!   1. `nom store sync <tempdir>` — DB gets 2 concept_defs + 6 words_v2 rows.
+//!   1. `nom store sync <tempdir>` — DB gets 2 concept_defs + 6 entities rows.
 //!   2. `nom build status <tempdir>` — exit 0; both concepts mentioned; words
 //!      resolved by prose-matching (no @hash in source yet).
 //!   3. `agent.nom` must NOT have any @hash yet (--write-locks not used yet).
@@ -151,11 +151,11 @@ mod tests {
             .expect("agent_safety_policy must be in concept_defs");
         assert_eq!(policy_row.name, "agent_safety_policy");
 
-        // 6 words_v2 rows — one per entity in the three tool .nomtu files.
+        // 6 entities rows — one per entity in the three tool .nomtu files.
         for word in &["read_file", "write_file", "list_dir", "fetch_url", "search_web", "run_command"] {
             let rows = dict
-                .find_words_v2_by_word(word)
-                .unwrap_or_else(|e| panic!("find_words_v2_by_word({word}) error: {e}"));
+                .find_entities_by_word(word)
+                .unwrap_or_else(|e| panic!("find_entities_by_word({word}) error: {e}"));
             assert_eq!(rows.len(), 1, "expected 1 row for {word}");
         }
 
@@ -213,7 +213,7 @@ mod tests {
         );
         // agent.nom has 6 tool refs: 5 are v1 (word-based) and 1 is a v2 typed-slot
         // (`the @Function matching "fetch the body of an https url"`).
-        // The typed-slot ref resolves via find_words_v2_by_kind but is NOT written back
+        // The typed-slot ref resolves via find_entities_by_kind but is NOT written back
         // to source (doc 07 §3.5: no bare word to anchor the @hash splice).
         // So write-locks patches: 5 v1 refs in agent.nom + 1 ref in safety.nom = 6 total.
         // assert wrote_n >= 5 to keep the guard conservative.

@@ -13,7 +13,7 @@ use nom_dict::NomDict;
 /// deserialises back to `Vec<IndexClause>` (Serde already covers this via the
 /// `nom-concept` Deserialize derives).
 ///
-/// Word rows come from `words_v2`; their `composed_of` JSON deserialises to a
+/// Word rows come from `entities`; their `composed_of` JSON deserialises to a
 /// list of hash strings, which we use to reconstruct the `CompositionDecl`
 /// needed by the closure walker's composition index.  Entities (rows with
 /// `composed_of IS NULL`) are represented only by their hash in resolved
@@ -50,15 +50,15 @@ pub fn materialize_concept_graph_from_db(
         });
     }
 
-    // ── 2. Load composition words (words_v2 where composed_of IS NOT NULL) ──
+    // ── 2. Load composition words (entities where composed_of IS NOT NULL) ──
     //
     // We only need CompositionDecls; entity words are fully represented by
     // their hash in the EntityRef inside concept index clauses, so no
     // NomtuFile is needed for them.
     //
-    // Strategy: fetch every words_v2 row for this repo via authored_in prefix
+    // Strategy: fetch every entities row for this repo via authored_in prefix
     // matching, then keep only those with a non-null `composed_of`.
-    // NOTE: nom-dict doesn't expose a "list by repo" query for words_v2, so we
+    // NOTE: nom-dict doesn't expose a "list by repo" query for entities, so we
     // collect them by scanning the concept index clauses for any resolved hashes
     // and walking `composed_of` transitively.  For the status command this is
     // sufficient — we only need the compositions the concepts actually reference.
@@ -77,11 +77,11 @@ pub fn materialize_concept_graph_from_db(
         if !visited_hashes.insert(hash.clone()) {
             continue;
         }
-        let row = match dict.find_word_v2(&hash) {
+        let row = match dict.find_entity(&hash) {
             Ok(Some(r)) => r,
             Ok(None) => continue,
             Err(e) => {
-                eprintln!("nom: materialize: find_word_v2 {hash}: {e}");
+                eprintln!("nom: materialize: find_entity {hash}: {e}");
                 continue;
             }
         };
