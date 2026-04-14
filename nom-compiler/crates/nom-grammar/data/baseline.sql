@@ -115,6 +115,17 @@ INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_com
 ('and', 'connective', NULL, 'doc 04', 'baseline-1.0', NULL),
 ('or',  'connective', NULL, 'doc 04', 'baseline-1.0', NULL);
 
+-- Keyword synonyms (S1 rewrites these to their canonical form).
+-- Corpus-driven: authors writing `proof` or `composition` want the
+-- `property` / `module` kinds; rather than extend the closed 9-kind
+-- set, we rewrite at lex time so the archive captures stay
+-- canonical-form-free while still parsing.
+INSERT OR IGNORE INTO keyword_synonyms (synonym, canonical_keyword, source_ref, shipped_commit, notes) VALUES
+('proof',       'property', 'doc 14 block 24', 'baseline-1.0', 'universally-quantified theorem claim maps to property kind'),
+('composition', 'module',   'doc 14 block 32', 'baseline-1.0', 'composition-of-functions idiom maps to module kind'),
+('row',         'data',     'doc 14 block 37', 'baseline-1.0', 'data-table row idiom maps to data kind'),
+('diagram',     'screen',   'doc 14 block 47', 'baseline-1.0', 'architecture diagram — screen is the generalized rendered-artifact kind');
+
 -- Clause shapes (per-kind grammar)
 -- function (6 clauses): intended (req) / uses / requires / ensures (≥1 req) / hazard / favor
 INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) VALUES

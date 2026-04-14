@@ -32,9 +32,11 @@ fn baseline_sql_imports_into_fresh_db() {
         "≥40 per-kind clause rows, got {}",
         counts.clause_shapes
     );
-    // patterns / keyword_synonyms remain user-populated.
+    // patterns remains user-populated. keyword_synonyms has a small
+    // corpus-driven seed (proof -> property, composition -> module)
+    // so the archived doc 14 captures parse under the canonical set.
     assert_eq!(counts.patterns, 0);
-    assert_eq!(counts.keyword_synonyms, 0);
+    assert_eq!(counts.keyword_synonyms, 4, "4 corpus-driven synonyms");
 }
 
 #[test]
