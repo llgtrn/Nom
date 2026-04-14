@@ -61,14 +61,52 @@ pub const KINDS_SEED: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Per-kind `allowed_refs` lattice. Each kind lists which @Kind typed-slot
+/// refs its `uses` clause may invoke. Derived from doc 08 §2 + actual
+/// translation corpus patterns in doc 14.
+const ALLOWED_REFS_FOR_KIND: &[(&str, &[&str])] = &[
+    ("function",  &["@Function", "@Data", "@Concept", "@Module", "@Property"]),
+    ("module",    &["@Function", "@Data", "@Module", "@Composition"]),
+    ("concept",   &["@Function", "@Data", "@Concept", "@Module", "@Composition", "@Route"]),
+    ("screen",    &["@Function", "@Data", "@Concept", "@Composition", "@Media"]),
+    ("data",      &[]), // data decls have no `uses` clause — pure structural
+    ("event",     &["@Data"]),
+    ("media",     &["@Function", "@Data", "@Media"]),
+    ("property",  &["@Function", "@Data", "@Property"]),
+    ("scenario",  &["@Function", "@Data", "@Concept", "@Property"]),
+];
+
+fn allowed_refs_json(kind: &str) -> String {
+    for (k, refs) in ALLOWED_REFS_FOR_KIND {
+        if *k == kind {
+            return serde_json::to_string(refs).unwrap_or_else(|_| "[]".to_string());
+        }
+    }
+    "[]".to_string()
+}
+
+/// Derive `allowed_clauses` for a kind from CLAUSE_SHAPES_SEED, sorted by position.
+fn allowed_clauses_json(kind: &str) -> String {
+    let mut pairs: Vec<(i32, &str)> = CLAUSE_SHAPES_SEED
+        .iter()
+        .filter(|s| s.kind == kind)
+        .map(|s| (s.position, s.clause_name))
+        .collect();
+    pairs.sort_by_key(|(pos, _)| *pos);
+    let clauses: Vec<&str> = pairs.into_iter().map(|(_, n)| n).collect();
+    serde_json::to_string(&clauses).unwrap_or_else(|_| "[]".to_string())
+}
+
 pub fn seed_kinds(conn: &Connection) -> Result<usize> {
     let mut inserted = 0;
     for (name, description, commit) in KINDS_SEED {
+        let allowed_clauses = allowed_clauses_json(name);
+        let allowed_refs = allowed_refs_json(name);
         conn.execute(
             "INSERT OR REPLACE INTO kinds \
              (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) \
-             VALUES (?1, ?2, '[]', '[]', ?3, NULL)",
-            params![name, description, commit],
+             VALUES (?1, ?2, ?3, ?4, ?5, NULL)",
+            params![name, description, allowed_clauses, allowed_refs, commit],
         )?;
         inserted += 1;
     }
@@ -366,11 +404,14 @@ pub const QUALITY_SEED: &[(&str, &str, &str, Option<&str>)] = &[
 pub fn seed_quality_names(conn: &Connection) -> Result<usize> {
     let mut inserted = 0;
     for (name, axis, cardinality, required_at) in QUALITY_SEED {
+        // metric_function is populated by `nom corpus register-axis` per
+        // MEMORY.md roadmap item 8. Until that ships, the column stays empty.
+        let metric_function: Option<&str> = None;
         conn.execute(
             "INSERT OR REPLACE INTO quality_names \
              (name, axis, metric_function, cardinality, required_at, source_ref, notes) \
-             VALUES (?1, ?2, 'placeholder_metric_hash', ?3, ?4, 'MEMORY.md:2026-04-14', NULL)",
-            params![name, axis, cardinality, required_at],
+             VALUES (?1, ?2, ?3, ?4, ?5, 'MEMORY.md:2026-04-14', 'metric_function pending nom corpus register-axis')",
+            params![name, axis, metric_function, cardinality, required_at],
         )?;
         inserted += 1;
     }
@@ -447,16 +488,37 @@ fn split_status_and_ref(cell: &str) -> (String, Option<String>) {
     }
 }
 
+/// Heuristic split of a doc-16 gap_summary into (source_paradigm, nom_shape)
+/// on the " → " arrow convention. Most doc 16 rows follow one of:
+///   "Source-paradigm-name → Nom shape prose"
+///   "Concept from lang X (reuses #N) → Nom shape"
+/// If no arrow is present, source_paradigm is left empty and the full text
+/// lands in gap_summary (preserving the existing column's content).
+pub fn split_gap_summary(gap: &str) -> (String, String, String) {
+    // Returns (source_paradigm, gap_summary_kept, nom_shape)
+    // The original gap_summary is preserved in full to avoid information loss.
+    if let Some(idx) = gap.find(" → ") {
+        let (head, tail) = gap.split_at(idx);
+        let shape = tail.trim_start_matches(" → ").trim();
+        (head.trim().to_string(), gap.to_string(), shape.to_string())
+    } else {
+        (String::new(), gap.to_string(), String::new())
+    }
+}
+
 pub fn seed_authoring_rules(conn: &Connection, rows: &[DocRuleRow]) -> Result<usize> {
     let mut inserted = 0;
     for row in rows {
+        let (paradigm, full_gap, shape) = split_gap_summary(&row.gap_summary);
         conn.execute(
             "INSERT OR REPLACE INTO authoring_rules \
              (row_id, source_paradigm, gap_summary, nom_shape, reuses_rows, destination, status, closed_in, source_doc_ref) \
-             VALUES (?1, '', ?2, '', NULL, ?3, ?4, ?5, ?6)",
+             VALUES (?1, ?2, ?3, ?4, NULL, ?5, ?6, ?7, ?8)",
             params![
                 row.row_id,
-                row.gap_summary,
+                paradigm,
+                full_gap,
+                shape,
                 row.destination,
                 row.status,
                 row.closed_in,
@@ -513,6 +575,120 @@ mod tests {
             .query_row("SELECT COUNT(*) FROM kinds", [], |r| r.get(0))
             .unwrap();
         assert_eq!(count, 9);
+    }
+
+    #[test]
+    fn kinds_allowed_clauses_are_derived_not_empty() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        // clause_shapes must seed before kinds for the derivation to work.
+        seed_clause_shapes(&conn).unwrap();
+        seed_kinds(&conn).unwrap();
+        // function kind has 6 clauses: intended, uses, requires, ensures, hazard, favor
+        let fn_clauses: String = conn
+            .query_row(
+                "SELECT allowed_clauses FROM kinds WHERE name = 'function'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(fn_clauses.contains("intended"), "got {fn_clauses}");
+        assert!(fn_clauses.contains("ensures"), "got {fn_clauses}");
+        assert!(fn_clauses.contains("hazard"), "got {fn_clauses}");
+        assert_ne!(fn_clauses, "[]", "function kind must not have empty allowed_clauses");
+    }
+
+    #[test]
+    fn kinds_allowed_refs_are_populated_per_kind() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        seed_kinds(&conn).unwrap();
+        // function can use @Function, @Data, @Concept, @Module, @Property
+        let fn_refs: String = conn
+            .query_row(
+                "SELECT allowed_refs FROM kinds WHERE name = 'function'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert!(fn_refs.contains("@Function"));
+        assert!(fn_refs.contains("@Data"));
+        // data kind is pure-structural: no @Kind refs
+        let data_refs: String = conn
+            .query_row(
+                "SELECT allowed_refs FROM kinds WHERE name = 'data'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(data_refs, "[]");
+    }
+
+    #[test]
+    fn quality_names_metric_function_is_null_not_placeholder() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        seed_quality_names(&conn).unwrap();
+        let metric: Option<String> = conn
+            .query_row(
+                "SELECT metric_function FROM quality_names WHERE name = 'forward_compatibility'",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(metric, None);
+    }
+
+    #[test]
+    fn gap_summary_split_on_arrow_populates_source_paradigm_and_nom_shape() {
+        let (p, g, s) = split_gap_summary("Erlang OTP supervisor → concept decl + FIFO mailbox + serialized invocation");
+        assert_eq!(p, "Erlang OTP supervisor");
+        assert!(g.contains(" → "));
+        assert_eq!(s, "concept decl + FIFO mailbox + serialized invocation");
+    }
+
+    #[test]
+    fn gap_summary_split_preserves_full_text_when_no_arrow() {
+        let (p, g, s) = split_gap_summary("Some legacy prose without an arrow");
+        assert_eq!(p, "");
+        assert_eq!(g, "Some legacy prose without an arrow");
+        assert_eq!(s, "");
+    }
+
+    #[test]
+    fn authoring_rules_have_split_paradigm_when_arrow_present() {
+        let dir = tempdir().unwrap();
+        let conn = init_at(dir.path().join("g.sqlite")).unwrap();
+        let md = "\
+| 419 | Behavioral-module declarations → structural typed-slots | authoring-guide rule | ✅ closed (doc 14 #85) |
+| 999 | Legacy row without arrow | W-wedge | ⏳ queued |
+";
+        let rows = parse_doc16_rules(md);
+        seed_authoring_rules(&conn, &rows).unwrap();
+        let paradigm_419: String = conn
+            .query_row(
+                "SELECT source_paradigm FROM authoring_rules WHERE row_id = 419",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(paradigm_419, "Behavioral-module declarations");
+        let shape_419: String = conn
+            .query_row(
+                "SELECT nom_shape FROM authoring_rules WHERE row_id = 419",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(shape_419, "structural typed-slots");
+        let paradigm_999: String = conn
+            .query_row(
+                "SELECT source_paradigm FROM authoring_rules WHERE row_id = 999",
+                [],
+                |r| r.get(0),
+            )
+            .unwrap();
+        assert_eq!(paradigm_999, "");
     }
 
     #[test]

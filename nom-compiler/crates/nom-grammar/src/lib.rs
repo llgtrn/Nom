@@ -62,7 +62,7 @@ CREATE INDEX IF NOT EXISTS idx_authoring_rules_paradigm
 CREATE TABLE IF NOT EXISTS quality_names (
   name            TEXT PRIMARY KEY,
   axis            TEXT NOT NULL,
-  metric_function TEXT NOT NULL,
+  metric_function TEXT,                   -- nullable: populated by `nom corpus register-axis`
   cardinality     TEXT NOT NULL,
   required_at     TEXT,
   source_ref      TEXT NOT NULL,
