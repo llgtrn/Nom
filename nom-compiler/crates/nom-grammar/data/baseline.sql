@@ -1527,6 +1527,343 @@ INSERT OR IGNORE INTO patterns (
   '[]'
 );
 
+
+-- Parallel-seeded batch 4 -- build + networking + graphics
+INSERT OR IGNORE INTO patterns (
+  pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs,
+  example_shape, hazards, favors, source_doc_refs
+) VALUES
+(
+  'continuous-integration-pipeline',
+  'run validation stages on every change before merge',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data","@Event"]',
+  'the function <name> is\n  intended to validate every change across build, test, and analysis stages before merge.\n  uses the @Data matching "source revision" with at-least 0.9 confidence.\n  uses the @Event matching "change proposed" with at-least 0.9 confidence.\n  requires every stage to report a terminal pass or fail status.\n  ensures a failing stage blocks promotion of the source revision.\n  hazard flaky stages erode trust and invite bypass.\n  favor reproducibility.',
+  '["flaky stage","bypass on red"]',
+  '["reproducibility","auditability","determinism"]',
+  '[]'
+),
+(
+  'artifact-promotion-gate',
+  'promote a built artifact between stages only when gate conditions hold',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to advance an artifact from a lower stage to a higher stage only when gate conditions hold.\n  uses the @Data matching "artifact manifest" with at-least 0.9 confidence.\n  requires every gate condition to evaluate to pass before advancement.\n  ensures the artifact at the higher stage is byte-identical to the artifact at the lower stage.\n  hazard rebuilding between stages silently changes the artifact.\n  favor auditability.',
+  '["rebuild between stages","skipped gate"]',
+  '["auditability","reproducibility","correctness"]',
+  '[]'
+),
+(
+  'blue-green-deployment',
+  'switch traffic atomically between two full environments',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data","@Event"]',
+  'the function <name> is\n  intended to move live traffic from the active environment to the standby environment in a single step.\n  uses the @Data matching "environment descriptor" with at-least 0.9 confidence.\n  uses the @Event matching "switch requested" with at-least 0.9 confidence.\n  requires the standby environment to have passed health checks before the switch.\n  ensures at most one environment receives live traffic at any instant.\n  hazard stale session state in the standby environment drops in-flight work.\n  favor availability.',
+  '["stale standby","split traffic"]',
+  '["availability","determinism","correctness"]',
+  '[]'
+),
+(
+  'canary-rollout-fraction',
+  'expose a new release to a bounded fraction of traffic first',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to send a bounded fraction of traffic to a candidate release while the rest stays on the baseline release.\n  uses the @Data matching "release descriptor" with at-least 0.9 confidence.\n  requires the canary fraction to lie within zero and one inclusive.\n  ensures exactly the declared fraction of requests reach the candidate release within measurement tolerance.\n  hazard too-small a canary hides regressions that surface only at full scale.\n  favor availability.',
+  '["undersized canary","skewed sampling"]',
+  '["availability","statistical_rigor","auditability"]',
+  '[]'
+),
+(
+  'rollback-to-previous-release',
+  'restore the immediately prior release when the current one misbehaves',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data","@Event"]',
+  'the function <name> is\n  intended to restore a previous release when the current release is observed to misbehave.\n  uses the @Data matching "release ledger" with at-least 0.9 confidence.\n  uses the @Event matching "rollback requested" with at-least 0.9 confidence.\n  requires the previous release to remain retrievable and runnable.\n  ensures live traffic returns to the previous release before the rollback is acknowledged as resolved.\n  hazard irreversible data migrations block rollback.\n  favor availability.',
+  '["irreversible migration","lost previous release"]',
+  '["availability","auditability","reproducibility"]',
+  '[]'
+),
+(
+  'immutable-build-tag',
+  'bind a content-addressed tag to a build that never moves',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to bind a build tag to a build artifact such that the binding never moves.\n  uses the @Data matching "build artifact" with at-least 0.9 confidence.\n  requires the build tag to be derived from the content of the build artifact.\n  ensures resolving the tag yields the same artifact for all time.\n  hazard reusing a tag for a new artifact invalidates every prior reference.\n  favor reproducibility.',
+  '["tag reuse","mutable tag"]',
+  '["reproducibility","auditability","determinism"]',
+  '[]'
+),
+(
+  'dependency-lockfile',
+  'pin every transitive dependency to exact resolved versions',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to pin every direct and transitive dependency of a project to an exact resolved version.\n  exposes a resolved version for each dependency name reachable from the project.\n  favor reproducibility.',
+  '["partial lock","drift on resolve"]',
+  '["reproducibility","determinism","auditability"]',
+  '[]'
+),
+(
+  'staged-release-channel',
+  'route releases through ordered maturity channels',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to place a release on a channel within an ordered sequence from least to most stable.\n  uses the @Data matching "channel registry" with at-least 0.9 confidence.\n  requires the release to have occupied every earlier channel before the current channel.\n  ensures subscribers of the channel see only releases that have cleared all earlier channels.\n  hazard skipping a channel exposes subscribers to unverified releases.\n  favor auditability.',
+  '["skipped channel","out-of-order publish"]',
+  '["auditability","reproducibility","availability"]',
+  '[]'
+),
+(
+  'deploy-preflight-check',
+  'verify environment and artifact compatibility before deploying',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to verify that a target environment can accept a candidate artifact before deployment begins.\n  uses the @Data matching "environment descriptor" with at-least 0.9 confidence.\n  requires every compatibility rule between the candidate artifact and the target environment to hold.\n  ensures deployment proceeds only when all preflight checks pass.\n  hazard preflight that drifts from the real deploy step gives false confidence.\n  favor correctness.',
+  '["drifted preflight","partial check"]',
+  '["correctness","auditability","determinism"]',
+  '[]'
+),
+(
+  'release-note-changelog',
+  'record a human-readable summary of changes per release',
+  '["data"]',
+  '["intended","exposes","favor"]',
+  '["@Data"]',
+  'the data <name> is\n  intended to record for a release a human-readable summary of what changed since the previous release.\n  exposes a change summary and affected area for each change included in the release.\n  favor documentation.',
+  '["missing entry","vague summary"]',
+  '["documentation","auditability","discoverability"]',
+  '[]'
+),
+(
+  'connection-pool-lifecycle',
+  'maintain a bounded pool of reusable peer sessions with health tracking',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to reuse peer sessions across many short requests.\n  uses the @Data matching "session handle" with at-least 0.9 confidence.\n  composes the @Function matching "acquire-release-evict" with at-least 0.9 confidence.\n  requires bounded capacity and per-session idle timeout.\n  ensures every acquired session is either returned or evicted.\n  hazard session leak when caller drops without release.\n  favor availability.',
+  '["session leak when caller drops without release","pool starvation under burst load"]',
+  '["availability","performance","determinism"]',
+  '[]'
+),
+(
+  'request-timeout-with-deadline',
+  'enforce an absolute deadline across a whole request rather than per-hop timeouts',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to bound the total time a request may consume end-to-end.\n  uses the @Data matching "deadline instant" with at-least 0.9 confidence.\n  requires the deadline to be propagated to every downstream call.\n  ensures the caller observes failure no later than the deadline.\n  hazard per-hop timeouts summing past the deadline when propagation is forgotten.\n  favor latency.',
+  '["per-hop timeouts summing past the deadline when propagation is forgotten"]',
+  '["latency","availability","determinism"]',
+  '[]'
+),
+(
+  'keepalive-heartbeat',
+  'detect dead peers on idle sessions by exchanging periodic liveness probes',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Event","@Function"]',
+  'the concept <name> is\n  intended to detect silently broken sessions that carry no traffic.\n  uses the @Event matching "probe-pong cycle" with at-least 0.9 confidence.\n  composes the @Function matching "send-probe-and-on-pong handler" with at-least 0.9 confidence.\n  requires probe interval shorter than any intermediary idle cutoff.\n  ensures a missed pong within the window marks the session dead.\n  hazard heartbeat storms on large pools amplifying load.\n  favor availability.',
+  '["heartbeat storms on large pools amplifying load"]',
+  '["availability","responsiveness"]',
+  '[]'
+),
+(
+  'backoff-with-jitter',
+  'space retry attempts with randomized exponential delays to avoid synchronized bursts',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to produce the next retry delay after a transient failure.\n  uses the @Data matching "attempt count and base interval" with at-least 0.9 confidence.\n  requires a cap that bounds the maximum delay.\n  ensures two peers retrying the same failure do not align in time.\n  hazard tight loops when jitter is omitted and many peers retry at once.\n  favor availability.',
+  '["tight loops when jitter is omitted and many peers retry at once"]',
+  '["availability","determinism"]',
+  '[]'
+),
+(
+  'message-framing-length-prefixed',
+  'carry a sequence of messages over a byte stream by prefixing each with its length',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to recover discrete messages from an ordered byte stream.\n  uses the @Data matching "length header plus payload" with at-least 0.9 confidence.\n  composes the @Function matching "encode-decode frame" with at-least 0.9 confidence.\n  requires a fixed maximum frame size rejected early.\n  ensures decoder resynchronizes only at a valid frame boundary.\n  hazard oversized length header exhausting memory when no cap is enforced.\n  favor correctness.',
+  '["oversized length header exhausting memory when no cap is enforced"]',
+  '["correctness","determinism","performance"]',
+  '[]'
+),
+(
+  'protocol-version-negotiation',
+  'agree on a shared protocol version at the start of a session',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Data"]',
+  'the function <name> is\n  intended to select the highest version both peers can speak.\n  uses the @Data matching "version offer set" with at-least 0.9 confidence.\n  requires a total order on version identifiers.\n  ensures both peers commit to the same version before any payload is exchanged.\n  hazard downgrade when an attacker strips higher versions from the offer.\n  favor correctness.',
+  '["downgrade when an attacker strips higher versions from the offer"]',
+  '["correctness","forward_compatibility","auditability"]',
+  '[]'
+),
+(
+  'bidirectional-streaming-channel',
+  'carry independent message streams in both directions over one session',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Event","@Function"]',
+  'the concept <name> is\n  intended to allow either peer to send messages without waiting for the other.\n  uses the @Event matching "close event" with at-least 0.9 confidence.\n  composes the @Function matching "send-receive-half-close" with at-least 0.9 confidence.\n  requires per-direction flow control with bounded buffers.\n  ensures closing one direction leaves the other direction drainable.\n  hazard deadlock when both peers block on full send buffers.\n  favor responsiveness.',
+  '["deadlock when both peers block on full send buffers"]',
+  '["responsiveness","availability","performance"]',
+  '[]'
+),
+(
+  'load-balanced-upstream-set',
+  'spread requests across a set of equivalent upstreams with health-aware selection',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to route each request to a healthy member of a replica group.\n  uses the @Data matching "member list with health flag" with at-least 0.9 confidence.\n  composes the @Function matching "pick-mark-rehabilitate" with at-least 0.9 confidence.\n  requires a passive or active signal that classifies members as healthy.\n  ensures an unhealthy member stops receiving new requests within a bounded delay.\n  hazard herding when every client picks the same member after a failover.\n  favor availability.',
+  '["herding when every client picks the same member after a failover"]',
+  '["availability","latency","responsiveness"]',
+  '[]'
+),
+(
+  'transport-encryption-handshake',
+  'establish an authenticated encrypted channel before any payload is exchanged',
+  '["concept"]',
+  '["intended","uses","composes","requires","ensures","hazard","favor"]',
+  '["@Data","@Function"]',
+  'the concept <name> is\n  intended to prove peer identity and derive session keys before payload traffic.\n  uses the @Data matching "peer identity and shared secret" with at-least 0.9 confidence.\n  composes the @Function matching "exchange-verify-derive" with at-least 0.9 confidence.\n  requires identity verification completed before any encrypted payload is sent.\n  ensures a successful handshake yields forward-secret keys distinct per session.\n  hazard silent acceptance of an unverified identity leaking session contents.\n  favor auditability.',
+  '["silent acceptance of an unverified identity leaking session contents"]',
+  '["auditability","correctness","forward_compatibility"]',
+  '[]'
+),
+(
+  'graceful-connection-shutdown',
+  'drain in-flight work before closing a session rather than cutting it abruptly',
+  '["function"]',
+  '["intended","uses","requires","ensures","hazard","favor"]',
+  '["@Function","@Event"]',
+  'the function <name> is\n  intended to close a session after letting outstanding requests finish.\n  uses the @Event matching "close event with drain deadline" with at-least 0.9 confidence.\n  requires new requests rejected immediately once shutdown begins.\n  ensures either all inflight requests complete or the drain deadline fires.\n  hazard indefinite hang when no drain deadline is enforced.\n  favor availability.',
+  '["indefinite hang when no drain deadline is enforced"]',
+  '["availability","responsiveness","determinism"]',
+  '[]'
+),
+(
+  'vector-path-render',
+  'rasterize a vector path into pixel coverage with anti-aliased edges',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to rasterize a vector path into a surface with coverage-based anti-aliasing.\n  uses the @Data matching "path with transform and coverage kernel" with at-least 0.9 confidence.\n  favor clarity.',
+  '["subpixel seams between adjacent fills","winding-rule ambiguity on self-intersecting paths"]',
+  '["clarity","determinism"]',
+  '[]'
+),
+(
+  'raster-image-composition',
+  'composite layered raster images under a blend mode into one output',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to composite layers under a blend mode into an output surface.\n  uses the @Data matching "layer stack with alpha model" with at-least 0.9 confidence.\n  favor correctness.',
+  '["premultiplied vs straight alpha mismatch","gamma-space blending darkening mid-tones"]',
+  '["correctness","reproducibility"]',
+  '[]'
+),
+(
+  'typeset-glyph-layout',
+  'lay out a run of glyphs along a baseline with shaping and kerning',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to lay out glyphs along a baseline with shaping and kerning.\n  uses the @Data matching "font face with shaping and kerning tables" with at-least 0.9 confidence.\n  favor accessibility.',
+  '["missing glyph fallback not applied","baseline misalignment across mixed scripts"]',
+  '["accessibility","clarity"]',
+  '[]'
+),
+(
+  'color-palette-swatch',
+  'define a named palette of colors with contrast-aware role assignments',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data"]',
+  'the media <name> is\n  intended to define a named set of colors with contrast-aware role assignments.\n  uses the @Data matching "swatches and role map with contrast threshold" with at-least 0.9 confidence.\n  favor accessibility.',
+  '["insufficient contrast for foreground-on-background pairs","role collisions when roles outnumber swatches"]',
+  '["accessibility","clarity"]',
+  '[]'
+),
+(
+  'shader-pipeline-stage',
+  'describe a single programmable stage that transforms inputs into outputs per-fragment',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to transform stage inputs into stage outputs per fragment.\n  uses the @Data matching "uniforms and sampler bindings" with at-least 0.9 confidence.\n  favor determinism.',
+  '["undefined behavior on division by zero in fragment math","precision loss at low-precision numeric types"]',
+  '["determinism","numerical_stability"]',
+  '[]'
+),
+(
+  'mesh-vertex-index-buffer',
+  'store a triangulated mesh as a vertex buffer paired with an index buffer',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data"]',
+  'the media <name> is\n  intended to store vertices paired with indices describing a triangulation.\n  uses the @Data matching "vertex attributes and primitive topology" with at-least 0.9 confidence.\n  favor performance.',
+  '["index out of vertex range","degenerate triangles with zero area"]',
+  '["performance","correctness"]',
+  '[]'
+),
+(
+  'animation-keyframe-interpolation',
+  'interpolate a property between keyframes along a timeline using an easing curve',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to interpolate a property between keyframes along a timeline using an easing curve.\n  uses the @Data matching "keyframes with easing and sample rate" with at-least 0.9 confidence.\n  favor responsiveness.',
+  '["easing overshoot producing out-of-range values","aliasing when sample rate is below keyframe density"]',
+  '["responsiveness","determinism"]',
+  '[]'
+),
+(
+  'tiled-image-pyramid',
+  'represent a large image as a pyramid of tiled mip levels for bounded-memory access',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data"]',
+  'the media <name> is\n  intended to represent a source image as tiled mip levels for bounded-memory access.\n  uses the @Data matching "tile size and level count with downsample filter" with at-least 0.9 confidence.\n  favor latency.',
+  '["seams at tile borders from non-overlapping filters","excessive level count inflating storage"]',
+  '["latency","performance"]',
+  '[]'
+),
+(
+  'text-line-bidi-reorder',
+  'reorder a mixed-direction character sequence into visual order for a single line',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to reorder logical text into visual order respecting direction runs.\n  uses the @Data matching "direction runs and mirrored bracket pairs" with at-least 0.9 confidence.\n  favor accessibility.',
+  '["mirrored bracket pairs not flipped","neutral characters resolved to the wrong run"]',
+  '["accessibility","correctness"]',
+  '[]'
+),
+(
+  'geometric-clip-region',
+  'restrict rendering to the intersection of a stack of geometric regions',
+  '["media"]',
+  '["intended","uses","favor"]',
+  '["@Data","@Function"]',
+  'the media <name> is\n  intended to restrict rendering to the intersection of a region stack.\n  uses the @Data matching "region stack with fill rule and transform" with at-least 0.9 confidence.\n  favor correctness.',
+  '["empty intersection silently producing no output","floating-point drift at region boundaries"]',
+  '["correctness","determinism"]',
+  '[]'
+);
+
 -- ── Schema version stamp ────────────────────────────────────────────
 
 INSERT OR REPLACE INTO schema_meta (key, value) VALUES ('baseline_version', '1.0');
