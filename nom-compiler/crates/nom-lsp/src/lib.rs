@@ -37,6 +37,16 @@ pub const SERVER_VERSION: &str = env!("CARGO_PKG_VERSION");
 /// the `MarkupContent` from `agent::render_agent_transcript`.
 pub const CMD_WHY_THIS_NOM: &str = "nom.whyThisNom";
 
+/// `workspace/executeCommand` token for the pattern-search command.
+/// Editor clients send `{ command: "nom.searchPatterns", arguments:
+/// [prose: string, grammar_db_path: string, threshold?: number,
+/// limit?: number] }`. The server returns a JSON array of objects
+/// `{ score, pattern_id, intent }` ranked by Jaccard token-overlap
+/// against each row's intent — the same backend the CLI's
+/// `nom grammar pattern-search` and the CI uniqueness test use, so
+/// editor results are byte-identical to the CLI for the same query.
+pub const CMD_SEARCH_PATTERNS: &str = "nom.searchPatterns";
+
 #[derive(Debug, Error)]
 pub enum LspError {
     #[error("protocol error: {0}")]
@@ -59,7 +69,10 @@ pub fn server_capabilities() -> ServerCapabilities {
             ..Default::default()
         }),
         execute_command_provider: Some(ExecuteCommandOptions {
-            commands: vec![CMD_WHY_THIS_NOM.to_string()],
+            commands: vec![
+                CMD_WHY_THIS_NOM.to_string(),
+                CMD_SEARCH_PATTERNS.to_string(),
+            ],
             ..Default::default()
         }),
         ..Default::default()
@@ -180,20 +193,112 @@ fn method_mismatch(id: RequestId, err: ExtractError<Request>) -> Response {
 /// agent-loop error) produce LSP `InvalidParams` / `InternalError`
 /// responses with structured messages so the client can surface them.
 fn handle_execute_command(id: RequestId, params: ExecuteCommandParams) -> Response {
-    if params.command != CMD_WHY_THIS_NOM {
-        return Response {
+    match params.command.as_str() {
+        CMD_WHY_THIS_NOM => handle_why_this_nom(id, params),
+        CMD_SEARCH_PATTERNS => handle_search_patterns(id, params),
+        _ => Response {
             id,
             result: None,
             error: Some(lsp_server::ResponseError {
                 code: lsp_server::ErrorCode::MethodNotFound as i32,
                 message: format!(
-                    "nom-lsp: command {:?} not handled; supported: [{}]",
-                    params.command, CMD_WHY_THIS_NOM
+                    "nom-lsp: command {:?} not handled; supported: [{}, {}]",
+                    params.command, CMD_WHY_THIS_NOM, CMD_SEARCH_PATTERNS
                 ),
                 data: None,
             }),
-        };
+        },
     }
+}
+
+fn handle_search_patterns(id: RequestId, params: ExecuteCommandParams) -> Response {
+    // Args: [prose: string, grammar_db_path: string, threshold?: number, limit?: number]
+    let prose = match params.arguments.first().and_then(|v| v.as_str()) {
+        Some(s) => s.to_string(),
+        None => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InvalidParams as i32,
+                    message: "nom.searchPatterns: arg[0] (prose) missing or not a string".into(),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let db_path = match params.arguments.get(1).and_then(|v| v.as_str()) {
+        Some(s) => std::path::PathBuf::from(s),
+        None => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InvalidParams as i32,
+                    message: "nom.searchPatterns: arg[1] (grammar_db_path) missing or not a string"
+                        .into(),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let threshold = params
+        .arguments
+        .get(2)
+        .and_then(|v| v.as_f64())
+        .unwrap_or(0.10);
+    let limit = params
+        .arguments
+        .get(3)
+        .and_then(|v| v.as_u64())
+        .unwrap_or(10) as usize;
+
+    let conn = match nom_grammar::open_readonly(&db_path) {
+        Ok(c) => c,
+        Err(e) => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InternalError as i32,
+                    message: format!("nom.searchPatterns: open grammar db: {e}"),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let hits = match nom_grammar::search_patterns(&conn, &prose, threshold, limit) {
+        Ok(h) => h,
+        Err(e) => {
+            return Response {
+                id,
+                result: None,
+                error: Some(lsp_server::ResponseError {
+                    code: lsp_server::ErrorCode::InternalError as i32,
+                    message: format!("nom.searchPatterns: search: {e}"),
+                    data: None,
+                }),
+            };
+        }
+    };
+    let arr: Vec<serde_json::Value> = hits
+        .iter()
+        .map(|m| {
+            serde_json::json!({
+                "score": m.score,
+                "pattern_id": m.pattern_id,
+                "intent": m.intent,
+            })
+        })
+        .collect();
+    Response {
+        id,
+        result: Some(serde_json::Value::Array(arr)),
+        error: None,
+    }
+}
+
+fn handle_why_this_nom(id: RequestId, params: ExecuteCommandParams) -> Response {
     // Args: [prose, dict_path] — both required strings.
     let prose = match params.arguments.first().and_then(|v| v.as_str()) {
         Some(s) => s.to_string(),
@@ -325,7 +430,73 @@ mod tests {
             "nom.whyThisNom must be advertised; got {:?}",
             ec.commands
         );
+        assert!(
+            ec.commands.iter().any(|c| c == CMD_SEARCH_PATTERNS),
+            "nom.searchPatterns must be advertised; got {:?}",
+            ec.commands
+        );
         assert!(caps.definition_provider.is_none());
+    }
+
+    #[test]
+    fn search_patterns_dispatch_returns_top_matches() {
+        // Seed an in-memory grammar.sqlite via the canonical helpers
+        // and dispatch a workspace/executeCommand for the new
+        // nom.searchPatterns command. Verify the response is a JSON
+        // array whose top hit matches the seeded pattern.
+        let dir = tempfile::tempdir().unwrap();
+        let db = dir.path().join("g.sqlite");
+        let conn = nom_grammar::init_at(&db).unwrap();
+        conn.execute(
+            "INSERT INTO patterns \
+             (pattern_id, intent, nom_kinds, nom_clauses, typed_slot_refs, \
+              example_shape, hazards, favors, source_doc_refs) \
+             VALUES \
+             ('alpha-cache', 'cache pure function results keyed on input', \
+              '[]', '[]', '[]', '', '[]', '[]', '[]'), \
+             ('beta-render', 'render typeset glyphs along baseline', \
+              '[]', '[]', '[]', '', '[]', '[]', '[]')",
+            [],
+        )
+        .unwrap();
+        drop(conn);
+
+        let req = Request::new(
+            RequestId::from(7),
+            ExecuteCommand::METHOD.to_string(),
+            ExecuteCommandParams {
+                command: CMD_SEARCH_PATTERNS.into(),
+                arguments: vec![
+                    serde_json::Value::String("cache pure function results".into()),
+                    serde_json::Value::String(db.to_string_lossy().into_owned()),
+                ],
+                work_done_progress_params: Default::default(),
+            },
+        );
+        let resp = dispatch_request(req);
+        assert!(resp.error.is_none(), "unexpected error: {:?}", resp.error);
+        let arr = resp.result.expect("search-patterns result set");
+        let arr = arr.as_array().expect("array");
+        assert!(!arr.is_empty(), "expected at least one match");
+        let top_id = arr[0].get("pattern_id").and_then(|v| v.as_str()).unwrap();
+        assert_eq!(top_id, "alpha-cache");
+    }
+
+    #[test]
+    fn search_patterns_dispatch_rejects_missing_args() {
+        let req = Request::new(
+            RequestId::from(8),
+            ExecuteCommand::METHOD.to_string(),
+            ExecuteCommandParams {
+                command: CMD_SEARCH_PATTERNS.into(),
+                arguments: vec![], // no args at all
+                work_done_progress_params: Default::default(),
+            },
+        );
+        let resp = dispatch_request(req);
+        assert!(resp.result.is_none());
+        let err = resp.error.expect("error must be set");
+        assert_eq!(err.code, lsp_server::ErrorCode::InvalidParams as i32);
     }
 
     #[test]
