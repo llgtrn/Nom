@@ -14,7 +14,7 @@ anything load-bearing.
   artifact store at `~/.nom/store/<hash>/body.{bc,avif,...}`.
 - `Dict { concepts, entities }` struct with per-tier connections.
   Constructors: `open_dir`, `open_paths`, `open_in_memory`.
-- Twenty-five free functions on `&Dict` across both tiers. Entities
+- Thirty free functions on `&Dict` across both tiers. Entities
   tier read-only: S3a (5) `upsert_entity` / `find_entity` /
   `find_entities_by_word` / `find_entities_by_kind` / `count_entities`;
   S3b (5) `count_concept_defs` / `count_required_axes` /
@@ -24,11 +24,15 @@ anything load-bearing.
   (entities-tier BFS over `entry_refs`), plus four concept-tier ports
   — `get_concept_id_by_name` / `list_concept_ids` / `delete_concept`
   / `add_concept_member`. S6 entities-tier mutators (5): `set_scores`
-  / `add_meta` / `set_signature` / `add_finding` / `add_ref`. Each
-  free fn is a faithful re-emit of the legacy `NomDict::*` SQL with
-  `&self.conn` swapped for `&d.entities` or `&d.concepts`. Legacy
-  methods stay live until the last replacement ships, per the
-  no-legacy rule.
+  / `add_meta` / `set_signature` / `add_finding` / `add_ref`.
+  S7 entries-tier readers returning owned types (5):
+  `find_by_word` / `find_by_body_kind` / `search_describe` /
+  `get_scores` / `get_findings` — shared SELECT prefix in a
+  `ENTRY_SELECT` const so the 21-column list lives in one place;
+  `row_to_entry` promoted to `pub(crate)`. Each free fn is a faithful
+  re-emit of the legacy `NomDict::*` SQL with `&self.conn` swapped
+  for `&d.entities` or `&d.concepts`. Legacy methods stay live until
+  the last replacement ships, per the no-legacy rule.
 - Per-tier specialised schemas: `CONCEPTS_SCHEMA_SQL` and
   `ENTITIES_SCHEMA_SQL`; cross-file foreign keys absent per the
   no-cross-file-FK invariant.
