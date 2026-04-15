@@ -10,7 +10,11 @@
 
 use std::path::Path;
 
-use nom_dict::{Dict, EntryFilter, find_entries};
+use nom_dict::{
+    Dict, EntryFilter, closure, count_entries, count_concept_defs, count_entities,
+    count_required_axes, body_kind_histogram, status_histogram, find_entries,
+    get_entry, get_meta, get_refs,
+};
 use nom_types::{EntryKind, EntryStatus};
 use sha2::Digest;
 
@@ -272,7 +276,7 @@ pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
             return 1;
         }
     };
-    let entry = match dict_db.get_entry(&id) {
+    let entry = match get_entry(&dict_db, &id) {
         Ok(Some(e)) => e,
         Ok(None) => {
             eprintln!("nom: entry not found: {id}");
@@ -283,7 +287,7 @@ pub fn cmd_store_get(hash: &str, dict: &Path, json: bool) -> i32 {
             return 1;
         }
     };
-    let meta = dict_db.get_meta(&id).unwrap_or_default();
+    let meta = get_meta(&dict_db, &id).unwrap_or_default();
 
     if json {
         // Minimal hand-rolled JSON to avoid pulling in a whole serializer
@@ -373,7 +377,7 @@ pub fn cmd_store_closure(hash: &str, dict: &Path, json: bool) -> i32 {
             return 1;
         }
     };
-    let closure = match dict_db.closure(&id) {
+    let closure = match closure(&dict_db, &id) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("nom: closure error: {e}");
@@ -402,7 +406,7 @@ pub fn cmd_store_verify(hash: &str, dict: &Path, strict: bool) -> i32 {
             return 1;
         }
     };
-    let closure = match dict_db.closure(&id) {
+    let closure = match closure(&dict_db, &id) {
         Ok(c) => c,
         Err(e) => {
             eprintln!("nom: closure error: {e}");
@@ -415,7 +419,7 @@ pub fn cmd_store_verify(hash: &str, dict: &Path, strict: bool) -> i32 {
     let mut broken: Vec<(String, String)> = Vec::new();
 
     for node in &closure {
-        match dict_db.get_entry(node) {
+        match get_entry(&dict_db, node) {
             Ok(Some(e)) => match e.status {
                 EntryStatus::Partial => partial += 1,
                 EntryStatus::Opaque => opaque += 1,
@@ -423,9 +427,9 @@ pub fn cmd_store_verify(hash: &str, dict: &Path, strict: bool) -> i32 {
             },
             _ => {}
         }
-        let refs = dict_db.get_refs(node).unwrap_or_default();
+        let refs = get_refs(&dict_db, node).unwrap_or_default();
         for r in refs {
-            if dict_db.get_entry(&r).ok().flatten().is_none() {
+            if get_entry(&dict_db, &r).ok().flatten().is_none() {
                 broken.push((node.clone(), r));
             }
         }
@@ -459,18 +463,18 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
         Some(d) => d,
         None => return 1,
     };
-    let total = dict_db.count().unwrap_or(0);
-    let concept_defs_count = dict_db.count_concept_defs().unwrap_or(0);
-    let entities_count = dict_db.count_entities().unwrap_or(0);
-    let required_axes_count = dict_db.count_required_axes().unwrap_or(0);
-    let body_hist = match dict_db.body_kind_histogram() {
+    let total = count_entries(&dict_db).unwrap_or(0);
+    let concept_defs_count = count_concept_defs(&dict_db).unwrap_or(0);
+    let entities_count = count_entities(&dict_db).unwrap_or(0);
+    let required_axes_count = count_required_axes(&dict_db).unwrap_or(0);
+    let body_hist = match body_kind_histogram(&dict_db) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("nom: dict error: {e}");
             return 1;
         }
     };
-    let status_hist = match dict_db.status_histogram() {
+    let status_hist = match status_histogram(&dict_db) {
         Ok(h) => h,
         Err(e) => {
             eprintln!("nom: dict error: {e}");
@@ -608,7 +612,7 @@ pub fn cmd_store_list(
             Some(d) => d,
             None => return 1,
         };
-        match dict_db.find_entries(&filter) {
+        match find_entries(&dict_db, &filter) {
             Ok(e) => e,
             Err(e) => {
                 eprintln!("nom: dict error: {e}");
@@ -684,7 +688,7 @@ pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
                 continue;
             }
         };
-        match dict_db.closure(&resolved) {
+        match closure(&dict_db, &resolved) {
             Ok(c) => {
                 for h in c {
                     keep.insert(h);
@@ -698,7 +702,7 @@ pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
 
     // Enumerate all ids.
     let mut stmt = match dict_db
-        .connection()
+        .entities
         .prepare("SELECT id FROM entries ORDER BY id")
     {
         Ok(s) => s,
@@ -737,7 +741,7 @@ pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
     // FK cascade handles side tables.
     for id in &to_remove {
         if let Err(e) = dict_db
-            .connection()
+            .entities
             .execute("DELETE FROM entries WHERE id = ?1", [id])
         {
             eprintln!("nom: gc delete error {id}: {e}");
@@ -761,7 +765,7 @@ pub fn try_build_by_hash(arg: &str, dict: &Path) -> Option<Vec<String>> {
         return None;
     }
     let id = resolve_prefix(&dict_db, arg).ok()?;
-    dict_db.closure(&id).ok()
+    closure(&dict_db, &id).ok()
 }
 
 /// Concatenate closure bodies in reverse BFS order so each entry's deps
@@ -778,7 +782,7 @@ pub fn materialize_closure_body(dict: &Path, closure: &[String]) -> Option<Strin
     let mut parts: Vec<String> = Vec::new();
     let mut bc_cached = 0usize;
     for id in closure.iter().rev() {
-        match dict_db.get_entry(id) {
+        match get_entry(&dict_db, id) {
             Ok(Some(e)) => {
                 if let Some(body) = e.body_nom {
                     let kind_tag = e

@@ -847,7 +847,7 @@ fn already_nom() -> integer { return 0 }
         // Prove the §4.4.6 lockstep invariant: --write creates ONE
         // concept + ONE entry + ONE membership per proposal, and
         // re-running the same input doesn't duplicate rows.
-        use nom_dict::NomDict;
+        use nom_dict::{Dict, list_concepts, find_by_word};
 
         let dir = std::env::temp_dir().join(format!(
             "nom-translate-write-{}-{}",
@@ -877,14 +877,14 @@ fn already_nom() -> integer { return 0 }
         assert_eq!(n1, 1, "first write should insert 1 new entry");
 
         // Verify: dict has the expected row structure.
-        let d = NomDict::open_in_place(&dict_path).unwrap();
-        let concepts = d.list_concepts().unwrap();
+        let d = Dict::open_dir(&dir).unwrap();
+        let concepts = list_concepts(&d).unwrap();
         assert!(
             concepts.iter().any(|c| c.name == "sketch"),
             "expected `sketch` concept: {:?}",
             concepts.iter().map(|c| &c.name).collect::<Vec<_>>()
         );
-        let entries = d.find_by_word("fetch_recent_activity").unwrap();
+        let entries = find_by_word(&d, "fetch_recent_activity").unwrap();
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].status, nom_types::EntryStatus::Partial);
 

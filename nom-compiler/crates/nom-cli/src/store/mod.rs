@@ -27,29 +27,35 @@ pub use sync::cmd_store_sync;
 
 use std::path::{Path, PathBuf};
 
-use nom_dict::NomDict;
+use nom_dict::Dict;
 
 // ── Shared helpers (used by commands.rs and sibling submodules) ──────
 
-pub(super) fn open_dict(dict: &Path) -> Option<NomDict> {
-    let root = if dict.extension().is_some_and(|e| e == "db") {
-        // dict points to a .db file; NomDict::open expects the directory
-        // that contains `data/nomdict.db`. Pick an ancestor that already
-        // has a `data/` child, falling back to cwd for compatibility
-        // with the legacy `--dict nomdict.db` convention.
-        let parent = dict.parent().unwrap_or_else(|| Path::new("."));
-        if parent.file_name().and_then(|n| n.to_str()) == Some("data") {
-            parent.parent().unwrap_or(Path::new(".")).to_path_buf()
-        } else {
-            parent.to_path_buf()
-        }
+pub(super) fn open_dict(dict: &Path) -> Option<Dict> {
+    // For legacy compatibility: if dict path ends with .db, try to open
+    // the split Dict at the parent directory. Otherwise treat dict as a directory.
+    let target_dir = if dict.extension().is_some_and(|e| e == "db") {
+        dict.parent()
+            .and_then(|p| {
+                // Check if parent/data/nomdict.db exists (legacy path);
+                // if not, try parent directly (split files case)
+                if p.join("data/nomdict.db").exists() {
+                    // Legacy NomDict layout: use the root above data/
+                    Some(p.to_path_buf())
+                } else {
+                    // Split Dict layout: use parent directly
+                    Some(p.to_path_buf())
+                }
+            })
+            .unwrap_or_else(|| Path::new(".").to_path_buf())
     } else {
         dict.to_path_buf()
     };
-    match NomDict::open(&root) {
+
+    match Dict::try_open_from_nomdict_path(&target_dir) {
         Ok(d) => Some(d),
         Err(e) => {
-            eprintln!("nom: cannot open nomdict at {}: {e}", root.display());
+            eprintln!("nom: cannot open dict at {}: {e}", target_dir.display());
             None
         }
     }
@@ -57,7 +63,9 @@ pub(super) fn open_dict(dict: &Path) -> Option<NomDict> {
 
 /// Resolve a hash prefix against the dict. Returns the full 64-char id
 /// on a unique match; an error message otherwise.
-pub(super) fn resolve_prefix(dict: &NomDict, hash: &str) -> Result<String, String> {
+pub(super) fn resolve_prefix(dict: &Dict, hash: &str) -> Result<String, String> {
+    use nom_dict::get_entry;
+
     if hash.len() < 8 {
         return Err(format!(
             "nom: hash prefix too short (need ≥ 8 hex chars): {hash}"
@@ -68,7 +76,7 @@ pub(super) fn resolve_prefix(dict: &NomDict, hash: &str) -> Result<String, Strin
     }
     // Full id? get_entry fast path.
     if hash.len() == 64 {
-        return match dict.get_entry(hash) {
+        return match get_entry(dict, hash) {
             Ok(Some(e)) => Ok(e.id),
             Ok(None) => Err(format!("nom: no entry with id {hash}")),
             Err(e) => Err(format!("nom: dict error: {e}")),
@@ -76,7 +84,7 @@ pub(super) fn resolve_prefix(dict: &NomDict, hash: &str) -> Result<String, Strin
     }
     let pattern = format!("{hash}%");
     let mut stmt = dict
-        .connection()
+        .entities
         .prepare_cached("SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id")
         .map_err(|e| format!("nom: dict error: {e}"))?;
     let ids: Vec<String> = stmt

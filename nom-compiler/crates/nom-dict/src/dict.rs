@@ -460,6 +460,15 @@ pub fn count_entities(d: &Dict) -> Result<i64> {
     Ok(n)
 }
 
+/// Total count of rows in `entries` on the entities tier.
+/// Mirrors `NomDict::count()` (total entries).
+pub fn count_entries(d: &Dict) -> Result<i64> {
+    let n: i64 = d
+        .entities
+        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))?;
+    Ok(n)
+}
+
 // ── S3b: 5 more dict-API free functions ─────────────────────────────
 // Per the doc 22 dict-split migration, this batch picks the next
 // high-value query helpers. Each mirrors a `NomDict` method on the
