@@ -17,6 +17,7 @@
 //!   nom fmt <path>      — format .nom source files with canonical style
 
 mod author;
+mod ast_bridge;
 mod build;
 mod concept;
 mod corpus;
@@ -3346,11 +3347,17 @@ fn cmd_check(file: &PathBuf, dict: &PathBuf) -> i32 {
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
-        Ok(sf) => sf,
-        Err(e) => {
-            eprintln!("nom: parse error: {e}");
-            return 1;
+    let parsed = match nom_concept::stages::run_pipeline(&source) {
+        Ok(pipeline_out) => ast_bridge::bridge_to_ast(&pipeline_out, None),
+        Err(_) => {
+            // Fall back to legacy parser for old flow-style syntax
+            match parse_source(&source) {
+                Ok(sf) => sf,
+                Err(e) => {
+                    eprintln!("nom: parse error: {e}");
+                    return 1;
+                }
+            }
         }
     };
 
@@ -4079,11 +4086,17 @@ fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
-        Ok(sf) => sf,
-        Err(e) => {
-            eprintln!("nom: parse error: {e}");
-            return 1;
+    let parsed = match nom_concept::stages::run_pipeline(&source) {
+        Ok(pipeline_out) => ast_bridge::bridge_to_ast(&pipeline_out, None),
+        Err(_) => {
+            // Fall back to legacy parser for old flow-style syntax
+            match parse_source(&source) {
+                Ok(sf) => sf,
+                Err(e) => {
+                    eprintln!("nom: parse error: {e}");
+                    return 1;
+                }
+            }
         }
     };
 

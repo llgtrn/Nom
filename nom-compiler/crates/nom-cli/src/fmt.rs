@@ -11,13 +11,27 @@
 //!   6. Spaces around `->` in flow chains
 
 use nom_ast::*;
+use nom_concept::stages::run_pipeline;
 use nom_parser::parse_source;
+use crate::ast_bridge::bridge_to_ast;
 
 /// Format a Nom source string with canonical style.
 /// Returns the formatted source, or an error message if parsing fails.
 pub fn format_source(source: &str) -> Result<String, String> {
-    let parsed = parse_source(source).map_err(|e| format!("{e}"))?;
-    Ok(emit_source_file(&parsed))
+    // Try the new pipeline first (prose syntax like "the concept ...")
+    match run_pipeline(source) {
+        Ok(pipeline_out) => {
+            let parsed = bridge_to_ast(&pipeline_out, None);
+            return Ok(emit_source_file(&parsed));
+        }
+        Err(_) => {
+            // Fall back to legacy parser for old flow-style syntax
+            match parse_source(source) {
+                Ok(sf) => return Ok(emit_source_file(&sf)),
+                Err(e) => return Err(format!("{e}"))
+            }
+        }
+    }
 }
 
 fn emit_source_file(sf: &SourceFile) -> String {

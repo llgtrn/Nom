@@ -237,7 +237,7 @@ fn write_proposals_to_dict(
     dict_path: &Path,
 ) -> Result<usize, String> {
     use nom_dict::{
-        Concept, Dict, NomDict, add_concept_member, upsert_concept, upsert_entry_if_new,
+        Concept, Dict, add_concept_member, upsert_concept, upsert_entry_if_new,
     };
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
@@ -252,86 +252,25 @@ fn write_proposals_to_dict(
         let _ = std::fs::create_dir_all(parent);
     }
 
+    let d = Dict::try_open_from_nomdict_path(&resolved)
+        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
+
     let now = chrono_like_now();
     let mut written = 0usize;
-
-    // Try Dict first (new split-DB path); fall back to NomDict for backward compatibility.
-    if let Ok(d) = Dict::try_open_from_nomdict_path(&resolved) {
-        for p in proposals {
-            // Concept — id deterministic from name; idempotent.
-            let concept_id = Concept::id_for(&p.concept);
-            upsert_concept(
-                &d,
-                &Concept {
-                    id: concept_id.clone(),
-                    name: p.concept.clone(),
-                    describe: Some(format!("auto-created from prose translation")),
-                    created_at: now.clone(),
-                    updated_at: None,
-                },
-            )
-            .map_err(|e| format!("upsert concept {}: {e}", p.concept))?;
-
-            // Entry — id = sha256(word + concept). Partial status; LLM
-            // lifts to Complete by authoring the body.
-            use sha2::{Digest, Sha256};
-            let id = {
-                let mut h = Sha256::new();
-                h.update(p.word.as_bytes());
-                h.update(b"|");
-                h.update(p.concept.as_bytes());
-                format!("{:x}", h.finalize())
-            };
-
-            let entry = Entry {
-                id: id.clone(),
-                word: p.word.clone(),
-                variant: None,
-                kind: EntryKind::Function,
-                language: "nom".to_string(),
-                describe: Some(format!("TODO: {}", p.source_phrase)),
-                concept: Some(p.concept.clone()),
-                body: None,
-                body_nom: None,
-                body_bytes: None,
-                body_kind: None,
-                contract: Contract::default(),
-                status: EntryStatus::Partial,
-                translation_score: None,
-                is_canonical: true,
-                deprecated_by: None,
-                created_at: now.clone(),
-                updated_at: None,
-            };
-
-            // upsert_entry_if_new: true iff a new row was inserted.
-            if upsert_entry_if_new(&d, &entry)
-                .map_err(|e| format!("upsert entry {}: {e}", p.word))?
-            {
-                written += 1;
-            }
-
-            // Link entry → concept.
-            add_concept_member(&d, &concept_id, &id)
-                .map_err(|e| format!("add_concept_member: {e}"))?;
-        }
-        return Ok(written);
-    }
-
-    // Fallback to NomDict (legacy single-file).
-    let dict = NomDict::open_in_place(&resolved)
-        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
 
     for p in proposals {
         // Concept — id deterministic from name; idempotent.
         let concept_id = Concept::id_for(&p.concept);
-        dict.upsert_concept(&Concept {
-            id: concept_id.clone(),
-            name: p.concept.clone(),
-            describe: Some(format!("auto-created from prose translation")),
-            created_at: now.clone(),
-            updated_at: None,
-        })
+        upsert_concept(
+            &d,
+            &Concept {
+                id: concept_id.clone(),
+                name: p.concept.clone(),
+                describe: Some(format!("auto-created from prose translation")),
+                created_at: now.clone(),
+                updated_at: None,
+            },
+        )
         .map_err(|e| format!("upsert concept {}: {e}", p.concept))?;
 
         // Entry — id = sha256(word + concept). Partial status; LLM
@@ -367,15 +306,14 @@ fn write_proposals_to_dict(
         };
 
         // upsert_entry_if_new: true iff a new row was inserted.
-        if dict
-            .upsert_entry_if_new(&entry)
+        if upsert_entry_if_new(&d, &entry)
             .map_err(|e| format!("upsert entry {}: {e}", p.word))?
         {
             written += 1;
         }
 
         // Link entry → concept.
-        dict.add_concept_member(&concept_id, &id)
+        add_concept_member(&d, &concept_id, &id)
             .map_err(|e| format!("add_concept_member: {e}"))?;
     }
     Ok(written)
