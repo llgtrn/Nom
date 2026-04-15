@@ -787,6 +787,7 @@ nom-resolver (intent.rs)
 - `nom store sync` now opens `Dict` directly, drives `.nom` / `.nomtu` sources through `nom_concept::stages::run_pipeline`, and writes `concept_defs` / `entities` through free functions instead of `NomDict` methods.
 - `nom corpus register-axis`, `nom corpus seed-standard-axes`, and `nom corpus list-axes` now open `Dict` directly and use split-aware required-axis free functions.
 - `nom-corpus` core ingest/clone entry points (`ingest_directory`, `ingest_parent`, `clone_and_ingest`, `clone_batch`, `ingest_pypi_top`) now take `&Dict` instead of `&NomDict`, with transactions preserved on the `entities` tier.
+- ✅ `nom store add-media` migrated to use `Dict::try_open_from_nomdict_path` + `nom_dict::upsert_entry` free function (2026-04-15)
 
 **What's missing (Phase 3 - Cleanup):**
 - Porting the backward-compatible atom commands (`extract`, `score`, `stats`, `coverage`) to use the S1-S6 pipeline and `.nomtu` formats.
@@ -1032,4 +1033,32 @@ PHASE 6+:
 
 ---
 
-*Report generated using GitNexus MCP (6098 symbols, 15340 relationships, 300 execution flows) + full research doc set.*
+## 10. Session Progress (2026-04-15)
+
+### Completed This Session
+
+**GAP-1 Phase 3a: Store Add-Media Migration**
+- ✅ Migrated `nom-cli/src/store/add_media.rs` from `NomDict` to `Dict`
+- ✅ Replaced `NomDict::open` with `Dict::try_open_from_nomdict_path`
+- ✅ Replaced `dict.upsert_entry()` method call with `nom_dict::upsert_entry()` free function
+- ✅ Verified compilation succeeds
+- ✅ Committed: "Migrate nom-cli store add-media to use Dict free functions"
+
+### Next Steps (High Priority)
+
+**Remaining GAP-0 Work** (Pipeline Wiring):
+- [ ] fmt.rs: Update `format_source()` to work with both legacy AST and new pipeline
+- [ ] check/report: Create bridge for verifier/security checker to work with new formats
+- [ ] Update test suites to use new pipeline where appropriate
+
+**Remaining GAP-1 Work** (Dict-Split Migration):
+- [ ] author.rs: Migrate `write_proposals_to_dict()` NomDict fallback path to Dict
+- [ ] Update remaining test files that directly call `NomDict::open`
+- [ ] Verify all Dict migrations are consistent in error handling
+
+**GAP-4 Preparation** (nom-parser Deletion):
+- [ ] Create an inventory of all remaining nom_parser dependencies
+- [ ] Design bridge strategy for legacy test surfaces
+- [ ] After all migrations complete, remove nom-parser crate
+
+*Report last updated: 2026-04-15 by automated session*
