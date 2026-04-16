@@ -63,77 +63,170 @@ export interface NodeResult {
   error?: string;
 }
 
-const nodeRegistry = new Map<string, NodeExecutor>();
+export interface NodePort {
+  name: string;
+  type: string;  // "text" | "number" | "any" | "entity" | "scores" | "plan"
+  required: boolean;
+}
 
-export function registerNodeType(type: string, executor: NodeExecutor): void {
-  nodeRegistry.set(type, executor);
+export interface NodeTypeDescriptor {
+  type: string;
+  label: string;
+  inputs: NodePort[];
+  outputs: NodePort[];
+  executor: NodeExecutor;
+}
+
+const nodeRegistry = new Map<string, NodeExecutor>();
+const nodeDescriptors = new Map<string, NodeTypeDescriptor>();
+
+export function registerNodeType(type: string, executor: NodeExecutor): void;
+export function registerNodeType(descriptor: NodeTypeDescriptor): void;
+export function registerNodeType(
+  typeOrDescriptor: string | NodeTypeDescriptor,
+  executor?: NodeExecutor
+): void {
+  if (typeof typeOrDescriptor === "string") {
+    nodeRegistry.set(typeOrDescriptor, executor!);
+  } else {
+    const descriptor = typeOrDescriptor;
+    nodeDescriptors.set(descriptor.type, descriptor);
+    nodeRegistry.set(descriptor.type, descriptor.executor);
+  }
+}
+
+export function getNodeDescriptor(type: string): NodeTypeDescriptor | undefined {
+  return nodeDescriptors.get(type);
+}
+
+export function getAllNodeTypes(): NodeTypeDescriptor[] {
+  return Array.from(nodeDescriptors.values());
 }
 
 // ── Built-in node executors ─────────────────────────────
 
-registerNodeType("compile", async (node, pool) => {
-  const source = (node.data.source as string) || "";
-  try {
-    const result = await invoke<{
-      success: boolean;
-      diagnostics: string[];
-      entities: string[];
-    }>("compile_block", { source });
-    pool.setNodeOutput(node.id, "result", result);
-    pool.setNodeOutput(node.id, "entities", result.entities);
-    return { success: result.success, outputs: { result, entities: result.entities } };
-  } catch (e) {
-    return { success: false, outputs: {}, error: String(e) };
-  }
+registerNodeType({
+  type: "compile",
+  label: "Compile Block",
+  inputs: [{ name: "source", type: "text", required: true }],
+  outputs: [
+    { name: "result", type: "any", required: false },
+    { name: "entities", type: "any", required: false },
+  ],
+  executor: async (node, pool) => {
+    const source = (node.data.source as string) || "";
+    try {
+      const result = await invoke<{
+        success: boolean;
+        diagnostics: string[];
+        entities: string[];
+      }>("compile_block", { source });
+      pool.setNodeOutput(node.id, "result", result);
+      pool.setNodeOutput(node.id, "entities", result.entities);
+      return { success: result.success, outputs: { result, entities: result.entities } };
+    } catch (e) {
+      return { success: false, outputs: {}, error: String(e) };
+    }
+  },
 });
 
-registerNodeType("score", async (node, pool) => {
-  const source = (node.data.source as string) || "";
-  try {
-    const scores = await invoke<Record<string, number>>("score_block", { source });
-    pool.setNodeOutput(node.id, "scores", scores);
-    return { success: true, outputs: { scores } };
-  } catch (e) {
-    return { success: false, outputs: {}, error: String(e) };
-  }
+registerNodeType({
+  type: "score",
+  label: "Score Block",
+  inputs: [{ name: "source", type: "text", required: true }],
+  outputs: [{ name: "scores", type: "scores", required: false }],
+  executor: async (node, pool) => {
+    const source = (node.data.source as string) || "";
+    try {
+      const scores = await invoke<Record<string, number>>("score_block", { source });
+      pool.setNodeOutput(node.id, "scores", scores);
+      return { success: true, outputs: { scores } };
+    } catch (e) {
+      return { success: false, outputs: {}, error: String(e) };
+    }
+  },
 });
 
-registerNodeType("plan", async (node, pool) => {
-  const source = (node.data.source as string) || "";
-  try {
-    const plan = await invoke<{ nodes: number; edges: number; fusion_passes: string[] }>(
-      "plan_flow", { source }
-    );
-    pool.setNodeOutput(node.id, "plan", plan);
-    return { success: true, outputs: { plan } };
-  } catch (e) {
-    return { success: false, outputs: {}, error: String(e) };
-  }
+registerNodeType({
+  type: "plan",
+  label: "Plan Flow",
+  inputs: [{ name: "source", type: "text", required: true }],
+  outputs: [{ name: "plan", type: "plan", required: false }],
+  executor: async (node, pool) => {
+    const source = (node.data.source as string) || "";
+    try {
+      const plan = await invoke<{ nodes: number; edges: number; fusion_passes: string[] }>(
+        "plan_flow", { source }
+      );
+      pool.setNodeOutput(node.id, "plan", plan);
+      return { success: true, outputs: { plan } };
+    } catch (e) {
+      return { success: false, outputs: {}, error: String(e) };
+    }
+  },
 });
 
-registerNodeType("search", async (node, pool) => {
-  const query = (node.data.query as string) || "";
-  try {
-    const results = await invoke<unknown[]>("search_dict", { query });
-    pool.setNodeOutput(node.id, "results", results);
-    return { success: true, outputs: { results } };
-  } catch (e) {
-    return { success: false, outputs: {}, error: String(e) };
-  }
+registerNodeType({
+  type: "search",
+  label: "Search Dict",
+  inputs: [{ name: "query", type: "text", required: true }],
+  outputs: [{ name: "results", type: "any", required: false }],
+  executor: async (node, pool) => {
+    const query = (node.data.query as string) || "";
+    try {
+      const results = await invoke<unknown[]>("search_dict", { query });
+      pool.setNodeOutput(node.id, "results", results);
+      return { success: true, outputs: { results } };
+    } catch (e) {
+      return { success: false, outputs: {}, error: String(e) };
+    }
+  },
 });
 
-registerNodeType("security", async (node, pool) => {
-  const source = (node.data.source as string) || "";
-  try {
-    const scan = await invoke<{ findings: string[]; risk_level: string }>(
-      "security_scan", { source }
-    );
-    pool.setNodeOutput(node.id, "scan", scan);
-    return { success: true, outputs: { scan } };
-  } catch (e) {
-    return { success: false, outputs: {}, error: String(e) };
-  }
+registerNodeType({
+  type: "security",
+  label: "Security Scan",
+  inputs: [{ name: "source", type: "text", required: true }],
+  outputs: [{ name: "scan", type: "any", required: false }],
+  executor: async (node, pool) => {
+    const source = (node.data.source as string) || "";
+    try {
+      const scan = await invoke<{ findings: string[]; risk_level: string }>(
+        "security_scan", { source }
+      );
+      pool.setNodeOutput(node.id, "scan", scan);
+      return { success: true, outputs: { scan } };
+    } catch (e) {
+      return { success: false, outputs: {}, error: String(e) };
+    }
+  },
 });
+
+// ── Graph Validation ────────────────────────────────────
+
+export function validateGraph(graph: WorkflowGraph): { valid: boolean; errors: string[] } {
+  const errors: string[] = [];
+
+  for (const node of graph.nodes) {
+    const descriptor = nodeDescriptors.get(node.type);
+    if (!descriptor) {
+      errors.push(`Unknown node type: ${node.type} (node ${node.id})`);
+      continue;
+    }
+
+    for (const input of descriptor.inputs) {
+      if (input.required) {
+        const hasData = node.data[input.name] !== undefined && node.data[input.name] !== "";
+        const hasEdge = graph.edges.some(e => e.target === node.id);
+        if (!hasData && !hasEdge) {
+          errors.push(`Node ${node.id} (${node.type}): missing required input "${input.name}"`);
+        }
+      }
+    }
+  }
+
+  return { valid: errors.length === 0, errors };
+}
 
 // ── IS_CHANGED Fingerprinting (ComfyUI pattern) ────────
 
@@ -243,6 +336,14 @@ export class GraphEngine {
     this.abortController = new AbortController();
     this.pool.clear();
     this.results.clear();
+
+    const validation = validateGraph(graph);
+    if (!validation.valid) {
+      for (const error of validation.errors) {
+        this.emit({ type: "node_error", nodeId: "validation", error });
+      }
+      return this.results;
+    }
 
     const order = topologicalSort(graph);
     const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
