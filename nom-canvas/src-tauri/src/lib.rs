@@ -3,12 +3,36 @@ mod lsp;
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
+use tauri::State;
 
 fn nom_dict_path() -> std::path::PathBuf {
     let home = std::env::var("USERPROFILE")
         .or_else(|_| std::env::var("HOME"))
         .unwrap_or_default();
     std::path::PathBuf::from(home).join(".nom")
+}
+
+struct AppState {
+    dict_path: std::path::PathBuf,
+    grammar_path: std::path::PathBuf,
+}
+
+impl AppState {
+    fn new() -> Self {
+        let base = nom_dict_path();
+        Self {
+            grammar_path: base.join("grammar.sqlite"),
+            dict_path: base,
+        }
+    }
+
+    fn open_dict(&self) -> Option<nom_dict::Dict> {
+        nom_dict::Dict::open_dir(&self.dict_path).ok()
+    }
+
+    fn open_grammar(&self) -> Option<rusqlite::Connection> {
+        nom_grammar::open_readonly(&self.grammar_path).ok()
+    }
 }
 
 // Module-level execution cache (ComfyUI IS_CHANGED pattern)
@@ -196,13 +220,8 @@ fn compile_block(source: &str) -> CompileResult {
 }
 
 #[tauri::command]
-fn lookup_nomtu(query: &str, kind: Option<&str>) -> LookupResult {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let dict_path = std::path::PathBuf::from(&home).join(".nom");
-
-    let matches = if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+fn lookup_nomtu(query: &str, kind: Option<&str>, state: State<'_, AppState>) -> LookupResult {
+    let matches = if let Some(dict) = state.open_dict() {
         let query_lower = query.to_lowercase();
         let rows = match kind {
             Some(k) => nom_dict::find_entities_by_kind(&dict, k).unwrap_or_default(),
@@ -225,15 +244,8 @@ fn lookup_nomtu(query: &str, kind: Option<&str>) -> LookupResult {
 }
 
 #[tauri::command]
-fn match_grammar(input: &str) -> Vec<GrammarMatch> {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let grammar_path = std::path::PathBuf::from(&home)
-        .join(".nom")
-        .join("grammar.sqlite");
-
-    if let Ok(conn) = nom_grammar::open_readonly(&grammar_path) {
+fn match_grammar(input: &str, state: State<'_, AppState>) -> Vec<GrammarMatch> {
+    if let Some(conn) = state.open_grammar() {
         nom_grammar::search_patterns(&conn, input, 0.1, 10)
             .unwrap_or_default()
             .into_iter()
@@ -272,13 +284,8 @@ fn build_artifact(_manifest_hash: &str) -> BuildResult {
 }
 
 #[tauri::command]
-fn hover_info(word: &str) -> HoverInfo {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let dict_path = std::path::PathBuf::from(&home).join(".nom");
-
-    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+fn hover_info(word: &str, state: State<'_, AppState>) -> HoverInfo {
+    if let Some(dict) = state.open_dict() {
         if let Ok(mut rows) = nom_dict::find_entities_by_word(&dict, word) {
             if let Some(entity) = rows.drain(..).next() {
                 let definition_file = entity
@@ -347,15 +354,10 @@ fn hover_info(word: &str) -> HoverInfo {
 }
 
 #[tauri::command]
-fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let dict_path = std::path::PathBuf::from(&home).join(".nom");
-
+fn complete_word(prefix: &str, _context: Option<&str>, state: State<'_, AppState>) -> Vec<CompletionItem> {
     let mut items: Vec<CompletionItem> = Vec::new();
 
-    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+    if let Some(dict) = state.open_dict() {
         if let Ok(rows) = nom_dict::find_entities_by_word(&dict, prefix) {
             for entity in rows
                 .into_iter()
@@ -371,10 +373,7 @@ fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
         }
     }
 
-    let grammar_path = std::path::PathBuf::from(&home)
-        .join(".nom")
-        .join("grammar.sqlite");
-    if let Ok(conn) = nom_grammar::open_readonly(&grammar_path) {
+    if let Some(conn) = state.open_grammar() {
         if let Ok(matches) = nom_grammar::search_patterns(&conn, prefix, 0.1, 10) {
             for m in matches {
                 items.push(CompletionItem {
@@ -398,7 +397,7 @@ fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
 // ── New commands ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn dream_report(manifest: &str) -> DreamReport {
+fn dream_report(manifest: &str, state: State<'_, AppState>) -> DreamReport {
     // Construct a minimal AppManifest from the manifest hash / JSON string.
     // If the caller passes a JSON blob, deserialize it; otherwise treat as hash.
     let app_manifest: nom_app::AppManifest = if manifest.trim_start().starts_with('{') {
@@ -425,8 +424,7 @@ fn dream_report(manifest: &str) -> DreamReport {
         }
     };
 
-    let dict_path = nom_dict_path();
-    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+    if let Some(dict) = state.open_dict() {
         let report = nom_app::dream_report(&app_manifest, &dict);
         DreamReport {
             score: report.app_score as f64,
@@ -536,13 +534,8 @@ fn wire_check(from_hash: &str, to_hash: &str) -> WireCheck {
 }
 
 #[tauri::command]
-fn search_dict(query: &str) -> Vec<SearchResult> {
-    let home = std::env::var("USERPROFILE")
-        .or_else(|_| std::env::var("HOME"))
-        .unwrap_or_default();
-    let dict_path = std::path::PathBuf::from(&home).join(".nom");
-
-    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+fn search_dict(query: &str, state: State<'_, AppState>) -> Vec<SearchResult> {
+    if let Some(dict) = state.open_dict() {
         nom_dict::find_entities_by_word(&dict, query)
             .unwrap_or_default()
             .into_iter()
@@ -762,8 +755,8 @@ fn hex_decode(hex: &str) -> Option<String> {
 }
 
 #[tauri::command]
-fn store_credential(key: &str, value: &str) -> CredentialResult {
-    let cred_dir = nom_dict_path().join("credentials");
+fn store_credential(key: &str, value: &str, state: State<'_, AppState>) -> CredentialResult {
+    let cred_dir = state.dict_path.join("credentials");
     if let Err(e) = std::fs::create_dir_all(&cred_dir) {
         return CredentialResult {
             success: false,
@@ -784,8 +777,8 @@ fn store_credential(key: &str, value: &str) -> CredentialResult {
 }
 
 #[tauri::command]
-fn get_credential(key: &str) -> CredentialResult {
-    let cred_dir = nom_dict_path().join("credentials");
+fn get_credential(key: &str, state: State<'_, AppState>) -> CredentialResult {
+    let cred_dir = state.dict_path.join("credentials");
     let path = cred_dir.join(format!("{}.cred", sanitize_key(key)));
     match std::fs::read_to_string(&path) {
         Ok(encoded) => match hex_decode(&encoded) {
@@ -842,6 +835,7 @@ fn lsp_request(method: &str, params: serde_json::Value) -> serde_json::Value {
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
+        .manage(AppState::new())
         .setup(|app| {
             if cfg!(debug_assertions) {
                 app.handle().plugin(

@@ -39,3 +39,4 @@ nom-security = { path = "../../nom-compiler/crates/nom-security" }
 nom-ux = { path = "../../nom-compiler/crates/nom-ux" }
 nom-llvm = { path = "../../nom-compiler/crates/nom-llvm", optional = true }
 nom-intent = { path = "../../nom-compiler/crates/nom-intent", optional = true }
+rusqlite = { version = "0.32", features = ["bundled"] }

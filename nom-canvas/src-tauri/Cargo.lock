@@ -2580,6 +2580,7 @@ dependencies = [
  "nom-security",
  "nom-types",
  "nom-ux",
+ "rusqlite",
  "serde",
  "serde_json",
  "tauri",
