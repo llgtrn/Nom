@@ -12,14 +12,16 @@
         <span class="logo">NomCanvas</span>
         <button id="btn-compile">Compile Block</button>
       </header>
-      <main id="canvas-container">
-        <div id="editor"></div>
-      </main>
-      <aside id="preview-pane">
-        <h3>Preview</h3>
-        <div id="compile-status" class="compile-status">// ready</div>
-        <pre id="preview-output"></pre>
-      </aside>
+      <div id="app-body">
+        <aside id="library-panel" class="component-library"></aside>
+        <main id="canvas-container"></main>
+        <aside id="preview-pane">
+          <h3>Preview</h3>
+          <div id="compile-status" class="compile-status">// ready</div>
+          <pre id="preview-output"></pre>
+        </aside>
+      </div>
+      <div id="minimap" class="minimap-wrapper"></div>
     </div>
     <script type="module" src="/src/main.ts"></script>
   </body>

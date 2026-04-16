@@ -123,3 +123,25 @@ jobs:
         working-directory: nom-compiler
         run: cargo clippy --workspace --no-deps -- -D warnings
         continue-on-error: true  # advisory; blockers will be addressed as they arise
+
+  canvas:
+    name: NomCanvas checks
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - run: rustup show
+      - name: Install frontend deps
+        working-directory: nom-canvas
+        run: npm install
+      - name: TypeScript check
+        working-directory: nom-canvas
+        run: npx tsc --noEmit
+      - name: Vite build
+        working-directory: nom-canvas
+        run: npx vite build
+      - name: Tauri Rust check (no LLVM)
+        working-directory: nom-canvas/src-tauri
+        run: cargo check
