@@ -26,3 +26,9 @@ nom-concept = { path = "../../nom-compiler/crates/nom-concept" }
 nom-dict = { path = "../../nom-compiler/crates/nom-dict" }
 nom-grammar = { path = "../../nom-compiler/crates/nom-grammar" }
 nom-search = { path = "../../nom-compiler/crates/nom-search" }
+nom-types = { path = "../../nom-compiler/crates/nom-types" }
+nom-score = { path = "../../nom-compiler/crates/nom-score" }
+nom-app = { path = "../../nom-compiler/crates/nom-app" }
+nom-media = { path = "../../nom-compiler/crates/nom-media" }
+nom-extract = { path = "../../nom-compiler/crates/nom-extract" }
+nom-security = { path = "../../nom-compiler/crates/nom-security" }

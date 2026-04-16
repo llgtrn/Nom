@@ -2,6 +2,13 @@ use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
+fn nom_dict_path() -> std::path::PathBuf {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    std::path::PathBuf::from(home).join(".nom")
+}
+
 // Module-level execution cache (ComfyUI IS_CHANGED pattern)
 static PLAN_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, PlanFlowResult>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
@@ -240,11 +247,15 @@ fn match_grammar(input: &str) -> Vec<GrammarMatch> {
 
 #[tauri::command]
 fn build_artifact(_manifest_hash: &str) -> BuildResult {
-    // Stub — will be wired to nom-llvm compilation
+    // TODO: wire to nom_llvm::compile — skipped because nom-llvm requires
+    // LLVM headers (inkwell/llvm18) which are not available in this build env.
+    // Pipeline: parse manifest hash -> look up AppManifest in Dict ->
+    // nom_concept::stages::run_pipeline -> ast_bridge -> nom_planner ->
+    // nom_llvm::compile(plan) -> write .bc artifact.
     BuildResult {
         success: false,
         artifact_path: None,
-        error: Some("build_artifact not yet implemented".into()),
+        error: Some("build_artifact requires LLVM toolchain".into()),
     }
 }
 
@@ -375,34 +386,140 @@ fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
 // ── New commands ──────────────────────────────────────────────────────────────
 
 #[tauri::command]
-fn dream_report(_manifest: &str) -> DreamReport {
-    DreamReport {
-        score: 0.0,
-        proposals: vec![],
-        dict_hints: vec![],
+fn dream_report(manifest: &str) -> DreamReport {
+    // Construct a minimal AppManifest from the manifest hash / JSON string.
+    // If the caller passes a JSON blob, deserialize it; otherwise treat as hash.
+    let app_manifest: nom_app::AppManifest = if manifest.trim_start().starts_with('{') {
+        serde_json::from_str(manifest).unwrap_or_else(|_| nom_app::AppManifest {
+            manifest_hash: manifest.to_string(),
+            name: "unknown".into(),
+            default_target: "native".into(),
+            root_page_hash: String::new(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        })
+    } else {
+        nom_app::AppManifest {
+            manifest_hash: manifest.to_string(),
+            name: "unknown".into(),
+            default_target: "native".into(),
+            root_page_hash: String::new(),
+            data_sources: vec![],
+            actions: vec![],
+            media_assets: vec![],
+            settings: serde_json::Value::Null,
+        }
+    };
+
+    let dict_path = nom_dict_path();
+    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+        let report = nom_app::dream_report(&app_manifest, &dict);
+        DreamReport {
+            score: report.app_score as f64,
+            proposals: report
+                .proposals
+                .iter()
+                .map(|p| {
+                    let word = p.suggested_word.as_deref().unwrap_or("?");
+                    format!("{word}: {}", p.rationale)
+                })
+                .collect(),
+            dict_hints: report
+                .proposals
+                .iter()
+                .flat_map(|p| p.dict_hints.iter().map(|h| h.word.clone()))
+                .collect(),
+        }
+    } else {
+        DreamReport {
+            score: 0.0,
+            proposals: vec![],
+            dict_hints: vec![],
+        }
     }
 }
 
 #[tauri::command]
-fn score_block(_source: &str) -> QualityScores {
+fn score_block(source: &str) -> QualityScores {
+    // Construct a minimal Atom from the source text and score it.
+    let atom = nom_types::Atom {
+        id: "canvas:inline".into(),
+        kind: nom_types::AtomKind::Function,
+        name: source.lines().next().unwrap_or("block").trim().to_string(),
+        source_path: "<canvas>".into(),
+        language: "nom".into(),
+        labels: vec![],
+        concept: None,
+        signature: None,
+        body: Some(source.to_string()),
+    };
+    let scores = nom_score::score_atom(&atom);
     QualityScores {
-        security: 0.0,
-        reliability: 0.0,
-        performance: 0.0,
-        readability: 0.0,
-        testability: 0.0,
-        portability: 0.0,
-        composability: 0.0,
-        maturity: 0.0,
-        overall: 0.0,
+        security: scores.security as f64,
+        reliability: scores.reliability as f64,
+        performance: scores.performance as f64,
+        readability: scores.readability as f64,
+        testability: scores.testability as f64,
+        portability: scores.portability as f64,
+        composability: scores.composability as f64,
+        maturity: scores.maturity as f64,
+        overall: scores.overall() as f64,
     }
 }
 
 #[tauri::command]
-fn wire_check(_from_hash: &str, _to_hash: &str) -> WireCheck {
-    WireCheck {
-        status: "compatible".into(),
-        reason: None,
+fn wire_check(from_hash: &str, to_hash: &str) -> WireCheck {
+    // Construct minimal producer/consumer atoms from the hashes, then run
+    // the real compatibility contract from nom-score.
+    let producer = nom_types::Atom {
+        id: from_hash.to_string(),
+        kind: nom_types::AtomKind::Function,
+        name: from_hash.to_string(),
+        source_path: "<canvas>".into(),
+        language: "nom".into(),
+        labels: vec![],
+        concept: None,
+        signature: Some(nom_types::AtomSignature {
+            params: vec![],
+            returns: Some("any".into()),
+            is_async: false,
+            is_method: false,
+            visibility: "pub".into(),
+        }),
+        body: None,
+    };
+    let consumer = nom_types::Atom {
+        id: to_hash.to_string(),
+        kind: nom_types::AtomKind::Function,
+        name: to_hash.to_string(),
+        source_path: "<canvas>".into(),
+        language: "nom".into(),
+        labels: vec![],
+        concept: None,
+        signature: Some(nom_types::AtomSignature {
+            params: vec![("input".into(), "any".into())],
+            returns: None,
+            is_async: false,
+            is_method: false,
+            visibility: "pub".into(),
+        }),
+        body: None,
+    };
+    match nom_score::can_wire(&producer, &consumer) {
+        nom_score::WireResult::Compatible { score } => WireCheck {
+            status: format!("compatible({score:.2})"),
+            reason: None,
+        },
+        nom_score::WireResult::NeedsAdapter { reason } => WireCheck {
+            status: "needs_adapter".into(),
+            reason: Some(reason),
+        },
+        nom_score::WireResult::Incompatible { reason } => WireCheck {
+            status: "incompatible".into(),
+            reason: Some(reason),
+        },
     }
 }
 
@@ -432,6 +549,10 @@ fn search_dict(query: &str) -> Vec<SearchResult> {
 
 #[tauri::command]
 fn resolve_intent(_input: &str) -> IntentResult {
+    // TODO: wire to nom_intent::classify — skipped because nom-intent
+    // transitively depends on nom-llvm which requires LLVM headers.
+    // Pipeline: nom_intent::classify(input, &IntentCtx::default(), &stub_llm)
+    // -> NomIntent::{Kind|Symbol|Flow} -> map to action string + confidence.
     IntentResult {
         action: "unknown".into(),
         confidence: 0.0,
@@ -440,19 +561,90 @@ fn resolve_intent(_input: &str) -> IntentResult {
 }
 
 #[tauri::command]
-fn ingest_media(_path: &str) -> MediaIngestResult {
+fn ingest_media(path: &str) -> MediaIngestResult {
+    // Detect modality from extension and read file metadata.
+    let ext = std::path::Path::new(path)
+        .extension()
+        .and_then(|e| e.to_str())
+        .unwrap_or("");
+
+    let mime = match nom_media::modality_from_ext(ext) {
+        Some(nom_media::Modality::ImageStill) => "image/avif",
+        Some(nom_media::Modality::Video) => "video/av1",
+        Some(nom_media::Modality::AudioLossy) => "audio/aac",
+        Some(nom_media::Modality::AudioLossless) => "audio/flac",
+        Some(nom_media::Modality::Font) => "font/woff2",
+        Some(nom_media::Modality::Mesh3d) => "model/gltf+json",
+        Some(nom_media::Modality::Document) => "application/pdf",
+        None => "application/octet-stream",
+    };
+
+    let (hash, size_bytes) = std::fs::read(path)
+        .map(|bytes| {
+            use std::hash::{Hash, Hasher};
+            let mut hasher = std::collections::hash_map::DefaultHasher::new();
+            bytes.hash(&mut hasher);
+            let h = format!("{:016x}", hasher.finish());
+            let sz = bytes.len() as u64;
+            (h, sz)
+        })
+        .unwrap_or_else(|_| (String::new(), 0));
+
     MediaIngestResult {
-        hash: String::new(),
-        mime: "application/octet-stream".into(),
-        size_bytes: 0,
+        hash,
+        mime: mime.into(),
+        size_bytes,
     }
 }
 
 #[tauri::command]
-fn extract_atoms(_path: &str) -> ExtractResult {
-    ExtractResult {
-        entities_found: 0,
-        languages: vec![],
+fn extract_atoms(path: &str) -> ExtractResult {
+    let p = std::path::Path::new(path);
+    if p.is_dir() {
+        match nom_extract::extract_from_dir(p) {
+            Ok(atoms) => {
+                let mut langs: Vec<String> = atoms
+                    .iter()
+                    .filter(|a| !a.language.is_empty())
+                    .map(|a| a.language.clone())
+                    .collect();
+                langs.sort();
+                langs.dedup();
+                ExtractResult {
+                    entities_found: atoms.len(),
+                    languages: langs,
+                }
+            }
+            Err(_) => ExtractResult {
+                entities_found: 0,
+                languages: vec![],
+            },
+        }
+    } else {
+        // Single file — detect language and parse
+        let lang = nom_extract::detect_language(path).unwrap_or("");
+        if lang.is_empty() {
+            return ExtractResult {
+                entities_found: 0,
+                languages: vec![],
+            };
+        }
+        match std::fs::read_to_string(path) {
+            Ok(source) => match nom_extract::parse_file(&source, path, lang) {
+                Ok(atoms) => ExtractResult {
+                    entities_found: atoms.len(),
+                    languages: vec![lang.to_string()],
+                },
+                Err(_) => ExtractResult {
+                    entities_found: 0,
+                    languages: vec![lang.to_string()],
+                },
+            },
+            Err(_) => ExtractResult {
+                entities_found: 0,
+                languages: vec![],
+            },
+        }
     }
 }
 
@@ -511,10 +703,24 @@ fn plan_flow(source: &str) -> PlanFlowResult {
 }
 
 #[tauri::command]
-fn security_scan(_source: &str) -> SecurityScanResult {
+fn security_scan(source: &str) -> SecurityScanResult {
+    let findings = nom_security::scan_body(source, "nom");
+    let score = nom_security::security_score(&findings);
+    let risk_level = if score >= 0.9 {
+        "low"
+    } else if score >= 0.7 {
+        "medium"
+    } else if score >= 0.4 {
+        "high"
+    } else {
+        "critical"
+    };
     SecurityScanResult {
-        findings: vec![],
-        risk_level: "low".into(),
+        findings: findings
+            .iter()
+            .map(|f| format!("[{:?}] {}: {}", f.severity, f.category, f.message))
+            .collect(),
+        risk_level: risk_level.into(),
     }
 }
 
