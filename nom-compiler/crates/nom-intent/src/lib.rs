@@ -17,6 +17,7 @@ pub mod dict_tools;
 pub mod instrumented;
 pub mod prompt;
 pub mod react;
+pub mod tool_registry;
 
 use serde::{Deserialize, Serialize};
 use thiserror::Error;

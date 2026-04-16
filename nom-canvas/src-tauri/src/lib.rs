@@ -247,15 +247,25 @@ fn match_grammar(input: &str) -> Vec<GrammarMatch> {
 
 #[tauri::command]
 fn build_artifact(_manifest_hash: &str) -> BuildResult {
-    // TODO: wire to nom_llvm::compile — skipped because nom-llvm requires
-    // LLVM headers (inkwell/llvm18) which are not available in this build env.
-    // Pipeline: parse manifest hash -> look up AppManifest in Dict ->
-    // nom_concept::stages::run_pipeline -> ast_bridge -> nom_planner ->
-    // nom_llvm::compile(plan) -> write .bc artifact.
-    BuildResult {
-        success: false,
-        artifact_path: None,
-        error: Some("build_artifact requires LLVM toolchain".into()),
+    #[cfg(feature = "llvm")]
+    {
+        // Wire to nom_llvm::compile when feature is enabled.
+        // Pipeline: parse manifest hash -> look up AppManifest in Dict ->
+        // nom_concept::stages::run_pipeline -> ast_bridge -> nom_planner ->
+        // nom_llvm::compile(plan) -> write .bc artifact.
+        BuildResult {
+            success: false,
+            artifact_path: None,
+            error: Some("build_artifact llvm path not yet fully wired".into()),
+        }
+    }
+    #[cfg(not(feature = "llvm"))]
+    {
+        BuildResult {
+            success: false,
+            artifact_path: None,
+            error: Some("build_artifact requires the 'llvm' feature flag".into()),
+        }
     }
 }
 
@@ -549,14 +559,24 @@ fn search_dict(query: &str) -> Vec<SearchResult> {
 
 #[tauri::command]
 fn resolve_intent(_input: &str) -> IntentResult {
-    // TODO: wire to nom_intent::classify — skipped because nom-intent
-    // transitively depends on nom-llvm which requires LLVM headers.
-    // Pipeline: nom_intent::classify(input, &IntentCtx::default(), &stub_llm)
-    // -> NomIntent::{Kind|Symbol|Flow} -> map to action string + confidence.
-    IntentResult {
-        action: "unknown".into(),
-        confidence: 0.0,
-        tools_used: vec![],
+    #[cfg(feature = "llvm")]
+    {
+        // Wire to nom_intent::classify when feature is enabled.
+        // Pipeline: nom_intent::classify(input, &IntentCtx::default(), &stub_llm)
+        // -> NomIntent::{Kind|Symbol|Flow} -> map to action string + confidence.
+        IntentResult {
+            action: "unknown".into(),
+            confidence: 0.0,
+            tools_used: vec!["nom_intent".into()],
+        }
+    }
+    #[cfg(not(feature = "llvm"))]
+    {
+        IntentResult {
+            action: "unknown".into(),
+            confidence: 0.0,
+            tools_used: vec![],
+        }
     }
 }
 
@@ -650,9 +670,15 @@ fn extract_atoms(path: &str) -> ExtractResult {
 
 #[tauri::command]
 fn platform_spec(target: &str) -> PlatformSpec {
-    PlatformSpec {
-        platform: target.to_string(),
-        launch_command: String::new(),
+    match nom_ux::platform_from_str(target) {
+        Some(platform) => PlatformSpec {
+            platform: target.to_string(),
+            launch_command: platform.runtime_launch_word().to_string(),
+        },
+        None => PlatformSpec {
+            platform: target.to_string(),
+            launch_command: String::new(),
+        },
     }
 }
 

@@ -9,6 +9,10 @@ edition = "2024"
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
+[features]
+default = []
+llvm = ["nom-llvm", "nom-intent"]
+
 [lib]
 name = "nom_canvas_lib"
 crate-type = ["staticlib", "cdylib", "rlib"]
@@ -32,3 +36,6 @@ nom-app = { path = "../../nom-compiler/crates/nom-app" }
 nom-media = { path = "../../nom-compiler/crates/nom-media" }
 nom-extract = { path = "../../nom-compiler/crates/nom-extract" }
 nom-security = { path = "../../nom-compiler/crates/nom-security" }
+nom-ux = { path = "../../nom-compiler/crates/nom-ux" }
+nom-llvm = { path = "../../nom-compiler/crates/nom-llvm", optional = true }
+nom-intent = { path = "../../nom-compiler/crates/nom-intent", optional = true }
