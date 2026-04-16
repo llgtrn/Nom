@@ -441,3 +441,116 @@ button:active {
     animation-duration: 0.01ms !important;
   }
 }
+
+/* ── Quality Score Decorations (8-dim) ─────────────────── */
+
+.quality-bar {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+  padding: 6px 0;
+  border-top: 1px solid var(--color-primary);
+  margin-top: 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+}
+
+.quality-overall {
+  font-size: 12px;
+  font-weight: 700;
+  padding: 2px 8px;
+  border: 1.5px solid;
+  border-radius: 4px;
+  letter-spacing: 0.5px;
+}
+
+.quality-badge {
+  padding: 1px 6px;
+  border: 1px solid;
+  border-radius: 3px;
+  font-size: 9px;
+  letter-spacing: 0.3px;
+  opacity: 0.8;
+  transition: opacity 200ms ease;
+}
+
+.quality-badge:hover {
+  opacity: 1;
+}
+
+.quality-error {
+  color: var(--color-cta);
+  font-size: 11px;
+}
+
+/* ── Block Wiring System ───────────────────────────────── */
+
+.wiring-layer {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 100%;
+  height: 100%;
+  pointer-events: none;
+  z-index: 1000;
+}
+
+.wire {
+  stroke-width: 2;
+  transition: stroke 200ms ease;
+}
+
+.wire-compatible {
+  stroke: #22C55E;
+}
+
+.wire-needs_adapter {
+  stroke: #F59E0B;
+  stroke-dasharray: 8 4;
+}
+
+.wire-incompatible {
+  stroke: #EF4444;
+  stroke-dasharray: 4 4;
+}
+
+.wire-pending {
+  stroke: #6B7280;
+  stroke-dasharray: 2 2;
+}
+
+.wire-preview {
+  stroke: #94A3B8;
+  stroke-width: 2;
+  stroke-dasharray: 6 3;
+  opacity: 0.7;
+}
+
+/* Output/input port indicators on blocks */
+.block-port {
+  width: 12px;
+  height: 12px;
+  border-radius: 50%;
+  border: 2px solid var(--color-secondary);
+  background: var(--color-background);
+  position: absolute;
+  cursor: crosshair;
+  transition: border-color 200ms ease, background 200ms ease;
+}
+
+.block-port:hover {
+  border-color: var(--color-cta);
+  background: var(--color-cta);
+}
+
+.block-port-output {
+  right: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
+
+.block-port-input {
+  left: -6px;
+  top: 50%;
+  transform: translateY(-50%);
+}
