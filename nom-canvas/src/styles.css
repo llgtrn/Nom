@@ -1148,3 +1148,93 @@ button:active {
   color: #6B7280;
   margin-left: auto;
 }
+
+/* ── Credential Manager ────────────────────────────────── */
+
+.credential-panel {
+  position: fixed;
+  top: 50%;
+  left: 50%;
+  transform: translate(-50%, -50%);
+  background: var(--color-primary);
+  border: 1px solid var(--color-secondary);
+  border-radius: 8px;
+  padding: 24px;
+  min-width: 480px;
+  z-index: 9999;
+  box-shadow: 0 20px 40px rgba(0, 0, 0, 0.5);
+}
+
+.credential-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 16px;
+}
+
+.credential-header h3 {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 14px;
+  color: var(--color-cta);
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+.credential-close {
+  background: transparent;
+  border: none;
+  color: #6B7280;
+  font-size: 16px;
+  cursor: pointer;
+  padding: 4px 8px;
+}
+
+.credential-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.credential-label {
+  min-width: 160px;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.credential-input {
+  flex: 1;
+  padding: 6px 10px;
+  background: var(--color-background);
+  border: 1px solid var(--color-secondary);
+  border-radius: 4px;
+  color: var(--color-text);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+}
+
+.credential-input:focus {
+  border-color: var(--color-cta);
+  outline: none;
+}
+
+.credential-save {
+  padding: 6px 12px;
+  font-size: 12px;
+}
+
+.credential-status {
+  font-size: 11px;
+  min-width: 50px;
+}
+
+.credential-status.saved { color: var(--color-cta); }
+.credential-status.error { color: #EF4444; }
+
+.credential-note {
+  font-size: 11px;
+  color: #6B7280;
+  margin-top: 16px;
+  font-style: italic;
+}
