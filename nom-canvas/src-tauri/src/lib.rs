@@ -728,6 +728,76 @@ fn plan_flow(source: &str) -> PlanFlowResult {
     result
 }
 
+// ── Credential storage ────────────────────────────────────────────────────────
+// TODO: replace hex-on-disk with OS keyring (tauri-plugin-store or `keyring` crate) in production.
+
+#[derive(Serialize)]
+pub struct CredentialResult {
+    pub success: bool,
+    pub value: Option<String>,
+    pub error: Option<String>,
+}
+
+fn sanitize_key(key: &str) -> String {
+    key.chars()
+        .filter(|c| c.is_ascii_alphanumeric() || *c == '_' || *c == '-')
+        .collect()
+}
+
+fn hex_encode(data: &[u8]) -> String {
+    data.iter().map(|b| format!("{:02x}", b)).collect()
+}
+
+fn hex_decode(hex: &str) -> Option<String> {
+    if hex.len() % 2 != 0 {
+        return None;
+    }
+    let bytes: Option<Vec<u8>> = (0..hex.len())
+        .step_by(2)
+        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
+        .collect();
+    bytes.and_then(|b| String::from_utf8(b).ok())
+}
+
+#[tauri::command]
+fn store_credential(key: &str, value: &str) -> CredentialResult {
+    let cred_dir = nom_dict_path().join("credentials");
+    if let Err(e) = std::fs::create_dir_all(&cred_dir) {
+        return CredentialResult {
+            success: false,
+            value: None,
+            error: Some(format!("{e}")),
+        };
+    }
+    let encoded = hex_encode(value.as_bytes());
+    let path = cred_dir.join(format!("{}.cred", sanitize_key(key)));
+    match std::fs::write(&path, encoded) {
+        Ok(()) => CredentialResult { success: true, value: None, error: None },
+        Err(e) => CredentialResult {
+            success: false,
+            value: None,
+            error: Some(format!("{e}")),
+        },
+    }
+}
+
+#[tauri::command]
+fn get_credential(key: &str) -> CredentialResult {
+    let cred_dir = nom_dict_path().join("credentials");
+    let path = cred_dir.join(format!("{}.cred", sanitize_key(key)));
+    match std::fs::read_to_string(&path) {
+        Ok(encoded) => match hex_decode(&encoded) {
+            Some(value) => CredentialResult { success: true, value: Some(value), error: None },
+            None => CredentialResult {
+                success: false,
+                value: None,
+                error: Some("decode failed".into()),
+            },
+        },
+        Err(_) => CredentialResult { success: true, value: None, error: None }, // not found = empty
+    }
+}
+
 #[tauri::command]
 fn security_scan(source: &str) -> SecurityScanResult {
     let findings = nom_security::scan_body(source, "nom");
@@ -780,6 +850,8 @@ pub fn run() {
             platform_spec,
             plan_flow,
             security_scan,
+            store_credential,
+            get_credential,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
