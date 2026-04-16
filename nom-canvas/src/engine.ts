@@ -185,6 +185,32 @@ export function topologicalSort(graph: WorkflowGraph): string[] {
   return sorted;
 }
 
+// ── Subgraph Extraction (n8n partial execution pattern) ──
+
+export function extractSubgraph(graph: WorkflowGraph, destinationId: string): WorkflowGraph {
+  // BFS backward from destination to find all required ancestors
+  const required = new Set<string>();
+  const queue = [destinationId];
+  required.add(destinationId);
+
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    // Find all edges pointing TO this node
+    for (const edge of graph.edges) {
+      if (edge.target === nodeId && !required.has(edge.source)) {
+        required.add(edge.source);
+        queue.push(edge.source);
+      }
+    }
+  }
+
+  return {
+    nodes: graph.nodes.filter(n => required.has(n.id)),
+    edges: graph.edges.filter(e => required.has(e.source) && required.has(e.target)),
+    metadata: { ...graph.metadata, partial: true, destination: destinationId },
+  };
+}
+
 // ── Execution Events (Dify streaming pattern) ───────────
 
 export type ExecutionEvent =
@@ -192,7 +218,8 @@ export type ExecutionEvent =
   | { type: "node_complete"; nodeId: string; result: NodeResult }
   | { type: "node_skipped"; nodeId: string; reason: string }
   | { type: "node_error"; nodeId: string; error: string }
-  | { type: "graph_complete"; results: Map<string, NodeResult> };
+  | { type: "graph_complete"; results: Map<string, NodeResult> }
+  | { type: "execution_cancelled"; results: Map<string, NodeResult> };
 
 export type EventCallback = (event: ExecutionEvent) => void;
 
@@ -202,6 +229,7 @@ export class GraphEngine {
   private pool = new VariablePool();
   private results = new Map<string, NodeResult>();
   private listeners: EventCallback[] = [];
+  private abortController: AbortController | null = null;
 
   onEvent(callback: EventCallback): void {
     this.listeners.push(callback);
@@ -212,6 +240,7 @@ export class GraphEngine {
   }
 
   async execute(graph: WorkflowGraph): Promise<Map<string, NodeResult>> {
+    this.abortController = new AbortController();
     this.pool.clear();
     this.results.clear();
 
@@ -219,6 +248,11 @@ export class GraphEngine {
     const nodeMap = new Map(graph.nodes.map(n => [n.id, n]));
 
     for (const nodeId of order) {
+      if (this.abortController.signal.aborted) {
+        this.emit({ type: "node_skipped", nodeId, reason: "cancelled" });
+        continue;
+      }
+
       const node = nodeMap.get(nodeId);
       if (!node) continue;
 
@@ -247,8 +281,26 @@ export class GraphEngine {
       }
     }
 
-    this.emit({ type: "graph_complete", results: this.results });
+    const wasCancelled = this.abortController.signal.aborted;
+    this.abortController = null;
+
+    if (wasCancelled) {
+      this.emit({ type: "execution_cancelled", results: this.results });
+    } else {
+      this.emit({ type: "graph_complete", results: this.results });
+    }
     return this.results;
+  }
+
+  async executePartial(graph: WorkflowGraph, destinationNodeId: string): Promise<Map<string, NodeResult>> {
+    const subgraph = extractSubgraph(graph, destinationNodeId);
+    return this.execute(subgraph);
+  }
+
+  cancel(): void {
+    if (this.abortController) {
+      this.abortController.abort();
+    }
   }
 }
 
