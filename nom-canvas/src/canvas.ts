@@ -8,17 +8,95 @@ export interface BlockPosition {
 }
 
 export interface CanvasState {
-  panX: number;
-  panY: number;
-  zoom: number;
   blocks: Map<string, BlockPosition>;
   nextZ: number;
 }
 
+export interface Bound {
+  x: number;
+  y: number;
+  w: number;
+  h: number;
+}
+
+export function boundsIntersect(a: Bound, b: Bound): boolean {
+  return !(a.x + a.w < b.x || b.x + b.w < a.x || a.y + a.h < b.y || b.y + b.h < a.y);
+}
+
+export class Viewport {
+  private _zoom = 1;
+  private _panX = 0;
+  private _panY = 0;
+  private _width = 0;
+  private _height = 0;
+
+  get zoom() { return this._zoom; }
+  get panX() { return this._panX; }
+  get panY() { return this._panY; }
+
+  /** Convert client (screen) coordinates to model (canvas) coordinates */
+  clientToModel(clientX: number, clientY: number): [number, number] {
+    return [
+      (clientX - this._panX) / this._zoom,
+      (clientY - this._panY) / this._zoom,
+    ];
+  }
+
+  /** Convert model coordinates to client coordinates */
+  modelToClient(modelX: number, modelY: number): [number, number] {
+    return [
+      modelX * this._zoom + this._panX,
+      modelY * this._zoom + this._panY,
+    ];
+  }
+
+  /** Get the visible bounds in model coordinates */
+  get viewportBounds(): Bound {
+    const [left, top] = this.clientToModel(0, 0);
+    const [right, bottom] = this.clientToModel(this._width, this._height);
+    return { x: left, y: top, w: right - left, h: bottom - top };
+  }
+
+  setZoom(zoom: number, centerX?: number, centerY?: number) {
+    const newZoom = Math.max(0.1, Math.min(5.0, zoom));
+    if (centerX !== undefined && centerY !== undefined) {
+      // Zoom toward cursor position
+      const [modelX, modelY] = this.clientToModel(centerX, centerY);
+      this._zoom = newZoom;
+      this._panX = centerX - modelX * newZoom;
+      this._panY = centerY - modelY * newZoom;
+    } else {
+      this._zoom = newZoom;
+    }
+  }
+
+  pan(dx: number, dy: number) {
+    this._panX += dx;
+    this._panY += dy;
+  }
+
+  setPan(x: number, y: number) {
+    this._panX = x;
+    this._panY = y;
+  }
+
+  setSize(width: number, height: number) {
+    this._width = width;
+    this._height = height;
+  }
+
+  resetView() {
+    this._zoom = 1;
+    this._panX = 0;
+    this._panY = 0;
+  }
+}
+
 export class SpatialCanvas {
+  private vp: Viewport;
   private state: CanvasState;
   private container: HTMLElement;
-  private viewport: HTMLElement;
+  private viewportEl: HTMLElement;
   private isDragging = false;
   private isPanning = false;
   private dragTarget: string | null = null;
@@ -31,17 +109,19 @@ export class SpatialCanvas {
     this.container = document.getElementById(containerId)!;
 
     // Create viewport layer
-    this.viewport = document.createElement("div");
-    this.viewport.className = "canvas-viewport";
-    this.container.appendChild(this.viewport);
+    this.viewportEl = document.createElement("div");
+    this.viewportEl.className = "canvas-viewport";
+    this.container.appendChild(this.viewportEl);
 
+    this.vp = new Viewport();
     this.state = {
-      panX: 0,
-      panY: 0,
-      zoom: 1,
       blocks: new Map(),
       nextZ: 1,
     };
+
+    // Sync viewport size so viewportBounds is accurate
+    const rect = this.container.getBoundingClientRect();
+    this.vp.setSize(rect.width || window.innerWidth, rect.height || window.innerHeight);
 
     this.setupEventListeners();
     this.updateTransform();
@@ -78,14 +158,14 @@ export class SpatialCanvas {
     content.className = "block-content";
     el.appendChild(content);
 
-    this.viewport.appendChild(el);
+    this.viewportEl.appendChild(el);
     return content; // Return content area for editor mounting
   }
 
   /** Remove a block */
   removeBlock(id: string) {
     this.state.blocks.delete(id);
-    const el = this.viewport.querySelector(`[data-block-id="${id}"]`);
+    const el = this.viewportEl.querySelector(`[data-block-id="${id}"]`);
     if (el) el.remove();
   }
 
@@ -99,44 +179,55 @@ export class SpatialCanvas {
     const pos = this.state.blocks.get(id);
     if (!pos) return;
     pos.zIndex = this.state.nextZ++;
-    const el = this.viewport.querySelector(`[data-block-id="${id}"]`) as HTMLElement;
+    const el = this.viewportEl.querySelector(`[data-block-id="${id}"]`) as HTMLElement;
     if (el) el.style.zIndex = String(pos.zIndex);
   }
 
-  /** Set zoom level (0.25 to 4.0) */
+  /** Set zoom level (0.1 to 5.0) */
   setZoom(zoom: number) {
-    this.state.zoom = Math.max(0.25, Math.min(4.0, zoom));
+    this.vp.setZoom(zoom);
     this.updateTransform();
   }
 
   /** Pan to a position */
   panTo(x: number, y: number) {
-    this.state.panX = x;
-    this.state.panY = y;
+    this.vp.setPan(x, y);
     this.updateTransform();
   }
 
   /** Reset view to origin */
   resetView() {
-    this.state.panX = 0;
-    this.state.panY = 0;
-    this.state.zoom = 1;
+    this.vp.resetView();
     this.updateTransform();
   }
 
+  /** Returns all blocks whose bounding rect intersects the current viewport */
+  getVisibleBlocks(): BlockPosition[] {
+    const vb = this.vp.viewportBounds;
+    const result: BlockPosition[] = [];
+    for (const pos of this.state.blocks.values()) {
+      const blockBound: Bound = { x: pos.x, y: pos.y, w: pos.width, h: pos.height };
+      if (boundsIntersect(vb, blockBound)) {
+        result.push(pos);
+      }
+    }
+    return result;
+  }
+
   private updateTransform() {
-    const { panX, panY, zoom } = this.state;
-    this.viewport.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
-    this.viewport.style.transformOrigin = "0 0";
+    const { panX, panY, zoom } = this.vp;
+    this.viewportEl.style.transform = `translate(${panX}px, ${panY}px) scale(${zoom})`;
+    this.viewportEl.style.transformOrigin = "0 0";
   }
 
   private setupEventListeners() {
-    // Zoom with Ctrl+scroll
+    // Zoom with Ctrl+scroll — zoom toward cursor position
     this.container.addEventListener("wheel", (e) => {
       if (e.ctrlKey || e.metaKey) {
         e.preventDefault();
         const delta = e.deltaY > 0 ? 0.9 : 1.1;
-        this.setZoom(this.state.zoom * delta);
+        this.vp.setZoom(this.vp.zoom * delta, e.clientX, e.clientY);
+        this.updateTransform();
       }
     }, { passive: false });
 
@@ -152,8 +243,9 @@ export class SpatialCanvas {
           this.dragTarget = blockId;
           this.bringToFront(blockId);
           const pos = this.state.blocks.get(blockId)!;
-          this.dragOffsetX = e.clientX / this.state.zoom - pos.x;
-          this.dragOffsetY = e.clientY / this.state.zoom - pos.y;
+          const [modelX, modelY] = this.vp.clientToModel(e.clientX, e.clientY);
+          this.dragOffsetX = modelX - pos.x;
+          this.dragOffsetY = modelY - pos.y;
           e.preventDefault();
           return;
         }
@@ -162,8 +254,8 @@ export class SpatialCanvas {
       // Pan with middle button or Ctrl+left
       if (e.button === 1 || (e.button === 0 && (e.ctrlKey || e.metaKey))) {
         this.isPanning = true;
-        this.dragStartX = e.clientX - this.state.panX;
-        this.dragStartY = e.clientY - this.state.panY;
+        this.dragStartX = e.clientX - this.vp.panX;
+        this.dragStartY = e.clientY - this.vp.panY;
         e.preventDefault();
       }
     });
@@ -172,17 +264,17 @@ export class SpatialCanvas {
       if (this.isDragging && this.dragTarget) {
         const pos = this.state.blocks.get(this.dragTarget);
         if (!pos) return;
-        pos.x = e.clientX / this.state.zoom - this.dragOffsetX;
-        pos.y = e.clientY / this.state.zoom - this.dragOffsetY;
-        const el = this.viewport.querySelector(`[data-block-id="${this.dragTarget}"]`) as HTMLElement;
+        const [modelX, modelY] = this.vp.clientToModel(e.clientX, e.clientY);
+        pos.x = modelX - this.dragOffsetX;
+        pos.y = modelY - this.dragOffsetY;
+        const el = this.viewportEl.querySelector(`[data-block-id="${this.dragTarget}"]`) as HTMLElement;
         if (el) {
           el.style.left = `${pos.x}px`;
           el.style.top = `${pos.y}px`;
         }
       }
       if (this.isPanning) {
-        this.state.panX = e.clientX - this.dragStartX;
-        this.state.panY = e.clientY - this.dragStartY;
+        this.vp.setPan(e.clientX - this.dragStartX, e.clientY - this.dragStartY);
         this.updateTransform();
       }
     });
