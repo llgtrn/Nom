@@ -14,6 +14,7 @@
 pub mod adapters;
 pub mod dict_tools;
 pub mod instrumented;
+pub mod prompt;
 pub mod react;
 
 use serde::{Deserialize, Serialize};
