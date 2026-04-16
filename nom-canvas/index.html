@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>NomCanvas</title>
+    <link rel="stylesheet" href="/src/styles.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header id="toolbar">
+        <span class="logo">NomCanvas</span>
+        <button id="btn-compile">Compile Block</button>
+      </header>
+      <main id="canvas-container">
+        <div id="editor"></div>
+      </main>
+      <aside id="preview-pane">
+        <h3>Preview</h3>
+        <pre id="preview-output"></pre>
+      </aside>
+    </div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
