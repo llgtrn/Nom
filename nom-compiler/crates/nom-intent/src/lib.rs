@@ -41,6 +41,10 @@ pub enum IntentError {
     StubMissing,
     #[error("candidate retrieval failed: {0}")]
     RetrievalFailed(String),
+    #[error("LLVM compilation unavailable: {0}")]
+    LlvmUnavailable(String),
+    #[error("entity not found: {0}")]
+    EntityNotFound(String),
 }
 
 pub struct IntentCtx {

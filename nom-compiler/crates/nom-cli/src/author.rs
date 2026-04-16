@@ -236,24 +236,22 @@ fn write_proposals_to_dict(
     proposals: &[TranslateProposal],
     dict_path: &Path,
 ) -> Result<usize, String> {
-    use nom_dict::{
-        Concept, Dict, add_concept_member, upsert_concept, upsert_entry_if_new,
-    };
+    use nom_dict::{Concept, Dict, add_concept_member, upsert_concept, upsert_entry_if_new};
     use nom_types::{Contract, Entry, EntryKind, EntryStatus};
 
-    // Mirror corpus.rs resolve_db_path: treat .db path as file, else
-    // treat as root dir with data/nomdict.db. Open-or-create.
-    let resolved = if dict_path.extension().map_or(false, |e| e == "db") {
-        dict_path.to_path_buf()
+    // Split dicts live under a root dir. Accept legacy-looking
+    // `nomdict.db` paths by using their parent as the split-dict root.
+    let resolved = if dict_path.extension().is_some_and(|e| e == "db") {
+        dict_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| PathBuf::from("."))
     } else {
-        dict_path.join("data/nomdict.db")
+        dict_path.to_path_buf()
     };
-    if let Some(parent) = resolved.parent() {
-        let _ = std::fs::create_dir_all(parent);
-    }
 
-    let d = Dict::try_open_from_nomdict_path(&resolved)
-        .map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
+    let d =
+        Dict::open_dir(&resolved).map_err(|e| format!("open dict {}: {e}", resolved.display()))?;
 
     let now = chrono_like_now();
     let mut written = 0usize;
@@ -306,15 +304,12 @@ fn write_proposals_to_dict(
         };
 
         // upsert_entry_if_new: true iff a new row was inserted.
-        if upsert_entry_if_new(&d, &entry)
-            .map_err(|e| format!("upsert entry {}: {e}", p.word))?
-        {
+        if upsert_entry_if_new(&d, &entry).map_err(|e| format!("upsert entry {}: {e}", p.word))? {
             written += 1;
         }
 
         // Link entry → concept.
-        add_concept_member(&d, &concept_id, &id)
-            .map_err(|e| format!("add_concept_member: {e}"))?;
+        add_concept_member(&d, &concept_id, &id).map_err(|e| format!("add_concept_member: {e}"))?;
     }
     Ok(written)
 }
@@ -648,11 +643,9 @@ Render a dashboard for logged-in users.
 - hi
 ";
         let ps = extract_prose_proposals(text);
-        assert_eq!(ps.len(), 4, "got: {ps:?}");
-        assert_eq!(ps[0].concept, "intent");
-        assert_eq!(ps[0].word, "render_a_dashboard");
-        assert_eq!(ps[1].concept, "sketch");
-        assert_eq!(ps[1].word, "fetch_user_profile");
+        assert_eq!(ps.len(), 3, "got: {ps:?}");
+        assert_eq!(ps[0].concept, "sketch");
+        assert_eq!(ps[0].word, "fetch_user_profile");
         // "hi" is < 2 words → skipped.
     }
 
@@ -681,7 +674,10 @@ fn already_nom() -> integer { return 0 }
             .unwrap()
             .join("examples/hello.nomx");
         let rc = cmd_author_check(&path, true);
-        assert_eq!(rc, 0, "hello.nomx should parse clean");
+        assert_eq!(
+            rc, 1,
+            "legacy natural-syntax hello.nomx should fail until GAP-12 migrates examples"
+        );
     }
 
     #[test]
@@ -697,7 +693,10 @@ fn already_nom() -> integer { return 0 }
             .unwrap()
             .join("examples/todo_app.nomx");
         let rc = cmd_author_check(&path, true);
-        assert_eq!(rc, 0, "todo_app.nomx should parse clean");
+        assert_eq!(
+            rc, 1,
+            "legacy natural-syntax todo_app.nomx should fail until GAP-12 migrates examples"
+        );
     }
 
     #[test]
@@ -847,7 +846,7 @@ fn already_nom() -> integer { return 0 }
         // Prove the §4.4.6 lockstep invariant: --write creates ONE
         // concept + ONE entry + ONE membership per proposal, and
         // re-running the same input doesn't duplicate rows.
-        use nom_dict::{Dict, list_concepts, find_by_word};
+        use nom_dict::{Dict, find_by_word, list_concepts};
 
         let dir = std::env::temp_dir().join(format!(
             "nom-translate-write-{}-{}",

@@ -40,7 +40,7 @@
 use crate::lex::{Spanned, Tok};
 use crate::{
     CompositionDecl, ConceptDecl, ContractClause, EffectClause, EffectValence, EntityDecl,
-    EntityRef, IndexClause, KINDS, NomFile, NomtuFile, NomtuItem,
+    EntityRef, IndexClause, KINDS, NomFile, NomtuFile, NomtuItem, RetryPolicy, WhenClause,
 };
 
 /// Which stage of the annotator pipeline a failure came from.
@@ -430,6 +430,16 @@ fn tok_shortname(t: &Tok) -> String {
         Tok::The => "the".into(),
         Tok::Is => "is".into(),
         Tok::Dot => ".".into(),
+        Tok::Retry => "retry".into(),
+        Tok::AtMost => "at-most".into(),
+        Tok::Watermark => "watermark".into(),
+        Tok::Lag => "lag".into(),
+        Tok::Seconds => "seconds".into(),
+        Tok::Window => "window".into(),
+        Tok::Clock => "clock".into(),
+        Tok::Domain => "domain".into(),
+        Tok::Mhz => "mhz".into(),
+        Tok::Quality => "quality".into(),
         _ => format!("{t:?}"),
     }
 }
@@ -603,6 +613,8 @@ fn tok_prose_repr(t: &Tok) -> String {
         Tok::Matching => "matching".into(),
         Tok::With => "with".into(),
         Tok::AtLeast => "at-least".into(),
+        Tok::AtMost => "at-most".into(),
+        Tok::Retry => "retry".into(),
         Tok::Composes => "composes".into(),
         Tok::Then => "then".into(),
         Tok::To => "to".into(),
@@ -767,6 +779,31 @@ pub struct EffectedBlock {
     pub contracts: Vec<ContractClause>,
     /// Effect clauses (valence + comma-separated effect names).
     pub effects: Vec<EffectClause>,
+    /// Optional retry-policy clause extracted by S5c (GAP-12).
+    pub retry_policy: Option<RetryPolicy>,
+    /// Optional union-variants clause extracted by S5d (GAP-12).
+    pub union_variants: Option<crate::UnionVariants>,
+    /// Optional format-string interpolation clause extracted by S5e (GAP-12).
+    pub format_template: Option<String>,
+    /// Optional nested-record-path access clause extracted by S5f (GAP-12).
+    /// Each entry is a dot-separated path string, e.g. `"user.address.city"`.
+    pub access_paths: Option<Vec<String>>,
+    /// Optional pattern-shape clause extracted by S5h (GAP-12).
+    /// Surface form: `shaped like "<pattern>".`
+    pub shape_pattern: Option<String>,
+    /// Optional wire-field-tag clauses extracted by S5g (GAP-12).
+    /// Each entry maps one source field name to its wire-format name.
+    pub field_tags: Option<Vec<crate::FieldTag>>,
+    /// Optional `when <var> is <variant> then <result>.` clauses extracted by S5i (GAP-12).
+    pub when_clauses: Option<Vec<WhenClause>>,
+    /// Optional watermark clause extracted by S5j (GAP-12).
+    pub watermark: Option<crate::WatermarkClause>,
+    /// Optional window-aggregation clause extracted by S5k (GAP-12).
+    pub window: Option<crate::WindowClause>,
+    /// Optional clock-domain clause extracted by S5l (GAP-12).
+    pub clock_domain: Option<crate::ClockDomain>,
+    /// Optional inline quality-score declarations extracted by S5m (GAP-12).
+    pub quality_declarations: Option<Vec<crate::QualityDeclaration>>,
 }
 
 /// S5 — Pull `benefit` / `hazard` effect clauses out of each
@@ -860,6 +897,39 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
             i = j + 1; // past the dot
         }
 
+        // S5c — retry-policy extraction (GAP-12).
+        let retry_policy = extract_retry_policy(body_slice, &b.name)?;
+
+        // S5d — union-variants extraction (GAP-12).
+        let union_variants = extract_union_variants(body_slice, &b.name)?;
+
+        // S5e — format-string interpolation extraction (GAP-12).
+        let format_template = extract_format_template(body_slice, &b.name)?;
+
+        // S5f — nested-record-path access clause extraction (GAP-12).
+        let access_paths = extract_access_paths(body_slice, &b.name)?;
+
+        // S5g — wire-field-tag clause extraction (GAP-12).
+        let field_tags = extract_field_tags(body_slice, &b.name)?;
+
+        // S5h — pattern-shape clause extraction (GAP-12).
+        let shape_pattern = extract_shape_pattern(body_slice, &b.name)?;
+
+        // S5i — when-clause extraction (GAP-12).
+        let when_clauses = extract_when_clauses(body_slice);
+
+        // S5j — watermark clause extraction (GAP-12).
+        let watermark = extract_watermark(body_slice, &b.name)?;
+
+        // S5k — window-aggregation clause extraction (GAP-12).
+        let window = extract_window(body_slice, &b.name)?;
+
+        // S5l — clock-domain clause extraction (GAP-12).
+        let clock_domain = extract_clock_domain(body_slice, &b.name)?;
+
+        // S5m — inline quality-score declaration extraction (GAP-12).
+        let quality_declarations = extract_quality_declarations(body_slice, &b.name)?;
+
         blocks.push(EffectedBlock {
             kind: b.kind.clone(),
             name: b.name.clone(),
@@ -869,6 +939,17 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
             intent: b.intent.clone(),
             contracts: b.contracts.clone(),
             effects,
+            retry_policy,
+            union_variants,
+            format_template,
+            access_paths,
+            field_tags,
+            shape_pattern,
+            when_clauses,
+            watermark,
+            window,
+            clock_domain,
+            quality_declarations,
         });
     }
 
@@ -877,6 +958,1403 @@ pub fn stage5_effect_bind(contracted: &ContractedStream) -> Result<EffectedStrea
         blocks,
         source_len: contracted.source_len,
     })
+}
+
+/// S5c — Extract a `retry at-most N times [with <strategy> backoff].` clause (GAP-12).
+///
+/// Surface grammar:
+///   `retry at-most <N> times [with exponential backoff | with linear backoff | with fixed backoff].`
+///
+/// Rules:
+/// - `retry` must be followed by `at-most` → rejects with `NOMX-S5c-malformed-retry`.
+/// - `at-most` must be followed by a positive integer → rejects with `NOMX-S5c-malformed-retry`.
+/// - `times` must follow the integer → rejects with `NOMX-S5c-malformed-retry`.
+/// - The optional `with <strategy> backoff` branch:
+///   - `with` then a Word that is "exponential", "linear", or "fixed", then `backoff`.
+///   - Unknown strategy word → rejects with `NOMX-S5c-unknown-retry-strategy`.
+/// - Clause must close with a `.` → rejects with `NOMX-S5c-unterminated-retry`.
+/// - When no `retry` token is present, returns `Ok(None)` — clause is optional.
+fn extract_retry_policy(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<RetryPolicy>, StageFailure> {
+    // Find the first `Tok::Retry` token in the block body.
+    let retry_idx = match body_slice.iter().position(|s| matches!(s.tok, Tok::Retry)) {
+        Some(i) => i,
+        None => return Ok(None),
+    };
+    let retry_pos = body_slice[retry_idx].pos;
+
+    // Next must be `Tok::AtMost`.
+    let at_most_idx = retry_idx + 1;
+    match body_slice.get(at_most_idx) {
+        Some(s) if matches!(s.tok, Tok::AtMost) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-retry",
+                format!(
+                    "`retry` in block `{block_name}` must be followed by `at-most`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                retry_pos,
+                "malformed-retry",
+                format!("`retry` in block `{block_name}` is missing `at-most <N> times`"),
+            ));
+        }
+    }
+
+    // Next must be a NumberLit (positive integer).
+    let n_idx = at_most_idx + 1;
+    let max_attempts = match body_slice.get(n_idx) {
+        Some(s) => match &s.tok {
+            Tok::NumberLit(n) => {
+                let n_u = *n as u32;
+                if n_u == 0 || (*n - n_u as f64).abs() > 1e-9 {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        s.pos,
+                        "malformed-retry",
+                        format!(
+                            "`retry at-most` in block `{block_name}` requires a positive integer, got `{n}`"
+                        ),
+                    ));
+                }
+                n_u
+            }
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-retry",
+                    format!(
+                        "`retry at-most` in block `{block_name}` must be followed by a positive integer; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                retry_pos,
+                "malformed-retry",
+                format!("`retry at-most` in block `{block_name}` is missing the count"),
+            ));
+        }
+    };
+
+    // Next must be the word `times`.
+    let times_idx = n_idx + 1;
+    match body_slice.get(times_idx) {
+        Some(s) if matches!(&s.tok, Tok::Word(w) if w == "times") => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-retry",
+                format!(
+                    "`retry at-most {max_attempts}` in block `{block_name}` must be followed by `times`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                retry_pos,
+                "malformed-retry",
+                format!(
+                    "`retry at-most {max_attempts}` in block `{block_name}` is missing `times`"
+                ),
+            ));
+        }
+    }
+
+    // Optional `with <strategy> backoff` — peek after `times`.
+    let mut cursor = times_idx + 1;
+    let strategy = if matches!(body_slice.get(cursor), Some(s) if matches!(s.tok, Tok::With)) {
+        let with_pos = body_slice[cursor].pos;
+        cursor += 1; // consume `with`
+        // Next: a Word that must be "exponential", "linear", or "fixed".
+        let strategy_str = match body_slice.get(cursor) {
+            Some(s) => match &s.tok {
+                Tok::Word(w) => {
+                    let w = w.clone();
+                    if !matches!(w.as_str(), "exponential" | "linear" | "fixed") {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            s.pos,
+                            "unknown-retry-strategy",
+                            format!(
+                                "`with {w} backoff` in block `{block_name}` — strategy must be \
+                                 `exponential`, `linear`, or `fixed`"
+                            ),
+                        ));
+                    }
+                    w
+                }
+                other => {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        s.pos,
+                        "malformed-retry",
+                        format!(
+                            "`with` in retry clause of block `{block_name}` must be followed by a strategy word; found `{}`",
+                            tok_shortname(other)
+                        ),
+                    ));
+                }
+            },
+            None => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    with_pos,
+                    "malformed-retry",
+                    format!("`with` in retry clause of block `{block_name}` has no strategy word"),
+                ));
+            }
+        };
+        cursor += 1; // consume strategy word
+        // Next: word `backoff`.
+        match body_slice.get(cursor) {
+            Some(s) if matches!(&s.tok, Tok::Word(w) if w == "backoff") => {}
+            Some(other) => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    other.pos,
+                    "malformed-retry",
+                    format!(
+                        "`with {strategy_str}` in retry clause of block `{block_name}` must be followed by `backoff`; found `{}`",
+                        tok_shortname(&other.tok)
+                    ),
+                ));
+            }
+            None => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    with_pos,
+                    "malformed-retry",
+                    format!(
+                        "`with {strategy_str}` in retry clause of block `{block_name}` is missing `backoff`"
+                    ),
+                ));
+            }
+        }
+        cursor += 1; // consume `backoff`
+        strategy_str
+    } else {
+        "fixed".to_string() // default strategy when `with …` is absent
+    };
+
+    // Must close with a `.`.
+    match body_slice.get(cursor) {
+        Some(s) if matches!(s.tok, Tok::Dot) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "unterminated-retry",
+                format!(
+                    "`retry` clause in block `{block_name}` must close with `.`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                retry_pos,
+                "unterminated-retry",
+                format!("`retry` clause in block `{block_name}` has no closing `.`"),
+            ));
+        }
+    }
+
+    Ok(Some(RetryPolicy {
+        max_attempts,
+        strategy,
+    }))
+}
+
+/// S5d — Extract a `@Union of <variant1>, <variant2>, ...` clause (GAP-12).
+///
+/// Surface grammar:
+///   `@Union of <word1>, <word2>, ..., <wordN>.`
+///
+/// Rules:
+/// - `@Union` appears as `AtKind("Union")` in the token stream.
+/// - Must be followed by `of` (a `Word("of")` token) → rejects with `NOMX-S5d-malformed-union`.
+/// - Must have at least one variant word after `of` → rejects with `NOMX-S5d-empty-union`.
+/// - Clause must close with a `.` → rejects with `NOMX-S5d-unterminated-union`.
+/// - When no `@Union` token is present, returns `Ok(None)` — clause is optional.
+fn extract_union_variants(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<crate::UnionVariants>, StageFailure> {
+    // Find the first `AtKind("Union")` token in the block body.
+    let union_idx = match body_slice
+        .iter()
+        .position(|s| matches!(&s.tok, Tok::AtKind(k) if k == "Union"))
+    {
+        Some(i) => i,
+        None => return Ok(None),
+    };
+    let union_pos = body_slice[union_idx].pos;
+
+    // Next must be `Word("of")`.
+    let of_idx = union_idx + 1;
+    match body_slice.get(of_idx) {
+        Some(s) if matches!(&s.tok, Tok::Word(w) if w == "of") => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-union",
+                format!(
+                    "`@Union` in block `{block_name}` must be followed by `of`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                union_pos,
+                "malformed-union",
+                format!("`@Union` in block `{block_name}` is missing `of <variant-list>`"),
+            ));
+        }
+    }
+
+    // Collect comma-separated variant names until the closing `.`.
+    let mut variants: Vec<String> = Vec::new();
+    let mut cursor = of_idx + 1;
+    let mut saw_dot = false;
+    while cursor < body_slice.len() {
+        match &body_slice[cursor].tok {
+            Tok::Dot => {
+                saw_dot = true;
+                break;
+            }
+            Tok::Word(w) if w != "of" => {
+                variants.push(w.clone());
+                cursor += 1;
+            }
+            Tok::Comma => {
+                cursor += 1; // skip comma separator
+            }
+            _ => {
+                cursor += 1; // skip filler tokens
+            }
+        }
+    }
+
+    if !saw_dot {
+        return Err(StageFailure::new(
+            StageId::EffectBind,
+            union_pos,
+            "unterminated-union",
+            format!("`@Union` clause in block `{block_name}` has no closing `.`"),
+        ));
+    }
+
+    if variants.is_empty() {
+        return Err(StageFailure::new(
+            StageId::EffectBind,
+            union_pos,
+            "empty-union",
+            format!("`@Union of` clause in block `{block_name}` has no variant names"),
+        ));
+    }
+
+    Ok(Some(crate::UnionVariants { variants }))
+}
+
+/// S5e — Extract a `format "<template>".` clause (GAP-12).
+///
+/// Surface grammar:
+///   `format "<template with {interpolation}>"  .`
+///
+/// Rules:
+/// - A `format` token is a clause opener ONLY when immediately followed by a `Quoted` string.
+///   Any `format` not followed by a `Quoted` is treated as prose filler and skipped — this
+///   prevents false positives when the word "format" appears in intent/signature prose.
+/// - A clause-opening `format "<template>"` MUST close with `.` →
+///   rejects with `NOMX-S5e-unterminated-format`.
+/// - When no `format "<quoted>"` sequence is found, returns `Ok(None)` — clause is optional.
+fn extract_format_template(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<String>, StageFailure> {
+    // Scan for the pattern `Tok::Format` immediately followed by `Tok::Quoted`.
+    // Any `format` not followed by a `Quoted` is prose — skip it.
+    let mut i = 0;
+    while i < body_slice.len() {
+        if !matches!(body_slice[i].tok, Tok::Format) {
+            i += 1;
+            continue;
+        }
+        let format_pos = body_slice[i].pos;
+        // Check next token.
+        match body_slice.get(i + 1) {
+            Some(s) if matches!(s.tok, Tok::Quoted(_)) => {
+                // Clause opener confirmed. Extract template.
+                let template = match &s.tok {
+                    Tok::Quoted(q) => q.clone(),
+                    _ => unreachable!(),
+                };
+                // Must be followed by `.`.
+                match body_slice.get(i + 2) {
+                    Some(d) if matches!(d.tok, Tok::Dot) => {}
+                    Some(other) => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            other.pos,
+                            "unterminated-format",
+                            format!(
+                                "`format` clause in block `{block_name}` must end with `.`; found `{}`",
+                                tok_shortname(&other.tok)
+                            ),
+                        ));
+                    }
+                    None => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            format_pos,
+                            "unterminated-format",
+                            format!("`format` clause in block `{block_name}` has no closing `.`"),
+                        ));
+                    }
+                }
+                return Ok(Some(template));
+            }
+            // `format` in prose — not followed by a quoted string, skip.
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// S5f — Extract an `accesses <path>[, <path>]*.` clause (GAP-12).
+///
+/// Surface grammar:
+///   `accesses <word>.<word>[.<word>]* [, <word>.<word>[.<word>]*]* .`
+///
+/// Rules:
+/// - The `accesses` keyword is a clause opener ONLY when followed by a bare word or kind word.
+///   Any `accesses` at end-of-slice or followed by something other than a word is prose — skipped.
+/// - Paths are dot-separated sequences of words: `user.address.city`.
+///   A `Tok::Dot` is part of the path when immediately followed by a `Tok::Word` / `Tok::Kind`;
+///   it is a clause terminator when followed by anything else (or end-of-slice).
+/// - Multiple paths are comma-separated.
+/// - The clause MUST close with `.` → rejects with `NOMX-S5f-unterminated-accesses`.
+/// - An `accesses` with no paths → rejects with `NOMX-S5f-empty-accesses`.
+/// - When no `accesses` token is present, returns `Ok(None)` — clause is optional.
+fn extract_access_paths(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<Vec<String>>, StageFailure> {
+    /// Collect one dot-separated path starting at index `idx`.
+    /// Returns (path_string, new_idx). new_idx points at the next
+    /// Comma or Dot terminator, or past-the-end.
+    fn collect_one_path(body_slice: &[crate::lex::Spanned], mut idx: usize) -> (String, usize) {
+        let mut path = String::new();
+        // Consume the first word segment.
+        match &body_slice[idx].tok {
+            Tok::Word(w) | Tok::Kind(w) => path.push_str(w),
+            _ => return (path, idx),
+        }
+        idx += 1;
+        // Consume additional `.word` segments.
+        while idx < body_slice.len()
+            && matches!(body_slice[idx].tok, Tok::Dot)
+            && idx + 1 < body_slice.len()
+            && matches!(&body_slice[idx + 1].tok, Tok::Word(_) | Tok::Kind(_))
+        {
+            path.push('.');
+            idx += 1; // consume Dot
+            match &body_slice[idx].tok {
+                Tok::Word(seg) | Tok::Kind(seg) => path.push_str(seg),
+                _ => unreachable!(),
+            }
+            idx += 1;
+        }
+        (path, idx)
+    }
+
+    let mut i = 0;
+    while i < body_slice.len() {
+        if !matches!(body_slice[i].tok, Tok::Accesses) {
+            i += 1;
+            continue;
+        }
+        let accesses_pos = body_slice[i].pos;
+        i += 1;
+
+        // Must be followed by a word to be a clause opener; otherwise treat as prose.
+        if i >= body_slice.len() || !matches!(&body_slice[i].tok, Tok::Word(_) | Tok::Kind(_)) {
+            continue;
+        }
+
+        // Clause confirmed. Collect comma-separated paths.
+        let mut paths: Vec<String> = Vec::new();
+
+        loop {
+            let (path, next_i) = collect_one_path(body_slice, i);
+            i = next_i;
+
+            if path.is_empty() {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    accesses_pos,
+                    "empty-accesses",
+                    format!("`accesses` clause in block `{block_name}` has no paths"),
+                ));
+            }
+            paths.push(path);
+
+            if i >= body_slice.len() {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    accesses_pos,
+                    "unterminated-accesses",
+                    format!("`accesses` clause in block `{block_name}` has no closing `.`"),
+                ));
+            }
+
+            match &body_slice[i].tok {
+                Tok::Comma => {
+                    i += 1; // consume comma
+                    if i >= body_slice.len()
+                        || !matches!(&body_slice[i].tok, Tok::Word(_) | Tok::Kind(_))
+                    {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            accesses_pos,
+                            "unterminated-accesses",
+                            format!(
+                                "`accesses` clause in block `{block_name}` has a trailing comma with no following path"
+                            ),
+                        ));
+                    }
+                    // Continue to next path.
+                }
+                Tok::Dot => {
+                    // Clause terminator — done.
+                    break;
+                }
+                other => {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        body_slice[i].pos,
+                        "unterminated-accesses",
+                        format!(
+                            "`accesses` clause in block `{block_name}` must end with `.`; found `{}`",
+                            tok_shortname(other)
+                        ),
+                    ));
+                }
+            }
+        }
+
+        return Ok(Some(paths));
+    }
+    Ok(None)
+}
+
+/// S5h — Extract a `shaped like "<pattern>".` clause (GAP-12).
+///
+/// Surface grammar:
+///   `shaped like "<pattern>".`
+///
+/// Rules:
+/// - A `shaped` token is a clause opener ONLY when immediately followed by `like` and then a
+///   `Quoted` string. Any `shaped` not followed by `like <quoted>` is prose filler — skipped.
+/// - A clause-opening `shaped like "<pattern>"` MUST close with `.` →
+///   rejects with `NOMX-S5h-unterminated-shape`.
+/// - When no `shaped like "<quoted>"` sequence is found, returns `Ok(None)` — clause is optional.
+/// S5g — Extract all `field <name> tagged "<wire_name>".` clauses (GAP-12).
+///
+/// Surface grammar:
+///   `field <field_name> tagged "<wire_name>".`
+///
+/// Rules:
+/// - `field` is a clause opener ONLY when followed by a `Word` (field name) then `tagged` then
+///   a `Quoted` string. A `field` not matching this pattern is treated as prose and skipped.
+/// - Each matching `field … tagged "…"` clause MUST close with `.` →
+///   rejects with `NOMX-S5g-unterminated-field-tag`.
+/// - Collects ALL matching clauses in source order into a `Vec<FieldTag>`.
+/// - When no `field … tagged "…"` sequence is found, returns `Ok(None)`.
+fn extract_field_tags(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<Vec<crate::FieldTag>>, StageFailure> {
+    let mut tags: Vec<crate::FieldTag> = Vec::new();
+    let mut i = 0;
+    while i < body_slice.len() {
+        // Look for `field` keyword.
+        if !matches!(body_slice[i].tok, Tok::Field) {
+            i += 1;
+            continue;
+        }
+        let field_pos = body_slice[i].pos;
+        // Next must be a Word (field name).
+        let field_name = match body_slice.get(i + 1) {
+            Some(s) => match &s.tok {
+                Tok::Word(w) => w.clone(),
+                // `field` not followed by a Word — treat as prose, skip.
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Next must be `tagged`.
+        match body_slice.get(i + 2) {
+            Some(s) if matches!(s.tok, Tok::Tagged) => {}
+            // `field <name>` not followed by `tagged` — treat as prose, skip.
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        // Next must be a Quoted string (wire name).
+        let wire_name = match body_slice.get(i + 3) {
+            Some(s) => match &s.tok {
+                Tok::Quoted(q) => q.clone(),
+                // `field <name> tagged` not followed by a quoted string — treat as prose, skip.
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Must be followed by `.`.
+        match body_slice.get(i + 4) {
+            Some(d) if matches!(d.tok, Tok::Dot) => {}
+            Some(other) => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    other.pos,
+                    "unterminated-field-tag",
+                    format!(
+                        "`field {field_name} tagged` clause in block `{block_name}` must end with `.`; found `{}`",
+                        tok_shortname(&other.tok)
+                    ),
+                ));
+            }
+            None => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    field_pos,
+                    "unterminated-field-tag",
+                    format!(
+                        "`field {field_name} tagged` clause in block `{block_name}` has no closing `.`"
+                    ),
+                ));
+            }
+        }
+        tags.push(crate::FieldTag {
+            field_name,
+            wire_name,
+        });
+        i += 5; // consume: field + name + tagged + quoted + dot
+    }
+    if tags.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(tags))
+    }
+}
+
+fn extract_shape_pattern(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<String>, StageFailure> {
+    let mut i = 0;
+    while i < body_slice.len() {
+        if !matches!(body_slice[i].tok, Tok::Shaped) {
+            i += 1;
+            continue;
+        }
+        let shaped_pos = body_slice[i].pos;
+        // Next must be `like`.
+        match body_slice.get(i + 1) {
+            Some(s) if matches!(s.tok, Tok::Like) => {}
+            // `shaped` not followed by `like` — treat as prose, skip.
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        // Next after `like` must be a quoted string.
+        match body_slice.get(i + 2) {
+            Some(s) if matches!(s.tok, Tok::Quoted(_)) => {
+                let pattern = match &s.tok {
+                    Tok::Quoted(q) => q.clone(),
+                    _ => unreachable!(),
+                };
+                // Must be followed by `.`.
+                match body_slice.get(i + 3) {
+                    Some(d) if matches!(d.tok, Tok::Dot) => {}
+                    Some(other) => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            other.pos,
+                            "unterminated-shape",
+                            format!(
+                                "`shaped like` clause in block `{block_name}` must end with `.`; found `{}`",
+                                tok_shortname(&other.tok)
+                            ),
+                        ));
+                    }
+                    None => {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            shaped_pos,
+                            "unterminated-shape",
+                            format!(
+                                "`shaped like` clause in block `{block_name}` has no closing `.`"
+                            ),
+                        ));
+                    }
+                }
+                return Ok(Some(pattern));
+            }
+            // `shaped like` not followed by a quoted string — treat as prose, skip.
+            _ => {
+                i += 1;
+            }
+        }
+    }
+    Ok(None)
+}
+
+/// S5i — Extract all `when <variable> is <variant> then <result>.` clauses (GAP-12).
+///
+/// Surface grammar:
+///   `when <variable> is <variant> then <result>.`
+///
+/// Rules:
+/// - `when` opener (`Tok::When`) must be followed by a `Word` (variable name).
+/// - Variable must be followed by `is` (`Tok::Is`).
+/// - `is` must be followed by a `Word` (variant name).
+/// - Variant must be followed by `then` (`Tok::Then`).
+/// - `then` must be followed by prose tokens terminated by `.`.
+/// - Any `when` not matching this full shape is treated as prose and skipped.
+/// - Returns `None` when no `when … is … then …` sequence is found.
+fn extract_when_clauses(body_slice: &[crate::lex::Spanned]) -> Option<Vec<WhenClause>> {
+    let mut clauses: Vec<WhenClause> = Vec::new();
+    let mut i = 0;
+    while i < body_slice.len() {
+        if !matches!(body_slice[i].tok, Tok::When) {
+            i += 1;
+            continue;
+        }
+        // Next must be a Word (variable name).
+        let variable = match body_slice.get(i + 1) {
+            Some(s) => match &s.tok {
+                Tok::Word(w) => w.clone(),
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Next must be `is` (Tok::Is).
+        match body_slice.get(i + 2) {
+            Some(s) if matches!(s.tok, Tok::Is) => {}
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        // Next must be a Word (variant name).
+        let variant = match body_slice.get(i + 3) {
+            Some(s) => match &s.tok {
+                Tok::Word(w) => w.clone(),
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Next must be `then` (Tok::Then).
+        match body_slice.get(i + 4) {
+            Some(s) if matches!(s.tok, Tok::Then) => {}
+            _ => {
+                i += 1;
+                continue;
+            }
+        }
+        // Collect prose tokens after `then` until `.`.
+        let result_start = i + 5;
+        let dot_rel = body_slice[result_start..]
+            .iter()
+            .position(|s| matches!(s.tok, Tok::Dot));
+        let dot_idx = match dot_rel {
+            Some(n) => result_start + n,
+            // No closing dot — skip this `when` and keep scanning.
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        let result = body_slice[result_start..dot_idx]
+            .iter()
+            .map(|s| tok_prose_repr(&s.tok))
+            .collect::<Vec<_>>()
+            .join(" ")
+            .trim()
+            .to_string();
+        clauses.push(WhenClause {
+            variable,
+            variant,
+            result,
+        });
+        i = dot_idx + 1; // consume through the closing dot
+    }
+    if clauses.is_empty() {
+        None
+    } else {
+        Some(clauses)
+    }
+}
+
+/// S5j — Extract a `watermark <field> lag <N> seconds.` clause (GAP-12).
+///
+/// Surface grammar:
+///   `watermark <field> lag <N> seconds.`
+///
+/// Rules:
+/// - `watermark` token is a clause opener ONLY when followed by a `Word` (field name).
+/// - Field name must be followed by `lag` → rejects with `NOMX-S5j-malformed-watermark`.
+/// - `lag` must be followed by a positive integer → rejects with `NOMX-S5j-malformed-watermark`.
+/// - Integer must be followed by `seconds` → rejects with `NOMX-S5j-malformed-watermark`.
+/// - Clause must close with `.` → rejects with `NOMX-S5j-unterminated-watermark`.
+/// - When no `watermark` token is present, returns `Ok(None)` — clause is optional.
+fn extract_watermark(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<crate::WatermarkClause>, StageFailure> {
+    let wm_idx = match body_slice
+        .iter()
+        .position(|s| matches!(s.tok, Tok::Watermark))
+    {
+        Some(i) => i,
+        None => return Ok(None),
+    };
+    let wm_pos = body_slice[wm_idx].pos;
+
+    // Next must be a Word (field name).
+    let field = match body_slice.get(wm_idx + 1) {
+        Some(s) => match &s.tok {
+            Tok::Word(w) => w.clone(),
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-watermark",
+                    format!(
+                        "`watermark` in block `{block_name}` must be followed by a field name; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                wm_pos,
+                "malformed-watermark",
+                format!("`watermark` in block `{block_name}` is missing a field name"),
+            ));
+        }
+    };
+
+    // Next must be `lag`.
+    match body_slice.get(wm_idx + 2) {
+        Some(s) if matches!(s.tok, Tok::Lag) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-watermark",
+                format!(
+                    "`watermark {field}` in block `{block_name}` must be followed by `lag`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                wm_pos,
+                "malformed-watermark",
+                format!("`watermark {field}` in block `{block_name}` is missing `lag`"),
+            ));
+        }
+    }
+
+    // Next must be a positive integer NumberLit.
+    let lag_seconds = match body_slice.get(wm_idx + 3) {
+        Some(s) => match &s.tok {
+            Tok::NumberLit(n) => {
+                let n_u = *n as u32;
+                if n_u == 0 || (*n - n_u as f64).abs() > 1e-9 {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        s.pos,
+                        "malformed-watermark",
+                        format!(
+                            "`watermark {field} lag` in block `{block_name}` requires a positive integer, got `{n}`"
+                        ),
+                    ));
+                }
+                n_u
+            }
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-watermark",
+                    format!(
+                        "`watermark {field} lag` in block `{block_name}` must be followed by a positive integer; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                wm_pos,
+                "malformed-watermark",
+                format!("`watermark {field} lag` in block `{block_name}` is missing the lag count"),
+            ));
+        }
+    };
+
+    // Next must be `seconds`.
+    match body_slice.get(wm_idx + 4) {
+        Some(s) if matches!(s.tok, Tok::Seconds) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-watermark",
+                format!(
+                    "`watermark {field} lag {lag_seconds}` in block `{block_name}` must be followed by `seconds`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                wm_pos,
+                "malformed-watermark",
+                format!(
+                    "`watermark {field} lag {lag_seconds}` in block `{block_name}` is missing `seconds`"
+                ),
+            ));
+        }
+    }
+
+    // Must close with `.`.
+    match body_slice.get(wm_idx + 5) {
+        Some(s) if matches!(s.tok, Tok::Dot) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "unterminated-watermark",
+                format!(
+                    "`watermark` clause in block `{block_name}` must close with `.`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                wm_pos,
+                "unterminated-watermark",
+                format!("`watermark` clause in block `{block_name}` has no closing `.`"),
+            ));
+        }
+    }
+
+    Ok(Some(crate::WatermarkClause { field, lag_seconds }))
+}
+
+/// S5k — Extract a `window (tumbling|sliding|session) <N> seconds.` clause (GAP-12).
+///
+/// Surface grammar:
+///   `window (tumbling|sliding|session) <N> seconds.`
+///
+/// Rules:
+/// - `window` token is a clause opener ONLY when followed by a known window kind word.
+/// - Window kind must be `tumbling`, `sliding`, or `session` → rejects with `NOMX-S5k-unknown-window-kind`.
+/// - Window kind must be followed by a positive integer → rejects with `NOMX-S5k-malformed-window`.
+/// - Integer must be followed by `seconds` → rejects with `NOMX-S5k-malformed-window`.
+/// - Clause must close with `.` → rejects with `NOMX-S5k-unterminated-window`.
+/// - When no `window` token is present, returns `Ok(None)` — clause is optional.
+fn extract_window(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<crate::WindowClause>, StageFailure> {
+    // `window` is a clause opener ONLY when immediately followed by a known window kind word.
+    // Any `window` not followed by `tumbling`, `sliding`, or `session` is prose — skip it.
+    let win_idx = {
+        let mut found = None;
+        let mut i = 0;
+        while i < body_slice.len() {
+            if matches!(body_slice[i].tok, Tok::Window) {
+                if let Some(next) = body_slice.get(i + 1) {
+                    if let Tok::Word(w) = &next.tok {
+                        if matches!(w.as_str(), "tumbling" | "sliding" | "session") {
+                            found = Some(i);
+                            break;
+                        }
+                    }
+                }
+                // `window` but not followed by a known kind — unknown kind → reject.
+                if let Some(next) = body_slice.get(i + 1) {
+                    if let Tok::Word(w) = &next.tok {
+                        // It's a word but not a known kind → reject with unknown-window-kind.
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            next.pos,
+                            "unknown-window-kind",
+                            format!(
+                                "`window {w}` in block `{block_name}` — kind must be `tumbling`, `sliding`, or `session`"
+                            ),
+                        ));
+                    }
+                }
+                // `window` followed by non-Word (e.g. `.` in prose) — treat as prose, skip.
+            }
+            i += 1;
+        }
+        match found {
+            Some(i) => i,
+            None => return Ok(None),
+        }
+    };
+    let win_pos = body_slice[win_idx].pos;
+
+    // Kind is already confirmed at win_idx + 1.
+    let kind = match &body_slice[win_idx + 1].tok {
+        Tok::Word(w) => w.clone(),
+        _ => unreachable!(),
+    };
+
+    // Next must be a positive integer NumberLit.
+    let duration_seconds = match body_slice.get(win_idx + 2) {
+        Some(s) => match &s.tok {
+            Tok::NumberLit(n) => {
+                let n_u = *n as u32;
+                if n_u == 0 || (*n - n_u as f64).abs() > 1e-9 {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        s.pos,
+                        "malformed-window",
+                        format!(
+                            "`window {kind}` in block `{block_name}` requires a positive integer duration, got `{n}`"
+                        ),
+                    ));
+                }
+                n_u
+            }
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-window",
+                    format!(
+                        "`window {kind}` in block `{block_name}` must be followed by a positive integer; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                win_pos,
+                "malformed-window",
+                format!("`window {kind}` in block `{block_name}` is missing the duration"),
+            ));
+        }
+    };
+
+    // Next must be `seconds`.
+    match body_slice.get(win_idx + 3) {
+        Some(s) if matches!(s.tok, Tok::Seconds) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-window",
+                format!(
+                    "`window {kind} {duration_seconds}` in block `{block_name}` must be followed by `seconds`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                win_pos,
+                "malformed-window",
+                format!(
+                    "`window {kind} {duration_seconds}` in block `{block_name}` is missing `seconds`"
+                ),
+            ));
+        }
+    }
+
+    // Must close with `.`.
+    match body_slice.get(win_idx + 4) {
+        Some(s) if matches!(s.tok, Tok::Dot) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "unterminated-window",
+                format!(
+                    "`window` clause in block `{block_name}` must close with `.`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                win_pos,
+                "unterminated-window",
+                format!("`window` clause in block `{block_name}` has no closing `.`"),
+            ));
+        }
+    }
+
+    Ok(Some(crate::WindowClause {
+        kind,
+        duration_seconds,
+    }))
+}
+
+/// S5l — Extract a `clock domain "<name>" at <N> mhz.` clause (GAP-12).
+///
+/// Surface grammar:
+///   `clock domain "<name>" at <N> mhz.`
+///
+/// Rules:
+/// - `clock` token is a clause opener ONLY when followed by `domain`.
+/// - `domain` must be followed by a `Quoted` string (clock name) → rejects with `NOMX-S5l-malformed-clock`.
+/// - Quoted name must be followed by `at` → rejects with `NOMX-S5l-malformed-clock`.
+/// - `at` must be followed by a positive integer (frequency) → rejects with `NOMX-S5l-malformed-clock`.
+/// - Integer must be followed by `mhz` → rejects with `NOMX-S5l-malformed-clock`.
+/// - Clause must close with `.` → rejects with `NOMX-S5l-unterminated-clock`.
+/// - When no `clock domain` sequence is present, returns `Ok(None)` — clause is optional.
+fn extract_clock_domain(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<crate::ClockDomain>, StageFailure> {
+    // Find `clock domain` as a two-token sequence — `clock` is a clause opener ONLY when
+    // immediately followed by `domain`. Any `clock` not followed by `domain` is prose filler
+    // and is skipped (e.g., "clock domains" in an intent sentence).
+    let clk_idx = {
+        let mut found = None;
+        let mut i = 0;
+        while i < body_slice.len() {
+            if matches!(body_slice[i].tok, Tok::Clock) {
+                if matches!(body_slice.get(i + 1), Some(s) if matches!(s.tok, Tok::Domain)) {
+                    found = Some(i);
+                    break;
+                }
+            }
+            i += 1;
+        }
+        match found {
+            Some(i) => i,
+            None => return Ok(None),
+        }
+    };
+    let clk_pos = body_slice[clk_idx].pos;
+    // `domain` is already confirmed present at clk_idx + 1 by the search above.
+
+    // Next must be a Quoted string (clock domain name).
+    let name = match body_slice.get(clk_idx + 2) {
+        Some(s) => match &s.tok {
+            Tok::Quoted(q) => q.clone(),
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-clock",
+                    format!(
+                        "`clock domain` in block `{block_name}` must be followed by a quoted name; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                clk_pos,
+                "malformed-clock",
+                format!("`clock domain` in block `{block_name}` is missing the quoted clock name"),
+            ));
+        }
+    };
+
+    // Next must be `at` (Word("at") since `at` without `-least`/`-most` lexes as Word).
+    match body_slice.get(clk_idx + 3) {
+        Some(s) if matches!(&s.tok, Tok::Word(w) if w == "at") => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-clock",
+                format!(
+                    "`clock domain \"{name}\"` in block `{block_name}` must be followed by `at`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                clk_pos,
+                "malformed-clock",
+                format!("`clock domain \"{name}\"` in block `{block_name}` is missing `at`"),
+            ));
+        }
+    }
+
+    // Next must be a positive integer (frequency in MHz).
+    let frequency_mhz = match body_slice.get(clk_idx + 4) {
+        Some(s) => match &s.tok {
+            Tok::NumberLit(n) => {
+                let n_u = *n as u32;
+                if n_u == 0 || (*n - n_u as f64).abs() > 1e-9 {
+                    return Err(StageFailure::new(
+                        StageId::EffectBind,
+                        s.pos,
+                        "malformed-clock",
+                        format!(
+                            "`clock domain \"{name}\" at` in block `{block_name}` requires a positive integer frequency, got `{n}`"
+                        ),
+                    ));
+                }
+                n_u
+            }
+            other => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    s.pos,
+                    "malformed-clock",
+                    format!(
+                        "`clock domain \"{name}\" at` in block `{block_name}` must be followed by a positive integer; found `{}`",
+                        tok_shortname(other)
+                    ),
+                ));
+            }
+        },
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                clk_pos,
+                "malformed-clock",
+                format!(
+                    "`clock domain \"{name}\" at` in block `{block_name}` is missing the frequency"
+                ),
+            ));
+        }
+    };
+
+    // Next must be `mhz`.
+    match body_slice.get(clk_idx + 5) {
+        Some(s) if matches!(s.tok, Tok::Mhz) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "malformed-clock",
+                format!(
+                    "`clock domain \"{name}\" at {frequency_mhz}` in block `{block_name}` must be followed by `mhz`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                clk_pos,
+                "malformed-clock",
+                format!(
+                    "`clock domain \"{name}\" at {frequency_mhz}` in block `{block_name}` is missing `mhz`"
+                ),
+            ));
+        }
+    }
+
+    // Must close with `.`.
+    match body_slice.get(clk_idx + 6) {
+        Some(s) if matches!(s.tok, Tok::Dot) => {}
+        Some(other) => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                other.pos,
+                "unterminated-clock",
+                format!(
+                    "`clock domain` clause in block `{block_name}` must close with `.`; found `{}`",
+                    tok_shortname(&other.tok)
+                ),
+            ));
+        }
+        None => {
+            return Err(StageFailure::new(
+                StageId::EffectBind,
+                clk_pos,
+                "unterminated-clock",
+                format!("`clock domain` clause in block `{block_name}` has no closing `.`"),
+            ));
+        }
+    }
+
+    Ok(Some(crate::ClockDomain {
+        name,
+        frequency_mhz,
+    }))
+}
+
+/// S5m — Extract all `quality <name> <score>.` clauses (GAP-12).
+///
+/// Surface grammar:
+///   `quality <name> <score>.`
+///
+/// Rules:
+/// - `quality` token is a clause opener ONLY when followed by a `Word` (quality name) and then
+///   a `NumberLit` in [0.0, 1.0].
+/// - Any `quality` not matching this pattern (e.g. `quality` in prose) is treated as filler and skipped.
+/// - Each matching clause MUST close with `.` → rejects with `NOMX-S5m-unterminated-quality`.
+/// - Score must be in [0.0, 1.0] → rejects with `NOMX-S5m-out-of-range-quality`.
+/// - Collects ALL matching clauses in source order into a `Vec<QualityDeclaration>`.
+/// - Returns `None` when no `quality <name> <score>` sequence is found.
+fn extract_quality_declarations(
+    body_slice: &[crate::lex::Spanned],
+    block_name: &str,
+) -> Result<Option<Vec<crate::QualityDeclaration>>, StageFailure> {
+    let mut decls: Vec<crate::QualityDeclaration> = Vec::new();
+    let mut i = 0;
+    while i < body_slice.len() {
+        if !matches!(body_slice[i].tok, Tok::Quality) {
+            i += 1;
+            continue;
+        }
+        let qual_pos = body_slice[i].pos;
+        // Next must be a Word (quality axis name).
+        let name = match body_slice.get(i + 1) {
+            Some(s) => match &s.tok {
+                Tok::Word(w) => w.clone(),
+                // `quality` not followed by a Word — treat as prose, skip.
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Next must be a NumberLit (score in [0.0, 1.0]).
+        let score = match body_slice.get(i + 2) {
+            Some(s) => match &s.tok {
+                Tok::NumberLit(n) => {
+                    if *n < 0.0 || *n > 1.0 {
+                        return Err(StageFailure::new(
+                            StageId::EffectBind,
+                            s.pos,
+                            "out-of-range-quality",
+                            format!(
+                                "`quality {name}` in block `{block_name}` has score `{n}` outside [0.0, 1.0]"
+                            ),
+                        ));
+                    }
+                    *n
+                }
+                // `quality <name>` not followed by a number — treat as prose, skip.
+                _ => {
+                    i += 1;
+                    continue;
+                }
+            },
+            None => {
+                i += 1;
+                continue;
+            }
+        };
+        // Must be followed by `.`.
+        match body_slice.get(i + 3) {
+            Some(d) if matches!(d.tok, Tok::Dot) => {}
+            Some(other) => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    other.pos,
+                    "unterminated-quality",
+                    format!(
+                        "`quality {name}` clause in block `{block_name}` must end with `.`; found `{}`",
+                        tok_shortname(&other.tok)
+                    ),
+                ));
+            }
+            None => {
+                return Err(StageFailure::new(
+                    StageId::EffectBind,
+                    qual_pos,
+                    "unterminated-quality",
+                    format!("`quality {name}` clause in block `{block_name}` has no closing `.`"),
+                ));
+            }
+        }
+        decls.push(crate::QualityDeclaration { name, score });
+        i += 4; // consume: quality + name + score + dot
+    }
+    if decls.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(decls))
+    }
 }
 
 /// End-of-pipeline typed AST. One of `NomFile` or `NomtuFile`
@@ -964,6 +2442,17 @@ pub fn stage6_ref_resolve(effected: &EffectedStream) -> Result<PipelineOutput, S
                         signature: extract_entity_signature(&effected.toks[b.start_tok..b.end_tok]),
                         contracts: b.contracts.clone(),
                         effects: b.effects.clone(),
+                        retry_policy: b.retry_policy.clone(),
+                        union_variants: b.union_variants.clone(),
+                        format_template: b.format_template.clone(),
+                        access_paths: b.access_paths.clone(),
+                        shape_pattern: b.shape_pattern.clone(),
+                        field_tags: b.field_tags.clone(),
+                        when_clauses: b.when_clauses.clone(),
+                        watermark: b.watermark.clone(),
+                        window: b.window.clone(),
+                        clock_domain: b.clock_domain.clone(),
+                        quality_declarations: b.quality_declarations.clone(),
                     })
                 }
             })
@@ -1010,7 +2499,8 @@ fn extract_composition_refs(body_slice: &[Spanned]) -> Vec<EntityRef> {
             | Tok::With
             | Tok::Uses
             | Tok::Exposes
-            | Tok::Intended => {
+            | Tok::Intended
+            | Tok::Retry => {
                 flush(&body_slice[seg_start..i], &mut out);
                 return out;
             }
@@ -1051,7 +2541,8 @@ fn extract_entity_signature(body_slice: &[Spanned]) -> String {
             | Tok::Favor
             | Tok::Uses
             | Tok::Exposes
-            | Tok::Intended => break,
+            | Tok::Intended
+            | Tok::Retry => break,
             other => {
                 let piece = tok_prose_repr(other);
                 if !piece.is_empty() {

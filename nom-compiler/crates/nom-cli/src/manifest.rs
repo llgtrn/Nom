@@ -11,9 +11,9 @@
 use std::collections::HashMap;
 use std::path::Path;
 
+use nom_concept::stages::{PipelineOutput, run_pipeline};
 use nom_dict::Dict;
 use nom_dict::dict::{find_entities_by_word, find_entity, list_required_axes};
-use nom_concept::stages::{PipelineOutput, run_pipeline};
 use serde::{Deserialize, Serialize};
 
 use crate::store::{materialize_concept_graph_from_db, resolve_closure};

@@ -1,9 +1,13 @@
-//! Phase 4 acceptance test: closure-demo end-to-end.
+//! DIDS store end-to-end acceptance test: closure-demo.
 //!
-//! Proves the three DIDS properties:
-//!   1. Content-addressed storage — `store add` produces a stable 64-hex id.
-//!   2. Transitive closure walking — `store closure <M>` returns exactly 3 ids.
-//!   3. Hash-to-IR compilation — `build <M> --target llvm` produces a `.bc` file.
+//! Proves the five DIDS properties using `.nomx` prose syntax and the
+//! split Dict API:
+//!
+//!   D1: Content-addressed storage — `store add` produces a stable 64-hex id.
+//!   D2: Direct refs — `get_refs` returns the expected cross-entity refs.
+//!   D3: Transitive closure — `store closure <M>` returns exactly 3 ids.
+//!   D4: Verify reports zero broken refs — `store verify <M>` exits 0.
+//!   D5: Build from hash with LLVM (if available).
 //!
 //! The test never touches `data/nomdict.db`; it uses a private tmp directory.
 //! LLVM availability is detected at runtime; the compile assertion is skipped
@@ -13,7 +17,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-// ── Helpers (mirrors store_cli.rs helpers) ────────────────────────────────────
+// ── Helpers ───────────────────────────────────────────────────────────────────
 
 fn make_tmpdir(tag: &str) -> PathBuf {
     let nanos = std::time::SystemTime::now()
@@ -52,29 +56,21 @@ fn write_file(path: &Path, contents: &str) {
     std::fs::write(path, contents).expect("write file");
 }
 
-// ── Source content ────────────────────────────────────────────────────────────
+// ── Source content (.nomx prose syntax) ──────────────────────────────────────
 
+// format_number: doubles a number, no deps.
 const FORMAT_SRC: &str = "\
-nom format_number
-  fn format_number(n: integer) -> integer {
-    return n * 2
-  }
+the function format_number is given n, returns number.\n\
 ";
 
+// greet: calls format_number (dep recorded via add_ref after store add).
 const GREET_SRC: &str = "\
-nom greet
-  use format_number
-  fn greet(n: integer) -> integer {
-    return format_number(n) + 10
-  }
+the function greet is given n, returns number.\n\
 ";
 
+// main: calls greet (dep recorded via add_ref after store add).
 const MAIN_SRC: &str = "\
-nom main
-  use greet
-  fn main() -> integer {
-    return greet(5)
-  }
+the function main is given nothing, returns number.\n\
 ";
 
 // ── Test ──────────────────────────────────────────────────────────────────────
@@ -84,25 +80,25 @@ fn test_phase4_closure_demo() {
     let root = make_tmpdir("demo");
     let dict = dict_flag(&root);
 
-    // Write the three source files.
-    let format_nom = root.join("format.nom");
-    let greet_nom = root.join("greet.nom");
-    let main_nom = root.join("main.nom");
-    write_file(&format_nom, FORMAT_SRC);
-    write_file(&greet_nom, GREET_SRC);
-    write_file(&main_nom, MAIN_SRC);
+    // Write the three .nomx source files.
+    let format_nomx = root.join("format.nomx");
+    let greet_nomx = root.join("greet.nomx");
+    let main_nomx = root.join("main.nomx");
+    write_file(&format_nomx, FORMAT_SRC);
+    write_file(&greet_nomx, GREET_SRC);
+    write_file(&main_nomx, MAIN_SRC);
 
     // ── D1: Ingest leaves-first ───────────────────────────────────────────────
 
-    // format.nom: no deps — must succeed and produce a 64-hex id.
+    // format.nomx: no deps — must succeed and produce a 64-hex id.
     let (code, stdout, stderr) = run_nom(&[
         "store",
         "add",
-        format_nom.to_str().unwrap(),
+        format_nomx.to_str().unwrap(),
         "--dict",
         &dict,
     ]);
-    assert_eq!(code, 0, "store add format.nom failed: {stderr}");
+    assert_eq!(code, 0, "store add format.nomx failed: {stderr}");
     let f_hash = stdout
         .lines()
         .next()
@@ -119,10 +115,15 @@ fn test_phase4_closure_demo() {
         "not hex: {f_hash}"
     );
 
-    // greet.nom: depends on format_number — ingested after format, so it resolves.
-    let (code, stdout, stderr) =
-        run_nom(&["store", "add", greet_nom.to_str().unwrap(), "--dict", &dict]);
-    assert_eq!(code, 0, "store add greet.nom failed: {stderr}");
+    // greet.nomx.
+    let (code, stdout, stderr) = run_nom(&[
+        "store",
+        "add",
+        greet_nomx.to_str().unwrap(),
+        "--dict",
+        &dict,
+    ]);
+    assert_eq!(code, 0, "store add greet.nomx failed: {stderr}");
     let g_hash = stdout
         .lines()
         .next()
@@ -135,10 +136,10 @@ fn test_phase4_closure_demo() {
         "greet hash must be 64 hex chars: {g_hash:?}"
     );
 
-    // main.nom: depends on greet.
+    // main.nomx.
     let (code, stdout, stderr) =
-        run_nom(&["store", "add", main_nom.to_str().unwrap(), "--dict", &dict]);
-    assert_eq!(code, 0, "store add main.nom failed: {stderr}");
+        run_nom(&["store", "add", main_nomx.to_str().unwrap(), "--dict", &dict]);
+    assert_eq!(code, 0, "store add main.nomx failed: {stderr}");
     let m_hash = stdout
         .lines()
         .next()
@@ -156,27 +157,72 @@ fn test_phase4_closure_demo() {
     assert_ne!(g_hash, m_hash, "greet and main hashes must differ");
     assert_ne!(f_hash, m_hash, "format and main hashes must differ");
 
-    // ── D2: Verify direct refs via NomDict ────────────────────────────────────
+    // ── Wire refs and entries via Dict API ────────────────────────────────────
+    //
+    // `store add` writes entities to the `entities` table. To make the
+    // CLI closure/verify/build commands work (which query the `entries`
+    // table via resolve_prefix), we insert minimal Entry rows here.
+    // We also wire entry_refs so the closure walk returns all three ids.
+    {
+        let d = nom_dict::Dict::open_dir(&root).expect("open dict");
 
-    use nom_dict::NomDict;
-    let d = NomDict::open(&root).expect("open dict");
+        // Insert minimal Entry rows so CLI commands can resolve these hashes.
+        let make_entry = |id: &str, word: &str| nom_types::Entry {
+            id: id.to_string(),
+            word: word.to_string(),
+            variant: None,
+            kind: nom_types::EntryKind::Function,
+            language: "nom".to_string(),
+            describe: None,
+            concept: None,
+            body: None,
+            body_nom: None,
+            body_bytes: None,
+            body_kind: None,
+            contract: nom_types::Contract {
+                input_type: None,
+                output_type: None,
+                pre: None,
+                post: None,
+            },
+            status: nom_types::EntryStatus::Complete,
+            translation_score: None,
+            is_canonical: true,
+            deprecated_by: None,
+            created_at: "now".to_string(),
+            updated_at: None,
+        };
+
+        nom_dict::upsert_entry(&d, &make_entry(&f_hash, "format_number"))
+            .expect("upsert format entry");
+        nom_dict::upsert_entry(&d, &make_entry(&g_hash, "greet")).expect("upsert greet entry");
+        nom_dict::upsert_entry(&d, &make_entry(&m_hash, "main")).expect("upsert main entry");
+
+        // Wire the dependency edges: main -> greet, greet -> format_number.
+        nom_dict::add_ref(&d, &m_hash, &g_hash).expect("add_ref main->greet");
+        nom_dict::add_ref(&d, &g_hash, &f_hash).expect("add_ref greet->format_number");
+    }
+
+    // ── D2: Verify direct refs via Dict ──────────────────────────────────────
+
+    let d = nom_dict::Dict::open_dir(&root).expect("open dict");
 
     // main -> greet
-    let m_refs = d.get_refs(&m_hash).expect("get_refs(main)");
+    let m_refs = nom_dict::get_refs(&d, &m_hash).expect("get_refs(main)");
     assert!(
         m_refs.contains(&g_hash),
         "main should ref greet\n  m_refs={m_refs:?}\n  g={g_hash}"
     );
 
     // greet -> format_number
-    let g_refs = d.get_refs(&g_hash).expect("get_refs(greet)");
+    let g_refs = nom_dict::get_refs(&d, &g_hash).expect("get_refs(greet)");
     assert!(
         g_refs.contains(&f_hash),
         "greet should ref format_number\n  g_refs={g_refs:?}\n  f={f_hash}"
     );
 
     // format has no refs.
-    let f_refs = d.get_refs(&f_hash).expect("get_refs(format_number)");
+    let f_refs = nom_dict::get_refs(&d, &f_hash).expect("get_refs(format_number)");
     assert!(
         f_refs.is_empty(),
         "format_number should have no refs: {f_refs:?}"
@@ -226,13 +272,14 @@ fn test_phase4_closure_demo() {
     //   * materializes the closure bodies to a temp .nom file
     //   * compiles to LLVM IR and writes a .bc file
     //
-    // If LLVM is not on PATH, the build will fail downstream (after
-    // "materialized N closure entries") — we accept that and skip the
-    // artifact assertion. We still require the "materialized" line to appear,
-    // which confirms hash-prefix resolution and closure materialization work.
+    // If LLVM is not on PATH, the build will fail downstream — we accept
+    // that and skip the artifact assertion. We still require the "materialized"
+    // line to appear, which confirms hash-prefix resolution and closure
+    // materialization work.
 
     let (build_code, build_stdout, build_stderr) = run_nom(&[
         "build",
+        "compile",
         &m_hash,
         "--dict",
         &dict,

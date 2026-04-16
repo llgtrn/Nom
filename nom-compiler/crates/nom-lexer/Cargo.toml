@@ -1,8 +1,0 @@
-[package]
-name = "nom-lexer"
-version.workspace = true
-edition.workspace = true
-
-[dependencies]
-nom-ast = { path = "../nom-ast" }
-thiserror = { workspace = true }

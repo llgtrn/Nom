@@ -7,7 +7,6 @@ license.workspace = true
 [dependencies]
 nom-types = { path = "../nom-types" }
 nom-dict = { path = "../nom-dict" }
-nom-parser = { path = "../nom-parser" }
 nom-planner = { path = "../nom-planner" }
 nom-resolver = { path = "../nom-resolver" }
 nom-llvm = { path = "../nom-llvm" }

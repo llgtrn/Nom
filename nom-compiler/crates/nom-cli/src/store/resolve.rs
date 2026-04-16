@@ -210,6 +210,7 @@ mod tests {
             bench_ids: None,
             authored_in: None,
             composed_of: None,
+            status: "complete".to_string(),
         }
     }
 

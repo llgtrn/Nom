@@ -126,6 +126,7 @@ pub fn sync_repo(repo: &Path, dict: &Dict) -> (SyncStats, Vec<String>) {
                                 bench_ids: None,
                                 authored_in: Some(rel.clone()),
                                 composed_of: None,
+                                status: "complete".to_string(),
                             };
 
                             if let Err(e) = upsert_entity(dict, &row) {
@@ -171,6 +172,7 @@ pub fn sync_repo(repo: &Path, dict: &Dict) -> (SyncStats, Vec<String>) {
                                 bench_ids: None,
                                 authored_in: Some(rel.clone()),
                                 composed_of,
+                                status: "complete".to_string(),
                             };
 
                             if let Err(e) = upsert_entity(dict, &row) {

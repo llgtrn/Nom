@@ -237,7 +237,37 @@ impl<'ctx> ModuleCompiler<'ctx> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom_ast::{
+        BinOp, Block, BlockStmt, Expr, FnDef, FnParam, Identifier, LetStmt, Literal, Span,
+        Statement, TypeExpr,
+    };
     use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy};
+
+    fn ident(name: &str) -> Identifier {
+        Identifier::new(name, Span::default())
+    }
+
+    fn integer_type() -> TypeExpr {
+        TypeExpr::Named(ident("integer"))
+    }
+
+    fn make_flow(name: &str, imperative_stmts: Vec<Statement>) -> FlowPlan {
+        FlowPlan {
+            name: name.into(),
+            classifier: "nom".into(),
+            agent: None,
+            graph: None,
+            nodes: vec![],
+            edges: vec![],
+            branches: vec![],
+            memory_strategy: MemoryStrategy::Stack,
+            concurrency_strategy: ConcurrencyStrategy::Sequential,
+            qualifier: "once".to_owned(),
+            on_fail: "abort".to_owned(),
+            effect_summary: vec![],
+            imperative_stmts,
+        }
+    }
 
     #[test]
     fn empty_plan_produces_valid_ir() {
@@ -254,50 +284,47 @@ mod tests {
 
     #[test]
     fn compiles_hello_world_with_main() {
-        let source = r#"
-nom hello
-  fn main() -> integer {
-    let x: integer = 42
-    let y: integer = 8
-    return x + y
-  }
-"#;
-
-        // Parse the source
-        let parsed = nom_parser::parse_source(source).expect("should parse hello program");
-
-        // Extract imperative statements
-        let mut imperative_stmts = Vec::new();
-        for decl in &parsed.declarations {
-            for stmt in &decl.statements {
-                match stmt {
-                    nom_ast::Statement::FnDef(_)
-                    | nom_ast::Statement::StructDef(_)
-                    | nom_ast::Statement::EnumDef(_) => {
-                        imperative_stmts.push(stmt.clone());
-                    }
-                    _ => {}
-                }
-            }
-        }
+        // fn main() -> integer {
+        //   let x: integer = 42
+        //   let y: integer = 8
+        //   return x + y
+        // }
+        let main_fn = FnDef {
+            name: ident("main"),
+            params: vec![],
+            return_type: Some(integer_type()),
+            body: Block {
+                stmts: vec![
+                    BlockStmt::Let(LetStmt {
+                        name: ident("x"),
+                        mutable: false,
+                        type_ann: Some(integer_type()),
+                        value: Expr::Literal(Literal::Integer(42)),
+                        span: Span::default(),
+                    }),
+                    BlockStmt::Let(LetStmt {
+                        name: ident("y"),
+                        mutable: false,
+                        type_ann: Some(integer_type()),
+                        value: Expr::Literal(Literal::Integer(8)),
+                        span: Span::default(),
+                    }),
+                    BlockStmt::Return(Some(Expr::BinaryOp(
+                        Box::new(Expr::Ident(ident("x"))),
+                        BinOp::Add,
+                        Box::new(Expr::Ident(ident("y"))),
+                    ))),
+                ],
+                span: Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: Span::default(),
+        };
 
         let plan = CompositionPlan {
             source_path: Some("hello.nom".into()),
-            flows: vec![FlowPlan {
-                name: "hello".into(),
-                classifier: "nom".into(),
-                agent: None,
-                graph: None,
-                nodes: vec![],
-                edges: vec![],
-                branches: vec![],
-                memory_strategy: MemoryStrategy::Stack,
-                concurrency_strategy: ConcurrencyStrategy::Sequential,
-                qualifier: "once".to_owned(),
-                on_fail: "abort".to_owned(),
-                effect_summary: vec![],
-                imperative_stmts,
-            }],
+            flows: vec![make_flow("hello", vec![Statement::FnDef(main_fn)])],
             nomiz: "{}".into(),
         };
 
@@ -322,41 +349,36 @@ nom hello
 
     #[test]
     fn no_main_no_wrapper() {
-        // Programs without a main function should not get a wrapper
-        let source = r#"
-nom lib
-  fn add(a: integer, b: integer) -> integer {
-    return a + b
-  }
-"#;
-
-        let parsed = nom_parser::parse_source(source).expect("should parse");
-        let mut imperative_stmts = Vec::new();
-        for decl in &parsed.declarations {
-            for stmt in &decl.statements {
-                if matches!(stmt, nom_ast::Statement::FnDef(_)) {
-                    imperative_stmts.push(stmt.clone());
-                }
-            }
-        }
+        // fn add(a: integer, b: integer) -> integer { return a + b }
+        let add_fn = FnDef {
+            name: ident("add"),
+            params: vec![
+                FnParam {
+                    name: ident("a"),
+                    type_ann: integer_type(),
+                },
+                FnParam {
+                    name: ident("b"),
+                    type_ann: integer_type(),
+                },
+            ],
+            return_type: Some(integer_type()),
+            body: Block {
+                stmts: vec![BlockStmt::Return(Some(Expr::BinaryOp(
+                    Box::new(Expr::Ident(ident("a"))),
+                    BinOp::Add,
+                    Box::new(Expr::Ident(ident("b"))),
+                )))],
+                span: Span::default(),
+            },
+            is_async: false,
+            is_pub: false,
+            span: Span::default(),
+        };
 
         let plan = CompositionPlan {
             source_path: Some("lib.nom".into()),
-            flows: vec![FlowPlan {
-                name: "lib".into(),
-                classifier: "nom".into(),
-                agent: None,
-                graph: None,
-                nodes: vec![],
-                edges: vec![],
-                branches: vec![],
-                memory_strategy: MemoryStrategy::Stack,
-                concurrency_strategy: ConcurrencyStrategy::Sequential,
-                qualifier: "once".to_owned(),
-                on_fail: "abort".to_owned(),
-                effect_summary: vec![],
-                imperative_stmts,
-            }],
+            flows: vec![make_flow("lib", vec![Statement::FnDef(add_fn)])],
             nomiz: "{}".into(),
         };
 

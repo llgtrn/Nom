@@ -221,6 +221,7 @@ CREATE TABLE IF NOT EXISTS entities (
     bench_ids     TEXT,
     authored_in   TEXT,
     composed_of   TEXT,
+    status        TEXT NOT NULL DEFAULT 'complete',
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
@@ -263,6 +264,12 @@ impl Dict {
     pub fn open_paths(concepts_path: &Path, entities_path: &Path) -> Result<Self> {
         let concepts = open_tier(concepts_path, "concepts", CONCEPTS_SCHEMA_SQL)?;
         let entities = open_tier(entities_path, "entities", ENTITIES_SCHEMA_SQL)?;
+        // Migration: add status column if missing (safe on existing DBs).
+        entities
+            .execute_batch(
+                "ALTER TABLE entities ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'",
+            )
+            .ok();
         // Root is a best-guess parent dir; S7 migrate tool will set it explicitly.
         let root = concepts_path
             .parent()
@@ -378,9 +385,9 @@ pub fn upsert_entity(d: &Dict, row: &EntityRow) -> Result<()> {
     d.entities.execute(
         "INSERT INTO entities
              (hash, word, kind, signature, contracts, body_kind, body_size,
-              origin_ref, bench_ids, authored_in, composed_of,
+              origin_ref, bench_ids, authored_in, composed_of, status,
               created_at, updated_at)
-         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'), NULL)
+         VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'), NULL)
          ON CONFLICT(hash) DO UPDATE SET
              word        = excluded.word,
              kind        = excluded.kind,
@@ -392,6 +399,7 @@ pub fn upsert_entity(d: &Dict, row: &EntityRow) -> Result<()> {
              bench_ids   = excluded.bench_ids,
              authored_in = excluded.authored_in,
              composed_of = excluded.composed_of,
+             status      = excluded.status,
              updated_at  = datetime('now')",
         params![
             row.hash,
@@ -405,6 +413,7 @@ pub fn upsert_entity(d: &Dict, row: &EntityRow) -> Result<()> {
             row.bench_ids,
             row.authored_in,
             row.composed_of,
+            row.status,
         ],
     )?;
     Ok(())
@@ -416,7 +425,7 @@ pub fn find_entity(d: &Dict, hash: &str) -> Result<Option<EntityRow>> {
         .entities
         .query_row(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                    origin_ref, bench_ids, authored_in, composed_of
+                    origin_ref, bench_ids, authored_in, composed_of, status
              FROM entities WHERE hash = ?1",
             params![hash],
             row_to_entity,
@@ -429,7 +438,7 @@ pub fn find_entity(d: &Dict, hash: &str) -> Result<Option<EntityRow>> {
 pub fn find_entities_by_word(d: &Dict, word: &str) -> Result<Vec<EntityRow>> {
     let mut stmt = d.entities.prepare_cached(
         "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                origin_ref, bench_ids, authored_in, composed_of
+                origin_ref, bench_ids, authored_in, composed_of, status
          FROM entities WHERE word = ?1 ORDER BY hash",
     )?;
     let rows = stmt
@@ -443,7 +452,7 @@ pub fn find_entities_by_word(d: &Dict, word: &str) -> Result<Vec<EntityRow>> {
 pub fn find_entities_by_kind(d: &Dict, kind: &str) -> Result<Vec<EntityRow>> {
     let mut stmt = d.entities.prepare_cached(
         "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                origin_ref, bench_ids, authored_in, composed_of
+                origin_ref, bench_ids, authored_in, composed_of, status
          FROM entities WHERE kind = ?1 ORDER BY hash",
     )?;
     let rows = stmt
@@ -460,8 +469,47 @@ pub fn count_entities(d: &Dict) -> Result<i64> {
     Ok(n)
 }
 
+/// Group `entities` by `status`, descending by count then ascending by label.
+/// Returns `(status_label, count)` pairs. Queries the canonical `entities` table.
+pub fn count_entities_by_status(d: &Dict) -> Result<Vec<(String, usize)>> {
+    let mut stmt = d.entities.prepare(
+        "SELECT status, COUNT(*) AS n
+         FROM entities
+         GROUP BY status
+         ORDER BY n DESC, status ASC",
+    )?;
+    let rows = stmt
+        .query_map([], |row| {
+            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
+        })?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Hashes of entities with `status = 'partial'`, ordered by hash for
+/// deterministic batch-resumption. `max = None` returns all rows;
+/// `max = Some(n)` caps at `n`.
+pub fn find_partial_entity_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
+    let sql = match max {
+        Some(n) => format!(
+            "SELECT hash FROM entities WHERE status = 'partial' ORDER BY hash LIMIT {}",
+            n
+        ),
+        None => "SELECT hash FROM entities WHERE status = 'partial' ORDER BY hash".to_string(),
+    };
+    let mut stmt = d.entities.prepare(&sql)?;
+    let rows = stmt
+        .query_map([], |row| row.get::<_, String>(0))?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// Total count of rows in `entries` on the entities tier.
 /// Mirrors `NomDict::count()` (total entries).
+///
+/// Deprecated: callers should migrate to [`count_entities`] which reads
+/// the canonical `entities` table. This function remains until all
+/// corpus/test code that still writes to `entries` is migrated.
 pub fn count_entries(d: &Dict) -> Result<i64> {
     let n: i64 = d
         .entities
@@ -555,26 +603,23 @@ pub fn count_entities_meta(d: &Dict) -> Result<i64> {
 // behaviour matches the legacy surface so callers can switch over by
 // pure rename when the dict-split migration completes.
 
-/// Group `entries` by `status`, descending by count then ascending by
-/// label for stable iteration. Mirrors `NomDict::status_histogram`.
+/// Group `entities` by `status`, descending by count then ascending by
+/// label for stable iteration. Queries the canonical `entities` table.
+///
+/// Previously queried the legacy `entries` table. Migrated to `entities`
+/// so callers automatically reflect the canonical status data. Delegates
+/// to [`count_entities_by_status`] internally.
 pub fn status_histogram(d: &Dict) -> Result<Vec<(String, usize)>> {
-    let mut stmt = d.entities.prepare(
-        "SELECT status AS s, COUNT(*) AS n
-         FROM entries
-         GROUP BY status
-         ORDER BY n DESC, s ASC",
-    )?;
-    let rows = stmt
-        .query_map([], |row| {
-            Ok((row.get::<_, String>(0)?, row.get::<_, i64>(1)? as usize))
-        })?
-        .collect::<rusqlite::Result<Vec<_>>>()?;
-    Ok(rows)
+    count_entities_by_status(d)
 }
 
 /// Return the raw `body_bytes` blob for an entry. `Ok(None)` for both
 /// "row missing" and "row exists but body_bytes is NULL"; callers that
 /// need to distinguish must combine with [`find_entity`].
+///
+/// Migration BLOCKED: the canonical `entities` table has no `body_bytes`
+/// column (body storage design is pending). This function must remain
+/// reading from `entries` until the body-storage design is resolved.
 pub fn get_entry_bytes(d: &Dict, id: &str) -> Result<Option<Vec<u8>>> {
     let result: Option<Option<Vec<u8>>> = d
         .entities
@@ -590,6 +635,10 @@ pub fn get_entry_bytes(d: &Dict, id: &str) -> Result<Option<Vec<u8>>> {
 /// Ids of entries with `status = 'partial'`, ordered by id for
 /// deterministic batch-resumption. `max = None` returns all rows;
 /// `max = Some(n)` caps at `n`. Same shape as `NomDict::list_partial_ids`.
+///
+/// Deprecated: queries the legacy `entries` table. Migrate callers to
+/// [`find_partial_entity_ids`] which reads the canonical `entities` table.
+#[deprecated(since = "0.0.0", note = "use find_partial_entity_ids(d, max) for the entities tier")]
 pub fn list_partial_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
     let sql = match max {
         Some(n) => format!(
@@ -964,6 +1013,11 @@ pub fn remove_concept_member(d: &Dict, concept_id: &str, entry_id: &str) -> Resu
 
 /// Fetch all entries belonging to a concept, ordered by entry id.
 /// Mirrors `NomDict::get_concept_members`.
+///
+/// Migration BLOCKED: `concept_members` stores `entry_id` which is an
+/// `entries.id` (SHA-256 of AST). The `entities` table uses `hash` as PK
+/// but has no concept membership column. Full migration requires either
+/// adding entity hashes to `concept_members` or a join-capable bridge.
 pub fn get_concept_members(d: &Dict, concept_id: &str) -> Result<Vec<Entry>> {
     let mut member_stmt = d.concepts.prepare_cached(
         "SELECT entry_id FROM concept_members WHERE concept_id = ?1 ORDER BY entry_id",
@@ -1042,6 +1096,11 @@ pub fn seed_standard_axes(
 
 /// Bulk-add every entry matching `filter` to the concept identified by `concept_id`.
 /// Mirrors `NomDict::add_concept_members_by_filter`.
+///
+/// Migration BLOCKED: reads candidate rows from the legacy `entries` table
+/// and inserts `entry_id` values into `concept_members`. The `entities`
+/// table has no concept-membership link; this function stays on `entries`
+/// until `concept_members` is extended to reference entity hashes.
 pub fn add_concept_members_by_filter(
     d: &Dict,
     concept_id: &str,
@@ -1211,6 +1270,10 @@ const ENTRY_SELECT: &str = "SELECT id, word, variant, kind, language, describe, 
 
 /// Look up every entry whose `word` column equals `word`, ordered by
 /// id. Empty vec when nothing matches. Mirrors `NomDict::find_by_word`.
+///
+/// Deprecated: queries the legacy `entries` table. Migrate callers to
+/// [`find_entities_by_word`] which reads the canonical `entities` table.
+#[deprecated(since = "0.0.0", note = "use find_entities_by_word(d, word) for the entities tier")]
 pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
     let sql = format!("{} WHERE word = ?1 ORDER BY id", ENTRY_SELECT);
     let mut stmt = d.entities.prepare_cached(&sql)?;
@@ -1222,6 +1285,10 @@ pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
 
 /// Entries whose `body_kind` equals `kind`, ordered by id, capped by
 /// `limit`. Mirrors `NomDict::find_by_body_kind`.
+///
+/// Deprecated: queries the legacy `entries` table. Migrate callers to
+/// [`find_entities_by_body_kind`] which reads the canonical `entities` table.
+#[deprecated(since = "0.0.0", note = "use find_entities_by_body_kind(d, kind, limit) for the entities tier")]
 pub fn find_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<Vec<Entry>> {
     let sql = format!("{} WHERE body_kind = ?1 ORDER BY id LIMIT ?2", ENTRY_SELECT);
     let mut stmt = d.entities.prepare_cached(&sql)?;
@@ -1231,10 +1298,29 @@ pub fn find_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<Vec<Entry
     Ok(rows)
 }
 
+/// Entities whose `body_kind` equals `kind`, ordered by hash, capped by
+/// `limit`. Reads the canonical `entities` table.
+pub fn find_entities_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<Vec<EntityRow>> {
+    let mut stmt = d.entities.prepare_cached(
+        "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                origin_ref, bench_ids, authored_in, composed_of, status
+         FROM entities WHERE body_kind = ?1 ORDER BY hash LIMIT ?2",
+    )?;
+    let rows = stmt
+        .query_map(params![kind, limit as i64], row_to_entity)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
 /// Case-insensitive substring search on `entries.describe`. Used by
 /// the LLM `search_nomtu` tool path — caller wraps the query in
 /// `%query%`-style wildcards via the LIKE pattern. Mirrors
 /// `NomDict::search_describe`.
+///
+/// Migration BLOCKED: the canonical `entities` table has no `describe`
+/// column (human-readable description lives in `entries` only). This
+/// function must remain reading from `entries` until a description column
+/// is added to `entities`.
 pub fn search_describe(d: &Dict, query: &str, limit: usize) -> Result<Vec<Entry>> {
     let pattern = format!("%{}%", query);
     let sql = format!(
@@ -1368,6 +1454,11 @@ pub fn bulk_set_scores(d: &Dict, scores: &[EntryScores]) -> Result<()> {
 }
 
 /// Fetch a single entry by id. Mirrors `NomDict::get_entry`.
+///
+/// Deprecated: queries the legacy `entries` table. For entities-tier
+/// lookups use [`find_entity`] which reads the canonical `entities` table
+/// by hash primary key.
+#[deprecated(since = "0.0.0", note = "use find_entity(d, hash) for the entities tier")]
 pub fn get_entry(d: &Dict, id: &str) -> Result<Option<Entry>> {
     let row = d
         .entities
@@ -1531,6 +1622,12 @@ pub fn upsert_entry_if_new(d: &Dict, entry: &Entry) -> Result<bool> {
 /// adds an AND clause. Results ordered by id for determinism.
 /// An empty filter returns the first `limit` entries (default 50).
 /// Mirrors `NomDict::find_entries`.
+///
+/// Deprecated: queries the legacy `entries` table. Migrate callers to
+/// [`find_entities`] which reads the canonical `entities` table.
+/// Note: `EntryFilter.language` is ignored by `find_entities` since
+/// the `entities` table has no `language` column.
+#[deprecated(since = "0.0.0", note = "use find_entities(d, f) for the entities tier")]
 pub fn find_entries(d: &Dict, f: &EntryFilter) -> Result<Vec<Entry>> {
     let mut sql = String::from(
         "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
@@ -1560,6 +1657,43 @@ pub fn find_entries(d: &Dict, f: &EntryFilter) -> Result<Vec<Entry>> {
     let mut stmt = d.entities.prepare(&sql)?;
     let rows = stmt
         .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entry)?
+        .collect::<rusqlite::Result<Vec<_>>>()?;
+    Ok(rows)
+}
+
+/// Unified filter query on the canonical `entities` table: each present field
+/// in the filter adds an AND clause. Results ordered by `hash` for determinism.
+/// An empty filter returns the first `limit` rows (default 50).
+///
+/// This is the entities-tier equivalent of the deprecated [`find_entries`].
+/// Note: `EntryFilter.language` is silently ignored — the `entities` table
+/// has no `language` column. Use [`find_entities_by_word`] or
+/// [`find_entities_by_kind`] when narrowing by word or kind alone.
+pub fn find_entities(d: &Dict, f: &EntryFilter) -> Result<Vec<EntityRow>> {
+    let mut sql = String::from(
+        "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
+                origin_ref, bench_ids, authored_in, composed_of, status
+         FROM entities WHERE 1=1",
+    );
+    let mut params_vec: Vec<Box<dyn rusqlite::ToSql>> = Vec::new();
+    // `language` is not present on `entities`; skip without error.
+    if let Some(k) = &f.body_kind {
+        sql.push_str(" AND body_kind = ?");
+        params_vec.push(Box::new(k.clone()));
+    }
+    if let Some(s) = f.status {
+        sql.push_str(" AND status = ?");
+        params_vec.push(Box::new(s.as_str().to_string()));
+    }
+    if let Some(k) = f.kind {
+        sql.push_str(" AND kind = ?");
+        params_vec.push(Box::new(k.as_str().to_string()));
+    }
+    sql.push_str(&format!(" ORDER BY hash LIMIT {}", f.limit.max(1)));
+    let param_refs: Vec<&dyn rusqlite::ToSql> = params_vec.iter().map(|b| b.as_ref()).collect();
+    let mut stmt = d.entities.prepare(&sql)?;
+    let rows = stmt
+        .query_map(rusqlite::params_from_iter(param_refs.iter()), row_to_entity)?
         .collect::<rusqlite::Result<Vec<_>>>()?;
     Ok(rows)
 }
@@ -1806,6 +1940,7 @@ mod tests {
             bench_ids: None,
             authored_in: None,
             composed_of: None,
+            status: "complete".to_string(),
         }
     }
 
@@ -1867,6 +2002,52 @@ mod tests {
         assert_eq!(count_entities(&d).unwrap(), 0);
         upsert_entity(&d, &sample_word("h", "w", "function")).unwrap();
         assert_eq!(count_entities(&d).unwrap(), 1);
+    }
+
+    #[test]
+    fn count_entities_by_status_groups_correctly() {
+        let d = Dict::open_in_memory().unwrap();
+        let mut partial = sample_word("p1", "stub_a", "function");
+        partial.status = "partial".to_string();
+        let mut partial2 = sample_word("p2", "stub_b", "function");
+        partial2.status = "partial".to_string();
+        upsert_entity(&d, &partial).unwrap();
+        upsert_entity(&d, &partial2).unwrap();
+        upsert_entity(&d, &sample_word("c1", "real_a", "function")).unwrap();
+        let hist = count_entities_by_status(&d).unwrap();
+        // partial=2, complete=1 — higher count first
+        assert_eq!(hist, vec![("partial".into(), 2), ("complete".into(), 1)]);
+    }
+
+    #[test]
+    fn find_partial_entity_ids_returns_only_partials() {
+        let d = Dict::open_in_memory().unwrap();
+        let mut partial = sample_word("p1", "stub", "function");
+        partial.status = "partial".to_string();
+        upsert_entity(&d, &partial).unwrap();
+        upsert_entity(&d, &sample_word("c1", "real", "function")).unwrap();
+        let ids = find_partial_entity_ids(&d, None).unwrap();
+        assert_eq!(ids, vec!["p1"]);
+    }
+
+    #[test]
+    fn find_partial_entity_ids_respects_max_cap() {
+        let d = Dict::open_in_memory().unwrap();
+        for i in 0..5 {
+            let mut row = sample_word(&format!("p{i}"), "stub", "function");
+            row.status = "partial".to_string();
+            upsert_entity(&d, &row).unwrap();
+        }
+        let ids = find_partial_entity_ids(&d, Some(3)).unwrap();
+        assert_eq!(ids.len(), 3);
+    }
+
+    #[test]
+    fn entity_status_defaults_to_complete_on_roundtrip() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(&d, &sample_word("h1", "greet", "function")).unwrap();
+        let got = find_entity(&d, "h1").unwrap().expect("row");
+        assert_eq!(got.status, "complete");
     }
 
     #[test]
@@ -1998,9 +2179,13 @@ mod tests {
     #[test]
     fn status_histogram_groups_by_status_count_then_label() {
         let d = Dict::open_in_memory().unwrap();
-        seed_entry(&d, "a", "partial");
-        seed_entry(&d, "b", "partial");
-        seed_entry(&d, "c", "complete");
+        let mut p1 = sample_word("a", "word_a", "function");
+        p1.status = "partial".to_string();
+        let mut p2 = sample_word("b", "word_b", "function");
+        p2.status = "partial".to_string();
+        upsert_entity(&d, &p1).unwrap();
+        upsert_entity(&d, &p2).unwrap();
+        upsert_entity(&d, &sample_word("c", "word_c", "function")).unwrap();
         let h = status_histogram(&d).unwrap();
         // partial=2, complete=1 — partial first (higher count), then complete
         assert_eq!(h, vec![("partial".into(), 2), ("complete".into(), 1)]);
@@ -2582,5 +2767,83 @@ mod tests {
             get_refs(&d, "from_id").unwrap(),
             vec!["to_a".to_string(), "to_b".into()]
         );
+    }
+
+    // ── find_entities free function tests ────────────────────────────
+
+    #[test]
+    fn find_entities_empty_filter_returns_rows_ordered_by_hash() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(&d, &sample_word("zzz", "c", "data")).unwrap();
+        upsert_entity(&d, &sample_word("aaa", "a", "function")).unwrap();
+        upsert_entity(&d, &sample_word("mmm", "b", "function")).unwrap();
+        let f = EntryFilter { limit: 10, ..Default::default() };
+        let rows = find_entities(&d, &f).unwrap();
+        assert_eq!(rows.len(), 3);
+        assert_eq!(rows[0].hash, "aaa");
+        assert_eq!(rows[1].hash, "mmm");
+        assert_eq!(rows[2].hash, "zzz");
+    }
+
+    #[test]
+    fn find_entities_filters_by_kind() {
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(&d, &sample_word("h1", "fn_a", "function")).unwrap();
+        upsert_entity(&d, &sample_word("h2", "fn_b", "function")).unwrap();
+        upsert_entity(&d, &sample_word("h3", "mod_a", "module")).unwrap();
+        let f = EntryFilter {
+            kind: Some(nom_types::EntryKind::Function),
+            limit: 10,
+            ..Default::default()
+        };
+        let rows = find_entities(&d, &f).unwrap();
+        assert_eq!(rows.len(), 2);
+        assert!(rows.iter().all(|r| r.kind == "function"));
+    }
+
+    #[test]
+    fn find_entities_filters_by_body_kind() {
+        let d = Dict::open_in_memory().unwrap();
+        let mut r1 = sample_word("h1", "wasm_fn", "function");
+        r1.body_kind = Some("wasm".to_string());
+        let mut r2 = sample_word("h2", "bc_fn", "function");
+        r2.body_kind = Some("bc".to_string());
+        upsert_entity(&d, &r1).unwrap();
+        upsert_entity(&d, &r2).unwrap();
+        let f = EntryFilter {
+            body_kind: Some("wasm".to_string()),
+            limit: 10,
+            ..Default::default()
+        };
+        let rows = find_entities(&d, &f).unwrap();
+        assert_eq!(rows.len(), 1);
+        assert_eq!(rows[0].hash, "h1");
+    }
+
+    #[test]
+    fn find_entities_respects_limit() {
+        let d = Dict::open_in_memory().unwrap();
+        for i in 0..5 {
+            upsert_entity(&d, &sample_word(&format!("h{i}"), "w", "function")).unwrap();
+        }
+        let f = EntryFilter { limit: 3, ..Default::default() };
+        let rows = find_entities(&d, &f).unwrap();
+        assert_eq!(rows.len(), 3);
+    }
+
+    #[test]
+    fn find_entities_ignores_language_filter_gracefully() {
+        // entities table has no language column; the filter should be skipped,
+        // not cause an error.
+        let d = Dict::open_in_memory().unwrap();
+        upsert_entity(&d, &sample_word("h1", "w", "function")).unwrap();
+        let f = EntryFilter {
+            language: Some("rust".to_string()),
+            limit: 10,
+            ..Default::default()
+        };
+        // Should return the row despite language filter (language is ignored).
+        let rows = find_entities(&d, &f).unwrap();
+        assert_eq!(rows.len(), 1);
     }
 }

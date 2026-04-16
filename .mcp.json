@@ -4,6 +4,11 @@
       "type": "stdio",
       "command": "node",
       "args": ["C:\\Users\\trngh\\Documents\\GitHub\\Nom\\scripts\\gitnexus-mcp.js"]
+    },
+    "claude-flow": {
+      "type": "stdio",
+      "command": "claude-flow",
+      "args": ["mcp", "start"]
     }
   }
 }

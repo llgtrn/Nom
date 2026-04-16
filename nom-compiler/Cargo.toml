@@ -1,8 +1,6 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/nom-lexer",
-    "crates/nom-parser",
     "crates/nom-ast",
     "crates/nom-resolver",
     "crates/nom-verifier",

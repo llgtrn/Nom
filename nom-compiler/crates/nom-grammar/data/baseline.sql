@@ -94,14 +94,30 @@ INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_com
 ('given',     'clause_opener', '["scenario"]', 'W47', 'baseline-1.0', NULL),
 ('when',      'clause_opener', '["scenario"]', 'W47', 'baseline-1.0', NULL),
 ('then',      'clause_opener', '["scenario"]', 'W47', 'baseline-1.0', NULL),
-('benefit',   'clause_opener', '["function","property","event"]', 'doc 04', 'baseline-1.0', 'positive effect valence');
+('benefit',   'clause_opener', '["function","property","event"]', 'doc 04', 'baseline-1.0', 'positive effect valence'),
+('retry',     'clause_opener', '["function"]', 'GAP-12', 'baseline-1.0', 'retry-policy clause: at-most N times with strategy backoff'),
+('shaped',    'clause_opener', '["data"]', 'GAP-12', 'baseline-1.0', 'pattern-shape clause: shaped like "<pattern>"'),
+('accesses',  'clause_opener', '["function"]', 'GAP-12', 'baseline-1.0', 'nested-record-path access clause: accesses <path>[, <path>]*');
 
 -- Ref-slot vocabulary
 INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_commit, notes) VALUES
 ('matching',   'ref_slot', NULL, 'doc 04', 'baseline-1.0', NULL),
 ('with',       'ref_slot', NULL, 'doc 04', 'baseline-1.0', NULL),
 ('at-least',   'ref_slot', NULL, 'doc 04', 'baseline-1.0', NULL),
+('at-most',    'ref_slot', NULL, 'GAP-12', 'baseline-1.0', 'retry-policy count bound'),
 ('confidence', 'ref_slot', NULL, 'doc 04', 'baseline-1.0', NULL);
+
+-- Retry-policy strategy words (used inside retry clauses; not clause openers themselves)
+INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_commit, notes) VALUES
+('times',       'clause_arg', '["function"]', 'GAP-12', 'baseline-1.0', 'multiplier word in retry at-most N times'),
+('backoff',     'clause_arg', '["function"]', 'GAP-12', 'baseline-1.0', 'trailing word in retry with <strategy> backoff'),
+('exponential', 'clause_arg', '["function"]', 'GAP-12', 'baseline-1.0', 'exponential backoff strategy'),
+('linear',      'clause_arg', '["function"]', 'GAP-12', 'baseline-1.0', 'linear backoff strategy'),
+('fixed',       'clause_arg', '["function"]', 'GAP-12', 'baseline-1.0', 'fixed backoff strategy');
+
+-- Pattern-shape clause args (used inside shaped like clauses)
+INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_commit, notes) VALUES
+('like', 'clause_arg', '["data"]', 'GAP-12', 'baseline-1.0', 'preposition in shaped like "<pattern>"');
 
 -- Connectives
 INSERT OR IGNORE INTO keywords (token, role, kind_scope, source_ref, shipped_commit, notes) VALUES
@@ -127,20 +143,29 @@ INSERT OR IGNORE INTO keyword_synonyms (synonym, canonical_keyword, source_ref, 
 ('format',       'data',     'baseline-1.0', 'baseline-1.0', 'data format specification maps to data kind');
 
 -- Clause shapes (per-kind grammar)
--- function (6 clauses): intended (req) / uses / requires / ensures (≥1 req) / hazard / favor
+-- function (13 clauses): intended (req) / uses / requires / ensures (≥1 req) / hazard / favor / retry / format / accesses / watermark / window / clock / quality
 INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) VALUES
-('function', 'intended', 1, 1, '''intended to'' <prose-sentence> ''.''', 'doc 04'),
-('function', 'uses',     0, 2, '''uses the'' ''@'' Kind ''matching'' <quoted-prose> ''with at-least'' <0..1> ''confidence'' ''.''', 'doc 04'),
-('function', 'requires', 0, 3, '''requires'' <prose> ''.''', 'doc 04'),
-('function', 'ensures',  2, 4, '''ensures'' <prose> ''.''', 'doc 04'),
-('function', 'hazard',   0, 5, '''hazard'' <prose> ''.''', 'doc 04'),
-('function', 'favor',    0, 6, '''favor'' <quality-name> ''.''', 'doc 08');
+('function', 'intended',  1, 1,  '''intended to'' <prose-sentence> ''.''', 'doc 04'),
+('function', 'uses',      0, 2,  '''uses the'' ''@'' Kind ''matching'' <quoted-prose> ''with at-least'' <0..1> ''confidence'' ''.''', 'doc 04'),
+('function', 'requires',  0, 3,  '''requires'' <prose> ''.''', 'doc 04'),
+('function', 'ensures',   2, 4,  '''ensures'' <prose> ''.''', 'doc 04'),
+('function', 'hazard',    0, 5,  '''hazard'' <prose> ''.''', 'doc 04'),
+('function', 'favor',     0, 6,  '''favor'' <quality-name> ''.''', 'doc 08'),
+('function', 'retry',     0, 7,  '''retry at-most'' <N> ''times'' (''with'' (''exponential''|''linear''|''fixed'') ''backoff'')? ''.''', 'GAP-12'),
+('function', 'format',    0, 8,  '''format'' <quoted-template-with-{interpolation}> ''.''', 'GAP-12'),
+('function', 'accesses',  0, 9,  '''accesses'' <dot-path> (''[,'' <dot-path>]*)? ''.''', 'GAP-12'),
+('function', 'watermark', 0, 10, '''watermark'' <field> ''lag'' <N> ''seconds'' ''.''', 'GAP-12'),
+('function', 'window',    0, 11, '''window'' (''tumbling''|''sliding''|''session'') <N> ''seconds'' ''.''', 'GAP-12'),
+('function', 'clock',     0, 12, '''clock domain'' <quoted-name> ''at'' <N> ''mhz'' ''.''', 'GAP-12'),
+('function', 'quality',   0, 13, '''quality'' <quality-name> <0..1> ''.''', 'GAP-12');
 
--- data (3 clauses): intended (req) / exposes (≥1 req) / favor
+-- data (5 clauses): intended (req) / exposes (≥1 req) / favor / shaped / field-tag
 INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) VALUES
-('data', 'intended', 1, 1, '''intended to'' <prose> ''.''', 'doc 04'),
-('data', 'exposes',  2, 2, '''exposes'' <field> (''at tag'' <int>)? ''as'' <type> ''.''', 'doc 04'),
-('data', 'favor',    0, 3, '''favor'' <quality-name> ''.''', 'doc 08');
+('data', 'intended',  1, 1, '''intended to'' <prose> ''.''', 'doc 04'),
+('data', 'exposes',   2, 2, '''exposes'' <field> (''at tag'' <int>)? ''as'' <type> ''.''', 'doc 04'),
+('data', 'favor',     0, 3, '''favor'' <quality-name> ''.''', 'doc 08'),
+('data', 'shaped',    0, 4, '''shaped like'' <quoted-pattern> ''.''', 'GAP-12'),
+('data', 'field_tag', 0, 5, '''field'' <field-name> ''tagged'' <quoted-wire-name> ''.''', 'GAP-12');
 
 -- concept (8 clauses)
 INSERT OR IGNORE INTO clause_shapes (kind, clause_name, is_required, position, grammar_shape, source_ref) VALUES

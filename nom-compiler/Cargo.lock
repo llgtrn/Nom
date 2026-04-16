@@ -1202,12 +1202,10 @@ dependencies = [
  "nom-grammar",
  "nom-graph",
  "nom-intent",
- "nom-lexer",
  "nom-llvm",
  "nom-locale",
  "nom-lsp",
  "nom-media",
- "nom-parser",
  "nom-planner",
  "nom-resolver",
  "nom-score",
@@ -1261,7 +1259,6 @@ version = "0.1.0"
 dependencies = [
  "nom-dict",
  "nom-llvm",
- "nom-parser",
  "nom-planner",
  "nom-resolver",
  "nom-types",
@@ -1393,17 +1390,11 @@ name = "nom-intent"
 version = "0.1.0"
 dependencies = [
  "nom-dict",
+ "nom-llvm",
+ "nom-planner",
  "serde",
  "serde_json",
  "sha2",
- "thiserror 2.0.18",
-]
-
-[[package]]
-name = "nom-lexer"
-version = "0.1.0"
-dependencies = [
- "nom-ast",
  "thiserror 2.0.18",
 ]
 
@@ -1414,7 +1405,6 @@ dependencies = [
  "cc",
  "inkwell",
  "nom-ast",
- "nom-parser",
  "nom-planner",
  "thiserror 2.0.18",
 ]
@@ -1462,21 +1452,11 @@ dependencies = [
 ]
 
 [[package]]
-name = "nom-parser"
-version = "0.1.0"
-dependencies = [
- "nom-ast",
- "nom-concept",
- "nom-diagnostics",
- "nom-lexer",
- "thiserror 2.0.18",
-]
-
-[[package]]
 name = "nom-planner"
 version = "0.1.0"
 dependencies = [
  "nom-ast",
+ "nom-concept",
  "nom-resolver",
  "nom-score",
  "nom-types",

@@ -38,6 +38,9 @@ pub use flow_edge::{
     FlowEdgeFinding, check_nom_file as check_flow_edges, check_nomtu_file as check_nomtu_flow_edges,
 };
 
+pub mod exhaustiveness;
+pub use exhaustiveness::{ExhaustivenessWarning, check_exhaustiveness};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by
@@ -111,6 +114,86 @@ pub struct EffectClause {
     pub effects: Vec<String>,
 }
 
+/// Retry policy declared via a `retry at-most N times [with <strategy> backoff].` clause.
+///
+/// GAP-12 grammar wedge. Optional on any entity block. When absent, `retry_policy` is `None`
+/// and the function has no retry semantics.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct RetryPolicy {
+    /// Maximum number of attempts (the N in `at-most N times`).
+    pub max_attempts: u32,
+    /// Backoff strategy: "exponential", "linear", or "fixed".
+    /// Defaults to "fixed" when the `with <strategy> backoff` part is absent.
+    pub strategy: String,
+}
+
+/// Variants of a `@Union` sum-type data declaration (GAP-12).
+///
+/// The surface clause is: `@Union of <variant1>, <variant2>, ...`
+/// on a `data` kind entity block. Each comma-separated word is one
+/// discriminant variant of the sum type.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct UnionVariants {
+    pub variants: Vec<String>,
+}
+
+/// Stream watermark clause declared via `watermark <field> lag <N> seconds.` (GAP-12).
+///
+/// Declares the event-time field and acceptable lag for a streaming function.
+/// Surface grammar: `watermark <field> lag <N> seconds.`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WatermarkClause {
+    /// The event-time field name (e.g. `event_time`).
+    pub field: String,
+    /// Maximum acceptable lag in seconds.
+    pub lag_seconds: u32,
+}
+
+/// Window-aggregation clause declared via `window tumbling <N> seconds.` (GAP-12).
+///
+/// Declares the windowing strategy for a streaming aggregation function.
+/// Surface grammar: `window (tumbling|sliding|session) <N> seconds.`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WindowClause {
+    /// Windowing kind: `tumbling`, `sliding`, or `session`.
+    pub kind: String,
+    /// Window duration in seconds.
+    pub duration_seconds: u32,
+}
+
+/// Clock-domain clause declared via `clock domain "<name>" at <N> mhz.` (GAP-12).
+///
+/// Declares the clock domain for a hardware-synchronization function.
+/// Surface grammar: `clock domain "<name>" at <N> mhz.`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct ClockDomain {
+    /// Clock domain name (quoted string content, without quotes).
+    pub name: String,
+    /// Clock frequency in megahertz.
+    pub frequency_mhz: u32,
+}
+
+/// Inline quality-score declaration via `quality <name> <score>.` (GAP-12).
+///
+/// Formalizes entity-level quality scores declared inline.
+/// Surface grammar: `quality <name> <score>.`
+/// Note: PartialEq uses epsilon comparison for the f64 score field.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct QualityDeclaration {
+    /// Quality axis name (e.g. `security`, `performance`).
+    pub name: String,
+    /// Score in range [0.0, 1.0].
+    pub score: f64,
+}
+
+impl PartialEq for QualityDeclaration {
+    fn eq(&self, other: &Self) -> bool {
+        self.name == other.name && (self.score - other.score).abs() < 1e-9
+    }
+}
+
+impl Eq for QualityDeclaration {}
+
 /// One DB2 entity declared inline in a `.nomtu`.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct EntityDecl {
@@ -119,6 +202,71 @@ pub struct EntityDecl {
     pub signature: String,
     pub contracts: Vec<ContractClause>,
     pub effects: Vec<EffectClause>,
+    /// Optional retry-policy clause (GAP-12). `None` when the source has no `retry …` clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub retry_policy: Option<RetryPolicy>,
+    /// Optional union-variants clause (GAP-12). `None` when the source has no `@Union of …` clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub union_variants: Option<UnionVariants>,
+    /// Optional format-string interpolation clause (GAP-12). `None` when the source has no `format …` clause.
+    /// The template string retains `{variable}` interpolation markers verbatim.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub format_template: Option<String>,
+    /// Optional nested-record-path access clause (GAP-12). `None` when the source has no `accesses …` clause.
+    /// Each entry is a dot-separated path string, e.g. `"user.address.city"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub access_paths: Option<Vec<String>>,
+    /// Optional pattern-shape clause (GAP-12). `None` when the source has no `shaped like …` clause.
+    /// The pattern string retains structural markers verbatim, e.g. `"{local}@{domain}"`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub shape_pattern: Option<String>,
+    /// Optional wire-field-tag clauses (GAP-12). `None` when the source has no `field … tagged …` clauses.
+    /// Each entry maps one source field name to its wire-format name (JSON key, protobuf field name, etc.).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub field_tags: Option<Vec<FieldTag>>,
+    /// Optional `when <var> is <variant> then <result>.` clauses (GAP-12).
+    /// `None` when the source has no `when … is … then …` clauses.
+    /// Used for exhaustiveness checking against `@Union` data types.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub when_clauses: Option<Vec<WhenClause>>,
+    /// Optional watermark clause (GAP-12). `None` when no `watermark … lag … seconds` clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub watermark: Option<WatermarkClause>,
+    /// Optional window-aggregation clause (GAP-12). `None` when no `window … seconds` clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub window: Option<WindowClause>,
+    /// Optional clock-domain clause (GAP-12). `None` when no `clock domain …` clause.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub clock_domain: Option<ClockDomain>,
+    /// Optional inline quality-score declarations (GAP-12). `None` when no `quality … <score>` clauses.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub quality_declarations: Option<Vec<QualityDeclaration>>,
+}
+
+/// Wire-format field tag mapping declared via `field <name> tagged "<wire_name>".` clauses (GAP-12).
+///
+/// Maps a source field name to its wire-format counterpart (JSON key, protobuf field name, etc.).
+/// Surface grammar: `field <field_name> tagged "<wire_name>".`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct FieldTag {
+    /// The source-level field name (bare word).
+    pub field_name: String,
+    /// The wire-format name (quoted string content, without quotes).
+    pub wire_name: String,
+}
+
+/// One arm of a `when <variable> is <variant> then <result>.` clause.
+///
+/// Used for exhaustiveness checking against `@Union` data types (GAP-12).
+/// Surface grammar: `when <variable> is <variant> then <result>.`
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WhenClause {
+    /// The variable being matched (e.g. `method`).
+    pub variable: String,
+    /// The union variant name being matched (e.g. `credit_card`).
+    pub variant: String,
+    /// The result expression or prose (e.g. `"Credit Card"`).
+    pub result: String,
 }
 
 /// A composition emitted by a `.nomtu` (one extra DB2 row).
@@ -276,6 +424,50 @@ mod lex {
         /// Emitted by the lexer when it sees the word `at` followed immediately by
         /// the literal sequence `-least` (hyphen + the word `least`).
         AtLeast,
+        /// `at-most` compound keyword for retry-policy clauses (GAP-12).
+        /// Emitted when the word `at` is followed immediately by `-most`.
+        AtMost,
+        /// `retry` keyword for retry-policy clauses (GAP-12).
+        /// Surface form: `retry at-most <N> times [with <strategy> backoff].`
+        Retry,
+        /// `format` keyword for format-string interpolation clauses (GAP-12).
+        /// Surface form: `format "<template with {interpolation}>".`
+        Format,
+        /// `accesses` keyword for nested-record-path clauses (GAP-12).
+        /// Surface form: `accesses <path>[, <path>]*.`
+        /// Example: `accesses user.address.city.`
+        Accesses,
+        /// `shaped` keyword for pattern-shape clauses (GAP-12).
+        /// Surface form: `shaped like "<pattern>".`
+        Shaped,
+        /// `like` keyword — preposition after `shaped`.
+        Like,
+        /// `field` keyword for wire-field-tag clauses (GAP-12).
+        /// Surface form: `field <field_name> tagged "<wire_name>".`
+        Field,
+        /// `tagged` keyword for wire-field-tag clauses (GAP-12).
+        /// Follows the field name in a `field … tagged "…"` clause.
+        Tagged,
+        /// `watermark` keyword for streaming-watermark clauses (GAP-12).
+        /// Surface form: `watermark <field> lag <N> seconds.`
+        Watermark,
+        /// `lag` keyword — preposition between field and duration in watermark clauses.
+        Lag,
+        /// `seconds` keyword — unit word closing watermark and window clauses.
+        Seconds,
+        /// `window` keyword for window-aggregation clauses (GAP-12).
+        /// Surface form: `window (tumbling|sliding|session) <N> seconds.`
+        Window,
+        /// `clock` keyword for clock-domain clauses (GAP-12).
+        /// Surface form: `clock domain "<name>" at <N> mhz.`
+        Clock,
+        /// `domain` keyword — second word of a `clock domain …` clause.
+        Domain,
+        /// `mhz` keyword — unit word closing clock-domain clauses.
+        Mhz,
+        /// `quality` keyword for inline quality-score declarations (GAP-12).
+        /// Surface form: `quality <name> <score>.`
+        Quality,
         /// A decimal number literal: `[0-9]+(.[0-9]+)?`.
         /// Used for confidence threshold values in typed-slot refs.
         NumberLit(f64),
@@ -500,6 +692,10 @@ mod lex {
                                     // Consume `-least` (1 byte for `-` + len of `least`).
                                     self.pos = word2_end;
                                     Tok::AtLeast
+                                } else if word2 == "most" {
+                                    // Consume `-most` (1 byte for `-` + len of `most`).
+                                    self.pos = word2_end;
+                                    Tok::AtMost
                                 } else {
                                     Tok::Word("at".to_string())
                                 }
@@ -513,6 +709,21 @@ mod lex {
                     "works" => Tok::Works,
                     "when" => Tok::When,
                     "favor" => Tok::Favor,
+                    "retry" => Tok::Retry,
+                    "format" => Tok::Format,
+                    "accesses" => Tok::Accesses,
+                    "shaped" => Tok::Shaped,
+                    "like" => Tok::Like,
+                    "field" => Tok::Field,
+                    "tagged" => Tok::Tagged,
+                    "watermark" => Tok::Watermark,
+                    "lag" => Tok::Lag,
+                    "seconds" => Tok::Seconds,
+                    "window" => Tok::Window,
+                    "clock" => Tok::Clock,
+                    "domain" => Tok::Domain,
+                    "mhz" => Tok::Mhz,
+                    "quality" => Tok::Quality,
                     // ── Effect valence keywords (English only) ───────────────
                     "benefit" => Tok::Benefit, // canonical positive
                     "boon" => Tok::Benefit,    // English synonym
@@ -646,6 +857,22 @@ mod parse {
             Tok::Dot => "`.`".into(),
             Tok::Comma => "`,`".into(),
             Tok::AtLeast => "`at-least`".into(),
+            Tok::AtMost => "`at-most`".into(),
+            Tok::Retry => "`retry`".into(),
+            Tok::Format => "`format`".into(),
+            Tok::Accesses => "`accesses`".into(),
+            Tok::Shaped => "`shaped`".into(),
+            Tok::Like => "`like`".into(),
+            Tok::Field => "`field`".into(),
+            Tok::Tagged => "`tagged`".into(),
+            Tok::Watermark => "`watermark`".into(),
+            Tok::Lag => "`lag`".into(),
+            Tok::Seconds => "`seconds`".into(),
+            Tok::Window => "`window`".into(),
+            Tok::Clock => "`clock`".into(),
+            Tok::Domain => "`domain`".into(),
+            Tok::Mhz => "`mhz`".into(),
+            Tok::Quality => "`quality`".into(),
             Tok::NumberLit(n) => format!("`{n}`"),
             Tok::Kind(k) => format!("`{k}`"),
             Tok::Word(w) => format!("`{w}`"),
@@ -826,6 +1053,22 @@ mod parse {
             Tok::At => "@".to_string(),
             Tok::Comma => ",".to_string(),
             Tok::AtLeast => "at-least".to_string(),
+            Tok::AtMost => "at-most".to_string(),
+            Tok::Retry => "retry".to_string(),
+            Tok::Format => "format".to_string(),
+            Tok::Accesses => "accesses".to_string(),
+            Tok::Shaped => "shaped".to_string(),
+            Tok::Like => "like".to_string(),
+            Tok::Field => "field".to_string(),
+            Tok::Tagged => "tagged".to_string(),
+            Tok::Watermark => "watermark".to_string(),
+            Tok::Lag => "lag".to_string(),
+            Tok::Seconds => "seconds".to_string(),
+            Tok::Window => "window".to_string(),
+            Tok::Clock => "clock".to_string(),
+            Tok::Domain => "domain".to_string(),
+            Tok::Mhz => "mhz".to_string(),
+            Tok::Quality => "quality".to_string(),
             Tok::NumberLit(n) => n.to_string(),
             Tok::Kind(k) => k.clone(),
             Tok::Word(w) => w.clone(),
@@ -1117,6 +1360,17 @@ mod parse {
             signature,
             contracts,
             effects,
+            retry_policy: None,
+            union_variants: None,
+            format_template: None,
+            access_paths: None,
+            shape_pattern: None,
+            field_tags: None,
+            when_clauses: None,
+            watermark: None,
+            window: None,
+            clock_domain: None,
+            quality_declarations: None,
         })
     }
 
@@ -1641,6 +1895,17 @@ mod tests {
                 ),
             ],
             effects: vec![],
+            retry_policy: None,
+            union_variants: None,
+            format_template: None,
+            access_paths: None,
+            shape_pattern: None,
+            field_tags: None,
+            when_clauses: None,
+            watermark: None,
+            window: None,
+            clock_domain: None,
+            quality_declarations: None,
         };
         let nomtu = NomtuFile {
             items: vec![NomtuItem::Entity(entity.clone())],

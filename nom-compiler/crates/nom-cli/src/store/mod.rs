@@ -1,6 +1,6 @@
 //! `nom store` subcommands — v2 content-addressed dictionary CLI.
 //!
-//! Wires nom-parser → nom-types::canonical → nom-dict → nom-resolver::v2
+//! Wires the nom-concept S1-S6 pipeline → nom-types::canonical → nom-dict → nom-resolver::v2
 //! so a user can ingest a `.nom` file, retrieve an entry by hash prefix,
 //! walk the closure from a root, verify reachability, and GC to roots.
 //!
@@ -61,10 +61,14 @@ pub(super) fn open_dict(dict: &Path) -> Option<Dict> {
     }
 }
 
-/// Resolve a hash prefix against the dict. Returns the full 64-char id
+/// Resolve a hash prefix against the dict. Returns the full 64-char hash
 /// on a unique match; an error message otherwise.
+///
+/// Queries the canonical `entities` table first (column `hash`), then
+/// falls back to the legacy `entries` table (column `id`) for entries
+/// not yet migrated to the entities tier.
 pub(super) fn resolve_prefix(dict: &Dict, hash: &str) -> Result<String, String> {
-    use nom_dict::get_entry;
+    use nom_dict::{find_entity, get_entry};
 
     if hash.len() < 8 {
         return Err(format!(
@@ -74,8 +78,11 @@ pub(super) fn resolve_prefix(dict: &Dict, hash: &str) -> Result<String, String> 
     if !hash.chars().all(|c| c.is_ascii_hexdigit()) {
         return Err(format!("nom: not a hex string: {hash}"));
     }
-    // Full id? get_entry fast path.
+    // Full hash? try entities first, then entries.
     if hash.len() == 64 {
+        if let Ok(Some(e)) = find_entity(dict, hash) {
+            return Ok(e.hash);
+        }
         return match get_entry(dict, hash) {
             Ok(Some(e)) => Ok(e.id),
             Ok(None) => Err(format!("nom: no entry with id {hash}")),
@@ -83,6 +90,32 @@ pub(super) fn resolve_prefix(dict: &Dict, hash: &str) -> Result<String, String> 
         };
     }
     let pattern = format!("{hash}%");
+    // Try entities tier first.
+    let mut stmt = dict
+        .entities
+        .prepare_cached("SELECT hash FROM entities WHERE hash LIKE ?1 ORDER BY hash")
+        .map_err(|e| format!("nom: dict error: {e}"))?;
+    let entity_ids: Vec<String> = stmt
+        .query_map([&pattern], |row| row.get::<_, String>(0))
+        .map_err(|e| format!("nom: dict error: {e}"))?
+        .collect::<rusqlite::Result<Vec<_>>>()
+        .map_err(|e| format!("nom: dict error: {e}"))?;
+    if !entity_ids.is_empty() {
+        return match entity_ids.len() {
+            1 => Ok(entity_ids.into_iter().next().unwrap()),
+            _ => {
+                let mut msg = format!(
+                    "nom: hash prefix {hash} is ambiguous ({} candidates):",
+                    entity_ids.len()
+                );
+                for id in &entity_ids {
+                    msg.push_str(&format!("\n  {id}"));
+                }
+                Err(msg)
+            }
+        };
+    }
+    // Fall back to legacy entries table.
     let mut stmt = dict
         .entities
         .prepare_cached("SELECT id FROM entries WHERE id LIKE ?1 ORDER BY id")

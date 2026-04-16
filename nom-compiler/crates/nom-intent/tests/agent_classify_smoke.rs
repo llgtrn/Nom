@@ -44,6 +44,7 @@ fn seed_add(d: &Dict) {
             bench_ids: None,
             authored_in: None,
             composed_of: None,
+            status: "complete".into(),
         },
     )
     .unwrap();

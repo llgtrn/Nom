@@ -57,6 +57,7 @@ fn classify_dispatches_query_to_dict_tools_against_seeded_row() {
             bench_ids: None,
             authored_in: None,
             composed_of: None,
+            status: "complete".into(),
         },
     )
     .unwrap();
@@ -126,6 +127,7 @@ fn nom_cli_adapter_drives_loop_to_completion_against_seeded_dict() {
             bench_ids: None,
             authored_in: Some("t.nom".into()),
             composed_of: None,
+            status: "complete".into(),
         },
     )
     .unwrap();

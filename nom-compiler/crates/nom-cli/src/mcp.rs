@@ -25,10 +25,18 @@ use std::io::{BufRead, Write};
 use std::path::Path;
 
 pub fn cmd_mcp_serve(dict_path: &Path) -> i32 {
-    let dict = match Dict::try_open_from_nomdict_path(dict_path) {
+    let dict_root = if dict_path.extension().is_some_and(|e| e == "db") {
+        dict_path
+            .parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| Path::new(".").to_path_buf())
+    } else {
+        dict_path.to_path_buf()
+    };
+    let dict = match Dict::open_dir(&dict_root) {
         Ok(d) => d,
         Err(e) => {
-            eprintln!("nom mcp: cannot open dict at {}: {e}", dict_path.display());
+            eprintln!("nom mcp: cannot open dict at {}: {e}", dict_root.display());
             return 1;
         }
     };

@@ -28,14 +28,18 @@ pub use dict::{
     closure,
     count_concept_defs,
     count_concept_members,
-    count_entries,
     count_entities,
+    count_entities_by_status,
     count_required_axes,
     delete_concept,
     find_by_word,
+    find_entities,
+    find_entities_by_body_kind,
     find_entities_by_kind,
+    find_entities_by_word,
     find_entity,
     find_entries,
+    find_partial_entity_ids,
     get_concept_by_name,
     get_concept_members,
     get_entry,
@@ -341,6 +345,10 @@ impl NomDict {
         // Additive V3 tables: concept_defs (DB1) + entities (DB2-v2).
         // CREATE TABLE IF NOT EXISTS makes this idempotent.
         self.conn.execute_batch(V3_SCHEMA_ADDITIONS_SQL)?;
+        // Migration: add status column to entities if missing (safe on existing DBs).
+        let _ = self.conn.execute_batch(
+            "ALTER TABLE entities ADD COLUMN status TEXT NOT NULL DEFAULT 'complete'",
+        );
         // Additive V4 tables: required_axes (M7a MECE CE-check registry).
         self.conn.execute_batch(V4_SCHEMA_ADDITIONS_SQL)?;
         // Additive V5 tables: dict_meta (freshness tracking, spec 2026-04-14).
@@ -1328,9 +1336,9 @@ impl NomDict {
         self.conn.execute(
             "INSERT INTO entities
                  (hash, word, kind, signature, contracts, body_kind, body_size,
-                  origin_ref, bench_ids, authored_in, composed_of,
+                  origin_ref, bench_ids, authored_in, composed_of, status,
                   created_at, updated_at)
-             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, datetime('now'), NULL)
+             VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, datetime('now'), NULL)
              ON CONFLICT(hash) DO UPDATE SET
                  word        = excluded.word,
                  kind        = excluded.kind,
@@ -1342,6 +1350,7 @@ impl NomDict {
                  bench_ids   = excluded.bench_ids,
                  authored_in = excluded.authored_in,
                  composed_of = excluded.composed_of,
+                 status      = excluded.status,
                  updated_at  = datetime('now')",
             params![
                 row.hash,
@@ -1355,6 +1364,7 @@ impl NomDict {
                 row.bench_ids,
                 row.authored_in,
                 row.composed_of,
+                row.status,
             ],
         )?;
         Ok(())
@@ -1366,7 +1376,7 @@ impl NomDict {
             .conn
             .query_row(
                 "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                        origin_ref, bench_ids, authored_in, composed_of
+                        origin_ref, bench_ids, authored_in, composed_of, status
                  FROM entities WHERE hash = ?1",
                 params![hash],
                 row_to_entity,
@@ -1380,7 +1390,7 @@ impl NomDict {
     pub fn find_entities_by_word(&self, word: &str) -> Result<Vec<EntityRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                    origin_ref, bench_ids, authored_in, composed_of
+                    origin_ref, bench_ids, authored_in, composed_of, status
              FROM entities WHERE word = ?1 ORDER BY hash",
         )?;
         let rows = stmt
@@ -1394,7 +1404,7 @@ impl NomDict {
     pub fn find_entities_by_kind(&self, kind: &str) -> Result<Vec<EntityRow>> {
         let mut stmt = self.conn.prepare_cached(
             "SELECT hash, word, kind, signature, contracts, body_kind, body_size,
-                    origin_ref, bench_ids, authored_in, composed_of
+                    origin_ref, bench_ids, authored_in, composed_of, status
              FROM entities WHERE kind = ?1 ORDER BY hash",
         )?;
         let rows = stmt
@@ -1511,6 +1521,7 @@ pub(crate) fn row_to_entity(row: &rusqlite::Row) -> rusqlite::Result<EntityRow> 
         bench_ids: row.get(8)?,
         authored_in: row.get(9)?,
         composed_of: row.get(10)?,
+        status: row.get(11)?,
     })
 }
 
@@ -1561,6 +1572,7 @@ CREATE TABLE IF NOT EXISTS entities (
     bench_ids     TEXT,
     authored_in   TEXT,
     composed_of   TEXT,
+    status        TEXT NOT NULL DEFAULT 'complete',
     created_at    TEXT NOT NULL DEFAULT (datetime('now')),
     updated_at    TEXT
 );
@@ -1657,6 +1669,8 @@ pub struct EntityRow {
     pub authored_in: Option<String>,
     /// JSON list of hashes; NULL if atomic entry.
     pub composed_of: Option<String>,
+    /// Lifecycle status: 'complete' (default) or 'partial' (corpus-ingested stub).
+    pub status: String,
 }
 
 // ── Legacy v1 shims ─────────────────────────────────────────────────
@@ -2340,6 +2354,7 @@ mod tests {
             bench_ids: Some(r#"["bench-001"]"#.to_string()),
             authored_in: Some("src/auth.nomtu".to_string()),
             composed_of: None,
+            status: "complete".to_string(),
         }
     }
 

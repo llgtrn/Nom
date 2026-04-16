@@ -82,7 +82,7 @@ fn mcp_initialize_handshake() {
     );
     assert_eq!(resp2["id"], 2, "echoed id for tools/list");
     let tools = resp2["result"]["tools"].as_array().expect("tools array");
-    assert_eq!(tools.len(), 3, "exactly 3 tools");
+    assert!(tools.len() >= 3, "expected at least core 3 tools");
     let names: Vec<&str> = tools.iter().filter_map(|t| t["name"].as_str()).collect();
     assert!(names.contains(&"list_nomtu"), "list_nomtu present");
     assert!(names.contains(&"get_nomtu"), "get_nomtu present");

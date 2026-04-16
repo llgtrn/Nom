@@ -9,6 +9,7 @@ nom-resolver = { path = "../nom-resolver" }
 nom-verifier = { path = "../nom-verifier" }
 nom-types = { path = "../nom-types" }
 nom-score = { path = "../nom-score" }
+nom-concept = { path = "../nom-concept" }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

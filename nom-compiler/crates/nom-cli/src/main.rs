@@ -16,8 +16,8 @@
 //!   nom audit           — deep security audit of all .nomtu bodies in the dictionary
 //!   nom fmt <path>      — format .nom source files with canonical style
 
-mod author;
 mod ast_bridge;
+mod author;
 mod build;
 mod concept;
 mod corpus;
@@ -39,7 +39,9 @@ use nom_score;
 use nom_search::BM25Index;
 use std::collections::HashMap;
 
-use nom_parser::parse_source;
+use ast_bridge::bridge_to_ast;
+use nom_ast::SourceFile;
+use nom_concept::stages::run_pipeline;
 use nom_planner::Planner;
 use nom_resolver::{NomtuEntry, Resolver};
 use nom_security::{SecurityChecker, SecurityConfig, Severity, scan_body, security_score};
@@ -493,6 +495,22 @@ enum BuildCmd {
         /// Restrict to one concept (default: all concepts in repo).
         #[arg(long)]
         concept: Option<String>,
+    },
+
+    /// Link multiple .bc files into a single executable via LLVM.
+    Link {
+        /// Directory containing .bc files, or individual .bc file paths.
+        #[arg(required = true)]
+        inputs: Vec<PathBuf>,
+        /// Output path for the linked executable (default: a.out or a.exe on Windows).
+        #[arg(short, long)]
+        output: Option<PathBuf>,
+        /// Read inputs from a build manifest JSON instead of explicit .bc paths.
+        #[arg(long)]
+        from_manifest: Option<PathBuf>,
+        /// Path to the nomdict database (used with --from-manifest).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
     },
 }
 
@@ -1301,6 +1319,19 @@ enum LocaleCmd {
 // ── Entry point ───────────────────────────────────────────────────────────────
 
 fn main() {
+    let handle = std::thread::Builder::new()
+        .name("nom-cli-main".to_string())
+        .stack_size(16 * 1024 * 1024)
+        .spawn(cli_main)
+        .expect("spawn nom CLI worker thread");
+    let exit_code = match handle.join() {
+        Ok(code) => code,
+        Err(_) => 101,
+    };
+    process::exit(exit_code);
+}
+
+fn cli_main() -> i32 {
     let cli = Cli::parse();
     let exit_code = match cli.command {
         Commands::Run {
@@ -1359,6 +1390,12 @@ fn main() {
                 prior,
                 concept,
             } => build::cmd_build_verify_acceptance(&repo, &dict, &prior, concept.as_deref()),
+            BuildCmd::Link {
+                inputs,
+                output,
+                from_manifest,
+                dict,
+            } => cmd_build_link(&inputs, output.as_deref(), from_manifest.as_deref(), &dict),
         },
         Commands::Check { file, dict } => cmd_check(&file, &dict),
         Commands::Test {
@@ -1817,7 +1854,7 @@ fn main() {
             } => cmd_grammar_pattern_search(path.as_deref(), &prose, limit, threshold, json),
         },
     };
-    process::exit(exit_code);
+    exit_code
 }
 
 fn default_grammar_path() -> PathBuf {
@@ -2891,6 +2928,20 @@ fn cmd_run(file: &PathBuf, dict: &PathBuf, target: &str, no_prelude: bool) -> i3
     }
 }
 
+/// A drop-in replacement for the legacy `nom_parser::parse_source`
+/// that routes .nom/.nomx/.nomtu through the `nom-concept` S1-S6 pipeline
+/// and bridges it to the `nom-ast::SourceFile` expected by legacy CLI tools.
+fn parse_with_bridge_or_legacy(source: &str) -> Result<SourceFile, String> {
+    match run_pipeline(source) {
+        Ok(pipeline_out) => Ok(bridge_to_ast(&pipeline_out, None)),
+        Err(e) => Err(format!(
+            "Pipeline stage {} failed: {}",
+            e.stage.code(),
+            e.detail
+        )),
+    }
+}
+
 /// Run a .nom file using the LLVM backend via `lli` (LLVM bitcode interpreter).
 fn cmd_run_llvm(file: &PathBuf, dict: &PathBuf) -> i32 {
     let source = match read_source(file) {
@@ -2898,7 +2949,7 @@ fn cmd_run_llvm(file: &PathBuf, dict: &PathBuf) -> i32 {
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
+    let parsed = match parse_with_bridge_or_legacy(&source) {
         Ok(sf) => sf,
         Err(e) => {
             eprintln!("nom: parse error: {e}");
@@ -3034,7 +3085,7 @@ fn load_prelude(file: &Path) -> Vec<nom_ast::Declaration> {
 
     for candidate in candidates.iter().flatten() {
         if let Ok(source) = std::fs::read_to_string(candidate) {
-            match parse_source(&source) {
+            match parse_with_bridge_or_legacy(&source) {
                 Ok(sf) => {
                     eprintln!("nom: loaded prelude from {}", candidate.display());
                     return sf.declarations;
@@ -3103,13 +3154,18 @@ fn cmd_build(
         None => return 1,
     };
 
-    let mut parsed = match parse_source(&source) {
-        Ok(sf) => sf,
+    let pipeline_out = match run_pipeline(&source) {
+        Ok(out) => out,
         Err(e) => {
-            eprintln!("nom: parse error: {e}");
+            eprintln!(
+                "nom: parse error: Pipeline stage {} failed: {}",
+                e.stage.code(),
+                e.detail
+            );
             return 1;
         }
     };
+    let mut parsed = bridge_to_ast(&pipeline_out, file.to_str().map(str::to_owned));
 
     // Load the standard prelude unless --no-prelude is specified
     if !no_prelude {
@@ -3128,15 +3184,22 @@ fn cmd_build(
     };
 
     let planner = Planner::new(&resolver);
-    let mut plan = match planner.plan(&parsed) {
-        Ok(p) => p,
-        Err(nom_planner::PlanError::VerificationFailed(findings)) => {
-            eprintln!("nom: verification failed ({} findings):", findings.len());
-            for (i, finding) in findings.iter().enumerate() {
-                eprintln!("  {}. {}", i + 1, finding);
+    let mut plan = match planner.plan_from_pipeline_output(&pipeline_out) {
+        Ok(p) if !p.flows.is_empty() => p,
+        Ok(_) => match planner.plan(&parsed) {
+            Ok(p) => p,
+            Err(nom_planner::PlanError::VerificationFailed(findings)) => {
+                eprintln!("nom: verification failed ({} findings):", findings.len());
+                for (i, finding) in findings.iter().enumerate() {
+                    eprintln!("  {}. {}", i + 1, finding);
+                }
+                return 1;
             }
-            return 1;
-        }
+            Err(e) => {
+                eprintln!("nom: plan error: {e}");
+                return 1;
+            }
+        },
         Err(e) => {
             eprintln!("nom: plan error: {e}");
             return 1;
@@ -3351,7 +3414,7 @@ fn cmd_check(file: &PathBuf, dict: &PathBuf) -> i32 {
         Ok(pipeline_out) => ast_bridge::bridge_to_ast(&pipeline_out, None),
         Err(_) => {
             // Fall back to legacy parser for old flow-style syntax
-            match parse_source(&source) {
+            match parse_with_bridge_or_legacy(&source) {
                 Ok(sf) => sf,
                 Err(e) => {
                     eprintln!("nom: parse error: {e}");
@@ -3487,7 +3550,7 @@ fn cmd_quality(file: &PathBuf, dict: &PathBuf) -> i32 {
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
+    let parsed = match parse_with_bridge_or_legacy(&source) {
         Ok(sf) => sf,
         Err(e) => {
             eprintln!("nom: parse error: {e}");
@@ -3708,7 +3771,7 @@ fn cmd_property_test(file: &PathBuf) -> i32 {
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
+    let parsed = match parse_with_bridge_or_legacy(&source) {
         Ok(sf) => sf,
         Err(e) => {
             eprintln!("nom: parse error: {e}");
@@ -3766,7 +3829,7 @@ fn cmd_test(file: &PathBuf, dict: &PathBuf, filter: Option<&str>, execute: bool)
         None => return 1,
     };
 
-    let parsed = match parse_source(&source) {
+    let parsed = match parse_with_bridge_or_legacy(&source) {
         Ok(sf) => sf,
         Err(e) => {
             eprintln!("nom: parse error: {e}");
@@ -4090,7 +4153,7 @@ fn cmd_report(file: &PathBuf, dict: &PathBuf, min_security: f64, format: &str) -
         Ok(pipeline_out) => ast_bridge::bridge_to_ast(&pipeline_out, None),
         Err(_) => {
             // Fall back to legacy parser for old flow-style syntax
-            match parse_source(&source) {
+            match parse_with_bridge_or_legacy(&source) {
                 Ok(sf) => sf,
                 Err(e) => {
                     eprintln!("nom: parse error: {e}");
@@ -6384,4 +6447,256 @@ fn cmd_audit(dict: &PathBuf, min_severity: &str, limit: usize, format: &str) -> 
     }
 
     if total_findings > 0 { 1 } else { 0 }
+}
+
+// ── nom build link ─────────────────────────────────────────────────────────────
+
+fn cmd_build_link(
+    inputs: &[PathBuf],
+    output: Option<&Path>,
+    from_manifest: Option<&Path>,
+    dict: &PathBuf,
+) -> i32 {
+    // Collect bitcode blobs either from a manifest or from explicit .bc paths.
+    let blobs: Vec<Vec<u8>> = if let Some(manifest_path) = from_manifest {
+        match load_blobs_from_manifest(manifest_path, dict) {
+            Ok(b) => b,
+            Err(msg) => {
+                eprintln!("nom build link: {msg}");
+                return 1;
+            }
+        }
+    } else {
+        let mut collected: Vec<Vec<u8>> = Vec::new();
+        for input in inputs {
+            if input.is_dir() {
+                // Collect all .bc files in the directory.
+                let entries = match std::fs::read_dir(input) {
+                    Ok(e) => e,
+                    Err(e) => {
+                        eprintln!("nom build link: read dir {}: {e}", input.display());
+                        return 1;
+                    }
+                };
+                for entry in entries.flatten() {
+                    let p = entry.path();
+                    if p.extension().and_then(|x| x.to_str()) == Some("bc") {
+                        match std::fs::read(&p) {
+                            Ok(bytes) => {
+                                println!("nom build link: loading {}", p.display());
+                                collected.push(bytes);
+                            }
+                            Err(e) => {
+                                eprintln!("nom build link: read {}: {e}", p.display());
+                                return 1;
+                            }
+                        }
+                    }
+                }
+            } else {
+                match std::fs::read(input) {
+                    Ok(bytes) => {
+                        println!("nom build link: loading {}", input.display());
+                        collected.push(bytes);
+                    }
+                    Err(e) => {
+                        eprintln!("nom build link: read {}: {e}", input.display());
+                        return 1;
+                    }
+                }
+            }
+        }
+        collected
+    };
+
+    if blobs.is_empty() {
+        eprintln!("nom build link: no .bc files found");
+        return 1;
+    }
+
+    println!(
+        "nom build link: linking {} bitcode module(s)...",
+        blobs.len()
+    );
+    let linked = match nom_llvm::link_bitcodes(&blobs) {
+        Ok(out) => out,
+        Err(e) => {
+            eprintln!("nom build link: LLVM link error: {e}");
+            return 1;
+        }
+    };
+
+    println!(
+        "nom build link: linked module is {} bytes bitcode, {} bytes IR",
+        linked.bitcode.len(),
+        linked.ir_text.len()
+    );
+
+    // Determine the output path for the final executable.
+    let exe_out: PathBuf = match output {
+        Some(p) => p.to_path_buf(),
+        None => {
+            if cfg!(windows) {
+                PathBuf::from("a.exe")
+            } else {
+                PathBuf::from("a.out")
+            }
+        }
+    };
+
+    // Write combined bitcode to a temp file.
+    let temp_dir = std::env::temp_dir().join("nom-link");
+    if let Err(e) = std::fs::create_dir_all(&temp_dir) {
+        eprintln!("nom build link: could not create temp dir: {e}");
+        return 1;
+    }
+    let bc_path = temp_dir.join("linked.bc");
+    let ll_path = temp_dir.join("linked.ll");
+
+    if let Err(e) = std::fs::write(&bc_path, &linked.bitcode) {
+        eprintln!("nom build link: write .bc error: {e}");
+        return 1;
+    }
+    if let Err(e) = std::fs::write(&ll_path, linked.ir_text.as_bytes()) {
+        eprintln!("nom build link: write .ll error: {e}");
+        return 1;
+    }
+
+    // Strategy 1: clang compiles the .ll directly to a native executable.
+    let ll_str = ll_path.to_string_lossy().into_owned();
+    let exe_str = exe_out.to_string_lossy().into_owned();
+    match process::Command::new("clang")
+        .args([ll_str.as_str(), "-o", exe_str.as_str(), "-O0"])
+        .status()
+    {
+        Ok(s) if s.success() => {
+            println!(
+                "nom build link: native executable written to {}",
+                exe_out.display()
+            );
+            return 0;
+        }
+        Ok(_) => {
+            eprintln!("nom build link: clang exited with error; trying llc + linker fallback");
+        }
+        Err(_) => {
+            eprintln!("nom build link: clang not found; trying llc + linker fallback");
+        }
+    }
+
+    // Strategy 2: llc compiles .bc to an object file, then link with cc/link.exe.
+    let obj_path = temp_dir.join("linked.o");
+    let obj_str = obj_path.to_string_lossy().into_owned();
+    let bc_str = bc_path.to_string_lossy().into_owned();
+    let llc_ok = process::Command::new("llc")
+        .args(["-filetype=obj", bc_str.as_str(), "-o", obj_str.as_str()])
+        .status()
+        .map(|s| s.success())
+        .unwrap_or(false);
+
+    if llc_ok {
+        // Try system linker: `cc` on Unix, `link` on Windows.
+        let linker = if cfg!(windows) { "link" } else { "cc" };
+        match process::Command::new(linker)
+            .args([obj_str.as_str(), "-o", exe_str.as_str()])
+            .status()
+        {
+            Ok(s) if s.success() => {
+                println!(
+                    "nom build link: native executable written to {}",
+                    exe_out.display()
+                );
+                return 0;
+            }
+            Ok(_) => {
+                eprintln!("nom build link: system linker failed");
+            }
+            Err(e) => {
+                eprintln!("nom build link: system linker not found: {e}");
+            }
+        }
+    } else {
+        eprintln!("nom build link: llc not found or failed");
+    }
+
+    // Fallback: report what was written and what the user can do.
+    eprintln!(
+        "nom build link: neither clang nor llc+linker succeeded.\n\
+         Combined bitcode : {}\n\
+         Combined IR      : {}\n\
+         To compile manually, run one of:\n\
+           clang {} -o {}\n\
+           llc -filetype=obj {} -o linked.o && cc linked.o -o {}",
+        bc_path.display(),
+        ll_path.display(),
+        ll_path.display(),
+        exe_out.display(),
+        bc_path.display(),
+        exe_out.display(),
+    );
+    1
+}
+
+/// Load bitcode blobs from a build manifest JSON (produced by `nom build manifest`).
+/// Reads the `build_order` array, resolves each entity hash from the store, and
+/// returns the stored bitcode blob for each entry that has one.
+fn load_blobs_from_manifest(manifest_path: &Path, dict: &PathBuf) -> Result<Vec<Vec<u8>>, String> {
+    let text = std::fs::read_to_string(manifest_path)
+        .map_err(|e| format!("read manifest {}: {e}", manifest_path.display()))?;
+
+    // Parse the JSON loosely — we only need `build_order[].hash` and the
+    // associated bitcode blob in the store.
+    let value: serde_json::Value =
+        serde_json::from_str(&text).map_err(|e| format!("parse manifest JSON: {e}"))?;
+
+    let build_order = value
+        .get("build_order")
+        .and_then(|v| v.as_array())
+        .ok_or_else(|| "manifest missing `build_order` array".to_string())?;
+
+    if build_order.is_empty() {
+        return Err("manifest `build_order` is empty".to_string());
+    }
+
+    let conn = rusqlite::Connection::open_with_flags(dict, OpenFlags::SQLITE_OPEN_READ_ONLY)
+        .map_err(|e| format!("open dict {}: {e}", dict.display()))?;
+
+    let mut blobs: Vec<Vec<u8>> = Vec::new();
+    for entry in build_order {
+        let hash = entry
+            .get("hash")
+            .and_then(|h| h.as_str())
+            .ok_or_else(|| "build_order entry missing `hash` field".to_string())?;
+
+        // Query the blob store for this hash.
+        let result: rusqlite::Result<Vec<u8>> = conn.query_row(
+            "SELECT blob FROM entry_blobs WHERE hash = ?1 LIMIT 1",
+            rusqlite::params![hash],
+            |row| row.get(0),
+        );
+
+        match result {
+            Ok(blob) => {
+                println!(
+                    "nom build link: loaded blob for {hash} ({} bytes)",
+                    blob.len()
+                );
+                blobs.push(blob);
+            }
+            Err(rusqlite::Error::QueryReturnedNoRows) => {
+                eprintln!(
+                    "nom build link: no blob stored for {hash} (run `nom build compile --target llvm` first)"
+                );
+            }
+            Err(e) => {
+                return Err(format!("query blob for {hash}: {e}"));
+            }
+        }
+    }
+
+    if blobs.is_empty() {
+        return Err("no bitcode blobs found for any entry in the manifest".to_string());
+    }
+
+    Ok(blobs)
 }

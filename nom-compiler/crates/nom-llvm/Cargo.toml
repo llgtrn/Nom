@@ -11,8 +11,6 @@ nom-planner = { path = "../nom-planner" }
 inkwell = { version = "0.5", features = ["llvm18-0", "llvm18-0-no-llvm-linking"] }
 thiserror.workspace = true
 
-[dev-dependencies]
-nom-parser = { path = "../nom-parser" }
 
 [build-dependencies]
 cc = "1"

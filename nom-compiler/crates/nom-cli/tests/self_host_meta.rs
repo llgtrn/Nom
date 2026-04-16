@@ -33,7 +33,7 @@ fn every_self_host_nom_has_its_own_acceptance_test() {
         .collect();
 
     // lexer.nom is the working Phase 1 unit; its acceptance lives in
-    // phase4_acceptance.rs / store_cli.rs rather than a dedicated
+    // dids_store_e2e.rs / store_cli.rs rather than a dedicated
     // self_host_lexer.rs file. Whitelist to avoid false positives.
     let whitelist = &["lexer"];
 

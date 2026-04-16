@@ -11,9 +11,9 @@
 use std::path::Path;
 
 use nom_dict::{
-    Dict, EntryFilter, closure, count_entries, count_concept_defs, count_entities,
-    count_required_axes, body_kind_histogram, status_histogram, find_entries,
-    get_entry, get_meta, get_refs,
+    Dict, EntryFilter, body_kind_histogram, closure, count_concept_defs, count_entities,
+    count_required_axes, find_entities, find_entries, get_entry, get_meta, get_refs,
+    status_histogram,
 };
 use nom_types::{EntryKind, EntryStatus};
 use sha2::Digest;
@@ -75,8 +75,14 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
         }
     };
 
-    // Use TryOpen to handle split-DB appropriately.
-    let dict_db = match nom_dict::Dict::try_open_from_nomdict_path(dict) {
+    let dict_root = if dict.extension().is_some_and(|e| e == "db") {
+        dict.parent()
+            .map(Path::to_path_buf)
+            .unwrap_or_else(|| Path::new(".").to_path_buf())
+    } else {
+        dict.to_path_buf()
+    };
+    let dict_db = match nom_dict::Dict::open_dir(&dict_root) {
         Ok(d) => d,
         Err(e) => {
             eprintln!("nom: dict error: {e}");
@@ -136,6 +142,7 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
                             bench_ids: None,
                             authored_in: Some(src_path.clone()),
                             composed_of: None,
+                            status: "complete".to_string(),
                         };
                         if let Err(e) = nom_dict::upsert_entity(&dict_db, &row) {
                             eprintln!("nom: upsert entity error for {}: {e}", decl.word);
@@ -165,6 +172,7 @@ pub fn cmd_store_add(file: &Path, dict: &Path, json: bool) -> i32 {
                             bench_ids: None,
                             authored_in: Some(src_path.clone()),
                             composed_of: composition_members_json(comp),
+                            status: "complete".to_string(),
                         };
                         if let Err(e) = nom_dict::upsert_entity(&dict_db, &row) {
                             eprintln!("nom: upsert composition error for {}: {e}", comp.word);
@@ -463,9 +471,9 @@ pub fn cmd_store_stats(dict: &Path, json: bool) -> i32 {
         Some(d) => d,
         None => return 1,
     };
-    let total = count_entries(&dict_db).unwrap_or(0);
-    let concept_defs_count = count_concept_defs(&dict_db).unwrap_or(0);
     let entities_count = count_entities(&dict_db).unwrap_or(0);
+    let total = entities_count;
+    let concept_defs_count = count_concept_defs(&dict_db).unwrap_or(0);
     let required_axes_count = count_required_axes(&dict_db).unwrap_or(0);
     let body_hist = match body_kind_histogram(&dict_db) {
         Ok(h) => h,
@@ -598,68 +606,60 @@ pub fn cmd_store_list(
         limit,
     };
 
-    // Try Dict first (new split-DB path); fall back to NomDict for backward compatibility.
-    let entries = if let Ok(d) = Dict::try_open_from_nomdict_path(dict) {
-        match find_entries(&d, &filter) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("nom: dict error: {e}");
-                return 1;
-            }
-        }
+    // Use canonical entities table via find_entities.
+    let dict_db = if let Ok(d) = Dict::try_open_from_nomdict_path(dict) {
+        d
     } else {
-        let dict_db = match open_dict(dict) {
+        match open_dict(dict) {
             Some(d) => d,
             None => return 1,
-        };
-        match find_entries(&dict_db, &filter) {
-            Ok(e) => e,
-            Err(e) => {
-                eprintln!("nom: dict error: {e}");
-                return 1;
-            }
+        }
+    };
+    let entities = match find_entities(&dict_db, &filter) {
+        Ok(e) => e,
+        Err(e) => {
+            eprintln!("nom: dict error: {e}");
+            return 1;
         }
     };
 
-    if entries.is_empty() {
-        eprintln!("nom: no entries match (check --language/--status/--kind values)");
+    if entities.is_empty() {
+        eprintln!("nom: no entities match (check --status/--kind values)");
         return 0;
     }
 
     if json {
-        for e in &entries {
+        for e in &entities {
             let bk = e
                 .body_kind
                 .as_deref()
                 .map(|k| format!("\"{}\"", escape_json(k)))
                 .unwrap_or_else(|| "null".into());
             println!(
-                "{{\"id\":\"{}\",\"word\":\"{}\",\"kind\":\"{}\",\"language\":\"{}\",\"status\":\"{}\",\"body_kind\":{}}}",
-                e.id,
+                "{{\"hash\":\"{}\",\"word\":\"{}\",\"kind\":\"{}\",\"status\":\"{}\",\"body_kind\":{}}}",
+                e.hash,
                 escape_json(&e.word),
-                e.kind.as_str(),
-                escape_json(&e.language),
-                e.status.as_str(),
+                &e.kind,
+                &e.status,
                 bk,
             );
         }
     } else {
         println!(
-            "{:<18} {:<20} {:<12} {:<12} {:<10} {}",
-            "id (prefix)", "word", "kind", "language", "status", "body_kind"
+            "{:<18} {:<20} {:<12} {:<10} {}",
+            "hash (prefix)", "word", "kind", "status", "body_kind"
         );
-        for e in &entries {
-            let id_pref = &e.id[..e.id.len().min(16)];
+        for e in &entities {
+            let id_pref = &e.hash[..e.hash.len().min(16)];
             println!(
-                "{id_pref:<18} {:<20} {:<12} {:<12} {:<10} {}",
+                "{id_pref:<18} {:<20} {:<12} {:<10} {}",
                 truncate(&e.word, 20),
-                e.kind.as_str(),
-                truncate(&e.language, 12),
-                e.status.as_str(),
+                &e.kind,
+                &e.status,
                 e.body_kind.as_deref().unwrap_or("-"),
             );
         }
-        println!("{} entries", entries.len());
+        println!("{} entities", entities.len());
     }
     0
 }
@@ -700,10 +700,10 @@ pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
         }
     }
 
-    // Enumerate all ids.
+    // Enumerate all entity hashes from the canonical entities table.
     let mut stmt = match dict_db
         .entities
-        .prepare("SELECT id FROM entries ORDER BY id")
+        .prepare("SELECT hash FROM entities ORDER BY hash")
     {
         Ok(s) => s,
         Err(e) => {
@@ -734,21 +734,21 @@ pub fn cmd_store_gc(dict: &Path, dry_run: bool) -> i32 {
         for id in &to_remove {
             println!("would remove: {id}");
         }
-        println!("would remove {} entries, keep {}", to_remove.len(), kept);
+        println!("would remove {} entities, keep {}", to_remove.len(), kept);
         return 0;
     }
 
-    // FK cascade handles side tables.
+    // Delete from canonical entities table.
     for id in &to_remove {
         if let Err(e) = dict_db
             .entities
-            .execute("DELETE FROM entries WHERE id = ?1", [id])
+            .execute("DELETE FROM entities WHERE hash = ?1", [id])
         {
             eprintln!("nom: gc delete error {id}: {e}");
             return 1;
         }
     }
-    println!("removed {} entries, kept {}", to_remove.len(), kept);
+    println!("removed {} entities, kept {}", to_remove.len(), kept);
     0
 }
 

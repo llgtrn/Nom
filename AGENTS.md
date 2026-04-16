@@ -1,7 +1,66 @@
+# Nom — Agent Instructions
+
+You are an agent working on the Nom compiler project. Follow these rules.
+
+## Three Systems Available
+
+| System | What it does | MCP Server |
+|--------|-------------|------------|
+| **GitNexus** | Code knowledge graph (symbols, relationships, blast radius) | `gitnexus` |
+| **Ruflo** | Agent orchestration (spawn workers, memory, tasks) | `claude-flow` |
+| **Superpowers** | Workflow skills (brainstorming, TDD, debugging) | Skills via `Skill` tool |
+
+## Before Editing Code (MANDATORY)
+
+1. Run `gitnexus_impact({target: "symbolName", direction: "upstream"})` on every symbol you will modify
+2. If risk is HIGH or CRITICAL — stop and report to the orchestrator/user
+3. Use `gitnexus_query({query: "concept"})` to understand execution flows (not grep)
+
+## Before Committing (MANDATORY)
+
+1. Run `gitnexus_detect_changes({scope: "staged"})` — verify only expected scope changed
+2. All d=1 (WILL BREAK) dependents must be updated
+
+## Workflow By Task Type
+
+### Implementing a plan task
+1. Read the plan file in `docs/superpowers/plans/`
+2. `gitnexus_impact` on symbols you'll touch
+3. Write tests first (TDD)
+4. Implement
+5. `gitnexus_detect_changes` before committing
+
+### Fixing a bug
+1. `gitnexus_query({query: "<error>"})` — find related flows
+2. `gitnexus_context({name: "<suspect>"})` — callers/callees
+3. Write a failing test that reproduces the bug
+4. Fix it
+5. `gitnexus_detect_changes` — verify scope
+
+### Exploring code
+1. `gitnexus_query({query: "concept"})` — execution flows first
+2. `gitnexus_context({name: "symbol"})` — 360-degree view
+3. `READ gitnexus://repo/Nom/process/{name}` — step-by-step trace
+4. Only fall back to file reads when GitNexus can't answer
+
+### Refactoring
+1. `gitnexus_context({name: "target"})` — all refs
+2. `gitnexus_impact({target: "target", direction: "upstream"})` — blast radius
+3. For renames: `gitnexus_rename({symbol_name: "old", new_name: "new", dry_run: true})` — NEVER find-and-replace
+4. `gitnexus_detect_changes({scope: "all"})` — verify scope
+
+## Never Do
+
+- NEVER edit code without running `gitnexus_impact` first
+- NEVER ignore HIGH/CRITICAL risk warnings
+- NEVER rename with find-and-replace — use `gitnexus_rename`
+- NEVER commit without `gitnexus_detect_changes`
+- NEVER claim work is done without running tests
+
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence
 
-This project is indexed by GitNexus as **Nom** (6098 symbols, 15340 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
+This project is indexed by GitNexus as **Nom** (6242 symbols, 15668 relationships, 300 execution flows). Use the GitNexus MCP tools to understand code, assess impact, and navigate safely.
 
 > If any GitNexus tool warns the index is stale, run `npx gitnexus analyze` in terminal first.
 
@@ -99,3 +158,19 @@ To check whether embeddings exist, inspect `.gitnexus/meta.json` — the `stats.
 | Index, status, clean, wiki CLI commands | `.claude/skills/gitnexus/gitnexus-cli/SKILL.md` |
 
 <!-- gitnexus:end -->
+
+## Ruflo Coordination
+
+When you are a Ruflo-spawned agent:
+- Report progress via `task_update({id, status, progress})`
+- Store reusable patterns via `memory_store({key, value})`
+- Check sibling agents via `agent_list()` to avoid duplicate work
+- Mark completion via `task_complete({id, result})`
+
+## Project Structure
+
+```
+docs/superpowers/
+├── plans/     # Implementation plans — read these for your assigned tasks
+├── specs/     # Design specs — context for why decisions were made
+```

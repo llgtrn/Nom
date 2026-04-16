@@ -5,23 +5,25 @@
 //! bitcode via `lli` (the shipped LLVM on this machine does not include
 //! `lli.exe`); verifying at the IR level keeps tests portable across
 //! Windows LLVM distributions.
+//!
+//! AST is constructed directly — no dependency on the deleted nom-parser crate.
 
+use nom_ast::{
+    BinOp, Block, BlockStmt, CallExpr, Expr, FnDef, Identifier, LetStmt, Literal, Span, Statement,
+    TypeExpr,
+};
 use nom_llvm::compile;
 use nom_planner::{CompositionPlan, ConcurrencyStrategy, FlowPlan, MemoryStrategy};
 
-fn plan_from_source(source: &str, name: &str) -> CompositionPlan {
-    let parsed = nom_parser::parse_source(source).expect("should parse");
-    let mut imperative_stmts = Vec::new();
-    for decl in &parsed.declarations {
-        for stmt in &decl.statements {
-            match stmt {
-                nom_ast::Statement::FnDef(_)
-                | nom_ast::Statement::StructDef(_)
-                | nom_ast::Statement::EnumDef(_) => imperative_stmts.push(stmt.clone()),
-                _ => {}
-            }
-        }
-    }
+fn ident(name: &str) -> Identifier {
+    Identifier::new(name, Span::default())
+}
+
+fn named_type(name: &str) -> TypeExpr {
+    TypeExpr::Named(ident(name))
+}
+
+fn make_plan(name: &str, stmts: Vec<Statement>) -> CompositionPlan {
     CompositionPlan {
         source_path: Some(format!("{name}.nom")),
         flows: vec![FlowPlan {
@@ -37,7 +39,7 @@ fn plan_from_source(source: &str, name: &str) -> CompositionPlan {
             qualifier: "once".to_owned(),
             on_fail: "abort".to_owned(),
             effect_summary: vec![],
-            imperative_stmts,
+            imperative_stmts: stmts,
         }],
         nomiz: "{}".into(),
     }
@@ -45,14 +47,35 @@ fn plan_from_source(source: &str, name: &str) -> CompositionPlan {
 
 #[test]
 fn test_string_length() {
-    let source = r#"
-nom strlen
-  fn main() -> integer {
-    let s: text = "hello"
-    return s.length
-  }
-"#;
-    let plan = plan_from_source(source, "strlen");
+    // fn main() -> integer {
+    //   let s: text = "hello"
+    //   return s.length
+    // }
+    let fn_def = FnDef {
+        name: ident("main"),
+        params: vec![],
+        return_type: Some(named_type("integer")),
+        body: Block {
+            stmts: vec![
+                BlockStmt::Let(LetStmt {
+                    name: ident("s"),
+                    mutable: false,
+                    type_ann: Some(named_type("text")),
+                    value: Expr::Literal(Literal::Text("hello".into())),
+                    span: Span::default(),
+                }),
+                BlockStmt::Return(Some(Expr::FieldAccess(
+                    Box::new(Expr::Ident(ident("s"))),
+                    ident("length"),
+                ))),
+            ],
+            span: Span::default(),
+        },
+        is_async: false,
+        is_pub: false,
+        span: Span::default(),
+    };
+    let plan = make_plan("strlen", vec![Statement::FnDef(fn_def)]);
     let out = compile(&plan).expect("compile");
     // A NomString struct type must be present.
     assert!(
@@ -76,14 +99,35 @@ nom strlen
 
 #[test]
 fn test_string_index() {
-    let source = r#"
-nom stridx
-  fn main() -> integer {
-    let s: text = "hello"
-    return s[1]
-  }
-"#;
-    let plan = plan_from_source(source, "stridx");
+    // fn main() -> integer {
+    //   let s: text = "hello"
+    //   return s[1]
+    // }
+    let fn_def = FnDef {
+        name: ident("main"),
+        params: vec![],
+        return_type: Some(named_type("integer")),
+        body: Block {
+            stmts: vec![
+                BlockStmt::Let(LetStmt {
+                    name: ident("s"),
+                    mutable: false,
+                    type_ann: Some(named_type("text")),
+                    value: Expr::Literal(Literal::Text("hello".into())),
+                    span: Span::default(),
+                }),
+                BlockStmt::Return(Some(Expr::Index(
+                    Box::new(Expr::Ident(ident("s"))),
+                    Box::new(Expr::Literal(Literal::Integer(1))),
+                ))),
+            ],
+            span: Span::default(),
+        },
+        is_async: false,
+        is_pub: false,
+        span: Span::default(),
+    };
+    let plan = make_plan("stridx", vec![Statement::FnDef(fn_def)]);
     let out = compile(&plan).expect("compile");
     // Expect a GEP against i8 and a load of i8, then zero-extend to i64.
     assert!(
@@ -105,15 +149,50 @@ nom stridx
 
 #[test]
 fn test_string_slice() {
-    let source = r#"
-nom strslice
-  fn main() {
-    let s: text = "hello world"
-    let w: text = s[6..11]
-    print(w)
-  }
-"#;
-    let plan = plan_from_source(source, "strslice");
+    // fn main() {
+    //   let s: text = "hello world"
+    //   let w: text = s[6..11]
+    //   print(w)
+    // }
+    let fn_def = FnDef {
+        name: ident("main"),
+        params: vec![],
+        return_type: None,
+        body: Block {
+            stmts: vec![
+                BlockStmt::Let(LetStmt {
+                    name: ident("s"),
+                    mutable: false,
+                    type_ann: Some(named_type("text")),
+                    value: Expr::Literal(Literal::Text("hello world".into())),
+                    span: Span::default(),
+                }),
+                BlockStmt::Let(LetStmt {
+                    name: ident("w"),
+                    mutable: false,
+                    type_ann: Some(named_type("text")),
+                    value: Expr::Index(
+                        Box::new(Expr::Ident(ident("s"))),
+                        Box::new(Expr::Range(
+                            Box::new(Expr::Literal(Literal::Integer(6))),
+                            Box::new(Expr::Literal(Literal::Integer(11))),
+                        )),
+                    ),
+                    span: Span::default(),
+                }),
+                BlockStmt::Expr(Expr::Call(CallExpr {
+                    callee: ident("print"),
+                    args: vec![Expr::Ident(ident("w"))],
+                    span: Span::default(),
+                })),
+            ],
+            span: Span::default(),
+        },
+        is_async: false,
+        is_pub: false,
+        span: Span::default(),
+    };
+    let plan = make_plan("strslice", vec![Statement::FnDef(fn_def)]);
     let out = compile(&plan).expect("compile");
     // Must declare and call nom_string_slice.
     assert!(
@@ -135,9 +214,6 @@ fn test_string_eq() {
     // as the equality token rather than `EqEq`, which is a pre-existing
     // quirk outside the scope of this task. We exercise the codegen path
     // by constructing the expected AST shape by hand.
-    use nom_ast::{
-        BinOp, Block, BlockStmt, Expr, FnDef, Identifier, LetStmt, Literal, Span, TypeExpr,
-    };
     let fn_def = FnDef {
         name: Identifier::new("main", Span::default()),
         params: vec![],

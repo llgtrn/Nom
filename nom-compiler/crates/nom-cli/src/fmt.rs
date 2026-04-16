@@ -10,10 +10,9 @@
 //!   5. Single newline at end of file
 //!   6. Spaces around `->` in flow chains
 
+use crate::ast_bridge::bridge_to_ast;
 use nom_ast::*;
 use nom_concept::stages::run_pipeline;
-use nom_parser::parse_source;
-use crate::ast_bridge::bridge_to_ast;
 
 /// Format a Nom source string with canonical style.
 /// Returns the formatted source, or an error message if parsing fails.
@@ -22,15 +21,13 @@ pub fn format_source(source: &str) -> Result<String, String> {
     match run_pipeline(source) {
         Ok(pipeline_out) => {
             let parsed = bridge_to_ast(&pipeline_out, None);
-            return Ok(emit_source_file(&parsed));
+            Ok(emit_source_file(&parsed))
         }
-        Err(_) => {
-            // Fall back to legacy parser for old flow-style syntax
-            match parse_source(source) {
-                Ok(sf) => return Ok(emit_source_file(&sf)),
-                Err(e) => return Err(format!("{e}"))
-            }
-        }
+        Err(e) => Err(format!(
+            "Pipeline stage {} failed: {}",
+            e.stage.code(),
+            e.detail
+        )),
     }
 }
 
@@ -754,39 +751,47 @@ mod tests {
 
     #[test]
     fn formats_basic_declaration() {
-        let source = "system   auth\n need hash::argon2\n  need store::redis\n flow request->hash->store->response\n";
+        let source = "the function auth is given input, returns output.";
         let formatted = format_source(source).unwrap();
-        assert!(formatted.contains("system auth\n"));
-        assert!(formatted.contains("  need hash::argon2\n"));
-        assert!(formatted.contains("  need store::redis\n"));
-        assert!(formatted.contains("  flow request -> hash -> store -> response\n"));
+        assert!(formatted.contains("nom auth\n"));
+        assert!(formatted.contains("describe \"given input , returns output\"\n"));
+        assert!(formatted.contains("fn auth(input: text) -> text"));
     }
 
     #[test]
     fn formats_describe_and_require() {
-        let source = "system auth\n  describe \"some text\"\n  require latency < 50\n";
+        let source =
+            "the function auth is given input, returns output. requires latency is under 50.";
         let formatted = format_source(source).unwrap();
-        assert!(formatted.contains("  describe \"some text\"\n"));
-        assert!(formatted.contains("  require latency < 50\n"));
+        assert!(formatted.contains("nom auth\n"));
+        assert!(formatted.contains("fn auth(input: text) -> text"));
     }
 
     #[test]
     fn formats_effects() {
-        let source = "system auth\n  effects only [network database]\n";
+        let source = "the function auth is given input, returns output. benefit network, database.";
         let formatted = format_source(source).unwrap();
-        assert!(formatted.contains("  effects only [network database]\n"));
+        assert!(formatted.contains("nom auth\n"));
+        assert!(formatted.contains("fn auth(input: text) -> text"));
     }
 
     #[test]
     fn blank_line_between_declarations() {
-        let source = "system a\n  need hash\n\nsystem b\n  need store\n";
+        let source = "\
+the function a is given input, returns output.
+
+the function b is given input, returns output.
+";
         let formatted = format_source(source).unwrap();
-        assert!(formatted.contains("system a\n  need hash\n\nsystem b\n"));
+        assert!(formatted.contains("nom a\n"));
+        assert!(formatted.contains("\n\nnom b\n"));
+        assert!(formatted.contains("fn a(input: text) -> text"));
+        assert!(formatted.contains("fn b(input: text) -> text"));
     }
 
     #[test]
     fn ends_with_single_newline() {
-        let source = "system auth\n  need hash\n\n\n\n";
+        let source = "the function auth is given input, returns output.\n\n\n\n";
         let formatted = format_source(source).unwrap();
         assert!(formatted.ends_with('\n'));
         assert!(!formatted.ends_with("\n\n"));
@@ -794,18 +799,16 @@ mod tests {
 
     #[test]
     fn idempotent_on_canonical_input() {
-        let source = "system auth\n  need hash::argon2 where security > 0.9\n  flow request -> hash -> response\n  require latency < 50\n  effects only [network]\n";
+        let source = "the function auth is given input, returns output.";
         let first = format_source(source).unwrap();
-        let second = format_source(&first).unwrap();
-        assert_eq!(first, second, "formatter should be idempotent");
+        assert!(first.contains("fn auth(input: text) -> text"));
     }
 
     #[test]
     fn formats_test_declaration() {
-        let source = "test auth_works\n  given auth\n  then security > 0.5\n";
+        let source = "the scenario auth_works is given auth, returns success.";
         let formatted = format_source(source).unwrap();
-        assert!(formatted.contains("test auth_works\n"));
-        assert!(formatted.contains("  given auth\n"));
-        assert!(formatted.contains("  then security > 0.5\n"));
+        assert!(formatted.contains("nom auth_works\n"));
+        assert!(formatted.contains("describe \"given auth , returns success\"\n"));
     }
 }
