@@ -1,3 +1,5 @@
+mod lsp;
+
 use serde::Serialize;
 use std::collections::HashMap;
 use std::sync::Mutex;
@@ -820,6 +822,23 @@ fn security_scan(source: &str) -> SecurityScanResult {
     }
 }
 
+#[tauri::command]
+fn lsp_request(method: &str, params: serde_json::Value) -> serde_json::Value {
+    match lsp::get_or_spawn_lsp() {
+        Ok(mut guard) => {
+            if let Some(client) = guard.as_mut() {
+                match client.request(method, params) {
+                    Ok(response) => response,
+                    Err(e) => serde_json::json!({"error": e}),
+                }
+            } else {
+                serde_json::json!({"error": "LSP not available"})
+            }
+        }
+        Err(e) => serde_json::json!({"error": e}),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -852,6 +871,7 @@ pub fn run() {
             security_scan,
             store_credential,
             get_credential,
+            lsp_request,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
