@@ -327,3 +327,23 @@ button:hover { background: var(--highlight); }
   outline: none;
   min-height: 80px;
 }
+
+/* ── Diagnostic decorations (Zed-style wavy underlines) ── */
+
+.nom-diagnostic-error {
+  text-decoration: underline wavy;
+  text-decoration-color: #ef4444;
+  text-underline-offset: 3px;
+}
+
+.nom-diagnostic-warning {
+  text-decoration: underline wavy;
+  text-decoration-color: #f59e0b;
+  text-underline-offset: 3px;
+}
+
+.nom-diagnostic-info {
+  text-decoration: underline wavy;
+  text-decoration-color: #3b82f6;
+  text-underline-offset: 3px;
+}

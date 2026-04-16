@@ -14,6 +14,7 @@ const NOM_KEYWORDS = new Set([
 
 interface TransformState {
   decorations: DecorationSet;
+  diagnosticDecos: DecorationSet;
   pendingCompile: ReturnType<typeof setTimeout> | null;
 }
 
@@ -85,20 +86,53 @@ export function createTransformPlugin(): Plugin {
         const decos = buildKeywordDecorations(state.doc);
         return {
           decorations: DecorationSet.create(state.doc, decos),
+          diagnosticDecos: DecorationSet.empty,
           pendingCompile: null,
         };
       },
       apply(tr, pluginState, _oldState, newState): TransformState {
+        // Handle diagnostic meta messages dispatched from the view lifecycle
+        const meta = tr.getMeta(transformPluginKey);
+        if (meta?.clearDiagnostics) {
+          const base = tr.docChanged
+            ? DecorationSet.create(newState.doc, buildKeywordDecorations(newState.doc))
+            : pluginState.decorations.map(tr.mapping, tr.doc);
+          return { ...pluginState, decorations: base, diagnosticDecos: DecorationSet.empty };
+        }
+        if (meta?.diagnostics) {
+          const diagDecos: Decoration[] = [];
+          tr.doc.descendants((node: any, pos: number) => {
+            if (node.isText) {
+              diagDecos.push(
+                Decoration.inline(pos, pos + node.nodeSize, {
+                  class: "nom-diagnostic-error",
+                  title: (meta.diagnostics as string[]).join("; "),
+                })
+              );
+            }
+          });
+          const base = tr.docChanged
+            ? DecorationSet.create(newState.doc, buildKeywordDecorations(newState.doc))
+            : pluginState.decorations.map(tr.mapping, tr.doc);
+          return {
+            ...pluginState,
+            decorations: base,
+            diagnosticDecos: DecorationSet.create(tr.doc, diagDecos),
+          };
+        }
+
         if (!tr.docChanged) {
           return {
             ...pluginState,
             decorations: pluginState.decorations.map(tr.mapping, tr.doc),
+            diagnosticDecos: pluginState.diagnosticDecos.map(tr.mapping, tr.doc),
           };
         }
-        // Rebuild keyword decorations on every change
+        // Rebuild keyword decorations on every change; clear stale diagnostic underlines
         const decos = buildKeywordDecorations(newState.doc);
         return {
           decorations: DecorationSet.create(newState.doc, decos),
+          diagnosticDecos: DecorationSet.empty,
           pendingCompile: pluginState.pendingCompile,
         };
       },
@@ -106,7 +140,13 @@ export function createTransformPlugin(): Plugin {
 
     props: {
       decorations(state) {
-        return this.getState(state)?.decorations ?? DecorationSet.empty;
+        const pluginState = this.getState(state);
+        if (!pluginState) return DecorationSet.empty;
+        // Merge keyword decorations and diagnostic decorations into one set
+        return pluginState.decorations.add(
+          state.doc,
+          pluginState.diagnosticDecos.find()
+        );
       },
     },
 
@@ -138,11 +178,17 @@ export function createTransformPlugin(): Plugin {
                     statusEl.textContent =
                       `// compiled: ${result.entities.join(", ")}`;
                   }
+                  view.dispatch(
+                    view.state.tr.setMeta(transformPluginKey, { clearDiagnostics: true })
+                  );
                 } else {
                   if (statusEl) {
                     statusEl.textContent =
                       `// error: ${result.diagnostics[0] || "unknown"}`;
                   }
+                  view.dispatch(
+                    view.state.tr.setMeta(transformPluginKey, { diagnostics: result.diagnostics })
+                  );
                 }
               } catch (e) {
                 if (statusEl) statusEl.textContent = `// invoke error: ${e}`;
