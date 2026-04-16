@@ -1,5 +1,80 @@
 use serde::Serialize;
 
+// ── New return types for the remaining 10 commands ────────────────────────────
+
+#[derive(Serialize)]
+pub struct DreamReport {
+    pub score: f64,
+    pub proposals: Vec<String>,
+    pub dict_hints: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct QualityScores {
+    pub security: f64,
+    pub reliability: f64,
+    pub performance: f64,
+    pub readability: f64,
+    pub testability: f64,
+    pub portability: f64,
+    pub composability: f64,
+    pub maturity: f64,
+    pub overall: f64,
+}
+
+#[derive(Serialize)]
+pub struct WireCheck {
+    pub status: String,
+    pub reason: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct SearchResult {
+    pub word: String,
+    pub kind: String,
+    pub score: f64,
+    pub snippet: Option<String>,
+}
+
+#[derive(Serialize)]
+pub struct IntentResult {
+    pub action: String,
+    pub confidence: f64,
+    pub tools_used: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct MediaIngestResult {
+    pub hash: String,
+    pub mime: String,
+    pub size_bytes: u64,
+}
+
+#[derive(Serialize)]
+pub struct ExtractResult {
+    pub entities_found: usize,
+    pub languages: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct PlatformSpec {
+    pub platform: String,
+    pub launch_command: String,
+}
+
+#[derive(Serialize)]
+pub struct PlanFlowResult {
+    pub nodes: usize,
+    pub edges: usize,
+    pub fusion_passes: Vec<String>,
+}
+
+#[derive(Serialize)]
+pub struct SecurityScanResult {
+    pub findings: Vec<String>,
+    pub risk_level: String,
+}
+
 #[derive(Serialize)]
 pub struct CompileResult {
     pub success: bool,
@@ -261,6 +336,132 @@ fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
     items
 }
 
+// ── New commands ──────────────────────────────────────────────────────────────
+
+#[tauri::command]
+fn dream_report(_manifest: &str) -> DreamReport {
+    DreamReport {
+        score: 0.0,
+        proposals: vec![],
+        dict_hints: vec![],
+    }
+}
+
+#[tauri::command]
+fn score_block(_source: &str) -> QualityScores {
+    QualityScores {
+        security: 0.0,
+        reliability: 0.0,
+        performance: 0.0,
+        readability: 0.0,
+        testability: 0.0,
+        portability: 0.0,
+        composability: 0.0,
+        maturity: 0.0,
+        overall: 0.0,
+    }
+}
+
+#[tauri::command]
+fn wire_check(_from_hash: &str, _to_hash: &str) -> WireCheck {
+    WireCheck {
+        status: "compatible".into(),
+        reason: None,
+    }
+}
+
+#[tauri::command]
+fn search_dict(query: &str) -> Vec<SearchResult> {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let dict_path = std::path::PathBuf::from(&home).join(".nom");
+
+    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+        nom_dict::find_entities_by_word(&dict, query)
+            .unwrap_or_default()
+            .into_iter()
+            .take(20)
+            .map(|r| SearchResult {
+                word: r.word,
+                kind: r.kind,
+                score: 1.0,
+                snippet: r.signature,
+            })
+            .collect()
+    } else {
+        vec![]
+    }
+}
+
+#[tauri::command]
+fn resolve_intent(_input: &str) -> IntentResult {
+    IntentResult {
+        action: "unknown".into(),
+        confidence: 0.0,
+        tools_used: vec![],
+    }
+}
+
+#[tauri::command]
+fn ingest_media(_path: &str) -> MediaIngestResult {
+    MediaIngestResult {
+        hash: String::new(),
+        mime: "application/octet-stream".into(),
+        size_bytes: 0,
+    }
+}
+
+#[tauri::command]
+fn extract_atoms(_path: &str) -> ExtractResult {
+    ExtractResult {
+        entities_found: 0,
+        languages: vec![],
+    }
+}
+
+#[tauri::command]
+fn platform_spec(target: &str) -> PlatformSpec {
+    PlatformSpec {
+        platform: target.to_string(),
+        launch_command: String::new(),
+    }
+}
+
+#[tauri::command]
+fn plan_flow(source: &str) -> PlanFlowResult {
+    match nom_concept::stages::run_pipeline(source) {
+        Ok(output) => {
+            let nodes = match &output {
+                nom_concept::stages::PipelineOutput::Nomtu(f) => f.items.len(),
+                nom_concept::stages::PipelineOutput::Nom(f) => f.concepts.len(),
+            };
+            PlanFlowResult {
+                nodes,
+                edges: 0,
+                fusion_passes: vec![
+                    "identity".into(),
+                    "consecutive_maps".into(),
+                    "single_branch".into(),
+                ],
+            }
+        }
+        Err(_) => PlanFlowResult {
+            nodes: 0,
+            edges: 0,
+            fusion_passes: vec![],
+        },
+    }
+}
+
+#[tauri::command]
+fn security_scan(_source: &str) -> SecurityScanResult {
+    SecurityScanResult {
+        findings: vec![],
+        risk_level: "low".into(),
+    }
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -281,6 +482,16 @@ pub fn run() {
             build_artifact,
             hover_info,
             complete_word,
+            dream_report,
+            score_block,
+            wire_check,
+            search_dict,
+            resolve_intent,
+            ingest_media,
+            extract_atoms,
+            platform_spec,
+            plan_flow,
+            security_scan,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
