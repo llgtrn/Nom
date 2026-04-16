@@ -1,4 +1,20 @@
 use serde::Serialize;
+use std::collections::HashMap;
+use std::sync::Mutex;
+
+// Module-level execution cache (ComfyUI IS_CHANGED pattern)
+static PLAN_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, PlanFlowResult>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+static COMPILE_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, CompileResult>>> =
+    std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
+
+fn hash_source(source: &str) -> u64 {
+    use std::hash::{Hash, Hasher};
+    let mut hasher = std::collections::hash_map::DefaultHasher::new();
+    source.hash(&mut hasher);
+    hasher.finish()
+}
 
 // ── New return types for the remaining 10 commands ────────────────────────────
 
@@ -62,7 +78,7 @@ pub struct PlatformSpec {
     pub launch_command: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct PlanFlowResult {
     pub nodes: usize,
     pub edges: usize,
@@ -75,7 +91,7 @@ pub struct SecurityScanResult {
     pub risk_level: String,
 }
 
-#[derive(Serialize)]
+#[derive(Serialize, Clone)]
 pub struct CompileResult {
     pub success: bool,
     pub diagnostics: Vec<String>,
@@ -123,7 +139,17 @@ pub struct CompletionItem {
 
 #[tauri::command]
 fn compile_block(source: &str) -> CompileResult {
-    match nom_concept::stages::run_pipeline(source) {
+    let hash = hash_source(source);
+
+    // Check cache (IS_CHANGED pattern)
+    if let Ok(cache) = COMPILE_CACHE.lock() {
+        if let Some(cached) = cache.get(&hash) {
+            return cached.clone();
+        }
+    }
+
+    // Cache miss — execute pipeline
+    let result = match nom_concept::stages::run_pipeline(source) {
         Ok(output) => {
             let entities: Vec<String> = match &output {
                 nom_concept::stages::PipelineOutput::Nomtu(f) => {
@@ -147,7 +173,17 @@ fn compile_block(source: &str) -> CompileResult {
             diagnostics: vec![format!("{e:?}")],
             entities: vec![],
         },
+    };
+
+    // Store in cache
+    if let Ok(mut cache) = COMPILE_CACHE.lock() {
+        if cache.len() > 1000 {
+            cache.clear();
+        }
+        cache.insert(hash, result.clone());
     }
+
+    result
 }
 
 #[tauri::command]
@@ -430,15 +466,25 @@ fn platform_spec(target: &str) -> PlatformSpec {
 
 #[tauri::command]
 fn plan_flow(source: &str) -> PlanFlowResult {
-    match nom_concept::stages::run_pipeline(source) {
+    let hash = hash_source(source);
+
+    // Check cache (IS_CHANGED pattern)
+    if let Ok(cache) = PLAN_CACHE.lock() {
+        if let Some(cached) = cache.get(&hash) {
+            return cached.clone();
+        }
+    }
+
+    // Cache miss — execute pipeline
+    let result = match nom_concept::stages::run_pipeline(source) {
         Ok(output) => {
-            let nodes = match &output {
-                nom_concept::stages::PipelineOutput::Nomtu(f) => f.items.len(),
-                nom_concept::stages::PipelineOutput::Nom(f) => f.concepts.len(),
+            let (nodes, edges) = match &output {
+                nom_concept::stages::PipelineOutput::Nomtu(f) => (f.items.len(), 0),
+                nom_concept::stages::PipelineOutput::Nom(f) => (f.concepts.len(), 0),
             };
             PlanFlowResult {
                 nodes,
-                edges: 0,
+                edges,
                 fusion_passes: vec![
                     "identity".into(),
                     "consecutive_maps".into(),
@@ -451,7 +497,17 @@ fn plan_flow(source: &str) -> PlanFlowResult {
             edges: 0,
             fusion_passes: vec![],
         },
+    };
+
+    // Store in cache
+    if let Ok(mut cache) = PLAN_CACHE.lock() {
+        if cache.len() > 1000 {
+            cache.clear();
+        }
+        cache.insert(hash, result.clone());
     }
+
+    result
 }
 
 #[tauri::command]

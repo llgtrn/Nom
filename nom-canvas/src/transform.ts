@@ -4,6 +4,34 @@ import { invoke } from "@tauri-apps/api/core";
 
 export const transformPluginKey = new PluginKey("nomx-transform");
 
+// ── Incremental compile cache (bolt.new pattern) ──────────
+interface CompileCache {
+  contentHash: number;
+  result: { success: boolean; diagnostics: string[]; entities: string[] } | null;
+}
+
+let compileCache: CompileCache = { contentHash: 0, result: null };
+
+/** Simple string hash for fast comparison (djb2) */
+export function hashString(str: string): number {
+  let hash = 5381;
+  for (let i = 0; i < str.length; i++) {
+    hash = ((hash << 5) + hash + str.charCodeAt(i)) | 0;
+  }
+  return hash;
+}
+
+/** Per-block compile fingerprint (ComfyUI IS_CHANGED pattern) */
+const blockFingerprints = new Map<string, number>();
+
+export function isBlockChanged(blockId: string, content: string): boolean {
+  const hash = hashString(content);
+  const cached = blockFingerprints.get(blockId);
+  if (cached === hash) return false;
+  blockFingerprints.set(blockId, hash);
+  return true;
+}
+
 // Nom keywords that get highlighted in prose
 const NOM_KEYWORDS = new Set([
   "the", "function", "module", "concept", "screen", "data", "event",
@@ -165,6 +193,18 @@ export function createTransformPlugin(): Plugin {
                 if (statusEl) statusEl.textContent = "// prose mode";
                 return;
               }
+              const hash = hashString(text);
+
+              // Skip recompile if content is unchanged
+              if (hash === compileCache.contentHash && compileCache.result !== null) {
+                if (statusEl) {
+                  statusEl.textContent = compileCache.result.success
+                    ? `// cached: ${compileCache.result.entities.join(", ")}`
+                    : `// cached error: ${compileCache.result.diagnostics[0] || "unknown"}`;
+                }
+                return;
+              }
+
               if (statusEl) statusEl.textContent = "// compiling...";
               try {
                 const result = await invoke<{
@@ -172,6 +212,8 @@ export function createTransformPlugin(): Plugin {
                   diagnostics: string[];
                   entities: string[];
                 }>("compile_block", { source: text });
+
+                compileCache = { contentHash: hash, result };
 
                 if (result.success) {
                   if (statusEl) {
