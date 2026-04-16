@@ -11,6 +11,7 @@
 //! Slice-2 (2026-04-14): the `react` module adds a ReAct-shaped loop over M8. See
 //! docs/superpowers/specs/2026-04-14-graph-rag-agentic-design.md for the full design.
 
+pub mod action_parser;
 pub mod adapters;
 pub mod dict_tools;
 pub mod instrumented;
