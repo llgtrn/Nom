@@ -12,8 +12,7 @@ use std::path::Path;
 
 use nom_dict::{
     Dict, EntryFilter, body_kind_histogram, closure, count_concept_defs, count_entities,
-    count_required_axes, find_entities, find_entries, get_entry, get_meta, get_refs,
-    status_histogram,
+    count_required_axes, find_entities, get_entry, get_meta, get_refs, status_histogram,
 };
 use nom_types::{EntryKind, EntryStatus};
 use sha2::Digest;

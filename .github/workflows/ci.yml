@@ -8,7 +8,9 @@ on:
 
 env:
   CARGO_TERM_COLOR: always
-  RUSTFLAGS: "-D warnings"
+  # -D warnings but allow deprecated — we have an active legacy table migration
+  # where callers of deprecated functions exist intentionally until migration completes.
+  RUSTFLAGS: "-D warnings -A deprecated"
 
 jobs:
   check:
@@ -81,11 +83,11 @@ jobs:
         run: |
           set -e
           for p in nom-types nom-dict nom-resolver nom-security nom-codegen \
-                   nom-lexer nom-parser nom-ast nom-graph nom-search \
+                   nom-ast nom-graph nom-search nom-grammar \
                    nom-translate nom-verifier nom-planner nom-diagnostics \
                    nom-media nom-ux nom-corpus nom-bench nom-app nom-flow \
                    nom-concept nom-locale nom-config nom-extract nom-score \
-                   nom-runtime nom-cli; do
+                   nom-runtime nom-intent nom-llvm nom-lsp nom-cli; do
             echo "=== $p ==="
             cargo test -p "$p" --quiet 2>&1 | tail -5
           done

@@ -10,7 +10,7 @@
 //!  - Clause shape registered in grammar DB for function kind.
 
 use nom_concept::{
-    NomtuItem, QualityDeclaration,
+    NomtuItem,
     stages::{PipelineOutput, run_pipeline},
 };
 
