@@ -1,25 +1,20 @@
 import { invoke } from "@tauri-apps/api/core";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
-import { Schema, DOMParser } from "prosemirror-model";
-import { schema as basicSchema } from "prosemirror-schema-basic";
-import { addListNodes } from "prosemirror-schema-list";
+import { DOMParser } from "prosemirror-model";
 import { keymap } from "prosemirror-keymap";
 import { baseKeymap } from "prosemirror-commands";
 import { history, undo, redo } from "prosemirror-history";
+import { nomCanvasSchema } from "./schema";
+import { createTransformPlugin } from "./transform";
 
-// Schema — basic prose + code blocks
-const schema = new Schema({
-  nodes: addListNodes(basicSchema.spec.nodes, "paragraph block*", "block"),
-  marks: basicSchema.spec.marks,
-});
-
-// Editor state
+// Editor state — uses NomCanvas custom schema + transform plugin
 const state = EditorState.create({
-  doc: DOMParser.fromSchema(schema).parse(
+  doc: DOMParser.fromSchema(nomCanvasSchema).parse(
     document.createElement("div")
   ),
   plugins: [
+    createTransformPlugin(),
     history(),
     keymap({ "Mod-z": undo, "Mod-y": redo }),
     keymap(baseKeymap),
@@ -61,7 +56,7 @@ compileBtn.addEventListener("click", async () => {
   }
 });
 
-// Placeholder text
+// Placeholder text — a valid .nomx entity declaration
 view.dispatch(
   view.state.tr.insertText(
     "the function greet is given a name of text, returns text."

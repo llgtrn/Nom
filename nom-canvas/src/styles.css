@@ -93,3 +93,177 @@ button:hover { background: var(--highlight); }
   white-space: pre-wrap;
   color: var(--success);
 }
+
+/* === Block Type Styles === */
+
+.nomx-block {
+  background: #1e293b;
+  border: 1px solid var(--accent);
+  border-radius: 6px;
+  padding: 12px;
+  margin: 8px 0;
+  font-family: 'JetBrains Mono', monospace;
+}
+
+.nomx-block code { display: block; white-space: pre-wrap; }
+.nomx-valid { border-color: var(--success); }
+.nomx-error { border-color: var(--highlight); }
+.nomx-draft { border-color: var(--border); }
+
+.media-node-block, .app-preview-block, .drawing-block {
+  background: #1e293b;
+  border: 1px dashed var(--border);
+  border-radius: 6px;
+  padding: 16px;
+  margin: 8px 0;
+  text-align: center;
+  color: #666;
+  font-size: 13px;
+}
+
+/* Inline marks */
+.nomtu-match {
+  background: rgba(78, 205, 196, 0.15);
+  border-bottom: 2px solid #4ecdc4;
+  cursor: help;
+}
+.nomtu-kind-function { border-color: #4ecdc4; }
+.nomtu-kind-data { border-color: #ffe66d; }
+.nomtu-kind-module { border-color: #a8dadc; }
+.nomtu-kind-concept { border-color: #e76f51; }
+
+.pattern-match {
+  background: rgba(255, 230, 109, 0.1);
+  border-bottom: 1px dotted #ffe66d;
+}
+
+.keyword {
+  color: #c084fc;
+  font-weight: 600;
+}
+
+.error {
+  text-decoration: wavy underline;
+  text-decoration-color: var(--highlight);
+}
+
+/* === Inline Transformation Decorations === */
+
+.nom-keyword {
+  color: #c084fc;
+  font-weight: 500;
+}
+
+.nom-kind-keyword {
+  color: #f472b6;
+  font-weight: 700;
+  font-size: 0.95em;
+  text-transform: lowercase;
+}
+
+.nom-identifier {
+  color: #4ecdc4;
+  border-bottom: 1px dotted rgba(78, 205, 196, 0.4);
+}
+
+/* ── Block type styles ─────────────────────────────────── */
+
+.nomx-block {
+  background: #0d1b2a;
+  border: 1px solid #1b4332;
+  border-radius: 4px;
+  padding: 12px;
+  margin: 8px 0;
+  font-family: 'JetBrains Mono', monospace;
+  position: relative;
+}
+
+.nomx-block.compiled {
+  border-color: var(--success);
+}
+
+.nomx-block::before {
+  content: '.nomx';
+  position: absolute;
+  top: 4px;
+  right: 8px;
+  font-size: 10px;
+  color: #4a5568;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+}
+
+.prose-block {
+  padding: 8px 0;
+  line-height: 1.8;
+}
+
+.media-node-block {
+  background: #1a1a3e;
+  border: 1px dashed var(--border);
+  border-radius: 4px;
+  padding: 24px;
+  text-align: center;
+  color: #666;
+}
+
+.app-preview-block {
+  background: #0a1628;
+  border: 2px solid var(--accent);
+  border-radius: 8px;
+  padding: 16px;
+  min-height: 200px;
+}
+
+.app-preview-block.building { border-color: #f59e0b; }
+.app-preview-block.ready { border-color: var(--success); }
+.app-preview-block.error { border-color: var(--highlight); }
+
+.drawing-block {
+  border: 1px solid var(--border);
+  border-radius: 4px;
+  margin: 8px 0;
+}
+
+.drawing-block canvas {
+  display: block;
+  background: #0a0a1a;
+}
+
+/* ── Nomtu inline marks ────────────────────────────────── */
+
+.nomtu-match {
+  border-bottom: 2px solid transparent;
+  cursor: help;
+  transition: border-color 0.2s;
+}
+
+.nomtu-match.high {
+  border-bottom-color: var(--success);
+  color: #a7f3d0;
+}
+
+.nomtu-match.medium {
+  border-bottom-color: #f59e0b;
+  color: #fde68a;
+}
+
+.nomtu-match.low {
+  border-bottom-color: #6b7280;
+}
+
+.nomx-keyword {
+  color: var(--highlight);
+  font-weight: 600;
+}
+
+/* ── Compile status indicator ──────────────────────────── */
+
+.compile-status {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #6b7280;
+  padding: 4px 0;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
