@@ -1093,3 +1093,58 @@ button:active {
   border-radius: 3px;
   pointer-events: none;
 }
+
+/* ── LSP Bridge UI ─────────────────────────────────────────────────────────── */
+
+.lsp-tooltip {
+  position: fixed;
+  background: var(--color-primary);
+  border: 1px solid var(--color-secondary);
+  border-radius: 4px;
+  padding: 8px 12px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--color-text);
+  max-width: 400px;
+  z-index: 10000;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+  white-space: pre-wrap;
+  pointer-events: none;
+}
+
+.lsp-completions {
+  position: fixed;
+  background: var(--color-primary);
+  border: 1px solid var(--color-secondary);
+  border-radius: 4px;
+  min-width: 240px;
+  max-height: 240px;
+  overflow-y: auto;
+  z-index: 10000;
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.4);
+}
+
+.lsp-completion-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  cursor: pointer;
+  transition: background 100ms ease;
+}
+
+.lsp-completion-item:hover {
+  background: var(--color-secondary);
+}
+
+.completion-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 13px;
+  color: var(--color-text);
+}
+
+.completion-detail {
+  font-size: 11px;
+  color: #6B7280;
+  margin-left: auto;
+}
