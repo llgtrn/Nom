@@ -138,9 +138,75 @@ fn build_artifact(_manifest_hash: &str) -> BuildResult {
 }
 
 #[tauri::command]
-fn hover_info(_file: &str, _line: u32, _col: u32) -> HoverInfo {
+fn hover_info(word: &str) -> HoverInfo {
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let dict_path = std::path::PathBuf::from(&home).join(".nom");
+
+    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+        if let Ok(mut rows) = nom_dict::find_entities_by_word(&dict, word) {
+            if let Some(entity) = rows.drain(..).next() {
+                let definition_file = entity
+                    .origin_ref
+                    .clone()
+                    .or_else(|| entity.authored_in.clone());
+
+                let mut md = format!("**{}** `{}`\n", entity.word, entity.kind);
+                if let Some(sig) = &entity.signature {
+                    md.push_str(&format!("\n**Signature:** `{sig}`\n"));
+                }
+                if let Some(contracts_json) = &entity.contracts {
+                    if !contracts_json.is_empty() && contracts_json != "[]" {
+                        if let Ok(clauses) =
+                            serde_json::from_str::<Vec<serde_json::Value>>(contracts_json)
+                        {
+                            let lines: Vec<String> = clauses
+                                .into_iter()
+                                .filter_map(|v| {
+                                    if let Some(pred) =
+                                        v.get("Requires").and_then(|r| r.as_str())
+                                    {
+                                        Some(format!("requires: {pred}"))
+                                    } else if let Some(pred) =
+                                        v.get("Ensures").and_then(|r| r.as_str())
+                                    {
+                                        Some(format!("ensures: {pred}"))
+                                    } else {
+                                        None
+                                    }
+                                })
+                                .collect();
+                            if !lines.is_empty() {
+                                md.push_str("\n**Contracts:**\n");
+                                for line in &lines {
+                                    md.push_str(&format!("- {line}\n"));
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some(bk) = &entity.body_kind {
+                    md.push_str(&format!("\n**Body kind:** `{bk}`\n"));
+                }
+                let source = entity
+                    .origin_ref
+                    .as_deref()
+                    .or(entity.authored_in.as_deref())
+                    .unwrap_or("source unavailable");
+                md.push_str(&format!("\n**Source:** `{source}`\n"));
+
+                return HoverInfo {
+                    markdown: md,
+                    definition_file,
+                    definition_line: None,
+                };
+            }
+        }
+    }
+
     HoverInfo {
-        markdown: "Hover info not yet implemented".into(),
+        markdown: format!("No entity found for `{word}`"),
         definition_file: None,
         definition_line: None,
     }
@@ -148,11 +214,51 @@ fn hover_info(_file: &str, _line: u32, _col: u32) -> HoverInfo {
 
 #[tauri::command]
 fn complete_word(prefix: &str, _context: Option<&str>) -> Vec<CompletionItem> {
-    vec![CompletionItem {
-        word: format!("{prefix}..."),
-        kind: "function".into(),
-        score: 0.0,
-    }]
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    let dict_path = std::path::PathBuf::from(&home).join(".nom");
+
+    let mut items: Vec<CompletionItem> = Vec::new();
+
+    if let Ok(dict) = nom_dict::Dict::open_dir(&dict_path) {
+        if let Ok(rows) = nom_dict::find_entities_by_word(&dict, prefix) {
+            for entity in rows
+                .into_iter()
+                .filter(|r| r.word.to_lowercase().starts_with(&prefix.to_lowercase()))
+                .take(20)
+            {
+                items.push(CompletionItem {
+                    word: entity.word,
+                    kind: entity.kind,
+                    score: 1.0,
+                });
+            }
+        }
+    }
+
+    let grammar_path = std::path::PathBuf::from(&home)
+        .join(".nom")
+        .join("grammar.sqlite");
+    if let Ok(conn) = nom_grammar::open_readonly(&grammar_path) {
+        if let Ok(matches) = nom_grammar::search_patterns(&conn, prefix, 0.1, 10) {
+            for m in matches {
+                items.push(CompletionItem {
+                    word: m.intent,
+                    kind: "pattern".into(),
+                    score: m.score,
+                });
+            }
+        }
+    }
+
+    items.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
+    items.truncate(20);
+    items
 }
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]

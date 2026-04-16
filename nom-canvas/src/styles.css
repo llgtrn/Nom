@@ -267,3 +267,63 @@ button:hover { background: var(--highlight); }
   margin-bottom: 8px;
   border-bottom: 1px solid var(--border);
 }
+
+/* ── Spatial Canvas ────────────────────────────────────── */
+
+#canvas-container {
+  position: relative;
+  overflow: hidden;
+  cursor: default;
+  /* Dot grid background */
+  background-image: radial-gradient(circle, #2a2a4a 1px, transparent 1px);
+  background-size: 24px 24px;
+}
+
+.canvas-viewport {
+  position: absolute;
+  top: 0;
+  left: 0;
+  width: 0;
+  height: 0;
+  will-change: transform;
+}
+
+.canvas-block {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.3);
+  transition: box-shadow 0.15s;
+}
+
+.canvas-block:hover {
+  box-shadow: 0 4px 16px rgba(0, 0, 0, 0.4);
+}
+
+.block-handle {
+  padding: 6px 12px;
+  background: rgba(255, 255, 255, 0.03);
+  border-bottom: 1px solid var(--border);
+  border-radius: 8px 8px 0 0;
+  cursor: grab;
+  user-select: none;
+  font-size: 11px;
+  color: #6b7280;
+}
+
+.block-handle:active { cursor: grabbing; }
+
+.block-id {
+  font-family: 'JetBrains Mono', monospace;
+  letter-spacing: 0.5px;
+}
+
+.block-content {
+  padding: 12px;
+  min-height: 100px;
+}
+
+.block-content .ProseMirror {
+  outline: none;
+  min-height: 80px;
+}
