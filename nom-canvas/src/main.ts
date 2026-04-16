@@ -18,6 +18,9 @@ import { Toolbar } from "./toolbar";
 import { ThemeManager } from "./theme";
 import { ActionRunner } from "./actions";
 import { ProjectManager } from "./project";
+import { CanvasRenderer } from "./renderer";
+import { ElementStore } from "./elements";
+import { Viewport } from "./canvas";
 
 // ---------- Theme (sets CSS variables first) ----------
 const theme = new ThemeManager();
@@ -35,6 +38,27 @@ const graphUI = new GraphUI("canvas-container", "compile-status");
 
 // Add initial block
 const blockContent = graphUI.addBlock("block-1", "nomx", 60, 60);
+
+// ---------- Canvas overlay renderer ----------
+const canvasEl = document.getElementById("canvas-overlay") as HTMLCanvasElement;
+const elementStore = new ElementStore();
+const rendererViewport = new Viewport();
+const renderer = new CanvasRenderer(canvasEl, rendererViewport);
+
+function resizeCanvas() {
+  const container = document.getElementById("canvas-container")!;
+  canvasEl.width = container.clientWidth;
+  canvasEl.height = container.clientHeight;
+  renderer.markDirty();
+}
+window.addEventListener("resize", resizeCanvas);
+resizeCanvas();
+
+function renderLoop() {
+  renderer.renderAll(elementStore.getAll(), new Set());
+  requestAnimationFrame(renderLoop);
+}
+requestAnimationFrame(renderLoop);
 
 // ---------- Status bar (auto-appended to #app) ----------
 const statusBar = new StatusBar();
