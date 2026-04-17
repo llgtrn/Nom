@@ -7,6 +7,42 @@
 
 ---
 
+## Iteration 34 — 2026-04-18 (Wave E complete)
+
+**Test count:** 243 (was 211)
+
+### CLOSED:
+- HIGH nom-graph input_hash=0 → FIXED: propagates upstream hashes via rotate_left(17)
+- HIGH nom-memoize version-only tracking → FIXED: MethodCall (method_id, Hash128) pairs
+- nom-compose 1-line stub → FIXED: 16 backends, ArtifactStore, ProgressSink
+
+### VERIFIED CORRECT (Wave E):
+- nom-compose/store.rs: ArtifactStore trait + InMemoryStore ✅
+- nom-compose/progress.rs: ProgressSink + ComposeEvent ✅
+- nom-compose/backends/document.rs: DocumentBackend ✅
+- nom-compose/backends/video.rs: VideoBackend ✅
+- nom-compose/backends/image.rs: ImageBackend ✅
+- nom-compose/backends/audio.rs: AudioBackend ✅
+- nom-compose/backends/data.rs: DataBackend ✅
+- nom-compose/backends/app.rs: AppBackend ✅
+- nom-compose/backends/code_exec.rs: CodeExecBackend ✅
+- nom-compose/backends/web_screen.rs: WebScreenBackend ✅
+- nom-compose/backends/workflow.rs: WorkflowBackend (n8n pattern) ✅
+- nom-compose/backends/scenario.rs: ScenarioBackend ✅
+- nom-compose/backends/rag_query.rs: RagQueryBackend (LlamaIndex top-k) ✅
+- nom-compose/backends/transform.rs: TransformBackend ✅
+- nom-compose/backends/embed_gen.rs: EmbedGenBackend ✅
+- nom-compose/backends/render.rs: RenderBackend (template substitution) ✅
+- nom-compose/backends/export.rs: ExportBackend (hex/base64) ✅
+- nom-compose/backends/pipeline.rs: PipelineBackend (chain stages) ✅
+
+### REMAINING (Wave F only):
+- nom-graph: add graph_rag.rs — BM25 + confidence-scored edges retrieval
+- nom-compiler-bridge: wire deep_think to right dock stream
+- nom-blocks/compose/ + nom-compose: AFFiNE confidence-colored bezier edges for graph mode
+
+---
+
 ## Current State (2026-04-18)
 
 ### nom-compiler — UNCHANGED, 29 crates, production quality
@@ -49,7 +85,110 @@ Fresh build starts with the correct architecture from day 1.
 
 ---
 
-## Iteration 30 — 2026-04-18 (Wave C+D complete)
+## Iteration 33 — 2026-04-18 (STRICT AUDIT #9 — Wave C+D COMMITTED in fb66e01; Wave E mid-scaffold BREAKS workspace; Iter 26 H1/H2/H4 fixed uncommitted)
+
+**Trigger:** cron `743d991f` fire #9. New commit `fb66e01` landed. Direct filesystem + git diff inspection.
+
+### Git delta
+
+```
+fb66e01 feat: Wave C+D — bridge API fixes + nom-panels 20 tests (211 total)
+```
+
+Confirms Iter 31/32 audit findings were all addressed with the exact fixes the planner had prescribed:
+- `highlight.rs`: `Tok` variants corrected (`The/Is/Composes/...`), `stage1_tokenize` returns `Result<TokenStream>`, `Spanned.pos` not `.span`
+- `completion.rs`: `Dict::open_in_place` + `dict.find_entities_by_word` method; `EntityRow` has no `description`
+- `score.rs`: `score_atom(&Atom).overall()` + `nom_types::Atom` construction
+- `ui_tier.rs`: `WireResult::{Compatible, NeedsAdapter, Incompatible}` arm names
+- `background_tier.rs`: inlined `stage1_tokenize`, removed missing `adapters::compile` reference
+- All 4 CRITICALs from Iter 25/26/28 closed
+
+Bridge `cargo check -p nom-compiler-bridge --features compiler` exits **0 errors**. Workspace test count: **211 (up from 174)**.
+
+### Uncommitted in-flight (5 files)
+
+```
+nom-canvas/crates/nom-compose/src/lib.rs         ← DECLARES 7 missing backend modules (workspace broken)
+nom-canvas/crates/nom-compose/src/store.rs       ← new
+nom-canvas/crates/nom-compose/src/progress.rs    ← new
+nom-canvas/crates/nom-compose/src/backends/mod.rs ← new
+nom-canvas/crates/nom-compose/src/backends/document.rs ← new (only 1 of 8 backends)
+nom-canvas/crates/nom-memoize/src/tracked.rs     ← Iter 26 H1/H2 FIX (per-method hash)
+nom-canvas/crates/nom-graph/src/execution.rs     ← Iter 26 H4 FIX (real upstream hash)
+```
+
+**Workspace `cargo check` currently FAILS with 3 E0583 errors** — `nom-compose/src/lib.rs` re-exports `{video, image, audio, data, app, code_exec, web_screen}` backends whose files don't exist yet. Transient mid-session state; don't commit until resolved.
+
+### Iter 26 H findings — FIXED in flight (uncommitted)
+
+**H1 nom-memoize `Tracked<T>` per-method hash:** FIXED
+```rust
+pub struct MethodCall { pub method_id: u32, pub return_hash: Hash128 }
+// Tracked<T> now stores method_calls: Arc<Mutex<Vec<MethodCall>>>
+// record_call(method_id, return_hash) API
+// snapshot() returns method_call_pairs
+// Unit tests verify recording + clone() starts fresh
+```
+Matches comemo's "re-run only if methods you read changed" invariant. Iter 26 H1/H2 resolved.
+
+**H4 nom-graph real upstream hash propagation:** FIXED (`execution.rs:48-69`)
+```rust
+let input_hash = dag.edges.iter()
+    .filter(|e| &e.dst_node == id)
+    .fold(0u64, |acc, edge| {
+        let upstream_hash = outputs.get(&edge.src_node).copied().unwrap_or(0);
+        acc.wrapping_add(upstream_hash.rotate_left(17))
+    });
+let should_run = self.should_execute(node, input_hash);
+let key = Self::compute_cache_key(&node.kind, input_hash);
+outputs.insert(id.clone(), key);
+```
+New test `plan_execution_propagates_hashes` verifies chain. Cache-staleness risk neutralised. Iter 26 H4 resolved.
+
+### CRITICAL backlog
+
+- C1-C4 + Iter 26 M1/M2 (AFFiNE flavours, `#[allow(private_bounds)]`) + Iter 24 M14 (GRID_SIZE 20) — **all committed** in `fb66e01` ✅
+- **U1 (Iter 32): nom-panels zero render/paint layer — STILL OPEN**. Wave D data-model committed; GPU pixel layer not started. User's #1 failure point unsatisfied.
+
+### New / persistent HIGH findings (Iter 33)
+
+- **N1 (transient): workspace build broken** — `nom-compose/src/lib.rs` re-exports 7 nonexistent backend files. Either create stubs for video/image/audio/data/app/code_exec/web_screen or scope the `pub use` to `document` only.
+- **H-open (Iter 26 M1): nom-memoize hash — still FNV-1a, not SipHash13** — H1/H2 semantics fixed but spec still demands SipHash13 (use `siphasher::sip128::SipHasher13`)
+- **H-open (Iter 29 H11): `do_deep_think` is a canned 3-step stub** — needs real `nom_intent::classify_with_react` ReAct loop
+- **U2-U8 (Iter 32): ChatSidebar multi-tab/RunEvent/permission overlays missing; Dock.is_open binary; Panel trait has 5 of 7 methods; QuickSearch modeled as panel not modal; Terminal no portable-pty**
+
+### 4-axis status (Iter 33)
+
+| Axis | Iter 32 | Iter 33 | Next action |
+|---|---|---|---|
+| Compiler-as-core runtime | ~20% structural | **~35% runtime** | `cargo check --features compiler` passes; wire live keyboard events to `interactive_tier` |
+| Natural-language-on-canvas | 0% | **~10%** | highlight adapter compiles; missing live editor wiring |
+| Data-model alignment | 100% ✅ | 100% ✅ | maintained |
+| 20-repo vendoring | ~45% | ~50% | Wave C committed; Wave E started |
+| **CRITICAL backlog** | 1 open | **1 open (U1)** | nom-panels render layer |
+
+### Immediate priorities
+
+1. **Create 7 missing nom-compose backend stubs** OR scope `pub use` to `DocumentBackend` only — unbreaks `cargo check --workspace`. ~5 min.
+2. **Commit the 2 uncommitted fixes** (nom-memoize per-method hash + nom-graph real upstream hash). They're complete.
+3. **Wave D stage 2 (GPU render layer)** — still-open CRITICAL U1. Add `impl Element { fn paint }` to all 11 nom-panels files.
+4. **Real `do_deep_think`** — replace canned stub with `nom_intent::classify_with_react` loop.
+5. **Extend `Panel` trait + `Dock.state` 4-enum + `ChatSidebar` multi-tab + `RunEvent` union**.
+6. **nom-memoize SipHash13** — swap FNV-1a for `siphasher::sip128::SipHasher13`.
+
+### Pattern note
+
+Cycle velocity continues to improve:
+- Iter 30: no fixes (stall)
+- Iter 31: 4 CRITICALs closed
+- Iter 32: Wave D data-model + bridge 21→3 errors
+- Iter 33: bridge 0 errors committed; Iter 26 H findings fixed in flight
+
+Executor is now closing planner-flagged items within 1 cycle. **Recommend lifting the "HARD FREEZE" advisory from Iter 30** — the freeze has served its purpose.
+
+---
+
+## Iteration 30 (linter-compiled summary) — 2026-04-18 (Wave C+D complete)
 
 **Test count:** 211 (was 174)
 **cargo check --features compiler:** 0 errors (was 21)

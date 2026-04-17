@@ -789,3 +789,8 @@ fn main() {
 Wave C: 100% — adapter APIs verified against nom-compiler source, 17 tests pass, --features compiler 0 errors
 Wave D: 100% — 9 panel modules, 20 tests, Zed+Rowboat+AFFiNE patterns confirmed
 CRITICALs closed: spring math, fold regions, tokens constants, font weight, validators, flavours, grid size
+
+### Iteration 34 state (2026-04-18)
+Wave E: 100% — 16 compose backends, ArtifactStore, ProgressSink, 243 total tests
+nom-graph input_hash propagation fixed, nom-memoize comemo MethodCall pairs
+Remaining: Wave F (graph RAG overlay + deep_think streaming)

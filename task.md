@@ -6,6 +6,52 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 34 — Wave E complete, 243 tests, 16 compose backends)
+
+| Wave | Planned | Actual | Evidence |
+|---|---|---|---|
+| Wave E Compose backends | 100% | **100% ✅** | 26/26 tests, 16 backends, ArtifactStore/ProgressSink |
+
+**Wave E closed items (commit a1ba5a1):**
+- [x] nom-compose ArtifactStore trait + InMemoryStore
+- [x] nom-compose ProgressSink + ComposeEvent
+- [x] nom-compose: 16 backends (document/video/image/audio/data/app/code_exec/web_screen/workflow/scenario/rag_query/transform/embed_gen/render/export/pipeline)
+- [x] nom-graph/execution.rs: input_hash propagation fixed (was hardcoded 0, now uses upstream output hashes with rotate_left(17))
+- [x] nom-memoize: full typst comemo pattern — MethodCall{method_id, return_hash}, constraint validates (method_id, Hash128) pairs, memo_cache takes &[TrackedSnapshot]
+
+**Wave summary after Iter 34:**
+| Wave | Status |
+|------|--------|
+| Wave 0 Bootstrap | 100% ✅ |
+| Wave A GPUI | ~85% (spring+order drift remain) |
+| Wave B Editor+Blocks | ~80% (find_replace/commands/scroll drift) |
+| Wave C Bridge | 100% ✅ (--features compiler 0 errors) |
+| Wave D Shell | 100% ✅ (20 tests) |
+| Wave E Compose | 100% ✅ (26 tests, 16 backends) |
+| Wave F RAG+DeepThink | 0% — next |
+
+---
+
+## Audit-Corrected Wave Status (2026-04-18 Iteration 33 — commit fb66e01 landed; Wave E mid-scaffold)
+
+**Cron fire #9 / Audit #9.** Commit `fb66e01` captures all Iter 31+32 audit recommendations: bridge passes `--features compiler` with 0 errors, nom-panels 20 tests, total 211.
+
+**In-flight (uncommitted, 2 fixes complete + 1 breakage):**
+- ✅ `nom-memoize/tracked.rs`: Iter 26 H1/H2 FIXED — `MethodCall { method_id, return_hash }` + per-method call recording + unit tests
+- ✅ `nom-graph/execution.rs`: Iter 26 H4 FIXED — real upstream hash via `fold + rotate_left(17)` + `plan_execution_propagates_hashes` test
+- ⚠️ `nom-compose/src/lib.rs`: Wave E scaffold started but workspace BROKEN — re-exports 7 backend files that don't exist yet (`video/image/audio/data/app/code_exec/web_screen`). `cargo check --workspace` fails with 3 E0583 errors.
+
+**Still 1 CRITICAL open (U1):** nom-panels zero render/paint/view code. Wave D data-model committed; pixel layer not started. User's #1 failure point.
+
+**Quick unblockers (~5 min each):**
+1. Create 7 nom-compose backend stubs OR scope `pub use backends::document::DocumentBackend` only
+2. Commit the 2 Iter 26 H-fix files (nom-memoize + nom-graph)
+3. Add `H1_SPACING = -0.02` and `ICON`/`ANIM_DEFAULT`/`ANIM_FAST` aliases to tokens.rs
+
+**Wave D stage 2 (biggest open work):** Add `impl Element` + `fn paint` to all 11 nom-panels files using nom-gpui `Scene` primitives + nom-theme tokens + spring animations.
+
+**Cycle velocity note:** Iter 30 NO-FIX → Iter 31 4-CRITICALs-closed → Iter 32 Wave D landed → Iter 33 Wave C committed. Executor closing planner items within 1-2 cycles. Iter 30 "HARD FREEZE" advisory can be lifted.
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 32 — Wave D data-model scaffold + bridge 21→3 errors)
 
 **Cron fire #8 / Audit #8.** nom-panels +991 LOC (11 files, Wave D started as pure data-model). Bridge errors down from 21 to 3 root causes (all in `background_tier.rs`, ~15 min fix). nom-canvas-core GRID_SIZE 24.0→20.0.

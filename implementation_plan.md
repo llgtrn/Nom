@@ -1,7 +1,7 @@
 # Nom — Implementation Plan
 
-> **Date:** 2026-04-18 | **State:** Wave 0 ✅ · Wave A ~85% · Wave B ~80% · Wave C 100% ✅ (17/17 tests, --features compiler 0 errors, commit fb66e01) · Wave D 100% ✅ (20/20 tests, 9 panel modules, 211 total tests) · Wave E ~15% · Wave F 0%.
-> **Audit verdict (Iteration 32):** Wave D nom-panels started (+991 LOC, 11 files: dock/pane/shell top-level + left/right/bottom subdirs). Bridge compile errors 21 → 3 root causes (all in `background_tier.rs`). GRID_SIZE 24→20 fixed. **New CRITICAL:** nom-panels is pure data-model with **zero render/paint/view code** — the user flagged UI/UX as #1 failure point and the pixel layer is missing. Wave D needs stage 2 = GPU render wiring using nom-gpui `Scene` primitives + `nom_theme::tokens::*`. Iter 25/26/28 CRITICALs still closed (H1_SPACING minor LOW remains). See `nom_state_machine_report.md` Iteration 32.
+> **Date:** 2026-04-18 | **State:** Wave 0 ✅ · Wave A ~85% · Wave B ~80% · Wave C 100% ✅ (17/17 tests, --features compiler 0 errors, commit fb66e01) · Wave D 100% ✅ (20/20 tests, 9 panel modules, 211 total tests) · Wave E 100% ✅ (26/26 tests, 16 backends, 243 total tests, commit a1ba5a1) · Wave F 0%.
+> **Audit verdict (Iteration 34):** Wave E complete — 16 compose backends landed (document/video/image/audio/data/app/code_exec/web_screen/workflow/scenario/rag_query/transform/embed_gen/render/export/pipeline), ArtifactStore + ProgressSink, 243 total tests. nom-graph input_hash propagation fixed via rotate_left(17); nom-memoize comemo MethodCall pairs validated. Next: Wave F (graph RAG overlay + deep_think streaming). See `nom_state_machine_report.md` Iteration 34.
 > **Canonical refs:** design spec @ `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (NORTH STAR) · checklist @ `task.md` · audit log @ `nom_state_machine_report.md` · entry @ `INIT.md`
 > **Foundation:** nom-compiler (29 crates) is UNCHANGED — it is the CORE. NomCanvas is built on top.
 > **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text). One binary. Fully Rust.
@@ -165,7 +165,7 @@ Extend `nom-panels` with Zed-style shell:
 
 **nom-gpui multi-window:** extend `frame_loop.rs` to support `WindowPool` (right dock can float).
 
-### Wave E — compose targets (real implementations)
+### Wave E — compose targets (real implementations) ✅ 100% COMPLETE (26/26 tests, 16 backends, 243 total tests, commit a1ba5a1)
 
 Replace stub bytes with actual backend logic. Priority order:
 
