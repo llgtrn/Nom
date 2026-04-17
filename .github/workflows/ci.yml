@@ -133,25 +133,24 @@ jobs:
         continue-on-error: true  # advisory; blockers will be addressed as they arise
 
   canvas:
-    name: NomCanvas checks
+    name: NomCanvas checks (Rust nom-gpui workspace)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - name: Install Rust toolchain
+        run: rustup show
+      - name: Cache cargo registry + nom-canvas target
+        uses: actions/cache@v4
         with:
-          node-version: '20'
-      - run: rustup show
-      - name: Install frontend deps
+          path: |
+            ~/.cargo/registry
+            ~/.cargo/git
+            nom-canvas/target
+          key: ubuntu-latest-nom-canvas-${{ hashFiles('nom-canvas/Cargo.lock') }}
+          restore-keys: ubuntu-latest-nom-canvas-
+      - name: cargo check --workspace
         working-directory: nom-canvas
-        run: npm install
-      - name: TypeScript check
+        run: cargo check --workspace --message-format short
+      - name: cargo test --workspace
         working-directory: nom-canvas
-        run: npx tsc --noEmit
-      - name: Vite build
-        working-directory: nom-canvas
-        run: npm run build
-      - name: Install system deps for Tauri
-        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
-      - name: Tauri Rust check (no LLVM)
-        working-directory: nom-canvas/src-tauri
-        run: cargo check
+        run: cargo test --workspace --quiet

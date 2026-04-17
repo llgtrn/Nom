@@ -1,0 +1,43 @@
+[workspace]
+resolver = "2"
+members = [
+    "crates/nom-gpui",
+]
+
+[workspace.package]
+edition = "2021"
+rust-version = "1.75"
+license = "Apache-2.0"
+authors = ["Nom"]
+
+[workspace.dependencies]
+# GPU rendering (versions aligned with Zed's GPUI)
+wgpu = "22"
+etagere = "0.2"
+bytemuck = { version = "1.16", features = ["derive"] }
+
+# Layout
+taffy = "0.6"
+
+# Text shaping + rasterization
+cosmic-text = "0.12"
+
+# Windowing
+winit = "0.30"
+raw-window-handle = "0.6"
+
+# Shared utilities
+parking_lot = "0.12"
+smallvec = "1.13"
+thiserror = "1.0"
+
+# Dev
+anyhow = "1.0"
+
+[workspace.lints.rust]
+unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# Allow some pragmatic patterns in GPU code
+too_many_arguments = "allow"
+new_without_default = "allow"

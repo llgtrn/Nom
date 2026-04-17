@@ -1,0 +1,22 @@
+[package]
+name = "nom-gpui"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "GPU-native scene graph, layout, and element framework for NomCanvas"
+
+[lints]
+workspace = true
+
+[dependencies]
+bytemuck.workspace = true
+etagere.workspace = true
+parking_lot.workspace = true
+smallvec.workspace = true
+taffy.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+anyhow.workspace = true

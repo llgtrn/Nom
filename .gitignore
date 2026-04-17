@@ -1,6 +1,7 @@
 # Build artifacts
 nom-compiler/target/
 nom-compiler/target2/
+nom-canvas/target/
 *.exe
 *.nomiz
 # LLVM build outputs produced by `nom build --target llvm` — never
@@ -44,3 +45,7 @@ Thumbs.db
 nom-compiler/.nom-out/
 *.nomiz
 .gitnexus
+
+# Python cache (ui-ux-pro-max scripts)
+__pycache__/
+*.pyc

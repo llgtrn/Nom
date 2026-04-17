@@ -1,0 +1,143 @@
+//! RGBA and HSLA color types with alpha compositing.
+
+/// Linear-space RGBA color with components in [0, 1].
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[repr(C)]
+pub struct Rgba {
+    pub r: f32,
+    pub g: f32,
+    pub b: f32,
+    pub a: f32,
+}
+
+impl Rgba {
+    pub const TRANSPARENT: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 0.0,
+    };
+    pub const BLACK: Self = Self {
+        r: 0.0,
+        g: 0.0,
+        b: 0.0,
+        a: 1.0,
+    };
+    pub const WHITE: Self = Self {
+        r: 1.0,
+        g: 1.0,
+        b: 1.0,
+        a: 1.0,
+    };
+
+    pub const fn new(r: f32, g: f32, b: f32, a: f32) -> Self {
+        Self { r, g, b, a }
+    }
+
+    pub const fn opaque(r: f32, g: f32, b: f32) -> Self {
+        Self { r, g, b, a: 1.0 }
+    }
+
+    /// Parse a 24-bit hex literal (#RRGGBB) with full alpha.
+    pub const fn hex(rgb: u32) -> Self {
+        let r = ((rgb >> 16) & 0xFF) as f32 / 255.0;
+        let g = ((rgb >> 8) & 0xFF) as f32 / 255.0;
+        let b = (rgb & 0xFF) as f32 / 255.0;
+        Self { r, g, b, a: 1.0 }
+    }
+
+    /// Source-over alpha blend: result = src + dst * (1 - src.a).
+    pub fn blend(self, below: Self) -> Self {
+        let a = self.a + below.a * (1.0 - self.a);
+        if a <= f32::EPSILON {
+            return Self::TRANSPARENT;
+        }
+        let comp = |s: f32, b: f32| (s * self.a + b * below.a * (1.0 - self.a)) / a;
+        Self {
+            r: comp(self.r, below.r),
+            g: comp(self.g, below.g),
+            b: comp(self.b, below.b),
+            a,
+        }
+    }
+
+    /// Convert to sRGB-encoded u8 tuple (for CPU-side display only).
+    pub fn to_u8(self) -> [u8; 4] {
+        let s = |c: f32| (c.clamp(0.0, 1.0) * 255.0 + 0.5) as u8;
+        [s(self.r), s(self.g), s(self.b), s(self.a)]
+    }
+}
+
+/// HSLA color (hue in degrees [0,360), saturation/lightness/alpha in [0,1]).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Hsla {
+    pub h: f32,
+    pub s: f32,
+    pub l: f32,
+    pub a: f32,
+}
+
+impl Hsla {
+    pub const fn new(h: f32, s: f32, l: f32, a: f32) -> Self {
+        Self { h, s, l, a }
+    }
+
+    pub fn to_rgba(self) -> Rgba {
+        let c = (1.0 - (2.0 * self.l - 1.0).abs()) * self.s;
+        let h_prime = (self.h.rem_euclid(360.0)) / 60.0;
+        let x = c * (1.0 - (h_prime.rem_euclid(2.0) - 1.0).abs());
+        let (r1, g1, b1) = match h_prime as i32 {
+            0 => (c, x, 0.0),
+            1 => (x, c, 0.0),
+            2 => (0.0, c, x),
+            3 => (0.0, x, c),
+            4 => (x, 0.0, c),
+            _ => (c, 0.0, x),
+        };
+        let m = self.l - c / 2.0;
+        Rgba {
+            r: r1 + m,
+            g: g1 + m,
+            b: b1 + m,
+            a: self.a,
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn hex_parses_rgb() {
+        let c = Rgba::hex(0xFF8040);
+        let [r, g, b, a] = c.to_u8();
+        assert_eq!(r, 255);
+        assert_eq!(g, 128);
+        assert_eq!(b, 64);
+        assert_eq!(a, 255);
+    }
+
+    #[test]
+    fn blend_over_opaque_keeps_alpha_one() {
+        let top = Rgba::new(1.0, 0.0, 0.0, 0.5);
+        let bot = Rgba::BLACK;
+        let out = top.blend(bot);
+        assert!((out.a - 1.0).abs() < 1e-6);
+        assert!((out.r - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn blend_transparent_over_anything_returns_below() {
+        let out = Rgba::TRANSPARENT.blend(Rgba::WHITE);
+        assert_eq!(out, Rgba::WHITE);
+    }
+
+    #[test]
+    fn hsla_red_converts_to_rgba() {
+        let red = Hsla::new(0.0, 1.0, 0.5, 1.0).to_rgba();
+        assert!((red.r - 1.0).abs() < 1e-4);
+        assert!(red.g < 1e-4);
+        assert!(red.b < 1e-4);
+    }
+}
