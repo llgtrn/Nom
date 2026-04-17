@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `fc20fc8` | **Tests:** 1044 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `d63bc35` | **Tests:** 1266 | **Workspace:** clean
 
 ## Wave V (2026-04-18) — GPU library wiring + test coverage push ✅ (29cb808, 824 tests)
 - [x] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
@@ -14,16 +14,27 @@
 - [x] **TEST-INTENT-COLLAB-MEMO** — +16 tests (intent 20, collab 23, memoize 27)
 - [x] **LINEAR-RGBA** — LinearRgba + ColorSpace enum added to nom-gpui renderer.rs
 
-## Wave X (2026-04-18) — in progress
-- [ ] nom-intent: 20→40+ tests
-- [ ] nom-collab: 23→45+ tests
-- [ ] nom-memoize: 27→50+ tests
-- [ ] nom-theme: 33→55+ tests
-- [ ] nom-gpui types.rs: +20 tests → 181+
-- [ ] nom-editor display/wrap/highlight: +20 → 100+
-- [ ] nom-compose cancel/credential/backends: +20 → 165+
-- [ ] nom-canvas-core spatial/snapping: +20 → 118+
-- [ ] nom-compiler-bridge adapters/sqlite: +20 → 90+
+## Wave X (2026-04-18) — COMPLETE ✅ (d63bc35, 1266 tests)
+- [x] nom-intent: 20→40 tests
+- [x] nom-collab: 23→44 tests
+- [x] nom-memoize: 27→56 tests
+- [x] nom-theme: 33→59 tests
+- [x] nom-gpui types.rs: +25 → 186 tests
+- [x] nom-editor display/wrap/highlight: +25 → 105 tests
+- [x] nom-compose cancel/credential/backends: +27 → 172 tests
+- [x] nom-canvas-core spatial/snapping: +24 → 122 tests
+- [x] nom-compiler-bridge adapters/sqlite: +25 → 95 tests
+
+## Wave Y (2026-04-18) — in progress
+- [ ] nom-cli: 30→55+ tests  
+- [ ] nom-collab: 44→65+ tests
+- [ ] nom-telemetry: 44→65+ tests
+- [ ] nom-lint: 45→70+ tests
+- [ ] nom-intent: 40→60+ tests
+- [ ] nom-blocks: 70→90+ tests
+- [ ] nom-memoize: 56→75+ tests
+- [ ] nom-panels: 81→100+ tests
+- [ ] nom-graph: 105→125+ tests
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
@@ -89,7 +100,8 @@
 | [x] U Coverage | ✅ | ef5e058 — intent/telemetry/collab+16 (733 tests) |
 | [x] V GPU wiring | ✅ | bytemuck+etagere+LinearRgba+CLI, 824 tests |
 | [x] W Coverage | ✅ | fc20fc8 — lint+telemetry+blocks+gpui+graph, 1044 tests |
-| [ ] X Deep coverage | ⏳ | intent/collab/memoize/theme/types |
+| [x] X Deep coverage | ✅ | d63bc35 — intent/collab/memoize/theme/types, 1266 tests |
+| [ ] Y Coverage | ⏳ | cli/collab/telemetry/lint/intent/blocks |
 
 ### Integrity Grep
 
