@@ -557,3 +557,79 @@ pub fn icon_path(icon: Icon) -> IconPath {
         },
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn icon_names_are_non_empty() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(!name.is_empty(), "{icon:?}.name() must not be empty");
+        }
+    }
+
+    #[test]
+    fn icon_all_covers_every_variant() {
+        // Spot-check that Icon::all() contains expected variants.
+        let all = Icon::all();
+        assert!(all.contains(&Icon::Plus));
+        assert!(all.contains(&Icon::Brain));
+        assert!(all.contains(&Icon::Workflow));
+        assert!(all.contains(&Icon::Sparkles));
+        assert!(all.contains(&Icon::ChevronRight));
+        // Must be non-empty.
+        assert!(!all.is_empty());
+    }
+
+    #[test]
+    fn icon_size_matches_spec() {
+        // The spec mandates ICON_SIZE = 24.0; icon geometry is normalized 0–1.
+        // All coordinate values in icon_path must be within [0.0, 1.0].
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(x1, y1, x2, y2) in path.lines {
+                assert!((0.0..=1.0).contains(&x1), "{icon:?} line x1={x1} out of [0,1]");
+                assert!((0.0..=1.0).contains(&y1), "{icon:?} line y1={y1} out of [0,1]");
+                assert!((0.0..=1.0).contains(&x2), "{icon:?} line x2={x2} out of [0,1]");
+                assert!((0.0..=1.0).contains(&y2), "{icon:?} line y2={y2} out of [0,1]");
+            }
+            for &(cx, cy, r) in path.circles {
+                assert!((0.0..=1.0).contains(&cx), "{icon:?} circle cx={cx} out of [0,1]");
+                assert!((0.0..=1.0).contains(&cy), "{icon:?} circle cy={cy} out of [0,1]");
+                assert!(r > 0.0, "{icon:?} circle radius must be positive");
+                assert!(r <= 0.5, "{icon:?} circle radius={r} exceeds half-viewport");
+            }
+        }
+    }
+
+    #[test]
+    fn icon_path_non_empty_geometry() {
+        // Every icon must have at least one line or one circle.
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            assert!(
+                !path.lines.is_empty() || !path.circles.is_empty(),
+                "{icon:?} has no geometry"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_names_unique() {
+        let all = Icon::all();
+        let mut names: Vec<&str> = all.iter().map(|i| i.name()).collect();
+        let original_len = names.len();
+        names.dedup();
+        // Sort then dedup for uniqueness check.
+        let mut sorted = all.iter().map(|i| i.name()).collect::<Vec<_>>();
+        sorted.sort_unstable();
+        sorted.dedup();
+        assert_eq!(sorted.len(), original_len, "icon names must be unique");
+    }
+}

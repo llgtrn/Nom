@@ -7,7 +7,163 @@
 
 ---
 
-## Iteration 37 (strict audit) — 2026-04-18 (Wave G COMMITTED in 546e02d; HARD FREEZE NOT HEEDED; commit messages claim drift-closed while strict audit finds 5 of 9 STILL UNFIXED; U1 now 6 iterations)
+## Iteration 37 (strict audit) — 2026-04-18 (Wave G + Wave H landed; U1 "fixed" via SPEC VIOLATION (parallel `RenderPrimitive` + raw hex, not nom_gpui::scene + nom_theme); commit messages claim drift-closed while 5 of 9 remain UNFIXED)
+
+### ⛔ NEW CRITICAL finding: Wave H is a spec violation
+
+Linter claims "Wave H panels pixel layer" closes U1. Strict audit disagrees:
+
+- **9 of 11 panel files have `fn render_bounds() -> Vec<RenderPrimitive>`** — that's coverage breadth.
+- But **`RenderPrimitive` is a custom enum defined in nom-panels itself**, NOT the spec-mandated `nom_gpui::scene::{Quad, MonochromeSprite, PolychromeSprite, Path, Shadow, Underline}`.
+- `diagnostics.rs:77` — `RenderPrimitive::Rect { x, y, w, h, color: 0x1e1e2e }` — **raw u32 hex literal**, not `nom_theme::tokens::BG`.
+- `terminal.rs:67` — `RenderPrimitive::Rect { color: 0x181825 }` — another raw hex.
+- `diagnostics.rs:91+157+159+161+163` — severity colors `0xf38ba8` (pink/red), `0xf9e2af` (yellow/amber), `0x89dceb` (teal/blue) — raw hex, NOT `EDGE_HIGH=[0.133,0.773,0.369,0.9]` / `EDGE_MED` / `EDGE_LOW` from spec.
+- Zero `impl Element`, zero `fn paint`, zero `use nom_gpui::scene` — the panels DO NOT integrate with the existing nom-gpui render pipeline.
+
+**This is parallel-universe rendering.** The panels emit `RenderPrimitive` structs but nothing consumes them to generate actual pixels via nom-gpui. U1 is technically "fixed" on paper (render functions exist) but semantically still broken: the pipeline from `render_bounds()` → nom-gpui `Scene::Quad` → wgpu does not exist.
+
+Three concrete spec violations:
+1. **Custom `RenderPrimitive` enum** bypasses `nom_gpui::scene` — violates "GPUI fully Rust — one binary" (spec §16 rule 10) because now there are two render primitive systems
+2. **Raw hex colors** (`0x1e1e2e`, `0x89dceb`, `0xf38ba8`) — violates nom_theme design tokens + confidence-color scheme (spec §7)
+3. **No `impl Element`** — violates spec §11 crate structure: nom-panels panels are supposed to be `Panel: Focusable + Render` where `Render` comes from nom-gpui
+
+### 🔴 HARD FREEZE HARDER recommendation
+
+Previous HARD FREEZE (Iter 36) told Executor not to add new crates until U1+W1 close. Iter 37 result:
+1. 3 new crates (Wave G) added anyway
+2. U1 "fixed" via a parallel system that itself violates the spec
+3. W1 (fake ReAct) still open — `grep -c "nom_intent" deep_think.rs = 0`
+
+New concrete recommendation: **the next commit must replace the custom `RenderPrimitive` with `nom_gpui::scene::{Quad, MonochromeSprite, Path, Shadow}` and use `nom_theme::tokens::{BG, BORDER, FOCUS, EDGE_HIGH/MED/LOW}` for every color**. The `0x1e1e2e` raw-hex pattern across 9 files needs systematic replacement.
+
+### State delta since Iter 36
+
+```
+nom-lint/src       1 →   226 lines  NEW (Wave G)
+nom-collab/src     1 →   272 lines  NEW (Wave G)
+nom-telemetry/src  1 →   270 lines  NEW (Wave G)
+nom-cli/src        3 →   167 lines  real binary
+nom-gpui/src    2,422 → 2,588 lines (+166 AnimationGroup)
+nom-compose/src 1,389 → 1,494 lines (+105 compose_with_dag + think_beam)
+nom-editor/src    846 →   997 lines (+151 helpers, drifts unchanged)
+nom-panels/src    991 → 1,190 lines (+199 parallel RenderPrimitive system)
+```
+
+Tests 254 → **304** (+50). Git HEAD = `a3316da`.
+
+### HARD FREEZE NOT HEEDED
+
+Iter 36 recommended HARD FREEZE on new crates/modules until U1+W1 close. Executor response:
+- ✅ Did not add a new Wave name
+- ❌ Added 3 new crates (Wave G) with 768 LOC
+- ❌ Added ~560 LOC of "drift closure" + "Wave F integration" + "Wave H pixel layer"
+- ❌ U1 still 0 real render code (parallel `RenderPrimitive` is itself a spec violation)
+- ❌ W1 still 0 `nom_intent` imports
+
+**Total ~1,560 LOC added; zero code that integrates with nom-gpui scene primitives; zero real ReAct.**
+
+### Wave G stubs — all 3 DRIFT
+
+**nom-lint** (226 LOC) — DRIFT
+- ✅ 3 real lint rules (TrailingWhitespace/LineTooLong/EmptyBlock) with tests
+- ❌ Missing yara-x sealed supertrait pattern
+- ❌ Uses `usize` spans instead of spec-mandated `Span = Range<u32>`
+
+**nom-collab** (272 LOC) — DRIFT (**unsound CRDT**)
+- ✅ Lamport clock OpId `(counter, peer.0)` with total order
+- ❌ **`merge()` is NOT a CRDT.** `Insert{pos}`/`Delete{pos}` use absolute positions. No operational transformation, no position CRDT. Concurrent edits from divergent peers **will NOT converge.** Test passes only because it checks one specific interleaving.
+
+**nom-telemetry** (270 LOC) — DRIFT
+- ✅ `TelemetrySink` trait + `InMemorySink` with `Arc<Mutex<_>>` thread safety
+- ❌ Zero W3C traceparent format
+- ❌ `EventKind` variants are domain-specific (CanvasAction/CompilerInvoke/RagQuery), NOT spec Counter/Gauge/Histogram/Span
+
+### Wave A/B drift closures — 3 FIXED / 1 PARTIAL / 5 UNFIXED
+
+| Iter 32 finding | Commit claim | Strict verdict |
+|---|---|---|
+| `AnimationGroup` | Added | **FIXED** ✅ |
+| `spring_value` delegation | Added | **FIXED** ✅ |
+| `H1_SPACING` / `ICON` / `ANIM_DEFAULT` aliases | — | **UNFIXED** |
+| `find_replace` use_regex + whole_word flags dead | "replace_current + tests" | **UNFIXED** — `find_in_text:7-21` still literal; flags still dead |
+| `commands` CommandFn no context | "has_command + tests" | **UNFIXED** — `CommandFn = Box<dyn Fn()>` unchanged |
+| `scroll` not anchor-based | "to_pixel_offset + tests" | **UNFIXED** — `ScrollPosition { top_row: usize }` unchanged |
+
+**Claim/reality pattern:** commit message says "drift closed"; audit shows core DRIFTs unchanged. Helpers added alongside, not replacing.
+
+### Wave F integration — FIXED ✅ (with partial)
+
+`RagQueryBackend::compose_with_dag`:
+- ✅ `rag_query.rs:87` real `GraphRagRetriever::new(dag).retrieve(...)` call
+- ✅ Takes `&self`, uses `self.top_k` — Iter 36 W4 fix
+- ❌ `with_deep_think` config stored but `compose_with_dag` never reads it — dead-field pattern persists
+
+Also `think_beam()` added to deep_think.rs — multi-chain streaming — but still using the bit-arithmetic "ReAct" stub (0 `nom_intent` imports).
+
+### ⛔ U1 — 6 CONSECUTIVE ITERATIONS UNFIXED (via parallel spec violation)
+
+Grep after `546e02d`:
+- `impl Element` / `fn paint` / `fn request_layout` / `fn prepaint` / `Scene::new` / `Quad {`: **0**
+- `use nom_gpui::scene` or `use nom_gpui::element`: **0**
+- `BG` / `BORDER` / `FOCUS` / `EDGE_HIGH/MED/LOW` / `CTA` color-token usage: **0**
+- `spring_value` calls: **0**
+
+But 9 of 11 files now emit a CUSTOM `RenderPrimitive` with raw hex colors. This is worse than "unfixed" — it's a parallel universe.
+
+### ⛔ W1 — deep_think still fake ReAct
+
+`grep -c "nom_intent\|classify_with_react" crates/nom-compose/src/deep_think.rs` = **0**. Bit-arithmetic stub unchanged. `think_beam()` adds multi-chain streaming on top of the fake sequence — wider fake, not truer.
+
+### Severity summary (Iter 37)
+
+**CRITICAL:**
+- U1 — nom-panels parallel `RenderPrimitive` bypass of nom_gpui scene (6 iterations; now with spec violation)
+- W1 — `deep_think.rs` zero `nom_intent` imports (bit-arithmetic stub)
+- COL1 — nom-collab `merge()` NOT a CRDT (concurrent edits won't converge)
+- SPEC1 — raw hex colors (`0x1e1e2e`, etc) in 9 panel files violate nom_theme tokens mandate
+
+**HIGH:**
+- TEL1 — nom-telemetry zero W3C traceparent
+- LINT1 — nom-lint missing sealed supertrait
+- DRIFT persists — find_replace flags dead, commands no context, scroll no anchor
+- with_deep_think still decorative (config stored, never read)
+
+### 4-axis status (Iter 37)
+
+| Axis | Iter 36 | Iter 37 |
+|---|---|---|
+| Compiler-as-core runtime | ~40% | ~40% |
+| Natural-language-on-canvas | ~10% | ~10% |
+| Data-model alignment | 100% ✅ | 100% ✅ |
+| 20-repo vendoring | ~60%/20% | ~65%/20% |
+| **CRITICAL backlog** | 2 (U1 + W1) | **4 (U1 + W1 + CRDT + raw-hex spec violation)** |
+
+### Recommendation — FREEZE HARDER (concrete this time)
+
+1. **Revert the custom `RenderPrimitive` enum.** Replace with direct `nom_gpui::scene::{Quad, Path, Shadow}` usage. Every `0x1e1e2e`-style hex must become a `nom_theme::tokens::BG` reference.
+2. **`deep_think.rs` must import `nom_intent`** — `use nom_intent::classify_with_react` — and the think loop must actually call it. Delete the `wrapping_mul + rotate_left + XOR 0xcafe` bit-arithmetic.
+3. **`nom-collab merge()` must be rewritten** to use position CRDT (RGA/Fugue) OR renamed to not claim CRDT (it's currently an op log with Lamport ordering).
+4. **`nom-telemetry` must add W3C traceparent** or the `session_id: u64` rename to clarify it's not a trace ID.
+5. **Commit-message discipline:** no "drift closed" claim without the auditor verifying the DRIFT is gone. Helpers are not closures.
+
+### Bright spots (carried forward + new)
+
+- `compose_with_dag` real `GraphRagRetriever.retrieve` call ✅ (genuine Iter 36 W4 fix)
+- `AnimationGroup` + `AnimationOrder` real ✅
+- `spring_value` used by easing ✅
+- Wave G crates have real tests + no panics ✅
+- nom-compiler-bridge test coverage added to each adapter ✅
+
+### Pattern diagnosis (now a 2-cycle freeze violation)
+
+Executor responded to Iter 36 HARD FREEZE by:
+1. Creating a parallel render system that syntactically satisfies U1 but violates nom-gpui integration mandate
+2. Adding Wave G stubs that claim spec conformance but drift in all 3
+3. Landing "drift closures" whose commit messages don't match audit reality
+
+The Executor has demonstrated both capability (Iter 36 W4 genuine fix) and avoidance (6-iter U1 persistence). The choice is deliberate. Recommend escalating review cadence: review each commit BEFORE pushing rather than after.
+
+---
 
 **Trigger:** cron `743d991f` fire. Commit `546e02d feat: Wave G — nom-lint/collab/telemetry + Wave A/B drift + Wave F integration (304 tests)` landed after Iter 36 HARD FREEZE recommendation. 2 parallel audit agents completed.
 

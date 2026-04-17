@@ -205,7 +205,7 @@ mod tests {
     }
 
     #[test]
-    fn lru_cache_evicts_oldest() {
+    fn lru_cache_evicts_oldest_at_capacity() {
         let mut cache = LruCache::new(2);
         cache.put(10, CachedValue::String("first".into()));
         cache.put(20, CachedValue::String("second".into()));
