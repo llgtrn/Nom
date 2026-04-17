@@ -5,9 +5,14 @@ pub mod block_model;
 pub mod block_schema;
 pub mod block_selection;
 pub mod block_transformer;
+pub mod drawing;
+pub mod embed;
 pub mod flavour;
+pub mod graph_node;
+pub mod media;
 pub mod nomx;
 pub mod prose;
+pub mod table;
 
 // ── Public re-exports ────────────────────────────────────────────────────────
 

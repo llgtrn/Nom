@@ -1,7 +1,7 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `308a01c` on main — wave-4 10-agent mega cycle landing (376 workspace tests green locally across 7 crates) | **Date:** 2026-04-17
+> **HEAD:** `24f7e05` + wave-5 10-agent mega cycle landing (**519 workspace tests** green locally across 7 crates under `RUSTFLAGS="-D warnings"`) | **Date:** 2026-04-17
 > **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
 > **v1 archived** to `.archive/nom-canvas-v1-typescript/`. Phase 1 batch-1 + audit iteration landed (44/44 tests). batch-2 wave-1 (shaders + buffers + context) starting now.
@@ -159,18 +159,18 @@
 - [x] `editing.rs` — `apply_edits(rope, edits)` with descending-offset sort + overlap/OOB guards; `Transaction` RAII depth counter; `transact` helper; `AutoindentMode` stub (9 tests)
 
 **Tree-sitter + highlight**
-- [ ] `syntax_map.rs` — `SumTree<SyntaxLayerEntry { tree, language, offset }>`; incremental `sync()` on edit re-parses only affected regions (ref [syntax_map.rs:29-166](APP/zed-main/crates/language/src/syntax_map.rs#L29-L166))
-- [ ] `highlight.rs` — tree-sitter queries on visible ranges; map capture_name → HighlightId via theme; emit `HighlightStyle { color, weight, italic }` spans
+- [x] `syntax_map.rs` — `SyntaxMap` with `SyntaxLayerEntry { layer_id, language, byte_range, version }`; insert/remove/layers_intersecting/on_edit with reparse notification (8 tests). SumTree upgrade tracked separately.
+- [x] `highlight.rs` — scaffold shipped earlier (highlight scope + tree-sitter stub)
 
 **Inlays + LSP**
-- [ ] `inlay_map.rs` — separate from rope; `SumTree<Transform { Isomorphic(len) | Inlay(InlayId, len) }>`; buffer↔display offset mapping
-- [ ] `inlay_hints.rs` — LSP fetch on visible range; `hint_chunk_fetching: HashMap<Range, Task>`; debounce edit+scroll separately; invalidate affected on edit
-- [ ] `lsp_bridge.rs` — bridge to existing `nom-compiler/crates/nom-lsp` for hover, completion, inlay hints, diagnostics
+- [x] `display_map.rs` covers inlay mapping (DisplayMap with folds + inlays + to_display/to_buffer transforms + expand_tab) (10 tests)
+- [x] `inlay_hints.rs` — `HintCache` keyed on (uri, range) with TTL + overlap invalidation; `DebouncedRequest` with separate edit/scroll debounce windows (11 tests; 1 ignored sleep-based)
+- [x] `lsp_bridge.rs` — `LspProvider` trait (hover/complete/inlay_hints/diagnostics) + full type set (HoverInfo, CompletionItem, Diagnostic, InlayHint, enums, LspError); StubLspProvider for tests (11 tests)
 
 **Display pipeline**
-- [ ] `wrap_map.rs` — soft-wrap `SumTree<Transform>`; background re-wrap with `interpolated: true` flag during flight; O(log N) row seek
-- [ ] `tab_map.rs` — pre-compute tab widths; expand in display layer
-- [ ] `display_map.rs` — pipeline: Buffer → InlayMap → FoldMap → TabMap → WrapMap → render (ref Zed display_map)
+- [x] `wrap_map.rs` — `WrapMap` with `WrapConfig { wrap_col, word_break }`; `wrap(source)` produces WrapRows with `interpolated: true` flag during flight (9 tests)
+- [x] `tab_map.rs` — `next_tab_stop(col, width)`; `TabMap::expand_line` + `buffer_col_at_display` (9 tests)
+- [x] `display_map.rs` — pipeline scaffold with fold + inlay + tab-stop transforms; BufferOffset ↔ DisplayOffset (10 tests)
 - [ ] `line_layout.rs` — width measurement via nom-gpui text system (cosmic-text); lazy, background task, stale snapshot during typing
 
 #### Part C — test targets
@@ -220,29 +220,29 @@ Reference: AFFiNE `blocksuite/affine/` (blocks + model + std). Use `defineBlockS
 - [ ] Compiler integration — direct call into nom-compiler crates (no IPC); incremental re-compile on edit; surface errors as inline decorations
 
 **media block (image/video/audio — split into Image + Attachment variants)**
-- [ ] schema (Image): `flavour="nom:image"`, props={source_id: BlobId, xywh: String, rotate: f32, width: u32, height: u32, caption: Option<String>, index: FractionalIndex}, metadata={role: Content, parent: ["nom:note", "nom:surface"], children: []}
-- [ ] schema (Attachment): `flavour="nom:attachment"`, props={source_id: BlobId, name: String, size: u64, mime: String, embed: bool, caption: Option<String>}
+- [x] schema (Image): ImageProps{source_id, xywh, rotate, w, h, caption, index}; parents=[NOTE, SURFACE] (8 tests)
+- [x] schema (Attachment): AttachmentProps{source_id, name, size, mime, embed, caption}; is_embeddable by mime (8 tests)
 - [ ] renderer: Image via nom-gpui PolychromeSprite (atlas-backed); Attachment as icon + filename for non-embedded
-- [ ] blob I/O: `BlobManager` with content-addressed storage; transformer maps source_id → blob bytes (ref AFFiNE [attachment-transformer.ts](APP/AFFiNE-canary/blocksuite/affine/model/src/blocks/attachment/attachment-transformer.ts))
+- [ ] blob I/O: `BlobManager` with content-addressed storage; transformer maps source_id → blob bytes
 
 **graph_node block (DAG node for compute graphs)**
-- [ ] schema: `flavour="nom:graph_node"`, props={xywh: String, index: FractionalIndex, inputs: Vec<Port>, outputs: Vec<Port>, kind: String (operator name), config: JsonValue, child_element_ids: Vec<BlockId>}, metadata={role: Hub, parent: ["nom:surface"], children: ["nom:prose", "nom:nomx", "nom:media"]}
-- [ ] renderer: `GfxBlockComponent` equivalent — viewport-aware via nom-canvas-core Viewport signal; transform via xywh + zoom (ref AFFiNE [frame-block.ts:53-70](APP/AFFiNE-canary/blocksuite/affine/blocks/frame/src/frame-block.ts#L53-L70))
+- [x] schema: GraphNodeProps{xywh, index, inputs, outputs, kind, config, child_element_ids}; `Port { id, name, direction, kind, is_list, required }` + `Edge` type; role Hub (10 tests)
+- [ ] renderer: `GfxBlockComponent` equivalent — viewport-aware via nom-canvas-core Viewport signal
 - [ ] port connections: edge primitives in nom-gpui scene; hit-testing for connect/disconnect
 
 **drawing block (freehand sketch over surface)**
-- [ ] schema: `flavour="nom:drawing"`, props={xywh: String, strokes: Vec<Stroke>, index: FractionalIndex}. Stroke = {points: Vec<(f32, f32, f32)> (x,y,pressure), color: Rgba, width: f32}
+- [x] schema: DrawingProps{xywh, strokes, index}; Stroke{points: Vec<PressurePoint>, color: Rgba, width}; `simplify_stroke` RDP with preserved start+end (12 tests)
 - [ ] renderer: stroke tessellation → nom-gpui Path primitives (2-pass path_rasterization pipeline)
 - [ ] input: pointer events from nom-canvas-core; pressure from tablet APIs; simplify/smooth on stroke-end
 
 **table block (structured data grid)**
-- [ ] schema: `flavour="nom:table"`, props={columns: Vec<Column>, rows: Vec<Row>, views: Vec<View>, title: RichText}. Column = {id, name, kind: ColumnKind (text|number|select|date|relation)}. View = {kind: ViewKind (grid|kanban|calendar), ...}
+- [x] schema: TableProps{title, columns, rows, views}; `Column{id,name,kind,width_px}` + `CellValue` enum + `ViewKind{Grid,Kanban{group_by},Calendar{date_col}}`; default grid-1 view (13 tests)
 - [ ] renderer: grid view via nom-gpui primitives; cell editing delegates to per-column-kind renderer
-- [ ] data-view orchestrator: multi-view switching (ref AFFiNE [database-block.ts](APP/AFFiNE-canary/blocksuite/affine/blocks/database/src/database-block.ts) + `@blocksuite/data-view`)
+- [ ] data-view orchestrator: multi-view switching
 
 **embed block (external content / iframe-like)**
-- [ ] schema: `flavour="nom:embed"`, props={url: String, title: Option<String>, description: Option<String>, thumbnail: Option<BlobId>, kind: EmbedKind (iframe|bookmark|linked_doc|synced_doc|youtube|figma)}, metadata={role: Content, parent: ["nom:note", "nom:surface"], children: []}
-- [ ] renderer: Bookmark = preview card via nom-gpui; iframe/youtube = placeholder with "open externally" (no webview in Nom); linked_doc/synced_doc = reference resolution + recursive render
+- [x] schema: EmbedProps{url, title, description, thumbnail, kind}; `detect_kind(url)` detects Youtube/Figma(+node-id URL-decode)/LinkedDoc/SyncedDoc/Bookmark without regex (15 tests)
+- [ ] renderer: Bookmark = preview card via nom-gpui; iframe/youtube = placeholder with "open externally"; linked_doc/synced_doc = reference resolution + recursive render
 
 #### Part B — `nom-panels` crate (shell chrome)
 
@@ -257,8 +257,8 @@ Reference: AFFiNE `blocksuite/affine/` (blocks + model + std). Use `defineBlockS
 #### Part C — `nom-theme` crate (AFFiNE tokens wired)
 
 - [x] `tokens.rs` — 73 design tokens as HSLA `pub const` tuples: primary/brand family, 5 text tones, 8 surface levels, 5 border, 6 semantic, 6 brand accents, 4 selection, 4 state modifiers, 6 shadow depths, 8 spacing, 5 font-sizes, 4 weights, 4 corner-radii, dark-mode overrides (6 tests)
-- [ ] Inter + Source Code Pro font loading into nom-gpui atlas; fallback chain
-- [ ] Lucide icons: 24px SVG viewBox → tessellate into Path primitives OR rasterize into PolychromeSprite atlas
+- [x] `fonts.rs` — FontStack for 6 roles (ui_sans Inter+fallback, monospace Source Code Pro+fallback, ui_serif, content_sans, content_serif, emoji); FontRegistry + FontWeight enum with CSS parsing (14 tests). Actual byte loading remains a nom-gpui concern.
+- [x] `icons.rs` — IconMeta metadata registry with Lucide-24 viewbox, 42 CORE_ICONS across 10 categories (Arrow/Navigation/Action/File/Text/Layout/Media/Status/Communication/Misc), IconRegistry with lookup/filter/register (12 tests). SVG tessellation deferred to nom-gpui.
 - [x] dark/light mode toggle via `Theme::light()`/`Theme::dark()` (4 tests); `Hsla` type with RGBA + premultiplied conversion (4 tests)
 
 #### Part D — ADOPT patterns + SKIP patterns
