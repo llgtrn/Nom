@@ -354,20 +354,15 @@ impl GpuAtlas {
         self.0.lock().drain_uploads();
     }
 
-    /// Return a cloned [`wgpu::TextureView`] for `texture_id`.
+    /// Return a [`wgpu::TextureView`] for `texture_id`, or `None` if the slot
+    /// no longer exists (e.g. after [`GpuAtlas::clear`] invalidated a stale id).
     ///
-    /// Texture views are cheap to clone (they are reference-counted handles).
-    ///
-    /// # Panics
-    ///
-    /// Panics if `texture_id.index` does not exist in the kind's slab list.
-    pub fn texture_view(&self, texture_id: AtlasTextureId) -> wgpu::TextureView {
+    /// Texture views are cheap to create (they are GPU object handles).
+    pub fn texture_view(&self, texture_id: AtlasTextureId) -> Option<wgpu::TextureView> {
         let lock = self.0.lock();
         let store = lock.storage.store_for_kind(texture_id.kind);
-        let slab = store
-            .get(texture_id.index)
-            .expect("texture_id index out of range");
-        slab.create_view()
+        let slab = store.get(texture_id.index)?;
+        Some(slab.create_view())
     }
 }
 
@@ -683,7 +678,42 @@ mod tests {
             })
             .unwrap();
 
-        // Must not panic.
-        let _view = atlas.texture_view(tile.texture);
+        // Must return Some for a valid, live texture id.
+        let view = atlas.texture_view(tile.texture);
+        assert!(view.is_some(), "expected Some for a valid texture id");
+    }
+
+    // ── texture_view returns None for a stale id after clear ──────────────────
+
+    #[test]
+    fn texture_view_returns_none_for_stale_id() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let Some((device, queue)) = gpu_pair() else {
+            eprintln!("SKIP: no GPU adapter");
+            return;
+        };
+
+        let atlas = GpuAtlas::new(device, queue);
+
+        // Insert a tile so that a slab is created and we get a valid id.
+        let tile = atlas
+            .get_or_insert(&mono_key(1), &mut || {
+                Ok((Size::new(DevicePixels(8), DevicePixels(8)), vec![0xFFu8; 64]))
+            })
+            .expect("tile allocation failed");
+
+        // Confirm the id is valid before clearing.
+        assert!(atlas.texture_view(tile.texture).is_some());
+
+        // After clear(), all slabs are dropped and the storage is reset.
+        // The previously returned AtlasTextureId is now stale.
+        atlas.clear();
+
+        // texture_view must return None, not panic.
+        let view = atlas.texture_view(tile.texture);
+        assert!(view.is_none(), "expected None for stale texture id after clear");
     }
 }

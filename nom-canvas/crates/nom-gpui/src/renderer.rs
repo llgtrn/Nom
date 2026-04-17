@@ -20,6 +20,7 @@
 
 #![deny(unsafe_code)]
 
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use crate::context::GpuContext;
@@ -310,31 +311,43 @@ impl Renderer {
         // Build the globals bind group (recreated each frame; cheap).
         let globals_bg = self.pipelines.bind_globals(device, &self.globals_buffer);
 
-        // Step 4: pre-collect atlas texture views so they outlive the render pass
-        // borrow. `TextureView` values must live longer than any render pass that
-        // references them, so we gather them before opening the pass.
+        // Step 4: pre-collect atlas texture views keyed by (SpriteKind, AtlasTextureId).
         //
-        // We tag each view with a `SpriteKind` so the dispatch loop can find the
-        // right view for each batch without separate iterators.
-        #[derive(Clone, Copy, PartialEq)]
+        // Views must outlive the render pass borrow, so we gather them before
+        // opening the pass. Keying by (kind, texture_id) eliminates the fragile
+        // positional iterator that could silently desync when the two traversals
+        // visit batches in different sequences.
+        #[derive(Clone, Copy, Hash, Eq, PartialEq)]
         enum SpriteKind { Mono, Poly, Subpixel }
 
-        let sprite_views: Vec<(SpriteKind, crate::atlas::AtlasTextureId, wgpu::TextureView)> = scene
-            .batches()
-            .filter_map(|b| match b {
+        let mut sprite_views: HashMap<(SpriteKind, crate::atlas::AtlasTextureId), wgpu::TextureView> =
+            HashMap::new();
+        for batch in scene.batches() {
+            match batch {
                 PrimitiveBatch::MonochromeSprites { texture_id, .. } => {
-                    Some((SpriteKind::Mono, texture_id, atlas.texture_view(texture_id)))
+                    if !sprite_views.contains_key(&(SpriteKind::Mono, texture_id)) {
+                        if let Some(view) = atlas.texture_view(texture_id) {
+                            sprite_views.insert((SpriteKind::Mono, texture_id), view);
+                        }
+                    }
                 }
                 PrimitiveBatch::PolychromeSprites { texture_id, .. } => {
-                    Some((SpriteKind::Poly, texture_id, atlas.texture_view(texture_id)))
+                    if !sprite_views.contains_key(&(SpriteKind::Poly, texture_id)) {
+                        if let Some(view) = atlas.texture_view(texture_id) {
+                            sprite_views.insert((SpriteKind::Poly, texture_id), view);
+                        }
+                    }
                 }
                 PrimitiveBatch::SubpixelSprites { texture_id, .. } => {
-                    Some((SpriteKind::Subpixel, texture_id, atlas.texture_view(texture_id)))
+                    if !sprite_views.contains_key(&(SpriteKind::Subpixel, texture_id)) {
+                        if let Some(view) = atlas.texture_view(texture_id) {
+                            sprite_views.insert((SpriteKind::Subpixel, texture_id), view);
+                        }
+                    }
                 }
-                _ => None,
-            })
-            .collect();
-        let mut sprite_view_iter = sprite_views.iter();
+                _ => {}
+            }
+        }
 
         // Step 5: open render pass and process each batch.
         {
@@ -357,8 +370,10 @@ impl Renderer {
                     PrimitiveBatch::Quads(quads) => {
                         self.draw_quads(device, queue, &globals_bg, quads, &mut pass);
                     }
-                    PrimitiveBatch::MonochromeSprites { sprites, .. } => {
-                        if let Some((_, _, atlas_view)) = sprite_view_iter.next() {
+                    PrimitiveBatch::MonochromeSprites { texture_id, sprites } => {
+                        if let Some(atlas_view) =
+                            sprite_views.get(&(SpriteKind::Mono, texture_id))
+                        {
                             self.draw_mono_sprites(
                                 device,
                                 queue,
@@ -367,6 +382,8 @@ impl Renderer {
                                 atlas_view,
                                 &mut pass,
                             );
+                        } else {
+                            eprintln!("nom_gpui: no atlas view for MonochromeSprites batch; batch dropped");
                         }
                     }
                     PrimitiveBatch::Underlines(underlines) => {
@@ -375,8 +392,10 @@ impl Renderer {
                     PrimitiveBatch::Shadows(shadows) => {
                         self.draw_shadows(device, queue, &globals_bg, shadows, &mut pass);
                     }
-                    PrimitiveBatch::PolychromeSprites { sprites, .. } => {
-                        if let Some((_, _, atlas_view)) = sprite_view_iter.next() {
+                    PrimitiveBatch::PolychromeSprites { texture_id, sprites } => {
+                        if let Some(atlas_view) =
+                            sprite_views.get(&(SpriteKind::Poly, texture_id))
+                        {
                             self.draw_poly_sprites(
                                 device,
                                 queue,
@@ -385,17 +404,14 @@ impl Renderer {
                                 atlas_view,
                                 &mut pass,
                             );
+                        } else {
+                            eprintln!("nom_gpui: no atlas view for PolychromeSprites batch; batch dropped");
                         }
                     }
-                    PrimitiveBatch::SubpixelSprites { sprites, .. } => {
-                        // Advance sprite_view_iter to stay in sync even when pipeline absent.
-                        let view_entry = sprite_view_iter.next();
-                        if let (Some(pipeline), Some((_, _, atlas_view))) =
-                            (&self.pipelines.subpixel_sprites, view_entry)
+                    PrimitiveBatch::SubpixelSprites { texture_id, sprites } => {
+                        if let Some(atlas_view) =
+                            sprite_views.get(&(SpriteKind::Subpixel, texture_id))
                         {
-                            // pipeline is borrowed from self.pipelines; we need a raw ptr trick
-                            // to avoid double-borrowing self. Instead, clone the pipeline ref.
-                            let _ = pipeline; // satisfy borrow checker pattern
                             self.draw_subpixel_sprites(
                                 device,
                                 queue,
@@ -404,14 +420,72 @@ impl Renderer {
                                 atlas_view,
                                 &mut pass,
                             );
+                        } else {
+                            eprintln!("nom_gpui: no atlas view for SubpixelSprites batch; batch dropped");
                         }
                     }
-                    // Batch-4: two-pass path renderer, not yet dispatched.
-                    PrimitiveBatch::Paths(_) => {}
+                    PrimitiveBatch::Paths(paths) => {
+                        self.draw_paths(paths);
+                    }
                 }
             }
         }
         // Step 7: render pass dropped here; caller submits the encoder.
+    }
+
+    /// Batch-4 stub: log the paths batch and return without issuing draw calls.
+    ///
+    /// # Full two-pass drop-pass algorithm (implement in batch-4)
+    ///
+    /// Path rendering requires MSAA anti-aliasing via a two-pass approach.
+    /// The render pass that is currently open (`nom_gpui_main_pass`) must be
+    /// **ended** before the path passes begin, then **reopened** with
+    /// `LoadOp::Load` afterward so previously rendered quads/sprites are
+    /// preserved.  The full sequence is:
+    ///
+    /// 1. **Drop the surface render pass** — end the current
+    ///    `nom_gpui_main_pass` by dropping the `RenderPass` guard.
+    ///
+    /// 2. **Allocate MSAA intermediate texture** — create (or reuse from cache)
+    ///    a 4x MSAA `wgpu::Texture` sized to `(viewport_size.0, viewport_size.1)`
+    ///    with format matching the surface.  Also allocate a matching non-MSAA
+    ///    resolve target texture.  Cache both textures keyed by size to avoid
+    ///    per-frame allocations.
+    ///
+    /// 3. **Path rasterization pass** — begin a new `RenderPass` targeting the
+    ///    MSAA texture with `resolve_target = Some(&resolve_view)`.
+    ///    For each `Path` in the slice:
+    ///    a. Tessellate `path.vertices` (a polygon) into a triangle fan:
+    ///       fan triangulation: `v0-v1-v2, v0-v2-v3, ..., v0-v(n-2)-v(n-1)`.
+    ///       Write `PathVertex { position: [x, y], color: [r, g, b, a] }` for
+    ///       each vertex into the `path_vertex_buffer` (a plain vertex buffer,
+    ///       not a storage buffer).
+    ///    b. Issue `draw(0..vertex_count, 0..1)` with the `path_rasterization`
+    ///       pipeline.  The pipeline writes to the MSAA attachment; WGPU
+    ///       auto-resolves to the non-MSAA texture when the pass ends.
+    ///    End this pass.
+    ///
+    /// 4. **Composite pass** — reopen the surface render pass with
+    ///    `LoadOp::Load` (to preserve already-drawn content).  Bind the
+    ///    resolved non-MSAA texture view as a sampled texture in bind group 1.
+    ///    Set the `paths` pipeline (a full-screen quad that samples the resolved
+    ///    texture and alpha-composites it over the existing surface content).
+    ///    Issue `draw(0..4, 0..1)` to emit the full-screen quad.
+    ///    Continue with remaining primitive batches inside this reopened pass.
+    ///
+    /// Reference: Zed `wgpu_renderer.rs:1218-1256`.
+    fn draw_paths(&self, paths: &[crate::scene::Path]) {
+        if paths.is_empty() {
+            return;
+        }
+        let total_vertices: usize = paths.iter().map(|p| p.vertices.len()).sum();
+        // batch-4 two-pass path render deferred — log via eprintln when NOM_LOG_PATHS is set
+        if std::env::var("NOM_LOG_PATHS").is_ok() {
+            eprintln!(
+                "nom_gpui: Paths batch (count={}, vertices={}) — batch-4 two-pass render not yet implemented",
+                paths.len(), total_vertices
+            );
+        }
     }
 
     // ── private batch dispatchers ─────────────────────────────────────────────

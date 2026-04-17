@@ -40,13 +40,19 @@ fn clip_distances_rect(pos: vec2<f32>, clip: Rect) -> vec4<f32> {
 // Per-instance data for a polychrome (full-RGBA) atlas sprite.
 // uv_min / uv_max are normalised UV coordinates into the Bgra8Unorm atlas.
 // grayscale: when 1u, convert the sampled RGB to luminance before output.
+// transform_row0: (rotation_scale[0][0], rotation_scale[0][1], translation.x, _pad)
+// transform_row1: (rotation_scale[1][0], rotation_scale[1][1], translation.y, _pad)
+// The 2×2 rotation/scale matrix and translation encode a 2D affine transform applied
+// around the sprite center (center-based semantics).
 struct PolySpriteInstance {
-    bounds:      Rect,
-    clip_bounds: Rect,
-    uv_min:      vec2<f32>,
-    uv_max:      vec2<f32>,
-    grayscale:   u32,
-    _pad:        vec3<u32>,
+    bounds:          Rect,
+    clip_bounds:     Rect,
+    uv_min:          vec2<f32>,
+    uv_max:          vec2<f32>,
+    grayscale:       u32,
+    _pad:            vec3<u32>,
+    transform_row0:  vec4<f32>,
+    transform_row1:  vec4<f32>,
 }
 
 struct PolySpriteVaryings {
@@ -70,9 +76,19 @@ fn vs_poly_sprite(
     @builtin(vertex_index)   vid: u32,
     @builtin(instance_index) iid: u32,
 ) -> PolySpriteVaryings {
-    let inst     = instances[iid];
-    let uv       = unit_vertex(vid);
-    let pos      = uv * inst.bounds.size + inst.bounds.origin;
+    let inst      = instances[iid];
+    let uv        = unit_vertex(vid);
+    let pos_local = uv * inst.bounds.size + inst.bounds.origin;
+
+    // Apply the 2D affine transform around the sprite center (center-based semantics).
+    let center = inst.bounds.origin + inst.bounds.size * 0.5;
+    let rs_r0  = inst.transform_row0.xy;
+    let rs_r1  = inst.transform_row1.xy;
+    let transl = vec2<f32>(inst.transform_row0.z, inst.transform_row1.z);
+    let local  = pos_local - center;
+    let rotated = vec2<f32>(dot(rs_r0, local), dot(rs_r1, local));
+    let pos    = rotated + center + transl;
+
     let atlas_uv = inst.uv_min + uv * (inst.uv_max - inst.uv_min);
 
     var out: PolySpriteVaryings;

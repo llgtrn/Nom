@@ -670,6 +670,236 @@ fn advance_while<T, F: Fn(&T) -> bool>(slice: &[T], start: usize, predicate: F) 
     end
 }
 
+// ── SceneBuilder ────────────────────────────────────────────────────────────
+
+/// Builder that auto-assigns [`DrawOrder`] values from an internal
+/// [`BoundsTree`], so callers never need to coordinate z-order manually.
+///
+/// # Design: own-scene semantics
+///
+/// `SceneBuilder` owns both a `Scene` (created via [`Scene::new_with_tree`])
+/// and a `BoundsTree`. Every `push_*` call:
+/// 1. Converts the caller-supplied `Bounds<ScaledPixels>` to `Bounds<i32>`.
+/// 2. Inserts that rect into the tree, obtaining a `DrawOrder`.
+/// 3. Constructs the full primitive (filling in the `order` field automatically)
+///    and delegates to the corresponding `Scene::insert_*` method.
+///
+/// Non-overlapping primitives receive the **same** `DrawOrder` from the tree —
+/// this is intentional: equal-order primitives batch together in the GPU
+/// renderer, reducing draw-call count.
+///
+/// `build()` calls [`Scene::finish`] (which stable-sorts each collection by
+/// order) and returns the finished, immutable `Scene`.
+///
+/// # Generation counter
+///
+/// `next_generation` is incremented each time `build` is called on the same
+/// builder (if reused via `reset`).  Renderers may compare generations to
+/// detect that the scene contents have changed without diffing every primitive.
+pub struct SceneBuilder {
+    scene: Scene,
+    tree: BoundsTree,
+    next_generation: u32,
+}
+
+impl SceneBuilder {
+    /// Create a fresh builder backed by an empty tree-indexed scene.
+    pub fn new() -> Self {
+        Self {
+            scene: Scene::new_with_tree(),
+            tree: BoundsTree::new(),
+            next_generation: 0,
+        }
+    }
+
+    /// Current generation counter value (bumped by each `build` call).
+    pub fn generation(&self) -> u32 {
+        self.next_generation
+    }
+
+    /// Read-only view into the scene being assembled.
+    pub fn as_scene(&self) -> &Scene {
+        &self.scene
+    }
+
+    // ── internal helper ────────────────────────────────────────────────────
+
+    /// Insert `bounds` into the tree and return the assigned `DrawOrder`.
+    fn next_order(&mut self, bounds: Bounds<ScaledPixels>) -> DrawOrder {
+        let b32 = scaled_bounds_to_i32(bounds);
+        self.tree.insert(b32)
+    }
+
+    // ── push methods ───────────────────────────────────────────────────────
+
+    /// Push a filled quad; returns the auto-assigned [`DrawOrder`].
+    ///
+    /// `clip_bounds` restricts the visible region during rendering. Pass a
+    /// large rect (e.g. the window bounds) to leave clipping unconstrained.
+    pub fn push_quad(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        corner_radii: Corners<ScaledPixels>,
+        background: Rgba,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_quad(Quad {
+            order,
+            bounds,
+            clip_bounds,
+            corner_radii,
+            background,
+            border_color: Rgba::TRANSPARENT,
+            border_widths: [ScaledPixels(0.0); 4],
+        });
+        order
+    }
+
+    /// Push a drop shadow; returns the auto-assigned [`DrawOrder`].
+    pub fn push_shadow(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        corner_radii: Corners<ScaledPixels>,
+        color: Rgba,
+        blur_radius: ScaledPixels,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_shadow(Shadow {
+            order,
+            bounds,
+            clip_bounds,
+            corner_radii,
+            color,
+            blur_radius,
+        });
+        order
+    }
+
+    /// Push an underline decoration; returns the auto-assigned [`DrawOrder`].
+    pub fn push_underline(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        color: Rgba,
+        thickness: ScaledPixels,
+        wavy: bool,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_underline(Underline {
+            order,
+            bounds,
+            clip_bounds,
+            color,
+            thickness,
+            wavy,
+        });
+        order
+    }
+
+    /// Push a monochrome (single-color) glyph sprite; returns the
+    /// auto-assigned [`DrawOrder`].
+    pub fn push_monochrome_sprite(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        color: Rgba,
+        tile: AtlasTileRef,
+        transform: TransformationMatrix,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_monochrome_sprite(MonochromeSprite {
+            order,
+            bounds,
+            clip_bounds,
+            color,
+            tile,
+            transform,
+        });
+        order
+    }
+
+    /// Push a subpixel (LCD/ClearType) glyph sprite; returns the
+    /// auto-assigned [`DrawOrder`].
+    pub fn push_subpixel_sprite(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        color: Rgba,
+        tile: AtlasTileRef,
+        transform: TransformationMatrix,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_subpixel_sprite(SubpixelSprite {
+            order,
+            bounds,
+            clip_bounds,
+            color,
+            tile,
+            transform,
+        });
+        order
+    }
+
+    /// Push a polychrome (RGBA image / emoji) sprite; returns the
+    /// auto-assigned [`DrawOrder`].
+    pub fn push_polychrome_sprite(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        tile: AtlasTileRef,
+        grayscale: bool,
+        transform: TransformationMatrix,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_polychrome_sprite(PolychromeSprite {
+            order,
+            bounds,
+            clip_bounds,
+            tile,
+            grayscale,
+            transform,
+        });
+        order
+    }
+
+    /// Push a filled path; returns the auto-assigned [`DrawOrder`].
+    pub fn push_path(
+        &mut self,
+        bounds: Bounds<ScaledPixels>,
+        clip_bounds: Bounds<ScaledPixels>,
+        vertices: Vec<Point<ScaledPixels>>,
+        color: Rgba,
+    ) -> DrawOrder {
+        let order = self.next_order(bounds);
+        self.scene.insert_path(Path {
+            order,
+            bounds,
+            clip_bounds,
+            vertices,
+            color,
+        });
+        order
+    }
+
+    // ── finalization ───────────────────────────────────────────────────────
+
+    /// Sort all collections by draw order and return the finished [`Scene`].
+    ///
+    /// Increments the internal generation counter.
+    pub fn build(mut self) -> Scene {
+        self.scene.finish();
+        self.scene
+    }
+}
+
+impl Default for SceneBuilder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[allow(dead_code)]
 trait HasOrder {
     fn order(&self) -> DrawOrder;

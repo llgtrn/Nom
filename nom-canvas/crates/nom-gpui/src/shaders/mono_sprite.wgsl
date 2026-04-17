@@ -38,12 +38,18 @@ fn clip_distances_rect(pos: vec2<f32>, clip: Rect) -> vec4<f32> {
 
 // Per-instance data for a monochrome atlas sprite.
 // uv_min / uv_max are normalised UV coordinates into the R8Unorm atlas texture.
+// transform_row0: (rotation_scale[0][0], rotation_scale[0][1], translation.x, _pad)
+// transform_row1: (rotation_scale[1][0], rotation_scale[1][1], translation.y, _pad)
+// The 2×2 rotation/scale matrix and translation encode a 2D affine transform applied
+// around the sprite center (center-based semantics).
 struct MonoSpriteInstance {
-    bounds:      Rect,
-    clip_bounds: Rect,
-    color:       vec4<f32>,
-    uv_min:      vec2<f32>,
-    uv_max:      vec2<f32>,
+    bounds:          Rect,
+    clip_bounds:     Rect,
+    color:           vec4<f32>,
+    uv_min:          vec2<f32>,
+    uv_max:          vec2<f32>,
+    transform_row0:  vec4<f32>,
+    transform_row1:  vec4<f32>,
 }
 
 struct MonoSpriteVaryings {
@@ -69,7 +75,18 @@ fn vs_mono_sprite(
 ) -> MonoSpriteVaryings {
     let inst  = instances[iid];
     let uv    = unit_vertex(vid);
-    let pos   = uv * inst.bounds.size + inst.bounds.origin;
+    let pos_local = uv * inst.bounds.size + inst.bounds.origin;
+
+    // Apply the 2D affine transform around the sprite center (center-based semantics).
+    // rotation_scale rows are packed in transform_row0.xy / transform_row1.xy,
+    // translation is in transform_row0.z / transform_row1.z.
+    let center = inst.bounds.origin + inst.bounds.size * 0.5;
+    let rs_r0  = inst.transform_row0.xy;
+    let rs_r1  = inst.transform_row1.xy;
+    let transl = vec2<f32>(inst.transform_row0.z, inst.transform_row1.z);
+    let local  = pos_local - center;
+    let rotated = vec2<f32>(dot(rs_r0, local), dot(rs_r1, local));
+    let pos    = rotated + center + transl;
 
     // Interpolate UV coordinates from uv_min to uv_max across the quad.
     let atlas_uv = inst.uv_min + uv * (inst.uv_max - inst.uv_min);
