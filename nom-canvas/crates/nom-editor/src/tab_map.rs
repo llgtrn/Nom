@@ -50,4 +50,30 @@ mod tests {
         assert_eq!(tm.visual_column("\t", 0), 0);
         assert_eq!(tm.visual_column("\thello", 1), 4);
     }
+
+    #[test]
+    fn tab_map_replaces_tabs_with_spaces() {
+        let tm = TabMap::new(4);
+        let (expanded, _offsets) = tm.expand_tabs("\t\tcode");
+        // Two tabs at size 4 each → 8 leading spaces
+        assert_eq!(&expanded[..8], "        ");
+        assert!(expanded.ends_with("code"));
+    }
+
+    #[test]
+    fn tab_map_mid_line_tab_alignment() {
+        let tm = TabMap::new(4);
+        // "ab\t" — tab at col 2 should pad to col 4 (2 spaces added)
+        let (expanded, _) = tm.expand_tabs("ab\t");
+        assert_eq!(expanded, "ab  ");
+    }
+
+    #[test]
+    fn tab_map_offsets_length_matches_chars() {
+        let tm = TabMap::new(4);
+        let line = "a\tb\tc";
+        let (_, offsets) = tm.expand_tabs(line);
+        // One offset per character in the original line
+        assert_eq!(offsets.len(), line.chars().count());
+    }
 }

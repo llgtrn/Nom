@@ -273,4 +273,35 @@ mod tests {
         // They should occupy different horizontal slots.
         assert_ne!(t1.bounds.left, t2.bounds.left, "tiles must not overlap");
     }
+
+    #[test]
+    fn atlas_allocate_and_lookup() {
+        let mut atlas = TextureAtlas::new(1);
+        let key = make_key(99);
+        // Pack a new glyph — must succeed and be findable via get().
+        let packed = atlas.pack_glyph(key, 16, 16);
+        assert!(packed.is_some(), "allocating a glyph into an empty atlas must succeed");
+        let tile = packed.unwrap();
+        // get() must return the same tile without side effects.
+        let looked_up = atlas.get(&key);
+        assert_eq!(looked_up, Some(tile), "get() must return the packed tile");
+        // Padding is always 1px — inner bounds start at offset 1.
+        assert_eq!(tile.bounds.left, 1, "left bound must start after 1px padding");
+        assert_eq!(tile.bounds.top, 1, "top bound must start after 1px padding");
+    }
+
+    #[test]
+    fn atlas_full_returns_none() {
+        // Fill the atlas with glyphs larger than the atlas can hold without
+        // accumulating enough entries to trigger batch eviction.
+        // A single glyph that is taller than the atlas height must fail.
+        let mut atlas = TextureAtlas::new(2);
+        // Glyph taller than DEFAULT_SIZE (2048) — nothing can fit.
+        let key = make_key(200);
+        let result = atlas.pack_glyph(key, 10, TextureAtlas::DEFAULT_SIZE + 1);
+        assert!(
+            result.is_none(),
+            "packing a glyph taller than the atlas must return None"
+        );
+    }
 }

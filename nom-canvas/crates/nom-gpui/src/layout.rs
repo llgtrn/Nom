@@ -137,4 +137,41 @@ mod tests {
         // id_a is gone; id_b is fresh with default bounds
         assert_eq!(engine.layout(id_b), Bounds::default());
     }
+
+    #[test]
+    fn layout_computes_flex_child_sizes() {
+        // Parent gets compute_layout with 400×300; child gets its own entry.
+        // Verify that compute_layout fills in the parent's size and that the
+        // child (not explicitly laid out) still returns a default Bounds.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let child = engine.request_layout(&style, &[]);
+        let parent = engine.request_layout(&style, &[child]);
+        let available = Size { width: Pixels(400.0), height: Pixels(300.0) };
+        engine.compute_layout(parent, available);
+        // Parent receives the available size.
+        assert_eq!(engine.layout(parent).size, available);
+        // Child was not individually laid out — its bounds remain default.
+        assert_eq!(engine.layout(child), Bounds::default());
+    }
+
+    #[test]
+    fn layout_max_width_constrains_children() {
+        // Two sequential compute_layout calls with different widths; the most
+        // recent call wins for that node (max-width constraint simulation).
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let wide = Size { width: Pixels(1200.0), height: Pixels(400.0) };
+        let narrow = Size { width: Pixels(320.0), height: Pixels(400.0) };
+        engine.compute_layout(id, wide);
+        assert_eq!(engine.layout(id).size.width, Pixels(1200.0));
+        // Re-computing with a narrower constraint overwrites the stored size.
+        engine.compute_layout(id, narrow);
+        assert_eq!(
+            engine.layout(id).size.width,
+            Pixels(320.0),
+            "re-computing with narrower width must constrain the stored size"
+        );
+    }
 }

@@ -452,4 +452,27 @@ mod tests {
         assert_eq!(gid.pop(), Some(ElementId::new(2)));
         assert_eq!(gid.0.len(), 1);
     }
+
+    #[test]
+    fn bounds_contains_point_on_edge() {
+        let origin = Point::new(Pixels(10.0), Pixels(20.0));
+        let size = Size::new(Pixels(100.0), Pixels(50.0));
+        let bounds = Bounds::new(origin, size);
+
+        // Points exactly on each edge must be considered inside (inclusive).
+        assert!(bounds.contains(&Point::new(Pixels(10.0), Pixels(30.0))),  "left edge");
+        assert!(bounds.contains(&Point::new(Pixels(110.0), Pixels(30.0))), "right edge");
+        assert!(bounds.contains(&Point::new(Pixels(60.0), Pixels(20.0))),  "top edge");
+        assert!(bounds.contains(&Point::new(Pixels(60.0), Pixels(70.0))),  "bottom edge");
+
+        // Corners must also be inside.
+        assert!(bounds.contains(&Point::new(Pixels(10.0), Pixels(20.0))),   "top-left corner");
+        assert!(bounds.contains(&Point::new(Pixels(110.0), Pixels(70.0))),  "bottom-right corner");
+
+        // One pixel outside each edge must be excluded.
+        assert!(!bounds.contains(&Point::new(Pixels(9.9), Pixels(30.0))),   "just outside left");
+        assert!(!bounds.contains(&Point::new(Pixels(110.1), Pixels(30.0))), "just outside right");
+        assert!(!bounds.contains(&Point::new(Pixels(60.0), Pixels(19.9))),  "just outside top");
+        assert!(!bounds.contains(&Point::new(Pixels(60.0), Pixels(70.1))),  "just outside bottom");
+    }
 }

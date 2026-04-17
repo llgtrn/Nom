@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `15a8366` | **Tests:** 558 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `f0ca908` | **Tests:** 581 | **Workspace:** clean
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -16,13 +16,11 @@
 - [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
 - [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
-**Remaining open (WAVE Q targets):**
-- SB1 MEDIUM — `nom-graph/src/sandbox.rs` missing n8n sanitizers: `this_replace`, `prototype_block`, `dollar_validate`
-- SC1 MEDIUM — `score_atom` in ui_tier.rs:167 creates UiTier per call (allocates SharedState each time)
-- CW1 MEDIUM — `nom-blocks/src/connector.rs:62` can_wire still stub — needs grammar-backed validation
-- DOC1 MEDIUM — `ui_tier.rs:40` docstring says `<2ms`; spec §3 says `<1ms`
-- E1 — panels use paint_scene not impl Element; document divergence or add trait bindings
-- CB1 — compiler-bridge adapters (score.rs:26 `let _ = (word, kind)`) still dead-code stubs
+**Wave Q committed f0ca908 (581 tests). Remaining open (WAVE R targets):**
+- NI1-REAPPLY — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
+- SH1 — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
+- Coverage: nom-telemetry, nom-collab, nom-cli, nom-lint all under 15 tests — need expansion
+- Backend completeness: verify all 16 nom-compose backends have domain models + tests
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -52,6 +50,7 @@
 | [x] N Infra+Vendor | ✅ | d6219b1 — vendor/router/cred/sandbox/SHA-256/semantic (523 tests) |
 | [x] O Infra+LSP | ✅ | e61a93c — cancel/cache/LSP/sandbox/web_screen (537 tests) |
 | [x] P Bug fixes | ✅ | 15a8366 — E2+11 fixes+MEDIUMs (558 tests) |
+| [x] Q Quality | ✅ | f0ca908 — SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence (581 tests) |
 
 ### Integrity Grep
 
@@ -62,25 +61,20 @@
 | `RgaPos`/`tombstoned` in nom-collab | 28 | ≥1 |
 | `RenderPrimitive` custom enum | 0 | 0 |
 
-## Open Missions (Wave Q targets)
+## Open Missions (Wave R targets)
 
 ### HIGH
 
-- [ ] **E1** — panels use paint_scene not impl Element; document divergence or add trait bindings
+- [ ] **NI1-REAPPLY** — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
 
 ### MEDIUM
 
-- [ ] **SB1** — `nom-graph/src/sandbox.rs` missing n8n sanitizers: `this_replace`, `prototype_block`, `dollar_validate`
-- [ ] **SC1** — `score_atom` in ui_tier.rs:167 creates UiTier per call (allocates SharedState each time)
-- [ ] **CW1** — `nom-blocks/src/connector.rs:62` can_wire still stub — needs grammar-backed validation
-- [ ] **DOC1** — `ui_tier.rs:40` docstring says `<2ms`; spec §3 says `<1ms`
-- [ ] **CB1** — compiler-bridge adapters (score.rs:26 `let _ = (word, kind)`) still dead-code stubs
-
-### Wave Q in progress
-
-- [ ] provider_router dispatch — verify 3-tier fallback triggers correctly under real backend failures
-- [ ] graph_rag edge-confidence weights — add Refly-pattern per-edge confidence scoring
-- [ ] E2/FG1 verification — confirm Wave P paint bodies + frosted overlay reach GPU pipeline end-to-end
+- [ ] **SH1** — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
+- [ ] **COV-TELEMETRY** — nom-telemetry under 15 tests; expand coverage
+- [ ] **COV-COLLAB** — nom-collab under 15 tests; expand coverage
+- [ ] **COV-CLI** — nom-cli under 15 tests; expand coverage
+- [ ] **COV-LINT** — nom-lint under 15 tests; expand coverage
+- [ ] **BE-AUDIT** — verify all 16 nom-compose backends have domain models + tests
 
 ## Non-Negotiable Rules
 
@@ -199,6 +193,15 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
 - [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
+### [x] Wave Q — Quality (commit `f0ca908`, 581 tests)
+- [x] SB1: nom-graph/src/sandbox.rs — added this_replace, prototype_block, dollar_validate sanitizers
+- [x] SC1: score_atom in ui_tier.rs:167 — eliminated per-call UiTier/SharedState allocation
+- [x] CW1: nom-blocks/src/connector.rs:62 can_wire — grammar-backed validation wired
+- [x] DOC1: ui_tier.rs:40 docstring corrected to `<1ms` (spec §3 compliance)
+- [x] CB1: compiler-bridge score.rs adapter dead-code stubs replaced with real implementation
+- [x] E1: panels paint_scene divergence from impl Element documented; trait bindings added
+- [x] rag-confidence: graph_rag edge-confidence weights (Refly-pattern per-edge scoring)
+
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 
 - [x] GAP-1c body_bytes · GAP-2 embeddings · GAP-3 corpus ingest
@@ -216,3 +219,4 @@ Iter log in `nom_state_machine_report.md`. Key pivots:
 - Iter 47 — whole-repo scan found E2 CRITICAL (paint body no-op)
 - Iter 44 — Wave O closed: CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen (537 tests)
 - Iter 45 — Wave P closed: E2 CRITICAL + 10 HIGH/MEDIUM + 1 CRITICAL + MEDIUMs (558 tests, commit 15a8366)
+- Iter 46 — Wave Q closed: SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence (581 tests, commit f0ca908)

@@ -112,4 +112,30 @@ mod tests {
         cs.add(Selection::range(8, 15));
         assert_eq!(cs.len(), 2); // [caret@0], [5..15] merged
     }
+
+    #[test]
+    fn multi_cursor_add_and_count() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(10));
+        cs.add(Selection::caret(20));
+        // All three are disjoint carets, none should merge
+        assert_eq!(cs.len(), 3);
+    }
+
+    #[test]
+    fn cursor_set_primary_is_last() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(50));
+        let primary = cs.primary().unwrap();
+        assert_eq!(primary.head(), 50);
+    }
+
+    #[test]
+    fn selection_reversed_head_tail() {
+        let sel = Selection::range(10, 3);
+        // range(10, 3) → reversed=true, start=3, end=10
+        assert!(sel.reversed);
+        assert_eq!(sel.head(), 3);
+        assert_eq!(sel.tail(), 10);
+    }
 }

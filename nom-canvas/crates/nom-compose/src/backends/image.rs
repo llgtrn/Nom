@@ -36,6 +36,7 @@ mod tests {
     use super::*;
     use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+
     #[test]
     fn image_compose_basic() {
         let mut store = InMemoryStore::new();
@@ -50,5 +51,39 @@ mod tests {
         assert_eq!(block.width, 8);
         assert_eq!(block.height, 8);
         assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn image_compose_stores_pixel_data() {
+        let mut store = InMemoryStore::new();
+        let pixel_data: Vec<u8> = (0u8..=255).collect();
+        let input = ImageInput {
+            entity: NomtuRef { id: "img2".into(), word: "gradient".into(), kind: "media".into() },
+            pixel_data: pixel_data.clone(),
+            width: 16,
+            height: 16,
+            prompt_used: "gradient test".into(),
+        };
+        let block = ImageBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.width, 16);
+        assert_eq!(block.height, 16);
+        assert_eq!(block.prompt_used, "gradient test");
+        let stored = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(stored, pixel_data);
+    }
+
+    #[test]
+    fn image_compose_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = ImageInput {
+            entity: NomtuRef { id: "img3".into(), word: "thumbnail".into(), kind: "media".into() },
+            pixel_data: vec![0u8; 16],
+            width: 4,
+            height: 4,
+            prompt_used: "black thumbnail".into(),
+        };
+        let block = ImageBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "img3");
+        assert_eq!(block.entity.word, "thumbnail");
     }
 }

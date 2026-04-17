@@ -394,4 +394,103 @@ mod tests {
         // Span ID too short (not 16 hex chars)
         assert!(TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-00f0-01").is_none());
     }
+
+    // -------------------------------------------------------------------------
+    // New coverage tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn telemetry_event_with_metadata_roundtrip() {
+        // TelemetryEvent carries structured data via EventKind::Error (code + message).
+        // Verify the key/value round-trips through construction and retrieval.
+        let event = TelemetryEvent::new(
+            EventKind::Error { code: 42, message: "context=canvas;user=7".into() },
+            500,
+            99,
+        );
+        match &event.kind {
+            EventKind::Error { code, message } => {
+                assert_eq!(*code, 42);
+                assert_eq!(message, "context=canvas;user=7");
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+        assert_eq!(event.timestamp_ms, 500);
+        assert_eq!(event.session_id, 99);
+    }
+
+    #[test]
+    fn telemetry_event_clone_independence() {
+        let mut original = TelemetryEvent::new(
+            EventKind::CanvasAction { action: "pan".into() },
+            100,
+            1,
+        );
+        let clone = original.clone();
+
+        // Mutate the original's timestamp after cloning.
+        original.timestamp_ms = 9999;
+
+        // Clone retains the original value.
+        assert_eq!(clone.timestamp_ms, 100);
+        assert_ne!(original.timestamp_ms, clone.timestamp_ms);
+        // Kind is independent too.
+        assert_eq!(clone.kind, EventKind::CanvasAction { action: "pan".into() });
+    }
+
+    #[test]
+    fn telemetry_multiple_events_different_spans() {
+        let span_a = [0x01u8, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08];
+        let span_b = [0xA1u8, 0xA2, 0xA3, 0xA4, 0xA5, 0xA6, 0xA7, 0xA8];
+        let trace = [0u8; 16];
+
+        let event_a = TelemetryEvent::with_trace(EventKind::SessionStart, 10, 1, trace, span_a);
+        let event_b = TelemetryEvent::with_trace(EventKind::SessionEnd, 20, 1, trace, span_b);
+
+        assert_ne!(event_a.span_id, event_b.span_id);
+        assert_eq!(event_a.trace_id, event_b.trace_id);
+    }
+
+    #[test]
+    fn telemetry_traceparent_consistent_with_ids() {
+        let trace_id: [u8; 16] = [
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
+            0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+        ];
+        let span_id: [u8; 8] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
+
+        let event = TelemetryEvent::with_trace(
+            EventKind::SessionStart,
+            0,
+            1,
+            trace_id,
+            span_id,
+        );
+        let tp = event.traceparent();
+
+        // Round-trip: parse should give back the same bytes.
+        let (parsed_trace, parsed_span, flags) =
+            TelemetryEvent::parse_traceparent(&tp).expect("valid traceparent");
+
+        assert_eq!(parsed_trace, event.trace_id);
+        assert_eq!(parsed_span, event.span_id);
+        assert_eq!(flags, 0x01);
+    }
+
+    #[test]
+    fn telemetry_event_timestamp_increases() {
+        // Two events recorded at t=0 and t=1 must have non-decreasing timestamps.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 5));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 5));
+
+        let events = sink.events();
+        assert_eq!(events.len(), 2);
+        assert!(
+            events[1].timestamp_ms >= events[0].timestamp_ms,
+            "timestamps must be non-decreasing: {} < {}",
+            events[1].timestamp_ms,
+            events[0].timestamp_ms,
+        );
+    }
 }

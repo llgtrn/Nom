@@ -36,6 +36,7 @@ mod tests {
     use super::*;
     use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+
     #[test]
     fn app_compose_basic() {
         let mut store = InMemoryStore::new();
@@ -48,5 +49,38 @@ mod tests {
         let block = AppBackend::compose(input, &mut store, &LogProgressSink);
         assert_eq!(block.target_platform, "web");
         assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn app_compose_different_platforms_produce_different_hashes() {
+        let mut store = InMemoryStore::new();
+        let source_hash = [1u8; 32];
+        let web_input = AppInput {
+            entity: NomtuRef { id: "app2a".into(), word: "app".into(), kind: "app".into() },
+            source_hash,
+            target_platform: "web".into(),
+        };
+        let mobile_input = AppInput {
+            entity: NomtuRef { id: "app2b".into(), word: "app".into(), kind: "app".into() },
+            source_hash,
+            target_platform: "mobile".into(),
+        };
+        let web_block = AppBackend::compose(web_input, &mut store, &LogProgressSink);
+        let mobile_block = AppBackend::compose(mobile_input, &mut store, &LogProgressSink);
+        // Different platforms must produce different artifact hashes.
+        assert_ne!(web_block.artifact_hash, mobile_block.artifact_hash);
+    }
+
+    #[test]
+    fn app_compose_deploy_url_initially_none() {
+        let mut store = InMemoryStore::new();
+        let input = AppInput {
+            entity: NomtuRef { id: "app3".into(), word: "service".into(), kind: "app".into() },
+            source_hash: [0u8; 32],
+            target_platform: "server".into(),
+        };
+        let block = AppBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(block.deploy_url.is_none());
+        assert_eq!(block.entity.id, "app3");
     }
 }

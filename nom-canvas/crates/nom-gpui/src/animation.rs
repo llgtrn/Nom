@@ -385,4 +385,30 @@ mod tests {
         assert_eq!(sorted.len(), 1);
         assert!((sorted[0].1 - 0.8).abs() < 1e-6);
     }
+
+    #[test]
+    fn animation_linear_easing_midpoint() {
+        // Linear easing at t=0.5 must return exactly 0.5.
+        let anim = Animation::new(Duration::from_millis(500), easing::linear());
+        let result = anim.evaluate(0.5);
+        assert!((result - 0.5).abs() < 1e-6, "linear(0.5) must be 0.5, got {result}");
+    }
+
+    #[test]
+    fn animation_step_completion_at_full_duration() {
+        // AnimationGroup with a single linear step: at global_t == step duration
+        // the sample value must be 1.0 (completed).
+        let group = AnimationGroup::new().then(2.0, easing::linear());
+        let result = group.sample(2.0);
+        assert!(
+            (result - 1.0).abs() < 1e-6,
+            "step at full duration must return 1.0, got {result}"
+        );
+        // Past the end also returns 1.0.
+        let past = group.sample(5.0);
+        assert!(
+            (past - 1.0).abs() < 1e-6,
+            "step past full duration must return 1.0, got {past}"
+        );
+    }
 }

@@ -318,6 +318,39 @@ mod tests {
     }
 
     #[test]
+    fn selection_contains_element_fully_inside() {
+        // Rubber-band [0,0]→[200,200]; element [50,50]→[100,100] is fully inside.
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [200.0, 200.0],
+        };
+        let elem = ElementBounds { id: 7, min: [50.0, 50.0], max: [100.0, 100.0] };
+        assert!(rb.intersects(&elem), "element fully inside rubber-band must intersect");
+    }
+
+    #[test]
+    fn selection_excludes_element_outside() {
+        // Rubber-band [0,0]→[50,50]; element [100,100]→[150,150] is completely outside.
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [50.0, 50.0],
+        };
+        let elem = ElementBounds { id: 8, min: [100.0, 100.0], max: [150.0, 150.0] };
+        assert!(!rb.intersects(&elem), "element outside rubber-band must not intersect");
+    }
+
+    #[test]
+    fn selection_intersects_partial_overlap() {
+        // Rubber-band [0,0]→[80,80]; element [60,60]→[120,120] partially overlaps.
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [80.0, 80.0],
+        };
+        let elem = ElementBounds { id: 9, min: [60.0, 60.0], max: [120.0, 120.0] };
+        assert!(rb.intersects(&elem), "element partially overlapping rubber-band must intersect");
+    }
+
+    #[test]
     fn selection_bounding_box() {
         // Build a selection of 3 elements and compute the union bounding box manually.
         let bounds = vec![

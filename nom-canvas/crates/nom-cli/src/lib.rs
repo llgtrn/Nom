@@ -151,4 +151,39 @@ mod tests {
         let err = parse_args(&["deploy", "."]).unwrap_err();
         assert!(err.contains("deploy"));
     }
+
+    #[test]
+    fn cli_parse_rag_query_preserved() {
+        let cmd = parse_args(&["rag", "canvas layout algorithm"]).unwrap();
+        assert_eq!(
+            cmd,
+            CliCommand::Rag { query: "canvas layout algorithm".to_string(), top_k: 5 }
+        );
+    }
+
+    #[test]
+    fn cli_parse_check_returns_check_not_lint() {
+        let cmd = parse_args(&["check", "src/lib.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Check { .. }));
+        assert!(!matches!(cmd, CliCommand::Lint { .. }));
+    }
+
+    #[test]
+    fn cli_parse_lint_returns_lint_not_check() {
+        let cmd = parse_args(&["lint", "src/lib.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Lint { .. }));
+        assert!(!matches!(cmd, CliCommand::Check { .. }));
+    }
+
+    #[test]
+    fn cli_parse_no_args_error_message_is_descriptive() {
+        let err = parse_args(&[]).unwrap_err();
+        assert!(err.contains("no arguments"));
+    }
+
+    #[test]
+    fn cli_parse_graph_returns_graph_variant() {
+        let cmd = parse_args(&["graph", "render pipeline"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Graph { .. }));
+    }
 }

@@ -296,6 +296,26 @@ mod tests {
     }
 
     #[test]
+    fn snap_disabled_returns_original() {
+        // With grid_snap=false and no other elements, the position must be unchanged.
+        let origin = [37.0_f32, 53.0_f32];
+        let result = snap_with_guides(origin, [20.0, 20.0], &[], false);
+        assert!(
+            (result.x - origin[0]).abs() < 1e-6,
+            "expected x={} unchanged, got {}",
+            origin[0],
+            result.x
+        );
+        assert!(
+            (result.y - origin[1]).abs() < 1e-6,
+            "expected y={} unchanged, got {}",
+            origin[1],
+            result.y
+        );
+        assert!(result.guides.is_empty(), "no guides should fire when snap is disabled");
+    }
+
+    #[test]
     fn snap_threshold_outside_range() {
         // Place element far enough from every grid line that no snap fires.
         // GRID_SIZE=20; position 10 is exactly at the midpoint between 0 and 20.

@@ -326,6 +326,67 @@ mod tests {
         assert_eq!(EmptyBlockRule.severity_multiplier(), 1.0);
     }
 
+    // --- InternalRule severity_multiplier ---
+
+    #[test]
+    fn internal_rule_multiplier_is_one_by_default() {
+        assert_eq!(TrailingWhitespaceRule.severity_multiplier(), 1.0_f32);
+        assert_eq!(EmptyBlockRule.severity_multiplier(), 1.0_f32);
+        assert_eq!(LineTooLongRule::new().severity_multiplier(), 1.0_f32);
+    }
+
+    // --- LintRunner multiple diagnostics ---
+
+    #[test]
+    fn lint_runner_reports_multiple_diagnostics() {
+        // Two separate trailing-whitespace lines → two diagnostics.
+        let source = "foo   \nbar\nbaz   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].line, 1);
+        assert_eq!(diags[1].line, 3);
+    }
+
+    // --- LintRunner empty source ---
+
+    #[test]
+    fn lint_runner_empty_source_has_no_diagnostics() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run("");
+        assert!(diags.is_empty());
+    }
+
+    // --- EmptyBlockRule on bare braces ---
+
+    #[test]
+    fn empty_block_rule_fires_on_braces() {
+        let diag = EmptyBlockRule
+            .check("{}", 1)
+            .expect("expected a diagnostic for bare {}");
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 2);
+        assert!(diag.message.contains("empty block"));
+    }
+
+    // --- LineTooLongRule boundary ---
+
+    #[test]
+    fn line_too_long_threshold() {
+        let rule = LineTooLongRule::new(); // max_len = 120
+        // Exactly 120 chars — must NOT fire.
+        let at_limit = "a".repeat(120);
+        assert!(rule.check(&at_limit, 1).is_none(), "120-char line should pass");
+        // 121 chars — must fire.
+        let over_limit = "a".repeat(121);
+        let diag = rule.check(&over_limit, 2).expect("121-char line should fail");
+        assert_eq!(diag.span.end, 121);
+    }
+
     // --- span field sanity ---
 
     #[test]

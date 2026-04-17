@@ -107,4 +107,33 @@ mod tests {
         assert_eq!(row, 0);
         assert_eq!(col, 5); // 4 (tab) + 1 (h)
     }
+
+    #[test]
+    fn display_map_handles_empty_buffer() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "");
+        let (row, col) = dm.buffer_to_display(&buf, 0);
+        assert_eq!((row, col), (0, 0));
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn display_map_fold_text_replaces_range() {
+        let mut dm = DisplayMap::new(4);
+        dm.add_fold(5..10, "…");
+        let folded = dm.fold_text("hello world!");
+        // characters 5..10 (" worl") replaced by the fold placeholder
+        assert!(folded.contains('\u{2026}'));
+        assert!(!folded.contains("worl"));
+    }
+
+    #[test]
+    fn display_map_remove_fold_restores_text() {
+        let mut dm = DisplayMap::new(4);
+        let range = 5..10;
+        dm.add_fold(range.clone(), "…");
+        dm.remove_fold(&range);
+        let text = "hello world!";
+        assert_eq!(dm.fold_text(text), text);
+    }
 }

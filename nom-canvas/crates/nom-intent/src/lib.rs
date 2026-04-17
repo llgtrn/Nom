@@ -1,5 +1,10 @@
 #![deny(unsafe_code)]
 
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
+
 /// Confidence score from 0.0 to 1.0.
 pub type Confidence = f32;
 
@@ -10,6 +15,43 @@ pub struct ReactStep {
     pub action: String,
     pub observation: String,
     pub score: Confidence,
+}
+
+/// A hypothesis with its computed score and supporting evidence.
+#[derive(Debug, Clone)]
+pub struct ScoredHypothesis {
+    pub hypothesis: String,
+    pub score: f32,
+    pub evidence_used: Vec<String>,
+    pub step_count: usize,
+}
+
+/// A cancellation signal for interruptible ReAct chains.
+#[derive(Clone)]
+pub struct InterruptSignal {
+    cancelled: Arc<AtomicBool>,
+}
+
+impl InterruptSignal {
+    pub fn new() -> Self {
+        Self {
+            cancelled: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
+    pub fn cancel(&self) {
+        self.cancelled.store(true, Ordering::SeqCst);
+    }
+
+    pub fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::SeqCst)
+    }
+}
+
+impl Default for InterruptSignal {
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Run a scored ReAct loop for a given hypothesis and evidence slice.
@@ -62,6 +104,61 @@ pub fn react_chain(hypothesis: &str, evidence: &[&str], max_steps: usize) -> Vec
         .collect()
 }
 
+/// Score each hypothesis against the given evidence, returning results sorted
+/// by score descending.
+pub fn rank_hypotheses(hypotheses: &[&str], evidence: &[&str]) -> Vec<ScoredHypothesis> {
+    let mut scored: Vec<ScoredHypothesis> = hypotheses
+        .iter()
+        .map(|h| {
+            let score = classify_with_react(h, evidence);
+            let steps = react_chain(h, evidence, evidence.len());
+            ScoredHypothesis {
+                hypothesis: h.to_string(),
+                score,
+                evidence_used: evidence.iter().map(|e| e.to_string()).collect(),
+                step_count: steps.len(),
+            }
+        })
+        .collect();
+    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored
+}
+
+/// Return the highest-scored hypothesis, or None if the slice is empty.
+pub fn best_hypothesis(hypotheses: &[&str], evidence: &[&str]) -> Option<ScoredHypothesis> {
+    rank_hypotheses(hypotheses, evidence).into_iter().next()
+}
+
+/// Same as `react_chain` but checks the interrupt signal before each step.
+/// Stops early if `signal.is_cancelled()` returns true.
+pub fn react_chain_interruptible(
+    hypothesis: &str,
+    evidence: &[&str],
+    max_steps: usize,
+    signal: &InterruptSignal,
+) -> Vec<ReactStep> {
+    let steps = max_steps.min(evidence.len());
+    let mut result = Vec::with_capacity(steps);
+    for i in 0..steps {
+        if signal.is_cancelled() {
+            break;
+        }
+        let obs_evidence = &evidence[..=i];
+        let score = classify_with_react(hypothesis, obs_evidence);
+        result.push(ReactStep {
+            thought: format!(
+                "checking evidence[{}] for hypothesis: {}",
+                i,
+                &hypothesis[..hypothesis.len().min(40)]
+            ),
+            action: format!("evaluate: {}", evidence[i]),
+            observation: format!("partial confidence: {:.3}", score),
+            score,
+        });
+    }
+    result
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -94,5 +191,52 @@ mod tests {
     fn classify_clamps_to_one() {
         let score = classify_with_react("word", &["word word word", "word more word"]);
         assert!(score <= 1.0);
+    }
+
+    #[test]
+    fn rank_hypotheses_orders_by_score() {
+        let evidence = &["graph query node traversal"];
+        let hypotheses = &["graph node query", "unrelated banana"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 2);
+        assert!(ranked[0].score >= ranked[1].score);
+        assert_eq!(ranked[0].hypothesis, "graph node query");
+    }
+
+    #[test]
+    fn best_hypothesis_returns_highest() {
+        let evidence = &["graph query node traversal"];
+        let hypotheses = &["graph node query", "completely unrelated"];
+        let best = best_hypothesis(hypotheses, evidence).expect("should have a result");
+        assert_eq!(best.hypothesis, "graph node query");
+        assert!(best.score > 0.0);
+    }
+
+    #[test]
+    fn interrupt_signal_cancels_chain() {
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let evidence = &["graph query", "node traversal", "result found"];
+        let steps = react_chain_interruptible("graph node", evidence, 3, &signal);
+        assert_eq!(steps.len(), 0, "cancelled before first step");
+    }
+
+    #[test]
+    fn react_chain_interruptible_stops_at_max() {
+        let signal = InterruptSignal::new(); // not cancelled
+        let evidence = &["graph query", "node traversal", "result found"];
+        let steps = react_chain_interruptible("graph node", evidence, 2, &signal);
+        assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn scored_hypothesis_fields() {
+        let evidence = &["graph query result"];
+        let scored = rank_hypotheses(&["graph query"], evidence);
+        assert_eq!(scored.len(), 1);
+        assert_eq!(scored[0].hypothesis, "graph query");
+        assert_eq!(scored[0].evidence_used.len(), 1);
+        assert_eq!(scored[0].step_count, 1);
+        assert!(scored[0].score > 0.0);
     }
 }

@@ -1,31 +1,37 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `15a8366` | **Tests:** 558 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `f0ca908` | **Tests:** 581 | **Workspace:** clean
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
-- [x] 558 tests passing across workspace
+- [x] 581 tests passing across workspace
 - [x] All 4 Wave K CRITICALs closed (U1 paint_scene + W1 real ReAct + COL1 RGA + INT1 imports)
 - [x] All 4 Wave L MEDIUMs claimed closed (deep_think config + W3C + RRF + impl Element)
 - [x] Wave M infra landed (sealed + 3-tier + 4-tier cache + dispatch/plan/task_queue)
 - [x] Wave N landed (vendor/provider/cred infra + sandbox 4-sanitizers + SHA-256 store + WrenAI MDL semantic layer)
 - [x] Wave O landed (CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen — 537 tests)
 - [x] Wave P landed (E2 CRITICAL + 10 HIGH/MEDIUM + MEDIUMs — 558 tests, commit 15a8366)
+- [x] Wave Q landed (SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence — 581 tests, commit f0ca908)
 
-## Open Missions (Wave Q)
+## Open Missions (Wave R)
 
-- [ ] E1 HIGH — no `impl Element for` on panels (paint_scene divergence undocumented)
-- [ ] SB1 MEDIUM — sandbox.rs missing this_replace/prototype_block/dollar_validate sanitizers
-- [ ] SC1 MEDIUM — score_atom allocates SharedState per call
-- [ ] CW1 MEDIUM — can_wire stub needs grammar-backed validation
-- [ ] DOC1 MEDIUM — ui_tier.rs:40 doc says `<2ms`; spec says `<1ms`
-- [ ] CB1 MEDIUM — compiler-bridge score.rs adapter still dead-code stub
-- [ ] provider_router dispatch verification
-- [ ] graph_rag edge-confidence weights (Refly pattern)
-- [ ] E2/FG1 GPU pipeline end-to-end verification
+- [ ] NI1-REAPPLY HIGH — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
+- [ ] SH1 MEDIUM — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
+- [ ] COV-TELEMETRY MEDIUM — nom-telemetry under 15 tests; expand coverage
+- [ ] COV-COLLAB MEDIUM — nom-collab under 15 tests; expand coverage
+- [ ] COV-CLI MEDIUM — nom-cli under 15 tests; expand coverage
+- [ ] COV-LINT MEDIUM — nom-lint under 15 tests; expand coverage
+- [ ] BE-AUDIT MEDIUM — verify all 16 nom-compose backends have domain models + tests
+
+## Iteration 46 — Wave Q committed (2026-04-18, commit `f0ca908`)
+
+- Committed: SB1 (sandbox this_replace/prototype_block/dollar_validate) + SC1 (score_atom alloc fix) + CW1 (can_wire grammar-backed) + DOC1 (ui_tier.rs docstring `<1ms`) + CB1 (compiler-bridge score adapter real impl) + E1 (paint_scene divergence documented + trait bindings) + rag-confidence (Refly-pattern per-edge confidence scoring)
+- Tests: 581 (+23 vs Wave P baseline of 558)
+- Closed: SB1/SC1/CW1/DOC1/CB1/E1 (6 MEDIUMs/HIGHs) + rag-confidence
+- Open: NI1-REAPPLY HIGH + SH1 + 4× coverage + BE-AUDIT (Wave R)
 
 ## Iteration 45 — Wave P committed (2026-04-18, commit `15a8366`)
 
@@ -120,6 +126,7 @@
 
 | Commit | Wave |
 |---|---|
+| `f0ca908` | Wave Q Quality |
 | `15a8366` | Wave P Bug fixes+MEDIUMs |
 | `e61a93c` | Wave O Infra+LSP |
 | `d6219b1` | Wave N Infra+Vendor |

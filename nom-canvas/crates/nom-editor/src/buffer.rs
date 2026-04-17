@@ -134,4 +134,25 @@ mod tests {
         buf.delete_range(5..11);
         assert_eq!(buf.text_for_range(0..5), "hello");
     }
+
+    #[test]
+    fn rope_buffer_insert_and_read() {
+        let mut buf = Buffer::new(1, "");
+        assert!(buf.is_empty());
+        buf.insert_at(0, "Nom");
+        assert_eq!(buf.len(), 3);
+        assert_eq!(buf.text_for_range(0..3).as_ref(), "Nom");
+        buf.insert_at(3, " rocks");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "Nom rocks");
+    }
+
+    #[test]
+    fn buffer_version_increments_on_edit() {
+        let mut buf = Buffer::new(42, "abc");
+        assert_eq!(buf.version, 0);
+        buf.insert_at(3, "d");
+        assert_eq!(buf.version, 1);
+        buf.delete_range(0..1);
+        assert_eq!(buf.version, 2);
+    }
 }

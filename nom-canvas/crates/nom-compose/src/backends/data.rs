@@ -39,6 +39,7 @@ mod tests {
     use super::*;
     use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+
     #[test]
     fn data_compose_basic() {
         let mut store = InMemoryStore::new();
@@ -56,6 +57,40 @@ mod tests {
         let block = DataBackend::compose(input, &mut store, &LogProgressSink);
         assert_eq!(block.row_count, 2);
         assert_eq!(block.schema.len(), 2);
+        assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn data_compose_csv_content() {
+        let mut store = InMemoryStore::new();
+        let input = DataInput {
+            entity: NomtuRef { id: "dat2".into(), word: "csv".into(), kind: "data".into() },
+            rows: vec![
+                vec!["x".into(), "1".into()],
+                vec!["y".into(), "2".into()],
+            ],
+            schema: vec![
+                ColumnSpec { name: "label".into(), col_type: "text".into() },
+                ColumnSpec { name: "val".into(), col_type: "integer".into() },
+            ],
+        };
+        let block = DataBackend::compose(input, &mut store, &LogProgressSink);
+        let content = store.read(&block.artifact_hash).unwrap();
+        let csv = std::str::from_utf8(&content).unwrap();
+        assert!(csv.contains("x,1"));
+        assert!(csv.contains("y,2"));
+    }
+
+    #[test]
+    fn data_compose_empty_rows() {
+        let mut store = InMemoryStore::new();
+        let input = DataInput {
+            entity: NomtuRef { id: "dat3".into(), word: "empty".into(), kind: "data".into() },
+            rows: vec![],
+            schema: vec![],
+        };
+        let block = DataBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.row_count, 0);
         assert!(store.exists(&block.artifact_hash));
     }
 }

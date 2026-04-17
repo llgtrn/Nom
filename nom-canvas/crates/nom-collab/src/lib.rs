@@ -420,4 +420,90 @@ mod tests {
         doc.apply(del);
         assert_eq!(doc.text(), "");
     }
+
+    // ── new coverage tests ───────────────────────────────────────────────────
+
+    #[test]
+    fn crdt_delete_marks_tombstone() {
+        let mut doc = DocState::new(PeerId(10));
+        let insert_op = doc.local_insert(RgaPos::Head, "delete_me");
+        assert_eq!(doc.text(), "delete_me");
+
+        let _del_op = doc.local_delete(insert_op.id);
+
+        // visible text is empty after deletion
+        assert_eq!(doc.text(), "");
+        // two ops in log: insert + delete
+        assert_eq!(doc.op_log().len(), 2);
+        // the delete op targets the insert's id
+        match &doc.op_log()[1].kind {
+            OpKind::Delete { target } => assert_eq!(*target, insert_op.id),
+            other => panic!("expected Delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crdt_visible_text_excludes_tombstones() {
+        let mut doc = DocState::new(PeerId(11));
+        let op_a = doc.local_insert(RgaPos::Head, "hello");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), " world");
+        assert_eq!(doc.text(), "hello world");
+
+        // Delete the first segment — " world" survives.
+        doc.local_delete(op_a.id);
+        assert_eq!(doc.text(), " world");
+
+        // Delete the second segment — nothing visible.
+        doc.local_delete(op_b.id);
+        assert_eq!(doc.text(), "");
+    }
+
+    #[test]
+    fn crdt_insert_at_head_works() {
+        let mut doc = DocState::new(PeerId(12));
+        let op = doc.local_insert(RgaPos::Head, "hello");
+
+        assert_eq!(doc.text(), "hello");
+        assert_eq!(op.id.peer, PeerId(12));
+        assert_eq!(op.id.counter, 1);
+        assert_eq!(doc.op_log().len(), 1);
+        match &op.kind {
+            OpKind::Insert { pos, text } => {
+                assert_eq!(*pos, RgaPos::Head);
+                assert_eq!(text, "hello");
+            }
+            other => panic!("expected Insert, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crdt_concurrent_delete_and_insert_converge() {
+        // Setup: both peers start with a shared node X ("base").
+        let mut peer_a = DocState::new(PeerId(1));
+        let op_x = peer_a.local_insert(RgaPos::Head, "base");
+
+        let mut peer_b = DocState::new(PeerId(2));
+        peer_b.apply(op_x.clone());
+        assert_eq!(peer_b.text(), "base");
+
+        // Concurrently: A deletes X, B inserts "extra" after X.
+        let op_del = peer_a.local_delete(op_x.id);
+        let op_ins = peer_b.local_insert(RgaPos::After(op_x.id), "extra");
+
+        // Merge both ways.
+        peer_a.apply(op_ins.clone());
+        peer_b.apply(op_del.clone());
+
+        // Both peers must converge to identical text.
+        assert_eq!(peer_a.text(), peer_b.text());
+        // "base" is deleted; "extra" is alive.
+        assert_eq!(peer_a.text(), "extra");
+    }
+
+    #[test]
+    fn crdt_empty_document_text_is_empty() {
+        let doc = DocState::new(PeerId(99));
+        assert_eq!(doc.text(), "");
+        assert_eq!(doc.op_log().len(), 0);
+    }
 }
