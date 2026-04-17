@@ -1286,3 +1286,56 @@ button:active {
   white-space: pre-wrap;
   color: var(--color-cta);
 }
+
+/* ── Streaming Pipeline ────────────────────────────────── */
+
+.stream-token { color: #94A3B8; font-size: 12px; }
+.stream-entity { color: var(--color-cta); font-weight: 600; padding: 2px 0; }
+.stream-diagnostic { color: #F59E0B; font-style: italic; padding: 2px 0; }
+.stream-complete { color: var(--color-cta); font-weight: 700; margin-top: 8px; }
+.stream-error { color: #EF4444; font-weight: 600; margin-top: 8px; }
+
+/* -- Multi-Cursor -------------------------------------------------------- */
+
+.extra-cursor {
+  display: inline-block;
+  width: 2px;
+  height: 1.2em;
+  background: #F59E0B;
+  margin-left: -1px;
+  animation: cursor-blink 1s step-end infinite;
+}
+
+@keyframes cursor-blink {
+  50% { opacity: 0; }
+}
+
+.extra-selection {
+  background: rgba(245, 158, 11, 0.2);
+}
+
+/* -- Folding + Snippets -------------------------------------------------- */
+
+.fold-indicator {
+  display: inline-block;
+  width: 14px;
+  height: 14px;
+  line-height: 14px;
+  text-align: center;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #6B7280;
+  background: var(--color-secondary);
+  border-radius: 2px;
+  cursor: pointer;
+  margin-right: 4px;
+  user-select: none;
+  transition: color 150ms ease;
+}
+
+.fold-indicator:hover { color: var(--color-cta); }
+.fold-indicator.folded { color: #F59E0B; }
+
+.fold-collapsed {
+  display: none;
+}
