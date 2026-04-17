@@ -1,6 +1,6 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `15a8366` | **Tests:** 558 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `ef5e058` | **Tests:** 733→800+ | **Workspace:** clean
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
 ## Architecture
@@ -97,22 +97,19 @@
 - [x] TQ1/CK1/DP1/F1/NR1/NI1/DEEP1/FG1/FR1/PAL1 HIGHs closed
 - [x] MEDIUMs: RRF_K const + InternalRule 3rd trait + HierarchicalCache::len L1+L2 + Panel trait 7 methods
 
-## Open Missions — Wave Q (in progress)
+### [ ] Wave V — GPU library wiring + test coverage push (2026-04-18)
+- [ ] **ETAGERE-WIRE** — atlas.rs uses `BucketedAtlasAllocator` from etagere (not manual shelf)
+- [ ] **BYTEMUCK-WIRE** — `QuadInstance`/`SpriteInstance`/`GlobalUniforms` derive `Pod+Zeroable`
+- [ ] **CLI-EXPAND** — nom-cli: 5 new commands (version/help/run/format/rag--top-k) + 10 tests → 28+
+- [ ] **TEST-CANVAS-CORE** — nom-canvas-core: +12 tests → 50+
+- [ ] **TEST-THEME** — nom-theme: +12 tests → 32+
+- [ ] **TEST-EDITOR** — nom-editor: +12 tests → 64+
+- [ ] **TEST-GRAPH** — nom-graph: +12 tests → 79+
+- [ ] **TEST-COMPOSE** — nom-compose: +12 tests → 106+
+- [ ] **TEST-INTENT-COLLAB-MEMO** — +15 tests across intent/collab/memoize
+- [ ] **LINEAR-RGBA** — `LinearRgba` type + `ColorSpace` enum added to nom-gpui
 
-### HIGH
-- [ ] **E1** no `impl Element for` on panels — document divergence or add trait bindings
-
-### MEDIUM
-- [ ] **SB1** `nom-graph/src/sandbox.rs` missing this_replace/prototype_block/dollar_validate sanitizers
-- [ ] **SC1** `score_atom` in ui_tier.rs:167 allocates SharedState per call
-- [ ] **CW1** `nom-blocks/src/connector.rs:62` can_wire still stub
-- [ ] **DOC1** `ui_tier.rs:40` doc says `<2ms`; spec §3 says `<1ms`
-- [ ] **CB1** compiler-bridge score.rs adapter still dead-code stub
-
-### Verification targets
-- [ ] provider_router dispatch — 3-tier fallback under real backend failures
-- [ ] graph_rag edge-confidence weights (Refly pattern)
-- [ ] E2/FG1 GPU pipeline end-to-end verification
+**Goal:** wire real GPU library types (etagere atlas allocation, bytemuck GPU buffer safety) and push total tests from 733 → 800+.
 
 ## Vendoring
 

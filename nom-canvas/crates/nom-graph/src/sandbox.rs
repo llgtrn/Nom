@@ -475,4 +475,57 @@ mod tests {
         };
         assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(1)));
     }
+
+    #[test]
+    fn sanitizer_this_replace_rejects_this() {
+        // Expr::Var("this") must produce ForbiddenIdentifier via ThisReplaceSanitizer.
+        let expr = Expr::Var("this".into());
+        assert_eq!(
+            ThisReplaceSanitizer.check(&expr),
+            Err(SandboxError::ForbiddenIdentifier("this".into())),
+            "ThisReplaceSanitizer must reject 'this'"
+        );
+    }
+
+    #[test]
+    fn sanitizer_prototype_block_rejects_proto() {
+        // "__proto__" access must be rejected as PrototypeAccess.
+        let expr = Expr::Var("__proto__".into());
+        assert_eq!(
+            PrototypeBlockSanitizer.check(&expr),
+            Err(SandboxError::PrototypeAccess),
+            "PrototypeBlockSanitizer must reject '__proto__'"
+        );
+    }
+
+    #[test]
+    fn sanitizer_dollar_validate_allows_workflow() {
+        // "$workflow" is in ALLOWED_DOLLAR_VARS and must pass DollarValidateSanitizer.
+        let expr = Expr::Var("$workflow".into());
+        assert!(
+            DollarValidateSanitizer.check(&expr).is_ok(),
+            "$workflow must be allowed by DollarValidateSanitizer"
+        );
+    }
+
+    #[test]
+    fn sanitizer_dollar_validate_rejects_unknown() {
+        // "$custom_var" is not in the allowed list, must produce InvalidDollarVar.
+        let expr = Expr::Var("$custom_var".into());
+        assert_eq!(
+            DollarValidateSanitizer.check(&expr),
+            Err(SandboxError::InvalidDollarVar("$custom_var".into())),
+            "$custom_var must be rejected as InvalidDollarVar"
+        );
+    }
+
+    #[test]
+    fn sanitizer_combined_all_four_pass_clean_expr() {
+        // A plain integer literal passes all sanitizers via the top-level sanitize().
+        let expr = Expr::Literal(SandboxValue::Int(7));
+        assert!(
+            sanitize(&expr).is_ok(),
+            "clean integer literal must pass all sanitizers"
+        );
+    }
 }

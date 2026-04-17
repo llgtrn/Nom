@@ -567,6 +567,73 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // graph_rag_rrf_k_constant_sixty
+    // -----------------------------------------------------------------------
+    /// The top result of a single-node DAG with full confidence has score
+    /// exactly `1.0 / (60.0 + 0)` = `1/60`, confirming RRF_K == 60.0.
+    #[test]
+    fn graph_rag_rrf_k_constant_sixty() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("solo");
+        let results = retriever.retrieve(&query, 1, 0);
+        assert_eq!(results.len(), 1);
+        let expected = 1.0f32 / 60.0;
+        assert!(
+            (results[0].score - expected).abs() < 1e-6,
+            "top score must be 1/60 (RRF_K=60), got {}",
+            results[0].score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_min_edge_confidence
+    // -----------------------------------------------------------------------
+    /// An edge with confidence exactly 0.05 (below MIN_EDGE_CONFIDENCE=0.1) must
+    /// be pruned, so the target node (not in dag.nodes) never appears in results.
+    #[test]
+    fn graph_rag_min_edge_confidence() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        // 0.05 < 0.1 = MIN_EDGE_CONFIDENCE — must be pruned.
+        dag.add_edge_weighted("root", "out", "unreachable", "in", 0.05);
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("root");
+        let results = retriever.retrieve(&query, 5, 2);
+        assert!(
+            results.iter().all(|r| r.node_id != "unreachable"),
+            "node reachable only via sub-threshold edge must not appear in results"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_bfs_respects_confidence
+    // -----------------------------------------------------------------------
+    /// Two edges from the same seed — one high-confidence (0.9), one low (0.2).
+    /// The high-confidence neighbour must score strictly higher than the
+    /// low-confidence neighbour when they share the same cosine_sim rank.
+    #[test]
+    fn graph_rag_bfs_respects_confidence() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("hub", "verb"));
+        // Both "hi" and "lo" only reachable via edges from "hub".
+        dag.add_edge_weighted("hub", "out", "hi", "in", 0.9);
+        dag.add_edge_weighted("hub", "out", "lo", "in", 0.2);
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query = hub vec; hub ranks first (cosine=1.0), hi and lo rank below.
+        let query = node_vec("hub");
+        let results = retriever.retrieve(&query, 3, 1);
+        let hi = results.iter().find(|r| r.node_id == "hi").expect("hi must appear");
+        let lo = results.iter().find(|r| r.node_id == "lo").expect("lo must appear");
+        assert!(
+            hi.score > lo.score,
+            "high-confidence neighbour (0.9) must score above low-confidence (0.2): {} vs {}",
+            hi.score, lo.score
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // graph_rag_deduplicates_nodes
     // -----------------------------------------------------------------------
     #[test]

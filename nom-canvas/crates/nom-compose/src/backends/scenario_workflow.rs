@@ -57,4 +57,49 @@ mod tests {
         let result = compose(&spec);
         assert!(result.is_ok());
     }
+
+    #[test]
+    fn scenario_workflow_spec_name() {
+        let spec = ScenarioWorkflowSpec {
+            name: "test".into(),
+            steps: vec![],
+            triggers: vec![],
+            timeout_ms: 0,
+        };
+        assert_eq!(spec.name, "test");
+    }
+
+    #[test]
+    fn scenario_workflow_empty_steps() {
+        let spec = ScenarioWorkflowSpec {
+            name: "empty_flow".into(),
+            steps: vec![],
+            triggers: vec![],
+            timeout_ms: 0,
+        };
+        assert_eq!(spec.step_count(), 0);
+        assert!(compose(&spec).is_ok());
+    }
+
+    #[test]
+    fn scenario_workflow_timeout_preserved() {
+        let spec = ScenarioWorkflowSpec {
+            name: "timed_flow".into(),
+            steps: vec!["step_a".into()],
+            triggers: vec![],
+            timeout_ms: 30_000,
+        };
+        assert_eq!(spec.timeout_ms, 30_000);
+    }
+
+    #[test]
+    fn scenario_workflow_trigger_count() {
+        let spec = ScenarioWorkflowSpec {
+            name: "multi_trigger".into(),
+            steps: vec![],
+            triggers: vec!["alpha".into(), "beta".into(), "gamma".into()],
+            timeout_ms: 1000,
+        };
+        assert_eq!(spec.trigger_count(), 3);
+    }
 }

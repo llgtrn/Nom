@@ -116,4 +116,62 @@ mod tests {
         assert_eq!(cache.miss_count(), 1);
         assert!((cache.hit_rate() - 0.5).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn cache_store_and_retrieve() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("store_key");
+        cache.put(key, 42_u32, Constraint::new(7));
+        let result = cache.get(&key, 7, &[]);
+        assert_eq!(result, Some(42));
+        assert_eq!(cache.hit_count(), 1);
+    }
+
+    #[test]
+    fn cache_miss_returns_none() {
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("missing_key");
+        // Key was never inserted.
+        let result = cache.get(&key, 0, &[]);
+        assert_eq!(result, None);
+        // Absent key is not counted as miss (returns None from the HashMap, not constraint failure).
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn cache_clear_removes_all_entries() {
+        // Insert several entries, clear, confirm length drops to zero.
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..5 {
+            let key = Hash128::of_u64(i);
+            cache.put(key, i as u8, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 5);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        // After clear, a previously-stored key returns None.
+        let key = Hash128::of_u64(0);
+        assert_eq!(cache.get(&key, 0, &[]), None);
+    }
+
+    #[test]
+    fn hash128_of_empty_string_is_deterministic() {
+        let h1 = Hash128::of_str("");
+        let h2 = Hash128::of_str("");
+        assert_eq!(h1, h2, "Hash128::of_str(\"\") must be deterministic");
+        // Empty string hash must differ from non-empty string hash.
+        assert_ne!(h1, Hash128::of_str("non-empty"));
+    }
+
+    #[test]
+    fn tracked_version_increments() {
+        // Create two Tracked values with consecutive versions; the later one must
+        // have the higher version number.
+        use crate::tracked::Tracked;
+        let t1 = Tracked::new("v1", 1);
+        let t2 = Tracked::new("v2", 2);
+        assert!(t2.version > t1.version, "later Tracked must have higher version");
+        assert_eq!(t1.version, 1);
+        assert_eq!(t2.version, 2);
+    }
 }

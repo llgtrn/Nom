@@ -106,4 +106,19 @@ mod tests {
         let c = CostEstimate::new(100_000, 10_000_000);
         assert!((c.dollars_per_call() - 1.0).abs() < f64::EPSILON);
     }
+
+    #[test]
+    fn stub_vendor_compose_returns_ok() {
+        let v = StubMediaVendor { name: "media_stub", kind: BackendKind::Image };
+        let result = v.compose(&BackendKind::Image, "payload", &|_| {});
+        assert_eq!(result, Ok("stub_output".to_string()));
+    }
+
+    #[test]
+    fn stub_vendor_kind_is_stub() {
+        let v = StubMediaVendor { name: "media_stub", kind: BackendKind::Audio };
+        assert_eq!(v.name(), "media_stub");
+        assert!(v.supports(&BackendKind::Audio));
+        assert!(!v.supports(&BackendKind::Video));
+    }
 }

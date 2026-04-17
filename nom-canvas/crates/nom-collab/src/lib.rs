@@ -606,4 +606,87 @@ mod tests {
         assert_eq!(op3.id.counter, 3);
         assert_eq!(doc.text(), "xyz");
     }
+
+    // ── additional coverage (wave T+1) ──────────────────────────────────────
+
+    #[test]
+    fn crdt_insert_and_lookup_via_text() {
+        // Insert a token and confirm it appears in the document text.
+        let mut doc = DocState::new(PeerId(20));
+        doc.local_insert(RgaPos::Head, "canvas");
+        assert_eq!(doc.text(), "canvas");
+        assert!(doc.text().contains("canvas"));
+    }
+
+    #[test]
+    fn crdt_delete_tombstones_node() {
+        // Insert then delete; node must be tombstoned (text disappears).
+        let mut doc = DocState::new(PeerId(21));
+        let op = doc.local_insert(RgaPos::Head, "tombstone_me");
+        assert_eq!(doc.text(), "tombstone_me");
+
+        doc.local_delete(op.id);
+
+        assert_eq!(doc.text(), "", "tombstoned text must not appear in doc.text()");
+        // The delete op is recorded in the log.
+        assert_eq!(doc.op_log().len(), 2);
+        match &doc.op_log()[1].kind {
+            OpKind::Delete { target } => assert_eq!(*target, op.id),
+            other => panic!("second op must be Delete, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crdt_merge_two_concurrent_inserts_converge() {
+        // Peers A and B both insert at Head without knowing each other's op.
+        let mut peer_a = DocState::new(PeerId(30));
+        let op_a = peer_a.local_insert(RgaPos::Head, "X");
+
+        let mut peer_b = DocState::new(PeerId(31));
+        let op_b = peer_b.local_insert(RgaPos::Head, "Y");
+
+        // Cross-merge.
+        peer_a.apply(op_b.clone());
+        peer_b.apply(op_a.clone());
+
+        // Both docs must converge to the same text.
+        assert_eq!(peer_a.text(), peer_b.text());
+        // Both characters must be present.
+        assert!(peer_a.text().contains('X'));
+        assert!(peer_a.text().contains('Y'));
+    }
+
+    #[test]
+    fn crdt_deleted_position_is_tombstoned_in_op_log() {
+        // After local_delete the op_log carries a Delete op whose target matches
+        // the insert's OpId — this is the tombstone record.
+        let mut doc = DocState::new(PeerId(40));
+        let insert_op = doc.local_insert(RgaPos::Head, "will_be_deleted");
+        let del_op = doc.local_delete(insert_op.id);
+
+        assert_eq!(del_op.id.peer, PeerId(40));
+        // Delete op counter > insert op counter.
+        assert!(del_op.id.counter > insert_op.id.counter);
+        match del_op.kind {
+            OpKind::Delete { target } => assert_eq!(target, insert_op.id),
+            other => panic!("expected Delete kind, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crdt_insert_then_delete_sequence_leaves_correct_content() {
+        // Insert two segments; delete the first; verify only the second survives.
+        let mut doc = DocState::new(PeerId(50));
+        let op_first = doc.local_insert(RgaPos::Head, "first");
+        let op_second = doc.local_insert(RgaPos::After(op_first.id), "_second");
+
+        assert_eq!(doc.text(), "first_second");
+
+        doc.local_delete(op_first.id);
+        assert_eq!(doc.text(), "_second");
+
+        // Deleting the second as well leaves empty string.
+        doc.local_delete(op_second.id);
+        assert_eq!(doc.text(), "");
+    }
 }

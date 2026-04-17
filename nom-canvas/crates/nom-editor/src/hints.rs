@@ -134,4 +134,56 @@ mod tests {
             assert_eq!(provider.hints_for_line(line).len(), 1);
         }
     }
+
+    #[test]
+    fn hint_provider_hints_for_line_empty() {
+        let provider = InlayHintProvider::new();
+        assert!(provider.hints_for_line(0).is_empty());
+        assert!(provider.hints_for_line(99).is_empty());
+    }
+
+    #[test]
+    fn hint_provider_add_then_count() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, ": u8", HintKind::Type);
+        provider.add_hint(1, 0, "x:", HintKind::Parameter);
+        provider.add_hint(2, 0, "-> bool", HintKind::Return);
+        assert_eq!(provider.hint_count(), 3);
+    }
+
+    #[test]
+    fn hint_provider_clear_removes_all() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(0, 0, ": i32", HintKind::Type);
+        provider.add_hint(1, 4, "n:", HintKind::Parameter);
+        assert_eq!(provider.hint_count(), 2);
+        provider.clear();
+        assert_eq!(provider.hint_count(), 0);
+    }
+
+    #[test]
+    fn hint_provider_from_lsp_response_parses() {
+        let raw = [(10, 3, ": str", "type"), (11, 0, "val:", "parameter")];
+        let provider = InlayHintProvider::from_lsp_response(&raw);
+        assert_eq!(provider.hint_count(), 2);
+        assert_eq!(provider.hints_for_line(10)[0].label, ": str");
+        assert_eq!(provider.hints_for_line(11)[0].kind, HintKind::Parameter);
+    }
+
+    #[test]
+    fn hint_provider_hints_for_line_filters() {
+        let mut provider = InlayHintProvider::new();
+        provider.add_hint(1, 0, "a", HintKind::Type);
+        provider.add_hint(2, 0, "b", HintKind::Type);
+        provider.add_hint(3, 0, "c", HintKind::Type);
+        assert_eq!(provider.hints_for_line(2).len(), 1);
+        assert_eq!(provider.hints_for_line(2)[0].label, "b");
+    }
+
+    #[test]
+    fn hint_kind_type_is_not_parameter() {
+        assert_ne!(HintKind::Type, HintKind::Parameter);
+        assert_eq!(HintKind::Return, HintKind::Return);
+        assert_ne!(HintKind::Reference, HintKind::Type);
+    }
 }

@@ -155,4 +155,18 @@ mod tests {
         buf.delete_range(0..1);
         assert_eq!(buf.version, 2);
     }
+
+    #[test]
+    fn buffer_insert_then_len() {
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(0, "abc");
+        assert_eq!(buf.len(), 3);
+    }
+
+    #[test]
+    fn buffer_insert_at_middle_offset() {
+        let mut buf = Buffer::new(1, "helo");
+        buf.insert_at(3, "l");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
 }

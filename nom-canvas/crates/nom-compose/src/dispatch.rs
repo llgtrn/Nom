@@ -150,4 +150,29 @@ mod tests {
         kinds.sort_by_key(|k| k.name());
         assert_eq!(kinds, vec![BackendKind::Document, BackendKind::Image]);
     }
+
+    #[test]
+    fn backend_registry_register_and_dispatch() {
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Render)));
+        let result = reg.dispatch(BackendKind::Render, "scene", &|_| {});
+        assert_eq!(result, Ok("render:scene".to_string()));
+    }
+
+    #[test]
+    fn backend_registry_unknown_kind_returns_err() {
+        let reg = BackendRegistry::new();
+        let result = reg.dispatch(BackendKind::Export, "data", &|_| {});
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("export"));
+    }
+
+    #[test]
+    fn backend_registry_multiple_kinds() {
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Pipeline)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::CodeExec)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Transform)));
+        assert_eq!(reg.registered_kinds().len(), 3);
+    }
 }

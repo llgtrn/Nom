@@ -6,6 +6,11 @@ pub enum CliCommand {
     Lint { path: String },
     Graph { query: String },
     Rag { query: String, top_k: usize },
+    Version,
+    Help,
+    Run { path: String },
+    Format { path: String },
+    RagWithK { query: String, top_k: usize },
 }
 
 /// Parse a slice of string arguments into a [`CliCommand`].
@@ -15,6 +20,16 @@ pub enum CliCommand {
 /// missing.
 pub fn parse_args(args: &[&str]) -> Result<CliCommand, String> {
     match args {
+        ["version"] => Ok(CliCommand::Version),
+        ["help"] => Ok(CliCommand::Help),
+        ["run", path] => Ok(CliCommand::Run { path: path.to_string() }),
+        ["format", path] => Ok(CliCommand::Format { path: path.to_string() }),
+        ["rag", "--top-k", k_str, query] => {
+            let top_k = k_str
+                .parse::<usize>()
+                .map_err(|_| format!("invalid top-k value: {}", k_str))?;
+            Ok(CliCommand::RagWithK { query: query.to_string(), top_k })
+        }
         ["check", path] => Ok(CliCommand::Check { path: path.to_string() }),
         ["build", "--release", path] => Ok(CliCommand::Build {
             path: path.to_string(),
@@ -185,5 +200,74 @@ mod tests {
     fn cli_parse_graph_returns_graph_variant() {
         let cmd = parse_args(&["graph", "render pipeline"]).unwrap();
         assert!(matches!(cmd, CliCommand::Graph { .. }));
+    }
+
+    #[test]
+    fn cli_parse_version() {
+        let cmd = parse_args(&["version"]).unwrap();
+        assert_eq!(cmd, CliCommand::Version);
+    }
+
+    #[test]
+    fn cli_parse_help() {
+        let cmd = parse_args(&["help"]).unwrap();
+        assert_eq!(cmd, CliCommand::Help);
+    }
+
+    #[test]
+    fn cli_parse_run() {
+        let cmd = parse_args(&["run", "src/main.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Run { path: "src/main.nom".to_string() });
+    }
+
+    #[test]
+    fn cli_parse_format() {
+        let cmd = parse_args(&["format", "src/main.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Format { path: "src/main.nom".to_string() });
+    }
+
+    #[test]
+    fn cli_parse_rag_with_top_k() {
+        let cmd = parse_args(&["rag", "--top-k", "10", "canvas layout"]).unwrap();
+        assert_eq!(
+            cmd,
+            CliCommand::RagWithK { query: "canvas layout".to_string(), top_k: 10 }
+        );
+    }
+
+    #[test]
+    fn cli_parse_rag_top_k_five() {
+        let cmd = parse_args(&["rag", "--top-k", "5", "query"]).unwrap();
+        assert_eq!(cmd, CliCommand::RagWithK { query: "query".to_string(), top_k: 5 });
+    }
+
+    #[test]
+    fn cli_parse_rag_top_k_twenty() {
+        let cmd = parse_args(&["rag", "--top-k", "20", "search term"]).unwrap();
+        assert_eq!(
+            cmd,
+            CliCommand::RagWithK { query: "search term".to_string(), top_k: 20 }
+        );
+    }
+
+    #[test]
+    fn cli_parse_run_absolute_path() {
+        let path = "/home/user/project/src/main.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_parse_format_path_preserved() {
+        let path = "crates/nom-canvas-core/src/lib.nom";
+        let cmd = parse_args(&["format", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Format { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_parse_rag_invalid_top_k_returns_err() {
+        let result = parse_args(&["rag", "--top-k", "abc", "query"]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("invalid"));
     }
 }

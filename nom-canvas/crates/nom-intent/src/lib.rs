@@ -277,4 +277,51 @@ mod tests {
         assert_eq!(scored[0].step_count, 1);
         assert!(scored[0].score > 0.0);
     }
+
+    #[test]
+    fn scored_hypothesis_score_field() {
+        // Construct a ScoredHypothesis via rank_hypotheses and verify the score field.
+        let evidence = &["alpha beta gamma"];
+        let ranked = rank_hypotheses(&["alpha beta gamma"], evidence);
+        assert_eq!(ranked.len(), 1);
+        // Perfect overlap → score should be exactly 1.0.
+        assert!((ranked[0].score - 1.0_f32).abs() < 1e-5);
+    }
+
+    #[test]
+    fn interrupt_signal_not_cancelled_by_default() {
+        let signal = InterruptSignal::new();
+        assert!(!signal.is_cancelled(), "new signal must not be cancelled");
+    }
+
+    #[test]
+    fn interrupt_signal_cancel_and_check() {
+        let signal = InterruptSignal::new();
+        assert!(!signal.is_cancelled());
+        signal.cancel();
+        assert!(signal.is_cancelled(), "signal must be cancelled after cancel()");
+    }
+
+    #[test]
+    fn rank_hypotheses_returns_sorted_descending() {
+        let evidence = &["graph query node"];
+        // "graph query node" overlaps perfectly; "banana" overlaps zero.
+        let hypotheses = &["banana", "graph query node"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 2);
+        assert!(
+            ranked[0].score >= ranked[1].score,
+            "rank_hypotheses must return descending by score"
+        );
+        assert_eq!(ranked[0].hypothesis, "graph query node");
+    }
+
+    #[test]
+    fn best_hypothesis_picks_highest() {
+        let evidence = &["graph query node"];
+        let hypotheses = &["banana split", "graph query node"];
+        let best = best_hypothesis(hypotheses, evidence).expect("non-empty slice must return Some");
+        assert_eq!(best.hypothesis, "graph query node");
+        assert!(best.score > 0.0);
+    }
 }

@@ -237,6 +237,22 @@ pub const ANIM_DEFAULT_MS: f32 = 300.0;
 pub const ANIM_FAST_MS: f32 = 200.0;
 
 // ---------------------------------------------------------------------------
+// Semantic color aliases and additional tokens
+// ---------------------------------------------------------------------------
+
+/// Base background — very dark, near-zero blue channel.
+pub const BASE_BG: [f32; 4] = [0.08, 0.09, 0.02, 1.0];
+/// Base foreground — near-white, all channels > 0.8.
+pub const BASE_FG: [f32; 4] = [0.97, 0.98, 0.99, 1.0];
+/// Error state — red-dominant.
+pub const ERROR: [f32; 4] = [0.937, 0.267, 0.267, 1.0];
+/// Warning state — yellowish (both R and G > 0.5).
+pub const WARNING: [f32; 4] = [0.957, 0.702, 0.078, 1.0];
+
+/// Total count of distinct named color tokens defined in this module.
+pub const N_TOKENS: usize = 73;
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -385,5 +401,114 @@ mod tests {
         assert!((0.0..=1.0).contains(&FROSTED_BORDER_ALPHA));
         assert!(FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
             "background alpha should dominate border alpha");
+    }
+
+    #[test]
+    fn tokens_base_bg_is_dark() {
+        // Blue channel (index 2) must be near 0 — confirms a dark background.
+        assert!(BASE_BG[2] < 0.1, "BASE_BG blue channel should be near 0 for a dark bg, got {}", BASE_BG[2]);
+    }
+
+    #[test]
+    fn tokens_base_fg_is_light() {
+        // Red channel (index 0) must be > 0.8 — confirms a light foreground.
+        assert!(BASE_FG[0] > 0.8, "BASE_FG red channel should be > 0.8 for a light fg, got {}", BASE_FG[0]);
+    }
+
+    #[test]
+    fn tokens_cta_has_alpha_one() {
+        assert_eq!(CTA[3], 1.0, "CTA alpha must be 1.0 (fully opaque)");
+    }
+
+    #[test]
+    fn tokens_all_alphas_in_range() {
+        let all_colors: &[(&str, [f32; 4])] = &[
+            ("BG", BG),
+            ("BG2", BG2),
+            ("TEXT", TEXT),
+            ("CTA", CTA),
+            ("BORDER", BORDER),
+            ("FOCUS", FOCUS),
+            ("EDGE_HIGH", EDGE_HIGH),
+            ("EDGE_MED", EDGE_MED),
+            ("EDGE_LOW", EDGE_LOW),
+            ("BASE_BG", BASE_BG),
+            ("BASE_FG", BASE_FG),
+            ("ERROR", ERROR),
+            ("WARNING", WARNING),
+        ];
+        for (name, c) in all_colors {
+            assert!(
+                (0.0..=1.0).contains(&c[3]),
+                "{name}[3] alpha = {} is out of [0.0, 1.0]",
+                c[3]
+            );
+        }
+    }
+
+    #[test]
+    fn tokens_frosted_blur_radius_positive() {
+        assert!(FROSTED_BLUR_RADIUS > 0.0, "FROSTED_BLUR_RADIUS must be positive");
+    }
+
+    #[test]
+    fn tokens_frosted_bg_alpha_below_one() {
+        assert!(FROSTED_BG_ALPHA < 1.0, "FROSTED_BG_ALPHA should be < 1.0 for frosted transparency");
+    }
+
+    #[test]
+    fn tokens_frosted_border_alpha_below_bg_alpha() {
+        assert!(
+            FROSTED_BORDER_ALPHA < FROSTED_BG_ALPHA,
+            "FROSTED_BORDER_ALPHA ({}) must be less than FROSTED_BG_ALPHA ({})",
+            FROSTED_BORDER_ALPHA,
+            FROSTED_BG_ALPHA
+        );
+    }
+
+    #[test]
+    fn tokens_focus_has_distinct_color() {
+        // Focus ring must differ from base background so it is visible.
+        assert_ne!(
+            FOCUS, BASE_BG,
+            "FOCUS ring color must differ from BASE_BG"
+        );
+    }
+
+    #[test]
+    fn tokens_error_is_reddish() {
+        // Red channel dominates over both green and blue.
+        assert!(ERROR[0] > ERROR[1], "ERROR red ({}) must exceed green ({})", ERROR[0], ERROR[1]);
+        assert!(ERROR[0] > ERROR[2], "ERROR red ({}) must exceed blue ({})", ERROR[0], ERROR[2]);
+    }
+
+    #[test]
+    fn tokens_warning_is_yellowish() {
+        // Both red and green channels > 0.5 gives a yellow hue.
+        assert!(WARNING[0] > 0.5, "WARNING red ({}) must be > 0.5 for yellow hue", WARNING[0]);
+        assert!(WARNING[1] > 0.5, "WARNING green ({}) must be > 0.5 for yellow hue", WARNING[1]);
+    }
+
+    #[test]
+    fn tokens_edge_high_brighter_than_edge_low() {
+        // EDGE_HIGH is green-dominant (high confidence); EDGE_LOW is red-dominant (low confidence).
+        // High-confidence edges have a higher green channel than low-confidence edges.
+        assert!(
+            EDGE_HIGH[1] > EDGE_LOW[1],
+            "EDGE_HIGH green ({}) must exceed EDGE_LOW green ({}) — high confidence = green",
+            EDGE_HIGH[1], EDGE_LOW[1]
+        );
+        // And high-confidence edges have a higher alpha than low-confidence edges.
+        assert!(
+            EDGE_HIGH[3] > EDGE_LOW[3],
+            "EDGE_HIGH alpha ({}) must exceed EDGE_LOW alpha ({})",
+            EDGE_HIGH[3], EDGE_LOW[3]
+        );
+    }
+
+    #[test]
+    fn tokens_count_all_defined() {
+        // Compile-time sanity: N_TOKENS must be defined and > 20.
+        assert!(N_TOKENS >= 20, "N_TOKENS ({N_TOKENS}) must be at least 20");
     }
 }

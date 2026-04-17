@@ -1,6 +1,18 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `0b0d48e` | **Tests:** 717 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `[TBD-commit]` | **Tests:** 733→800+ | **Workspace:** clean
+
+## Wave V (2026-04-18) — GPU library wiring + test coverage push
+- [ ] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
+- [ ] **BYTEMUCK-WIRE** — QuadInstance/SpriteInstance/GlobalUniforms derive Pod+Zeroable
+- [ ] **CLI-EXPAND** — nom-cli: 5 new commands (version/help/run/format/rag--top-k) + 10 tests → 28+
+- [ ] **TEST-CANVAS-CORE** — nom-canvas-core: +12 tests → 50+
+- [ ] **TEST-THEME** — nom-theme: +12 tests → 32+
+- [ ] **TEST-EDITOR** — nom-editor: +12 tests → 64+
+- [ ] **TEST-GRAPH** — nom-graph: +12 tests → 79+
+- [ ] **TEST-COMPOSE** — nom-compose: +12 tests → 106+
+- [ ] **TEST-INTENT-COLLAB-MEMO** — +15 tests across intent/collab/memoize
+- [ ] **LINEAR-RGBA** — LinearRgba type + ColorSpace enum added to nom-gpui
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -51,6 +63,8 @@
 | [x] R Coverage | ✅ | 0949124 — NI1+SipHash13+coverage+57 (638 tests) |
 | [x] S Spec align | ✅ | c4d6252 — 5 panels+10 backends+FrostedRect+hints+renderer (686 tests) |
 | [x] T Cleanup | ✅ | 0b0d48e — scenario_workflow+renderer+integration+31 (717 tests) |
+| [x] U Coverage | ✅ | ef5e058 — intent/telemetry/collab+16 (733 tests) |
+| [ ] V GPU wiring | ⏳ | bytemuck+etagere wired, +80 tests |
 
 ### Integrity Grep
 

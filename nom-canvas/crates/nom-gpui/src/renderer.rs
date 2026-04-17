@@ -2,6 +2,37 @@ use crate::scene::{FrostedRect, Scene};
 use crate::types::Hsla;
 
 // ---------------------------------------------------------------------------
+// Color space types
+// ---------------------------------------------------------------------------
+
+/// Distinguishes linear and gamma-encoded color spaces.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum ColorSpace {
+    Linear,
+    Gamma,
+}
+
+/// Linear RGBA color, stored as four `f32` components suitable for GPU buffers.
+///
+/// All arithmetic and blending should be performed in linear space.
+/// Derives `Pod` + `Zeroable` so it can be cast directly to/from byte slices.
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
+pub struct LinearRgba(pub [f32; 4]);
+
+impl From<Hsla> for LinearRgba {
+    /// Convert `Hsla` → linear RGBA using a 2.2-power gamma approximation.
+    ///
+    /// The HSL→RGB conversion produces sRGB values; we then apply
+    /// `c^2.2` to each RGB channel to convert to linear light space.
+    /// Alpha is passed through unchanged (linear by convention).
+    fn from(color: Hsla) -> Self {
+        let [r, g, b, a] = hsla_to_rgba(color);
+        LinearRgba([r.powf(2.2), g.powf(2.2), b.powf(2.2), a])
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Instance types — GPU-buffer-aligned per-primitive data
 // ---------------------------------------------------------------------------
 
@@ -9,7 +40,7 @@ use crate::types::Hsla;
 ///
 /// Packed with `#[repr(C)]` to match wgpu vertex/instance buffer layout.
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct QuadInstance {
     /// x, y, width, height in screen-space pixels.
     pub bounds: [f32; 4],
@@ -24,7 +55,7 @@ pub struct QuadInstance {
 
 /// Instance data for the sprite pipelines (mono + polychrome).
 #[repr(C)]
-#[derive(Debug, Clone, Copy, Default)]
+#[derive(Debug, Clone, Copy, Default, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct SpriteInstance {
     /// x, y, width, height in screen-space pixels.
     pub bounds: [f32; 4],
@@ -36,7 +67,7 @@ pub struct SpriteInstance {
 
 /// Global uniforms shared across all pipelines in a frame.
 #[repr(C)]
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, bytemuck::Pod, bytemuck::Zeroable)]
 pub struct GlobalUniforms {
     /// Column-major 4x4 orthographic projection matrix.
     pub projection: [[f32; 4]; 4],
@@ -591,5 +622,121 @@ mod tests {
 
         assert_eq!(renderer.stats().frames, 2, "two frames after second draw");
         assert_eq!(renderer.stats().quads_drawn, 3, "cumulative quads: 2 + 1");
+    }
+
+    // ------------------------------------------------------------------
+    // bytemuck Pod/Zeroable tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn quad_instance_pod_cast() {
+        use std::mem::size_of;
+        let instance = QuadInstance::default();
+        let bytes = bytemuck::cast_slice::<QuadInstance, u8>(std::slice::from_ref(&instance));
+        assert_eq!(
+            bytes.len(),
+            size_of::<QuadInstance>(),
+            "byte slice length must equal size_of::<QuadInstance>"
+        );
+    }
+
+    #[test]
+    fn sprite_instance_pod_cast() {
+        use std::mem::size_of;
+        let instance = SpriteInstance::default();
+        let bytes = bytemuck::cast_slice::<SpriteInstance, u8>(std::slice::from_ref(&instance));
+        assert_eq!(
+            bytes.len(),
+            size_of::<SpriteInstance>(),
+            "byte slice length must equal size_of::<SpriteInstance>"
+        );
+    }
+
+    #[test]
+    fn global_uniforms_pod_cast() {
+        use std::mem::size_of;
+        let uniforms = GlobalUniforms {
+            projection: [[0.0; 4]; 4],
+            viewport_size: [0.0; 2],
+            _pad: [0.0; 2],
+        };
+        let bytes = bytemuck::cast_slice::<GlobalUniforms, u8>(std::slice::from_ref(&uniforms));
+        assert_eq!(
+            bytes.len(),
+            size_of::<GlobalUniforms>(),
+            "byte slice length must equal size_of::<GlobalUniforms>"
+        );
+    }
+
+    #[test]
+    fn linear_rgba_from_hsla_zero() {
+        // Black: h=0, s=0, l=0, a=1 — all RGB channels 0 after gamma, alpha 1.
+        let color = LinearRgba::from(Hsla { h: 0.0, s: 0.0, l: 0.0, a: 1.0 });
+        assert!((color.0[0] - 0.0).abs() < 1e-6, "r should be 0, got {}", color.0[0]);
+        assert!((color.0[1] - 0.0).abs() < 1e-6, "g should be 0, got {}", color.0[1]);
+        assert!((color.0[2] - 0.0).abs() < 1e-6, "b should be 0, got {}", color.0[2]);
+        assert!((color.0[3] - 1.0).abs() < 1e-6, "a should be 1, got {}", color.0[3]);
+    }
+
+    #[test]
+    fn linear_rgba_from_hsla_white() {
+        // White: h=0, s=0, l=1, a=1 — 1.0^2.2 = 1.0 for all RGB channels.
+        let color = LinearRgba::from(Hsla { h: 0.0, s: 0.0, l: 1.0, a: 1.0 });
+        assert!((color.0[0] - 1.0).abs() < 1e-5, "r should be ~1, got {}", color.0[0]);
+        assert!((color.0[1] - 1.0).abs() < 1e-5, "g should be ~1, got {}", color.0[1]);
+        assert!((color.0[2] - 1.0).abs() < 1e-5, "b should be ~1, got {}", color.0[2]);
+        assert!((color.0[3] - 1.0).abs() < 1e-5, "a should be 1, got {}", color.0[3]);
+    }
+
+    #[test]
+    fn frame_stats_default_zeroed() {
+        let stats = FrameStats::default();
+        assert_eq!(stats.quads_drawn, 0);
+        assert_eq!(stats.shadows_drawn, 0);
+        assert_eq!(stats.frosted_drawn, 0);
+        assert_eq!(stats.paths_drawn, 0);
+        assert_eq!(stats.mono_sprites_drawn, 0);
+        assert_eq!(stats.sprites_drawn, 0);
+        assert_eq!(stats.underlines_drawn, 0);
+        assert_eq!(stats.frames, 0);
+    }
+
+    #[test]
+    fn renderer_draw_increments_frames() {
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+        renderer.draw(&mut scene);
+        assert_eq!(renderer.stats().frames, 1, "frames should be 1 after one draw");
+    }
+
+    #[test]
+    fn frame_stats_frosted_counted() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+
+        let make_rect = |x: f32| FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(x), y: Pixels(0.0) },
+                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+            },
+            blur_radius: 4.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.3,
+        };
+
+        scene.push_frosted_rect(make_rect(0.0));
+        scene.push_frosted_rect(make_rect(60.0));
+        renderer.draw(&mut scene);
+
+        // frosted_drawn counts the number of FrostedRect primitives (2).
+        // draw_frosted_rects produces 2 QuadInstances per rect (4 total).
+        assert_eq!(
+            renderer.stats().frosted_drawn,
+            2,
+            "frosted_drawn should count 2 FrostedRects"
+        );
     }
 }

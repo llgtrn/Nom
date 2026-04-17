@@ -155,4 +155,47 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("image"));
     }
+
+    #[test]
+    fn provider_router_compose_success() {
+        let mut r = ProviderRouter::new();
+        r.register(StubMediaVendor { name: "primary", kind: BackendKind::Data }, FallbackLevel::Primary);
+        r.register(StubMediaVendor { name: "secondary", kind: BackendKind::Data }, FallbackLevel::Secondary);
+        let result = r.compose_with_fallback(&BackendKind::Data, "input", &|_| {}, false);
+        assert_eq!(result, Ok("stub_output".to_string()));
+        // primary succeeds so vendor_count still 2 (no removal on success)
+        assert_eq!(r.vendor_count(), 2);
+    }
+
+    #[test]
+    fn provider_router_fallback_used_on_err() {
+        let mut r = ProviderRouter::new();
+        r.register(FailingVendor { name: "bad_primary", kind: BackendKind::Document }, FallbackLevel::Primary);
+        r.register(StubMediaVendor { name: "good_fallback", kind: BackendKind::Document }, FallbackLevel::Secondary);
+        let result = r.compose_with_fallback(&BackendKind::Document, "data", &|_| {}, true);
+        assert_eq!(result, Ok("stub_output".to_string()));
+    }
+
+    #[test]
+    fn provider_router_no_fallbacks_propagates_err() {
+        let mut r = ProviderRouter::new();
+        r.register(FailingVendor { name: "fail1", kind: BackendKind::Audio }, FallbackLevel::Primary);
+        r.register(FailingVendor { name: "fail2", kind: BackendKind::Audio }, FallbackLevel::Secondary);
+        r.register(FailingVendor { name: "fail3", kind: BackendKind::Audio }, FallbackLevel::Tertiary);
+        let result = r.compose_with_fallback(&BackendKind::Audio, "x", &|_| {}, true);
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "error");
+    }
+
+    #[test]
+    fn provider_router_progress_called() {
+        use std::cell::Cell;
+        let mut r = ProviderRouter::new();
+        r.register(StubMediaVendor { name: "v", kind: BackendKind::Video }, FallbackLevel::Primary);
+        let called = Cell::new(false);
+        let _ = r.compose_with_fallback(&BackendKind::Video, "clip", &|p| {
+            if p >= 1.0 { called.set(true); }
+        }, false);
+        assert!(called.get());
+    }
 }

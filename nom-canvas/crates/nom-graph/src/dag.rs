@@ -239,4 +239,44 @@ mod tests {
         let active_edges: Vec<_> = dag.edges.iter().filter(|e| e.confidence > 0.0).collect();
         assert!(active_edges.is_empty(), "zero-confidence edge must be pruned by confidence filter");
     }
+
+    #[test]
+    fn dag_edge_confidence_default_one() {
+        // add_edge (unweighted) must store confidence exactly 1.0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("u", "verb"));
+        dag.add_node(ExecNode::new("v", "verb"));
+        dag.add_edge("u", "out", "v", "in");
+        assert_eq!(dag.edges[0].confidence, 1.0, "default add_edge must produce confidence=1.0");
+    }
+
+    #[test]
+    fn dag_add_edge_weighted_clamps_above_one() {
+        // Confidence values above 1.0 must be clamped to 1.0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge_weighted("a", "out", "b", "in", 1.5);
+        assert_eq!(dag.edges[0].confidence, 1.0, "confidence 1.5 must clamp to 1.0");
+    }
+
+    #[test]
+    fn dag_add_edge_weighted_clamps_below_zero() {
+        // Confidence values below 0.0 must be clamped to 0.0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("p", "verb"));
+        dag.add_node(ExecNode::new("q", "verb"));
+        dag.add_edge_weighted("p", "out", "q", "in", -0.1);
+        assert_eq!(dag.edges[0].confidence, 0.0, "confidence -0.1 must clamp to 0.0");
+    }
+
+    #[test]
+    fn dag_edge_confidence_zero_point_five() {
+        // add_edge_weighted with exactly 0.5 must store 0.5 (no clamping needed).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("m", "verb"));
+        dag.add_node(ExecNode::new("n", "verb"));
+        dag.add_edge_weighted("m", "out", "n", "in", 0.5);
+        assert_eq!(dag.edges[0].confidence, 0.5, "confidence 0.5 must be stored as-is");
+    }
 }
