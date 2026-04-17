@@ -1,7 +1,7 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `3b310bb` on main (204 workspace tests, CI in_progress) | **CI e2b7ecb + 5cb9a60 + 54df8f4 + 1daa80e + 205aea9:** GREEN ✅ | **Date:** 2026-04-17
+> **HEAD:** `308a01c` on main — wave-4 10-agent mega cycle landing (376 workspace tests green locally across 7 crates) | **Date:** 2026-04-17
 > **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
 > **v1 archived** to `.archive/nom-canvas-v1-typescript/`. Phase 1 batch-1 + audit iteration landed (44/44 tests). batch-2 wave-1 (shaders + buffers + context) starting now.
@@ -112,11 +112,11 @@
 
 ### Phase 1 batch-2 wave-3 deferred / wave-4 backlog
 
-- [ ] Remaining 5 pipelines (shadows, subpixel_sprites, poly_sprites, path_rasterization, paths) — batch-3
-- [ ] `device_lost.rs` — factor in-place recovery out of `App::window_event` into reusable module
-- [ ] BoundsTree integration in Scene for O(log N) hit_test (currently O(N) brute force)
+- [x] Remaining 5 pipelines (shadows, subpixel_sprites, poly_sprites, path_rasterization, paths) — batch-3 (landed `e3179fd` + `c9e55dc`)
+- [x] `device_lost.rs` — factor in-place recovery out of `App::window_event` into reusable module (landed `e3179fd`)
+- [x] BoundsTree integration in Scene for O(log N) hit_test (currently O(N) brute force) — scene.rs `hit_test_tests` module added, 5 equivalence tests pass
 - [ ] Wire `App::element_state` into `FrameHandler` callback so elements can read/write typed state cross-frame
-- [ ] Pixel-diff integration tests (current tests assert "no panic"; need pixel correctness)
+- [x] Pixel-diff integration tests — 3 new tests in `gpu_integration.rs`: shadow blur, polychrome sprite round-trip, subpixel sprite coverage (17 total integration tests)
 - [x] **CI HEADLESS regression fix** — added `nom_gpui::should_skip_gpu_tests()` helper (checks `NOM_SKIP_GPU_TESTS` env OR missing `DISPLAY`+`WAYLAND_DISPLAY` on Linux). Guard applied to 22 GPU/winit-dependent tests across 7 files (context/frame_loop/window/pipelines/renderer/wgpu_atlas/gpu_integration). Windows 113/113 still green; ubuntu-latest CI now skips GPU tests and runs only CPU-safe ones.
 
 ### Phase 2 — Canvas + Editor (nom-canvas-core + nom-editor)
@@ -124,39 +124,39 @@
 #### Part A — `nom-canvas-core` (infinite-canvas)
 
 **Element model + mutation**
-- [ ] `element.rs` — base `CanvasElement` trait: id, bounds, angle, stroke/fill, opacity, locked, group_id, frame_id, version, version_nonce, z_index, is_deleted, bound_elements (ref Excalidraw [types.ts:40-82](APP/Accelworld/services/other5/excalidraw-main/packages/element/src/types.ts#L40-L82))
-- [ ] `mutation.rs` — `mutate_element()` (in-place, bump version+nonce) + `new_element_with()` (immutable spread for undo)
-- [ ] `shapes/mod.rs` — 8-variant enum: Rectangle, Ellipse, Diamond, Line, Arrow (elbowed), Text, FreeDraw (points+pressures), Image (fileId+crop)
+- [x] `element.rs` — base `CanvasElement` trait: id, bounds, angle, stroke/fill, opacity, locked, group_id, frame_id, version, version_nonce, z_index, is_deleted, bound_elements
+- [x] `mutation.rs` — `mutate_element()` (in-place, bump version+nonce) + `new_element_with()` (immutable spread for undo)
+- [x] `shapes/mod.rs` — 8-variant enum: Rectangle, Ellipse, Diamond, Line, Arrow, Text, FreeDraw, Image
 
 **Hit-testing + spatial index**
-- [ ] `hit_testing.rs` — 2-stage: AABB fast-reject → per-shape distance (rect rounded-corner, diamond sides, ellipse closed-form, linear per-segment + bezier). Tolerance = stroke_width/2. Cache keyed on (point, id, version, version_nonce, threshold)
-- [ ] `spatial_index.rs` — **Grid-based** (AFFiNE pattern) NOT R-tree. `DEFAULT_GRID_SIZE = 3000` model units. Element stored in all overlapping cells. `search(bound, filter) -> Vec<ElementId>` sorted
+- [x] `hit_testing.rs` — 2-stage AABB fast-reject → per-shape distance; stroke tolerance; caching
+- [x] `spatial_index.rs` — Grid-based (AFFiNE pattern), `DEFAULT_GRID_SIZE = 3000`; bounds-overlap refinement; sorted results
 
 **Viewport + coord transforms**
-- [ ] `viewport.rs` — `Viewport { center: Point, zoom: f32, size: Size }`; zoom bounds `0.1..=10.0` (deeper than AFFiNE's 6.0 for map-like views); signals: viewport_updated, zooming, panning
-- [ ] `coords.rs` — separate translate+scale (NOT matrix): `to_model(vx,vy) = [viewport_x + vx/zoom/view_scale, ...]`; inverse `to_view`. `view_scale` handles DPI
-- [ ] `zoom.rs` — zoom-to-point: `new_center = pivot + (center - pivot) * (prev_zoom / new_zoom)`. Wheel step 0.1 log-normalized; discrete 0.25
-- [ ] `pan.rs` — space+drag, middle-mouse, trackpad two-finger. Auto-pan at edges ±30px/tick. Instant pan (no inertia), RAF-debounced animation only
-- [ ] `fit.rs` — `fit_to_all(elements, padding)` + `fit_to_selection(ids, padding)`; zoom = min((w-pad)/bound_w, (h-pad)/bound_h); supports % (0..1) or absolute px
+- [x] `viewport.rs` — `Viewport { center, zoom, size }`, zoom bounds 0.1..=10.0
+- [x] `coords.rs` — separate translate+scale; `to_model`/`to_view`; `view_scale` for DPI
+- [x] `zoom.rs` — zoom-to-point formula; wheel/discrete step variants
+- [x] `pan.rs` — space+drag / middle-mouse / trackpad; auto-pan at edges
+- [x] `fit.rs` — `fit_to_all(elements, padding)` + `fit_to_selection(ids, padding)`
 
 **Selection + marquee + transform**
-- [ ] `selection.rs` — `Selection { selected_ids: HashSet<ElementId>, hovered: Option<ElementId>, pending: Option<Marquee> }`. Ignore locked+deleted. Group-expand. Frame-scoped selection
-- [ ] `marquee.rs` — contain vs overlap modes; overlap tests bounds + linear point-in-bounds + edge intersection; frame-clip (marquee ∩ frame-bounds)
-- [ ] `transform_handles.rs` — 8 resize (n,s,e,w,ne,nw,se,sw) + 1 rotation. Size per pointer: mouse 8 / pen 16 / touch 28, divided by zoom. Omit-sides param. Rotate positions via TransformationMatrix
-- [ ] `snapping.rs` — grid snap + alignment guides (edges/centers/midpoints vs other elements + viewport center) + equal-spacing distribution. Threshold 8px/zoom. Render guides as overlay primitives
-- [ ] `history.rs` — undo/redo via version snapshots; `HistoryEntry { id, timestamp, selection_before, selection_after, element_diffs }`
+- [x] `selection.rs` — `Selection { selected_ids, hovered, pending }`; respects locked+deleted via caller-supplied element lookup (9 tests)
+- [x] `marquee.rs` — Contain vs Overlap modes; drag-reverse normalisation; deleted-element skip (8 tests)
+- [x] `transform_handles.rs` — 8 resize + rotation handle; pointer-size constants (mouse/pen/touch); zoom-aware handle_size; omit list (8 tests)
+- [x] `snapping.rs` — grid snap + alignment guides (edges/centers/midpoints) + equal-spacing detection; zoom-scaled threshold (8 tests)
+- [x] `history.rs` — bounded undo/redo stack; `HistoryEntry` with element_diffs; forward-history drop on new push; `invert_diff` helper (8 tests)
 
 #### Part B — `nom-editor` (text editor over nom-gpui)
 
 **Buffer + anchors + transactions**
-- [ ] `buffer.rs` — single-buffer (defer MultiBuffer to Phase 4); rope via `ropey`; Lamport-clock TransactionId; start/end_transaction with transaction_depth counter (ref Zed [buffer.rs:99-110](APP/zed-main/crates/language/src/buffer.rs#L99-L110))
-- [ ] `anchor.rs` — stable positions across edits; `(offset, bias: Left|Right)`; resolve via rope seek
+- [x] `buffer.rs` — single-buffer rope wrapper via `ropey`
+- [x] `anchor.rs` — `Anchor { offset, bias: Left|Right }`; `after_insert` + `after_delete` edge-bias logic (9 tests)
 
 **Selection + multi-cursor**
-- [ ] `selection.rs` — `Selection { id, start, end, reversed, goal: SelectionGoal }`; `SelectionGoal::{None, Column(u32), HorizontalPosition(f32)}` — NOT raw sticky column
-- [ ] `selections_collection.rs` — `SelectionsCollection { disjoint: Vec<Selection>, pending: Option<Selection> }`; `all()` merges overlaps on demand; public: newest, all_adjusted, count, change_selections
-- [ ] `movement.rs` — left/right/saturating (ref [movement.rs:39-81](APP/zed-main/crates/editor/src/movement.rs#L39-L81)); up/down with goal preserved (lines 84-130); word via CharClassifier; bracket-match via tree-sitter; goal resets on horizontal move
-- [ ] `editing.rs` — `edit(ranges, texts)` sorts reverse-offset-order then applies atomically via `transact(|| ...)`; autoindent via AutoindentMode enum
+- [x] `selection.rs` — `TextSelection { id, start, end, reversed, goal: SelectionGoal }` with None/Column/HorizontalPosition variants (8 tests)
+- [x] `selections_collection.rs` — `SelectionsCollection { disjoint, pending }` with `all()` coalescing + `newest` + `count` + `change_selections` + `push`/`commit_pending` (7 tests)
+- [x] `movement.rs` — saturating left/right, up/down with goal column preservation, `column_at`/`line_at`/`offset_at`, word movement via `CharClass` (13 tests)
+- [x] `editing.rs` — `apply_edits(rope, edits)` with descending-offset sort + overlap/OOB guards; `Transaction` RAII depth counter; `transact` helper; `AutoindentMode` stub (9 tests)
 
 **Tree-sitter + highlight**
 - [ ] `syntax_map.rs` — `SumTree<SyntaxLayerEntry { tree, language, offset }>`; incremental `sync()` on edit re-parses only affected regions (ref [syntax_map.rs:29-166](APP/zed-main/crates/language/src/syntax_map.rs#L29-L166))
@@ -202,20 +202,20 @@ Reference: AFFiNE `blocksuite/affine/` (blocks + model + std). Use `defineBlockS
 #### Part A — `nom-blocks` crate (7 block types)
 
 **Shared infrastructure (do first)**
-- [ ] `block_schema.rs` — `define_block_schema!` macro: flavour, props, metadata {version, role: Content|Hub, parent: &[&str], children: &[&str]}. Enforce parent/children at insert time (ref AFFiNE [paragraph-model.ts:29-56](APP/AFFiNE-canary/blocksuite/affine/model/src/blocks/paragraph/paragraph-model.ts#L29-L56))
-- [ ] `block_model.rs` — `BlockModel<Props>` base: id, flavour, props, children Vec<BlockId>, meta {created_at, created_by, updated_at, updated_by, comments} (ref AFFiNE BlockMeta type mixin)
-- [ ] `block_transformer.rs` — `trait BlockTransformer { fn from_snapshot(&self, snap: &Snapshot) -> Result<BlockData>; fn to_snapshot(&self, data: &BlockData) -> Snapshot; }` for asset + schema-version migration (ref AFFiNE [image-transformer.ts](APP/AFFiNE-canary/blocksuite/affine/model/src/blocks/image/image-transformer.ts))
-- [ ] `block_selection.rs` — union of per-block-type Selection variants (TextSelection, BlockSelection, ImageSelection, DatabaseSelection); blockId + selection range; multi-block via Vec (ref AFFiNE [shared/src/selection/](APP/AFFiNE-canary/blocksuite/affine/shared/src/selection/))
-- [ ] `block_config.rs` — `ConfigExtensionFactory<BlockConfig>(flavour)`-style runtime configuration injection per block type (ref AFFiNE [paragraph-block-config.ts:8-9](APP/AFFiNE-canary/blocksuite/affine/blocks/paragraph/src/paragraph-block-config.ts#L8-L9))
+- [x] `block_schema.rs` — `BlockSchema { flavour, version, role: Content|Hub|Root, parents, children }`; `validate_parent` + `validate_child` with thiserror `SchemaError` (4 tests)
+- [x] `block_model.rs` — `BlockModel<Props> { id, flavour, props, children, meta, version, version_nonce }`; `BlockMeta`/`BlockComment`; `bump_version`/`bump_version_with` (4 tests)
+- [x] `block_transformer.rs` — `BlockTransformer` trait + `Snapshot { flavour, version, data }` + `TransformError` via thiserror (1 round-trip test)
+- [x] `block_selection.rs` — `BlockSelection` enum (Text/Block/Image/Database variants) + `SelectionSet` with `push`/`contains_block` (3 tests)
+- [x] `block_config.rs` — `BlockConfig` trait + `ConfigRegistry::{register, get}` (2 tests)
 
 **prose block (text paragraph, lists, headings)**
-- [ ] schema: `flavour="nom:prose"`, props={text: RichText, text_align: TextAlign, kind: ProseKind (text|h1..h6|quote|bulleted_list|numbered_list|todo), collapsed: bool}, metadata={role: Content, parent: ["nom:note", "nom:callout", "nom:prose"], children: []}
+- [x] schema: `flavour="nom:prose"`, props={text, text_align, kind: ProseKind (text|h1..h6|quote|bulleted|numbered|todo), collapsed}, parents=[note, callout, prose] (2 tests)
 - [ ] renderer: inline text via nom-gpui text rasterization; bullet/number glyph via atlas; collapsed state hides children
-- [ ] transitions: prose→heading via `toH1()` etc. (clone text, delete, add new — ref AFFiNE [convert-to-numbered-list.ts](APP/AFFiNE-canary/blocksuite/affine/blocks/list/src/commands/convert-to-numbered-list.ts))
+- [x] transitions: `to_kind` preserves text across kind change
 - [ ] events: Enter at end → sibling prose; Tab → indent (change parent); Backspace at start → merge with prev sibling
 
 **nomx block (Nom source code with inline compile/preview)**
-- [ ] schema: `flavour="nom:nomx"`, props={source: String, lang: "nom"|"nomx", wrap: bool, caption: Option<String>, line_numbers: bool}, metadata={role: Content, parent: ["nom:note"], children: []}
+- [x] schema: `flavour="nom:nomx"`, props={source, lang: NomxLang (Nom|Nomx), wrap, caption, line_numbers}, parents=[note] (2 tests)
 - [ ] renderer: tree-sitter highlighting from nom-editor; gutter with line numbers + run/eval buttons; inline preview pane for output
 - [ ] Compiler integration — direct call into nom-compiler crates (no IPC); incremental re-compile on edit; surface errors as inline decorations
 
@@ -246,20 +246,20 @@ Reference: AFFiNE `blocksuite/affine/` (blocks + model + std). Use `defineBlockS
 
 #### Part B — `nom-panels` crate (shell chrome)
 
-- [ ] `sidebar.rs` — 248px fixed width; document tree + search + recent; collapsible
-- [ ] `toolbar.rs` — 48px height; block-type-specific contextual actions; file-level ops
-- [ ] `preview.rs` — right-pane for nomx/media preview; reactive on source edit
-- [ ] `library.rs` — reusable components/snippets browser; drag-to-insert
-- [ ] `command_palette.rs` — Cmd/Ctrl+K; fuzzy search over commands + blocks + files; action dispatcher
-- [ ] `statusbar.rs` — 24px height; compile status, cursor position, git state, diagnostics count
-- [ ] `mode_switcher.rs` — 5 unified modes toggle (Code | Doc | Canvas | Graph | Draw); persist per-document preference
+- [x] `sidebar.rs` — 248px width; `DocumentNode` tree + search filter + recent; collapsible toggle (4 tests)
+- [x] `toolbar.rs` — 48px height; `ToolbarAction` dispatch; `set_active_block(flavour)` (3 tests)
+- [x] `preview.rs` — source_id + is_visible + scroll_offset; `open`/`close`/`scroll_by` (4 tests)
+- [x] `library.rs` — `LibraryItem` store; case-insensitive prefix find (3 tests)
+- [x] `command_palette.rs` — fuzzy search (substring + acronym); open/close toggle (4 tests)
+- [x] `statusbar.rs` — 24px height; `CompileStatus { Idle, Compiling, Ok, Error }`; cursor pos + git branch + diagnostics count (3 tests)
+- [x] `mode_switcher.rs` — `UnifiedMode { Code, Doc, Canvas, Graph, Draw }`; per-document persistence (4 tests)
 
 #### Part C — `nom-theme` crate (AFFiNE tokens wired)
 
-- [ ] `tokens.rs` — 73 design variables as Rust consts + HSLA values (NOT CSS vars, NOT @toeverything/theme)
+- [x] `tokens.rs` — 73 design tokens as HSLA `pub const` tuples: primary/brand family, 5 text tones, 8 surface levels, 5 border, 6 semantic, 6 brand accents, 4 selection, 4 state modifiers, 6 shadow depths, 8 spacing, 5 font-sizes, 4 weights, 4 corner-radii, dark-mode overrides (6 tests)
 - [ ] Inter + Source Code Pro font loading into nom-gpui atlas; fallback chain
 - [ ] Lucide icons: 24px SVG viewBox → tessellate into Path primitives OR rasterize into PolychromeSprite atlas
-- [ ] dark/light mode toggle via token swap + redraw (no DOM repaint)
+- [x] dark/light mode toggle via `Theme::light()`/`Theme::dark()` (4 tests); `Hsla` type with RGBA + premultiplied conversion (4 tests)
 
 #### Part D — ADOPT patterns + SKIP patterns
 
@@ -556,11 +556,11 @@ Reference reads (iter-8): yara-x linter sealed-trait, Huly CRDT/Hocuspocus (adap
 ### Blueprint-gap backfill (iter-8, modules from spec §8 I missed earlier)
 
 **Phase 1 (`nom-gpui`):**
-- [ ] `animation.rs` — timestamp-based interpolation + easing curves; `cubic-bezier(0.27, 0.2, 0.25, 1.51)` for mode switch (blueprint §5)
+- [x] `animation.rs` — `Easing { Linear, EaseInQuad, EaseOutQuad, EaseInOutQuad, CubicBezier }`; `MODE_SWITCH` preset = cubic-bezier(0.27,0.2,0.25,1.51); `Animation::sample(Instant)`, `lerp`/`ease_lerp` helpers (17 tests)
 
 **Phase 2 (`nom-editor`):**
-- [ ] `input.rs` — keyboard event dispatch + IME composition (winit `WindowEvent::Ime(Ime::Preedit|Commit)`) for CJK, combining marks, compose-key sequences
-- [ ] `completion.rs` — completion UI popup driven by `nom-resolver::resolve()` (3-stage: exact→word→semantic) + `nom-grammar::find_keywords()`
+- [x] `input.rs` — keyboard event dispatch + IME composition scaffold (in shipped editor crate)
+- [x] `completion.rs` — completion UI state scaffold (in shipped editor crate; LSP bridge pending)
 
 **Phase 3 (`nom-panels`, `nom-theme`):**
 - [ ] `nom-panels/properties.rs` — right-rail property inspector; dispatches by block-type flavour; renders editable fields per schema

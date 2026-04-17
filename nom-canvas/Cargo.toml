@@ -4,6 +4,9 @@ members = [
     "crates/nom-gpui",
     "crates/nom-canvas-core",
     "crates/nom-editor",
+    "crates/nom-theme",
+    "crates/nom-panels",
+    "crates/nom-blocks",
 ]
 
 [workspace.package]

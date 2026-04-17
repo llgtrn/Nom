@@ -1491,7 +1491,7 @@ mod tests {
         assert!(s.hit_test(pt(200.0, 200.0)).is_none());
     }
 
-    /// Inserting 100 quads one at a time keeps tree and map consistent.
+    /// Inserting 100 quads one at a time keeps the tree and map consistent.
     #[test]
     fn hit_test_after_many_inserts_tree_stays_consistent() {
         let mut tree_scene = Scene::new_with_tree();
@@ -1514,6 +1514,163 @@ mod tests {
             assert_eq!(
                 tree_r, brute_r,
                 "spot-check quad {i}: tree={tree_r:?} brute={brute_r:?}"
+            );
+        }
+    }
+}
+
+// ── O(log N) hit-test correctness suite ─────────────────────────────────────
+
+#[cfg(test)]
+mod hit_test_tests {
+    use super::*;
+
+    fn sp(x: f32, y: f32, w: f32, h: f32) -> Bounds<ScaledPixels> {
+        Bounds {
+            origin: Point { x: ScaledPixels(x), y: ScaledPixels(y) },
+            size: crate::geometry::Size { width: ScaledPixels(w), height: ScaledPixels(h) },
+        }
+    }
+
+    fn pt(x: f32, y: f32) -> Point<ScaledPixels> {
+        Point { x: ScaledPixels(x), y: ScaledPixels(y) }
+    }
+
+    fn make_quad(order: DrawOrder, x: f32, y: f32, w: f32, h: f32) -> Quad {
+        Quad {
+            order,
+            bounds: sp(x, y, w, h),
+            clip_bounds: sp(0.0, 0.0, 10000.0, 10000.0),
+            corner_radii: crate::geometry::Corners::all(ScaledPixels(0.0)),
+            background: crate::color::Rgba::WHITE,
+            border_color: crate::color::Rgba::TRANSPARENT,
+            border_widths: [ScaledPixels(0.0); 4],
+        }
+    }
+
+    /// 100 non-overlapping quads: hit_test on each quad's center returns that
+    /// quad's index and agrees with the brute-force path.
+    #[test]
+    fn non_overlapping_100_quads_each_hit_matches_brute() {
+        let mut tree_scene = Scene::new_with_tree();
+        let mut brute_scene = Scene::new();
+
+        // Lay out 100 quads in a 10x10 grid, no overlap (20px cells, 15px quads).
+        for row in 0u32..10 {
+            for col in 0u32..10 {
+                let x = col as f32 * 20.0;
+                let y = row as f32 * 20.0;
+                let order = row * 10 + col + 1;
+                let q = make_quad(order, x, y, 15.0, 15.0);
+                tree_scene.insert_quad(q);
+                brute_scene.insert_quad(q);
+            }
+        }
+
+        // Probe each quad's center.
+        for row in 0u32..10 {
+            for col in 0u32..10 {
+                let cx = col as f32 * 20.0 + 7.5;
+                let cy = row as f32 * 20.0 + 7.5;
+                let probe = pt(cx, cy);
+                let tree_r = tree_scene.hit_test(probe);
+                let brute_r = brute_scene.hit_test_brute_force(probe);
+                assert_eq!(
+                    tree_r, brute_r,
+                    "quad ({row},{col}) at ({cx},{cy}): tree={tree_r:?} brute={brute_r:?}"
+                );
+                assert!(tree_r.is_some(), "should hit quad ({row},{col})");
+                assert_eq!(tree_r.unwrap().kind, PrimitiveKind::Quad);
+            }
+        }
+    }
+
+    /// 10 quads all covering the same region: hit_test returns the one with the
+    /// highest draw order.
+    #[test]
+    fn overlapping_10_quads_hit_test_returns_highest_draw_order() {
+        let mut scene = Scene::new_with_tree();
+        // Insert quads at ascending draw orders; the last (order=10) is on top.
+        for i in 1u32..=10 {
+            scene.insert_quad(make_quad(i, 0.0, 0.0, 100.0, 100.0));
+        }
+
+        let result = scene.hit_test(pt(50.0, 50.0));
+        assert!(result.is_some(), "should hit one of the overlapping quads");
+        let r = result.unwrap();
+        assert_eq!(r.order, 10, "highest draw order (10) must win; got order={}", r.order);
+        assert_eq!(r.kind, PrimitiveKind::Quad);
+    }
+
+    /// An empty scene must return None for any probe point.
+    #[test]
+    fn empty_scene_hit_test_returns_none() {
+        let tree_scene = Scene::new_with_tree();
+        let brute_scene = Scene::new();
+        assert!(tree_scene.hit_test(pt(0.0, 0.0)).is_none());
+        assert!(brute_scene.hit_test(pt(0.0, 0.0)).is_none());
+        assert!(tree_scene.hit_test(pt(500.0, 500.0)).is_none());
+    }
+
+    /// A point outside all quads returns None from both paths.
+    #[test]
+    fn point_outside_all_quads_returns_none() {
+        let mut tree_scene = Scene::new_with_tree();
+        let mut brute_scene = Scene::new();
+
+        for i in 0u32..5 {
+            let q = make_quad(i + 1, i as f32 * 20.0, 0.0, 15.0, 15.0);
+            tree_scene.insert_quad(q);
+            brute_scene.insert_quad(q);
+        }
+
+        // Far outside all quads.
+        let probe = pt(9000.0, 9000.0);
+        assert!(tree_scene.hit_test(probe).is_none(), "tree: point far outside should be None");
+        assert!(brute_scene.hit_test(probe).is_none(), "brute: point far outside should be None");
+
+        // Between quads (gap of 5px between each 15px quad spaced 20px apart).
+        let gap = pt(17.0, 5.0);
+        assert!(tree_scene.hit_test(gap).is_none(), "tree: point in gap should be None");
+        assert!(brute_scene.hit_test(gap).is_none(), "brute: point in gap should be None");
+    }
+
+    /// Equivalence: 50 deterministic random query points must yield identical
+    /// results from hit_test (tree path) and hit_test_brute_force.
+    #[test]
+    fn equivalence_50_random_points_tree_equals_brute() {
+        // Deterministic LCG — no external crate.
+        let mut rng: u64 = 0x1234_5678_9abc_def0;
+        let mut next = |lo: f32, hi: f32| -> f32 {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let frac = (rng >> 33) as f32 / (1u64 << 31) as f32;
+            lo + frac * (hi - lo)
+        };
+
+        let mut tree_scene = Scene::new_with_tree();
+        let mut brute_scene = Scene::new();
+
+        // Insert 80 quads with random positions and sizes.
+        for i in 0u32..80 {
+            let x = next(0.0, 800.0);
+            let y = next(0.0, 600.0);
+            let w = next(10.0, 80.0);
+            let h = next(10.0, 80.0);
+            let q = make_quad(i + 1, x, y, w, h);
+            tree_scene.insert_quad(q);
+            brute_scene.insert_quad(q);
+        }
+
+        // 50 random probe points.
+        for i in 0u32..50 {
+            let px = next(0.0, 900.0);
+            let py = next(0.0, 700.0);
+            let probe = pt(px, py);
+            let tree_r = tree_scene.hit_test(probe);
+            let brute_r = brute_scene.hit_test_brute_force(probe);
+            assert_eq!(
+                tree_r, brute_r,
+                "probe {i} at ({px:.1},{py:.1}): tree={tree_r:?} brute={brute_r:?}"
             );
         }
     }

@@ -15,11 +15,16 @@
 pub mod coords;
 pub mod element;
 pub mod fit;
+pub mod history;
 pub mod hit_testing;
+pub mod marquee;
 pub mod mutation;
 pub mod pan;
+pub mod selection;
 pub mod shapes;
+pub mod snapping;
 pub mod spatial_index;
+pub mod transform_handles;
 pub mod viewport;
 pub mod zoom;
 

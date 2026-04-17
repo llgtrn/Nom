@@ -1014,6 +1014,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-blocks"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "parking_lot",
+ "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "nom-canvas-core"
 version = "0.1.0"
 dependencies = [
@@ -1053,6 +1063,21 @@ dependencies = [
  "thiserror 1.0.69",
  "wgpu",
  "winit",
+]
+
+[[package]]
+name = "nom-panels"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "smallvec",
+]
+
+[[package]]
+name = "nom-theme"
+version = "0.1.0"
+dependencies = [
+ "nom-gpui",
 ]
 
 [[package]]
