@@ -1,7 +1,7 @@
 # Nom Compiler + NomCanvas IDE — State Machine Report
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `6196ef1` | **Uncommitted:** nom-canvas/ Rust workspace (crates/nom-gpui Phase 1 batch-1, 31/31 tests) + v1 TS tree moved to `.archive/` | **Date:** 2026-04-17
+> **HEAD:** `e2b7ecb` on main | **CI:** canvas job GREEN (cargo check + test 23s on ubuntu-latest); compiler matrix still running | **Date:** 2026-04-17
 > **Sibling docs:** `implementation_plan.md`, `task.md`, `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (all 4 MUST stay in sync)
 > **Compiler:** 29 crates, 1067 tests | **Canvas v1:** ARCHIVED to `.archive/nom-canvas-v1-typescript/`
 > **NomCanvas:** Custom GPUI (wgpu+winit+taffy+cosmic-text). Full Rust. GPU-native. Phase 1 foundation landed.
@@ -46,3 +46,18 @@ Zed (GPUI rendering), AFFiNE (design system), ComfyUI (DAG + 4 caches), Refly (4
 - v2 design: Custom GPUI + compiler-as-core + universal composition
 - 19 repos read fully end-to-end (not README — actual source)
 - Remotion video pattern adapted for GPU-native Rust
+
+## Plan Completeness Tracker (loop goal → 100%)
+
+| Scope | Detailed % | Notes |
+|-------|-----------|-------|
+| Phase 1 batch-1 | 100% landed, audit found **3 CRITICAL + 4 HIGH + 10 MED + 6 LOW** | Fixes now listed as batch-2 prerequisite in task.md |
+| Phase 1 batch-2 | 85% | 12 subtasks + audit-fix prerequisites + Zed citations. Still need: wgsl shader skeletons, binding-group layouts spelled out |
+| Phase 2 (canvas+editor) | 30% | High-level bullets only; needs per-module task decomposition |
+| Phase 3 (blocks+panels) | 25% | 7 block types + AFFiNE tokens listed; no sub-task breakdown |
+| Phase 4 (composition) | 20% | Backends named; no concrete interface specs |
+| Phase 5 (production) | 15% | Patterns named; no acceptance criteria |
+| **Overall plan** | **~52%** | Cron loop iterates to close gaps each minute |
+
+**Iteration 1 delta:** +5 pp (Phase 1 batch-2 decomposed to 12 tasks with Zed citations)
+**Iteration 2 delta:** +7 pp — Commit `e2b7ecb` landed; 6 parallel audit agents found 3 CRITICAL rendering-correctness bugs + 4 HIGH API-shape issues + 10 MED pattern gaps. Prerequisites now blocking batch-2 captured in plan + task.md. Archive move verified clean; security posture verified (0 unsafe, 0 CVEs, 0 secrets).

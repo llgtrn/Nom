@@ -1,6 +1,6 @@
 # Nom Programming Language — Context
 
-> **HEAD:** `6196ef1` (uncommitted: nom-canvas/ Phase 1 batch-1, 31/31 tests) | **Date:** 2026-04-17
+> **HEAD:** `e2b7ecb` on main (canvas CI GREEN 23s) | **Date:** 2026-04-17
 > **Compiler:** 29 crates, 1067 tests | **Canvas v1:** ARCHIVED (`.archive/nom-canvas-v1-typescript/`)
 > **NomCanvas:** Full Rust GPU-native IDE. Custom GPUI (wgpu+winit+taffy+cosmic-text). **Phase 1 batch-1 landed** — nom-gpui crate (9 modules: geometry, color, bounds_tree, scene, atlas, style, styled, element, taffy_layout). 31/31 tests green. Zero foreign identifiers.
 > **Foundation:** Everything built around Nom language. Compiler IS the IDE. Dictionary IS the knowledge base.
