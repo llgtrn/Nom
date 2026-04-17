@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
-use crate::dock::{DockPosition, Panel};
-use crate::right::chat_sidebar::RenderPrimitive;
+use crate::dock::{fill_quad, DockPosition, Panel};
+use nom_gpui::scene::Scene;
+use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum SearchResultKind { NomtuEntry, Command, File, RecentDoc }
@@ -52,56 +53,17 @@ impl QuickSearchPanel {
 }
 
 impl QuickSearchPanel {
-    /// Render the search box and result rows into primitives.
-    ///
-    /// Layout: input rect (h=32) at top; each result row is 18px tall below it.
-    /// Matched text receives a highlight rect (color 0x45475a) behind it.
-    pub fn render_bounds(&self, width: f32, _height: f32) -> Vec<RenderPrimitive> {
-        let mut out = Vec::new();
+    /// Paint the search box + result rows into the GPU scene.
+    pub fn paint_scene(&self, width: f32, _height: f32, scene: &mut Scene) {
+        // Input field background (32 px tall).
+        scene.push_quad(fill_quad(0.0, 0.0, width, 32.0, tokens::BG2));
 
-        // Input field background.
-        out.push(RenderPrimitive::Rect {
-            x: 0.0,
-            y: 0.0,
-            w: width,
-            h: 32.0,
-            color: 0x313244,
-        });
-
-        // Query text inside the input box.
-        if !self.query.is_empty() {
-            out.push(RenderPrimitive::Text {
-                x: 8.0,
-                y: 8.0,
-                text: self.query.clone(),
-                size: 13.0,
-                color: 0xcdd6f4,
-            });
-        }
-
-        // Result rows.
-        for (i, result) in self.results.iter().enumerate() {
+        // Result row backgrounds (18 px each).
+        for (i, _result) in self.results.iter().enumerate() {
             let y = 32.0 + i as f32 * 18.0;
-
-            // Highlight rect for the matched portion.
-            out.push(RenderPrimitive::Rect {
-                x: 0.0,
-                y,
-                w: width,
-                h: 18.0,
-                color: 0x45475a,
-            });
-
-            out.push(RenderPrimitive::Text {
-                x: 8.0,
-                y: y + 2.0,
-                text: result.label.clone(),
-                size: 13.0,
-                color: 0xcdd6f4,
-            });
+            let row_bg = if self.selected == Some(i) { tokens::FOCUS } else { tokens::BG };
+            scene.push_quad(fill_quad(0.0, y, width, 18.0, row_bg));
         }
-
-        out
     }
 }
 
@@ -130,7 +92,7 @@ mod tests {
     }
 
     #[test]
-    fn quick_search_render_has_input_rect() {
+    fn quick_search_paint_has_input_and_rows() {
         let mut qs = QuickSearchPanel::new();
         qs.open();
         qs.set_query("main");
@@ -151,28 +113,13 @@ mod tests {
             },
         ]);
 
-        let prims = qs.render_bounds(248.0, 400.0);
+        let mut scene = Scene::new();
+        qs.paint_scene(248.0, 400.0, &mut scene);
 
-        // First primitive must be the input rect (h=32, color 0x313244).
-        match &prims[0] {
-            RenderPrimitive::Rect { y, h, color, .. } => {
-                assert_eq!(*y, 0.0);
-                assert_eq!(*h, 32.0);
-                assert_eq!(*color, 0x313244);
-            }
-            other => panic!("expected input Rect, got {:?}", other),
-        }
-
-        // Must have highlight rects for both results (color 0x45475a).
-        let highlight_count = prims
-            .iter()
-            .filter(|p| matches!(p, RenderPrimitive::Rect { color: 0x45475a, .. }))
-            .count();
-        assert_eq!(highlight_count, 2, "expected 2 result highlight rects");
-
-        // Must have text primitives for query + 2 results.
-        let text_count = prims.iter().filter(|p| matches!(p, RenderPrimitive::Text { .. })).count();
-        assert!(text_count >= 3, "expected >=3 text primitives, got {}", text_count);
+        // input quad + 2 result-row quads.
+        assert_eq!(scene.quads.len(), 3);
+        let input = &scene.quads[0];
+        assert_eq!(input.bounds.size.height, nom_gpui::types::Pixels(32.0));
     }
 
     #[test]

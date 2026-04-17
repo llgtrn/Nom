@@ -1,7 +1,8 @@
 #![deny(unsafe_code)]
-use crate::dock::{Dock, DockPosition, RenderPrimitive};
+use crate::dock::{fill_quad, Dock, DockPosition};
 use crate::pane::PaneGroup;
-use nom_theme::tokens::{SIDEBAR_W, PANEL_RIGHT_WIDTH, STATUSBAR_H, TOOLBAR_H};
+use nom_gpui::scene::Scene;
+use nom_theme::tokens::{self, PANEL_RIGHT_WIDTH, SIDEBAR_W, STATUSBAR_H, TOOLBAR_H};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ShellMode { Normal, Insert }
@@ -73,44 +74,28 @@ impl Shell {
     pub fn right_visible(&self) -> bool { self.right.is_open }
     pub fn bottom_visible(&self) -> bool { self.bottom.is_open }
 
-    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
-        let mut out = Vec::new();
+    /// Paint the shell chrome (status bar + optional mode/file strip) into the
+    /// shared GPU scene.
+    pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
+        // Root background.
+        scene.push_quad(fill_quad(0.0, 0.0, width, height, tokens::BG));
 
-        // Status bar background at bottom
-        let sb_y = height - 22.0;
-        out.push(RenderPrimitive::Rect {
-            x: 0.0,
-            y: sb_y,
-            w: width,
-            h: 22.0,
-            color: 0x181825,
-        });
+        // Status bar background strip at the bottom.
+        let sb_h = self.layout.statusbar_h;
+        let sb_y = height - sb_h;
+        scene.push_quad(fill_quad(0.0, sb_y, width, sb_h, tokens::BG2));
 
-        // Mode indicator text (left side)
-        let mode_text = match self.mode {
-            ShellMode::Normal => "-- NORMAL --",
-            ShellMode::Insert => "-- INSERT --",
+        // Mode indicator accent rect (left edge of status bar).
+        let accent_color = match self.mode {
+            ShellMode::Normal => tokens::CTA,
+            ShellMode::Insert => tokens::EDGE_HIGH,
         };
-        out.push(RenderPrimitive::Text {
-            x: 8.0,
-            y: sb_y + 4.0,
-            text: mode_text.to_string(),
-            size: 12.0,
-            color: 0xa6e3a1,
-        });
+        scene.push_quad(fill_quad(0.0, sb_y, 4.0, sb_h, accent_color));
 
-        // File path text at center
-        if let Some(ref path) = self.active_file {
-            out.push(RenderPrimitive::Text {
-                x: width / 2.0,
-                y: sb_y + 4.0,
-                text: path.clone(),
-                size: 12.0,
-                color: 0xcdd6f4,
-            });
+        // Active-file strip (right side of status bar).
+        if self.active_file.is_some() {
+            scene.push_quad(fill_quad(width - 240.0, sb_y, 240.0, sb_h, tokens::BORDER));
         }
-
-        out
     }
 }
 
@@ -141,53 +126,23 @@ mod tests {
     }
 
     #[test]
-    fn shell_render_status_bar() {
+    fn shell_paint_status_bar() {
         let mut shell = Shell::new();
         shell.active_file = Some("src/main.nom".to_string());
-        let prims = shell.render_bounds(1440.0, 900.0);
+        let mut scene = Scene::new();
+        shell.paint_scene(1440.0, 900.0, &mut scene);
 
-        // Status bar rect at y=878 (900-22), h=22
-        match &prims[0] {
-            RenderPrimitive::Rect { x, y, w, h, color } => {
-                assert!((x - 0.0).abs() < 0.01);
-                assert!((y - 878.0).abs() < 0.01);
-                assert!((w - 1440.0).abs() < 0.01);
-                assert!((h - 22.0).abs() < 0.01);
-                assert_eq!(*color, 0x181825);
-            }
-            _ => panic!("expected status bar Rect"),
-        }
-
-        // Mode indicator present with green color
-        let mode_text = prims.iter().find(|p| matches!(p,
-            RenderPrimitive::Text { color: 0xa6e3a1, .. }
-        ));
-        assert!(mode_text.is_some(), "mode indicator text missing");
-        if let Some(RenderPrimitive::Text { text, .. }) = mode_text {
-            assert_eq!(text, "-- NORMAL --");
-        }
-
-        // File path present with correct color
-        let file_text = prims.iter().find(|p| matches!(p,
-            RenderPrimitive::Text { color: 0xcdd6f4, .. }
-        ));
-        assert!(file_text.is_some(), "file path text missing");
-        if let Some(RenderPrimitive::Text { text, .. }) = file_text {
-            assert_eq!(text, "src/main.nom");
-        }
+        // bg + status bar + mode accent + active-file strip = 4 quads.
+        assert!(scene.quads.len() >= 4, "expected >=4 quads, got {}", scene.quads.len());
     }
 
     #[test]
-    fn shell_render_insert_mode() {
+    fn shell_paint_insert_mode_has_accent() {
         let mut shell = Shell::new();
         shell.mode = ShellMode::Insert;
-        let prims = shell.render_bounds(800.0, 600.0);
-        let mode_text = prims.iter().find(|p| matches!(p,
-            RenderPrimitive::Text { color: 0xa6e3a1, .. }
-        ));
-        assert!(mode_text.is_some());
-        if let Some(RenderPrimitive::Text { text, .. }) = mode_text {
-            assert_eq!(text, "-- INSERT --");
-        }
+        let mut scene = Scene::new();
+        shell.paint_scene(800.0, 600.0, &mut scene);
+        // bg + status bar + mode accent = 3 (no active_file).
+        assert_eq!(scene.quads.len(), 3);
     }
 }

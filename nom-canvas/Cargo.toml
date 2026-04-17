@@ -15,6 +15,7 @@ members = [
   "crates/nom-collab",
   "crates/nom-lint",
   "crates/nom-cli",
+  "crates/nom-intent",
 ]
 
 [workspace.dependencies]

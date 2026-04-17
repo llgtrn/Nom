@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
-use crate::dock::{DockPosition, Panel};
-use crate::right::chat_sidebar::RenderPrimitive;
+use crate::dock::{fill_quad, DockPosition, Panel};
+use nom_gpui::scene::Scene;
+use nom_theme::tokens;
 
 #[derive(Debug, Clone)]
 pub struct ThinkingStep {
@@ -56,35 +57,25 @@ impl DeepThinkPanel {
         self.steps.iter().filter(|s| s.confidence >= 0.8).collect()
     }
 
-    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
-        let mut out = Vec::new();
-        // Panel background
-        out.push(RenderPrimitive::Rect { x: 0.0, y: 0.0, w: width, h: height, color: 0x1e1e2e });
+    pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
+        // Panel background.
+        scene.push_quad(fill_quad(0.0, 0.0, width, height, tokens::BG));
         let total = self.steps.len();
-        for (i, step) in self.steps.iter().enumerate() {
+        for (i, _step) in self.steps.iter().enumerate() {
             let y = i as f32 * 24.0 + 4.0;
             let is_active = i + 1 == total;
-            if is_active {
-                out.push(RenderPrimitive::Rect { x: 0.0, y, w: width, h: 22.0, color: 0x313244 });
-            }
-            out.push(RenderPrimitive::Text {
-                x: 6.0,
-                y: y + 6.0,
-                text: format!("{}. {}", i + 1, step.hypothesis),
-                size: 12.0,
-                color: 0xcdd6f4,
-            });
+            let color = if is_active { tokens::FOCUS } else { tokens::BG2 };
+            scene.push_quad(fill_quad(0.0, y, width, 22.0, color));
         }
-        // Progress indicator line at bottom
+        // Progress indicator quad at bottom.
         let fraction = if total == 0 { 0.0 } else {
             match self.state {
                 ThinkState::Complete => 1.0,
                 _ => total as f32 / (total as f32 + 1.0),
             }
         };
-        let line_end_x = width * fraction;
-        out.push(RenderPrimitive::Line { x1: 0.0, y1: height - 2.0, x2: line_end_x, y2: height - 2.0, color: 0x89b4fa });
-        out
+        let progress_w = width * fraction;
+        scene.push_quad(fill_quad(0.0, height - 2.0, progress_w, 2.0, tokens::CTA));
     }
 }
 
@@ -124,28 +115,15 @@ mod tests {
     }
 
     #[test]
-    fn deep_think_panel_render_has_steps() {
+    fn deep_think_panel_paint_has_quads() {
         let mut panel = DeepThinkPanel::new();
         panel.begin("analyze intent");
         panel.push_step(ThinkingStep::new("hypothesis alpha", 0.9));
         panel.push_step(ThinkingStep::new("hypothesis beta", 0.6));
         panel.complete();
-        let prims = panel.render_bounds(320.0, 400.0);
-        // Must have: 1 bg + 1 active highlight + 2 text + 1 progress line = 5 minimum
-        assert!(prims.len() >= 5, "expected at least 5 primitives, got {}", prims.len());
-        // Background is first
-        assert_eq!(prims[0], RenderPrimitive::Rect { x: 0.0, y: 0.0, w: 320.0, h: 400.0, color: 0x1e1e2e });
-        // Active step highlight (last step uses 0x313244)
-        let has_highlight = prims.iter().any(|p| matches!(p, RenderPrimitive::Rect { color: 0x313244, .. }));
-        assert!(has_highlight, "active step highlight not found");
-        // Progress line present at bottom
-        let has_line = prims.iter().any(|p| matches!(p, RenderPrimitive::Line { .. }));
-        assert!(has_line, "progress line not found");
-        // Text prims contain step numbers
-        let text_contents: Vec<&str> = prims.iter().filter_map(|p| {
-            if let RenderPrimitive::Text { text, .. } = p { Some(text.as_str()) } else { None }
-        }).collect();
-        assert!(text_contents.iter().any(|t| t.contains("1.")), "step 1 text not found");
-        assert!(text_contents.iter().any(|t| t.contains("2.")), "step 2 text not found");
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 400.0, &mut scene);
+        // bg + 2 step rows + progress = 4 quads.
+        assert_eq!(scene.quads.len(), 4);
     }
 }

@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 use crate::progress::{ComposeEvent, ProgressSink};
+use nom_intent::{classify_with_react, react_chain};
 
 /// One step in a chain-of-thought pipeline.
 #[derive(Debug, Clone, PartialEq)]
@@ -40,24 +41,38 @@ impl DeepThinkStream {
         Self { config }
     }
 
-    /// Generates `config.max_steps` think steps, emitting `ComposeEvent::Progress` at each step
-    /// and `ComposeEvent::Completed` at the end.
+    /// Generates `config.max_steps` think steps using a ReAct reasoning loop,
+    /// emitting `ComposeEvent::Progress` at each step and `ComposeEvent::Completed` at the end.
     pub fn think(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<DeepThinkStep> {
+        let input = format!("intent_{:016x}", input_hash);
         let mut steps = Vec::with_capacity(self.config.max_steps);
 
-        for i in 0..self.config.max_steps {
-            let step_id = i;
-            let evidence_hash = input_hash.rotate_left(step_id as u32 * 3);
+        for step_id in 0..self.config.max_steps {
+            let hypothesis = format!("hypothesis_{}: {}", step_id, &input[..input.len().min(30)]);
+
+            // Build evidence from previous step hypotheses (ReAct: each step observes prior)
+            let prev_evidence: Vec<&str> =
+                steps.iter().map(|s: &DeepThinkStep| s.hypothesis.as_str()).collect();
+
+            let confidence = if prev_evidence.is_empty() {
+                0.5
+            } else {
+                let raw = classify_with_react(&hypothesis, &prev_evidence);
+                (raw + step_id as f32 * 0.05).min(0.95)
+            };
+
+            let chain = react_chain(&hypothesis, &[input.as_str()], 1);
+            let evidence: Vec<String> = chain.into_iter().map(|r| r.observation).collect();
 
             steps.push(DeepThinkStep {
-                hypothesis: format!("hypothesis_{}", step_id),
-                evidence: vec![format!("nomtu_{:x}", evidence_hash)],
-                confidence: 0.5 + (step_id as f32 * 0.1).min(0.4),
+                hypothesis,
+                evidence,
+                confidence,
                 counterevidence: vec![],
                 refined_from: if step_id > 0 { Some(step_id - 1) } else { None },
             });
 
-            let pct = ((i + 1) as f32 / self.config.max_steps as f32) * 100.0;
+            let pct = ((step_id + 1) as f32 / self.config.max_steps as f32) * 100.0;
             progress.emit(ComposeEvent::Progress {
                 percent: pct,
                 stage: format!("think_step_{}", step_id),
@@ -76,24 +91,40 @@ impl DeepThinkStream {
     /// Run `config.beam_width` independent think chains in parallel and return
     /// them all.
     ///
-    /// Each chain uses a seed derived from `input_hash` by rotating left by
-    /// `beam_i * 7` bits.  A `ComposeEvent::Progress` is emitted after each
-    /// beam completes; a final `ComposeEvent::Completed` is emitted once all
-    /// beams are done.
+    /// Each chain uses a hypothesis seeded with its beam index so beams diverge
+    /// and produce different confidence trajectories.  A `ComposeEvent::Progress`
+    /// is emitted after each beam completes; a final `ComposeEvent::Completed`
+    /// is emitted once all beams are done.
     pub fn think_beam(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<Vec<DeepThinkStep>> {
+        let input = format!("intent_{:016x}", input_hash);
         let mut beams: Vec<Vec<DeepThinkStep>> = Vec::with_capacity(self.config.beam_width);
 
         for beam_i in 0..self.config.beam_width {
-            let seed = input_hash.rotate_left(beam_i as u32 * 7);
             let mut chain = Vec::with_capacity(self.config.max_steps);
 
-            for i in 0..self.config.max_steps {
-                let step_id = i;
-                let evidence_hash = seed.rotate_left(step_id as u32 * 3);
+            for step_id in 0..self.config.max_steps {
+                // Include beam_i in hypothesis so each beam diverges
+                let hypothesis =
+                    format!("beam{}_hypothesis_{}: {}", beam_i, step_id, &input[..input.len().min(24)]);
+
+                let prev_evidence: Vec<&str> =
+                    chain.iter().map(|s: &DeepThinkStep| s.hypothesis.as_str()).collect();
+
+                let confidence = if prev_evidence.is_empty() {
+                    0.5 + beam_i as f32 * 0.02
+                } else {
+                    let raw = classify_with_react(&hypothesis, &prev_evidence);
+                    (raw + step_id as f32 * 0.05 + beam_i as f32 * 0.01).min(0.95)
+                };
+
+                let react_ev = react_chain(&hypothesis, &[input.as_str()], 1);
+                let evidence: Vec<String> =
+                    react_ev.into_iter().map(|r| r.observation).collect();
+
                 chain.push(DeepThinkStep {
-                    hypothesis: format!("hypothesis_{}", step_id),
-                    evidence: vec![format!("nomtu_{:x}", evidence_hash)],
-                    confidence: 0.5 + (step_id as f32 * 0.1).min(0.4),
+                    hypothesis,
+                    evidence,
+                    confidence,
                     counterevidence: vec![],
                     refined_from: if step_id > 0 { Some(step_id - 1) } else { None },
                 });
@@ -134,7 +165,12 @@ mod tests {
         let steps = stream.think(0xdeadbeef, &sink);
         assert_eq!(steps.len(), DeepThinkConfig::default().max_steps);
         for (i, step) in steps.iter().enumerate() {
-            assert_eq!(step.hypothesis, format!("hypothesis_{}", i));
+            assert!(
+                step.hypothesis.starts_with(&format!("hypothesis_{}:", i)),
+                "step {} hypothesis should start with 'hypothesis_{i}:', got: {}",
+                i,
+                step.hypothesis
+            );
         }
     }
 
@@ -199,7 +235,7 @@ mod tests {
             );
         }
 
-        // Different beams must differ (seeds are rotated differently).
+        // Different beams must differ (beam index is embedded in hypothesis).
         assert_ne!(beams[0], beams[1], "beam 0 and beam 1 should differ");
         assert_ne!(beams[1], beams[2], "beam 1 and beam 2 should differ");
 
@@ -238,18 +274,21 @@ mod tests {
 
         let steps = stream.think(0xabcd_ef01, &sink);
 
-        // First step: no refined_from, confidence=0.5
+        // First step: no refined_from, confidence is the initial 0.5 (no prior evidence)
         assert_eq!(steps[0].refined_from, None);
-        assert!((steps[0].confidence - 0.5).abs() < 1e-6);
+        assert!(
+            (steps[0].confidence - 0.5).abs() < 1e-6,
+            "step 0 confidence should be 0.5, got {}",
+            steps[0].confidence
+        );
         assert_eq!(steps[0].counterevidence, Vec::<String>::new());
 
-        // Second step: refined_from=Some(0), confidence=0.6
+        // Subsequent steps: refined_from links are correct and confidence is in [0, 1]
         assert_eq!(steps[1].refined_from, Some(0));
-        assert!((steps[1].confidence - 0.6).abs() < 1e-6);
+        assert!(steps[1].confidence >= 0.0 && steps[1].confidence <= 1.0);
 
-        // Third step: refined_from=Some(1), confidence=0.7
         assert_eq!(steps[2].refined_from, Some(1));
-        assert!((steps[2].confidence - 0.7).abs() < 1e-6);
+        assert!(steps[2].confidence >= 0.0 && steps[2].confidence <= 1.0);
 
         // Deterministic: same input → same output
         let stream2 = DeepThinkStream::new(cfg);

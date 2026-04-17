@@ -1,3 +1,5 @@
+use nom_gpui::types::{Bounds, Pixels, Point, Size};
+
 /// Infinite-canvas viewport: maps between screen and canvas coordinate systems.
 ///
 /// Coordinate convention (matches Excalidraw):
@@ -46,6 +48,22 @@ impl Viewport {
         (top_left, bot_right)
     }
 
+    /// Returns the visible canvas region as a `nom_gpui::types::Bounds<Pixels>`.
+    ///
+    /// The origin is the top-left canvas coordinate mapped from screen `(0, 0)`,
+    /// and the size is the canvas area covered by the current viewport at the
+    /// current zoom level.  Use this when passing bounds to nom_gpui rendering.
+    pub fn visible_bounds_gpui(&self) -> Bounds<Pixels> {
+        let top_left = self.screen_to_canvas([0.0, 0.0]);
+        let bot_right = self.screen_to_canvas(self.size);
+        let w = bot_right[0] - top_left[0];
+        let h = bot_right[1] - top_left[1];
+        Bounds {
+            origin: Point { x: Pixels(top_left[0]), y: Pixels(top_left[1]) },
+            size: Size { width: Pixels(w), height: Pixels(h) },
+        }
+    }
+
     /// Zoom toward a screen-space cursor position so the canvas point under the
     /// cursor stays fixed on screen (standard pinch-to-zoom / scroll-wheel behaviour).
     pub fn zoom_toward(&mut self, new_zoom: f32, cursor: [f32; 2]) {
@@ -80,6 +98,10 @@ impl Viewport {
     ///
     /// The translation incorporates `size/2` so the canvas origin appears at
     /// screen centre (consistent with `canvas_to_screen`).
+    ///
+    /// Returns the affine 3x3 transform for use with nom_gpui::scene rendering.
+    /// Maps canvas coordinates to screen coordinates via pan and zoom.
+    /// Pair with `visible_bounds_gpui()` to pass the clip region to the renderer.
     pub fn to_scene_transform(&self) -> [[f32; 3]; 3] {
         let tx = self.pan[0] + self.size[0] / 2.0;
         let ty = self.pan[1] + self.size[1] / 2.0;
@@ -251,5 +273,45 @@ mod tests {
         assert!((tl[1] - (-300.0)).abs() < 1e-4);
         assert!((br[0] - 400.0).abs() < 1e-4);
         assert!((br[1] - 300.0).abs() < 1e-4);
+    }
+
+    // ── nom_gpui integration ─────────────────────────────────────────────────
+
+    #[test]
+    fn visible_bounds_gpui_matches_raw_at_default() {
+        use nom_gpui::types::{Pixels, Point};
+        let vp = Viewport::new(800.0, 600.0);
+        let b = vp.visible_bounds_gpui();
+        // At zoom=1, pan=0: origin at (-400, -300), size 800×600.
+        assert!((b.origin.x.0 - (-400.0)).abs() < 1e-4, "origin.x={}", b.origin.x.0);
+        assert!((b.origin.y.0 - (-300.0)).abs() < 1e-4, "origin.y={}", b.origin.y.0);
+        assert!((b.size.width.0 - 800.0).abs() < 1e-4, "width={}", b.size.width.0);
+        assert!((b.size.height.0 - 600.0).abs() < 1e-4, "height={}", b.size.height.0);
+        // The nom_gpui Bounds::contains check works for the canvas origin.
+        let canvas_origin = Point { x: Pixels(0.0), y: Pixels(0.0) };
+        assert!(b.contains(&canvas_origin), "canvas origin must be inside visible bounds");
+    }
+
+    #[test]
+    fn visible_bounds_gpui_shrinks_with_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        let b = vp.visible_bounds_gpui();
+        // At 2× zoom the visible canvas area halves in each dimension.
+        assert!((b.size.width.0 - 400.0).abs() < 1e-3, "width at 2x zoom = {}", b.size.width.0);
+        assert!((b.size.height.0 - 300.0).abs() < 1e-3, "height at 2x zoom = {}", b.size.height.0);
+    }
+
+    #[test]
+    fn visible_bounds_gpui_contains_checks_nom_gpui_point() {
+        use nom_gpui::types::{Bounds, Pixels, Point};
+        let vp = Viewport::new(800.0, 600.0);
+        let bounds: Bounds<Pixels> = vp.visible_bounds_gpui();
+        // The canvas-space point (200, 100) should lie inside the default viewport.
+        let inside = Point { x: Pixels(200.0), y: Pixels(100.0) };
+        assert!(bounds.contains(&inside));
+        // A far-off point should be outside.
+        let outside = Point { x: Pixels(1000.0), y: Pixels(1000.0) };
+        assert!(!bounds.contains(&outside));
     }
 }

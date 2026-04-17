@@ -5,6 +5,7 @@
 ///          ellipse equation; connectors use `dist_to_bezier < HIT_RADIUS`.
 
 use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect};
+use nom_gpui::types::{Bounds, Pixels, Point};
 
 /// Pixel radius within which a click is considered a hit on a curve/line.
 /// Matches Excalidraw's `HIT_THRESHOLD = 5.0`.
@@ -47,6 +48,20 @@ pub fn hit_test_circle(pt: [f32; 2], cx: f32, cy: f32, r: f32) -> bool {
     let dx = pt[0] - cx;
     let dy = pt[1] - cy;
     dx * dx + dy * dy <= r * r
+}
+
+/// Returns `true` if the raw canvas-space point `pt` falls inside a
+/// `nom_gpui::types::Bounds<Pixels>` region.
+///
+/// This bridges the raw `[f32; 2]` hit-testing layer with the nom_gpui typed
+/// bounds used by the renderer, enabling the broadphase to operate directly on
+/// GPU-typed regions without an intermediate conversion step.
+pub fn hit_test_bounds(pt: [f32; 2], bounds: &Bounds<Pixels>) -> bool {
+    let x = bounds.origin.x.0;
+    let y = bounds.origin.y.0;
+    let w = bounds.size.width.0;
+    let h = bounds.size.height.0;
+    hit_test_rect_aabb(pt, x, y, w, h)
 }
 
 /// Returns `true` if `pt` (canvas-space) hits the rectangle.
@@ -384,5 +399,42 @@ mod tests {
     fn hit_test_circle_inside() {
         // Point at distance 3 from centre (4, 4); radius 5 — inside.
         assert!(hit_test_circle([4.0, 7.0], 4.0, 4.0, 5.0));
+    }
+
+    // ── hit_test_bounds (nom_gpui types) ─────────────────────────────────────
+
+    #[test]
+    fn hit_test_bounds_inside() {
+        use nom_gpui::types::{Bounds, Pixels, Point, Size};
+        let bounds = Bounds {
+            origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
+            size: Size { width: Pixels(100.0), height: Pixels(80.0) },
+        };
+        // Point well inside the bounds.
+        assert!(hit_test_bounds([60.0, 60.0], &bounds));
+    }
+
+    #[test]
+    fn hit_test_bounds_outside() {
+        use nom_gpui::types::{Bounds, Pixels, Point, Size};
+        let bounds = Bounds {
+            origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
+            size: Size { width: Pixels(100.0), height: Pixels(80.0) },
+        };
+        // Point to the right of the bounds.
+        assert!(!hit_test_bounds([200.0, 60.0], &bounds));
+    }
+
+    #[test]
+    fn hit_test_bounds_on_edge() {
+        use nom_gpui::types::{Bounds, Pixels, Point, Size};
+        let bounds = Bounds {
+            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+            size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+        };
+        // Exactly on the right edge — inclusive boundary.
+        assert!(hit_test_bounds([50.0, 25.0], &bounds));
+        // One pixel beyond the right edge — miss.
+        assert!(!hit_test_bounds([51.0, 25.0], &bounds));
     }
 }

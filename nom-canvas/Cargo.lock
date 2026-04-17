@@ -1189,6 +1189,7 @@ dependencies = [
  "crossbeam-channel",
  "nom-blocks",
  "nom-graph",
+ "nom-intent",
  "serde_json",
  "tokio",
 ]
@@ -1257,6 +1258,10 @@ dependencies = [
  "nom-blocks",
  "nom-memoize",
 ]
+
+[[package]]
+name = "nom-intent"
+version = "0.1.0"
 
 [[package]]
 name = "nom-lint"

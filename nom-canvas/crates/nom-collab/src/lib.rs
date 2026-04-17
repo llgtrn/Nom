@@ -25,11 +25,21 @@ impl Ord for OpId {
     }
 }
 
+/// RGA position: insert ops reference a left-anchor OpId (or None for head).
+/// This makes concurrent inserts commutative — order is determined by (counter, peer.id).
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub enum RgaPos {
+    Head,
+    After(OpId),
+}
+
 /// The payload of an operation.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum OpKind {
-    Insert { pos: usize, text: String },
-    Delete { pos: usize, len: usize },
+    /// Insert `text` after the anchor position.
+    Insert { pos: RgaPos, text: String },
+    /// Tombstone the op with this id (logical delete).
+    Delete { target: OpId },
     SetMeta { key: String, value: String },
 }
 
@@ -40,11 +50,25 @@ pub struct Op {
     pub kind: OpKind,
 }
 
-/// Simple CRDT document that maintains a text buffer and an ordered op log.
+/// RGA node in the sequence: holds an op id, text content, and a tombstone flag.
+#[derive(Debug, Clone)]
+struct RgaNode {
+    id: OpId,
+    text: String,
+    tombstoned: bool,
+}
+
+/// CRDT document using RGA (Replicated Growable Array) for convergent text editing.
+///
+/// Every Insert names a left-anchor (`RgaPos`). On apply the node is placed
+/// immediately after that anchor, with ties broken by (counter, peer.0) descending
+/// so higher-priority ops end up to the left of lower-priority concurrent siblings.
 pub struct DocState {
     peer: PeerId,
     counter: u64,
-    text: String,
+    /// The ordered sequence of RGA nodes (tombstoned nodes stay in place).
+    nodes: Vec<RgaNode>,
+    /// Full op log — used for merge idempotency checks.
     op_log: Vec<Op>,
 }
 
@@ -54,7 +78,7 @@ impl DocState {
         Self {
             peer,
             counter: 0,
-            text: String::new(),
+            nodes: Vec::new(),
             op_log: Vec::new(),
         }
     }
@@ -75,21 +99,66 @@ impl DocState {
         if op.id.counter > self.counter {
             self.counter = op.id.counter;
         }
-        self.apply_to_text(&op);
+        self.apply_rga(&op);
         self.op_log.push(op);
     }
 
-    /// Apply the text mutation described by `op` to the internal buffer.
-    fn apply_to_text(&mut self, op: &Op) {
+    /// Apply RGA semantics for the operation.
+    fn apply_rga(&mut self, op: &Op) {
         match &op.kind {
             OpKind::Insert { pos, text } => {
-                let pos = (*pos).min(self.text.len());
-                self.text.insert_str(pos, text);
+                // Find the index of the anchor node (or -1 for Head).
+                let anchor_idx: Option<usize> = match pos {
+                    RgaPos::Head => None,
+                    RgaPos::After(anchor_id) => {
+                        self.nodes.iter().position(|n| &n.id == anchor_id)
+                    }
+                };
+
+                // The insertion point starts right after the anchor.
+                let start = anchor_idx.map(|i| i + 1).unwrap_or(0);
+
+                // Walk forward past any concurrent siblings that have higher priority.
+                // A sibling is a node inserted at the same anchor that must come before
+                // this op. We use (counter, peer.0) descending as the tiebreak: higher
+                // counter (or same counter + higher peer id) wins and stays to the left.
+                let mut insert_at = start;
+                for i in start..self.nodes.len() {
+                    let sibling = &self.nodes[i];
+                    // A sibling shares the same anchor; check by comparing the op that
+                    // was inserted after the same position. We detect this by checking
+                    // whether the node at `i` has its own anchor equal to our anchor.
+                    // We look this up from the op_log.
+                    let sibling_anchor = self.node_anchor(&sibling.id);
+                    if sibling_anchor.as_ref() != Some(pos) {
+                        // This node was not inserted at the same anchor; stop scanning.
+                        break;
+                    }
+                    // Both ops share the same anchor. Higher-priority op goes left.
+                    // Priority: descending by (counter, peer.0).
+                    if sibling.id > op.id {
+                        // Sibling has higher priority — it stays to the left; advance.
+                        insert_at = i + 1;
+                    } else {
+                        // Our op has higher or equal priority — insert here.
+                        break;
+                    }
+                }
+
+                self.nodes.insert(
+                    insert_at,
+                    RgaNode {
+                        id: op.id,
+                        text: text.clone(),
+                        tombstoned: false,
+                    },
+                );
             }
-            OpKind::Delete { pos, len } => {
-                let start = (*pos).min(self.text.len());
-                let end = (start + len).min(self.text.len());
-                self.text.drain(start..end);
+            OpKind::Delete { target } => {
+                if let Some(node) = self.nodes.iter_mut().find(|n| &n.id == target) {
+                    node.tombstoned = true;
+                    node.text.clear();
+                }
             }
             OpKind::SetMeta { .. } => {
                 // Metadata ops do not mutate the text buffer.
@@ -97,20 +166,43 @@ impl DocState {
         }
     }
 
-    /// Merge a batch of remote operations.
+    /// Look up the `RgaPos` anchor of a node by its id, using the op_log.
+    fn node_anchor(&self, id: &OpId) -> Option<RgaPos> {
+        self.op_log.iter().find_map(|op| {
+            if &op.id == id {
+                if let OpKind::Insert { pos, .. } = &op.kind {
+                    return Some(pos.clone());
+                }
+            }
+            None
+        })
+    }
+
+    /// Idempotently merge all ops from `other` into this document.
     ///
-    /// Operations are sorted by `(counter, peer.0)` before application so that
-    /// concurrent ops from different peers always converge to the same order.
-    pub fn merge(&mut self, mut ops: Vec<Op>) {
-        ops.sort_by_key(|op| op.id);
-        for op in ops {
+    /// This satisfies the CRDT merge contract: commutativity and idempotency —
+    /// merging the same op twice has no additional effect.
+    pub fn merge(&mut self, other: &DocState) {
+        // Collect ops not yet in our log, sorted by OpId for deterministic replay.
+        let mut new_ops: Vec<Op> = other
+            .op_log
+            .iter()
+            .filter(|o| !self.op_log.iter().any(|mine| mine.id == o.id))
+            .cloned()
+            .collect();
+        new_ops.sort_by_key(|o| o.id);
+        for op in new_ops {
             self.apply(op);
         }
     }
 
-    /// Return the current document text.
-    pub fn text(&self) -> &str {
-        &self.text
+    /// Return the current document text (tombstoned nodes excluded).
+    pub fn text(&self) -> String {
+        self.nodes
+            .iter()
+            .filter(|n| !n.tombstoned)
+            .map(|n| n.text.as_str())
+            .collect()
     }
 
     /// Return all operations in the order they were applied.
@@ -120,7 +212,7 @@ impl DocState {
 
     /// Convenience: author a local insert op, apply it, and return a clone for
     /// broadcasting to remote peers.
-    pub fn local_insert(&mut self, pos: usize, text: impl Into<String>) -> Op {
+    pub fn local_insert(&mut self, pos: RgaPos, text: impl Into<String>) -> Op {
         let id = self.next_id();
         let op = Op {
             id,
@@ -133,13 +225,13 @@ impl DocState {
         op
     }
 
-    /// Convenience: author a local delete op, apply it, and return a clone for
-    /// broadcasting to remote peers.
-    pub fn local_delete(&mut self, pos: usize, len: usize) -> Op {
+    /// Convenience: author a local delete op targeting the given op id,
+    /// apply it, and return a clone for broadcasting to remote peers.
+    pub fn local_delete(&mut self, target: OpId) -> Op {
         let id = self.next_id();
         let op = Op {
             id,
-            kind: OpKind::Delete { pos, len },
+            kind: OpKind::Delete { target },
         };
         self.apply(op.clone());
         op
@@ -150,7 +242,9 @@ impl DocState {
 mod tests {
     use super::*;
 
-    fn make_insert(peer: u64, counter: u64, pos: usize, text: &str) -> Op {
+    // ── helpers ─────────────────────────────────────────────────────────────
+
+    fn make_insert(peer: u64, counter: u64, pos: RgaPos, text: &str) -> Op {
         Op {
             id: OpId {
                 peer: PeerId(peer),
@@ -163,26 +257,34 @@ mod tests {
         }
     }
 
-    fn make_delete(peer: u64, counter: u64, pos: usize, len: usize) -> Op {
+    fn make_delete(peer: u64, counter: u64, target_peer: u64, target_counter: u64) -> Op {
         Op {
             id: OpId {
                 peer: PeerId(peer),
                 counter,
             },
-            kind: OpKind::Delete { pos, len },
+            kind: OpKind::Delete {
+                target: OpId {
+                    peer: PeerId(target_peer),
+                    counter: target_counter,
+                },
+            },
         }
     }
+
+    // ── basic ops ───────────────────────────────────────────────────────────
 
     #[test]
     fn collab_insert_op() {
         let mut doc = DocState::new(PeerId(1));
-        let op = doc.local_insert(0, "hello");
+        let op = doc.local_insert(RgaPos::Head, "hello");
         assert_eq!(doc.text(), "hello");
         assert_eq!(doc.op_log().len(), 1);
         assert_eq!(op.id.peer, PeerId(1));
         assert_eq!(op.id.counter, 1);
 
-        doc.local_insert(5, " world");
+        // Insert " world" after the first op.
+        doc.local_insert(RgaPos::After(op.id), " world");
         assert_eq!(doc.text(), "hello world");
         assert_eq!(doc.op_log().len(), 2);
     }
@@ -190,62 +292,19 @@ mod tests {
     #[test]
     fn collab_delete_op() {
         let mut doc = DocState::new(PeerId(2));
-        doc.local_insert(0, "hello world");
+        let op = doc.local_insert(RgaPos::Head, "hello world");
         assert_eq!(doc.text(), "hello world");
 
-        doc.local_delete(5, 6); // remove " world"
-        assert_eq!(doc.text(), "hello");
+        doc.local_delete(op.id);
+        // The whole node is tombstoned.
+        assert_eq!(doc.text(), "");
         assert_eq!(doc.op_log().len(), 2);
-    }
-
-    #[test]
-    fn collab_merge_two_peers() {
-        // Peer A starts with "foo"
-        let mut peer_a = DocState::new(PeerId(1));
-        let op_a1 = peer_a.local_insert(0, "foo");
-
-        // Peer B starts empty, receives A's op, then appends " bar"
-        let mut peer_b = DocState::new(PeerId(2));
-        peer_b.merge(vec![op_a1]);
-        assert_eq!(peer_b.text(), "foo");
-
-        let op_b1 = peer_b.local_insert(3, " bar");
-
-        // A receives B's op
-        peer_a.merge(vec![op_b1]);
-        assert_eq!(peer_a.text(), "foo bar");
-
-        // Both peers now have the same text
-        assert_eq!(peer_a.text(), peer_b.text());
-    }
-
-    #[test]
-    fn collab_op_order_deterministic() {
-        // Two peers concurrently insert at position 0 with the same counter.
-        // Sort key: (counter=1, peer.0) → peer 1 comes before peer 2.
-        let op_peer2 = make_insert(2, 1, 0, "B");
-        let op_peer1 = make_insert(1, 1, 0, "A");
-
-        let mut doc = DocState::new(PeerId(99));
-
-        // Deliver in reverse order — merge should sort them first.
-        doc.merge(vec![op_peer2.clone(), op_peer1.clone()]);
-
-        // After sort: peer1(counter=1) < peer2(counter=1 but peer.0=2)
-        // op_peer1 inserts "A" at 0 → "A"
-        // op_peer2 inserts "B" at 0 → "BA"
-        assert_eq!(doc.text(), "BA");
-
-        // A fresh doc applying in the other order should produce the same result.
-        let mut doc2 = DocState::new(PeerId(99));
-        doc2.merge(vec![op_peer1, op_peer2]);
-        assert_eq!(doc2.text(), doc.text());
     }
 
     #[test]
     fn collab_set_meta_does_not_change_text() {
         let mut doc = DocState::new(PeerId(3));
-        doc.local_insert(0, "hello");
+        doc.local_insert(RgaPos::Head, "hello");
         let meta_op = Op {
             id: OpId {
                 peer: PeerId(3),
@@ -261,12 +320,104 @@ mod tests {
         assert_eq!(doc.op_log().len(), 2);
     }
 
+    // ── merge / convergence ─────────────────────────────────────────────────
+
     #[test]
-    fn collab_delete_clamps_to_buffer_end() {
+    fn collab_merge_two_peers() {
+        // Peer A starts with "foo"
+        let mut peer_a = DocState::new(PeerId(1));
+        let op_a1 = peer_a.local_insert(RgaPos::Head, "foo");
+
+        // Peer B starts empty, receives A's op, then appends " bar"
+        let mut peer_b = DocState::new(PeerId(2));
+        peer_b.merge(&{
+            let mut tmp = DocState::new(PeerId(1));
+            tmp.apply(op_a1.clone());
+            tmp
+        });
+        assert_eq!(peer_b.text(), "foo");
+
+        let op_b1 = peer_b.local_insert(RgaPos::After(op_a1.id), " bar");
+
+        // A receives B's op
+        peer_a.merge(&{
+            let mut tmp = DocState::new(PeerId(2));
+            tmp.apply(op_a1.clone());
+            tmp.apply(op_b1.clone());
+            tmp
+        });
+        assert_eq!(peer_a.text(), "foo bar");
+
+        // Both peers now have the same text
+        assert_eq!(peer_a.text(), peer_b.text());
+    }
+
+    #[test]
+    fn crdt_convergence_concurrent_inserts() {
+        // Peer A and Peer B both insert at Head concurrently (no shared history).
+        let mut peer_a = DocState::new(PeerId(1));
+        let op_a = peer_a.local_insert(RgaPos::Head, "hello");
+
+        let mut peer_b = DocState::new(PeerId(2));
+        let op_b = peer_b.local_insert(RgaPos::Head, "world");
+
+        // Cross-merge: A gets B's op, B gets A's op.
+        peer_a.merge(&peer_b);
+        peer_b.merge(&peer_a);
+
+        // Both must converge to the same text.
+        assert_eq!(peer_a.text(), peer_b.text());
+
+        // Tiebreak: same counter (1), peer 2 > peer 1 → op_b sorts higher → "world"
+        // appears to the LEFT of "hello" (higher-priority op wins the left position).
+        // i.e. descending (counter, peer.0): peer 2 wins → "worldhello"
+        assert_eq!(peer_a.text(), "worldhello");
+
+        // op_a and op_b both have counter=1. op_b.id > op_a.id (peer 2 > peer 1).
+        // So op_b has higher priority and is inserted at position 0; op_a follows.
+        let _ = (op_a, op_b); // used to author the ops
+    }
+
+    #[test]
+    fn crdt_merge_idempotent() {
+        // Merging the same ops twice must not change the document.
+        let mut peer_a = DocState::new(PeerId(1));
+        peer_a.local_insert(RgaPos::Head, "hello");
+
+        let mut peer_b = DocState::new(PeerId(2));
+        peer_b.merge(&peer_a);
+        let text_after_first = peer_b.text();
+        let log_len_after_first = peer_b.op_log().len();
+
+        peer_b.merge(&peer_a); // merge again — must be idempotent
+        assert_eq!(peer_b.text(), text_after_first);
+        assert_eq!(peer_b.op_log().len(), log_len_after_first);
+    }
+
+    #[test]
+    fn crdt_merge_commutative() {
+        // Applying ops in different orders must produce the same result.
+        let op1 = make_insert(1, 1, RgaPos::Head, "A");
+        let op2 = make_insert(2, 1, RgaPos::Head, "B");
+
+        let mut doc_ab = DocState::new(PeerId(99));
+        doc_ab.apply(op1.clone());
+        doc_ab.apply(op2.clone());
+
+        let mut doc_ba = DocState::new(PeerId(99));
+        doc_ba.apply(op2.clone());
+        doc_ba.apply(op1.clone());
+
+        // Both docs must have the same text regardless of arrival order.
+        assert_eq!(doc_ab.text(), doc_ba.text());
+    }
+
+    #[test]
+    fn collab_delete_marks_tombstone() {
         let mut doc = DocState::new(PeerId(4));
-        doc.local_insert(0, "hi");
-        // Delete beyond the end — should not panic, just remove to end.
-        doc.apply(make_delete(4, 10, 1, 100));
-        assert_eq!(doc.text(), "h");
+        let op = doc.local_insert(RgaPos::Head, "hi");
+        let del = make_delete(4, 10, op.id.peer.0, op.id.counter);
+        doc.apply(del);
+        assert_eq!(doc.text(), "");
     }
 }

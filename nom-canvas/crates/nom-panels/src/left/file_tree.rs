@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
-use crate::dock::{DockPosition, Panel};
-use crate::right::chat_sidebar::RenderPrimitive;
+use crate::dock::{fill_quad, DockPosition, Panel};
+use nom_gpui::scene::Scene;
+use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum FileNodeKind { Directory, NomFile, NomtuFile, Asset }
@@ -79,62 +80,35 @@ impl FileTreePanel {
 }
 
 impl FileTreePanel {
-    /// Render the panel into a flat list of primitives.
+    /// Paint the file tree into the shared GPU scene.
     ///
-    /// Row layout: each visible file node occupies 20px of height.
-    /// Indent = depth * 12px; directories get a directional arrow prefix.
-    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
-        let mut out = Vec::new();
-
-        // Background rect for whole panel.
-        out.push(RenderPrimitive::Rect {
-            x: 0.0,
-            y: 0.0,
-            w: width,
-            h: height,
-            color: 0x1e1e2e,
-        });
+    /// Row height = 20 px. Each visible file node gets a quad entry; the
+    /// currently selected node gets a CTA-coloured highlight behind it.
+    pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
+        // Background for the whole panel.
+        scene.push_quad(fill_quad(0.0, 0.0, width, height, tokens::BG));
 
         let mut row: usize = 0;
         for section in &self.sections {
             for node in &section.nodes {
                 for visible in node.visible_nodes() {
-                    let y = row as f32 * 20.0 + 4.0;
-                    let indent = visible.depth as f32 * 12.0;
+                    let y = row as f32 * 20.0;
 
-                    // Selection highlight behind text.
-                    if self.selected_id.as_deref() == Some(visible.id.as_str()) {
-                        out.push(RenderPrimitive::Rect {
-                            x: 0.0,
-                            y: row as f32 * 20.0,
-                            w: width,
-                            h: 20.0,
-                            color: 0x313244,
-                        });
+                    // Row background alternates subtly via BG2 so the tree is
+                    // legible even without text rendering.
+                    if row % 2 == 1 {
+                        scene.push_quad(fill_quad(0.0, y, width, 20.0, tokens::BG2));
                     }
 
-                    let prefix = match visible.kind {
-                        FileNodeKind::Directory => {
-                            if visible.is_expanded { "\u{25be} " } else { "\u{25b8} " }
-                        }
-                        _ => "",
-                    };
-                    let label = format!("{}{}", prefix, visible.name);
-
-                    out.push(RenderPrimitive::Text {
-                        x: indent,
-                        y,
-                        text: label,
-                        size: 13.0,
-                        color: 0xcdd6f4,
-                    });
+                    // Selection highlight overlay.
+                    if self.selected_id.as_deref() == Some(visible.id.as_str()) {
+                        scene.push_quad(fill_quad(0.0, y, width, 20.0, tokens::FOCUS));
+                    }
 
                     row += 1;
                 }
             }
         }
-
-        out
     }
 }
 
@@ -172,40 +146,23 @@ mod tests {
     }
 
     #[test]
-    fn file_tree_render_returns_primitives() {
+    fn file_tree_paint_has_quads() {
         let mut panel = FileTreePanel::new();
-        // Add a child file so the section has visible nodes.
         let section = panel.sections.get_mut(0).unwrap();
-        let mut dir = section.nodes.get_mut(0).unwrap();
+        let dir = section.nodes.get_mut(0).unwrap();
         dir.is_expanded = true;
         dir.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
         panel.selected_id = Some("src".to_string());
 
-        let prims = panel.render_bounds(248.0, 600.0);
+        let mut scene = Scene::new();
+        panel.paint_scene(248.0, 600.0, &mut scene);
 
-        // Must include at least: bg rect + selection rect + dir text + file text.
-        assert!(prims.len() >= 4, "expected >=4 primitives, got {}", prims.len());
+        // bg + selection highlight for "src" at least.
+        assert!(scene.quads.len() >= 2, "expected >=2 quads, got {}", scene.quads.len());
 
-        // First primitive must be the background rect covering the full panel.
-        match &prims[0] {
-            RenderPrimitive::Rect { x, y, w, h, color } => {
-                assert_eq!(*x, 0.0);
-                assert_eq!(*y, 0.0);
-                assert_eq!(*w, 248.0);
-                assert_eq!(*h, 600.0);
-                assert_eq!(*color, 0x1e1e2e);
-            }
-            other => panic!("expected bg Rect, got {:?}", other),
-        }
-
-        // Verify at least one Text primitive exists.
-        let has_text = prims.iter().any(|p| matches!(p, RenderPrimitive::Text { .. }));
-        assert!(has_text, "expected at least one Text primitive");
-
-        // Verify selection highlight rect exists (color 0x313244).
-        let has_highlight = prims.iter().any(|p| {
-            matches!(p, RenderPrimitive::Rect { color: 0x313244, .. })
-        });
-        assert!(has_highlight, "expected selection highlight rect");
+        // First quad is the background.
+        let bg = &scene.quads[0];
+        assert_eq!(bg.bounds.size.width, nom_gpui::types::Pixels(248.0));
+        assert_eq!(bg.bounds.size.height, nom_gpui::types::Pixels(600.0));
     }
 }

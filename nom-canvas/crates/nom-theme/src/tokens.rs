@@ -218,6 +218,8 @@ pub const BTN_H: f32 = 28.0;
 pub const BTN_H_LG: f32 = 32.0;
 pub const BTN_H_XL: f32 = 40.0;
 pub const ICON_SIZE: f32 = 24.0;
+pub const ICON_SIZE_SM: f32 = 16.0;
+pub const H1_SPACING: f32 = 8.0;   // letter-spacing for H1
 pub const H1_WEIGHT: u16 = 700;
 pub const H1_LETTER_SPACING: f32 = -0.02;
 pub const H2_WEIGHT: u16 = 600;
@@ -316,6 +318,18 @@ mod tests {
     fn token_icon_size_matches_spec() {
         // Spec: ICON_SIZE = 24.0 px
         assert_eq!(ICON_SIZE, 24.0);
+    }
+
+    #[test]
+    fn token_icon_size_sm_smaller_than_icon_size() {
+        assert!(ICON_SIZE_SM < ICON_SIZE);
+        assert_eq!(ICON_SIZE_SM, 16.0);
+    }
+
+    #[test]
+    fn token_h1_spacing_positive() {
+        assert!(H1_SPACING > 0.0);
+        assert_eq!(H1_SPACING, 8.0);
     }
 
     #[test]

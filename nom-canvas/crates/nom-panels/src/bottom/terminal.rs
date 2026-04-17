@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
-use crate::dock::{DockPosition, Panel};
-use crate::RenderPrimitive;
+use crate::dock::{fill_quad, DockPosition, Panel};
+use nom_gpui::scene::Scene;
+use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum TerminalLineKind { Stdout, Stderr, Command, Info }
@@ -47,31 +48,29 @@ impl TerminalPanel {
 
     pub fn clear(&mut self) { self.lines.clear(); }
 
-    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
-        let mut out = Vec::new();
-        out.push(RenderPrimitive::Rect { x: 0.0, y: 0.0, w: width, h: height, color: 0x181825 });
+    pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
+        // Panel background.
+        scene.push_quad(fill_quad(0.0, 0.0, width, height, tokens::BG));
+
+        // Severity accent strip per line (4 px wide on the left).
         for (i, line) in self.lines.iter().enumerate() {
             let color = match line.kind {
-                TerminalLineKind::Stderr  => 0xf38ba8,
-                TerminalLineKind::Command => 0xa6e3a1,
-                _                        => 0xcdd6f4,
+                TerminalLineKind::Stderr  => tokens::EDGE_LOW,
+                TerminalLineKind::Command => tokens::CTA,
+                TerminalLineKind::Info    => tokens::EDGE_MED,
+                TerminalLineKind::Stdout  => tokens::BORDER,
             };
-            out.push(RenderPrimitive::Text {
-                x: 4.0,
-                y: i as f32 * 16.0,
-                text: line.text.clone(),
-                size: 13.0,
-                color,
-            });
+            scene.push_quad(fill_quad(0.0, i as f32 * 16.0, 4.0, 16.0, color));
         }
-        out.push(RenderPrimitive::Rect {
-            x: self.cursor_col as f32 * 8.0 + 4.0,
-            y: self.cursor_row as f32 * 16.0,
-            w: 8.0,
-            h: 16.0,
-            color: 0xcdd6f4,
-        });
-        out
+
+        // Cursor quad.
+        scene.push_quad(fill_quad(
+            self.cursor_col as f32 * 8.0 + 4.0,
+            self.cursor_row as f32 * 16.0,
+            8.0,
+            16.0,
+            tokens::TEXT,
+        ));
     }
 }
 
@@ -111,25 +110,16 @@ mod tests {
     }
 
     #[test]
-    fn terminal_panel_render_lines() {
+    fn terminal_paint_scene_has_quads() {
         let mut t = TerminalPanel::new();
         t.push_line(TerminalLine::stdout("hello"));
         t.push_line(TerminalLine::stderr("error msg"));
         t.push_line(TerminalLine::command("cargo build"));
         t.cursor_row = 1;
         t.cursor_col = 2;
-        let prims = t.render_bounds(800.0, 300.0);
-        // first primitive is background rect
-        assert!(matches!(prims[0], RenderPrimitive::Rect { color: 0x181825, .. }));
-        // stdout line: default output color
-        assert!(matches!(prims[1], RenderPrimitive::Text { color: 0xcdd6f4, .. }));
-        // stderr line: error color
-        assert!(matches!(prims[2], RenderPrimitive::Text { color: 0xf38ba8, .. }));
-        // command line: green
-        assert!(matches!(prims[3], RenderPrimitive::Text { color: 0xa6e3a1, .. }));
-        // cursor rect
-        let cursor = &prims[4];
-        assert!(matches!(cursor, RenderPrimitive::Rect { x, y, w: 8.0, h: 16.0, color: 0xcdd6f4 }
-            if (*x - (2.0 * 8.0 + 4.0)).abs() < f32::EPSILON && (*y - 16.0).abs() < f32::EPSILON));
+        let mut scene = Scene::new();
+        t.paint_scene(800.0, 300.0, &mut scene);
+        // bg + 3 line accents + cursor = 5 quads.
+        assert_eq!(scene.quads.len(), 5);
     }
 }

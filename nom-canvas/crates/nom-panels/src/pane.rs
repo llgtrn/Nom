@@ -1,6 +1,8 @@
 #![deny(unsafe_code)]
 
-use crate::dock::RenderPrimitive;
+use crate::dock::fill_quad;
+use nom_gpui::scene::Scene;
+use nom_theme::tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum SplitDirection { Horizontal, Vertical }
@@ -112,61 +114,36 @@ impl PaneGroup {
         self.root = Member::Axis(axis);
     }
 
-    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
-        render_member(&self.root, 0.0, 0.0, width, height)
+    pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
+        paint_member(&self.root, 0.0, 0.0, width, height, scene);
     }
 }
 
-fn render_member(member: &Member, x: f32, y: f32, w: f32, h: f32) -> Vec<RenderPrimitive> {
+fn paint_member(member: &Member, x: f32, y: f32, w: f32, h: f32, scene: &mut Scene) {
     match member {
-        Member::Pane(pane) => render_pane(pane, x, y, w, h),
-        Member::Axis(axis) => render_axis(axis, x, y, w, h),
+        Member::Pane(pane) => paint_pane(pane, x, y, w, h, scene),
+        Member::Axis(axis) => paint_axis(axis, x, y, w, h, scene),
     }
 }
 
-fn render_pane(pane: &Pane, x: f32, y: f32, w: f32, h: f32) -> Vec<RenderPrimitive> {
-    let _ = h;
-    let mut out = Vec::new();
+fn paint_pane(pane: &Pane, x: f32, y: f32, w: f32, _h: f32, scene: &mut Scene) {
+    // Tab bar background strip.
+    scene.push_quad(fill_quad(x, y, w, 28.0, tokens::BG2));
 
-    // Tab bar background
-    out.push(RenderPrimitive::Rect { x, y, w, h: 28.0, color: 0x181825 });
-
-    // Tab labels
+    // Active-tab underline.
     let mut tab_x = x + 8.0;
-    for (i, tab) in pane.tabs.iter().enumerate() {
+    for (i, _tab) in pane.tabs.iter().enumerate() {
         let is_active = pane.active_tab == Some(i);
-        let label = if tab.is_dirty {
-            format!("{} ●", tab.title)
-        } else {
-            tab.title.clone()
-        };
-        out.push(RenderPrimitive::Text {
-            x: tab_x,
-            y: y + 7.0,
-            text: label,
-            size: 13.0,
-            color: if is_active { 0xcdd6f4 } else { 0x6c7086 },
-        });
         if is_active {
-            // Active tab underline
-            out.push(RenderPrimitive::Rect {
-                x: tab_x - 4.0,
-                y: y + 26.0,
-                w: 80.0,
-                h: 2.0,
-                color: 0x89b4fa,
-            });
+            scene.push_quad(fill_quad(tab_x - 4.0, y + 26.0, 80.0, 2.0, tokens::CTA));
         }
         tab_x += 100.0;
     }
-
-    out
 }
 
-fn render_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32) -> Vec<RenderPrimitive> {
-    let mut out = Vec::new();
+fn paint_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32, scene: &mut Scene) {
     let n = axis.members.len();
-    if n == 0 { return out; }
+    if n == 0 { return; }
 
     let mut offset = 0.0;
     for (i, (member, &flex)) in axis.members.iter().zip(axis.flexes.iter()).enumerate() {
@@ -180,26 +157,18 @@ fn render_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32) -> Vec<RenderPri
                 (x, y + offset, w, member_h)
             }
         };
-        out.extend(render_member(member, mx, my, mw, mh));
+        paint_member(member, mx, my, mw, mh, scene);
 
-        // Draw split line between members (not after the last one)
+        // Split-divider quad between members (1 px on the splitting axis).
         if i + 1 < n {
             match axis.direction {
                 SplitDirection::Horizontal => {
                     let line_x = x + offset + flex * w;
-                    out.push(RenderPrimitive::Line {
-                        x1: line_x, y1: y,
-                        x2: line_x, y2: y + h,
-                        color: 0x313244,
-                    });
+                    scene.push_quad(fill_quad(line_x, y, 1.0, h, tokens::BORDER));
                 }
                 SplitDirection::Vertical => {
                     let line_y = y + offset + flex * h;
-                    out.push(RenderPrimitive::Line {
-                        x1: x,       y1: line_y,
-                        x2: x + w,   y2: line_y,
-                        color: 0x313244,
-                    });
+                    scene.push_quad(fill_quad(x, line_y, w, 1.0, tokens::BORDER));
                 }
             }
         }
@@ -209,8 +178,6 @@ fn render_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32) -> Vec<RenderPri
             SplitDirection::Vertical   => offset += flex * h,
         }
     }
-
-    out
 }
 
 #[cfg(test)]
@@ -248,49 +215,27 @@ mod tests {
     }
 
     #[test]
-    fn pane_group_render_tab_bar() {
+    fn pane_group_paint_tab_bar() {
         let mut g = PaneGroup::single("main");
         if let Member::Pane(ref mut p) = g.root {
             p.open_tab("file.nom", "file.nom");
             p.open_tab("other.nom", "other.nom");
         }
-        let prims = g.render_bounds(800.0, 600.0);
-
-        // Tab bar rect at top
-        match &prims[0] {
-            RenderPrimitive::Rect { x, y, w, h, color } => {
-                assert!((x - 0.0).abs() < 0.01);
-                assert!((y - 0.0).abs() < 0.01);
-                assert!((w - 800.0).abs() < 0.01);
-                assert!((h - 28.0).abs() < 0.01);
-                assert_eq!(*color, 0x181825);
-            }
-            _ => panic!("expected tab bar Rect"),
-        }
-
-        // Active tab underline should be present
-        let has_underline = prims.iter().any(|p| matches!(p,
-            RenderPrimitive::Rect { h, color: 0x89b4fa, .. } if (*h - 2.0).abs() < 0.01
-        ));
-        assert!(has_underline, "active tab underline missing");
-
-        // Both tab labels present as Text
-        let texts: Vec<&str> = prims.iter().filter_map(|p| {
-            if let RenderPrimitive::Text { text, .. } = p { Some(text.as_str()) } else { None }
-        }).collect();
-        assert!(texts.iter().any(|t| t.contains("file.nom")));
-        assert!(texts.iter().any(|t| t.contains("other.nom")));
+        let mut scene = Scene::new();
+        g.paint_scene(800.0, 600.0, &mut scene);
+        // Tab bar + active-tab underline.
+        assert!(scene.quads.len() >= 2);
+        let bar = &scene.quads[0];
+        assert_eq!(bar.bounds.size.height, nom_gpui::types::Pixels(28.0));
     }
 
     #[test]
-    fn pane_group_render_split_line() {
+    fn pane_group_paint_split_line() {
         let mut g = PaneGroup::single("left");
         g.split(SplitDirection::Horizontal, "right");
-        let prims = g.render_bounds(800.0, 600.0);
-
-        let has_split_line = prims.iter().any(|p| matches!(p,
-            RenderPrimitive::Line { color: 0x313244, .. }
-        ));
-        assert!(has_split_line, "split line missing for horizontal split");
+        let mut scene = Scene::new();
+        g.paint_scene(800.0, 600.0, &mut scene);
+        // >=2 pane tab bars + 1 split divider.
+        assert!(scene.quads.len() >= 3, "expected >=3 quads, got {}", scene.quads.len());
     }
 }
