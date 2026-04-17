@@ -42,11 +42,21 @@ static PLAN_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, PlanFlowResult>>> =
 static COMPILE_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, CompileResult>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
+fn stable_hash(s: &str) -> u64 {
+    stable_hash_bytes(s.as_bytes())
+}
+
+fn stable_hash_bytes(data: &[u8]) -> u64 {
+    let mut hash: u64 = 0xcbf29ce484222325; // FNV-1a offset basis
+    for byte in data {
+        hash ^= *byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3); // FNV prime
+    }
+    hash
+}
+
 fn hash_source(source: &str) -> u64 {
-    use std::hash::{Hash, Hasher};
-    let mut hasher = std::collections::hash_map::DefaultHasher::new();
-    source.hash(&mut hasher);
-    hasher.finish()
+    stable_hash(source)
 }
 
 // ── New return types for the remaining 10 commands ────────────────────────────
@@ -201,11 +211,28 @@ fn compile_block(source: &str) -> CompileResult {
                 entities,
             }
         }
-        Err(e) => CompileResult {
-            success: false,
-            diagnostics: vec![format!("{e:?}")],
-            entities: vec![],
-        },
+        Err(e) => {
+            // Compute 1-based line and column from byte position.
+            let (line, col) = {
+                let before = &source[..e.position.min(source.len())];
+                let line = before.chars().filter(|&c| c == '\n').count() + 1;
+                let col = before.rfind('\n').map(|p| e.position - p - 1).unwrap_or(e.position) + 1;
+                (line, col)
+            };
+            let msg = format!(
+                "[{}] {} ({}:{}) — {}",
+                e.diag_id(),
+                e.stage.code(),
+                line,
+                col,
+                e.detail,
+            );
+            CompileResult {
+                success: false,
+                diagnostics: vec![msg],
+                entities: vec![],
+            }
+        }
     };
 
     // Store in cache
@@ -596,10 +623,7 @@ fn ingest_media(path: &str) -> MediaIngestResult {
 
     let (hash, size_bytes) = std::fs::read(path)
         .map(|bytes| {
-            use std::hash::{Hash, Hasher};
-            let mut hasher = std::collections::hash_map::DefaultHasher::new();
-            bytes.hash(&mut hasher);
-            let h = format!("{:016x}", hasher.finish());
+            let h = format!("{:016x}", stable_hash_bytes(&bytes));
             let sz = bytes.len() as u64;
             (h, sz)
         })
@@ -832,6 +856,17 @@ fn lsp_request(method: &str, params: serde_json::Value) -> serde_json::Value {
     }
 }
 
+#[tauri::command]
+fn clear_caches() -> bool {
+    if let Ok(mut cache) = COMPILE_CACHE.lock() {
+        cache.clear();
+    }
+    if let Ok(mut cache) = PLAN_CACHE.lock() {
+        cache.clear();
+    }
+    true
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     tauri::Builder::default()
@@ -866,6 +901,7 @@ pub fn run() {
             store_credential,
             get_credential,
             lsp_request,
+            clear_caches,
         ])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");

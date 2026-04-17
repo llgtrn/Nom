@@ -1339,3 +1339,146 @@ button:active {
 .fold-collapsed {
   display: none;
 }
+
+/* ── Node Graph Renderer ───────────────────────────────── */
+.node-graph { position: relative; min-height: 300px; }
+.node-graph-svg { position: absolute; inset: 0; pointer-events: none; }
+.graph-node {
+  position: absolute;
+  background: var(--color-primary);
+  border: 2px solid var(--color-secondary);
+  border-radius: 6px;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  cursor: pointer;
+  transition: border-color 200ms ease;
+}
+.graph-node:hover { border-color: var(--color-cta); }
+.node-type-compile { border-color: #4ECDC4; }
+.node-type-score { border-color: #FFE66D; }
+.node-type-security { border-color: #EF4444; }
+.node-type-search { border-color: #A78BFA; }
+.node-type-plan { border-color: #60A5FA; }
+.graph-node-title {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  text-transform: uppercase;
+  color: var(--color-text);
+}
+.graph-node-label {
+  font-size: 10px;
+  color: #6B7280;
+  margin-top: 4px;
+}
+.graph-edge {
+  fill: none;
+  stroke: #475569;
+  stroke-width: 2;
+}
+
+/* ── Artifact Preview ──────────────────────────────────── */
+.artifact-preview { height: 100%; overflow: auto; }
+.artifact-iframe { width: 100%; height: 300px; border: none; background: white; border-radius: 4px; }
+.artifact-header {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  color: #6B7280;
+  padding: 8px 0 4px;
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+.artifact-code {
+  background: #0D1117;
+  padding: 12px;
+  border-radius: 4px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  overflow-x: auto;
+  color: var(--color-text);
+}
+.artifact-image { max-width: 100%; border-radius: 4px; }
+.artifact-video { max-width: 100%; border-radius: 4px; }
+.artifact-text { white-space: pre-wrap; font-size: 12px; color: var(--color-text); }
+
+/* ── Cheatsheet ────────────────────────────────────────── */
+.cheatsheet-overlay {
+  position: fixed; inset: 0; background: rgba(0,0,0,0.6);
+  display: flex; justify-content: center; align-items: center; z-index: 9999;
+}
+.cheatsheet-dialog {
+  background: var(--color-primary); border: 1px solid var(--color-secondary);
+  border-radius: 8px; padding: 24px; max-width: 600px; max-height: 80vh;
+  overflow-y: auto; box-shadow: 0 20px 40px rgba(0,0,0,0.4);
+}
+.cheatsheet-title {
+  font-family: 'JetBrains Mono', monospace; font-size: 16px;
+  color: var(--color-cta); margin: 0 0 16px; text-transform: uppercase; letter-spacing: 1px;
+}
+.cheatsheet-section h3 {
+  font-size: 12px; color: #6B7280; text-transform: uppercase;
+  letter-spacing: 1px; margin: 16px 0 8px; padding-bottom: 4px;
+  border-bottom: 1px solid var(--color-secondary);
+}
+.cheatsheet-row {
+  display: flex; justify-content: space-between; align-items: center;
+  padding: 4px 0; font-size: 13px;
+}
+.cheatsheet-label { color: var(--color-text); text-transform: capitalize; }
+.cheatsheet-keys {
+  font-family: 'JetBrains Mono', monospace; font-size: 11px;
+  background: var(--color-background); padding: 2px 8px;
+  border: 1px solid var(--color-secondary); border-radius: 3px; color: #94A3B8;
+}
+
+/* ── Notifications ─────────────────────────────────────── */
+.notification-container {
+  position: fixed; top: 56px; right: 16px; z-index: 9998;
+  display: flex; flex-direction: column; gap: 8px; pointer-events: none;
+}
+.notification {
+  display: flex; align-items: center; gap: 8px;
+  padding: 10px 16px; border-radius: 6px;
+  font-family: 'IBM Plex Sans', sans-serif; font-size: 13px;
+  pointer-events: all; animation: notif-in 300ms ease;
+  box-shadow: 0 4px 12px rgba(0,0,0,0.3);
+}
+.notification-success { background: #065F46; color: #A7F3D0; border-left: 3px solid #22C55E; }
+.notification-error { background: #7F1D1D; color: #FCA5A5; border-left: 3px solid #EF4444; }
+.notification-warning { background: #78350F; color: #FDE68A; border-left: 3px solid #F59E0B; }
+.notification-info { background: #1E3A5F; color: #93C5FD; border-left: 3px solid #3B82F6; }
+.notification-icon {
+  font-family: 'JetBrains Mono', monospace; font-size: 10px; font-weight: 700;
+  width: 20px; height: 20px; display: flex; align-items: center; justify-content: center;
+  border-radius: 50%; background: rgba(255,255,255,0.1);
+}
+.notification-text { flex: 1; }
+.notification-close {
+  background: transparent; border: none; color: inherit; cursor: pointer;
+  opacity: 0.5; font-size: 14px; padding: 0 4px;
+}
+.notification-close:hover { opacity: 1; }
+.notification-exit { animation: notif-out 300ms ease forwards; }
+@keyframes notif-in { from { transform: translateX(100%); opacity: 0; } }
+@keyframes notif-out { to { transform: translateX(100%); opacity: 0; } }
+
+/* ── Settings Panel ────────────────────────────────────── */
+.settings-panel {
+  position: fixed; top: 50%; left: 50%; transform: translate(-50%, -50%);
+  background: var(--color-primary); border: 1px solid var(--color-secondary);
+  border-radius: 8px; padding: 24px; min-width: 400px; z-index: 9999;
+  box-shadow: 0 20px 40px rgba(0,0,0,0.5);
+}
+.settings-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.settings-header h3 { font-family: 'JetBrains Mono', monospace; font-size: 14px; color: var(--color-cta); text-transform: uppercase; letter-spacing: 1px; margin: 0; }
+.settings-close { background: transparent; border: none; color: #6B7280; font-size: 16px; cursor: pointer; padding: 4px 8px; }
+.settings-row { display: flex; align-items: center; justify-content: space-between; padding: 8px 0; border-bottom: 1px solid var(--color-secondary); }
+.settings-label { font-size: 13px; color: var(--color-text); }
+.settings-input {
+  padding: 4px 8px; background: var(--color-background); border: 1px solid var(--color-secondary);
+  border-radius: 4px; color: var(--color-text); font-family: 'JetBrains Mono', monospace; font-size: 12px; width: 120px;
+}
+.settings-input:focus { border-color: var(--color-cta); outline: none; }
+.settings-checkbox { accent-color: var(--color-cta); width: 16px; height: 16px; }
