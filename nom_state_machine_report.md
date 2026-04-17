@@ -1853,3 +1853,10 @@ User directives that triggered the fresh build and doc rewrite:
 - nom-canvas-core: impl Element for GraphNodeElement/WireElement (paint_scene needed)
 
 nom-canvas HEAD before deletion: `6403a1b`. nom-canvas fresh build starts from empty workspace.
+
+## Iteration 41 — Wave L (2026-04-18)
+
+**Commit:** d139644
+**Tests:** 504 (compiler: 41, canvas: 463)
+**Closed:** with_deep_think config wired, graph_rag RRF, W3C traceparent, impl Element for canvas elements
+**Status:** All 8 original CRITICALs + MEDIUMs resolved; remaining gaps are Wave M (nom-compiler-bridge 3-tier) + Wave N (compose backends)

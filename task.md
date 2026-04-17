@@ -6,6 +6,23 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Wave L (2026-04-18 Iter 41) — MEDIUM items closed
+
+- [x] with_deep_think: compose_with_dag now invokes DeepThinkStream::think when config present
+- [x] graph_rag: RRF hop penalty (1/(60+rank)) replaces harmonic
+- [x] nom-telemetry: W3C traceparent format (trace_id/span_id + parse/format methods)
+- [x] impl Element for GraphNodeElement + WireElement (3-phase GPU lifecycle)
+
+**Remaining open (WAVE M targets):**
+- nom-compiler-bridge: 3-tier (UI/Interactive/Background) full assembly + CompilerLspProvider
+- nom-compose backends: video (Remotion) + document (typst) prototypes
+- nom-lint: yara-x sealed supertrait + Range<u32> span type
+- nom-collab: verify RGA convergence under high concurrency
+
+**Test count: 504 total (compiler: 41, canvas: 463) — 0 failures**
+
+---
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 40 — Wave K: 4 CRITICALs closed)
 
 **Wave K results (commit dc6a025):**
