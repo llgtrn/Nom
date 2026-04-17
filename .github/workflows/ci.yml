@@ -24,6 +24,14 @@ jobs:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain from rust-toolchain.toml
         run: rustup show
+      - name: Install system deps (dav1d for nom-media AVIF codec)
+        shell: bash
+        run: |
+          if [ "$RUNNER_OS" = "Linux" ]; then
+            sudo apt-get update && sudo apt-get install -y libdav1d-dev
+          elif [ "$RUNNER_OS" = "macOS" ]; then
+            brew install dav1d
+          fi
       - name: Verify toolchain pin is honored (plan §10.3.1 Risk #1)
         working-directory: nom-compiler
         shell: bash
@@ -141,7 +149,9 @@ jobs:
         run: npx tsc --noEmit
       - name: Vite build
         working-directory: nom-canvas
-        run: npx vite build
+        run: npm run build
+      - name: Install system deps for Tauri
+        run: sudo apt-get update && sudo apt-get install -y libdav1d-dev libwebkit2gtk-4.1-dev libgtk-3-dev libayatana-appindicator3-dev librsvg2-dev
       - name: Tauri Rust check (no LLVM)
         working-directory: nom-canvas/src-tauri
         run: cargo check
