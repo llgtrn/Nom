@@ -2,6 +2,8 @@
 
 **Date:** 2026-04-18 | **HEAD:** `2b73744` | **Tests:** 1462 | **Workspace:** clean
 
+**Master roadmap to 100%:** [`ROADMAP_TO_100.md`](ROADMAP_TO_100.md) — every remaining `[ ]` across 4 axes (compiler/language/integration/platform).
+
 ## Wave V (2026-04-18) — GPU library wiring + test coverage push ✅ (29cb808, 824 tests)
 - [x] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
 - [x] **BYTEMUCK-WIRE** — QuadInstance/SpriteInstance/GlobalUniforms derive Pod+Zeroable
