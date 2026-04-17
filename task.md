@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `d63bc35` | **Tests:** 1266 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `2b73744` | **Tests:** 1462 | **Workspace:** clean
 
 ## Wave V (2026-04-18) — GPU library wiring + test coverage push ✅ (29cb808, 824 tests)
 - [x] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
@@ -25,16 +25,27 @@
 - [x] nom-canvas-core spatial/snapping: +24 → 122 tests
 - [x] nom-compiler-bridge adapters/sqlite: +25 → 95 tests
 
-## Wave Y (2026-04-18) — in progress
-- [ ] nom-cli: 30→55+ tests  
-- [ ] nom-collab: 44→65+ tests
-- [ ] nom-telemetry: 44→65+ tests
-- [ ] nom-lint: 45→70+ tests
-- [ ] nom-intent: 40→60+ tests
-- [ ] nom-blocks: 70→90+ tests
-- [ ] nom-memoize: 56→75+ tests
-- [ ] nom-panels: 81→100+ tests
-- [ ] nom-graph: 105→125+ tests
+## Wave Y (2026-04-18) — COMPLETE ✅ (2b73744, 1462 tests)
+- [x] nom-cli: 30→55 tests
+- [x] nom-collab: 44→66 tests
+- [x] nom-telemetry: 44→65 tests
+- [x] nom-lint: 45→70 tests
+- [x] nom-intent: 40→60 tests
+- [x] nom-blocks: 70→93 tests
+- [x] nom-memoize: 56→75 tests
+- [x] nom-panels: 81→102 tests
+- [x] nom-graph: 105→125 tests
+
+## Wave Z (2026-04-18) — in progress
+- [ ] nom-theme: 59→85+ tests
+- [ ] nom-collab: 66→90+ tests
+- [ ] nom-telemetry: 65→90+ tests
+- [ ] nom-compiler-bridge: 95→120+ tests
+- [ ] nom-compose: 172→195+ tests
+- [ ] nom-canvas-core: 122→145+ tests
+- [ ] nom-panels: 102→125+ tests
+- [ ] nom-editor: 105→128+ tests
+- [ ] nom-gpui: 186→210+ tests
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
@@ -101,7 +112,8 @@
 | [x] V GPU wiring | ✅ | bytemuck+etagere+LinearRgba+CLI, 824 tests |
 | [x] W Coverage | ✅ | fc20fc8 — lint+telemetry+blocks+gpui+graph, 1044 tests |
 | [x] X Deep coverage | ✅ | d63bc35 — intent/collab/memoize/theme/types, 1266 tests |
-| [ ] Y Coverage | ⏳ | cli/collab/telemetry/lint/intent/blocks |
+| [x] Y Coverage | ✅ | 2b73744 — cli/collab/telemetry/lint/intent/blocks, 1462 tests |
+| [ ] Z Coverage | ⏳ | theme/collab/telemetry/bridge/compose |
 
 ### Integrity Grep
 
