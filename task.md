@@ -1,18 +1,18 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `[TBD-commit]` | **Tests:** 733→800+ | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `29cb808` | **Tests:** 824 | **Workspace:** clean
 
-## Wave V (2026-04-18) — GPU library wiring + test coverage push
-- [ ] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
-- [ ] **BYTEMUCK-WIRE** — QuadInstance/SpriteInstance/GlobalUniforms derive Pod+Zeroable
-- [ ] **CLI-EXPAND** — nom-cli: 5 new commands (version/help/run/format/rag--top-k) + 10 tests → 28+
-- [ ] **TEST-CANVAS-CORE** — nom-canvas-core: +12 tests → 50+
-- [ ] **TEST-THEME** — nom-theme: +12 tests → 32+
-- [ ] **TEST-EDITOR** — nom-editor: +12 tests → 64+
-- [ ] **TEST-GRAPH** — nom-graph: +12 tests → 79+
-- [ ] **TEST-COMPOSE** — nom-compose: +12 tests → 106+
-- [ ] **TEST-INTENT-COLLAB-MEMO** — +15 tests across intent/collab/memoize
-- [ ] **LINEAR-RGBA** — LinearRgba type + ColorSpace enum added to nom-gpui
+## Wave V (2026-04-18) — GPU library wiring + test coverage push ✅ (29cb808, 824 tests)
+- [x] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
+- [x] **BYTEMUCK-WIRE** — QuadInstance/SpriteInstance/GlobalUniforms derive Pod+Zeroable
+- [x] **CLI-EXPAND** — nom-cli: 5 new commands (version/help/run/format/rag--top-k) + 12 tests → 30
+- [x] **TEST-CANVAS-CORE** — nom-canvas-core: already at 98 tests (no change needed)
+- [x] **TEST-THEME** — nom-theme: +13 tests → 33
+- [x] **TEST-EDITOR** — nom-editor: +13 tests → 80
+- [x] **TEST-GRAPH** — nom-graph: +12 tests → 88
+- [x] **TEST-COMPOSE** — nom-compose: +13 tests → 127
+- [x] **TEST-INTENT-COLLAB-MEMO** — +16 tests (intent 20, collab 23, memoize 27)
+- [x] **LINEAR-RGBA** — LinearRgba + ColorSpace enum added to nom-gpui renderer.rs
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
