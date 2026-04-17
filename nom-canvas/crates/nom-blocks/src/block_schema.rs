@@ -32,6 +32,8 @@ pub enum SchemaError {
     ParentNotAllowed(&'static str, &'static str),
     #[error("child flavour '{0}' is not allowed by schema '{1}'")]
     ChildNotAllowed(&'static str, &'static str),
+    #[error("unknown flavour '{0}' — not registered in the schema registry")]
+    UnknownFlavour(&'static str),
 }
 
 /// Check that `parent_flavour` is an allowed parent for this schema.

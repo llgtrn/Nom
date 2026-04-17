@@ -1,14 +1,12 @@
 //! Image and attachment block schemas.
 #![deny(unsafe_code)]
 
+use crate::block_model::FractionalIndex;
 use crate::block_schema::{BlockSchema, Role};
 use crate::flavour::{MEDIA_ATTACHMENT, MEDIA_IMAGE, NOTE, SURFACE};
 
 /// Content-addressed blob identifier (SHA-256 or equivalent handle).
 pub type BlobId = String;
-
-/// Fractional index for stable sibling ordering.
-pub type FractionalIndex = String;
 
 /// Bounding box in model coordinates: "x y width height".
 pub type Xywh = String;

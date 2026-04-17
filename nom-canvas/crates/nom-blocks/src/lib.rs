@@ -14,6 +14,7 @@ pub mod media;
 pub mod nomx;
 pub mod prose;
 pub mod table;
+pub mod schema_registry;
 pub mod tree_query;
 pub mod validators;
 

@@ -1,7 +1,8 @@
 #![deny(unsafe_code)]
 use crate::block_schema::{BlockSchema, Role};
 use crate::flavour::{NOTE, SURFACE};
-use crate::media::{BlobId, FractionalIndex};
+use crate::block_model::FractionalIndex;
+use crate::media::BlobId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum AppKind {

@@ -142,6 +142,10 @@ pub struct NarrativeResult {
     pub script: ScriptDocument,
     pub characters: CharacterDesign,
     pub storyboard: StoryboardResult,
+    /// Content hash of the final rendered video artifact. `None` until the
+    /// Video phase has produced output; distinguishing "storyboard done, video
+    /// pending" from "video done" in `completed_phase()`.
+    pub video_output_hash: Option<String>,
     pub usd_cost_cents: u64,
 }
 
@@ -152,6 +156,7 @@ impl Default for NarrativeResult {
             script: ScriptDocument::default(),
             characters: CharacterDesign::default(),
             storyboard: StoryboardResult::new(""),
+            video_output_hash: None,
             usd_cost_cents: 0,
         }
     }
@@ -178,6 +183,9 @@ impl NarrativeResult {
         }
         if self.storyboard.panels.is_empty() {
             return Some(NarrativePhase::Characters);
+        }
+        if self.video_output_hash.is_none() {
+            return Some(NarrativePhase::Storyboard);
         }
         Some(NarrativePhase::Video)
     }
@@ -358,6 +366,10 @@ mod tests {
         assert_eq!(r.completed_phase(), Some(NarrativePhase::Characters));
 
         r.storyboard.panels.push(StoryboardPanel { panel_id: "p1".into(), duration_ms: 500, scene_description: "x".into() });
+        // Storyboard panels present but video_output_hash is None → Storyboard, not Video.
+        assert_eq!(r.completed_phase(), Some(NarrativePhase::Storyboard));
+
+        r.video_output_hash = Some("abc123".into());
         assert_eq!(r.completed_phase(), Some(NarrativePhase::Video));
     }
 
