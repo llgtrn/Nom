@@ -82,4 +82,29 @@ mod tests {
         assert_eq!(row, 1);
         assert_eq!(col, 1);
     }
+
+    #[test]
+    fn display_map_maps_offset_to_row_col() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "abc\ndef\nghi");
+        // offset 0 = 'a' on row 0, col 0
+        let (row, col) = dm.buffer_to_display(&buf, 0);
+        assert_eq!((row, col), (0, 0));
+        // offset 4 = 'd' on row 1, col 0
+        let (row, col) = dm.buffer_to_display(&buf, 4);
+        assert_eq!((row, col), (1, 0));
+        // offset 6 = 'f' on row 1, col 2
+        let (row, col) = dm.buffer_to_display(&buf, 6);
+        assert_eq!((row, col), (1, 2));
+    }
+
+    #[test]
+    fn display_map_handles_wrapping() {
+        // Tab expansion: a tab at col 0 with tab_size 4 should advance col to 4
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "\thello");
+        let (row, col) = dm.buffer_to_display(&buf, 2); // after '\t' + 'h'
+        assert_eq!(row, 0);
+        assert_eq!(col, 5); // 4 (tab) + 1 (h)
+    }
 }

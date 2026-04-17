@@ -344,3 +344,112 @@ impl LayoutId {
 // ---------------------------------------------------------------------------
 
 pub type FontId = u32;
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn color_types_roundtrip() {
+        // Hsla constructors and field access
+        let black = Hsla::black();
+        assert_eq!(black.h, 0.0);
+        assert_eq!(black.s, 0.0);
+        assert_eq!(black.l, 0.0);
+        assert_eq!(black.a, 1.0);
+
+        let white = Hsla::white();
+        assert_eq!(white.l, 1.0);
+
+        let transparent = Hsla::transparent();
+        assert_eq!(transparent.a, 0.0);
+
+        // with_alpha preserves other fields
+        let semi = Hsla::new(180.0, 0.5, 0.5, 1.0).with_alpha(0.5);
+        assert!((semi.a - 0.5).abs() < 1e-6);
+        assert_eq!(semi.h, 180.0);
+
+        // AtlasTile roundtrip
+        let bounds = AtlasBounds::new(10, 20, 30, 40);
+        assert_eq!(bounds.left, 10);
+        assert_eq!(bounds.top, 20);
+        assert_eq!(bounds.right, 30);
+        assert_eq!(bounds.bottom, 40);
+
+        let tile = AtlasTile::new(7, bounds, 1.5);
+        assert_eq!(tile.texture_id, 7);
+        assert_eq!(tile.padding, 1.5);
+        assert_eq!(tile.bounds, bounds);
+    }
+
+    #[test]
+    fn size_bounds_constructors() {
+        // Point arithmetic
+        let a = Point::new(Pixels(3.0), Pixels(4.0));
+        let b = Point::new(Pixels(1.0), Pixels(2.0));
+        let sum = a + b;
+        assert_eq!(sum.x, Pixels(4.0));
+        assert_eq!(sum.y, Pixels(6.0));
+        let diff = a - b;
+        assert_eq!(diff.x, Pixels(2.0));
+        assert_eq!(diff.y, Pixels(2.0));
+
+        // Size constructor
+        let s = Size::new(Pixels(100.0), Pixels(200.0));
+        assert_eq!(s.width, Pixels(100.0));
+        assert_eq!(s.height, Pixels(200.0));
+
+        // Bounds contains
+        let origin = Point::new(Pixels(0.0), Pixels(0.0));
+        let b = Bounds::new(origin, s);
+        assert!(b.contains(&Point::new(Pixels(50.0), Pixels(100.0))));
+        assert!(!b.contains(&Point::new(Pixels(150.0), Pixels(100.0))));
+
+        // Edges::all and Corners::all
+        let e = Edges::all(Pixels(5.0));
+        assert_eq!(e.top, Pixels(5.0));
+        assert_eq!(e.right, Pixels(5.0));
+        assert_eq!(e.bottom, Pixels(5.0));
+        assert_eq!(e.left, Pixels(5.0));
+
+        let c = Corners::all(Pixels(8.0));
+        assert_eq!(c.top_left, Pixels(8.0));
+        assert_eq!(c.bottom_right, Pixels(8.0));
+
+        // Pixels arithmetic
+        let p = Pixels(10.0) + Pixels(5.0);
+        assert_eq!(p, Pixels(15.0));
+        let p = Pixels(10.0) - Pixels(3.0);
+        assert_eq!(p, Pixels(7.0));
+        let p = Pixels(4.0) * 2.5;
+        assert_eq!(p, Pixels(10.0));
+        let p = Pixels(9.0) / 3.0;
+        assert_eq!(p, Pixels(3.0));
+
+        // TransformationMatrix identity
+        let m = TransformationMatrix::identity();
+        assert_eq!(m.0[0][0], 1.0);
+        assert_eq!(m.0[1][1], 1.0);
+        assert_eq!(m.0[2][2], 1.0);
+        assert_eq!(m.0[3][3], 1.0);
+        assert_eq!(m.0[0][1], 0.0);
+
+        // Vec2 operations
+        let v = Vec2::new(3.0, 4.0);
+        assert!((v.length() - 5.0).abs() < 1e-6);
+        let n = v.normalize();
+        assert!((n.x - 0.6).abs() < 1e-6);
+        assert!((n.y - 0.8).abs() < 1e-6);
+
+        // GlobalElementId push/pop
+        let mut gid = GlobalElementId::new();
+        gid.push(ElementId::new(1));
+        gid.push(ElementId::new(2));
+        assert_eq!(gid.pop(), Some(ElementId::new(2)));
+        assert_eq!(gid.0.len(), 1);
+    }
+}

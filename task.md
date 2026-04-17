@@ -6,6 +6,32 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 38 — Wave I: canvas-core+gpui integration, 100% target)
+
+**Wave I: scene/renderer/canvas-core integration:**
+- [x] nom-canvas-core: viewport to_scene_transform + hit_test_rect/circle + 7 new tests
+- [x] nom-canvas-core: spatial_index/snapping/selection + tests
+- [x] nom-gpui: scene push_quad/path/clear + hsla_to_rgba/ortho_projection + 8 new tests
+- [x] nom-gpui: window/focus/event/layout tests + Wave A 100% closed
+- [x] nom-editor: indent/completion/display_map tests + Wave B 100% closed
+- [x] nom-graph: execution/cache/dag integration tests
+- [x] nom-memoize: constraint/memo-cache tests
+- [x] nom-theme: token completeness tests
+
+**Wave status — approaching 100%:**
+| Wave | Status |
+|------|--------|
+| Wave 0 Bootstrap | 100% ✅ |
+| Wave A GPUI | 100% ✅ |
+| Wave B Editor | 100% ✅ |
+| Wave C Bridge | 100% ✅ |
+| Wave D Shell | 100% ✅ |
+| Wave E Compose | 100% ✅ |
+| Wave F RAG+DeepThink | 100% ✅ |
+| Wave G Stubs | 100% ✅ |
+| Wave H Panels Pixel | 100% ✅ |
+| Wave I Integration | 100% ✅ |
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 37 — Wave H panels pixel layer)
 
 **Wave H: nom-panels pixel render layer (closes CRITICAL gap)**

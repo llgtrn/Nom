@@ -69,6 +69,47 @@ impl Viewport {
         self.zoom = 1.0;
         self.pan = [0.0, 0.0];
     }
+
+    /// Returns a 3×3 column-major affine matrix that maps canvas coords to screen:
+    ///
+    /// ```text
+    /// [[zoom, 0,    pan_x],
+    ///  [0,    zoom, pan_y],
+    ///  [0,    0,    1    ]]
+    /// ```
+    ///
+    /// The translation incorporates `size/2` so the canvas origin appears at
+    /// screen centre (consistent with `canvas_to_screen`).
+    pub fn to_scene_transform(&self) -> [[f32; 3]; 3] {
+        let tx = self.pan[0] + self.size[0] / 2.0;
+        let ty = self.pan[1] + self.size[1] / 2.0;
+        [
+            [self.zoom, 0.0,       tx],
+            [0.0,       self.zoom, ty],
+            [0.0,       0.0,       1.0],
+        ]
+    }
+
+    /// Applies `to_scene_transform` to a canvas-space point, returning a
+    /// screen-space point.  Equivalent to `canvas_to_screen` but expressed
+    /// through the matrix.
+    pub fn apply_transform(&self, pt: [f32; 2]) -> [f32; 2] {
+        let m = self.to_scene_transform();
+        [
+            m[0][0] * pt[0] + m[0][1] * pt[1] + m[0][2],
+            m[1][0] * pt[0] + m[1][1] * pt[1] + m[1][2],
+        ]
+    }
+
+    /// Returns `true` if the canvas-space point `pt` maps to a screen-space
+    /// position that lies within the viewport bounds `[0, size[0]) × [0, size[1])`.
+    pub fn is_point_visible(&self, pt: [f32; 2]) -> bool {
+        let screen = self.apply_transform(pt);
+        screen[0] >= 0.0
+            && screen[0] <= self.size[0]
+            && screen[1] >= 0.0
+            && screen[1] <= self.size[1]
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +192,54 @@ mod tests {
         assert!((vp.zoom - 1.0).abs() < 1e-6);
         assert!((vp.pan[0]).abs() < 1e-6);
         assert!((vp.pan[1]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn viewport_to_scene_transform_identity() {
+        // At zoom=1, pan=[0,0], size=[800,600]: matrix maps canvas origin to
+        // screen centre (400, 300).
+        let vp = Viewport::new(800.0, 600.0);
+        let m = vp.to_scene_transform();
+        // Top-left 2×2 is identity * zoom
+        assert!((m[0][0] - 1.0).abs() < 1e-6);
+        assert!((m[1][1] - 1.0).abs() < 1e-6);
+        assert!((m[0][1]).abs() < 1e-6);
+        assert!((m[1][0]).abs() < 1e-6);
+        // Translation is size/2
+        assert!((m[0][2] - 400.0).abs() < 1e-4);
+        assert!((m[1][2] - 300.0).abs() < 1e-4);
+        assert!((m[2][2] - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn viewport_apply_transform_with_pan() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([50.0, -20.0]);
+        // Canvas origin should map to screen centre + pan
+        let screen = vp.apply_transform([0.0, 0.0]);
+        assert!((screen[0] - 450.0).abs() < 1e-4, "x={}", screen[0]);
+        assert!((screen[1] - 280.0).abs() < 1e-4, "y={}", screen[1]);
+        // apply_transform must match canvas_to_screen
+        let pt = [10.0_f32, -5.0];
+        let via_matrix = vp.apply_transform(pt);
+        let direct = vp.canvas_to_screen(pt);
+        assert!((via_matrix[0] - direct[0]).abs() < 1e-4);
+        assert!((via_matrix[1] - direct[1]).abs() < 1e-4);
+    }
+
+    #[test]
+    fn viewport_is_point_visible_in_bounds() {
+        let vp = Viewport::new(800.0, 600.0);
+        // Canvas origin maps to screen centre — always visible.
+        assert!(vp.is_point_visible([0.0, 0.0]));
+    }
+
+    #[test]
+    fn viewport_is_point_visible_out_of_bounds() {
+        let vp = Viewport::new(800.0, 600.0);
+        // Canvas point far off to the right.
+        // At zoom=1, x_screen = canvas_x + 400; canvas_x=1000 → screen_x=1400 > 800.
+        assert!(!vp.is_point_visible([1000.0, 0.0]));
     }
 
     #[test]

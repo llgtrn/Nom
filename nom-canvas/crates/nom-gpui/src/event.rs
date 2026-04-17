@@ -111,4 +111,61 @@ mod tests {
         let m = Modifiers { shift: true, alt: true, ..Modifiers::default() };
         assert!(!m.is_shortcut());
     }
+
+    #[test]
+    fn key_event_pressed_matches_key_and_modifiers() {
+        let ev = KeyEvent::Pressed {
+            key: Key::Char('a'),
+            modifiers: Modifiers { ctrl: true, ..Modifiers::default() },
+        };
+        if let KeyEvent::Pressed { key, modifiers } = ev {
+            assert_eq!(key, Key::Char('a'));
+            assert!(modifiers.ctrl);
+        } else {
+            panic!("expected Pressed variant");
+        }
+    }
+
+    #[test]
+    fn key_event_input_carries_text() {
+        let ev = KeyEvent::Input { text: "hello".to_string() };
+        if let KeyEvent::Input { text } = ev {
+            assert_eq!(text, "hello");
+        } else {
+            panic!("expected Input variant");
+        }
+    }
+
+    #[test]
+    fn mouse_event_down_carries_position_and_button() {
+        let pos = Vec2::new(10.0, 20.0);
+        let ev = MouseEvent::Down {
+            button: MouseButton::Left,
+            position: pos,
+            modifiers: Modifiers::default(),
+        };
+        if let MouseEvent::Down { button, position, .. } = ev {
+            assert_eq!(button, MouseButton::Left);
+            assert_eq!(position, pos);
+        } else {
+            panic!("expected Down variant");
+        }
+    }
+
+    #[test]
+    fn scroll_event_stores_delta() {
+        let ev = ScrollEvent {
+            position: Vec2::new(0.0, 0.0),
+            delta: Vec2::new(0.0, -120.0),
+            modifiers: Modifiers::default(),
+        };
+        assert_eq!(ev.delta, Vec2::new(0.0, -120.0));
+    }
+
+    #[test]
+    fn action_names_are_correct() {
+        assert_eq!(Undo.name(), "undo");
+        assert_eq!(Redo.name(), "redo");
+        assert_eq!(OpenCommandPalette.name(), "open_command_palette");
+    }
 }

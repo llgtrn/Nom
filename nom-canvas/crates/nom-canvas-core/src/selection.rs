@@ -278,4 +278,66 @@ mod tests {
         assert!((nw.position[0] - 6.0).abs() < 1e-6);
         assert!((nw.position[1] - 16.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn selection_add_element() {
+        let mut sel = Selection::empty();
+        sel.add(99);
+        assert!(sel.contains(99));
+        assert_eq!(sel.len(), 1);
+        // Adding the same ID twice is idempotent (BTreeSet semantics)
+        sel.add(99);
+        assert_eq!(sel.len(), 1);
+        sel.add(100);
+        assert_eq!(sel.len(), 2);
+    }
+
+    #[test]
+    fn selection_clear() {
+        let mut sel = Selection::empty();
+        sel.add(1);
+        sel.add(2);
+        sel.add(3);
+        assert_eq!(sel.len(), 3);
+        sel.clear();
+        assert!(sel.is_empty());
+        assert_eq!(sel.len(), 0);
+        // transform_origin must be reset to [0,0]
+        assert!((sel.transform_origin[0]).abs() < 1e-6);
+        assert!((sel.transform_origin[1]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn selection_contains_element() {
+        let mut sel = Selection::empty();
+        assert!(!sel.contains(5));
+        sel.add(5);
+        assert!(sel.contains(5));
+        sel.remove(5);
+        assert!(!sel.contains(5));
+    }
+
+    #[test]
+    fn selection_bounding_box() {
+        // Build a selection of 3 elements and compute the union bounding box manually.
+        let bounds = vec![
+            ElementBounds { id: 1, min: [0.0, 0.0], max: [10.0, 10.0] },
+            ElementBounds { id: 2, min: [5.0, 5.0], max: [20.0, 25.0] },
+            ElementBounds { id: 3, min: [-5.0, 2.0], max: [3.0, 8.0] },
+        ];
+        let mut sel = Selection::empty();
+        for b in &bounds {
+            sel.add(b.id);
+        }
+        // Union AABB of selected elements
+        let selected_bounds: Vec<_> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
+        let min_x = selected_bounds.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let min_y = selected_bounds.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
+        let max_x = selected_bounds.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = selected_bounds.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (-5.0)).abs() < 1e-6, "min_x={}", min_x);
+        assert!((min_y - 0.0).abs() < 1e-6, "min_y={}", min_y);
+        assert!((max_x - 20.0).abs() < 1e-6, "max_x={}", max_x);
+        assert!((max_y - 25.0).abs() < 1e-6, "max_y={}", max_y);
+    }
 }

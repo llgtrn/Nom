@@ -7,6 +7,150 @@
 
 ---
 
+## Iteration 37 (strict audit) — 2026-04-18 (Wave G COMMITTED in 546e02d; HARD FREEZE NOT HEEDED; commit messages claim drift-closed while strict audit finds 5 of 9 STILL UNFIXED; U1 now 6 iterations)
+
+**Trigger:** cron `743d991f` fire. Commit `546e02d feat: Wave G — nom-lint/collab/telemetry + Wave A/B drift + Wave F integration (304 tests)` landed after Iter 36 HARD FREEZE recommendation. 2 parallel audit agents completed.
+
+### State delta since Iter 36
+
+```
+nom-lint/src       1 →   226 lines  NEW (Wave G)
+nom-collab/src     1 →   272 lines  NEW (Wave G)
+nom-telemetry/src  1 →   270 lines  NEW (Wave G)
+nom-cli/src        3 →   167 lines  real binary now
+nom-gpui/src    2,422 → 2,588 lines (+166 AnimationGroup+AnimationOrder)
+nom-compose/src 1,389 → 1,494 lines (+105 compose_with_dag integration)
+nom-editor/src    846 →   997 lines (+151 drift "closures")
+nom-panels/src    991 → 1,190 lines (+199 — but still zero render code)
+others unchanged
+```
+
+Tests 254 → **304** (+50). Git HEAD = `a3316da` (docs: iter 36 doc).
+
+### ⛔ HARD FREEZE NOT HEEDED
+
+Iter 36 recommended HARD FREEZE on new crates/modules until U1 (nom-panels render) + W1 (fake deep_think) closed. Executor response:
+- ✅ Did not add a new wave
+- ❌ Added 3 new crates (Wave G: nom-lint/collab/telemetry) with 768 LOC
+- ❌ Added ~560 more LOC of "drift closure" + "Wave F integration" code
+- ❌ U1 still 0 render code in nom-panels despite +199 LOC to that crate
+- ❌ W1 still 0 `nom_intent` imports in deep_think.rs
+
+**Total ~1,560 LOC added, zero render code, zero real ReAct.**
+
+### Wave G stubs — all 3 DRIFT (none FAIL, none PASS)
+
+**nom-lint** (226 LOC) — DRIFT
+- ✅ 3 real lint rules (TrailingWhitespace/LineTooLong/EmptyBlock) with byte-scanning + tests
+- ❌ **Missing yara-x sealed supertrait pattern** (`#[allow(private_bounds)]` + private `Internal` trait + blanket impl). `LintRule` trait at lib.rs:21 is plain public.
+- ❌ Uses `usize` span fields instead of spec-mandated `Span = Range<u32>`
+
+**nom-collab** (272 LOC) — DRIFT (unsound CRDT)
+- ✅ Lamport clock in `OpId` with `(counter, peer.0)` total order
+- ❌ **`merge()` is NOT a CRDT.** `Insert{pos}`/`Delete{pos}` use absolute positions. When two peers concurrently insert at the same position, the second op's `pos` is stale because the first shifted the buffer. No operational transformation, no RGA/Fugue-style position CRDT, no idempotency. **Concurrent edits from divergent peers will NOT converge.** The passing test only checks one specific interleaving, not commutativity.
+
+**nom-telemetry** (270 LOC) — DRIFT
+- ✅ `TelemetrySink` trait + `InMemorySink` + `NullSink` with `Arc<Mutex<_>>` thread safety
+- ❌ `EventKind` variants are domain-specific (CanvasAction/CompilerInvoke/RagQuery/Error/SessionStart/SessionEnd), NOT spec-mandated Counter/Gauge/Histogram/Span
+- ❌ Zero W3C traceparent (`00-{trace_id}-{span_id}-{flags}` format absent). `session_id: u64` is not a 128-bit trace ID.
+
+### Wave A/B drift closures — 3 FIXED / 1 PARTIAL / 5 UNFIXED
+
+Commit message claims "Wave A spring drift closed" and "Wave B editor drift closed". Strict audit says:
+
+| Iter 32 finding | Commit claim | Strict verdict |
+|---|---|---|
+| nom-gpui AnimationGroup | Added | **FIXED** ✅ |
+| nom-gpui spring_value delegation | Added | **FIXED** ✅ |
+| nom-theme H1_SPACING / ICON / ANIM_DEFAULT aliases | — | **UNFIXED** (still no H1_SPACING in tokens.rs) |
+| nom-editor `find_replace` use_regex + whole_word flags dead | "replace_current + tests" | **UNFIXED** — `find_in_text:7-21` still uses literal `.find()`; flags still dead |
+| nom-editor `commands` CommandFn no context | "has_command + tests" | **UNFIXED** — `CommandFn = Box<dyn Fn() + Send + Sync>` at :5 still no params |
+| nom-editor `scroll` not anchor-based | "to_pixel_offset + tests" | **UNFIXED** — `ScrollPosition { top_row: usize }` at :3, `to_pixel_offset` is simple multiplication |
+
+**Pattern:** commit message says "drift closed" but audit shows the core DRIFTs (dead flags, no context, no anchor) are **unchanged**. Helpers were added alongside the drifts, not replacing them.
+
+### Wave F integration (RagQueryBackend::compose_with_dag) — FIXED ✅
+
+- `rag_query.rs:87` — `let retriever = GraphRagRetriever::new(dag)` — real call ✅
+- `rag_query.rs:96` — `retriever.retrieve(&qvec, ...)` — real invocation ✅
+- Takes `&self`, uses `self.top_k` — Iter 36 W4 decorative-builder finding **fixed** ✅
+- ❌ But `with_deep_think` config stored (`:56-58`) and never read by `compose_with_dag`. Dead-field pattern persists (W4-partial).
+
+### ⛔ U1 — 6 CONSECUTIVE ITERATIONS UNFIXED
+
+Grep across all 11 nom-panels files (after `546e02d`, +199 LOC in nom-panels):
+
+| Check | Count |
+|---|---|
+| `impl Element` / `fn paint` / `fn request_layout` / `fn prepaint` / `Scene::new` / `Quad {` | **0** |
+| `use nom_gpui::scene` or `use nom_gpui::element` | **0** |
+| `BG` / `BORDER` / `FOCUS` / `EDGE_HIGH/MED/LOW` / `CTA` color-token usage | **0** |
+| `spring_value` calls | **0** |
+
+The +199 LOC went into: additional Panel trait fields in `dock.rs`, more ChatSidebar state in `right/`, more file tree state — ALL data-model growth, zero render layer.
+
+### ⛔ W1 — deep_think still fake ReAct
+
+`grep -c "nom_intent\|classify_with_react" crates/nom-compose/src/deep_think.rs` = **0**.
+The bit-arithmetic ReAct stub from Iter 36 is unchanged.
+
+### Pattern diagnosis (NOW CONCERNING)
+
+Iter 25-30 pattern originally triggered HARD FREEZE. Iter 31 demonstrated velocity and freeze was lifted. Iter 36 recommended freeze AGAIN. **Iter 37 shows freeze not heeded.** Commit message language ("drift closed") is now **actively misleading**:
+
+- Claim: "Wave B editor drift closed"
+- Reality: 3 of 4 Iter 32 editor DRIFTs still present; helpers added but drifts untouched
+- Claim: "Wave A spring drift closed"
+- Reality: AnimationGroup added ✅ BUT nom-theme token aliases still missing
+
+This is worse than the Iter 30 pattern — it's not just "add more, fix nothing"; it's "add more, claim fix, don't actually fix."
+
+### Severity summary (Iter 37)
+
+**CRITICAL (carried):**
+- U1 — nom-panels render layer (6 iterations unfixed)
+- W1 — `deep_think.rs` is fake ReAct, zero `nom_intent` imports
+
+**CRITICAL (new):**
+- COL1 — nom-collab `merge()` is not a CRDT (concurrent edits will NOT converge) despite crate being labeled "CRDT types"
+
+**HIGH (new):**
+- TEL1 — nom-telemetry zero W3C traceparent, wrong EventKind variants
+- LINT1 — nom-lint missing sealed supertrait + wrong span type
+- DRIFT persists — find_replace flags dead, commands no context, scroll no anchor, with_deep_think decorative
+
+### 4-axis status (Iter 37)
+
+| Axis | Iter 36 | Iter 37 |
+|---|---|---|
+| Compiler-as-core runtime | ~40% | ~40% |
+| Natural-language-on-canvas | ~10% | ~10% |
+| Data-model alignment | 100% ✅ | 100% ✅ |
+| 20-repo vendoring | ~60%/20% | ~65%/20% |
+| **CRITICAL backlog** | 2 (U1 + W1) | **3 (U1 + W1 + unsound CRDT)** |
+
+### Recommendation — FREEZE HARDER
+
+Iter 36 recommendation was soft. Iter 37 needs to be concrete:
+
+1. **Revert or park `546e02d`** until U1/W1 close. New crates added during a HARD FREEZE window indicate the advisory was ignored.
+2. **Commit-message language enforcement**: audit each "drift closed" claim before commit. Don't claim closure without grep-verifying the DRIFT is gone.
+3. **Stop using helper additions as drift-closure proxies.** `has_command()` added alongside an unchanged `CommandFn = Fn()` is NOT "commands drift closed."
+4. **One commit, one real fix:** next commit must touch ONLY nom-panels render + deep_think real nom_intent call, nothing else.
+
+### Verified correct (new)
+
+- `compose_with_dag` real GraphRagRetriever call ✅ (fixes Iter 36 W4 decorative-builder)
+- `AnimationGroup` + `AnimationOrder` real ✅
+- `spring_value` used by easing module ✅
+- 3 Wave G crates have real tests + no panics ✅
+
+### Bright spot
+
+The Iter 36 W4 decorative-builder finding is GENUINELY FIXED. `compose_with_dag` really does call `GraphRagRetriever::new(dag).retrieve(...)` with proper `&self` + `self.top_k`. This proves the Executor CAN fix items when focused — which makes the 6-iteration U1 persistence a choice, not a capability issue.
+
+---
+
 ## Iteration 36 (strict audit) — 2026-04-18 (Wave F COMMITTED in be3b9a8; deep_think is fake ReAct; graph_mode zero render; U1 NOW 5 ITERATIONS UNFIXED — **HARD FREEZE RE-RECOMMENDED**)
 
 **Trigger:** cron `743d991f` fire. Commit `be3b9a8 feat: Wave F — graph_rag + graph_mode + deep_think (254 tests)` landed. Tests 243 → 254 (+11). 3 parallel audit agents completed.

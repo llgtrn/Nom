@@ -31,6 +31,24 @@ pub struct HitResult {
 
 // ─── Rectangle ──────────────────────────────────────────────────────────────
 
+/// Axis-aligned bounding box hit test using raw rect parameters.
+///
+/// Returns `true` if `pt` falls inside the rectangle defined by
+/// `(rect_x, rect_y, rect_x + w, rect_y + h)`.
+pub fn hit_test_rect_aabb(pt: [f32; 2], rect_x: f32, rect_y: f32, w: f32, h: f32) -> bool {
+    pt[0] >= rect_x && pt[0] <= rect_x + w && pt[1] >= rect_y && pt[1] <= rect_y + h
+}
+
+/// Circle hit test using raw centre and radius parameters.
+///
+/// Returns `true` if `pt` falls inside (or on the boundary of) the circle
+/// centred at `(cx, cy)` with radius `r`.
+pub fn hit_test_circle(pt: [f32; 2], cx: f32, cy: f32, r: f32) -> bool {
+    let dx = pt[0] - cx;
+    let dy = pt[1] - cy;
+    dx * dx + dy * dy <= r * r
+}
+
 /// Returns `true` if `pt` (canvas-space) hits the rectangle.
 ///
 /// The test inverse-rotates `pt` around the rect centre before doing an AABB
@@ -346,5 +364,25 @@ mod tests {
     fn segment_degenerate_point() {
         let d = dist_to_segment([3.0, 4.0], [0.0, 0.0], [0.0, 0.0]);
         assert!((d - 5.0).abs() < 1e-4, "got {}", d);
+    }
+
+    // ── hit_test_rect_aabb (flat params) ─────────────────────────────────────
+
+    #[test]
+    fn hit_test_rect_inside() {
+        assert!(hit_test_rect_aabb([50.0, 40.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    #[test]
+    fn hit_test_rect_outside() {
+        assert!(!hit_test_rect_aabb([200.0, 40.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    // ── hit_test_circle (flat params) ────────────────────────────────────────
+
+    #[test]
+    fn hit_test_circle_inside() {
+        // Point at distance 3 from centre (4, 4); radius 5 — inside.
+        assert!(hit_test_circle([4.0, 7.0], 4.0, 4.0, 5.0));
     }
 }

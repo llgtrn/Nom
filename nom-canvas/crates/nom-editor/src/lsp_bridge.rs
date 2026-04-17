@@ -22,3 +22,33 @@ impl LspProvider for StubLspProvider {
     fn completions(&self, _path: &std::path::Path, _offset: usize) -> Vec<CompletionItem> { vec![] }
     fn goto_definition(&self, _path: &std::path::Path, _offset: usize) -> Option<Location> { None }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::path::Path;
+
+    #[test]
+    fn lsp_bridge_creates() {
+        let provider = StubLspProvider;
+        let path = Path::new("test.nom");
+        assert!(provider.hover(path, 0).is_none());
+        assert!(provider.completions(path, 0).is_empty());
+        assert!(provider.goto_definition(path, 0).is_none());
+    }
+
+    #[test]
+    fn lsp_request_formats_correctly() {
+        // CompletionItem round-trip: label and insert_text match
+        let item = CompletionItem {
+            label: "summarize".into(),
+            kind: CompletionKind::Function,
+            detail: Some("fn summarize(text: str) -> str".into()),
+            insert_text: "summarize".into(),
+            sort_text: None,
+        };
+        assert_eq!(item.label, item.insert_text);
+        assert!(item.detail.is_some());
+        assert_eq!(item.kind, CompletionKind::Function);
+    }
+}

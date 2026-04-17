@@ -82,4 +82,12 @@ mod tests {
         let s = format!("{}", h);
         assert_eq!(s.len(), 32);
     }
+
+    #[test]
+    fn hash128_of_u64_deterministic() {
+        let h1 = Hash128::of_u64(42);
+        let h2 = Hash128::of_u64(42);
+        assert_eq!(h1, h2);
+        assert_ne!(h1, Hash128::of_u64(43));
+    }
 }

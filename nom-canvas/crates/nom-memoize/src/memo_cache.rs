@@ -83,4 +83,37 @@ mod tests {
         assert_eq!(result, None);
         assert_eq!(cache.miss_count(), 1);
     }
+
+    #[test]
+    fn memo_cache_miss_on_absent_key() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("absent");
+        let result = cache.get(&key, 0, &[]);
+        assert_eq!(result, None);
+        assert_eq!(cache.hit_count(), 0);
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_cache_invalidate_removes_entry() {
+        let mut cache: MemoCache<i32> = MemoCache::new();
+        let key = Hash128::of_str("inv_key");
+        cache.put(key, 7, Constraint::new(1));
+        assert_eq!(cache.len(), 1);
+        cache.invalidate(&key);
+        assert_eq!(cache.len(), 0);
+        assert_eq!(cache.get(&key, 1, &[]), None);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_tracks_correctly() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let key = Hash128::of_str("rate_key");
+        cache.put(key, 1, Constraint::new(55));
+        cache.get(&key, 55, &[]); // hit
+        cache.get(&key, 99, &[]); // miss (stale input)
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 1);
+        assert!((cache.hit_rate() - 0.5).abs() < f64::EPSILON);
+    }
 }

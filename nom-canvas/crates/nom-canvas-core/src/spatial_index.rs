@@ -216,4 +216,38 @@ mod tests {
         let found = idx.query_in_bounds([0.0, 0.0], [200.0, 20.0]);
         assert_eq!(found.len(), 10);
     }
+
+    #[test]
+    fn spatial_index_insert_and_query() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(10, [5.0, 5.0], [15.0, 15.0]));
+        idx.insert(make_bounds(20, [50.0, 50.0], [60.0, 60.0]));
+        assert_eq!(idx.len(), 2);
+        // Query region that covers only element 10
+        let found = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(found.contains(&10), "expected id 10, got {:?}", found);
+        assert!(!found.contains(&20), "id 20 should not appear, got {:?}", found);
+    }
+
+    #[test]
+    fn spatial_index_radius_query() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));
+        idx.insert(make_bounds(2, [500.0, 500.0], [510.0, 510.0]));
+        // nearest within a large radius picks the nearby element
+        let near = idx.nearest([5.0, 5.0], 200.0);
+        assert_eq!(near, Some(1), "expected element 1 as nearest");
+        // nearest within a tiny radius excludes the far element
+        let none = idx.nearest([5.0, 5.0], 1.0);
+        // element 1 bounds distance_2 to [5,5] is 0 (point is inside) → distance = 0 ≤ 1
+        assert_eq!(none, Some(1), "point inside bounds has distance 0");
+    }
+
+    #[test]
+    fn spatial_index_empty_returns_empty() {
+        let idx = SpatialIndex::new();
+        let found = idx.query_in_bounds([0.0, 0.0], [1000.0, 1000.0]);
+        assert!(found.is_empty(), "empty index must return no results");
+        assert_eq!(idx.nearest([0.0, 0.0], 9999.0), None);
+    }
 }

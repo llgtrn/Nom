@@ -96,4 +96,45 @@ mod tests {
         engine.compute_layout(id, available);
         assert_eq!(engine.layout(id).size, available);
     }
+
+    #[test]
+    fn layout_unknown_id_returns_default() {
+        let engine = LayoutEngine::new();
+        assert_eq!(engine.layout(LayoutId(999)), Bounds::default());
+    }
+
+    #[test]
+    fn request_layout_with_children_increments_id() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let child = engine.request_layout(&style, &[]);
+        let parent = engine.request_layout(&style, &[child]);
+        // parent id is strictly greater than child id
+        assert!(parent.0 > child.0);
+    }
+
+    #[test]
+    fn compute_layout_on_non_root_does_not_affect_other_nodes() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id1 = engine.request_layout(&style, &[]);
+        let id2 = engine.request_layout(&style, &[]);
+        let available = Size { width: Pixels(1024.0), height: Pixels(768.0) };
+        engine.compute_layout(id1, available);
+        // id2 should remain default
+        assert_eq!(engine.layout(id2), Bounds::default());
+    }
+
+    #[test]
+    fn remove_then_request_layout_gives_fresh_id() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id_a = engine.request_layout(&style, &[]);
+        engine.remove_layout_id(id_a);
+        let id_b = engine.request_layout(&style, &[]);
+        // id_b is a new sequential id, not a reuse
+        assert_ne!(id_a, id_b);
+        // id_a is gone; id_b is fresh with default bounds
+        assert_eq!(engine.layout(id_b), Bounds::default());
+    }
 }

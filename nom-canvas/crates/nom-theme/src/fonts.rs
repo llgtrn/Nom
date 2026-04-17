@@ -111,3 +111,70 @@ impl TypeStyle {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::tokens;
+
+    #[test]
+    fn font_registry_has_default() {
+        let reg = FontRegistry::placeholder();
+        // Placeholder IDs are sequential 0..5; all must be valid u32 values.
+        let ids = [
+            reg.inter_regular,
+            reg.inter_medium,
+            reg.inter_semibold,
+            reg.inter_bold,
+            reg.source_code_pro_regular,
+            reg.source_code_pro_semibold,
+        ];
+        // All distinct.
+        for i in 0..ids.len() {
+            for j in (i + 1)..ids.len() {
+                assert_ne!(ids[i], ids[j], "placeholder font IDs must be distinct");
+            }
+        }
+    }
+
+    #[test]
+    fn font_size_scale_monotonic() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        let body = TypeStyle::body(&reg);
+        let h3 = TypeStyle::heading3(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        let h1 = TypeStyle::heading1(&reg);
+        assert!(caption.size < body.size);
+        assert!(body.size < h3.size);
+        assert!(h3.size < h2.size);
+        assert!(h2.size < h1.size);
+    }
+
+    #[test]
+    fn type_style_body_matches_tokens() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        assert_eq!(body.size, tokens::FONT_SIZE_BODY);
+        assert_eq!(body.line_height, tokens::LINE_HEIGHT_BODY);
+        assert_eq!(body.letter_spacing, 0.0);
+    }
+
+    #[test]
+    fn type_style_code_uses_mono_font() {
+        let reg = FontRegistry::placeholder();
+        let code = TypeStyle::code(&reg);
+        let code_bold = TypeStyle::code_semibold(&reg);
+        // Both must reference a SourceCodePro font ID.
+        assert_eq!(code.font_id, reg.source_code_pro_regular);
+        assert_eq!(code_bold.font_id, reg.source_code_pro_semibold);
+        // Same size, same line height.
+        assert_eq!(code.size, tokens::FONT_SIZE_CODE);
+        assert_eq!(code.size, code_bold.size);
+        assert_eq!(code.line_height, code_bold.line_height);
+    }
+}

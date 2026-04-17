@@ -119,4 +119,10 @@ mod tests {
         let t2 = t.clone();
         assert_eq!(t2.call_count(), 0); // clone starts with empty call list
     }
+
+    #[test]
+    fn tracked_version_exposed() {
+        let t = Tracked::new(42u32, 99);
+        assert_eq!(t.version, 99);
+    }
 }

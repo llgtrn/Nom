@@ -257,4 +257,62 @@ mod tests {
         let has_vertical = result.guides.iter().any(|g| g.axis == SnapAxis::Vertical);
         assert!(has_vertical, "expected a vertical guide for X snap");
     }
+
+    #[test]
+    fn snap_to_grid_rounds_correctly() {
+        // GRID_SIZE = 20; values below midpoint round down, above round up
+        let snapped_up = snap_to_grid([14.0, 0.0]);
+        assert!(
+            (snapped_up[0] - 20.0).abs() < 1e-6,
+            "14 should round up to 20, got {}",
+            snapped_up[0]
+        );
+        let snapped_down = snap_to_grid([6.0, 0.0]);
+        assert!(
+            snapped_down[0].abs() < 1e-6,
+            "6 should round down to 0, got {}",
+            snapped_down[0]
+        );
+        // Both axes independent
+        let snapped_both = snap_to_grid([14.0, 36.0]);
+        assert!((snapped_both[0] - 20.0).abs() < 1e-6);
+        assert!((snapped_both[1] - 40.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn snap_threshold_within_range() {
+        // Moving element at x=4 with grid_snap=true; nearest grid line is 0, delta=4 < SNAP_THRESHOLD(8)
+        let result = snap_with_guides([4.0, 4.0], [10.0, 10.0], &[], true);
+        assert!(
+            result.x.abs() < 1e-6,
+            "expected snap to x=0, got {}",
+            result.x
+        );
+        assert!(
+            result.y.abs() < 1e-6,
+            "expected snap to y=0, got {}",
+            result.y
+        );
+    }
+
+    #[test]
+    fn snap_threshold_outside_range() {
+        // Place element far enough from every grid line that no snap fires.
+        // GRID_SIZE=20; position 10 is exactly at the midpoint between 0 and 20.
+        // snap_to_grid([10,10]) = [20,20] but delta=10 > SNAP_THRESHOLD(8) → no snap.
+        // However f32 rounding: 10/20=0.5, round()=0 or 1 depending on banker's rounding.
+        // Use 9.5 which unambiguously rounds to 20 but delta from 9.5 to 20 = 10.5 > 8.
+        let result = snap_with_guides([9.5, 9.5], [10.0, 10.0], &[], true);
+        // delta = |9.5 - 20| = 10.5 > SNAP_THRESHOLD → position unchanged
+        assert!(
+            (result.x - 9.5).abs() < 1e-6,
+            "expected x unchanged at 9.5, got {}",
+            result.x
+        );
+        assert!(
+            (result.y - 9.5).abs() < 1e-6,
+            "expected y unchanged at 9.5, got {}",
+            result.y
+        );
+    }
 }

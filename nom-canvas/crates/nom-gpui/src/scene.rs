@@ -201,4 +201,67 @@ mod tests {
         scene.clear();
         assert!(scene.is_empty());
     }
+
+    #[test]
+    fn scene_push_quad_adds_to_quads() {
+        let mut scene = Scene::new();
+        scene.push_quad(Quad {
+            background: Some(Hsla::new(120.0, 0.5, 0.5, 1.0)),
+            ..Default::default()
+        });
+        scene.push_quad(Quad::default());
+        assert_eq!(scene.quads.len(), 2);
+        assert!(!scene.is_empty());
+    }
+
+    #[test]
+    fn scene_sort_and_batch_stable() {
+        let mut scene = Scene::new();
+        // Push sprites in reverse texture_id order; sort_and_batch must produce
+        // ascending order without losing any entries.
+        for id in [5u32, 2, 8, 1, 3] {
+            scene.push_sprite(crate::scene::MonochromeSprite {
+                tile: crate::types::AtlasTile {
+                    texture_id: id,
+                    bounds: AtlasBounds::default(),
+                    padding: 0.0,
+                },
+                color: Hsla::white(),
+                transformation: TransformationMatrix::identity(),
+                ..Default::default()
+            });
+        }
+        scene.sort_and_batch();
+        let ids: Vec<u32> =
+            scene.monochrome_sprites.iter().map(|s| s.tile.texture_id).collect();
+        assert_eq!(ids, vec![1, 2, 3, 5, 8]);
+    }
+
+    #[test]
+    fn scene_push_path_adds_to_paths() {
+        let mut scene = Scene::new();
+        scene.push_path(Path {
+            color: Hsla::black(),
+            ..Default::default()
+        });
+        assert_eq!(scene.paths.len(), 1);
+        scene.push_path(Path::default());
+        assert_eq!(scene.paths.len(), 2);
+    }
+
+    #[test]
+    fn scene_clear_resets_all() {
+        let mut scene = Scene::new();
+        scene.push_quad(Quad::default());
+        scene.push_path(Path::default());
+        scene.push_shadow(crate::scene::Shadow::default());
+        scene.push_underline(crate::scene::Underline::default());
+        assert!(!scene.is_empty());
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(scene.quads.len(), 0);
+        assert_eq!(scene.paths.len(), 0);
+        assert_eq!(scene.shadows.len(), 0);
+        assert_eq!(scene.underlines.len(), 0);
+    }
 }

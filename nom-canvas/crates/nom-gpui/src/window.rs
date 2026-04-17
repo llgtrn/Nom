@@ -117,4 +117,47 @@ mod tests {
         // after take it is false again
         assert!(!w.take_frame_pending());
     }
+
+    #[test]
+    fn window_default_options_are_correct() {
+        let opts = WindowOptions::default();
+        assert_eq!(opts.title, "nom-canvas");
+        assert_eq!(opts.size, Vec2::new(1280.0, 800.0));
+        assert!(opts.resizable);
+        assert!(opts.decorations);
+        assert!(!opts.transparent);
+    }
+
+    #[test]
+    fn set_scale_factor_marks_frame_pending() {
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending(); // clear any initial pending state
+        w.set_scale_factor(2.0);
+        assert_eq!(w.scale_factor, 2.0);
+        assert!(w.take_frame_pending());
+    }
+
+    #[test]
+    fn set_cursor_position_updates_stored_position() {
+        let mut w = Window::new(WindowOptions::default());
+        let pos = Vec2::new(42.0, 100.0);
+        w.set_cursor_position(pos);
+        assert_eq!(w.cursor_position, pos);
+    }
+
+    #[test]
+    fn handle_device_lost_sets_frame_pending() {
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending();
+        w.handle_device_lost();
+        assert!(w.take_frame_pending());
+    }
+
+    #[test]
+    fn window_initial_state_is_unfocused_at_origin() {
+        let w = Window::new(WindowOptions::default());
+        assert!(!w.is_focused);
+        assert_eq!(w.cursor_position, Vec2::zero());
+        assert_eq!(w.scale_factor, 1.0);
+    }
 }

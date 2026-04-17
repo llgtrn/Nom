@@ -319,4 +319,41 @@ mod tests {
         assert_eq!(r1.pipeline_count, r2.pipeline_count);
         assert_eq!(r1.frame_count, r2.frame_count);
     }
+
+    #[test]
+    fn hsla_to_rgba_red() {
+        // Pure red: h=0, s=1, l=0.5, a=1 → [1, 0, 0, 1]
+        let rgba = hsla_to_rgba(Hsla { h: 0.0, s: 1.0, l: 0.5, a: 1.0 });
+        assert!((rgba[0] - 1.0).abs() < 1e-5, "red channel should be ~1, got {}", rgba[0]);
+        assert!((rgba[1] - 0.0).abs() < 1e-5, "green channel should be ~0, got {}", rgba[1]);
+        assert!((rgba[2] - 0.0).abs() < 1e-5, "blue channel should be ~0, got {}", rgba[2]);
+        assert!((rgba[3] - 1.0).abs() < 1e-5, "alpha should be 1, got {}", rgba[3]);
+    }
+
+    #[test]
+    fn ortho_projection_identity_check() {
+        // ortho_projection(2, 2): x scale = 2/2 = 1, y scale = -2/2 = -1
+        // translation: (-1, 1).
+        // Point (1, 1) in screen space → NDC (x*scale + tx, y*scale + ty)
+        //   = (1*1 + (-1), 1*(-1) + 1) = (0, 0) — center of NDC space.
+        let m = ortho_projection(2.0, 2.0);
+        let x_scale = m[0][0];
+        let y_scale = m[1][1];
+        let x_trans = m[3][0];
+        let y_trans = m[3][1];
+        assert!((x_scale - 1.0).abs() < 1e-6, "x scale should be 1.0, got {x_scale}");
+        assert!((y_scale - (-1.0)).abs() < 1e-6, "y scale should be -1.0, got {y_scale}");
+        // (1, 1) → NDC (0, 0)
+        let ndc_x = 1.0 * x_scale + x_trans;
+        let ndc_y = 1.0 * y_scale + y_trans;
+        assert!((ndc_x - 0.0).abs() < 1e-6, "NDC x should be 0, got {ndc_x}");
+        assert!((ndc_y - 0.0).abs() < 1e-6, "NDC y should be 0, got {ndc_y}");
+    }
+
+    #[test]
+    fn renderer_new_creates() {
+        let r = Renderer::new();
+        assert_eq!(r.pipeline_count, 8);
+        assert_eq!(r.frame_count, 0);
+    }
 }

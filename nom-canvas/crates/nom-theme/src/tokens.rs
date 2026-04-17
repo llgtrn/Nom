@@ -233,3 +233,143 @@ pub const EDGE_MED: [f32; 4] = [0.957, 0.702, 0.078, 0.7];
 pub const EDGE_LOW: [f32; 4] = [0.937, 0.267, 0.267, 0.5];
 pub const ANIM_DEFAULT_MS: f32 = 300.0;
 pub const ANIM_FAST_MS: f32 = 200.0;
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn token_spacing_values_consistent() {
+        // Each step is a multiple of the 4px base grid.
+        assert_eq!(SPACING_1, 4.0);
+        assert_eq!(SPACING_2, 8.0);
+        assert_eq!(SPACING_3, 12.0);
+        assert_eq!(SPACING_4, 16.0);
+        assert_eq!(SPACING_6, 24.0);
+        assert_eq!(SPACING_8, 32.0);
+        assert_eq!(SPACING_12, 48.0);
+        // Strictly ascending.
+        let spacings = [SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12];
+        for w in spacings.windows(2) {
+            assert!(w[1] > w[0], "spacing scale must be strictly ascending");
+        }
+    }
+
+    #[test]
+    fn token_font_sizes_ordered() {
+        // Caption < code < body < h3 < h2 < h1
+        assert!(FONT_SIZE_CAPTION < FONT_SIZE_CODE);
+        assert!(FONT_SIZE_CODE < FONT_SIZE_BODY);
+        assert!(FONT_SIZE_BODY < FONT_SIZE_H3);
+        assert!(FONT_SIZE_H3 < FONT_SIZE_H2);
+        assert!(FONT_SIZE_H2 < FONT_SIZE_H1);
+    }
+
+    #[test]
+    fn token_colors_are_valid_rgba() {
+        // Every [f32; 4] color constant must have components in [0.0, 1.0].
+        let named_colors: &[(&str, [f32; 4])] = &[
+            ("BG", BG),
+            ("BG2", BG2),
+            ("TEXT", TEXT),
+            ("CTA", CTA),
+            ("BORDER", BORDER),
+            ("FOCUS", FOCUS),
+            ("EDGE_HIGH", EDGE_HIGH),
+            ("EDGE_MED", EDGE_MED),
+            ("EDGE_LOW", EDGE_LOW),
+        ];
+        for (name, c) in named_colors {
+            for (i, component) in c.iter().enumerate() {
+                assert!(
+                    (0.0..=1.0).contains(component),
+                    "{name}[{i}] = {component} out of [0,1]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn theme_token_all_colors_nonzero() {
+        // RGB channels of opaque color constants must have at least one non-zero component.
+        let colors: &[(&str, [f32; 4])] = &[
+            ("BG", BG),
+            ("BG2", BG2),
+            ("TEXT", TEXT),
+            ("CTA", CTA),
+            ("BORDER", BORDER),
+            ("EDGE_HIGH", EDGE_HIGH),
+            ("EDGE_MED", EDGE_MED),
+            ("EDGE_LOW", EDGE_LOW),
+        ];
+        for (name, c) in colors {
+            let sum: f32 = c[0] + c[1] + c[2];
+            assert!(sum > 0.0, "{name} RGB sum must be > 0");
+        }
+    }
+
+    #[test]
+    fn token_icon_size_matches_spec() {
+        // Spec: ICON_SIZE = 24.0 px
+        assert_eq!(ICON_SIZE, 24.0);
+    }
+
+    #[test]
+    fn token_font_constants_match_spec() {
+        // H1 weight 700, H2 weight 600, body weight 400
+        assert_eq!(H1_WEIGHT, 700);
+        assert_eq!(H2_WEIGHT, 600);
+        assert_eq!(BODY_WEIGHT, 400);
+    }
+
+    #[test]
+    fn token_panel_sizes_within_bounds() {
+        assert!(PANEL_LEFT_WIDTH > PANEL_MIN_WIDTH);
+        assert!(PANEL_RIGHT_WIDTH > PANEL_MIN_WIDTH);
+        assert!(PANEL_LEFT_WIDTH < PANEL_MAX_WIDTH);
+        assert!(PANEL_RIGHT_WIDTH <= PANEL_MAX_WIDTH);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_routing() {
+        let high = edge_color_for_confidence(0.9);
+        let expected_high = edge_color_high_confidence();
+        assert!((high.h - expected_high.h).abs() < f32::EPSILON);
+
+        let med = edge_color_for_confidence(0.65);
+        let expected_med = edge_color_medium_confidence();
+        assert!((med.h - expected_med.h).abs() < f32::EPSILON);
+
+        let low = edge_color_for_confidence(0.2);
+        let expected_low = edge_color_low_confidence();
+        assert!((low.h - expected_low.h).abs() < f32::EPSILON);
+
+        // Boundary: exactly 0.8 → high
+        let boundary = edge_color_for_confidence(0.8);
+        assert!((boundary.h - expected_high.h).abs() < f32::EPSILON);
+
+        // Boundary: exactly 0.5 → medium
+        let boundary_med = edge_color_for_confidence(0.5);
+        assert!((boundary_med.h - expected_med.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn shadow_tokens_blur_ordering() {
+        // Larger shadow variants must have greater blur.
+        assert!(SHADOW_MD.blur > SHADOW_SM.blur);
+        assert!(SHADOW_LG.blur > SHADOW_MD.blur);
+        assert!(SHADOW_XL.blur > SHADOW_LG.blur);
+    }
+
+    #[test]
+    fn frosted_glass_alpha_in_range() {
+        assert!((0.0..=1.0).contains(&FROSTED_BG_ALPHA));
+        assert!((0.0..=1.0).contains(&FROSTED_BORDER_ALPHA));
+        assert!(FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
+            "background alpha should dominate border alpha");
+    }
+}

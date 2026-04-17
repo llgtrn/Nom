@@ -43,4 +43,31 @@ mod tests {
         assert_eq!(menu.visible_items().len(), 1);
         assert_eq!(menu.visible_items()[0].label, "summarize");
     }
+    #[test]
+    fn completion_list_creates() {
+        let menu = CompletionMenu::new(vec![make_item("foo"), make_item("bar")], 0);
+        assert_eq!(menu.items.len(), 2);
+        assert_eq!(menu.selected, 0);
+        assert_eq!(menu.trigger_pos, 0);
+    }
+    #[test]
+    fn completion_filter_by_prefix() {
+        let mut menu = CompletionMenu::new(
+            vec![make_item("alpha"), make_item("beta"), make_item("almond")],
+            0,
+        );
+        menu.filter_items("al");
+        let visible = menu.visible_items();
+        assert_eq!(visible.len(), 2);
+        assert!(visible.iter().all(|i| i.label.starts_with("al")));
+    }
+    #[test]
+    fn completion_select_item() {
+        let mut menu = CompletionMenu::new(vec![make_item("a"), make_item("b"), make_item("c")], 0);
+        assert_eq!(menu.selected_item().unwrap().label, "a");
+        menu.select_next();
+        assert_eq!(menu.selected_item().unwrap().label, "b");
+        menu.select_prev();
+        assert_eq!(menu.selected_item().unwrap().label, "a");
+    }
 }

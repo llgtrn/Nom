@@ -191,4 +191,54 @@ mod tests {
         cache.clear();
         assert!(cache.get(99).is_none());
     }
+
+    #[test]
+    fn basic_cache_stores_and_retrieves() {
+        let mut cache = BasicCache::new();
+        cache.put(7, CachedValue::Bytes(vec![0xde, 0xad]));
+        let val = cache.get(7).expect("should retrieve stored value");
+        match val {
+            CachedValue::Bytes(b) => assert_eq!(b, vec![0xde, 0xad]),
+            _ => panic!("wrong variant"),
+        }
+        assert_eq!(cache.len(), 1);
+    }
+
+    #[test]
+    fn lru_cache_evicts_oldest() {
+        let mut cache = LruCache::new(2);
+        cache.put(10, CachedValue::String("first".into()));
+        cache.put(20, CachedValue::String("second".into()));
+        // Adding a third entry must evict key 10 (oldest).
+        cache.put(30, CachedValue::String("third".into()));
+        assert!(cache.get(10).is_none(), "oldest entry should be evicted");
+        assert!(cache.get(20).is_some());
+        assert!(cache.get(30).is_some());
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn ram_pressure_cache_creates() {
+        let cache = RamPressureCache::new(8);
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn hierarchical_cache_l1_hit() {
+        // Items stored via put() land in both L1 and L2.
+        // A get() should find them via L1 (checked first).
+        let mut cache = HierarchicalCache::new(4, 100);
+        cache.put(42, CachedValue::Json(r#"{"x":1}"#.into()));
+        // L1 hit
+        assert!(cache.l1.get(42).is_some(), "L1 should hold the value");
+        // L2 also holds it
+        assert!(cache.l2.get(42).is_some(), "L2 should hold the value");
+        // Top-level get returns something
+        let result = cache.get(42);
+        assert!(result.is_some());
+        match result.unwrap() {
+            CachedValue::Json(s) => assert_eq!(s, r#"{"x":1}"#),
+            _ => panic!("wrong variant"),
+        }
+    }
 }

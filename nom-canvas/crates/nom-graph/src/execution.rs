@@ -123,4 +123,52 @@ mod tests {
         assert_eq!(plan[0], "root");
         assert_eq!(plan[1], "child");
     }
+
+    #[test]
+    fn execution_engine_runs_single_node() {
+        let engine = ExecutionEngine::new(BasicCache::new());
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo", "verb"));
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert_eq!(plan, vec!["solo"]);
+    }
+
+    #[test]
+    fn execution_engine_propagates_output_hash() {
+        // Two-node chain: root -> leaf. Both start with empty cache so both run.
+        // After planning, the output hash for "root" feeds into "leaf"'s input hash,
+        // meaning the leaf's cache key is derived from root's output — not zero.
+        let engine = ExecutionEngine::new(BasicCache::new());
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("leaf", "noun"));
+        dag.add_edge("root", "out", "leaf", "in");
+        let plan = engine.plan_execution(&dag).unwrap();
+        // Both nodes should be scheduled when cache is empty.
+        assert_eq!(plan.len(), 2);
+        // Order must be root before leaf.
+        assert_eq!(plan[0], "root");
+        assert_eq!(plan[1], "leaf");
+        // The cache key for leaf should differ from a standalone leaf (non-zero input hash).
+        let standalone_key = ExecutionEngine::compute_cache_key("noun", 0);
+        let root_key = ExecutionEngine::compute_cache_key("verb", 0);
+        let chained_key = ExecutionEngine::compute_cache_key("noun", root_key.rotate_left(17));
+        assert_ne!(standalone_key, chained_key);
+    }
+
+    #[test]
+    fn execution_engine_skips_unchanged_nodes() {
+        use crate::cache::CachedValue;
+        let mut cache = BasicCache::new();
+        // Pre-populate the cache for node "stable" with HashInput policy (default).
+        // input_hash for a standalone node (no upstream edges) is 0.
+        let key = ExecutionEngine::compute_cache_key("verb", 0);
+        cache.put(key, CachedValue::String("cached".into()));
+
+        let engine = ExecutionEngine::new(cache);
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("stable", "verb")); // HashInput, cache hit → skip
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert!(plan.is_empty(), "node with warm cache should be skipped");
+    }
 }

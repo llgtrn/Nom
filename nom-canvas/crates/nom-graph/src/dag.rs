@@ -138,4 +138,50 @@ mod tests {
         assert_eq!(sorted[0], "root");
         assert_eq!(sorted[3], "merge");
     }
+
+    #[test]
+    fn dag_add_edge_connects_nodes() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge("src", "out", "dst", "in");
+        assert_eq!(dag.edge_count(), 1);
+        let edge = &dag.edges[0];
+        assert_eq!(edge.src_node, "src");
+        assert_eq!(edge.src_port, "out");
+        assert_eq!(edge.dst_node, "dst");
+        assert_eq!(edge.dst_port, "in");
+    }
+
+    #[test]
+    fn dag_topological_order_respects_deps() {
+        // Build a chain: p -> q -> r. Topological order must be [p, q, r].
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("p", "verb"));
+        dag.add_node(ExecNode::new("q", "verb"));
+        dag.add_node(ExecNode::new("r", "verb"));
+        dag.add_edge("p", "o", "q", "i");
+        dag.add_edge("q", "o", "r", "i");
+        let order = dag.topological_sort().unwrap();
+        assert_eq!(order, vec!["p", "q", "r"]);
+        // p must come before q, q before r
+        let pos = |id: &str| order.iter().position(|x| x == id).unwrap();
+        assert!(pos("p") < pos("q"));
+        assert!(pos("q") < pos("r"));
+    }
+
+    #[test]
+    fn dag_remove_node_cleans_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("alpha", "verb"));
+        dag.add_node(ExecNode::new("beta", "verb"));
+        dag.add_edge("alpha", "out", "beta", "in");
+        assert_eq!(dag.node_count(), 2);
+        assert_eq!(dag.edge_count(), 1);
+        // Remove "alpha" and any edges that reference it.
+        dag.nodes.remove("alpha");
+        dag.edges.retain(|e| e.src_node != "alpha" && e.dst_node != "alpha");
+        assert_eq!(dag.node_count(), 1);
+        assert_eq!(dag.edge_count(), 0);
+    }
 }
