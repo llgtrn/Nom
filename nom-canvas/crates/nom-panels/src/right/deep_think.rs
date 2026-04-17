@@ -1,7 +1,44 @@
 #![deny(unsafe_code)]
-use crate::dock::{fill_quad, DockPosition, Panel};
-use nom_gpui::scene::Scene;
+use crate::dock::{fill_quad, rgba_to_hsla, DockPosition, Panel};
+use nom_compose::deep_think::DeepThinkStep;
+use nom_gpui::scene::{Quad, Scene};
+use nom_gpui::types::{Bounds, ContentMask, Corners, Edges, Pixels, Point, Size};
+use nom_intent::classify_with_react;
 use nom_theme::tokens;
+
+/// Lightweight view-model card produced by consuming a `DeepThinkStep` stream.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ThinkCard {
+    pub hypothesis: String,
+    pub confidence: f32,
+    pub step_num: usize,
+}
+
+/// Translate a slice of `DeepThinkStep`s into `ThinkCard`s.
+///
+/// If a step has no prior evidence the confidence field from the step is used
+/// directly; otherwise `classify_with_react` is called with the step's
+/// hypothesis and its evidence slice to (re)compute confidence so the panel
+/// always reflects the ReAct-derived score.
+pub fn consume_stream(events: Vec<DeepThinkStep>) -> Vec<ThinkCard> {
+    events
+        .into_iter()
+        .enumerate()
+        .map(|(step_num, step)| {
+            let confidence = if step.evidence.is_empty() {
+                step.confidence
+            } else {
+                let ev_refs: Vec<&str> = step.evidence.iter().map(|s| s.as_str()).collect();
+                classify_with_react(&step.hypothesis, &ev_refs)
+            };
+            ThinkCard {
+                hypothesis: step.hypothesis,
+                confidence: confidence.clamp(0.0, 1.0),
+                step_num,
+            }
+        })
+        .collect()
+}
 
 #[derive(Debug, Clone)]
 pub struct ThinkingStep {
@@ -31,13 +68,14 @@ pub enum ThinkState { Idle, Streaming, Complete, Interrupted(String) }
 
 pub struct DeepThinkPanel {
     pub steps: Vec<ThinkingStep>,
+    pub cards: Vec<ThinkCard>,
     pub state: ThinkState,
     pub intent: String,
 }
 
 impl DeepThinkPanel {
     pub fn new() -> Self {
-        Self { steps: vec![], state: ThinkState::Idle, intent: String::new() }
+        Self { steps: vec![], cards: vec![], state: ThinkState::Idle, intent: String::new() }
     }
 
     pub fn begin(&mut self, intent: impl Into<String>) {
@@ -57,6 +95,23 @@ impl DeepThinkPanel {
         self.steps.iter().filter(|s| s.confidence >= 0.8).collect()
     }
 
+    /// Consume a stream of `DeepThinkStep`s, translating each into a `ThinkCard`
+    /// and appending to `self.cards`.
+    pub fn ingest_events(&mut self, events: Vec<DeepThinkStep>) {
+        let mut new_cards = consume_stream(events);
+        // Re-number so step_num is relative to total cards already stored.
+        let offset = self.cards.len();
+        for card in &mut new_cards {
+            card.step_num += offset;
+        }
+        self.cards.extend(new_cards);
+    }
+
+    /// Returns the number of cards currently held by this panel.
+    pub fn card_count(&self) -> usize {
+        self.cards.len()
+    }
+
     pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
         // Panel background.
         scene.push_quad(fill_quad(0.0, 0.0, width, height, tokens::BG));
@@ -66,6 +121,28 @@ impl DeepThinkPanel {
             let is_active = i + 1 == total;
             let color = if is_active { tokens::FOCUS } else { tokens::BG2 };
             scene.push_quad(fill_quad(0.0, y, width, 22.0, color));
+        }
+        // One Quad per ThinkCard — stacked vertically with EDGE_MED border.
+        let card_h = 40.0;
+        let card_margin = 4.0;
+        for (i, _card) in self.cards.iter().enumerate() {
+            let y = i as f32 * (card_h + card_margin) + 4.0;
+            scene.push_quad(Quad {
+                bounds: Bounds {
+                    origin: Point { x: Pixels(4.0), y: Pixels(y) },
+                    size: Size { width: Pixels(width - 8.0), height: Pixels(card_h) },
+                },
+                background: Some(rgba_to_hsla(tokens::BG)),
+                border_color: Some(rgba_to_hsla(tokens::EDGE_MED)),
+                border_widths: Edges {
+                    left: Pixels(1.0),
+                    right: Pixels(1.0),
+                    top: Pixels(1.0),
+                    bottom: Pixels(1.0),
+                },
+                corner_radii: Corners::default(),
+                content_mask: ContentMask { bounds: Bounds::default() },
+            });
         }
         // Progress indicator quad at bottom.
         let fraction = if total == 0 { 0.0 } else {
@@ -92,6 +169,66 @@ impl Panel for DeepThinkPanel {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nom_compose::deep_think::DeepThinkStep;
+
+    fn make_step(hypothesis: &str, confidence: f32, evidence: Vec<String>) -> DeepThinkStep {
+        DeepThinkStep {
+            hypothesis: hypothesis.to_string(),
+            evidence,
+            confidence,
+            counterevidence: vec![],
+            refined_from: None,
+        }
+    }
+
+    #[test]
+    fn deep_think_panel_ingest_events_populates_cards() {
+        let mut panel = DeepThinkPanel::new();
+        let events = vec![
+            make_step("hypothesis_0: think deeper", 0.5, vec![]),
+            make_step("hypothesis_1: refine answer", 0.7, vec!["obs_a".to_string()]),
+        ];
+        panel.ingest_events(events);
+        assert_eq!(panel.cards.len(), 2);
+        assert_eq!(panel.cards[0].step_num, 0);
+        assert_eq!(panel.cards[1].step_num, 1);
+        assert!(panel.cards[0].hypothesis.contains("hypothesis_0"));
+        assert!(panel.cards[1].hypothesis.contains("hypothesis_1"));
+    }
+
+    #[test]
+    fn deep_think_panel_card_count() {
+        let mut panel = DeepThinkPanel::new();
+        assert_eq!(panel.card_count(), 0);
+        panel.ingest_events(vec![
+            make_step("h0", 0.5, vec![]),
+            make_step("h1", 0.6, vec![]),
+            make_step("h2", 0.7, vec![]),
+        ]);
+        assert_eq!(panel.card_count(), 3);
+        // Ingest more — offset numbering is cumulative.
+        panel.ingest_events(vec![make_step("h3", 0.8, vec![])]);
+        assert_eq!(panel.card_count(), 4);
+        assert_eq!(panel.cards[3].step_num, 3);
+    }
+
+    #[test]
+    fn deep_think_panel_paint_scene_emits_quads_per_card() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![
+            make_step("card_0", 0.5, vec![]),
+            make_step("card_1", 0.7, vec!["ev".to_string()]),
+            make_step("card_2", 0.9, vec![]),
+        ]);
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 600.0, &mut scene);
+        // Expected quads: 1 bg + 0 steps (steps is empty) + 3 card quads + 1 progress = 5.
+        assert_eq!(scene.quads.len(), 5);
+        // The card quads (indices 1..=3) should all have a border color set.
+        for quad in &scene.quads[1..=3] {
+            assert!(quad.border_color.is_some(), "card quad must have a border color");
+        }
+    }
 
     #[test]
     fn thinking_step_confidence_label() {
@@ -123,7 +260,7 @@ mod tests {
         panel.complete();
         let mut scene = Scene::new();
         panel.paint_scene(320.0, 400.0, &mut scene);
-        // bg + 2 step rows + progress = 4 quads.
+        // bg + 2 step rows + 0 card quads (no cards ingested) + progress = 4 quads.
         assert_eq!(scene.quads.len(), 4);
     }
 }

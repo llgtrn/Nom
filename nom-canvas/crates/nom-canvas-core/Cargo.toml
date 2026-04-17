@@ -7,3 +7,4 @@ edition = "2021"
 rstar = { workspace = true }
 bytemuck = { workspace = true }
 nom-gpui = { path = "../nom-gpui" }
+nom-theme = { path = "../nom-theme" }

@@ -6,8 +6,8 @@ pub mod right;
 pub mod shell;
 pub mod bottom;
 
-pub use dock::{Dock, DockPosition, Panel, PanelEntry, PanelSizeState, rgba_to_hsla, fill_quad};
-pub use left::{FileTreePanel, QuickSearchPanel, FileNode, FileNodeKind, SearchResult, SearchResultKind};
+pub use dock::{Dock, DockPosition, Panel, PanelEntry, PanelSizeState, rgba_to_hsla, fill_quad, focus_ring_quad};
+pub use left::{FileTreePanel, QuickSearchPanel, FileNode, FileNodeKind, SearchResult, SearchResultKind, NodePalette, PaletteEntry};
 pub use pane::{Pane, PaneAxis, PaneGroup, PaneTab, Member, SplitDirection};
 pub use right::{ChatSidebarPanel, ChatMessage, ChatRole, ToolCard, DeepThinkPanel, ThinkingStep};
 pub use shell::{Shell, ShellLayout, ShellMode};

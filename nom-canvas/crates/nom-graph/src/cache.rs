@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use std::collections::HashMap;
+use std::sync::Mutex;
 use crate::node::NodeId;
 
 /// ComfyUI 4-tier cache hierarchy
@@ -49,26 +50,32 @@ impl ExecutionCache for BasicCache {
 pub struct LruCache {
     capacity: usize,
     data: HashMap<u64, CachedValue>,
-    order: Vec<u64>, // front = LRU (oldest), back = MRU (newest)
+    order: Mutex<Vec<u64>>, // front = LRU (oldest), back = MRU (newest); Mutex allows get(&self) to update recency
 }
 
 impl LruCache {
     pub fn new(capacity: usize) -> Self {
-        Self { capacity, data: HashMap::new(), order: Vec::new() }
+        Self { capacity, data: HashMap::new(), order: Mutex::new(Vec::new()) }
     }
-    fn touch(&mut self, key: u64) {
-        self.order.retain(|k| *k != key);
-        self.order.push(key);
+    fn touch(&self, key: u64) {
+        let mut order = self.order.lock().unwrap();
+        order.retain(|k| *k != key);
+        order.push(key);
     }
 }
 
 impl ExecutionCache for LruCache {
-    fn get(&self, key: u64) -> Option<CachedValue> { self.data.get(&key).cloned() }
+    fn get(&self, key: u64) -> Option<CachedValue> {
+        let value = self.data.get(&key).cloned();
+        if value.is_some() { self.touch(key); }
+        value
+    }
     fn put(&mut self, key: u64, value: CachedValue) {
         if self.data.len() >= self.capacity && !self.data.contains_key(&key) {
-            if let Some(lru_key) = self.order.first().cloned() {
-                self.order.remove(0);
-                self.data.remove(&lru_key);
+            let lru_key = self.order.lock().unwrap().first().cloned();
+            if let Some(k) = lru_key {
+                self.order.lock().unwrap().remove(0);
+                self.data.remove(&k);
             }
         }
         self.data.insert(key, value);
@@ -76,9 +83,9 @@ impl ExecutionCache for LruCache {
     }
     fn invalidate(&mut self, key: u64) {
         self.data.remove(&key);
-        self.order.retain(|k| *k != key);
+        self.order.lock().unwrap().retain(|k| *k != key);
     }
-    fn clear(&mut self) { self.data.clear(); self.order.clear(); }
+    fn clear(&mut self) { self.data.clear(); self.order.lock().unwrap().clear(); }
     fn len(&self) -> usize { self.data.len() }
 }
 
@@ -157,7 +164,7 @@ impl ExecutionCache for HierarchicalCache {
         self.l2.invalidate(key);
     }
     fn clear(&mut self) { self.l1.clear(); self.l2.clear(); }
-    fn len(&self) -> usize { self.l1.len() }
+    fn len(&self) -> usize { self.l1.len() + self.l2.len() }
 }
 
 /// 4-tier cache strategy — ComfyUI execution model pattern.
@@ -404,6 +411,23 @@ mod tests {
     }
 
     #[test]
+    fn lru_cache_get_updates_recency() {
+        // capacity=2: put 1, put 2 → order=[1,2] (1 is LRU)
+        // get(1) must move 1 to MRU → order=[2,1]
+        // put(3) must evict 2 (now LRU), not 1
+        let mut cache = LruCache::new(2);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        // touch key 1 via get — it should become MRU
+        assert!(cache.get(1).is_some());
+        // inserting key 3 must evict key 2 (LRU after get(1)), not key 1
+        cache.put(3, CachedValue::String("c".into()));
+        assert!(cache.get(1).is_some(), "key 1 should survive (was touched by get)");
+        assert!(cache.get(2).is_none(), "key 2 should have been evicted (LRU after get(1))");
+        assert!(cache.get(3).is_some());
+    }
+
+    #[test]
     fn hierarchical_cache_l1_preferred_over_l2() {
         // Both L1 and L2 hold key 5, but with different values.
         // A direct get() should return the L1 value (checked first).
@@ -416,5 +440,15 @@ mod tests {
             CachedValue::String(s) => assert_eq!(s, "from-l1", "L1 value should be preferred"),
             _ => panic!("wrong variant"),
         }
+    }
+
+    #[test]
+    fn hierarchical_cache_len_includes_both_tiers() {
+        // put() inserts into both L1 and L2, so len() should count both.
+        let mut cache = HierarchicalCache::new(10, 100);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        // L1 has 2, L2 has 2 → total len = 4.
+        assert_eq!(cache.len(), 4, "len() must sum L1 and L2 counts");
     }
 }

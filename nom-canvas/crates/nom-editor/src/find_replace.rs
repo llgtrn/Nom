@@ -1,26 +1,28 @@
 #![deny(unsafe_code)]
 use std::ops::Range;
+use regex::Regex;
 
 pub struct FindState { pub query: String, pub case_sensitive: bool, pub whole_word: bool, pub use_regex: bool, pub matches: Vec<Range<usize>>, pub current_match: usize }
 impl FindState {
     pub fn new() -> Self { Self { query: String::new(), case_sensitive: false, whole_word: false, use_regex: false, matches: Vec::new(), current_match: 0 } }
 
-    /// Perform a "regex" search: currently uses substring containment as a simple
-    /// stand-in (a real regex engine would need an external dep).
+    /// Perform a real regex search using the `regex` crate.
+    ///
+    /// Compiles `self.query` as a `Regex` (honouring `case_sensitive`) and
+    /// returns the byte-offset start of every match.  Returns an empty Vec
+    /// if the query is empty or the pattern fails to compile.
     pub fn find_regex(&self, text: &str) -> Vec<usize> {
         if self.query.is_empty() { return Vec::new(); }
-        let (search_text, search_query) = if self.case_sensitive {
-            (text.to_string(), self.query.clone())
+        let pattern = if self.case_sensitive {
+            self.query.clone()
         } else {
-            (text.to_lowercase(), self.query.to_lowercase())
+            format!("(?i){}", self.query)
         };
-        let mut positions = Vec::new();
-        let mut start = 0;
-        while let Some(pos) = search_text[start..].find(&search_query) {
-            positions.push(start + pos);
-            start = start + pos + 1;
-        }
-        positions
+        let re = match Regex::new(&pattern) {
+            Ok(r) => r,
+            Err(_) => return Vec::new(),
+        };
+        re.find_iter(text).map(|m| m.start()).collect()
     }
 
     fn is_word_boundary(text: &str, pos: usize, len: usize) -> bool {
@@ -45,9 +47,16 @@ impl FindState {
         if self.query.is_empty() { return; }
 
         if self.use_regex {
-            let positions = self.find_regex(text);
-            for pos in positions {
-                self.matches.push(pos..pos + self.query.len());
+            if self.query.is_empty() { return; }
+            let pattern = if self.case_sensitive {
+                self.query.clone()
+            } else {
+                format!("(?i){}", self.query)
+            };
+            if let Ok(re) = Regex::new(&pattern) {
+                for m in re.find_iter(text) {
+                    self.matches.push(m.start()..m.end());
+                }
             }
             return;
         }
@@ -173,5 +182,29 @@ mod tests {
         let state = FindState { query: "ab".to_string(), case_sensitive: true, ..FindState::new() };
         let positions = state.find_regex("xabyzab");
         assert_eq!(positions, vec![1, 5]);
+    }
+
+    #[test]
+    fn find_replace_regex_matches_pattern() {
+        let mut state = FindState::new();
+        // Pattern matches one or more digits.
+        state.query = r"\d+".to_string();
+        state.use_regex = true;
+        state.find_in_text("abc 123 def 45 ghi");
+        // "abc " = bytes 0-3, "123" = bytes 4-6, " def " = bytes 7-11, "45" = bytes 12-13
+        assert_eq!(state.matches.len(), 2);
+        assert_eq!(state.matches[0], 4..7);
+        assert_eq!(state.matches[1], 12..14);
+    }
+
+    #[test]
+    fn find_replace_regex_invalid_pattern_returns_empty() {
+        let mut state = FindState::new();
+        // Unclosed bracket is an invalid regex pattern.
+        state.query = "[unclosed".to_string();
+        state.use_regex = true;
+        state.find_in_text("some text [unclosed here");
+        // Must return empty matches rather than panicking or erroring.
+        assert!(state.matches.is_empty());
     }
 }

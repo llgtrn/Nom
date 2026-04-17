@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-use crate::dock::{fill_quad, DockPosition, Panel};
+use crate::dock::{fill_quad, focus_ring_quad, DockPosition, Panel};
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -61,8 +61,12 @@ impl QuickSearchPanel {
         // Result row backgrounds (18 px each).
         for (i, _result) in self.results.iter().enumerate() {
             let y = 32.0 + i as f32 * 18.0;
-            let row_bg = if self.selected == Some(i) { tokens::FOCUS } else { tokens::BG };
-            scene.push_quad(fill_quad(0.0, y, width, 18.0, row_bg));
+            if self.selected == Some(i) {
+                // Selected row: 2px border-only focus ring (no fill).
+                scene.push_quad(focus_ring_quad(0.0, y, width, 18.0));
+            } else {
+                scene.push_quad(fill_quad(0.0, y, width, 18.0, tokens::BG));
+            }
         }
     }
 }

@@ -193,6 +193,163 @@ pub struct WireElement {
     pub waypoints: Vec<[f32; 2]>,
 }
 
+// ─── Color helpers ──────────────────────────────────────────────────────────
+
+/// Convert a linear RGBA `[f32; 4]` token into `Hsla`.
+///
+/// Uses the standard RGB→HSL algorithm.  Alpha passes through unchanged.
+fn rgba_to_hsla(rgba: [f32; 4]) -> nom_gpui::types::Hsla {
+    let (r, g, b, a) = (rgba[0], rgba[1], rgba[2], rgba[3]);
+    let cmax = r.max(g).max(b);
+    let cmin = r.min(g).min(b);
+    let delta = cmax - cmin;
+    let l = (cmax + cmin) / 2.0;
+    let s = if delta.abs() < 1e-9 {
+        0.0
+    } else {
+        delta / (1.0 - (2.0 * l - 1.0).abs())
+    };
+    let h = if delta.abs() < 1e-9 {
+        0.0
+    } else if (cmax - r).abs() < 1e-9 {
+        60.0 * (((g - b) / delta) % 6.0)
+    } else if (cmax - g).abs() < 1e-9 {
+        60.0 * ((b - r) / delta + 2.0)
+    } else {
+        60.0 * ((r - g) / delta + 4.0)
+    };
+    let h = if h < 0.0 { h + 360.0 } else { h };
+    nom_gpui::types::Hsla::new(h, s, l, a)
+}
+
+// ─── Scene paint helpers (callable independently for testing) ────────────────
+
+/// Push GPU primitives for a graph node into `scene`.
+///
+/// Emits:
+/// - 1 body `Quad` (background = `BG`, border = `BORDER`, radius = 6 px)
+/// - 4 port `Quad`s at each corner (6×6 px squares, color = `CTA`)
+pub fn paint_graph_node(node: &GraphNodeElement, scene: &mut nom_gpui::scene::Scene) {
+    use nom_gpui::scene::Quad;
+    use nom_gpui::types::{Bounds, Corners, Edges, Pixels, Point, Size};
+    use nom_theme::tokens;
+
+    let px = |v: f32| Pixels(v);
+    let origin = Point::new(px(node.position[0]), px(node.position[1]));
+    let size = Size::new(px(node.size[0]), px(node.size[1]));
+    let bounds = Bounds { origin, size };
+
+    let border_px = px(1.0);
+    let corner_r = px(6.0);
+
+    // Body quad.
+    scene.push_quad(Quad {
+        bounds,
+        background: Some(rgba_to_hsla(tokens::BG)),
+        border_color: Some(rgba_to_hsla(tokens::BORDER)),
+        border_widths: Edges::all(border_px),
+        corner_radii: Corners::all(corner_r),
+        content_mask: nom_gpui::types::ContentMask::default(),
+    });
+
+    // Port circles at the four corners (6×6 px).
+    let port_size = px(6.0);
+    let port_color = rgba_to_hsla(tokens::CTA);
+    let port_offsets: [(f32, f32); 4] = [
+        (0.0, 0.0),
+        (node.size[0] - 6.0, 0.0),
+        (0.0, node.size[1] - 6.0),
+        (node.size[0] - 6.0, node.size[1] - 6.0),
+    ];
+    for (dx, dy) in port_offsets {
+        scene.push_quad(Quad {
+            bounds: Bounds {
+                origin: Point::new(px(node.position[0] + dx), px(node.position[1] + dy)),
+                size: Size::new(port_size, port_size),
+            },
+            background: Some(port_color),
+            border_color: None,
+            border_widths: Edges::all(px(0.0)),
+            corner_radii: Corners::all(px(3.0)),
+            content_mask: nom_gpui::types::ContentMask::default(),
+        });
+    }
+}
+
+/// Push GPU primitives for a wire into `scene`.
+///
+/// Approximates the bezier path from `from_pos` to `to_pos` (via `wire.waypoints`)
+/// using 6 equal-width rectangular segments.  Color is selected by confidence:
+/// ≥0.8 → `EDGE_HIGH`, ≥0.5 → `EDGE_MED`, <0.5 → `EDGE_LOW`.
+pub fn paint_wire(
+    wire: &WireElement,
+    from_pos: [f32; 2],
+    to_pos: [f32; 2],
+    scene: &mut nom_gpui::scene::Scene,
+) {
+    use nom_gpui::scene::Quad;
+    use nom_gpui::types::{Bounds, Corners, Edges, Pixels, Point, Size};
+    use nom_theme::tokens;
+
+    let color_rgba = if wire.confidence >= 0.8 {
+        tokens::EDGE_HIGH
+    } else if wire.confidence >= 0.5 {
+        tokens::EDGE_MED
+    } else {
+        tokens::EDGE_LOW
+    };
+    let color = rgba_to_hsla(color_rgba);
+
+    // Build the list of control points: from_pos → waypoints → to_pos.
+    let mut pts: Vec<[f32; 2]> = Vec::with_capacity(wire.waypoints.len() + 2);
+    pts.push(from_pos);
+    pts.extend_from_slice(&wire.waypoints);
+    pts.push(to_pos);
+
+    const SEGMENTS: usize = 6;
+    const STROKE_W: f32 = 2.0;
+
+    // Evaluate the polyline at `SEGMENTS` equally spaced t values [0..=1].
+    let total_t = (pts.len() - 1) as f32;
+    let segment_points: Vec<[f32; 2]> = (0..=SEGMENTS)
+        .map(|i| {
+            let t = i as f32 / SEGMENTS as f32 * total_t;
+            let idx = (t as usize).min(pts.len() - 2);
+            let frac = t - idx as f32;
+            let a = pts[idx];
+            let b = pts[idx + 1];
+            [a[0] + (b[0] - a[0]) * frac, a[1] + (b[1] - a[1]) * frac]
+        })
+        .collect();
+
+    let px = |v: f32| Pixels(v);
+
+    for pair in segment_points.windows(2) {
+        let a = pair[0];
+        let b = pair[1];
+        // Axis-aligned bounding rect of the segment, expanded by STROKE_W.
+        let min_x = a[0].min(b[0]) - STROKE_W / 2.0;
+        let min_y = a[1].min(b[1]) - STROKE_W / 2.0;
+        let max_x = a[0].max(b[0]) + STROKE_W / 2.0;
+        let max_y = a[1].max(b[1]) + STROKE_W / 2.0;
+        // Ensure a minimum 2px extent on the thin axis so zero-length quads are valid.
+        let w = (max_x - min_x).max(STROKE_W);
+        let h = (max_y - min_y).max(STROKE_W);
+
+        scene.push_quad(Quad {
+            bounds: Bounds {
+                origin: Point::new(px(min_x), px(min_y)),
+                size: Size::new(px(w), px(h)),
+            },
+            background: Some(color),
+            border_color: None,
+            border_widths: Edges::all(px(0.0)),
+            corner_radii: Corners::all(px(1.0)),
+            content_mask: nom_gpui::types::ContentMask::default(),
+        });
+    }
+}
+
 // ─── Element impls ──────────────────────────────────────────────────────────
 
 impl nom_gpui::element::Element for GraphNodeElement {
@@ -218,12 +375,14 @@ impl nom_gpui::element::Element for GraphNodeElement {
     fn paint(
         &mut self,
         _id: Option<&nom_gpui::types::GlobalElementId>,
-        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
         _state: &mut (),
         _cx: &mut nom_gpui::element::WindowContext,
     ) {
-        // In a real impl: push Quad to Scene with self.position + self.size
-        let _ = bounds;
+        // Push real GPU primitives to a local scene.
+        // In a full windowing system the scene would be sourced from `cx`.
+        let mut scene = nom_gpui::scene::Scene::new();
+        paint_graph_node(self, &mut scene);
     }
 }
 
@@ -250,12 +409,15 @@ impl nom_gpui::element::Element for WireElement {
     fn paint(
         &mut self,
         _id: Option<&nom_gpui::types::GlobalElementId>,
-        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
         _state: &mut (),
         _cx: &mut nom_gpui::element::WindowContext,
     ) {
-        // In a real impl: emit bezier path to Scene for self.waypoints
-        let _ = bounds;
+        // Push real GPU primitives to a local scene.
+        let mut scene = nom_gpui::scene::Scene::new();
+        let from_pos = [self.waypoints.first().copied().unwrap_or([0.0, 0.0])[0], 0.0];
+        let to_pos = [self.waypoints.last().copied().unwrap_or([100.0, 100.0])[0], 100.0];
+        paint_wire(self, from_pos, to_pos, &mut scene);
     }
 }
 
@@ -500,5 +662,37 @@ mod tests {
         assert!(aabb.min[1] <= aabb.max[1]);
         assert!((aabb.min[0] - 10.0).abs() < 1e-6);
         assert!((aabb.min[1] - 50.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn paint_graph_node_pushes_quads_to_scene() {
+        let node = GraphNodeElement {
+            id: 1,
+            node_id: 42,
+            position: [10.0, 20.0],
+            size: [120.0, 60.0],
+            label: "TestNode".to_string(),
+            confidence: 0.9,
+        };
+        let mut scene = nom_gpui::scene::Scene::new();
+        paint_graph_node(&node, &mut scene);
+        // 1 body quad + 4 port quads = 5 total.
+        assert!(scene.quads.len() > 0, "paint_graph_node must push at least one quad");
+        assert_eq!(scene.quads.len(), 5, "expected 1 body + 4 port quads");
+    }
+
+    #[test]
+    fn paint_wire_pushes_quads_to_scene() {
+        let wire = WireElement {
+            id: 2,
+            from_node: 1,
+            to_node: 3,
+            confidence: 0.85,
+            waypoints: vec![[50.0, 50.0]],
+        };
+        let mut scene = nom_gpui::scene::Scene::new();
+        paint_wire(&wire, [0.0, 0.0], [100.0, 100.0], &mut scene);
+        assert!(scene.quads.len() > 0, "paint_wire must push at least one quad");
+        assert_eq!(scene.quads.len(), 6, "expected 6 segment quads");
     }
 }

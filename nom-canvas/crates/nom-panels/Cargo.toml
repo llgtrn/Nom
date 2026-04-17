@@ -7,3 +7,5 @@ edition = "2021"
 nom-gpui = { path = "../nom-gpui" }
 nom-theme = { path = "../nom-theme" }
 nom-blocks = { path = "../nom-blocks" }
+nom-compose = { path = "../nom-compose" }
+nom-intent = { path = "../nom-intent" }

@@ -68,6 +68,22 @@ pub struct Underline {
     pub content_mask: ContentMask<Pixels>,
 }
 
+/// Frosted-glass surface — a blurred, semi-transparent panel region.
+///
+/// Carries the three frosted-glass token values from `nom_theme::tokens`:
+/// `FROSTED_BLUR_RADIUS`, `FROSTED_BG_ALPHA`, `FROSTED_BORDER_ALPHA`.
+/// The GPU back-end is expected to execute a Gaussian-blur pre-pass over the
+/// framebuffer region described by `bounds` with the given `blur_radius`
+/// before compositing the background at `bg_alpha` opacity and the border
+/// at `border_alpha` opacity.
+#[derive(Debug, Clone, Default)]
+pub struct FrostedRect {
+    pub bounds: Bounds<Pixels>,
+    pub blur_radius: f32,
+    pub bg_alpha: f32,
+    pub border_alpha: f32,
+}
+
 // ---------------------------------------------------------------------------
 // Scene — accumulated primitives for one frame
 // ---------------------------------------------------------------------------
@@ -82,6 +98,7 @@ pub struct Scene {
     pub paths: Vec<Path>,
     pub shadows: Vec<Shadow>,
     pub underlines: Vec<Underline>,
+    pub frosted_rects: Vec<FrostedRect>,
 }
 
 impl Scene {
@@ -112,6 +129,8 @@ impl Scene {
 
     pub fn push_underline(&mut self, u: Underline) { self.underlines.push(u); }
 
+    pub fn push_frosted_rect(&mut self, r: FrostedRect) { self.frosted_rects.push(r); }
+
     pub fn clear(&mut self) {
         self.quads.clear();
         self.monochrome_sprites.clear();
@@ -119,6 +138,7 @@ impl Scene {
         self.paths.clear();
         self.shadows.clear();
         self.underlines.clear();
+        self.frosted_rects.clear();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -128,6 +148,7 @@ impl Scene {
             && self.paths.is_empty()
             && self.shadows.is_empty()
             && self.underlines.is_empty()
+            && self.frosted_rects.is_empty()
     }
 }
 

@@ -45,7 +45,7 @@ impl TaskQueue {
     }
 
     pub fn complete(&mut self, id: u64) -> bool {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id) {
+        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id && t.state == TaskState::Running) {
             t.state = TaskState::Completed; t.progress_pct = 100; true
         } else { false }
     }
@@ -97,5 +97,19 @@ mod tests {
         let a = q.enqueue(BackendKind::Video, "a");
         let b = q.enqueue(BackendKind::Audio, "b");
         assert_eq!(b, a + 1);
+    }
+    #[test]
+    fn task_queue_complete_only_from_running_state() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "input");
+        // complete() on a Pending task must fail — guard required
+        assert!(!q.complete(id), "complete() must return false when task is not Running");
+        assert_eq!(q.get(id).unwrap().state, TaskState::Pending);
+        q.start(id);
+        // now Running — complete() must succeed
+        assert!(q.complete(id));
+        assert_eq!(q.get(id).unwrap().state, TaskState::Completed);
+        // already Completed — second complete() must fail
+        assert!(!q.complete(id), "complete() must return false on already-Completed task");
     }
 }

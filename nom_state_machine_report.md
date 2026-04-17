@@ -1,17 +1,18 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `d6219b1` | **Tests:** 523 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `e61a93c` | **Tests:** 537 | **Workspace:** clean
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
-- [x] 523 tests passing across workspace
+- [x] 537 tests passing across workspace
 - [x] All 4 Wave K CRITICALs closed (U1 paint_scene + W1 real ReAct + COL1 RGA + INT1 imports)
 - [x] All 4 Wave L MEDIUMs claimed closed (deep_think config + W3C + RRF + impl Element)
 - [x] Wave M infra landed (sealed + 3-tier + 4-tier cache + dispatch/plan/task_queue)
 - [x] Wave N landed (vendor/provider/cred infra + sandbox 4-sanitizers + SHA-256 store + WrenAI MDL semantic layer)
+- [x] Wave O landed (CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen — 537 tests)
 - [ ] **E2 CRITICAL OPEN** — impl Element bodies empty (see Iter 47 below)
 
 ## Open Missions
@@ -25,6 +26,13 @@
 - [ ] DEEP1 HIGH — no nom-panels consumer for deep_think stream
 - [ ] NI1 HIGH — nom-intent skeletal at 98 LOC
 - [ ] 6 MEDIUMs — RRF_K const + nom-lint 3rd trait + HierarchicalCache::len + UiTierOps alloc + ui_tier timing doc + Panel trait 5/7 methods
+
+## Iteration 44 — Wave O committed (2026-04-18, commit `e61a93c`)
+
+- Committed: CompilerLspProvider (nom-compiler-bridge) + ExecutionEngine cancel/abort signal + HierarchicalCache L1→L2 promotion wiring (nom-graph) + code_exec backend (n8n JsTaskRunner + sandbox wiring) + web_screen backend (headless browser stub) (nom-compose)
+- Tests: 537 (+14 vs Wave N baseline of 523)
+- New capabilities: real LSP completions/diagnostics from nom-compiler, cancellable execution, cache tier promotion, n8n sandbox wiring, headless web screen stub
+- Open: E2 CRITICAL (paint no-op) + TQ1/CK1/DP1/F1/NR1/NI1/DEEP1/FG1 HIGH; FR1/PAL1 MEDIUM + 4 MEDIUMs remain (Wave P)
 
 ## Iteration 50 — Wave N committed (2026-04-18, commit `d6219b1`)
 
@@ -105,6 +113,8 @@
 
 | Commit | Wave |
 |---|---|
+| `e61a93c` | Wave O Infra+LSP |
+| `d6219b1` | Wave N Infra+Vendor |
 | `fb886fa` | Wave M docs |
 | `ef9fc84` | Wave M infra |
 | `d139644` | Wave L MEDIUM |

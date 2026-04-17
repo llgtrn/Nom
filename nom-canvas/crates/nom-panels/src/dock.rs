@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 
-use nom_gpui::scene::{Quad, Scene};
+use nom_gpui::scene::{FrostedRect, Quad, Scene};
 use nom_gpui::types::{Bounds, ContentMask, Corners, Edges, Hsla, Pixels, Point, Size};
 use nom_theme::tokens;
 
@@ -39,6 +39,28 @@ pub fn fill_quad(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Quad {
         background: Some(rgba_to_hsla(color)),
         border_color: None,
         border_widths: Edges::default(),
+        corner_radii: Corners::default(),
+        content_mask: ContentMask { bounds: Bounds::default() },
+    }
+}
+
+/// Helper: build a border-only (transparent background) 2px focus ring.
+/// Uses `tokens::FOCUS` as the border color with no fill -- a true outline stroke,
+/// not an alpha-fill overlay.
+pub fn focus_ring_quad(x: f32, y: f32, w: f32, h: f32) -> Quad {
+    Quad {
+        bounds: Bounds {
+            origin: Point { x: Pixels(x), y: Pixels(y) },
+            size: Size { width: Pixels(w), height: Pixels(h) },
+        },
+        background: None,
+        border_color: Some(rgba_to_hsla(tokens::FOCUS)),
+        border_widths: Edges {
+            left: Pixels(2.0),
+            right: Pixels(2.0),
+            top: Pixels(2.0),
+            bottom: Pixels(2.0),
+        },
         corner_radii: Corners::default(),
         content_mask: ContentMask { bounds: Bounds::default() },
     }
@@ -137,12 +159,23 @@ impl Dock {
             content_mask: ContentMask { bounds: Bounds::default() },
         });
 
-        // Active-tab highlight quad (one per visible entry that's active).
+        // Frosted-glass surface overlay — blurred, semi-transparent panel skin.
+        scene.push_frosted_rect(FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(x), y: Pixels(y) },
+                size: Size { width: Pixels(w), height: Pixels(h) },
+            },
+            blur_radius: tokens::FROSTED_BLUR_RADIUS,
+            bg_alpha: tokens::FROSTED_BG_ALPHA,
+            border_alpha: tokens::FROSTED_BORDER_ALPHA,
+        });
+
+        // Active-tab focus ring: 2px border-only outline (no fill).
         for (i, entry) in self.entries.iter().enumerate() {
             if !entry.is_visible { continue; }
             if self.active_index != Some(i) { continue; }
             let tab_y = y + 8.0 + i as f32 * 24.0;
-            scene.push_quad(fill_quad(x + 2.0, tab_y - 2.0, w - 4.0, 20.0, tokens::FOCUS));
+            scene.push_quad(focus_ring_quad(x + 2.0, tab_y - 2.0, w - 4.0, 20.0));
         }
     }
 }
@@ -154,6 +187,11 @@ pub trait Panel {
     fn position(&self) -> DockPosition;
     fn is_visible(&self) -> bool { true }
     fn activation_priority(&self) -> u32 { 100 }
+    fn persistent_name(&self) -> &str { "" }
+    fn toggle_action(&self) -> &str { "" }
+    fn icon(&self) -> Option<&str> { None }
+    fn icon_label(&self) -> &str { "" }
+    fn is_agent_panel(&self) -> bool { false }
 }
 
 #[cfg(test)]
@@ -223,4 +261,72 @@ mod tests {
         let white = rgba_to_hsla([1.0, 1.0, 1.0, 1.0]);
         assert!((white.l - 1.0).abs() < 1e-6);
     }
+
+    #[test]
+    fn dock_paint_scene_emits_frosted_rect() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        let mut scene = Scene::new();
+        dock.paint_scene(1440.0, 900.0, &mut scene);
+
+        // paint_scene must push exactly one FrostedRect for the dock panel.
+        assert_eq!(scene.frosted_rects.len(), 1);
+
+        let fr = &scene.frosted_rects[0];
+        // The frosted rect must cover the same bounds as the background quad.
+        assert_eq!(fr.bounds.origin.x, Pixels(0.0));
+        assert_eq!(fr.bounds.origin.y, Pixels(0.0));
+        assert_eq!(fr.bounds.size.width, Pixels(220.0));
+        assert_eq!(fr.bounds.size.height, Pixels(900.0));
+    }
+
+    #[test]
+    fn frosted_rect_uses_correct_tokens() {
+        let mut dock = Dock::new(DockPosition::Right);
+        dock.add_panel("inspector", 320.0);
+        let mut scene = Scene::new();
+        dock.paint_scene(1440.0, 900.0, &mut scene);
+
+        assert_eq!(scene.frosted_rects.len(), 1);
+        let fr = &scene.frosted_rects[0];
+
+        // Values must match tokens exactly.
+        assert_eq!(fr.blur_radius, tokens::FROSTED_BLUR_RADIUS);
+        assert_eq!(fr.bg_alpha, tokens::FROSTED_BG_ALPHA);
+        assert_eq!(fr.border_alpha, tokens::FROSTED_BORDER_ALPHA);
+
+        // Sanity-check the expected token values per spec.
+        assert_eq!(fr.blur_radius, 12.0);
+        assert!((fr.bg_alpha - 0.85).abs() < f32::EPSILON);
+        assert!((fr.border_alpha - 0.12).abs() < f32::EPSILON);
+    }
+    #[test]
+    fn focus_ring_quad_is_border_only() {
+        let q = focus_ring_quad(10.0, 20.0, 100.0, 24.0);
+        assert!(q.background.is_none());
+        assert!(q.border_color.is_some());
+        assert_eq!(q.border_widths.top, Pixels(2.0));
+        assert_eq!(q.border_widths.left, Pixels(2.0));
+        assert_eq!(q.bounds.origin.x, Pixels(10.0));
+        assert_eq!(q.bounds.size.width, Pixels(100.0));
+    }
+
+    #[test]
+    fn dock_paint_scene_active_tab_is_focus_ring() {
+        // The active-tab indicator must be a border-only quad (no fill).
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        let mut scene = Scene::new();
+        dock.paint_scene(1440.0, 900.0, &mut scene);
+
+        // quads[1] is the active-tab focus ring.
+        let ring = &scene.quads[1];
+        assert!(ring.background.is_none(), "focus ring must have no background fill");
+        assert!(ring.border_color.is_some(), "focus ring must have a border color");
+        assert_eq!(ring.border_widths.top, Pixels(2.0));
+        assert_eq!(ring.border_widths.right, Pixels(2.0));
+        assert_eq!(ring.border_widths.bottom, Pixels(2.0));
+        assert_eq!(ring.border_widths.left, Pixels(2.0));
+    }
+
 }

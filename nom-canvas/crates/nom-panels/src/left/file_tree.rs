@@ -1,5 +1,5 @@
 #![deny(unsafe_code)]
-use crate::dock::{fill_quad, DockPosition, Panel};
+use crate::dock::{fill_quad, focus_ring_quad, DockPosition, Panel};
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -100,9 +100,9 @@ impl FileTreePanel {
                         scene.push_quad(fill_quad(0.0, y, width, 20.0, tokens::BG2));
                     }
 
-                    // Selection highlight overlay.
+                    // Selection focus ring: 2px border-only outline (no fill).
                     if self.selected_id.as_deref() == Some(visible.id.as_str()) {
-                        scene.push_quad(fill_quad(0.0, y, width, 20.0, tokens::FOCUS));
+                        scene.push_quad(focus_ring_quad(0.0, y, width, 20.0));
                     }
 
                     row += 1;

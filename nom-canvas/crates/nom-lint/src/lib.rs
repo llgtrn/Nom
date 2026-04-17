@@ -36,6 +36,13 @@ pub trait LintRule: private::Sealed {
     fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic>;
 }
 
+/// An internal lint rule that additionally exposes a severity multiplier.
+///
+/// Default multiplier is `1.0` (no scaling).
+pub trait InternalRule: LintRule {
+    fn severity_multiplier(&self) -> f32 { 1.0 }
+}
+
 // ---------------------------------------------------------------------------
 // Concrete rules
 // ---------------------------------------------------------------------------
@@ -44,6 +51,7 @@ pub trait LintRule: private::Sealed {
 pub struct TrailingWhitespaceRule;
 
 impl private::Sealed for TrailingWhitespaceRule {}
+impl InternalRule for TrailingWhitespaceRule {}
 
 impl LintRule for TrailingWhitespaceRule {
     fn name(&self) -> &'static str {
@@ -84,6 +92,7 @@ impl Default for LineTooLongRule {
 }
 
 impl private::Sealed for LineTooLongRule {}
+impl InternalRule for LineTooLongRule {}
 
 impl LintRule for LineTooLongRule {
     fn name(&self) -> &'static str {
@@ -112,6 +121,7 @@ impl LintRule for LineTooLongRule {
 pub struct EmptyBlockRule;
 
 impl private::Sealed for EmptyBlockRule {}
+impl InternalRule for EmptyBlockRule {}
 
 impl LintRule for EmptyBlockRule {
     fn name(&self) -> &'static str {
@@ -305,6 +315,15 @@ mod tests {
         runner.add_rule(LineTooLongRule::new());
         runner.add_rule(EmptyBlockRule);
         assert!(runner.check_file("").is_empty());
+    }
+
+    // --- InternalRule ---
+
+    #[test]
+    fn internal_rule_default_severity_multiplier() {
+        assert_eq!(TrailingWhitespaceRule.severity_multiplier(), 1.0);
+        assert_eq!(LineTooLongRule::new().severity_multiplier(), 1.0);
+        assert_eq!(EmptyBlockRule.severity_multiplier(), 1.0);
     }
 
     // --- span field sanity ---

@@ -1,6 +1,27 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `d6219b1` | **Tests:** 523 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `e61a93c` | **Tests:** 537 | **Workspace:** clean
+
+## Wave O (2026-04-18 Iter 44) — Infra+LSP: CompilerLspProvider + cancel + cache + sandbox wiring + web_screen
+- [x] nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
+- [x] nom-compose backends: code_exec (n8n JsTaskRunner + sandbox wiring), web_screen (headless browser stub)
+- [x] nom-graph: ExecutionEngine cancel/abort signal
+- [x] nom-graph: HierarchicalCache L1+L2 promotion wiring in ExecutionEngine
+- [x] All 14 canvas crates: 537 tests passing workspace-wide
+
+**Remaining open (WAVE P targets):**
+- E2 CRITICAL — `nom-canvas-core/elements.rs:225-226` paint() = `let _ = bounds;` (no draw)
+- TQ1 HIGH — task_queue.rs:48 complete() missing Running guard (1-line)
+- CK1 HIGH — cache.rs:66 LruCache.get() missing touch() (2-line)
+- DP1 HIGH — dispatch.rs enum-lookup, not Box<dyn Backend>
+- F1 HIGH — find_replace.rs regex stub uses substring
+- NR1 HIGH — graph_mode.rs:242-244 duplicate NomtuRef with Option<u64> (§12 violation)
+- NI1 HIGH — nom-intent skeletal at 98 LOC
+- DEEP1 HIGH — deep_think stream unwired, no nom-panels consumer
+- FG1 HIGH — frosted glass tokens defined but no blur primitive pushed in paint()
+- FR1 MEDIUM — focus ring is alpha-fill overlay, not 2px outline stroke
+- PAL1 MEDIUM — node palette entirely absent (Wave D deliverable missing)
+- MEDIUM: RRF_K=60.0 const missing + nom-lint InternalRule (3rd trait) + HierarchicalCache::len() L1-only + Panel trait 5/7 methods (missing persistent_name/toggle_action/icon/icon_label/is_agent_panel)
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -10,13 +31,6 @@
 - [x] nom-compose store.rs: ContentHash now uses SHA-256 via sha2 (spec §14 compliance)
 - [x] nom-compose semantic.rs: WrenAI MDL semantic layer (SemanticModel + SemanticRegistry + SQL generation)
 
-**Remaining open (WAVE O targets):**
-- nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
-- nom-compose backends: code_exec (n8n JsTaskRunner + sandbox wiring), web_screen (headless browser stub)
-- nom-graph: ExecutionEngine cancel/abort signal
-- nom-graph: HierarchicalCache L1+L2 promotion wiring in ExecutionEngine
-- E2 CRITICAL — `nom-canvas-core/elements.rs:225-226` paint() = `let _ = bounds;` (no draw)
-- All 14 canvas crates: verify tests ≥ 500 total workspace
 **Sibling docs:** `implementation_plan.md` · `nom_state_machine_report.md` · `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · `INIT.md`
 
 ## Current Status
@@ -34,6 +48,8 @@
 | [x] K (4 CRITICALs) | ✅ | dc6a025 — U1/W1/COL1/INT1 closed |
 | [x] L (MEDIUM) | ✅ | d139644 — deep_think + W3C + RRF |
 | [x] M (Infra) | ⚠️ DRIFT | ef9fc84 — 4 claims DRIFT, 1 HIGH bug (TQ1) |
+| [x] N Infra+Vendor | ✅ | d6219b1 — vendor/router/cred/sandbox/SHA-256/semantic (523 tests) |
+| [x] O Infra+LSP | ✅ | e61a93c — cancel/cache/LSP/sandbox/web_screen (537 tests) |
 
 ### Integrity Grep
 
@@ -167,6 +183,21 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] compose dispatch + plan + task_queue (⚠️ TQ1 bug + DP1 drift)
 - [x] graph 4-tier cache (⚠️ CK1 LruCache.get broken)
 
+### [x] Wave N — Infra+Vendor (commit `d6219b1`, 523 tests)
+- [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
+- [x] nom-compose provider_router.rs: FallbackLevel 3-tier + retry_delay_ms
+- [x] nom-compose credential_store.rs: kind-keyed secret storage
+- [x] nom-graph sandbox.rs: 4 AST sanitizers + eval_expr
+- [x] nom-compose store.rs: SHA-256 ContentHash via sha2
+- [x] nom-compose semantic.rs: WrenAI MDL SemanticModel + SemanticRegistry
+
+### [x] Wave O — Infra+LSP (commit `e61a93c`, 537 tests)
+- [x] nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
+- [x] nom-compose backends: code_exec (n8n JsTaskRunner + sandbox wiring), web_screen (headless browser stub)
+- [x] nom-graph: ExecutionEngine cancel/abort signal
+- [x] nom-graph: HierarchicalCache L1+L2 promotion wiring in ExecutionEngine
+- [x] Workspace-wide: 537 tests verified across all 14 canvas crates
+
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 
 - [x] GAP-1c body_bytes · GAP-2 embeddings · GAP-3 corpus ingest
@@ -182,3 +213,4 @@ Iter log in `nom_state_machine_report.md`. Key pivots:
 - Iter 45 — Wave L; impl Element claim found SHAPE-ONLY
 - Iter 46 — Wave M; 4 DRIFT + TQ1 correctness bug
 - Iter 47 — whole-repo scan found E2 CRITICAL (paint body no-op)
+- Iter 44 — Wave O closed: CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen (537 tests)

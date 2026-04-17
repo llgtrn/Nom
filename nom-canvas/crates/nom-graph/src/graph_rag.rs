@@ -5,10 +5,14 @@
 //!   1. Every node in the DAG is assigned a deterministic 16-float embedding
 //!      derived from its `NodeId` string via a simple FNV-1a hash spread.
 //!   2. BFS from every node explores the graph up to `max_hops` steps.
-//!   3. Each (node, hop_distance) pair is scored:
-//!         score = cosine_sim(query_vec, node_vec) * (1.0 / (1.0 + hops as f32))
+//!   3. Each (node, hop_distance) pair scores cosine similarity with the query.
 //!   4. When the same node is reached via multiple paths, the best score is kept.
-//!   5. The top-k results by score are returned.
+//!   5. Candidates are ranked by cosine similarity and scored via RRF_K=60.0:
+//!         rrf_score = 1.0 / (RRF_K + rank)
+//!   6. The top-k results by RRF score are returned.
+
+/// Reciprocal Rank Fusion constant.  Score = `1.0 / (RRF_K + rank)`.
+const RRF_K: f32 = 60.0;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -129,7 +133,7 @@ impl<'a> GraphRagRetriever<'a> {
     /// by cosine similarity descending and scored using Reciprocal Rank Fusion:
     ///
     /// ```text
-    /// rrf_score = 1.0 / (60.0 + rank)   (rank is 0-indexed position)
+    /// rrf_score = 1.0 / (RRF_K + rank)   (rank is 0-indexed position, RRF_K=60.0)
     /// ```
     ///
     /// If a node is reached by multiple paths the best cosine similarity wins.
@@ -188,14 +192,14 @@ impl<'a> GraphRagRetriever<'a> {
             .collect();
         candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
 
-        // Apply RRF: score = 1.0 / (60.0 + rank) where rank is 0-indexed position.
+        // Apply RRF: score = 1.0 / (RRF_K + rank) where rank is 0-indexed position.
         let take = top_k.min(candidates.len());
         candidates
             .into_iter()
             .enumerate()
             .map(|(rank, (id, _sim, hops))| RetrievedNode {
                 node_id: id.to_owned(),
-                score: 1.0 / (60.0 + rank as f32),
+                score: 1.0 / (RRF_K + rank as f32),
                 hops,
             })
             .take(take)
@@ -348,11 +352,11 @@ mod tests {
             leaf_result.unwrap().score,
         );
 
-        // Verify the RRF formula: top result score must equal 1/(60+0).
-        let expected_top = 1.0f32 / 60.0;
+        // Verify the RRF formula: top result score must equal 1/(RRF_K+0).
+        let expected_top = 1.0f32 / RRF_K;
         assert!(
             (results[0].score - expected_top).abs() < 1e-6,
-            "top result RRF score must be 1/60 = {}, got {}",
+            "top result RRF score must be 1/RRF_K = {}, got {}",
             expected_top,
             results[0].score
         );
