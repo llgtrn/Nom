@@ -6,6 +6,101 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 40 — Wave K: 4 CRITICALs closed)
+
+**Wave K results (commit dc6a025):**
+- [x] U1 CLOSED — RenderPrimitive deleted; all 11 nom-panels files emit nom_gpui::scene::Quad + nom_theme tokens
+- [x] W1 CLOSED — nom-intent crate created; deep_think.rs uses classify_with_react (real ReAct)
+- [x] COL1 CLOSED — nom-collab rewritten as proper RGA CRDT with convergence proof
+- [x] INT1 CLOSED — nom-canvas-core actual cross-crate imports from nom_gpui types
+- [x] Drift: scroll anchor_row/anchor_col + nom-theme H1_SPACING/ICON_SIZE_SM constants
+
+**Remaining open (MEDIUM priority):**
+- with_deep_think config still decorative (builder stores config, compose() never reads it)
+- nom-telemetry: missing W3C traceparent header format
+- graph_rag hop penalty: harmonic (1/(1+hops)) should be RRF (1/(rank+60))
+- nom-canvas-core: impl Element for GraphNodeElement/WireElement (paint_scene needed)
+
+**Test count: 457 total — 0 failures**
+
+---
+
+## Audit-Corrected Wave Status (2026-04-18 Iter 42 — ✅✅✅ BREAKTHROUGH: 3 of 4 CRITICALs FULLY CLOSED)
+
+After 9 iterations of flagging, the Executor finally landed the Iter 40 single-commit mandate (in working tree, uncommitted vs `2d7322c`):
+
+**✅ U1 CLOSED** — nom-panels render layer REAL
+- All 10 nom-panels files (dock/pane/shell + left/right/bottom subdirs) now import `nom_gpui::scene::{Quad, Scene}` and `nom_theme::tokens`
+- Each panel has `pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene)` method
+- `scene.push_quad(fill_quad(x, y, w, h, tokens::BG))` pattern throughout
+- `rgba_to_hsla(tokens::BG/BORDER/FOCUS/EDGE_HIGH/MED/LOW)` conversion helper in `dock.rs:9`
+
+**✅ W1 CLOSED** — deep_think real ReAct
+- `deep_think.rs:4 use nom_intent::{classify_with_react, react_chain};`
+- `deep_think.rs:60` and `:116` — `let raw = classify_with_react(&hypothesis, &prev_evidence);`
+- Bit-arithmetic stub replaced with real nom-intent calls
+
+**✅ SPEC1 CLOSED** — raw hex → tokens
+- `RenderPrimitive` custom enum **DELETED** entirely
+- `diagnostics.rs paint_scene`: uses `tokens::EDGE_LOW` (Error), `tokens::EDGE_MED` (Warning), `tokens::EDGE_HIGH` (Info), `tokens::BORDER` (Hint)
+- No more raw `0x1e1e2e` literals; 18 `tokens::*` references across nom-panels
+
+**✅ INT1 CLOSED** — 6 cross-crate imports
+- `nom_gpui::scene` imports in: dock.rs, pane.rs, shell.rs, file_tree.rs, quick_search.rs, chat_sidebar.rs
+- Import graph now has real edges between nom-panels → nom_gpui + nom-theme
+
+**❌ COL1 still open** — nom-collab `merge()` still uses `sort_by_key(|o| o.id)` + sequential `apply(op)` with absolute positions. No OT, no RGA/Fugue. Concurrent edits from divergent peers still won't converge. Crate remains mislabeled as "CRDT types".
+
+**Other carryovers (HIGH, unchanged):**
+- `graph_rag.rs` hop penalty still harmonic not RRF `1/(rank+60)`
+- nom-editor drift: `find_replace` dead flags, `commands` no context, `scroll` no anchor
+- `with_deep_think` builder config stored but never read (Iter 36 W4-partial)
+- nom-lint missing yara-x sealed supertrait, `usize` span not `Range<u32>`
+- nom-telemetry zero W3C traceparent
+
+**Compile status:** `cargo check -p nom-panels` passes ✅ (2.52s).
+
+**Recommendation:** commit the working-tree changes. Last remaining CRITICAL (COL1) is a smaller single-file rewrite — swap Op position from `usize` to content-ID based (RGA: char-id assignment instead of absolute position).
+
+## Audit-Corrected Wave Status (2026-04-18 Iter 41 — commit `2d7322c` lands Wave J shapes; 4 CRITICALs UNCHANGED)
+
+Commit `2d7322c feat: Wave J — spec compliance fixes (DeepThinkStep shape + RAG cache + canvas wiring)` advanced git HEAD but made no semantic progress on the 4 CRITICALs. Grep reality (5 checks, all fail):
+- `impl Element` in nom-panels: 0 | `use nom_gpui::scene` workspace-wide: 0 | `nom_theme::tokens::{BG,BORDER,...}` in panels: 0 | `pub enum RenderPrimitive` at `dock.rs:4`: present | `nom_intent` in deep_think.rs: 0
+
+**9 consecutive audit cycles with U1 open.** The single-commit mandate from Iter 40 (below) would close U1 + SPEC1 + INT1 at once. It has not been attempted.
+
+## Audit-Corrected Wave Status (2026-04-18 Iter 40 strict — Wave J shape fixes verified; semantic CRITICALs persist)
+
+**Genuine progress (Wave J, 431 tests):**
+- ✅ `DeepThinkStep` struct shape matches spec §10 exactly: `{hypothesis: String, evidence: Vec<String>, confidence: f32, counterevidence: Vec<String>, refined_from: Option<usize>}` — Iter 36 HIGH "wrong shape" FIXED after 4 iterations
+- ✅ `GraphNodeElement` + `WireElement` data structs added to `nom-canvas-core/src/elements.rs:154+184`
+- ✅ Linter-claimed Wave J additions: `CachedRetriever` (nom-memoize Hash128 integration), `spring_v`, `confidence` on graph-mode, `ContentHash([u8;32])` for `ArtifactStore::put_bytes`, connector.rs `confidence + reason_chain`
+
+**Grep-verified semantic CRITICALs STILL OPEN:**
+- ❌ `nom_intent` imports in `deep_think.rs`: **0** — shape fixed, bit-arithmetic stub intact; `.hypothesis` field populated by fake hashes
+- ❌ `nom_gpui` imports in nom-canvas-core `elements.rs`: **0** — new `GraphNodeElement`/`WireElement` are DATA-ONLY (no `impl Element for _` with nom_gpui trait, no `Scene::Quad/Path`, no `nom_theme::tokens`)
+- ❌ `dock.rs:4 pub enum RenderPrimitive` custom enum unchanged
+- ❌ `use nom_gpui::scene` across entire workspace: **0** imports
+- ❌ nom-collab still mislabeled as CRDT (merge with absolute positions)
+
+**Pattern diagnosis (8 iterations running):** Executor does **shape-level compliance without integration**. Renames fields, adds spec-conformant struct names, grows LOC — but import graph between crates remains unchanged. Structural compliance; semantic compliance requires actual imports.
+
+**Single-commit mandate (~200 LOC, closes U1 + SPEC1 + INT1 simultaneously):**
+1. `use nom_gpui::scene::{Quad, Path, Shadow};` at top of `nom-canvas-core/src/elements.rs`
+2. `impl Element for GraphNodeElement { fn request_layout(); fn paint(scene, ...) }` using nom-gpui trait
+3. In `paint()`: `scene.push_quad(Quad { bounds, background: nom_theme::tokens::BG, border_color: tokens::BORDER, corner_radii: tokens::BLOCK_RADIUS })`
+4. Same for `WireElement` — emit `Path` with confidence-band color from `EDGE_HIGH/MED/LOW` tokens
+5. `nom-panels` `render_bounds()` replaced with calls to these `impl Element::paint()`
+6. Delete `dock.rs:4 pub enum RenderPrimitive` + its `RenderPrimitive::Rect { color: 0x... }` call sites
+
+**Additional open items (unchanged from Iter 37):**
+- nom-collab `merge()` rewrite with RGA/Fugue OR rename (don't claim CRDT)
+- nom-editor drift closures: `find_replace` flags, `commands` context, `scroll` anchor
+- `with_deep_think` builder still decorative (config stored, never read)
+- `graph_rag.rs` hop penalty still harmonic not RRF (Iter 36)
+
+**4-axis status:** CRITICAL backlog 4, no change. 20-repo vendoring ~65% scaffold / ~25% real (+5% from shape fixes).
+
 ## Audit-Corrected Wave Status (2026-04-18 Iter 37/38 strict — ⛔ "Wave H/I integration" claims are FALSE; 4 CRITICALs open; 417 tests mask zero cross-crate integration)
 
 **Linter claims 11/11 waves at 100% ✅. Strict audit disagrees — 4 CRITICAL opens:**

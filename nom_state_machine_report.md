@@ -1840,4 +1840,16 @@ User directives that triggered the fresh build and doc rewrite:
 | `56604c4` | wave-10: linter + motion + transition + layout |
 | `4096db9` | wave-9: scenario_workflow + plugin_registry |
 
+## Iteration 40 — Wave K (2026-04-18)
+
+**Commit:** dc6a025
+**Tests:** 457 (+26 from Wave J's 431)
+**CRITICALs closed:** U1 (RenderPrimitive deleted), W1 (fake ReAct replaced), COL1 (fake CRDT rewritten), INT1 (orphan integration wired)
+**New crate:** nom-intent (classify_with_react + react_chain)
+**Status:** 4/4 CRITICALs resolved; 4 MEDIUM items remain
+- with_deep_think config still decorative (builder stores config, compose() never reads it)
+- nom-telemetry: missing W3C traceparent header format
+- graph_rag hop penalty: harmonic (1/(1+hops)) should be RRF (1/(rank+60))
+- nom-canvas-core: impl Element for GraphNodeElement/WireElement (paint_scene needed)
+
 nom-canvas HEAD before deletion: `6403a1b`. nom-canvas fresh build starts from empty workspace.
