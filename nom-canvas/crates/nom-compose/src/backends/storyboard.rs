@@ -99,4 +99,13 @@ mod tests {
         };
         let _ = count_before; // suppress unused warning
     }
+
+    #[test]
+    fn storyboard_backend_compose_ok() {
+        let mut store = InMemoryStore::new();
+        let mut spec = StoryboardSpec::new("trailer", 24);
+        spec.add_frame(StoryboardFrame { scene_index: 0, duration_ms: 500, caption: "Opening".into() });
+        spec.add_frame(StoryboardFrame { scene_index: 1, duration_ms: 500, caption: "Closing".into() });
+        assert!(StoryboardBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
 }

@@ -92,4 +92,52 @@ mod tests {
         let shapes = dict.clause_shapes_for("verb");
         assert!(!shapes.is_empty());
     }
+
+    #[test]
+    fn stub_dict_lookup_unknown_kind_returns_none() {
+        let dict = StubDictReader::new();
+        let result = dict.lookup_entity("anything", "nonexistent_kind_xyz");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn stub_dict_with_shapes_overrides_default() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![
+                ClauseShape { name: "custom_port".into(), grammar_shape: "prose".into(), is_required: true, description: "custom".into() },
+            ]);
+        let shapes = dict.clause_shapes_for("verb");
+        assert_eq!(shapes.len(), 1);
+        assert_eq!(shapes[0].name, "custom_port");
+        assert_eq!(shapes[0].grammar_shape, "prose");
+    }
+
+    #[test]
+    fn stub_dict_unknown_kind_returns_default_shapes() {
+        let dict = StubDictReader::new();
+        // For a kind with no seeded shapes, default shapes (input + output) are returned
+        let shapes = dict.clause_shapes_for("no_seed_kind");
+        assert_eq!(shapes.len(), 2);
+        assert!(shapes.iter().any(|s| s.name == "input"));
+        assert!(shapes.iter().any(|s| s.name == "output"));
+    }
+
+    #[test]
+    fn stub_dict_with_kinds_adds_custom_kind() {
+        let dict = StubDictReader::with_kinds(&["custom_kind", "another_kind"]);
+        assert!(dict.is_known_kind("custom_kind"));
+        assert!(dict.is_known_kind("another_kind"));
+        // Base kinds also present
+        assert!(dict.is_known_kind("verb"));
+        assert!(!dict.is_known_kind("not_added_kind"));
+    }
+
+    #[test]
+    fn stub_dict_lookup_entity_id_is_prefixed() {
+        let dict = StubDictReader::new();
+        let entity = dict.lookup_entity("summarize", "verb").unwrap();
+        assert!(entity.id.starts_with("stub-"));
+        assert_eq!(entity.word, "summarize");
+        assert_eq!(entity.kind, "verb");
+    }
 }

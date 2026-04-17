@@ -110,4 +110,17 @@ mod tests {
         hash.copy_from_slice(&r);
         assert!(store.exists(&hash));
     }
+
+    #[test]
+    fn mesh_backend_compose_ok() {
+        let mut store = InMemoryStore::new();
+        let spec = MeshSpec {
+            name: "plane".into(),
+            vertex_count: 4,
+            face_count: 2,
+            primitive: MeshPrimitive::Triangles,
+            format: "gltf".into(),
+        };
+        assert!(MeshBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
 }

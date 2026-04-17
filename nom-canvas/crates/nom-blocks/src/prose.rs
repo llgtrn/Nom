@@ -93,4 +93,149 @@ mod tests {
         assert_eq!(FLAVOUR_CODE, "affine:code");
         assert_eq!(FLAVOUR_DATABASE, "affine:database");
     }
+
+    #[test]
+    fn block_heading_nomturef_required() {
+        let entity = NomtuRef::new("heading-01", "title", "concept");
+        let block = HeadingBlock {
+            entity: entity.clone(),
+            text: vec![],
+            level: 1,
+            children: vec![],
+        };
+        assert!(!block.entity.id.is_empty());
+        assert_eq!(block.entity.id, "heading-01");
+    }
+
+    #[test]
+    fn block_para_text_preserved() {
+        let entity = NomtuRef::new("para-01", "summarize", "verb");
+        let text = vec![DeltaOp::Insert {
+            text: "hello world".into(),
+            attrs: std::collections::HashMap::new(),
+        }];
+        let block = ParagraphBlock {
+            entity,
+            text: text.clone(),
+            children: vec![],
+        };
+        assert_eq!(block.text.len(), 1);
+        if let DeltaOp::Insert { text: t, .. } = &block.text[0] {
+            assert_eq!(t, "hello world");
+        } else {
+            panic!("expected Insert op");
+        }
+    }
+
+    #[test]
+    fn block_list_items_count() {
+        let entity = NomtuRef::new("list-01", "enumerate", "verb");
+        let make_insert = |s: &str| DeltaOp::Insert {
+            text: s.into(),
+            attrs: std::collections::HashMap::new(),
+        };
+        let children = vec!["item-1".to_string(), "item-2".to_string(), "item-3".to_string()];
+        let block = ListBlock {
+            entity,
+            text: vec![make_insert("• items")],
+            list_type: ListType::Bulleted,
+            checked: None,
+            children: children.clone(),
+        };
+        assert_eq!(block.children.len(), 3);
+        assert_eq!(block.list_type, ListType::Bulleted);
+    }
+
+    #[test]
+    fn block_code_language_field() {
+        let entity = NomtuRef::new("code-01", "compile", "verb");
+        let block = CodeBlock {
+            entity,
+            language: "rust".into(),
+            text: vec![DeltaOp::Insert {
+                text: "fn main(){}".into(),
+                attrs: std::collections::HashMap::new(),
+            }],
+            wrap: false,
+        };
+        assert_eq!(block.language, "rust");
+        assert_eq!(block.text.len(), 1);
+    }
+
+    #[test]
+    fn block_callout_emoji_field() {
+        let entity = NomtuRef::new("callout-01", "warn", "verb");
+        let block = CalloutBlock {
+            entity,
+            text: vec![],
+            emoji: "⚠️".into(),
+            style: CalloutStyle::Warning,
+        };
+        assert_eq!(block.emoji, "⚠️");
+    }
+
+    #[test]
+    fn block_divider_no_content() {
+        let entity = NomtuRef::new("div-01", "separate", "verb");
+        let block = DividerBlock { entity };
+        // DividerBlock has no text/children fields — structural guarantee
+        assert_eq!(block.entity.id, "div-01");
+    }
+
+    #[test]
+    fn block_linked_doc_target_ref() {
+        let entity = NomtuRef::new("link-01", "reference", "concept");
+        let block = LinkedDocBlock {
+            entity,
+            page_id: "page-xyz".into(),
+            params: String::new(),
+        };
+        assert_eq!(block.page_id, "page-xyz");
+        assert_eq!(block.entity.id, "link-01");
+    }
+
+    #[test]
+    fn heading_level_clamp_min() {
+        let h = HeadingBlock {
+            entity: NomtuRef::new("id", "title", "concept"),
+            text: vec![],
+            level: 1,
+            children: vec![],
+        };
+        // level 1 is already within [1,6], should stay 1
+        assert_eq!(h.level_clamped(), 1);
+    }
+
+    #[test]
+    fn block_type_display_flavour_constants_are_distinct() {
+        let flavours = [
+            FLAVOUR_PARAGRAPH, FLAVOUR_HEADING, FLAVOUR_LIST, FLAVOUR_QUOTE,
+            FLAVOUR_DIVIDER, FLAVOUR_CALLOUT, FLAVOUR_DATABASE, FLAVOUR_LINKED_DOC,
+            FLAVOUR_BOOKMARK, FLAVOUR_ATTACHMENT, FLAVOUR_IMAGE, FLAVOUR_CODE,
+        ];
+        let unique: std::collections::HashSet<_> = flavours.iter().collect();
+        assert_eq!(unique.len(), flavours.len(), "every block flavour constant must be distinct");
+    }
+
+    #[test]
+    fn list_type_variants_are_eq() {
+        assert_eq!(ListType::Bulleted, ListType::Bulleted);
+        assert_ne!(ListType::Bulleted, ListType::Numbered);
+        assert_ne!(ListType::Todo, ListType::Toggle);
+    }
+
+    #[test]
+    fn bookmark_block_optional_fields() {
+        let entity = NomtuRef::new("bm-01", "link", "concept");
+        let block = BookmarkBlock {
+            entity,
+            url: "https://example.com".into(),
+            title: Some("Example".into()),
+            description: None,
+            favicon: None,
+        };
+        assert_eq!(block.url, "https://example.com");
+        assert!(block.title.is_some());
+        assert!(block.description.is_none());
+    }
 }

@@ -154,6 +154,39 @@ mod tests {
     }
 
     #[test]
+    fn palette_filter_case_insensitive() {
+        let mut palette = CommandPalette::new();
+        palette.items.push(CommandPaletteItem::new("graph layout", "Arrange graph nodes"));
+        palette.items.push(CommandPaletteItem::new("Open File", "Open a file"));
+        palette.set_query("GRA");
+        let filtered = palette.filtered_items();
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].label, "graph layout");
+    }
+
+    #[test]
+    fn palette_filtered_empty_when_no_match() {
+        let mut palette = CommandPalette::new();
+        palette.items.push(CommandPaletteItem::new("Open File", ""));
+        palette.items.push(CommandPaletteItem::new("Save File", ""));
+        palette.set_query("zzz");
+        assert_eq!(palette.filtered_items().len(), 0);
+    }
+
+    #[test]
+    fn palette_select_next_wraps_past_end() {
+        let mut palette = CommandPalette::new();
+        palette.items.push(CommandPaletteItem::new("A", ""));
+        palette.items.push(CommandPaletteItem::new("B", ""));
+        // Move to last index (1)
+        palette.select_next();
+        assert_eq!(palette.selected_idx, 1);
+        // Wrap back to first
+        palette.select_next();
+        assert_eq!(palette.selected_idx, 0);
+    }
+
+    #[test]
     fn command_palette_paint_scene_emits_quads() {
         let mut palette = CommandPalette::new();
         palette.items.push(CommandPaletteItem::new("Open File", "").with_shortcut("Cmd+O"));

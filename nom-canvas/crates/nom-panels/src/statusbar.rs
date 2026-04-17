@@ -84,6 +84,41 @@ mod tests {
     }
 
     #[test]
+    fn statusbar_slot_set_left() {
+        let mut bar = StatusBar::new();
+        assert!(bar.left.content.is_empty());
+        bar.set_left("main");
+        assert_eq!(bar.left.content, "main");
+    }
+
+    #[test]
+    fn statusbar_slot_set_right() {
+        let mut bar = StatusBar::new();
+        assert!(bar.right.content.is_empty());
+        bar.set_right("UTF-8");
+        assert_eq!(bar.right.content, "UTF-8");
+    }
+
+    #[test]
+    fn statusbar_center_overwrite() {
+        let mut bar = StatusBar::new();
+        bar.set_center("Ln 1, Col 1");
+        bar.set_center("Ln 42, Col 7");
+        assert_eq!(bar.center.content, "Ln 42, Col 7");
+    }
+
+    #[test]
+    fn statusbar_all_slots_independent() {
+        let mut bar = StatusBar::new();
+        bar.set_left("branch");
+        bar.set_center("ready");
+        bar.set_right("Rust");
+        assert_eq!(bar.left.content, "branch");
+        assert_eq!(bar.center.content, "ready");
+        assert_eq!(bar.right.content, "Rust");
+    }
+
+    #[test]
     fn statusbar_paint_scene_emits_background() {
         let mut bar = StatusBar::new();
         bar.set_left("ready");

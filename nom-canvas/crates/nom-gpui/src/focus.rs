@@ -168,4 +168,81 @@ mod tests {
         fm.blur();
         assert!(fm.focused.is_none());
     }
+
+    #[test]
+    fn focus_handle_new_is_unfocused() {
+        let mut fm = FocusManager::new();
+        let h = fm.create_handle();
+        // A freshly created handle must not be focused
+        assert!(!h.is_focused(&fm));
+    }
+
+    #[test]
+    fn focus_handle_focus_sets_focused() {
+        let mut fm = FocusManager::new();
+        let h = fm.create_handle();
+        fm.focus(&h);
+        assert!(h.is_focused(&fm));
+    }
+
+    #[test]
+    fn focus_handle_blur_clears() {
+        let mut fm = FocusManager::new();
+        let h = fm.create_handle();
+        fm.focus(&h);
+        assert!(h.is_focused(&fm));
+        fm.blur();
+        assert!(!h.is_focused(&fm));
+    }
+
+    #[test]
+    fn focus_state_focused_id_matches() {
+        let mut fm = FocusManager::new();
+        let h1 = fm.create_handle();
+        let h2 = fm.create_handle();
+        fm.focus(&h2);
+        // FocusManager.focused tracks the id of the focused handle
+        assert_eq!(fm.focused, Some(h2.id));
+        assert_ne!(fm.focused, Some(h1.id));
+    }
+
+    #[test]
+    fn focus_handle_ref_count_starts_at_one() {
+        let h = FocusHandle::new(FocusId(42));
+        assert_eq!(h.ref_count(), 1);
+    }
+
+    #[test]
+    fn focus_handle_ref_count_shared_between_clones() {
+        let h = FocusHandle::new(FocusId(99));
+        let _clone = h.clone();
+        // Both handles share the same Arc; strong count is at least 1
+        assert!(h.ref_count() >= 1);
+        // The clone reports the same count as the original
+        assert_eq!(h.ref_count(), _clone.ref_count());
+    }
+
+    #[test]
+    fn focus_handle_equality_by_id() {
+        let h1 = FocusHandle::new(FocusId(1));
+        let h2 = FocusHandle::new(FocusId(1));
+        let h3 = FocusHandle::new(FocusId(2));
+        assert_eq!(h1, h2);
+        assert_ne!(h1, h3);
+    }
+
+    #[test]
+    fn focus_manager_default_has_no_focus() {
+        let fm = FocusManager::default();
+        assert!(fm.focused.is_none());
+    }
+
+    #[test]
+    fn focus_manager_focus_next_from_none_lands_on_first() {
+        let mut fm = FocusManager::new();
+        let _h = fm.create_handle();
+        assert!(fm.focused.is_none());
+        fm.focus_next();
+        assert!(fm.focused.is_some());
+    }
 }

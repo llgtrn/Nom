@@ -88,4 +88,22 @@ mod tests {
         plan.add_step_after(BackendKind::Export, "v", "o", vec![a]);
         assert!(plan.is_valid_dag());
     }
+
+    #[test]
+    fn plan_step_count() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Video, "in", "v");
+        plan.add_step(BackendKind::Audio, "in", "a");
+        plan.add_step(BackendKind::Export, "a", "out");
+        assert_eq!(plan.steps.len(), 3);
+    }
+
+    #[test]
+    fn plan_step_label_preserved() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Image, "source_image", "rendered_image");
+        let step = &plan.steps[0];
+        assert_eq!(step.input_key, "source_image");
+        assert_eq!(step.output_key, "rendered_image");
+    }
 }

@@ -235,4 +235,37 @@ mod tests {
         assert_eq!(ops.resolve_synonym("concept"), Some("concept".to_string()));
         assert_eq!(ops.resolve_synonym("unknown"), None);
     }
+
+    #[test]
+    fn ui_tier_creates_from_shared() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state.clone());
+        // Construction must not panic; Arc refcount is at least 2
+        assert!(Arc::strong_count(&state) >= 2);
+        drop(tier);
+    }
+
+    #[test]
+    fn ui_tier_can_wire_always_returns_bool() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        let r = tier.can_wire("kindA", "slotA", "kindB", "slotB");
+        // In stub mode is_valid is always true; result must be well-formed
+        let _ = r.is_valid; // just access the field to ensure it compiles
+        assert!(r.confidence >= 0.0);
+    }
+
+    #[test]
+    fn ui_tier_grammar_keywords_non_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "define".into(), description: "declaration keyword".into() },
+            crate::shared::GrammarKind { name: "that".into(), description: "connector".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let kw = tier.grammar_keywords();
+        assert!(!kw.is_empty());
+        assert!(kw.contains(&"define".to_string()));
+        assert!(kw.contains(&"that".to_string()));
+    }
 }

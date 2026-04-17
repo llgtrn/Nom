@@ -131,4 +131,47 @@ mod tests {
         assert_eq!(errors[0].severity, Severity::Error);
         assert!(errors[0].message.contains("nonexistent_kind"));
     }
+
+    #[test]
+    fn validation_error_with_label_and_footer() {
+        let err = ValidationError::error(0..5, "test error")
+            .with_label(Label { span: 0..3, message: "here".into() })
+            .with_footer("hint: fix the kind");
+        assert_eq!(err.labels.len(), 1);
+        assert_eq!(err.footers.len(), 1);
+        assert_eq!(err.footers[0], "hint: fix the kind");
+        assert_eq!(err.severity, Severity::Error);
+    }
+
+    #[test]
+    fn slot_shape_validator_warns_unknown_slot() {
+        let dict = StubDictReader::new(); // default shapes: only "input" and "output"
+        let mut block = BlockModel::new("b2", NomtuRef::new("e2", "summarize", "verb"), "affine:paragraph");
+        block.set_slot("nonexistent_slot", crate::slot::SlotValue::Bool(true));
+        let errors = SlotShapeValidator.validate(&block, &dict);
+        // "nonexistent_slot" is not in the default stub shapes → should produce a warning
+        assert!(!errors.is_empty());
+        assert_eq!(errors[0].severity, Severity::Warning);
+        assert!(errors[0].message.contains("nonexistent_slot"));
+    }
+
+    #[test]
+    fn slot_shape_validator_passes_known_slot() {
+        use crate::dict_reader::ClauseShape;
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![
+                ClauseShape { name: "output".into(), grammar_shape: "text".into(), is_required: true, description: String::new() },
+            ]);
+        let mut block = BlockModel::new("b3", NomtuRef::new("e3", "fetch", "verb"), "affine:paragraph");
+        block.set_slot("output", crate::slot::SlotValue::Text("result".into()));
+        let errors = SlotShapeValidator.validate(&block, &dict);
+        assert!(errors.is_empty(), "known slot must not produce warnings: {:?}", errors.iter().map(|e| &e.message).collect::<Vec<_>>());
+    }
+
+    #[test]
+    fn validation_warning_severity() {
+        let w = ValidationError::warning(0..4, "mild issue");
+        assert_eq!(w.severity, Severity::Warning);
+        assert_eq!(w.message, "mild issue");
+    }
 }

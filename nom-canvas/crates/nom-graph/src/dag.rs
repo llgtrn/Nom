@@ -279,4 +279,103 @@ mod tests {
         dag.add_edge_weighted("m", "out", "n", "in", 0.5);
         assert_eq!(dag.edges[0].confidence, 0.5, "confidence 0.5 must be stored as-is");
     }
+
+    #[test]
+    fn dag_topological_sort_simple() {
+        // A → B → C must sort to [A, B, C].
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        let sorted = dag.topological_sort().unwrap();
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("A") < pos("B"), "A must precede B");
+        assert!(pos("B") < pos("C"), "B must precede C");
+    }
+
+    #[test]
+    fn dag_cycle_detection() {
+        // A → B and B → A creates a cycle; topological_sort must return Err.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "A", "in");
+        assert!(dag.topological_sort().is_err(), "cycle A→B→A must be detected");
+    }
+
+    #[test]
+    fn dag_node_count() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "verb"));
+        dag.add_node(ExecNode::new("n2", "verb"));
+        dag.add_node(ExecNode::new("n3", "verb"));
+        assert_eq!(dag.node_count(), 3);
+    }
+
+    #[test]
+    fn dag_edge_count() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_node(ExecNode::new("z", "verb"));
+        dag.add_edge("x", "out", "y", "in");
+        dag.add_edge("y", "out", "z", "in");
+        assert_eq!(dag.edge_count(), 2);
+    }
+
+    #[test]
+    fn dag_remove_node_also_removes_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("mid", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge("src", "out", "mid", "in");
+        dag.add_edge("mid", "out", "dst", "in");
+        assert_eq!(dag.node_count(), 3);
+        assert_eq!(dag.edge_count(), 2);
+        // Remove "mid" and all its incident edges.
+        dag.nodes.remove("mid");
+        dag.edges.retain(|e| e.src_node != "mid" && e.dst_node != "mid");
+        assert_eq!(dag.node_count(), 2);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    #[test]
+    fn dag_ancestors_of_leaf() {
+        // Chain: root → parent → leaf. Ancestors of "leaf" (nodes that can reach it)
+        // are root and parent; verified by checking topological positions.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("parent", "verb"));
+        dag.add_node(ExecNode::new("leaf", "verb"));
+        dag.add_edge("root", "out", "parent", "in");
+        dag.add_edge("parent", "out", "leaf", "in");
+        let sorted = dag.topological_sort().unwrap();
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        // root and parent both precede leaf in topological order.
+        assert!(pos("root") < pos("leaf"), "root must precede leaf");
+        assert!(pos("parent") < pos("leaf"), "parent must precede leaf");
+    }
+
+    #[test]
+    fn dag_descendants_of_root() {
+        // Star: root → a, root → b, root → c. All three must follow root in sort.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("root", "out", "a", "in");
+        dag.add_edge("root", "out", "b", "in");
+        dag.add_edge("root", "out", "c", "in");
+        let sorted = dag.topological_sort().unwrap();
+        let root_pos = sorted.iter().position(|x| x == "root").unwrap();
+        for child in &["a", "b", "c"] {
+            let child_pos = sorted.iter().position(|x| x == *child).unwrap();
+            assert!(root_pos < child_pos, "root must precede {child}");
+        }
+    }
 }

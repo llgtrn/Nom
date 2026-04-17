@@ -102,4 +102,38 @@ mod tests {
         assert!(reg.get("orders").is_some());
         assert!(reg.get("missing").is_none());
     }
+
+    #[test]
+    fn semantic_model_name_preserved() {
+        let m = SemanticModel::new("orders", "raw.orders");
+        assert_eq!(m.name, "orders");
+    }
+
+    #[test]
+    fn semantic_registry_register_lookup() {
+        let mut reg = SemanticRegistry::new();
+        reg.register(SemanticModel::new("products", "raw.products"));
+        assert!(reg.get("products").is_some());
+    }
+
+    #[test]
+    fn semantic_registry_unknown_returns_none() {
+        let reg = SemanticRegistry::new();
+        assert!(reg.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn semantic_sql_generation() {
+        let mut m = SemanticModel::new("events", "raw.events");
+        m.add_column(SemanticColumn { name: "ts".into(), data_type: SemanticDataType::Timestamp, description: None });
+        let sql = m.to_select_sql();
+        assert!(!sql.is_empty());
+        assert!(sql.contains("raw.events"));
+    }
+
+    #[test]
+    fn semantic_model_table_name() {
+        let m = SemanticModel::new("sessions", "raw.sessions");
+        assert_eq!(m.source_table, "raw.sessions");
+    }
 }

@@ -285,4 +285,107 @@ mod tests {
         assert_eq!(scene.shadows.len(), 0);
         assert_eq!(scene.underlines.len(), 0);
     }
+
+    #[test]
+    fn scene_sort_and_batch_stable_order() {
+        // Push quads in reverse order; sort_and_batch must not reorder quads
+        // (only sprites are sorted by texture_id), and must not panic.
+        let mut scene = Scene::new();
+        for i in [3u8, 2, 1] {
+            scene.push_quad(Quad {
+                background: Some(Hsla::new(i as f32 * 30.0, 0.5, 0.5, 1.0)),
+                ..Default::default()
+            });
+        }
+        let first_color = scene.quads[0].background;
+        scene.sort_and_batch();
+        // Quads are not reordered by sort_and_batch — first entry stays first.
+        assert_eq!(scene.quads[0].background, first_color);
+        assert_eq!(scene.quads.len(), 3);
+    }
+
+    #[test]
+    fn scene_paths_bucket() {
+        let mut scene = Scene::new();
+        scene.push_path(Path {
+            color: Hsla::black(),
+            ..Default::default()
+        });
+        assert_eq!(scene.paths.len(), 1);
+    }
+
+    #[test]
+    fn scene_underlines_bucket() {
+        let mut scene = Scene::new();
+        scene.push_underline(Underline {
+            wavy: true,
+            ..Default::default()
+        });
+        assert_eq!(scene.underlines.len(), 1);
+    }
+
+    #[test]
+    fn scene_multiple_primitives_mix() {
+        let mut scene = Scene::new();
+        scene.push_quad(Quad::default());
+        scene.push_shadow(Shadow::default());
+        scene.push_path(Path::default());
+        assert_eq!(scene.quads.len(), 1);
+        assert_eq!(scene.shadows.len(), 1);
+        assert_eq!(scene.paths.len(), 1);
+    }
+
+    #[test]
+    fn scene_frosted_rect_distinct_from_quad() {
+        let mut scene = Scene::new();
+        scene.push_frosted_rect(FrostedRect {
+            blur_radius: 8.0,
+            bg_alpha: 0.7,
+            border_alpha: 0.3,
+            ..Default::default()
+        });
+        scene.push_quad(Quad::default());
+        assert_eq!(scene.frosted_rects.len(), 1);
+        assert_eq!(scene.quads.len(), 1);
+    }
+
+    #[test]
+    fn scene_clear_resets_all_buckets() {
+        let mut scene = Scene::new();
+        scene.push_quad(Quad::default());
+        scene.push_shadow(Shadow::default());
+        scene.push_path(Path::default());
+        scene.push_underline(Underline::default());
+        scene.push_frosted_rect(FrostedRect::default());
+        scene.push_sprite(MonochromeSprite {
+            tile: crate::types::AtlasTile {
+                texture_id: 1,
+                bounds: AtlasBounds::default(),
+                padding: 0.0,
+            },
+            color: Hsla::white(),
+            transformation: TransformationMatrix::identity(),
+            ..Default::default()
+        });
+        assert!(!scene.is_empty());
+        scene.clear();
+        assert!(scene.is_empty());
+        assert_eq!(scene.quads.len(), 0);
+        assert_eq!(scene.shadows.len(), 0);
+        assert_eq!(scene.paths.len(), 0);
+        assert_eq!(scene.underlines.len(), 0);
+        assert_eq!(scene.frosted_rects.len(), 0);
+        assert_eq!(scene.monochrome_sprites.len(), 0);
+    }
+
+    #[test]
+    fn scene_shadow_blur_radius() {
+        let mut scene = Scene::new();
+        scene.push_shadow(Shadow {
+            blur_radius: Pixels(12.0),
+            color: Hsla::black(),
+            ..Default::default()
+        });
+        assert_eq!(scene.shadows[0].blur_radius, Pixels(12.0));
+    }
 }

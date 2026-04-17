@@ -528,4 +528,123 @@ mod tests {
             "clean integer literal must pass all sanitizers"
         );
     }
+
+    #[test]
+    fn eval_expr_addition() {
+        // 2 + 3 == 5
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Int(2))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(5)));
+    }
+
+    #[test]
+    fn eval_expr_string_concat() {
+        // "hello" + " world" == "hello world"
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Str("hello".into()))),
+            right: Box::new(Expr::Literal(SandboxValue::Str(" world".into()))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("hello world".into())));
+    }
+
+    #[test]
+    fn eval_expr_depth_limit_respected() {
+        // Build a BinOp chain 18 levels deep — exceeds default max_depth of 16.
+        let deep = (0..18).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| {
+            Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(acc),
+                right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            }
+        });
+        assert_eq!(
+            sanitize(&deep),
+            Err(SandboxError::DepthLimitExceeded),
+            "expression nested > 16 levels must be rejected"
+        );
+    }
+
+    #[test]
+    fn eval_expr_unknown_function_blocked() {
+        // "console_log" is not in the allowed function list; AllowedFunctionsSanitizer must reject it.
+        let expr = Expr::Call {
+            name: "console_log".into(),
+            args: vec![Expr::Literal(SandboxValue::Str("x".into()))],
+        };
+        assert_eq!(
+            sanitize(&expr),
+            Err(SandboxError::UnknownFunction("console_log".into())),
+            "unknown function must be rejected by sanitize()"
+        );
+    }
+
+    #[test]
+    fn graph_rag_query_returns_ranked() {
+        // Verify that retrieve() returns results sorted by score descending.
+        use crate::dag::Dag;
+        use crate::node::ExecNode;
+        use crate::graph_rag::{GraphRagRetriever, node_vec};
+
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("node1", "verb"));
+        dag.add_node(ExecNode::new("node2", "verb"));
+        dag.add_node(ExecNode::new("node3", "verb"));
+        dag.add_edge("node1", "out", "node2", "in");
+        dag.add_edge("node2", "out", "node3", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("node1");
+        let results = retriever.retrieve(&query, 3, 2);
+
+        assert_eq!(results.len(), 3);
+        for i in 0..results.len() - 1 {
+            assert!(
+                results[i].score >= results[i + 1].score,
+                "results must be sorted by score descending: {} < {}",
+                results[i].score, results[i + 1].score
+            );
+        }
+    }
+
+    #[test]
+    fn graph_rag_empty_graph_returns_empty() {
+        use crate::dag::Dag;
+        use crate::graph_rag::{GraphRagRetriever, node_vec};
+
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("anything");
+        let results = retriever.retrieve(&query, 5, 2);
+        assert!(results.is_empty(), "empty DAG must return no results");
+    }
+
+    #[test]
+    fn graph_rag_node_self_relevance() {
+        // A node queried with its own vec scores highest (cosine_sim == 1.0 → rank 0).
+        use crate::dag::Dag;
+        use crate::node::ExecNode;
+        use crate::graph_rag::{GraphRagRetriever, node_vec};
+
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("target", "verb"));
+        dag.add_node(ExecNode::new("other1", "verb"));
+        dag.add_node(ExecNode::new("other2", "verb"));
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("target");
+        let results = retriever.retrieve(&query, 3, 1);
+
+        assert!(!results.is_empty());
+        // "target" must appear at position 0 (highest score).
+        assert_eq!(
+            results[0].node_id, "target",
+            "node queried with its own vec must rank first"
+        );
+    }
 }

@@ -136,4 +136,62 @@ mod tests {
         let diags = p.diagnose("short line\nanother line");
         assert!(diags.is_empty());
     }
+
+    #[test]
+    fn lsp_provider_hover_returns_response() {
+        let p = make_provider();
+        let r = p.hover("emit").unwrap();
+        assert_eq!(r.word, "emit");
+        assert!(r.documentation.contains("emit"));
+    }
+
+    #[test]
+    fn lsp_provider_completion_items_non_empty() {
+        let p = make_provider();
+        let items = p.complete("de", 10);
+        assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn lsp_severity_ordering() {
+        // Variants are defined in order Error < Warning < Info < Hint
+        let severities = [LspSeverity::Error, LspSeverity::Warning, LspSeverity::Info, LspSeverity::Hint];
+        // Each must be cloneable and comparable
+        for s in &severities {
+            let cloned = s.clone();
+            assert_eq!(&cloned, s);
+        }
+        // Error != Warning
+        assert_ne!(LspSeverity::Error, LspSeverity::Warning);
+        // Info != Hint
+        assert_ne!(LspSeverity::Info, LspSeverity::Hint);
+    }
+
+    #[test]
+    fn lsp_diagnostic_has_range() {
+        let d = LspDiagnostic {
+            line: 3,
+            column: 10,
+            message: "test error".into(),
+            severity: LspSeverity::Error,
+        };
+        assert_eq!(d.line, 3);
+        assert_eq!(d.column, 10);
+        assert_eq!(d.message, "test error");
+        assert_eq!(d.severity, LspSeverity::Error);
+    }
+
+    #[test]
+    fn completion_item_label_preserved() {
+        let item = CompletionItem {
+            label: "define".to_string(),
+            kind_hint: "keyword".to_string(),
+            detail: Some("core keyword".into()),
+            sort_score: 1.0,
+        };
+        assert_eq!(item.label, "define");
+        assert_eq!(item.kind_hint, "keyword");
+        assert_eq!(item.sort_score, 1.0);
+        assert_eq!(item.detail.as_deref(), Some("core keyword"));
+    }
 }

@@ -415,4 +415,212 @@ mod tests {
             }
         }
     }
+
+    // --- LintDiagnostic fields ---
+
+    #[test]
+    fn lint_diagnostic_level_is_warning_for_trailing_whitespace() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 5).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning);
+    }
+
+    #[test]
+    fn lint_diagnostic_line_number_stored_correctly() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 42).unwrap();
+        assert_eq!(diag.line, 42);
+    }
+
+    #[test]
+    fn lint_diagnostic_message_is_non_empty() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        assert!(!diag.message.is_empty());
+    }
+
+    #[test]
+    fn lint_diagnostic_clone_equals_original() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        let cloned = diag.clone();
+        assert_eq!(diag, cloned);
+    }
+
+    // --- TrailingWhitespaceRule edge cases ---
+
+    #[test]
+    fn trailing_whitespace_tab_only_detected() {
+        let diag = TrailingWhitespaceRule.check("code\t", 1).unwrap();
+        assert_eq!(diag.span.start, 4);
+        assert_eq!(diag.span.end, 5);
+    }
+
+    #[test]
+    fn trailing_whitespace_mixed_tab_space_detected() {
+        let diag = TrailingWhitespaceRule.check("code \t ", 1).unwrap();
+        assert_eq!(diag.span.start, 4);
+        assert_eq!(diag.span.end, 7);
+    }
+
+    #[test]
+    fn trailing_whitespace_only_whitespace_line_detected() {
+        // A line that is entirely whitespace — span starts at 0.
+        let diag = TrailingWhitespaceRule.check("   ", 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 3);
+    }
+
+    #[test]
+    fn trailing_whitespace_empty_line_no_diag() {
+        assert!(TrailingWhitespaceRule.check("", 1).is_none());
+    }
+
+    #[test]
+    fn trailing_whitespace_single_char_no_trailing_no_diag() {
+        assert!(TrailingWhitespaceRule.check("x", 1).is_none());
+    }
+
+    // --- LineTooLongRule edge cases ---
+
+    #[test]
+    fn line_too_long_custom_max_len() {
+        let rule = LineTooLongRule { max_len: 40 };
+        let short = "a".repeat(40);
+        assert!(rule.check(&short, 1).is_none());
+        let long = "a".repeat(41);
+        let diag = rule.check(&long, 2).unwrap();
+        assert_eq!(diag.span.end, 41);
+    }
+
+    #[test]
+    fn line_too_long_default_constructor_max_120() {
+        let rule = LineTooLongRule::new();
+        assert_eq!(rule.max_len, 120);
+    }
+
+    #[test]
+    fn line_too_long_default_trait_max_120() {
+        let rule = LineTooLongRule::default();
+        assert_eq!(rule.max_len, 120);
+    }
+
+    #[test]
+    fn line_too_long_empty_line_no_diag() {
+        let rule = LineTooLongRule::new();
+        assert!(rule.check("", 1).is_none());
+    }
+
+    #[test]
+    fn line_too_long_span_covers_whole_line() {
+        let rule = LineTooLongRule { max_len: 5 };
+        let line = "hello world"; // 11 chars
+        let diag = rule.check(line, 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 11);
+    }
+
+    #[test]
+    fn line_too_long_message_contains_actual_and_max() {
+        let rule = LineTooLongRule { max_len: 10 };
+        let line = "a".repeat(15);
+        let diag = rule.check(&line, 1).unwrap();
+        assert!(diag.message.contains("15"));
+        assert!(diag.message.contains("10"));
+    }
+
+    // --- EmptyBlockRule edge cases ---
+
+    #[test]
+    fn empty_block_at_start_of_line() {
+        let diag = EmptyBlockRule.check("{} rest", 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 2);
+    }
+
+    #[test]
+    fn empty_block_multiple_occurrences_first_fires() {
+        // find() returns the first match; rule should fire on "fn a() {}"
+        let diag = EmptyBlockRule.check("fn a() {} fn b() {}", 1).unwrap();
+        assert_eq!(diag.span.start, 7);
+    }
+
+    #[test]
+    fn empty_block_rule_name() {
+        assert_eq!(EmptyBlockRule.name(), "empty-block");
+    }
+
+    #[test]
+    fn trailing_whitespace_rule_name() {
+        assert_eq!(TrailingWhitespaceRule.name(), "trailing-whitespace");
+    }
+
+    #[test]
+    fn line_too_long_rule_name() {
+        assert_eq!(LineTooLongRule::new().name(), "line-too-long");
+    }
+
+    // --- LintRunner rule count / check_line ---
+
+    #[test]
+    fn lint_runner_no_rules_produces_no_diags() {
+        let runner = LintRunner::new();
+        assert!(runner.check_line("fn foo() {}  ", 1).is_empty());
+    }
+
+    #[test]
+    fn lint_runner_check_line_single_rule() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line("hello   ", 1);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    #[test]
+    fn lint_runner_run_equals_check_file() {
+        let source = "line one   \nline two\nline three   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.run(source), runner.check_file(source));
+    }
+
+    #[test]
+    fn lint_runner_default_trait_works() {
+        let runner = LintRunner::default();
+        assert!(runner.run("anything").is_empty());
+    }
+
+    #[test]
+    fn lint_runner_single_line_no_newline() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run("fn empty() {}");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    #[test]
+    fn lint_runner_multiple_rules_same_line() {
+        // A long line that also has trailing whitespace.
+        let long_trailing = format!("{}   ", "b".repeat(130));
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(&long_trailing);
+        // Both rules should fire on line 1.
+        assert_eq!(diags.iter().filter(|d| d.line == 1).count(), 2);
+    }
+
+    // --- LintLevel enum ---
+
+    #[test]
+    fn lint_level_variants_distinct() {
+        assert_ne!(LintLevel::Error, LintLevel::Warning);
+        assert_ne!(LintLevel::Warning, LintLevel::Info);
+        assert_ne!(LintLevel::Error, LintLevel::Info);
+    }
+
+    #[test]
+    fn lint_level_clone_equality() {
+        let a = LintLevel::Warning;
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
 }

@@ -243,4 +243,47 @@ mod tests {
         assert!((c.confidence - 0.9).abs() < f32::EPSILON);
         assert_eq!(c.can_wire_result.2, "validated");
     }
+
+    #[test]
+    fn connector_has_from_to_nodes() {
+        let c = Connector::new_stub("wire-1", "node-src", "output", "node-dst", "input");
+        assert_eq!(c.src.0, "node-src");
+        assert_eq!(c.src.1, "output");
+        assert_eq!(c.dst.0, "node-dst");
+        assert_eq!(c.dst.1, "input");
+    }
+
+    #[test]
+    fn connector_can_wire_same_kind() {
+        // Same block type wiring to itself — should be valid with "any" ports
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(
+            "c4", "n1", "output", "n1", "input", &dict, "verb", "verb",
+        );
+        assert!(c.is_valid());
+    }
+
+    #[test]
+    fn connector_type_mismatch_fails() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "integer")]);
+        let c = Connector::new_with_validation(
+            "c5", "n1", "output", "n2", "input", &dict, "verb", "concept",
+        );
+        assert!(!c.is_valid());
+        assert!(c.can_wire_result.2.contains("type mismatch"));
+    }
+
+    #[test]
+    fn connector_unknown_dst_port_fails() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(
+            "c6", "n1", "output", "n2", "no_such_port", &dict, "verb", "concept",
+        );
+        assert!(!c.is_valid());
+        assert!(c.can_wire_result.2.contains("unknown port: no_such_port"));
+    }
 }

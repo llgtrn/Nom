@@ -634,6 +634,55 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // graph_rag_query_top_k_limit
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_query_top_k_limit() {
+        // A DAG with 5 nodes; top_k=3 must return exactly 3 results.
+        let mut dag = Dag::new();
+        for name in &["n1", "n2", "n3", "n4", "n5"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n2", "out", "n3", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("n1");
+        let results = retriever.retrieve(&query, 3, 2);
+        assert_eq!(results.len(), 3, "retrieve must return exactly top_k results");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_scores_are_positive
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_scores_are_positive() {
+        // All returned scores must be > 0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("a");
+        let results = retriever.retrieve(&query, 2, 1);
+        for r in &results {
+            assert!(r.score > 0.0, "score for {} must be positive, got {}", r.node_id, r.score);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_top_k_zero_returns_empty
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_top_k_zero_returns_empty() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("x");
+        let results = retriever.retrieve(&query, 0, 1);
+        assert!(results.is_empty(), "top_k=0 must return empty results");
+    }
+
+    // -----------------------------------------------------------------------
     // graph_rag_deduplicates_nodes
     // -----------------------------------------------------------------------
     #[test]

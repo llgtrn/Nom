@@ -2,6 +2,7 @@
 
 pub mod types;
 pub mod scene;
+pub mod shaders;
 pub mod renderer;
 pub mod atlas;
 pub mod element;

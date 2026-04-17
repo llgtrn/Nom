@@ -111,6 +111,34 @@ mod tests {
     }
 
     #[test]
+    fn library_kind_count_empty() {
+        let panel = LibraryPanel::new();
+        assert_eq!(panel.kind_count(), 0);
+        assert!(panel.selected_kind.is_none());
+    }
+
+    #[test]
+    fn library_load_kinds_populates() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(SAMPLE_KINDS);
+        assert_eq!(panel.kind_count(), 3);
+        assert_eq!(panel.kinds[0].name, "Function");
+        assert_eq!(panel.kinds[1].name, "Concept");
+        assert_eq!(panel.kinds[2].name, "Entity");
+    }
+
+    #[test]
+    fn library_select_kind_sets_selected() {
+        let mut panel = LibraryPanel::new();
+        panel.load_kinds(SAMPLE_KINDS);
+        panel.select_kind("Function");
+        assert_eq!(panel.selected_kind.as_deref(), Some("Function"));
+        // Selecting another replaces the selection
+        panel.select_kind("Entity");
+        assert_eq!(panel.selected_kind.as_deref(), Some("Entity"));
+    }
+
+    #[test]
     fn library_panel_paint_scene_quads() {
         let mut panel = LibraryPanel::new();
         panel.load_kinds(SAMPLE_KINDS);

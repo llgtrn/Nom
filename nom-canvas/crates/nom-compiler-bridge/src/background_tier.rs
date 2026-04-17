@@ -342,4 +342,22 @@ mod tests {
         assert_eq!(first.source_hash, second.source_hash);
         assert_eq!(first.grammar_version, second.grammar_version);
     }
+
+    #[test]
+    fn background_tier_creates_from_shared() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let ops = BackgroundTierOps::new(state.clone());
+        // Verify construction works and Arc refcount is at least 2 (original + ops)
+        assert!(Arc::strong_count(&state) >= 2);
+        drop(ops);
+    }
+
+    #[test]
+    fn background_tier_compile_stub_returns_ok() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let result = worker.do_compile("", &CompileOpts::fast());
+        // Stub must return Ok even for empty source
+        assert!(result.is_ok());
+    }
 }

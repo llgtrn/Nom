@@ -378,6 +378,24 @@ mod tests {
     }
 
     #[test]
+    fn dock_panel_count_increases() {
+        let mut dock = Dock::new(DockPosition::Left);
+        assert_eq!(dock.panel_count(), 0);
+        dock.add_panel("panel-a", 248.0);
+        assert_eq!(dock.panel_count(), 1);
+        dock.add_panel("panel-b", 248.0);
+        assert_eq!(dock.panel_count(), 2);
+    }
+
+    #[test]
+    fn dock_position_left_right_distinct() {
+        assert_ne!(DockPosition::Left, DockPosition::Right);
+        assert_ne!(DockPosition::Left, DockPosition::Bottom);
+        assert_ne!(DockPosition::Right, DockPosition::Bottom);
+        assert_eq!(DockPosition::Left, DockPosition::Left);
+    }
+
+    #[test]
     fn dock_paint_scene_active_tab_is_focus_ring() {
         // The active-tab indicator must be a border-only quad (no fill).
         let mut dock = Dock::new(DockPosition::Left);

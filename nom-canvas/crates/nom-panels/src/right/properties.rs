@@ -111,6 +111,32 @@ mod tests {
     }
 
     #[test]
+    fn properties_row_count_empty() {
+        let panel = PropertiesPanel::new();
+        assert_eq!(panel.row_count(), 0);
+    }
+
+    #[test]
+    fn properties_load_entity_populates() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity("ent-99", "Concept");
+        panel.set_row("name", "my_concept", true);
+        panel.set_row("visibility", "public", false);
+        assert_eq!(panel.row_count(), 2);
+        assert_eq!(panel.entity_id.as_deref(), Some("ent-99"));
+        assert_eq!(panel.entity_kind.as_deref(), Some("Concept"));
+    }
+
+    #[test]
+    fn properties_row_key_preserved() {
+        let mut panel = PropertiesPanel::new();
+        panel.set_row("return_type", "i32", true);
+        assert_eq!(panel.rows[0].key, "return_type");
+        assert_eq!(panel.rows[0].value, "i32");
+        assert!(panel.rows[0].editable);
+    }
+
+    #[test]
     fn properties_panel_paint_scene_emits_per_row_quads() {
         let mut panel = PropertiesPanel::new();
         panel.load_entity("ent-1", "Concept");

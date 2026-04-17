@@ -73,4 +73,48 @@ mod tests {
         ws.remove_block("b1");
         assert_eq!(ws.block_count(), 0);
     }
+
+    #[test]
+    fn workspace_insert_node_and_connector() {
+        let mut ws = Workspace::new();
+        let node = GraphNode::new(
+            "n1",
+            NomtuRef::new("e1", "fetch", "verb"),
+            "verb",
+            [0.0, 0.0],
+        );
+        ws.insert_node(node);
+        assert_eq!(ws.node_count(), 1);
+
+        let conn = Connector::new_stub("c1", "n1", "output", "n2", "input");
+        ws.insert_connector(conn);
+        assert_eq!(ws.connector_count(), 1);
+    }
+
+    #[test]
+    fn workspace_remove_block_updates_doc_tree() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            let block = BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            );
+            ws.insert_block(block);
+        }
+        assert_eq!(ws.block_count(), 3);
+        assert_eq!(ws.doc_tree.len(), 3);
+        ws.remove_block("b1");
+        assert_eq!(ws.block_count(), 2);
+        assert!(!ws.doc_tree.contains(&"b1".to_string()));
+    }
+
+    #[test]
+    fn canvas_object_entity_returns_block_entity() {
+        let entity = NomtuRef::new("e1", "render", "verb");
+        let block = BlockModel::new("b1", entity.clone(), "affine:paragraph");
+        let obj = CanvasObject::Block(block);
+        assert_eq!(obj.entity().id, "e1");
+        assert_eq!(obj.entity().word, "render");
+    }
 }

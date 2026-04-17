@@ -238,4 +238,21 @@ mod tests {
         let info = ops.hover_info("run");
         assert_eq!(info, Some("nomtu: run".to_string()));
     }
+
+    #[test]
+    fn interactive_tier_creates_from_shared() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state.clone());
+        // sender must be usable — capacity check via try_send a dummy to verify it is live
+        // We just verify the tier is constructed without panic
+        drop(tier);
+    }
+
+    #[test]
+    fn interactive_tier_ops_tokenize_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let tokens = ops.tokenize_line("");
+        assert!(tokens.is_empty());
+    }
 }

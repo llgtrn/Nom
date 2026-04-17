@@ -411,4 +411,81 @@ mod tests {
             "step past full duration must return 1.0, got {past}"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Easing boundary tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn easing_linear_at_zero() {
+        let f = easing::linear();
+        assert!((f(0.0) - 0.0).abs() < 1e-6, "linear(0.0) must be 0.0");
+    }
+
+    #[test]
+    fn easing_linear_at_one() {
+        let f = easing::linear();
+        assert!((f(1.0) - 1.0).abs() < 1e-6, "linear(1.0) must be 1.0");
+    }
+
+    #[test]
+    fn easing_ease_in_less_than_linear_at_midpoint() {
+        let f = easing::ease_in();
+        // t*t at 0.5 = 0.25 < 0.5
+        assert!(f(0.5) < 0.5, "ease_in(0.5) must be < 0.5");
+    }
+
+    #[test]
+    fn easing_ease_out_greater_than_linear_at_midpoint() {
+        let f = easing::ease_out();
+        // t*(2-t) at 0.5 = 0.75 > 0.5
+        assert!(f(0.5) > 0.5, "ease_out(0.5) must be > 0.5");
+    }
+
+    #[test]
+    fn easing_ease_in_at_boundaries() {
+        let f = easing::ease_in();
+        assert!((f(0.0) - 0.0).abs() < 1e-6);
+        assert!((f(1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn easing_ease_out_at_boundaries() {
+        let f = easing::ease_out();
+        assert!((f(0.0) - 0.0).abs() < 1e-6);
+        assert!((f(1.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn spring_settle_converges_near_one() {
+        // Advance spring 100 small steps (simulated via spring_value at t=1.0)
+        // At t=1.0 the spring should be very close to its target of 1.0.
+        let value = easing::spring_value(400.0, 28.0, 1.0);
+        assert!(
+            (value - 1.0).abs() < 0.05,
+            "spring at t=1.0 should be within 0.05 of 1.0, got {value}"
+        );
+    }
+
+    #[test]
+    fn spring_starts_at_zero() {
+        let value = easing::spring_value(400.0, 28.0, 0.0);
+        assert!((value - 0.0).abs() < 1e-6, "spring at t=0 must be 0.0, got {value}");
+    }
+
+    #[test]
+    fn animation_delta_increases_with_elapsed() {
+        let anim = Animation::new(Duration::from_millis(1000), easing::linear());
+        let d1 = anim.delta(Duration::from_millis(100));
+        let d2 = anim.delta(Duration::from_millis(500));
+        assert!(d2 > d1, "delta should increase with elapsed time");
+    }
+
+    #[test]
+    fn animation_looping_delta_wraps() {
+        let anim = Animation::new(Duration::from_millis(1000), easing::linear()).looping();
+        // At 1.5× duration the fractional part should be ~0.5
+        let d = anim.delta(Duration::from_millis(1500));
+        assert!((d - 0.5).abs() < 0.01, "looping delta at 1.5× should be ~0.5, got {d}");
+    }
 }

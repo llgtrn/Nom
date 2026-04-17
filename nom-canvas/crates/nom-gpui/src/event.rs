@@ -168,4 +168,104 @@ mod tests {
         assert_eq!(Redo.name(), "redo");
         assert_eq!(OpenCommandPalette.name(), "open_command_palette");
     }
+
+    #[test]
+    fn mouse_event_position_preserved() {
+        let pos = Vec2::new(42.5, 99.0);
+        let ev = MouseEvent::Move { position: pos, modifiers: Modifiers::default() };
+        if let MouseEvent::Move { position, .. } = ev {
+            assert_eq!(position, pos);
+        } else {
+            panic!("expected Move variant");
+        }
+    }
+
+    #[test]
+    fn key_event_code_preserved() {
+        let ev = KeyEvent::Pressed { key: Key::Return, modifiers: Modifiers::default() };
+        if let KeyEvent::Pressed { key, .. } = ev {
+            assert_eq!(key, Key::Return);
+        } else {
+            panic!("expected Pressed variant");
+        }
+    }
+
+    #[test]
+    fn scroll_event_delta_preserved() {
+        let delta = Vec2::new(-15.0, 30.0);
+        let ev = ScrollEvent {
+            position: Vec2::new(0.0, 0.0),
+            delta,
+            modifiers: Modifiers::default(),
+        };
+        assert_eq!(ev.delta, delta);
+    }
+
+    #[test]
+    fn mouse_button_other_variant_carries_value() {
+        let btn = MouseButton::Other(5);
+        assert_eq!(btn, MouseButton::Other(5));
+        assert_ne!(btn, MouseButton::Other(6));
+    }
+
+    #[test]
+    fn mouse_event_up_position_preserved() {
+        let pos = Vec2::new(7.0, 14.0);
+        let ev = MouseEvent::Up {
+            button: MouseButton::Right,
+            position: pos,
+            modifiers: Modifiers::default(),
+        };
+        if let MouseEvent::Up { button, position, .. } = ev {
+            assert_eq!(button, MouseButton::Right);
+            assert_eq!(position, pos);
+        } else {
+            panic!("expected Up variant");
+        }
+    }
+
+    #[test]
+    fn mouse_event_enter_position_preserved() {
+        let pos = Vec2::new(3.0, 5.0);
+        let ev = MouseEvent::Enter { position: pos };
+        if let MouseEvent::Enter { position } = ev {
+            assert_eq!(position, pos);
+        } else {
+            panic!("expected Enter variant");
+        }
+    }
+
+    #[test]
+    fn key_event_released_key_preserved() {
+        let ev = KeyEvent::Released { key: Key::Escape, modifiers: Modifiers::default() };
+        if let KeyEvent::Released { key, .. } = ev {
+            assert_eq!(key, Key::Escape);
+        } else {
+            panic!("expected Released variant");
+        }
+    }
+
+    #[test]
+    fn key_char_variant_preserves_char() {
+        let k = Key::Char('z');
+        assert_eq!(k, Key::Char('z'));
+        assert_ne!(k, Key::Char('a'));
+    }
+
+    #[test]
+    fn modifiers_shortcut_false_for_shift_only() {
+        let m = Modifiers { shift: true, ..Modifiers::default() };
+        assert!(!m.is_shortcut());
+    }
+
+    #[test]
+    fn scroll_event_position_preserved() {
+        let pos = Vec2::new(100.0, 200.0);
+        let ev = ScrollEvent {
+            position: pos,
+            delta: Vec2::new(0.0, 0.0),
+            modifiers: Modifiers::default(),
+        };
+        assert_eq!(ev.position, pos);
+    }
 }

@@ -112,4 +112,39 @@ mod tests {
         // already Completed — second complete() must fail
         assert!(!q.complete(id), "complete() must return false on already-Completed task");
     }
+
+    #[test]
+    fn task_queue_enqueue() {
+        let mut q = TaskQueue::new();
+        q.enqueue(BackendKind::Data, "payload");
+        assert_eq!(q.pending_count(), 1);
+    }
+
+    #[test]
+    fn task_queue_dequeue() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Image, "img_src");
+        let task = q.get(id).unwrap();
+        assert_eq!(task.input, "img_src");
+    }
+
+    #[test]
+    fn task_queue_complete_marks_done() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Audio, "track");
+        q.start(id);
+        q.complete(id);
+        assert_eq!(q.get(id).unwrap().state, TaskState::Completed);
+    }
+
+    #[test]
+    fn task_queue_pending_count() {
+        let mut q = TaskQueue::new();
+        let id1 = q.enqueue(BackendKind::Video, "v1");
+        q.enqueue(BackendKind::Audio, "a1");
+        q.enqueue(BackendKind::Image, "i1");
+        q.start(id1);
+        q.complete(id1);
+        assert_eq!(q.pending_count(), 2);
+    }
 }

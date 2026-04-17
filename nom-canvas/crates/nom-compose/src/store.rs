@@ -139,4 +139,41 @@ mod tests {
         // Must be valid lowercase hex
         assert!(hex.chars().all(|c| c.is_ascii_hexdigit()));
     }
+
+    #[test]
+    fn artifact_store_insert_retrieve() {
+        let mut s = InMemoryStore::new();
+        let ch = s.put_bytes(b"artifact content");
+        assert_eq!(s.read(ch.as_bytes()).unwrap(), b"artifact content");
+    }
+
+    #[test]
+    fn artifact_store_miss_returns_none() {
+        let s = InMemoryStore::new();
+        let unknown = [0xdeu8; 32];
+        assert!(s.read(&unknown).is_none());
+    }
+
+    #[test]
+    fn content_hash_sha256_deterministic() {
+        let h1 = ContentHash::from_bytes(b"same input");
+        let h2 = ContentHash::from_bytes(b"same input");
+        assert_eq!(h1, h2);
+    }
+
+    #[test]
+    fn content_hash_different_content() {
+        let h1 = ContentHash::from_bytes(b"content A");
+        let h2 = ContentHash::from_bytes(b"content B");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn artifact_store_count() {
+        let mut s = InMemoryStore::new();
+        s.put_bytes(b"one");
+        s.put_bytes(b"two");
+        s.put_bytes(b"three");
+        assert_eq!(s.blobs.len(), 3);
+    }
 }

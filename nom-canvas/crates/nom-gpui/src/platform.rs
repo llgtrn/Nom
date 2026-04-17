@@ -115,4 +115,64 @@ mod tests {
     fn default_platform_does_not_panic() {
         let _p = default_platform();
     }
+
+    #[test]
+    fn desktop_platform_surface_descriptor_format() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let p = DesktopPlatform;
+            let desc = p.create_surface_descriptor();
+            // Desktop should use Bgra format
+            assert!(matches!(desc.format, TextureFormat::Bgra8UnormSrgb));
+        }
+    }
+
+    #[test]
+    fn desktop_platform_surface_descriptor_present_mode() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let p = DesktopPlatform;
+            let desc = p.create_surface_descriptor();
+            assert_eq!(desc.present_mode, PresentMode::Fifo);
+        }
+    }
+
+    #[test]
+    fn desktop_platform_adapter_prefers_high_performance() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let p = DesktopPlatform;
+            let opts = p.adapter_options();
+            assert!(matches!(opts.power_preference, PowerPreference::HighPerformance));
+            assert!(!opts.force_fallback);
+        }
+    }
+
+    #[test]
+    fn desktop_platform_device_features_is_zero() {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            let p = DesktopPlatform;
+            assert_eq!(p.device_features(), 0);
+        }
+    }
+
+    #[test]
+    fn present_mode_equality() {
+        assert_eq!(PresentMode::Fifo, PresentMode::Fifo);
+        assert_ne!(PresentMode::Fifo, PresentMode::Immediate);
+        assert_ne!(PresentMode::Immediate, PresentMode::Mailbox);
+    }
+
+    #[test]
+    fn default_platform_returns_fifo_present_mode() {
+        let p = default_platform();
+        assert_eq!(p.present_mode(), PresentMode::Fifo);
+    }
+
+    #[test]
+    fn default_platform_device_features_is_zero() {
+        let p = default_platform();
+        assert_eq!(p.device_features(), 0);
+    }
 }

@@ -101,6 +101,43 @@ mod tests {
     }
 
     #[test]
+    fn toolbar_height_is_48() {
+        let toolbar = Toolbar::new();
+        assert_eq!(toolbar.height, 48.0);
+    }
+
+    #[test]
+    fn toolbar_buttons_count() {
+        let mut toolbar = Toolbar::new();
+        toolbar.add_button("A", "action_a");
+        toolbar.add_button("B", "action_b");
+        toolbar.add_button("C", "action_c");
+        assert_eq!(toolbar.buttons.len(), 3);
+    }
+
+    #[test]
+    fn toolbar_active_button_toggle() {
+        let mut toolbar = Toolbar::new();
+        toolbar.add_button("Run", "run");
+        toolbar.add_button("Stop", "stop");
+        // Initially none active
+        assert!(!toolbar.buttons[0].active);
+        assert!(!toolbar.buttons[1].active);
+        // Activate run
+        toolbar.set_active("run");
+        assert!(toolbar.buttons[0].active);
+        assert!(!toolbar.buttons[1].active);
+        // Switch to stop — run becomes inactive
+        toolbar.set_active("stop");
+        assert!(!toolbar.buttons[0].active);
+        assert!(toolbar.buttons[1].active);
+        // Activate unknown — all become inactive
+        toolbar.set_active("unknown");
+        assert!(!toolbar.buttons[0].active);
+        assert!(!toolbar.buttons[1].active);
+    }
+
+    #[test]
     fn toolbar_paint_scene_emits_background() {
         let mut toolbar = Toolbar::new();
         toolbar.add_button("Run", "run");
