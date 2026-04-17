@@ -5,3 +5,4 @@ pub mod fonts;
 pub mod icons;
 pub mod mode;
 pub mod tokens;
+pub mod typography;

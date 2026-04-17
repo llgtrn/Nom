@@ -1,7 +1,7 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `4592b85` (wave-5 LANDED, **519 workspace tests** green under `RUSTFLAGS="-D warnings"` across **11 crates**) | **Date:** 2026-04-17
+> **HEAD:** wave-7 LANDING (**870 workspace tests** green under `RUSTFLAGS="-D warnings"` across **13 crates**). Wave-6 added 6 new crates (nom-graph-v2/compose/lint/memoize/telemetry/collab) + line_layout + compose-preview blocks + HIGH animation div-by-zero + MEDIUM EmbedKind brand-name rename + MEDIUM CI env var. Wave-7 added 10 new modules: artifact_store + vendor_trait + video_composition + format_translator + semantic + rayon_bridge + watcher + sandbox + typography + command_history. | **Date:** 2026-04-17
 > **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (721 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
 > **Status:** Phase 1 + Phase 2 (100%, 30/30 modules) + Phase 3 (96%, missing `line_layout.rs`) landed. Phase 4 + Phase 5 crates scaffolded but depth-of-impl TBD. 8 of 13 audit-backlog items still open (see iter-14 overlay in state report).

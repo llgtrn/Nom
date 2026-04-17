@@ -1,7 +1,8 @@
 #![deny(unsafe_code)]
 
-pub mod tier;
-pub mod span;
-pub mod sampler;
-pub mod propagation;
 pub mod exporter;
+pub mod propagation;
+pub mod rayon_bridge;
+pub mod sampler;
+pub mod span;
+pub mod tier;

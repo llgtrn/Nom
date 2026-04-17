@@ -15,6 +15,7 @@
 
 #![deny(unsafe_code)]
 
+pub mod command_history;
 pub mod command_palette;
 pub mod library;
 pub mod mode_switcher;
