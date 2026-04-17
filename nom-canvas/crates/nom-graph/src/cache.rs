@@ -128,9 +128,23 @@ impl HierarchicalCache {
     pub fn new(l1_cap: usize, l2_threshold: usize) -> Self {
         Self { l1: LruCache::new(l1_cap), l2: RamPressureCache::new(l2_threshold) }
     }
+
+    /// Promoting get: L2 hits are copied into L1 so subsequent accesses are fast.
+    /// Use this when you have `&mut` access and want full L1+L2 promotion semantics.
+    pub fn get_promoting(&mut self, key: u64) -> Option<CachedValue> {
+        if let Some(v) = self.l1.get(key) {
+            return Some(v);
+        }
+        if let Some(v) = self.l2.get(key) {
+            self.l1.put(key, v.clone());
+            return Some(v);
+        }
+        None
+    }
 }
 
 impl ExecutionCache for HierarchicalCache {
+    /// Non-promoting read (trait requires `&self`). Use `get_promoting` when `&mut` is available.
     fn get(&self, key: u64) -> Option<CachedValue> {
         self.l1.get(key).or_else(|| self.l2.get(key))
     }
@@ -364,5 +378,43 @@ mod tests {
         flags.mark_clean("n1".to_string());
         assert!(!flags.is_changed(&"n1".to_string()));
         assert_eq!(flags.changed_count(), 0);
+    }
+
+    #[test]
+    fn hierarchical_cache_l2_hit_promotes_to_l1() {
+        // L1 capacity = 1 so a second put evicts the first entry from L1.
+        // After eviction, the value lives only in L2.
+        // get_promoting() must re-populate L1 with the promoted value.
+        let mut cache = HierarchicalCache::new(1, 100);
+        cache.put(10, CachedValue::String("ten".into()));
+        // Evict key 10 from L1 by inserting another entry (L1 cap = 1).
+        cache.l1.put(99, CachedValue::String("other".into()));
+        // Verify L1 no longer holds 10 but L2 still does.
+        assert!(cache.l1.get(10).is_none(), "key 10 should have been evicted from L1");
+        assert!(cache.l2.get(10).is_some(), "key 10 should still be in L2");
+        // get_promoting should find it in L2 and promote to L1.
+        let result = cache.get_promoting(10);
+        assert!(result.is_some(), "get_promoting should return the L2-resident value");
+        match result.unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "ten"),
+            _ => panic!("wrong variant"),
+        }
+        // After promotion, L1 should now contain key 10.
+        assert!(cache.l1.get(10).is_some(), "key 10 should be promoted back to L1");
+    }
+
+    #[test]
+    fn hierarchical_cache_l1_preferred_over_l2() {
+        // Both L1 and L2 hold key 5, but with different values.
+        // A direct get() should return the L1 value (checked first).
+        let mut cache = HierarchicalCache::new(10, 100);
+        // Manually insert distinct values into L1 and L2 to confirm L1 wins.
+        cache.l1.put(5, CachedValue::String("from-l1".into()));
+        cache.l2.put(5, CachedValue::String("from-l2".into()));
+        let result = cache.get(5).expect("should find key in cache");
+        match result {
+            CachedValue::String(s) => assert_eq!(s, "from-l1", "L1 value should be preferred"),
+            _ => panic!("wrong variant"),
+        }
     }
 }

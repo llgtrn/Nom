@@ -1,5 +1,7 @@
 #![deny(unsafe_code)]
 use std::collections::HashMap;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::Arc;
 use crate::node::{ExecNode, NodeId, IsChanged};
 use crate::dag::Dag;
 use crate::cache::{ExecutionCache, ChangedFlags};
@@ -18,12 +20,27 @@ pub struct ExecutionEngine {
     pub cache: Box<dyn ExecutionCache>,
     /// Per-node IS_CHANGED flags — nodes marked clean can be skipped when cache is warm.
     pub changed_flags: ChangedFlags,
+    /// Shared cancel flag. Set via `cancel()`; checked inside the execution loop.
+    pub cancel_flag: Arc<AtomicBool>,
 }
 
 impl ExecutionEngine {
     pub fn new(cache: impl ExecutionCache + 'static) -> Self {
-        Self { cache: Box::new(cache), changed_flags: ChangedFlags::default() }
+        Self {
+            cache: Box::new(cache),
+            changed_flags: ChangedFlags::default(),
+            cancel_flag: Arc::new(AtomicBool::new(false)),
+        }
     }
+
+    /// Signal the engine to abort the current execution as soon as possible.
+    pub fn cancel(&self) { self.cancel_flag.store(true, Ordering::SeqCst); }
+
+    /// Clear the cancel flag so the engine can accept new executions.
+    pub fn reset_cancel(&self) { self.cancel_flag.store(false, Ordering::SeqCst); }
+
+    /// Returns `true` if a cancel has been requested.
+    pub fn is_cancelled(&self) -> bool { self.cancel_flag.load(Ordering::SeqCst) }
 
     /// Compute a SipHash-like key from node kind + serialized inputs
     pub fn compute_cache_key(node_kind: &str, input_hash: u64) -> u64 {
@@ -56,8 +73,11 @@ impl ExecutionEngine {
     }
 
     /// Execute DAG: sort -> filter by cache -> dispatch in order
-    /// Returns execution plan (list of nodes to actually run)
+    /// Returns execution plan (list of nodes to actually run), or `Err` if cancelled or cycle detected.
     pub fn plan_execution(&self, dag: &Dag) -> Result<Vec<NodeId>, Vec<NodeId>> {
+        if self.is_cancelled() {
+            return Err(vec![]);
+        }
         let sorted = dag.topological_sort()?;
         // Track output hash per node so downstream edges pick up real values
         let mut outputs: HashMap<NodeId, u64> = HashMap::new();
@@ -165,6 +185,26 @@ mod tests {
         let root_key = ExecutionEngine::compute_cache_key("verb", 0);
         let chained_key = ExecutionEngine::compute_cache_key("noun", root_key.rotate_left(17));
         assert_ne!(standalone_key, chained_key);
+    }
+
+    #[test]
+    fn execution_cancel_flag_works() {
+        let engine = ExecutionEngine::new(BasicCache::new());
+        assert!(!engine.is_cancelled(), "fresh engine should not be cancelled");
+        engine.cancel();
+        assert!(engine.is_cancelled(), "engine should be cancelled after cancel()");
+        engine.reset_cancel();
+        assert!(!engine.is_cancelled(), "engine should not be cancelled after reset_cancel()");
+    }
+
+    #[test]
+    fn plan_execution_returns_err_when_cancelled() {
+        let engine = ExecutionEngine::new(BasicCache::new());
+        engine.cancel();
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "verb"));
+        let result = engine.plan_execution(&dag);
+        assert!(result.is_err(), "plan_execution should return Err when cancelled");
     }
 
     #[test]
