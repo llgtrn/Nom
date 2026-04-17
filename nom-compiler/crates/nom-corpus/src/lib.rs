@@ -18,6 +18,8 @@ use thiserror::Error;
 pub mod checkpoint;
 pub use checkpoint::IngestCheckpoint;
 
+pub mod pipeline;
+
 pub mod equivalence_gate;
 pub use equivalence_gate::{GateError, GateOutcome, run_gate};
 

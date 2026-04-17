@@ -434,6 +434,12 @@ pub fn find_entity(d: &Dict, hash: &str) -> Result<Option<EntityRow>> {
     Ok(row)
 }
 
+/// Get a single entity by hash from the canonical `entities` table.
+/// Canonical replacement for deprecated `get_entry`.
+pub fn get_entity(d: &Dict, hash: &str) -> Result<Option<EntityRow>> {
+    find_entity(d, hash)
+}
+
 /// Return every `entities` row with the given `word` column, ordered by hash.
 pub fn find_entities_by_word(d: &Dict, word: &str) -> Result<Vec<EntityRow>> {
     let mut stmt = d.entities.prepare_cached(

@@ -1,0 +1,20 @@
+the function parse_entity_declaration is
+  intended to parse a complete entity declaration from tokens.
+  given source of text, returns text.
+  requires source starts with the keyword the.
+
+the function parse_kind is
+  intended to extract the entity kind from a declaration.
+  given source of text, returns text.
+
+the function parse_signature is
+  intended to extract the function signature including parameters and return type.
+  given source of text, returns text.
+
+the function parse_contracts is
+  intended to extract requires and ensures clauses from a declaration.
+  given source of text, returns text.
+
+the function parse_effects is
+  intended to extract benefit and hazard clauses from a declaration.
+  given source of text, returns text.

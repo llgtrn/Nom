@@ -1,0 +1,22 @@
+the function tokenize is
+  intended to split source text into a stream of tokens.
+  given source of text, returns text.
+  requires source is not empty.
+  benefit fast_path.
+
+the function skip_whitespace is
+  intended to advance past whitespace characters in the source.
+  given source of text, returns text.
+
+the function peek_token is
+  intended to look at the next token without consuming it.
+  given source of text, returns text.
+
+the function consume_token is
+  intended to read and consume the next token from the source.
+  given source of text, returns text.
+  requires source has remaining tokens.
+
+the function classify_token is
+  intended to determine if a token is a keyword identifier or literal.
+  given token of text, returns text.

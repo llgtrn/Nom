@@ -18,6 +18,7 @@
 
 mod ast_bridge;
 mod author;
+mod bootstrap;
 mod build;
 mod concept;
 mod corpus;
@@ -769,6 +770,21 @@ enum CorpusCmd {
         /// Emit JSON for scripting.
         #[arg(long)]
         json: bool,
+    },
+
+    /// Populate per-entity embedding vectors when an embedding model is
+    /// available. Reports the entity count and exits without writing when
+    /// no model is configured (scaffold).
+    Embed {
+        /// Path to the nomdict database (default: nomdict.db).
+        #[arg(long, default_value = "nomdict.db")]
+        dict: PathBuf,
+        /// Embedding model name (e.g. "text-embedding-3-small").
+        #[arg(long)]
+        model: Option<String>,
+        /// Number of entities to embed per batch.
+        #[arg(long, default_value = "64")]
+        batch_size: usize,
     },
 }
 
@@ -1548,6 +1564,11 @@ fn cli_main() -> i32 {
                 dict,
                 json,
             } => corpus::cmd_corpus_seed_standard_axes(&repo_id, &dict, json),
+            CorpusCmd::Embed {
+                dict,
+                model,
+                batch_size,
+            } => corpus::cmd_corpus_embed(&dict, model.as_deref(), batch_size),
         },
         Commands::Mcp { dict } => mcp::cmd_mcp_serve(&dict),
         Commands::Lsp { action } => match action {

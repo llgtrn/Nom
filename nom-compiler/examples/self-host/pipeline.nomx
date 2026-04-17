@@ -1,0 +1,11 @@
+the module self_host_parser is
+  intended to compose all parser functions into the pipeline.
+  uses the function tokenize,
+       the function parse_entity_declaration.
+
+the concept nom_parser is
+  intended to be the self-hosting parser for the Nom language.
+  uses the module self_host_parser.
+  exposes tokenize.
+  this works when all entity declarations parse correctly.
+  favor composability then readability then performance.

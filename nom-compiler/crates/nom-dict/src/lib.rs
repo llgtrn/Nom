@@ -7,6 +7,7 @@
 //!
 //! Layout: `data/nomdict.db`. WAL mode is enabled for concurrent reads.
 
+pub mod body_store;
 pub mod dict;
 pub mod freshness;
 
@@ -42,6 +43,7 @@ pub use dict::{
     find_partial_entity_ids,
     get_concept_by_name,
     get_concept_members,
+    get_entity,
     get_entry,
     get_entry_bytes,
     get_findings,

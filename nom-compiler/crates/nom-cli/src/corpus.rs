@@ -6,7 +6,7 @@
 //!            v2 Entry per file into the nomdict (§5.17 source ingestion).
 
 use nom_dict::Dict;
-use nom_dict::dict::{list_required_axes, register_required_axis, seed_standard_axes};
+use nom_dict::dict::{count_entities, list_required_axes, register_required_axis, seed_standard_axes};
 use std::path::Path;
 
 // ── cmd_corpus_scan ──────────────────────────────────────────────────────────
@@ -342,6 +342,45 @@ pub fn cmd_corpus_list_axes(scope: &str, repo_id: &str, dict: &Path) -> i32 {
             1
         }
     }
+}
+
+// ── cmd_corpus_embed ─────────────────────────────────────────────────────────
+
+/// Scaffold: report how many entities need embedding.
+///
+/// When an embedding model is wired in this function should iterate over
+/// entities without an embedding vector and call the model in batches of
+/// `batch_size`.  For now it reports the count and exits cleanly.
+pub fn cmd_corpus_embed(dict: &Path, model: Option<&str>, batch_size: usize) -> i32 {
+    let db_path = resolve_db_path(dict);
+    let d = match Dict::try_open_from_nomdict_path(&db_path) {
+        Ok(d) => d,
+        Err(e) => {
+            eprintln!("nom: cannot open dict {}: {e}", db_path.display());
+            return 1;
+        }
+    };
+    let total = match count_entities(&d) {
+        Ok(n) => n,
+        Err(e) => {
+            eprintln!("nom: count_entities error: {e}");
+            return 1;
+        }
+    };
+    match model {
+        Some(m) => {
+            println!(
+                "{total} entities need embedding. Model={m} batch-size={batch_size}. \
+                 Embedding model not yet wired — scaffold only."
+            );
+        }
+        None => {
+            println!(
+                "{total} entities need embedding. Embedding model not configured."
+            );
+        }
+    }
+    0
 }
 
 /// Resolve a `--dict` argument (which may point directly at a `.db` file
