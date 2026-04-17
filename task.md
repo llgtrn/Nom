@@ -1,7 +1,7 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `1daa80e` on main (audit-fix CI in_progress) | **CI e2b7ecb + 5cb9a60:** GREEN ✅ | **Date:** 2026-04-17
+> **HEAD:** `3b310bb` on main (204 workspace tests, CI in_progress) | **CI e2b7ecb + 5cb9a60 + 54df8f4 + 1daa80e + 205aea9:** GREEN ✅ | **Date:** 2026-04-17
 > **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
 > **v1 archived** to `.archive/nom-canvas-v1-typescript/`. Phase 1 batch-1 + audit iteration landed (44/44 tests). batch-2 wave-1 (shaders + buffers + context) starting now.
