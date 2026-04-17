@@ -504,19 +504,6 @@ pub fn find_partial_entity_ids(d: &Dict, max: Option<usize>) -> Result<Vec<Strin
     Ok(rows)
 }
 
-/// Total count of rows in `entries` on the entities tier.
-/// Mirrors `NomDict::count()` (total entries).
-///
-/// Deprecated: callers should migrate to [`count_entities`] which reads
-/// the canonical `entities` table. This function remains until all
-/// corpus/test code that still writes to `entries` is migrated.
-pub fn count_entries(d: &Dict) -> Result<i64> {
-    let n: i64 = d
-        .entities
-        .query_row("SELECT COUNT(*) FROM entries", [], |row| row.get(0))?;
-    Ok(n)
-}
-
 // ── S3b: 5 more dict-API free functions ─────────────────────────────
 // Per the doc 22 dict-split migration, this batch picks the next
 // high-value query helpers. Each mirrors a `NomDict` method on the
@@ -1263,6 +1250,9 @@ pub fn add_ref(d: &Dict, from_id: &str, to_id: &str) -> Result<()> {
 // the SELECT lists are byte-identical with the legacy version so
 // callers swap by pure rename.
 
+// LEGACY: blocked on body storage design — `entries` is the only table
+// that holds `describe` and `body_bytes`; these readers stay here until
+// those columns are promoted to the `entities` tier.
 const ENTRY_SELECT: &str = "SELECT id, word, variant, kind, language, describe, concept, body, body_nom, \
      input_type, output_type, pre, post, status, translation_score, \
      is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes \
@@ -1478,6 +1468,9 @@ pub fn get_entry(d: &Dict, id: &str) -> Result<Option<Entry>> {
 /// Bulk INSERT OR IGNORE entries in a transaction.
 /// Returns the count of rows actually inserted (duplicates ignored).
 /// Mirrors `NomDict::bulk_upsert`.
+///
+/// LEGACY: blocked on body storage design — writes to `entries` until
+/// `body_bytes` has a home on the `entities` tier.
 pub fn bulk_upsert(d: &Dict, entries: &[Entry]) -> Result<usize> {
     let tx = d.entities.unchecked_transaction()?;
     let mut inserted = 0;
@@ -1528,6 +1521,9 @@ pub fn bulk_upsert(d: &Dict, entries: &[Entry]) -> Result<usize> {
 /// but only updates optional fields (describe, concept, body, etc.) if the new
 /// value is NOT NULL (using COALESCE to preserve existing values if new is NULL).
 /// Mirrors `NomDict::upsert_entry`.
+///
+/// LEGACY: blocked on body storage design — writes to `entries` until
+/// `body_bytes` and `describe` have homes on the `entities` tier.
 pub fn upsert_entry(d: &Dict, entry: &Entry) -> Result<String> {
     d.entities.execute(
         "INSERT INTO entries (id, word, variant, kind, language, describe, concept,
@@ -1584,6 +1580,9 @@ pub fn upsert_entry(d: &Dict, entry: &Entry) -> Result<String> {
 /// Unlike `upsert_entry`, this does NOT replace on conflict — the existing
 /// row is preserved. Designed for corpus deduplication without SELECT overhead.
 /// Mirrors `NomDict::upsert_entry_if_new`.
+///
+/// LEGACY: blocked on body storage design — writes to `entries` until
+/// `body_bytes` and `describe` have homes on the `entities` tier.
 pub fn upsert_entry_if_new(d: &Dict, entry: &Entry) -> Result<bool> {
     let changed = d.entities.execute(
         "INSERT OR IGNORE INTO entries (id, word, variant, kind, language, describe, concept,
