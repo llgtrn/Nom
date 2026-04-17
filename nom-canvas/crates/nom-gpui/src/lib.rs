@@ -24,6 +24,7 @@ pub mod text;
 pub mod wgpu_atlas;
 pub mod buffers;
 pub mod context;
+#[cfg(feature = "native")]
 pub mod frame_loop;
 pub mod pipelines;
 pub mod bounds_tree;
@@ -34,6 +35,7 @@ pub mod scene;
 pub mod style;
 pub mod styled;
 pub mod taffy_layout;
+#[cfg(feature = "native")]
 pub mod window;
 
 pub use atlas::{AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, InMemoryAtlas, PlatformAtlas};
@@ -44,9 +46,11 @@ pub use geometry::{
     Bounds, Corners, DevicePixels, Edges, Pixels, Point, ScaledPixels, Size, TransformationMatrix,
 };
 pub use scene::{
-    AtlasTileRef, MonochromeSprite, Path, PolychromeSprite, PrimitiveBatch, PrimitiveKind, Quad,
+    AtlasTileRef, HitResult, MonochromeSprite, Path, PolychromeSprite, PrimitiveBatch, PrimitiveKind, Quad,
     Scene, Shadow, SubpixelSprite, Underline,
 };
+#[cfg(feature = "native")]
+pub use frame_loop::ElementStateMap;
 pub use style::{AlignItems, Display, FlexDirection, JustifyContent, Length, Overflow, Style};
 pub use styled::{Styled, StyledBox};
 pub use taffy_layout::{LayoutEngine, LayoutError, LayoutId, MeasureFn, NodeContext};

@@ -10,6 +10,13 @@ description = "GPU-native scene graph, layout, and element framework for NomCanv
 [lints]
 workspace = true
 
+[features]
+default = ["native"]
+# Desktop target: winit + wgpu with native backends (Vulkan, Metal, DX12).
+native = ["dep:winit"]
+# Browser target: wgpu with WebGPU backend. Excludes winit (uses web-sys via wasm-bindgen).
+web = []
+
 [dependencies]
 bytemuck.workspace = true
 etagere.workspace = true
@@ -22,7 +29,7 @@ thiserror.workspace = true
 wgpu.workspace = true
 pollster.workspace = true
 raw-window-handle.workspace = true
-winit.workspace = true
+winit = { workspace = true, optional = true }
 
 # Text shaping + rasterization
 cosmic-text.workspace = true

@@ -102,15 +102,22 @@
 - [x] Audit MEDIUM: `Scene` fields `pub(crate)` + 7 read-only accessors ✅
 - [x] Test-gap audit: ABA sprite texture pattern, Hsla 360° wrap + saturation=0 gray + lightness 0/1 extremes, `try_request_layout` NaN observation, `assert_not_impl_all!(Pixels: From<f32>)` via `static_assertions` ✅
 
-### Phase 1 batch-2 wave-3 (NEXT) — renderer + hit-testing + integration
+### Phase 1 batch-2 wave-3 — LANDED (this cycle, 113 tests: 104 unit + 9 integration)
 
-- [ ] `renderer.rs` — main draw loop: iterate `scene.batches()`, dispatch each `PrimitiveBatch` variant to the correct `RenderPipeline`, write instance data into `InstanceBuffer` (grow+retry on overflow), bind atlas texture per sprite batch, issue `draw_indexed`
-- [ ] Feature flags `native` (default) vs `web` (wasm32) in Cargo.toml + `#[cfg(target_arch = "wasm32")]` gates
-- [ ] Hit-testing wiring — expose `BoundsTree::topmost_intersecting(point)` as `Scene::hit_test`; route winit pointer events through it to dispatched `ElementId`
-- [ ] Element state storage — persistent `HashMap<ElementId, Box<dyn Any>>` on `App` so `Styled` chains survive across frames
-- [ ] Integration tests — headless offscreen `TextureView` render with pixel-diff assertions; 60-frame buffer-growth soak; atlas-full-then-new-texture stress
+- [x] `renderer.rs` (637 LOC, 6 tests) — main draw loop: `atlas.flush_uploads()`, writes GlobalParams uniform, resets InstanceBuffers, iterates `scene.batches()`, dispatches Quads/MonochromeSprites/Underlines to pipelines; pre-collects atlas TextureViews before render pass (wgpu borrow-lifetime requirement); `draw(0..4, 0..N)` TriangleStrip×N instances. GpuQuad=96B, GpuMonoSprite=64B, GpuUnderline=64B (WGSL-layout tests). Shadows/SubpixelSprites/PolychromeSprites/Paths silently skipped (batch-3).
+- [x] Feature flags `native` (default = winit) vs `web` (wasm32 = no winit) — both `cargo check` (default) and `cargo check --no-default-features --features web` succeed. `frame_loop` + `window` gated `#[cfg(feature = "native")]`.
+- [x] Hit-testing wiring — `Scene::hit_test(point) -> Option<HitResult { kind, index, order }>` via O(N) brute-force scan across all 7 collections (`check_collection!` macro). 3 tests. BoundsTree integration deferred to batch-3.
+- [x] Element state storage — `ElementStateMap { map: HashMap<ElementId, Box<dyn Any>> }` attached to `App<H>` as `pub element_state`. Typed `get_or_insert<T, F>()` + `remove()` + `len()`. 2 tests.
+- [x] Integration tests — `tests/gpu_integration.rs` (351 LOC, 9 tests all green on Windows DX12): atlas round-trip + slab overflow (Gpu + InMemory variants), buffer-growth doubles-and-clamps, Scene batch iterator exhausts cleanly, headless clear-to-color readback, pipelines construct on Bgra8Unorm + Rgba8Unorm, InMemoryAtlas shelf fill.
+
+### Phase 1 batch-2 wave-3 deferred / wave-4 backlog
+
 - [ ] Remaining 5 pipelines (shadows, subpixel_sprites, poly_sprites, path_rasterization, paths) — batch-3
 - [ ] `device_lost.rs` — factor in-place recovery out of `App::window_event` into reusable module
+- [ ] BoundsTree integration in Scene for O(log N) hit_test (currently O(N) brute force)
+- [ ] Wire `App::element_state` into `FrameHandler` callback so elements can read/write typed state cross-frame
+- [ ] Pixel-diff integration tests (current tests assert "no panic"; need pixel correctness)
+- [ ] **CI HEADLESS regression** (`910f29a` wave-2 failed) — diagnose which test fails on ubuntu-latest `cargo test --workspace` and add skip guard (GPU/winit tests need env-var or display-server check)
 
 ### Phase 2 — Canvas + Editor (nom-canvas-core + nom-editor)
 
@@ -385,6 +392,28 @@ Reference reads (iter-7): ComfyUI execution.py + graph.py + caching.py, n8n work
 - [ ] `nom-media::MeshGeometry` kind integration
 - [ ] glTF 2.0 Rust-native writer (no C bindings — `gltf-json` crate or custom)
 - [ ] Scene composition: combine `MeshGeometry` + `Material` + `AnimationClip` into single scene
+
+#### Part F-bis — FallbackStrategy 3 variants (blueprint §15, iter-10)
+
+- [ ] `provider_router.rs` add `enum FallbackStrategy { Fallback, RoundRobin, FillFirst }`
+- [ ] `combo_strategies: HashMap<String, FallbackStrategy>` for per-combo routing overrides
+- [ ] Default `Fallback`; user-configurable per vendor combo via credentials panel
+
+#### Part B-bis — `nom-collab::transactor` (blueprint §16, iter-10)
+
+- [ ] `transactor.rs` — immutable append-only event log: `Vec<Transaction { timestamp, client_id, doc_id, yrs_update: Uint8Array }>` to SQLite or append-only file
+- [ ] Separate from Y.Doc snapshot in `persistence.rs` (transactor = every update for audit/time-travel; snapshots = periodic checkpoints)
+- [ ] Retention: keep 30 days full + daily snapshots (configurable)
+- [ ] `replay(doc_id, until: Timestamp) -> Y.Doc` API for time-travel debugging + audit queries
+
+#### Part C-ter — VideoComposition concrete struct (blueprint §18, iter-10)
+
+- [ ] `VideoComposition { fps, duration_frames, width, height, scenes: Vec<SceneEntry> }`
+- [ ] `SceneEntry { from_frame, duration, entity_hash: ContentHash }` — hash refs `artifact_store` (Part H)
+- [ ] `render_frame(frame, &mut Scene)` — find active scenes via `from_frame..from_frame+duration` range; paint with `relative_frame = frame - from_frame`
+- [ ] `export(output_path)` — pre-spawn FFmpeg (Remotion pattern); per-frame `Scene::new() → render_frame → capture_frame (wgpu offscreen) → ffmpeg.stdin.write_all`
+- [ ] Per-scene render cache: if `artifact_store.get(entity_hash)` hits, skip re-render (content-addressing enables this — Remotion can't)
+- [ ] Shared GPU pipeline: canvas preview AND video export use identical wgpu codepath
 
 #### Part G — `MediaVendor` trait (backfill from blueprint §12+§15)
 

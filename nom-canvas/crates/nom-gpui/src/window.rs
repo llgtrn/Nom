@@ -1,3 +1,4 @@
+#![cfg(feature = "native")]
 //! Surface creation, format negotiation, and resize handling for `nom-gpui`.
 //!
 //! [`WindowSurface`] wraps a `wgpu::Surface` together with its

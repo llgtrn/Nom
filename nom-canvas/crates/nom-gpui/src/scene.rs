@@ -108,6 +108,17 @@ pub enum PrimitiveKind {
     Path,
 }
 
+/// Returned by [`Scene::hit_test`]: identifies the topmost primitive under a point.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct HitResult {
+    /// Which primitive kind was hit.
+    pub kind: PrimitiveKind,
+    /// Index of the primitive in its collection (e.g. `scene.quads()[index]`).
+    pub index: usize,
+    /// The draw order of the hit primitive.
+    pub order: DrawOrder,
+}
+
 /// Scene graph: 7 typed collections.
 /// Fields are `pub(crate)` so the renderer (in the same crate) can access
 /// them directly; external callers use the read-only slice accessors below.
@@ -184,6 +195,47 @@ impl Scene {
 
     pub fn insert_path(&mut self, p: Path) {
         self.paths.push(p);
+    }
+
+    /// Return the topmost-order primitive whose bounds contain `point`, if any.
+    ///
+    /// Iterates all 7 primitive collections and picks the one with the highest
+    /// `DrawOrder` whose `bounds` contains the point. O(N) in total primitive
+    /// count — fine for MVP frames with < 10k primitives. Caller is responsible
+    /// for applying clip_bounds before routing pointer events.
+    pub fn hit_test(&self, point: Point<ScaledPixels>) -> Option<HitResult> {
+        let mut best: Option<HitResult> = None;
+
+        macro_rules! check_collection {
+            ($coll:expr, $kind:expr) => {
+                for (idx, prim) in $coll.iter().enumerate() {
+                    if prim.bounds.contains(point) {
+                        let candidate = HitResult {
+                            kind: $kind,
+                            index: idx,
+                            order: prim.order,
+                        };
+                        let replace = match &best {
+                            None => true,
+                            Some(b) => candidate.order > b.order,
+                        };
+                        if replace {
+                            best = Some(candidate);
+                        }
+                    }
+                }
+            };
+        }
+
+        check_collection!(self.shadows, PrimitiveKind::Shadow);
+        check_collection!(self.quads, PrimitiveKind::Quad);
+        check_collection!(self.underlines, PrimitiveKind::Underline);
+        check_collection!(self.monochrome_sprites, PrimitiveKind::MonochromeSprite);
+        check_collection!(self.subpixel_sprites, PrimitiveKind::SubpixelSprite);
+        check_collection!(self.polychrome_sprites, PrimitiveKind::PolychromeSprite);
+        check_collection!(self.paths, PrimitiveKind::Path);
+
+        best
     }
 
     /// Sort each collection by draw order, and sprite collections additionally
@@ -799,6 +851,61 @@ mod tests {
             }
             other => panic!("expected SubpixelSprites batch 1, got {:?}", other),
         }
+    }
+
+    // --- hit_test tests ---
+
+    fn quad_at(order: DrawOrder, x: f32, y: f32, w: f32, h: f32) -> Quad {
+        Quad {
+            order,
+            bounds: sp_bounds(x, y, w, h),
+            clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
+            corner_radii: Corners::all(ScaledPixels(0.0)),
+            background: Rgba::WHITE,
+            border_color: Rgba::TRANSPARENT,
+            border_widths: [ScaledPixels(0.0); 4],
+        }
+    }
+
+    fn pt(x: f32, y: f32) -> Point<ScaledPixels> {
+        Point { x: ScaledPixels(x), y: ScaledPixels(y) }
+    }
+
+    #[test]
+    fn hit_test_returns_topmost_quad_at_point() {
+        let mut s = Scene::new();
+        s.insert_quad(quad_at(1, 0.0, 0.0, 100.0, 100.0));
+        // Hit inside the only quad.
+        let result = s.hit_test(pt(50.0, 50.0));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.kind, PrimitiveKind::Quad);
+        assert_eq!(r.index, 0);
+        assert_eq!(r.order, 1);
+    }
+
+    #[test]
+    fn hit_test_returns_none_outside_all_bounds() {
+        let mut s = Scene::new();
+        s.insert_quad(quad_at(1, 0.0, 0.0, 50.0, 50.0));
+        // Point outside the quad.
+        let result = s.hit_test(pt(200.0, 200.0));
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn hit_test_chooses_highest_order_when_stacked() {
+        let mut s = Scene::new();
+        // Two quads covering the same region; order 5 is on top.
+        s.insert_quad(quad_at(2, 0.0, 0.0, 100.0, 100.0));
+        s.insert_quad(quad_at(5, 10.0, 10.0, 80.0, 80.0));
+        s.insert_quad(quad_at(3, 0.0, 0.0, 100.0, 100.0));
+        // Point inside all three quads.
+        let result = s.hit_test(pt(50.0, 50.0));
+        assert!(result.is_some());
+        let r = result.unwrap();
+        assert_eq!(r.order, 5, "highest order quad should win");
+        assert_eq!(r.kind, PrimitiveKind::Quad);
     }
 
     // --- Fix 3 tests: accessor methods ---

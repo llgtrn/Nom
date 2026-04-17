@@ -1,3 +1,4 @@
+#![cfg(feature = "native")]
 //! Winit 0.30 event loop integration for `nom-gpui`.
 //!
 //! [`App`] implements `winit::application::ApplicationHandler` so the caller
@@ -12,6 +13,8 @@
 
 #![deny(unsafe_code)]
 
+use std::any::Any;
+use std::collections::HashMap;
 use std::sync::Arc;
 
 use winit::{
@@ -22,7 +25,50 @@ use winit::{
 };
 
 use crate::context::GpuContext;
+use crate::element::ElementId;
 use crate::window::{WindowError, WindowSurface};
+
+// ── ElementStateMap ───────────────────────────────────────────────────────────
+
+/// Persistent cross-frame state keyed by [`ElementId`].
+///
+/// Elements look up or insert their own typed state each frame. State survives
+/// across redraws until explicitly removed.
+pub struct ElementStateMap {
+    map: HashMap<ElementId, Box<dyn Any>>,
+}
+
+impl ElementStateMap {
+    pub fn new() -> Self {
+        Self { map: HashMap::new() }
+    }
+
+    /// Get or insert state of type `T` for `id`.
+    ///
+    /// If no entry exists for `id`, calls `init()` to create the initial value.
+    /// Returns a mutable reference to the stored `T`.
+    ///
+    /// # Panics
+    ///
+    /// Panics if an entry already exists but was stored as a different type.
+    pub fn get_or_insert<T: Any, F: FnOnce() -> T>(&mut self, id: ElementId, init: F) -> &mut T {
+        self.map
+            .entry(id)
+            .or_insert_with(|| Box::new(init()))
+            .downcast_mut::<T>()
+            .expect("ElementStateMap: type mismatch for element id")
+    }
+
+    /// Remove and return the raw boxed state for `id`, if present.
+    pub fn remove(&mut self, id: ElementId) -> Option<Box<dyn Any>> {
+        self.map.remove(&id)
+    }
+
+    /// Number of tracked elements.
+    pub fn len(&self) -> usize {
+        self.map.len()
+    }
+}
 
 // ── FrameHandler ──────────────────────────────────────────────────────────────
 
@@ -63,6 +109,9 @@ pub struct App<H: FrameHandler> {
     window: Option<Arc<Window>>,
     surface: Option<WindowSurface>,
     gpu: GpuContext,
+    /// Persistent element state, keyed by [`ElementId`].
+    /// Available for future wave-3 integration with the element lifecycle.
+    pub element_state: ElementStateMap,
 }
 
 impl<H: FrameHandler> App<H> {
@@ -77,6 +126,7 @@ impl<H: FrameHandler> App<H> {
             window: None,
             surface: None,
             gpu,
+            element_state: ElementStateMap::new(),
         }
     }
 
@@ -223,6 +273,39 @@ mod tests {
 
     impl FrameHandler for NoopHandler {
         fn draw(&mut self, _view: &wgpu::TextureView, _window: &Window) {}
+    }
+
+    // --- ElementStateMap tests ---
+
+    #[test]
+    fn element_state_get_or_insert_creates_then_returns_same() {
+        let mut map = ElementStateMap::new();
+        let id = ElementId(42);
+        // First call creates the entry.
+        {
+            let v = map.get_or_insert(id, || 0u32);
+            assert_eq!(*v, 0);
+            *v = 7;
+        }
+        // Second call returns the same mutated value.
+        {
+            let v = map.get_or_insert(id, || 99u32);
+            assert_eq!(*v, 7, "should return existing state, not re-initialize");
+        }
+        assert_eq!(map.len(), 1);
+    }
+
+    #[test]
+    fn element_state_remove_clears_entry() {
+        let mut map = ElementStateMap::new();
+        let id = ElementId(1);
+        map.get_or_insert(id, || String::from("hello"));
+        assert_eq!(map.len(), 1);
+        let removed = map.remove(id);
+        assert!(removed.is_some());
+        assert_eq!(map.len(), 0);
+        // A second remove returns None.
+        assert!(map.remove(id).is_none());
     }
 
     /// Verify default trait implementations compile and behave correctly.
