@@ -48,10 +48,22 @@ impl ExecutionEngine {
     /// Returns execution plan (list of nodes to actually run)
     pub fn plan_execution(&self, dag: &Dag) -> Result<Vec<NodeId>, Vec<NodeId>> {
         let sorted = dag.topological_sort()?;
-        // Filter: only nodes that need re-execution
+        // Track output hash per node so downstream edges pick up real values
+        let mut outputs: HashMap<NodeId, u64> = HashMap::new();
         let to_run: Vec<NodeId> = sorted.into_iter().filter(|id| {
             if let Some(node) = dag.nodes.get(id) {
-                self.should_execute(node, 0) // input_hash=0 for planning phase
+                // Collect input hashes from upstream outputs
+                let input_hash = dag.edges.iter()
+                    .filter(|e| &e.dst_node == id)
+                    .fold(0u64, |acc, edge| {
+                        let upstream_hash = outputs.get(&edge.src_node).copied().unwrap_or(0);
+                        acc.wrapping_add(upstream_hash.rotate_left(17))
+                    });
+                let should_run = self.should_execute(node, input_hash);
+                // Store output hash for downstream consumers regardless of run/skip
+                let key = Self::compute_cache_key(&node.kind, input_hash);
+                outputs.insert(id.clone(), key);
+                should_run
             } else {
                 false
             }
@@ -97,5 +109,18 @@ mod tests {
         dag.add_edge("a", "out", "b", "in");
         let plan = engine.plan_execution(&dag).unwrap();
         assert_eq!(plan, vec!["a", "b"]);
+    }
+
+    #[test]
+    fn plan_execution_propagates_hashes() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("child", "verb"));
+        dag.add_edge("root", "out", "child", "in");
+        let engine = ExecutionEngine::new(BasicCache::new());
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert_eq!(plan.len(), 2); // both should run (empty cache)
+        assert_eq!(plan[0], "root");
+        assert_eq!(plan[1], "child");
     }
 }

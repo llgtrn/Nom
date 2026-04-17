@@ -7,3 +7,4 @@ edition = "2021"
 tokio = { workspace = true }
 nom-blocks = { path = "../nom-blocks" }
 crossbeam-channel = { workspace = true }
+serde_json = { workspace = true }

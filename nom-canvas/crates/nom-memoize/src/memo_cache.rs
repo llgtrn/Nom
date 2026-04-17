@@ -2,6 +2,7 @@
 use std::collections::HashMap;
 use crate::constraint::Constraint;
 use crate::hash::Hash128;
+use crate::tracked::TrackedSnapshot;
 
 /// A single cached computation result
 pub struct CachedResult<T: Clone> {
@@ -24,9 +25,10 @@ impl<T: Clone> MemoCache<T> {
     }
 
     /// Try to retrieve a cached result. Validates constraint before returning.
-    pub fn get(&mut self, key: &Hash128, current_input_hash: u64, current_versions: &[u64]) -> Option<T> {
+    /// `current_snapshots` holds fresh (method_id, return_hash) snapshots for validation.
+    pub fn get(&mut self, key: &Hash128, current_input_hash: u64, current_snapshots: &[TrackedSnapshot]) -> Option<T> {
         let entry = self.entries.get(&key.as_u64())?;
-        if entry.constraint.validate(current_input_hash, current_versions) {
+        if entry.constraint.validate(current_input_hash, current_snapshots) {
             self.hit_count += 1;
             Some(entry.value.clone())
         } else {

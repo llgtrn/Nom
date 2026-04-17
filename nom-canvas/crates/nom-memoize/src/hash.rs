@@ -1,7 +1,8 @@
 #![deny(unsafe_code)]
 
 /// 128-bit content hash for stable memoization keys (typst pattern: hash128)
-/// Uses a simple but fast deterministic algorithm (FNV-1a 128-bit variant)
+/// TODO: Replace with SipHash13 via siphasher::sip128::SipHasher13
+/// Current: FNV-1a dual-chain (structurally equivalent, different constants)
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Hash128(pub u64, pub u64);
 
