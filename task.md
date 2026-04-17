@@ -6,6 +6,55 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 36 — Wave G stubs, Wave A/B drift closed)
+
+**Wave G stub crates implemented:**
+- [x] nom-lint: LintRule trait + TrailingWhitespace/LineTooLong/EmptyBlock rules + LintRunner, 4 tests
+- [x] nom-collab: PeerId/OpId/Op CRDT + DocState merge, 4 tests
+- [x] nom-telemetry: EventKind/TelemetryEvent/TelemetrySink + InMemorySink, 4 tests
+
+**Wave A spring drift closed:**
+- [x] AnimationGroup + AnimationOrder added to nom-gpui/animation.rs, 5 new tests
+
+**Wave B editor drift closed:**
+- [x] find_replace: replace_current + 5 new tests
+- [x] commands: has_command + 4 new tests
+- [x] scroll: to_pixel_offset + 5 new tests
+
+**Wave F integration:**
+- [x] RagQueryBackend::compose_with_dag — GraphRagRetriever end-to-end, 3 tests
+
+**Wave status:**
+| Wave | Status |
+|------|--------|
+| Wave A GPUI | ~95% ✅ |
+| Wave B Editor | ~95% ✅ |
+| Wave F RAG+DeepThink | ~80% |
+| Wave G Stubs | 100% ✅ |
+
+## Audit-Corrected Wave Status (2026-04-18 Iter 34 strict — Wave E: 5 PASS / 9 DRIFT / 2 STUB; UI U1 open 3 iters)
+
+**Strict per-backend verdict** (vs linter's all-green summary):
+- **PASS (5):** audio, transform, render, export, pipeline
+- **DRIFT (9):** document, video, image, data, app, workflow, scenario, rag_query, embed_gen
+- **STUB-ONLY (2):** `code_exec.rs:24` returns literal `"[stub] exec"`; `web_screen.rs:24` literal `"[stub] screenshot"`
+
+**Uniform Wave E drift (all 16 backends):** no `interrupt: &AtomicBool` param; return bare `T` not `Result<Artifact>`; `ArtifactStore.write(&[u8]) -> [u8;32]` missing `mime` param; store hash is FNV-1a 32-byte expansion NOT SHA-256.
+
+**9router infrastructure ABSENT:** `vendor_trait.rs`, `format_translator.rs`, `account_fallback.rs` with `min(1000*2^level,120_000)ms`, `executor_registry.rs`, `NomKind→backend` DB-driven dispatch — **zero of 5 present**. Mandate 5 violated.
+
+**CRITICAL U1 (3 iterations unfixed):** `grep -c "impl Element\|fn paint\|Scene::new\|Quad {\|impl Render"` in all nom-panels files = **0**. Zero nom_gpui::scene imports. Zero color-token usage. Zero spring_value calls. Pure data-model. User's #1 failure point remains.
+
+**nom-memoize Iter 26 H1/H2 FIXED ✅** (MethodCall pairs). M1 FNV-1a vs SipHash13 still open.
+
+**Priority unblock list:**
+1. Wave D stage 2 (render layer) — 11 nom-panels files need `impl Element { fn paint }` using nom-gpui Scene + nom-theme tokens + spring_value
+2. Wave E uniform signature: add `InterruptFlag` param + `Result<Artifact>` return to all 16 backends
+3. `ArtifactStore.write(bytes, mime) -> [u8;32]` + swap FNV-1a for `sha2::Sha256`
+4. Scaffold 9router infra (MediaVendor/FormatTranslator/AccountFallback/ExecutorRegistry)
+5. Real `code_exec` (n8n JsTaskRunnerSandbox + 4 AST sanitizers) + `web_screen` (headless browser)
+6. nom-memoize: add `siphasher` dep, use full Hash128 key (drop `.as_u64()` fold)
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 35 — Wave F started, graph_rag+graph_mode+deep_think)
 
 **Wave F (RAG+DeepThink) — modules implemented:**

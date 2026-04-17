@@ -3,6 +3,7 @@ use nom_blocks::NomtuRef;
 use crate::store::ArtifactStore;
 use crate::progress::{ProgressSink, ComposeEvent};
 use crate::deep_think::DeepThinkConfig;
+use nom_graph::{Dag, GraphRagRetriever, QueryVec, RetrievedNode};
 
 pub struct RagChunk {
     pub id: String,
@@ -23,13 +24,30 @@ pub struct RagQueryOutput {
     pub chunks_used: Vec<String>,
 }
 
+/// Pipeline configuration for a single RAG retrieval pass over a [`Dag`].
+pub struct RagPipeline {
+    /// Hash of the query input, used to derive the query embedding.
+    pub input_hash: u64,
+    /// How many nodes to retrieve (default 5).
+    pub top_k: usize,
+    /// Maximum BFS hops during graph traversal (default 3).
+    pub max_hops: usize,
+}
+
+impl RagPipeline {
+    pub fn new(input_hash: u64) -> Self {
+        Self { input_hash, top_k: 5, max_hops: 3 }
+    }
+}
+
 pub struct RagQueryBackend {
     pub deep_think_config: Option<DeepThinkConfig>,
+    pub top_k: Option<usize>,
 }
 
 impl Default for RagQueryBackend {
     fn default() -> Self {
-        Self { deep_think_config: None }
+        Self { deep_think_config: None, top_k: None }
     }
 }
 
@@ -52,13 +70,43 @@ impl RagQueryBackend {
         sink.emit(ComposeEvent::Completed { artifact_hash: hash, byte_size: answer.len() as u64 });
         RagQueryOutput { artifact_hash: hash, answer, chunks_used: used_ids }
     }
+
+    /// Retrieve graph nodes from `dag` most relevant to `input_hash`.
+    ///
+    /// Derives a [`QueryVec`] from `input_hash` by spreading its bits across
+    /// 16 slots (`v[i] = ((input_hash >> (i * 4)) & 0xF) as f32 / 15.0`),
+    /// then runs [`GraphRagRetriever::retrieve`] with the configured `top_k`
+    /// and a fixed `max_hops` of 3.  Emits a midpoint progress event and a
+    /// completion event via `sink`.
+    pub fn compose_with_dag(
+        &self,
+        dag: &Dag,
+        input_hash: u64,
+        sink: &dyn ProgressSink,
+    ) -> Vec<RetrievedNode> {
+        let retriever = GraphRagRetriever::new(dag);
+
+        let mut qvec: QueryVec = [0.0f32; 16];
+        for i in 0..16 {
+            qvec[i] = ((input_hash >> (i * 4)) & 0xF) as f32 / 15.0;
+        }
+
+        sink.emit(ComposeEvent::Progress { percent: 50.0, stage: "graph_rag_retrieve".into() });
+
+        let results = retriever.retrieve(&qvec, self.top_k.unwrap_or(5), 3);
+
+        sink.emit(ComposeEvent::Progress { percent: 100.0, stage: "graph_rag_done".into() });
+
+        results
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::store::InMemoryStore;
-    use crate::progress::LogProgressSink;
+    use crate::progress::{LogProgressSink, VecProgressSink};
+    use nom_graph::{Dag, ExecNode};
 
     #[test]
     fn rag_top_k_selection() {
@@ -89,5 +137,62 @@ mod tests {
         }, &mut store, &LogProgressSink);
         assert_eq!(out.chunks_used.len(), 0);
         assert!(store.exists(&out.artifact_hash));
+    }
+
+    // -----------------------------------------------------------------------
+    // compose_with_dag integration tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn rag_pipeline_compose_with_empty_dag() {
+        let dag = Dag::new();
+        let backend = RagQueryBackend::default();
+        let results = backend.compose_with_dag(&dag, 0xdeadbeef_cafebabe, &LogProgressSink);
+        assert!(results.is_empty(), "empty DAG must return no results");
+    }
+
+    #[test]
+    fn rag_pipeline_compose_returns_nodes() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("node_a", "verb"));
+        dag.add_node(ExecNode::new("node_b", "verb"));
+        dag.add_node(ExecNode::new("node_c", "verb"));
+        dag.add_edge("node_a", "out", "node_b", "in");
+        dag.add_edge("node_b", "out", "node_c", "in");
+
+        let backend = RagQueryBackend { top_k: Some(2), ..Default::default() };
+        let results = backend.compose_with_dag(&dag, 0x1234567890abcdef, &LogProgressSink);
+
+        assert_eq!(results.len(), 2, "top_k=2 must return exactly 2 nodes");
+        // Results must be sorted by score descending.
+        assert!(
+            results[0].score >= results[1].score,
+            "results must be sorted by score descending"
+        );
+    }
+
+    #[test]
+    fn rag_pipeline_emits_progress_events() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+
+        let backend = RagQueryBackend::default();
+        let sink = VecProgressSink::new();
+        let _ = backend.compose_with_dag(&dag, 0xffffffff00000000, &sink);
+
+        let events = sink.take();
+        let progress_events: Vec<_> = events.iter().filter(|e| matches!(e, ComposeEvent::Progress { .. })).collect();
+        assert!(
+            progress_events.len() >= 2,
+            "must emit at least 2 Progress events, got {}",
+            progress_events.len()
+        );
+        // First event must be at 50%, last at 100%.
+        if let ComposeEvent::Progress { percent, .. } = &progress_events[0] {
+            assert!((*percent - 50.0).abs() < 0.01, "first progress must be 50%, got {percent}");
+        }
+        if let ComposeEvent::Progress { percent, .. } = &progress_events[progress_events.len() - 1] {
+            assert!((*percent - 100.0).abs() < 0.01, "last progress must be 100%, got {percent}");
+        }
     }
 }

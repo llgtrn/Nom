@@ -3,6 +3,10 @@ name = "nom-cli"
 version = "0.1.0"
 edition = "2021"
 
+[lib]
+name = "nom_cli"
+path = "src/lib.rs"
+
 [[bin]]
 name = "nom-canvas"
 path = "src/main.rs"

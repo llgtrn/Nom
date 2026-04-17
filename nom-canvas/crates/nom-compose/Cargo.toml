@@ -6,5 +6,6 @@ edition = "2021"
 [dependencies]
 tokio = { workspace = true }
 nom-blocks = { path = "../nom-blocks" }
+nom-graph = { path = "../nom-graph" }
 crossbeam-channel = { workspace = true }
 serde_json = { workspace = true }

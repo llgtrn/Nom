@@ -129,6 +129,114 @@ pub mod easing {
 }
 
 // ---------------------------------------------------------------------------
+// AnimationGroup — sequential / parallel animation steps
+// ---------------------------------------------------------------------------
+
+/// A single step in an `AnimationGroup`.
+pub struct AnimationStep {
+    pub duration: f32,
+    pub easing: Box<dyn Fn(f32) -> f32 + Send + Sync>,
+}
+
+/// Chains multiple animation steps; `sample` maps a global time to the
+/// current step's local eased value.
+pub struct AnimationGroup {
+    steps: Vec<AnimationStep>,
+}
+
+impl AnimationGroup {
+    pub fn new() -> Self {
+        Self { steps: Vec::new() }
+    }
+
+    /// Append a step with the given duration and easing function.
+    pub fn then(
+        mut self,
+        duration: f32,
+        easing: impl Fn(f32) -> f32 + Send + Sync + 'static,
+    ) -> Self {
+        self.steps.push(AnimationStep {
+            duration,
+            easing: Box::new(easing),
+        });
+        self
+    }
+
+    /// Total duration of all steps combined.
+    pub fn total_duration(&self) -> f32 {
+        self.steps.iter().map(|s| s.duration).sum()
+    }
+
+    /// Map `global_t` ∈ [0, total_duration] to the eased value of the
+    /// current step.  Returns the final step's value when `global_t` exceeds
+    /// the total duration.
+    pub fn sample(&self, global_t: f32) -> f32 {
+        if self.steps.is_empty() {
+            return 0.0;
+        }
+        let mut remaining = global_t.max(0.0);
+        for step in &self.steps {
+            if remaining <= step.duration {
+                let local_t = if step.duration > 0.0 {
+                    (remaining / step.duration).clamp(0.0, 1.0)
+                } else {
+                    1.0
+                };
+                return (step.easing)(local_t);
+            }
+            remaining -= step.duration;
+        }
+        // Past the end — return the final eased value at t=1.
+        let last = self.steps.last().unwrap();
+        (last.easing)(1.0)
+    }
+}
+
+impl Default for AnimationGroup {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// AnimationOrder — deterministic ordered animation values
+// ---------------------------------------------------------------------------
+
+/// Stores (id, value) pairs and returns them sorted by id ascending,
+/// guaranteeing a deterministic application order regardless of insertion order.
+pub struct AnimationOrder {
+    anims: Vec<(u32, f32)>,
+}
+
+impl AnimationOrder {
+    pub fn new() -> Self {
+        Self { anims: Vec::new() }
+    }
+
+    /// Insert or replace the value for the given id.
+    pub fn set(&mut self, id: u32, value: f32) {
+        if let Some(entry) = self.anims.iter_mut().find(|(eid, _)| *eid == id) {
+            entry.1 = value;
+        } else {
+            self.anims.push((id, value));
+        }
+    }
+
+    /// Return all (id, value) pairs sorted by id ascending.
+    pub fn get_sorted(&self) -> Vec<(u32, f32)> {
+        let mut out = self.anims.clone();
+        out.sort_by_key(|(id, _)| *id);
+        out
+    }
+}
+
+impl Default for AnimationOrder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Interpolation helpers
 // ---------------------------------------------------------------------------
 
@@ -218,5 +326,63 @@ mod tests {
         let anim = Animation::new(Duration::from_millis(100), easing::linear());
         assert!((anim.evaluate(-0.5) - 0.0).abs() < 1e-6);
         assert!((anim.evaluate(1.5) - 1.0).abs() < 1e-6);
+    }
+
+    // -----------------------------------------------------------------------
+    // AnimationGroup tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn animation_group_single_step() {
+        let group = AnimationGroup::new().then(1.0, easing::linear());
+        // At t=0.5 within a single 1-second linear step → 0.5.
+        let result = group.sample(0.5);
+        assert!((result - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn animation_group_two_steps_transition() {
+        // Step 1: linear 0→1 over 1 s; step 2: ease_in 0→1 over 1 s.
+        let group = AnimationGroup::new()
+            .then(1.0, easing::linear())
+            .then(1.0, easing::ease_in());
+        // At global_t=0.5 we are in step 1, local_t=0.5 → linear(0.5)=0.5.
+        assert!((group.sample(0.5) - 0.5).abs() < 1e-6);
+        // At global_t=1.5 we are in step 2, local_t=0.5 → ease_in(0.5)=0.25.
+        assert!((group.sample(1.5) - 0.25).abs() < 1e-6);
+        // Past total duration → final step at t=1 → ease_in(1.0)=1.0.
+        assert!((group.sample(3.0) - 1.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn animation_group_total_duration() {
+        let group = AnimationGroup::new()
+            .then(0.3, easing::linear())
+            .then(0.7, easing::ease_out());
+        assert!((group.total_duration() - 1.0).abs() < 1e-6);
+    }
+
+    // -----------------------------------------------------------------------
+    // AnimationOrder tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn animation_order_sorts_by_id() {
+        let mut order = AnimationOrder::new();
+        order.set(3, 0.9);
+        order.set(1, 0.1);
+        order.set(2, 0.5);
+        let sorted = order.get_sorted();
+        assert_eq!(sorted, vec![(1, 0.1), (2, 0.5), (3, 0.9)]);
+    }
+
+    #[test]
+    fn animation_order_set_overrides() {
+        let mut order = AnimationOrder::new();
+        order.set(1, 0.1);
+        order.set(1, 0.8);
+        let sorted = order.get_sorted();
+        assert_eq!(sorted.len(), 1);
+        assert!((sorted[0].1 - 0.8).abs() < 1e-6);
     }
 }
