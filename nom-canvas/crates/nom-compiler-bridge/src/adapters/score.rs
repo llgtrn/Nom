@@ -23,8 +23,17 @@ pub fn score_to_status(word: &str, kind: &str, _state: &SharedState) -> CompileS
     }
     #[cfg(not(feature = "compiler"))]
     {
-        let _ = (word, kind);
-        CompileStatus::NotChecked
+        let kinds = _state.cached_grammar_kinds();
+        if kinds.is_empty() {
+            return CompileStatus::NotChecked;
+        }
+        let known_word = kinds.iter().any(|k| k.name == word);
+        let known_kind = kinds.iter().any(|k| k.name == kind);
+        if known_word || known_kind {
+            CompileStatus::from_score(0.9)
+        } else {
+            CompileStatus::from_score(0.3)
+        }
     }
 }
 
@@ -46,6 +55,7 @@ pub fn status_color(status: &CompileStatus) -> [f32; 4] {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::GrammarKind;
 
     #[test]
     fn status_label_strings() {
@@ -55,10 +65,49 @@ mod tests {
     }
 
     #[test]
-    fn score_to_status_not_checked_without_feature() {
+    fn score_to_status_not_checked_when_cache_empty() {
         let state = SharedState::new("a.db", "b.db");
+        // Empty grammar cache → NotChecked (no basis for scoring)
         let status = score_to_status("summarize", "verb", &state);
-        // Without compiler feature, always NotChecked
         assert_eq!(status, CompileStatus::NotChecked);
+    }
+
+    #[test]
+    fn score_to_status_valid_when_word_is_known_kind() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "verb".into(), description: "action word".into() },
+        ]);
+        // "verb" matches a known kind → score 0.9 → Valid
+        let status = score_to_status("verb", "other", &state);
+        assert_eq!(status, CompileStatus::Valid);
+    }
+
+    #[test]
+    fn score_to_status_unknown_when_neither_matches() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "verb".into(), description: "action word".into() },
+        ]);
+        // Neither "summarize" nor "noun" is a known kind → score 0.3 → Unknown
+        let status = score_to_status("summarize", "noun", &state);
+        assert_eq!(status, CompileStatus::Unknown);
+    }
+
+    #[test]
+    fn score_to_status_valid_when_kind_param_is_known() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "concept".into(), description: "abstract idea".into() },
+        ]);
+        // kind param matches a known grammar kind → Valid
+        let status = score_to_status("unknown_word", "concept", &state);
+        assert_eq!(status, CompileStatus::Valid);
+    }
+
+    #[test]
+    fn status_color_valid_has_positive_alpha() {
+        let color = status_color(&CompileStatus::Valid);
+        assert_eq!(color[3], 1.0);
     }
 }

@@ -1,6 +1,6 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `d6219b1` | **Tests:** 523 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `15a8366` | **Tests:** 558 | **Workspace:** clean
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
 ## Architecture
@@ -79,19 +79,40 @@
 ### [x] Wave L — MEDIUM closures (commit `d139644`)
 - [x] with_deep_think wired · W3C traceparent · RRF `1/(60+rank)` · impl Element on elements
 
-### [x] Wave M — Infra (commit `ef9fc84`)
+### [x] Wave M — Infra (commit `ef9fc84`, 498 tests)
 - [x] nom-lint sealed trait · compiler-bridge 3-tier · compose dispatch/plan/task_queue · graph 4-tier cache
 
-## Open Missions (priority order)
+### [x] Wave N — Infra+Vendor (commit `d6219b1`, 523 tests)
+- [x] nom-compose: MediaVendor trait + ProviderRouter 3-tier fallback + CredentialStore kind-keyed
+- [x] nom-graph: 4 AST sanitizers + eval_expr
+- [x] nom-compose: SHA-256 ContentHash via sha2 + SemanticModel/SemanticRegistry MDL
 
-- [ ] **E2 CRITICAL** — `nom-canvas-core/elements.rs:225-226` `paint()` = no-op; push Quad to Scene + port circles + bezier tessellation (~100-150 LOC)
-- [ ] **TQ1** `task_queue.rs:48` missing `state == Running` guard (1-line)
-- [ ] **E1** no `impl Element for` on panels — document or bind
-- [ ] **F1** `find_replace.rs` regex stub — import `regex` crate
-- [ ] **CK1** `cache.rs:66` LruCache.get() missing `touch()` (2-line)
-- [ ] **DP1** `dispatch.rs` enum-lookup, not `Box<dyn Backend>`
-- [ ] **DEEP1** deep_think stream unwired — nom-panels consumer missing
-- [ ] **NI1** nom-intent 98 LOC — expand ReAct + scored hypothesis tree
+### [x] Wave O — Infra+LSP (commit `e61a93c`, 537 tests)
+- [x] nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
+- [x] nom-compose: code_exec (n8n JsTaskRunner + sandbox wiring) + web_screen (headless browser stub)
+- [x] nom-graph: ExecutionEngine cancel/abort signal + HierarchicalCache L1→L2 promotion wiring
+
+### [x] Wave P — Bug fixes + MEDIUMs (commit `15a8366`, 558 tests)
+- [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads + port circles + bezier
+- [x] TQ1/CK1/DP1/F1/NR1/NI1/DEEP1/FG1/FR1/PAL1 HIGHs closed
+- [x] MEDIUMs: RRF_K const + InternalRule 3rd trait + HierarchicalCache::len L1+L2 + Panel trait 7 methods
+
+## Open Missions — Wave Q (in progress)
+
+### HIGH
+- [ ] **E1** no `impl Element for` on panels — document divergence or add trait bindings
+
+### MEDIUM
+- [ ] **SB1** `nom-graph/src/sandbox.rs` missing this_replace/prototype_block/dollar_validate sanitizers
+- [ ] **SC1** `score_atom` in ui_tier.rs:167 allocates SharedState per call
+- [ ] **CW1** `nom-blocks/src/connector.rs:62` can_wire still stub
+- [ ] **DOC1** `ui_tier.rs:40` doc says `<2ms`; spec §3 says `<1ms`
+- [ ] **CB1** compiler-bridge score.rs adapter still dead-code stub
+
+### Verification targets
+- [ ] provider_router dispatch — 3-tier fallback under real backend failures
+- [ ] graph_rag edge-confidence weights (Refly pattern)
+- [ ] E2/FG1 GPU pipeline end-to-end verification
 
 ## Vendoring
 

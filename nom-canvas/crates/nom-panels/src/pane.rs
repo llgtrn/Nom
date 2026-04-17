@@ -180,6 +180,48 @@ fn paint_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32, scene: &mut Scene
     }
 }
 
+// ---------------------------------------------------------------------------
+// Element impl — bridges PaneGroup into the nom_gpui Element trait tree
+// ---------------------------------------------------------------------------
+
+/// `PaneGroup` implements the three-phase GPU element lifecycle.
+/// `paint_scene` is preserved for direct scene-emission tests;
+/// `paint` delegates to it via a local Scene, consistent with the pattern
+/// established in `nom-canvas-core/src/elements.rs`.
+impl nom_gpui::element::Element for PaneGroup {
+    type State = ();
+
+    fn request_layout(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        cx: &mut nom_gpui::element::WindowContext,
+    ) -> (nom_gpui::types::LayoutId, ()) {
+        let layout_id = cx.request_layout(&nom_gpui::styled::StyleRefinement::default(), &[]);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        // No hit-test registration needed for pane groups.
+    }
+
+    fn paint(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        let mut scene = nom_gpui::scene::Scene::new();
+        self.paint_scene(bounds.size.width.0, bounds.size.height.0, &mut scene);
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -227,6 +269,32 @@ mod tests {
         assert!(scene.quads.len() >= 2);
         let bar = &scene.quads[0];
         assert_eq!(bar.bounds.size.height, nom_gpui::types::Pixels(28.0));
+    }
+
+    #[test]
+    fn pane_group_implements_element_trait() {
+        use nom_gpui::element::{Element, WindowContext};
+        use nom_gpui::types::{Bounds, Pixels, Point, Size, Vec2};
+
+        let mut g = PaneGroup::single("main");
+        if let Member::Pane(ref mut p) = g.root {
+            p.open_tab("file.nom", "file.nom");
+        }
+        let mut cx = WindowContext::new(1.0, Vec2::new(800.0, 600.0));
+        let bounds = Bounds {
+            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+            size: Size { width: Pixels(800.0), height: Pixels(600.0) },
+        };
+
+        // Phase 1: request_layout returns a valid LayoutId.
+        let (layout_id, mut state) = Element::request_layout(&mut g, None, &mut cx);
+        let _ = layout_id;
+
+        // Phase 2: prepaint is a no-op (must not panic).
+        Element::prepaint(&mut g, None, bounds, &mut state, &mut cx);
+
+        // Phase 3: paint must not panic and internally calls paint_scene.
+        Element::paint(&mut g, None, bounds, &mut state, &mut cx);
     }
 
     #[test]

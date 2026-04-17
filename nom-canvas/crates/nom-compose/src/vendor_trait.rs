@@ -32,6 +32,8 @@ pub trait MediaVendor: Send + Sync {
     fn supports(&self, kind: &BackendKind) -> bool;
     fn capability(&self) -> VendorCapability;
     fn cost_estimate(&self) -> CostEstimate;
+    /// Execute a compose call. Returns Ok(output) or Err(reason).
+    fn compose(&self, kind: &BackendKind, input: &str, progress: &dyn Fn(f32)) -> Result<String, String>;
 }
 
 /// A stub vendor for testing.
@@ -45,6 +47,43 @@ impl MediaVendor for StubVendor {
     fn supports(&self, k: &BackendKind) -> bool { k == &self.kind }
     fn capability(&self) -> VendorCapability { VendorCapability { supports_streaming: false, supports_batch: false, max_input_bytes: 1024 * 1024, quality_tier: 1 } }
     fn cost_estimate(&self) -> CostEstimate { CostEstimate::free() }
+    fn compose(&self, _kind: &BackendKind, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
+        progress(1.0);
+        Ok(format!("stub:{}", input))
+    }
+}
+
+/// A vendor that always succeeds, returning "stub_output".
+pub struct StubMediaVendor {
+    pub name: &'static str,
+    pub kind: BackendKind,
+}
+
+impl MediaVendor for StubMediaVendor {
+    fn name(&self) -> &'static str { self.name }
+    fn supports(&self, k: &BackendKind) -> bool { k == &self.kind }
+    fn capability(&self) -> VendorCapability { VendorCapability { supports_streaming: false, supports_batch: false, max_input_bytes: 1024 * 1024, quality_tier: 2 } }
+    fn cost_estimate(&self) -> CostEstimate { CostEstimate::free() }
+    fn compose(&self, _kind: &BackendKind, _input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
+        progress(1.0);
+        Ok("stub_output".to_string())
+    }
+}
+
+/// A vendor that always fails with "error".
+pub struct FailingVendor {
+    pub name: &'static str,
+    pub kind: BackendKind,
+}
+
+impl MediaVendor for FailingVendor {
+    fn name(&self) -> &'static str { self.name }
+    fn supports(&self, k: &BackendKind) -> bool { k == &self.kind }
+    fn capability(&self) -> VendorCapability { VendorCapability::default() }
+    fn cost_estimate(&self) -> CostEstimate { CostEstimate::free() }
+    fn compose(&self, _kind: &BackendKind, _input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        Err("error".to_string())
+    }
 }
 
 #[cfg(test)]

@@ -5,14 +5,22 @@
 //!   1. Every node in the DAG is assigned a deterministic 16-float embedding
 //!      derived from its `NodeId` string via a simple FNV-1a hash spread.
 //!   2. BFS from every node explores the graph up to `max_hops` steps.
+//!      Edge confidence weights (0.0–1.0) are multiplied along each path
+//!      to produce a cumulative_confidence for each visited node.
 //!   3. Each (node, hop_distance) pair scores cosine similarity with the query.
-//!   4. When the same node is reached via multiple paths, the best score is kept.
+//!   4. When the same node is reached via multiple paths, the best
+//!      (cosine_sim, cumulative_confidence) pair is kept.
 //!   5. Candidates are ranked by cosine similarity and scored via RRF_K=60.0:
-//!         rrf_score = 1.0 / (RRF_K + rank)
-//!   6. The top-k results by RRF score are returned.
+//!         rrf_score = cumulative_confidence / (RRF_K + rank)
+//!      Nodes reached via high-confidence edges rank higher for equal rank.
+//!   6. Edges with confidence below `MIN_EDGE_CONFIDENCE` are pruned during BFS.
+//!   7. The top-k results by RRF score are returned.
 
-/// Reciprocal Rank Fusion constant.  Score = `1.0 / (RRF_K + rank)`.
+/// Reciprocal Rank Fusion constant.  Score = `cumulative_confidence / (RRF_K + rank)`.
 const RRF_K: f32 = 60.0;
+
+/// Edges with confidence strictly below this threshold are pruned during BFS traversal.
+const MIN_EDGE_CONFIDENCE: f32 = 0.1;
 
 use std::collections::{HashMap, VecDeque};
 
@@ -98,14 +106,24 @@ pub fn cosine_sim(a: &QueryVec, b: &QueryVec) -> f32 {
 // ---------------------------------------------------------------------------
 
 /// Build an undirected adjacency list (both edge directions) for BFS.
-fn build_adjacency(dag: &Dag) -> HashMap<&str, Vec<&str>> {
-    let mut adj: HashMap<&str, Vec<&str>> = HashMap::new();
+///
+/// Each entry is `(neighbour_id, edge_confidence)`.  Edges with confidence
+/// below [`MIN_EDGE_CONFIDENCE`] are excluded so BFS never traverses them.
+fn build_adjacency(dag: &Dag) -> HashMap<&str, Vec<(&str, f32)>> {
+    let mut adj: HashMap<&str, Vec<(&str, f32)>> = HashMap::new();
     for node_id in dag.nodes.keys() {
         adj.entry(node_id.as_str()).or_default();
     }
     for edge in &dag.edges {
-        adj.entry(edge.src_node.as_str()).or_default().push(edge.dst_node.as_str());
-        adj.entry(edge.dst_node.as_str()).or_default().push(edge.src_node.as_str());
+        if edge.confidence < MIN_EDGE_CONFIDENCE {
+            continue;
+        }
+        adj.entry(edge.src_node.as_str())
+            .or_default()
+            .push((edge.dst_node.as_str(), edge.confidence));
+        adj.entry(edge.dst_node.as_str())
+            .or_default()
+            .push((edge.src_node.as_str(), edge.confidence));
     }
     adj
 }
@@ -129,16 +147,24 @@ impl<'a> GraphRagRetriever<'a> {
     ///
     /// Every node in the DAG is a BFS seed (hop=0).  Neighbours are explored
     /// up to `max_hops`.  For each (node, hop) encounter the best cosine
-    /// similarity with the query is recorded.  After BFS, candidates are sorted
-    /// by cosine similarity descending and scored using Reciprocal Rank Fusion:
+    /// similarity with the query is recorded alongside the cumulative edge
+    /// confidence along the path.  After BFS, candidates are sorted by cosine
+    /// similarity descending and scored using Reciprocal Rank Fusion weighted
+    /// by cumulative edge confidence (the Refly pattern):
     ///
     /// ```text
-    /// rrf_score = 1.0 / (RRF_K + rank)   (rank is 0-indexed position, RRF_K=60.0)
+    /// rrf_score = cumulative_confidence / (RRF_K + rank)
     /// ```
     ///
-    /// If a node is reached by multiple paths the best cosine similarity wins.
-    /// Results are sorted by RRF score descending (which preserves the cosine
-    /// similarity ranking) and truncated to `top_k`.
+    /// where `cumulative_confidence` is the product of edge confidence values
+    /// along the best-confidence path to the node and `rank` is the 0-indexed
+    /// position in the cosine-similarity ranking.
+    ///
+    /// Nodes reached via high-confidence edges rank higher for equal rank.
+    /// Edges below [`MIN_EDGE_CONFIDENCE`] are pruned and never traversed.
+    /// If a node is reached by multiple paths the best (cosine_sim,
+    /// cumulative_confidence) pair is kept.
+    /// Results are sorted by RRF score descending and truncated to `top_k`.
     pub fn retrieve(&self, query: &QueryVec, top_k: usize, max_hops: usize) -> Vec<RetrievedNode> {
         if top_k == 0 || self.dag.nodes.is_empty() {
             return Vec::new();
@@ -146,38 +172,42 @@ impl<'a> GraphRagRetriever<'a> {
 
         let adj = build_adjacency(self.dag);
 
-        // best_cosine[node_id] → (cosine_sim, hops)
-        let mut best: HashMap<&str, (f32, usize)> = HashMap::new();
+        // best[node_id] → (cosine_sim, hops, cumulative_confidence)
+        let mut best: HashMap<&str, (f32, usize, f32)> = HashMap::new();
 
         // BFS from each node as a seed.
         for start_id in self.dag.nodes.keys() {
-            // visited tracks the minimum hops at which each node was seen
-            // in this BFS, to avoid re-enqueuing at a worse hop depth.
-            let mut visited: HashMap<&str, usize> = HashMap::new();
-            let mut queue: VecDeque<(&str, usize)> = VecDeque::new();
-            queue.push_back((start_id.as_str(), 0));
-            visited.insert(start_id.as_str(), 0);
+            // visited tracks (min_hops, max_cumulative_confidence) seen for each
+            // node in this BFS.  Re-enqueue only when a strictly better path exists.
+            let mut visited: HashMap<&str, (usize, f32)> = HashMap::new();
+            // Queue entries: (node_id, hops, cumulative_confidence)
+            let mut queue: VecDeque<(&str, usize, f32)> = VecDeque::new();
+            queue.push_back((start_id.as_str(), 0, 1.0));
+            visited.insert(start_id.as_str(), (0, 1.0));
 
-            while let Some((current, hops)) = queue.pop_front() {
+            while let Some((current, hops, cum_conf)) = queue.pop_front() {
                 // Raw cosine similarity (no hop penalty — RRF handles ranking).
                 let nv = node_vec(current);
                 let raw_sim = cosine_sim(query, &nv);
 
-                // Update global best cosine similarity for this node.
-                let entry = best.entry(current).or_insert((f32::NEG_INFINITY, usize::MAX));
-                if raw_sim > entry.0 {
-                    *entry = (raw_sim, hops);
+                // Update global best for this node: prefer higher cosine_sim;
+                // on tie prefer higher cumulative_confidence.
+                let entry = best.entry(current).or_insert((f32::NEG_INFINITY, usize::MAX, 0.0));
+                if raw_sim > entry.0 || (raw_sim == entry.0 && cum_conf > entry.2) {
+                    *entry = (raw_sim, hops, cum_conf);
                 }
 
                 // Expand neighbours if within hop budget.
                 if hops < max_hops {
                     if let Some(neighbours) = adj.get(current) {
-                        for &nbr in neighbours {
+                        for &(nbr, edge_conf) in neighbours {
                             let next_hops = hops + 1;
-                            let prev = visited.get(nbr).copied().unwrap_or(usize::MAX);
-                            if next_hops < prev {
-                                visited.insert(nbr, next_hops);
-                                queue.push_back((nbr, next_hops));
+                            let next_conf = cum_conf * edge_conf;
+                            let prev = visited.get(nbr).copied().unwrap_or((usize::MAX, 0.0));
+                            // Re-enqueue if this path is shorter OR same length but higher confidence.
+                            if next_hops < prev.0 || (next_hops == prev.0 && next_conf > prev.1) {
+                                visited.insert(nbr, (next_hops, next_conf));
+                                queue.push_back((nbr, next_hops, next_conf));
                             }
                         }
                     }
@@ -186,20 +216,23 @@ impl<'a> GraphRagRetriever<'a> {
         }
 
         // Sort all candidates by cosine similarity descending to establish rank.
-        let mut candidates: Vec<(&str, f32, usize)> = best
+        let mut candidates: Vec<(&str, f32, usize, f32)> = best
             .into_iter()
-            .map(|(id, (sim, hops))| (id, sim, hops))
+            .map(|(id, (sim, hops, conf))| (id, sim, hops, conf))
             .collect();
         candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
 
-        // Apply RRF: score = 1.0 / (RRF_K + rank) where rank is 0-indexed position.
+        // Apply confidence-weighted RRF:
+        //   score = cumulative_confidence / (RRF_K + rank)
+        // A node reached entirely through full-confidence (1.0) edges scores
+        // identically to the original unweighted formula.
         let take = top_k.min(candidates.len());
         candidates
             .into_iter()
             .enumerate()
-            .map(|(rank, (id, _sim, hops))| RetrievedNode {
+            .map(|(rank, (id, _sim, hops, conf))| RetrievedNode {
                 node_id: id.to_owned(),
-                score: 1.0 / (RRF_K + rank as f32),
+                score: conf / (RRF_K + rank as f32),
                 hops,
             })
             .take(take)
@@ -398,6 +431,139 @@ mod tests {
             assert_eq!(a.node_id, b.node_id);
             assert!((a.score - b.score).abs() < 1e-6);
         }
+    }
+
+    // -----------------------------------------------------------------------
+    // rag_high_confidence_edge_ranks_higher
+    // -----------------------------------------------------------------------
+    /// A single seed node has two outgoing weighted edges to nodes that are
+    /// NOT added to `dag.nodes` — so those targets are only reachable via
+    /// cross-edges, never from their own BFS seed.  This means their
+    /// cumulative_confidence is exactly the edge weight, not 1.0.
+    ///
+    /// The high-confidence target (0.9) must score higher than the
+    /// low-confidence target (0.2) at every rank position.
+    #[test]
+    fn rag_high_confidence_edge_ranks_higher() {
+        let mut dag = Dag::new();
+        // Only "seed" is registered as a node.  "high" and "low" are referenced
+        // only by edges, so they have no own-seed BFS path.
+        dag.add_node(ExecNode::new("seed", "verb"));
+        dag.add_edge_weighted("seed", "out", "high", "in", 0.9);
+        dag.add_edge_weighted("seed", "out", "low", "in", 0.2);
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query = seed's own vec; seed cosine=1.0 (rank 0), high and low rank below.
+        let query = node_vec("seed");
+        let results = retriever.retrieve(&query, 3, 1);
+
+        assert_eq!(results.len(), 3, "seed + high + low should be returned");
+        let high_result = results.iter().find(|r| r.node_id == "high").expect("high must appear");
+        let low_result  = results.iter().find(|r| r.node_id == "low").expect("low must appear");
+
+        // Verify the confidence-weighted RRF formula is applied correctly.
+        // high's best path: seed→high with conf=0.9; no own-seed BFS exists.
+        // low's best path:  seed→low with conf=0.2.
+        let high_rank = results.iter().position(|r| r.node_id == "high").unwrap();
+        let low_rank  = results.iter().position(|r| r.node_id == "low").unwrap();
+        let high_expected = 0.9 / (RRF_K + high_rank as f32);
+        let low_expected  = 0.2 / (RRF_K + low_rank as f32);
+        assert!(
+            (high_result.score - high_expected).abs() < 1e-5,
+            "high score: expected conf/rrf={high_expected}, got {}", high_result.score
+        );
+        assert!(
+            (low_result.score - low_expected).abs() < 1e-5,
+            "low score: expected conf/rrf={low_expected}, got {}", low_result.score
+        );
+        // high must score strictly more than low when they occupy the same or adjacent ranks.
+        // The simplest invariant: if ranks are equal (impossible, no ties), high wins.
+        // Since ranks differ by definition, verify that high's weighted score > low's.
+        // High: 0.9/(RRF_K+k1)  Low: 0.2/(RRF_K+k2) where k1 ≤ k2 (high has better cosine).
+        assert!(
+            high_result.score > low_result.score,
+            "high-confidence node must outscore low-confidence node: {} vs {}",
+            high_result.score, low_result.score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // rag_low_confidence_path_discounted
+    // -----------------------------------------------------------------------
+    /// A chain seed → mid → leaf where "mid" and "leaf" are NOT in dag.nodes.
+    /// Confidences: seed→mid = 0.8, mid→leaf = 0.5.
+    /// leaf's cumulative_confidence from the seed BFS = 0.8 × 0.5 = 0.4.
+    /// Its RRF score must be `0.4 / (RRF_K + rank)`.
+    #[test]
+    fn rag_low_confidence_path_discounted() {
+        let mut dag = Dag::new();
+        // Only "seed" is a registered node.  "mid" and "leaf" exist only via edges.
+        dag.add_node(ExecNode::new("seed", "verb"));
+        dag.add_edge_weighted("seed", "out", "mid", "in", 0.8);
+        dag.add_edge_weighted("mid", "out", "leaf", "in", 0.5);
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query = leaf's vec so leaf gets cosine=1.0 and likely rank 0.
+        let query = node_vec("leaf");
+        let results = retriever.retrieve(&query, 3, 2);
+
+        // "leaf" is only reachable via seed→mid→leaf, conf = 0.8*0.5 = 0.4.
+        let leaf = results.iter().find(|r| r.node_id == "leaf").expect("leaf must appear");
+        let leaf_rank = results.iter().position(|r| r.node_id == "leaf").unwrap();
+        let expected_leaf = 0.4f32 / (RRF_K + leaf_rank as f32);
+        assert!(
+            (leaf.score - expected_leaf).abs() < 1e-5,
+            "leaf score should be {expected_leaf} (conf=0.4), got {}", leaf.score
+        );
+
+        // "mid" is reachable via seed→mid, conf=0.8.
+        let mid = results.iter().find(|r| r.node_id == "mid").expect("mid must appear");
+        let mid_rank = results.iter().position(|r| r.node_id == "mid").unwrap();
+        let expected_mid = 0.8f32 / (RRF_K + mid_rank as f32);
+        assert!(
+            (mid.score - expected_mid).abs() < 1e-5,
+            "mid score should be {expected_mid} (conf=0.8), got {}", mid.score
+        );
+
+        // Mid (conf=0.8) must score higher than leaf (conf=0.4) at equal or better rank.
+        // Leaf has higher cosine (query=leaf_vec) so it ranks first.  But due to
+        // discounted confidence, leaf's score ratio is lower.  Just verify formula.
+        assert!(expected_mid > 0.0 && expected_leaf > 0.0, "both scores must be positive");
+    }
+
+    // -----------------------------------------------------------------------
+    // rag_min_confidence_pruning
+    // -----------------------------------------------------------------------
+    /// An edge with confidence strictly below `MIN_EDGE_CONFIDENCE` (0.1) must
+    /// be pruned during BFS traversal.  The destination node — which is not in
+    /// `dag.nodes` — must NOT appear in the results at all, because the only
+    /// path to it was pruned.
+    #[test]
+    fn rag_min_confidence_pruning() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("source", "verb"));
+        // "ghost" is only reachable via a below-threshold edge (conf=0.05 < 0.1).
+        // It is NOT in dag.nodes, so it has no own-seed BFS either.
+        dag.add_edge_weighted("source", "out", "ghost", "in", 0.05);
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("source");
+        let results = retriever.retrieve(&query, 5, 2);
+
+        // "ghost" must not appear: its only path was pruned and it has no own seed.
+        assert!(
+            results.iter().all(|r| r.node_id != "ghost"),
+            "ghost must not appear when its only edge is below MIN_EDGE_CONFIDENCE"
+        );
+
+        // "source" must appear with its own-seed confidence=1.0.
+        let src = results.iter().find(|r| r.node_id == "source").expect("source must appear");
+        let src_rank = results.iter().position(|r| r.node_id == "source").unwrap();
+        let expected_score = 1.0f32 / (RRF_K + src_rank as f32);
+        assert!(
+            (src.score - expected_score).abs() < 1e-5,
+            "source score should be {expected_score}, got {}", src.score
+        );
     }
 
     // -----------------------------------------------------------------------

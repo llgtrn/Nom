@@ -7,6 +7,8 @@ pub struct Edge {
     pub src_port: String,
     pub dst_node: NodeId,
     pub dst_port: String,
+    /// Confidence weight for this edge in [0.0, 1.0].  Defaults to `1.0`.
+    pub confidence: f32,
 }
 
 pub struct Dag {
@@ -28,6 +30,25 @@ impl Dag {
         self.edges.push(Edge {
             src_node: src_node.into(), src_port: src_port.into(),
             dst_node: dst_node.into(), dst_port: dst_port.into(),
+            confidence: 1.0,
+        });
+    }
+
+    /// Add an edge with an explicit confidence weight in [0.0, 1.0].
+    pub fn add_edge_weighted(
+        &mut self,
+        src_node: impl Into<String>,
+        src_port: impl Into<String>,
+        dst_node: impl Into<String>,
+        dst_port: impl Into<String>,
+        confidence: f32,
+    ) {
+        self.edges.push(Edge {
+            src_node: src_node.into(),
+            src_port: src_port.into(),
+            dst_node: dst_node.into(),
+            dst_port: dst_port.into(),
+            confidence: confidence.clamp(0.0, 1.0),
         });
     }
 

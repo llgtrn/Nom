@@ -37,7 +37,7 @@ impl CompileStatus {
     }
 }
 
-/// UI tier — all functions are sync and must complete in <2ms
+/// UI tier — all functions are sync and must complete in <1ms
 pub struct UiTier {
     state: Arc<SharedState>,
 }
@@ -163,13 +163,29 @@ impl<'a> UiTierOps<'a> {
             .map(|k| k.name)
     }
 
-    /// Score an atom — delegates to UiTier stub (0.5 without compiler feature)
+    /// Score an atom — uses shared ref directly, zero allocation per call
     pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
-        let tier = UiTier::new(Arc::new(SharedState::new(
-            &self.shared.dict_path,
-            &self.shared.grammar_path,
-        )));
-        tier.score_atom(word, kind)
+        #[cfg(feature = "compiler")]
+        {
+            use nom_types::{Atom, AtomKind};
+            let atom = Atom {
+                id: word.to_string(),
+                kind: AtomKind::Function,
+                name: word.to_string(),
+                source_path: String::new(),
+                language: "nom".to_string(),
+                labels: vec![],
+                concept: Some(kind.to_string()),
+                signature: None,
+                body: None,
+            };
+            return nom_score::score_atom(&atom).overall();
+        }
+        #[cfg(not(feature = "compiler"))]
+        {
+            let _ = (word, kind);
+            0.5
+        }
     }
 }
 

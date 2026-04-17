@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 use serde::{Deserialize, Serialize};
 use crate::graph_node::NodeId;
+use crate::dict_reader::DictReader;
 
 pub type ConnectorId = String;
 pub type SlotName = String;
@@ -67,6 +68,69 @@ impl Connector {
         self.can_wire_result.0
     }
 
+    /// Validate whether two ports can be wired using grammar shapes from the dict.
+    /// Returns (is_valid, confidence, reason).
+    pub fn validate_with_dict(
+        dict: &dyn DictReader,
+        from_kind: &str,
+        from_port: &str,
+        to_kind: &str,
+        to_port: &str,
+    ) -> (bool, f32, String) {
+        let from_shapes = dict.clause_shapes_for(from_kind);
+        let to_shapes = dict.clause_shapes_for(to_kind);
+
+        let from_shape = from_shapes.iter().find(|s| s.name == from_port);
+        let to_shape = to_shapes.iter().find(|s| s.name == to_port);
+
+        match (from_shape, to_shape) {
+            (None, _) => (false, 0.0, format!("unknown port: {}", from_port)),
+            (_, None) => (false, 0.0, format!("unknown port: {}", to_port)),
+            (Some(fs), Some(ts)) => {
+                let compatible = fs.grammar_shape == "any"
+                    || ts.grammar_shape == "any"
+                    || fs.grammar_shape == ts.grammar_shape;
+                if compatible {
+                    (true, 0.9, "validated".into())
+                } else {
+                    (
+                        false,
+                        0.3,
+                        format!("type mismatch: {} → {}", fs.grammar_shape, ts.grammar_shape),
+                    )
+                }
+            }
+        }
+    }
+
+    /// Construct a connector with real grammar validation from the dict.
+    pub fn new_with_validation(
+        id: impl Into<String>,
+        from_node: impl Into<NodeId>,
+        from_port: impl Into<String>,
+        to_node: impl Into<NodeId>,
+        to_port: impl Into<String>,
+        dict: &dyn DictReader,
+        from_kind: &str,
+        to_kind: &str,
+    ) -> Self {
+        let from_port = from_port.into();
+        let to_port = to_port.into();
+        let result =
+            Self::validate_with_dict(dict, from_kind, &from_port, to_kind, &to_port);
+        let confidence = result.1;
+        Self {
+            id: id.into(),
+            src: (from_node.into(), from_port),
+            dst: (to_node.into(), to_port),
+            confidence,
+            reason: result.2.clone(),
+            reason_chain: Vec::new(),
+            route: Vec::new(),
+            can_wire_result: result,
+        }
+    }
+
     /// Auto-route: straight line from src to dst with 2 bezier control points
     pub fn auto_route(&mut self, src_pos: [f32; 2], dst_pos: [f32; 2]) {
         let mid_x = (src_pos[0] + dst_pos[0]) / 2.0;
@@ -82,6 +146,8 @@ impl Connector {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dict_reader::ClauseShape;
+    use crate::stub_dict::StubDictReader;
 
     #[test]
     fn connector_stub_is_valid() {
@@ -129,5 +195,52 @@ mod tests {
         assert_eq!(c.reason_chain.len(), 2);
         assert_eq!(c.reason_chain[0], "grammar matched");
         assert_eq!(c.reason_chain[1], "type aligned");
+    }
+
+    fn make_shape(name: &str, grammar_shape: &str) -> ClauseShape {
+        ClauseShape {
+            name: name.into(),
+            grammar_shape: grammar_shape.into(),
+            is_required: false,
+            description: String::new(),
+        }
+    }
+
+    #[test]
+    fn connector_validates_known_ports() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(
+            "c1", "n1", "output", "n2", "input", &dict, "verb", "concept",
+        );
+        assert!(c.is_valid());
+        assert!((c.confidence - 0.9).abs() < f32::EPSILON);
+        assert_eq!(c.can_wire_result.2, "validated");
+    }
+
+    #[test]
+    fn connector_rejects_unknown_port() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(
+            "c2", "n1", "nonexistent", "n2", "input", &dict, "verb", "concept",
+        );
+        assert!(!c.is_valid());
+        assert_eq!(c.confidence, 0.0);
+        assert!(c.can_wire_result.2.contains("unknown port: nonexistent"));
+    }
+
+    #[test]
+    fn connector_validates_any_type_port() {
+        // StubDictReader default shapes use grammar_shape "any" — should always be compatible
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(
+            "c3", "n1", "output", "n2", "input", &dict, "verb", "concept",
+        );
+        assert!(c.is_valid());
+        assert!((c.confidence - 0.9).abs() < f32::EPSILON);
+        assert_eq!(c.can_wire_result.2, "validated");
     }
 }

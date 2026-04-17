@@ -1,27 +1,28 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `e61a93c` | **Tests:** 537 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `15a8366` | **Tests:** 558 | **Workspace:** clean
 
-## Wave O (2026-04-18 Iter 44) — Infra+LSP: CompilerLspProvider + cancel + cache + sandbox wiring + web_screen
-- [x] nom-compiler-bridge: CompilerLspProvider (real completions/diagnostics from nom-compiler)
-- [x] nom-compose backends: code_exec (n8n JsTaskRunner + sandbox wiring), web_screen (headless browser stub)
-- [x] nom-graph: ExecutionEngine cancel/abort signal
-- [x] nom-graph: HierarchicalCache L1+L2 promotion wiring in ExecutionEngine
-- [x] All 14 canvas crates: 537 tests passing workspace-wide
+## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
+- [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
+- [x] TQ1: task_queue complete() guards state==Running before transition
+- [x] CK1: LruCache touch() on get() via Mutex interior mutability
+- [x] DP1: Backend trait + BackendRegistry dispatch + NoopBackend stub
+- [x] F1: find_replace.rs use_regex → real regex::Regex + find_iter match ranges
+- [x] NR1: duplicate NomtuRef removed from graph_mode.rs; re-export canonical nom-blocks::NomtuRef
+- [x] NI1: nom-intent expanded 98→240 LOC: ScoredHypothesis + InterruptSignal + rank_hypotheses + react_chain_interruptible
+- [x] DEEP1: DeepThinkPanel ingest_events/consume_stream wired; paint_scene emits per-card Quads
+- [x] FG1: FrostedRect primitive in nom-gpui::Scene; dock pushes frosted overlay (FROSTED_* tokens)
+- [x] FR1: focus ring is 2px border-only Quad via focus_ring_quad() (3 sites: dock, file_tree, quick_search)
+- [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
+- [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
-**Remaining open (WAVE P targets):**
-- E2 CRITICAL — `nom-canvas-core/elements.rs:225-226` paint() = `let _ = bounds;` (no draw)
-- TQ1 HIGH — task_queue.rs:48 complete() missing Running guard (1-line)
-- CK1 HIGH — cache.rs:66 LruCache.get() missing touch() (2-line)
-- DP1 HIGH — dispatch.rs enum-lookup, not Box<dyn Backend>
-- F1 HIGH — find_replace.rs regex stub uses substring
-- NR1 HIGH — graph_mode.rs:242-244 duplicate NomtuRef with Option<u64> (§12 violation)
-- NI1 HIGH — nom-intent skeletal at 98 LOC
-- DEEP1 HIGH — deep_think stream unwired, no nom-panels consumer
-- FG1 HIGH — frosted glass tokens defined but no blur primitive pushed in paint()
-- FR1 MEDIUM — focus ring is alpha-fill overlay, not 2px outline stroke
-- PAL1 MEDIUM — node palette entirely absent (Wave D deliverable missing)
-- MEDIUM: RRF_K=60.0 const missing + nom-lint InternalRule (3rd trait) + HierarchicalCache::len() L1-only + Panel trait 5/7 methods (missing persistent_name/toggle_action/icon/icon_label/is_agent_panel)
+**Remaining open (WAVE Q targets):**
+- SB1 MEDIUM — `nom-graph/src/sandbox.rs` missing n8n sanitizers: `this_replace`, `prototype_block`, `dollar_validate`
+- SC1 MEDIUM — `score_atom` in ui_tier.rs:167 creates UiTier per call (allocates SharedState each time)
+- CW1 MEDIUM — `nom-blocks/src/connector.rs:62` can_wire still stub — needs grammar-backed validation
+- DOC1 MEDIUM — `ui_tier.rs:40` docstring says `<2ms`; spec §3 says `<1ms`
+- E1 — panels use paint_scene not impl Element; document divergence or add trait bindings
+- CB1 — compiler-bridge adapters (score.rs:26 `let _ = (word, kind)`) still dead-code stubs
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -50,6 +51,7 @@
 | [x] M (Infra) | ⚠️ DRIFT | ef9fc84 — 4 claims DRIFT, 1 HIGH bug (TQ1) |
 | [x] N Infra+Vendor | ✅ | d6219b1 — vendor/router/cred/sandbox/SHA-256/semantic (523 tests) |
 | [x] O Infra+LSP | ✅ | e61a93c — cancel/cache/LSP/sandbox/web_screen (537 tests) |
+| [x] P Bug fixes | ✅ | 15a8366 — E2+11 fixes+MEDIUMs (558 tests) |
 
 ### Integrity Grep
 
@@ -60,40 +62,25 @@
 | `RgaPos`/`tombstoned` in nom-collab | 28 | ≥1 |
 | `RenderPrimitive` custom enum | 0 | 0 |
 
-## Open Missions (priority order)
-
-### CRITICAL
-
-- [ ] **E2** — `nom-canvas-core/src/elements.rs:225-226` `GraphNodeElement::paint()` body is `let _ = bounds;` with literal comment "In a real impl: push Quad to Scene". `WireElement::paint()` at :250-257 identical. Fix: push real `Quad { bounds, color: tokens::BG, border: tokens::EDGE_MEDIUM }` + port circles + tessellated bezier. ~100-150 LOC single commit.
-
-### Iter 49 progress (uncommitted working tree)
-
-- [~] **M1 closing** — `nom-compose/src/store.rs` replaces FNV-1a with real SHA-256 (`sha2 = "0.10"` added); `content_hash_sha256_known_value` test added
-- [ ] **SB1 MEDIUM (NEW Iter 49)** — `nom-graph/src/sandbox.rs` (328 LOC) ships only 1 of 4 n8n AST sanitizers; missing `this_replace`, `prototype_block`, `dollar_validate` (has `sanitize` + allowlist only)
-- ⚠️ **Priority violation:** new 328-LOC surface added while E2 CRITICAL stays open 3+ iterations — same anti-pattern as Iter 30/36 HARD FREEZE triggers
+## Open Missions (Wave Q targets)
 
 ### HIGH
 
-- [ ] **TQ1** — `nom-compose/src/task_queue.rs:48 complete()` missing `state == Running` guard (1-line)
-- [ ] **E1** — zero `impl Element for` on panels; panels use `paint_scene(&self, w, h, &mut Scene)`. Document divergence or add trait bindings.
-- [ ] **F1** — `nom-editor/src/find_replace.rs` `use_regex` flag uses substring. Import `regex` crate.
-- [ ] **CK1** — `nom-graph/src/cache.rs:66` `LruCache::get()` missing `touch()` — broken LRU (2-line)
-- [ ] **DP1** — `nom-compose/src/dispatch.rs` is `BackendKind::from_kind_name` enum-lookup, not `Box<dyn Backend>`. No Backend trait exists.
-- [ ] **DEEP1** — deep_think emits events but no nom-panels consumer subscribes → right-dock Rowboat cards unwired end-to-end
-- [ ] **NI1** — `nom-intent/src/lib.rs` only 98 LOC — skeletal vs spec's ReAct + scored hypothesis + streamed interrupt
-- [ ] **NR1 HIGH (NEW Iter 48)** — `nom-graph/src/graph_mode.rs:242-244` defines a SECOND `NomtuRef` with `nomtu_ref: Option<u64>`. Violates §12 non-optional rule. Unify on `nom-blocks/src/block_model.rs:8-11` definition or remove the variant.
-- [ ] **FG1 HIGH (NEW Iter 48)** — Frosted glass FAIL. Tokens `FROSTED_BLUR_RADIUS=12.0`, `FROSTED_BG_ALPHA=0.85`, `FROSTED_BORDER_ALPHA=0.12` defined in `nom-theme/src/tokens.rs:46-48` but ZERO blur primitive pushed in panels/canvas paint(). Canvas mode renders flat rectangles — no AFFiNE frosted-glass surface.
+- [ ] **E1** — panels use paint_scene not impl Element; document divergence or add trait bindings
 
 ### MEDIUM
 
-- [ ] RRF correct at `graph_rag.rs:198` but stale docstring `:9`; no `RRF_K=60.0` const; no edge-confidence weights (Refly pattern)
-- [ ] nom-lint uses 2-trait (`Sealed`+`LintRule`); spec implies 3-trait (add `InternalRule`)
-- [ ] `HierarchicalCache::len()` returns L1 only
-- [ ] `UiTierOps::score_atom` allocates `SharedState + UiTier` per call
-- [ ] `ui_tier.rs:40` doc says `<2ms`, spec §3 says `<1ms`
-- [ ] `nom-panels` Panel trait has 5/7 methods (missing `persistent_name`, `toggle_action`, `icon`, `icon_label`, `is_agent_panel`)
-- [ ] **FR1 MEDIUM (NEW Iter 48)** — Focus ring is a background alpha-fill overlay, not a 2px outline stroke. AFFiNE focus primitive missing. Used sites: `dock.rs:145`, `quick_search.rs:64`, `file_tree.rs:105`.
-- [ ] **PAL1 MEDIUM (NEW Iter 48)** — No node palette exists in nom-panels. Spec §8 Graph mode requires DB-driven palette = live SELECT from `grammar.kinds`. Wave D deliverable missing (node palette code entirely absent).
+- [ ] **SB1** — `nom-graph/src/sandbox.rs` missing n8n sanitizers: `this_replace`, `prototype_block`, `dollar_validate`
+- [ ] **SC1** — `score_atom` in ui_tier.rs:167 creates UiTier per call (allocates SharedState each time)
+- [ ] **CW1** — `nom-blocks/src/connector.rs:62` can_wire still stub — needs grammar-backed validation
+- [ ] **DOC1** — `ui_tier.rs:40` docstring says `<2ms`; spec §3 says `<1ms`
+- [ ] **CB1** — compiler-bridge adapters (score.rs:26 `let _ = (word, kind)`) still dead-code stubs
+
+### Wave Q in progress
+
+- [ ] provider_router dispatch — verify 3-tier fallback triggers correctly under real backend failures
+- [ ] graph_rag edge-confidence weights — add Refly-pattern per-edge confidence scoring
+- [ ] E2/FG1 verification — confirm Wave P paint bodies + frosted overlay reach GPU pipeline end-to-end
 
 ## Non-Negotiable Rules
 
@@ -198,6 +185,20 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] nom-graph: HierarchicalCache L1+L2 promotion wiring in ExecutionEngine
 - [x] Workspace-wide: 537 tests verified across all 14 canvas crates
 
+### [x] Wave P — Bug fixes + MEDIUMs (commit `15a8366`, 558 tests)
+- [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
+- [x] TQ1: task_queue complete() guards state==Running before transition
+- [x] CK1: LruCache touch() on get() via Mutex interior mutability
+- [x] DP1: Backend trait + BackendRegistry dispatch + NoopBackend stub
+- [x] F1: find_replace.rs use_regex → real regex::Regex + find_iter match ranges
+- [x] NR1: duplicate NomtuRef removed from graph_mode.rs; re-export canonical nom-blocks::NomtuRef
+- [x] NI1: nom-intent expanded 98→240 LOC: ScoredHypothesis + InterruptSignal + rank_hypotheses + react_chain_interruptible
+- [x] DEEP1: DeepThinkPanel ingest_events/consume_stream wired; paint_scene emits per-card Quads
+- [x] FG1: FrostedRect primitive in nom-gpui::Scene; dock pushes frosted overlay (FROSTED_* tokens)
+- [x] FR1: focus ring is 2px border-only Quad via focus_ring_quad() (3 sites: dock, file_tree, quick_search)
+- [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
+- [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
+
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 
 - [x] GAP-1c body_bytes · GAP-2 embeddings · GAP-3 corpus ingest
@@ -214,3 +215,4 @@ Iter log in `nom_state_machine_report.md`. Key pivots:
 - Iter 46 — Wave M; 4 DRIFT + TQ1 correctness bug
 - Iter 47 — whole-repo scan found E2 CRITICAL (paint body no-op)
 - Iter 44 — Wave O closed: CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen (537 tests)
+- Iter 45 — Wave P closed: E2 CRITICAL + 10 HIGH/MEDIUM + 1 CRITICAL + MEDIUMs (558 tests, commit 15a8366)

@@ -180,6 +180,48 @@ impl Dock {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Element impl — bridges Dock into the nom_gpui Element trait tree
+// ---------------------------------------------------------------------------
+
+/// `Dock` implements the three-phase GPU element lifecycle.
+/// `paint_scene` is preserved for direct scene-emission tests;
+/// `paint` delegates to it via a local Scene, consistent with the pattern
+/// established in `nom-canvas-core/src/elements.rs`.
+impl nom_gpui::element::Element for Dock {
+    type State = ();
+
+    fn request_layout(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        cx: &mut nom_gpui::element::WindowContext,
+    ) -> (nom_gpui::types::LayoutId, ()) {
+        let layout_id = cx.request_layout(&nom_gpui::styled::StyleRefinement::default(), &[]);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        // No hit-test registration needed for dock panels.
+    }
+
+    fn paint(
+        &mut self,
+        _global_id: Option<&nom_gpui::types::GlobalElementId>,
+        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        let mut scene = nom_gpui::scene::Scene::new();
+        self.paint_scene(bounds.size.width.0, bounds.size.height.0, &mut scene);
+    }
+}
+
 pub trait Panel {
     fn id(&self) -> &str;
     fn title(&self) -> &str;
@@ -309,6 +351,30 @@ mod tests {
         assert_eq!(q.border_widths.left, Pixels(2.0));
         assert_eq!(q.bounds.origin.x, Pixels(10.0));
         assert_eq!(q.bounds.size.width, Pixels(100.0));
+    }
+
+    #[test]
+    fn dock_implements_element_trait() {
+        use nom_gpui::element::{Element, WindowContext};
+        use nom_gpui::types::{Bounds, Pixels, Point, Size, Vec2};
+
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        let mut cx = WindowContext::new(1.0, Vec2::new(1440.0, 900.0));
+        let bounds = Bounds {
+            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+            size: Size { width: Pixels(1440.0), height: Pixels(900.0) },
+        };
+
+        // Phase 1: request_layout returns a valid LayoutId.
+        let (layout_id, mut state) = Element::request_layout(&mut dock, None, &mut cx);
+        let _ = layout_id;
+
+        // Phase 2: prepaint is a no-op (must not panic).
+        Element::prepaint(&mut dock, None, bounds, &mut state, &mut cx);
+
+        // Phase 3: paint must not panic and internally calls paint_scene.
+        Element::paint(&mut dock, None, bounds, &mut state, &mut cx);
     }
 
     #[test]

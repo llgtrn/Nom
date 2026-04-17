@@ -51,6 +51,12 @@ pub enum SandboxError {
     TypeMismatch { expected: &'static str, got: &'static str },
     UnknownFunction(String),
     DepthLimitExceeded,
+    /// n8n JSTaskRunner: `this` access is forbidden.
+    ForbiddenIdentifier(String),
+    /// n8n JSTaskRunner: prototype chain access (`__proto__`, `prototype`, `constructor`) is forbidden.
+    PrototypeAccess,
+    /// n8n JSTaskRunner: dollar-prefixed variable not in the allowed set.
+    InvalidDollarVar(String),
 }
 
 impl std::fmt::Display for SandboxError {
@@ -61,6 +67,9 @@ impl std::fmt::Display for SandboxError {
             Self::TypeMismatch { expected, got } => write!(f, "type mismatch: expected {expected}, got {got}"),
             Self::UnknownFunction(n) => write!(f, "unknown function: {n}"),
             Self::DepthLimitExceeded => write!(f, "recursion depth exceeded"),
+            Self::ForbiddenIdentifier(id) => write!(f, "forbidden identifier: {id}"),
+            Self::PrototypeAccess => write!(f, "prototype chain access is forbidden"),
+            Self::InvalidDollarVar(name) => write!(f, "invalid dollar variable: {name}"),
         }
     }
 }
@@ -145,6 +154,63 @@ impl TypeCoherenceSanitizer {
     }
 }
 
+/// --- Sanitizer 5: ThisReplaceSanitizer ---
+/// Detects use of `this` as a variable name (n8n JSTaskRunner pattern).
+pub struct ThisReplaceSanitizer;
+impl ThisReplaceSanitizer {
+    pub fn check(&self, expr: &Expr) -> Result<(), SandboxError> {
+        match expr {
+            Expr::Var(name) if name == "this" => Err(SandboxError::ForbiddenIdentifier("this".into())),
+            Expr::Var(_) | Expr::Literal(_) => Ok(()),
+            Expr::BinOp { left, right, .. } => { self.check(left)?; self.check(right) }
+            Expr::If { cond, then, else_ } => { self.check(cond)?; self.check(then)?; self.check(else_) }
+            Expr::Call { args, .. } => args.iter().try_for_each(|a| self.check(a)),
+        }
+    }
+}
+
+/// --- Sanitizer 6: PrototypeBlockSanitizer ---
+/// Detects access to `__proto__`, `prototype`, or `constructor` identifiers.
+pub struct PrototypeBlockSanitizer;
+const PROTOTYPE_KEYWORDS: &[&str] = &["__proto__", "prototype", "constructor"];
+impl PrototypeBlockSanitizer {
+    pub fn check(&self, expr: &Expr) -> Result<(), SandboxError> {
+        match expr {
+            Expr::Var(name) if PROTOTYPE_KEYWORDS.iter().any(|kw| name.contains(kw)) => {
+                Err(SandboxError::PrototypeAccess)
+            }
+            Expr::Var(_) | Expr::Literal(_) => Ok(()),
+            Expr::BinOp { left, right, .. } => { self.check(left)?; self.check(right) }
+            Expr::If { cond, then, else_ } => { self.check(cond)?; self.check(then)?; self.check(else_) }
+            Expr::Call { args, .. } => args.iter().try_for_each(|a| self.check(a)),
+        }
+    }
+}
+
+/// --- Sanitizer 7: DollarValidateSanitizer ---
+/// Allows only known n8n dollar-prefixed variables; rejects unknown `$`-prefixed names.
+pub struct DollarValidateSanitizer;
+const ALLOWED_DOLLAR_VARS: &[&str] = &[
+    "$input", "$json", "$node", "$workflow", "$item", "$items", "$runIndex",
+];
+impl DollarValidateSanitizer {
+    pub fn check(&self, expr: &Expr) -> Result<(), SandboxError> {
+        match expr {
+            Expr::Var(name) if name.starts_with('$') => {
+                if ALLOWED_DOLLAR_VARS.contains(&name.as_str()) {
+                    Ok(())
+                } else {
+                    Err(SandboxError::InvalidDollarVar(name.clone()))
+                }
+            }
+            Expr::Var(_) | Expr::Literal(_) => Ok(()),
+            Expr::BinOp { left, right, .. } => { self.check(left)?; self.check(right) }
+            Expr::If { cond, then, else_ } => { self.check(cond)?; self.check(then)?; self.check(else_) }
+            Expr::Call { args, .. } => args.iter().try_for_each(|a| self.check(a)),
+        }
+    }
+}
+
 pub struct EvalContext {
     vars: std::collections::HashMap<String, SandboxValue>,
 }
@@ -162,6 +228,9 @@ pub fn sanitize(expr: &Expr) -> Result<(), SandboxError> {
     AllowedFunctionsSanitizer::default_safe().check(expr)?;
     NoSideEffectsSanitizer.check(expr)?;
     TypeCoherenceSanitizer.check(expr)?;
+    ThisReplaceSanitizer.check(expr)?;
+    PrototypeBlockSanitizer.check(expr)?;
+    DollarValidateSanitizer.check(expr)?;
     Ok(())
 }
 
@@ -323,5 +392,44 @@ mod tests {
             right: Box::new(Expr::Literal(SandboxValue::Int(2))),
         };
         assert!(TypeCoherenceSanitizer.check(&expr).is_err());
+    }
+    #[test]
+    fn sandbox_this_access_is_blocked() {
+        let expr = Expr::Var("this".into());
+        assert_eq!(
+            ThisReplaceSanitizer.check(&expr),
+            Err(SandboxError::ForbiddenIdentifier("this".into()))
+        );
+        assert!(sanitize(&expr).is_err());
+    }
+    #[test]
+    fn sandbox_prototype_access_is_blocked() {
+        for name in &["__proto__", "prototype", "constructor", "obj.prototype"] {
+            let expr = Expr::Var((*name).into());
+            assert_eq!(
+                PrototypeBlockSanitizer.check(&expr),
+                Err(SandboxError::PrototypeAccess),
+                "expected PrototypeAccess for {name}"
+            );
+        }
+    }
+    #[test]
+    fn sandbox_invalid_dollar_var_is_blocked() {
+        let expr = Expr::Var("$secret".into());
+        assert_eq!(
+            DollarValidateSanitizer.check(&expr),
+            Err(SandboxError::InvalidDollarVar("$secret".into()))
+        );
+        assert!(sanitize(&expr).is_err());
+    }
+    #[test]
+    fn sandbox_valid_dollar_var_is_allowed() {
+        for name in ALLOWED_DOLLAR_VARS {
+            let expr = Expr::Var((*name).into());
+            assert!(
+                DollarValidateSanitizer.check(&expr).is_ok(),
+                "{name} should be allowed"
+            );
+        }
     }
 }

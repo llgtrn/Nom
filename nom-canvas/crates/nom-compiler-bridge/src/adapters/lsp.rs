@@ -35,10 +35,13 @@ impl CompilerLspProvider {
 }
 
 impl LspProvider for CompilerLspProvider {
-    fn hover(&self, _path: &std::path::Path, _offset: usize) -> Option<HoverResult> {
-        // Real impl: extract word at offset from buffer, then hover_from_dict
-        // Wave C stub: returns None until buffer word extraction is wired
-        None
+    fn hover(&self, path: &std::path::Path, _offset: usize) -> Option<HoverResult> {
+        // Use the file stem as a word probe when no buffer extraction is available.
+        // This lets the cache-based lookup work for document-level hover.
+        let word = path.file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or("");
+        hover_from_dict(word, &self.state)
     }
 
     fn completions(&self, _path: &std::path::Path, _offset: usize) -> Vec<CompletionItem> {
@@ -63,17 +66,45 @@ impl LspProvider for CompilerLspProvider {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::shared::GrammarKind;
 
     #[test]
     fn compiler_lsp_provider_completions_from_cache() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            crate::shared::GrammarKind { name: "verb".into(), description: "action word".into() },
-            crate::shared::GrammarKind { name: "concept".into(), description: "abstract idea".into() },
+            GrammarKind { name: "verb".into(), description: "action word".into() },
+            GrammarKind { name: "concept".into(), description: "abstract idea".into() },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         assert_eq!(completions.len(), 2);
         assert_eq!(completions[0].label, "verb");
+    }
+
+    #[test]
+    fn compiler_lsp_provider_hover_returns_none_without_compiler_feature() {
+        // Without the "compiler" feature, hover_from_dict always returns None.
+        // CompilerLspProvider::hover should propagate that None.
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let provider = CompilerLspProvider::new(state);
+        let result = provider.hover(std::path::Path::new("verb.nomx"), 0);
+        // Without compiler feature, always None regardless of cache
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compiler_lsp_provider_goto_def_returns_none() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let provider = CompilerLspProvider::new(state);
+        let result = provider.goto_definition(std::path::Path::new("any.nomx"), 0);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn compiler_lsp_provider_completions_empty_when_no_grammar() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let provider = CompilerLspProvider::new(state);
+        let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
+        assert!(completions.is_empty());
     }
 }

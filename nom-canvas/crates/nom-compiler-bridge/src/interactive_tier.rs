@@ -170,6 +170,11 @@ impl<'a> InteractiveTierOps<'a> {
         Self { shared }
     }
 
+    /// Expose shared state reference for adapter composition
+    pub fn shared(&self) -> &'a SharedState {
+        self.shared
+    }
+
     /// Tokenize a line into word tokens
     pub fn tokenize_line(&self, line: &str) -> Vec<String> {
         line.split_whitespace().map(|s| s.to_string()).collect()
