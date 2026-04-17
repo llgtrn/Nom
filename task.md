@@ -6,6 +6,29 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iter 36 strict — ⛔ HARD FREEZE re-recommended: U1 5 iterations unfixed, Wave F deep_think is fake ReAct)
+
+**Wave F strict verdicts (vs linter's rosy summary):**
+- `graph_rag.rs`: 3 PASS / 3 DRIFT. Cosine sim + BFS + dedup correct. Hop penalty is harmonic `1/(1+hops)` NOT RRF `1/(rank+60)`. No nom-memoize `Tracked<T>` integration. BFS O(N²) scalability.
+- `graph_mode.rs`: **1 DRIFT / 7 FAIL.** Pure data skeleton. `layout_dag` is topo-sort grid (NOT force-directed Fruchterman-Reingold). Zero `nom_gpui::scene` imports. Zero color tokens. Zero `spring_value` calls. No `confidence` field. Spec §8 visual requirements entirely unaddressed.
+- `deep_think.rs`: **1 CRITICAL + 3 HIGH + 2 MEDIUM + 1 LOW.** "ReAct loop" at `:48-67` is literal bit arithmetic (`wrapping_mul + rotate_left + XOR 0xcafe`). Zero `nom_intent` imports. `ThinkStep` shape has `{step_id, prompt_hash, output_hash, token_count}` — spec mandates `{hypothesis, evidence, confidence, counterevidence, refined_from}`. Zero semantic overlap. `RagQueryBackend::with_deep_think` is decorative (compose() is static — stored config unreachable).
+
+**⛔ U1 ESCALATED — nom-panels render layer unfixed for 5 iterations (Iter 32/33/34/35/36).** Grep across all 11 nom-panels files:
+- `impl Element` / `fn paint` / `Scene::new` / `Quad {`: **0**
+- `use nom_gpui::scene` or `use nom_gpui::element`: **0**
+- `BG`/`BORDER`/`FOCUS`/`EDGE_HIGH/MED/LOW`/`CTA` color tokens used: **0**
+- `spring_value` calls: **0**
+
+**LOC added since U1 first flagged:** ~2,500+ (Wave E + Wave F + now Wave G stubs). Zero render code among them. This matches the Iter 25-30 "add more, fix nothing" pattern that originally triggered the HARD FREEZE.
+
+**Recommended HARD FREEZE terms:**
+1. No new module / new crate / new backend / new wave until `impl Element { fn paint }` lands in all 11 nom-panels files
+2. All new commits must call nom_gpui Scene primitives (Quad/Path/Shadow) + import nom_theme tokens
+3. `deep_think.rs` must delete bit-arithmetic stub, replace with real `nom_intent::classify_with_react` call
+4. `RagQueryBackend::compose` must accept `&self` so `with_deep_think` builder is non-decorative
+
+**User's explicit mandate:** "UI/UX is the #1 failure point. Any UI surface that was merely stubbed is a FAIL, not a PASS." — unmet 5 iterations running.
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 36 — Wave G stubs, Wave A/B drift closed)
 
 **Wave G stub crates implemented:**

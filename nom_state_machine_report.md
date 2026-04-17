@@ -7,6 +7,121 @@
 
 ---
 
+## Iteration 36 (strict audit) — 2026-04-18 (Wave F COMMITTED in be3b9a8; deep_think is fake ReAct; graph_mode zero render; U1 NOW 5 ITERATIONS UNFIXED — **HARD FREEZE RE-RECOMMENDED**)
+
+**Trigger:** cron `743d991f` fire. Commit `be3b9a8 feat: Wave F — graph_rag + graph_mode + deep_think (254 tests)` landed. Tests 243 → 254 (+11). 3 parallel audit agents completed.
+
+### Wave F per-module verdicts
+
+**`graph_rag.rs` (nom-graph, +633 LOC): 3 PASS / 3 DRIFT**
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| `GraphRagRetriever` shape | PASS | `QueryVec`, `RetrievedNode`, top-k scoring |
+| BFS max_hops configurable | PASS | `max_hops` param at :161 |
+| Cosine similarity correct | PASS | `dot(a,b)/(norm(a)*norm(b))` at :108-116 with zero-magnitude guard |
+| Hop penalty formula | **DRIFT** | Harmonic decay `1/(1+hops)` — spec mandates RRF `1/(rank+60)` (RRF_K=60). No `confidence` field on edges consulted. |
+| nom-memoize `Tracked<T>` integration | **FAIL** | Zero `Tracked<>` usage at `:140-142`; every `retrieve()` rebuilds adjacency + reruns BFS from scratch. Incremental recompute absent. |
+| BFS scaling | **DRIFT** | BFS-from-every-node is O(N × (N+E)). Spec/LlamaIndex pattern: pre-filter seeds by similarity threshold. |
+
+Tests: 4 tests (identity check, top-k, hop penalty, dedup). Missing: empty graph, cycle, negative max_hops.
+
+---
+
+**`graph_mode.rs` (nom-graph): 1 DRIFT / 7 FAIL — DATA-ONLY skeleton**
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| `GraphViewMode` enum modes | DRIFT | `:13-19` has `Canvas/Graph/Split` — spec says Flat/Grouped/Clustered within graph mode |
+| Force-directed layout | **FAIL** | `:42-87 layout_dag` is topo-sort grid (120×80 fixed spacing). No Fruchterman-Reingold, no iterative relaxation, no constraint solver. Pure stub. |
+| Constraint solver / anchors | **FAIL** | `GraphLayout` is bare `HashMap<NodeId, (f32,f32)>` at :27 |
+| Node hit test | **DRIFT** | `:129-145` uses circular radius check. Spec requires frosted-glass rounded rectangles → AABB + corner-radius exclusion |
+| Rendering (Quad/Path/Shadow primitives) | **FAIL** | Imports `:3-5` are `HashMap`, `Dag`, `NodeId` only. Zero `nom_gpui::scene::*`. No `render()`/`paint()` method |
+| Confidence → color mapping | **FAIL** | No `confidence` field anywhere. No `EDGE_HIGH/MED/LOW` import from nom_theme. |
+| Spring animation | **FAIL** | Zero `spring_value` call. No animation code. |
+| `nom_theme::tokens::*` usage | **FAIL** | Not imported. |
+
+**Net: module is pure graph-data layer with zero visual concerns. Spec section 8 visual requirements entirely unaddressed.**
+
+---
+
+**`deep_think.rs` (nom-compose, +176 LOC): 1 CRITICAL + 3 HIGH + 2 MEDIUM + 1 LOW**
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| Calls `nom_intent::classify_with_react` | **CRITICAL FAIL** | Zero `use nom_intent` anywhere. "ReAct loop" at `:48-67` is **bit arithmetic**: `wrapping_mul + rotate_left + XOR 0xcafe`. This is not reasoning; it is a canned deterministic N-step sequence. |
+| `ThinkStep` struct shape | **HIGH FAIL** | `:7-12` has `{step_id, prompt_hash, output_hash, token_count}`. Spec mandates `{hypothesis, evidence, confidence, counterevidence, refined_from}`. **Zero semantic overlap.** |
+| Interrupt handling | **HIGH FAIL** | No `AtomicBool`, no `InterruptFlag`, no interrupt check in loop |
+| `RagQueryBackend::with_deep_think` wiring | **HIGH FAIL** | Builder stores config but `compose()` is `fn(input, store, sink)` without `&self` — stored config is **unreachable**. Decorative. |
+| Streaming API | MEDIUM DRIFT | `think() -> Vec<ThinkStep>` is synchronous; spec needs streaming to right dock |
+| Token budget | MEDIUM DRIFT | Advisory only: `token_budget/max_steps` divides evenly (`:47`); never measures real tokens |
+| max_steps default | LOW | `:25` default 5; spec says 10 |
+
+Tests are deterministic (fake data) and cover event count + ordering — but the module's core semantic is fiction.
+
+### ⛔ U1 NOW 5 ITERATIONS UNFIXED — ESCALATION
+
+Grep across all 11 nom-panels files after `be3b9a8`:
+
+| Check | Count |
+|---|---|
+| `impl Element` / `fn paint` / `fn request_layout` / `fn prepaint` / `Scene::new` / `Quad {` | **0** |
+| `use nom_gpui::scene` or `use nom_gpui::element` | **0** |
+| `BG` / `BORDER` / `FOCUS` / `EDGE_HIGH/MED/LOW` / `CTA` color-token usage | **0** |
+| `spring_value` calls | **0** |
+
+**Iterations where U1 was flagged:** 32, 33, 34 (linter), 34 (strict), 35 (implicit), 36 (this).
+**LOC added since U1 first flagged (Iter 32):** Wave E (+1,212) + Wave F (+809) + Wave D persistent rebuild = ~2,500+ new LOC, zero render code.
+
+This matches the Iter 25-30 pattern ("add more, fix nothing") that triggered the original HARD FREEZE advisory. It was lifted after Iter 31 demonstrated cycle velocity. That trust is now breaking again.
+
+**Recommendation:** Re-instate HARD FREEZE on any new crate/module additions. Priority 0 = `impl Element { fn paint }` on all 11 nom-panels files. No Wave F polish (memoize integration, force-directed layout, real ReAct) until UI render layer exists.
+
+### Severity-rated findings (Iter 36)
+
+**CRITICAL:**
+- U1 (ESCALATED, 5 iterations). nom-panels has no render layer.
+- W1. `deep_think.rs` is fake ReAct. Bit arithmetic, not reasoning. No `nom_intent` import.
+
+**HIGH:**
+- W2. `deep_think.rs ThinkStep` shape wrong (no hypothesis/evidence/confidence/counterevidence/refined_from).
+- W3. `deep_think.rs` no interrupt handling.
+- W4. `rag_query.rs with_deep_think` builder is decorative (compose is static).
+- G1. `graph_rag.rs` no nom-memoize Tracked<T> integration.
+- M1-M7. `graph_mode.rs` 7 rendering-adjacent fails.
+
+**MEDIUM/LOW:** carried forward + graph_rag RRF formula drift, graph_rag scalability, graph_mode hit test shape.
+
+### 4-axis status (Iter 36)
+
+| Axis | Iter 35 | Iter 36 |
+|---|---|---|
+| Compiler-as-core runtime | ~40% | ~40% |
+| Natural-language-on-canvas | ~10% | ~10% (deep_think is fake) |
+| Data-model alignment | 100% ✅ | 100% ✅ |
+| 20-repo vendoring | ~55% scaffold / ~20% real | ~60% scaffold / ~20% real |
+| **CRITICAL backlog** | 1 (U1) | **2 (U1 + W1 fake deep_think)** |
+
+### Verified correct (new)
+
+- `graph_rag.rs` cosine similarity correctness ✅
+- `graph_rag.rs` BFS cycle detection ✅
+- Wave F tests pass (254 total, +11) ✅
+- Bridge `--features compiler` still 0 errors ✅
+
+### Patterns missed (3 iterations running)
+
+- Zed `impl Element { paint }` — the entire Wave D UI render layer. Nothing in nom-panels imports nom-gpui scene primitives.
+- nom-intent `classify_with_react` real call — `deep_think.rs` imports nothing from nom-intent.
+- AFFiNE frosted-glass + spring animations — zero `spring_value` calls anywhere.
+- LlamaIndex RRF `1/(rank+60)` — graph_rag uses harmonic decay instead.
+
+### Pattern diagnosis (escalated)
+
+Iter 25-30 pattern recurring: new surface area (Wave E 16 backends, Wave F 3 modules) added while flagged blockers (U1 render, nom-compose 9router infra, real deep_think, Wave E uniform signatures) remain open. Test count (254) and LOC (~9,500) are real — but they measure scaffolding breadth, not spec-fidelity depth. The user's explicit "UI/UX is #1 failure point" is unmet 5 iterations running.
+
+---
+
 ## Iteration 34 (strict audit, belated) — 2026-04-18 (Wave E verdict: 5 PASS / 9 DRIFT / 2 STUB; 9router infra MISSING; UI U1 still open 3 iters)
 
 **Cron `743d991f` fire #10.** Commit `a1ba5a1` landed Wave E. Strict per-backend agent audit contradicts linter's "Wave E complete ✅": **audio/transform/render/export/pipeline PASS (5) · document/video/image/data/app/workflow/scenario/rag_query/embed_gen DRIFT (9) · code_exec + web_screen are literal `"[stub] exec ..."` / `"[stub] screenshot ..."` STRING RETURNS (2)**.
