@@ -2,6 +2,8 @@
 //! Stage-1: Rust compiler compiles Nom-authored parser → Stage-2 binary
 //! Stage-2: Stage-2 binary compiles same source → Stage-3 binary
 //! Fixpoint: hash(Stage-2) == hash(Stage-3)
+//!
+//! Infrastructure module — used when bootstrap is attempted (GAP-10).
 
 use sha2::{Digest, Sha256};
 use std::path::Path;

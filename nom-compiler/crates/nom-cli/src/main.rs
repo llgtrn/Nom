@@ -18,6 +18,7 @@
 
 mod ast_bridge;
 mod author;
+#[allow(dead_code)]
 mod bootstrap;
 mod build;
 mod concept;
