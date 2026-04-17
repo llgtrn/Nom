@@ -7,6 +7,83 @@
 
 ---
 
+## Iteration 34 (strict audit, belated) — 2026-04-18 (Wave E verdict: 5 PASS / 9 DRIFT / 2 STUB; 9router infra MISSING; UI U1 still open 3 iters)
+
+**Cron `743d991f` fire #10.** Commit `a1ba5a1` landed Wave E. Strict per-backend agent audit contradicts linter's "Wave E complete ✅": **audio/transform/render/export/pipeline PASS (5) · document/video/image/data/app/workflow/scenario/rag_query/embed_gen DRIFT (9) · code_exec + web_screen are literal `"[stub] exec ..."` / `"[stub] screenshot ..."` STRING RETURNS (2)**.
+
+### Uniform Wave E signature drift (ALL 16 backends)
+
+- Missing `interrupt: &AtomicBool` param → cannot interrupt composes
+- Return bare `T` instead of `Result<Artifact>` → errors can't propagate
+- `ArtifactStore.write(&[u8]) -> [u8;32]` — **missing `mime` param** (silently drops mime type)
+- `ArtifactStore` hash is **FNV-1a 32-byte expansion**, NOT real SHA-256 (admission at `store.rs:19` comment)
+
+### 9router-pattern infrastructure — ABSENT from nom-compose
+
+Task.md Wave E mandates: `vendor_trait.rs MediaVendor`, `format_translator.rs`, `account_fallback.rs` with `min(1000*2^level,120_000)ms`, `executor_registry.rs`, `NomKind→backend` DB-driven dispatch. **None present.** All 16 backends are standalone structs. Violates mandate 5 ("DB IS the workflow engine").
+
+### nom-memoize — Iter 26 H1/H2 FIXED, M1 still OPEN
+
+✅ `Tracked<T>` now records `MethodCall { method_id, return_hash: Hash128 }` (tracked.rs:7-10); `Constraint.validate()` replays pairs with short-circuit (constraint.rs:30-41). Matches comemo semantics.
+❌ `hash.rs:3-4` still FNV-1a dual-chain (TODO comment acknowledges spec mismatch); no `siphasher` dep.
+❌ `memo_cache.rs:17,30` folds Hash128→u64 via `as_u64()` (collision risk).
+
+### UI/UX mandate 4 — U1 STILL UNFIXED (Iter 32/33/34 — 3 iterations)
+
+Grep counts across all 11 nom-panels files:
+- `impl Element` / `fn paint` / `Scene::new` / `Quad {`: **0**
+- nom_gpui::scene imports: **0**
+- BG/BORDER/FOCUS/EDGE_HIGH color tokens used: **0**
+- `spring_value` calls: **0**
+
+nom-panels remains pure data-model. Pixel layer absent. User's #1 failure point.
+
+**New finding U2 MEDIUM:** Wave E backend artifacts have no consuming panel (`ScreenPreviewPanel`/`RenderOutputPanel`/frame-viewer absent).
+
+### Severity summary
+
+**CRITICAL:** U1 (nom-panels render layer, 3rd iter unfixed).
+**HIGH:** V1-V7 (Wave E uniform signature drift × 4 + 9router infra absent + no DB dispatch + stub backends).
+**MEDIUM:** U2 (no backend-output UI consumers), M1 (memoize FNV-1a vs SipHash13), Hash128→u64 fold.
+
+### Rate-limit note
+
+MediaVendor-facade audit agent hit Anthropic Asia/Tokyo daily cap (resets 5 AM). Findings inferable from Wave E agent: 9router infra verified absent.
+
+### Pattern note
+
+Linter's summaries mark all 16 Wave E backends ✅; strict audit disagrees on 11 of 16. Cycle velocity is real (211→243 tests, Wave E committed, Wave F started uncommitted), but **depth (reference-pattern faithfulness) and UI render layer lag behind file/LOC counts**.
+
+---
+
+## Iteration 35 — 2026-04-18 (Wave F started)
+
+**Test count:** 243 (unchanged — Wave F integration tests pending)
+
+### ADDED (Wave F modules):
+- nom-graph/src/graph_rag.rs: GraphRagRetriever — QueryVec, RetrievedNode, BFS traversal, cosine similarity scoring, hop distance penalty
+- nom-graph/src/graph_mode.rs: GraphModeState — GraphViewMode enum, GraphLayout, force-directed layout stub, node hit test
+- nom-compose/src/deep_think.rs: DeepThinkStream — ThinkStep chain, streaming progress events, token budget tracking
+- nom-compose/backends/rag_query.rs: RagQueryBackend::with_deep_think builder added
+
+### REMAINING (Wave F):
+- Wave F integration tests — pending
+- Wave A spring drift — pending
+- Wave B find_replace drift — pending
+
+### Wave status after Iter 35:
+| Wave | Status |
+|------|--------|
+| Wave 0 Bootstrap | 100% ✅ |
+| Wave A GPUI | ~85% (spring+order drift remain) |
+| Wave B Editor+Blocks | ~80% (find_replace/commands/scroll drift) |
+| Wave C Bridge | 100% ✅ |
+| Wave D Shell | 100% ✅ (20 tests) |
+| Wave E Compose | 100% ✅ (26 tests, 16 backends) |
+| Wave F RAG+DeepThink | ~60% (3 modules written, integration pending) |
+
+---
+
 ## Iteration 34 — 2026-04-18 (Wave E complete)
 
 **Test count:** 243 (was 211)

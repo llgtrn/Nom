@@ -2,6 +2,7 @@
 use nom_blocks::NomtuRef;
 use crate::store::ArtifactStore;
 use crate::progress::{ProgressSink, ComposeEvent};
+use crate::deep_think::DeepThinkConfig;
 
 pub struct RagChunk {
     pub id: String,
@@ -22,9 +23,23 @@ pub struct RagQueryOutput {
     pub chunks_used: Vec<String>,
 }
 
-pub struct RagQueryBackend;
+pub struct RagQueryBackend {
+    pub deep_think_config: Option<DeepThinkConfig>,
+}
+
+impl Default for RagQueryBackend {
+    fn default() -> Self {
+        Self { deep_think_config: None }
+    }
+}
 
 impl RagQueryBackend {
+    /// Attach a `DeepThinkConfig` to this backend; compose signature is unchanged.
+    pub fn with_deep_think(mut self, config: DeepThinkConfig) -> Self {
+        self.deep_think_config = Some(config);
+        self
+    }
+
     pub fn compose(input: RagQueryInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> RagQueryOutput {
         sink.emit(ComposeEvent::Started { backend: "rag_query".into(), entity_id: input.entity.id.clone() });
         let mut top: Vec<&RagChunk> = input.chunks.iter().collect();

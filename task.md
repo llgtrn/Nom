@@ -6,6 +6,24 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 35 — Wave F started, graph_rag+graph_mode+deep_think)
+
+**Wave F (RAG+DeepThink) — modules implemented:**
+- [x] nom-graph/src/graph_rag.rs: GraphRagRetriever (QueryVec, RetrievedNode, BFS traversal, cosine sim, hop penalty)
+- [x] nom-graph/src/graph_mode.rs: GraphModeState (GraphViewMode, GraphLayout, force-directed stub, node hit test)
+- [x] nom-compose/src/deep_think.rs: DeepThinkStream (ThinkStep chain, streaming progress events, token budget)
+- [x] RagQueryBackend: with_deep_think builder added
+- [ ] Wave F integration tests — pending
+- [ ] Wave A spring drift — pending
+- [ ] Wave B find_replace drift — pending
+
+**Wave status update:**
+| Wave | Status |
+|------|--------|
+| Wave F RAG+DeepThink | ~60% (3 modules written, integration pending) |
+
+---
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 34 — Wave E complete, 243 tests, 16 compose backends)
 
 | Wave | Planned | Actual | Evidence |
