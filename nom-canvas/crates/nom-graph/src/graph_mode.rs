@@ -232,25 +232,6 @@ impl GraphModeState {
 }
 
 // ---------------------------------------------------------------------------
-// NomtuRef carrier — every graph node may optionally reference a nomtu entry
-// ---------------------------------------------------------------------------
-
-/// A thin wrapper that pairs an `ExecNode` id with an optional nomtu entry
-/// reference (a 64-bit hash).  This lives here rather than in `node.rs` so
-/// that the DAG execution layer stays free of canvas/UI concerns.
-#[derive(Clone, Debug, Default)]
-pub struct NomtuRef {
-    pub node_id: NodeId,
-    pub nomtu_ref: Option<u64>,
-}
-
-impl NomtuRef {
-    pub fn new(node_id: impl Into<String>, nomtu_ref: Option<u64>) -> Self {
-        Self { node_id: node_id.into(), nomtu_ref }
-    }
-}
-
-// ---------------------------------------------------------------------------
 // Canvas events
 // ---------------------------------------------------------------------------
 
