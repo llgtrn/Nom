@@ -13,3 +13,4 @@ pub mod persistence;
 pub mod protocol;
 pub mod snapshot;
 pub mod transaction;
+pub mod presence;

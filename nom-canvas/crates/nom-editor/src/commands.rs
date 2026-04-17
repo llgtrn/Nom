@@ -14,6 +14,7 @@ pub enum CommandError {
     #[error("unknown command id '{0}'")]
     Unknown(String),
     #[error("command '{0}' failed: {1}")]
+    #[allow(dead_code)]
     Failed(String, String),
 }
 

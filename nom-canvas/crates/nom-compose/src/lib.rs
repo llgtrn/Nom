@@ -7,6 +7,7 @@ pub mod credential_store;
 pub mod dispatch;
 pub mod format_translator;
 pub mod kind;
+pub mod plan;
 pub mod provider_router;
 pub mod semantic;
 pub mod task_queue;

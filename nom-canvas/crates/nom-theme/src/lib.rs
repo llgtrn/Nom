@@ -4,5 +4,6 @@ pub mod color;
 pub mod fonts;
 pub mod icons;
 pub mod mode;
+pub mod motion;
 pub mod tokens;
 pub mod typography;

@@ -20,6 +20,7 @@ pub mod hit_testing;
 pub mod marquee;
 pub mod mutation;
 pub mod pan;
+pub mod rendering_hints;
 pub mod selection;
 pub mod shapes;
 pub mod snapping;

@@ -92,10 +92,29 @@ pub fn xy_cut(mut blocks: Vec<LayoutBlock>) -> Vec<LayoutBlock> {
     }
 }
 
-/// Within a horizontal band, sort left-to-right (by x).
+/// Within a horizontal band, sort left-to-right (by x), then recurse back
+/// into `xy_cut` on each x-group so multi-column rows still surface any
+/// vertical sub-gaps inside them.  Without this step, blocks arranged in
+/// a grid (2 rows × 2 cols) would collapse to row-major reading order
+/// only for the primary split axis.
 fn xy_cut_horizontal(mut blocks: Vec<LayoutBlock>) -> Vec<LayoutBlock> {
+    if blocks.len() <= 1 { return blocks; }
     blocks.sort_by(|a, b| a.x.partial_cmp(&b.x).unwrap_or(std::cmp::Ordering::Equal));
-    blocks
+    // Find the largest horizontal gap between consecutive x-intervals.
+    let mut best_idx = 0usize;
+    let mut best_gap = 0f32;
+    for i in 1..blocks.len() {
+        let gap = blocks[i].x - (blocks[i - 1].x + blocks[i - 1].width);
+        if gap > best_gap { best_gap = gap; best_idx = i; }
+    }
+    if best_gap > 0.0 {
+        let tail = blocks.split_off(best_idx);
+        let mut sorted = xy_cut(blocks);
+        sorted.extend(xy_cut(tail));
+        sorted
+    } else {
+        blocks
+    }
 }
 
 #[derive(Debug, thiserror::Error)]

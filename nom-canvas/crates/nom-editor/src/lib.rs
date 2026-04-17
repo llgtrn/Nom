@@ -4,6 +4,7 @@
 
 pub mod anchor;
 pub mod buffer;
+pub mod commands;
 pub mod completion;
 pub mod cursor;
 pub mod display_map;
