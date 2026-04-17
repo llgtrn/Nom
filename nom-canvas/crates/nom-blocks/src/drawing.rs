@@ -1,25 +1,26 @@
 //! Freehand drawing block schema (strokes over a surface).
+//!
+//! Color representation: sRGB 8-bit per channel color (`SrgbColor`).
 #![deny(unsafe_code)]
 
+use crate::block_model::FractionalIndex;
 use crate::block_schema::{BlockSchema, Role};
 use crate::flavour::{DRAWING, SURFACE};
 
-pub type FractionalIndex = String;
-
 #[derive(Clone, Copy, Debug, PartialEq)]
-pub struct Rgba {
+pub struct SrgbColor {
     pub r: u8,
     pub g: u8,
     pub b: u8,
     pub a: u8,
 }
 
-impl Rgba {
-    pub const BLACK: Rgba = Rgba { r: 0, g: 0, b: 0, a: 255 };
-    pub const RED: Rgba = Rgba { r: 255, g: 0, b: 0, a: 255 };
+impl SrgbColor {
+    pub const BLACK: SrgbColor = SrgbColor { r: 0, g: 0, b: 0, a: 255 };
+    pub const RED: SrgbColor = SrgbColor { r: 255, g: 0, b: 0, a: 255 };
 
     pub fn new(r: u8, g: u8, b: u8, a: u8) -> Self {
-        Rgba { r, g, b, a }
+        SrgbColor { r, g, b, a }
     }
 }
 
@@ -34,12 +35,12 @@ pub struct PressurePoint {
 #[derive(Clone, Debug, PartialEq)]
 pub struct Stroke {
     pub points: Vec<PressurePoint>,
-    pub color: Rgba,
+    pub color: SrgbColor,
     pub width: f32,
 }
 
 impl Stroke {
-    pub fn new(color: Rgba, width: f32) -> Self {
+    pub fn new(color: SrgbColor, width: f32) -> Self {
         Stroke { points: Vec::new(), color, width }
     }
 
@@ -204,48 +205,48 @@ mod tests {
 
     #[test]
     fn stroke_new_is_empty() {
-        let s = Stroke::new(Rgba::BLACK, 2.0);
+        let s = Stroke::new(SrgbColor::BLACK, 2.0);
         assert!(s.is_empty());
         assert_eq!(s.len(), 0);
     }
 
     #[test]
     fn add_point_clamps_pressure_below_zero() {
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         s.add_point(0.0, 0.0, -5.0);
         assert_eq!(s.points[0].pressure, 0.0);
     }
 
     #[test]
     fn add_point_clamps_pressure_above_one() {
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         s.add_point(0.0, 0.0, 99.0);
         assert_eq!(s.points[0].pressure, 1.0);
     }
 
     #[test]
     fn add_point_keeps_valid_pressure() {
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         s.add_point(1.0, 2.0, 0.7);
         assert!((s.points[0].pressure - 0.7).abs() < f32::EPSILON);
     }
 
     #[test]
     fn bounding_box_empty_returns_none() {
-        let s = Stroke::new(Rgba::BLACK, 1.0);
+        let s = Stroke::new(SrgbColor::BLACK, 1.0);
         assert!(s.bounding_box().is_none());
     }
 
     #[test]
     fn bounding_box_single_point() {
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         s.add_point(3.0, 7.0, 0.5);
         assert_eq!(s.bounding_box(), Some((3.0, 7.0, 3.0, 7.0)));
     }
 
     #[test]
     fn bounding_box_multiple_points() {
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         s.add_point(1.0, 5.0, 0.5);
         s.add_point(10.0, 2.0, 0.5);
         s.add_point(4.0, 8.0, 0.5);
@@ -254,7 +255,7 @@ mod tests {
 
     #[test]
     fn simplify_preserves_start_and_end() {
-        let mut s = Stroke::new(Rgba::RED, 1.0);
+        let mut s = Stroke::new(SrgbColor::RED, 1.0);
         for i in 0..20 {
             let t = i as f32;
             s.add_point(t, t.sin() * 0.01, 0.5); // nearly collinear
@@ -274,7 +275,7 @@ mod tests {
     #[test]
     fn simplify_large_epsilon_reduces_points() {
         // Build a stroke that is nearly a straight line with a small bump.
-        let mut s = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s = Stroke::new(SrgbColor::BLACK, 1.0);
         for i in 0..=100 {
             let x = i as f32;
             let y = if i == 50 { 0.5 } else { 0.0 }; // tiny bump at midpoint
@@ -298,10 +299,10 @@ mod tests {
     #[test]
     fn total_points_sums_across_strokes() {
         let mut d = DrawingProps::new();
-        let mut s1 = Stroke::new(Rgba::BLACK, 1.0);
+        let mut s1 = Stroke::new(SrgbColor::BLACK, 1.0);
         s1.add_point(0.0, 0.0, 0.5);
         s1.add_point(1.0, 1.0, 0.5);
-        let mut s2 = Stroke::new(Rgba::RED, 2.0);
+        let mut s2 = Stroke::new(SrgbColor::RED, 2.0);
         s2.add_point(2.0, 2.0, 0.5);
         d.push_stroke(s1);
         d.push_stroke(s2);

@@ -112,4 +112,30 @@ mod tests {
         assert!((0.55..=0.65).contains(&light.tokens.primary_brand.h));
         assert!((0.55..=0.65).contains(&dark.tokens.primary_brand.h));
     }
+
+    // ── Integration: theme tokens ↔ RGBA round-trip ──────────────────────────
+
+    #[test]
+    fn primary_color_token_converts_to_valid_rgba() {
+        use crate::tokens::PRIMARY_BRAND;
+        let rgba = Hsla::from_tuple(PRIMARY_BRAND).to_rgba();
+        for &component in &rgba {
+            assert!(
+                (0.0..=1.0).contains(&component),
+                "RGBA component {component} out of [0,1]"
+            );
+        }
+    }
+
+    #[test]
+    fn black_and_white_tokens_differ() {
+        // TEXT_PRIMARY is near-black (l=0.102, s=0); SURFACE_BACKGROUND is pure white (l=1.0, s=0).
+        use crate::tokens::{SURFACE_BACKGROUND, TEXT_PRIMARY};
+        let black_rgba = Hsla::from_tuple(TEXT_PRIMARY).to_rgba();
+        let white_rgba = Hsla::from_tuple(SURFACE_BACKGROUND).to_rgba();
+        assert_ne!(
+            black_rgba, white_rgba,
+            "near-black and white tokens must produce different RGBA values"
+        );
+    }
 }

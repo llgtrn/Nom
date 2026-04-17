@@ -14,10 +14,12 @@ pub mod media;
 pub mod nomx;
 pub mod prose;
 pub mod table;
+pub mod tree_query;
+pub mod validators;
 
 // ── Public re-exports ────────────────────────────────────────────────────────
 
-pub use block_model::{BlockComment, BlockId, BlockMeta, BlockModel};
+pub use block_model::{BlockComment, BlockId, BlockMeta, BlockModel, FractionalIndex};
 pub use block_schema::{BlockSchema, Role, SchemaError};
 pub use block_selection::{BlockSelection, SelectionSet};
 pub use block_transformer::{BlockTransformer, Snapshot, TransformError};

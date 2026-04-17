@@ -81,8 +81,10 @@ pub fn xy_cut(mut blocks: Vec<LayoutBlock>) -> Vec<LayoutBlock> {
         if gap > best_gap { best_gap = gap; best_idx = i; }
     }
     if best_gap > 0.0 {
+        // Both halves recurse so multi-band stacks split fully.  Previously
+        // only the tail recursed, leaving top-half sub-gaps undetected.
         let tail = blocks.split_off(best_idx);
-        let mut sorted = xy_cut_horizontal(blocks);
+        let mut sorted = xy_cut(blocks);
         sorted.extend(xy_cut(tail));
         sorted
     } else {

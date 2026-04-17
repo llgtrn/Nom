@@ -21,6 +21,7 @@ pub mod library;
 pub mod mode_switcher;
 pub mod preview;
 pub mod properties;
+pub mod shortcuts;
 pub mod sidebar;
 pub mod statusbar;
 pub mod toolbar;

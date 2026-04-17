@@ -1,11 +1,9 @@
 //! Graph node (DAG compute node) block schema.
 #![deny(unsafe_code)]
 
-use crate::block_model::BlockId;
+use crate::block_model::{BlockId, FractionalIndex};
 use crate::block_schema::{BlockSchema, Role};
 use crate::flavour::{GRAPH_NODE, MEDIA_IMAGE, NOMX, PROSE, SURFACE};
-
-pub type FractionalIndex = String;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum PortDirection {

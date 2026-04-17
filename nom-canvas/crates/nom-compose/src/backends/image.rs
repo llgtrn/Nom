@@ -75,7 +75,12 @@ impl ImageSpec {
     }
 
     pub fn final_dimensions(&self) -> (u32, u32) {
-        (self.width * self.upscale_factor, self.height * self.upscale_factor)
+        // Saturating math prevents silent wraparound on pathological inputs;
+        // `validate()` additionally rejects dimensions × upscale beyond MAX_FINAL_DIMENSION.
+        (
+            self.width.saturating_mul(self.upscale_factor),
+            self.height.saturating_mul(self.upscale_factor),
+        )
     }
 
     /// Number of 512x512 tiles needed for tile-upscale.
@@ -84,11 +89,15 @@ impl ImageSpec {
             return 1;
         }
         let (w, h) = self.final_dimensions();
-        let wt = (w + 511) / 512;
-        let ht = (h + 511) / 512;
-        wt * ht
+        let wt = w.saturating_add(511) / 512;
+        let ht = h.saturating_add(511) / 512;
+        wt.saturating_mul(ht)
     }
 }
+
+/// Upper bound on `width × upscale_factor` (and similarly for height).
+/// Prevents pathological `(u32::MAX, 4)` inputs from overflowing downstream arithmetic.
+pub const MAX_FINAL_DIMENSION: u32 = 65_536;
 
 #[derive(Debug, thiserror::Error)]
 pub enum ImageError {
@@ -96,6 +105,8 @@ pub enum ImageError {
     EmptyPrompt,
     #[error("dimensions must be > 0")]
     InvalidDimensions,
+    #[error("final dimension {0} exceeds MAX_FINAL_DIMENSION ({})", MAX_FINAL_DIMENSION)]
+    DimensionTooLarge(u32),
     #[error("upscale factor must be 1, 2, or 4; got {0}")]
     InvalidUpscale(u32),
     #[error("steps must be in 1..=150; got {0}")]
@@ -111,6 +122,13 @@ pub fn validate(spec: &ImageSpec) -> Result<(), ImageError> {
     }
     if !matches!(spec.upscale_factor, 1 | 2 | 4) {
         return Err(ImageError::InvalidUpscale(spec.upscale_factor));
+    }
+    let (fw, fh) = spec.final_dimensions();
+    if fw > MAX_FINAL_DIMENSION {
+        return Err(ImageError::DimensionTooLarge(fw));
+    }
+    if fh > MAX_FINAL_DIMENSION {
+        return Err(ImageError::DimensionTooLarge(fh));
     }
     if spec.steps == 0 || spec.steps > 150 {
         return Err(ImageError::InvalidSteps(spec.steps));

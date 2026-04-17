@@ -39,6 +39,7 @@ pub mod style;
 pub mod styled;
 pub mod taffy_layout;
 pub mod animation;
+pub mod cursor;
 #[cfg(feature = "native")]
 pub mod window;
 

@@ -3,6 +3,9 @@ use crate::flavour::Flavour;
 /// Opaque 64-bit identifier for a block instance.
 pub type BlockId = u64;
 
+/// Fractional index string used for ordering blocks (e.g. "a0", "a1").
+pub type FractionalIndex = String;
+
 /// A comment attached to a block.
 #[derive(Debug, Clone)]
 pub struct BlockComment {

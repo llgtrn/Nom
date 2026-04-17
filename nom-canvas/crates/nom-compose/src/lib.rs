@@ -12,3 +12,4 @@ pub mod semantic;
 pub mod task_queue;
 pub mod vendor_trait;
 pub mod video_composition;
+pub mod plugin_registry;

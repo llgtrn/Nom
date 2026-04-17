@@ -12,9 +12,9 @@ use std::ops::Range;
 /// A 32-bit RGBA color value. Hex constructor interprets `0xRRGGBB` with
 /// full opacity (alpha = 0xFF).
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Rgba(pub u32);
+pub struct PackedRgba(pub u32);
 
-impl Rgba {
+impl PackedRgba {
     /// Construct from a 24-bit `0xRRGGBB` literal; alpha is set to 0xFF.
     pub const fn hex(rgb: u32) -> Self {
         Self((rgb << 8) | 0xFF)
@@ -44,27 +44,27 @@ pub struct Highlighter {
 }
 
 pub struct Palette {
-    pub keyword: Rgba,
-    pub ident: Rgba,
-    pub string_lit: Rgba,
-    pub number_lit: Rgba,
-    pub operator: Rgba,
-    pub comment: Rgba,
-    pub punctuation: Rgba,
-    pub default: Rgba,
+    pub keyword: PackedRgba,
+    pub ident: PackedRgba,
+    pub string_lit: PackedRgba,
+    pub number_lit: PackedRgba,
+    pub operator: PackedRgba,
+    pub comment: PackedRgba,
+    pub punctuation: PackedRgba,
+    pub default: PackedRgba,
 }
 
 impl Default for Palette {
     fn default() -> Self {
         Self {
-            keyword:     Rgba::hex(0x569c_d6),
-            ident:       Rgba::hex(0x9cdc_fe),
-            string_lit:  Rgba::hex(0xce91_78),
-            number_lit:  Rgba::hex(0xb5ce_a8),
-            operator:    Rgba::hex(0xd4d4_d4),
-            comment:     Rgba::hex(0x6a99_55),
-            punctuation: Rgba::hex(0xd4d4_d4),
-            default:     Rgba::hex(0xd4d4_d4),
+            keyword:     PackedRgba::hex(0x569c_d6),
+            ident:       PackedRgba::hex(0x9cdc_fe),
+            string_lit:  PackedRgba::hex(0xce91_78),
+            number_lit:  PackedRgba::hex(0xb5ce_a8),
+            operator:    PackedRgba::hex(0xd4d4_d4),
+            comment:     PackedRgba::hex(0x6a99_55),
+            punctuation: PackedRgba::hex(0xd4d4_d4),
+            default:     PackedRgba::hex(0xd4d4_d4),
         }
     }
 }
@@ -75,7 +75,7 @@ impl Highlighter {
     }
 
     /// Map a role to its palette color.
-    pub fn color_for(&self, role: TokenRole) -> Rgba {
+    pub fn color_for(&self, role: TokenRole) -> PackedRgba {
         match role {
             TokenRole::Keyword     => self.palette.keyword,
             TokenRole::Ident       => self.palette.ident,
@@ -109,7 +109,7 @@ impl Highlighter {
 #[derive(Clone, Debug)]
 pub struct ColorRun {
     pub byte_range: Range<usize>,
-    pub color: Rgba,
+    pub color: PackedRgba,
 }
 
 #[cfg(test)]
@@ -144,7 +144,7 @@ mod tests {
     #[test]
     fn color_for_uses_palette() {
         let h = Highlighter::new(Palette::default());
-        assert_eq!(h.color_for(TokenRole::Keyword), Rgba::hex(0x569cd6));
+        assert_eq!(h.color_for(TokenRole::Keyword), PackedRgba::hex(0x569cd6));
     }
 
     #[test]

@@ -15,6 +15,7 @@ pub mod data_query;
 pub mod image;
 pub mod mesh;
 pub mod native_screen;
+pub mod scenario_workflow;
 pub mod storyboard_narrative;
 pub mod video;
 pub mod web_screen;
@@ -30,6 +31,10 @@ pub use data_query::{
 pub use image::{ImageFormat, ImageSpec, InferenceLocation, StubImageBackend};
 pub use mesh::{AnimationClip, ExportFormat, MaterialRef, MeshGeometry, MeshSceneSpec, StubMeshBackend};
 pub use native_screen::{NativeSpec, OptLevel, StubNativeScreenBackend, TargetTriple};
+pub use scenario_workflow::{
+    NodeActivation, NodeKey, NodeState, OnError, RetryPolicy, StubScenarioWorkflowBackend,
+    WorkflowError, WorkflowNode, WorkflowSpec, next_ready, validate,
+};
 pub use storyboard_narrative::{
     NarrativePhase, NarrativeResult, StoryboardPhase, StoryboardResult, StubNarrativeBackend,
     StubStoryboardBackend,
@@ -59,6 +64,7 @@ pub fn register_all_stubs(dispatcher: &mut ComposeDispatcher) {
         Arc::new(StubAudioBackend),
         Arc::new(StubDataFrameBackend),
         Arc::new(StubMeshBackend),
+        Arc::new(StubScenarioWorkflowBackend),
     ];
     for backend in stubs {
         dispatcher.register(backend);

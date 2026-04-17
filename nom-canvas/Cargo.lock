@@ -1112,6 +1112,7 @@ version = "0.1.0"
 dependencies = [
  "parking_lot",
  "smallvec",
+ "thiserror 1.0.69",
 ]
 
 [[package]]
