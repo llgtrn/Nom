@@ -174,6 +174,7 @@ impl LspClient {
     }
 
     /// Send a notification (no response expected)
+    #[allow(dead_code)]
     pub fn notify(&mut self, method: &str, params: Value) -> Result<(), String> {
         let notification = serde_json::json!({
             "jsonrpc": "2.0",
@@ -200,6 +201,7 @@ impl LspClient {
     }
 
     /// Shutdown the LSP
+    #[allow(dead_code)]
     pub fn shutdown(&mut self) -> Result<(), String> {
         let _ = self.request("shutdown", Value::Null);
         let _ = self.notify("exit", Value::Null);
