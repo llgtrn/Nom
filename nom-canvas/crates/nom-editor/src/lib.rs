@@ -12,6 +12,7 @@ pub mod highlight;
 pub mod hints;
 pub mod inlay_hints;
 pub mod input;
+pub mod line_layout;
 pub mod lsp_bridge;
 pub mod movement;
 pub mod selection;

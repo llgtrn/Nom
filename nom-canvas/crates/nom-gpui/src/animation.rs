@@ -105,6 +105,12 @@ impl Animation {
     }
 
     pub fn sample(&self, now: Instant) -> f32 {
+        // Zero-duration animation is treated as already finished, mapping to `to`.
+        // Without this guard, `elapsed / Duration::ZERO` produces NaN which
+        // propagates through easing into the caller's render state.
+        if self.duration.is_zero() {
+            return self.to;
+        }
         let elapsed = now.saturating_duration_since(self.start);
         let t = (elapsed.as_secs_f32() / self.duration.as_secs_f32()).clamp(0.0, 1.0);
         let eased = self.easing.apply(t);
@@ -112,6 +118,9 @@ impl Animation {
     }
 
     pub fn progress(&self, now: Instant) -> f32 {
+        if self.duration.is_zero() {
+            return 1.0;
+        }
         let elapsed = now.saturating_duration_since(self.start);
         (elapsed.as_secs_f32() / self.duration.as_secs_f32()).clamp(0.0, 1.0)
     }

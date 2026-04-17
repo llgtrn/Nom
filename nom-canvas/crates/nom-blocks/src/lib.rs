@@ -5,6 +5,7 @@ pub mod block_model;
 pub mod block_schema;
 pub mod block_selection;
 pub mod block_transformer;
+pub mod compose;
 pub mod drawing;
 pub mod embed;
 pub mod flavour;

@@ -1035,6 +1035,23 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-collab"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "nom-compose"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
 name = "nom-editor"
 version = "0.1.0"
 dependencies = [
@@ -1066,11 +1083,43 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-graph-v2"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "nom-lint"
+version = "0.1.0"
+dependencies = [
+ "smallvec",
+ "thiserror 1.0.69",
+]
+
+[[package]]
+name = "nom-memoize"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+]
+
+[[package]]
 name = "nom-panels"
 version = "0.1.0"
 dependencies = [
  "parking_lot",
  "smallvec",
+]
+
+[[package]]
+name = "nom-telemetry"
+version = "0.1.0"
+dependencies = [
+ "parking_lot",
+ "thiserror 1.0.69",
 ]
 
 [[package]]

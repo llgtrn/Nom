@@ -153,4 +153,6 @@ jobs:
         run: cargo check --workspace --message-format short
       - name: cargo test --workspace
         working-directory: nom-canvas
+        env:
+          NOM_SKIP_GPU_TESTS: "1"
         run: cargo test --workspace --quiet

@@ -1,4 +1,6 @@
-//! External-content embed block (iframe, bookmark, linked/synced doc, youtube, figma).
+//! External-content embed block (iframe, bookmark, linked/synced doc, video stream, design file).
+//! Provider-agnostic enum variants — domain-string matching for youtube.com / figma.com lives
+//! inside `detect_kind` only, not in the public API identifiers.
 #![deny(unsafe_code)]
 
 use crate::block_schema::{BlockSchema, Role};
@@ -12,8 +14,8 @@ pub enum EmbedKind {
     Bookmark,
     LinkedDoc { target_doc_id: String },
     SyncedDoc { target_doc_id: String },
-    Youtube { video_id: String },
-    Figma { file_key: String, node_id: Option<String> },
+    VideoStream { video_id: String },
+    DesignFile { file_key: String, node_id: Option<String> },
     Generic,
 }
 
@@ -122,7 +124,7 @@ pub fn detect_kind(url: &str) -> EmbedKind {
     if host == "youtube.com" || host == "m.youtube.com" {
         if path == "watch" {
             if let Some(v) = query_param(query, "v") {
-                return EmbedKind::Youtube { video_id: v.to_string() };
+                return EmbedKind::VideoStream { video_id: v.to_string() };
             }
         }
     }
@@ -131,7 +133,7 @@ pub fn detect_kind(url: &str) -> EmbedKind {
         // path_and_query starts with the video id
         let video_id = path.trim_matches('/');
         if !video_id.is_empty() {
-            return EmbedKind::Youtube { video_id: video_id.to_string() };
+            return EmbedKind::VideoStream { video_id: video_id.to_string() };
         }
     }
 
@@ -144,7 +146,7 @@ pub fn detect_kind(url: &str) -> EmbedKind {
                 if !file_key.is_empty() {
                     let node_id = query_param(query, "node-id")
                         .map(|v| decode_figma_node_id(v));
-                    return EmbedKind::Figma {
+                    return EmbedKind::DesignFile {
                         file_key: file_key.to_string(),
                         node_id,
                     };
@@ -174,7 +176,7 @@ mod tests {
     fn youtube_watch_url() {
         assert_eq!(
             detect_kind("https://www.youtube.com/watch?v=abc123"),
-            EmbedKind::Youtube { video_id: "abc123".to_string() }
+            EmbedKind::VideoStream { video_id: "abc123".to_string() }
         );
     }
 
@@ -182,7 +184,7 @@ mod tests {
     fn youtube_watch_url_no_www() {
         assert_eq!(
             detect_kind("https://youtube.com/watch?v=dQw4w9WgXcQ"),
-            EmbedKind::Youtube { video_id: "dQw4w9WgXcQ".to_string() }
+            EmbedKind::VideoStream { video_id: "dQw4w9WgXcQ".to_string() }
         );
     }
 
@@ -190,7 +192,7 @@ mod tests {
     fn youtu_be_short_url() {
         assert_eq!(
             detect_kind("https://youtu.be/xyz"),
-            EmbedKind::Youtube { video_id: "xyz".to_string() }
+            EmbedKind::VideoStream { video_id: "xyz".to_string() }
         );
     }
 
@@ -198,7 +200,7 @@ mod tests {
     fn figma_with_node_id_percent_encoded() {
         assert_eq!(
             detect_kind("https://www.figma.com/file/ABCDEF/Design?node-id=1%3A2"),
-            EmbedKind::Figma {
+            EmbedKind::DesignFile {
                 file_key: "ABCDEF".to_string(),
                 node_id: Some("1:2".to_string()),
             }
@@ -209,7 +211,7 @@ mod tests {
     fn figma_without_node_id() {
         assert_eq!(
             detect_kind("https://www.figma.com/file/GHI"),
-            EmbedKind::Figma {
+            EmbedKind::DesignFile {
                 file_key: "GHI".to_string(),
                 node_id: None,
             }
@@ -248,7 +250,7 @@ mod tests {
     #[test]
     fn embed_props_new_calls_detect_kind() {
         let props = EmbedProps::new("https://youtu.be/test99");
-        assert_eq!(props.kind, EmbedKind::Youtube { video_id: "test99".to_string() });
+        assert_eq!(props.kind, EmbedKind::VideoStream { video_id: "test99".to_string() });
         assert_eq!(props.url, "https://youtu.be/test99");
         assert!(props.title.is_none());
         assert!(props.description.is_none());
@@ -283,7 +285,7 @@ mod tests {
     fn figma_node_id_lowercase_percent() {
         assert_eq!(
             detect_kind("https://figma.com/file/XYZ/page?node-id=2%3a5"),
-            EmbedKind::Figma {
+            EmbedKind::DesignFile {
                 file_key: "XYZ".to_string(),
                 node_id: Some("2:5".to_string()),
             }

@@ -7,6 +7,12 @@ members = [
     "crates/nom-theme",
     "crates/nom-panels",
     "crates/nom-blocks",
+    "crates/nom-memoize",
+    "crates/nom-lint",
+    "crates/nom-telemetry",
+    "crates/nom-collab",
+    "crates/nom-graph-v2",
+    "crates/nom-compose",
 ]
 
 [workspace.package]

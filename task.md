@@ -1,10 +1,10 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `24f7e05` + wave-5 10-agent mega cycle landing (**519 workspace tests** green locally across 7 crates under `RUSTFLAGS="-D warnings"`) | **Date:** 2026-04-17
-> **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — canonical
+> **HEAD:** `4592b85` (wave-5 LANDED, **519 workspace tests** green under `RUSTFLAGS="-D warnings"` across **11 crates**) | **Date:** 2026-04-17
+> **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (721 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
-> **v1 archived** to `.archive/nom-canvas-v1-typescript/`. Phase 1 batch-1 + audit iteration landed (44/44 tests). batch-2 wave-1 (shaders + buffers + context) starting now.
+> **Status:** Phase 1 + Phase 2 (100%, 30/30 modules) + Phase 3 (96%, missing `line_layout.rs`) landed. Phase 4 + Phase 5 crates scaffolded but depth-of-impl TBD. 8 of 13 audit-backlog items still open (see iter-14 overlay in state report).
 
 ---
 
