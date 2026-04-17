@@ -59,7 +59,10 @@ export async function lspComplete(line: number, character: number): Promise<LspC
   return result.result.items || [];
 }
 
-/** Get diagnostics for a document */
+/** Get diagnostics for a document — currently returns [] because diagnostics come as
+ * notifications (not request/response). The compile_block path in transform.ts handles
+ * diagnostics via the Tauri command instead. This function still sends didOpen so the
+ * LSP server stays in sync with the current document content. */
 export async function lspDiagnostics(content: string): Promise<LspDiagnostic[]> {
   // Send didOpen/didChange to trigger diagnostics
   await lspRequest("textDocument/didOpen", {
@@ -71,8 +74,8 @@ export async function lspDiagnostics(content: string): Promise<LspDiagnostic[]> 
     },
   });
 
-  // Diagnostics come as notifications — for now, use our compile_block
-  // as the diagnostic source (already wired in transform.ts)
+  // Diagnostics arrive as publishDiagnostics notifications, not as a response to
+  // this request. Real diagnostic rendering is handled by transform.ts via compile_block.
   return [];
 }
 

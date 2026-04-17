@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { CompileResult } from "./types";
 
 export type PreviewMode = "json" | "entities" | "plan" | "quality" | "security" | "dream";
 
@@ -65,7 +66,7 @@ export class PreviewPanel {
   }
 
   /** Show compile result */
-  showCompileResult(result: { success: boolean; diagnostics: string[]; entities: string[] }, blockId: string): void {
+  showCompileResult(result: CompileResult, blockId: string): void {
     const state: PreviewState = {
       mode: this.currentMode,
       content: JSON.stringify(result, null, 2),

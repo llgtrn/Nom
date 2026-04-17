@@ -51,7 +51,9 @@ fn bm25_score(query_tokens: &[String], doc_tokens: &[String], avg_doc_len: f64, 
 }
 
 /// Rerank a list of candidates using BM25 scoring against a query.
-/// Combines original scores with BM25 scores using reciprocal rank fusion.
+/// BM25 scores are normalized to [0, 1] before being combined with the original
+/// scores via weighted interpolation: `alpha * orig_score + (1 - alpha) * bm25_normalized`.
+/// Both inputs are on the same [0, 1] scale, making the weight parameter meaningful.
 pub fn rerank(query: &str, candidates: &[(String, String, f64)], alpha: f64) -> Vec<RankedResult> {
     // candidates: Vec<(id, word/description, original_score)>
     if candidates.is_empty() {
@@ -88,20 +90,27 @@ pub fn rerank(query: &str, candidates: &[(String, String, f64)], alpha: f64) -> 
     // Average document length
     let avg_doc_len = doc_tokens.iter().map(|t| t.len()).sum::<usize>() as f64 / num_docs as f64;
 
-    // Score each candidate
+    // Score each candidate with raw BM25
     let mut results: Vec<RankedResult> = candidates.iter().zip(doc_tokens.iter())
         .map(|((id, word, orig_score), tokens)| {
             let bm25 = bm25_score(&query_tokens, tokens, avg_doc_len, num_docs, &doc_freqs);
-            let combined = alpha * orig_score + (1.0 - alpha) * bm25;
             RankedResult {
                 id: id.clone(),
                 word: word.clone(),
                 original_score: *orig_score,
                 rerank_score: bm25,
-                combined_score: combined,
+                combined_score: 0.0, // filled in after normalization
             }
         })
         .collect();
+
+    // Normalize BM25 scores to [0, 1] so they are on the same scale as original_score
+    let max_bm25 = results.iter().map(|r| r.rerank_score).fold(0.0f64, f64::max);
+    for r in &mut results {
+        let normalized_bm25 = if max_bm25 > 0.0 { r.rerank_score / max_bm25 } else { 0.0 };
+        r.rerank_score = normalized_bm25;
+        r.combined_score = alpha * r.original_score + (1.0 - alpha) * normalized_bm25;
+    }
 
     // Sort by combined score descending
     results.sort_by(|a, b| b.combined_score.partial_cmp(&a.combined_score).unwrap_or(std::cmp::Ordering::Equal));

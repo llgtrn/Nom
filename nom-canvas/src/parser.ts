@@ -1,6 +1,7 @@
 /** Parser state — cached between keystrokes for incremental parsing */
 export interface ParserState {
   position: number;
+  inputHash: number; // hash of input[0..position] — detects edits before cursor
   insideEntity: boolean;
   insideContract: boolean;
   currentEntityKind: string | null;
@@ -29,11 +30,25 @@ export interface ParseError {
 const ENTITY_KINDS = new Set(["function", "module", "concept", "screen", "data", "event", "media", "property", "scenario"]);
 
 export function createInitialState(): ParserState {
-  return { position: 0, insideEntity: false, insideContract: false, currentEntityKind: null, currentEntityName: null, entities: [], errors: [] };
+  return { position: 0, inputHash: simpleHash(""), insideEntity: false, insideContract: false, currentEntityKind: null, currentEntityName: null, entities: [], errors: [] };
+}
+
+function simpleHash(s: string): number {
+  let hash = 5381;
+  for (let i = 0; i < s.length; i++) {
+    hash = ((hash << 5) + hash + s.charCodeAt(i)) | 0;
+  }
+  return hash;
 }
 
 /** Resume parsing from cached state — only processes new content after state.position */
 export function parseIncremental(input: string, state: ParserState): ParserState {
+  // If content before the cached position changed, all offsets are invalid — restart
+  const prefixHash = simpleHash(input.slice(0, state.position));
+  if (prefixHash !== state.inputHash) {
+    return parseIncremental(input, createInitialState());
+  }
+
   const newState = { ...state, entities: [...state.entities], errors: [...state.errors] };
   let pos = newState.position;
   const lower = input.toLowerCase();
@@ -98,6 +113,7 @@ export function parseIncremental(input: string, state: ParserState): ParserState
   }
 
   newState.position = pos;
+  newState.inputHash = simpleHash(input.slice(0, pos));
   return newState;
 }
 

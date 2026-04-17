@@ -1,13 +1,14 @@
 import { Plugin, PluginKey } from "prosemirror-state";
 import { Decoration, DecorationSet } from "prosemirror-view";
 import { invoke } from "@tauri-apps/api/core";
+import { CompileResult } from "./types";
 
 export const transformPluginKey = new PluginKey("nomx-transform");
 
 // ── Incremental compile cache (bolt.new pattern) ──────────
 interface CompileCache {
   contentHash: number;
-  result: { success: boolean; diagnostics: string[]; entities: string[] } | null;
+  result: CompileResult | null;
 }
 
 let compileCache: CompileCache = { contentHash: 0, result: null };
@@ -207,11 +208,7 @@ export function createTransformPlugin(): Plugin {
 
               if (statusEl) statusEl.textContent = "// compiling...";
               try {
-                const result = await invoke<{
-                  success: boolean;
-                  diagnostics: string[];
-                  entities: string[];
-                }>("compile_block", { source: text });
+                const result = await invoke<CompileResult>("compile_block", { source: text });
 
                 compileCache = { contentHash: hash, result };
 

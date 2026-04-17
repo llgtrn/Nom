@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { CompileResult } from "./types";
 
 export type ArtifactType = "html" | "code" | "json" | "media" | "binary" | "unknown";
 
@@ -44,14 +45,15 @@ export class ArtifactPreview {
   private renderHTML(html: string): void {
     this.iframe = document.createElement("iframe");
     this.iframe.className = "artifact-iframe";
-    this.iframe.sandbox.add("allow-scripts");
+    // Sandboxed without scripts — safe from XSS
+    this.iframe.setAttribute("sandbox", "");
+    const cspMeta = `<meta http-equiv="Content-Security-Policy" content="default-src 'none';">`;
+    const hasHead = /<head[^>]*>/i.test(html);
+    const safeHtml = hasHead
+      ? html.replace(/(<head[^>]*>)/i, `$1${cspMeta}`)
+      : `<head>${cspMeta}</head>${html}`;
+    this.iframe.srcdoc = safeHtml;
     this.container.appendChild(this.iframe);
-    const doc = this.iframe.contentDocument;
-    if (doc) {
-      doc.open();
-      doc.write(html);
-      doc.close();
-    }
   }
 
   private renderCode(code: string, name: string): void {
@@ -107,9 +109,7 @@ export class ArtifactPreview {
   /** Compile source and preview the result */
   async compileAndPreview(source: string): Promise<void> {
     try {
-      const result = await invoke<{ success: boolean; entities: string[]; diagnostics: string[] }>(
-        "compile_block", { source }
-      );
+      const result = await invoke<CompileResult>("compile_block", { source });
       if (result.success && result.entities.length > 0) {
         this.render({
           type: "code",

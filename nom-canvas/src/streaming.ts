@@ -21,7 +21,10 @@ export class StreamingPipeline {
     for (const cb of this.listeners) cb(chunk);
   }
 
-  /** Stream compilation results for a block of text */
+  /** Stream compilation results for a block of text.
+   * NOTE: This is simulated streaming — words are emitted immediately as tokens,
+   * then the full compile result arrives after the Tauri invoke completes.
+   * True token-level streaming requires a streaming pipeline in nom-concept. */
   async streamCompile(source: string): Promise<void> {
     if (this.isStreaming) {
       this.cancel();

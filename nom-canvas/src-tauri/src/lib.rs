@@ -748,7 +748,6 @@ fn plan_flow(source: &str) -> PlanFlowResult {
 }
 
 // ── Credential storage ────────────────────────────────────────────────────────
-// TODO: replace hex-on-disk with OS keyring (tauri-plugin-store or `keyring` crate) in production.
 
 #[derive(Serialize)]
 pub struct CredentialResult {
@@ -763,19 +762,38 @@ fn sanitize_key(key: &str) -> String {
         .collect()
 }
 
-fn hex_encode(data: &[u8]) -> String {
-    data.iter().map(|b| format!("{:02x}", b)).collect()
+// TODO: Replace with OS keyring (tauri-plugin-keyring) for production.
+fn machine_seed() -> String {
+    let user = std::env::var("USERNAME")
+        .or_else(|_| std::env::var("USER"))
+        .unwrap_or_default();
+    let home = std::env::var("USERPROFILE")
+        .or_else(|_| std::env::var("HOME"))
+        .unwrap_or_default();
+    format!("nomcanvas:{}:{}", user, home)
 }
 
-fn hex_decode(hex: &str) -> Option<String> {
-    if hex.len() % 2 != 0 {
-        return None;
+fn machine_key() -> [u8; 32] {
+    let seed = machine_seed();
+    let mut key = [0u8; 32];
+    let mut hash: u64 = 0xcbf29ce484222325;
+    for byte in seed.bytes() {
+        hash ^= byte as u64;
+        hash = hash.wrapping_mul(0x100000001b3);
     }
-    let bytes: Option<Vec<u8>> = (0..hex.len())
-        .step_by(2)
-        .map(|i| u8::from_str_radix(&hex[i..i + 2], 16).ok())
-        .collect();
-    bytes.and_then(|b| String::from_utf8(b).ok())
+    for i in 0..4 {
+        let h = hash.wrapping_add(i as u64).wrapping_mul(0x9e3779b97f4a7c15);
+        key[i * 8..(i + 1) * 8].copy_from_slice(&h.to_le_bytes());
+    }
+    key
+}
+
+fn obfuscate(data: &[u8], key: &[u8; 32]) -> Vec<u8> {
+    data.iter().enumerate().map(|(i, &b)| b ^ key[i % 32]).collect()
+}
+
+fn deobfuscate(data: &[u8], key: &[u8; 32]) -> Vec<u8> {
+    obfuscate(data, key) // XOR is symmetric
 }
 
 #[tauri::command]
@@ -788,9 +806,10 @@ fn store_credential(key: &str, value: &str, state: State<'_, AppState>) -> Crede
             error: Some(format!("{e}")),
         };
     }
-    let encoded = hex_encode(value.as_bytes());
+    let key_bytes = machine_key();
+    let obfuscated = obfuscate(value.as_bytes(), &key_bytes);
     let path = cred_dir.join(format!("{}.cred", sanitize_key(key)));
-    match std::fs::write(&path, encoded) {
+    match std::fs::write(&path, &obfuscated) {
         Ok(()) => CredentialResult { success: true, value: None, error: None },
         Err(e) => CredentialResult {
             success: false,
@@ -804,15 +823,19 @@ fn store_credential(key: &str, value: &str, state: State<'_, AppState>) -> Crede
 fn get_credential(key: &str, state: State<'_, AppState>) -> CredentialResult {
     let cred_dir = state.dict_path.join("credentials");
     let path = cred_dir.join(format!("{}.cred", sanitize_key(key)));
-    match std::fs::read_to_string(&path) {
-        Ok(encoded) => match hex_decode(&encoded) {
-            Some(value) => CredentialResult { success: true, value: Some(value), error: None },
-            None => CredentialResult {
-                success: false,
-                value: None,
-                error: Some("decode failed".into()),
-            },
-        },
+    match std::fs::read(&path) {
+        Ok(data) => {
+            let key_bytes = machine_key();
+            let plain = deobfuscate(&data, &key_bytes);
+            match String::from_utf8(plain) {
+                Ok(value) => CredentialResult { success: true, value: Some(value), error: None },
+                Err(_) => CredentialResult {
+                    success: false,
+                    value: None,
+                    error: Some("decode failed".into()),
+                },
+            }
+        }
         Err(_) => CredentialResult { success: true, value: None, error: None }, // not found = empty
     }
 }
@@ -841,10 +864,11 @@ fn security_scan(source: &str) -> SecurityScanResult {
 
 #[tauri::command]
 fn lsp_request(method: &str, params: serde_json::Value) -> serde_json::Value {
+    const LSP_TIMEOUT_MS: u64 = 5_000;
     match lsp::get_or_spawn_lsp() {
         Ok(mut guard) => {
             if let Some(client) = guard.as_mut() {
-                match client.request(method, params) {
+                match client.request_with_timeout(method, params, LSP_TIMEOUT_MS) {
                     Ok(response) => response,
                     Err(e) => serde_json::json!({"error": e}),
                 }

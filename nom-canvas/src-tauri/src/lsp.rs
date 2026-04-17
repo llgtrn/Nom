@@ -1,8 +1,9 @@
 //! LSP client — spawns nom-lsp as child process, communicates via JSON-RPC stdio.
 
 use std::io::{BufRead, BufReader, Write};
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdout, Command, Stdio};
 use std::sync::Mutex;
+use std::time::Duration;
 use serde_json::Value;
 
 /// LSP client state
@@ -74,6 +75,102 @@ impl LspClient {
             .map_err(|e| format!("Parse error: {e}"))?;
 
         Ok(response)
+    }
+
+    /// Send a JSON-RPC request and get the response, with a deadline in milliseconds.
+    ///
+    /// The write to stdin is synchronous (fast). The blocking read from stdout is
+    /// off-loaded to a dedicated thread; the calling thread waits at most
+    /// `timeout_ms` milliseconds before returning an error.
+    pub fn request_with_timeout(
+        &mut self,
+        method: &str,
+        params: Value,
+        timeout_ms: u64,
+    ) -> Result<Value, String> {
+        let id = self.next_id;
+        self.next_id += 1;
+
+        // Build and send the request.
+        let request = serde_json::json!({
+            "jsonrpc": "2.0",
+            "id": id,
+            "method": method,
+            "params": params,
+        });
+        let body = serde_json::to_string(&request).map_err(|e| format!("{e}"))?;
+        let message = format!("Content-Length: {}\r\n\r\n{}", body.len(), body);
+        let stdin = self.child.stdin.as_mut().ok_or("No stdin")?;
+        stdin.write_all(message.as_bytes()).map_err(|e| format!("Write error: {e}"))?;
+        stdin.flush().map_err(|e| format!("Flush error: {e}"))?;
+
+        // Take stdout out of the child so the reader thread can own it.
+        let stdout: ChildStdout = self.child.stdout.take().ok_or("No stdout")?;
+
+        let (tx, rx) = std::sync::mpsc::channel::<Result<(Vec<u8>, ChildStdout), String>>();
+
+        std::thread::spawn(move || {
+            let mut reader = BufReader::new(stdout);
+            let mut content_length = 0usize;
+
+            // Read LSP headers.
+            loop {
+                let mut line = String::new();
+                match reader.read_line(&mut line) {
+                    Err(e) => {
+                        let _ = tx.send(Err(format!("Header read error: {e}")));
+                        return;
+                    }
+                    Ok(0) => {
+                        let _ = tx.send(Err("EOF in headers".to_string()));
+                        return;
+                    }
+                    Ok(_) => {}
+                }
+                let trimmed = line.trim();
+                if trimmed.is_empty() {
+                    break;
+                }
+                if let Some(len) = trimmed.strip_prefix("Content-Length: ") {
+                    content_length = len.parse().unwrap_or(0);
+                }
+            }
+
+            if content_length == 0 {
+                let _ = tx.send(Err("Empty response (content-length 0)".to_string()));
+                return;
+            }
+
+            // Read body.
+            let mut buf = vec![0u8; content_length];
+            match std::io::Read::read_exact(&mut reader, &mut buf) {
+                Err(e) => {
+                    let _ = tx.send(Err(format!("Body read error: {e}")));
+                }
+                Ok(()) => {
+                    // Return the buffer and the unwrapped stdout so the caller can
+                    // put it back into Child.
+                    let inner = reader.into_inner();
+                    let _ = tx.send(Ok((buf, inner)));
+                }
+            }
+        });
+
+        match rx.recv_timeout(Duration::from_millis(timeout_ms)) {
+            Ok(Ok((buf, stdout_back))) => {
+                // Restore stdout so subsequent requests work.
+                self.child.stdout = Some(stdout_back);
+                serde_json::from_slice(&buf).map_err(|e| format!("Parse error: {e}"))
+            }
+            Ok(Err(e)) => {
+                // Reader thread failed; stdout is gone — kill & respawn on next call.
+                Err(e)
+            }
+            Err(_) => {
+                // Timeout — stdout is gone; the child will be considered dead on next call.
+                Err(format!("LSP request timed out after {timeout_ms}ms"))
+            }
+        }
     }
 
     /// Send a notification (no response expected)

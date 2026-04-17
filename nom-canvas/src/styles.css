@@ -1482,3 +1482,28 @@ button:active {
 }
 .settings-input:focus { border-color: var(--color-cta); outline: none; }
 .settings-checkbox { accent-color: var(--color-cta); width: 16px; height: 16px; }
+
+/* ── Layout Fixes ──────────────────────────────────────── */
+
+/* Fix status bar clipping canvas */
+#canvas-container {
+    padding-bottom: 32px; /* space for fixed status bar */
+}
+
+/* Responsive breakpoints */
+@media (max-width: 1024px) {
+    .component-library { width: 240px; }
+    .toolbar-btn { padding: 3px 6px; font-size: 10px; }
+}
+
+@media (max-width: 768px) {
+    #app { grid-template-columns: 1fr; }
+    .component-library { display: none; }
+    #preview-pane { display: none; }
+    .toolbar-group { gap: 1px; }
+}
+
+@media (max-width: 480px) {
+    .nom-toolbar { overflow-x: auto; }
+    .canvas-block { min-width: 280px; }
+}

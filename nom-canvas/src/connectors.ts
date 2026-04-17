@@ -49,8 +49,30 @@ registerConnector("json", async (config) => {
 });
 
 registerConnector("http", async (config) => {
+  const url = config.params.url || "";
+  // Validate URL before fetch — prevent SSRF
   try {
-    const resp = await fetch(config.params.url || "");
+    const parsed = new URL(url);
+    if (!["http:", "https:"].includes(parsed.protocol)) {
+      return { success: false, data: null, error: "Only http/https URLs allowed" };
+    }
+    // Block localhost/private IPs
+    const host = parsed.hostname.toLowerCase();
+    if (
+      host === "localhost" ||
+      host === "127.0.0.1" ||
+      host === "0.0.0.0" ||
+      host.startsWith("192.168.") ||
+      host.startsWith("10.") ||
+      host.startsWith("172.")
+    ) {
+      return { success: false, data: null, error: "Private/local URLs not allowed" };
+    }
+  } catch {
+    return { success: false, data: null, error: "Invalid URL" };
+  }
+  try {
+    const resp = await fetch(url);
     const data = await resp.json();
     return { success: true, data, rowCount: Array.isArray(data) ? data.length : 1 };
   } catch (e) { return { success: false, data: null, error: String(e) }; }

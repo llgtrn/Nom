@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { CompileResult } from "./types";
 
 export type ActionType = "compile" | "build" | "test" | "score" | "extract" | "scan" | "custom";
 
@@ -100,9 +101,7 @@ export class ActionRunner {
   private async executeAction(action: Action): Promise<string> {
     switch (action.type) {
       case "compile": {
-        const result = await invoke<{ success: boolean; diagnostics: string[]; entities: string[] }>(
-          "compile_block", { source: action.params.source || "" }
-        );
+        const result = await invoke<CompileResult>("compile_block", { source: action.params.source || "" });
         return result.success
           ? `Compiled: ${result.entities.join(", ")}`
           : `Error: ${result.diagnostics.join("; ")}`;

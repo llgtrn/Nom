@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { CompileResult } from "./types";
 import { EditorState } from "prosemirror-state";
 import { EditorView } from "prosemirror-view";
 import { DOMParser } from "prosemirror-model";
@@ -183,12 +184,6 @@ if (compileBtn) {
 
 // ---------- Compile helper ----------
 const previewOutput = document.getElementById("preview-output")!;
-
-interface CompileResult {
-  success: boolean;
-  diagnostics: string[];
-  entities: string[];
-}
 
 async function compileCurrentBlock(): Promise<void> {
   const content = view.state.doc.textContent;

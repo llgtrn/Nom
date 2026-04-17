@@ -275,7 +275,52 @@ export function topologicalSort(graph: WorkflowGraph): string[] {
     }
   }
 
+  // Cycle detection: if not all nodes were visited, a cycle exists
+  if (sorted.length < graph.nodes.length) {
+    const sortedSet = new Set(sorted);
+    const unsorted = graph.nodes
+      .filter(n => !sortedSet.has(n.id))
+      .map(n => n.id);
+    console.error(`Cycle detected in graph. Cyclic nodes: ${unsorted.join(", ")}`);
+  }
+
   return sorted;
+}
+
+export function hasCycles(graph: WorkflowGraph): boolean {
+  const inDegree = new Map<string, number>();
+  const adjacency = new Map<string, string[]>();
+
+  for (const node of graph.nodes) {
+    inDegree.set(node.id, 0);
+    adjacency.set(node.id, []);
+  }
+
+  for (const edge of graph.edges) {
+    const prev = inDegree.get(edge.target) || 0;
+    inDegree.set(edge.target, prev + 1);
+    const adj = adjacency.get(edge.source) || [];
+    adj.push(edge.target);
+    adjacency.set(edge.source, adj);
+  }
+
+  const queue: string[] = [];
+  for (const [id, degree] of inDegree) {
+    if (degree === 0) queue.push(id);
+  }
+
+  let visited = 0;
+  while (queue.length > 0) {
+    const nodeId = queue.shift()!;
+    visited++;
+    for (const neighbor of adjacency.get(nodeId) || []) {
+      const deg = (inDegree.get(neighbor) || 1) - 1;
+      inDegree.set(neighbor, deg);
+      if (deg === 0) queue.push(neighbor);
+    }
+  }
+
+  return visited < graph.nodes.length;
 }
 
 // ── Subgraph Extraction (n8n partial execution pattern) ──
