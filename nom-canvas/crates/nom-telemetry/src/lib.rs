@@ -493,4 +493,64 @@ mod tests {
             events[0].timestamp_ms,
         );
     }
+
+    #[test]
+    fn in_memory_sink_default_is_empty() {
+        let sink = InMemorySink::default();
+        assert_eq!(sink.count(), 0);
+        assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn compiler_invoke_duration_preserved() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::CompilerInvoke { duration_ms: 250 },
+            10,
+            1,
+        ));
+        let events = sink.events();
+        match &events[0].kind {
+            EventKind::CompilerInvoke { duration_ms } => assert_eq!(*duration_ms, 250),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn rag_query_top_k_preserved() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 20 }, 30, 2));
+        let events = sink.events();
+        match &events[0].kind {
+            EventKind::RagQuery { top_k } => assert_eq!(*top_k, 20),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn telemetry_event_default_trace_and_span_are_zero() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.trace_id, [0u8; 16]);
+        assert_eq!(event.span_id, [0u8; 8]);
+    }
+
+    #[test]
+    fn in_memory_sink_clone_shares_storage() {
+        let sink_a = InMemorySink::new();
+        let sink_b = sink_a.clone();
+
+        sink_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        // sink_b shares the same Arc<Mutex<_>>, so count must reflect the write.
+        assert_eq!(sink_b.count(), 1);
+    }
+
+    #[test]
+    fn traceparent_all_zeros_formats_correctly() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = event.traceparent();
+        assert_eq!(
+            tp,
+            "00-00000000000000000000000000000000-0000000000000000-01"
+        );
+    }
 }

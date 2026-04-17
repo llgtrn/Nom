@@ -506,4 +506,104 @@ mod tests {
         assert_eq!(doc.text(), "");
         assert_eq!(doc.op_log().len(), 0);
     }
+
+    // ── new coverage tests (Wave T) ──────────────────────────────────────────
+
+    #[test]
+    fn crdt_multiple_peers_converge_after_3_ops() {
+        // Three peers each insert one char; all merge to the same text.
+        let mut peer_a = DocState::new(PeerId(1));
+        let op_a = peer_a.local_insert(RgaPos::Head, "A");
+
+        let mut peer_b = DocState::new(PeerId(2));
+        let op_b = peer_b.local_insert(RgaPos::Head, "B");
+
+        let mut peer_c = DocState::new(PeerId(3));
+        let op_c = peer_c.local_insert(RgaPos::Head, "C");
+
+        // Full cross-merge: every peer gets the other two ops.
+        for op in [op_b.clone(), op_c.clone()] {
+            peer_a.apply(op);
+        }
+        for op in [op_a.clone(), op_c.clone()] {
+            peer_b.apply(op);
+        }
+        for op in [op_a.clone(), op_b.clone()] {
+            peer_c.apply(op);
+        }
+
+        // All three peers converge to identical text.
+        assert_eq!(peer_a.text(), peer_b.text());
+        assert_eq!(peer_b.text(), peer_c.text());
+        // Three characters must be present (order deterministic but not asserted here).
+        assert_eq!(peer_a.text().len(), 3);
+        assert!(peer_a.text().contains('A'));
+        assert!(peer_a.text().contains('B'));
+        assert!(peer_a.text().contains('C'));
+    }
+
+    #[test]
+    fn crdt_op_id_ordering_deterministic() {
+        // Two ops with same counter, different peer ids — lower peer id sorts lower.
+        let op_low = OpId { peer: PeerId(1), counter: 5 };
+        let op_high = OpId { peer: PeerId(2), counter: 5 };
+
+        // OpId Ord: counter first, then peer.0 ascending.
+        assert!(op_low < op_high, "lower peer id must sort before higher peer id at equal counter");
+
+        // Different counters: counter dominates.
+        let op_counter_low = OpId { peer: PeerId(99), counter: 1 };
+        let op_counter_high = OpId { peer: PeerId(1), counter: 10 };
+        assert!(op_counter_low < op_counter_high, "lower counter must sort before higher counter");
+    }
+
+    #[test]
+    fn crdt_text_preserves_insertion_order() {
+        // Insert "A" at Head, then "B" After A → expected text "AB".
+        let mut doc = DocState::new(PeerId(1));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        doc.local_insert(RgaPos::After(op_a.id), "B");
+
+        assert_eq!(doc.text(), "AB", "sequential inserts must preserve left-to-right order");
+    }
+
+    #[test]
+    fn crdt_merge_self_is_idempotent() {
+        // Merging a doc with itself must not grow the op log or change text.
+        let mut doc = DocState::new(PeerId(7));
+        doc.local_insert(RgaPos::Head, "hello");
+        doc.local_insert(RgaPos::Head, "world");
+
+        let text_before = doc.text();
+        let log_len_before = doc.op_log().len();
+
+        // Clone the doc so we can pass a reference to merge() without borrowing issues.
+        let snapshot_ops: Vec<Op> = doc.op_log().to_vec();
+        let mut mirror = DocState::new(PeerId(7));
+        for op in snapshot_ops {
+            mirror.apply(op);
+        }
+
+        doc.merge(&mirror);
+
+        assert_eq!(doc.text(), text_before, "merge-self must not change text");
+        assert_eq!(doc.op_log().len(), log_len_before, "merge-self must not grow op log");
+    }
+
+    #[test]
+    fn crdt_local_insert_increments_counter() {
+        // Consecutive local_insert calls must produce strictly increasing OpId counters.
+        let mut doc = DocState::new(PeerId(5));
+        let op1 = doc.local_insert(RgaPos::Head, "x");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "y");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "z");
+
+        assert!(op1.id.counter < op2.id.counter, "op2 counter must be > op1");
+        assert!(op2.id.counter < op3.id.counter, "op3 counter must be > op2");
+        // Counters must be 1, 2, 3 for a fresh doc.
+        assert_eq!(op1.id.counter, 1);
+        assert_eq!(op2.id.counter, 2);
+        assert_eq!(op3.id.counter, 3);
+        assert_eq!(doc.text(), "xyz");
+    }
 }

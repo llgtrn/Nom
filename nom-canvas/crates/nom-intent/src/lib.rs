@@ -230,6 +230,44 @@ mod tests {
     }
 
     #[test]
+    fn react_chain_max_steps_respected() {
+        let evidence = &["step one", "step two", "step three", "step four", "step five"];
+        let steps = react_chain("hypothesis", evidence, 3);
+        assert_eq!(steps.len(), 3);
+    }
+
+    #[test]
+    fn ranked_hypotheses_scores_sum_to_positive() {
+        let evidence = &["graph query node traversal result"];
+        let hypotheses = &["graph node query", "traversal result"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        let total: f32 = ranked.iter().map(|h| h.score).sum();
+        assert!(total > 0.0, "expected positive total score, got {total}");
+    }
+
+    #[test]
+    fn interrupt_signal_default_is_not_cancelled() {
+        let signal = InterruptSignal::default();
+        assert!(!signal.is_cancelled());
+    }
+
+    #[test]
+    fn scored_hypothesis_evidence_used_populated() {
+        let evidence = &["alpha beta", "gamma delta"];
+        let ranked = rank_hypotheses(&["alpha gamma"], evidence);
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].evidence_used.len(), 2);
+        assert_eq!(ranked[0].evidence_used[0], "alpha beta");
+        assert_eq!(ranked[0].evidence_used[1], "gamma delta");
+    }
+
+    #[test]
+    fn best_hypothesis_empty_returns_none() {
+        let result = best_hypothesis(&[], &["some evidence"]);
+        assert!(result.is_none());
+    }
+
+    #[test]
     fn scored_hypothesis_fields() {
         let evidence = &["graph query result"];
         let scored = rank_hypotheses(&["graph query"], evidence);

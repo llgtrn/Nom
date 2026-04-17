@@ -1,6 +1,6 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `c4d6252` | **Tests:** 686 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `0b0d48e` | **Tests:** 717 | **Workspace:** clean
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
@@ -17,15 +17,22 @@
 - [x] Wave Q landed (SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence — 581 tests, commit f0ca908)
 - [x] Wave R landed (NI1+SipHash13+coverage+57 — 638 tests, commit 0949124)
 - [x] Wave S landed (5 panels+10 backends+FrostedRect+hints+renderer — 686 tests, commit c4d6252)
+- [x] Wave T landed (scenario_workflow+renderer+integration+31 new tests — 717 tests, commit 0b0d48e)
 
-## Open Missions (Wave T)
+## Open Missions (Wave U)
 
-- [ ] BE-SCENARIO-WORKFLOW HIGH — scenario_workflow backend missing from spec (domain model + tests)
-- [ ] RENDERER-DRAW HIGH — Renderer draw methods "Real impl" stubs → real FrameStats draw counting
-- [ ] INTEG-PANELS-GPUI MEDIUM — cross-crate integration tests: panels↔gpui↔compose pipeline
-- [ ] INTEG-BLOCKS-CANVAS MEDIUM — cross-crate integration tests: blocks↔canvas-core↔editor
-- [ ] NOM-GRAPH-TESTS MEDIUM — nom-graph test suite expansion 68→75+
-- [ ] COMPILER-BRIDGE-TESTS MEDIUM — nom-compiler-bridge test suite expansion 44→52+
+All Wave T missions closed at commit 0b0d48e (717 tests).
+
+Wave U targets:
+- Final test coverage push (nom-collab +5 tests shipped = 18 tests)
+- element.rs WindowContext cleanup
+
+## Iteration 49 — Wave T committed (2026-04-18, commit `0b0d48e`)
+
+- Committed: scenario_workflow backend (domain model + tests) + Renderer real FrameStats draw-call counting + cross-crate integration tests (panels↔gpui↔compose + blocks↔canvas-core↔editor) + nom-graph 68→75+ tests + nom-compiler-bridge 44→52+ tests + nom-collab 13→18 tests (Wave U coverage: crdt_multiple_peers_converge_after_3_ops + crdt_op_id_ordering_deterministic + crdt_text_preserves_insertion_order + crdt_merge_self_is_idempotent + crdt_local_insert_increments_counter)
+- Tests: 717 (+31 vs Wave S baseline of 686)
+- Closed: BE-SCENARIO-WORKFLOW/RENDERER-DRAW (2 HIGHs) + INTEG-PANELS-GPUI/INTEG-BLOCKS-CANVAS/NOM-GRAPH-TESTS/COMPILER-BRIDGE-TESTS (4 MEDIUMs)
+- Open: Wave U — element.rs WindowContext cleanup + remaining coverage
 
 ## Iteration 48 — Wave S committed (2026-04-18, commit `c4d6252`)
 

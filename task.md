@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `c4d6252` | **Tests:** 686 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `0b0d48e` | **Tests:** 717 | **Workspace:** clean
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -16,13 +16,8 @@
 - [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
 - [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
-**Wave S committed c4d6252 (686 tests). Remaining open (WAVE T targets):**
-- scenario_workflow backend (missing from spec)
-- Renderer "Real impl" stubs → real FrameStats draw counting in draw methods
-- Cross-crate integration tests: panels↔gpui↔compose pipeline
-- Cross-crate integration tests: blocks↔canvas-core↔editor
-- nom-graph tests expansion (68→75+)
-- nom-compiler-bridge tests expansion (44→52+)
+**Wave S committed c4d6252 (686 tests). Wave T committed 0b0d48e (717 tests). All spec-mandated modules implemented.**
+**Wave U: final test coverage push + element.rs WindowContext cleanup.**
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -55,6 +50,7 @@
 | [x] Q Quality | ✅ | f0ca908 — SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence (581 tests) |
 | [x] R Coverage | ✅ | 0949124 — NI1+SipHash13+coverage+57 (638 tests) |
 | [x] S Spec align | ✅ | c4d6252 — 5 panels+10 backends+FrostedRect+hints+renderer (686 tests) |
+| [x] T Cleanup | ✅ | 0b0d48e — scenario_workflow+renderer+integration+31 (717 tests) |
 
 ### Integrity Grep
 
@@ -65,25 +61,18 @@
 | `RgaPos`/`tombstoned` in nom-collab | 28 | ≥1 |
 | `RenderPrimitive` custom enum | 0 | 0 |
 
-## Open Missions (Wave T targets)
+## Open Missions (Wave T — COMPLETE)
 
-### HIGH — Missing compose backend
+All spec-mandated modules implemented. Wave U: final test coverage push + element.rs WindowContext cleanup.
 
-- [ ] **BE-SCENARIO-WORKFLOW** — scenario_workflow backend missing from spec (domain model + tests)
+### Wave T — Completed
 
-### HIGH — Renderer stubs
-
-- [ ] **RENDERER-DRAW** — Renderer draw methods have "Real impl" placeholder stubs; replace with real FrameStats draw-call counting
-
-### MEDIUM — Cross-crate integration tests
-
-- [ ] **INTEG-PANELS-GPUI** — integration tests: panels↔gpui↔compose pipeline cross-crate
-- [ ] **INTEG-BLOCKS-CANVAS** — integration tests: blocks↔canvas-core↔editor cross-crate
-
-### MEDIUM — Test expansion
-
-- [ ] **NOM-GRAPH-TESTS** — nom-graph test suite expansion: 68→75+ tests
-- [ ] **COMPILER-BRIDGE-TESTS** — nom-compiler-bridge test suite expansion: 44→52+ tests
+- [x] **BE-SCENARIO-WORKFLOW** — scenario_workflow backend domain model + tests (0b0d48e)
+- [x] **RENDERER-DRAW** — Renderer draw methods real FrameStats draw-call counting (0b0d48e)
+- [x] **INTEG-PANELS-GPUI** — integration tests: panels↔gpui↔compose pipeline cross-crate (0b0d48e)
+- [x] **INTEG-BLOCKS-CANVAS** — integration tests: blocks↔canvas-core↔editor cross-crate (0b0d48e)
+- [x] **NOM-GRAPH-TESTS** — nom-graph test suite expansion: 68→75+ tests (0b0d48e)
+- [x] **COMPILER-BRIDGE-TESTS** — nom-compiler-bridge test suite expansion: 44→52+ tests (0b0d48e)
 
 ## Non-Negotiable Rules
 

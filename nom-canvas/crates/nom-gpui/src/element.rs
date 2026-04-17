@@ -41,7 +41,6 @@ pub struct WindowContext {
     pub scale_factor: f32,
     pub viewport_size: Vec2,
     layout_registry: LayoutRegistry,
-    // In a real impl: reference to window + app state
 }
 
 impl WindowContext {
