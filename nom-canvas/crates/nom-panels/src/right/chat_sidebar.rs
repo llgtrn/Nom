@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use crate::dock::{DockPosition, Panel};
+pub use crate::dock::RenderPrimitive;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum ChatRole { User, Assistant, System, Tool }
@@ -91,6 +92,40 @@ impl ChatSidebarPanel {
     }
 
     pub fn message_count(&self) -> usize { self.messages.len() }
+
+    pub fn render_bounds(&self, width: f32, height: f32) -> Vec<RenderPrimitive> {
+        let mut out = Vec::new();
+        // Panel background
+        out.push(RenderPrimitive::Rect { x: 0.0, y: 0.0, w: width, h: height, color: 0x1e1e2e });
+        for (i, msg) in self.messages.iter().enumerate() {
+            let y = i as f32 * 60.0 + 8.0;
+            let bubble_w = width * 0.75;
+            let (bx, bg_color, text_color) = match msg.role {
+                ChatRole::User => (width - bubble_w - 8.0, 0x89b4fa_u32, 0x1e1e2e_u32),
+                _ => (8.0, 0x313244_u32, 0xcdd6f4_u32),
+            };
+            out.push(RenderPrimitive::Rect { x: bx, y, w: bubble_w, h: 44.0, color: bg_color });
+            out.push(RenderPrimitive::Text {
+                x: bx + 6.0,
+                y: y + 14.0,
+                text: msg.content.clone(),
+                size: 13.0,
+                color: text_color,
+            });
+            for card in &msg.tool_cards {
+                let card_y = y + 46.0;
+                out.push(RenderPrimitive::Rect { x: 8.0, y: card_y, w: width - 16.0, h: 20.0, color: 0x45475a });
+                out.push(RenderPrimitive::Text {
+                    x: 12.0,
+                    y: card_y + 6.0,
+                    text: format!("[tool: {}]", card.tool_name),
+                    size: 11.0,
+                    color: 0xcdd6f4,
+                });
+            }
+        }
+        out
+    }
 }
 
 impl Default for ChatSidebarPanel { fn default() -> Self { Self::new() } }
@@ -128,5 +163,26 @@ mod tests {
         let last = panel.messages.last().unwrap();
         assert_eq!(last.tool_cards.len(), 1);
         assert_eq!(last.tool_cards[0].tool_name, "stage1_tokenize");
+    }
+
+    #[test]
+    fn chat_panel_render_returns_messages() {
+        let mut panel = ChatSidebarPanel::new();
+        panel.push_message(ChatMessage::user("u1", "hello"));
+        panel.push_message(ChatMessage::assistant_streaming("a1"));
+        // finalize so content is set
+        panel.append_to_last(" world");
+        panel.finalize_last();
+        let prims = panel.render_bounds(320.0, 600.0);
+        // Must have at least: 1 bg + 2 bubble rects + 2 text prims
+        assert!(prims.len() >= 5, "expected at least 5 primitives, got {}", prims.len());
+        // First primitive is the background rect
+        assert_eq!(prims[0], RenderPrimitive::Rect { x: 0.0, y: 0.0, w: 320.0, h: 600.0, color: 0x1e1e2e });
+        // User bubble uses 0x89b4fa
+        let has_user_bubble = prims.iter().any(|p| matches!(p, RenderPrimitive::Rect { color: 0x89b4fa, .. }));
+        assert!(has_user_bubble, "user bubble not found");
+        // Assistant bubble uses 0x313244
+        let has_asst_bubble = prims.iter().any(|p| matches!(p, RenderPrimitive::Rect { color: 0x313244, .. }));
+        assert!(has_asst_bubble, "assistant bubble not found");
     }
 }

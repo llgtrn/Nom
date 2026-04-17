@@ -118,4 +118,17 @@ mod tests {
         assert_eq!(span.start, 0u32);
         assert_eq!(span.end, 10u32);
     }
+
+    /// Validator flags blocks whose entity.kind is not registered in the dict —
+    /// the enforcement path for the blueprint's "NomtuRef is non-optional" invariant.
+    #[test]
+    fn validator_rejects_missing_nomtu() {
+        let dict = StubDictReader::new();
+        // An entity with an unrecognised kind simulates a block not backed by a real DB entry
+        let block = BlockModel::new("b1", NomtuRef::new("?", "unknown_word", "nonexistent_kind"), "affine:note");
+        let errors = validate_block(&block, &dict);
+        assert!(!errors.is_empty(), "Validator must reject block with unknown nomtu kind");
+        assert_eq!(errors[0].severity, Severity::Error);
+        assert!(errors[0].message.contains("nonexistent_kind"));
+    }
 }

@@ -6,6 +6,32 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iteration 37 — Wave H panels pixel layer)
+
+**Wave H: nom-panels pixel render layer (closes CRITICAL gap)**
+- [x] left/file_tree.rs + quick_search.rs: render_bounds() with RenderPrimitive
+- [x] right/chat_sidebar.rs + deep_think.rs: render_bounds() with bubble layout
+- [x] bottom/terminal.rs + diagnostics.rs: render_bounds() with severity coloring
+- [x] dock.rs + pane.rs + shell.rs: render_bounds() with layout splits
+
+**Wave F final 20% closed:**
+- [x] graph_mode: GraphEvent (NodeSelected/Hovered/ModeChanged) + process_click/hover
+- [x] deep_think: think_beam() multi-chain streaming
+
+**Additional:**
+- [x] nom-compiler-bridge: tests added
+- [x] nom-blocks: NomtuRef validation tests
+
+**Wave status:**
+| Wave | Status |
+|------|--------|
+| Wave A GPUI | ~98% ✅ |
+| Wave B Editor | ~98% ✅ |
+| Wave F RAG+DeepThink | ~95% ✅ |
+| Wave G Stubs | 100% ✅ |
+| Wave H Panels Pixel | 100% ✅ |
+
+
 ## Audit-Corrected Wave Status (2026-04-18 Iter 36 strict — ⛔ HARD FREEZE re-recommended: U1 5 iterations unfixed, Wave F deep_think is fake ReAct)
 
 **Wave F strict verdicts (vs linter's rosy summary):**

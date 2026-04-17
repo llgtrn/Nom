@@ -165,6 +165,55 @@ impl NomtuRef {
 }
 
 // ---------------------------------------------------------------------------
+// Canvas events
+// ---------------------------------------------------------------------------
+
+/// Events emitted by graph-mode interaction.
+#[derive(Clone, Debug, PartialEq)]
+pub enum GraphEvent {
+    NodeSelected(NodeId),
+    NodeHovered(NodeId),
+    NodeDeselected,
+    ModeChanged(GraphViewMode),
+    LayoutRefreshed,
+}
+
+impl GraphModeState {
+    /// Hit-test a click at `(x, y)` with `radius`.
+    ///
+    /// If a node is found, it becomes selected and `NodeSelected` is returned.
+    /// Otherwise the selection is cleared and `None` is returned.
+    pub fn process_click(&mut self, x: f32, y: f32, radius: f32) -> Option<GraphEvent> {
+        match Self::node_at_point(&self.layout, x, y, radius) {
+            Some(id) => {
+                self.selected = Some(id.clone());
+                Some(GraphEvent::NodeSelected(id))
+            }
+            None => {
+                self.selected = None;
+                None
+            }
+        }
+    }
+
+    /// Hit-test a pointer move at `(x, y)` with `radius`.
+    ///
+    /// Returns `NodeHovered` if a node is within radius, otherwise `None`.
+    /// Also updates `self.hovered`.
+    pub fn process_hover(&mut self, x: f32, y: f32, radius: f32) -> Option<GraphEvent> {
+        let hit = Self::node_at_point(&self.layout, x, y, radius);
+        self.hovered = hit.clone();
+        hit.map(GraphEvent::NodeHovered)
+    }
+
+    /// Change the current view mode and return a `ModeChanged` event.
+    pub fn change_mode(&mut self, mode: GraphViewMode) -> GraphEvent {
+        self.mode = mode.clone();
+        GraphEvent::ModeChanged(mode)
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -270,5 +319,63 @@ mod tests {
         let (_, yc) = layout["c"];
         assert!(ya < yb, "b should be below a");
         assert!(yb < yc, "c should be below b");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_event_click_selects_node
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_event_click_selects_node() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+
+        // Inject a known layout position for "a".
+        state.layout.insert("a".to_string(), (0.0, 0.0));
+
+        let event = state.process_click(0.0, 0.0, 50.0);
+        assert_eq!(event, Some(GraphEvent::NodeSelected("a".to_string())));
+        assert_eq!(state.selected.as_deref(), Some("a"));
+
+        // Click far from every node — deselects.
+        let miss = state.process_click(9999.0, 9999.0, 10.0);
+        assert!(miss.is_none());
+        assert!(state.selected.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // graph_event_hover_returns_event
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_event_hover_returns_event() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.layout.insert("b".to_string(), (100.0, 100.0));
+
+        let event = state.process_hover(100.0, 100.0, 30.0);
+        assert_eq!(event, Some(GraphEvent::NodeHovered("b".to_string())));
+        assert_eq!(state.hovered.as_deref(), Some("b"));
+
+        // Move away — no event, hovered cleared.
+        let miss = state.process_hover(500.0, 500.0, 10.0);
+        assert!(miss.is_none());
+        assert!(state.hovered.is_none());
+    }
+
+    // ------------------------------------------------------------------
+    // graph_event_mode_change
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_event_mode_change() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        assert_eq!(state.mode, GraphViewMode::Graph);
+
+        let event = state.change_mode(GraphViewMode::Canvas);
+        assert_eq!(event, GraphEvent::ModeChanged(GraphViewMode::Canvas));
+        assert_eq!(state.mode, GraphViewMode::Canvas);
+
+        let event2 = state.change_mode(GraphViewMode::Split);
+        assert_eq!(event2, GraphEvent::ModeChanged(GraphViewMode::Split));
+        assert_eq!(state.mode, GraphViewMode::Split);
     }
 }

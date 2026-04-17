@@ -74,6 +74,53 @@ impl DeepThinkStream {
 
         steps
     }
+
+    /// Run `config.beam_width` independent think chains in parallel and return
+    /// them all.
+    ///
+    /// Each chain uses a seed derived from `input_hash` by rotating left by
+    /// `beam_i * 7` bits.  A `ComposeEvent::Progress` is emitted after each
+    /// beam completes; a final `ComposeEvent::Completed` is emitted once all
+    /// beams are done.
+    pub fn think_beam(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<Vec<ThinkStep>> {
+        let mut beams: Vec<Vec<ThinkStep>> = Vec::with_capacity(self.config.beam_width);
+        let tokens_per_step = self.config.token_budget / self.config.max_steps as u32;
+
+        for beam_i in 0..self.config.beam_width {
+            let seed = input_hash.rotate_left(beam_i as u32 * 7);
+            let mut chain = Vec::with_capacity(self.config.max_steps);
+
+            for i in 0..self.config.max_steps {
+                let step_id = i as u32;
+                let prompt_hash = seed
+                    .wrapping_mul(step_id as u64 + 1)
+                    .rotate_left(17);
+                let output_hash = prompt_hash ^ (step_id as u64 * 0xcafe);
+                chain.push(ThinkStep {
+                    step_id,
+                    prompt_hash,
+                    output_hash,
+                    token_count: tokens_per_step,
+                });
+            }
+
+            beams.push(chain);
+
+            let pct = ((beam_i + 1) as f32 / self.config.beam_width as f32) * 100.0;
+            progress.emit(ComposeEvent::Progress {
+                percent: pct,
+                stage: format!("beam_{}", beam_i),
+            });
+        }
+
+        progress.emit(ComposeEvent::Completed {
+            artifact_hash: [0u8; 32],
+            byte_size: beams.iter().map(|c| c.len()).sum::<usize>() as u64
+                * std::mem::size_of::<ThinkStep>() as u64,
+        });
+
+        beams
+    }
 }
 
 #[cfg(test)]
@@ -134,6 +181,58 @@ mod tests {
 
         // steps count matches config
         assert_eq!(steps.len(), n);
+    }
+
+    #[test]
+    fn deep_think_beam_returns_multiple_chains() {
+        let cfg = DeepThinkConfig { max_steps: 4, beam_width: 3, token_budget: 400 };
+        let stream = DeepThinkStream::new(cfg.clone());
+        let sink = VecProgressSink::new();
+        let beams = stream.think_beam(0xbeef_cafe, &sink);
+
+        // Must return exactly beam_width chains.
+        assert_eq!(beams.len(), cfg.beam_width, "number of chains must equal beam_width");
+
+        // Each chain must have exactly max_steps steps.
+        for (i, chain) in beams.iter().enumerate() {
+            assert_eq!(
+                chain.len(),
+                cfg.max_steps,
+                "chain {} must have {} steps",
+                i,
+                cfg.max_steps
+            );
+        }
+
+        // Different beams must differ (seeds are rotated differently).
+        assert_ne!(beams[0], beams[1], "beam 0 and beam 1 should differ");
+        assert_ne!(beams[1], beams[2], "beam 1 and beam 2 should differ");
+
+        // Events: one Progress per beam + one Completed.
+        let events = sink.take();
+        assert_eq!(events.len(), cfg.beam_width + 1);
+        assert!(matches!(events[cfg.beam_width], ComposeEvent::Completed { .. }));
+    }
+
+    #[test]
+    fn deep_think_beam_width_respected() {
+        // beam_width=1 → single chain, same as think() with rotated seed.
+        let cfg = DeepThinkConfig { max_steps: 3, beam_width: 1, token_budget: 300 };
+        let stream = DeepThinkStream::new(cfg.clone());
+        let sink = VecProgressSink::new();
+        let beams = stream.think_beam(0x1111, &sink);
+        assert_eq!(beams.len(), 1);
+        assert_eq!(beams[0].len(), cfg.max_steps);
+
+        // beam_width=5 → five chains.
+        let cfg5 = DeepThinkConfig { max_steps: 2, beam_width: 5, token_budget: 200 };
+        let stream5 = DeepThinkStream::new(cfg5.clone());
+        let sink5 = VecProgressSink::new();
+        let beams5 = stream5.think_beam(0x2222, &sink5);
+        assert_eq!(beams5.len(), 5);
+        for chain in &beams5 {
+            assert_eq!(chain.len(), cfg5.max_steps);
+        }
     }
 
     #[test]

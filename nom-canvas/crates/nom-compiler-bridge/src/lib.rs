@@ -28,3 +28,54 @@ impl BridgeState {
         return SqliteDictReader::new_stub();
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bridge_state_creates_shared() {
+        let bridge = BridgeState::new("test.db", "test.grammar");
+        // Arc strong count is 1 (only bridge holds it)
+        assert_eq!(std::sync::Arc::strong_count(&bridge.shared), 1);
+    }
+
+    #[test]
+    fn shared_state_has_paths() {
+        let state = SharedState::new("my_dict.db", "my_grammar.db");
+        assert_eq!(state.dict_path, "my_dict.db");
+        assert_eq!(state.grammar_path, "my_grammar.db");
+    }
+
+    #[test]
+    fn pipeline_output_fields() {
+        let output = PipelineOutput {
+            source_hash: 42,
+            grammar_version: 7,
+            output_json: "{\"ok\":true}".into(),
+        };
+        assert_eq!(output.source_hash, 42);
+        assert_eq!(output.grammar_version, 7);
+        assert_eq!(output.output_json, "{\"ok\":true}");
+    }
+
+    #[test]
+    fn grammar_kind_variants() {
+        let kind = GrammarKind {
+            name: "verb".into(),
+            description: "an action word".into(),
+        };
+        assert_eq!(kind.name, "verb");
+        assert_eq!(kind.description, "an action word");
+    }
+
+    #[test]
+    #[cfg(not(feature = "compiler"))]
+    fn sqlite_dict_reader_stub() {
+        use nom_blocks::dict_reader::DictReader;
+        let reader = SqliteDictReader::new_stub();
+        assert!(!reader.is_known_kind("verb"));
+        assert!(reader.clause_shapes_for("verb").is_empty());
+        assert!(reader.lookup_entity("run", "verb").is_none());
+    }
+}
