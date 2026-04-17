@@ -1,6 +1,5 @@
 #![deny(unsafe_code)]
 use crate::tracked::TrackedSnapshot;
-use crate::hash::Hash128;
 
 /// Captures what a memoized function read and validates that those reads
 /// are still valid before returning a cached result (typst comemo pattern).

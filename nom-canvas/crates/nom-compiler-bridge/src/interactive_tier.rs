@@ -24,6 +24,9 @@ pub struct TokenSpan {
 }
 
 pub struct InteractiveTier {
+    /// Kept so the tier can spawn additional workers later; the current worker
+    /// receives its own clone via the mpsc loop, so this field is not read directly.
+    #[allow(dead_code)]
     state: Arc<SharedState>,
     sender: tokio::sync::mpsc::Sender<InteractiveRequest>,
 }

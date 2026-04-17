@@ -5,7 +5,7 @@
 ///          ellipse equation; connectors use `dist_to_bezier < HIT_RADIUS`.
 
 use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect};
-use nom_gpui::types::{Bounds, Pixels, Point};
+use nom_gpui::types::{Bounds, Pixels};
 
 /// Pixel radius within which a click is considered a hit on a curve/line.
 /// Matches Excalidraw's `HIT_THRESHOLD = 5.0`.
