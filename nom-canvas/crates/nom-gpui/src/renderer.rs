@@ -1,4 +1,4 @@
-use crate::scene::Scene;
+use crate::scene::{FrostedRect, Scene};
 use crate::types::Hsla;
 
 // ---------------------------------------------------------------------------
@@ -69,6 +69,15 @@ pub enum PipelineKind {
 // Renderer — depth-less painter's-algorithm GPU renderer
 // ---------------------------------------------------------------------------
 
+/// Per-frame draw call counters — updated by each draw_* method.
+#[derive(Debug, Clone, Copy, Default)]
+pub struct FrameStats {
+    pub quads_drawn: usize,
+    pub shadows_drawn: usize,
+    pub frosted_drawn: usize,
+    pub frames: u64,
+}
+
 /// Depth-less painter's-algorithm renderer.
 ///
 /// Frame structure:
@@ -85,6 +94,8 @@ pub struct Renderer {
     pub pipeline_count: usize,
     /// Incremented each time `draw` is called; useful for frame-rate tracking.
     pub frame_count: u64,
+    /// Per-frame draw call statistics.
+    pub frame_stats: FrameStats,
 }
 
 impl Renderer {
@@ -92,7 +103,13 @@ impl Renderer {
         Self {
             pipeline_count: 8,
             frame_count: 0,
+            frame_stats: FrameStats::default(),
         }
+    }
+
+    /// Returns a reference to the current frame statistics.
+    pub fn stats(&self) -> &FrameStats {
+        &self.frame_stats
     }
 
     /// Submit a complete scene to the GPU.
@@ -102,6 +119,7 @@ impl Renderer {
     pub fn draw(&mut self, scene: &mut Scene) {
         scene.sort_and_batch();
         self.frame_count += 1;
+        self.frame_stats.frames += 1;
 
         // Shadow pass must come before the main pass so shadows appear
         // beneath all other content.
@@ -115,16 +133,24 @@ impl Renderer {
         self.draw_monochrome_sprites(scene);
         self.draw_polychrome_sprites(scene);
         self.draw_underlines(scene);
+
+        // Frosted-glass pass — software approximation via two quads per rect.
+        // A real implementation would execute a Gaussian-blur pre-pass here.
+        if !scene.frosted_rects.is_empty() {
+            self.draw_frosted_rects(&scene.frosted_rects.clone());
+        }
     }
 
     /// Shadow blur pass — renders each shadow to a temporary texture,
     /// applies a Gaussian blur, then composites onto the main surface.
-    fn draw_shadows(&mut self, _scene: &Scene) {
+    fn draw_shadows(&mut self, scene: &Scene) {
+        self.frame_stats.shadows_drawn += scene.shadows.len();
         // Real impl: dispatch wgpu compute pass for Gaussian blur.
     }
 
     /// Quad pipeline — instanced draw with one `QuadInstance` per quad.
-    fn draw_quads(&mut self, _scene: &Scene) {
+    fn draw_quads(&mut self, scene: &Scene) {
+        self.frame_stats.quads_drawn += scene.quads.len();
         // Real impl: upload QuadInstance array to vertex buffer, draw_indexed.
     }
 
@@ -147,6 +173,50 @@ impl Renderer {
     /// sine-wave modulation.
     fn draw_underlines(&mut self, _scene: &Scene) {
         // Real impl: upload underline instance data, draw_indexed.
+    }
+
+    /// Frosted-glass software approximation pass.
+    ///
+    /// Each `FrostedRect` is decomposed into two `QuadInstance`s:
+    /// 1. **Background quad** — neutral grey fill at `bg_alpha` opacity,
+    ///    representing the blurred-background tint.
+    /// 2. **Border quad** — white border at `border_alpha` opacity, representing
+    ///    the highlight rim of the frosted surface.
+    ///
+    /// A real GPU implementation would run a two-pass Gaussian blur over the
+    /// captured framebuffer region before compositing; that is left as a future
+    /// extension in the `Reserved6` pipeline slot.
+    pub fn draw_frosted_rects(&mut self, rects: &[FrostedRect]) -> Vec<QuadInstance> {
+        self.frame_stats.frosted_drawn += rects.len();
+        let mut quads = Vec::with_capacity(rects.len() * 2);
+        for rect in rects {
+            let bounds = [
+                rect.bounds.origin.x.0,
+                rect.bounds.origin.y.0,
+                rect.bounds.size.width.0,
+                rect.bounds.size.height.0,
+            ];
+
+            // Background quad: neutral mid-grey at bg_alpha opacity.
+            quads.push(QuadInstance {
+                bounds,
+                bg_color: [0.5, 0.5, 0.5, rect.bg_alpha],
+                border_color: [0.0, 0.0, 0.0, 0.0],
+                border_widths: [0.0; 4],
+                corner_radii: [0.0; 4],
+            });
+
+            // Border quad: white highlight rim at border_alpha opacity.
+            quads.push(QuadInstance {
+                bounds,
+                bg_color: [0.0, 0.0, 0.0, 0.0],
+                border_color: [1.0, 1.0, 1.0, rect.border_alpha],
+                border_widths: [1.0; 4],
+                corner_radii: [0.0; 4],
+            });
+        }
+        // Real impl: upload `quads` to the quad vertex buffer, draw_indexed.
+        quads
     }
 }
 
@@ -355,5 +425,126 @@ mod tests {
         let r = Renderer::new();
         assert_eq!(r.pipeline_count, 8);
         assert_eq!(r.frame_count, 0);
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rects_processes_all() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+
+        let make_rect = |x: f32| FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(x), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+            },
+            blur_radius: 8.0,
+            bg_alpha: 0.6,
+            border_alpha: 0.4,
+        };
+
+        scene.push_frosted_rect(make_rect(0.0));
+        scene.push_frosted_rect(make_rect(110.0));
+        scene.push_frosted_rect(make_rect(220.0));
+
+        // Must not panic; frame_count must advance.
+        renderer.draw(&mut scene);
+        assert_eq!(renderer.frame_count, 1);
+    }
+
+    #[test]
+    fn renderer_frosted_rect_decomposed_to_quads() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
+                size: Size { width: Pixels(200.0), height: Pixels(80.0) },
+            },
+            blur_radius: 12.0,
+            bg_alpha: 0.7,
+            border_alpha: 0.3,
+        };
+
+        let quads = renderer.draw_frosted_rects(&[rect]);
+
+        // Each FrostedRect must produce exactly 2 QuadInstances.
+        assert_eq!(quads.len(), 2, "expected 2 quads (bg + border) per frosted rect");
+
+        // Background quad: non-zero bg_alpha, zero border alpha.
+        let bg = &quads[0];
+        assert!(
+            (bg.bg_color[3] - 0.7).abs() < 1e-6,
+            "bg quad alpha should equal bg_alpha (0.7), got {}",
+            bg.bg_color[3]
+        );
+        assert!(
+            (bg.border_color[3] - 0.0).abs() < 1e-6,
+            "bg quad border_color alpha should be 0"
+        );
+
+        // Border quad: zero bg alpha, non-zero border_alpha.
+        let border = &quads[1];
+        assert!(
+            (border.border_color[3] - 0.3).abs() < 1e-6,
+            "border quad alpha should equal border_alpha (0.3), got {}",
+            border.border_color[3]
+        );
+        assert!(
+            (border.bg_color[3] - 0.0).abs() < 1e-6,
+            "border quad bg_color alpha should be 0"
+        );
+
+        // Bounds must be forwarded correctly to both quads.
+        assert_eq!(bg.bounds, [10.0, 20.0, 200.0, 80.0]);
+        assert_eq!(border.bounds, [10.0, 20.0, 200.0, 80.0]);
+    }
+
+    #[test]
+    fn renderer_stats_count_draws() {
+        use crate::scene::{FrostedRect, Shadow};
+        use crate::types::{Bounds, Pixels, Point, Size};
+        use crate::scene::Quad;
+
+        let mut renderer = Renderer::new();
+        assert_eq!(renderer.stats().frames, 0);
+        assert_eq!(renderer.stats().quads_drawn, 0);
+        assert_eq!(renderer.stats().shadows_drawn, 0);
+        assert_eq!(renderer.stats().frosted_drawn, 0);
+
+        let mut scene = Scene::new();
+
+        // Push 2 quads, 1 shadow, 1 frosted rect.
+        scene.push_quad(Quad::default());
+        scene.push_quad(Quad::default());
+        scene.push_shadow(Shadow::default());
+        scene.push_frosted_rect(FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+            },
+            blur_radius: 4.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.3,
+        });
+
+        renderer.draw(&mut scene);
+
+        assert_eq!(renderer.stats().frames, 1, "one frame rendered");
+        assert_eq!(renderer.stats().quads_drawn, 2, "two quads counted");
+        assert_eq!(renderer.stats().shadows_drawn, 1, "one shadow counted");
+        assert_eq!(renderer.stats().frosted_drawn, 1, "one frosted rect counted");
+
+        // Second draw with empty scene — counters accumulate.
+        let mut scene2 = Scene::new();
+        scene2.push_quad(Quad::default());
+        renderer.draw(&mut scene2);
+
+        assert_eq!(renderer.stats().frames, 2, "two frames after second draw");
+        assert_eq!(renderer.stats().quads_drawn, 3, "cumulative quads: 2 + 1");
     }
 }

@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `f0ca908` | **Tests:** 581 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `0949124` | **Tests:** 638 | **Workspace:** clean
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -16,11 +16,12 @@
 - [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
 - [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
-**Wave Q committed f0ca908 (581 tests). Remaining open (WAVE R targets):**
-- NI1-REAPPLY — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
-- SH1 — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
-- Coverage: nom-telemetry, nom-collab, nom-cli, nom-lint all under 15 tests — need expansion
-- Backend completeness: verify all 16 nom-compose backends have domain models + tests
+**Wave R committed 0949124 (638 tests). Remaining open (WAVE S targets):**
+- 5 missing panels: command_palette.rs, toolbar.rs, statusbar.rs, properties.rs, library.rs
+- 10 missing compose backends: mesh, storyboard, native_screen, mobile_screen, presentation, app_bundle, ad_creative, data_extract, data_frame, data_query
+- FrostedRect renderer wiring into Renderer::draw()
+- nom-editor hints.rs inlay hints module
+- Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -51,6 +52,7 @@
 | [x] O Infra+LSP | ✅ | e61a93c — cancel/cache/LSP/sandbox/web_screen (537 tests) |
 | [x] P Bug fixes | ✅ | 15a8366 — E2+11 fixes+MEDIUMs (558 tests) |
 | [x] Q Quality | ✅ | f0ca908 — SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence (581 tests) |
+| [x] R Coverage | ✅ | 0949124 — NI1+SipHash13+coverage+57 (638 tests) |
 
 ### Integrity Grep
 
@@ -61,20 +63,34 @@
 | `RgaPos`/`tombstoned` in nom-collab | 28 | ≥1 |
 | `RenderPrimitive` custom enum | 0 | 0 |
 
-## Open Missions (Wave R targets)
+## Open Missions (Wave S targets)
 
-### HIGH
+### HIGH — Missing panels
 
-- [ ] **NI1-REAPPLY** — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
+- [ ] **PANEL-CMD** — command_palette.rs missing from spec (panels group)
+- [ ] **PANEL-TB** — toolbar.rs missing from spec (panels group)
+- [ ] **PANEL-SB** — statusbar.rs missing from spec (panels group)
+- [ ] **PANEL-PROPS** — properties.rs missing from spec (panels group)
+- [ ] **PANEL-LIB** — library.rs missing from spec (panels group)
+
+### HIGH — Missing compose backends
+
+- [ ] **BE-MESH** — mesh backend missing domain model + tests
+- [ ] **BE-STORYBOARD** — storyboard backend missing domain model + tests
+- [ ] **BE-NATIVE-SCREEN** — native_screen backend missing domain model + tests
+- [ ] **BE-MOBILE-SCREEN** — mobile_screen backend missing domain model + tests
+- [ ] **BE-PRESENTATION** — presentation backend missing domain model + tests
+- [ ] **BE-APP-BUNDLE** — app_bundle backend missing domain model + tests
+- [ ] **BE-AD-CREATIVE** — ad_creative backend missing domain model + tests
+- [ ] **BE-DATA-EXTRACT** — data_extract backend missing domain model + tests
+- [ ] **BE-DATA-FRAME** — data_frame backend missing domain model + tests
+- [ ] **BE-DATA-QUERY** — data_query backend missing domain model + tests
 
 ### MEDIUM
 
-- [ ] **SH1** — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
-- [ ] **COV-TELEMETRY** — nom-telemetry under 15 tests; expand coverage
-- [ ] **COV-COLLAB** — nom-collab under 15 tests; expand coverage
-- [ ] **COV-CLI** — nom-cli under 15 tests; expand coverage
-- [ ] **COV-LINT** — nom-lint under 15 tests; expand coverage
-- [ ] **BE-AUDIT** — verify all 16 nom-compose backends have domain models + tests
+- [ ] **FROSTED-RENDERER** — FrostedRect wired into Renderer::draw()
+- [ ] **HINTS** — nom-editor hints.rs inlay hints module
+- [ ] **RENDERER-INFRA** — Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
 
 ## Non-Negotiable Rules
 
@@ -201,6 +217,14 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] CB1: compiler-bridge score.rs adapter dead-code stubs replaced with real implementation
 - [x] E1: panels paint_scene divergence from impl Element documented; trait bindings added
 - [x] rag-confidence: graph_rag edge-confidence weights (Refly-pattern per-edge scoring)
+
+### [x] Wave R — Coverage (commit `0949124`, 638 tests)
+- [x] NI1-REAPPLY: nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses re-landed (5→10 tests)
+- [x] SH1: nom-memoize hash.rs FNV-1a replaced with SipHash13
+- [x] COV-TELEMETRY: nom-telemetry coverage expanded to ≥15 tests
+- [x] COV-COLLAB: nom-collab coverage expanded to ≥15 tests
+- [x] COV-CLI: nom-cli coverage expanded to ≥15 tests
+- [x] COV-LINT: nom-lint coverage expanded to ≥15 tests
 
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 

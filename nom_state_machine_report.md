@@ -1,13 +1,13 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `f0ca908` | **Tests:** 581 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `0949124` | **Tests:** 638 | **Workspace:** clean
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
-- [x] 581 tests passing across workspace
+- [x] 638 tests passing across workspace
 - [x] All 4 Wave K CRITICALs closed (U1 paint_scene + W1 real ReAct + COL1 RGA + INT1 imports)
 - [x] All 4 Wave L MEDIUMs claimed closed (deep_think config + W3C + RRF + impl Element)
 - [x] Wave M infra landed (sealed + 3-tier + 4-tier cache + dispatch/plan/task_queue)
@@ -15,16 +15,35 @@
 - [x] Wave O landed (CompilerLspProvider + cancel + cache-promotion + sandbox wiring + web_screen — 537 tests)
 - [x] Wave P landed (E2 CRITICAL + 10 HIGH/MEDIUM + MEDIUMs — 558 tests, commit 15a8366)
 - [x] Wave Q landed (SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence — 581 tests, commit f0ca908)
+- [x] Wave R landed (NI1+SipHash13+coverage+57 — 638 tests, commit 0949124)
 
-## Open Missions (Wave R)
+## Open Missions (Wave S)
 
-- [ ] NI1-REAPPLY HIGH — nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses lost from Wave P commit; re-land (5→10 tests)
-- [ ] SH1 MEDIUM — nom-memoize hash.rs still uses FNV-1a; TODO says replace with SipHash13
-- [ ] COV-TELEMETRY MEDIUM — nom-telemetry under 15 tests; expand coverage
-- [ ] COV-COLLAB MEDIUM — nom-collab under 15 tests; expand coverage
-- [ ] COV-CLI MEDIUM — nom-cli under 15 tests; expand coverage
-- [ ] COV-LINT MEDIUM — nom-lint under 15 tests; expand coverage
-- [ ] BE-AUDIT MEDIUM — verify all 16 nom-compose backends have domain models + tests
+- [ ] PANEL-CMD HIGH — command_palette.rs missing from spec
+- [ ] PANEL-TB HIGH — toolbar.rs missing from spec
+- [ ] PANEL-SB HIGH — statusbar.rs missing from spec
+- [ ] PANEL-PROPS HIGH — properties.rs missing from spec
+- [ ] PANEL-LIB HIGH — library.rs missing from spec
+- [ ] BE-MESH HIGH — mesh backend missing domain model + tests
+- [ ] BE-STORYBOARD HIGH — storyboard backend missing domain model + tests
+- [ ] BE-NATIVE-SCREEN HIGH — native_screen backend missing domain model + tests
+- [ ] BE-MOBILE-SCREEN HIGH — mobile_screen backend missing domain model + tests
+- [ ] BE-PRESENTATION HIGH — presentation backend missing domain model + tests
+- [ ] BE-APP-BUNDLE HIGH — app_bundle backend missing domain model + tests
+- [ ] BE-AD-CREATIVE HIGH — ad_creative backend missing domain model + tests
+- [ ] BE-DATA-EXTRACT HIGH — data_extract backend missing domain model + tests
+- [ ] BE-DATA-FRAME HIGH — data_frame backend missing domain model + tests
+- [ ] BE-DATA-QUERY HIGH — data_query backend missing domain model + tests
+- [ ] FROSTED-RENDERER MEDIUM — FrostedRect wired into Renderer::draw()
+- [ ] HINTS MEDIUM — nom-editor hints.rs inlay hints module
+- [ ] RENDERER-INFRA MEDIUM — Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+
+## Iteration 47 — Wave R committed (2026-04-18, commit `0949124`)
+
+- Committed: NI1-REAPPLY (nom-intent ScoredHypothesis/InterruptSignal/rank_hypotheses re-landed) + SH1 (SipHash13 replacing FNV-1a in nom-memoize) + COV-TELEMETRY/COLLAB/CLI/LINT coverage expansions (all ≥15 tests each)
+- Tests: 638 (+57 vs Wave Q baseline of 581)
+- Closed: NI1-REAPPLY HIGH + SH1 MEDIUM + 4× coverage MEDIUMs
+- Open: Wave S targets — 5 missing panels + 10 missing compose backends + FrostedRect renderer wiring + hints.rs + Renderer infra
 
 ## Iteration 46 — Wave Q committed (2026-04-18, commit `f0ca908`)
 
@@ -126,6 +145,7 @@
 
 | Commit | Wave |
 |---|---|
+| `0949124` | Wave R Coverage |
 | `f0ca908` | Wave Q Quality |
 | `15a8366` | Wave P Bug fixes+MEDIUMs |
 | `e61a93c` | Wave O Infra+LSP |

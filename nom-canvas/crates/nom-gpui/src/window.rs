@@ -24,6 +24,49 @@ impl Default for WindowOptions {
     }
 }
 
+/// Builder for `Window` — fluent API for configuring window properties.
+pub struct WindowBuilder {
+    title: String,
+    width: f32,
+    height: f32,
+    resizable: bool,
+}
+
+impl WindowBuilder {
+    pub fn new(title: impl Into<String>) -> Self {
+        Self {
+            title: title.into(),
+            width: 1280.0,
+            height: 800.0,
+            resizable: true,
+        }
+    }
+
+    pub fn width(mut self, w: f32) -> Self {
+        self.width = w;
+        self
+    }
+
+    pub fn height(mut self, h: f32) -> Self {
+        self.height = h;
+        self
+    }
+
+    pub fn resizable(mut self) -> Self {
+        self.resizable = true;
+        self
+    }
+
+    pub fn build(self) -> Window {
+        Window::new(WindowOptions {
+            title: self.title,
+            size: Vec2::new(self.width, self.height),
+            resizable: self.resizable,
+            ..WindowOptions::default()
+        })
+    }
+}
+
 /// Application handler callbacks — winit ApplicationHandler pattern
 pub trait ApplicationHandler {
     fn resumed(&mut self, window: &mut Window);
@@ -159,5 +202,19 @@ mod tests {
         assert!(!w.is_focused);
         assert_eq!(w.cursor_position, Vec2::zero());
         assert_eq!(w.scale_factor, 1.0);
+    }
+
+    #[test]
+    fn window_builder_creates_window_with_options() {
+        let w = WindowBuilder::new("test-window")
+            .width(1920.0)
+            .height(1080.0)
+            .resizable()
+            .build();
+
+        assert_eq!(w.options.title, "test-window");
+        assert_eq!(w.options.size, Vec2::new(1920.0, 1080.0));
+        assert_eq!(w.content_size, Vec2::new(1920.0, 1080.0));
+        assert!(w.options.resizable);
     }
 }

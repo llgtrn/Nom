@@ -2,6 +2,37 @@ use crate::types::*;
 use crate::styled::{StyleRefinement, Styled};
 
 // ---------------------------------------------------------------------------
+// LayoutRegistry — hands out unique, incrementing LayoutIds
+// ---------------------------------------------------------------------------
+
+/// Registry that issues unique `LayoutId`s.
+///
+/// Each call to `next_id` returns a monotonically increasing ID. This ensures
+/// that different elements receive different IDs even in the stub (no-taffy)
+/// implementation.
+pub struct LayoutRegistry {
+    next: u64,
+}
+
+impl LayoutRegistry {
+    pub fn new() -> Self {
+        Self { next: 1 }
+    }
+
+    pub fn next_id(&mut self) -> LayoutId {
+        let id = LayoutId(self.next);
+        self.next += 1;
+        id
+    }
+}
+
+impl Default for LayoutRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---------------------------------------------------------------------------
 // WindowContext
 // ---------------------------------------------------------------------------
 
@@ -9,23 +40,25 @@ use crate::styled::{StyleRefinement, Styled};
 pub struct WindowContext {
     pub scale_factor: f32,
     pub viewport_size: Vec2,
+    layout_registry: LayoutRegistry,
     // In a real impl: reference to window + app state
 }
 
 impl WindowContext {
     pub fn new(scale_factor: f32, viewport_size: Vec2) -> Self {
-        Self { scale_factor, viewport_size }
+        Self { scale_factor, viewport_size, layout_registry: LayoutRegistry::new() }
     }
 
     pub fn rem_size(&self) -> Pixels { Pixels(16.0 * self.scale_factor) }
 
     /// Delegates to taffy via the layout engine (stub implementation).
+    /// Returns a unique, non-zero `LayoutId` per call.
     pub fn request_layout(
         &mut self,
         _style: &StyleRefinement,
         _children: &[LayoutId],
     ) -> LayoutId {
-        LayoutId(0)
+        self.layout_registry.next_id()
     }
 
     pub fn layout(&self, _id: LayoutId) -> Bounds<Pixels> {
@@ -235,13 +268,35 @@ mod tests {
         let mut div = Div::new();
         let mut cx = make_cx();
         let (id, _state) = Element::request_layout(&mut div, None, &mut cx);
-        // Stub returns LayoutId(0)
-        let _ = id;
+        // Registry starts at 1, so first id must be non-zero.
+        assert_ne!(id, LayoutId(0), "layout id must be non-zero");
     }
 
     #[test]
     fn window_context_rem_size_scales_with_dpi() {
         let cx = WindowContext::new(2.0, Vec2::new(800.0, 600.0));
         assert_eq!(cx.rem_size(), Pixels(32.0));
+    }
+
+    #[test]
+    fn layout_ids_are_unique() {
+        let mut cx = make_cx();
+        let style = crate::styled::StyleRefinement::default();
+
+        let id1 = cx.request_layout(&style, &[]);
+        let id2 = cx.request_layout(&style, &[]);
+        let id3 = cx.request_layout(&style, &[]);
+
+        assert_ne!(id1, id2, "id1 and id2 must differ");
+        assert_ne!(id2, id3, "id2 and id3 must differ");
+        assert_ne!(id1, id3, "id1 and id3 must differ");
+    }
+
+    #[test]
+    fn layout_registry_starts_at_one() {
+        let mut registry = LayoutRegistry::new();
+        assert_eq!(registry.next_id(), LayoutId(1));
+        assert_eq!(registry.next_id(), LayoutId(2));
+        assert_eq!(registry.next_id(), LayoutId(3));
     }
 }
