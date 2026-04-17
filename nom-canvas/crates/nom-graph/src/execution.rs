@@ -2,7 +2,7 @@
 use std::collections::HashMap;
 use crate::node::{ExecNode, NodeId, IsChanged};
 use crate::dag::Dag;
-use crate::cache::ExecutionCache;
+use crate::cache::{ExecutionCache, ChangedFlags};
 
 /// Result of executing a single node
 #[derive(Clone, Debug)]
@@ -16,11 +16,13 @@ pub struct NodeOutput {
 /// Execution engine: runs a DAG in topological order with caching
 pub struct ExecutionEngine {
     pub cache: Box<dyn ExecutionCache>,
+    /// Per-node IS_CHANGED flags — nodes marked clean can be skipped when cache is warm.
+    pub changed_flags: ChangedFlags,
 }
 
 impl ExecutionEngine {
     pub fn new(cache: impl ExecutionCache + 'static) -> Self {
-        Self { cache: Box::new(cache) }
+        Self { cache: Box::new(cache), changed_flags: ChangedFlags::default() }
     }
 
     /// Compute a SipHash-like key from node kind + serialized inputs
@@ -32,8 +34,17 @@ impl ExecutionEngine {
         kind_hash ^ input_hash
     }
 
-    /// Check if a node should re-execute based on IS_CHANGED hierarchy
+    /// Check if a node should re-execute based on IS_CHANGED hierarchy.
+    /// Also respects ChangedFlags: nodes explicitly marked clean are skipped
+    /// when a cached result exists (Classic-style gating).
     pub fn should_execute(&self, node: &ExecNode, input_hash: u64) -> bool {
+        // If node is explicitly flagged as clean, honour that and skip it.
+        if !self.changed_flags.is_changed(&node.id) {
+            let key = Self::compute_cache_key(&node.kind, input_hash);
+            if self.cache.get(key).is_some() {
+                return false;
+            }
+        }
         match node.is_changed {
             IsChanged::Always => true,
             IsChanged::Never => false,

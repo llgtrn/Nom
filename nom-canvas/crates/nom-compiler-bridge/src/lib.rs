@@ -8,6 +8,9 @@ pub mod adapters;
 
 pub use shared::{SharedState, PipelineOutput, GrammarKind};
 pub use sqlite_dict::SqliteDictReader;
+pub use ui_tier::UiTierOps;
+pub use interactive_tier::InteractiveTierOps;
+pub use background_tier::BackgroundTierOps;
 
 /// Bridge state — central coordinator for all nom-compiler access from nom-canvas
 pub struct BridgeState {
@@ -26,6 +29,18 @@ impl BridgeState {
         return SqliteDictReader::new(self.shared.clone());
         #[cfg(not(feature = "compiler"))]
         return SqliteDictReader::new_stub();
+    }
+
+    pub fn ui_tier(&self) -> UiTierOps<'_> {
+        UiTierOps::new(&self.shared)
+    }
+
+    pub fn interactive_tier(&self) -> InteractiveTierOps<'_> {
+        InteractiveTierOps::new(&self.shared)
+    }
+
+    pub fn background_tier(&self) -> BackgroundTierOps {
+        BackgroundTierOps::new(self.shared.clone())
     }
 }
 

@@ -92,6 +92,32 @@ impl Default for BackgroundTier {
     }
 }
 
+/// BackgroundTierOps — Arc-owned accessor for background-tier operations (>100ms, may block)
+pub struct BackgroundTierOps {
+    shared: Arc<SharedState>,
+}
+
+impl BackgroundTierOps {
+    pub fn new(shared: Arc<SharedState>) -> Self {
+        Self { shared }
+    }
+
+    /// Plan pipeline steps from a source string — returns non-empty lines as steps
+    pub fn plan_pipeline(&self, source: &str) -> Vec<String> {
+        source
+            .lines()
+            .filter(|l| !l.trim().is_empty())
+            .map(|l| l.to_string())
+            .collect()
+    }
+
+    /// Submit a compile job and return the result synchronously (blocks)
+    pub fn compile_sync(&self, source: &str) -> Result<PipelineOutput, String> {
+        let worker = BackgroundWorker::new(self.shared.clone());
+        worker.do_compile(source, &CompileOpts::full())
+    }
+}
+
 /// Worker that processes background jobs (runs on a thread pool)
 pub struct BackgroundWorker {
     state: Arc<SharedState>,
@@ -128,7 +154,7 @@ impl BackgroundWorker {
         }
     }
 
-    fn do_compile(&self, source: &str, opts: &CompileOpts) -> Result<PipelineOutput, String> {
+    pub(crate) fn do_compile(&self, source: &str, opts: &CompileOpts) -> Result<PipelineOutput, String> {
         let version = self.state.grammar_version();
         let cache_key = SharedState::compile_cache_key(source, version);
 
@@ -250,5 +276,23 @@ mod tests {
         worker.do_deep_think("test", &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
         assert!(events.is_empty(), "interrupted before any events");
+    }
+
+    #[test]
+    fn background_tier_ops_plan_pipeline() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let ops = BackgroundTierOps::new(state);
+        let steps = ops.plan_pipeline("define x\n\nthat is 42\nresult");
+        assert_eq!(steps, vec!["define x", "that is 42", "result"]);
+    }
+
+    #[test]
+    fn background_tier_ops_compile_sync() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let ops = BackgroundTierOps::new(state);
+        let result = ops.compile_sync("define x that is 42");
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        assert!(output.output_json.contains("stub") || output.output_json.contains("source"));
     }
 }

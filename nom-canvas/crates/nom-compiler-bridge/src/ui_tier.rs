@@ -139,6 +139,40 @@ impl UiTier {
     pub fn compile_status(&self, _word: &str, _kind: &str) -> CompileStatus { CompileStatus::NotChecked }
 }
 
+/// UiTierOps — borrowed accessor for UI-tier operations (<1ms, sync)
+pub struct UiTierOps<'a> {
+    shared: &'a SharedState,
+}
+
+impl<'a> UiTierOps<'a> {
+    pub fn new(shared: &'a SharedState) -> Self {
+        Self { shared }
+    }
+
+    /// Check if a kind name is known in the grammar cache
+    pub fn is_known_kind(&self, kind: &str) -> bool {
+        let kinds = self.shared.cached_grammar_kinds();
+        !kinds.is_empty() && kinds.iter().any(|k| k.name == kind)
+    }
+
+    /// Resolve a synonym by checking grammar kinds for a matching name
+    pub fn resolve_synonym(&self, word: &str) -> Option<String> {
+        self.shared.cached_grammar_kinds()
+            .into_iter()
+            .find(|k| k.name == word)
+            .map(|k| k.name)
+    }
+
+    /// Score an atom — delegates to UiTier stub (0.5 without compiler feature)
+    pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
+        let tier = UiTier::new(Arc::new(SharedState::new(
+            &self.shared.dict_path,
+            &self.shared.grammar_path,
+        )));
+        tier.score_atom(word, kind)
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -162,5 +196,27 @@ mod tests {
         ]);
         let keywords = tier.grammar_keywords();
         assert_eq!(keywords, vec!["verb"]);
+    }
+
+    #[test]
+    fn ui_tier_ops_is_known_kind() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "verb".into(), description: "action".into() },
+        ]);
+        let ops = UiTierOps::new(&state);
+        assert!(ops.is_known_kind("verb"));
+        assert!(!ops.is_known_kind("noun"));
+    }
+
+    #[test]
+    fn ui_tier_ops_resolve_synonym() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "concept".into(), description: "abstract idea".into() },
+        ]);
+        let ops = UiTierOps::new(&state);
+        assert_eq!(ops.resolve_synonym("concept"), Some("concept".to_string()));
+        assert_eq!(ops.resolve_synonym("unknown"), None);
     }
 }

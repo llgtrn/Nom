@@ -1,5 +1,13 @@
 #![deny(unsafe_code)]
 
+// ---------------------------------------------------------------------------
+// Sealed supertrait (yara-x pattern) — prevents external implementations.
+// ---------------------------------------------------------------------------
+
+mod private {
+    pub trait Sealed {}
+}
+
 /// Severity level for a lint diagnostic.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum LintLevel {
@@ -9,17 +17,23 @@ pub enum LintLevel {
 }
 
 /// A single lint finding produced by a rule.
+///
+/// `line` is the 1-based line number within the file.
+/// `span` is the column range within that line (0-based, byte offsets).
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct LintDiagnostic {
-    pub message: String,
-    pub span_start: usize,
-    pub span_end: usize,
     pub level: LintLevel,
+    pub message: String,
+    pub line: u32,
+    pub span: std::ops::Range<u32>,
 }
 
-/// A lint rule that inspects source text and returns diagnostics.
-pub trait LintRule {
-    fn check(&self, source: &str) -> Vec<LintDiagnostic>;
+/// A lint rule that inspects one line at a time and returns a diagnostic.
+///
+/// This trait is sealed — it cannot be implemented outside of `nom-lint`.
+pub trait LintRule: private::Sealed {
+    fn name(&self) -> &'static str;
+    fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic>;
 }
 
 // ---------------------------------------------------------------------------
@@ -29,31 +43,25 @@ pub trait LintRule {
 /// Flags lines that end with one or more space or tab characters.
 pub struct TrailingWhitespaceRule;
 
+impl private::Sealed for TrailingWhitespaceRule {}
+
 impl LintRule for TrailingWhitespaceRule {
-    fn check(&self, source: &str) -> Vec<LintDiagnostic> {
-        let mut diagnostics = Vec::new();
-        let mut offset = 0usize;
+    fn name(&self) -> &'static str {
+        "trailing-whitespace"
+    }
 
-        for line in source.split('\n') {
-            let line_end = offset + line.len();
-
-            // Detect trailing whitespace (spaces or tabs before end of line).
-            let trimmed_len = line.trim_end_matches(|c| c == ' ' || c == '\t').len();
-            if trimmed_len < line.len() {
-                let span_start = offset + trimmed_len;
-                diagnostics.push(LintDiagnostic {
-                    message: "trailing whitespace".to_string(),
-                    span_start,
-                    span_end: line_end,
-                    level: LintLevel::Warning,
-                });
-            }
-
-            // +1 for the '\n' separator (except possibly the last line).
-            offset = line_end + 1;
+    fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+        let trimmed_len = line.trim_end_matches(|c| c == ' ' || c == '\t').len();
+        if trimmed_len < line.len() {
+            Some(LintDiagnostic {
+                level: LintLevel::Warning,
+                message: "trailing whitespace".to_string(),
+                line: line_num,
+                span: trimmed_len as u32..line.len() as u32,
+            })
+        } else {
+            None
         }
-
-        diagnostics
     }
 }
 
@@ -75,55 +83,52 @@ impl Default for LineTooLongRule {
     }
 }
 
+impl private::Sealed for LineTooLongRule {}
+
 impl LintRule for LineTooLongRule {
-    fn check(&self, source: &str) -> Vec<LintDiagnostic> {
-        let mut diagnostics = Vec::new();
-        let mut offset = 0usize;
+    fn name(&self) -> &'static str {
+        "line-too-long"
+    }
 
-        for line in source.split('\n') {
-            let line_len = line.len();
-            if line_len > self.max_len {
-                diagnostics.push(LintDiagnostic {
-                    message: format!(
-                        "line is {} characters, exceeds maximum of {}",
-                        line_len, self.max_len
-                    ),
-                    span_start: offset,
-                    span_end: offset + line_len,
-                    level: LintLevel::Warning,
-                });
-            }
-            offset += line_len + 1;
+    fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+        let line_len = line.len();
+        if line_len > self.max_len {
+            Some(LintDiagnostic {
+                level: LintLevel::Warning,
+                message: format!(
+                    "line is {} characters, exceeds maximum of {}",
+                    line_len, self.max_len
+                ),
+                line: line_num,
+                span: 0..line_len as u32,
+            })
+        } else {
+            None
         }
-
-        diagnostics
     }
 }
 
 /// Flags occurrences of `{}` — braces with nothing between them.
 pub struct EmptyBlockRule;
 
+impl private::Sealed for EmptyBlockRule {}
+
 impl LintRule for EmptyBlockRule {
-    fn check(&self, source: &str) -> Vec<LintDiagnostic> {
-        let mut diagnostics = Vec::new();
-        let bytes = source.as_bytes();
-        let mut i = 0usize;
+    fn name(&self) -> &'static str {
+        "empty-block"
+    }
 
-        while i + 1 < bytes.len() {
-            if bytes[i] == b'{' && bytes[i + 1] == b'}' {
-                diagnostics.push(LintDiagnostic {
-                    message: "empty block `{}`".to_string(),
-                    span_start: i,
-                    span_end: i + 2,
-                    level: LintLevel::Warning,
-                });
-                i += 2;
-            } else {
-                i += 1;
-            }
+    fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+        if let Some(col) = line.find("{}") {
+            Some(LintDiagnostic {
+                level: LintLevel::Warning,
+                message: "empty block `{}`".to_string(),
+                line: line_num,
+                span: col as u32..(col + 2) as u32,
+            })
+        } else {
+            None
         }
-
-        diagnostics
     }
 }
 
@@ -147,12 +152,28 @@ impl LintRunner {
         self.rules.push(Box::new(rule));
     }
 
-    /// Run all registered rules against `source` and return the combined diagnostics.
-    pub fn run(&self, source: &str) -> Vec<LintDiagnostic> {
+    /// Run all registered rules against a single `line` (1-based `line_num`).
+    pub fn check_line(&self, line: &str, line_num: u32) -> Vec<LintDiagnostic> {
         self.rules
             .iter()
-            .flat_map(|rule| rule.check(source))
+            .filter_map(|r| r.check(line, line_num))
             .collect()
+    }
+
+    /// Run all registered rules against every line of `source`.
+    pub fn check_file(&self, source: &str) -> Vec<LintDiagnostic> {
+        source
+            .lines()
+            .enumerate()
+            .flat_map(|(i, line)| self.check_line(line, i as u32 + 1))
+            .collect()
+    }
+
+    /// Run all registered rules against `source` and return the combined diagnostics.
+    ///
+    /// Equivalent to `check_file`.
+    pub fn run(&self, source: &str) -> Vec<LintDiagnostic> {
+        self.check_file(source)
     }
 }
 
@@ -170,46 +191,72 @@ impl Default for LintRunner {
 mod tests {
     use super::*;
 
+    // --- TrailingWhitespaceRule ---
+
     #[test]
     fn trailing_whitespace_detected() {
-        let source = "fn foo() {   \n    let x = 1;\n}";
-        let diags = TrailingWhitespaceRule.check(source);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].level, LintLevel::Warning);
-        assert!(diags[0].message.contains("trailing whitespace"));
-        // span_start should point to the first trailing space on line 0.
-        // Line 0 is "fn foo() {   " — 13 chars; trailing spaces start at index 10.
-        assert_eq!(diags[0].span_start, 10);
-        assert_eq!(diags[0].span_end, 13);
+        // "fn foo() {   " — trailing spaces start at column 10.
+        let diag = TrailingWhitespaceRule
+            .check("fn foo() {   ", 1)
+            .expect("expected a diagnostic");
+        assert_eq!(diag.level, LintLevel::Warning);
+        assert!(diag.message.contains("trailing whitespace"));
+        assert_eq!(diag.line, 1);
+        assert_eq!(diag.span.start, 10);
+        assert_eq!(diag.span.end, 13);
     }
+
+    #[test]
+    fn trailing_whitespace_clean_line_no_diag() {
+        assert!(TrailingWhitespaceRule.check("fn foo() {}", 1).is_none());
+    }
+
+    // --- LineTooLongRule ---
 
     #[test]
     fn line_too_long_detected() {
         let long_line = "x".repeat(130);
-        let source = format!("short line\n{}\nanother short line", long_line);
         let rule = LineTooLongRule { max_len: 120 };
-        let diags = rule.check(&source);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].level, LintLevel::Warning);
-        assert!(diags[0].message.contains("130"));
-        assert!(diags[0].message.contains("120"));
+        let diag = rule.check(&long_line, 2).expect("expected a diagnostic");
+        assert_eq!(diag.level, LintLevel::Warning);
+        assert!(diag.message.contains("130"));
+        assert!(diag.message.contains("120"));
+        assert_eq!(diag.line, 2);
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 130);
     }
+
+    #[test]
+    fn line_within_limit_no_diag() {
+        let rule = LineTooLongRule { max_len: 120 };
+        assert!(rule.check("short", 1).is_none());
+    }
+
+    // --- EmptyBlockRule ---
 
     #[test]
     fn empty_block_detected() {
-        let source = "fn foo() {}\nfn bar() {\n    // not empty\n}";
-        let diags = EmptyBlockRule.check(source);
-        assert_eq!(diags.len(), 1);
-        assert_eq!(diags[0].level, LintLevel::Warning);
-        assert!(diags[0].message.contains("empty block"));
-        assert_eq!(diags[0].span_start, 9);
-        assert_eq!(diags[0].span_end, 11);
+        let diag = EmptyBlockRule
+            .check("fn foo() {}", 3)
+            .expect("expected a diagnostic");
+        assert_eq!(diag.level, LintLevel::Warning);
+        assert!(diag.message.contains("empty block"));
+        assert_eq!(diag.line, 3);
+        assert_eq!(diag.span.start, 9);
+        assert_eq!(diag.span.end, 11);
     }
 
     #[test]
+    fn non_empty_block_no_diag() {
+        assert!(EmptyBlockRule.check("fn bar() { x }", 1).is_none());
+    }
+
+    // --- LintRunner::run (single-pass) ---
+
+    #[test]
     fn lint_runner_combines_rules() {
-        // Source has: trailing whitespace on line 0, a long line, and an empty block.
         let long_line = "y".repeat(130);
+        // line 1: trailing whitespace, line 2: too long, line 3: empty block
         let source = format!("let x = 1;   \n{}\nfn empty() {{}}", long_line);
 
         let mut runner = LintRunner::new();
@@ -218,9 +265,74 @@ mod tests {
         runner.add_rule(EmptyBlockRule);
 
         let diags = runner.run(&source);
-        // Expect at least one diagnostic from each rule.
         assert!(diags.iter().any(|d| d.message.contains("trailing whitespace")));
         assert!(diags.iter().any(|d| d.message.contains("130")));
         assert!(diags.iter().any(|d| d.message.contains("empty block")));
+    }
+
+    // --- LintRunner::check_file (multi-line) ---
+
+    #[test]
+    fn check_file_assigns_correct_line_numbers() {
+        let source = "ok line\ntrailing   \nalso ok";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+
+        let diags = runner.check_file(source);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 2); // second line carries the trailing whitespace
+    }
+
+    #[test]
+    fn check_file_multiple_issues_across_lines() {
+        let long_line = "z".repeat(130);
+        let source = format!("good\n{}\nbad trailing   \ngood again", long_line);
+
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(TrailingWhitespaceRule);
+
+        let diags = runner.check_file(source.as_str());
+        // Line 2 triggers LineTooLong, line 3 triggers TrailingWhitespace.
+        assert!(diags.iter().any(|d| d.line == 2 && d.message.contains("130")));
+        assert!(diags.iter().any(|d| d.line == 3 && d.message.contains("trailing")));
+    }
+
+    #[test]
+    fn check_file_empty_source_no_diags() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        assert!(runner.check_file("").is_empty());
+    }
+
+    // --- span field sanity ---
+
+    #[test]
+    fn span_start_lte_end() {
+        let rules: Vec<Box<dyn LintRule>> = vec![
+            Box::new(TrailingWhitespaceRule),
+            Box::new(LineTooLongRule::new()),
+            Box::new(EmptyBlockRule),
+        ];
+        let lines = [
+            "fn foo() {   ",
+            &"x".repeat(130),
+            "fn bar() {}",
+        ];
+        for rule in &rules {
+            for (i, line) in lines.iter().enumerate() {
+                if let Some(diag) = rule.check(line, i as u32 + 1) {
+                    assert!(
+                        diag.span.start <= diag.span.end,
+                        "rule {} produced inverted span on line {:?}",
+                        rule.name(),
+                        line
+                    );
+                    assert!(diag.span.end > 0, "span.end should be > 0 for a real finding");
+                }
+            }
+        }
     }
 }

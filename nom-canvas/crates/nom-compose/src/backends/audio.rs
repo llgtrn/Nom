@@ -4,6 +4,22 @@ use nom_blocks::NomtuRef;
 use crate::store::ArtifactStore;
 use crate::progress::{ProgressSink, ComposeEvent};
 
+/// Audio composition spec.
+#[derive(Debug, Clone)]
+pub struct AudioSpec {
+    pub sample_rate: u32,
+    pub channels: u8,
+    pub duration_ms: u32,
+    pub codec: String,
+}
+
+impl AudioSpec {
+    /// Estimated bitrate in kbps: sample_rate * channels * 16-bit / 1000.
+    pub fn bitrate_kbps(&self) -> u32 {
+        (self.sample_rate * self.channels as u32 * 16) / 1000
+    }
+}
+
 pub struct AudioInput {
     pub entity: NomtuRef,
     pub pcm_samples: Vec<f32>,
@@ -16,23 +32,45 @@ pub struct AudioBackend;
 impl AudioBackend {
     pub fn compose(input: AudioInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> AudioBlock {
         sink.emit(ComposeEvent::Started { backend: "audio".into(), entity_id: input.entity.id.clone() });
-        // Serialize f32 samples to raw bytes (little-endian)
+
+        let sample_rate = input.sample_rate.max(1);
+        let duration_ms = ((input.pcm_samples.len() as u64) * 1000 / sample_rate as u64) as u32;
+
+        let spec = AudioSpec {
+            sample_rate,
+            channels: 1,
+            duration_ms,
+            codec: input.codec.clone(),
+        };
+
+        // Encode f32 PCM samples to little-endian bytes.
         let raw: Vec<u8> = input.pcm_samples.iter()
             .flat_map(|s| s.to_le_bytes())
             .collect();
+
         sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "encoding".into() });
-        let artifact_hash = store.write(&raw);
+
+        // Write spec metadata as JSON alongside the raw audio.
+        let spec_json = serde_json::json!({
+            "sample_rate": spec.sample_rate,
+            "channels": spec.channels,
+            "duration_ms": spec.duration_ms,
+            "codec": spec.codec,
+            "bitrate_kbps": spec.bitrate_kbps(),
+        });
+        let mut payload = spec_json.to_string().into_bytes();
+        payload.push(b'\0');
+        payload.extend_from_slice(&raw);
+
+        let artifact_hash = store.write(&payload);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        let duration_ms = if input.sample_rate > 0 {
-            (input.pcm_samples.len() as u64) * 1000 / input.sample_rate as u64
-        } else {
-            0
-        };
+
         sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+
         AudioBlock {
             entity: input.entity,
             artifact_hash,
-            duration_ms,
+            duration_ms: duration_ms as u64,
             codec: input.codec,
         }
     }
@@ -43,6 +81,27 @@ mod tests {
     use super::*;
     use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+
+    #[test]
+    fn audio_spec_bitrate_kbps() {
+        let spec = AudioSpec {
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: 3000,
+            codec: "pcm_f32le".into(),
+        };
+        // 44100 * 2 * 16 / 1000 = 1411 kbps
+        assert_eq!(spec.bitrate_kbps(), 1411);
+
+        let mono = AudioSpec {
+            sample_rate: 44100,
+            channels: 1,
+            duration_ms: 1000,
+            codec: "pcm_f32le".into(),
+        };
+        assert_eq!(mono.bitrate_kbps(), 705);
+    }
+
     #[test]
     fn audio_compose_basic() {
         let mut store = InMemoryStore::new();

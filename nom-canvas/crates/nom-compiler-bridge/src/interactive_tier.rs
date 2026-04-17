@@ -160,6 +160,35 @@ impl InteractiveWorker {
     }
 }
 
+/// InteractiveTierOps — borrowed accessor for interactive-tier operations (<100ms, sync)
+pub struct InteractiveTierOps<'a> {
+    shared: &'a SharedState,
+}
+
+impl<'a> InteractiveTierOps<'a> {
+    pub fn new(shared: &'a SharedState) -> Self {
+        Self { shared }
+    }
+
+    /// Tokenize a line into word tokens
+    pub fn tokenize_line(&self, line: &str) -> Vec<String> {
+        line.split_whitespace().map(|s| s.to_string()).collect()
+    }
+
+    /// Classify the kind for a token using the grammar cache
+    pub fn classify_kind(&self, token: &str) -> Option<String> {
+        self.shared.cached_grammar_kinds()
+            .into_iter()
+            .find(|k| k.name == token)
+            .map(|k| k.name)
+    }
+
+    /// Hover info for a word — returns a nomtu-prefixed description
+    pub fn hover_info(&self, word: &str) -> Option<String> {
+        Some(format!("nomtu: {word}"))
+    }
+}
+
 fn simple_tokenize_stub(source: &str) -> Vec<TokenSpan> {
     let mut spans = Vec::new();
     let mut offset = 0usize;
@@ -187,5 +216,21 @@ mod tests {
         assert_eq!(spans.len(), 2);
         assert_eq!(spans[0].text, "hello");
         assert_eq!(spans[1].text, "world");
+    }
+
+    #[test]
+    fn interactive_tier_ops_tokenize_line() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let tokens = ops.tokenize_line("define x that is 42");
+        assert_eq!(tokens, vec!["define", "x", "that", "is", "42"]);
+    }
+
+    #[test]
+    fn interactive_tier_ops_hover_info() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let info = ops.hover_info("run");
+        assert_eq!(info, Some("nomtu: run".to_string()));
     }
 }

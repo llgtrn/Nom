@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use std::collections::HashMap;
+use crate::node::NodeId;
 
 /// ComfyUI 4-tier cache hierarchy
 /// Tier 0: NullCache — no caching
@@ -145,6 +146,75 @@ impl ExecutionCache for HierarchicalCache {
     fn len(&self) -> usize { self.l1.len() }
 }
 
+/// 4-tier cache strategy — ComfyUI execution model pattern.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum CacheStrategy {
+    NoCache,
+    Lru { capacity: usize },
+    RamPressure { max_entries: usize },
+    Classic,  // IS_CHANGED-gated
+}
+
+/// IS_CHANGED flag per node — tracks whether node needs recomputation.
+#[derive(Debug, Default)]
+pub struct ChangedFlags {
+    flags: HashMap<NodeId, bool>,
+}
+
+impl ChangedFlags {
+    pub fn new() -> Self { Self::default() }
+    pub fn mark_changed(&mut self, id: NodeId) { self.flags.insert(id, true); }
+    pub fn mark_clean(&mut self, id: NodeId) { self.flags.insert(id, false); }
+    /// Nodes are changed by default (unknown == needs recompute).
+    pub fn is_changed(&self, id: &NodeId) -> bool { self.flags.get(id).copied().unwrap_or(true) }
+    pub fn changed_count(&self) -> usize { self.flags.values().filter(|&&v| v).count() }
+}
+
+/// Strategy-backed node-level result cache.
+pub struct NodeCache {
+    pub strategy: CacheStrategy,
+    entries: HashMap<NodeId, CachedValue>,
+    lru_order: Vec<NodeId>,
+}
+
+impl NodeCache {
+    pub fn new(strategy: CacheStrategy) -> Self {
+        Self { strategy, entries: HashMap::new(), lru_order: Vec::new() }
+    }
+
+    pub fn get(&mut self, id: &NodeId) -> Option<&CachedValue> {
+        if self.strategy == CacheStrategy::NoCache { return None; }
+        if self.entries.contains_key(id) {
+            self.lru_order.retain(|x| x != id);
+            self.lru_order.push(id.clone());
+        }
+        self.entries.get(id)
+    }
+
+    pub fn put(&mut self, id: NodeId, output: CachedValue) {
+        if self.strategy == CacheStrategy::NoCache { return; }
+        if let CacheStrategy::Lru { capacity } = self.strategy {
+            if self.entries.len() >= capacity && !self.entries.contains_key(&id) {
+                if let Some(oldest) = self.lru_order.first().cloned() {
+                    self.entries.remove(&oldest);
+                    self.lru_order.remove(0);
+                }
+            }
+        }
+        self.lru_order.retain(|x| x != &id);
+        self.lru_order.push(id.clone());
+        self.entries.insert(id, output);
+    }
+
+    pub fn evict(&mut self, id: &NodeId) {
+        self.entries.remove(id);
+        self.lru_order.retain(|x| x != id);
+    }
+
+    pub fn len(&self) -> usize { self.entries.len() }
+    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -240,5 +310,59 @@ mod tests {
             CachedValue::Json(s) => assert_eq!(s, r#"{"x":1}"#),
             _ => panic!("wrong variant"),
         }
+    }
+
+    // --- 4-tier CacheStrategy + ChangedFlags tests ---
+
+    #[test]
+    fn cache_no_cache_strategy_always_misses() {
+        let mut cache = NodeCache::new(CacheStrategy::NoCache);
+        cache.put("n1".to_string(), CachedValue::String("v".into()));
+        // NoCache never stores, so get must return None
+        assert!(cache.get(&"n1".to_string()).is_none());
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn cache_lru_evicts_oldest() {
+        let mut cache = NodeCache::new(CacheStrategy::Lru { capacity: 2 });
+        cache.put("a".to_string(), CachedValue::String("1".into()));
+        cache.put("b".to_string(), CachedValue::String("2".into()));
+        // Adding "c" must evict "a" (oldest, LRU)
+        cache.put("c".to_string(), CachedValue::String("3".into()));
+        assert!(cache.get(&"a".to_string()).is_none(), "a should have been evicted");
+        assert!(cache.get(&"b".to_string()).is_some());
+        assert!(cache.get(&"c".to_string()).is_some());
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn cache_classic_stores_and_retrieves() {
+        let mut cache = NodeCache::new(CacheStrategy::Classic);
+        cache.put("node1".to_string(), CachedValue::Bytes(vec![1, 2, 3]));
+        let val = cache.get(&"node1".to_string()).expect("Classic cache should store and retrieve");
+        match val {
+            CachedValue::Bytes(b) => assert_eq!(b, &[1u8, 2, 3]),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    #[test]
+    fn changed_flags_default_to_changed() {
+        let flags = ChangedFlags::new();
+        // Unknown nodes are considered changed (needs recompute)
+        assert!(flags.is_changed(&"unknown_node".to_string()));
+        assert_eq!(flags.changed_count(), 0); // no explicit marks yet
+    }
+
+    #[test]
+    fn changed_flags_mark_clean() {
+        let mut flags = ChangedFlags::new();
+        flags.mark_changed("n1".to_string());
+        assert!(flags.is_changed(&"n1".to_string()));
+        assert_eq!(flags.changed_count(), 1);
+        flags.mark_clean("n1".to_string());
+        assert!(!flags.is_changed(&"n1".to_string()));
+        assert_eq!(flags.changed_count(), 0);
     }
 }
