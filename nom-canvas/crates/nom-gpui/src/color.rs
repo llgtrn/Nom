@@ -78,8 +78,29 @@ pub struct Hsla {
 }
 
 impl Hsla {
+    /// Create an HSLA color. **`h` is in degrees [0, 360)**; s/l/a are in [0, 1].
+    ///
+    /// This matches standard CSS `hsl()` convention. Use [`Hsla::from_normalized`]
+    /// if you have a hue in [0, 1] (Zed/GPUI convention).
     pub const fn new(h: f32, s: f32, l: f32, a: f32) -> Self {
         Self { h, s, l, a }
+    }
+
+    /// Explicit degrees constructor. `h_deg` is in [0, 360); s/l/a in [0, 1].
+    /// Identical to [`Hsla::new`] but signals intent at the call site.
+    pub fn from_degrees(h_deg: f32, s: f32, l: f32, a: f32) -> Self {
+        Self { h: h_deg, s, l, a }
+    }
+
+    /// Normalized-hue constructor. `h_01` is in [0, 1] (Zed/GPUI convention);
+    /// it is multiplied by 360 internally before storage. s/l/a are in [0, 1].
+    pub fn from_normalized(h_01: f32, s: f32, l: f32, a: f32) -> Self {
+        Self {
+            h: h_01 * 360.0,
+            s,
+            l,
+            a,
+        }
     }
 
     pub fn to_rgba(self) -> Rgba {
@@ -139,5 +160,25 @@ mod tests {
         assert!((red.r - 1.0).abs() < 1e-4);
         assert!(red.g < 1e-4);
         assert!(red.b < 1e-4);
+    }
+
+    #[test]
+    fn from_normalized_matches_from_degrees() {
+        let a = Hsla::from_normalized(0.5, 0.8, 0.4, 1.0).to_rgba();
+        let b = Hsla::from_degrees(180.0, 0.8, 0.4, 1.0).to_rgba();
+        assert!((a.r - b.r).abs() < 1e-5);
+        assert!((a.g - b.g).abs() < 1e-5);
+        assert!((a.b - b.b).abs() < 1e-5);
+        assert!((a.a - b.a).abs() < 1e-5);
+    }
+
+    #[test]
+    fn theme_style_normalized_hue_produces_correct_color() {
+        // A theme using Zed-convention h=0.0833… (30°) should give an orange-ish tone.
+        let c = Hsla::from_normalized(30.0 / 360.0, 1.0, 0.5, 1.0).to_rgba();
+        // 30° HSL with s=1, l=0.5 → RGB (1.0, 0.5, 0.0)
+        assert!((c.r - 1.0).abs() < 1e-4, "r={}", c.r);
+        assert!((c.g - 0.5).abs() < 1e-4, "g={}", c.g);
+        assert!(c.b < 1e-4, "b={}", c.b);
     }
 }

@@ -105,6 +105,17 @@ pub struct Scene {
     pub paths: Vec<Path>,
 }
 
+/// Stable sort key for `AtlasTextureId` (no `Ord` impl on the type itself).
+fn texture_sort_key(t: &AtlasTextureId) -> (u8, u32) {
+    use crate::atlas::AtlasTextureKind;
+    let kind_ord = match t.kind {
+        AtlasTextureKind::Monochrome => 0u8,
+        AtlasTextureKind::Subpixel => 1u8,
+        AtlasTextureKind::Polychrome => 2u8,
+    };
+    (kind_ord, t.index)
+}
+
 impl Scene {
     pub fn new() -> Self {
         Self::default()
@@ -152,14 +163,20 @@ impl Scene {
         self.paths.push(p);
     }
 
-    /// Sort each collection by draw order. Call once before batching.
+    /// Sort each collection by draw order, and sprite collections additionally
+    /// by texture so that same-texture sprites are contiguous within a z-band.
+    /// Call once before batching.
     pub fn finish(&mut self) {
         self.shadows.sort_by_key(|p| p.order);
         self.quads.sort_by_key(|p| p.order);
         self.underlines.sort_by_key(|p| p.order);
-        self.monochrome_sprites.sort_by_key(|p| p.order);
-        self.polychrome_sprites.sort_by_key(|p| p.order);
         self.paths.sort_by_key(|p| p.order);
+        // Sprite collections: primary sort by order, secondary by texture so the
+        // batch iterator can break on texture_id changes within a single z-band.
+        self.monochrome_sprites
+            .sort_by_key(|s| (s.order, texture_sort_key(&s.tile.texture)));
+        self.polychrome_sprites
+            .sort_by_key(|s| (s.order, texture_sort_key(&s.tile.texture)));
     }
 
     /// Iterator that produces `PrimitiveBatch`es in z-order: each batch is a
@@ -179,13 +196,21 @@ impl Scene {
 }
 
 /// A contiguous run of same-kind primitives at consecutive draw orders.
+/// Sprite variants carry the `texture_id` so the renderer can bind the right
+/// atlas without scanning the slice.
 #[derive(Debug)]
 pub enum PrimitiveBatch<'a> {
     Shadows(&'a [Shadow]),
     Quads(&'a [Quad]),
     Underlines(&'a [Underline]),
-    MonochromeSprites(&'a [MonochromeSprite]),
-    PolychromeSprites(&'a [PolychromeSprite]),
+    MonochromeSprites {
+        texture_id: AtlasTextureId,
+        sprites: &'a [MonochromeSprite],
+    },
+    PolychromeSprites {
+        texture_id: AtlasTextureId,
+        sprites: &'a [PolychromeSprite],
+    },
     Paths(&'a [Path]),
 }
 
@@ -203,62 +228,100 @@ impl<'a> Iterator for BatchIterator<'a> {
     type Item = PrimitiveBatch<'a>;
 
     fn next(&mut self) -> Option<Self::Item> {
-        // Peek the next draw order in each collection; pick the kind whose
-        // next order is lowest; emit the maximal run of that kind.
-        fn peek<T: HasOrder>(slice: &[T], i: usize) -> Option<DrawOrder> {
-            slice.get(i).map(|p| p.order())
-        }
-        let candidates: [(PrimitiveKind, Option<DrawOrder>); 6] = [
-            (PrimitiveKind::Shadow, peek(&self.scene.shadows, self.shadow_i)),
-            (PrimitiveKind::Quad, peek(&self.scene.quads, self.quad_i)),
-            (PrimitiveKind::Underline, peek(&self.scene.underlines, self.underline_i)),
-            (PrimitiveKind::MonochromeSprite, peek(&self.scene.monochrome_sprites, self.mono_i)),
-            (PrimitiveKind::PolychromeSprite, peek(&self.scene.polychrome_sprites, self.poly_i)),
-            (PrimitiveKind::Path, peek(&self.scene.paths, self.path_i)),
+        // Peek the next draw order in each collection.
+        let peeks: [(PrimitiveKind, Option<DrawOrder>); 6] = [
+            (PrimitiveKind::Shadow, self.scene.shadows.get(self.shadow_i).map(|p| p.order)),
+            (PrimitiveKind::Quad, self.scene.quads.get(self.quad_i).map(|p| p.order)),
+            (PrimitiveKind::Underline, self.scene.underlines.get(self.underline_i).map(|p| p.order)),
+            (PrimitiveKind::MonochromeSprite, self.scene.monochrome_sprites.get(self.mono_i).map(|p| p.order)),
+            (PrimitiveKind::PolychromeSprite, self.scene.polychrome_sprites.get(self.poly_i).map(|p| p.order)),
+            (PrimitiveKind::Path, self.scene.paths.get(self.path_i).map(|p| p.order)),
         ];
-        let (kind, _) = candidates
+
+        // Pick the kind with the lowest next order (stable tiebreak: enum
+        // declaration order via the array index).
+        let (selected_idx, (kind, _)) = peeks
             .iter()
-            .filter_map(|(k, o): &(PrimitiveKind, Option<DrawOrder>)| o.map(|v| (*k, v)))
-            .min_by_key(|(_, o)| *o)?;
-        // Emit max run of that kind at strictly-increasing order: for simplicity,
-        // emit ALL remaining of that kind in a single batch. The GPU renderer can
-        // re-sort if it needs to interleave with other kinds — in practice, same-kind
-        // primitives from one paint pass have monotonic orders.
+            .enumerate()
+            .filter_map(|(i, (k, o))| o.map(|v| (i, (*k, v))))
+            .min_by_key(|(_, (_, o))| *o)?;
+
+        // cutoff = min order among ALL OTHER kinds (u32::MAX when all others empty).
+        // We may emit items while item.order <= cutoff without reordering with
+        // another kind's primitives.
+        let cutoff: DrawOrder = peeks
+            .iter()
+            .enumerate()
+            .filter(|(i, _)| *i != selected_idx)
+            .filter_map(|(_, (_, o))| *o)
+            .min()
+            .unwrap_or(u32::MAX);
+
         Some(match kind {
             PrimitiveKind::Shadow => {
-                let slice = &self.scene.shadows[self.shadow_i..];
-                self.shadow_i = self.scene.shadows.len();
-                PrimitiveBatch::Shadows(slice)
+                let start = self.shadow_i;
+                let end = advance_while(&self.scene.shadows, start, |s| s.order <= cutoff);
+                self.shadow_i = end;
+                PrimitiveBatch::Shadows(&self.scene.shadows[start..end])
             }
             PrimitiveKind::Quad => {
-                let slice = &self.scene.quads[self.quad_i..];
-                self.quad_i = self.scene.quads.len();
-                PrimitiveBatch::Quads(slice)
+                let start = self.quad_i;
+                let end = advance_while(&self.scene.quads, start, |q| q.order <= cutoff);
+                self.quad_i = end;
+                PrimitiveBatch::Quads(&self.scene.quads[start..end])
             }
             PrimitiveKind::Underline => {
-                let slice = &self.scene.underlines[self.underline_i..];
-                self.underline_i = self.scene.underlines.len();
-                PrimitiveBatch::Underlines(slice)
+                let start = self.underline_i;
+                let end = advance_while(&self.scene.underlines, start, |u| u.order <= cutoff);
+                self.underline_i = end;
+                PrimitiveBatch::Underlines(&self.scene.underlines[start..end])
             }
             PrimitiveKind::MonochromeSprite => {
-                let slice = &self.scene.monochrome_sprites[self.mono_i..];
-                self.mono_i = self.scene.monochrome_sprites.len();
-                PrimitiveBatch::MonochromeSprites(slice)
+                let start = self.mono_i;
+                let texture_id = self.scene.monochrome_sprites[start].tile.texture;
+                let end = advance_while(&self.scene.monochrome_sprites, start, |s| {
+                    s.order <= cutoff && s.tile.texture == texture_id
+                });
+                self.mono_i = end;
+                PrimitiveBatch::MonochromeSprites {
+                    texture_id,
+                    sprites: &self.scene.monochrome_sprites[start..end],
+                }
             }
             PrimitiveKind::PolychromeSprite => {
-                let slice = &self.scene.polychrome_sprites[self.poly_i..];
-                self.poly_i = self.scene.polychrome_sprites.len();
-                PrimitiveBatch::PolychromeSprites(slice)
+                let start = self.poly_i;
+                let texture_id = self.scene.polychrome_sprites[start].tile.texture;
+                let end = advance_while(&self.scene.polychrome_sprites, start, |s| {
+                    s.order <= cutoff && s.tile.texture == texture_id
+                });
+                self.poly_i = end;
+                PrimitiveBatch::PolychromeSprites {
+                    texture_id,
+                    sprites: &self.scene.polychrome_sprites[start..end],
+                }
             }
             PrimitiveKind::Path => {
-                let slice = &self.scene.paths[self.path_i..];
-                self.path_i = self.scene.paths.len();
-                PrimitiveBatch::Paths(slice)
+                let start = self.path_i;
+                let end = advance_while(&self.scene.paths, start, |p| p.order <= cutoff);
+                self.path_i = end;
+                PrimitiveBatch::Paths(&self.scene.paths[start..end])
             }
         })
     }
 }
 
+/// Advance cursor from `start` while `predicate` holds, returning the new end
+/// index (exclusive). Always advances by at least 1 (the item at `start` is
+/// assumed to already satisfy the batch conditions).
+fn advance_while<T, F: Fn(&T) -> bool>(slice: &[T], start: usize, predicate: F) -> usize {
+    let mut end = start + 1; // always consume at least the current item
+    while end < slice.len() && predicate(&slice[end]) {
+        end += 1;
+    }
+    end
+}
+
+#[allow(dead_code)]
 trait HasOrder {
     fn order(&self) -> DrawOrder;
 }
@@ -275,6 +338,7 @@ impl_has_order!(Shadow, Quad, Underline, MonochromeSprite, PolychromeSprite, Pat
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::atlas::{AtlasTextureKind, AtlasTextureId};
     use crate::geometry::Size;
 
     fn sp_bounds(x: f32, y: f32, w: f32, h: f32) -> Bounds<ScaledPixels> {
@@ -312,6 +376,50 @@ mod tests {
             blur_radius: ScaledPixels(4.0),
         }
     }
+
+    fn tex(index: u32) -> AtlasTextureId {
+        AtlasTextureId {
+            kind: AtlasTextureKind::Monochrome,
+            index,
+        }
+    }
+
+    fn poly_tex(index: u32) -> AtlasTextureId {
+        AtlasTextureId {
+            kind: AtlasTextureKind::Polychrome,
+            index,
+        }
+    }
+
+    fn mono_sprite(order: DrawOrder, texture_index: u32) -> MonochromeSprite {
+        MonochromeSprite {
+            order,
+            bounds: sp_bounds(0.0, 0.0, 8.0, 8.0),
+            clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
+            color: Rgba::WHITE,
+            tile: AtlasTileRef {
+                texture: tex(texture_index),
+                uv: [0.0, 0.0, 1.0, 1.0],
+            },
+            transform: TransformationMatrix::IDENTITY,
+        }
+    }
+
+    fn poly_sprite(order: DrawOrder, texture_index: u32) -> PolychromeSprite {
+        PolychromeSprite {
+            order,
+            bounds: sp_bounds(0.0, 0.0, 8.0, 8.0),
+            clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
+            tile: AtlasTileRef {
+                texture: poly_tex(texture_index),
+                uv: [0.0, 0.0, 1.0, 1.0],
+            },
+            grayscale: false,
+            transform: TransformationMatrix::IDENTITY,
+        }
+    }
+
+    // --- Original tests (must still pass) ---
 
     #[test]
     fn empty_scene_has_no_batches() {
@@ -355,5 +463,149 @@ mod tests {
         assert!(!s.is_empty());
         s.clear();
         assert!(s.is_empty());
+    }
+
+    // --- New tests for Bug 1 fix: interleaved z-order ---
+
+    /// Interleaved shadow/quad: shadow@1, quad@5, shadow@10 must emit
+    /// three separate batches in correct z-order, not one big shadow batch.
+    #[test]
+    fn interleaved_kinds_emit_correct_z_order() {
+        let mut s = Scene::new();
+        s.insert_shadow(shadow(1));
+        s.insert_quad(quad(5));
+        s.insert_shadow(shadow(10));
+        s.finish();
+
+        let batches: Vec<_> = s.batches().collect();
+        assert_eq!(batches.len(), 3, "expected 3 batches for interleaved shadow/quad/shadow");
+
+        // Batch 0: shadow@1 (stops because quad@5 has lower order than shadow@10)
+        match &batches[0] {
+            PrimitiveBatch::Shadows(s) => {
+                assert_eq!(s.len(), 1);
+                assert_eq!(s[0].order, 1);
+            }
+            other => panic!("expected Shadows, got {:?}", other),
+        }
+
+        // Batch 1: quad@5
+        match &batches[1] {
+            PrimitiveBatch::Quads(q) => {
+                assert_eq!(q.len(), 1);
+                assert_eq!(q[0].order, 5);
+            }
+            other => panic!("expected Quads, got {:?}", other),
+        }
+
+        // Batch 2: shadow@10
+        match &batches[2] {
+            PrimitiveBatch::Shadows(s) => {
+                assert_eq!(s.len(), 1);
+                assert_eq!(s[0].order, 10);
+            }
+            other => panic!("expected Shadows, got {:?}", other),
+        }
+    }
+
+    /// When only one kind is present, all items are emitted in one batch
+    /// (no other kind to interleave with, cutoff = u32::MAX).
+    #[test]
+    fn single_kind_emits_all_in_one_batch() {
+        let mut s = Scene::new();
+        s.insert_quad(quad(1));
+        s.insert_quad(quad(2));
+        s.insert_quad(quad(3));
+        s.finish();
+
+        let batches: Vec<_> = s.batches().collect();
+        assert_eq!(batches.len(), 1, "all quads should be one batch with no interleaving");
+        match &batches[0] {
+            PrimitiveBatch::Quads(q) => assert_eq!(q.len(), 3),
+            other => panic!("expected Quads, got {:?}", other),
+        }
+    }
+
+    // --- New tests for Bug 2 fix: sprite texture_id batching ---
+
+    /// Sprites with different textures at different orders break into separate batches.
+    #[test]
+    fn sprites_with_different_textures_break_batches() {
+        let mut s = Scene::new();
+        // Two sprites, same order, different textures
+        s.insert_monochrome_sprite(mono_sprite(1, 0));
+        s.insert_monochrome_sprite(mono_sprite(2, 1)); // different texture
+        s.finish();
+
+        let batches: Vec<_> = s.batches().collect();
+        assert_eq!(batches.len(), 2, "different textures must produce separate batches");
+        match &batches[0] {
+            PrimitiveBatch::MonochromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 0);
+                assert_eq!(sprites.len(), 1);
+            }
+            other => panic!("expected MonochromeSprites, got {:?}", other),
+        }
+        match &batches[1] {
+            PrimitiveBatch::MonochromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 1);
+                assert_eq!(sprites.len(), 1);
+            }
+            other => panic!("expected MonochromeSprites, got {:?}", other),
+        }
+    }
+
+    /// Polychrome sprites with different textures break into separate batches.
+    #[test]
+    fn polychrome_sprites_with_different_textures_break_batches() {
+        let mut s = Scene::new();
+        s.insert_polychrome_sprite(poly_sprite(3, 0));
+        s.insert_polychrome_sprite(poly_sprite(4, 1)); // different texture
+        s.finish();
+
+        let batches: Vec<_> = s.batches().collect();
+        assert_eq!(batches.len(), 2, "polychrome different textures must be separate batches");
+        match &batches[0] {
+            PrimitiveBatch::PolychromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 0);
+                assert_eq!(sprites.len(), 1);
+            }
+            other => panic!("expected PolychromeSprites batch 0, got {:?}", other),
+        }
+        match &batches[1] {
+            PrimitiveBatch::PolychromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 1);
+                assert_eq!(sprites.len(), 1);
+            }
+            other => panic!("expected PolychromeSprites batch 1, got {:?}", other),
+        }
+    }
+
+    /// Two sprites at the same order with the same texture stay in one batch;
+    /// a third sprite at the same order but different texture breaks into a new batch.
+    #[test]
+    fn texture_id_break_within_same_order() {
+        let mut s = Scene::new();
+        s.insert_monochrome_sprite(mono_sprite(5, 0)); // tex 0
+        s.insert_monochrome_sprite(mono_sprite(5, 0)); // tex 0 — same batch
+        s.insert_monochrome_sprite(mono_sprite(5, 1)); // tex 1 — new batch
+        s.finish();
+
+        let batches: Vec<_> = s.batches().collect();
+        assert_eq!(batches.len(), 2, "texture change at same order must break batch");
+        match &batches[0] {
+            PrimitiveBatch::MonochromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 0);
+                assert_eq!(sprites.len(), 2);
+            }
+            other => panic!("expected MonochromeSprites batch 0, got {:?}", other),
+        }
+        match &batches[1] {
+            PrimitiveBatch::MonochromeSprites { texture_id, sprites } => {
+                assert_eq!(texture_id.index, 1);
+                assert_eq!(sprites.len(), 1);
+            }
+            other => panic!("expected MonochromeSprites batch 1, got {:?}", other),
+        }
     }
 }

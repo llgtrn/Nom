@@ -44,19 +44,33 @@ impl LayoutEngine {
     }
 
     /// Create a new leaf/branch node with the given style and children.
+    ///
+    /// This is the infallible MVP entry point: taffy errors are promoted to
+    /// panics here because a well-formed `Style` should never fail allocation
+    /// in practice. For code that needs to handle allocation errors gracefully,
+    /// use [`LayoutEngine::try_request_layout`].
     pub fn request_layout(&mut self, style: &Style, children: &[LayoutId]) -> LayoutId {
+        self.try_request_layout(style, children)
+            .expect("request_layout: taffy node creation failed")
+    }
+
+    /// Fallible variant of [`LayoutEngine::request_layout`]. Returns a
+    /// [`LayoutError`] if taffy rejects the node (e.g. unknown child id,
+    /// allocation failure). Prefer this in production frame code where
+    /// graceful error recovery is desirable.
+    pub fn try_request_layout(
+        &mut self,
+        style: &Style,
+        children: &[LayoutId],
+    ) -> Result<LayoutId, LayoutError> {
         let taffy_style = style.to_taffy();
         let id = if children.is_empty() {
-            self.tree
-                .new_leaf(taffy_style)
-                .expect("new_leaf should not fail for well-formed style")
+            self.tree.new_leaf(taffy_style)?
         } else {
             let child_ids: Vec<taffy::NodeId> = children.iter().map(|c| c.0).collect();
-            self.tree
-                .new_with_children(taffy_style, &child_ids)
-                .expect("new_with_children should not fail for well-formed style")
+            self.tree.new_with_children(taffy_style, &child_ids)?
         };
-        LayoutId(id)
+        Ok(LayoutId(id))
     }
 
     /// Compute layout for a subtree rooted at `root`. Must be called before
@@ -126,6 +140,23 @@ mod tests {
     use super::*;
     use crate::geometry::Pixels;
     use crate::style::{FlexDirection, Length};
+
+    #[test]
+    fn try_request_layout_returns_ok_for_valid_style() {
+        let mut engine = LayoutEngine::new();
+        let s = Style {
+            width: Length::Pixels(Pixels(60.0)),
+            height: Length::Pixels(Pixels(30.0)),
+            ..Default::default()
+        };
+        let result = engine.try_request_layout(&s, &[]);
+        assert!(result.is_ok(), "well-formed style should not produce an error");
+        let leaf = result.unwrap();
+        // Also verify request_layout (infallible wrapper) gives equivalent result.
+        let leaf2 = engine.request_layout(&s, &[]);
+        // Both are distinct nodes but structurally equivalent — just confirm no panic.
+        let _ = (leaf, leaf2);
+    }
 
     #[test]
     fn single_leaf_with_fixed_size() {

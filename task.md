@@ -67,13 +67,80 @@
 - [ ] Integration tests — headless offscreen `TextureView` render; atlas round-trip; path intermediate-texture; resize/device-lost; 60-frame buffer-growth soak
 
 ### Phase 2 — Canvas + Editor (nom-canvas-core + nom-editor)
-- [ ] Infinite canvas (viewport, zoom, pan, coordinate transforms)
-- [ ] Elements (8 shapes + hit testing + transform handles)
-- [ ] Spatial index (R-tree for fast lookup)
-- [ ] Rope-based text buffer (ropey crate)
-- [ ] Multi-cursor + selections
-- [ ] S1-S2 driven syntax highlighting
-- [ ] Inlay hints from nom-lsp
+
+#### Part A — `nom-canvas-core` (infinite-canvas)
+
+**Element model + mutation**
+- [ ] `element.rs` — base `CanvasElement` trait: id, bounds, angle, stroke/fill, opacity, locked, group_id, frame_id, version, version_nonce, z_index, is_deleted, bound_elements (ref Excalidraw [types.ts:40-82](APP/Accelworld/services/other5/excalidraw-main/packages/element/src/types.ts#L40-L82))
+- [ ] `mutation.rs` — `mutate_element()` (in-place, bump version+nonce) + `new_element_with()` (immutable spread for undo)
+- [ ] `shapes/mod.rs` — 8-variant enum: Rectangle, Ellipse, Diamond, Line, Arrow (elbowed), Text, FreeDraw (points+pressures), Image (fileId+crop)
+
+**Hit-testing + spatial index**
+- [ ] `hit_testing.rs` — 2-stage: AABB fast-reject → per-shape distance (rect rounded-corner, diamond sides, ellipse closed-form, linear per-segment + bezier). Tolerance = stroke_width/2. Cache keyed on (point, id, version, version_nonce, threshold)
+- [ ] `spatial_index.rs` — **Grid-based** (AFFiNE pattern) NOT R-tree. `DEFAULT_GRID_SIZE = 3000` model units. Element stored in all overlapping cells. `search(bound, filter) -> Vec<ElementId>` sorted
+
+**Viewport + coord transforms**
+- [ ] `viewport.rs` — `Viewport { center: Point, zoom: f32, size: Size }`; zoom bounds `0.1..=10.0` (deeper than AFFiNE's 6.0 for map-like views); signals: viewport_updated, zooming, panning
+- [ ] `coords.rs` — separate translate+scale (NOT matrix): `to_model(vx,vy) = [viewport_x + vx/zoom/view_scale, ...]`; inverse `to_view`. `view_scale` handles DPI
+- [ ] `zoom.rs` — zoom-to-point: `new_center = pivot + (center - pivot) * (prev_zoom / new_zoom)`. Wheel step 0.1 log-normalized; discrete 0.25
+- [ ] `pan.rs` — space+drag, middle-mouse, trackpad two-finger. Auto-pan at edges ±30px/tick. Instant pan (no inertia), RAF-debounced animation only
+- [ ] `fit.rs` — `fit_to_all(elements, padding)` + `fit_to_selection(ids, padding)`; zoom = min((w-pad)/bound_w, (h-pad)/bound_h); supports % (0..1) or absolute px
+
+**Selection + marquee + transform**
+- [ ] `selection.rs` — `Selection { selected_ids: HashSet<ElementId>, hovered: Option<ElementId>, pending: Option<Marquee> }`. Ignore locked+deleted. Group-expand. Frame-scoped selection
+- [ ] `marquee.rs` — contain vs overlap modes; overlap tests bounds + linear point-in-bounds + edge intersection; frame-clip (marquee ∩ frame-bounds)
+- [ ] `transform_handles.rs` — 8 resize (n,s,e,w,ne,nw,se,sw) + 1 rotation. Size per pointer: mouse 8 / pen 16 / touch 28, divided by zoom. Omit-sides param. Rotate positions via TransformationMatrix
+- [ ] `snapping.rs` — grid snap + alignment guides (edges/centers/midpoints vs other elements + viewport center) + equal-spacing distribution. Threshold 8px/zoom. Render guides as overlay primitives
+- [ ] `history.rs` — undo/redo via version snapshots; `HistoryEntry { id, timestamp, selection_before, selection_after, element_diffs }`
+
+#### Part B — `nom-editor` (text editor over nom-gpui)
+
+**Buffer + anchors + transactions**
+- [ ] `buffer.rs` — single-buffer (defer MultiBuffer to Phase 4); rope via `ropey`; Lamport-clock TransactionId; start/end_transaction with transaction_depth counter (ref Zed [buffer.rs:99-110](APP/zed-main/crates/language/src/buffer.rs#L99-L110))
+- [ ] `anchor.rs` — stable positions across edits; `(offset, bias: Left|Right)`; resolve via rope seek
+
+**Selection + multi-cursor**
+- [ ] `selection.rs` — `Selection { id, start, end, reversed, goal: SelectionGoal }`; `SelectionGoal::{None, Column(u32), HorizontalPosition(f32)}` — NOT raw sticky column
+- [ ] `selections_collection.rs` — `SelectionsCollection { disjoint: Vec<Selection>, pending: Option<Selection> }`; `all()` merges overlaps on demand; public: newest, all_adjusted, count, change_selections
+- [ ] `movement.rs` — left/right/saturating (ref [movement.rs:39-81](APP/zed-main/crates/editor/src/movement.rs#L39-L81)); up/down with goal preserved (lines 84-130); word via CharClassifier; bracket-match via tree-sitter; goal resets on horizontal move
+- [ ] `editing.rs` — `edit(ranges, texts)` sorts reverse-offset-order then applies atomically via `transact(|| ...)`; autoindent via AutoindentMode enum
+
+**Tree-sitter + highlight**
+- [ ] `syntax_map.rs` — `SumTree<SyntaxLayerEntry { tree, language, offset }>`; incremental `sync()` on edit re-parses only affected regions (ref [syntax_map.rs:29-166](APP/zed-main/crates/language/src/syntax_map.rs#L29-L166))
+- [ ] `highlight.rs` — tree-sitter queries on visible ranges; map capture_name → HighlightId via theme; emit `HighlightStyle { color, weight, italic }` spans
+
+**Inlays + LSP**
+- [ ] `inlay_map.rs` — separate from rope; `SumTree<Transform { Isomorphic(len) | Inlay(InlayId, len) }>`; buffer↔display offset mapping
+- [ ] `inlay_hints.rs` — LSP fetch on visible range; `hint_chunk_fetching: HashMap<Range, Task>`; debounce edit+scroll separately; invalidate affected on edit
+- [ ] `lsp_bridge.rs` — bridge to existing `nom-compiler/crates/nom-lsp` for hover, completion, inlay hints, diagnostics
+
+**Display pipeline**
+- [ ] `wrap_map.rs` — soft-wrap `SumTree<Transform>`; background re-wrap with `interpolated: true` flag during flight; O(log N) row seek
+- [ ] `tab_map.rs` — pre-compute tab widths; expand in display layer
+- [ ] `display_map.rs` — pipeline: Buffer → InlayMap → FoldMap → TabMap → WrapMap → render (ref Zed display_map)
+- [ ] `line_layout.rs` — width measurement via nom-gpui text system (cosmic-text); lazy, background task, stale snapshot during typing
+
+#### Part C — test targets
+
+- [ ] Hit-test golden files — per-shape boundary points ±tolerance
+- [ ] Marquee contain vs overlap — 2×4 shape grid, assert correct subset per mode
+- [ ] Zoom-to-point invariant — pivot at (100,100), zoom 1.0→3.0, assert pivot unchanged
+- [ ] Coord round-trip — `to_view(to_model(v)) == v` for 1000 random points × 5 zoom levels
+- [ ] Grid spatial index — 100k elements, 1000 random queries, verify linear-scan parity
+- [ ] Multi-cursor reverse-offset edit — 3 cursors P1<P2<P3 insert "a"; final P1+1, P2+2, P3+3
+- [ ] Goal-column preservation — down-down-left-down; assert goal resets on horizontal
+- [ ] Selection merge — 2 cursors whose `select_word` results overlap → single merged
+- [ ] Inlay offset mapping — insert inlay at display 10; buffer 10 still resolves; pre-inlay buffer edit shifts both
+- [ ] Incremental tree-sitter — edit 1 char; assert only affected layer re-parses (instrumentation counter)
+
+#### Part D — NON-GOALS (do NOT adapt)
+
+- Zed GPUI Entity/Context + AsyncAppContext (no runtime yet — use Rc/RefCell + channels)
+- Zed MultiBuffer (single-buffer first; defer to Phase 4)
+- Excalidraw RoughJS (we're GPU shaders)
+- Excalidraw DOM event coords (native winit instead)
+- AFFiNE RxJS Subjects (native signals / tokio::sync::watch)
+- AFFiNE CSS transforms + Lit components (wgpu-native)
 
 ### Phase 3 — Blocks + Panels (nom-blocks + nom-panels)
 - [ ] 7 block types (prose, nomx, media, graph_node, drawing, table, embed)

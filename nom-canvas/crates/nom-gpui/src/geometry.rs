@@ -28,18 +28,6 @@ impl Pixels {
     }
 }
 
-impl From<f32> for Pixels {
-    fn from(v: f32) -> Self {
-        Self(v)
-    }
-}
-
-impl From<Pixels> for f32 {
-    fn from(p: Pixels) -> Self {
-        p.0
-    }
-}
-
 /// DPI-scaled logical pixel (between Pixels and DevicePixels).
 #[derive(Clone, Copy, Debug, Default, PartialEq, PartialOrd)]
 #[repr(transparent)]
@@ -343,6 +331,19 @@ mod tests {
     fn pixel_scaling_roundtrip() {
         let p = Pixels(10.0);
         assert_eq!(p.scale(2.0).to_device(), DevicePixels(20));
+    }
+
+    #[test]
+    fn pixels_explicit_construction_only() {
+        // Verify that Pixels must be constructed explicitly — .0 field is the only
+        // extraction path after removing the implicit From<f32> / From<Pixels> impls.
+        let p = Pixels(42.0);
+        assert_eq!(p.0, 42.0_f32);
+        // ScaledPixels and DevicePixels likewise have no From<f32>/From<i32>:
+        let sp = ScaledPixels(5.0);
+        assert_eq!(sp.0, 5.0_f32);
+        let dp = DevicePixels(3);
+        assert_eq!(dp.0, 3_i32);
     }
 
     #[test]
