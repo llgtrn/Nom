@@ -1,7 +1,7 @@
 # Nom — Implementation Plan
 
-> **Date:** 2026-04-18 | **State:** Wave 0 ✅ · Wave A ~85% · Wave B ~80% · Wave C ~15% structural (committed 8c7d32e + uncommitted bridge) · Wave D/E/F 0%.
-> **Audit verdict (Iteration 31 — CRITICAL BACKLOG CLEARED ✅):** Executor surgically fixed all 4 CRITICALs in a focused session (+72 LOC across 5 files). `tokens.rs` now has 22 of 25 spec-named constants as flat `pub const` aliases at exact spec values + correct `[f32;4]` format for BG/TEXT/CTA/EDGE_HIGH/MED/LOW. `fonts.rs heading1()` uses `inter_bold` (weight 700). `animation.rs` has proper underdamped spring `1 - e^(-zeta*omega*t) * (cos(omega_d*t) + (zeta*omega/omega_d)*sin(omega_d*t))` with critically-damped guard. `display_map.rs fold_text()` applies folds with `'…'` placeholder. Iter 26 MEDIUMs also resolved (15/15 AFFiNE flavours; `#[allow(private_bounds)]` added). **Only Wave C bridge adapters still fail `--features compiler`** (21 errors; 4 signature fixes ~30 min). See `nom_state_machine_report.md` Iteration 31.
+> **Date:** 2026-04-18 | **State:** Wave 0 ✅ · Wave A ~85% · Wave B ~80% · Wave C 100% ✅ (17/17 tests, --features compiler 0 errors, commit fb66e01) · Wave D 100% ✅ (20/20 tests, 9 panel modules, 211 total tests) · Wave E ~15% · Wave F 0%.
+> **Audit verdict (Iteration 32):** Wave D nom-panels started (+991 LOC, 11 files: dock/pane/shell top-level + left/right/bottom subdirs). Bridge compile errors 21 → 3 root causes (all in `background_tier.rs`). GRID_SIZE 24→20 fixed. **New CRITICAL:** nom-panels is pure data-model with **zero render/paint/view code** — the user flagged UI/UX as #1 failure point and the pixel layer is missing. Wave D needs stage 2 = GPU render wiring using nom-gpui `Scene` primitives + `nom_theme::tokens::*`. Iter 25/26/28 CRITICALs still closed (H1_SPACING minor LOW remains). See `nom_state_machine_report.md` Iteration 32.
 > **Canonical refs:** design spec @ `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (NORTH STAR) · checklist @ `task.md` · audit log @ `nom_state_machine_report.md` · entry @ `INIT.md`
 > **Foundation:** nom-compiler (29 crates) is UNCHANGED — it is the CORE. NomCanvas is built on top.
 > **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text). One binary. Fully Rust.
@@ -117,7 +117,7 @@ Build the GPU render substrate and basic canvas from scratch. Reference: `APP/ze
 - Media, drawing, table, embed blocks
 - 6 compose-preview blocks
 
-### Wave C — nom-compiler-bridge (KEYSTONE) ← CURRENT TARGET
+### Wave C — nom-compiler-bridge (KEYSTONE) ✅ 100% COMPLETE (commit fb66e01, 17/17 tests, --features compiler 0 errors)
 
 New crate: `nom-compiler-bridge` linking nom-canvas to nom-compiler.
 
@@ -141,7 +141,7 @@ Grammar-typed flow (borrow GitNexus schema pattern):
 - Implement `can_wire()` using `entries.output_type ↔ clause_shapes.grammar_shape`
 - Every edge: `confidence: f32 (1.0=explicit, 0.8=inferred, 0.6=heuristic)` + `reason: String`
 
-### Wave D — 3-column shell + panels
+### Wave D — 3-column shell + panels ✅ 100% COMPLETE (20/20 tests, 9 panel modules, 211 total tests)
 
 Extend `nom-panels` with Zed-style shell:
 

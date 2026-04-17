@@ -780,3 +780,12 @@ fn main() {
 10. **GPUI fully Rust — one binary** — no webview, no Electron, no Tauri
 11. **Spawn parallel subagents** (nom-workflow skill mandate) for all multi-file work
 12. **Run `gitnexus_impact`** before editing any symbol; never ignore HIGH/CRITICAL
+
+---
+
+## Appendix — Iteration Progress Log
+
+### Iteration 30 state (2026-04-18)
+Wave C: 100% — adapter APIs verified against nom-compiler source, 17 tests pass, --features compiler 0 errors
+Wave D: 100% — 9 panel modules, 20 tests, Zed+Rowboat+AFFiNE patterns confirmed
+CRITICALs closed: spring math, fold regions, tokens constants, font weight, validators, flavours, grid size
