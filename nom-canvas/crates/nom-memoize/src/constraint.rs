@@ -146,4 +146,40 @@ mod tests {
         c.record(snap(2, vec![(4, h)]));
         assert!(c.validate(5, &[snap(1, vec![(3, h)]), snap(2, vec![(4, h)])]));
     }
+
+    #[test]
+    fn constraint_new_with_hash() {
+        let c = Constraint::new(0xdeadbeef);
+        assert_eq!(c.input_hash(), 0xdeadbeef);
+        assert_eq!(c.snapshot_count(), 0);
+    }
+
+    #[test]
+    fn constraint_validate_empty_calls_passes() {
+        let c = Constraint::new(42);
+        assert!(c.validate(42, &[]));
+    }
+
+    #[test]
+    fn constraint_record_increments_count() {
+        let mut c = Constraint::new(1);
+        assert_eq!(c.snapshot_count(), 0);
+        c.record(snap(1, vec![]));
+        assert_eq!(c.snapshot_count(), 1);
+        c.record(snap(2, vec![]));
+        assert_eq!(c.snapshot_count(), 2);
+        c.record(snap(3, vec![]));
+        assert_eq!(c.snapshot_count(), 3);
+    }
+
+    #[test]
+    fn constraint_snapshot_count_matches_recorded() {
+        let mut c = Constraint::new(100);
+        let h = Hash128::of_str("data");
+        c.record(snap(1, vec![(1, h), (2, h)]));
+        c.record(snap(2, vec![(3, h)]));
+        assert_eq!(c.snapshot_count(), 2);
+        // validate with matching snapshots confirms both recorded correctly
+        assert!(c.validate(100, &[snap(1, vec![(1, h), (2, h)]), snap(2, vec![(3, h)])]));
+    }
 }

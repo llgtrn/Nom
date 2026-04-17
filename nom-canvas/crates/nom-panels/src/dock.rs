@@ -413,4 +413,25 @@ mod tests {
         assert_eq!(ring.border_widths.left, Pixels(2.0));
     }
 
+    #[test]
+    fn dock_resize_panel_preserves_size() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        // Change the size via the size_state.
+        dock.entries[0].size_state = PanelSizeState::fixed(360.0);
+        let effective = dock.entries[0].size_state.effective_size(1000.0);
+        assert!((effective - 360.0).abs() < 0.01);
+    }
+
+    #[test]
+    fn dock_collapse_and_expand() {
+        let mut dock = Dock::new(DockPosition::Right);
+        dock.add_panel("inspector", 320.0);
+        assert!(dock.is_open);
+        dock.toggle();
+        assert!(!dock.is_open, "dock should be collapsed after toggle");
+        dock.toggle();
+        assert!(dock.is_open, "dock should be open after second toggle");
+    }
+
 }

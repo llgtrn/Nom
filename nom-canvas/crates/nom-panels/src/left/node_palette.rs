@@ -151,4 +151,49 @@ mod tests {
         let second_bg = &scene.quads[2];
         assert_eq!(second_bg.bounds.origin.y, Pixels(24.0));
     }
+
+    #[test]
+    fn palette_empty_search_returns_all() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let results = palette.search("");
+        assert_eq!(results.len(), SAMPLE_KINDS.len());
+    }
+
+    #[test]
+    fn palette_search_filters_by_kind_name() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("VideoUnit", "Video Block", "A video media unit"),
+            ("AudioUnit", "Audio Block", "An audio media unit"),
+            ("TextBlock", "Text Block", "A prose text block"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        let results = palette.search("video");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].kind_name, "VideoUnit");
+    }
+
+    #[test]
+    fn palette_entry_fields_preserved() {
+        let entry = PaletteEntry {
+            kind_name: "Concept".to_string(),
+            display_name: "Concept Node".to_string(),
+            description: "An abstract idea".to_string(),
+        };
+        assert_eq!(entry.kind_name, "Concept");
+        assert_eq!(entry.display_name, "Concept Node");
+        assert_eq!(entry.description, "An abstract idea");
+    }
+
+    #[test]
+    fn palette_entry_count_five() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("A", "Alpha", "desc a"),
+            ("B", "Beta", "desc b"),
+            ("C", "Gamma", "desc c"),
+            ("D", "Delta", "desc d"),
+            ("E", "Epsilon", "desc e"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        assert_eq!(palette.entry_count(), 5);
+    }
 }

@@ -151,4 +151,87 @@ mod tests {
         let parsed = u64::from_str_radix(r.id.trim_start_matches('0'), 16).unwrap_or(0);
         assert_eq!(parsed, 0xcafe_u64);
     }
+
+    /// BlockModel.kind is accessible via entity.kind field
+    #[test]
+    fn block_model_kind_field() {
+        let entity = NomtuRef::new("e1", "plan", "concept");
+        let block = BlockModel::new("b1", entity, "affine:note");
+        assert_eq!(block.entity.kind, "concept");
+    }
+
+    /// entity field is NomtuRef (non-optional) with all three sub-fields accessible
+    #[test]
+    fn block_model_entity_is_nomturef() {
+        let entity = NomtuRef::new("eid", "compose", "verb");
+        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        // Access all three fields of NomtuRef to confirm the type
+        let _id: &str = &block.entity.id;
+        let _word: &str = &block.entity.word;
+        let _kind: &str = &block.entity.kind;
+        assert_eq!(block.entity.id, "eid");
+        assert_eq!(block.entity.word, "compose");
+        assert_eq!(block.entity.kind, "verb");
+    }
+
+    /// children is Vec<BlockId> and starts empty
+    #[test]
+    fn block_model_children_vec() {
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        assert!(block.children.is_empty());
+        let mut block = block;
+        block.children.push("child-1".to_string());
+        block.children.push("child-2".to_string());
+        assert_eq!(block.children.len(), 2);
+        assert_eq!(block.children[0], "child-1");
+    }
+
+    /// parent is Option<BlockId> and defaults to None
+    #[test]
+    fn block_model_parent_optional() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        assert!(block.parent.is_none());
+        block.parent = Some("parent-block".to_string());
+        assert_eq!(block.parent.as_deref(), Some("parent-block"));
+    }
+
+    /// Two BlockModels created via insert() have different IDs
+    #[test]
+    fn block_model_id_unique() {
+        let dict = StubDictReader::new();
+        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "affine:paragraph", &dict);
+        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "affine:paragraph", &dict);
+        assert_ne!(b1.id, b2.id, "insert() must generate unique IDs");
+    }
+
+    /// NomtuRef::new produces fields in correct order
+    #[test]
+    fn nomtu_ref_fields_order() {
+        let r = NomtuRef::new("my-id", "my-word", "my-kind");
+        assert_eq!(r.id, "my-id");
+        assert_eq!(r.word, "my-word");
+        assert_eq!(r.kind, "my-kind");
+    }
+
+    /// BlockMeta default has version == 1 and empty author
+    #[test]
+    fn block_meta_default() {
+        let meta = BlockMeta::default();
+        assert_eq!(meta.version, 1);
+        assert_eq!(meta.author, "");
+        assert_eq!(meta.created_at, 0);
+        assert_eq!(meta.updated_at, 0);
+    }
+
+    /// set_slot overwrites an existing slot instead of appending a duplicate
+    #[test]
+    fn block_model_set_slot_overwrites() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.set_slot("key", crate::slot::SlotValue::Text("first".into()));
+        block.set_slot("key", crate::slot::SlotValue::Text("second".into()));
+        // Only one entry for "key"
+        let count = block.slots.iter().filter(|(k, _)| k == "key").count();
+        assert_eq!(count, 1);
+        assert_eq!(block.get_slot("key").and_then(|v| v.as_text()), Some("second"));
+    }
 }

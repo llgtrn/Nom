@@ -265,4 +265,54 @@ mod tests {
             assert_eq!(cache.get(&key, i, &[]), Some(i * 2));
         }
     }
+
+    #[test]
+    fn memo_cache_store_string_key() {
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("string_key");
+        cache.put(key, "hello".to_string(), Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some("hello".to_string()));
+    }
+
+    #[test]
+    fn memo_cache_store_u64_key() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let raw: u64 = 0xdeadbeef_cafebabe;
+        let key = Hash128::of_u64(raw);
+        cache.put(key, 999u64, Constraint::new(raw));
+        assert_eq!(cache.get(&key, raw, &[]), Some(999u64));
+    }
+
+    #[test]
+    fn memo_cache_len_empty_is_zero() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn memo_cache_len_after_three_inserts() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        cache.put(Hash128::of_str("a"), 1, Constraint::new(1));
+        cache.put(Hash128::of_str("b"), 2, Constraint::new(2));
+        cache.put(Hash128::of_str("c"), 3, Constraint::new(3));
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn memo_cache_contains_after_insert() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("present_key");
+        cache.put(key, 42, Constraint::new(7));
+        // A successful get with correct hash confirms the entry exists
+        assert_eq!(cache.get(&key, 7, &[]), Some(42));
+    }
+
+    #[test]
+    fn memo_cache_not_contains_miss() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("never_inserted");
+        // get on absent key returns None without counting as a miss
+        assert_eq!(cache.get(&key, 0, &[]), None);
+        assert_eq!(cache.miss_count(), 0);
+    }
 }

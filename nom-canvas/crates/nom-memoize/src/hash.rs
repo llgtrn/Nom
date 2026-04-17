@@ -152,4 +152,40 @@ mod tests {
         assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
         assert_eq!(s, "00112233445566778899aabbccddeeff");
     }
+
+    #[test]
+    fn hash128_of_empty_bytes() {
+        let h1 = Hash128::of_bytes(&[]);
+        let h2 = Hash128::of_bytes(&[]);
+        assert_eq!(h1, h2, "Hash128::of_bytes(&[]) must be deterministic");
+    }
+
+    #[test]
+    fn hash128_single_byte() {
+        let h0 = Hash128::of_bytes(&[0]);
+        let h1 = Hash128::of_bytes(&[1]);
+        assert_ne!(h0, h1, "of_bytes(&[0]) must differ from of_bytes(&[1])");
+    }
+
+    #[test]
+    fn hash128_combine_with_zero() {
+        let h = Hash128::of_str("non-zero");
+        let combined = h.combine(Hash128::ZERO);
+        // combine(ZERO) multiplies then adds 0 to h2; the wrapping_mul changes h1/h2 so result != h
+        assert_ne!(combined, h);
+    }
+
+    #[test]
+    fn hash128_as_u64_zero_hash() {
+        assert_eq!(Hash128::ZERO.as_u64(), 0u64);
+    }
+
+    #[test]
+    fn hash128_large_input() {
+        let data = vec![0xABu8; 10_000];
+        // Must not panic and must be deterministic
+        let h1 = Hash128::of_bytes(&data);
+        let h2 = Hash128::of_bytes(&data);
+        assert_eq!(h1, h2);
+    }
 }

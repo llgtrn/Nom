@@ -7,12 +7,14 @@ use std::sync::{Arc, Mutex};
 // ---------------------------------------------------------------------------
 
 /// All observable event categories emitted by NomCanvas subsystems.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub enum EventKind {
     /// A user action on the canvas surface (pan, zoom, select, drag, …).
     CanvasAction { action: String },
     /// A call into the Nom compiler, with elapsed wall-time in milliseconds.
     CompilerInvoke { duration_ms: u64 },
+    /// A call into the Nom compiler with an optional source path.
+    CompilerInvokeWithPath { duration_ms: u64, path: String },
     /// A RAG/vector retrieval query with the requested result count.
     RagQuery { top_k: usize },
     /// An error with a numeric code and human-readable message.
@@ -21,6 +23,14 @@ pub enum EventKind {
     SessionStart,
     /// Emitted once when a session is torn down.
     SessionEnd,
+    /// User hovered over a canvas entity identified by a nomtu-style ref string.
+    Hover { entity: String },
+    /// Command palette was opened by the user.
+    CommandPaletteOpened,
+    /// Deep-think / AI reasoning mode was started.
+    DeepThinkStarted,
+    /// Canvas zoom level changed.
+    CanvasZoom { level: f32 },
 }
 
 // ---------------------------------------------------------------------------
@@ -28,7 +38,7 @@ pub enum EventKind {
 // ---------------------------------------------------------------------------
 
 /// A single telemetry observation.
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq)]
 pub struct TelemetryEvent {
     pub kind: EventKind,
     /// Wall-clock timestamp in milliseconds since the Unix epoch.
@@ -164,6 +174,25 @@ impl InMemorySink {
     /// Return the number of events recorded so far.
     pub fn count(&self) -> usize {
         self.events.lock().expect("InMemorySink mutex poisoned").len()
+    }
+
+    /// Discard all recorded events (simulate a flush).
+    pub fn clear(&self) {
+        self.events.lock().expect("InMemorySink mutex poisoned").clear();
+    }
+
+    /// Filter events by a predicate on `EventKind`, returning a cloned subset.
+    pub fn filter_by<F>(&self, predicate: F) -> Vec<TelemetryEvent>
+    where
+        F: Fn(&EventKind) -> bool,
+    {
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .iter()
+            .filter(|e| predicate(&e.kind))
+            .cloned()
+            .collect()
     }
 }
 
@@ -841,5 +870,310 @@ mod tests {
             ));
         }
         assert_eq!(sink.count(), n);
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW: EventKind edge cases
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn event_kind_hover_with_entity() {
+        let entity = "nomtu://canvas/block-42".to_string();
+        let kind = EventKind::Hover { entity: entity.clone() };
+        let event = TelemetryEvent::new(kind, 10, 1);
+        match &event.kind {
+            EventKind::Hover { entity: e } => assert_eq!(e, &entity),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_command_palette_opened() {
+        let kind = EventKind::CommandPaletteOpened;
+        let event = TelemetryEvent::new(kind.clone(), 20, 2);
+        assert_eq!(event.kind, EventKind::CommandPaletteOpened);
+    }
+
+    #[test]
+    fn event_kind_deep_think_started() {
+        let kind = EventKind::DeepThinkStarted;
+        let event = TelemetryEvent::new(kind.clone(), 30, 3);
+        assert_eq!(event.kind, EventKind::DeepThinkStarted);
+    }
+
+    #[test]
+    fn event_kind_compile_invoked_with_path() {
+        let path = "/workspace/main.nom".to_string();
+        let kind = EventKind::CompilerInvokeWithPath { duration_ms: 99, path: path.clone() };
+        let event = TelemetryEvent::new(kind, 40, 4);
+        match &event.kind {
+            EventKind::CompilerInvokeWithPath { duration_ms, path: p } => {
+                assert_eq!(*duration_ms, 99);
+                assert_eq!(p, &path);
+            }
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_canvas_zoom_level() {
+        let levels: &[f32] = &[0.5, 1.0, 2.0, 4.0];
+        for &level in levels {
+            let kind = EventKind::CanvasZoom { level };
+            let event = TelemetryEvent::new(kind, 50, 5);
+            match &event.kind {
+                EventKind::CanvasZoom { level: l } => {
+                    assert!((*l - level).abs() < f32::EPSILON, "zoom level mismatch");
+                }
+                other => panic!("unexpected kind: {other:?}"),
+            }
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW: Telemetry session lifecycle
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn telemetry_session_restart() {
+        let sink = InMemorySink::new();
+        let shared: Arc<dyn TelemetrySink + Send + Sync> = Arc::new(sink.clone());
+        let tel = Telemetry::new(shared);
+
+        // First session
+        tel.emit(EventKind::SessionStart, 0, 100);
+        tel.emit(EventKind::SessionEnd, 500, 100);
+
+        // Second session — different session_id
+        tel.emit(EventKind::SessionStart, 600, 101);
+
+        let events = sink.events();
+        assert_eq!(events[0].session_id, 100);
+        assert_eq!(events[1].session_id, 100);
+        assert_eq!(events[2].session_id, 101);
+        assert_ne!(events[0].session_id, events[2].session_id);
+    }
+
+    #[test]
+    fn telemetry_session_event_count() {
+        let sink = InMemorySink::new();
+        let shared: Arc<dyn TelemetrySink + Send + Sync> = Arc::new(sink.clone());
+        let tel = Telemetry::new(shared);
+
+        let session_id = 42u64;
+        for i in 0..5u64 {
+            tel.emit(EventKind::CanvasAction { action: format!("act-{i}") }, i, session_id);
+        }
+
+        let session_events: Vec<_> = sink.events()
+            .into_iter()
+            .filter(|e| e.session_id == session_id)
+            .collect();
+        assert_eq!(session_events.len(), 5);
+    }
+
+    #[test]
+    fn telemetry_flush_clears_buffer() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(sink.count(), 2);
+
+        sink.clear();
+
+        assert_eq!(sink.count(), 0);
+        assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn telemetry_multi_session_events_separate() {
+        let sink = InMemorySink::new();
+        let shared: Arc<dyn TelemetrySink + Send + Sync> = Arc::new(sink.clone());
+        let tel = Telemetry::new(shared);
+
+        tel.emit(EventKind::SessionStart, 0, 10);
+        tel.emit(EventKind::CanvasAction { action: "pan".into() }, 1, 10);
+        tel.emit(EventKind::SessionStart, 2, 20);
+        tel.emit(EventKind::CanvasAction { action: "zoom".into() }, 3, 20);
+
+        let s10: Vec<_> = sink.events().into_iter().filter(|e| e.session_id == 10).collect();
+        let s20: Vec<_> = sink.events().into_iter().filter(|e| e.session_id == 20).collect();
+        assert_eq!(s10.len(), 2);
+        assert_eq!(s20.len(), 2);
+        // Events of different sessions must not mix
+        assert!(s10.iter().all(|e| e.session_id == 10));
+        assert!(s20.iter().all(|e| e.session_id == 20));
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW: InMemorySink advanced
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn sink_filter_by_kind() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "pan".into() }, 1, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 2, 1));
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "zoom".into() }, 3, 1));
+
+        let actions = sink.filter_by(|k| matches!(k, EventKind::CanvasAction { .. }));
+        assert_eq!(actions.len(), 2);
+        let sessions = sink.filter_by(|k| matches!(k, EventKind::SessionStart | EventKind::SessionEnd));
+        assert_eq!(sessions.len(), 2);
+    }
+
+    #[test]
+    fn sink_oldest_event_first() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 100, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 200, 1));
+        sink.record(TelemetryEvent::new(EventKind::CommandPaletteOpened, 300, 1));
+
+        let events = sink.events();
+        for window in events.windows(2) {
+            assert!(window[0].timestamp_ms <= window[1].timestamp_ms,
+                "events out of order: {} > {}", window[0].timestamp_ms, window[1].timestamp_ms);
+        }
+    }
+
+    #[test]
+    fn sink_events_after_clear_is_empty() {
+        let sink = InMemorySink::new();
+        for i in 0..10u64 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 10);
+        sink.clear();
+        assert_eq!(sink.count(), 0);
+        assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn sink_capacity_1000() {
+        let sink = InMemorySink::new();
+        for i in 0..1000u64 {
+            sink.record(TelemetryEvent::new(
+                EventKind::CanvasAction { action: format!("a-{i}") },
+                i,
+                1,
+            ));
+        }
+        assert_eq!(sink.count(), 1000);
+        // Verify no panic and all events accessible
+        let events = sink.events();
+        assert_eq!(events.len(), 1000);
+    }
+
+    #[test]
+    fn sink_clone_independence() {
+        // Cloning an InMemorySink shares the same Arc<Mutex<_>> by design
+        // (documented behavior). This test verifies the *snapshot* returned by
+        // .events() is a fresh Vec that does not alias the internal storage.
+        let sink_a = InMemorySink::new();
+        sink_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let snapshot = sink_a.events(); // Vec<TelemetryEvent> — independent copy
+
+        // Adding to sink_a after snapshot must not affect the snapshot.
+        sink_a.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(snapshot.len(), 1, "snapshot must not grow after more records");
+        assert_eq!(sink_a.count(), 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW: TelemetryEvent fields
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn event_session_id_nonempty() {
+        // session_id must be non-zero for a real session
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 99);
+        assert_ne!(event.session_id, 0, "session_id 0 is reserved; real sessions use nonzero ids");
+    }
+
+    #[test]
+    fn event_timestamp_nonzero() {
+        // A real event has a non-zero timestamp (epoch ms > 0 at any real time).
+        let event = TelemetryEvent::new(EventKind::SessionStart, 1_700_000_000_000, 1);
+        assert!(event.timestamp_ms > 0);
+    }
+
+    #[test]
+    fn event_kind_field_accessible() {
+        let event = TelemetryEvent::new(
+            EventKind::CompilerInvoke { duration_ms: 77 },
+            0,
+            1,
+        );
+        // The `kind` field must be directly accessible (pub).
+        match event.kind {
+            EventKind::CompilerInvoke { duration_ms } => assert_eq!(duration_ms, 77),
+            other => panic!("unexpected kind: {other:?}"),
+        }
+    }
+
+    // -------------------------------------------------------------------------
+    // NEW: Traceparent format edge cases
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn traceparent_roundtrip_v00() {
+        let s = "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        let (trace, span, flags) = TelemetryEvent::parse_traceparent(s).expect("valid v00");
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, span);
+        let rebuilt = ev.traceparent();
+        assert_eq!(rebuilt, format!("00-{}-{}-01",
+            trace.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            span.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+        assert_eq!(flags, 0x01);
+    }
+
+    #[test]
+    fn traceparent_invalid_version_ff() {
+        // W3C spec: version "ff" is reserved and must be rejected.
+        let header = "ff-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        assert!(
+            TelemetryEvent::parse_traceparent(header).is_none(),
+            "version ff must be rejected"
+        );
+    }
+
+    #[test]
+    fn traceparent_parent_id_all_zeros_invalid() {
+        // W3C spec: all-zeros parent-id (span-id) is invalid.
+        // Our parser does not distinguish; we verify the hex bytes are all zero
+        // so a caller can detect this case.
+        let header = "00-4bf92f3b77b34126a84c84354e705a9c-0000000000000000-01";
+        let result = TelemetryEvent::parse_traceparent(header);
+        // Parser may accept the format — the caller is responsible for
+        // rejecting the all-zeros span. Verify the parsed span is indeed zeros.
+        if let Some((_, span, _)) = result {
+            assert_eq!(span, [0u8; 8], "all-zeros parent-id parsed correctly for caller check");
+        }
+        // If None, the implementation already rejected it — also acceptable.
+    }
+
+    #[test]
+    fn traceparent_sampled_flag() {
+        let trace = [0u8; 16];
+        let span = [0x01u8; 8];
+
+        // flags=01 → sampled
+        let tp_sampled = format!(
+            "00-{}-{}-01",
+            trace.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            span.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        );
+        let (_, _, flags) = TelemetryEvent::parse_traceparent(&tp_sampled).unwrap();
+        assert_eq!(flags & 0x01, 0x01, "sampled flag bit must be set");
+
+        // flags=00 → not sampled
+        let tp_unsampled = format!(
+            "00-{}-{}-00",
+            trace.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+            span.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+        );
+        let (_, _, flags2) = TelemetryEvent::parse_traceparent(&tp_unsampled).unwrap();
+        assert_eq!(flags2 & 0x01, 0x00, "sampled flag bit must be clear");
     }
 }

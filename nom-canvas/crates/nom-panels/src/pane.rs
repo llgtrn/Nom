@@ -306,4 +306,53 @@ mod tests {
         // >=2 pane tab bars + 1 split divider.
         assert!(scene.quads.len() >= 3, "expected >=3 quads, got {}", scene.quads.len());
     }
+
+    #[test]
+    fn pane_group_single_pane() {
+        let g = PaneGroup::single("only");
+        assert_eq!(g.pane_count(), 1);
+    }
+
+    #[test]
+    fn pane_group_split_horizontal() {
+        let mut g = PaneGroup::single("left");
+        g.split(SplitDirection::Horizontal, "right");
+        assert_eq!(g.pane_count(), 2);
+        // Root should now be an Axis.
+        assert!(matches!(g.root, Member::Axis(_)));
+    }
+
+    #[test]
+    fn pane_group_split_vertical() {
+        let mut g = PaneGroup::single("top");
+        g.split(SplitDirection::Vertical, "bottom");
+        assert_eq!(g.pane_count(), 2);
+        if let Member::Axis(ref ax) = g.root {
+            assert_eq!(ax.direction, SplitDirection::Vertical);
+        } else {
+            panic!("root should be Axis after split");
+        }
+    }
+
+    #[test]
+    fn pane_group_nested_split() {
+        let mut g = PaneGroup::single("a");
+        g.split(SplitDirection::Horizontal, "b");
+        // Split the whole group again — adds a third child at the top level.
+        g.split(SplitDirection::Vertical, "c");
+        // After two splits the root wraps everything: 2 + 1 = 3 panes.
+        assert_eq!(g.pane_count(), 3);
+    }
+
+    #[test]
+    fn pane_active_tab_set() {
+        let mut p = Pane::new("editor");
+        p.open_tab("alpha.nom", "alpha.nom");
+        p.open_tab("beta.nom", "beta.nom");
+        // active_tab defaults to the last opened tab.
+        assert_eq!(p.active_tab().unwrap().id, "beta.nom");
+        // Re-open first tab makes it active.
+        p.open_tab("alpha.nom", "alpha.nom");
+        assert_eq!(p.active_tab().unwrap().id, "alpha.nom");
+    }
 }

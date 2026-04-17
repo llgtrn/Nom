@@ -145,4 +145,41 @@ mod tests {
         // bg + status bar + mode accent = 3 (no active_file).
         assert_eq!(scene.quads.len(), 3);
     }
+
+    #[test]
+    fn shell_new_has_no_active_file() {
+        let shell = Shell::new();
+        assert!(shell.active_file.is_none());
+    }
+
+    #[test]
+    fn shell_left_visible_by_default() {
+        let shell = Shell::new();
+        assert!(shell.left_visible());
+        assert!(shell.right_visible());
+        assert!(shell.bottom_visible());
+    }
+
+    #[test]
+    fn shell_toggle_left_dock() {
+        let mut shell = Shell::new();
+        assert!(shell.left_visible());
+        shell.left.toggle();
+        assert!(!shell.left_visible());
+        shell.left.toggle();
+        assert!(shell.left_visible());
+    }
+
+    #[test]
+    fn shell_mode_default_is_normal() {
+        let shell = Shell::new();
+        assert_eq!(shell.mode, ShellMode::Normal);
+    }
+
+    #[test]
+    fn shell_active_file_set() {
+        let mut shell = Shell::new();
+        shell.active_file = Some("main.nom".to_string());
+        assert_eq!(shell.active_file.as_deref(), Some("main.nom"));
+    }
 }

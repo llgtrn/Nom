@@ -270,4 +270,199 @@ mod tests {
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("invalid"));
     }
+
+    #[test]
+    fn cli_check_empty_path() {
+        let cmd = parse_args(&["check", ""]).unwrap();
+        assert!(matches!(cmd, CliCommand::Check { .. }));
+        if let CliCommand::Check { path } = cmd {
+            assert_eq!(path, "");
+        }
+    }
+
+    #[test]
+    fn cli_build_path_with_spaces() {
+        let cmd = parse_args(&["build", "my file.nom"]).unwrap();
+        assert_eq!(
+            cmd,
+            CliCommand::Build { path: "my file.nom".to_string(), release: false }
+        );
+    }
+
+    #[test]
+    fn cli_lint_absolute_windows_path() {
+        let path = "C:\\project\\main.nom";
+        let cmd = parse_args(&["lint", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Lint { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_rag_query_with_spaces() {
+        let cmd = parse_args(&["rag", "how does layout work"]).unwrap();
+        assert_eq!(
+            cmd,
+            CliCommand::Rag { query: "how does layout work".to_string(), top_k: 5 }
+        );
+    }
+
+    #[test]
+    fn cli_version_returns_version() {
+        let cmd = parse_args(&["version"]).unwrap();
+        assert_eq!(cmd, CliCommand::Version);
+    }
+
+    #[test]
+    fn cli_help_returns_help() {
+        let cmd = parse_args(&["help"]).unwrap();
+        assert_eq!(cmd, CliCommand::Help);
+    }
+
+    #[test]
+    fn cli_run_returns_run() {
+        let cmd = parse_args(&["run", "main.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Run { .. }));
+    }
+
+    #[test]
+    fn cli_format_returns_format() {
+        let cmd = parse_args(&["format", "main.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Format { .. }));
+    }
+
+    #[test]
+    fn cli_rag_with_k_10() {
+        let cmd = parse_args(&["rag", "--top-k", "10", "some query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 10);
+        } else {
+            panic!("expected RagWithK variant");
+        }
+    }
+
+    #[test]
+    fn cli_rag_with_k_1() {
+        let cmd = parse_args(&["rag", "--top-k", "1", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 1);
+        } else {
+            panic!("expected RagWithK variant");
+        }
+    }
+
+    #[test]
+    fn cli_rag_with_k_100() {
+        let cmd = parse_args(&["rag", "--top-k", "100", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 100);
+        } else {
+            panic!("expected RagWithK variant");
+        }
+    }
+
+    #[test]
+    fn cli_unknown_command_two_words() {
+        let result = parse_args(&["run", "two", "args"]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown"));
+    }
+
+    #[test]
+    fn cli_build_release_flag_position() {
+        // --release after path is not recognized; falls through to unknown
+        let result = parse_args(&["build", "main.nom", "--release"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_rag_top_k_zero() {
+        let cmd = parse_args(&["rag", "--top-k", "0", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 0);
+        } else {
+            panic!("expected RagWithK variant");
+        }
+    }
+
+    #[test]
+    fn cli_check_unicode_path() {
+        let path = "プロジェクト/main.nom";
+        let cmd = parse_args(&["check", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Check { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_format_dot_path() {
+        let cmd = parse_args(&["format", "."]).unwrap();
+        assert_eq!(cmd, CliCommand::Format { path: ".".to_string() });
+    }
+
+    #[test]
+    fn cli_run_relative_path() {
+        let path = "../sibling/main.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_build_no_release_is_false() {
+        let cmd = parse_args(&["build", "src/main.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(!release);
+        } else {
+            panic!("expected Build variant");
+        }
+    }
+
+    #[test]
+    fn cli_build_with_release_is_true() {
+        let cmd = parse_args(&["build", "--release", "src/main.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(release);
+        } else {
+            panic!("expected Build variant");
+        }
+    }
+
+    #[test]
+    fn cli_parse_unknown_with_multiple_args() {
+        let result = parse_args(&["unknown", "a", "b"]);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().contains("unknown"));
+    }
+
+    #[test]
+    fn cli_rag_empty_query_parses() {
+        let cmd = parse_args(&["rag", ""]).unwrap();
+        if let CliCommand::Rag { query, .. } = cmd {
+            assert_eq!(query, "");
+        } else {
+            panic!("expected Rag variant");
+        }
+    }
+
+    #[test]
+    fn cli_check_path_with_dot() {
+        let cmd = parse_args(&["check", "./main.nom"]).unwrap();
+        assert_eq!(cmd, CliCommand::Check { path: "./main.nom".to_string() });
+    }
+
+    #[test]
+    fn cli_version_no_args_wrong() {
+        // ["version", "extra"] has unknown command "version" since it won't match ["version"]
+        let result = parse_args(&["version", "extra"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_lint_path_with_hyphen() {
+        let path = "my-project/main.nom";
+        let cmd = parse_args(&["lint", path]).unwrap();
+        assert_eq!(cmd, CliCommand::Lint { path: path.to_string() });
+    }
+
+    #[test]
+    fn cli_graph_empty_query() {
+        let cmd = parse_args(&["graph", ""]).unwrap();
+        assert_eq!(cmd, CliCommand::Graph { query: "".to_string() });
+    }
 }

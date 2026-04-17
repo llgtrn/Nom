@@ -585,6 +585,76 @@ mod tests {
     }
 
     #[test]
+    fn eval_expr_nested_binary() {
+        // (1 + 2) * 3 == 9
+        let ctx = EvalContext::new();
+        let inner = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        let expr = Expr::BinOp {
+            op: BinOpKind::Mul,
+            left: Box::new(inner),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(9)));
+    }
+
+    #[test]
+    fn eval_expr_comparison() {
+        // 1 < 2 evaluates to Bool(true)
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Lt,
+            left: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    #[test]
+    fn eval_expr_literal_string() {
+        // A string literal evaluates to itself.
+        let ctx = EvalContext::new();
+        let expr = Expr::Literal(SandboxValue::Str("hello".into()));
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("hello".into())));
+    }
+
+    #[test]
+    fn sanitizer_all_allowed_functions_pass() {
+        // Every function in the default safe allowlist must pass AllowedFunctionsSanitizer.
+        let allowed = AllowedFunctionsSanitizer::default_safe();
+        for &fn_name in &["len", "upper", "lower", "trim", "abs", "min", "max", "concat", "to_str", "to_int"] {
+            let expr = Expr::Call {
+                name: fn_name.into(),
+                args: vec![Expr::Literal(SandboxValue::Int(0))],
+            };
+            assert!(
+                allowed.check(&expr).is_ok(),
+                "{fn_name} must pass AllowedFunctionsSanitizer"
+            );
+        }
+    }
+
+    #[test]
+    fn sanitizer_depth_10_is_too_deep() {
+        // A BinOp chain 10 levels deep exceeds max_depth=5; DepthLimitSanitizer must reject it.
+        let deep = (0..10).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| {
+            Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(acc),
+                right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            }
+        });
+        assert_eq!(
+            DepthLimitSanitizer { max_depth: 5 }.check(&deep),
+            Err(SandboxError::DepthLimitExceeded),
+            "depth-10 expression must be rejected by max_depth=5 sanitizer"
+        );
+    }
+
+    #[test]
     fn graph_rag_query_returns_ranked() {
         // Verify that retrieve() returns results sorted by score descending.
         use crate::dag::Dag;

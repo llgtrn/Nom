@@ -80,4 +80,67 @@ mod tests {
         let sb2 = SlotBinding::inferred("output", "concept", SlotValue::Bool(true));
         assert_eq!(sb2.confidence, 0.8);
     }
+
+    /// SlotValue::Number accessor returns correct value
+    #[test]
+    fn slot_value_number_accessor() {
+        let sv = SlotValue::Number(3.14);
+        assert!((sv.as_number().unwrap() - 3.14).abs() < f64::EPSILON);
+        assert!(sv.as_text().is_none());
+        assert!(sv.as_bool().is_none());
+    }
+
+    /// SlotValue::Bool accessor returns correct value
+    #[test]
+    fn slot_value_bool_accessor() {
+        let sv = SlotValue::Bool(true);
+        assert_eq!(sv.as_bool(), Some(true));
+        assert!(sv.as_text().is_none());
+        assert!(sv.as_number().is_none());
+    }
+
+    /// SlotValue::Ref accessor returns the NomtuRef
+    #[test]
+    fn slot_value_ref_accessor() {
+        use crate::block_model::NomtuRef;
+        let r = NomtuRef::new("id1", "fetch", "verb");
+        let sv = SlotValue::Ref(r.clone());
+        let got = sv.as_ref().unwrap();
+        assert_eq!(got.id, "id1");
+        assert_eq!(got.word, "fetch");
+    }
+
+    /// SlotValue::List can nest other SlotValues
+    #[test]
+    fn slot_value_list_nesting() {
+        let list = SlotValue::List(vec![
+            SlotValue::Text("a".into()),
+            SlotValue::Number(1.0),
+            SlotValue::Bool(false),
+        ]);
+        if let SlotValue::List(items) = &list {
+            assert_eq!(items.len(), 3);
+            assert_eq!(items[0].as_text(), Some("a"));
+        } else {
+            panic!("expected List variant");
+        }
+    }
+
+    /// SlotBinding::explicit sets is_required true; inferred sets it false
+    #[test]
+    fn slot_binding_is_required_flag() {
+        let explicit = SlotBinding::explicit("port", "text", SlotValue::Text("v".into()));
+        assert!(explicit.is_required);
+        let inferred = SlotBinding::inferred("port", "text", SlotValue::Text("v".into()));
+        assert!(!inferred.is_required);
+    }
+
+    /// SlotBinding reason strings differ between explicit and inferred
+    #[test]
+    fn slot_binding_reason_strings() {
+        let explicit = SlotBinding::explicit("a", "text", SlotValue::Bool(true));
+        assert!(explicit.reason.contains("explicit"));
+        let inferred = SlotBinding::inferred("b", "text", SlotValue::Bool(false));
+        assert!(inferred.reason.contains("inferred") || inferred.reason.contains("grammar"));
+    }
 }

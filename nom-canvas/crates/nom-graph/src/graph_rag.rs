@@ -714,4 +714,103 @@ mod tests {
         }
         assert_eq!(results.len(), 4, "all four nodes should be returned");
     }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_query_single_word
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_query_single_word() {
+        // A single-word query against a multi-node graph must return ranked results.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("apple", "verb"));
+        dag.add_node(ExecNode::new("banana", "verb"));
+        dag.add_node(ExecNode::new("cherry", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("apple");
+        let results = retriever.retrieve(&query, 3, 1);
+        assert_eq!(results.len(), 3, "single-word query must return all 3 nodes");
+        // Results must be sorted descending by score.
+        for i in 0..results.len() - 1 {
+            assert!(
+                results[i].score >= results[i + 1].score,
+                "results must be sorted by score descending"
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_score_decreases_with_distance
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_score_decreases_with_distance() {
+        // A linear chain queried with the first node's vec:
+        // the first node (rank 0, cosine=1.0) scores 1/(RRF_K+0);
+        // the last node (rank n, lower cosine) scores lower.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("start", "verb"));
+        dag.add_node(ExecNode::new("middle", "verb"));
+        dag.add_node(ExecNode::new("end", "verb"));
+        dag.add_edge("start", "out", "middle", "in");
+        dag.add_edge("middle", "out", "end", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("start");
+        let results = retriever.retrieve(&query, 3, 2);
+        assert_eq!(results.len(), 3);
+        // The top result must score highest; the last result must score lowest.
+        assert!(
+            results[0].score >= results[2].score,
+            "first result must score >= last result"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_top_k_1_returns_one
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_top_k_1_returns_one() {
+        // top_k=1 must return exactly 1 result.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("only", "verb"));
+        dag.add_node(ExecNode::new("other", "verb"));
+        dag.add_edge("only", "out", "other", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("only");
+        let results = retriever.retrieve(&query, 1, 1);
+        assert_eq!(results.len(), 1, "top_k=1 must return exactly 1 result");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_content_match_boosts_score
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_content_match_boosts_score() {
+        // A node queried with its own vec must score > 0.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("target_node", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("target_node");
+        let results = retriever.retrieve(&query, 1, 0);
+        assert_eq!(results.len(), 1);
+        assert!(
+            results[0].score > 0.0,
+            "node matching query term must score > 0, got {}",
+            results[0].score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_no_match_gives_zero_via_empty
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_no_match_gives_zero_via_empty() {
+        // An empty graph with top_k > 0 returns an empty result (no matches).
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("anything");
+        let results = retriever.retrieve(&query, 5, 2);
+        assert!(
+            results.is_empty(),
+            "empty graph must return no results (no nodes to score)"
+        );
+    }
 }

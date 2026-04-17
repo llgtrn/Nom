@@ -378,4 +378,134 @@ mod tests {
             assert!(root_pos < child_pos, "root must precede {child}");
         }
     }
+
+    #[test]
+    fn dag_empty_topological_sort() {
+        // An empty DAG produces an empty sorted list.
+        let dag = Dag::new();
+        let sorted = dag.topological_sort().unwrap();
+        assert!(sorted.is_empty(), "empty DAG must sort to []");
+    }
+
+    #[test]
+    fn dag_linear_chain_topological() {
+        // A→B→C→D must sort to [A, B, C, D] in that relative order.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 4);
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("A") < pos("B"));
+        assert!(pos("B") < pos("C"));
+        assert!(pos("C") < pos("D"));
+    }
+
+    #[test]
+    fn dag_diamond_topology() {
+        // A→B, A→C, B→D, C→D — all 4 nodes must appear and A before D.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 4, "diamond must include all 4 nodes");
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("A") < pos("B"), "A before B");
+        assert!(pos("A") < pos("C"), "A before C");
+        assert!(pos("B") < pos("D"), "B before D");
+        assert!(pos("C") < pos("D"), "C before D");
+    }
+
+    #[test]
+    fn dag_self_loop_detection() {
+        // A→A is a cycle; topological_sort must return Err.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_edge("A", "out", "A", "in");
+        assert!(dag.topological_sort().is_err(), "self-loop A→A must be detected as cycle");
+    }
+
+    #[test]
+    fn dag_multiple_roots() {
+        // Two independent nodes with no edges — both must appear in sort.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 2, "both independent nodes must appear");
+        assert!(sorted.contains(&"A".to_string()), "A must be in sort");
+        assert!(sorted.contains(&"B".to_string()), "B must be in sort");
+    }
+
+    #[test]
+    fn dag_edge_list() {
+        // edges() field returns (src_node, dst_node) pairs as stored.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge("src", "out", "dst", "in");
+        assert_eq!(dag.edges.len(), 1);
+        assert_eq!(dag.edges[0].src_node, "src");
+        assert_eq!(dag.edges[0].dst_node, "dst");
+    }
+
+    #[test]
+    fn dag_in_degree() {
+        // B has two incoming edges → in-degree == 2.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("C", "out", "B", "in");
+        let in_degree_b = dag.edges.iter().filter(|e| e.dst_node == "B").count();
+        assert_eq!(in_degree_b, 2, "B must have in-degree 2");
+    }
+
+    #[test]
+    fn dag_out_degree() {
+        // A has two outgoing edges → out-degree == 2.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        let out_degree_a = dag.edges.iter().filter(|e| e.src_node == "A").count();
+        assert_eq!(out_degree_a, 2, "A must have out-degree 2");
+    }
+
+    #[test]
+    fn dag_is_dag_true() {
+        // A valid acyclic graph: topological_sort returns Ok.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_edge("X", "out", "Y", "in");
+        assert!(dag.topological_sort().is_ok(), "valid DAG must return Ok from topological_sort");
+    }
+
+    #[test]
+    fn dag_is_dag_false_on_cycle() {
+        // A→B→C→A forms a cycle; topological_sort must return Err.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+        dag.add_edge("C", "out", "A", "in");
+        assert!(dag.topological_sort().is_err(), "A→B→C→A cycle must cause topological_sort to return Err");
+    }
 }

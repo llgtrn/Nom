@@ -174,4 +174,51 @@ mod tests {
         assert_eq!(w.severity, Severity::Warning);
         assert_eq!(w.message, "mild issue");
     }
+
+    /// validate_block returns no errors when block has no slots set
+    #[test]
+    fn validate_block_no_slots_no_errors() {
+        let dict = StubDictReader::new();
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "affine:note");
+        let errors = validate_block(&block, &dict);
+        assert!(errors.is_empty(), "block with no slots and known kind must validate clean");
+    }
+
+    /// Span range boundaries are preserved in ValidationError
+    #[test]
+    fn validation_error_span_preserved() {
+        let err = ValidationError::error(5..20, "span test");
+        assert_eq!(err.span.start, 5u32);
+        assert_eq!(err.span.end, 20u32);
+    }
+
+    /// Multiple labels can be attached to a single ValidationError
+    #[test]
+    fn validation_error_multiple_labels() {
+        let err = ValidationError::error(0..1, "multi")
+            .with_label(Label { span: 0..1, message: "label 1".into() })
+            .with_label(Label { span: 0..1, message: "label 2".into() });
+        assert_eq!(err.labels.len(), 2);
+        assert_eq!(err.labels[0].message, "label 1");
+        assert_eq!(err.labels[1].message, "label 2");
+    }
+
+    /// GrammarDerivationValidator passes when kind is known
+    #[test]
+    fn grammar_derivation_validator_passes_known_kind() {
+        let dict = StubDictReader::new();
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "fetch", "verb"), "affine:paragraph");
+        let errors = GrammarDerivationValidator.validate(&block, &dict);
+        assert!(errors.is_empty());
+    }
+
+    /// GrammarDerivationValidator error message includes the unknown kind name
+    #[test]
+    fn grammar_derivation_validator_error_includes_kind_name() {
+        let dict = StubDictReader::new();
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "foo", "spooky_kind"), "affine:note");
+        let errors = GrammarDerivationValidator.validate(&block, &dict);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].message.contains("spooky_kind"));
+    }
 }

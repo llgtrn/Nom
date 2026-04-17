@@ -263,4 +263,58 @@ mod tests {
         // bg + 2 step rows + 0 card quads (no cards ingested) + progress = 4 quads.
         assert_eq!(scene.quads.len(), 4);
     }
+
+    #[test]
+    fn deep_think_panel_empty_events() {
+        let panel = DeepThinkPanel::new();
+        assert_eq!(panel.card_count(), 0);
+        assert_eq!(panel.steps.len(), 0);
+    }
+
+    #[test]
+    fn deep_think_ingest_event() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![make_step("h1", 0.6, vec![])]);
+        assert_eq!(panel.card_count(), 1);
+    }
+
+    #[test]
+    fn deep_think_consume_stream_order() {
+        let events = vec![
+            make_step("first", 0.4, vec![]),
+            make_step("second", 0.7, vec![]),
+            make_step("third", 0.9, vec![]),
+        ];
+        let cards = consume_stream(events);
+        assert_eq!(cards.len(), 3);
+        assert_eq!(cards[0].step_num, 0);
+        assert_eq!(cards[1].step_num, 1);
+        assert_eq!(cards[2].step_num, 2);
+        assert!(cards[0].hypothesis.contains("first"));
+        assert!(cards[1].hypothesis.contains("second"));
+        assert!(cards[2].hypothesis.contains("third"));
+    }
+
+    #[test]
+    fn deep_think_clear_via_begin() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![
+            make_step("h0", 0.5, vec![]),
+            make_step("h1", 0.6, vec![]),
+        ]);
+        assert_eq!(panel.card_count(), 2);
+        // begin() clears steps (but not cards — cards are independent).
+        panel.begin("new intent");
+        assert_eq!(panel.steps.len(), 0);
+    }
+
+    #[test]
+    fn deep_think_steps_not_capped() {
+        let mut panel = DeepThinkPanel::new();
+        panel.begin("stress");
+        for i in 0..20 {
+            panel.push_step(ThinkingStep::new(format!("step {i}"), 0.5));
+        }
+        assert_eq!(panel.steps.len(), 20);
+    }
 }

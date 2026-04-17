@@ -182,4 +182,42 @@ mod tests {
         assert_eq!(mc.method_id, 42);
         assert_eq!(mc.return_hash, Hash128::of_str("out"));
     }
+
+    #[test]
+    fn tracked_multiple_record_calls() {
+        let t = Tracked::new("data", 1);
+        for i in 0..10u32 {
+            t.record_call(i, Hash128::of_u64(i as u64));
+        }
+        assert_eq!(t.call_count(), 10);
+    }
+
+    #[test]
+    fn tracked_snapshot_after_take_is_empty() {
+        let t = Tracked::new("data", 1);
+        t.record_call(1, Hash128::of_str("r"));
+        t.record_call(2, Hash128::of_str("s"));
+        t.take_calls();
+        let snap = t.snapshot();
+        assert_eq!(snap.method_call_pairs.len(), 0);
+    }
+
+    #[test]
+    fn tracked_record_same_method_twice() {
+        let t = Tracked::new("data", 1);
+        let h = Hash128::of_str("result");
+        t.record_call(5, h);
+        t.record_call(5, h);
+        assert_eq!(t.call_count(), 2);
+        let calls = t.take_calls();
+        assert_eq!(calls[0].method_id, 5);
+        assert_eq!(calls[1].method_id, 5);
+    }
+
+    #[test]
+    fn tracked_version_zero() {
+        let t = Tracked::new("value", 0);
+        assert_eq!(t.version, 0);
+        assert_eq!(t.call_count(), 0);
+    }
 }

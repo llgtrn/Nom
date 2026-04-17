@@ -117,4 +117,47 @@ mod tests {
         assert_eq!(obj.entity().id, "e1");
         assert_eq!(obj.entity().word, "render");
     }
+
+    /// Workspace::new() starts with zero counts
+    #[test]
+    fn workspace_starts_empty() {
+        let ws = Workspace::new();
+        assert_eq!(ws.block_count(), 0);
+        assert_eq!(ws.node_count(), 0);
+        assert_eq!(ws.connector_count(), 0);
+        assert!(ws.doc_tree.is_empty());
+    }
+
+    /// Inserting the same block ID twice updates the map but doc_tree gets two entries
+    #[test]
+    fn workspace_insert_duplicate_block_id() {
+        let mut ws = Workspace::new();
+        let b1 = BlockModel::new("dup", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let b2 = BlockModel::new("dup", NomtuRef::new("e2", "w", "verb"), "affine:paragraph");
+        ws.insert_block(b1);
+        ws.insert_block(b2);
+        // HashMap replaces: still 1 block
+        assert_eq!(ws.block_count(), 1);
+        // doc_tree appends: 2 entries
+        assert_eq!(ws.doc_tree.len(), 2);
+    }
+
+    /// CanvasObject::Node entity returns the node's NomtuRef
+    #[test]
+    fn canvas_object_node_entity() {
+        use crate::graph_node::GraphNode;
+        let entity = NomtuRef::new("ne1", "transform", "verb");
+        let node = GraphNode::new("n1", entity.clone(), "verb", [0.0, 0.0]);
+        let obj = CanvasObject::Node(node);
+        assert_eq!(obj.entity().id, "ne1");
+        assert_eq!(obj.entity().word, "transform");
+    }
+
+    /// remove_block on non-existent ID returns None without panicking
+    #[test]
+    fn workspace_remove_nonexistent_block_returns_none() {
+        let mut ws = Workspace::new();
+        let result = ws.remove_block("no-such-id");
+        assert!(result.is_none());
+    }
 }
