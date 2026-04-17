@@ -1,8 +1,8 @@
 # NomCanvas — Full Rust GPU-Native IDE Design Specification
 
 > **CANONICAL TRACKING DOC — MAIN DESIGN SPEC** (Planner/Auditor refreshes every cycle)
-> **Date:** 2026-04-17 | **HEAD:** `6196ef1`
-> **Status:** DESIGN — active; Phase 1 batch-1 landed on disk (31/31 tests, uncommitted)
+> **Date:** 2026-04-17 | **HEAD:** `56604c4` (wave-10 landed, **1272 tests**, 13 crates shipped). **⚠️ "Compose by natural language on canvas" promise: 0% delivered** (iter-17 audit) — input path (prose→compiler) dead in 6 wires, output path (artifact→canvas) dead in 5 wires. Keystone: `stage1_tokenize → Highlighter` adapter (~200 LOC).
+> **Status:** DESIGN → IMPLEMENTATION. Phase 1 ✅ · Phase 2 100% ✅ · Phase 3 ~100% ✅ · Phase 4/5 scaffolded (nom-compose 94 tests, nom-graph-v2 64, nom-lint 39, nom-telemetry 36, nom-collab 33, nom-memoize 17). **Compiler-as-core integration still 0% runtime** (bridge crate spec designed iter-16, not yet implemented). **Vendoring 58% integrated** (8 DEEP · 3 PATTERN · 6 REF · 2 NOT-USED).
 > **Sibling tracking docs:** `implementation_plan.md`, `nom_state_machine_report.md`, `task.md` (all 4 MUST stay in sync)
 > **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text) — Zed's approach
 > **FOUNDATION:** Everything is built around the Nom language. The compiler IS the IDE. The dictionary IS the knowledge base. The grammar IS the type system. The .nomx format IS the universal input. External patterns are studied and ABSTRACTED into Nom-native implementations — zero foreign identities, zero wrappers, zero adapters.
@@ -719,3 +719,26 @@ the media product_spin is
 ```
 
 The compiler resolves each `uses` reference against the dictionary, builds a `VideoComposition` with `SceneEntry` per media entity, and calls `export()` — rendering every frame through the same GPU scene graph that powers the canvas IDE.
+
+---
+
+## 21. Session 2026-04-17 Implementation Log — Waves 4→10
+
+This appendix tracks what landed against the spec during the 2026-04-17 execution session. Architectural content above is canonical; this section records commit → spec-clause coverage.
+
+**8 commits on main, 204 → 1272 tests, 3 → 13 crates.**
+
+| Commit | Wave | Spec sections advanced |
+|--------|------|------------------------|
+| `c2d7090` | 4 | §8 Phase 3 (nom-theme tokens/color/mode, nom-panels shell, nom-blocks shared infra + prose + nomx) · §5 animation curves |
+| `24f7e05` | CI | `.github/workflows/ci.yml` canvas job brought into line with §19 headless-GPU discipline |
+| `4592b85` | 5 | §8 Phase 3 remaining blocks (media, graph_node, drawing, table, embed) · §7 editor display pipeline (syntax_map, display_map, lsp_bridge, inlay_hints, wrap_map, tab_map) · §9 theme fonts + icons |
+| `9f3df57` | 6 | §10-12 Phase 4/5 scaffolds: nom-graph-v2 (§11 DAG + 4 caches) · nom-compose (§12 dispatch + queue + router + credential) · nom-lint (§13 sealed-trait linter) · nom-memoize (§14 comemo pattern without dep) · nom-telemetry (§15 W3C traceparent) · nom-collab (§16 CRDT types) · nom-editor line_layout (§7 cosmic-text interface) · nom-blocks compose/*_block preview types (§12 canvas integration) |
+| `2e47d5d` | 7 | §12 artifact_store / vendor_trait / video_composition / format_translator · §14 semantic (WrenAI MDL types) · §15 rayon_bridge · §13 file-watcher scaffold · §11 AST-sandbox data-structure sanitizers · §9 typography scale · §6 command history |
+| `365db9b` | 8 | §12 all 10 concrete backends stubbed + `register_all_stubs()`: video, image, web_screen, native_screen, data_extract (XY-Cut++), data_query (WrenAI 5-stage), storyboard_narrative (4-phase + 5-phase typed pipelines), audio, data_frame (Polars-inspired minimal), mesh (glTF 2.0) |
+| `4096db9` | 9 | §12 last backend: scenario_workflow (n8n-style retry + webhook resume) · §15 plugin_registry · §6 cursor primitive · §6 shortcut registry + platform normalize · §8 tree_query + whole-tree validators · integration tests for §11 DAG + §12 dispatcher |
+| `56604c4` | 10 | §5 transition primitive · §9 motion tokens · §6 panels layout solver · §6 rendering_hints (hover/select overlay layer) · §16 presence sibling to awareness · §7 command handlers · §13 2 concrete lint rules (trailing whitespace, double blank lines) |
+
+**Audit findings resolved this session:** 2 HIGH (animation `Duration::ZERO` NaN, `NarrativeResult::completed_phase()` skip) + 5 MEDIUM (EmbedKind brand names → `VideoStream`/`DesignFile`, three `Rgba` types → `SrgbColor` rename, `FractionalIndex` dedup to `block_model.rs`, CI `NOM_SKIP_GPU_TESTS` env var, `RUSTFLAGS=-D warnings` dead_code cleanup) + 1 LOW (`CommandError::Failed` `#[allow(dead_code)]`).
+
+**Still 0% per the spec's Vision (§1):** the render substrate exists, but the natural-language → compiler → canvas pipe remains fully disconnected — see iter-17 audit in `nom_state_machine_report.md`. The keystone unlock is the `nom_concept::stage1_tokenize → Highlighter::color_runs` adapter (~200 LOC), blocked on the cross-workspace cargo path-dep decision between `nom-compiler/` and `nom-canvas/`.

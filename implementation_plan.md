@@ -1,11 +1,35 @@
 # Nom — Implementation Plan
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `e2b7ecb` on main | **CI:** canvas job GREEN (cargo check + test 23s on ubuntu-latest); compiler matrix still running | **Date:** 2026-04-17
-> **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — also canonical
+> **HEAD:** `56604c4` on main (wave-10 landed, **1272 workspace tests across 13 crates**) | **Date:** 2026-04-17
+> **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (721 lines) — also canonical
 > **Sibling docs:** `nom_state_machine_report.md`, `task.md` (all 4 MUST stay in sync)
 > **Foundation:** Everything built around Nom language. 9 kinds compose everything.
-> **Zed gpui_wgpu end-to-end read** (7 files + Cargo.toml: wgpu/cosmic-text 0.17/swash 0.2.6/etagere 0.2) complete; batch-2 MVP = quads + mono_sprites + buffer growth + atlas upload; defer path_rasterization + subpixel-dual-source to batch-3.
+> **Standing status:** Compiler-as-core = **0% runtime** · "Compose by natural language on canvas" user promise = **0% delivered** (iter-17 audit: input path dead in 6 wires, output path dead in 5 wires, stage1_tokenize→Highlighter is the keystone) · Vendoring = **58%**
+> **Status:** Phase 1 ✅ · Phase 2 100% ✅ · Phase 3 ~100% (line_layout landed wave-6) ✅ · Phase 4 (nom-compose) **305 tests** — artifact_store + video_composition + format_translator + semantic + vendor_trait + provider_router + credential_store + task_queue + dispatch + plugin_registry + 11 backend stubs (video/image/web_screen/native_screen/data_extract/data_query/storyboard_narrative/audio/data_frame/mesh/scenario_workflow) · Phase 5: nom-graph-v2 **64** (Kahn + 4-cache + sandbox + 6-test end-to-end integration), nom-lint **75** (sealed trait + watcher + 2 concrete rules), nom-telemetry **36** (W3C + rayon_bridge), nom-memoize **17**, nom-collab **47** (+ presence). Security CLEAN. Test quality B.
+
+## Session 2026-04-17 Wave Log (4→10)
+
+| Commit | Wave | Crates net | Tests cumulative | Headline |
+|--------|------|-----------:|-----------------:|----------|
+| `c2d7090` | 4 | +3 | 376 | nom-theme + nom-panels + nom-blocks scaffolds + 10 modules across canvas-core/editor/gpui |
+| `24f7e05` | CI | 0 | 376 | Silence `-D warnings` dead_code/unused_import across 5 sites |
+| `4592b85` | 5 | 0 | 519 | 5 remaining Phase 3 block types + editor display pipeline (6 modules) + theme fonts/icons |
+| `9f3df57` | 6 | +6 | 751 | 6 new crates (nom-graph-v2/compose/lint/memoize/telemetry/collab) + line_layout + compose preview blocks + HIGH animation fix + MEDIUM EmbedKind rename + MEDIUM CI env var |
+| `2e47d5d` | 7 | 0 | 870 | compose {artifact_store, vendor_trait, video_composition, format_translator, semantic} + rayon_bridge + watcher + sandbox + typography + command_history |
+| `365db9b` | 8 | 0 | 1028 | 10 Phase 4 backend stubs + `register_all_stubs()` covering all 11 NomKind variants |
+| `4096db9` | 9 | 0 | 1155 | scenario_workflow + plugin_registry + 2 integration tests + cursor + shortcuts + tree_query + validators + HIGH storyboard phase skip + MEDIUM SrgbColor rename + FractionalIndex hoist |
+| `56604c4` | 10 | 0 | 1272 | Wire linter-added modules (motion + transition + layout + rendering_hints + presence + commands + lint/rules) + fix `CommandError::Failed` dead_code |
+
+**Audit outcomes (this session, 2 HIGH + 5 MEDIUM + 1 LOW, all resolved):**
+1. HIGH `Animation::sample` / `progress` NaN when `Duration::ZERO` — guard added (wave-6)
+2. HIGH `NarrativeResult::completed_phase()` skipped Storyboard phase — `video_output_hash: Option<String>` field added + case covered (wave-9)
+3. MEDIUM `EmbedKind::Youtube / Figma` brand-name identifiers → `VideoStream / DesignFile` (wave-6)
+4. MEDIUM three colliding `Rgba` types (nom-gpui linear f32, drawing u8, highlight packed u32) → `drawing::Rgba` renamed `SrgbColor` (wave-9)
+5. MEDIUM `FractionalIndex` duplicated in drawing.rs + graph_node.rs + media.rs → hoisted to `block_model.rs` (wave-9)
+6. MEDIUM CI canvas job missing `NOM_SKIP_GPU_TESTS=1` env var → added to `.github/workflows/ci.yml` (wave-6)
+7. MEDIUM `RUSTFLAGS=-D warnings` turned dead_code/unused_import warnings into errors → 5 sites fixed (scene.rs `point_to_query` + `primitive_order`, frame_loop.rs `WritingHandler` test-scoped struct, hit_testing.rs `Size`, spatial_index.rs `Point, Size`) — commit `24f7e05`
+8. LOW `CommandError::Failed` variant unconstructed → `#[allow(dead_code)]` until real command handlers wire up (wave-10)
 
 ---
 

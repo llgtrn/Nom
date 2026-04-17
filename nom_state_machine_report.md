@@ -1,11 +1,27 @@
 # Nom Compiler + NomCanvas IDE — State Machine Report
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `e2b7ecb` on main | **CI:** canvas job GREEN (cargo check + test 23s on ubuntu-latest); compiler matrix still running | **Date:** 2026-04-17
+> **HEAD:** `56604c4` on main (wave-10 landed, **1272 workspace tests green** under `RUSTFLAGS="-D warnings -A deprecated"`) | **Date:** 2026-04-17
 > **Sibling docs:** `implementation_plan.md`, `task.md`, `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (all 4 MUST stay in sync)
-> **Compiler:** 29 crates, 1067 tests | **Canvas v1:** ARCHIVED to `.archive/nom-canvas-v1-typescript/`
-> **NomCanvas:** Custom GPUI (wgpu+winit+taffy+cosmic-text). Full Rust. GPU-native. Phase 1 foundation landed.
+> **Standing status lines:** Compiler-as-core = **0% runtime / ~7% stubbed** · 19-repo vendoring = **58% integrated** (8 DEEP, 3 PATTERN, 6 REF-only, 2 NOT-USED)
+> **Compiler:** 29 crates, 1067 tests (unchanged) | **Canvas v1:** ARCHIVED to `.archive/nom-canvas-v1-typescript/`
+> **NomCanvas:** **13 crates shipped** through wave-10. Phase 1-5 all have code. Wave-4 landed nom-theme + nom-panels + nom-blocks; wave-5 added 5 remaining block types + editor display pipeline + theme fonts/icons; wave-6 added 6 new Phase 4/5 crates (nom-graph-v2, nom-compose, nom-lint, nom-memoize, nom-telemetry, nom-collab); wave-7 added artifact_store/vendor_trait/video_composition/format_translator/semantic + rayon_bridge + watcher + sandbox + typography + command_history; wave-8 stubbed all 10 Phase 4 backends + `register_all_stubs()`; wave-9 added scenario_workflow + plugin_registry + 2 integration tests + cursor + shortcuts + tree_query + validators; wave-10 wired linter-added modules (motion, transition, layout, rendering_hints, presence, commands, lint/rules).
 > **Foundation:** Everything built around Nom language. 9 kinds compose everything in the world.
+
+## Session 2026-04-17 log — Waves 4→10
+
+| Commit | Wave | Delivery | Tests |
+|--------|------|----------|-------|
+| `c2d7090` | 4 | nom-theme + nom-panels + nom-blocks scaffolds + 10 new modules in existing crates | 376 |
+| `24f7e05` | CI | Silence dead_code/unused_import under `RUSTFLAGS=-D warnings` (5 sites) | — |
+| `4592b85` | 5 | 5 remaining Phase 3 blocks (media/graph_node/drawing/table/embed) + editor display pipeline (syntax_map/display_map/lsp_bridge/inlay_hints/wrap_map/tab_map) + theme fonts/icons | 519 |
+| `9f3df57` | 6 | 6 new crates: nom-graph-v2 (Kahn + 4 caches) + nom-compose (dispatch + queue + router) + nom-lint (sealed trait) + nom-memoize (thread-local) + nom-telemetry (W3C) + nom-collab (CRDT types) + nom-editor/line_layout + compose preview blocks + **HIGH animation div-by-zero** + **MEDIUM EmbedKind brand-name rename** + **MEDIUM CI env var** | 751 |
+| `2e47d5d` | 7 | compose {artifact_store, vendor_trait, video_composition, format_translator, semantic} + telemetry/rayon_bridge + lint/watcher + graph-v2/sandbox + theme/typography + panels/command_history | 870 |
+| `365db9b` | 8 | 10 Phase 4 backend stubs + `register_all_stubs()` covering all 11 NomKind variants (video, image, web_screen, native_screen, data_extract, data_query, storyboard_narrative, audio, data_frame, mesh) | 1028 |
+| `4096db9` | 9 | scenario_workflow (last Phase 4 backend) + plugin_registry + 2 integration tests (end_to_end DAG + dispatch_all_kinds) + cursor + shortcuts + tree_query + validators + **HIGH storyboard phase skip** + **MEDIUM SrgbColor rename + FractionalIndex hoist** | 1155 |
+| `56604c4` | 10 | Wire linter-added modules: motion + transition + layout + rendering_hints + presence + commands + nom-lint/rules (trailing_whitespace, double_blank_lines) + fix `CommandError::Failed` dead_code | 1272 |
+
+**Audit cycle payoff:** 2 HIGH + 5 MEDIUM + 1 LOW findings identified across wave-6/wave-8 audits, all resolved within the same session without destabilising the test baseline. Each fix was file-isolated with explicit acceptance criteria.
 
 ---
 
@@ -60,6 +76,294 @@ Zed (GPUI rendering), AFFiNE (design system), ComfyUI (DAG + 4 caches), Refly (4
 | **Overall plan** | **100%** | Blueprint fully decomposed across all 18 sections. Remaining work is EXECUTION, not planning. Executor fix-wave stalled 5 iterations blocks wave-2 start |
 
 **Blueprint-gap backfill (iter-8):** caught 6 modules named in spec §8 but missed in earlier decompositions — `nom-gpui/animation.rs`, `nom-editor/input.rs` (IME!) + `completion.rs`, `nom-panels/properties.rs`, `nom-theme/fonts.rs` + `icons.rs`. Added as Phase 1/2/3 addenda.
+
+## Iteration 17 — 2026-04-17 (HEAD `365db9b`, end-to-end promise audit)
+
+**User question:** "Everything is composed through natural language — words, sentences, grammar — and the canvas is the place to show it. Is the structure now like that?"
+
+**Answer: NO. The blueprint's core promise is 0% delivered.** Render substrate + 1028 tests + 12 crates + 11 backend stubs all exist, but the **input path (prose→compiler) and output path (artifact→canvas preview) are both completely disconnected**.
+
+### Input path — prose → compiler: BROKEN (6 missing wires)
+
+User can type into a `ropey::Rope`-backed `Buffer` ([nom-editor/src/buffer.rs:30-34](nom-canvas/crates/nom-editor/src/buffer.rs#L30-L34)) if someone sends `EditorCommand`s, but the text dies there as a plain Rust `String`:
+
+1. **No winit event loop → editor wire** — `KeyEvent`/`EditorCommand` types exist in `nom-editor/src/input.rs:82-106`, but nothing in `frame_loop.rs` dispatches OS keyboard events to them
+2. **No Buffer → Block model wire** — `ProseBlock.text: String` ([prose.rs:31-36](nom-canvas/crates/nom-blocks/src/prose.rs#L31-L36)) and `NomxBlock.source: String` ([nomx.rs:15-16](nom-canvas/crates/nom-blocks/src/nomx.rs#L15-L16)) are plain fields never updated from editor buffer changes
+3. **No Block → compiler wire** — grep `nom-canvas/crates/**` for `use nom_concept`/`use nom_grammar`/`use nom_lsp`/`use nom_dict`: **0 matches**
+4. **No SyntaxMap producer** — `nom-editor/src/syntax_map.rs:68` has `on_edit` signaling "needs reparse" but no parser ever registered
+5. **`Highlighter::color_runs` consumer exists, no producer** — [highlight.rs:93-106](nom-canvas/crates/nom-editor/src/highlight.rs#L93-L106) is ready to color `HighlightSpan`s but nothing in the crate creates them
+6. **LSP client uninstantiated** — `nom-lsp` exists in compiler; never constructed from canvas
+
+**Result:** typing `the media product_video is...` produces pure keystrokes → `Rope::insert`. Zero synonym resolution, zero dictionary lookup, zero kind classification, zero syntax highlighting driven by compiler.
+
+### Output path — compose → canvas: BROKEN (5 missing wires)
+
+1. **`ComposeDispatcher::dispatch()` only called in tests** — grep confirms zero non-test callers across `nom-canvas/crates/`
+2. **Two disconnected `CompositionPlan` structs** — `nom-compose/src/plan.rs:30` (canvas-side, test-only construction) vs `nom-compiler/crates/nom-planner/src/lib.rs:189` (compiler-side). No bridge between them.
+3. **Backends return placeholder bytes** — `StubVideoBackend::compose()` at [video.rs:120-132](nom-canvas/crates/nom-compose/src/backends/video.rs#L120-L132) returns `ComposeOutput { bytes: Vec::new(), mime_type: "video/mp4" }`. Doc comment: "Real impl spawns an ffmpeg process" — real impl absent.
+4. **`ArtifactStore::put` has 0 non-test callers** — grep across entire repo confirms
+5. **Compose preview blocks don't read `ArtifactStore`** — `VideoBlockProps.source_id: String` opaque; no read path from artifact hash
+
+**Result:** no UI can trigger a compose; plan can't be built from user prose; stubs return empty bytes; no artifact flows back to canvas preview.
+
+### The keystone wire (architect's pick)
+
+**`stage1_tokenize` adapter** from `nom_concept::stage1_tokenize` → `nom-editor/src/highlight.rs::Highlighter::color_runs`.
+
+**Why THE keystone:**
+1. **Both endpoints exist and match.** Producer at [stages.rs:112](nom-compiler/crates/nom-concept/src/stages.rs#L112) is a pure fn (`&str → Result<TokenStream>`) — no DB, no async, no runtime. Consumer at [highlight.rs:25-34, :93-106](nom-canvas/crates/nom-editor/src/highlight.rs#L25-L106) takes `&[HighlightSpan]`. Adapter is a straight match arm: `Tok::The|Tok::Is|Tok::Composes|...` → `TokenRole::Keyword`, `Tok::Word(_)` → `Ident`, etc.
+2. **Crosses the workspace boundary with minimum scope.** Establishes `path = "../nom-compiler/crates/nom-concept"` pattern — every future wire (hover, completion, compose) reuses it.
+3. **First user-visible compiler behavior.** Type `the greeting is...` → keywords highlight as the compiler parses. 10-second demo possible after keystone lands.
+
+**Risk:** `nom-concept` pulls `rusqlite` via `nom-grammar`. Fallback: extract `nom-concept-core` crate with only `lex` module + `Tok`/`Spanned` types (~200 LOC, no DB deps) before linking.
+
+**Subsequent dependency chain (auto-unlocks after keystone):**
+```
+stage1 adapter (keystone)
+  → S2 kind_classify drives fold markers
+  → hover via nom-grammar::resolve_synonym (statusbar)
+  → Async runtime required HERE for nom-lsp
+  → completion via nom-resolver
+  → Cmd+K compose via S1-S6 pipeline + first real backend
+  → video/media artifact flow
+```
+
+### Verdict
+
+The 12 crates + 1028 tests ship a **working render/edit substrate** that is LOOKING FOR a compiler to drive it. Every trait seam is in place (`LspProvider`, `Highlighter`, `CompileStatus`, `CompositionBackend`, `ArtifactStore`). The scaffolding is honest — nothing is secretly reimplementing compiler logic inline. It's waiting for the cross-workspace Cargo dep and a single adapter.
+
+**The one wire that makes the blueprint's promise visible: stage1 tokenize → syntax highlighting on the canvas.** Until that lands, the compose-by-natural-language story is aspirational architecture, not working code.
+
+---
+
+## Iteration 16 — 2026-04-17 (HEAD `365db9b`, 5m-cron loop tick 1)
+
+**Late-breaking: wave-8 `365db9b` also landed during this tick** — 10 Phase 4 backend stubs in `nom-compose/src/backends/`: video, image, web_screen, native_screen, data_extract, data_query, storyboard_narrative (5+4-phase pipelines), audio, data_frame (Polars pattern, no external deps), mesh (glTF 2.0). Registered via `register_all_stubs()` covering all 11 `NomKind` variants. Tests 870 → **1028** (+158).
+
+**Vendoring implications (pending deep audit next tick):** storyboard_narrative.rs landing 5-phase + 4-phase pipelines likely promotes **ArcReel** and **waoowaoo** PATTERN→DEEP. `image.rs` + `data_extract.rs` stubs likely promote **Open-Higgsfield** + **opendataloader-pdf** REF→PATTERN. Conservative estimate: **58% → ~63-68% vendoring** after wave-8 audit confirms stub substance.
+
+---
+
+
+
+2 new commits during dispatch: `9f3df57` wave-6 (6 new crates, 751 tests) + `2e47d5d` wave-7 (60 module additions across 7 crates, 870 tests). **12 nom-canvas crates now** (nom-collab added in wave-6).
+
+### (A) Compiler-as-core: STILL 0% runtime integration
+
+Grep-verified post-wave-7: zero `use nom_*::` imports across nom-canvas, zero `path = "../../../nom-compiler/...` deps, only 4 files mention `nom-compiler` (all in comments deferring wiring). **Wave-7's "telemetry bridge" is `nom-telemetry/rayon_bridge.rs`** (rayon span propagation for tracing) — unrelated to compiler-canvas wiring despite similar name.
+
+**Architect designed concrete `nom-compiler-bridge` crate spec** this tick (ready for Executor to land):
+
+- **Module layout** (10 files): `lib.rs`, `shared.rs` (Arc<RwLock> dict pool + grammar + compile_cache + bm25), `dispatcher.rs` (Request/Response enums), `ui_tier.rs` (sync cached reads), `interactive_tier.rs` (tokio mpsc), `background_tier.rs` (crossbeam + worker thread), `adapters/{highlight,lsp,completion,score}.rs`
+- **Cargo path deps**: `nom-concept`, `nom-dict`, `nom-grammar`, `nom-score`, `nom-search` via `../../../nom-compiler/crates/*`. New external: `tokio`, `crossbeam-channel`. Gated behind `feature = "compiler"` so existing code compiles without
+- **Public API** (~15 fns): `CompilerBridge::new(config)`, `bridge.ui().{lookup_nomtu, score_atom, can_wire, grammar_keywords}`, `bridge.interactive().{tokenize, highlight_spans, complete_prefix, hover}`, `bridge.background().{compile, plan_flow, verify}`
+- **First-wire target — `stage1_tokenize` → Highlighter**: highest leverage because both producer (`nom_concept::stage1_tokenize` at `stages.rs:112-117`, pure fn, no DB) and consumer (`nom-editor/src/highlight.rs:42-107` with `Highlighter::color_runs`) are fully implemented. Only the `Spanned.pos → byte_range` length computation is non-trivial (scan forward to next token's pos).
+- **LOC estimate**: ~350 LOC for scaffold + first adapter; ~500 LOC to include tokio runtime for Interactive tier.
+
+### (B) Vendoring: 53% → **58%** (+5pp)
+
+Wave-7 deepened two repos:
+
+- **n8n REFERENCED-ONLY → DEEP**: `nom-graph-v2/src/sandbox.rs` ports **all 4 AST sanitizers** from n8n expression-sandbox pattern (this_replace, prototype_block, dollar_validate, allowlist + sanitize combinator) with 17 tests. This was the "critical security-load-bearing finding" from iter-7.
+- **Remotion PATTERN → DEEP**: `nom-compose/src/video_composition.rs` lands concrete `VideoComposition + SceneEntry + active_scenes + validate` with 18 tests — matches the blueprint §18 architecture exactly.
+
+Bonus: **WrenAI refreshed** with full `SemanticModel + SemanticEntity + DerivedMetric + EntityRelation + validate` (13 tests in `nom-compose/src/semantic.rs`), **9router pattern deepened** via `format_translator.rs` (Anthropic/OpenAI/Google wire-format mapping, 10 tests), **artifact_store.rs** (content-addressed store from blueprint §12, 10 tests).
+
+**Updated vendoring table:**
+
+| Tier | % | Repos |
+|------|---|-------|
+| **DEEP** | **42%** (8/19) | Zed, AFFiNE, yara-x, typst, WrenAI, 9router, **n8n** (new), **Remotion** (promoted) |
+| **PATTERN** | **16%** (3/19) | ComfyUI, waoowaoo, ArcReel |
+| **REFERENCED-ONLY** | **32%** (6/19) | Refly, LlamaIndex, Haystack, ToolJet, Open-Higgsfield, opendataloader-pdf |
+| **NOT-USED** | **11%** (2/19) | Dioxus (explicit NO), Huly (scaffolded as nom-collab, deferred) |
+
+**Next-tick promotion target picked by agent (scored 24/25):** LlamaIndex REF → PATTERN. Reason: (1) unblocks semantic search layer used by compiler-bridge, (2) natural home in `nom-compose/dispatch.rs` via new `retriever.rs` + `postprocessor.rs` + `rag_backend.rs` (~150 LOC), (3) zero SKIP violations (no polars, no anthropic SDK, no comemo). Scaffold: `trait Retriever { retrieve(query, top_k) -> Vec<RetrievedDoc> }` + `Postprocessor enum { Rerank, Filter, Summarize, Fusion }` + `RagBackend impl CompositionBackend`. Exit to DEEP when RAG query <50ms on 1K-doc corpus + 5-entity coverage.
+
+### New crate: `nom-collab` (wave-6)
+
+- 8 modules, 33 tests: `DocId + DocSnapshot + TransactionLog + SyncMessage + Awareness GC + AuthClaims stub + PersistenceBackend + OfflineQueue`
+- Still NOT-USED vendoring-wise (needs yrs/Hocuspocus-compatible impl; iter-15 classified as scaffolding-only). Would take Huly NOT-USED → PATTERN once a real CRDT impl lands.
+
+### Per-doc updates this tick
+
+- All 5 canonical doc headers refreshed to `HEAD: 2e47d5d` + `870 tests` + `12 crates` + standing (A) 0% / (B) 58% status lines
+- state report iter-16 overlay (this section)
+- implementation_plan.md phase line reflects wave-7 feature set
+- INIT.md keeps user-facing A/B % bullets
+- spec header moved DESIGN→IMPLEMENTATION date forward
+
+---
+
+## Iteration 15 audit — 2026-04-17 (HEAD `4592b85`, 6-agent parallel audit on compiler-as-core + 19-repo vendoring)
+
+User question: "how does nom-compiler act as core role in nom-canvas, and what % of the 19 reference repos are actually vendored?"
+
+### (A) Compiler-as-core integration: **0% runtime / ~7% stubbed**
+
+**5 of 6 agents converged independently** on the same finding: `nom-compiler` and `nom-canvas` are **completely disjoint workspaces** with no dependency in either direction.
+
+| Metric | Blueprint claim (§2/§3/§4/§7) | Reality @ HEAD `4592b85` |
+|--------|-------------------------------|-------------------------|
+| Cargo deps (compiler crates in nom-canvas crates' Cargo.toml) | "Direct function calls. Compiler crates linked as dependencies." | **0 of 15** compiler crates referenced |
+| `use nom_*::` imports in nom-canvas/**/*.rs | ~15 expected | **0 matches** across 4000+ .rs files |
+| Call sites (function invocations) | "Type char → stage1_tokenize, <10ms" etc. | **0 call sites** |
+| Thread-tier dispatcher (UI / Interactive / Background) | §3 mandates 3-tier with channels | **0 of 3 tiers** implemented (TelemetryTier enum exists but is observability-only) |
+| Dict connection pool (1 write + N read WAL) | §3 requirement | **0** — no rusqlite/nom-dict anywhere in nom-canvas |
+| Tokio runtime for Interactive tier | §3 implicit | **0** — `LspProvider` trait is sync; no `#[tokio::main]` |
+| Continuous-compile loop | §1 "runs continuously, rendering its own state" | **0** — frame_loop.rs is pure GPU, zero compiler calls |
+
+**The 7 integration subclaims from blueprint §7 (compiler-as-core integration table):**
+
+| Subclaim | Status |
+|----------|--------|
+| Type char → `stage1_tokenize` → highlighting | **NOT-STARTED** (`highlight.rs` ready but no producer) |
+| Hover → `handle_hover` → tooltip | **STUBBED** (`LspProvider` trait defined, only `StubLspProvider` HashMap-backed exists) |
+| Pause typing → `run_pipeline` S1-S6 | NOT-STARTED |
+| Drag wire → `can_wire` → green/amber/red | NOT-STARTED |
+| Click Run → LLVM compile + execute | NOT-STARTED |
+| Command bar → `classify_with_react` | NOT-STARTED (command_palette.rs is fuzzy string matcher, no intent classification) |
+| Dream dashboard → `dream_report` | NOT-STARTED |
+
+**Evidence of honest stubbing (not divergent reimplementation):**
+- `nom-editor/src/completion.rs:1-3` comment: *"MVP stub...real wiring lands with compiler integration"*
+- `nom-editor/src/hints.rs:1-2` comment: *"actual LSP wiring lands with nom-compiler integration"*
+- `nom-editor/src/lsp_bridge.rs:1-4` comment: *"does NOT depend on nom-lsp directly...trait the bridge implements"*
+- `nom-collab/lib.rs:1-5` comment: *"Phase 5 scaffolding: No yrs dependency, no WebSocket server"*
+
+The canvas crates are **structurally honest scaffolds** — they define the right trait boundaries (LspProvider, Highlighter, CompileStatus) for future wiring, but have zero production impl.
+
+**Highest-leverage missing integration:** wire `nom-compiler` as a path dep in `nom-canvas/Cargo.toml` workspace (or cross-workspace path dep from each canvas crate) and call `nom_concept::stage1_tokenize` on keystroke in `nom-editor/src/highlight.rs`. That single wire unlocks syntax highlighting (most user-visible), validates cross-workspace linking, and establishes the channel pattern all other integrations reuse.
+
+### (B) 19-repo vendoring assessment: **53% actively integrated**
+
+| Tier | Count | % | Repos |
+|------|-------|---|-------|
+| **DEEP** (pattern ported with file:line evidence in code) | 6 | **32%** | Zed (scene/bounds_tree/element/styled), AFFiNE (73 tokens + Inter/SCP), yara-x (sealed trait in `nom-lint/rule_trait.rs`), typst (comemo pattern in `nom-memoize/`), WrenAI (MDL in `nom-compose/semantic.rs`), 9router (3-tier fallback in `nom-compose/provider_router.rs`) |
+| **PATTERN** (architecture adapted, scaffolded) | 4 | **21%** | ComfyUI (Kahn sort in `nom-graph-v2/topology.rs`; IS_CHANGED deferred), waoowaoo (4-phase PhaseResult partially scaffolded), ArcReel (video scene graph + frame routing scaffolded), Remotion (GPU scene→FFmpeg architecture present in `video_composition.rs`) |
+| **REFERENCED-ONLY** (named in docs, no code evidence) | 7 | **37%** | Refly, LlamaIndex, Haystack, ToolJet, n8n, Open-Higgsfield, opendataloader-pdf |
+| **NOT-USED** (zero evidence) | 2 | **11%** | Dioxus (explicit NO — "Dioxus desktop = webview"), Huly (scaffolding-only, no yrs dep) |
+
+**Vendoring = DEEP + PATTERN = 10 / 19 = 53%.**
+
+Note: this is structural vendoring of design patterns. **Runtime integration with the compiler is separate** and is 0% (see section A). The 19-repo vendoring % applies to Phase 1-3 rendering + editor + block + theme layer, which has shipped successfully. The compiler-as-core integration is the unshipped axis.
+
+### What should improve
+
+**TIER-1 BLOCKING (nom-compiler integration, highest user impact):**
+1. Add `nom-compiler/crates/*` as path deps in `nom-canvas/Cargo.toml` workspace — enables all subsequent wiring
+2. Wire `nom_concept::stage1_tokenize` into `nom-editor/src/highlight.rs` (single channel producer, existing consumer)
+3. Set up tokio Runtime + 3-tier dispatcher (UI sync / Interactive async / Background thread pool)
+4. Open `nom-dict` SQLite connection pool (1 write + N read WAL)
+5. Wire `nom_lsp::handle_hover/handle_completion` replacing `StubLspProvider`
+6. Per blueprint §7 table — wire each of the 7 user-action-to-compiler-call rows one by one
+
+**TIER-2 (finish 19-repo vendoring):**
+7. 7 REFERENCED-ONLY repos either need pattern ports (if Phase 4/5 needs them) OR should be dropped from the "read end-to-end" list in INIT.md / blueprint §17 to match reality
+
+**TIER-3 (housekeeping, from iter-14):**
+- 8 open audit items (bytes_per_row alignment, FrameHandler wiring, pointer routing, GammaParams, SubpixelVariant 4×4, pub-use Renderer, line_layout.rs, 20-frame guard)
+
+### Planning-lie disclosure
+
+The iter-14 update I made to INIT.md said: *"11 crates shipped. 519 tests green. Phase 1 + Phase 2 100% + Phase 3 96%."* That was accurate for **render/edit/block layers**. It was **silent on compiler integration** — which is the central architectural claim of the blueprint. Readers would reasonably interpret "Phase 2/3 done" as "the compiler is wired." The honest status is: **rendering substrate complete + compiler integration entirely deferred**. Suggest adding a one-line compiler-integration-% to the canonical doc headers so this stays visible.
+
+---
+
+## Iteration 14 audit — 2026-04-17 (HEAD `4592b85`, 6-agent parallel audit)
+
+Save point was `cb40522`. 8 commits landed, tests 113 → **519** (+406), 1 crate → **11 crates**.
+
+### Phase completion status (ground truth from code scan)
+
+| Phase | Status | Evidence |
+|-------|--------|----------|
+| Phase 1 (nom-gpui) | ✅ Enhanced | 21 modules, 170 tests; waves 2-3 + batch-3 shipped shadows/poly_sprites/subpixel_sprites pipelines + device_lost + animation + 8-pipeline renderer dispatch |
+| Phase 2 (nom-canvas-core + nom-editor) | ✅ **100%** | 30/30 planned modules + 4 bonus · nom-canvas-core 62 tests, nom-editor 142 tests · All 15 canvas-core modules (element, mutation, shapes, hit_testing, spatial_index, viewport, coords, zoom, pan, fit, selection, marquee, transform_handles, snapping, history) + 15 editor modules |
+| Phase 3 (nom-theme + nom-panels + nom-blocks) | ✅ **96%** | 25/26 planned modules + 4 bonus · nom-theme 41 tests (tokens, fonts, icons, +color, +mode) · nom-panels 29 tests (sidebar, toolbar, preview, library, properties, command_palette, statusbar, +mode_switcher) · nom-blocks 76 tests (all 7 block types + 5 shared-infra + flavour) |
+| Phase 4 (nom-compose + nom-graph-v2) | 🟡 Scaffolded | nom-graph-v2 25 tests (topology, fingerprint, schema), nom-compose 7 tests (kind composition). Backends + MediaVendor + artifact_store + per-kind backends NOT yet audited this run |
+| Phase 5 (nom-lint + nom-memoize + nom-telemetry + nom-collab) | 🟡 Partial | nom-lint 10 tests (landed), nom-memoize 0 tests, nom-telemetry 0 tests, nom-collab **NOT PRESENT** |
+
+### Audit-backlog status (from iter-6/10/13 flagged items)
+
+**3 of 13 fully closed · 2 partial · 8 still open:**
+
+| # | Item | Status | Evidence |
+|---|------|--------|----------|
+| 1 | `order: u32` on GpuQuad Pod struct + WGSL | ❌ MISSING | renderer.rs:69, quad.wgsl — 6 fields, no order |
+| 2 | `order`+`texture_sort_key`+`transformation` on GpuMonoSprite | ❌ MISSING | renderer.rs:91, mono_sprite.wgsl |
+| 3 | 20-frame overflow guard in InstanceBuffer | ❌ MISSING | buffers.rs:116, no counter |
+| 4 | `bytes_per_row` 256-align in wgpu_atlas | ❌ MISSING | wgpu_atlas.rs:287, raw multiplication |
+| 5 | GammaParams uniform `@group(0) @binding(1)` | ❌ MISSING | pipelines.rs — zero matches |
+| 6 | SubpixelSprite render pipeline gated on dual_source_blending | ✅ **PRESENT** | pipelines.rs:60 `Option<wgpu::RenderPipeline>`, line 345 gate |
+| 7 | SubpixelVariant 4×4 (y:0..4, divisor 4.0) | 🟡 PARTIAL | text.rs:35 struct exists but y still 0..2, divisor 2.0 |
+| 8 | `pub mod renderer` in lib.rs | 🟡 PARTIAL | lib.rs:32 module public but no `pub use Renderer` re-export |
+| 9 | Concrete FrameHandler wiring Layout+Element+Renderer | ❌ MISSING | Only NoopHandler + WritingHandler (test stubs) |
+| 10 | Pointer event routing CursorMoved → hit_test → ElementId | ❌ MISSING | frame_loop.rs handles only RedrawRequested/Resized/CloseRequested |
+| 11 | BoundsTree-backed hit-test (not O(N)) | ✅ **PRESENT** | scene.rs:360 `hit_test` uses `bounds_tree` O(log N) with brute-force fallback |
+| 12 | Pixel-readback test for drawn primitive | ✅ **PRESENT** | gpu_integration.rs — 5 tests: `single_quad_pixel_color_matches`, `two_quads_correct_z_order`, pixel_diff_* |
+| 13 | BoundsTree proptest | ❌ MISSING | Zero proptest/quickcheck usage anywhere (open 10+ iterations) |
+
+### Test quality (iter-14 vs iter-13)
+
+- **Grade D+ → C+**. Pixel-readback gap CLOSED (was the biggest deficiency).
+- Silent-skips dropped **70%** (23 → 7, all in wgpu_atlas.rs only).
+- 6 `copy_texture_to_buffer` + `map_async` call sites now test actual pixel output.
+- Still zero proptest/quickcheck after 13+ iterations.
+- No scenario-level integration tests (no cross-crate end-to-end).
+- 2 crates with 0 tests: nom-memoize, nom-telemetry.
+- ~13 tautological "construct-and-drop" tests remain.
+
+### Security posture — CLEAN
+
+- `unsafe` block count: **1** (unchanged, pre-existing in `window.rs:89`, documented SAFETY)
+- `unsafe_code = deny` enforced workspace-wide + 50+ file-level `#![deny(unsafe_code)]`
+- New deps: **1** — `ropey 1.6` for nom-editor (well-maintained, 5M+ downloads, no CVEs)
+- **Zero SKIP violations**: no `comemo`, no `polars`, no `anthropic-*`, no `openai-*`, no `Hocuspocus` — all plan-forbidden deps absent
+- Zero secrets / credentials in source
+- All `bytemuck::Pod` structs `#[repr(C)]` with no padding holes
+
+### What should improve (prioritized fix list)
+
+**HIGH (blocks real rendering):**
+1. `bytes_per_row` 256-alignment in `wgpu_atlas.rs:287` — will trigger wgpu validation panic on first non-256-aligned glyph on Vulkan/DX12
+2. Concrete FrameHandler impl wiring LayoutEngine + Element::paint + Renderer — without this, no Element will ever render on screen outside unit tests
+3. Pointer event routing (CursorMoved → hit_test → ElementId dispatch) — canvas is non-interactive without this
+4. GammaParams uniform — blocks correct subpixel text rendering
+
+**MEDIUM:**
+5. SubpixelVariant 4×4 (one-line fix: y:0..4 + divisor 4.0) — currently 4×2 diverges from blueprint §4
+6. `pub use Renderer` re-export from nom-gpui (1-line fix) — makes Renderer ergonomic for downstream crates
+7. `line_layout.rs` in nom-editor — only Phase 3 module missing (may have been merged into display_map; confirm + document or add)
+8. 20-frame overflow guard for InstanceBuffer — silent VRAM exhaustion risk under unusual load
+
+**LOW (cosmetic):**
+9. `order: u32` on GPU Pod structs — CPU-side Scene::finish() painter's algo currently handles Z-order; GPU field only needed if depth-buffer-based sorting added
+10. BoundsTree proptest — open 13+ iterations; audit hygiene item
+11. Clean up 7 remaining silent-skip tests in wgpu_atlas.rs
+12. Rewrite ~13 tautological tests to exercise invariants
+
+### Doc drift fixed this iteration
+
+- INIT.md: HEAD e2b7ecb → 4592b85, tests 31 → 519, 1 crate → 11 crates
+- task.md: header refreshed, "starting now" phrasing removed
+- nom_state_machine_report.md: HEAD refresh + per-crate test count
+- implementation_plan.md: HEAD refresh + phase status line added
+- Design spec: HEAD 6196ef1 → 4592b85, status DESIGN → IMPLEMENTATION
+
+### Recommendation for Executor
+
+Single fix commit can close 6 of 8 open HIGH/MED items in ~1 day:
+- `pub use Renderer` in lib.rs (1 line)
+- `bytes_per_row` 256-align in wgpu_atlas::flush_uploads (5 lines)
+- SubpixelVariant y→0..4 + divisor 4.0 (2 lines)
+- GammaParams uniform + BGL binding (~20 lines + WGSL)
+- Concrete FrameHandler impl wiring Layout→Element→Renderer end-to-end (~80 lines)
+- Pointer event routing via scene.hit_test (~30 lines)
+
+Then wave-6 can focus on depth-of-impl for Phase 4/5 crates (nom-compose backends, nom-memoize, nom-telemetry, nom-collab).
+
+---
 
 **Iteration 13 delta:** Commit `cb40522` landed (batch-2 wave-3 — renderer + hit-test + integration, 99→113 tests). 6 parallel audit agents. Key findings:
 
