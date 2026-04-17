@@ -1,35 +1,20 @@
 #![deny(unsafe_code)]
 use std::collections::HashMap;
 
-/// 32-byte content-addressed hash derived from FNV-1a expansion.
+/// 32-byte content-addressed hash (SHA-256).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct ContentHash([u8; 32]);
 
 impl ContentHash {
-    /// Derive a `ContentHash` from raw bytes using FNV-1a 64-bit expanded to 32 bytes.
-    ///
-    /// Layout:
-    ///  bytes  0- 7 = h0.to_le_bytes()
-    ///  bytes  8-15 = h1.to_le_bytes()  (h1 = h0 rotated left 17)
-    ///  bytes 16-23 = (h0 ^ h1).to_le_bytes()
-    ///  bytes 24-31 = (h0.wrapping_add(h1)).to_le_bytes()
+    /// Derive a `ContentHash` from raw bytes using SHA-256 (spec §14).
     pub fn from_bytes(data: &[u8]) -> Self {
-        const FNV_OFFSET: u64 = 14695981039346656037;
-        const FNV_PRIME: u64 = 1099511628211;
-        let mut h0: u64 = FNV_OFFSET;
-        for &b in data {
-            h0 ^= b as u64;
-            h0 = h0.wrapping_mul(FNV_PRIME);
-        }
-        let h1 = h0.rotate_left(17);
-        let h2 = h0 ^ h1;
-        let h3 = h0.wrapping_add(h1);
-        let mut out = [0u8; 32];
-        out[0..8].copy_from_slice(&h0.to_le_bytes());
-        out[8..16].copy_from_slice(&h1.to_le_bytes());
-        out[16..24].copy_from_slice(&h2.to_le_bytes());
-        out[24..32].copy_from_slice(&h3.to_le_bytes());
-        Self(out)
+        use sha2::{Sha256, Digest};
+        let mut hasher = Sha256::new();
+        hasher.update(data);
+        let result = hasher.finalize();
+        let mut bytes = [0u8; 32];
+        bytes.copy_from_slice(&result);
+        Self(bytes)
     }
 
     /// Encode the hash as a 64-character lowercase hex string.
@@ -70,21 +55,7 @@ impl InMemoryStore {
     pub fn new() -> Self { Self { blobs: HashMap::new() } }
 
     fn sha256(data: &[u8]) -> [u8; 32] {
-        // Simple deterministic hash (real impl would use sha2 crate)
-        // FNV-1a → 32-byte expansion via mixing
-        let mut h = [0u8; 32];
-        let mut state: u64 = 14695981039346656037;
-        for &b in data {
-            state ^= b as u64;
-            state = state.wrapping_mul(1099511628211);
-        }
-        // Fill 32 bytes from 64-bit hash using expansion
-        for i in 0..8 {
-            let shift = (i % 4) * 8;
-            let word = if i < 4 { state } else { state.rotate_left(32) };
-            h[i * 4..(i + 1) * 4].copy_from_slice(&((word >> shift) as u32).to_le_bytes());
-        }
-        h
+        *ContentHash::from_bytes(data).as_bytes()
     }
 }
 
@@ -139,6 +110,14 @@ mod tests {
         // Different input must produce different hash
         let h3 = ContentHash::from_bytes(b"world");
         assert_ne!(h1, h3);
+    }
+
+    #[test]
+    fn content_hash_sha256_known_value() {
+        // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
+        let h = ContentHash::from_bytes(b"");
+        let hex = h.as_hex();
+        assert_eq!(hex, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
     }
 
     #[test]

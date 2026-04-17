@@ -1191,6 +1191,7 @@ dependencies = [
  "nom-graph",
  "nom-intent",
  "serde_json",
+ "sha2",
  "tokio",
 ]
 
