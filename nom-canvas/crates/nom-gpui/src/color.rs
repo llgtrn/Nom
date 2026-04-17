@@ -181,4 +181,86 @@ mod tests {
         assert!((c.g - 0.5).abs() < 1e-4, "g={}", c.g);
         assert!(c.b < 1e-4, "b={}", c.b);
     }
+
+    /// Hue 360° must produce the same color as hue 0° because `to_rgba` uses
+    /// `rem_euclid(360.0)` — 360 wraps to 0 before the sector match.
+    #[test]
+    fn hsla_hue_wraps_at_360() {
+        let a = Hsla::from_degrees(0.0, 1.0, 0.5, 1.0).to_rgba();
+        let b = Hsla::from_degrees(360.0, 1.0, 0.5, 1.0).to_rgba();
+        assert!(
+            (a.r - b.r).abs() < 1e-4,
+            "r mismatch: {:.6} vs {:.6}",
+            a.r,
+            b.r
+        );
+        assert!(
+            (a.g - b.g).abs() < 1e-4,
+            "g mismatch: {:.6} vs {:.6}",
+            a.g,
+            b.g
+        );
+        assert!(
+            (a.b - b.b).abs() < 1e-4,
+            "b mismatch: {:.6} vs {:.6}",
+            a.b,
+            b.b
+        );
+    }
+
+    /// Saturation = 0 means the hue is irrelevant — all fully-desaturated colors
+    /// are gray (r == g == b, modulated only by lightness).
+    #[test]
+    fn hsla_saturation_zero_produces_gray() {
+        let gray = Hsla::from_degrees(180.0, 0.0, 0.5, 1.0).to_rgba();
+        assert!(
+            (gray.r - gray.g).abs() < 1e-4,
+            "r={:.6} g={:.6} should be equal",
+            gray.r,
+            gray.g
+        );
+        assert!(
+            (gray.g - gray.b).abs() < 1e-4,
+            "g={:.6} b={:.6} should be equal",
+            gray.g,
+            gray.b
+        );
+    }
+
+    /// Lightness 0 → black; lightness 1 → white (regardless of hue/saturation).
+    #[test]
+    fn hsla_lightness_extremes() {
+        let black = Hsla::from_degrees(180.0, 1.0, 0.0, 1.0).to_rgba();
+        assert!(
+            black.r < 1e-4,
+            "black.r should be ~0, got {:.6}",
+            black.r
+        );
+        assert!(
+            black.g < 1e-4,
+            "black.g should be ~0, got {:.6}",
+            black.g
+        );
+        assert!(
+            black.b < 1e-4,
+            "black.b should be ~0, got {:.6}",
+            black.b
+        );
+        let white = Hsla::from_degrees(180.0, 1.0, 1.0, 1.0).to_rgba();
+        assert!(
+            (white.r - 1.0).abs() < 1e-4,
+            "white.r should be ~1, got {:.6}",
+            white.r
+        );
+        assert!(
+            (white.g - 1.0).abs() < 1e-4,
+            "white.g should be ~1, got {:.6}",
+            white.g
+        );
+        assert!(
+            (white.b - 1.0).abs() < 1e-4,
+            "white.b should be ~1, got {:.6}",
+            white.b
+        );
+    }
 }

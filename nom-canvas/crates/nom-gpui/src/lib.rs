@@ -9,7 +9,7 @@
 //! - [`geometry`]  — `Point`, `Size`, `Bounds`, `Pixels`, `TransformationMatrix`.
 //! - [`color`]     — `Rgba`, `Hsla`, alpha compositing.
 //! - [`bounds_tree`] — R-tree assigning stable `DrawOrder` to paint calls.
-//! - [`scene`]     — 6 typed primitive collections with batched iteration.
+//! - [`scene`]     — 7 typed primitive collections with batched iteration.
 //! - [`atlas`]     — Texture atlas trait + in-memory implementation.
 //! - [`style`]     — Layout + paint style (converts to `taffy::Style`).
 //! - [`styled`]    — Fluent builder trait (`.flex_col().padding(8.0).bg(...)`).
@@ -20,7 +20,12 @@
 
 pub mod shaders;
 pub mod atlas;
+pub mod text;
+pub mod wgpu_atlas;
 pub mod buffers;
+pub mod context;
+pub mod frame_loop;
+pub mod pipelines;
 pub mod bounds_tree;
 pub mod color;
 pub mod element;
@@ -29,6 +34,7 @@ pub mod scene;
 pub mod style;
 pub mod styled;
 pub mod taffy_layout;
+pub mod window;
 
 pub use atlas::{AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, InMemoryAtlas, PlatformAtlas};
 pub use bounds_tree::{BoundsTree, DrawOrder};
@@ -39,8 +45,8 @@ pub use geometry::{
 };
 pub use scene::{
     AtlasTileRef, MonochromeSprite, Path, PolychromeSprite, PrimitiveBatch, PrimitiveKind, Quad,
-    Scene, Shadow, Underline,
+    Scene, Shadow, SubpixelSprite, Underline,
 };
 pub use style::{AlignItems, Display, FlexDirection, JustifyContent, Length, Overflow, Style};
 pub use styled::{Styled, StyledBox};
-pub use taffy_layout::{LayoutEngine, LayoutError, LayoutId};
+pub use taffy_layout::{LayoutEngine, LayoutError, LayoutId, MeasureFn, NodeContext};

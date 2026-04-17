@@ -333,8 +333,22 @@ mod tests {
         assert_eq!(p.scale(2.0).to_device(), DevicePixels(20));
     }
 
+    /// Compile-time assertion that `From<f32>` is NOT implemented for `Pixels`,
+    /// `ScaledPixels`, or `DevicePixels`. If someone adds `impl From<f32> for Pixels`
+    /// in the future, this test will fail to compile — catching the regression early.
+    ///
+    /// `assert_not_impl_all!(T: Trait)` passes if `T` does NOT implement `Trait`.
     #[test]
-    fn pixels_explicit_construction_only() {
+    fn pixels_does_not_implement_from_f32() {
+        use static_assertions::assert_not_impl_all;
+        assert_not_impl_all!(Pixels: From<f32>);
+        assert_not_impl_all!(ScaledPixels: From<f32>);
+        // DevicePixels is integer-based; no From<i32> either.
+        assert_not_impl_all!(DevicePixels: From<i32>);
+    }
+
+    #[test]
+    fn pixels_requires_explicit_construction() {
         // Verify that Pixels must be constructed explicitly — .0 field is the only
         // extraction path after removing the implicit From<f32> / From<Pixels> impls.
         let p = Pixels(42.0);

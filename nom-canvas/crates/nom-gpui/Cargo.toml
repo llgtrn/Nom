@@ -22,7 +22,13 @@ thiserror.workspace = true
 wgpu.workspace = true
 pollster.workspace = true
 raw-window-handle.workspace = true
+winit.workspace = true
+
+# Text shaping + rasterization
+cosmic-text.workspace = true
+swash.workspace = true
 
 [dev-dependencies]
 anyhow.workspace = true
 naga = { version = "22", features = ["wgsl-in"] }
+static_assertions = "1.1"
