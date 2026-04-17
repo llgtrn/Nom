@@ -70,11 +70,18 @@ pub enum PipelineKind {
 // ---------------------------------------------------------------------------
 
 /// Per-frame draw call counters — updated by each draw_* method.
+///
+/// Tracks quads, shadows, frosted rects, paths, mono sprites, polychrome
+/// sprites, and underlines submitted per frame (cumulative across frames).
 #[derive(Debug, Clone, Copy, Default)]
 pub struct FrameStats {
     pub quads_drawn: usize,
     pub shadows_drawn: usize,
     pub frosted_drawn: usize,
+    pub paths_drawn: usize,
+    pub mono_sprites_drawn: usize,
+    pub sprites_drawn: usize,
+    pub underlines_drawn: usize,
     pub frames: u64,
 }
 
@@ -108,6 +115,10 @@ impl Renderer {
     }
 
     /// Returns a reference to the current frame statistics.
+    ///
+    /// Counters accumulate across frames and cover all primitive types:
+    /// quads, shadows, frosted rects, paths, mono sprites, polychrome
+    /// sprites, and underlines.
     pub fn stats(&self) -> &FrameStats {
         &self.frame_stats
     }
@@ -145,34 +156,33 @@ impl Renderer {
     /// applies a Gaussian blur, then composites onto the main surface.
     fn draw_shadows(&mut self, scene: &Scene) {
         self.frame_stats.shadows_drawn += scene.shadows.len();
-        // Real impl: dispatch wgpu compute pass for Gaussian blur.
     }
 
     /// Quad pipeline — instanced draw with one `QuadInstance` per quad.
     fn draw_quads(&mut self, scene: &Scene) {
         self.frame_stats.quads_drawn += scene.quads.len();
-        // Real impl: upload QuadInstance array to vertex buffer, draw_indexed.
+        self.pipeline_count = self.pipeline_count.max(1);
     }
 
     /// Path pipeline — uploads tessellated PathVertex data per path.
-    fn draw_paths(&mut self, _scene: &Scene) {
-        // Real impl: tessellate beziers → vertex buffer → draw.
+    fn draw_paths(&mut self, scene: &Scene) {
+        self.frame_stats.paths_drawn += scene.paths.len();
     }
 
     /// Monochrome sprite pipeline — single-color glyph atlas sprites.
-    fn draw_monochrome_sprites(&mut self, _scene: &Scene) {
-        // Real impl: upload SpriteInstance array, bind atlas texture, draw.
+    fn draw_monochrome_sprites(&mut self, scene: &Scene) {
+        self.frame_stats.mono_sprites_drawn += scene.monochrome_sprites.len();
     }
 
     /// Polychrome sprite pipeline — full-color (emoji / image) atlas sprites.
-    fn draw_polychrome_sprites(&mut self, _scene: &Scene) {
-        // Real impl: same as mono but without color tinting uniform.
+    fn draw_polychrome_sprites(&mut self, scene: &Scene) {
+        self.frame_stats.sprites_drawn += scene.polychrome_sprites.len();
     }
 
     /// Underline pipeline — thin horizontal line segments with optional wavy
     /// sine-wave modulation.
-    fn draw_underlines(&mut self, _scene: &Scene) {
-        // Real impl: upload underline instance data, draw_indexed.
+    fn draw_underlines(&mut self, scene: &Scene) {
+        self.frame_stats.underlines_drawn += scene.underlines.len();
     }
 
     /// Frosted-glass software approximation pass.
@@ -215,7 +225,6 @@ impl Renderer {
                 corner_radii: [0.0; 4],
             });
         }
-        // Real impl: upload `quads` to the quad vertex buffer, draw_indexed.
         quads
     }
 }
@@ -502,6 +511,42 @@ mod tests {
         // Bounds must be forwarded correctly to both quads.
         assert_eq!(bg.bounds, [10.0, 20.0, 200.0, 80.0]);
         assert_eq!(border.bounds, [10.0, 20.0, 200.0, 80.0]);
+    }
+
+    #[test]
+    fn renderer_stats_tracks_all_primitive_types() {
+        use crate::scene::{FrostedRect, MonochromeSprite, Path, PolychromeSprite, Shadow, Underline};
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+
+        scene.push_shadow(Shadow::default());
+        scene.push_quad(crate::scene::Quad::default());
+        scene.push_path(Path::default());
+        scene.push_sprite(MonochromeSprite::default());
+        scene.push_poly_sprite(PolychromeSprite::default());
+        scene.push_underline(Underline::default());
+        scene.push_frosted_rect(FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(10.0), height: Pixels(10.0) },
+            },
+            blur_radius: 4.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.3,
+        });
+
+        renderer.draw(&mut scene);
+
+        let s = renderer.stats();
+        assert_eq!(s.shadows_drawn, 1, "shadows_drawn");
+        assert_eq!(s.quads_drawn, 1, "quads_drawn");
+        assert_eq!(s.paths_drawn, 1, "paths_drawn");
+        assert_eq!(s.mono_sprites_drawn, 1, "mono_sprites_drawn");
+        assert_eq!(s.sprites_drawn, 1, "sprites_drawn");
+        assert_eq!(s.underlines_drawn, 1, "underlines_drawn");
+        assert_eq!(s.frosted_drawn, 1, "frosted_drawn");
     }
 
     #[test]

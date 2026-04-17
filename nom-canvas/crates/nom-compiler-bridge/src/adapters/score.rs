@@ -110,4 +110,24 @@ mod tests {
         let color = status_color(&CompileStatus::Valid);
         assert_eq!(color[3], 1.0);
     }
+
+    #[test]
+    fn score_adapter_returns_valid_for_known_kind() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "define".into(), description: "declaration keyword".into() },
+        ]);
+        // word matches a known grammar kind → score 0.9 → Valid
+        let status = score_to_status("define", "other", &state);
+        assert_eq!(status, CompileStatus::Valid);
+    }
+
+    #[test]
+    fn score_adapter_returns_unknown_for_empty_cache() {
+        let state = SharedState::new("a.db", "b.db");
+        // No grammar kinds loaded — score_to_status returns NotChecked (not Unknown)
+        // because there is no basis for scoring without any grammar entries
+        let status = score_to_status("some_word", "some_kind", &state);
+        assert_eq!(status, CompileStatus::NotChecked);
+    }
 }

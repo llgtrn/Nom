@@ -120,4 +120,67 @@ mod tests {
         assert_eq!(kinds.len(), 1);
         assert_eq!(kinds[0].name, "verb");
     }
+
+    #[test]
+    fn shared_state_grammar_cache_roundtrip() {
+        let state = SharedState::new("dict.db", "grammar.db");
+        assert!(state.cached_grammar_kinds().is_empty());
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "action".into(), description: "something done".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        assert_eq!(kinds.len(), 1);
+        assert_eq!(kinds[0].name, "action");
+        assert_eq!(kinds[0].description, "something done");
+    }
+
+    #[test]
+    fn shared_state_lru_eviction() {
+        let state = SharedState::new("d.db", "g.db");
+        // Insert 257 entries to exceed the LRU capacity of 256
+        let version = state.grammar_version();
+        // The first key inserted (key_0) should be evicted after 256 more are added
+        let key_0 = SharedState::compile_cache_key("evict_me_source", version);
+        state.cache_compile_result(key_0, PipelineOutput {
+            source_hash: key_0,
+            grammar_version: version,
+            output_json: "{}".into(),
+        });
+        for i in 1u64..=256 {
+            let src = format!("source_{i}");
+            let k = SharedState::compile_cache_key(&src, version);
+            state.cache_compile_result(k, PipelineOutput {
+                source_hash: k,
+                grammar_version: version,
+                output_json: "{}".into(),
+            });
+        }
+        // key_0 should have been evicted (LRU capacity = 256, we added 257 total)
+        assert!(
+            state.get_cached_compile(key_0).is_none(),
+            "oldest entry should have been evicted by LRU"
+        );
+    }
+
+    #[test]
+    fn shared_state_pipeline_output_version_tracking() {
+        let state = SharedState::new("d.db", "g.db");
+        // Bump grammar version so we have a non-zero version to track
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "noun".into(), description: "thing".into() },
+        ]);
+        let version = state.grammar_version();
+        assert_eq!(version, 1);
+        let source = "define item that is 1";
+        let key = SharedState::compile_cache_key(source, version);
+        let output = PipelineOutput {
+            source_hash: key,
+            grammar_version: version,
+            output_json: r#"{"ok":true}"#.into(),
+        };
+        state.cache_compile_result(key, output.clone());
+        let retrieved = state.get_cached_compile(key).expect("should be cached");
+        assert_eq!(retrieved.source_hash, key, "source_hash preserved");
+        assert_eq!(retrieved.grammar_version, 1, "grammar_version preserved");
+    }
 }

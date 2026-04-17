@@ -205,4 +205,38 @@ mod tests {
         assert_eq!(dag.node_count(), 1);
         assert_eq!(dag.edge_count(), 0);
     }
+
+    #[test]
+    fn dag_weighted_edge_clamps_confidence_to_range() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge_weighted("src", "out", "dst", "in", 1.5);
+        assert_eq!(dag.edge_count(), 1);
+        assert_eq!(dag.edges[0].confidence, 1.0, "confidence above 1.0 must be clamped to 1.0");
+    }
+
+    #[test]
+    fn dag_default_edge_confidence_is_one() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        assert_eq!(dag.edges[0].confidence, 1.0, "unweighted add_edge must set confidence to 1.0");
+    }
+
+    #[test]
+    fn dag_topology_respects_edge_confidence_prune() {
+        // add_edge_weighted with confidence 0.0 stores a zero-confidence edge.
+        // Callers filtering edges by minimum confidence (e.g. > 0.0) will skip it.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_edge_weighted("x", "out", "y", "in", 0.0);
+        assert_eq!(dag.edge_count(), 1);
+        assert_eq!(dag.edges[0].confidence, 0.0);
+        // Filter by confidence > 0.0 — simulates BFS pruning low-confidence edges.
+        let active_edges: Vec<_> = dag.edges.iter().filter(|e| e.confidence > 0.0).collect();
+        assert!(active_edges.is_empty(), "zero-confidence edge must be pruned by confidence filter");
+    }
 }

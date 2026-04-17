@@ -24,6 +24,7 @@ pub mod mesh;
 pub mod storyboard;
 pub mod native_screen;
 pub mod mobile_screen;
+pub mod scenario_workflow;
 
 /// Uniform error-wrapping return type for safe compose wrappers.
 pub type ComposeResult = Result<(), String>;

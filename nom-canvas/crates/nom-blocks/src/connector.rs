@@ -7,7 +7,7 @@ pub type ConnectorId = String;
 pub type SlotName = String;
 
 /// A wire between two graph nodes. can_wire_result is NON-OPTIONAL.
-/// In Wave B: populated with stub. In Wave C: real can_wire() from grammar.
+/// Grammar-backed validation added in Wave Q — use new_with_validation() for real port/type checking.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Connector {
     pub id: ConnectorId,
@@ -60,7 +60,7 @@ impl Connector {
             reason: String::new(),
             reason_chain: Vec::new(),
             route: Vec::new(),
-            can_wire_result: (true, 0.0, "stub - pending Wave C validation".into()),
+            can_wire_result: (true, 0.0, "stub — use new_with_validation() for grammar-backed checking".into()),
         }
     }
 

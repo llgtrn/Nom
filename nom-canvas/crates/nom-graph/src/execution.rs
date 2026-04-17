@@ -222,4 +222,35 @@ mod tests {
         let plan = engine.plan_execution(&dag).unwrap();
         assert!(plan.is_empty(), "node with warm cache should be skipped");
     }
+
+    #[test]
+    fn execution_engine_cancel_prevents_processing() {
+        let engine = ExecutionEngine::new(BasicCache::new());
+        engine.cancel();
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "verb"));
+        dag.add_node(ExecNode::new("n2", "verb"));
+        dag.add_edge("n1", "out", "n2", "in");
+        let result = engine.plan_execution(&dag);
+        assert!(result.is_err(), "plan_execution must return Err when cancel flag is set before call");
+        assert_eq!(result.unwrap_err(), Vec::<NodeId>::new(), "cancel returns empty Err vec");
+    }
+
+    #[test]
+    fn execution_engine_changed_flags_skip_unchanged() {
+        use crate::cache::CachedValue;
+        let mut cache = BasicCache::new();
+        // Pre-populate cache for "clean_node" (kind="verb", input_hash=0).
+        let key = ExecutionEngine::compute_cache_key("verb", 0);
+        cache.put(key, CachedValue::String("cached".into()));
+
+        let mut engine = ExecutionEngine::new(cache);
+        // Mark the node as clean — combined with a cache hit this should skip it.
+        engine.changed_flags.mark_clean("clean_node".to_string());
+
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("clean_node", "verb"));
+        let plan = engine.plan_execution(&dag).unwrap();
+        assert!(plan.is_empty(), "node marked clean with a warm cache must be skipped");
+    }
 }

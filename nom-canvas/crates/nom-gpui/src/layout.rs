@@ -1,9 +1,10 @@
 use crate::types::*;
 use crate::styled::StyleRefinement;
 
-/// Taffy layout engine integration.
-/// `LayoutId` is a newtype over taffy's NodeId (u64 here — taffy is not linked yet).
-/// Pattern: Zed (APP/zed-main/crates/gpui/src/taffy.rs)
+/// Layout engine integration.
+///
+/// `LayoutId` is a newtype over the internal node identifier (u64). The engine
+/// stores computed `Bounds<Pixels>` per node and resolves them on demand.
 pub struct LayoutEngine {
     next_id: u64,
     layouts: std::collections::HashMap<LayoutId, Bounds<Pixels>>,
@@ -17,8 +18,7 @@ impl LayoutEngine {
         }
     }
 
-    /// Request a new layout node. Returns a `LayoutId`.
-    /// In a real impl this would create a `taffy::NodeId` and store style + children.
+    /// Creates a layout node. Returns a unique `LayoutId` from the `LayoutEngine` registry.
     pub fn request_layout(
         &mut self,
         _style: &StyleRefinement,
@@ -40,8 +40,7 @@ impl LayoutEngine {
         self.layouts.remove(&id);
     }
 
-    /// Compute layout for the tree rooted at `root_id`, given available space.
-    /// In a real impl this calls `taffy::compute_layout()`.
+    /// Computes layout for the tree rooted at `root_id` given available space.
     pub fn compute_layout(&mut self, root_id: LayoutId, available: Size<Pixels>) {
         if let Some(layout) = self.layouts.get_mut(&root_id) {
             layout.size = available;

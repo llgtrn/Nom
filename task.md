@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `0949124` | **Tests:** 638 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `c4d6252` | **Tests:** 686 | **Workspace:** clean
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -16,12 +16,13 @@
 - [x] PAL1: NodePalette + PaletteEntry added to nom-panels/left — DB-driven load/search/paint
 - [x] MEDIUMs: RRF_K=60.0 const; InternalRule 3rd trait; HierarchicalCache::len sums L1+L2; Panel trait 7 methods
 
-**Wave R committed 0949124 (638 tests). Remaining open (WAVE S targets):**
-- 5 missing panels: command_palette.rs, toolbar.rs, statusbar.rs, properties.rs, library.rs
-- 10 missing compose backends: mesh, storyboard, native_screen, mobile_screen, presentation, app_bundle, ad_creative, data_extract, data_frame, data_query
-- FrostedRect renderer wiring into Renderer::draw()
-- nom-editor hints.rs inlay hints module
-- Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+**Wave S committed c4d6252 (686 tests). Remaining open (WAVE T targets):**
+- scenario_workflow backend (missing from spec)
+- Renderer "Real impl" stubs → real FrameStats draw counting in draw methods
+- Cross-crate integration tests: panels↔gpui↔compose pipeline
+- Cross-crate integration tests: blocks↔canvas-core↔editor
+- nom-graph tests expansion (68→75+)
+- nom-compiler-bridge tests expansion (44→52+)
 
 ## Wave N (2026-04-18 Iter 43) — router infra + sandbox + SHA-256 + semantic MDL
 - [x] nom-compose vendor_trait.rs: MediaVendor + CostEstimate + StubVendor
@@ -53,6 +54,7 @@
 | [x] P Bug fixes | ✅ | 15a8366 — E2+11 fixes+MEDIUMs (558 tests) |
 | [x] Q Quality | ✅ | f0ca908 — SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence (581 tests) |
 | [x] R Coverage | ✅ | 0949124 — NI1+SipHash13+coverage+57 (638 tests) |
+| [x] S Spec align | ✅ | c4d6252 — 5 panels+10 backends+FrostedRect+hints+renderer (686 tests) |
 
 ### Integrity Grep
 
@@ -63,34 +65,25 @@
 | `RgaPos`/`tombstoned` in nom-collab | 28 | ≥1 |
 | `RenderPrimitive` custom enum | 0 | 0 |
 
-## Open Missions (Wave S targets)
+## Open Missions (Wave T targets)
 
-### HIGH — Missing panels
+### HIGH — Missing compose backend
 
-- [ ] **PANEL-CMD** — command_palette.rs missing from spec (panels group)
-- [ ] **PANEL-TB** — toolbar.rs missing from spec (panels group)
-- [ ] **PANEL-SB** — statusbar.rs missing from spec (panels group)
-- [ ] **PANEL-PROPS** — properties.rs missing from spec (panels group)
-- [ ] **PANEL-LIB** — library.rs missing from spec (panels group)
+- [ ] **BE-SCENARIO-WORKFLOW** — scenario_workflow backend missing from spec (domain model + tests)
 
-### HIGH — Missing compose backends
+### HIGH — Renderer stubs
 
-- [ ] **BE-MESH** — mesh backend missing domain model + tests
-- [ ] **BE-STORYBOARD** — storyboard backend missing domain model + tests
-- [ ] **BE-NATIVE-SCREEN** — native_screen backend missing domain model + tests
-- [ ] **BE-MOBILE-SCREEN** — mobile_screen backend missing domain model + tests
-- [ ] **BE-PRESENTATION** — presentation backend missing domain model + tests
-- [ ] **BE-APP-BUNDLE** — app_bundle backend missing domain model + tests
-- [ ] **BE-AD-CREATIVE** — ad_creative backend missing domain model + tests
-- [ ] **BE-DATA-EXTRACT** — data_extract backend missing domain model + tests
-- [ ] **BE-DATA-FRAME** — data_frame backend missing domain model + tests
-- [ ] **BE-DATA-QUERY** — data_query backend missing domain model + tests
+- [ ] **RENDERER-DRAW** — Renderer draw methods have "Real impl" placeholder stubs; replace with real FrameStats draw-call counting
 
-### MEDIUM
+### MEDIUM — Cross-crate integration tests
 
-- [ ] **FROSTED-RENDERER** — FrostedRect wired into Renderer::draw()
-- [ ] **HINTS** — nom-editor hints.rs inlay hints module
-- [ ] **RENDERER-INFRA** — Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+- [ ] **INTEG-PANELS-GPUI** — integration tests: panels↔gpui↔compose pipeline cross-crate
+- [ ] **INTEG-BLOCKS-CANVAS** — integration tests: blocks↔canvas-core↔editor cross-crate
+
+### MEDIUM — Test expansion
+
+- [ ] **NOM-GRAPH-TESTS** — nom-graph test suite expansion: 68→75+ tests
+- [ ] **COMPILER-BRIDGE-TESTS** — nom-compiler-bridge test suite expansion: 44→52+ tests
 
 ## Non-Negotiable Rules
 
@@ -225,6 +218,26 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] COV-COLLAB: nom-collab coverage expanded to ≥15 tests
 - [x] COV-CLI: nom-cli coverage expanded to ≥15 tests
 - [x] COV-LINT: nom-lint coverage expanded to ≥15 tests
+
+### [x] Wave S — Spec align (commit `c4d6252`, 686 tests)
+- [x] PANEL-CMD: command_palette.rs panel added to nom-panels
+- [x] PANEL-TB: toolbar.rs panel added to nom-panels
+- [x] PANEL-SB: statusbar.rs panel added to nom-panels
+- [x] PANEL-PROPS: properties.rs panel added to nom-panels
+- [x] PANEL-LIB: library.rs panel added to nom-panels
+- [x] BE-MESH: mesh compose backend domain model + tests
+- [x] BE-STORYBOARD: storyboard compose backend domain model + tests
+- [x] BE-NATIVE-SCREEN: native_screen compose backend domain model + tests
+- [x] BE-MOBILE-SCREEN: mobile_screen compose backend domain model + tests
+- [x] BE-PRESENTATION: presentation compose backend domain model + tests
+- [x] BE-APP-BUNDLE: app_bundle compose backend domain model + tests
+- [x] BE-AD-CREATIVE: ad_creative compose backend domain model + tests
+- [x] BE-DATA-EXTRACT: data_extract compose backend domain model + tests
+- [x] BE-DATA-FRAME: data_frame compose backend domain model + tests
+- [x] BE-DATA-QUERY: data_query compose backend domain model + tests
+- [x] FROSTED-RENDERER: FrostedRect wired into Renderer::draw()
+- [x] HINTS: nom-editor hints.rs inlay hints module
+- [x] RENDERER-INFRA: Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
 
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 

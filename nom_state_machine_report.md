@@ -1,13 +1,13 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `0949124` | **Tests:** 638 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `c4d6252` | **Tests:** 686 | **Workspace:** clean
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
-- [x] 638 tests passing across workspace
+- [x] 686 tests passing across workspace
 - [x] All 4 Wave K CRITICALs closed (U1 paint_scene + W1 real ReAct + COL1 RGA + INT1 imports)
 - [x] All 4 Wave L MEDIUMs claimed closed (deep_think config + W3C + RRF + impl Element)
 - [x] Wave M infra landed (sealed + 3-tier + 4-tier cache + dispatch/plan/task_queue)
@@ -16,27 +16,23 @@
 - [x] Wave P landed (E2 CRITICAL + 10 HIGH/MEDIUM + MEDIUMs — 558 tests, commit 15a8366)
 - [x] Wave Q landed (SB1+SC1+CW1+DOC1+CB1+E1+rag-confidence — 581 tests, commit f0ca908)
 - [x] Wave R landed (NI1+SipHash13+coverage+57 — 638 tests, commit 0949124)
+- [x] Wave S landed (5 panels+10 backends+FrostedRect+hints+renderer — 686 tests, commit c4d6252)
 
-## Open Missions (Wave S)
+## Open Missions (Wave T)
 
-- [ ] PANEL-CMD HIGH — command_palette.rs missing from spec
-- [ ] PANEL-TB HIGH — toolbar.rs missing from spec
-- [ ] PANEL-SB HIGH — statusbar.rs missing from spec
-- [ ] PANEL-PROPS HIGH — properties.rs missing from spec
-- [ ] PANEL-LIB HIGH — library.rs missing from spec
-- [ ] BE-MESH HIGH — mesh backend missing domain model + tests
-- [ ] BE-STORYBOARD HIGH — storyboard backend missing domain model + tests
-- [ ] BE-NATIVE-SCREEN HIGH — native_screen backend missing domain model + tests
-- [ ] BE-MOBILE-SCREEN HIGH — mobile_screen backend missing domain model + tests
-- [ ] BE-PRESENTATION HIGH — presentation backend missing domain model + tests
-- [ ] BE-APP-BUNDLE HIGH — app_bundle backend missing domain model + tests
-- [ ] BE-AD-CREATIVE HIGH — ad_creative backend missing domain model + tests
-- [ ] BE-DATA-EXTRACT HIGH — data_extract backend missing domain model + tests
-- [ ] BE-DATA-FRAME HIGH — data_frame backend missing domain model + tests
-- [ ] BE-DATA-QUERY HIGH — data_query backend missing domain model + tests
-- [ ] FROSTED-RENDERER MEDIUM — FrostedRect wired into Renderer::draw()
-- [ ] HINTS MEDIUM — nom-editor hints.rs inlay hints module
-- [ ] RENDERER-INFRA MEDIUM — Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+- [ ] BE-SCENARIO-WORKFLOW HIGH — scenario_workflow backend missing from spec (domain model + tests)
+- [ ] RENDERER-DRAW HIGH — Renderer draw methods "Real impl" stubs → real FrameStats draw counting
+- [ ] INTEG-PANELS-GPUI MEDIUM — cross-crate integration tests: panels↔gpui↔compose pipeline
+- [ ] INTEG-BLOCKS-CANVAS MEDIUM — cross-crate integration tests: blocks↔canvas-core↔editor
+- [ ] NOM-GRAPH-TESTS MEDIUM — nom-graph test suite expansion 68→75+
+- [ ] COMPILER-BRIDGE-TESTS MEDIUM — nom-compiler-bridge test suite expansion 44→52+
+
+## Iteration 48 — Wave S committed (2026-04-18, commit `c4d6252`)
+
+- Committed: 5 missing panels (command_palette, toolbar, statusbar, properties, library) + 10 missing compose backends (mesh, storyboard, native_screen, mobile_screen, presentation, app_bundle, ad_creative, data_extract, data_frame, data_query) + FrostedRect wired into Renderer::draw() + hints.rs inlay hints module + Renderer FrameStats/WindowBuilder/LayoutRegistry improvements
+- Tests: 686 (+48 vs Wave R baseline of 638)
+- Closed: PANEL-CMD/TB/SB/PROPS/LIB (5 HIGH panels) + BE-MESH/STORYBOARD/NATIVE-SCREEN/MOBILE-SCREEN/PRESENTATION/APP-BUNDLE/AD-CREATIVE/DATA-EXTRACT/DATA-FRAME/DATA-QUERY (10 HIGH backends) + FROSTED-RENDERER/HINTS/RENDERER-INFRA (3 MEDIUMs)
+- Open: Wave T targets — scenario_workflow backend + Renderer draw stubs + cross-crate integration tests + nom-graph 68→75+ + compiler-bridge 44→52+
 
 ## Iteration 47 — Wave R committed (2026-04-18, commit `0949124`)
 
@@ -145,6 +141,7 @@
 
 | Commit | Wave |
 |---|---|
+| `c4d6252` | Wave S Spec align |
 | `0949124` | Wave R Coverage |
 | `f0ca908` | Wave Q Quality |
 | `15a8366` | Wave P Bug fixes+MEDIUMs |

@@ -295,4 +295,51 @@ mod tests {
         let output = result.unwrap();
         assert!(output.output_json.contains("stub") || output.output_json.contains("source"));
     }
+
+    #[test]
+    fn background_tier_compile_sends_job() {
+        let (tier, receiver) = BackgroundTier::new();
+        let opts = CompileOpts::full();
+        let source = "define x that is 42".to_string();
+        let _reply = tier.compile(source.clone(), opts);
+        // The job must be immediately visible in the receiver
+        let job = receiver.try_recv().expect("expected a job on the channel");
+        match job {
+            BackgroundJob::Compile { source: s, .. } => {
+                assert_eq!(s, source);
+            }
+            other => panic!("expected BackgroundJob::Compile, got a different variant: {:?}", std::mem::discriminant(&other)),
+        }
+    }
+
+    #[test]
+    fn background_tier_plan_flow_sends_job() {
+        let (tier, receiver) = BackgroundTier::new();
+        let output = PipelineOutput {
+            source_hash: 99,
+            grammar_version: 1,
+            output_json: r#"{"stub":true}"#.into(),
+        };
+        let _reply = tier.plan_flow(output.clone());
+        let job = receiver.try_recv().expect("expected a job on the channel");
+        match job {
+            BackgroundJob::PlanFlow { output: o, .. } => {
+                assert_eq!(o.source_hash, output.source_hash);
+                assert_eq!(o.grammar_version, output.grammar_version);
+            }
+            other => panic!("expected BackgroundJob::PlanFlow, got a different variant: {:?}", std::mem::discriminant(&other)),
+        }
+    }
+
+    #[test]
+    fn background_tier_compile_cache_hit_returns_same_output() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state.clone());
+        // First compile populates the cache
+        let first = worker.do_compile("define y that is 7", &CompileOpts::full()).unwrap();
+        // Second compile with cache enabled must return the same source_hash
+        let second = worker.do_compile("define y that is 7", &CompileOpts::full()).unwrap();
+        assert_eq!(first.source_hash, second.source_hash);
+        assert_eq!(first.grammar_version, second.grammar_version);
+    }
 }

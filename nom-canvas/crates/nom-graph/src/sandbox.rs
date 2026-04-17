@@ -432,4 +432,47 @@ mod tests {
             );
         }
     }
+
+    #[test]
+    fn sandbox_nested_expr_depth_limit() {
+        // Build a BinOp chain nested 17 levels deep — exceeds max_depth of 16.
+        let deep = (0..17).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| {
+            Expr::BinOp {
+                op: BinOpKind::Add,
+                left: Box::new(acc),
+                right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            }
+        });
+        let result = sanitize(&deep);
+        assert_eq!(result, Err(SandboxError::DepthLimitExceeded), "nesting > 16 must be rejected");
+    }
+
+    #[test]
+    fn sandbox_eval_arithmetic() {
+        // (3 + 4) * 2 == 14
+        let ctx = EvalContext::new();
+        let inner = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Int(3))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(4))),
+        };
+        let expr = Expr::BinOp {
+            op: BinOpKind::Mul,
+            left: Box::new(inner),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(14)));
+    }
+
+    #[test]
+    fn sandbox_eval_if_condition() {
+        // if true { 1 } else { 2 } == 1
+        let ctx = EvalContext::new();
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(Expr::Literal(SandboxValue::Int(1))),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(1)));
+    }
 }
