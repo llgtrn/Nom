@@ -13,6 +13,9 @@ pub const SHADOW_SHADER: &str = include_str!("shadow.wgsl");
 pub const POLY_SPRITE_SHADER: &str = include_str!("poly_sprite.wgsl");
 pub const SUBPIXEL_SPRITE_SHADER: &str = include_str!("subpixel_sprite.wgsl");
 
+// batch-4: two-pass bezier path rendering
+pub const PATH_SHADER: &str = include_str!("path.wgsl");
+
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
@@ -35,6 +38,7 @@ mod tests {
             SHADOW_SHADER,
             POLY_SPRITE_SHADER,
             SUBPIXEL_SPRITE_SHADER,
+            PATH_SHADER,
         ];
         for src in files {
             wgsl::parse_str(src).expect("wgsl parse");

@@ -29,6 +29,7 @@ pub mod device_lost;
 #[cfg(feature = "native")]
 pub mod frame_loop;
 pub mod pipelines;
+pub mod renderer;
 pub mod bounds_tree;
 pub mod color;
 pub mod element;
@@ -48,7 +49,7 @@ pub use geometry::{
     Bounds, Corners, DevicePixels, Edges, Pixels, Point, ScaledPixels, Size, TransformationMatrix,
 };
 pub use scene::{
-    AtlasTileRef, HitResult, MonochromeSprite, Path, PolychromeSprite, PrimitiveBatch, PrimitiveKind, Quad,
+    AtlasTileRef, HitResult, MonochromeSprite, Path, PolychromeSprite, PrimitiveBatch, Quad,
     Scene, Shadow, SubpixelSprite, Underline,
 };
 #[cfg(feature = "native")]

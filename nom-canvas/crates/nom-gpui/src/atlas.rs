@@ -156,6 +156,10 @@ impl PlatformAtlas for InMemoryAtlas {
             origin = Point::new(DevicePixels::ZERO, DevicePixels(origin.y.0 + row_height.0));
             inner.row_height_per_kind.insert(key.kind, DevicePixels::ZERO);
         }
+        // Reject if the new row exceeds texture height.
+        if origin.y.0 + size.height.0 > self.texture_size.height.0 {
+            return Err(AtlasError::TooLarge(size, self.texture_size));
+        }
         // Update row height bookkeeping.
         let new_row_height = inner
             .row_height_per_kind

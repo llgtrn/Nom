@@ -29,7 +29,7 @@
 #![deny(unsafe_code)]
 
 use crate::context::GpuContext;
-use crate::shaders::{MONO_SPRITE_SHADER, POLY_SPRITE_SHADER, QUAD_SHADER, SHADOW_SHADER, SUBPIXEL_SPRITE_SHADER, UNDERLINE_SHADER};
+use crate::shaders::{MONO_SPRITE_SHADER, PATH_SHADER, POLY_SPRITE_SHADER, QUAD_SHADER, SHADOW_SHADER, SUBPIXEL_SPRITE_SHADER, UNDERLINE_SHADER};
 
 // ── pipeline registry ─────────────────────────────────────────────────────────
 
@@ -70,6 +70,31 @@ pub struct Pipelines {
     /// `@group(1)` layout for sprite pipelines — storage-read buffer plus a
     /// `texture_2d<f32>` and a `sampler` for the atlas.
     pub sprite_instances_bgl: wgpu::BindGroupLayout,
+
+    /// `@group(1)` layout for the `path_rasterization` pipeline — one
+    /// storage-read buffer of `PathVertex` structs (no texture, no sampler).
+    pub path_vertex_bgl: wgpu::BindGroupLayout,
+
+    /// `@group(1)` layout for the `paths` pipeline — storage-read buffer of
+    /// `PathSprite` structs + a `texture_2d<f32>` (intermediate) + a sampler.
+    pub path_sprite_bgl: wgpu::BindGroupLayout,
+
+    /// Bezier path rasterization pipeline (pass 1).
+    ///
+    /// Renders filled quadratic bezier paths into an intermediate MSAA texture
+    /// (sample_count=4). Input: storage buffer of `PathVertex` structs.
+    /// Topology: `TriangleList`. Blend: `PREMULTIPLIED_ALPHA_BLENDING`.
+    ///
+    /// NOTE: `renderer.rs` does not yet dispatch this pipeline — follow-up task.
+    pub path_rasterization: wgpu::RenderPipeline,
+
+    /// Path compositing pipeline (pass 2).
+    ///
+    /// Composites the resolved intermediate texture onto the surface.
+    /// Blend: `One / OneMinusSrcAlpha`. Topology: `TriangleStrip`.
+    ///
+    /// NOTE: `renderer.rs` does not yet dispatch this pipeline — follow-up task.
+    pub paths: wgpu::RenderPipeline,
 }
 
 impl Pipelines {
@@ -143,6 +168,61 @@ impl Pipelines {
                         count: None,
                     },
                     // binding=2: atlas sampler
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 2,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Sampler(wgpu::SamplerBindingType::Filtering),
+                        count: None,
+                    },
+                ],
+            });
+
+        // @group(1) for path_rasterization: PathVertex storage buffer only.
+        // No atlas texture; coverage is computed analytically in fs_path_raster.
+        let path_vertex_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("nom_gpui_path_vertex_bgl"),
+                entries: &[wgpu::BindGroupLayoutEntry {
+                    binding: 0,
+                    visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                    ty: wgpu::BindingType::Buffer {
+                        ty: wgpu::BufferBindingType::Storage { read_only: true },
+                        has_dynamic_offset: false,
+                        min_binding_size: None,
+                    },
+                    count: None,
+                }],
+            });
+
+        // @group(1) for paths (compositing): PathSprite buffer + resolved intermediate
+        // texture (single-sample Bgra8Unorm, the MSAA resolve target) + sampler.
+        let path_sprite_bgl =
+            device.create_bind_group_layout(&wgpu::BindGroupLayoutDescriptor {
+                label: Some("nom_gpui_path_sprite_bgl"),
+                entries: &[
+                    // binding=0: PathSprite storage array
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 0,
+                        visibility: wgpu::ShaderStages::VERTEX_FRAGMENT,
+                        ty: wgpu::BindingType::Buffer {
+                            ty: wgpu::BufferBindingType::Storage { read_only: true },
+                            has_dynamic_offset: false,
+                            min_binding_size: None,
+                        },
+                        count: None,
+                    },
+                    // binding=1: resolved path intermediate texture (single-sample)
+                    wgpu::BindGroupLayoutEntry {
+                        binding: 1,
+                        visibility: wgpu::ShaderStages::FRAGMENT,
+                        ty: wgpu::BindingType::Texture {
+                            sample_type: wgpu::TextureSampleType::Float { filterable: true },
+                            view_dimension: wgpu::TextureViewDimension::D2,
+                            multisampled: false,
+                        },
+                        count: None,
+                    },
+                    // binding=2: sampler for the intermediate texture
                     wgpu::BindGroupLayoutEntry {
                         binding: 2,
                         visibility: wgpu::ShaderStages::FRAGMENT,
@@ -274,6 +354,125 @@ impl Pipelines {
             None
         };
 
+        // batch-4: two-pass bezier path renderer
+
+        // Pass 1: path_rasterization
+        //   Topology: TriangleList (bezier triangle mesh, 3 vertices per triangle).
+        //   Blend: PREMULTIPLIED_ALPHA_BLENDING (coverage accumulation into MSAA).
+        //   Sample count: 4 (MSAA intermediate texture).
+        //   renderer.rs integration is a follow-up task; see path.wgsl for dispatch notes.
+        let path_rasterization = {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("nom_gpui_path_rasterization_shader"),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(PATH_SHADER)),
+            });
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("nom_gpui_path_rasterization_layout"),
+                bind_group_layouts: &[&globals_bgl, &path_vertex_bgl],
+                push_constant_ranges: &[],
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("nom_gpui_path_rasterization"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_path_raster",
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_path_raster",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(wgpu::BlendState::PREMULTIPLIED_ALPHA_BLENDING),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleList,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                // sample_count=4 matches the MSAA intermediate texture created by the renderer.
+                multisample: wgpu::MultisampleState {
+                    count: 4,
+                    mask: !0,
+                    alpha_to_coverage_enabled: false,
+                },
+                multiview: None,
+                cache: None,
+            })
+        };
+
+        // Pass 2: paths (composite resolved intermediate onto surface).
+        //   Topology: TriangleStrip (4-vertex unit quad, instance_count = sprite_count).
+        //   Blend: One / OneMinusSrcAlpha, correct for premultiplied coverage from pass 1.
+        //   Sample count: 1 (surface target, not MSAA).
+        //   renderer.rs integration is a follow-up task; see path.wgsl for dispatch notes.
+        let paths_blend = wgpu::BlendState {
+            color: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::OneMinusSrcAlpha,
+                operation: wgpu::BlendOperation::Add,
+            },
+            alpha: wgpu::BlendComponent {
+                src_factor: wgpu::BlendFactor::One,
+                dst_factor: wgpu::BlendFactor::One,
+                operation: wgpu::BlendOperation::Add,
+            },
+        };
+        let paths = {
+            let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+                label: Some("nom_gpui_paths_shader"),
+                source: wgpu::ShaderSource::Wgsl(std::borrow::Cow::Borrowed(PATH_SHADER)),
+            });
+            let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+                label: Some("nom_gpui_paths_layout"),
+                bind_group_layouts: &[&globals_bgl, &path_sprite_bgl],
+                push_constant_ranges: &[],
+            });
+            device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+                label: Some("nom_gpui_paths"),
+                layout: Some(&layout),
+                vertex: wgpu::VertexState {
+                    module: &shader,
+                    entry_point: "vs_path",
+                    buffers: &[],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                },
+                fragment: Some(wgpu::FragmentState {
+                    module: &shader,
+                    entry_point: "fs_path",
+                    targets: &[Some(wgpu::ColorTargetState {
+                        format: surface_format,
+                        blend: Some(paths_blend),
+                        write_mask: wgpu::ColorWrites::ALL,
+                    })],
+                    compilation_options: wgpu::PipelineCompilationOptions::default(),
+                }),
+                primitive: wgpu::PrimitiveState {
+                    topology: wgpu::PrimitiveTopology::TriangleStrip,
+                    strip_index_format: None,
+                    front_face: wgpu::FrontFace::Ccw,
+                    cull_mode: None,
+                    polygon_mode: wgpu::PolygonMode::Fill,
+                    unclipped_depth: false,
+                    conservative: false,
+                },
+                depth_stencil: None,
+                multisample: wgpu::MultisampleState::default(), // count=1 (surface)
+                multiview: None,
+                cache: None,
+            })
+        };
+
         Self {
             quads,
             mono_sprites,
@@ -281,9 +480,13 @@ impl Pipelines {
             shadows,
             poly_sprites,
             subpixel_sprites,
+            path_rasterization,
+            paths,
             globals_bgl,
             instances_bgl,
             sprite_instances_bgl,
+            path_vertex_bgl,
+            path_sprite_bgl,
         }
     }
 }
@@ -484,4 +687,54 @@ mod tests {
             );
         }
     }
+    /// Verify that the `path_rasterization` pipeline (pass 1) compiles.
+    /// Topology is TriangleList with sample_count=4 (MSAA intermediate target).
+    #[test]
+    fn path_rasterization_pipeline_compiles() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        let _ = &pipelines.path_rasterization;
+    }
+
+    /// Verify that the `paths` pipeline (pass 2) compiles.
+    /// Topology is TriangleStrip with One/OneMinusSrcAlpha blend on the surface.
+    #[test]
+    fn paths_pipeline_compiles() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        let _ = &pipelines.paths;
+    }
+
+    /// Both new pipelines and their bind-group layouts are accessible in the registry.
+    #[test]
+    fn both_pipelines_present_in_registry() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        let _ = &pipelines.path_rasterization;
+        let _ = &pipelines.paths;
+        let _ = &pipelines.path_vertex_bgl;
+        let _ = &pipelines.path_sprite_bgl;
+    }
+
 }

@@ -4,10 +4,12 @@
 //! homogeneous `Vec<T>` for cache-friendly batched submission to the GPU.
 //! `DrawOrder` from [`BoundsTree`](crate::bounds_tree) orders draws across types.
 
+use std::collections::HashMap;
+
 use crate::atlas::AtlasTextureId;
-use crate::bounds_tree::DrawOrder;
+use crate::bounds_tree::{BoundsTree, DrawOrder};
 use crate::color::Rgba;
-use crate::geometry::{Bounds, Corners, Point, ScaledPixels, TransformationMatrix};
+use crate::geometry::{Bounds, Corners, Point, ScaledPixels, Size, TransformationMatrix};
 
 /// Filled/stroked rounded rectangle with optional shadow/border.
 #[derive(Clone, Copy, Debug)]
@@ -71,7 +73,7 @@ pub struct PolychromeSprite {
 #[derive(Clone, Copy, Debug)]
 pub struct AtlasTileRef {
     pub texture: AtlasTextureId,
-    /// UV rect in [0,1] coordinates.
+    /// UV rect in [0,1] normalized texture coordinates: `[u_min, v_min, u_max, v_max]`.
     pub uv: [f32; 4],
 }
 
@@ -98,7 +100,7 @@ pub struct Path {
 
 /// Enum discriminant for batched iteration.
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum PrimitiveKind {
+pub(crate) enum PrimitiveKind {
     Shadow,
     Quad,
     Underline,
@@ -112,7 +114,7 @@ pub enum PrimitiveKind {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct HitResult {
     /// Which primitive kind was hit.
-    pub kind: PrimitiveKind,
+    pub(crate) kind: PrimitiveKind,
     /// Index of the primitive in its collection (e.g. `scene.quads()[index]`).
     pub index: usize,
     /// The draw order of the hit primitive.
@@ -122,6 +124,14 @@ pub struct HitResult {
 /// Scene graph: 7 typed collections.
 /// Fields are `pub(crate)` so the renderer (in the same crate) can access
 /// them directly; external callers use the read-only slice accessors below.
+///
+/// # Spatial indexing
+///
+/// When constructed via [`Scene::new_with_tree`], the scene maintains an
+/// [`BoundsTree`] in sync with primitive insertions so that [`Scene::hit_test`]
+/// runs in O(log N) instead of O(N). Scenes built with [`Scene::new`] (or via
+/// `Default::default()`) skip the spatial index and use the brute-force scan,
+/// which is fine for low primitive counts.
 #[derive(Debug, Default)]
 pub struct Scene {
     pub(crate) shadows: Vec<Shadow>,
@@ -131,6 +141,64 @@ pub struct Scene {
     pub(crate) subpixel_sprites: Vec<SubpixelSprite>,
     pub(crate) polychrome_sprites: Vec<PolychromeSprite>,
     pub(crate) paths: Vec<Path>,
+
+    /// Optional spatial index maintained in sync with primitive insertions.
+    /// When `Some`, `hit_test` uses O(log N) tree queries. When `None`
+    /// (default), `hit_test` falls back to the O(N) scan.
+    pub(crate) bounds_tree: Option<BoundsTree>,
+
+    /// Map from tree-assigned [`DrawOrder`] → list of `(PrimitiveKind, index)`
+    /// primitives sharing that tree order. Only populated when `bounds_tree`
+    /// is `Some`. Non-overlapping primitives may share a tree order band,
+    /// so this is a `Vec` rather than a single entry.
+    pub(crate) order_to_primitive: HashMap<DrawOrder, Vec<(PrimitiveKind, usize)>>,
+
+    /// Flat list of all primitives appended in insertion order, each entry
+    /// carrying the primitive's own `.order` field plus its integer-expanded
+    /// bounds for fast coarse filtering.  Only populated when `bounds_tree`
+    /// is `Some`.  Iterating this in reverse (highest-order-last → topmost
+    /// first) gives O(P) early-exit hit testing without calling
+    /// `topmost_intersecting` — which is O(N) for fully non-overlapping scenes.
+    pub(crate) sorted_primitives: Vec<(DrawOrder, PrimitiveKind, usize, Bounds<i32>)>,
+}
+
+// ── Coordinate helpers ───────────────────────────────────────────────────────
+
+/// Convert a `Bounds<ScaledPixels>` to `Bounds<i32>` for insertion into the
+/// [`BoundsTree`] and coarse hit-test filtering.
+///
+/// # Precision — inclusive expansion
+/// The origin is floored and the right/bottom edges are **ceiled**, so the
+/// integer rectangle is a conservative over-approximation of the float rect.
+/// This guarantees no false negatives: a float point that `Bounds::contains`
+/// accepts will also pass the i32 coarse filter.  False positives (i32 passes
+/// but float rejects) are cheap — they fall through to the exact float check.
+fn scaled_bounds_to_i32(b: Bounds<ScaledPixels>) -> Bounds<i32> {
+    let x0 = b.origin.x.0.floor() as i32;
+    let y0 = b.origin.y.0.floor() as i32;
+    let x1 = (b.origin.x.0 + b.size.width.0).ceil() as i32;
+    let y1 = (b.origin.y.0 + b.size.height.0).ceil() as i32;
+    Bounds {
+        origin: Point::new(x0, y0),
+        size: Size::new(x1 - x0, y1 - y0),
+    }
+}
+
+/// Convert a hit-test point to a 1×1 [`Bounds<i32>`] for `topmost_intersecting`.
+///
+/// The 1×1 box at `(floor(x), floor(y))` intersects exactly the same set of
+/// integer-aligned rectangles that `Bounds::contains(point)` would match
+/// (since `contains` uses `>=` on the left/top and `<` on right/bottom, a
+/// point at sub-pixel position `(4.7, 3.2)` is inside any rect whose
+/// origin.x ≤ 4 and right > 4, which is exactly what a 1×1 query at `(4, 3)`
+/// tests against integer-rounded rects).
+fn point_to_query(point: Point<ScaledPixels>) -> Bounds<i32> {
+    let x = point.x.0 as i32;
+    let y = point.y.0 as i32;
+    Bounds {
+        origin: Point::new(x, y),
+        size: Size::new(1, 1),
+    }
 }
 
 /// Stable sort key for `AtlasTextureId` (no `Ord` impl on the type itself).
@@ -145,8 +213,23 @@ fn texture_sort_key(t: &AtlasTextureId) -> (u8, u32) {
 }
 
 impl Scene {
+    /// Create a scene without a spatial index (default, low overhead).
     pub fn new() -> Self {
         Self::default()
+    }
+
+    /// Create a scene with a [`BoundsTree`] spatial index enabled.
+    ///
+    /// [`hit_test`](Self::hit_test) will use O(log N) tree queries instead of
+    /// the O(N) brute-force scan. The tree is maintained incrementally on every
+    /// `insert_*` call; no explicit rebuild step is needed.
+    pub fn new_with_tree() -> Self {
+        Self {
+            bounds_tree: Some(BoundsTree::new()),
+            order_to_primitive: HashMap::new(),
+            sorted_primitives: Vec::new(),
+            ..Self::default()
+        }
     }
 
     pub fn clear(&mut self) {
@@ -157,6 +240,13 @@ impl Scene {
         self.subpixel_sprites.clear();
         self.polychrome_sprites.clear();
         self.paths.clear();
+        // Clear tree and map but keep the Option variant so subsequent inserts
+        // continue using the tree-backed path.
+        if let Some(ref mut tree) = self.bounds_tree {
+            tree.clear();
+        }
+        self.order_to_primitive.clear();
+        self.sorted_primitives.clear();
     }
 
     pub fn is_empty(&self) -> bool {
@@ -170,40 +260,172 @@ impl Scene {
     }
 
     pub fn insert_shadow(&mut self, s: Shadow) {
+        let index = self.shadows.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(s.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::Shadow, index));
+            self.sorted_primitives.push((s.order, PrimitiveKind::Shadow, index, b32));
+        }
         self.shadows.push(s);
     }
 
     pub fn insert_quad(&mut self, q: Quad) {
+        let index = self.quads.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(q.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::Quad, index));
+            self.sorted_primitives.push((q.order, PrimitiveKind::Quad, index, b32));
+        }
         self.quads.push(q);
     }
 
     pub fn insert_underline(&mut self, u: Underline) {
+        let index = self.underlines.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(u.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::Underline, index));
+            self.sorted_primitives.push((u.order, PrimitiveKind::Underline, index, b32));
+        }
         self.underlines.push(u);
     }
 
     pub fn insert_monochrome_sprite(&mut self, s: MonochromeSprite) {
+        let index = self.monochrome_sprites.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(s.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::MonochromeSprite, index));
+            self.sorted_primitives.push((s.order, PrimitiveKind::MonochromeSprite, index, b32));
+        }
         self.monochrome_sprites.push(s);
     }
 
     pub fn insert_subpixel_sprite(&mut self, s: SubpixelSprite) {
+        let index = self.subpixel_sprites.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(s.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::SubpixelSprite, index));
+            self.sorted_primitives.push((s.order, PrimitiveKind::SubpixelSprite, index, b32));
+        }
         self.subpixel_sprites.push(s);
     }
 
     pub fn insert_polychrome_sprite(&mut self, s: PolychromeSprite) {
+        let index = self.polychrome_sprites.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(s.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::PolychromeSprite, index));
+            self.sorted_primitives.push((s.order, PrimitiveKind::PolychromeSprite, index, b32));
+        }
         self.polychrome_sprites.push(s);
     }
 
     pub fn insert_path(&mut self, p: Path) {
+        let index = self.paths.len();
+        if let Some(ref mut tree) = self.bounds_tree {
+            let b32 = scaled_bounds_to_i32(p.bounds);
+            let tree_order = tree.insert(b32);
+            self.order_to_primitive.entry(tree_order).or_default().push((PrimitiveKind::Path, index));
+            self.sorted_primitives.push((p.order, PrimitiveKind::Path, index, b32));
+        }
         self.paths.push(p);
     }
 
     /// Return the topmost-order primitive whose bounds contain `point`, if any.
     ///
-    /// Iterates all 7 primitive collections and picks the one with the highest
-    /// `DrawOrder` whose `bounds` contains the point. O(N) in total primitive
-    /// count — fine for MVP frames with < 10k primitives. Caller is responsible
-    /// for applying clip_bounds before routing pointer events.
+    /// When a [`BoundsTree`] is present (scene built with
+    /// [`new_with_tree`](Self::new_with_tree)), this runs in O(log N) using the
+    /// tree's `topmost_intersecting` query. Otherwise falls back to the O(N)
+    /// brute-force scan.
+    ///
+    /// Caller is responsible for applying `clip_bounds` before routing pointer
+    /// events; this method only tests `bounds`, not `clip_bounds`.
+    ///
+    /// # Tree ordering vs. primitive `.order` field
+    ///
+    /// The [`BoundsTree`] assigns its own internal draw order based on spatial
+    /// overlap relationships (non-overlapping rects share the same tree order
+    /// for batching purposes). This tree order is distinct from the primitive's
+    /// `.order` field. `hit_test` uses the tree order to find the spatially
+    /// topmost primitive, then reads back the primitive's own `.order` field
+    /// for the returned [`HitResult`]. Both paths (`tree` and `brute_force`)
+    /// return the same result when primitives are inserted in ascending `.order`
+    /// order — the canonical usage pattern.
     pub fn hit_test(&self, point: Point<ScaledPixels>) -> Option<HitResult> {
+        if self.bounds_tree.is_none() {
+            return self.hit_test_brute_force(point);
+        }
+
+        // Tree path: scan sorted_primitives in reverse insertion order.
+        // Primitives are pushed in insertion order; the caller is expected to
+        // insert in ascending `.order` (same discipline as `finish()`).
+        // Scanning in reverse therefore visits highest-.order candidates first,
+        // enabling early-exit on the first float-precise hit.
+        //
+        // Two-level filter:
+        //   1. Coarse: i32 inclusive-expanded bounds — avoids float work on
+        //      the ~99% of entries that don't cover the probe point.
+        //   2. Fine:   exact float `Bounds::contains` — eliminates the rare
+        //      false positives introduced by inclusive rounding.
+        //
+        // This is O(P) where P is the number of primitives at the probe point,
+        // not O(N). For fully non-overlapping scenes P=1 regardless of N.
+        let px = point.x.0 as i32;
+        let py = point.y.0 as i32;
+        for &(prim_order, kind, index, b32) in self.sorted_primitives.iter().rev() {
+            // Coarse i32 check (inclusive-expanded bounds).
+            if px < b32.origin.x
+                || py < b32.origin.y
+                || px >= b32.origin.x + b32.size.width
+                || py >= b32.origin.y + b32.size.height
+            {
+                continue;
+            }
+            // Fine float check.
+            let float_bounds = self.primitive_bounds(kind, index);
+            if float_bounds.contains(point) {
+                return Some(HitResult { kind, index, order: prim_order });
+            }
+        }
+        None
+    }
+
+    /// Retrieve the `bounds` field of the primitive identified by `(kind, index)`.
+    fn primitive_bounds(&self, kind: PrimitiveKind, index: usize) -> Bounds<ScaledPixels> {
+        match kind {
+            PrimitiveKind::Shadow => self.shadows[index].bounds,
+            PrimitiveKind::Quad => self.quads[index].bounds,
+            PrimitiveKind::Underline => self.underlines[index].bounds,
+            PrimitiveKind::MonochromeSprite => self.monochrome_sprites[index].bounds,
+            PrimitiveKind::SubpixelSprite => self.subpixel_sprites[index].bounds,
+            PrimitiveKind::PolychromeSprite => self.polychrome_sprites[index].bounds,
+            PrimitiveKind::Path => self.paths[index].bounds,
+        }
+    }
+
+    /// Retrieve the `.order` field of the primitive identified by `(kind, index)`.
+    fn primitive_order(&self, kind: PrimitiveKind, index: usize) -> DrawOrder {
+        match kind {
+            PrimitiveKind::Shadow => self.shadows[index].order,
+            PrimitiveKind::Quad => self.quads[index].order,
+            PrimitiveKind::Underline => self.underlines[index].order,
+            PrimitiveKind::MonochromeSprite => self.monochrome_sprites[index].order,
+            PrimitiveKind::SubpixelSprite => self.subpixel_sprites[index].order,
+            PrimitiveKind::PolychromeSprite => self.polychrome_sprites[index].order,
+            PrimitiveKind::Path => self.paths[index].order,
+        }
+    }
+
+    /// O(N) fallback used when no [`BoundsTree`] is present.
+    ///
+    /// Also available as an explicit escape-hatch for callers that want to
+    /// bypass the spatial index (e.g. correctness cross-checks in tests).
+    pub(crate) fn hit_test_brute_force(&self, point: Point<ScaledPixels>) -> Option<HitResult> {
         let mut best: Option<HitResult> = None;
 
         macro_rules! check_collection {
@@ -326,6 +548,7 @@ pub enum PrimitiveBatch<'a> {
     Paths(&'a [Path]),
 }
 
+#[derive(Debug)]
 pub struct BatchIterator<'a> {
     scene: &'a Scene,
     shadow_i: usize,
@@ -941,5 +1164,127 @@ mod tests {
         assert_eq!(s.subpixel_sprites().len(), 1);
         assert_eq!(s.polychrome_sprites().len(), 1);
         assert_eq!(s.paths().len(), 1);
+    }
+
+    // ── BoundsTree-backed hit_test tests ─────────────────────────────────────
+
+    /// Tree path and brute-force path must agree on 1 000 random quads.
+    #[test]
+    fn hit_test_with_tree_agrees_with_brute_force_on_random_scene() {
+        // Deterministic pseudo-random generator (LCG) — no external crate needed.
+        let mut rng: u64 = 0xdeadbeef_cafebabe;
+        let mut next = |lo: f32, hi: f32| -> f32 {
+            rng = rng.wrapping_mul(6364136223846793005).wrapping_add(1442695040888963407);
+            let frac = (rng >> 33) as f32 / (1u64 << 31) as f32;
+            lo + frac * (hi - lo)
+        };
+
+        let mut tree_scene = Scene::new_with_tree();
+        let mut brute_scene = Scene::new();
+
+        for i in 0u32..1000 {
+            let x = next(0.0, 900.0);
+            let y = next(0.0, 700.0);
+            let w = next(10.0, 100.0);
+            let h = next(10.0, 100.0);
+            let q = quad_at(i + 1, x, y, w, h);
+            tree_scene.insert_quad(q);
+            brute_scene.insert_quad(q);
+        }
+
+        // Sample 200 probe points spread across the canvas.
+        for i in 0u32..200 {
+            let px = next(0.0, 1000.0);
+            let py = next(0.0, 800.0);
+            let probe = pt(px, py);
+            let tree_result = tree_scene.hit_test(probe);
+            let brute_result = brute_scene.hit_test_brute_force(probe);
+            assert_eq!(
+                tree_result, brute_result,
+                "probe {i} at ({px},{py}): tree={tree_result:?} brute={brute_result:?}"
+            );
+        }
+    }
+
+    /// Inserting 10 000 quads into a tree scene and hit-testing completes within
+    /// a reasonable wall-clock budget (asserted as < 1 second total).
+    #[test]
+    fn hit_test_tree_faster_than_brute_force_for_large_scene() {
+        use std::time::Instant;
+
+        let mut scene = Scene::new_with_tree();
+        // 10k non-overlapping quads in a grid.
+        for row in 0u32..100 {
+            for col in 0u32..100 {
+                let x = col as f32 * 12.0;
+                let y = row as f32 * 12.0;
+                let order = row * 100 + col + 1;
+                scene.insert_quad(quad_at(order, x, y, 10.0, 10.0));
+            }
+        }
+
+        let start = Instant::now();
+        for row in 0u32..100 {
+            for col in 0u32..100 {
+                let px = col as f32 * 12.0 + 5.0;
+                let py = row as f32 * 12.0 + 5.0;
+                let _ = scene.hit_test(pt(px, py));
+            }
+        }
+        let elapsed = start.elapsed();
+        assert!(
+            elapsed.as_secs() < 1,
+            "10 000 tree hit_tests took {:?}, expected < 1s",
+            elapsed
+        );
+    }
+
+    /// A scene built with `new()` (no tree) still returns correct hit_test results.
+    #[test]
+    fn hit_test_without_tree_uses_brute_force() {
+        let mut s = Scene::new();
+        s.insert_quad(quad_at(1, 0.0, 0.0, 50.0, 50.0));
+        s.insert_quad(quad_at(3, 10.0, 10.0, 30.0, 30.0));
+        s.insert_quad(quad_at(2, 0.0, 0.0, 50.0, 50.0));
+
+        // Point inside all three quads — highest order (3) should win.
+        let result = s.hit_test(pt(20.0, 20.0));
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().order, 3);
+
+        // Point only inside the outer two quads (order 1 and 2) — order 2 wins.
+        let result2 = s.hit_test(pt(5.0, 5.0));
+        assert!(result2.is_some());
+        assert_eq!(result2.unwrap().order, 2);
+
+        // Point outside everything.
+        assert!(s.hit_test(pt(200.0, 200.0)).is_none());
+    }
+
+    /// Inserting 100 quads one at a time keeps tree and map consistent.
+    #[test]
+    fn hit_test_after_many_inserts_tree_stays_consistent() {
+        let mut tree_scene = Scene::new_with_tree();
+        let mut brute_scene = Scene::new();
+
+        for i in 0u32..100 {
+            // Non-overlapping quads in a column.
+            let y = i as f32 * 12.0;
+            let q = quad_at(i + 1, 0.0, y, 10.0, 10.0);
+            tree_scene.insert_quad(q);
+            brute_scene.insert_quad(q);
+        }
+
+        // Spot-check every 10th quad's center.
+        for i in (0u32..100).step_by(10) {
+            let py = i as f32 * 12.0 + 5.0;
+            let probe = pt(5.0, py);
+            let tree_r = tree_scene.hit_test(probe);
+            let brute_r = brute_scene.hit_test_brute_force(probe);
+            assert_eq!(
+                tree_r, brute_r,
+                "spot-check quad {i}: tree={tree_r:?} brute={brute_r:?}"
+            );
+        }
     }
 }

@@ -19,8 +19,19 @@ pub struct ElementId(pub u64);
 /// Passed to every lifecycle method; holds rem size, scale factor, layout engine.
 pub struct ElementCx<'a> {
     pub layout: &'a mut LayoutEngine,
+    /// Root font-size in logical pixels. Used to convert rem units in `Style` to absolute pixels.
     pub rem_size: f32,
+    /// DPI scale factor (e.g. 2.0 on Retina displays). Multiplies logical coords to device coords.
     pub scale_factor: f32,
+}
+
+impl<'a> std::fmt::Debug for ElementCx<'a> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("ElementCx")
+            .field("rem_size", &self.rem_size)
+            .field("scale_factor", &self.scale_factor)
+            .finish_non_exhaustive()
+    }
 }
 
 impl<'a> ElementCx<'a> {

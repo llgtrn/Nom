@@ -2,6 +2,8 @@
 resolver = "2"
 members = [
     "crates/nom-gpui",
+    "crates/nom-canvas-core",
+    "crates/nom-editor",
 ]
 
 [workspace.package]
@@ -32,6 +34,7 @@ raw-window-handle = "0.6"
 parking_lot = "0.12"
 smallvec = "1.13"
 thiserror = "1.0"
+ropey = "1.6"
 
 # Dev
 anyhow = "1.0"
