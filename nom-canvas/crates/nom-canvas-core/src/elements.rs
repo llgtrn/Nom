@@ -193,6 +193,72 @@ pub struct WireElement {
     pub waypoints: Vec<[f32; 2]>,
 }
 
+// ─── Element impls ──────────────────────────────────────────────────────────
+
+impl nom_gpui::element::Element for GraphNodeElement {
+    type State = ();
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        cx: &mut nom_gpui::element::WindowContext,
+    ) -> (nom_gpui::types::LayoutId, ()) {
+        let layout_id = cx.request_layout(&nom_gpui::styled::StyleRefinement::default(), &[]);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {}
+
+    fn paint(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        // In a real impl: push Quad to Scene with self.position + self.size
+        let _ = bounds;
+    }
+}
+
+impl nom_gpui::element::Element for WireElement {
+    type State = ();
+
+    fn request_layout(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        cx: &mut nom_gpui::element::WindowContext,
+    ) -> (nom_gpui::types::LayoutId, ()) {
+        let layout_id = cx.request_layout(&nom_gpui::styled::StyleRefinement::default(), &[]);
+        (layout_id, ())
+    }
+
+    fn prepaint(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {}
+
+    fn paint(
+        &mut self,
+        _id: Option<&nom_gpui::types::GlobalElementId>,
+        bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
+        _state: &mut (),
+        _cx: &mut nom_gpui::element::WindowContext,
+    ) {
+        // In a real impl: emit bezier path to Scene for self.waypoints
+        let _ = bounds;
+    }
+}
+
 /// Returns the midpoint between `from_pos` and `to_pos`.
 ///
 /// Waypoints are not considered — this gives the straight-line midpoint
@@ -383,6 +449,39 @@ mod tests {
         };
         assert!((node.confidence - 0.75).abs() < 1e-6);
         assert_eq!(node.node_id, 1);
+    }
+
+    #[test]
+    fn graph_node_element_implements_element_trait() {
+        use nom_gpui::element::{Element, WindowContext};
+        use nom_gpui::types::Vec2;
+        let mut node = GraphNodeElement {
+            id: 1,
+            node_id: 10,
+            position: [0.0, 0.0],
+            size: [100.0, 60.0],
+            label: "test".to_string(),
+            confidence: 1.0,
+        };
+        let mut cx = WindowContext::new(1.0, Vec2::new(1024.0, 768.0));
+        let (layout_id, ()) = node.request_layout(None, &mut cx);
+        let _ = layout_id;
+    }
+
+    #[test]
+    fn wire_element_implements_element_trait() {
+        use nom_gpui::element::{Element, WindowContext};
+        use nom_gpui::types::Vec2;
+        let mut wire = WireElement {
+            id: 2,
+            from_node: 1,
+            to_node: 3,
+            confidence: 0.5,
+            waypoints: vec![[50.0, 50.0]],
+        };
+        let mut cx = WindowContext::new(1.0, Vec2::new(1024.0, 768.0));
+        let (layout_id, ()) = wire.request_layout(None, &mut cx);
+        let _ = layout_id;
     }
 
     #[test]

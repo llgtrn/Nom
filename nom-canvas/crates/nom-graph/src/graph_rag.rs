@@ -10,8 +10,7 @@
 //!   4. When the same node is reached via multiple paths, the best score is kept.
 //!   5. The top-k results by score are returned.
 
-use std::collections::{BinaryHeap, HashMap, VecDeque};
-use std::cmp::Ordering;
+use std::collections::{HashMap, VecDeque};
 
 use crate::dag::Dag;
 use crate::node::NodeId;
@@ -36,31 +35,6 @@ pub struct RetrievedNode {
     pub score: f32,
     /// Graph distance (BFS hops) from the nearest seed node.
     pub hops: usize,
-}
-
-// BinaryHeap wrapper for max-heap ordering by score.
-#[derive(Debug, Clone)]
-struct ScoredNode {
-    node_id: NodeId,
-    score: f32,
-    hops: usize,
-}
-
-impl PartialEq for ScoredNode {
-    fn eq(&self, other: &Self) -> bool {
-        self.score.total_cmp(&other.score) == Ordering::Equal
-    }
-}
-impl Eq for ScoredNode {}
-impl PartialOrd for ScoredNode {
-    fn partial_cmp(&self, other: &Self) -> Option<Ordering> {
-        Some(self.cmp(other))
-    }
-}
-impl Ord for ScoredNode {
-    fn cmp(&self, other: &Self) -> Ordering {
-        self.score.total_cmp(&other.score)
-    }
 }
 
 // ---------------------------------------------------------------------------
@@ -150,14 +124,17 @@ impl<'a> GraphRagRetriever<'a> {
     /// Retrieve the top-`top_k` nodes most relevant to `query`.
     ///
     /// Every node in the DAG is a BFS seed (hop=0).  Neighbours are explored
-    /// up to `max_hops`.  For each (node, hop) encounter the score is:
+    /// up to `max_hops`.  For each (node, hop) encounter the best cosine
+    /// similarity with the query is recorded.  After BFS, candidates are sorted
+    /// by cosine similarity descending and scored using Reciprocal Rank Fusion:
     ///
     /// ```text
-    /// score = cosine_sim(query, node_vec(node_id)) * (1.0 / (1.0 + hops))
+    /// rrf_score = 1.0 / (60.0 + rank)   (rank is 0-indexed position)
     /// ```
     ///
-    /// If a node is reached by multiple paths the best (highest) score wins.
-    /// Results are sorted by score descending and truncated to `top_k`.
+    /// If a node is reached by multiple paths the best cosine similarity wins.
+    /// Results are sorted by RRF score descending (which preserves the cosine
+    /// similarity ranking) and truncated to `top_k`.
     pub fn retrieve(&self, query: &QueryVec, top_k: usize, max_hops: usize) -> Vec<RetrievedNode> {
         if top_k == 0 || self.dag.nodes.is_empty() {
             return Vec::new();
@@ -165,7 +142,7 @@ impl<'a> GraphRagRetriever<'a> {
 
         let adj = build_adjacency(self.dag);
 
-        // best_score[node_id] → (score, hops)
+        // best_cosine[node_id] → (cosine_sim, hops)
         let mut best: HashMap<&str, (f32, usize)> = HashMap::new();
 
         // BFS from each node as a seed.
@@ -178,15 +155,14 @@ impl<'a> GraphRagRetriever<'a> {
             visited.insert(start_id.as_str(), 0);
 
             while let Some((current, hops)) = queue.pop_front() {
-                // Score for this (node, hops) encounter.
+                // Raw cosine similarity (no hop penalty — RRF handles ranking).
                 let nv = node_vec(current);
                 let raw_sim = cosine_sim(query, &nv);
-                let score = raw_sim * (1.0 / (1.0 + hops as f32));
 
-                // Update global best for this node.
+                // Update global best cosine similarity for this node.
                 let entry = best.entry(current).or_insert((f32::NEG_INFINITY, usize::MAX));
-                if score > entry.0 {
-                    *entry = (score, hops);
+                if raw_sim > entry.0 {
+                    *entry = (raw_sim, hops);
                 }
 
                 // Expand neighbours if within hop budget.
@@ -205,24 +181,25 @@ impl<'a> GraphRagRetriever<'a> {
             }
         }
 
-        // Collect into a max-heap and drain top-k.
-        let mut heap: BinaryHeap<ScoredNode> = best
+        // Sort all candidates by cosine similarity descending to establish rank.
+        let mut candidates: Vec<(&str, f32, usize)> = best
             .into_iter()
-            .map(|(id, (score, hops))| ScoredNode {
+            .map(|(id, (sim, hops))| (id, sim, hops))
+            .collect();
+        candidates.sort_by(|a, b| b.1.total_cmp(&a.1));
+
+        // Apply RRF: score = 1.0 / (60.0 + rank) where rank is 0-indexed position.
+        let take = top_k.min(candidates.len());
+        candidates
+            .into_iter()
+            .enumerate()
+            .map(|(rank, (id, _sim, hops))| RetrievedNode {
                 node_id: id.to_owned(),
-                score,
+                score: 1.0 / (60.0 + rank as f32),
                 hops,
             })
-            .collect();
-
-        let take = top_k.min(heap.len());
-        let mut results = Vec::with_capacity(take);
-        for _ in 0..take {
-            if let Some(sn) = heap.pop() {
-                results.push(RetrievedNode { node_id: sn.node_id, score: sn.score, hops: sn.hops });
-            }
-        }
-        results
+            .take(take)
+            .collect()
     }
 }
 
@@ -336,7 +313,7 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
-    // graph_rag_hop_penalty_reduces_score
+    // graph_rag_hop_penalty_reduces_score  (now verifies RRF ranking)
     // -----------------------------------------------------------------------
     #[test]
     fn graph_rag_hop_penalty_reduces_score() {
@@ -349,11 +326,9 @@ mod tests {
         dag.add_edge("mid", "out", "leaf", "in");
 
         let retriever = GraphRagRetriever::new(&dag);
-        // root's vec as query: root scores cosine=1.0 at hop=0 (score=1.0),
-        // leaf scores cosine=1.0 at hop=0 from its own BFS seed but also
-        // appears at hop=2 from root's BFS — root should be ranked #1 since
-        // its raw sim with the query (= root_vec) is 1.0 * 1.0 = 1.0, while
-        // leaf's best raw sim with root_vec is lower (different hash).
+        // root's vec as query: root has cosine_sim=1.0 (rank 0, RRF=1/60),
+        // leaf's cosine_sim with root_vec < 1.0 (different embedding → lower rank).
+        // Under RRF the highest-cosine-sim node gets the best RRF score (1/60).
         let query = node_vec("root");
         let results = retriever.retrieve(&query, 3, 3);
 
@@ -363,16 +338,23 @@ mod tests {
         assert!(root_result.is_some(), "root must appear in results");
         assert!(leaf_result.is_some(), "leaf must appear in results");
 
-        // root: hop=0, cosine_sim(root_vec, root_vec)=1.0 → score=1.0
-        // leaf: best = cosine_sim(root_vec, leaf_vec)*1.0 (from leaf's own
-        //        BFS at hop=0) but cosine_sim(root_vec, leaf_vec) < 1.0
-        //        since they have different node_vec embeddings.
+        // root: rank=0 → RRF = 1/(60+0) = 1/60
+        // leaf: cosine_sim(root_vec, leaf_vec) < 1.0 so it ranks lower → RRF < 1/60
         assert!(
             root_result.unwrap().score > leaf_result.unwrap().score,
-            "hop penalty / different embeddings must make root outscore leaf: \
+            "RRF: root (rank 0) must outscore leaf (lower rank): \
              root={} leaf={}",
             root_result.unwrap().score,
             leaf_result.unwrap().score,
+        );
+
+        // Verify the RRF formula: top result score must equal 1/(60+0).
+        let expected_top = 1.0f32 / 60.0;
+        assert!(
+            (results[0].score - expected_top).abs() < 1e-6,
+            "top result RRF score must be 1/60 = {}, got {}",
+            expected_top,
+            results[0].score
         );
     }
 

@@ -35,13 +35,85 @@ pub struct TelemetryEvent {
     pub timestamp_ms: u64,
     /// Opaque identifier that groups events belonging to one user session.
     pub session_id: u64,
+    /// W3C Trace Context trace-id (16 bytes = 32 lowercase hex chars).
+    pub trace_id: [u8; 16],
+    /// W3C Trace Context span-id (8 bytes = 16 lowercase hex chars).
+    pub span_id: [u8; 8],
 }
 
 impl TelemetryEvent {
-    /// Convenience constructor.
+    /// Convenience constructor (trace_id and span_id default to all-zero).
     pub fn new(kind: EventKind, timestamp_ms: u64, session_id: u64) -> Self {
-        Self { kind, timestamp_ms, session_id }
+        Self {
+            kind,
+            timestamp_ms,
+            session_id,
+            trace_id: [0u8; 16],
+            span_id: [0u8; 8],
+        }
     }
+
+    /// Convenience constructor with explicit W3C trace context fields.
+    pub fn with_trace(
+        kind: EventKind,
+        timestamp_ms: u64,
+        session_id: u64,
+        trace_id: [u8; 16],
+        span_id: [u8; 8],
+    ) -> Self {
+        Self { kind, timestamp_ms, session_id, trace_id, span_id }
+    }
+
+    /// Format as a W3C traceparent header value.
+    ///
+    /// Format: `"00-{trace_id_32hex}-{span_id_16hex}-01"` (sampled).
+    pub fn traceparent(&self) -> String {
+        let trace = self.trace_id.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let span = self.span_id.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        format!("00-{trace}-{span}-01")
+    }
+
+    /// Parse a W3C traceparent header into `(trace_id, span_id, flags)`.
+    ///
+    /// Returns `None` if the header is malformed or the version is not `"00"`.
+    pub fn parse_traceparent(s: &str) -> Option<([u8; 16], [u8; 8], u8)> {
+        let parts: Vec<&str> = s.split('-').collect();
+        if parts.len() != 4 || parts[0] != "00" {
+            return None;
+        }
+        let trace = hex_to_16(parts[1])?;
+        let span = hex_to_8(parts[2])?;
+        let flags = u8::from_str_radix(parts[3], 16).ok()?;
+        Some((trace, span, flags))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Private hex helpers
+// ---------------------------------------------------------------------------
+
+fn hex_to_16(s: &str) -> Option<[u8; 16]> {
+    if s.len() != 32 {
+        return None;
+    }
+    let mut out = [0u8; 16];
+    for (i, chunk) in s.as_bytes().chunks(2).enumerate() {
+        let hex = std::str::from_utf8(chunk).ok()?;
+        out[i] = u8::from_str_radix(hex, 16).ok()?;
+    }
+    Some(out)
+}
+
+fn hex_to_8(s: &str) -> Option<[u8; 8]> {
+    if s.len() != 16 {
+        return None;
+    }
+    let mut out = [0u8; 8];
+    for (i, chunk) in s.as_bytes().chunks(2).enumerate() {
+        let hex = std::str::from_utf8(chunk).ok()?;
+        out[i] = u8::from_str_radix(hex, 16).ok()?;
+    }
+    Some(out)
 }
 
 // ---------------------------------------------------------------------------
@@ -266,5 +338,60 @@ mod tests {
             EventKind::Error { code: 1, message: "x".into() },
             EventKind::Error { code: 1, message: "x".into() }
         );
+    }
+
+    // -------------------------------------------------------------------------
+    // W3C traceparent tests
+    // -------------------------------------------------------------------------
+
+    #[test]
+    fn traceparent_format_correct() {
+        let trace_id = [
+            0x4b, 0xf9, 0x2f, 0x3b, 0x77, 0xb3, 0x41, 0x26,
+            0xa8, 0x4c, 0x84, 0x35, 0x4e, 0x70, 0x5a, 0x9c,
+        ];
+        let span_id = [0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7];
+        let event = TelemetryEvent::with_trace(
+            EventKind::SessionStart,
+            0,
+            1,
+            trace_id,
+            span_id,
+        );
+        let tp = event.traceparent();
+        // Must be "00-{32 hex}-{16 hex}-01"
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4);
+        assert_eq!(parts[0], "00");
+        assert_eq!(parts[1].len(), 32);
+        assert_eq!(parts[2].len(), 16);
+        assert_eq!(parts[3], "01");
+        // Exact value check
+        assert_eq!(tp, "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01");
+    }
+
+    #[test]
+    fn traceparent_parse_valid() {
+        let header = "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        let result = TelemetryEvent::parse_traceparent(header);
+        assert!(result.is_some());
+        let (trace, span, flags) = result.unwrap();
+        assert_eq!(trace[0], 0x4b);
+        assert_eq!(trace[1], 0xf9);
+        assert_eq!(span[0], 0x00);
+        assert_eq!(span[1], 0xf0);
+        assert_eq!(flags, 0x01);
+    }
+
+    #[test]
+    fn traceparent_parse_invalid_returns_none() {
+        // Wrong version prefix
+        assert!(TelemetryEvent::parse_traceparent("ff-short-span-01").is_none());
+        // Too few parts
+        assert!(TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-01").is_none());
+        // Trace ID too short (not 32 hex chars)
+        assert!(TelemetryEvent::parse_traceparent("00-4bf9-00f067aa0ba902b7-01").is_none());
+        // Span ID too short (not 16 hex chars)
+        assert!(TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-00f0-01").is_none());
     }
 }

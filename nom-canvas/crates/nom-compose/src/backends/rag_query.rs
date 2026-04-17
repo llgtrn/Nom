@@ -2,7 +2,7 @@
 use nom_blocks::NomtuRef;
 use crate::store::ArtifactStore;
 use crate::progress::{ProgressSink, ComposeEvent};
-use crate::deep_think::DeepThinkConfig;
+use crate::deep_think::{DeepThinkConfig, DeepThinkStream};
 use nom_graph::{Dag, GraphRagRetriever, QueryVec, RetrievedNode};
 
 pub struct RagChunk {
@@ -84,6 +84,13 @@ impl RagQueryBackend {
         input_hash: u64,
         sink: &dyn ProgressSink,
     ) -> Vec<RetrievedNode> {
+        // If deep-think config is set, run the reasoning chain first; steps are
+        // emitted to sink as progress events before the RAG retrieval begins.
+        if let Some(ref config) = self.deep_think_config {
+            let stream = DeepThinkStream::new(config.clone());
+            let _steps = stream.think(input_hash, sink);
+        }
+
         let retriever = GraphRagRetriever::new(dag);
 
         let mut qvec: QueryVec = [0.0f32; 16];
@@ -168,6 +175,44 @@ mod tests {
         assert!(
             results[0].score >= results[1].score,
             "results must be sorted by score descending"
+        );
+    }
+
+    #[test]
+    fn rag_query_with_deep_think_emits_progress() {
+        use crate::deep_think::DeepThinkConfig;
+
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("dt_node", "verb"));
+
+        let config = DeepThinkConfig { max_steps: 2, beam_width: 1, token_budget: 128 };
+        let backend = RagQueryBackend::default().with_deep_think(config);
+        let sink = VecProgressSink::new();
+        let _ = backend.compose_with_dag(&dag, 0xaabb_ccdd_eeff_0011, &sink);
+
+        let events = sink.take();
+        // Deep-think emits max_steps Progress events + 1 Completed, then RAG
+        // emits 2 more Progress events.  We just verify at least 2 Progress
+        // events from the deep-think phase are present.
+        let progress_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, ComposeEvent::Progress { .. }))
+            .collect();
+        assert!(
+            progress_events.len() >= 2,
+            "deep-think (max_steps=2) must emit at least 2 Progress events, got {}",
+            progress_events.len()
+        );
+        // Verify at least one deep-think stage label is present.
+        assert!(
+            progress_events.iter().any(|e| {
+                if let ComposeEvent::Progress { stage, .. } = e {
+                    stage.starts_with("think_step_")
+                } else {
+                    false
+                }
+            }),
+            "expected at least one think_step_* Progress event"
         );
     }
 
