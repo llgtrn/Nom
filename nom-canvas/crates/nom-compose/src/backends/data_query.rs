@@ -53,9 +53,21 @@ mod tests {
     fn make_registry() -> SemanticRegistry {
         let mut reg = SemanticRegistry::new();
         let mut m = SemanticModel::new("orders", "raw.orders");
-        m.add_column(SemanticColumn { name: "order_id".into(), data_type: SemanticDataType::Integer, description: None });
-        m.add_column(SemanticColumn { name: "customer_id".into(), data_type: SemanticDataType::Integer, description: None });
-        m.add_column(SemanticColumn { name: "amount".into(), data_type: SemanticDataType::Float, description: None });
+        m.add_column(SemanticColumn {
+            name: "order_id".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        m.add_column(SemanticColumn {
+            name: "customer_id".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        m.add_column(SemanticColumn {
+            name: "amount".into(),
+            data_type: SemanticDataType::Float,
+            description: None,
+        });
         reg.register(m);
         reg
     }
@@ -70,7 +82,10 @@ mod tests {
             limit: Some(50),
         };
         let sql = spec.to_sql(&reg).expect("model should exist");
-        assert_eq!(sql, "SELECT order_id, amount FROM raw.orders WHERE amount > 100 LIMIT 50");
+        assert_eq!(
+            sql,
+            "SELECT order_id, amount FROM raw.orders WHERE amount > 100 LIMIT 50"
+        );
     }
 
     #[test]
@@ -109,5 +124,30 @@ mod tests {
             limit: None,
         };
         assert!(spec.to_sql(&reg).is_none());
+    }
+
+    #[test]
+    fn data_query_backend_kind() {
+        // Verify DataQuerySpec fields are wired correctly.
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into()],
+            where_clause: None,
+            limit: Some(10),
+        };
+        assert_eq!(spec.model_name, "orders");
+        assert_eq!(spec.limit, Some(10));
+    }
+
+    #[test]
+    fn data_query_backend_compose_ok() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into(), "amount".into()],
+            where_clause: None,
+            limit: Some(5),
+        };
+        assert!(compose(&spec, &reg).is_ok());
     }
 }

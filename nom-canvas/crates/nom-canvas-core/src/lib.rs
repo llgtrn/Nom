@@ -1,19 +1,19 @@
 #![deny(unsafe_code)]
 
-pub mod viewport;
 pub mod elements;
+pub mod hit_test;
 pub mod selection;
 pub mod snapping;
-pub mod hit_test;
 pub mod spatial_index;
+pub mod viewport;
 
 #[cfg(test)]
 mod integration_tests {
-    use crate::viewport::Viewport;
-    use crate::selection::RubberBand;
-    use crate::elements::{ElementBounds, GraphNodeElement, WireElement};
     use crate::elements::{paint_graph_node, paint_wire};
+    use crate::elements::{ElementBounds, GraphNodeElement, WireElement};
     use crate::hit_test::hit_test_bounds;
+    use crate::selection::RubberBand;
+    use crate::viewport::Viewport;
     use nom_gpui::types::{Bounds, Pixels, Point, Size};
 
     /// Creates a viewport at scale 1.0, creates a rubber band, tests that an
@@ -34,7 +34,10 @@ mod integration_tests {
         };
 
         // The element is inside the viewport visible area.
-        assert!(vp.is_point_visible([0.0, 0.0]), "canvas origin must be visible");
+        assert!(
+            vp.is_point_visible([0.0, 0.0]),
+            "canvas origin must be visible"
+        );
         // The rubber band must intersect the element.
         assert!(
             rb.intersects(&elem),
@@ -77,8 +80,14 @@ mod integration_tests {
     #[test]
     fn hit_test_with_gpui_bounds() {
         let bounds: Bounds<Pixels> = Bounds {
-            origin: Point { x: Pixels(50.0), y: Pixels(50.0) },
-            size: Size { width: Pixels(200.0), height: Pixels(150.0) },
+            origin: Point {
+                x: Pixels(50.0),
+                y: Pixels(50.0),
+            },
+            size: Size {
+                width: Pixels(200.0),
+                height: Pixels(150.0),
+            },
         };
         // Point well inside: (100, 100) is inside [50,50]→[250,200].
         let inside_pt = [100.0_f32, 100.0];

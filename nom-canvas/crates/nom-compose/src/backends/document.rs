@@ -1,9 +1,9 @@
 #![deny(unsafe_code)]
+use crate::backends::ComposeResult;
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore;
 use nom_blocks::compose::document_block::DocumentBlock;
 use nom_blocks::NomtuRef;
-use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
-use crate::backends::ComposeResult;
 
 /// A document section — typst-style content block.
 #[derive(Debug, Clone)]
@@ -24,7 +24,10 @@ pub struct DocSpec {
 
 impl DocSpec {
     pub fn word_count(&self) -> usize {
-        self.sections.iter().map(|s| s.body.split_whitespace().count()).sum()
+        self.sections
+            .iter()
+            .map(|s| s.body.split_whitespace().count())
+            .sum()
     }
 
     pub fn page_count_estimate(&self) -> usize {
@@ -35,7 +38,12 @@ impl DocSpec {
 fn parse_section(index: usize, block: &str) -> DocSection {
     if block.starts_with('#') {
         let mut parts = block.splitn(2, '\n');
-        let h = parts.next().unwrap_or("").trim_start_matches('#').trim().to_string();
+        let h = parts
+            .next()
+            .unwrap_or("")
+            .trim_start_matches('#')
+            .trim()
+            .to_string();
         let body = parts.next().unwrap_or("").trim().to_string();
         DocSection {
             heading: Some(h),
@@ -60,10 +68,20 @@ pub struct DocumentInput {
 pub struct DocumentBackend;
 
 impl DocumentBackend {
-    pub fn compose(input: DocumentInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> DocumentBlock {
-        sink.emit(ComposeEvent::Started { backend: "document".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: DocumentInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> DocumentBlock {
+        sink.emit(ComposeEvent::Started {
+            backend: "document".into(),
+            entity_id: input.entity.id.clone(),
+        });
 
-        let sections: Vec<DocSection> = input.content_blocks.iter().enumerate()
+        let sections: Vec<DocSection> = input
+            .content_blocks
+            .iter()
+            .enumerate()
             .map(|(i, block)| parse_section(i, block))
             .collect();
 
@@ -97,7 +115,10 @@ impl DocumentBackend {
         let artifact_hash = store.write(&content_bytes);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
 
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
 
         DocumentBlock {
             entity: input.entity,
@@ -108,7 +129,11 @@ impl DocumentBackend {
     }
 
     /// Error-wrapped variant of [`compose`]. Returns `Ok(())` on success.
-    pub fn compose_safe(input: DocumentInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ComposeResult {
+    pub fn compose_safe(
+        input: DocumentInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> ComposeResult {
         let _block = Self::compose(input, store, sink);
         Ok(())
     }
@@ -117,8 +142,8 @@ impl DocumentBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn doc_spec_creation() {
@@ -126,8 +151,16 @@ mod tests {
             title: "Test Doc".into(),
             author: "Author".into(),
             sections: vec![
-                DocSection { heading: Some("Intro".into()), body: "Hello world".into(), page_break: false },
-                DocSection { heading: None, body: "More content here".into(), page_break: false },
+                DocSection {
+                    heading: Some("Intro".into()),
+                    body: "Hello world".into(),
+                    page_break: false,
+                },
+                DocSection {
+                    heading: None,
+                    body: "More content here".into(),
+                    page_break: false,
+                },
             ],
             page_count: 0,
         };
@@ -141,8 +174,16 @@ mod tests {
             title: "WC Test".into(),
             author: "".into(),
             sections: vec![
-                DocSection { heading: None, body: "one two three".into(), page_break: false },
-                DocSection { heading: None, body: "four five".into(), page_break: false },
+                DocSection {
+                    heading: None,
+                    body: "one two three".into(),
+                    page_break: false,
+                },
+                DocSection {
+                    heading: None,
+                    body: "four five".into(),
+                    page_break: false,
+                },
             ],
             page_count: 0,
         };
@@ -155,7 +196,11 @@ mod tests {
         let spec2 = DocSpec {
             title: "Big".into(),
             author: "".into(),
-            sections: vec![DocSection { heading: None, body: big_body, page_break: false }],
+            sections: vec![DocSection {
+                heading: None,
+                body: big_body,
+                page_break: false,
+            }],
             page_count: 0,
         };
         assert_eq!(spec2.word_count(), 250);
@@ -166,7 +211,11 @@ mod tests {
     fn document_compose_produces_artifact() {
         let mut store = InMemoryStore::new();
         let input = DocumentInput {
-            entity: NomtuRef { id: "doc1".into(), word: "report".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "doc1".into(),
+                word: "report".into(),
+                kind: "concept".into(),
+            },
             content_blocks: vec!["# Title\nIntroduction text".into(), "body text here".into()],
             target_mime: "text/markdown".into(),
         };
@@ -179,7 +228,11 @@ mod tests {
     fn document_compose_safe_returns_ok() {
         let mut store = InMemoryStore::new();
         let input = DocumentInput {
-            entity: NomtuRef { id: "doc2".into(), word: "brief".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "doc2".into(),
+                word: "brief".into(),
+                kind: "concept".into(),
+            },
             content_blocks: vec!["intro".into(), "conclusion".into()],
             target_mime: "text/plain".into(),
         };
@@ -191,7 +244,11 @@ mod tests {
     fn document_compose_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = DocumentInput {
-            entity: NomtuRef { id: "doc3".into(), word: "charter".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "doc3".into(),
+                word: "charter".into(),
+                kind: "concept".into(),
+            },
             content_blocks: vec!["content here".into()],
             target_mime: "text/html".into(),
         };
@@ -205,7 +262,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         // A single short block should yield at least 1 page
         let input = DocumentInput {
-            entity: NomtuRef { id: "doc4".into(), word: "note".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "doc4".into(),
+                word: "note".into(),
+                kind: "concept".into(),
+            },
             content_blocks: vec!["hello".into()],
             target_mime: "text/plain".into(),
         };
@@ -219,7 +280,11 @@ mod tests {
         let spec = DocSpec {
             title: "Long".into(),
             author: "".into(),
-            sections: vec![DocSection { heading: None, body: long_body, page_break: false }],
+            sections: vec![DocSection {
+                heading: None,
+                body: long_body,
+                page_break: false,
+            }],
             page_count: 0,
         };
         // 500 words / 250 = 2 pages

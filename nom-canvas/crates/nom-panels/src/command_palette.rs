@@ -12,7 +12,11 @@ pub struct CommandPaletteItem {
 
 impl CommandPaletteItem {
     pub fn new(label: impl Into<String>, description: impl Into<String>) -> Self {
-        Self { label: label.into(), description: description.into(), shortcut: None }
+        Self {
+            label: label.into(),
+            description: description.into(),
+            shortcut: None,
+        }
     }
 
     pub fn with_shortcut(mut self, shortcut: impl Into<String>) -> Self {
@@ -29,7 +33,11 @@ pub struct CommandPalette {
 
 impl CommandPalette {
     pub fn new() -> Self {
-        Self { items: vec![], query: String::new(), selected_idx: 0 }
+        Self {
+            items: vec![],
+            query: String::new(),
+            selected_idx: 0,
+        }
     }
 
     pub fn set_query(&mut self, q: &str) {
@@ -54,13 +62,17 @@ impl CommandPalette {
 
     pub fn select_next(&mut self) {
         let count = self.filtered_items().len();
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         self.selected_idx = (self.selected_idx + 1) % count;
     }
 
     pub fn select_prev(&mut self) {
         let count = self.filtered_items().len();
-        if count == 0 { return; }
+        if count == 0 {
+            return;
+        }
         self.selected_idx = if self.selected_idx == 0 {
             count - 1
         } else {
@@ -85,13 +97,31 @@ impl CommandPalette {
 
         // Border quad using EDGE_MED as background (1px border simulation)
         scene.push_quad(fill_quad(modal_x, modal_y, modal_w, 1.0, tokens::EDGE_MED));
-        scene.push_quad(fill_quad(modal_x, modal_y + modal_h - 1.0, modal_w, 1.0, tokens::EDGE_MED));
+        scene.push_quad(fill_quad(
+            modal_x,
+            modal_y + modal_h - 1.0,
+            modal_w,
+            1.0,
+            tokens::EDGE_MED,
+        ));
         scene.push_quad(fill_quad(modal_x, modal_y, 1.0, modal_h, tokens::EDGE_MED));
-        scene.push_quad(fill_quad(modal_x + modal_w - 1.0, modal_y, 1.0, modal_h, tokens::EDGE_MED));
+        scene.push_quad(fill_quad(
+            modal_x + modal_w - 1.0,
+            modal_y,
+            1.0,
+            modal_h,
+            tokens::EDGE_MED,
+        ));
 
         // Input row
         let input_y = modal_y + 8.0;
-        scene.push_quad(fill_quad(modal_x + 8.0, input_y, modal_w - 16.0, 32.0, tokens::BG));
+        scene.push_quad(fill_quad(
+            modal_x + 8.0,
+            input_y,
+            modal_w - 16.0,
+            32.0,
+            tokens::BG,
+        ));
 
         // Item rows
         for (i, _item) in filtered.iter().enumerate() {
@@ -99,14 +129,21 @@ impl CommandPalette {
             scene.push_quad(fill_quad(modal_x, row_y, modal_w, row_h, tokens::BG));
 
             if i == self.selected_idx {
-                scene.push_quad(focus_ring_quad(modal_x + 2.0, row_y + 2.0, modal_w - 4.0, row_h - 4.0));
+                scene.push_quad(focus_ring_quad(
+                    modal_x + 2.0,
+                    row_y + 2.0,
+                    modal_w - 4.0,
+                    row_h - 4.0,
+                ));
             }
         }
     }
 }
 
 impl Default for CommandPalette {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -116,9 +153,16 @@ mod tests {
     #[test]
     fn command_palette_filter_by_query() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Open File", "Open a file in the editor"));
-        palette.items.push(CommandPaletteItem::new("Save File", "Save current file"));
-        palette.items.push(CommandPaletteItem::new("Run Tests", "Execute test suite"));
+        palette.items.push(CommandPaletteItem::new(
+            "Open File",
+            "Open a file in the editor",
+        ));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Save File", "Save current file"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Run Tests", "Execute test suite"));
 
         assert_eq!(palette.filtered_items().len(), 3);
 
@@ -156,8 +200,13 @@ mod tests {
     #[test]
     fn palette_filter_case_insensitive() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("graph layout", "Arrange graph nodes"));
-        palette.items.push(CommandPaletteItem::new("Open File", "Open a file"));
+        palette.items.push(CommandPaletteItem::new(
+            "graph layout",
+            "Arrange graph nodes",
+        ));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Open File", "Open a file"));
         palette.set_query("GRA");
         let filtered = palette.filtered_items();
         assert_eq!(filtered.len(), 1);
@@ -187,9 +236,41 @@ mod tests {
     }
 
     #[test]
+    fn palette_item_description() {
+        let item = CommandPaletteItem::new("Open File", "Opens a file in the editor");
+        assert_eq!(item.description, "Opens a file in the editor");
+    }
+
+    #[test]
+    fn palette_item_shortcut() {
+        let item = CommandPaletteItem::new("Save", "Save file").with_shortcut("Ctrl+S");
+        assert_eq!(item.shortcut, Some("Ctrl+S".to_string()));
+        let item_no_shortcut = CommandPaletteItem::new("Close", "Close");
+        assert_eq!(item_no_shortcut.shortcut, None);
+    }
+
+    #[test]
+    fn palette_execute_first_item() {
+        let mut palette = CommandPalette::new();
+        palette.items.push(
+            CommandPaletteItem::new("Run Tests", "Execute test suite").with_shortcut("Ctrl+T"),
+        );
+        palette
+            .items
+            .push(CommandPaletteItem::new("Open File", "Open"));
+        // Verify we can access first item by selected_idx
+        let filtered = palette.filtered_items();
+        assert!(!filtered.is_empty());
+        let first = &filtered[palette.selected_idx];
+        assert_eq!(first.label, "Run Tests");
+    }
+
+    #[test]
     fn command_palette_paint_scene_emits_quads() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Open File", "").with_shortcut("Cmd+O"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Open File", "").with_shortcut("Cmd+O"));
         palette.items.push(CommandPaletteItem::new("Save File", ""));
         palette.items.push(CommandPaletteItem::new("Run Tests", ""));
 
@@ -197,7 +278,11 @@ mod tests {
         palette.paint_scene(1440.0, 900.0, &mut scene);
 
         // background + 4 border edges + input row + 3 item rows + 1 focus ring = 10 quads minimum
-        assert!(scene.quads.len() >= 10, "expected >=10 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 10,
+            "expected >=10 quads, got {}",
+            scene.quads.len()
+        );
 
         // Background quad is the first one pushed
         let bg = &scene.quads[0];

@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use nom_blocks::NomtuRef;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
+use nom_blocks::NomtuRef;
 
 // ---------------------------------------------------------------------------
 // Domain model
@@ -58,8 +58,15 @@ pub struct WebScreenBackend;
 
 impl WebScreenBackend {
     /// Legacy typed-input compose used by existing callers.
-    pub fn compose(input: WebScreenInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> WebScreenResult {
-        sink.emit(ComposeEvent::Started { backend: "web_screen".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: WebScreenInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> WebScreenResult {
+        sink.emit(ComposeEvent::Started {
+            backend: "web_screen".into(),
+            entity_id: input.entity.id.clone(),
+        });
 
         let spec = ScreenshotSpec {
             url: input.url,
@@ -70,11 +77,20 @@ impl WebScreenBackend {
         };
 
         let json = Self::spec_to_json(&spec);
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "capturing".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "capturing".into(),
+        });
         let artifact_hash = store.write(json.as_bytes());
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
-        WebScreenResult { artifact_hash, duration_ms: 0 }
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
+        WebScreenResult {
+            artifact_hash,
+            duration_ms: 0,
+        }
     }
 
     /// String-input compose: builds a `ScreenshotSpec` from the URL string,
@@ -85,16 +101,30 @@ impl WebScreenBackend {
         store: &mut dyn ArtifactStore,
         sink: &dyn ProgressSink,
     ) -> String {
-        sink.emit(ComposeEvent::Started { backend: "web_screen".into(), entity_id: String::new() });
+        sink.emit(ComposeEvent::Started {
+            backend: "web_screen".into(),
+            entity_id: String::new(),
+        });
 
         let spec = ScreenshotSpec::new(input);
         let json = Self::spec_to_json(&spec);
 
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "capturing".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "capturing".into(),
+        });
         let hash = store.write(json.as_bytes());
         let byte_size = store.byte_size(&hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash: hash, byte_size });
-        format!("{:x}", hash.iter().take(4).fold(0u64, |acc, &b| acc * 256 + b as u64))
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash: hash,
+            byte_size,
+        });
+        format!(
+            "{:x}",
+            hash.iter()
+                .take(4)
+                .fold(0u64, |acc, &b| acc * 256 + b as u64)
+        )
     }
 
     /// Serialise a `ScreenshotSpec` to a JSON string using serde_json.
@@ -117,22 +147,27 @@ impl WebScreenBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::{LogProgressSink, VecProgressSink};
+    use crate::store::InMemoryStore;
 
     #[test]
     fn web_screen_spec_pixel_count() {
         let spec = ScreenshotSpec::new("https://example.com");
         assert_eq!(spec.pixel_count(), 1280 * 720);
 
-        let wide = ScreenshotSpec { viewport_width: 1920, viewport_height: 1080, ..spec.clone() };
+        let wide = ScreenshotSpec {
+            viewport_width: 1920,
+            viewport_height: 1080,
+            ..spec.clone()
+        };
         assert_eq!(wide.pixel_count(), 1920 * 1080);
     }
 
     #[test]
     fn web_screen_compose_produces_artifact() {
         let mut store = InMemoryStore::new();
-        let result = WebScreenBackend.compose_str("https://example.com", &mut store, &LogProgressSink);
+        let result =
+            WebScreenBackend.compose_str("https://example.com", &mut store, &LogProgressSink);
         // Must return a non-empty hash hex string.
         assert!(!result.is_empty());
         // The stored payload must contain the URL and be valid JSON.
@@ -145,7 +180,7 @@ mod tests {
         })
         .to_string();
         let hash_bytes = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut h = Sha256::new();
             h.update(expected_json.as_bytes());
             let r = h.finalize();
@@ -165,11 +200,37 @@ mod tests {
         WebScreenBackend.compose_str("https://example.com", &mut store, &sink);
         let events = sink.take();
         // Must have at least: Started, Progress, Completed.
-        assert!(events.len() >= 3, "expected >=3 events, got {}", events.len());
+        assert!(
+            events.len() >= 3,
+            "expected >=3 events, got {}",
+            events.len()
+        );
         assert!(matches!(events[0], ComposeEvent::Started { .. }));
-        let has_progress = events.iter().any(|e| matches!(e, ComposeEvent::Progress { .. }));
+        let has_progress = events
+            .iter()
+            .any(|e| matches!(e, ComposeEvent::Progress { .. }));
         assert!(has_progress, "no Progress event emitted");
-        let has_completed = events.iter().any(|e| matches!(e, ComposeEvent::Completed { .. }));
+        let has_completed = events
+            .iter()
+            .any(|e| matches!(e, ComposeEvent::Completed { .. }));
         assert!(has_completed, "no Completed event emitted");
+    }
+
+    #[test]
+    fn web_screen_backend_kind() {
+        // ScreenshotSpec carries "web_screen" semantics; verify defaults.
+        let spec = ScreenshotSpec::new("https://nom.dev");
+        assert_eq!(spec.viewport_width, 1280);
+        assert_eq!(spec.viewport_height, 720);
+        assert_eq!(spec.wait_ms, 1000);
+        assert!(!spec.full_page);
+    }
+
+    #[test]
+    fn web_screen_backend_compose_ok() {
+        let mut store = InMemoryStore::new();
+        let result =
+            WebScreenBackend.compose_str("https://nom.dev/canvas", &mut store, &LogProgressSink);
+        assert!(!result.is_empty());
     }
 }

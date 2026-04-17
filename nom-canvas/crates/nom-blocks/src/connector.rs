@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use serde::{Deserialize, Serialize};
-use crate::graph_node::NodeId;
 use crate::dict_reader::DictReader;
+use crate::graph_node::NodeId;
+use serde::{Deserialize, Serialize};
 
 pub type ConnectorId = String;
 pub type SlotName = String;
@@ -60,7 +60,11 @@ impl Connector {
             reason: String::new(),
             reason_chain: Vec::new(),
             route: Vec::new(),
-            can_wire_result: (true, 0.0, "stub — use new_with_validation() for grammar-backed checking".into()),
+            can_wire_result: (
+                true,
+                0.0,
+                "stub — use new_with_validation() for grammar-backed checking".into(),
+            ),
         }
     }
 
@@ -116,8 +120,7 @@ impl Connector {
     ) -> Self {
         let from_port = from_port.into();
         let to_port = to_port.into();
-        let result =
-            Self::validate_with_dict(dict, from_kind, &from_port, to_kind, &to_port);
+        let result = Self::validate_with_dict(dict, from_kind, &from_port, to_kind, &to_port);
         let confidence = result.1;
         Self {
             id: id.into(),
@@ -134,12 +137,7 @@ impl Connector {
     /// Auto-route: straight line from src to dst with 2 bezier control points
     pub fn auto_route(&mut self, src_pos: [f32; 2], dst_pos: [f32; 2]) {
         let mid_x = (src_pos[0] + dst_pos[0]) / 2.0;
-        self.route = vec![
-            src_pos,
-            [mid_x, src_pos[1]],
-            [mid_x, dst_pos[1]],
-            dst_pos,
-        ];
+        self.route = vec![src_pos, [mid_x, src_pos[1]], [mid_x, dst_pos[1]], dst_pos];
     }
 }
 
@@ -225,7 +223,14 @@ mod tests {
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "text")]);
         let c = Connector::new_with_validation(
-            "c2", "n1", "nonexistent", "n2", "input", &dict, "verb", "concept",
+            "c2",
+            "n1",
+            "nonexistent",
+            "n2",
+            "input",
+            &dict,
+            "verb",
+            "concept",
         );
         assert!(!c.is_valid());
         assert_eq!(c.confidence, 0.0);
@@ -281,7 +286,14 @@ mod tests {
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "text")]);
         let c = Connector::new_with_validation(
-            "c6", "n1", "output", "n2", "no_such_port", &dict, "verb", "concept",
+            "c6",
+            "n1",
+            "output",
+            "n2",
+            "no_such_port",
+            &dict,
+            "verb",
+            "concept",
         );
         assert!(!c.is_valid());
         assert!(c.can_wire_result.2.contains("unknown port: no_such_port"));

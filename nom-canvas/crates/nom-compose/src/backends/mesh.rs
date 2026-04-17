@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 use crate::backends::ComposeResult;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 
 /// Primitive topology for a mesh.
 #[derive(Debug, Clone, PartialEq)]
@@ -36,8 +36,15 @@ impl MeshSpec {
 pub struct MeshBackend;
 
 impl MeshBackend {
-    pub fn compose(spec: &MeshSpec, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ComposeResult {
-        sink.emit(ComposeEvent::Started { backend: "mesh".into(), entity_id: spec.name.clone() });
+    pub fn compose(
+        spec: &MeshSpec,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> ComposeResult {
+        sink.emit(ComposeEvent::Started {
+            backend: "mesh".into(),
+            entity_id: spec.name.clone(),
+        });
 
         let json = serde_json::json!({
             "name": spec.name,
@@ -48,10 +55,16 @@ impl MeshBackend {
         });
         let bytes = json.to_string().into_bytes();
 
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "serializing mesh spec".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "serializing mesh spec".into(),
+        });
         let artifact_hash = store.write(&bytes);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
 
         Ok(())
     }
@@ -60,8 +73,8 @@ impl MeshBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn mesh_spec_triangle_count() {
@@ -74,10 +87,16 @@ mod tests {
         };
         assert_eq!(tri.triangle_count(), 12);
 
-        let lines = MeshSpec { primitive: MeshPrimitive::Lines, ..tri.clone() };
+        let lines = MeshSpec {
+            primitive: MeshPrimitive::Lines,
+            ..tri.clone()
+        };
         assert_eq!(lines.triangle_count(), 0);
 
-        let points = MeshSpec { primitive: MeshPrimitive::Points, ..tri.clone() };
+        let points = MeshSpec {
+            primitive: MeshPrimitive::Points,
+            ..tri.clone()
+        };
         assert_eq!(points.triangle_count(), 0);
     }
 
@@ -100,9 +119,10 @@ mod tests {
             "face_count": 196,
             "primitive": "Triangles",
             "format": "obj",
-        }).to_string();
+        })
+        .to_string();
 
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut h = Sha256::new();
         h.update(expected_json.as_bytes());
         let r = h.finalize();

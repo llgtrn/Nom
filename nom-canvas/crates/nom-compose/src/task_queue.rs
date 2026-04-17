@@ -29,39 +29,88 @@ pub struct TaskQueue {
 }
 
 impl TaskQueue {
-    pub fn new() -> Self { Self { next_id: 1, tasks: Vec::new() } }
+    pub fn new() -> Self {
+        Self {
+            next_id: 1,
+            tasks: Vec::new(),
+        }
+    }
 
     pub fn enqueue(&mut self, backend: BackendKind, input: impl Into<String>) -> u64 {
         let id = self.next_id;
         self.next_id += 1;
-        self.tasks.push(ComposeTask { id, backend, input: input.into(), state: TaskState::Pending, progress_pct: 0 });
+        self.tasks.push(ComposeTask {
+            id,
+            backend,
+            input: input.into(),
+            state: TaskState::Pending,
+            progress_pct: 0,
+        });
         id
     }
 
     pub fn start(&mut self, id: u64) -> bool {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id && t.state == TaskState::Pending) {
-            t.state = TaskState::Running; true
-        } else { false }
+        if let Some(t) = self
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == id && t.state == TaskState::Pending)
+        {
+            t.state = TaskState::Running;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn complete(&mut self, id: u64) -> bool {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id && t.state == TaskState::Running) {
-            t.state = TaskState::Completed; t.progress_pct = 100; true
-        } else { false }
+        if let Some(t) = self
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == id && t.state == TaskState::Running)
+        {
+            t.state = TaskState::Completed;
+            t.progress_pct = 100;
+            true
+        } else {
+            false
+        }
     }
 
     pub fn cancel(&mut self, id: u64) -> bool {
-        if let Some(t) = self.tasks.iter_mut().find(|t| t.id == id && t.state == TaskState::Running) {
-            t.state = TaskState::Cancelled; true
-        } else { false }
+        if let Some(t) = self
+            .tasks
+            .iter_mut()
+            .find(|t| t.id == id && t.state == TaskState::Running)
+        {
+            t.state = TaskState::Cancelled;
+            true
+        } else {
+            false
+        }
     }
 
-    pub fn pending_count(&self) -> usize { self.tasks.iter().filter(|t| t.state == TaskState::Pending).count() }
-    pub fn running_count(&self) -> usize { self.tasks.iter().filter(|t| t.state == TaskState::Running).count() }
-    pub fn get(&self, id: u64) -> Option<&ComposeTask> { self.tasks.iter().find(|t| t.id == id) }
+    pub fn pending_count(&self) -> usize {
+        self.tasks
+            .iter()
+            .filter(|t| t.state == TaskState::Pending)
+            .count()
+    }
+    pub fn running_count(&self) -> usize {
+        self.tasks
+            .iter()
+            .filter(|t| t.state == TaskState::Running)
+            .count()
+    }
+    pub fn get(&self, id: u64) -> Option<&ComposeTask> {
+        self.tasks.iter().find(|t| t.id == id)
+    }
 }
 
-impl Default for TaskQueue { fn default() -> Self { Self::new() } }
+impl Default for TaskQueue {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -103,14 +152,20 @@ mod tests {
         let mut q = TaskQueue::new();
         let id = q.enqueue(BackendKind::Video, "input");
         // complete() on a Pending task must fail — guard required
-        assert!(!q.complete(id), "complete() must return false when task is not Running");
+        assert!(
+            !q.complete(id),
+            "complete() must return false when task is not Running"
+        );
         assert_eq!(q.get(id).unwrap().state, TaskState::Pending);
         q.start(id);
         // now Running — complete() must succeed
         assert!(q.complete(id));
         assert_eq!(q.get(id).unwrap().state, TaskState::Completed);
         // already Completed — second complete() must fail
-        assert!(!q.complete(id), "complete() must return false on already-Completed task");
+        assert!(
+            !q.complete(id),
+            "complete() must return false on already-Completed task"
+        );
     }
 
     #[test]

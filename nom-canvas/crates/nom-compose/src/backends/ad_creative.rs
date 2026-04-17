@@ -55,7 +55,11 @@ mod tests {
             height: 1080,
         };
         let ratio = spec.aspect_ratio();
-        assert!((ratio - (16.0 / 9.0)).abs() < 1e-4, "expected 16:9 ratio, got {}", ratio);
+        assert!(
+            (ratio - (16.0 / 9.0)).abs() < 1e-4,
+            "expected 16:9 ratio, got {}",
+            ratio
+        );
 
         let square = AdCreativeSpec {
             brand: "Acme".into(),
@@ -80,5 +84,34 @@ mod tests {
         };
         let result = compose(&spec);
         assert!(result.is_ok(), "compose must return Ok for valid spec");
+    }
+
+    #[test]
+    fn ad_creative_backend_kind() {
+        // AdCreativeSpec format and dimensions intact.
+        let spec = AdCreativeSpec {
+            brand: "Acme".into(),
+            headline: "Limited offer".into(),
+            cta: "Click here".into(),
+            format: AdFormat::Video,
+            width: 1920,
+            height: 1080,
+        };
+        assert_eq!(spec.format, AdFormat::Video);
+        assert_eq!(spec.width, 1920);
+        assert_eq!(spec.height, 1080);
+    }
+
+    #[test]
+    fn ad_creative_backend_compose_ok() {
+        let spec = AdCreativeSpec {
+            brand: "TechCo".into(),
+            headline: "New release".into(),
+            cta: "Learn more".into(),
+            format: AdFormat::Banner,
+            width: 728,
+            height: 90,
+        };
+        assert!(compose(&spec).is_ok());
     }
 }

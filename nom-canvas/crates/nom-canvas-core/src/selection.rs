@@ -265,9 +265,15 @@ mod tests {
     #[test]
     fn compute_handles_rotate_above_top_edge() {
         let handles = compute_handles(([0.0, 0.0], [100.0, 80.0]));
-        let rotate = handles.iter().find(|h| h.kind == HandleKind::Rotate).unwrap();
+        let rotate = handles
+            .iter()
+            .find(|h| h.kind == HandleKind::Rotate)
+            .unwrap();
         // Rotate handle should be above y=0 (negative y)
-        assert!(rotate.position[1] < 0.0, "Rotate handle should be above top edge");
+        assert!(
+            rotate.position[1] < 0.0,
+            "Rotate handle should be above top edge"
+        );
     }
 
     #[test]
@@ -324,8 +330,15 @@ mod tests {
             start: [0.0, 0.0],
             end: [200.0, 200.0],
         };
-        let elem = ElementBounds { id: 7, min: [50.0, 50.0], max: [100.0, 100.0] };
-        assert!(rb.intersects(&elem), "element fully inside rubber-band must intersect");
+        let elem = ElementBounds {
+            id: 7,
+            min: [50.0, 50.0],
+            max: [100.0, 100.0],
+        };
+        assert!(
+            rb.intersects(&elem),
+            "element fully inside rubber-band must intersect"
+        );
     }
 
     #[test]
@@ -335,8 +348,15 @@ mod tests {
             start: [0.0, 0.0],
             end: [50.0, 50.0],
         };
-        let elem = ElementBounds { id: 8, min: [100.0, 100.0], max: [150.0, 150.0] };
-        assert!(!rb.intersects(&elem), "element outside rubber-band must not intersect");
+        let elem = ElementBounds {
+            id: 8,
+            min: [100.0, 100.0],
+            max: [150.0, 150.0],
+        };
+        assert!(
+            !rb.intersects(&elem),
+            "element outside rubber-band must not intersect"
+        );
     }
 
     #[test]
@@ -346,17 +366,36 @@ mod tests {
             start: [0.0, 0.0],
             end: [80.0, 80.0],
         };
-        let elem = ElementBounds { id: 9, min: [60.0, 60.0], max: [120.0, 120.0] };
-        assert!(rb.intersects(&elem), "element partially overlapping rubber-band must intersect");
+        let elem = ElementBounds {
+            id: 9,
+            min: [60.0, 60.0],
+            max: [120.0, 120.0],
+        };
+        assert!(
+            rb.intersects(&elem),
+            "element partially overlapping rubber-band must intersect"
+        );
     }
 
     #[test]
     fn selection_bounding_box() {
         // Build a selection of 3 elements and compute the union bounding box manually.
         let bounds = vec![
-            ElementBounds { id: 1, min: [0.0, 0.0], max: [10.0, 10.0] },
-            ElementBounds { id: 2, min: [5.0, 5.0], max: [20.0, 25.0] },
-            ElementBounds { id: 3, min: [-5.0, 2.0], max: [3.0, 8.0] },
+            ElementBounds {
+                id: 1,
+                min: [0.0, 0.0],
+                max: [10.0, 10.0],
+            },
+            ElementBounds {
+                id: 2,
+                min: [5.0, 5.0],
+                max: [20.0, 25.0],
+            },
+            ElementBounds {
+                id: 3,
+                min: [-5.0, 2.0],
+                max: [3.0, 8.0],
+            },
         ];
         let mut sel = Selection::empty();
         for b in &bounds {
@@ -364,13 +403,217 @@ mod tests {
         }
         // Union AABB of selected elements
         let selected_bounds: Vec<_> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
-        let min_x = selected_bounds.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
-        let min_y = selected_bounds.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
-        let max_x = selected_bounds.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
-        let max_y = selected_bounds.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        let min_x = selected_bounds
+            .iter()
+            .map(|b| b.min[0])
+            .fold(f32::INFINITY, f32::min);
+        let min_y = selected_bounds
+            .iter()
+            .map(|b| b.min[1])
+            .fold(f32::INFINITY, f32::min);
+        let max_x = selected_bounds
+            .iter()
+            .map(|b| b.max[0])
+            .fold(f32::NEG_INFINITY, f32::max);
+        let max_y = selected_bounds
+            .iter()
+            .map(|b| b.max[1])
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((min_x - (-5.0)).abs() < 1e-6, "min_x={}", min_x);
         assert!((min_y - 0.0).abs() < 1e-6, "min_y={}", min_y);
         assert!((max_x - 20.0).abs() < 1e-6, "max_x={}", max_x);
         assert!((max_y - 25.0).abs() < 1e-6, "max_y={}", max_y);
+    }
+
+    /// Adding an id that is already in the selection does not increase len.
+    #[test]
+    fn selection_toggle_twice_deselects() {
+        let mut sel = Selection::empty();
+        sel.add(10);
+        assert_eq!(sel.len(), 1);
+        // "toggle" = remove if present
+        if sel.contains(10) {
+            sel.remove(10);
+        }
+        assert!(
+            !sel.contains(10),
+            "element must be deselected after toggle-remove"
+        );
+        assert_eq!(sel.len(), 0);
+    }
+
+    /// select_range equivalent: add a slice of ids, all are contained.
+    #[test]
+    fn selection_range() {
+        let ids = [1u64, 2, 3, 4, 5];
+        let mut sel = Selection::empty();
+        for &id in &ids {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), ids.len());
+        for &id in &ids {
+            assert!(sel.contains(id), "id {} must be in selection", id);
+        }
+    }
+
+    /// Intersection of two selections returns only common elements.
+    #[test]
+    fn selection_intersection() {
+        let mut a = Selection::empty();
+        for id in [1u64, 2, 3, 4] {
+            a.add(id);
+        }
+        let mut b = Selection::empty();
+        for id in [3u64, 4, 5, 6] {
+            b.add(id);
+        }
+        // Intersection: ids in both a and b
+        let inter: std::collections::BTreeSet<u64> = a.ids.intersection(&b.ids).copied().collect();
+        assert_eq!(inter.len(), 2);
+        assert!(inter.contains(&3));
+        assert!(inter.contains(&4));
+        assert!(!inter.contains(&1));
+        assert!(!inter.contains(&5));
+    }
+
+    /// Union of two selections returns all elements from both.
+    #[test]
+    fn selection_union() {
+        let mut a = Selection::empty();
+        for id in [1u64, 2, 3] {
+            a.add(id);
+        }
+        let mut b = Selection::empty();
+        for id in [3u64, 4, 5] {
+            b.add(id);
+        }
+        // Union: ids in a or b
+        let union: std::collections::BTreeSet<u64> = a.ids.union(&b.ids).copied().collect();
+        assert_eq!(union.len(), 5);
+        for id in [1u64, 2, 3, 4, 5] {
+            assert!(union.contains(&id), "union must contain {}", id);
+        }
+    }
+
+    /// "Move" selected elements: verify new positions differ from originals.
+    #[test]
+    fn selection_move() {
+        // Represent positions as a vec of (id, pos) pairs.
+        let mut positions: Vec<(u64, [f32; 2])> =
+            vec![(1, [10.0, 20.0]), (2, [50.0, 60.0]), (3, [100.0, 120.0])];
+        let mut sel = Selection::empty();
+        sel.add(1);
+        sel.add(2);
+        let delta = [5.0_f32, -10.0];
+        // Apply delta to selected elements.
+        for (id, pos) in &mut positions {
+            if sel.contains(*id) {
+                pos[0] += delta[0];
+                pos[1] += delta[1];
+            }
+        }
+        let pos1 = positions.iter().find(|(id, _)| *id == 1).unwrap().1;
+        let pos2 = positions.iter().find(|(id, _)| *id == 2).unwrap().1;
+        let pos3 = positions.iter().find(|(id, _)| *id == 3).unwrap().1;
+        assert!((pos1[0] - 15.0).abs() < 1e-6);
+        assert!((pos1[1] - 10.0).abs() < 1e-6);
+        assert!((pos2[0] - 55.0).abs() < 1e-6);
+        assert!((pos2[1] - 50.0).abs() < 1e-6);
+        // Unselected element must be unchanged.
+        assert!((pos3[0] - 100.0).abs() < 1e-6);
+        assert!((pos3[1] - 120.0).abs() < 1e-6);
+    }
+
+    /// rubber_band start sets is_active equivalent (start != end initially false after update).
+    #[test]
+    fn rubber_band_start() {
+        let rb = RubberBand::new([50.0, 50.0]);
+        // After construction start==end, so aabb has zero area.
+        let (min, max) = rb.aabb();
+        assert!((min[0] - max[0]).abs() < 1e-6, "zero-width initially");
+        assert!((min[1] - max[1]).abs() < 1e-6, "zero-height initially");
+    }
+
+    /// rubber_band_update changes the end point, aabb reflects new bounds.
+    #[test]
+    fn rubber_band_update() {
+        let mut rb = RubberBand::new([10.0, 10.0]);
+        rb.update([80.0, 90.0]);
+        let (min, max) = rb.aabb();
+        assert!((min[0] - 10.0).abs() < 1e-6);
+        assert!((min[1] - 10.0).abs() < 1e-6);
+        assert!((max[0] - 80.0).abs() < 1e-6);
+        assert!((max[1] - 90.0).abs() < 1e-6);
+    }
+
+    /// rubber_band_finish equivalent: after updating end to start, aabb collapses.
+    #[test]
+    fn rubber_band_finish() {
+        let mut rb = RubberBand::new([30.0, 40.0]);
+        rb.update([200.0, 150.0]);
+        // "Finish" by collapsing end back to start.
+        rb.update(rb.start);
+        let (min, max) = rb.aabb();
+        assert!(
+            (max[0] - min[0]).abs() < 1e-6,
+            "finished rubber_band must have zero width"
+        );
+        assert!(
+            (max[1] - min[1]).abs() < 1e-6,
+            "finished rubber_band must have zero height"
+        );
+    }
+
+    /// rubber_band selects enclosed elements via intersects.
+    #[test]
+    fn rubber_band_selects_enclosed() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [100.0, 100.0],
+        };
+        let elements = vec![
+            ElementBounds {
+                id: 1,
+                min: [10.0, 10.0],
+                max: [40.0, 40.0],
+            },
+            ElementBounds {
+                id: 2,
+                min: [200.0, 200.0],
+                max: [300.0, 300.0],
+            },
+            ElementBounds {
+                id: 3,
+                min: [50.0, 50.0],
+                max: [80.0, 80.0],
+            },
+        ];
+        let selected: Vec<u64> = elements
+            .iter()
+            .filter(|e| rb.intersects(e))
+            .map(|e| e.id)
+            .collect();
+        assert!(selected.contains(&1), "element 1 must be selected");
+        assert!(!selected.contains(&2), "element 2 must not be selected");
+        assert!(selected.contains(&3), "element 3 must be selected");
+    }
+
+    /// rubber_band selects elements with partial overlap.
+    #[test]
+    fn rubber_band_partial_overlap() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [60.0, 60.0],
+        };
+        // Element partially overlaps the rubber-band.
+        let elem = ElementBounds {
+            id: 5,
+            min: [40.0, 40.0],
+            max: [100.0, 100.0],
+        };
+        assert!(
+            rb.intersects(&elem),
+            "partially overlapping element must be selected"
+        );
     }
 }

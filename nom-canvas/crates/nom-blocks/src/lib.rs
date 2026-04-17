@@ -1,37 +1,37 @@
 #![deny(unsafe_code)]
 pub mod block_model;
-pub mod slot;
-pub mod shared_types;
-pub mod dict_reader;
-pub mod stub_dict;
-pub mod prose;
-pub mod nomx;
-pub mod graph_node;
-pub mod connector;
-pub mod validators;
-pub mod media;
-pub mod drawing;
-pub mod table;
-pub mod embed;
 pub mod compose;
+pub mod connector;
+pub mod dict_reader;
+pub mod drawing;
+pub mod embed;
+pub mod graph_node;
+pub mod media;
+pub mod nomx;
+pub mod prose;
+pub mod shared_types;
+pub mod slot;
+pub mod stub_dict;
+pub mod table;
+pub mod validators;
 pub mod workspace;
 
-pub use block_model::{BlockId, BlockModel, BlockMeta, NomtuRef};
-pub use slot::{SlotValue, SlotBinding};
-pub use shared_types::{DeepThinkStep, DeepThinkEvent, CompositionPlan, PlanStep, RunEvent};
-pub use dict_reader::{ClauseShape, DictReader};
-pub use stub_dict::StubDictReader;
-pub use graph_node::{GraphNode, NodeId};
+pub use block_model::{BlockId, BlockMeta, BlockModel, NomtuRef};
 pub use connector::{Connector, ConnectorId};
-pub use workspace::{Workspace, CanvasObject};
+pub use dict_reader::{ClauseShape, DictReader};
+pub use graph_node::{GraphNode, NodeId};
+pub use shared_types::{CompositionPlan, DeepThinkEvent, DeepThinkStep, PlanStep, RunEvent};
+pub use slot::{SlotBinding, SlotValue};
+pub use stub_dict::StubDictReader;
+pub use workspace::{CanvasObject, Workspace};
 
 #[cfg(test)]
 mod integration_tests {
+    use crate::block_model::NomtuRef;
     use crate::connector::Connector;
     use crate::dict_reader::{ClauseShape, DictReader};
-    use crate::stub_dict::StubDictReader;
     use crate::prose::HeadingBlock;
-    use crate::block_model::NomtuRef;
+    use crate::stub_dict::StubDictReader;
 
     fn make_shape(name: &str, grammar_shape: &str) -> ClauseShape {
         ClauseShape {
@@ -48,12 +48,7 @@ mod integration_tests {
     fn block_with_stub_dict_can_wire_validated() {
         let dict = StubDictReader::new();
         let connector = Connector::new_with_validation(
-            "wire-1",
-            "node-a", "output",
-            "node-b", "input",
-            &dict,
-            "verb",
-            "concept",
+            "wire-1", "node-a", "output", "node-b", "input", &dict, "verb", "concept",
         );
         assert!(
             connector.can_wire_result.0,
@@ -85,14 +80,10 @@ mod integration_tests {
     fn block_schema_validates_required_fields() {
         // BlockSchema is represented by the shapes returned by the DictReader for a kind.
         // We build a dict seeded with heading-specific shapes to confirm at least one entry.
-        let dict = StubDictReader::new()
-            .with_shapes(
-                "heading",
-                vec![
-                    make_shape("text", "prose"),
-                    make_shape("level", "integer"),
-                ],
-            );
+        let dict = StubDictReader::new().with_shapes(
+            "heading",
+            vec![make_shape("text", "prose"), make_shape("level", "integer")],
+        );
         let clause_shapes = dict.clause_shapes_for("heading");
         assert!(
             !clause_shapes.is_empty(),

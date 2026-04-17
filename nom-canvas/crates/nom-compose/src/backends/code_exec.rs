@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use nom_blocks::NomtuRef;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
+use nom_blocks::NomtuRef;
 
 pub struct CodeExecInput {
     pub entity: NomtuRef,
@@ -21,16 +21,32 @@ pub struct CodeExecBackend;
 
 impl CodeExecBackend {
     /// Legacy typed-input compose used by existing callers.
-    pub fn compose(input: CodeExecInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> CodeExecResult {
-        sink.emit(ComposeEvent::Started { backend: "code_exec".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: CodeExecInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> CodeExecResult {
+        sink.emit(ComposeEvent::Started {
+            backend: "code_exec".into(),
+            entity_id: input.entity.id.clone(),
+        });
         // Evaluate the code field via the sandbox evaluator when it carries an eval: prefix;
         // otherwise serialise to stdout bytes directly.
         let stdout = Self::eval_code(&input.code);
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "executing".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "executing".into(),
+        });
         let artifact_hash = store.write(stdout.as_bytes());
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
-        CodeExecResult { artifact_hash, duration_ms: 0 }
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
+        CodeExecResult {
+            artifact_hash,
+            duration_ms: 0,
+        }
     }
 
     /// String-input compose that writes the evaluated result to the store.
@@ -40,15 +56,26 @@ impl CodeExecBackend {
         store: &mut dyn ArtifactStore,
         sink: &dyn ProgressSink,
     ) -> String {
-        sink.emit(ComposeEvent::Started { backend: "code_exec".into(), entity_id: String::new() });
+        sink.emit(ComposeEvent::Started {
+            backend: "code_exec".into(),
+            entity_id: String::new(),
+        });
 
         let result = Self::eval_code(input);
 
         let bytes = result.as_bytes();
         let hash = store.write(bytes);
         let byte_size = store.byte_size(&hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash: hash, byte_size });
-        format!("{:x}", hash.iter().take(4).fold(0u64, |acc, &b| acc * 256 + b as u64))
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash: hash,
+            byte_size,
+        });
+        format!(
+            "{:x}",
+            hash.iter()
+                .take(4)
+                .fold(0u64, |acc, &b| acc * 256 + b as u64)
+        )
     }
 
     /// Fallible variant of `compose_str`.
@@ -65,7 +92,7 @@ impl CodeExecBackend {
     /// Evaluate a code string through the sandbox evaluator.
     /// Handles the `eval:` prefix for integer literals; passes other input through unchanged.
     fn eval_code(input: &str) -> String {
-        use nom_graph::{Expr, SandboxValue, EvalContext, eval_expr};
+        use nom_graph::{eval_expr, EvalContext, Expr, SandboxValue};
 
         if input.trim().starts_with("eval:") {
             let code = input.trim().trim_start_matches("eval:").trim();
@@ -89,8 +116,8 @@ impl CodeExecBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn code_exec_compose_basic() {
@@ -100,7 +127,7 @@ mod tests {
         assert!(!result.is_empty());
         // The stored value must match the raw input.
         let hash_bytes = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut h = Sha256::new();
             h.update(b"hello world");
             let r = h.finalize();
@@ -117,7 +144,7 @@ mod tests {
         let result = CodeExecBackend.compose_str("eval:42", &mut store, &LogProgressSink);
         // The stored artifact must contain the evaluated integer as text.
         let hash_bytes = {
-            use sha2::{Sha256, Digest};
+            use sha2::{Digest, Sha256};
             let mut h = Sha256::new();
             h.update(b"42");
             let r = h.finalize();

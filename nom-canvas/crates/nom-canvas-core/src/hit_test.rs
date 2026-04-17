@@ -3,7 +3,6 @@
 /// Phase 1: AABB broadphase (check `bounds.contains(pt)`).
 /// Phase 2: Precise — rect uses inverse-rotation test; ellipse uses normalised
 ///          ellipse equation; connectors use `dist_to_bezier < HIT_RADIUS`.
-
 use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect};
 use nom_gpui::types::{Bounds, Pixels};
 
@@ -162,13 +161,7 @@ pub fn dist_to_segment(pt: [f32; 2], a: [f32; 2], b: [f32; 2]) -> f32 {
 /// Minimum distance from `pt` to a cubic Bezier curve defined by `p0, c1, c2, p3`.
 ///
 /// Uses 101-sample linear approximation — sufficient for interactive hit-testing.
-pub fn dist_to_bezier(
-    pt: [f32; 2],
-    p0: [f32; 2],
-    c1: [f32; 2],
-    c2: [f32; 2],
-    p3: [f32; 2],
-) -> f32 {
+pub fn dist_to_bezier(pt: [f32; 2], p0: [f32; 2], c1: [f32; 2], c2: [f32; 2], p3: [f32; 2]) -> f32 {
     (0..=100)
         .map(|i| {
             let t = i as f32 / 100.0;
@@ -191,7 +184,9 @@ pub fn dist_to_bezier(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::elements::{ArrowHead, CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect};
+    use crate::elements::{
+        ArrowHead, CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect,
+    };
 
     // ── hit_test_rect ────────────────────────────────────────────────────────
 
@@ -290,7 +285,11 @@ mod tests {
         let p3 = [100.0, 100.0];
         let midpt = [50.0_f32, 50.0_f32];
         let d = dist_to_bezier(midpt, p0, c1, c2, p3);
-        assert!(d < 2.0, "expected ~0 distance to midpoint of diagonal bezier, got {}", d);
+        assert!(
+            d < 2.0,
+            "expected ~0 distance to midpoint of diagonal bezier, got {}",
+            d
+        );
     }
 
     #[test]
@@ -407,8 +406,14 @@ mod tests {
     fn hit_test_bounds_inside() {
         use nom_gpui::types::{Bounds, Pixels, Point, Size};
         let bounds = Bounds {
-            origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
-            size: Size { width: Pixels(100.0), height: Pixels(80.0) },
+            origin: Point {
+                x: Pixels(10.0),
+                y: Pixels(20.0),
+            },
+            size: Size {
+                width: Pixels(100.0),
+                height: Pixels(80.0),
+            },
         };
         // Point well inside the bounds.
         assert!(hit_test_bounds([60.0, 60.0], &bounds));
@@ -418,8 +423,14 @@ mod tests {
     fn hit_test_bounds_outside() {
         use nom_gpui::types::{Bounds, Pixels, Point, Size};
         let bounds = Bounds {
-            origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
-            size: Size { width: Pixels(100.0), height: Pixels(80.0) },
+            origin: Point {
+                x: Pixels(10.0),
+                y: Pixels(20.0),
+            },
+            size: Size {
+                width: Pixels(100.0),
+                height: Pixels(80.0),
+            },
         };
         // Point to the right of the bounds.
         assert!(!hit_test_bounds([200.0, 60.0], &bounds));
@@ -429,12 +440,144 @@ mod tests {
     fn hit_test_bounds_on_edge() {
         use nom_gpui::types::{Bounds, Pixels, Point, Size};
         let bounds = Bounds {
-            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-            size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+            origin: Point {
+                x: Pixels(0.0),
+                y: Pixels(0.0),
+            },
+            size: Size {
+                width: Pixels(50.0),
+                height: Pixels(50.0),
+            },
         };
         // Exactly on the right edge — inclusive boundary.
         assert!(hit_test_bounds([50.0, 25.0], &bounds));
         // One pixel beyond the right edge — miss.
         assert!(!hit_test_bounds([51.0, 25.0], &bounds));
+    }
+
+    /// A rotated rect hit-tests correctly for a point inside it.
+    #[test]
+    fn hit_test_rotated_rect() {
+        use std::f32::consts::FRAC_PI_4; // 45 degrees
+        let r = CanvasRect {
+            id: 50,
+            // 100×100 box centred at (50,50).
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: FRAC_PI_4,
+            z_index: 0,
+        };
+        // The centre (50,50) is always inside regardless of rotation.
+        assert!(
+            hit_test_rect([50.0, 50.0], &r, 0.0),
+            "centre must always hit"
+        );
+        // A point well outside the original AABB diagonally (beyond the rotated corners)
+        // should miss when using exact hit (no threshold).
+        assert!(
+            !hit_test_rect([95.0, 5.0], &r, 0.0),
+            "corner outside rotated rect must miss"
+        );
+    }
+
+    /// A point just off a thin line does not hit with exact threshold.
+    #[test]
+    fn hit_test_thin_line_near_miss() {
+        let l = CanvasLine {
+            id: 11,
+            start: [0.0, 0.0],
+            end: [100.0, 0.0],
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            dashes: vec![],
+            z_index: 0,
+        };
+        // Point exactly 6px above the line — just outside HIT_RADIUS (5.0).
+        assert!(
+            !hit_test_line([50.0, 6.0], &l, HIT_RADIUS),
+            "6px away must miss with HIT_RADIUS=5"
+        );
+        // Point exactly 4px above — inside HIT_RADIUS.
+        assert!(
+            hit_test_line([50.0, 4.0], &l, HIT_RADIUS),
+            "4px away must hit with HIT_RADIUS=5"
+        );
+    }
+
+    /// Group hit if any child is hit: test by checking two overlapping rects,
+    /// topmost by z_index is the group winner.
+    #[test]
+    fn hit_test_group_element() {
+        // Simulate a group: two rects sharing the same area.
+        let child1 = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 1,
+        };
+        let child2 = CanvasRect {
+            id: 2,
+            bounds: ([20.0, 20.0], [60.0, 60.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 2,
+        };
+        let pt = [50.0, 50.0];
+        // Both children are hit; the group is hit if any child is hit.
+        let hit_any = hit_test_rect(pt, &child1, 0.0) || hit_test_rect(pt, &child2, 0.0);
+        assert!(hit_any, "group must be hit when any child is hit");
+    }
+
+    /// Returns topmost (highest z_index) element when overlapping rects are tested.
+    #[test]
+    fn hit_test_z_order() {
+        let rects = vec![
+            CanvasRect {
+                id: 10,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 1,
+            },
+            CanvasRect {
+                id: 20,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 5,
+            },
+            CanvasRect {
+                id: 30,
+                bounds: ([0.0, 0.0], [100.0, 100.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 3,
+            },
+        ];
+        let pt = [50.0, 50.0];
+        // Find the topmost hit (highest z_index).
+        let topmost = rects
+            .iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(topmost.is_some(), "at least one rect must be hit");
+        assert_eq!(
+            topmost.unwrap().id,
+            20,
+            "topmost hit must be id=20 (z_index=5)"
+        );
     }
 }

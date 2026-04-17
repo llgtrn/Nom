@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
-use std::collections::HashMap;
 use crate::constraint::Constraint;
 use crate::hash::Hash128;
 use crate::tracked::TrackedSnapshot;
+use std::collections::HashMap;
 
 /// A single cached computation result
 pub struct CachedResult<T: Clone> {
@@ -21,14 +21,26 @@ pub struct MemoCache<T: Clone> {
 
 impl<T: Clone> MemoCache<T> {
     pub fn new() -> Self {
-        Self { entries: HashMap::new(), hit_count: 0, miss_count: 0 }
+        Self {
+            entries: HashMap::new(),
+            hit_count: 0,
+            miss_count: 0,
+        }
     }
 
     /// Try to retrieve a cached result. Validates constraint before returning.
     /// `current_snapshots` holds fresh (method_id, return_hash) snapshots for validation.
-    pub fn get(&mut self, key: &Hash128, current_input_hash: u64, current_snapshots: &[TrackedSnapshot]) -> Option<T> {
+    pub fn get(
+        &mut self,
+        key: &Hash128,
+        current_input_hash: u64,
+        current_snapshots: &[TrackedSnapshot],
+    ) -> Option<T> {
         let entry = self.entries.get(&key.as_u64())?;
-        if entry.constraint.validate(current_input_hash, current_snapshots) {
+        if entry
+            .constraint
+            .validate(current_input_hash, current_snapshots)
+        {
             self.hit_count += 1;
             Some(entry.value.clone())
         } else {
@@ -38,24 +50,47 @@ impl<T: Clone> MemoCache<T> {
     }
 
     pub fn put(&mut self, key: Hash128, value: T, constraint: Constraint) {
-        self.entries.insert(key.as_u64(), CachedResult { value, constraint, hash: key });
+        self.entries.insert(
+            key.as_u64(),
+            CachedResult {
+                value,
+                constraint,
+                hash: key,
+            },
+        );
     }
 
     pub fn invalidate(&mut self, key: &Hash128) {
         self.entries.remove(&key.as_u64());
     }
 
-    pub fn clear(&mut self) { self.entries.clear(); }
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn hit_count(&self) -> u64 { self.hit_count }
-    pub fn miss_count(&self) -> u64 { self.miss_count }
+    pub fn clear(&mut self) {
+        self.entries.clear();
+    }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn hit_count(&self) -> u64 {
+        self.hit_count
+    }
+    pub fn miss_count(&self) -> u64 {
+        self.miss_count
+    }
     pub fn hit_rate(&self) -> f64 {
         let total = self.hit_count + self.miss_count;
-        if total == 0 { 0.0 } else { self.hit_count as f64 / total as f64 }
+        if total == 0 {
+            0.0
+        } else {
+            self.hit_count as f64 / total as f64
+        }
     }
 }
 
-impl<T: Clone> Default for MemoCache<T> { fn default() -> Self { Self::new() } }
+impl<T: Clone> Default for MemoCache<T> {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -170,7 +205,10 @@ mod tests {
         use crate::tracked::Tracked;
         let t1 = Tracked::new("v1", 1);
         let t2 = Tracked::new("v2", 2);
-        assert!(t2.version > t1.version, "later Tracked must have higher version");
+        assert!(
+            t2.version > t1.version,
+            "later Tracked must have higher version"
+        );
         assert_eq!(t1.version, 1);
         assert_eq!(t2.version, 2);
     }

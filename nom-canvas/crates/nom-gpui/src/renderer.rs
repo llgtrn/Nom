@@ -367,10 +367,7 @@ mod tests {
             (rgba[2] - 0.0).abs() < 1e-6,
             "blue channel should be 0 for black"
         );
-        assert!(
-            (rgba[3] - 1.0).abs() < 1e-6,
-            "alpha should be 1 for black"
-        );
+        assert!((rgba[3] - 1.0).abs() < 1e-6, "alpha should be 1 for black");
     }
 
     #[test]
@@ -388,10 +385,7 @@ mod tests {
             (rgba[2] - 1.0).abs() < 1e-6,
             "blue channel should be 1 for white"
         );
-        assert!(
-            (rgba[3] - 1.0).abs() < 1e-6,
-            "alpha should be 1 for white"
-        );
+        assert!((rgba[3] - 1.0).abs() < 1e-6, "alpha should be 1 for white");
     }
 
     #[test]
@@ -433,11 +427,32 @@ mod tests {
     #[test]
     fn hsla_to_rgba_red() {
         // Pure red: h=0, s=1, l=0.5, a=1 → [1, 0, 0, 1]
-        let rgba = hsla_to_rgba(Hsla { h: 0.0, s: 1.0, l: 0.5, a: 1.0 });
-        assert!((rgba[0] - 1.0).abs() < 1e-5, "red channel should be ~1, got {}", rgba[0]);
-        assert!((rgba[1] - 0.0).abs() < 1e-5, "green channel should be ~0, got {}", rgba[1]);
-        assert!((rgba[2] - 0.0).abs() < 1e-5, "blue channel should be ~0, got {}", rgba[2]);
-        assert!((rgba[3] - 1.0).abs() < 1e-5, "alpha should be 1, got {}", rgba[3]);
+        let rgba = hsla_to_rgba(Hsla {
+            h: 0.0,
+            s: 1.0,
+            l: 0.5,
+            a: 1.0,
+        });
+        assert!(
+            (rgba[0] - 1.0).abs() < 1e-5,
+            "red channel should be ~1, got {}",
+            rgba[0]
+        );
+        assert!(
+            (rgba[1] - 0.0).abs() < 1e-5,
+            "green channel should be ~0, got {}",
+            rgba[1]
+        );
+        assert!(
+            (rgba[2] - 0.0).abs() < 1e-5,
+            "blue channel should be ~0, got {}",
+            rgba[2]
+        );
+        assert!(
+            (rgba[3] - 1.0).abs() < 1e-5,
+            "alpha should be 1, got {}",
+            rgba[3]
+        );
     }
 
     #[test]
@@ -451,8 +466,14 @@ mod tests {
         let y_scale = m[1][1];
         let x_trans = m[3][0];
         let y_trans = m[3][1];
-        assert!((x_scale - 1.0).abs() < 1e-6, "x scale should be 1.0, got {x_scale}");
-        assert!((y_scale - (-1.0)).abs() < 1e-6, "y scale should be -1.0, got {y_scale}");
+        assert!(
+            (x_scale - 1.0).abs() < 1e-6,
+            "x scale should be 1.0, got {x_scale}"
+        );
+        assert!(
+            (y_scale - (-1.0)).abs() < 1e-6,
+            "y scale should be -1.0, got {y_scale}"
+        );
         // (1, 1) → NDC (0, 0)
         let ndc_x = 1.0 * x_scale + x_trans;
         let ndc_y = 1.0 * y_scale + y_trans;
@@ -477,8 +498,14 @@ mod tests {
 
         let make_rect = |x: f32| FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(x), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(x),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 8.0,
             bg_alpha: 0.6,
@@ -502,8 +529,14 @@ mod tests {
         let mut renderer = Renderer::new();
         let rect = FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(10.0), y: Pixels(20.0) },
-                size: Size { width: Pixels(200.0), height: Pixels(80.0) },
+                origin: Point {
+                    x: Pixels(10.0),
+                    y: Pixels(20.0),
+                },
+                size: Size {
+                    width: Pixels(200.0),
+                    height: Pixels(80.0),
+                },
             },
             blur_radius: 12.0,
             bg_alpha: 0.7,
@@ -513,7 +546,11 @@ mod tests {
         let quads = renderer.draw_frosted_rects(&[rect]);
 
         // Each FrostedRect must produce exactly 2 QuadInstances.
-        assert_eq!(quads.len(), 2, "expected 2 quads (bg + border) per frosted rect");
+        assert_eq!(
+            quads.len(),
+            2,
+            "expected 2 quads (bg + border) per frosted rect"
+        );
 
         // Background quad: non-zero bg_alpha, zero border alpha.
         let bg = &quads[0];
@@ -546,7 +583,9 @@ mod tests {
 
     #[test]
     fn renderer_stats_tracks_all_primitive_types() {
-        use crate::scene::{FrostedRect, MonochromeSprite, Path, PolychromeSprite, Shadow, Underline};
+        use crate::scene::{
+            FrostedRect, MonochromeSprite, Path, PolychromeSprite, Shadow, Underline,
+        };
         use crate::types::{Bounds, Pixels, Point, Size};
 
         let mut renderer = Renderer::new();
@@ -560,8 +599,14 @@ mod tests {
         scene.push_underline(Underline::default());
         scene.push_frosted_rect(FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(10.0), height: Pixels(10.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(10.0),
+                    height: Pixels(10.0),
+                },
             },
             blur_radius: 4.0,
             bg_alpha: 0.5,
@@ -582,9 +627,9 @@ mod tests {
 
     #[test]
     fn renderer_stats_count_draws() {
+        use crate::scene::Quad;
         use crate::scene::{FrostedRect, Shadow};
         use crate::types::{Bounds, Pixels, Point, Size};
-        use crate::scene::Quad;
 
         let mut renderer = Renderer::new();
         assert_eq!(renderer.stats().frames, 0);
@@ -600,8 +645,14 @@ mod tests {
         scene.push_shadow(Shadow::default());
         scene.push_frosted_rect(FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(0.0),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(100.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 4.0,
             bg_alpha: 0.5,
@@ -613,7 +664,11 @@ mod tests {
         assert_eq!(renderer.stats().frames, 1, "one frame rendered");
         assert_eq!(renderer.stats().quads_drawn, 2, "two quads counted");
         assert_eq!(renderer.stats().shadows_drawn, 1, "one shadow counted");
-        assert_eq!(renderer.stats().frosted_drawn, 1, "one frosted rect counted");
+        assert_eq!(
+            renderer.stats().frosted_drawn,
+            1,
+            "one frosted rect counted"
+        );
 
         // Second draw with empty scene — counters accumulate.
         let mut scene2 = Scene::new();
@@ -671,21 +726,63 @@ mod tests {
     #[test]
     fn linear_rgba_from_hsla_zero() {
         // Black: h=0, s=0, l=0, a=1 — all RGB channels 0 after gamma, alpha 1.
-        let color = LinearRgba::from(Hsla { h: 0.0, s: 0.0, l: 0.0, a: 1.0 });
-        assert!((color.0[0] - 0.0).abs() < 1e-6, "r should be 0, got {}", color.0[0]);
-        assert!((color.0[1] - 0.0).abs() < 1e-6, "g should be 0, got {}", color.0[1]);
-        assert!((color.0[2] - 0.0).abs() < 1e-6, "b should be 0, got {}", color.0[2]);
-        assert!((color.0[3] - 1.0).abs() < 1e-6, "a should be 1, got {}", color.0[3]);
+        let color = LinearRgba::from(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: 1.0,
+        });
+        assert!(
+            (color.0[0] - 0.0).abs() < 1e-6,
+            "r should be 0, got {}",
+            color.0[0]
+        );
+        assert!(
+            (color.0[1] - 0.0).abs() < 1e-6,
+            "g should be 0, got {}",
+            color.0[1]
+        );
+        assert!(
+            (color.0[2] - 0.0).abs() < 1e-6,
+            "b should be 0, got {}",
+            color.0[2]
+        );
+        assert!(
+            (color.0[3] - 1.0).abs() < 1e-6,
+            "a should be 1, got {}",
+            color.0[3]
+        );
     }
 
     #[test]
     fn linear_rgba_from_hsla_white() {
         // White: h=0, s=0, l=1, a=1 — 1.0^2.2 = 1.0 for all RGB channels.
-        let color = LinearRgba::from(Hsla { h: 0.0, s: 0.0, l: 1.0, a: 1.0 });
-        assert!((color.0[0] - 1.0).abs() < 1e-5, "r should be ~1, got {}", color.0[0]);
-        assert!((color.0[1] - 1.0).abs() < 1e-5, "g should be ~1, got {}", color.0[1]);
-        assert!((color.0[2] - 1.0).abs() < 1e-5, "b should be ~1, got {}", color.0[2]);
-        assert!((color.0[3] - 1.0).abs() < 1e-5, "a should be 1, got {}", color.0[3]);
+        let color = LinearRgba::from(Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 1.0,
+            a: 1.0,
+        });
+        assert!(
+            (color.0[0] - 1.0).abs() < 1e-5,
+            "r should be ~1, got {}",
+            color.0[0]
+        );
+        assert!(
+            (color.0[1] - 1.0).abs() < 1e-5,
+            "g should be ~1, got {}",
+            color.0[1]
+        );
+        assert!(
+            (color.0[2] - 1.0).abs() < 1e-5,
+            "b should be ~1, got {}",
+            color.0[2]
+        );
+        assert!(
+            (color.0[3] - 1.0).abs() < 1e-5,
+            "a should be 1, got {}",
+            color.0[3]
+        );
     }
 
     #[test]
@@ -706,7 +803,11 @@ mod tests {
         let mut renderer = Renderer::new();
         let mut scene = Scene::new();
         renderer.draw(&mut scene);
-        assert_eq!(renderer.stats().frames, 1, "frames should be 1 after one draw");
+        assert_eq!(
+            renderer.stats().frames,
+            1,
+            "frames should be 1 after one draw"
+        );
     }
 
     #[test]
@@ -719,8 +820,14 @@ mod tests {
 
         let make_rect = |x: f32| FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(x), y: Pixels(0.0) },
-                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+                origin: Point {
+                    x: Pixels(x),
+                    y: Pixels(0.0),
+                },
+                size: Size {
+                    width: Pixels(50.0),
+                    height: Pixels(50.0),
+                },
             },
             blur_radius: 4.0,
             bg_alpha: 0.5,

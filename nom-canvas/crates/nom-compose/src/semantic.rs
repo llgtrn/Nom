@@ -9,7 +9,15 @@ pub struct SemanticColumn {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SemanticDataType { String, Integer, Float, Boolean, Date, Timestamp, Json }
+pub enum SemanticDataType {
+    String,
+    Integer,
+    Float,
+    Boolean,
+    Date,
+    Timestamp,
+    Json,
+}
 
 impl SemanticDataType {
     pub fn from_str(s: &str) -> Option<Self> {
@@ -37,7 +45,12 @@ pub struct SemanticModel {
 
 impl SemanticModel {
     pub fn new(name: impl Into<String>, source: impl Into<String>) -> Self {
-        Self { name: name.into(), source_table: source.into(), columns: Vec::new(), description: None }
+        Self {
+            name: name.into(),
+            source_table: source.into(),
+            columns: Vec::new(),
+            description: None,
+        }
     }
 
     pub fn add_column(&mut self, col: SemanticColumn) -> &mut Self {
@@ -49,7 +62,9 @@ impl SemanticModel {
         self.columns.iter().find(|c| c.name == name)
     }
 
-    pub fn column_count(&self) -> usize { self.columns.len() }
+    pub fn column_count(&self) -> usize {
+        self.columns.len()
+    }
 
     /// Generate a simple SQL SELECT from this model.
     pub fn to_select_sql(&self) -> String {
@@ -68,10 +83,18 @@ pub struct SemanticRegistry {
 }
 
 impl SemanticRegistry {
-    pub fn new() -> Self { Self::default() }
-    pub fn register(&mut self, model: SemanticModel) { self.models.push(model); }
-    pub fn get(&self, name: &str) -> Option<&SemanticModel> { self.models.iter().find(|m| m.name == name) }
-    pub fn model_count(&self) -> usize { self.models.len() }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn register(&mut self, model: SemanticModel) {
+        self.models.push(model);
+    }
+    pub fn get(&self, name: &str) -> Option<&SemanticModel> {
+        self.models.iter().find(|m| m.name == name)
+    }
+    pub fn model_count(&self) -> usize {
+        self.models.len()
+    }
 }
 
 #[cfg(test)]
@@ -80,8 +103,16 @@ mod tests {
     #[test]
     fn semantic_model_to_sql() {
         let mut m = SemanticModel::new("users", "raw.users");
-        m.add_column(SemanticColumn { name: "id".into(), data_type: SemanticDataType::Integer, description: None });
-        m.add_column(SemanticColumn { name: "name".into(), data_type: SemanticDataType::String, description: None });
+        m.add_column(SemanticColumn {
+            name: "id".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        m.add_column(SemanticColumn {
+            name: "name".into(),
+            data_type: SemanticDataType::String,
+            description: None,
+        });
         assert_eq!(m.to_select_sql(), "SELECT id, name FROM raw.users");
     }
     #[test]
@@ -91,8 +122,14 @@ mod tests {
     }
     #[test]
     fn semantic_data_type_from_str() {
-        assert_eq!(SemanticDataType::from_str("varchar"), Some(SemanticDataType::String));
-        assert_eq!(SemanticDataType::from_str("jsonb"), Some(SemanticDataType::Json));
+        assert_eq!(
+            SemanticDataType::from_str("varchar"),
+            Some(SemanticDataType::String)
+        );
+        assert_eq!(
+            SemanticDataType::from_str("jsonb"),
+            Some(SemanticDataType::Json)
+        );
         assert_eq!(SemanticDataType::from_str("unknown"), None);
     }
     #[test]
@@ -125,7 +162,11 @@ mod tests {
     #[test]
     fn semantic_sql_generation() {
         let mut m = SemanticModel::new("events", "raw.events");
-        m.add_column(SemanticColumn { name: "ts".into(), data_type: SemanticDataType::Timestamp, description: None });
+        m.add_column(SemanticColumn {
+            name: "ts".into(),
+            data_type: SemanticDataType::Timestamp,
+            description: None,
+        });
         let sql = m.to_select_sql();
         assert!(!sql.is_empty());
         assert!(sql.contains("raw.events"));

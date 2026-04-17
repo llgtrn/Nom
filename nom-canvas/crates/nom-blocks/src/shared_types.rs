@@ -38,25 +38,67 @@ pub struct PlanStep {
 /// Used by both nom-compiler-bridge and nom-panels right dock
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RunEvent {
-    LLMStream { delta: String, model: String },
-    ToolInvocation { tool_name: String, input: serde_json::Value },
-    ToolResult { tool_name: String, output: serde_json::Value, duration_ms: u64 },
-    PermissionRequest { tool_name: String, reason: String },
-    AskHuman { question: String, placeholder: Option<String> },
-    SpawnSubFlow { agent_name: String, intent: String },
-    TextMessage { content: String, role: String },
-    Status { message: String, progress: Option<f32> },
-    ThinkingStream { delta: String },
+    LLMStream {
+        delta: String,
+        model: String,
+    },
+    ToolInvocation {
+        tool_name: String,
+        input: serde_json::Value,
+    },
+    ToolResult {
+        tool_name: String,
+        output: serde_json::Value,
+        duration_ms: u64,
+    },
+    PermissionRequest {
+        tool_name: String,
+        reason: String,
+    },
+    AskHuman {
+        question: String,
+        placeholder: Option<String>,
+    },
+    SpawnSubFlow {
+        agent_name: String,
+        intent: String,
+    },
+    TextMessage {
+        content: String,
+        role: String,
+    },
+    Status {
+        message: String,
+        progress: Option<f32>,
+    },
+    ThinkingStream {
+        delta: String,
+    },
     DeepThinkStep(DeepThinkStep),
-    ComposeProgress { target: String, stage: String, percent: f32 },
-    Error { message: String, code: Option<String> },
-    RunCompleted { summary: String, artifact_hashes: Vec<[u8; 32]> },
-    Interrupt { reason: String },
+    ComposeProgress {
+        target: String,
+        stage: String,
+        percent: f32,
+    },
+    Error {
+        message: String,
+        code: Option<String>,
+    },
+    RunCompleted {
+        summary: String,
+        artifact_hashes: Vec<[u8; 32]>,
+    },
+    Interrupt {
+        reason: String,
+    },
 }
 
 impl RunEvent {
     pub fn is_terminal(&self) -> bool {
-        matches!(self, RunEvent::RunCompleted { .. } | RunEvent::Error { .. } | RunEvent::Interrupt { .. })
+        matches!(
+            self,
+            RunEvent::RunCompleted { .. } | RunEvent::Error { .. } | RunEvent::Interrupt { .. }
+        )
     }
 }
 
@@ -66,9 +108,21 @@ mod tests {
 
     #[test]
     fn run_event_terminal() {
-        assert!(RunEvent::RunCompleted { summary: "done".into(), artifact_hashes: vec![] }.is_terminal());
-        assert!(RunEvent::Error { message: "err".into(), code: None }.is_terminal());
-        assert!(!RunEvent::Status { message: "ok".into(), progress: None }.is_terminal());
+        assert!(RunEvent::RunCompleted {
+            summary: "done".into(),
+            artifact_hashes: vec![]
+        }
+        .is_terminal());
+        assert!(RunEvent::Error {
+            message: "err".into(),
+            code: None
+        }
+        .is_terminal());
+        assert!(!RunEvent::Status {
+            message: "ok".into(),
+            progress: None
+        }
+        .is_terminal());
     }
 
     #[test]

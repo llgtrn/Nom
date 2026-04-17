@@ -1,17 +1,38 @@
 #![deny(unsafe_code)]
 
-pub mod types;
-pub mod scene;
-pub mod shaders;
-pub mod renderer;
+pub mod animation;
 pub mod atlas;
 pub mod element;
-pub mod layout;
-pub mod styled;
-pub mod animation;
-pub mod window;
-pub mod platform;
 pub mod event;
 pub mod focus;
+pub mod layout;
+pub mod platform;
+pub mod renderer;
+pub mod scene;
+pub mod shaders;
+pub mod styled;
+pub mod types;
+pub mod window;
 
 pub use types::*;
+
+#[cfg(test)]
+mod tests {
+    #[test]
+    fn lib_exports_scene() {
+        // nom_gpui::scene::Scene must be accessible via the crate path.
+        let _scene: crate::scene::Scene = crate::scene::Scene::new();
+        // If this compiles, Scene is reachable from the crate root.
+    }
+
+    #[test]
+    fn lib_exports_renderer() {
+        // nom_gpui::renderer::Renderer must be accessible via the crate path.
+        // We verify it is accessible by referencing the type in a way that
+        // requires it to be resolvable at compile time.
+        fn _accepts_renderer_type() {
+            let _: Option<crate::renderer::Renderer> = None;
+        }
+        _accepts_renderer_type();
+    }
+}

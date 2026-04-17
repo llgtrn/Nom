@@ -1,9 +1,13 @@
 #![deny(unsafe_code)]
 
-pub struct TabMap { pub tab_size: usize }
+pub struct TabMap {
+    pub tab_size: usize,
+}
 
 impl TabMap {
-    pub fn new(tab_size: usize) -> Self { Self { tab_size } }
+    pub fn new(tab_size: usize) -> Self {
+        Self { tab_size }
+    }
 
     /// Expand tabs to spaces, return (expanded_text, visual_column_offsets)
     pub fn expand_tabs(&self, line: &str) -> (String, Vec<usize>) {
@@ -14,7 +18,10 @@ impl TabMap {
             offsets.push(col);
             if ch == '\t' {
                 let spaces = self.tab_size - (col % self.tab_size);
-                for _ in 0..spaces { expanded.push(' '); col += 1; }
+                for _ in 0..spaces {
+                    expanded.push(' ');
+                    col += 1;
+                }
             } else {
                 expanded.push(ch);
                 col += 1;
@@ -27,9 +34,14 @@ impl TabMap {
     pub fn visual_column(&self, line: &str, char_offset: usize) -> usize {
         let mut col = 0usize;
         for (i, ch) in line.chars().enumerate() {
-            if i == char_offset { break; }
-            if ch == '\t' { col += self.tab_size - (col % self.tab_size); }
-            else { col += 1; }
+            if i == char_offset {
+                break;
+            }
+            if ch == '\t' {
+                col += self.tab_size - (col % self.tab_size);
+            } else {
+                col += 1;
+            }
         }
         col
     }
@@ -75,5 +87,22 @@ mod tests {
         let (_, offsets) = tm.expand_tabs(line);
         // One offset per character in the original line
         assert_eq!(offsets.len(), line.chars().count());
+    }
+
+    #[test]
+    fn tab_map_tab_to_spaces() {
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("\thello");
+        // One tab at col 0 with tab_size=4 expands to 4 spaces
+        assert!(expanded.starts_with("    "));
+        assert!(expanded.ends_with("hello"));
+    }
+
+    #[test]
+    fn tab_map_preserves_newlines() {
+        // expand_tabs operates on a single line; a line without tabs is unchanged
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("no tabs here");
+        assert_eq!(expanded, "no tabs here");
     }
 }

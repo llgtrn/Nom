@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
-use serde::{Deserialize, Serialize};
 use crate::block_model::NomtuRef;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct MediaBlock {
@@ -14,11 +14,24 @@ pub struct MediaBlock {
 
 impl MediaBlock {
     pub fn new(entity: NomtuRef, blob_hash: [u8; 32], mime: impl Into<String>) -> Self {
-        Self { entity, blob_hash, mime: mime.into(), width: None, height: None, duration_ms: None }
+        Self {
+            entity,
+            blob_hash,
+            mime: mime.into(),
+            width: None,
+            height: None,
+            duration_ms: None,
+        }
     }
-    pub fn is_video(&self) -> bool { self.mime.starts_with("video/") }
-    pub fn is_audio(&self) -> bool { self.mime.starts_with("audio/") }
-    pub fn is_image(&self) -> bool { self.mime.starts_with("image/") }
+    pub fn is_video(&self) -> bool {
+        self.mime.starts_with("video/")
+    }
+    pub fn is_audio(&self) -> bool {
+        self.mime.starts_with("audio/")
+    }
+    pub fn is_image(&self) -> bool {
+        self.mime.starts_with("image/")
+    }
 }
 
 #[cfg(test)]

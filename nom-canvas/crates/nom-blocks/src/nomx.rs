@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use serde::{Deserialize, Serialize};
 use crate::block_model::NomtuRef;
 use crate::prose::{CodeBlock, FLAVOUR_CODE};
+use serde::{Deserialize, Serialize};
 
 pub const NOMX_LANGUAGE: &str = "nomx";
 

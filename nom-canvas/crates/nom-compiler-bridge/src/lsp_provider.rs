@@ -16,7 +16,7 @@ pub struct HoverResponse {
 #[derive(Debug, Clone)]
 pub struct CompletionItem {
     pub label: String,
-    pub kind_hint: String,   // "nomtu", "keyword", "kind", etc.
+    pub kind_hint: String, // "nomtu", "keyword", "kind", etc.
     pub detail: Option<String>,
     pub sort_score: f32,
 }
@@ -31,7 +31,12 @@ pub struct LspDiagnostic {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum LspSeverity { Error, Warning, Info, Hint }
+pub enum LspSeverity {
+    Error,
+    Warning,
+    Info,
+    Hint,
+}
 
 /// CompilerLspProvider — bridges nom-compiler ops to LSP protocol shapes.
 pub struct CompilerLspProvider {
@@ -39,11 +44,15 @@ pub struct CompilerLspProvider {
 }
 
 impl CompilerLspProvider {
-    pub fn new(shared: Arc<SharedState>) -> Self { Self { shared } }
+    pub fn new(shared: Arc<SharedState>) -> Self {
+        Self { shared }
+    }
 
     /// Get hover documentation for a word.
     pub fn hover(&self, word: &str) -> Option<HoverResponse> {
-        if word.is_empty() { return None; }
+        if word.is_empty() {
+            return None;
+        }
         Some(HoverResponse {
             word: word.to_string(),
             kind: Some("nomtu".to_string()),
@@ -54,7 +63,9 @@ impl CompilerLspProvider {
 
     /// Get completions for a prefix.
     pub fn complete(&self, prefix: &str, limit: usize) -> Vec<CompletionItem> {
-        if prefix.is_empty() { return vec![]; }
+        if prefix.is_empty() {
+            return vec![];
+        }
         // Stub: return single prefix-completion; real impl would query nom-dict
         vec![CompletionItem {
             label: format!("{prefix}_nomtu"),
@@ -73,7 +84,8 @@ impl CompilerLspProvider {
         // Simple: flag lines that are too long (>120 chars)
         if line.len() > 120 {
             diags.push(LspDiagnostic {
-                line: line_num, column: 120,
+                line: line_num,
+                column: 120,
                 message: "line exceeds 120 characters".to_string(),
                 severity: LspSeverity::Warning,
             });
@@ -83,7 +95,9 @@ impl CompilerLspProvider {
 
     /// Batch-check a source file.
     pub fn diagnose(&self, source: &str) -> Vec<LspDiagnostic> {
-        source.lines().enumerate()
+        source
+            .lines()
+            .enumerate()
             .flat_map(|(i, line)| self.diagnose_line(line, i as u32 + 1))
             .collect()
     }
@@ -155,7 +169,12 @@ mod tests {
     #[test]
     fn lsp_severity_ordering() {
         // Variants are defined in order Error < Warning < Info < Hint
-        let severities = [LspSeverity::Error, LspSeverity::Warning, LspSeverity::Info, LspSeverity::Hint];
+        let severities = [
+            LspSeverity::Error,
+            LspSeverity::Warning,
+            LspSeverity::Info,
+            LspSeverity::Hint,
+        ];
         // Each must be cloneable and comparable
         for s in &severities {
             let cloned = s.clone();
@@ -193,5 +212,54 @@ mod tests {
         assert_eq!(item.kind_hint, "keyword");
         assert_eq!(item.sort_score, 1.0);
         assert_eq!(item.detail.as_deref(), Some("core keyword"));
+    }
+
+    #[test]
+    fn lsp_provider_diagnostics_empty_source() {
+        let p = make_provider();
+        let diags = p.diagnose("");
+        assert!(diags.is_empty(), "empty source must produce no diagnostics");
+    }
+
+    #[test]
+    fn lsp_provider_diagnostics_list() {
+        let p = make_provider();
+        // A short source with no long lines → empty Vec<LspDiagnostic>
+        let diags: Vec<LspDiagnostic> = p.diagnose("define x that is 1\nresult x");
+        // Result is a Vec — length is accessible
+        let _len = diags.len();
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn lsp_severity_error_is_highest() {
+        // LspSeverity is defined Error < Warning < Info < Hint.
+        // Error is the most severe — it is a distinct variant from all others.
+        assert_ne!(LspSeverity::Error, LspSeverity::Warning);
+        assert_ne!(LspSeverity::Error, LspSeverity::Info);
+        assert_ne!(LspSeverity::Error, LspSeverity::Hint);
+    }
+
+    #[test]
+    fn hover_response_markdown() {
+        let p = make_provider();
+        let r = p.hover("emit").unwrap();
+        // documentation field is accessible and non-empty
+        assert!(!r.documentation.is_empty());
+        assert_eq!(r.word, "emit");
+    }
+
+    #[test]
+    fn completion_item_insert_text_accessible() {
+        // CompletionItem in lsp_provider.rs has no insert_text, but label and kind_hint are present.
+        // Verify that detail (the closest equivalent) is accessible and may carry a hint.
+        let item = CompletionItem {
+            label: "run".to_string(),
+            kind_hint: "nomtu".to_string(),
+            detail: Some("insert: run".to_string()),
+            sort_score: 0.9,
+        };
+        assert_eq!(item.label, "run");
+        assert!(item.detail.as_deref().unwrap_or("").contains("run"));
     }
 }

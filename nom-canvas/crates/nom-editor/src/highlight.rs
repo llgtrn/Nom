@@ -28,15 +28,50 @@ impl HighlightSpan {
 // Color as [h,s,l,a] since we can't import nom-gpui Hsla directly here
 // (nom-gpui dep not in nom-editor Cargo.toml by default — colors looked up from theme at render)
 #[derive(Clone, Copy, Debug)]
-pub struct SpanColor { pub h: f32, pub s: f32, pub l: f32, pub a: f32 }
+pub struct SpanColor {
+    pub h: f32,
+    pub s: f32,
+    pub l: f32,
+    pub a: f32,
+}
 
 impl SpanColor {
-    pub const KEYWORD: SpanColor = SpanColor { h: 0.586, s: 1.0, l: 0.65, a: 1.0 }; // accent-blue
-    pub const NOMTU_REF: SpanColor = SpanColor { h: 0.75, s: 0.91, l: 0.70, a: 1.0 }; // accent-purple
-    pub const LITERAL: SpanColor = SpanColor { h: 0.403, s: 0.63, l: 0.49, a: 1.0 }; // accent-green
-    pub const COMMENT: SpanColor = SpanColor { h: 0.0, s: 0.0, l: 0.45, a: 1.0 };
-    pub const OPERATOR: SpanColor = SpanColor { h: 0.0, s: 0.0, l: 0.75, a: 1.0 };
-    pub const DEFAULT: SpanColor = SpanColor { h: 0.0, s: 0.0, l: 0.98, a: 1.0 };
+    pub const KEYWORD: SpanColor = SpanColor {
+        h: 0.586,
+        s: 1.0,
+        l: 0.65,
+        a: 1.0,
+    }; // accent-blue
+    pub const NOMTU_REF: SpanColor = SpanColor {
+        h: 0.75,
+        s: 0.91,
+        l: 0.70,
+        a: 1.0,
+    }; // accent-purple
+    pub const LITERAL: SpanColor = SpanColor {
+        h: 0.403,
+        s: 0.63,
+        l: 0.49,
+        a: 1.0,
+    }; // accent-green
+    pub const COMMENT: SpanColor = SpanColor {
+        h: 0.0,
+        s: 0.0,
+        l: 0.45,
+        a: 1.0,
+    };
+    pub const OPERATOR: SpanColor = SpanColor {
+        h: 0.0,
+        s: 0.0,
+        l: 0.75,
+        a: 1.0,
+    };
+    pub const DEFAULT: SpanColor = SpanColor {
+        h: 0.0,
+        s: 0.0,
+        l: 0.98,
+        a: 1.0,
+    };
 }
 
 pub struct Highlighter;
@@ -45,17 +80,20 @@ impl Highlighter {
     /// Convert highlight spans to (range, color) pairs.
     /// Wave B: applies static color map. Wave C: spans come from stage1_tokenize via bridge.
     pub fn color_runs(spans: &[HighlightSpan]) -> Vec<(Range<usize>, SpanColor)> {
-        spans.iter().map(|span| {
-            let color = match span.token_role {
-                TokenRole::Keyword | TokenRole::ClauseConnective => SpanColor::KEYWORD,
-                TokenRole::NomtuRef => SpanColor::NOMTU_REF,
-                TokenRole::Literal => SpanColor::LITERAL,
-                TokenRole::Operator => SpanColor::OPERATOR,
-                TokenRole::Comment => SpanColor::COMMENT,
-                _ => SpanColor::DEFAULT,
-            };
-            (span.range.clone(), color)
-        }).collect()
+        spans
+            .iter()
+            .map(|span| {
+                let color = match span.token_role {
+                    TokenRole::Keyword | TokenRole::ClauseConnective => SpanColor::KEYWORD,
+                    TokenRole::NomtuRef => SpanColor::NOMTU_REF,
+                    TokenRole::Literal => SpanColor::LITERAL,
+                    TokenRole::Operator => SpanColor::OPERATOR,
+                    TokenRole::Comment => SpanColor::COMMENT,
+                    _ => SpanColor::DEFAULT,
+                };
+                (span.range.clone(), color)
+            })
+            .collect()
     }
 }
 
@@ -129,5 +167,35 @@ mod tests {
         let runs = Highlighter::color_runs(&spans);
         assert_eq!(runs[0].1.h, SpanColor::DEFAULT.h);
         assert_eq!(runs[0].1.a, 1.0);
+    }
+
+    #[test]
+    fn highlight_comment_color() {
+        let comment_spans = vec![HighlightSpan::new(0..5, TokenRole::Comment)];
+        let keyword_spans = vec![HighlightSpan::new(0..5, TokenRole::Keyword)];
+        let comment_runs = Highlighter::color_runs(&comment_spans);
+        let keyword_runs = Highlighter::color_runs(&keyword_spans);
+        // Comment and keyword must have distinct hues
+        let comment_h = comment_runs[0].1.h;
+        let keyword_h = keyword_runs[0].1.h;
+        assert_ne!(
+            comment_h, keyword_h,
+            "comment color must differ from keyword color"
+        );
+    }
+
+    #[test]
+    fn highlight_string_color() {
+        // Literal (string) token must have a distinct color from keyword
+        let literal_spans = vec![HighlightSpan::new(0..5, TokenRole::Literal)];
+        let keyword_spans = vec![HighlightSpan::new(0..5, TokenRole::Keyword)];
+        let literal_runs = Highlighter::color_runs(&literal_spans);
+        let keyword_runs = Highlighter::color_runs(&keyword_spans);
+        let literal_h = literal_runs[0].1.h;
+        let keyword_h = keyword_runs[0].1.h;
+        assert_ne!(
+            literal_h, keyword_h,
+            "string/literal color must differ from keyword color"
+        );
     }
 }

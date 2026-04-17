@@ -29,12 +29,18 @@ impl Hash128 {
     /// Combine two hashes (for multi-input memoization)
     pub fn combine(self, other: Hash128) -> Hash128 {
         Hash128(
-            self.0.wrapping_mul(6364136223846793005).wrapping_add(other.0),
-            self.1.wrapping_mul(6364136223846793005).wrapping_add(other.1),
+            self.0
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(other.0),
+            self.1
+                .wrapping_mul(6364136223846793005)
+                .wrapping_add(other.1),
         )
     }
 
-    pub fn as_u64(&self) -> u64 { self.0 ^ self.1.rotate_left(32) }
+    pub fn as_u64(&self) -> u64 {
+        self.0 ^ self.1.rotate_left(32)
+    }
 }
 
 impl std::fmt::Display for Hash128 {

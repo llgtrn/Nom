@@ -44,7 +44,7 @@ pub fn consume_stream(events: Vec<DeepThinkStep>) -> Vec<ThinkCard> {
 pub struct ThinkingStep {
     pub hypothesis: String,
     pub evidence: Vec<String>,
-    pub confidence: f32,  // 0.0–1.0
+    pub confidence: f32, // 0.0–1.0
     pub counterevidence: Vec<String>,
     pub refined_from: Option<String>,
     pub is_expanded: bool,
@@ -52,19 +52,37 @@ pub struct ThinkingStep {
 
 impl ThinkingStep {
     pub fn new(hypothesis: impl Into<String>, confidence: f32) -> Self {
-        Self { hypothesis: hypothesis.into(), evidence: vec![], confidence: confidence.clamp(0.0, 1.0), counterevidence: vec![], refined_from: None, is_expanded: true }
+        Self {
+            hypothesis: hypothesis.into(),
+            evidence: vec![],
+            confidence: confidence.clamp(0.0, 1.0),
+            counterevidence: vec![],
+            refined_from: None,
+            is_expanded: true,
+        }
     }
 
     pub fn confidence_label(&self) -> &'static str {
-        if self.confidence >= 0.8 { "HIGH" }
-        else if self.confidence >= 0.5 { "MED" }
-        else { "LOW" }
+        if self.confidence >= 0.8 {
+            "HIGH"
+        } else if self.confidence >= 0.5 {
+            "MED"
+        } else {
+            "LOW"
+        }
     }
 
-    pub fn toggle_expand(&mut self) { self.is_expanded = !self.is_expanded; }
+    pub fn toggle_expand(&mut self) {
+        self.is_expanded = !self.is_expanded;
+    }
 }
 
-pub enum ThinkState { Idle, Streaming, Complete, Interrupted(String) }
+pub enum ThinkState {
+    Idle,
+    Streaming,
+    Complete,
+    Interrupted(String),
+}
 
 pub struct DeepThinkPanel {
     pub steps: Vec<ThinkingStep>,
@@ -75,7 +93,12 @@ pub struct DeepThinkPanel {
 
 impl DeepThinkPanel {
     pub fn new() -> Self {
-        Self { steps: vec![], cards: vec![], state: ThinkState::Idle, intent: String::new() }
+        Self {
+            steps: vec![],
+            cards: vec![],
+            state: ThinkState::Idle,
+            intent: String::new(),
+        }
     }
 
     pub fn begin(&mut self, intent: impl Into<String>) {
@@ -88,8 +111,12 @@ impl DeepThinkPanel {
         self.steps.push(step);
     }
 
-    pub fn complete(&mut self) { self.state = ThinkState::Complete; }
-    pub fn interrupt(&mut self, reason: impl Into<String>) { self.state = ThinkState::Interrupted(reason.into()); }
+    pub fn complete(&mut self) {
+        self.state = ThinkState::Complete;
+    }
+    pub fn interrupt(&mut self, reason: impl Into<String>) {
+        self.state = ThinkState::Interrupted(reason.into());
+    }
 
     pub fn high_confidence_steps(&self) -> Vec<&ThinkingStep> {
         self.steps.iter().filter(|s| s.confidence >= 0.8).collect()
@@ -119,7 +146,11 @@ impl DeepThinkPanel {
         for (i, _step) in self.steps.iter().enumerate() {
             let y = i as f32 * 24.0 + 4.0;
             let is_active = i + 1 == total;
-            let color = if is_active { tokens::FOCUS } else { tokens::BG2 };
+            let color = if is_active {
+                tokens::FOCUS
+            } else {
+                tokens::BG2
+            };
             scene.push_quad(fill_quad(0.0, y, width, 22.0, color));
         }
         // One Quad per ThinkCard — stacked vertically with EDGE_MED border.
@@ -129,8 +160,14 @@ impl DeepThinkPanel {
             let y = i as f32 * (card_h + card_margin) + 4.0;
             scene.push_quad(Quad {
                 bounds: Bounds {
-                    origin: Point { x: Pixels(4.0), y: Pixels(y) },
-                    size: Size { width: Pixels(width - 8.0), height: Pixels(card_h) },
+                    origin: Point {
+                        x: Pixels(4.0),
+                        y: Pixels(y),
+                    },
+                    size: Size {
+                        width: Pixels(width - 8.0),
+                        height: Pixels(card_h),
+                    },
                 },
                 background: Some(rgba_to_hsla(tokens::BG)),
                 border_color: Some(rgba_to_hsla(tokens::EDGE_MED)),
@@ -141,11 +178,15 @@ impl DeepThinkPanel {
                     bottom: Pixels(1.0),
                 },
                 corner_radii: Corners::default(),
-                content_mask: ContentMask { bounds: Bounds::default() },
+                content_mask: ContentMask {
+                    bounds: Bounds::default(),
+                },
             });
         }
         // Progress indicator quad at bottom.
-        let fraction = if total == 0 { 0.0 } else {
+        let fraction = if total == 0 {
+            0.0
+        } else {
             match self.state {
                 ThinkState::Complete => 1.0,
                 _ => total as f32 / (total as f32 + 1.0),
@@ -156,14 +197,28 @@ impl DeepThinkPanel {
     }
 }
 
-impl Default for DeepThinkPanel { fn default() -> Self { Self::new() } }
+impl Default for DeepThinkPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Panel for DeepThinkPanel {
-    fn id(&self) -> &str { "deep-think" }
-    fn title(&self) -> &str { "Deep Thinking" }
-    fn default_size(&self) -> f32 { 320.0 }
-    fn position(&self) -> DockPosition { DockPosition::Right }
-    fn activation_priority(&self) -> u32 { 20 }
+    fn id(&self) -> &str {
+        "deep-think"
+    }
+    fn title(&self) -> &str {
+        "Deep Thinking"
+    }
+    fn default_size(&self) -> f32 {
+        320.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Right
+    }
+    fn activation_priority(&self) -> u32 {
+        20
+    }
 }
 
 #[cfg(test)]
@@ -186,7 +241,11 @@ mod tests {
         let mut panel = DeepThinkPanel::new();
         let events = vec![
             make_step("hypothesis_0: think deeper", 0.5, vec![]),
-            make_step("hypothesis_1: refine answer", 0.7, vec!["obs_a".to_string()]),
+            make_step(
+                "hypothesis_1: refine answer",
+                0.7,
+                vec!["obs_a".to_string()],
+            ),
         ];
         panel.ingest_events(events);
         assert_eq!(panel.cards.len(), 2);
@@ -226,7 +285,10 @@ mod tests {
         assert_eq!(scene.quads.len(), 5);
         // The card quads (indices 1..=3) should all have a border color set.
         for quad in &scene.quads[1..=3] {
-            assert!(quad.border_color.is_some(), "card quad must have a border color");
+            assert!(
+                quad.border_color.is_some(),
+                "card quad must have a border color"
+            );
         }
     }
 

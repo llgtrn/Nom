@@ -104,9 +104,9 @@ impl TextureAtlas {
         let tile = AtlasTile {
             texture_id: self.texture_id,
             bounds: AtlasBounds {
-                left: (rect.min.x + 1) as u32,  // skip 1px left padding
-                top: (rect.min.y + 1) as u32,   // skip 1px top padding
-                right: (rect.max.x - 1) as u32, // skip 1px right padding
+                left: (rect.min.x + 1) as u32,   // skip 1px left padding
+                top: (rect.min.y + 1) as u32,    // skip 1px top padding
+                right: (rect.max.x - 1) as u32,  // skip 1px right padding
                 bottom: (rect.max.y - 1) as u32, // skip 1px bottom padding
             },
             padding: 1.0,
@@ -218,8 +218,14 @@ mod tests {
         let tile = tile.unwrap();
         assert_eq!(tile.texture_id, 0);
         // padding=1 → left offset = min.x + 1 (etagere starts at 0)
-        assert!(tile.bounds.left >= 1, "left must be at least 1 due to padding");
-        assert!(tile.bounds.top >= 1, "top must be at least 1 due to padding");
+        assert!(
+            tile.bounds.left >= 1,
+            "left must be at least 1 due to padding"
+        );
+        assert!(
+            tile.bounds.top >= 1,
+            "top must be at least 1 due to padding"
+        );
     }
 
     #[test]
@@ -234,7 +240,11 @@ mod tests {
     #[test]
     fn subpixel_index_corners() {
         assert_eq!(subpixel_index(0.0, 0.0), 0, "(0,0) → top-left = 0");
-        assert_eq!(subpixel_index(0.9, 0.9), 15, "(0.9,0.9) → bottom-right = 15");
+        assert_eq!(
+            subpixel_index(0.9, 0.9),
+            15,
+            "(0.9,0.9) → bottom-right = 15"
+        );
         assert_eq!(subpixel_index(0.26, 0.0), 1, "second x-cell, first y-cell");
         assert_eq!(subpixel_index(0.0, 0.26), 4, "first x-cell, second y-cell");
     }
@@ -281,7 +291,10 @@ mod tests {
         let key = make_key(99);
         // Pack a new glyph — must succeed and be findable via get().
         let packed = atlas.pack_glyph(key, 16, 16);
-        assert!(packed.is_some(), "allocating a glyph into an empty atlas must succeed");
+        assert!(
+            packed.is_some(),
+            "allocating a glyph into an empty atlas must succeed"
+        );
         let tile = packed.unwrap();
         // get() must return the same tile without side effects.
         let looked_up = atlas.get(&key);
@@ -349,9 +362,16 @@ mod tests {
         let first = atlas.pack_glyph(key, 14, 14).unwrap();
         // Second call with same key must return cached tile (no re-allocation).
         let second = atlas.pack_glyph(key, 14, 14).unwrap();
-        assert_eq!(first, second, "same key must return cached tile on second call");
+        assert_eq!(
+            first, second,
+            "same key must return cached tile on second call"
+        );
         // get() must also agree.
-        assert_eq!(atlas.get(&key), Some(first), "get() must return the same tile");
+        assert_eq!(
+            atlas.get(&key),
+            Some(first),
+            "get() must return the same tile"
+        );
     }
 
     #[test]
@@ -374,7 +394,10 @@ mod tests {
         let mut atlas = TextureAtlas::new(3);
         // Allocate with a width that is larger than the atlas — must fail immediately.
         let result = atlas.pack_glyph(make_key(50), TextureAtlas::DEFAULT_SIZE + 1, 10);
-        assert!(result.is_none(), "allocation wider than atlas must return None");
+        assert!(
+            result.is_none(),
+            "allocation wider than atlas must return None"
+        );
     }
 
     #[test]
@@ -423,8 +446,14 @@ mod tests {
     fn atlas_texture_id_nonzero() {
         // texture_id is passed through from new() — test that it is preserved.
         let atlas = TextureAtlas::new(42);
-        assert_eq!(atlas.texture_id, 42, "texture_id must equal the value passed to new()");
+        assert_eq!(
+            atlas.texture_id, 42,
+            "texture_id must equal the value passed to new()"
+        );
         // Any positive texture_id is valid.
-        assert!(atlas.texture_id > 0, "texture_id must be > 0 when constructed with 42");
+        assert!(
+            atlas.texture_id > 0,
+            "texture_id must be > 0 when constructed with 42"
+        );
     }
 }

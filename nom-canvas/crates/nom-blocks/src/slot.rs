@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
-use serde::{Deserialize, Serialize};
 use crate::block_model::NomtuRef;
+use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SlotValue {
@@ -14,16 +14,32 @@ pub enum SlotValue {
 
 impl SlotValue {
     pub fn as_text(&self) -> Option<&str> {
-        if let SlotValue::Text(t) = self { Some(t) } else { None }
+        if let SlotValue::Text(t) = self {
+            Some(t)
+        } else {
+            None
+        }
     }
     pub fn as_number(&self) -> Option<f64> {
-        if let SlotValue::Number(n) = self { Some(*n) } else { None }
+        if let SlotValue::Number(n) = self {
+            Some(*n)
+        } else {
+            None
+        }
     }
     pub fn as_bool(&self) -> Option<bool> {
-        if let SlotValue::Bool(b) = self { Some(*b) } else { None }
+        if let SlotValue::Bool(b) = self {
+            Some(*b)
+        } else {
+            None
+        }
     }
     pub fn as_ref(&self) -> Option<&NomtuRef> {
-        if let SlotValue::Ref(r) = self { Some(r) } else { None }
+        if let SlotValue::Ref(r) = self {
+            Some(r)
+        } else {
+            None
+        }
     }
 }
 
@@ -39,7 +55,11 @@ pub struct SlotBinding {
 }
 
 impl SlotBinding {
-    pub fn explicit(clause_name: impl Into<String>, grammar_shape: impl Into<String>, value: SlotValue) -> Self {
+    pub fn explicit(
+        clause_name: impl Into<String>,
+        grammar_shape: impl Into<String>,
+        value: SlotValue,
+    ) -> Self {
         Self {
             clause_name: clause_name.into(),
             grammar_shape: grammar_shape.into(),
@@ -50,7 +70,11 @@ impl SlotBinding {
         }
     }
 
-    pub fn inferred(clause_name: impl Into<String>, grammar_shape: impl Into<String>, value: SlotValue) -> Self {
+    pub fn inferred(
+        clause_name: impl Into<String>,
+        grammar_shape: impl Into<String>,
+        value: SlotValue,
+    ) -> Self {
         Self {
             clause_name: clause_name.into(),
             grammar_shape: grammar_shape.into(),

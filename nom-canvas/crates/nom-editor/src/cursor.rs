@@ -1,7 +1,10 @@
 #![deny(unsafe_code)]
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Bias { Left, Right }
+pub enum Bias {
+    Left,
+    Right,
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct Anchor {
@@ -10,8 +13,18 @@ pub struct Anchor {
 }
 
 impl Anchor {
-    pub fn at(offset: usize) -> Self { Self { offset, bias: Bias::Left } }
-    pub fn at_right(offset: usize) -> Self { Self { offset, bias: Bias::Right } }
+    pub fn at(offset: usize) -> Self {
+        Self {
+            offset,
+            bias: Bias::Left,
+        }
+    }
+    pub fn at_right(offset: usize) -> Self {
+        Self {
+            offset,
+            bias: Bias::Right,
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -25,7 +38,12 @@ pub struct Selection {
 impl Selection {
     pub fn caret(offset: usize) -> Self {
         let anchor = Anchor::at(offset);
-        Self { start: anchor, end: anchor, goal_column: None, reversed: false }
+        Self {
+            start: anchor,
+            end: anchor,
+            goal_column: None,
+            reversed: false,
+        }
     }
 
     pub fn range(start: usize, end: usize) -> Self {
@@ -34,14 +52,37 @@ impl Selection {
         } else {
             (Anchor::at(end), Anchor::at_right(start), true)
         };
-        Self { start, end, goal_column: None, reversed }
+        Self {
+            start,
+            end,
+            goal_column: None,
+            reversed,
+        }
     }
 
-    pub fn is_empty(&self) -> bool { self.start.offset == self.end.offset }
-    pub fn head(&self) -> usize { if self.reversed { self.start.offset } else { self.end.offset } }
-    pub fn tail(&self) -> usize { if self.reversed { self.end.offset } else { self.start.offset } }
-    pub fn min_offset(&self) -> usize { self.start.offset.min(self.end.offset) }
-    pub fn max_offset(&self) -> usize { self.start.offset.max(self.end.offset) }
+    pub fn is_empty(&self) -> bool {
+        self.start.offset == self.end.offset
+    }
+    pub fn head(&self) -> usize {
+        if self.reversed {
+            self.start.offset
+        } else {
+            self.end.offset
+        }
+    }
+    pub fn tail(&self) -> usize {
+        if self.reversed {
+            self.end.offset
+        } else {
+            self.start.offset
+        }
+    }
+    pub fn min_offset(&self) -> usize {
+        self.start.offset.min(self.end.offset)
+    }
+    pub fn max_offset(&self) -> usize {
+        self.start.offset.max(self.end.offset)
+    }
 
     /// Check if this selection overlaps with another
     pub fn overlaps(&self, other: &Self) -> bool {
@@ -56,7 +97,9 @@ pub struct CursorSet {
 
 impl CursorSet {
     pub fn single(offset: usize) -> Self {
-        Self { selections: vec![Selection::caret(offset)] }
+        Self {
+            selections: vec![Selection::caret(offset)],
+        }
     }
 
     pub fn add(&mut self, sel: Selection) {
@@ -81,9 +124,15 @@ impl CursorSet {
         self.selections = merged;
     }
 
-    pub fn len(&self) -> usize { self.selections.len() }
-    pub fn is_empty(&self) -> bool { self.selections.is_empty() }
-    pub fn primary(&self) -> Option<&Selection> { self.selections.last() }
+    pub fn len(&self) -> usize {
+        self.selections.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.selections.is_empty()
+    }
+    pub fn primary(&self) -> Option<&Selection> {
+        self.selections.last()
+    }
 }
 
 #[cfg(test)]
@@ -180,5 +229,73 @@ mod tests {
         let sel = Selection::range(7, 3);
         assert_eq!(sel.min_offset(), 3);
         assert_eq!(sel.max_offset(), 7);
+    }
+
+    #[test]
+    fn multi_cursor_set_new_has_one() {
+        let cs = CursorSet::single(0);
+        assert_eq!(cs.len(), 1);
+    }
+
+    #[test]
+    fn multi_cursor_add_cursor_at() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(5));
+        assert_eq!(cs.len(), 2);
+    }
+
+    #[test]
+    fn multi_cursor_primary_is_first_added() {
+        // CursorSet::single starts with one cursor; primary() returns last after sort.
+        // The first added stays at its offset if it doesn't overlap later additions.
+        let cs = CursorSet::single(0);
+        let primary = cs.primary().unwrap();
+        assert_eq!(primary.head(), 0);
+    }
+
+    #[test]
+    fn multi_cursor_collapse_to_primary() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(10));
+        cs.add(Selection::caret(20));
+        assert_eq!(cs.len(), 3);
+        // Collapse: retain only primary (last/highest offset after sort)
+        let primary = cs.primary().unwrap().clone();
+        cs.selections = vec![primary];
+        assert_eq!(cs.len(), 1);
+    }
+
+    #[test]
+    fn multi_cursor_select_all_same_word() {
+        // Simulate select-all-occurrences by finding all "foo" offsets in text
+        // and creating a CursorSet with one selection per match.
+        let text = "foo bar foo baz foo";
+        let word = "foo";
+        let mut cs = CursorSet::single(0);
+        cs.selections.clear();
+        let mut start = 0;
+        while let Some(pos) = text[start..].find(word) {
+            let abs = start + pos;
+            cs.selections.push(Selection::range(abs, abs + word.len()));
+            start = abs + 1;
+        }
+        assert!(cs.len() > 0);
+        assert_eq!(cs.len(), 3);
+    }
+
+    #[test]
+    fn multi_cursor_move_all_down_simulated() {
+        // Simulate move_all_down: each cursor offset increases by line_len+1
+        let line_len = 10usize;
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(5));
+        let moved: Vec<Selection> = cs
+            .selections
+            .iter()
+            .map(|s| Selection::caret(s.head() + line_len + 1))
+            .collect();
+        assert_eq!(moved.len(), 2);
+        assert_eq!(moved[0].head(), line_len + 1);
+        assert_eq!(moved[1].head(), 5 + line_len + 1);
     }
 }

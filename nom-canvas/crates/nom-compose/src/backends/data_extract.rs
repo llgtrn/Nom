@@ -31,7 +31,10 @@ pub fn compose(spec: &DataExtractSpec) -> ComposeResult {
     }
     if let Some((start, end)) = spec.page_range {
         if start > end {
-            return Err(format!("page_range start ({}) must not exceed end ({})", start, end));
+            return Err(format!(
+                "page_range start ({}) must not exceed end ({})",
+                start, end
+            ));
         }
     }
     Ok(())
@@ -67,5 +70,28 @@ mod tests {
         };
         let result = compose(&spec);
         assert!(result.is_ok(), "compose must return Ok for valid spec");
+    }
+
+    #[test]
+    fn data_extract_backend_kind() {
+        // The backend name for data extraction is "data_extract".
+        let spec = DataExtractSpec {
+            source_uri: "file:///doc.pdf".into(),
+            mode: ExtractMode::Pdf,
+            page_range: None,
+        };
+        // The module name is "data_extract" — verify spec fields are intact.
+        assert_eq!(spec.mode, ExtractMode::Pdf);
+        assert!(!spec.source_uri.is_empty());
+    }
+
+    #[test]
+    fn data_extract_backend_compose_ok() {
+        let spec = DataExtractSpec {
+            source_uri: "https://example.com/page".into(),
+            mode: ExtractMode::Html,
+            page_range: None,
+        };
+        assert!(compose(&spec).is_ok());
     }
 }

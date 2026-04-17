@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
 
-use std::collections::HashMap;
 use crate::dag::Dag;
 use crate::node::NodeId;
+use std::collections::HashMap;
 
 // ---------------------------------------------------------------------------
 // View mode
@@ -469,17 +469,32 @@ mod tests {
         state.tick_animations(0.005);
         let (ax, ay) = state.layout["a"];
         assert!(ax > 0.0, "x should have moved from origin, got {ax}");
-        assert!(ax < 100.0, "x should not yet be at target after 5 ms, got {ax}");
+        assert!(
+            ax < 100.0,
+            "x should not yet be at target after 5 ms, got {ax}"
+        );
         assert!(ay > 0.0, "y should have moved from origin, got {ay}");
-        assert!(ay < 100.0, "y should not yet be at target after 5 ms, got {ay}");
+        assert!(
+            ay < 100.0,
+            "y should not yet be at target after 5 ms, got {ay}"
+        );
 
         // After a full second the animation should be complete.
         state.tick_animations(1.0);
         let (ax2, ay2) = state.layout["a"];
-        assert!((ax2 - 100.0).abs() < 1e-3, "x should reach target, got {ax2}");
-        assert!((ay2 - 100.0).abs() < 1e-3, "y should reach target, got {ay2}");
+        assert!(
+            (ax2 - 100.0).abs() < 1e-3,
+            "x should reach target, got {ax2}"
+        );
+        assert!(
+            (ay2 - 100.0).abs() < 1e-3,
+            "y should reach target, got {ay2}"
+        );
         // Animation entry should be removed once complete.
-        assert!(state.animations.get("a").is_none(), "completed animation should be removed");
+        assert!(
+            state.animations.get("a").is_none(),
+            "completed animation should be removed"
+        );
     }
 
     // ------------------------------------------------------------------

@@ -1,5 +1,5 @@
-pub mod terminal;
 pub mod diagnostics;
+pub mod terminal;
 
-pub use terminal::{TerminalPanel, TerminalLine, TerminalLineKind};
-pub use diagnostics::{DiagnosticsPanel, Diagnostic, DiagnosticSeverity};
+pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticsPanel};
+pub use terminal::{TerminalLine, TerminalLineKind, TerminalPanel};

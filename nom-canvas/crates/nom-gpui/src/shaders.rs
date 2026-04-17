@@ -151,4 +151,53 @@ mod tests {
             );
         }
     }
+
+    // ---- New tests ----
+
+    #[test]
+    fn shaders_all_contain_vertex_or_fragment() {
+        // The 8 pipeline shaders (4 pairs) each contain @vertex or @fragment.
+        let pipeline_shaders = [
+            QUAD_VERT_WGSL,
+            QUAD_FRAG_WGSL,
+            SPRITE_VERT_WGSL,
+            SPRITE_FRAG_WGSL,
+            SHADOW_VERT_WGSL,
+            SHADOW_FRAG_WGSL,
+            PATH_VERT_WGSL,
+            PATH_FRAG_WGSL,
+        ];
+        for shader in &pipeline_shaders {
+            assert!(
+                shader.contains("@vertex") || shader.contains("@fragment"),
+                "shader missing @vertex or @fragment"
+            );
+        }
+    }
+
+    #[test]
+    fn shaders_no_empty() {
+        let pipeline_shaders = [
+            QUAD_VERT_WGSL,
+            QUAD_FRAG_WGSL,
+            SPRITE_VERT_WGSL,
+            SPRITE_FRAG_WGSL,
+            SHADOW_VERT_WGSL,
+            SHADOW_FRAG_WGSL,
+            PATH_VERT_WGSL,
+            PATH_FRAG_WGSL,
+        ];
+        for shader in &pipeline_shaders {
+            assert!(
+                !shader.trim().is_empty(),
+                "pipeline shader must not be empty"
+            );
+        }
+    }
+
+    #[test]
+    fn pipeline_count_matches_pipeline_kind() {
+        // PIPELINE_COUNT == 8 corresponds to 4 (quad/sprite/shadow/path) × 2 (vert+frag)
+        assert_eq!(PIPELINE_COUNT, 8);
+    }
 }

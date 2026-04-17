@@ -40,7 +40,9 @@ pub trait LintRule: private::Sealed {
 ///
 /// Default multiplier is `1.0` (no scaling).
 pub trait InternalRule: LintRule {
-    fn severity_multiplier(&self) -> f32 { 1.0 }
+    fn severity_multiplier(&self) -> f32 {
+        1.0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -275,7 +277,9 @@ mod tests {
         runner.add_rule(EmptyBlockRule);
 
         let diags = runner.run(&source);
-        assert!(diags.iter().any(|d| d.message.contains("trailing whitespace")));
+        assert!(diags
+            .iter()
+            .any(|d| d.message.contains("trailing whitespace")));
         assert!(diags.iter().any(|d| d.message.contains("130")));
         assert!(diags.iter().any(|d| d.message.contains("empty block")));
     }
@@ -304,8 +308,12 @@ mod tests {
 
         let diags = runner.check_file(source.as_str());
         // Line 2 triggers LineTooLong, line 3 triggers TrailingWhitespace.
-        assert!(diags.iter().any(|d| d.line == 2 && d.message.contains("130")));
-        assert!(diags.iter().any(|d| d.line == 3 && d.message.contains("trailing")));
+        assert!(diags
+            .iter()
+            .any(|d| d.line == 2 && d.message.contains("130")));
+        assert!(diags
+            .iter()
+            .any(|d| d.line == 3 && d.message.contains("trailing")));
     }
 
     #[test]
@@ -378,12 +386,17 @@ mod tests {
     #[test]
     fn line_too_long_threshold() {
         let rule = LineTooLongRule::new(); // max_len = 120
-        // Exactly 120 chars — must NOT fire.
+                                           // Exactly 120 chars — must NOT fire.
         let at_limit = "a".repeat(120);
-        assert!(rule.check(&at_limit, 1).is_none(), "120-char line should pass");
+        assert!(
+            rule.check(&at_limit, 1).is_none(),
+            "120-char line should pass"
+        );
         // 121 chars — must fire.
         let over_limit = "a".repeat(121);
-        let diag = rule.check(&over_limit, 2).expect("121-char line should fail");
+        let diag = rule
+            .check(&over_limit, 2)
+            .expect("121-char line should fail");
         assert_eq!(diag.span.end, 121);
     }
 
@@ -396,11 +409,7 @@ mod tests {
             Box::new(LineTooLongRule::new()),
             Box::new(EmptyBlockRule),
         ];
-        let lines = [
-            "fn foo() {   ",
-            &"x".repeat(130),
-            "fn bar() {}",
-        ];
+        let lines = ["fn foo() {   ", &"x".repeat(130), "fn bar() {}"];
         for rule in &rules {
             for (i, line) in lines.iter().enumerate() {
                 if let Some(diag) = rule.check(line, i as u32 + 1) {
@@ -410,7 +419,10 @@ mod tests {
                         rule.name(),
                         line
                     );
-                    assert!(diag.span.end > 0, "span.end should be > 0 for a real finding");
+                    assert!(
+                        diag.span.end > 0,
+                        "span.end should be > 0 for a real finding"
+                    );
                 }
             }
         }
@@ -772,7 +784,13 @@ mod tests {
     fn runner_check_file_with_10_lines() {
         // Lines 1, 3, 5, 7, 9 have trailing whitespace → 5 diagnostics.
         let source = (1..=10)
-            .map(|i| if i % 2 == 1 { "x  ".to_string() } else { "x".to_string() })
+            .map(|i| {
+                if i % 2 == 1 {
+                    "x  ".to_string()
+                } else {
+                    "x".to_string()
+                }
+            })
             .collect::<Vec<_>>()
             .join("\n");
         let mut runner = LintRunner::new();

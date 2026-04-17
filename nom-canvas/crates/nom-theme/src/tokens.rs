@@ -83,7 +83,12 @@ pub const SHADOW_SM: ShadowToken = ShadowToken {
     offset_y: 1.0,
     blur: 2.0,
     spread: 0.0,
-    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.15 },
+    color: || Hsla {
+        h: 0.0,
+        s: 0.0,
+        l: 0.0,
+        a: 0.15,
+    },
 };
 
 pub const SHADOW_MD: ShadowToken = ShadowToken {
@@ -91,7 +96,12 @@ pub const SHADOW_MD: ShadowToken = ShadowToken {
     offset_y: 4.0,
     blur: 8.0,
     spread: 0.0,
-    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.20 },
+    color: || Hsla {
+        h: 0.0,
+        s: 0.0,
+        l: 0.0,
+        a: 0.20,
+    },
 };
 
 pub const SHADOW_LG: ShadowToken = ShadowToken {
@@ -99,7 +109,12 @@ pub const SHADOW_LG: ShadowToken = ShadowToken {
     offset_y: 8.0,
     blur: 24.0,
     spread: 0.0,
-    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.25 },
+    color: || Hsla {
+        h: 0.0,
+        s: 0.0,
+        l: 0.0,
+        a: 0.25,
+    },
 };
 
 pub const SHADOW_XL: ShadowToken = ShadowToken {
@@ -107,7 +122,12 @@ pub const SHADOW_XL: ShadowToken = ShadowToken {
     offset_y: 16.0,
     blur: 48.0,
     spread: 0.0,
-    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.30 },
+    color: || Hsla {
+        h: 0.0,
+        s: 0.0,
+        l: 0.0,
+        a: 0.30,
+    },
 };
 
 // ---------------------------------------------------------------------------
@@ -219,7 +239,7 @@ pub const BTN_H_LG: f32 = 32.0;
 pub const BTN_H_XL: f32 = 40.0;
 pub const ICON_SIZE: f32 = 24.0;
 pub const ICON_SIZE_SM: f32 = 16.0;
-pub const H1_SPACING: f32 = 8.0;   // letter-spacing for H1
+pub const H1_SPACING: f32 = 8.0; // letter-spacing for H1
 pub const H1_WEIGHT: u16 = 700;
 pub const H1_LETTER_SPACING: f32 = -0.02;
 pub const H2_WEIGHT: u16 = 600;
@@ -271,7 +291,9 @@ mod tests {
         assert_eq!(SPACING_8, 32.0);
         assert_eq!(SPACING_12, 48.0);
         // Strictly ascending.
-        let spacings = [SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12];
+        let spacings = [
+            SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
+        ];
         for w in spacings.windows(2) {
             assert!(w[1] > w[0], "spacing scale must be strictly ascending");
         }
@@ -399,20 +421,30 @@ mod tests {
     fn frosted_glass_alpha_in_range() {
         assert!((0.0..=1.0).contains(&FROSTED_BG_ALPHA));
         assert!((0.0..=1.0).contains(&FROSTED_BORDER_ALPHA));
-        assert!(FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
-            "background alpha should dominate border alpha");
+        assert!(
+            FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
+            "background alpha should dominate border alpha"
+        );
     }
 
     #[test]
     fn tokens_base_bg_is_dark() {
         // Blue channel (index 2) must be near 0 — confirms a dark background.
-        assert!(BASE_BG[2] < 0.1, "BASE_BG blue channel should be near 0 for a dark bg, got {}", BASE_BG[2]);
+        assert!(
+            BASE_BG[2] < 0.1,
+            "BASE_BG blue channel should be near 0 for a dark bg, got {}",
+            BASE_BG[2]
+        );
     }
 
     #[test]
     fn tokens_base_fg_is_light() {
         // Red channel (index 0) must be > 0.8 — confirms a light foreground.
-        assert!(BASE_FG[0] > 0.8, "BASE_FG red channel should be > 0.8 for a light fg, got {}", BASE_FG[0]);
+        assert!(
+            BASE_FG[0] > 0.8,
+            "BASE_FG red channel should be > 0.8 for a light fg, got {}",
+            BASE_FG[0]
+        );
     }
 
     #[test]
@@ -448,12 +480,18 @@ mod tests {
 
     #[test]
     fn tokens_frosted_blur_radius_positive() {
-        assert!(FROSTED_BLUR_RADIUS > 0.0, "FROSTED_BLUR_RADIUS must be positive");
+        assert!(
+            FROSTED_BLUR_RADIUS > 0.0,
+            "FROSTED_BLUR_RADIUS must be positive"
+        );
     }
 
     #[test]
     fn tokens_frosted_bg_alpha_below_one() {
-        assert!(FROSTED_BG_ALPHA < 1.0, "FROSTED_BG_ALPHA should be < 1.0 for frosted transparency");
+        assert!(
+            FROSTED_BG_ALPHA < 1.0,
+            "FROSTED_BG_ALPHA should be < 1.0 for frosted transparency"
+        );
     }
 
     #[test]
@@ -469,24 +507,39 @@ mod tests {
     #[test]
     fn tokens_focus_has_distinct_color() {
         // Focus ring must differ from base background so it is visible.
-        assert_ne!(
-            FOCUS, BASE_BG,
-            "FOCUS ring color must differ from BASE_BG"
-        );
+        assert_ne!(FOCUS, BASE_BG, "FOCUS ring color must differ from BASE_BG");
     }
 
     #[test]
     fn tokens_error_is_reddish() {
         // Red channel dominates over both green and blue.
-        assert!(ERROR[0] > ERROR[1], "ERROR red ({}) must exceed green ({})", ERROR[0], ERROR[1]);
-        assert!(ERROR[0] > ERROR[2], "ERROR red ({}) must exceed blue ({})", ERROR[0], ERROR[2]);
+        assert!(
+            ERROR[0] > ERROR[1],
+            "ERROR red ({}) must exceed green ({})",
+            ERROR[0],
+            ERROR[1]
+        );
+        assert!(
+            ERROR[0] > ERROR[2],
+            "ERROR red ({}) must exceed blue ({})",
+            ERROR[0],
+            ERROR[2]
+        );
     }
 
     #[test]
     fn tokens_warning_is_yellowish() {
         // Both red and green channels > 0.5 gives a yellow hue.
-        assert!(WARNING[0] > 0.5, "WARNING red ({}) must be > 0.5 for yellow hue", WARNING[0]);
-        assert!(WARNING[1] > 0.5, "WARNING green ({}) must be > 0.5 for yellow hue", WARNING[1]);
+        assert!(
+            WARNING[0] > 0.5,
+            "WARNING red ({}) must be > 0.5 for yellow hue",
+            WARNING[0]
+        );
+        assert!(
+            WARNING[1] > 0.5,
+            "WARNING green ({}) must be > 0.5 for yellow hue",
+            WARNING[1]
+        );
     }
 
     #[test]
@@ -496,13 +549,15 @@ mod tests {
         assert!(
             EDGE_HIGH[1] > EDGE_LOW[1],
             "EDGE_HIGH green ({}) must exceed EDGE_LOW green ({}) — high confidence = green",
-            EDGE_HIGH[1], EDGE_LOW[1]
+            EDGE_HIGH[1],
+            EDGE_LOW[1]
         );
         // And high-confidence edges have a higher alpha than low-confidence edges.
         assert!(
             EDGE_HIGH[3] > EDGE_LOW[3],
             "EDGE_HIGH alpha ({}) must exceed EDGE_LOW alpha ({})",
-            EDGE_HIGH[3], EDGE_LOW[3]
+            EDGE_HIGH[3],
+            EDGE_LOW[3]
         );
     }
 
@@ -515,38 +570,75 @@ mod tests {
     #[test]
     fn tokens_border_has_alpha() {
         // BORDER is an opaque or semi-transparent border — alpha must be in (0.0, 1.0].
-        assert!(BORDER[3] > 0.0, "BORDER alpha ({}) must be > 0.0", BORDER[3]);
-        assert!(BORDER[3] <= 1.0, "BORDER alpha ({}) must be <= 1.0", BORDER[3]);
+        assert!(
+            BORDER[3] > 0.0,
+            "BORDER alpha ({}) must be > 0.0",
+            BORDER[3]
+        );
+        assert!(
+            BORDER[3] <= 1.0,
+            "BORDER alpha ({}) must be <= 1.0",
+            BORDER[3]
+        );
     }
 
     #[test]
     fn tokens_focus_alpha_partial() {
         // FOCUS is a semi-transparent ring — alpha must be less than 1.0.
-        assert!(FOCUS[3] < 1.0, "FOCUS alpha ({}) must be < 1.0 for a semi-transparent ring", FOCUS[3]);
+        assert!(
+            FOCUS[3] < 1.0,
+            "FOCUS alpha ({}) must be < 1.0 for a semi-transparent ring",
+            FOCUS[3]
+        );
     }
 
     #[test]
     fn tokens_focus_ring_visible() {
         // FOCUS ring must be at least somewhat visible — alpha > 0.1.
-        assert!(FOCUS[3] > 0.1, "FOCUS alpha ({}) too low to be visible", FOCUS[3]);
+        assert!(
+            FOCUS[3] > 0.1,
+            "FOCUS alpha ({}) too low to be visible",
+            FOCUS[3]
+        );
     }
 
     #[test]
     fn tokens_base_fg_all_channels_bright() {
         // BASE_FG near-white: all three RGB channels must be > 0.8.
-        assert!(BASE_FG[0] > 0.8, "BASE_FG[0] R={} must be > 0.8", BASE_FG[0]);
-        assert!(BASE_FG[1] > 0.8, "BASE_FG[1] G={} must be > 0.8", BASE_FG[1]);
-        assert!(BASE_FG[2] > 0.8, "BASE_FG[2] B={} must be > 0.8", BASE_FG[2]);
+        assert!(
+            BASE_FG[0] > 0.8,
+            "BASE_FG[0] R={} must be > 0.8",
+            BASE_FG[0]
+        );
+        assert!(
+            BASE_FG[1] > 0.8,
+            "BASE_FG[1] G={} must be > 0.8",
+            BASE_FG[1]
+        );
+        assert!(
+            BASE_FG[2] > 0.8,
+            "BASE_FG[2] B={} must be > 0.8",
+            BASE_FG[2]
+        );
     }
 
     #[test]
     fn tokens_all_rgb_values_in_unit_range() {
         // Every RGB component of every named color token must be in [0.0, 1.0].
         let all_colors: &[(&str, [f32; 4])] = &[
-            ("BG", BG), ("BG2", BG2), ("TEXT", TEXT), ("CTA", CTA),
-            ("BORDER", BORDER), ("FOCUS", FOCUS),
-            ("EDGE_HIGH", EDGE_HIGH), ("EDGE_MED", EDGE_MED), ("EDGE_LOW", EDGE_LOW),
-            ("BASE_BG", BASE_BG), ("BASE_FG", BASE_FG), ("ERROR", ERROR), ("WARNING", WARNING),
+            ("BG", BG),
+            ("BG2", BG2),
+            ("TEXT", TEXT),
+            ("CTA", CTA),
+            ("BORDER", BORDER),
+            ("FOCUS", FOCUS),
+            ("EDGE_HIGH", EDGE_HIGH),
+            ("EDGE_MED", EDGE_MED),
+            ("EDGE_LOW", EDGE_LOW),
+            ("BASE_BG", BASE_BG),
+            ("BASE_FG", BASE_FG),
+            ("ERROR", ERROR),
+            ("WARNING", WARNING),
         ];
         for (name, c) in all_colors {
             for (i, ch) in c[..3].iter().enumerate() {
@@ -561,7 +653,8 @@ mod tests {
     #[test]
     fn tokens_cta_vs_bg_contrast() {
         // CTA and BG must differ by more than 0.2 in at least one RGB channel.
-        let max_diff = (CTA[0] - BG[0]).abs()
+        let max_diff = (CTA[0] - BG[0])
+            .abs()
             .max((CTA[1] - BG[1]).abs())
             .max((CTA[2] - BG[2]).abs());
         assert!(
@@ -583,7 +676,10 @@ mod tests {
         // Larger shadows must be darker (higher alpha).
         let sm_a = (SHADOW_SM.color)().a;
         let xl_a = (SHADOW_XL.color)().a;
-        assert!(xl_a > sm_a, "SHADOW_XL alpha ({xl_a}) must exceed SHADOW_SM alpha ({sm_a})");
+        assert!(
+            xl_a > sm_a,
+            "SHADOW_XL alpha ({xl_a}) must exceed SHADOW_SM alpha ({sm_a})"
+        );
     }
 
     #[test]
@@ -621,7 +717,8 @@ mod tests {
         assert!(
             MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
             "MOTION_HOVER_DURATION_MS ({}) must be less than MOTION_PANEL_RESIZE_DURATION_MS ({})",
-            MOTION_HOVER_DURATION_MS, MOTION_PANEL_RESIZE_DURATION_MS
+            MOTION_HOVER_DURATION_MS,
+            MOTION_PANEL_RESIZE_DURATION_MS
         );
     }
 
@@ -640,6 +737,125 @@ mod tests {
         assert!(
             TOOLBAR_H > STATUSBAR_H,
             "TOOLBAR_H ({TOOLBAR_H}) must be greater than STATUSBAR_H ({STATUSBAR_H})"
+        );
+    }
+
+    #[test]
+    fn tokens_spacing_small_less_than_large() {
+        // SPACING_1 is the smallest step; SPACING_12 is the largest.
+        assert!(
+            SPACING_1 < SPACING_12,
+            "SPACING_1 ({SPACING_1}) must be less than SPACING_12 ({SPACING_12})"
+        );
+    }
+
+    #[test]
+    fn tokens_border_radius_positive() {
+        // All non-zero radius constants must be > 0.
+        assert!(RADIUS_SM > 0.0, "RADIUS_SM must be positive");
+        assert!(RADIUS_MD > 0.0, "RADIUS_MD must be positive");
+        assert!(RADIUS_LG > 0.0, "RADIUS_LG must be positive");
+    }
+
+    #[test]
+    fn tokens_icon_size_positive() {
+        assert!(
+            ICON_SIZE > 0.0,
+            "ICON_SIZE must be positive, got {ICON_SIZE}"
+        );
+        assert!(
+            ICON_SIZE_SM > 0.0,
+            "ICON_SIZE_SM must be positive, got {ICON_SIZE_SM}"
+        );
+    }
+
+    #[test]
+    fn tokens_line_height_above_one() {
+        // Readable line heights must be >= 1.0 to avoid overlap.
+        assert!(
+            LINE_HEIGHT_BODY >= 1.0,
+            "LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY}) must be >= 1.0"
+        );
+        assert!(
+            LINE_HEIGHT_CAPTION >= 1.0,
+            "LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION}) must be >= 1.0"
+        );
+        assert!(
+            LINE_HEIGHT_CODE >= 1.0,
+            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) must be >= 1.0"
+        );
+        assert!(
+            LINE_HEIGHT_HEADING >= 1.0,
+            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) must be >= 1.0"
+        );
+    }
+
+    #[test]
+    fn tokens_sidebar_width_positive() {
+        assert!(
+            SIDEBAR_W > 0.0,
+            "SIDEBAR_W must be positive, got {SIDEBAR_W}"
+        );
+    }
+
+    #[test]
+    fn tokens_toolbar_height_is_48() {
+        assert_eq!(
+            TOOLBAR_H, 48.0,
+            "TOOLBAR_H must be 48.0 per spec, got {TOOLBAR_H}"
+        );
+    }
+
+    #[test]
+    fn tokens_statusbar_height_is_24() {
+        assert_eq!(
+            STATUSBAR_H, 24.0,
+            "STATUSBAR_H must be 24.0 per spec, got {STATUSBAR_H}"
+        );
+    }
+
+    #[test]
+    fn tokens_all_spacing_positive() {
+        let spacings = [
+            SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_6, SPACING_8, SPACING_12,
+        ];
+        for (i, s) in spacings.iter().enumerate() {
+            assert!(*s > 0.0, "spacing[{i}] = {s} must be positive");
+        }
+    }
+
+    #[test]
+    fn tokens_hover_is_lighter_than_bg() {
+        // BASE_BG is the dark base; BASE_FG is the light foreground.
+        // They must differ — confirmed by checking they are not equal.
+        assert_ne!(BASE_FG, BASE_BG, "BASE_FG and BASE_BG must differ");
+    }
+
+    #[test]
+    fn tokens_active_state_differs_from_hover() {
+        // CTA (active/call-to-action) must differ from the base background.
+        assert_ne!(
+            CTA, BASE_BG,
+            "CTA (active) must differ from BASE_BG (hover-base)"
+        );
+    }
+
+    #[test]
+    fn tokens_destructive_is_red() {
+        // ERROR is the destructive color; red channel must dominate (> 0.5).
+        assert!(
+            ERROR[0] > 0.5,
+            "ERROR red channel ({}) must be > 0.5 for destructive red",
+            ERROR[0]
+        );
+    }
+
+    #[test]
+    fn tokens_panel_left_equals_sidebar_w() {
+        // PANEL_LEFT_WIDTH and SIDEBAR_W should match — both represent the left panel width.
+        assert_eq!(
+            PANEL_LEFT_WIDTH, SIDEBAR_W,
+            "PANEL_LEFT_WIDTH ({PANEL_LEFT_WIDTH}) must equal SIDEBAR_W ({SIDEBAR_W})"
         );
     }
 }

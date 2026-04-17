@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
+use crate::node::NodeId;
 use std::collections::HashMap;
 use std::sync::Mutex;
-use crate::node::NodeId;
 
 /// ComfyUI 4-tier cache hierarchy
 /// Tier 0: NullCache — no caching
@@ -27,23 +27,49 @@ pub trait ExecutionCache: Send + Sync {
 /// Tier 0: No caching — always re-execute
 pub struct NullCache;
 impl ExecutionCache for NullCache {
-    fn get(&self, _key: u64) -> Option<CachedValue> { None }
+    fn get(&self, _key: u64) -> Option<CachedValue> {
+        None
+    }
     fn put(&mut self, _key: u64, _value: CachedValue) {}
     fn invalidate(&mut self, _key: u64) {}
     fn clear(&mut self) {}
-    fn len(&self) -> usize { 0 }
+    fn len(&self) -> usize {
+        0
+    }
 }
 
 /// Tier 1: Basic cache — unbounded HashMap
-pub struct BasicCache { data: HashMap<u64, CachedValue> }
-impl BasicCache { pub fn new() -> Self { Self { data: HashMap::new() } } }
-impl Default for BasicCache { fn default() -> Self { Self::new() } }
+pub struct BasicCache {
+    data: HashMap<u64, CachedValue>,
+}
+impl BasicCache {
+    pub fn new() -> Self {
+        Self {
+            data: HashMap::new(),
+        }
+    }
+}
+impl Default for BasicCache {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 impl ExecutionCache for BasicCache {
-    fn get(&self, key: u64) -> Option<CachedValue> { self.data.get(&key).cloned() }
-    fn put(&mut self, key: u64, value: CachedValue) { self.data.insert(key, value); }
-    fn invalidate(&mut self, key: u64) { self.data.remove(&key); }
-    fn clear(&mut self) { self.data.clear(); }
-    fn len(&self) -> usize { self.data.len() }
+    fn get(&self, key: u64) -> Option<CachedValue> {
+        self.data.get(&key).cloned()
+    }
+    fn put(&mut self, key: u64, value: CachedValue) {
+        self.data.insert(key, value);
+    }
+    fn invalidate(&mut self, key: u64) {
+        self.data.remove(&key);
+    }
+    fn clear(&mut self) {
+        self.data.clear();
+    }
+    fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 /// Tier 2: LRU cache — fixed capacity with LRU eviction
@@ -55,7 +81,11 @@ pub struct LruCache {
 
 impl LruCache {
     pub fn new(capacity: usize) -> Self {
-        Self { capacity, data: HashMap::new(), order: Mutex::new(Vec::new()) }
+        Self {
+            capacity,
+            data: HashMap::new(),
+            order: Mutex::new(Vec::new()),
+        }
     }
     fn touch(&self, key: u64) {
         let mut order = self.order.lock().unwrap();
@@ -67,7 +97,9 @@ impl LruCache {
 impl ExecutionCache for LruCache {
     fn get(&self, key: u64) -> Option<CachedValue> {
         let value = self.data.get(&key).cloned();
-        if value.is_some() { self.touch(key); }
+        if value.is_some() {
+            self.touch(key);
+        }
         value
     }
     fn put(&mut self, key: u64, value: CachedValue) {
@@ -85,8 +117,13 @@ impl ExecutionCache for LruCache {
         self.data.remove(&key);
         self.order.lock().unwrap().retain(|k| *k != key);
     }
-    fn clear(&mut self) { self.data.clear(); self.order.lock().unwrap().clear(); }
-    fn len(&self) -> usize { self.data.len() }
+    fn clear(&mut self) {
+        self.data.clear();
+        self.order.lock().unwrap().clear();
+    }
+    fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 /// Tier 3: RAM-pressure-aware cache — evicts oldest 25% when len > threshold
@@ -98,19 +135,30 @@ pub struct RamPressureCache {
 
 impl RamPressureCache {
     pub fn new(threshold: usize) -> Self {
-        Self { threshold, data: HashMap::new(), order: Vec::new() }
+        Self {
+            threshold,
+            data: HashMap::new(),
+            order: Vec::new(),
+        }
     }
     fn evict_if_needed(&mut self) {
         if self.data.len() >= self.threshold {
             let evict_count = self.threshold / 4;
-            let to_evict: Vec<u64> = self.order.drain(..evict_count.min(self.order.len())).collect();
-            for key in to_evict { self.data.remove(&key); }
+            let to_evict: Vec<u64> = self
+                .order
+                .drain(..evict_count.min(self.order.len()))
+                .collect();
+            for key in to_evict {
+                self.data.remove(&key);
+            }
         }
     }
 }
 
 impl ExecutionCache for RamPressureCache {
-    fn get(&self, key: u64) -> Option<CachedValue> { self.data.get(&key).cloned() }
+    fn get(&self, key: u64) -> Option<CachedValue> {
+        self.data.get(&key).cloned()
+    }
     fn put(&mut self, key: u64, value: CachedValue) {
         self.evict_if_needed();
         self.data.insert(key, value);
@@ -121,8 +169,13 @@ impl ExecutionCache for RamPressureCache {
         self.data.remove(&key);
         self.order.retain(|k| *k != key);
     }
-    fn clear(&mut self) { self.data.clear(); self.order.clear(); }
-    fn len(&self) -> usize { self.data.len() }
+    fn clear(&mut self) {
+        self.data.clear();
+        self.order.clear();
+    }
+    fn len(&self) -> usize {
+        self.data.len()
+    }
 }
 
 /// Hierarchical cache: try L1 (fast LRU) then L2 (larger RAM-pressure)
@@ -133,7 +186,10 @@ pub struct HierarchicalCache {
 
 impl HierarchicalCache {
     pub fn new(l1_cap: usize, l2_threshold: usize) -> Self {
-        Self { l1: LruCache::new(l1_cap), l2: RamPressureCache::new(l2_threshold) }
+        Self {
+            l1: LruCache::new(l1_cap),
+            l2: RamPressureCache::new(l2_threshold),
+        }
     }
 
     /// Promoting get: L2 hits are copied into L1 so subsequent accesses are fast.
@@ -163,8 +219,13 @@ impl ExecutionCache for HierarchicalCache {
         self.l1.invalidate(key);
         self.l2.invalidate(key);
     }
-    fn clear(&mut self) { self.l1.clear(); self.l2.clear(); }
-    fn len(&self) -> usize { self.l1.len() + self.l2.len() }
+    fn clear(&mut self) {
+        self.l1.clear();
+        self.l2.clear();
+    }
+    fn len(&self) -> usize {
+        self.l1.len() + self.l2.len()
+    }
 }
 
 /// 4-tier cache strategy — ComfyUI execution model pattern.
@@ -173,7 +234,7 @@ pub enum CacheStrategy {
     NoCache,
     Lru { capacity: usize },
     RamPressure { max_entries: usize },
-    Classic,  // IS_CHANGED-gated
+    Classic, // IS_CHANGED-gated
 }
 
 /// IS_CHANGED flag per node — tracks whether node needs recomputation.
@@ -183,12 +244,22 @@ pub struct ChangedFlags {
 }
 
 impl ChangedFlags {
-    pub fn new() -> Self { Self::default() }
-    pub fn mark_changed(&mut self, id: NodeId) { self.flags.insert(id, true); }
-    pub fn mark_clean(&mut self, id: NodeId) { self.flags.insert(id, false); }
+    pub fn new() -> Self {
+        Self::default()
+    }
+    pub fn mark_changed(&mut self, id: NodeId) {
+        self.flags.insert(id, true);
+    }
+    pub fn mark_clean(&mut self, id: NodeId) {
+        self.flags.insert(id, false);
+    }
     /// Nodes are changed by default (unknown == needs recompute).
-    pub fn is_changed(&self, id: &NodeId) -> bool { self.flags.get(id).copied().unwrap_or(true) }
-    pub fn changed_count(&self) -> usize { self.flags.values().filter(|&&v| v).count() }
+    pub fn is_changed(&self, id: &NodeId) -> bool {
+        self.flags.get(id).copied().unwrap_or(true)
+    }
+    pub fn changed_count(&self) -> usize {
+        self.flags.values().filter(|&&v| v).count()
+    }
 }
 
 /// Strategy-backed node-level result cache.
@@ -200,11 +271,17 @@ pub struct NodeCache {
 
 impl NodeCache {
     pub fn new(strategy: CacheStrategy) -> Self {
-        Self { strategy, entries: HashMap::new(), lru_order: Vec::new() }
+        Self {
+            strategy,
+            entries: HashMap::new(),
+            lru_order: Vec::new(),
+        }
     }
 
     pub fn get(&mut self, id: &NodeId) -> Option<&CachedValue> {
-        if self.strategy == CacheStrategy::NoCache { return None; }
+        if self.strategy == CacheStrategy::NoCache {
+            return None;
+        }
         if self.entries.contains_key(id) {
             self.lru_order.retain(|x| x != id);
             self.lru_order.push(id.clone());
@@ -213,7 +290,9 @@ impl NodeCache {
     }
 
     pub fn put(&mut self, id: NodeId, output: CachedValue) {
-        if self.strategy == CacheStrategy::NoCache { return; }
+        if self.strategy == CacheStrategy::NoCache {
+            return;
+        }
         if let CacheStrategy::Lru { capacity } = self.strategy {
             if self.entries.len() >= capacity && !self.entries.contains_key(&id) {
                 if let Some(oldest) = self.lru_order.first().cloned() {
@@ -232,8 +311,12 @@ impl NodeCache {
         self.lru_order.retain(|x| x != id);
     }
 
-    pub fn len(&self) -> usize { self.entries.len() }
-    pub fn is_empty(&self) -> bool { self.entries.is_empty() }
+    pub fn len(&self) -> usize {
+        self.entries.len()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
 }
 
 #[cfg(test)]
@@ -269,7 +352,9 @@ mod tests {
     #[test]
     fn ram_pressure_evicts_batch() {
         let mut cache = RamPressureCache::new(4);
-        for i in 0..4u64 { cache.put(i, CachedValue::String(format!("{i}"))); }
+        for i in 0..4u64 {
+            cache.put(i, CachedValue::String(format!("{i}")));
+        }
         cache.put(4, CachedValue::String("4".into())); // triggers eviction of 25%
         assert!(cache.len() <= 4);
     }
@@ -351,7 +436,10 @@ mod tests {
         cache.put("b".to_string(), CachedValue::String("2".into()));
         // Adding "c" must evict "a" (oldest, LRU)
         cache.put("c".to_string(), CachedValue::String("3".into()));
-        assert!(cache.get(&"a".to_string()).is_none(), "a should have been evicted");
+        assert!(
+            cache.get(&"a".to_string()).is_none(),
+            "a should have been evicted"
+        );
         assert!(cache.get(&"b".to_string()).is_some());
         assert!(cache.get(&"c".to_string()).is_some());
         assert_eq!(cache.len(), 2);
@@ -361,7 +449,9 @@ mod tests {
     fn cache_classic_stores_and_retrieves() {
         let mut cache = NodeCache::new(CacheStrategy::Classic);
         cache.put("node1".to_string(), CachedValue::Bytes(vec![1, 2, 3]));
-        let val = cache.get(&"node1".to_string()).expect("Classic cache should store and retrieve");
+        let val = cache
+            .get(&"node1".to_string())
+            .expect("Classic cache should store and retrieve");
         match val {
             CachedValue::Bytes(b) => assert_eq!(b, &[1u8, 2, 3]),
             _ => panic!("wrong variant"),
@@ -397,17 +487,26 @@ mod tests {
         // Evict key 10 from L1 by inserting another entry (L1 cap = 1).
         cache.l1.put(99, CachedValue::String("other".into()));
         // Verify L1 no longer holds 10 but L2 still does.
-        assert!(cache.l1.get(10).is_none(), "key 10 should have been evicted from L1");
+        assert!(
+            cache.l1.get(10).is_none(),
+            "key 10 should have been evicted from L1"
+        );
         assert!(cache.l2.get(10).is_some(), "key 10 should still be in L2");
         // get_promoting should find it in L2 and promote to L1.
         let result = cache.get_promoting(10);
-        assert!(result.is_some(), "get_promoting should return the L2-resident value");
+        assert!(
+            result.is_some(),
+            "get_promoting should return the L2-resident value"
+        );
         match result.unwrap() {
             CachedValue::String(s) => assert_eq!(s, "ten"),
             _ => panic!("wrong variant"),
         }
         // After promotion, L1 should now contain key 10.
-        assert!(cache.l1.get(10).is_some(), "key 10 should be promoted back to L1");
+        assert!(
+            cache.l1.get(10).is_some(),
+            "key 10 should be promoted back to L1"
+        );
     }
 
     #[test]
@@ -422,8 +521,14 @@ mod tests {
         assert!(cache.get(1).is_some());
         // inserting key 3 must evict key 2 (LRU after get(1)), not key 1
         cache.put(3, CachedValue::String("c".into()));
-        assert!(cache.get(1).is_some(), "key 1 should survive (was touched by get)");
-        assert!(cache.get(2).is_none(), "key 2 should have been evicted (LRU after get(1))");
+        assert!(
+            cache.get(1).is_some(),
+            "key 1 should survive (was touched by get)"
+        );
+        assert!(
+            cache.get(2).is_none(),
+            "key 2 should have been evicted (LRU after get(1))"
+        );
         assert!(cache.get(3).is_some());
     }
 

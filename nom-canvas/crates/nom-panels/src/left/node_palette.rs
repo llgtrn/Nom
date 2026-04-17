@@ -81,11 +81,21 @@ impl Default for NodePalette {
 }
 
 impl Panel for NodePalette {
-    fn id(&self) -> &str { "node-palette" }
-    fn title(&self) -> &str { "Node Palette" }
-    fn default_size(&self) -> f32 { 248.0 }
-    fn position(&self) -> DockPosition { DockPosition::Left }
-    fn activation_priority(&self) -> u32 { 30 }
+    fn id(&self) -> &str {
+        "node-palette"
+    }
+    fn title(&self) -> &str {
+        "Node Palette"
+    }
+    fn default_size(&self) -> f32 {
+        248.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Left
+    }
+    fn activation_priority(&self) -> u32 {
+        30
+    }
 }
 
 #[cfg(test)]

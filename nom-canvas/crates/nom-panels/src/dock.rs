@@ -33,14 +33,22 @@ pub fn rgba_to_hsla(c: [f32; 4]) -> Hsla {
 pub fn fill_quad(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Quad {
     Quad {
         bounds: Bounds {
-            origin: Point { x: Pixels(x), y: Pixels(y) },
-            size: Size { width: Pixels(w), height: Pixels(h) },
+            origin: Point {
+                x: Pixels(x),
+                y: Pixels(y),
+            },
+            size: Size {
+                width: Pixels(w),
+                height: Pixels(h),
+            },
         },
         background: Some(rgba_to_hsla(color)),
         border_color: None,
         border_widths: Edges::default(),
         corner_radii: Corners::default(),
-        content_mask: ContentMask { bounds: Bounds::default() },
+        content_mask: ContentMask {
+            bounds: Bounds::default(),
+        },
     }
 }
 
@@ -50,8 +58,14 @@ pub fn fill_quad(x: f32, y: f32, w: f32, h: f32, color: [f32; 4]) -> Quad {
 pub fn focus_ring_quad(x: f32, y: f32, w: f32, h: f32) -> Quad {
     Quad {
         bounds: Bounds {
-            origin: Point { x: Pixels(x), y: Pixels(y) },
-            size: Size { width: Pixels(w), height: Pixels(h) },
+            origin: Point {
+                x: Pixels(x),
+                y: Pixels(y),
+            },
+            size: Size {
+                width: Pixels(w),
+                height: Pixels(h),
+            },
         },
         background: None,
         border_color: Some(rgba_to_hsla(tokens::FOCUS)),
@@ -62,24 +76,43 @@ pub fn focus_ring_quad(x: f32, y: f32, w: f32, h: f32) -> Quad {
             bottom: Pixels(2.0),
         },
         corner_radii: Corners::default(),
-        content_mask: ContentMask { bounds: Bounds::default() },
+        content_mask: ContentMask {
+            bounds: Bounds::default(),
+        },
     }
 }
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
-pub enum DockPosition { Left, Right, Bottom }
+pub enum DockPosition {
+    Left,
+    Right,
+    Bottom,
+}
 
 pub struct PanelSizeState {
-    pub size: Option<f32>,   // fixed pixel size
-    pub flex: Option<f32>,   // proportional (0.0–1.0), overrides size when set
+    pub size: Option<f32>, // fixed pixel size
+    pub flex: Option<f32>, // proportional (0.0–1.0), overrides size when set
 }
 
 impl PanelSizeState {
-    pub fn fixed(px: f32) -> Self { Self { size: Some(px), flex: None } }
-    pub fn flex(ratio: f32) -> Self { Self { size: None, flex: Some(ratio.clamp(0.0, 1.0)) } }
+    pub fn fixed(px: f32) -> Self {
+        Self {
+            size: Some(px),
+            flex: None,
+        }
+    }
+    pub fn flex(ratio: f32) -> Self {
+        Self {
+            size: None,
+            flex: Some(ratio.clamp(0.0, 1.0)),
+        }
+    }
     pub fn effective_size(&self, container: f32) -> f32 {
-        if let Some(f) = self.flex { f * container }
-        else { self.size.unwrap_or(0.0) }
+        if let Some(f) = self.flex {
+            f * container
+        } else {
+            self.size.unwrap_or(0.0)
+        }
     }
 }
 
@@ -98,7 +131,12 @@ pub struct Dock {
 
 impl Dock {
     pub fn new(position: DockPosition) -> Self {
-        Self { position, entries: vec![], active_index: None, is_open: true }
+        Self {
+            position,
+            entries: vec![],
+            active_index: None,
+            is_open: true,
+        }
     }
 
     pub fn add_panel(&mut self, id: impl Into<String>, size_px: f32) {
@@ -124,46 +162,83 @@ impl Dock {
     }
 
     pub fn active_panel_id(&self) -> Option<&str> {
-        self.active_index.and_then(|i| self.entries.get(i)).map(|e| e.id.as_str())
+        self.active_index
+            .and_then(|i| self.entries.get(i))
+            .map(|e| e.id.as_str())
     }
 
-    pub fn toggle(&mut self) { self.is_open = !self.is_open; }
-    pub fn panel_count(&self) -> usize { self.entries.len() }
+    pub fn toggle(&mut self) {
+        self.is_open = !self.is_open;
+    }
+    pub fn panel_count(&self) -> usize {
+        self.entries.len()
+    }
 
     /// Paint the dock chrome (sidebar background + active-tab highlight)
     /// into the shared GPU scene.
     pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
-        if !self.is_open { return; }
+        if !self.is_open {
+            return;
+        }
 
         let (x, y, w, h) = match self.position {
-            DockPosition::Left   => (0.0,            0.0,             220.0, height),
-            DockPosition::Right  => (width - 220.0,  0.0,             220.0, height),
-            DockPosition::Bottom => (0.0,            height - 160.0,  width, 160.0),
+            DockPosition::Left => (0.0, 0.0, 220.0, height),
+            DockPosition::Right => (width - 220.0, 0.0, 220.0, height),
+            DockPosition::Bottom => (0.0, height - 160.0, width, 160.0),
         };
 
         // Sidebar background with a 1px border on the inside edge.
         let border_edges = match self.position {
-            DockPosition::Left   => Edges { left: Pixels(0.0), right: Pixels(1.0), top: Pixels(0.0), bottom: Pixels(0.0) },
-            DockPosition::Right  => Edges { left: Pixels(1.0), right: Pixels(0.0), top: Pixels(0.0), bottom: Pixels(0.0) },
-            DockPosition::Bottom => Edges { left: Pixels(0.0), right: Pixels(0.0), top: Pixels(1.0), bottom: Pixels(0.0) },
+            DockPosition::Left => Edges {
+                left: Pixels(0.0),
+                right: Pixels(1.0),
+                top: Pixels(0.0),
+                bottom: Pixels(0.0),
+            },
+            DockPosition::Right => Edges {
+                left: Pixels(1.0),
+                right: Pixels(0.0),
+                top: Pixels(0.0),
+                bottom: Pixels(0.0),
+            },
+            DockPosition::Bottom => Edges {
+                left: Pixels(0.0),
+                right: Pixels(0.0),
+                top: Pixels(1.0),
+                bottom: Pixels(0.0),
+            },
         };
         scene.push_quad(Quad {
             bounds: Bounds {
-                origin: Point { x: Pixels(x), y: Pixels(y) },
-                size: Size { width: Pixels(w), height: Pixels(h) },
+                origin: Point {
+                    x: Pixels(x),
+                    y: Pixels(y),
+                },
+                size: Size {
+                    width: Pixels(w),
+                    height: Pixels(h),
+                },
             },
             background: Some(rgba_to_hsla(tokens::BG)),
             border_color: Some(rgba_to_hsla(tokens::BORDER)),
             border_widths: border_edges,
             corner_radii: Corners::default(),
-            content_mask: ContentMask { bounds: Bounds::default() },
+            content_mask: ContentMask {
+                bounds: Bounds::default(),
+            },
         });
 
         // Frosted-glass surface overlay — blurred, semi-transparent panel skin.
         scene.push_frosted_rect(FrostedRect {
             bounds: Bounds {
-                origin: Point { x: Pixels(x), y: Pixels(y) },
-                size: Size { width: Pixels(w), height: Pixels(h) },
+                origin: Point {
+                    x: Pixels(x),
+                    y: Pixels(y),
+                },
+                size: Size {
+                    width: Pixels(w),
+                    height: Pixels(h),
+                },
             },
             blur_radius: tokens::FROSTED_BLUR_RADIUS,
             bg_alpha: tokens::FROSTED_BG_ALPHA,
@@ -172,8 +247,12 @@ impl Dock {
 
         // Active-tab focus ring: 2px border-only outline (no fill).
         for (i, entry) in self.entries.iter().enumerate() {
-            if !entry.is_visible { continue; }
-            if self.active_index != Some(i) { continue; }
+            if !entry.is_visible {
+                continue;
+            }
+            if self.active_index != Some(i) {
+                continue;
+            }
             let tab_y = y + 8.0 + i as f32 * 24.0;
             scene.push_quad(focus_ring_quad(x + 2.0, tab_y - 2.0, w - 4.0, 20.0));
         }
@@ -227,13 +306,27 @@ pub trait Panel {
     fn title(&self) -> &str;
     fn default_size(&self) -> f32;
     fn position(&self) -> DockPosition;
-    fn is_visible(&self) -> bool { true }
-    fn activation_priority(&self) -> u32 { 100 }
-    fn persistent_name(&self) -> &str { "" }
-    fn toggle_action(&self) -> &str { "" }
-    fn icon(&self) -> Option<&str> { None }
-    fn icon_label(&self) -> &str { "" }
-    fn is_agent_panel(&self) -> bool { false }
+    fn is_visible(&self) -> bool {
+        true
+    }
+    fn activation_priority(&self) -> u32 {
+        100
+    }
+    fn persistent_name(&self) -> &str {
+        ""
+    }
+    fn toggle_action(&self) -> &str {
+        ""
+    }
+    fn icon(&self) -> Option<&str> {
+        None
+    }
+    fn icon_label(&self) -> &str {
+        ""
+    }
+    fn is_agent_panel(&self) -> bool {
+        false
+    }
 }
 
 #[cfg(test)]
@@ -362,8 +455,14 @@ mod tests {
         dock.add_panel("file-tree", 248.0);
         let mut cx = WindowContext::new(1.0, Vec2::new(1440.0, 900.0));
         let bounds = Bounds {
-            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-            size: Size { width: Pixels(1440.0), height: Pixels(900.0) },
+            origin: Point {
+                x: Pixels(0.0),
+                y: Pixels(0.0),
+            },
+            size: Size {
+                width: Pixels(1440.0),
+                height: Pixels(900.0),
+            },
         };
 
         // Phase 1: request_layout returns a valid LayoutId.
@@ -405,8 +504,14 @@ mod tests {
 
         // quads[1] is the active-tab focus ring.
         let ring = &scene.quads[1];
-        assert!(ring.background.is_none(), "focus ring must have no background fill");
-        assert!(ring.border_color.is_some(), "focus ring must have a border color");
+        assert!(
+            ring.background.is_none(),
+            "focus ring must have no background fill"
+        );
+        assert!(
+            ring.border_color.is_some(),
+            "focus ring must have a border color"
+        );
         assert_eq!(ring.border_widths.top, Pixels(2.0));
         assert_eq!(ring.border_widths.right, Pixels(2.0));
         assert_eq!(ring.border_widths.bottom, Pixels(2.0));
@@ -433,5 +538,4 @@ mod tests {
         dock.toggle();
         assert!(dock.is_open, "dock should be open after second toggle");
     }
-
 }

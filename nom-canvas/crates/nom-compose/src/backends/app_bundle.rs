@@ -61,4 +61,29 @@ mod tests {
         let result = compose(&spec);
         assert!(result.is_ok(), "compose must return Ok for valid spec");
     }
+
+    #[test]
+    fn app_bundle_backend_kind() {
+        // AppBundleSpec version and entry_point fields preserved.
+        let spec = AppBundleSpec {
+            name: "canvas-app".into(),
+            version: "2.0.0".into(),
+            targets: vec![AppTarget::Web, AppTarget::Mobile],
+            entry_point: "src/main.ts".into(),
+        };
+        assert_eq!(spec.version, "2.0.0");
+        assert_eq!(spec.entry_point, "src/main.ts");
+        assert_eq!(spec.target_count(), 2);
+    }
+
+    #[test]
+    fn app_bundle_backend_compose_ok() {
+        let spec = AppBundleSpec {
+            name: "nom-viewer".into(),
+            version: "1.0.0".into(),
+            targets: vec![AppTarget::Desktop],
+            entry_point: "src/viewer.rs".into(),
+        };
+        assert!(compose(&spec).is_ok());
+    }
 }

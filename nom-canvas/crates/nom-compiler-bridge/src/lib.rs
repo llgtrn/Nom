@@ -1,18 +1,20 @@
 #![deny(unsafe_code)]
+pub mod adapters;
+pub mod background_tier;
+pub mod interactive_tier;
+pub mod lsp_provider;
 pub mod shared;
 pub mod sqlite_dict;
 pub mod ui_tier;
-pub mod interactive_tier;
-pub mod background_tier;
-pub mod adapters;
-pub mod lsp_provider;
 
-pub use shared::{SharedState, PipelineOutput, GrammarKind};
+pub use background_tier::BackgroundTierOps;
+pub use interactive_tier::InteractiveTierOps;
+pub use lsp_provider::{
+    CompilerLspProvider, CompletionItem, HoverResponse, LspDiagnostic, LspSeverity,
+};
+pub use shared::{GrammarKind, PipelineOutput, SharedState};
 pub use sqlite_dict::SqliteDictReader;
 pub use ui_tier::UiTierOps;
-pub use interactive_tier::InteractiveTierOps;
-pub use background_tier::BackgroundTierOps;
-pub use lsp_provider::{CompilerLspProvider, HoverResponse, CompletionItem, LspDiagnostic, LspSeverity};
 
 /// Bridge state — central coordinator for all nom-compiler access from nom-canvas
 pub struct BridgeState {

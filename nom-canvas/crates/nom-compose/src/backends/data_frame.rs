@@ -11,12 +11,19 @@ pub struct DataFrame {
 
 impl DataFrame {
     pub fn new(columns: Vec<String>) -> Self {
-        Self { columns, rows: Vec::new() }
+        Self {
+            columns,
+            rows: Vec::new(),
+        }
     }
 
-    pub fn row_count(&self) -> usize { self.rows.len() }
+    pub fn row_count(&self) -> usize {
+        self.rows.len()
+    }
 
-    pub fn column_count(&self) -> usize { self.columns.len() }
+    pub fn column_count(&self) -> usize {
+        self.columns.len()
+    }
 
     pub fn add_row(&mut self, row: Vec<String>) {
         self.rows.push(row);
@@ -120,5 +127,29 @@ mod tests {
             transform: None,
         };
         assert!(compose(&spec, None).is_err());
+    }
+
+    #[test]
+    fn data_frame_backend_kind() {
+        // Verify DataFrameSpec fields and module identity.
+        let spec = DataFrameSpec {
+            source_query: "SELECT * FROM metrics".into(),
+            limit: Some(50),
+            transform: None,
+        };
+        assert_eq!(spec.limit, Some(50));
+        assert!(!spec.source_query.is_empty());
+    }
+
+    #[test]
+    fn data_frame_backend_compose_ok() {
+        let spec = DataFrameSpec {
+            source_query: "SELECT id FROM logs".into(),
+            limit: None,
+            transform: None,
+        };
+        let mut df = DataFrame::new(vec!["id".into()]);
+        df.add_row(vec!["42".into()]);
+        assert!(compose(&spec, Some(df)).is_ok());
     }
 }

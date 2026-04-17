@@ -18,7 +18,11 @@ pub struct PropertiesPanel {
 
 impl PropertiesPanel {
     pub fn new() -> Self {
-        Self { entity_id: None, entity_kind: None, rows: vec![] }
+        Self {
+            entity_id: None,
+            entity_kind: None,
+            rows: vec![],
+        }
     }
 
     pub fn load_entity(&mut self, id: &str, kind: &str) {
@@ -33,7 +37,11 @@ impl PropertiesPanel {
             row.value = value.into();
             row.editable = editable;
         } else {
-            self.rows.push(PropertyRow { key, value: value.into(), editable });
+            self.rows.push(PropertyRow {
+                key,
+                value: value.into(),
+                editable,
+            });
         }
     }
 
@@ -71,11 +79,21 @@ impl Default for PropertiesPanel {
 }
 
 impl Panel for PropertiesPanel {
-    fn id(&self) -> &str { "properties" }
-    fn title(&self) -> &str { "Properties" }
-    fn default_size(&self) -> f32 { 280.0 }
-    fn position(&self) -> DockPosition { DockPosition::Right }
-    fn activation_priority(&self) -> u32 { 20 }
+    fn id(&self) -> &str {
+        "properties"
+    }
+    fn title(&self) -> &str {
+        "Properties"
+    }
+    fn default_size(&self) -> f32 {
+        280.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Right
+    }
+    fn activation_priority(&self) -> u32 {
+        20
+    }
 }
 
 #[cfg(test)]

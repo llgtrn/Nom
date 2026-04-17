@@ -370,7 +370,8 @@ impl nom_gpui::element::Element for GraphNodeElement {
         _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
         _state: &mut (),
         _cx: &mut nom_gpui::element::WindowContext,
-    ) {}
+    ) {
+    }
 
     fn paint(
         &mut self,
@@ -404,7 +405,8 @@ impl nom_gpui::element::Element for WireElement {
         _bounds: nom_gpui::types::Bounds<nom_gpui::types::Pixels>,
         _state: &mut (),
         _cx: &mut nom_gpui::element::WindowContext,
-    ) {}
+    ) {
+    }
 
     fn paint(
         &mut self,
@@ -415,8 +417,14 @@ impl nom_gpui::element::Element for WireElement {
     ) {
         // Push real GPU primitives to a local scene.
         let mut scene = nom_gpui::scene::Scene::new();
-        let from_pos = [self.waypoints.first().copied().unwrap_or([0.0, 0.0])[0], 0.0];
-        let to_pos = [self.waypoints.last().copied().unwrap_or([100.0, 100.0])[0], 100.0];
+        let from_pos = [
+            self.waypoints.first().copied().unwrap_or([0.0, 0.0])[0],
+            0.0,
+        ];
+        let to_pos = [
+            self.waypoints.last().copied().unwrap_or([100.0, 100.0])[0],
+            100.0,
+        ];
         paint_wire(self, from_pos, to_pos, &mut scene);
     }
 }
@@ -425,11 +433,7 @@ impl nom_gpui::element::Element for WireElement {
 ///
 /// Waypoints are not considered — this gives the straight-line midpoint
 /// between the two connected node positions, suitable for label placement.
-pub fn wire_midpoint(
-    _wire: &WireElement,
-    from_pos: [f32; 2],
-    to_pos: [f32; 2],
-) -> [f32; 2] {
+pub fn wire_midpoint(_wire: &WireElement, from_pos: [f32; 2], to_pos: [f32; 2]) -> [f32; 2] {
     [
         (from_pos[0] + to_pos[0]) / 2.0,
         (from_pos[1] + to_pos[1]) / 2.0,
@@ -465,12 +469,24 @@ impl CanvasConnector {
         let mut min = self.route[0];
         let mut max = self.route[0];
         for pt in &self.route {
-            if pt[0] < min[0] { min[0] = pt[0]; }
-            if pt[1] < min[1] { min[1] = pt[1]; }
-            if pt[0] > max[0] { max[0] = pt[0]; }
-            if pt[1] > max[1] { max[1] = pt[1]; }
+            if pt[0] < min[0] {
+                min[0] = pt[0];
+            }
+            if pt[1] < min[1] {
+                min[1] = pt[1];
+            }
+            if pt[0] > max[0] {
+                max[0] = pt[0];
+            }
+            if pt[1] > max[1] {
+                max[1] = pt[1];
+            }
         }
-        Some(ElementBounds { id: self.id, min, max })
+        Some(ElementBounds {
+            id: self.id,
+            min,
+            max,
+        })
     }
 }
 
@@ -493,8 +509,16 @@ mod tests {
         assert_eq!(aabb.id, 1);
         assert!((aabb.min[0] - 10.0).abs() < 1e-6);
         assert!((aabb.min[1] - 20.0).abs() < 1e-6);
-        assert!((aabb.max[0] - 40.0).abs() < 1e-6, "max x should be 10+30=40, got {}", aabb.max[0]);
-        assert!((aabb.max[1] - 60.0).abs() < 1e-6, "max y should be 20+40=60, got {}", aabb.max[1]);
+        assert!(
+            (aabb.max[0] - 40.0).abs() < 1e-6,
+            "max x should be 10+30=40, got {}",
+            aabb.max[0]
+        );
+        assert!(
+            (aabb.max[1] - 60.0).abs() < 1e-6,
+            "max y should be 20+40=60, got {}",
+            aabb.max[1]
+        );
     }
 
     #[test]
@@ -581,8 +605,16 @@ mod tests {
         let (tl, br) = bounding_box(&node);
         assert!((tl[0] - 5.0).abs() < 1e-6);
         assert!((tl[1] - 10.0).abs() < 1e-6);
-        assert!((br[0] - 85.0).abs() < 1e-6, "br x should be 5+80=85, got {}", br[0]);
-        assert!((br[1] - 50.0).abs() < 1e-6, "br y should be 10+40=50, got {}", br[1]);
+        assert!(
+            (br[0] - 85.0).abs() < 1e-6,
+            "br x should be 5+80=85, got {}",
+            br[0]
+        );
+        assert!(
+            (br[1] - 50.0).abs() < 1e-6,
+            "br y should be 10+40=50, got {}",
+            br[1]
+        );
     }
 
     #[test]
@@ -677,7 +709,10 @@ mod tests {
         let mut scene = nom_gpui::scene::Scene::new();
         paint_graph_node(&node, &mut scene);
         // 1 body quad + 4 port quads = 5 total.
-        assert!(scene.quads.len() > 0, "paint_graph_node must push at least one quad");
+        assert!(
+            scene.quads.len() > 0,
+            "paint_graph_node must push at least one quad"
+        );
         assert_eq!(scene.quads.len(), 5, "expected 1 body + 4 port quads");
     }
 
@@ -692,7 +727,10 @@ mod tests {
         };
         let mut scene = nom_gpui::scene::Scene::new();
         paint_wire(&wire, [0.0, 0.0], [100.0, 100.0], &mut scene);
-        assert!(scene.quads.len() > 0, "paint_wire must push at least one quad");
+        assert!(
+            scene.quads.len() > 0,
+            "paint_wire must push at least one quad"
+        );
         assert_eq!(scene.quads.len(), 6, "expected 6 segment quads");
     }
 
@@ -727,7 +765,11 @@ mod tests {
             })
             .collect();
         let max_z = rects.iter().map(|r| r.z_index).max().unwrap_or(0);
-        let front = CanvasRect { id: 99, z_index: max_z + 1, ..rects[0].clone() };
+        let front = CanvasRect {
+            id: 99,
+            z_index: max_z + 1,
+            ..rects[0].clone()
+        };
         assert!(
             front.z_index > max_z,
             "brought-to-front element must have z_index > all others"
@@ -749,7 +791,11 @@ mod tests {
             .collect();
         let min_z = rects.iter().map(|r| r.z_index).min().unwrap_or(0);
         // Send-to-back element gets z_index = 0 (below all existing).
-        let back = CanvasRect { id: 99, z_index: 0, ..rects[0].clone() };
+        let back = CanvasRect {
+            id: 99,
+            z_index: 0,
+            ..rects[0].clone()
+        };
         assert!(
             back.z_index <= min_z,
             "sent-to-back element must have z_index ≤ all others"
@@ -775,14 +821,20 @@ mod tests {
         let a = CanvasRect {
             id: 1,
             bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None,
-            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         let b = CanvasRect {
             id: 2,
             bounds: ([0.0, 0.0], [10.0, 10.0]),
-            fill: None, stroke: None,
-            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         assert_ne!(a.id, b.id, "two distinct elements must have different IDs");
     }
@@ -792,8 +844,11 @@ mod tests {
         let r = CanvasRect {
             id: 3,
             bounds: ([5.0, 10.0], [40.0, 30.0]),
-            fill: None, stroke: None,
-            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
         };
         let aabb = r.bounds_aabb();
         assert!((aabb.min[0] - 5.0).abs() < 1e-6);
@@ -833,7 +888,8 @@ mod tests {
             assert!(
                 wire.confidence >= 0.0 && wire.confidence <= 1.0,
                 "confidence {} ({}) must be in [0,1]",
-                conf, band
+                conf,
+                band
             );
         }
     }
@@ -865,5 +921,39 @@ mod tests {
             z_index: 0,
         };
         assert_eq!(e.z_index, 0);
+    }
+
+    /// GraphNodeElement has a label field and it roundtrips correctly.
+    #[test]
+    fn element_label_field() {
+        let node = GraphNodeElement {
+            id: 100,
+            node_id: 1,
+            position: [0.0, 0.0],
+            size: [80.0, 40.0],
+            label: "Canvas Block".to_string(),
+            confidence: 1.0,
+        };
+        assert_eq!(
+            node.label, "Canvas Block",
+            "label field must store the provided string"
+        );
+        assert!(!node.label.is_empty(), "label must not be empty");
+    }
+
+    /// WireElement has a waypoints vec that acts as the children/control-points collection.
+    #[test]
+    fn element_group_children() {
+        let wire = WireElement {
+            id: 200,
+            from_node: 1,
+            to_node: 2,
+            confidence: 0.8,
+            waypoints: vec![[10.0, 10.0], [50.0, 50.0], [90.0, 10.0]],
+        };
+        assert_eq!(wire.waypoints.len(), 3, "waypoints vec must hold 3 entries");
+        assert!((wire.waypoints[0][0] - 10.0).abs() < 1e-6);
+        assert!((wire.waypoints[1][0] - 50.0).abs() < 1e-6);
+        assert!((wire.waypoints[2][0] - 90.0).abs() < 1e-6);
     }
 }

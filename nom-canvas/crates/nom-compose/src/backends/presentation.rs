@@ -44,13 +44,11 @@ mod tests {
         let mut spec = PresentationSpec {
             title: "Q1 Review".into(),
             author: "Alice".into(),
-            slides: vec![
-                PresentationSlide {
-                    title: "Intro".into(),
-                    body: "Welcome".into(),
-                    speaker_notes: "Say hello".into(),
-                },
-            ],
+            slides: vec![PresentationSlide {
+                title: "Intro".into(),
+                body: "Welcome".into(),
+                speaker_notes: "Say hello".into(),
+            }],
             theme: "dark".into(),
         };
         assert_eq!(spec.slide_count(), 1);
@@ -67,16 +65,43 @@ mod tests {
         let spec = PresentationSpec {
             title: "Annual Deck".into(),
             author: "Bob".into(),
-            slides: vec![
-                PresentationSlide {
-                    title: "Cover".into(),
-                    body: "Company name".into(),
-                    speaker_notes: "".into(),
-                },
-            ],
+            slides: vec![PresentationSlide {
+                title: "Cover".into(),
+                body: "Company name".into(),
+                speaker_notes: "".into(),
+            }],
             theme: "light".into(),
         };
         let result = compose(&spec);
         assert!(result.is_ok(), "compose must return Ok for valid spec");
+    }
+
+    #[test]
+    fn presentation_backend_kind() {
+        // PresentationSpec carries theme and author metadata.
+        let spec = PresentationSpec {
+            title: "Tech Talk".into(),
+            author: "Carol".into(),
+            slides: vec![],
+            theme: "corporate".into(),
+        };
+        assert_eq!(spec.author, "Carol");
+        assert_eq!(spec.theme, "corporate");
+        assert_eq!(spec.slide_count(), 0);
+    }
+
+    #[test]
+    fn presentation_backend_compose_ok() {
+        let spec = PresentationSpec {
+            title: "Product Demo".into(),
+            author: "Dave".into(),
+            slides: vec![PresentationSlide {
+                title: "Overview".into(),
+                body: "Key features".into(),
+                speaker_notes: "Mention timeline".into(),
+            }],
+            theme: "minimal".into(),
+        };
+        assert!(compose(&spec).is_ok());
     }
 }

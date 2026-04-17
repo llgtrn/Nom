@@ -9,12 +9,24 @@ pub struct ScrollPosition {
 }
 impl Default for ScrollPosition {
     fn default() -> Self {
-        Self { top_row: 0, anchor_row: 0, anchor_col: 0, vertical_offset: 0.0, horizontal_offset: 0.0 }
+        Self {
+            top_row: 0,
+            anchor_row: 0,
+            anchor_col: 0,
+            vertical_offset: 0.0,
+            horizontal_offset: 0.0,
+        }
     }
 }
 impl ScrollPosition {
     pub fn with_anchor(row: usize, col: usize) -> Self {
-        Self { top_row: row, anchor_row: row, anchor_col: col, vertical_offset: 0.0, horizontal_offset: 0.0 }
+        Self {
+            top_row: row,
+            anchor_row: row,
+            anchor_col: col,
+            vertical_offset: 0.0,
+            horizontal_offset: 0.0,
+        }
     }
 
     /// Adjust `top_row` so that `line` is visible within `viewport_lines` rows.
@@ -30,13 +42,22 @@ impl ScrollPosition {
 
     pub fn scroll_by(&mut self, dy: f32, line_height: f32) {
         self.vertical_offset += dy;
-        while self.vertical_offset >= line_height { self.top_row += 1; self.vertical_offset -= line_height; }
-        while self.vertical_offset < 0.0 && self.top_row > 0 { self.top_row -= 1; self.vertical_offset += line_height; }
+        while self.vertical_offset >= line_height {
+            self.top_row += 1;
+            self.vertical_offset -= line_height;
+        }
+        while self.vertical_offset < 0.0 && self.top_row > 0 {
+            self.top_row -= 1;
+            self.vertical_offset += line_height;
+        }
         self.vertical_offset = self.vertical_offset.max(0.0);
     }
     pub fn ensure_visible(&mut self, row: usize, visible_rows: usize) {
-        if row < self.top_row { self.top_row = row; }
-        else if row >= self.top_row + visible_rows { self.top_row = row + 1 - visible_rows; }
+        if row < self.top_row {
+            self.top_row = row;
+        } else if row >= self.top_row + visible_rows {
+            self.top_row = row + 1 - visible_rows;
+        }
     }
     pub fn to_pixel_offset(&self, line_height: f32) -> f32 {
         self.top_row as f32 * line_height + self.vertical_offset
@@ -56,7 +77,13 @@ mod tests {
 
     #[test]
     fn scroll_by_negative_decreases_top_row() {
-        let mut pos = ScrollPosition { top_row: 5, anchor_row: 5, anchor_col: 0, vertical_offset: 0.0, horizontal_offset: 0.0 };
+        let mut pos = ScrollPosition {
+            top_row: 5,
+            anchor_row: 5,
+            anchor_col: 0,
+            vertical_offset: 0.0,
+            horizontal_offset: 0.0,
+        };
         pos.scroll_by(-16.0, 16.0);
         assert_eq!(pos.top_row, 4);
     }
@@ -70,14 +97,26 @@ mod tests {
 
     #[test]
     fn scroll_ensure_visible_already_visible() {
-        let mut pos = ScrollPosition { top_row: 3, anchor_row: 3, anchor_col: 0, vertical_offset: 0.0, horizontal_offset: 0.0 };
+        let mut pos = ScrollPosition {
+            top_row: 3,
+            anchor_row: 3,
+            anchor_col: 0,
+            vertical_offset: 0.0,
+            horizontal_offset: 0.0,
+        };
         pos.ensure_visible(5, 10);
         assert_eq!(pos.top_row, 3);
     }
 
     #[test]
     fn scroll_to_pixel_offset() {
-        let pos = ScrollPosition { top_row: 3, anchor_row: 3, anchor_col: 0, vertical_offset: 4.0, horizontal_offset: 0.0 };
+        let pos = ScrollPosition {
+            top_row: 3,
+            anchor_row: 3,
+            anchor_col: 0,
+            vertical_offset: 4.0,
+            horizontal_offset: 0.0,
+        };
         let offset = pos.to_pixel_offset(16.0);
         assert!((offset - 52.0).abs() < f32::EPSILON);
     }

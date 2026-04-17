@@ -12,7 +12,11 @@ pub struct ToolbarButton {
 
 impl ToolbarButton {
     pub fn new(label: impl Into<String>, action: impl Into<String>) -> Self {
-        Self { label: label.into(), action: action.into(), active: false }
+        Self {
+            label: label.into(),
+            action: action.into(),
+            active: false,
+        }
     }
 }
 
@@ -23,7 +27,10 @@ pub struct Toolbar {
 
 impl Toolbar {
     pub fn new() -> Self {
-        Self { buttons: vec![], height: 48.0 }
+        Self {
+            buttons: vec![],
+            height: 48.0,
+        }
     }
 
     pub fn add_button(&mut self, label: impl Into<String>, action: impl Into<String>) {
@@ -55,12 +62,20 @@ impl Toolbar {
         }
 
         // Bottom border
-        scene.push_quad(fill_quad(0.0, self.height - 1.0, width, 1.0, tokens::EDGE_LOW));
+        scene.push_quad(fill_quad(
+            0.0,
+            self.height - 1.0,
+            width,
+            1.0,
+            tokens::EDGE_LOW,
+        ));
     }
 }
 
 impl Default for Toolbar {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -138,6 +153,33 @@ mod tests {
     }
 
     #[test]
+    fn toolbar_button_action() {
+        let btn = ToolbarButton::new("Run", "run_action");
+        assert_eq!(btn.action, "run_action");
+        assert_eq!(btn.label, "Run");
+    }
+
+    #[test]
+    fn toolbar_button_active_state() {
+        let mut toolbar = Toolbar::new();
+        toolbar.add_button("Build", "build");
+        toolbar.set_active("build");
+        assert!(toolbar.buttons[0].active);
+        // Toggle off by activating a different action
+        toolbar.set_active("other");
+        assert!(!toolbar.buttons[0].active);
+    }
+
+    #[test]
+    fn toolbar_separator() {
+        // A separator is modeled as a button with empty action string
+        let mut toolbar = Toolbar::new();
+        toolbar.add_button("", "");
+        let sep = &toolbar.buttons[0];
+        assert!(sep.action.is_empty());
+    }
+
+    #[test]
     fn toolbar_paint_scene_emits_background() {
         let mut toolbar = Toolbar::new();
         toolbar.add_button("Run", "run");
@@ -148,7 +190,11 @@ mod tests {
         toolbar.paint_scene(1440.0, 48.0, &mut scene);
 
         // background + 2 button quads + bottom border = 4 quads minimum
-        assert!(scene.quads.len() >= 4, "expected >=4 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 4,
+            "expected >=4 quads, got {}",
+            scene.quads.len()
+        );
 
         // First quad is the background spanning full width
         let bg = &scene.quads[0];

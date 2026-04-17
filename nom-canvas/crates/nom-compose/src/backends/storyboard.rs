@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 use crate::backends::ComposeResult;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 
 /// A single frame in a video storyboard.
 #[derive(Debug, Clone)]
@@ -21,7 +21,11 @@ pub struct StoryboardSpec {
 
 impl StoryboardSpec {
     pub fn new(title: impl Into<String>, fps: u32) -> Self {
-        Self { title: title.into(), frames: Vec::new(), fps }
+        Self {
+            title: title.into(),
+            frames: Vec::new(),
+            fps,
+        }
     }
 
     pub fn add_frame(&mut self, frame: StoryboardFrame) {
@@ -37,16 +41,27 @@ impl StoryboardSpec {
 pub struct StoryboardBackend;
 
 impl StoryboardBackend {
-    pub fn compose(spec: &StoryboardSpec, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ComposeResult {
-        sink.emit(ComposeEvent::Started { backend: "storyboard".into(), entity_id: spec.title.clone() });
+    pub fn compose(
+        spec: &StoryboardSpec,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> ComposeResult {
+        sink.emit(ComposeEvent::Started {
+            backend: "storyboard".into(),
+            entity_id: spec.title.clone(),
+        });
 
-        let frames_json: Vec<_> = spec.frames.iter().map(|f| {
-            serde_json::json!({
-                "scene_index": f.scene_index,
-                "duration_ms": f.duration_ms,
-                "caption": f.caption,
+        let frames_json: Vec<_> = spec
+            .frames
+            .iter()
+            .map(|f| {
+                serde_json::json!({
+                    "scene_index": f.scene_index,
+                    "duration_ms": f.duration_ms,
+                    "caption": f.caption,
+                })
             })
-        }).collect();
+            .collect();
 
         let json = serde_json::json!({
             "title": spec.title,
@@ -57,10 +72,16 @@ impl StoryboardBackend {
         });
         let bytes = json.to_string().into_bytes();
 
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "serializing storyboard".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "serializing storyboard".into(),
+        });
         let artifact_hash = store.write(&bytes);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
 
         Ok(())
     }
@@ -69,15 +90,27 @@ impl StoryboardBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn storyboard_total_duration() {
         let mut spec = StoryboardSpec::new("intro", 24);
-        spec.add_frame(StoryboardFrame { scene_index: 0, duration_ms: 2000, caption: "Opening".into() });
-        spec.add_frame(StoryboardFrame { scene_index: 1, duration_ms: 3000, caption: "Main".into() });
-        spec.add_frame(StoryboardFrame { scene_index: 2, duration_ms: 1500, caption: "Outro".into() });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 0,
+            duration_ms: 2000,
+            caption: "Opening".into(),
+        });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 1,
+            duration_ms: 3000,
+            caption: "Main".into(),
+        });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 2,
+            duration_ms: 1500,
+            caption: "Outro".into(),
+        });
         assert_eq!(spec.total_duration_ms(), 6500);
     }
 
@@ -85,7 +118,11 @@ mod tests {
     fn storyboard_compose_produces_artifact() {
         let mut store = InMemoryStore::new();
         let mut spec = StoryboardSpec::new("demo", 30);
-        spec.add_frame(StoryboardFrame { scene_index: 0, duration_ms: 1000, caption: "Scene A".into() });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 0,
+            duration_ms: 1000,
+            caption: "Scene A".into(),
+        });
         let result = StoryboardBackend::compose(&spec, &mut store, &LogProgressSink);
         assert!(result.is_ok());
 
@@ -104,8 +141,16 @@ mod tests {
     fn storyboard_backend_compose_ok() {
         let mut store = InMemoryStore::new();
         let mut spec = StoryboardSpec::new("trailer", 24);
-        spec.add_frame(StoryboardFrame { scene_index: 0, duration_ms: 500, caption: "Opening".into() });
-        spec.add_frame(StoryboardFrame { scene_index: 1, duration_ms: 500, caption: "Closing".into() });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 0,
+            duration_ms: 500,
+            caption: "Opening".into(),
+        });
+        spec.add_frame(StoryboardFrame {
+            scene_index: 1,
+            duration_ms: 500,
+            caption: "Closing".into(),
+        });
         assert!(StoryboardBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
     }
 }

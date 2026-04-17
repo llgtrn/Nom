@@ -1,5 +1,5 @@
-use std::time::Duration;
 use crate::types::*;
+use std::time::Duration;
 
 // ---------------------------------------------------------------------------
 // Animation
@@ -16,10 +16,7 @@ pub struct Animation {
 }
 
 impl Animation {
-    pub fn new(
-        duration: Duration,
-        easing: impl Fn(f32) -> f32 + Send + Sync + 'static,
-    ) -> Self {
+    pub fn new(duration: Duration, easing: impl Fn(f32) -> f32 + Send + Sync + 'static) -> Self {
         Self {
             duration,
             oneshot: true,
@@ -107,9 +104,8 @@ pub mod easing {
             return 1.0 - (-omega * t).exp() * (1.0 + omega * t);
         }
         let omega_d = omega * (1.0 - zeta * zeta).sqrt();
-        1.0 - (-zeta * omega * t).exp() * (
-            (omega_d * t).cos() + (zeta * omega / omega_d) * (omega_d * t).sin()
-        )
+        1.0 - (-zeta * omega * t).exp()
+            * ((omega_d * t).cos() + (zeta * omega / omega_d) * (omega_d * t).sin())
     }
 
     /// NomCanvas connect animation: spring(400, 28).
@@ -391,7 +387,10 @@ mod tests {
         // Linear easing at t=0.5 must return exactly 0.5.
         let anim = Animation::new(Duration::from_millis(500), easing::linear());
         let result = anim.evaluate(0.5);
-        assert!((result - 0.5).abs() < 1e-6, "linear(0.5) must be 0.5, got {result}");
+        assert!(
+            (result - 0.5).abs() < 1e-6,
+            "linear(0.5) must be 0.5, got {result}"
+        );
     }
 
     #[test]
@@ -470,7 +469,10 @@ mod tests {
     #[test]
     fn spring_starts_at_zero() {
         let value = easing::spring_value(400.0, 28.0, 0.0);
-        assert!((value - 0.0).abs() < 1e-6, "spring at t=0 must be 0.0, got {value}");
+        assert!(
+            (value - 0.0).abs() < 1e-6,
+            "spring at t=0 must be 0.0, got {value}"
+        );
     }
 
     #[test]
@@ -486,6 +488,9 @@ mod tests {
         let anim = Animation::new(Duration::from_millis(1000), easing::linear()).looping();
         // At 1.5× duration the fractional part should be ~0.5
         let d = anim.delta(Duration::from_millis(1500));
-        assert!((d - 0.5).abs() < 0.01, "looping delta at 1.5× should be ~0.5, got {d}");
+        assert!(
+            (d - 0.5).abs() < 0.01,
+            "looping delta at 1.5× should be ~0.5, got {d}"
+        );
     }
 }

@@ -181,7 +181,10 @@ mod tests {
     #[test]
     fn font_registry_placeholder_ids_start_at_zero() {
         let reg = FontRegistry::placeholder();
-        assert_eq!(reg.inter_regular, 0, "inter_regular placeholder ID must be 0");
+        assert_eq!(
+            reg.inter_regular, 0,
+            "inter_regular placeholder ID must be 0"
+        );
     }
 
     #[test]
@@ -191,16 +194,31 @@ mod tests {
         let h2 = TypeStyle::heading2(&reg);
         let h3 = TypeStyle::heading3(&reg);
         // Headings use tight letter-spacing (negative values).
-        assert!(h1.letter_spacing < 0.0, "H1 letter_spacing ({}) must be negative", h1.letter_spacing);
-        assert!(h2.letter_spacing < 0.0, "H2 letter_spacing ({}) must be negative", h2.letter_spacing);
-        assert!(h3.letter_spacing < 0.0, "H3 letter_spacing ({}) must be negative", h3.letter_spacing);
+        assert!(
+            h1.letter_spacing < 0.0,
+            "H1 letter_spacing ({}) must be negative",
+            h1.letter_spacing
+        );
+        assert!(
+            h2.letter_spacing < 0.0,
+            "H2 letter_spacing ({}) must be negative",
+            h2.letter_spacing
+        );
+        assert!(
+            h3.letter_spacing < 0.0,
+            "H3 letter_spacing ({}) must be negative",
+            h3.letter_spacing
+        );
     }
 
     #[test]
     fn font_type_style_caption_line_height_positive() {
         let reg = FontRegistry::placeholder();
         let caption = TypeStyle::caption(&reg);
-        assert!(caption.line_height > 0.0, "caption line_height must be positive");
+        assert!(
+            caption.line_height > 0.0,
+            "caption line_height must be positive"
+        );
     }
 
     #[test]
@@ -212,7 +230,8 @@ mod tests {
         assert!(
             code.line_height > body.line_height,
             "code line_height ({}) should be wider than body line_height ({})",
-            code.line_height, body.line_height
+            code.line_height,
+            body.line_height
         );
     }
 
@@ -229,8 +248,113 @@ mod tests {
             TypeStyle::code_semibold(&reg),
         ];
         for (i, s) in styles.iter().enumerate() {
-            assert!(s.size > 0.0, "TypeStyle[{i}].size must be positive, got {}", s.size);
-            assert!(s.line_height > 0.0, "TypeStyle[{i}].line_height must be positive, got {}", s.line_height);
+            assert!(
+                s.size > 0.0,
+                "TypeStyle[{i}].size must be positive, got {}",
+                s.size
+            );
+            assert!(
+                s.line_height > 0.0,
+                "TypeStyle[{i}].line_height must be positive, got {}",
+                s.line_height
+            );
+        }
+    }
+
+    #[test]
+    fn font_display_larger_than_body() {
+        // H1 is the display-level heading; must exceed body size.
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        let h1 = TypeStyle::heading1(&reg);
+        assert!(
+            h1.size > body.size,
+            "H1 ({}) must be larger than body ({})",
+            h1.size,
+            body.size
+        );
+    }
+
+    #[test]
+    fn font_body_size_range() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        assert!(
+            body.size >= 12.0 && body.size <= 18.0,
+            "body font size ({}) must be between 12 and 18pt",
+            body.size
+        );
+    }
+
+    #[test]
+    fn font_code_is_monospace() {
+        // SourceCodePro IDs are sequential 4 and 5 in the placeholder registry.
+        // Verify code TypeStyle uses the SourceCodePro slot (ID >= 4).
+        let reg = FontRegistry::placeholder();
+        let code = TypeStyle::code(&reg);
+        assert_eq!(
+            code.font_id, reg.source_code_pro_regular,
+            "code TypeStyle must use source_code_pro_regular font"
+        );
+    }
+
+    #[test]
+    fn font_heading_1_largest() {
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        assert!(
+            h1.size >= h2.size,
+            "H1 ({}) must be >= H2 ({})",
+            h1.size,
+            h2.size
+        );
+    }
+
+    #[test]
+    fn font_heading_2_larger_than_body() {
+        let reg = FontRegistry::placeholder();
+        let h2 = TypeStyle::heading2(&reg);
+        let body = TypeStyle::body(&reg);
+        assert!(
+            h2.size > body.size,
+            "H2 ({}) must be > body ({})",
+            h2.size,
+            body.size
+        );
+    }
+
+    #[test]
+    fn font_caption_smallest() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        let body = TypeStyle::body(&reg);
+        assert!(
+            caption.size <= body.size,
+            "caption ({}) must be <= body ({})",
+            caption.size,
+            body.size
+        );
+    }
+
+    #[test]
+    fn font_line_height_not_zero() {
+        let reg = FontRegistry::placeholder();
+        let styles = [
+            TypeStyle::body(&reg),
+            TypeStyle::caption(&reg),
+            TypeStyle::heading1(&reg),
+            TypeStyle::heading2(&reg),
+            TypeStyle::heading3(&reg),
+            TypeStyle::code(&reg),
+            TypeStyle::code_semibold(&reg),
+        ];
+        for (i, s) in styles.iter().enumerate() {
+            assert!(
+                s.line_height > 0.0,
+                "TypeStyle[{i}].line_height must not be zero, got {}",
+                s.line_height
+            );
         }
     }
 }

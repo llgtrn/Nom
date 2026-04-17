@@ -1,16 +1,16 @@
 #![deny(unsafe_code)]
+use crate::cache::{ChangedFlags, ExecutionCache};
+use crate::dag::Dag;
+use crate::node::{ExecNode, IsChanged, NodeId};
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
-use crate::node::{ExecNode, NodeId, IsChanged};
-use crate::dag::Dag;
-use crate::cache::{ExecutionCache, ChangedFlags};
 
 /// Result of executing a single node
 #[derive(Clone, Debug)]
 pub struct NodeOutput {
     pub node_id: NodeId,
-    pub outputs: HashMap<String, Vec<u8>>,  // port_name -> serialized output bytes
+    pub outputs: HashMap<String, Vec<u8>>, // port_name -> serialized output bytes
     pub cache_key: u64,
     pub was_cached: bool,
 }
@@ -34,20 +34,26 @@ impl ExecutionEngine {
     }
 
     /// Signal the engine to abort the current execution as soon as possible.
-    pub fn cancel(&self) { self.cancel_flag.store(true, Ordering::SeqCst); }
+    pub fn cancel(&self) {
+        self.cancel_flag.store(true, Ordering::SeqCst);
+    }
 
     /// Clear the cancel flag so the engine can accept new executions.
-    pub fn reset_cancel(&self) { self.cancel_flag.store(false, Ordering::SeqCst); }
+    pub fn reset_cancel(&self) {
+        self.cancel_flag.store(false, Ordering::SeqCst);
+    }
 
     /// Returns `true` if a cancel has been requested.
-    pub fn is_cancelled(&self) -> bool { self.cancel_flag.load(Ordering::SeqCst) }
+    pub fn is_cancelled(&self) -> bool {
+        self.cancel_flag.load(Ordering::SeqCst)
+    }
 
     /// Compute a SipHash-like key from node kind + serialized inputs
     pub fn compute_cache_key(node_kind: &str, input_hash: u64) -> u64 {
         // Simple deterministic hash: xor with kind hash
-        let kind_hash = node_kind.bytes().fold(0u64, |acc, b| {
-            acc.wrapping_mul(31).wrapping_add(b as u64)
-        });
+        let kind_hash = node_kind
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
         kind_hash ^ input_hash
     }
 
@@ -81,24 +87,30 @@ impl ExecutionEngine {
         let sorted = dag.topological_sort()?;
         // Track output hash per node so downstream edges pick up real values
         let mut outputs: HashMap<NodeId, u64> = HashMap::new();
-        let to_run: Vec<NodeId> = sorted.into_iter().filter(|id| {
-            if let Some(node) = dag.nodes.get(id) {
-                // Collect input hashes from upstream outputs
-                let input_hash = dag.edges.iter()
-                    .filter(|e| &e.dst_node == id)
-                    .fold(0u64, |acc, edge| {
-                        let upstream_hash = outputs.get(&edge.src_node).copied().unwrap_or(0);
-                        acc.wrapping_add(upstream_hash.rotate_left(17))
-                    });
-                let should_run = self.should_execute(node, input_hash);
-                // Store output hash for downstream consumers regardless of run/skip
-                let key = Self::compute_cache_key(&node.kind, input_hash);
-                outputs.insert(id.clone(), key);
-                should_run
-            } else {
-                false
-            }
-        }).collect();
+        let to_run: Vec<NodeId> = sorted
+            .into_iter()
+            .filter(|id| {
+                if let Some(node) = dag.nodes.get(id) {
+                    // Collect input hashes from upstream outputs
+                    let input_hash =
+                        dag.edges
+                            .iter()
+                            .filter(|e| &e.dst_node == id)
+                            .fold(0u64, |acc, edge| {
+                                let upstream_hash =
+                                    outputs.get(&edge.src_node).copied().unwrap_or(0);
+                                acc.wrapping_add(upstream_hash.rotate_left(17))
+                            });
+                    let should_run = self.should_execute(node, input_hash);
+                    // Store output hash for downstream consumers regardless of run/skip
+                    let key = Self::compute_cache_key(&node.kind, input_hash);
+                    outputs.insert(id.clone(), key);
+                    should_run
+                } else {
+                    false
+                }
+            })
+            .collect();
         Ok(to_run)
     }
 }
@@ -190,11 +202,20 @@ mod tests {
     #[test]
     fn execution_cancel_flag_works() {
         let engine = ExecutionEngine::new(BasicCache::new());
-        assert!(!engine.is_cancelled(), "fresh engine should not be cancelled");
+        assert!(
+            !engine.is_cancelled(),
+            "fresh engine should not be cancelled"
+        );
         engine.cancel();
-        assert!(engine.is_cancelled(), "engine should be cancelled after cancel()");
+        assert!(
+            engine.is_cancelled(),
+            "engine should be cancelled after cancel()"
+        );
         engine.reset_cancel();
-        assert!(!engine.is_cancelled(), "engine should not be cancelled after reset_cancel()");
+        assert!(
+            !engine.is_cancelled(),
+            "engine should not be cancelled after reset_cancel()"
+        );
     }
 
     #[test]
@@ -204,7 +225,10 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("n1", "verb"));
         let result = engine.plan_execution(&dag);
-        assert!(result.is_err(), "plan_execution should return Err when cancelled");
+        assert!(
+            result.is_err(),
+            "plan_execution should return Err when cancelled"
+        );
     }
 
     #[test]
@@ -232,8 +256,15 @@ mod tests {
         dag.add_node(ExecNode::new("n2", "verb"));
         dag.add_edge("n1", "out", "n2", "in");
         let result = engine.plan_execution(&dag);
-        assert!(result.is_err(), "plan_execution must return Err when cancel flag is set before call");
-        assert_eq!(result.unwrap_err(), Vec::<NodeId>::new(), "cancel returns empty Err vec");
+        assert!(
+            result.is_err(),
+            "plan_execution must return Err when cancel flag is set before call"
+        );
+        assert_eq!(
+            result.unwrap_err(),
+            Vec::<NodeId>::new(),
+            "cancel returns empty Err vec"
+        );
     }
 
     #[test]
@@ -251,6 +282,9 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("clean_node", "verb"));
         let plan = engine.plan_execution(&dag).unwrap();
-        assert!(plan.is_empty(), "node marked clean with a warm cache must be skipped");
+        assert!(
+            plan.is_empty(),
+            "node marked clean with a warm cache must be skipped"
+        );
     }
 }

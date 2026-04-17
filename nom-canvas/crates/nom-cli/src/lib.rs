@@ -22,15 +22,24 @@ pub fn parse_args(args: &[&str]) -> Result<CliCommand, String> {
     match args {
         ["version"] => Ok(CliCommand::Version),
         ["help"] => Ok(CliCommand::Help),
-        ["run", path] => Ok(CliCommand::Run { path: path.to_string() }),
-        ["format", path] => Ok(CliCommand::Format { path: path.to_string() }),
+        ["run", path] => Ok(CliCommand::Run {
+            path: path.to_string(),
+        }),
+        ["format", path] => Ok(CliCommand::Format {
+            path: path.to_string(),
+        }),
         ["rag", "--top-k", k_str, query] => {
             let top_k = k_str
                 .parse::<usize>()
                 .map_err(|_| format!("invalid top-k value: {}", k_str))?;
-            Ok(CliCommand::RagWithK { query: query.to_string(), top_k })
+            Ok(CliCommand::RagWithK {
+                query: query.to_string(),
+                top_k,
+            })
         }
-        ["check", path] => Ok(CliCommand::Check { path: path.to_string() }),
+        ["check", path] => Ok(CliCommand::Check {
+            path: path.to_string(),
+        }),
         ["build", "--release", path] => Ok(CliCommand::Build {
             path: path.to_string(),
             release: true,
@@ -39,8 +48,12 @@ pub fn parse_args(args: &[&str]) -> Result<CliCommand, String> {
             path: path.to_string(),
             release: false,
         }),
-        ["lint", path] => Ok(CliCommand::Lint { path: path.to_string() }),
-        ["graph", query] => Ok(CliCommand::Graph { query: query.to_string() }),
+        ["lint", path] => Ok(CliCommand::Lint {
+            path: path.to_string(),
+        }),
+        ["graph", query] => Ok(CliCommand::Graph {
+            query: query.to_string(),
+        }),
         ["rag", query] => Ok(CliCommand::Rag {
             query: query.to_string(),
             top_k: 5,
@@ -57,7 +70,12 @@ mod tests {
     #[test]
     fn cli_parse_check() {
         let cmd = parse_args(&["check", "src/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Check { path: "src/main.nom".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Check {
+                path: "src/main.nom".to_string()
+            }
+        );
     }
 
     #[test]
@@ -65,7 +83,10 @@ mod tests {
         let cmd = parse_args(&["build", "src/main.nom"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Build { path: "src/main.nom".to_string(), release: false }
+            CliCommand::Build {
+                path: "src/main.nom".to_string(),
+                release: false
+            }
         );
     }
 
@@ -74,20 +95,33 @@ mod tests {
         let cmd = parse_args(&["build", "--release", "src/main.nom"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Build { path: "src/main.nom".to_string(), release: true }
+            CliCommand::Build {
+                path: "src/main.nom".to_string(),
+                release: true
+            }
         );
     }
 
     #[test]
     fn cli_parse_lint() {
         let cmd = parse_args(&["lint", "src/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: "src/main.nom".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: "src/main.nom".to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_parse_graph() {
         let cmd = parse_args(&["graph", "canvas render"]).unwrap();
-        assert_eq!(cmd, CliCommand::Graph { query: "canvas render".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Graph {
+                query: "canvas render".to_string()
+            }
+        );
     }
 
     #[test]
@@ -95,7 +129,10 @@ mod tests {
         let cmd = parse_args(&["rag", "block layout"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Rag { query: "block layout".to_string(), top_k: 5 }
+            CliCommand::Rag {
+                query: "block layout".to_string(),
+                top_k: 5
+            }
         );
     }
 
@@ -116,7 +153,12 @@ mod tests {
     fn cli_parse_check_path_preserved() {
         let path = "/absolute/path/to/project.nom";
         let cmd = parse_args(&["check", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Check { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Check {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
@@ -142,13 +184,23 @@ mod tests {
     #[test]
     fn cli_parse_lint_path_preserved() {
         let cmd = parse_args(&["lint", "crates/nom-core"]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: "crates/nom-core".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: "crates/nom-core".to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_parse_graph_query_preserved() {
         let cmd = parse_args(&["graph", "node edge type"]).unwrap();
-        assert_eq!(cmd, CliCommand::Graph { query: "node edge type".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Graph {
+                query: "node edge type".to_string()
+            }
+        );
     }
 
     #[test]
@@ -172,7 +224,10 @@ mod tests {
         let cmd = parse_args(&["rag", "canvas layout algorithm"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Rag { query: "canvas layout algorithm".to_string(), top_k: 5 }
+            CliCommand::Rag {
+                query: "canvas layout algorithm".to_string(),
+                top_k: 5
+            }
         );
     }
 
@@ -217,13 +272,23 @@ mod tests {
     #[test]
     fn cli_parse_run() {
         let cmd = parse_args(&["run", "src/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: "src/main.nom".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: "src/main.nom".to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_parse_format() {
         let cmd = parse_args(&["format", "src/main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: "src/main.nom".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: "src/main.nom".to_string()
+            }
+        );
     }
 
     #[test]
@@ -231,14 +296,23 @@ mod tests {
         let cmd = parse_args(&["rag", "--top-k", "10", "canvas layout"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::RagWithK { query: "canvas layout".to_string(), top_k: 10 }
+            CliCommand::RagWithK {
+                query: "canvas layout".to_string(),
+                top_k: 10
+            }
         );
     }
 
     #[test]
     fn cli_parse_rag_top_k_five() {
         let cmd = parse_args(&["rag", "--top-k", "5", "query"]).unwrap();
-        assert_eq!(cmd, CliCommand::RagWithK { query: "query".to_string(), top_k: 5 });
+        assert_eq!(
+            cmd,
+            CliCommand::RagWithK {
+                query: "query".to_string(),
+                top_k: 5
+            }
+        );
     }
 
     #[test]
@@ -246,7 +320,10 @@ mod tests {
         let cmd = parse_args(&["rag", "--top-k", "20", "search term"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::RagWithK { query: "search term".to_string(), top_k: 20 }
+            CliCommand::RagWithK {
+                query: "search term".to_string(),
+                top_k: 20
+            }
         );
     }
 
@@ -254,14 +331,24 @@ mod tests {
     fn cli_parse_run_absolute_path() {
         let path = "/home/user/project/src/main.nom";
         let cmd = parse_args(&["run", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_parse_format_path_preserved() {
         let path = "crates/nom-canvas-core/src/lib.nom";
         let cmd = parse_args(&["format", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
@@ -285,7 +372,10 @@ mod tests {
         let cmd = parse_args(&["build", "my file.nom"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Build { path: "my file.nom".to_string(), release: false }
+            CliCommand::Build {
+                path: "my file.nom".to_string(),
+                release: false
+            }
         );
     }
 
@@ -293,7 +383,12 @@ mod tests {
     fn cli_lint_absolute_windows_path() {
         let path = "C:\\project\\main.nom";
         let cmd = parse_args(&["lint", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
@@ -301,7 +396,10 @@ mod tests {
         let cmd = parse_args(&["rag", "how does layout work"]).unwrap();
         assert_eq!(
             cmd,
-            CliCommand::Rag { query: "how does layout work".to_string(), top_k: 5 }
+            CliCommand::Rag {
+                query: "how does layout work".to_string(),
+                top_k: 5
+            }
         );
     }
 
@@ -387,20 +485,35 @@ mod tests {
     fn cli_check_unicode_path() {
         let path = "プロジェクト/main.nom";
         let cmd = parse_args(&["check", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Check { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Check {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_format_dot_path() {
         let cmd = parse_args(&["format", "."]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: ".".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: ".".to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_run_relative_path() {
         let path = "../sibling/main.nom";
         let cmd = parse_args(&["run", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
@@ -443,7 +556,12 @@ mod tests {
     #[test]
     fn cli_check_path_with_dot() {
         let cmd = parse_args(&["check", "./main.nom"]).unwrap();
-        assert_eq!(cmd, CliCommand::Check { path: "./main.nom".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Check {
+                path: "./main.nom".to_string()
+            }
+        );
     }
 
     #[test]
@@ -457,12 +575,22 @@ mod tests {
     fn cli_lint_path_with_hyphen() {
         let path = "my-project/main.nom";
         let cmd = parse_args(&["lint", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Lint { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Lint {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_graph_empty_query() {
         let cmd = parse_args(&["graph", ""]).unwrap();
-        assert_eq!(cmd, CliCommand::Graph { query: "".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Graph {
+                query: "".to_string()
+            }
+        );
     }
 }

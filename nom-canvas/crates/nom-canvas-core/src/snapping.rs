@@ -102,11 +102,11 @@ pub fn snap_with_guides(
         // ── X (vertical guide) snap pairs ────────────────────────────────────
         // Pairs: (moving feature, target feature) — left, right, centre, cross-left, cross-right
         let x_pairs: [(f32, f32); 5] = [
-            (x, ox),   // left → left
+            (x, ox),    // left → left
             (mx2, ox2), // right → right
             (mcx, ocx), // centre → centre
-            (x, ox2),  // left → right (butting)
-            (mx2, ox), // right → left (butting)
+            (x, ox2),   // left → right (butting)
+            (mx2, ox),  // right → left (butting)
         ];
         for (mv, ov) in x_pairs {
             if (mv - ov).abs() < SNAP_THRESHOLD {
@@ -126,13 +126,7 @@ pub fn snap_with_guides(
         }
 
         // ── Y (horizontal guide) snap pairs ──────────────────────────────────
-        let y_pairs: [(f32, f32); 5] = [
-            (y, oy),
-            (my2, oy2),
-            (mcy, ocy),
-            (y, oy2),
-            (my2, oy),
-        ];
+        let y_pairs: [(f32, f32); 5] = [(y, oy), (my2, oy2), (mcy, ocy), (y, oy2), (my2, oy)];
         for (mv, ov) in y_pairs {
             if (mv - ov).abs() < SNAP_THRESHOLD {
                 let delta = ov - mv;
@@ -181,11 +175,7 @@ mod tests {
     fn snap_to_grid_rounds_down() {
         // 9px is closer to 0 than 20
         let snapped = snap_to_grid([9.0, 0.0]);
-        assert!(
-            snapped[0].abs() < 1e-6,
-            "expected 0, got {}",
-            snapped[0]
-        );
+        assert!(snapped[0].abs() < 1e-6, "expected 0, got {}", snapped[0]);
     }
 
     #[test]
@@ -220,7 +210,11 @@ mod tests {
             &[([100.0, 50.0], [60.0, 30.0])],
             false,
         );
-        assert!((result.x - 100.0).abs() < 1e-6, "expected x=100, got {}", result.x);
+        assert!(
+            (result.x - 100.0).abs() < 1e-6,
+            "expected x=100, got {}",
+            result.x
+        );
         assert!(!result.guides.is_empty());
     }
 
@@ -234,7 +228,11 @@ mod tests {
             &[([100.0, 200.0], [60.0, 30.0])],
             false,
         );
-        assert!((result.x - 120.0).abs() < 1e-6, "expected x unchanged at 120, got {}", result.x);
+        assert!(
+            (result.x - 120.0).abs() < 1e-6,
+            "expected x unchanged at 120, got {}",
+            result.x
+        );
         assert_eq!(result.guides.len(), 0);
     }
 
@@ -312,7 +310,10 @@ mod tests {
             origin[1],
             result.y
         );
-        assert!(result.guides.is_empty(), "no guides should fire when snap is disabled");
+        assert!(
+            result.guides.is_empty(),
+            "no guides should fire when snap is disabled"
+        );
     }
 
     #[test]
@@ -392,7 +393,10 @@ mod tests {
             ],
             false,
         );
-        assert!(!result.guides.is_empty(), "expected snap guide from element alignment");
+        assert!(
+            !result.guides.is_empty(),
+            "expected snap guide from element alignment"
+        );
         assert!(
             (result.x - 100.0).abs() < 1e-6,
             "expected snap to x=100, got {}",

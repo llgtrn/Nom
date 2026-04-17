@@ -192,7 +192,9 @@ impl<'a> GraphRagRetriever<'a> {
 
                 // Update global best for this node: prefer higher cosine_sim;
                 // on tie prefer higher cumulative_confidence.
-                let entry = best.entry(current).or_insert((f32::NEG_INFINITY, usize::MAX, 0.0));
+                let entry = best
+                    .entry(current)
+                    .or_insert((f32::NEG_INFINITY, usize::MAX, 0.0));
                 if raw_sim > entry.0 || (raw_sim == entry.0 && cum_conf > entry.2) {
                     *entry = (raw_sim, hops, cum_conf);
                 }
@@ -278,7 +280,8 @@ impl<'a> CachedRetriever<'a> {
         // distinct.
         let query_bytes: &[u8] = {
             // SAFETY-free: reinterpret the f32 array as a byte slice via copy.
-            &query.iter()
+            &query
+                .iter()
                 .flat_map(|f| f.to_le_bytes())
                 .collect::<Vec<u8>>()
         };
@@ -422,10 +425,18 @@ mod tests {
         let mut cached = CachedRetriever::new(&dag);
         let first = cached.retrieve_cached(&query, 3, 2);
         // Cache should now hold one entry.
-        assert_eq!(cached.cache.len(), 1, "cache should have one entry after first call");
+        assert_eq!(
+            cached.cache.len(),
+            1,
+            "cache should have one entry after first call"
+        );
         let second = cached.retrieve_cached(&query, 3, 2);
         // Cache should still hold exactly one entry — no new insertion.
-        assert_eq!(cached.cache.len(), 1, "cache should not grow on repeated call");
+        assert_eq!(
+            cached.cache.len(),
+            1,
+            "cache should not grow on repeated call"
+        );
         assert_eq!(first.len(), second.len(), "results length should match");
         for (a, b) in first.iter().zip(second.iter()) {
             assert_eq!(a.node_id, b.node_id);
@@ -458,23 +469,31 @@ mod tests {
         let results = retriever.retrieve(&query, 3, 1);
 
         assert_eq!(results.len(), 3, "seed + high + low should be returned");
-        let high_result = results.iter().find(|r| r.node_id == "high").expect("high must appear");
-        let low_result  = results.iter().find(|r| r.node_id == "low").expect("low must appear");
+        let high_result = results
+            .iter()
+            .find(|r| r.node_id == "high")
+            .expect("high must appear");
+        let low_result = results
+            .iter()
+            .find(|r| r.node_id == "low")
+            .expect("low must appear");
 
         // Verify the confidence-weighted RRF formula is applied correctly.
         // high's best path: seed→high with conf=0.9; no own-seed BFS exists.
         // low's best path:  seed→low with conf=0.2.
         let high_rank = results.iter().position(|r| r.node_id == "high").unwrap();
-        let low_rank  = results.iter().position(|r| r.node_id == "low").unwrap();
+        let low_rank = results.iter().position(|r| r.node_id == "low").unwrap();
         let high_expected = 0.9 / (RRF_K + high_rank as f32);
-        let low_expected  = 0.2 / (RRF_K + low_rank as f32);
+        let low_expected = 0.2 / (RRF_K + low_rank as f32);
         assert!(
             (high_result.score - high_expected).abs() < 1e-5,
-            "high score: expected conf/rrf={high_expected}, got {}", high_result.score
+            "high score: expected conf/rrf={high_expected}, got {}",
+            high_result.score
         );
         assert!(
             (low_result.score - low_expected).abs() < 1e-5,
-            "low score: expected conf/rrf={low_expected}, got {}", low_result.score
+            "low score: expected conf/rrf={low_expected}, got {}",
+            low_result.score
         );
         // high must score strictly more than low when they occupy the same or adjacent ranks.
         // The simplest invariant: if ranks are equal (impossible, no ties), high wins.
@@ -483,7 +502,8 @@ mod tests {
         assert!(
             high_result.score > low_result.score,
             "high-confidence node must outscore low-confidence node: {} vs {}",
-            high_result.score, low_result.score
+            high_result.score,
+            low_result.score
         );
     }
 
@@ -508,27 +528,38 @@ mod tests {
         let results = retriever.retrieve(&query, 3, 2);
 
         // "leaf" is only reachable via seed→mid→leaf, conf = 0.8*0.5 = 0.4.
-        let leaf = results.iter().find(|r| r.node_id == "leaf").expect("leaf must appear");
+        let leaf = results
+            .iter()
+            .find(|r| r.node_id == "leaf")
+            .expect("leaf must appear");
         let leaf_rank = results.iter().position(|r| r.node_id == "leaf").unwrap();
         let expected_leaf = 0.4f32 / (RRF_K + leaf_rank as f32);
         assert!(
             (leaf.score - expected_leaf).abs() < 1e-5,
-            "leaf score should be {expected_leaf} (conf=0.4), got {}", leaf.score
+            "leaf score should be {expected_leaf} (conf=0.4), got {}",
+            leaf.score
         );
 
         // "mid" is reachable via seed→mid, conf=0.8.
-        let mid = results.iter().find(|r| r.node_id == "mid").expect("mid must appear");
+        let mid = results
+            .iter()
+            .find(|r| r.node_id == "mid")
+            .expect("mid must appear");
         let mid_rank = results.iter().position(|r| r.node_id == "mid").unwrap();
         let expected_mid = 0.8f32 / (RRF_K + mid_rank as f32);
         assert!(
             (mid.score - expected_mid).abs() < 1e-5,
-            "mid score should be {expected_mid} (conf=0.8), got {}", mid.score
+            "mid score should be {expected_mid} (conf=0.8), got {}",
+            mid.score
         );
 
         // Mid (conf=0.8) must score higher than leaf (conf=0.4) at equal or better rank.
         // Leaf has higher cosine (query=leaf_vec) so it ranks first.  But due to
         // discounted confidence, leaf's score ratio is lower.  Just verify formula.
-        assert!(expected_mid > 0.0 && expected_leaf > 0.0, "both scores must be positive");
+        assert!(
+            expected_mid > 0.0 && expected_leaf > 0.0,
+            "both scores must be positive"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -557,12 +588,16 @@ mod tests {
         );
 
         // "source" must appear with its own-seed confidence=1.0.
-        let src = results.iter().find(|r| r.node_id == "source").expect("source must appear");
+        let src = results
+            .iter()
+            .find(|r| r.node_id == "source")
+            .expect("source must appear");
         let src_rank = results.iter().position(|r| r.node_id == "source").unwrap();
         let expected_score = 1.0f32 / (RRF_K + src_rank as f32);
         assert!(
             (src.score - expected_score).abs() < 1e-5,
-            "source score should be {expected_score}, got {}", src.score
+            "source score should be {expected_score}, got {}",
+            src.score
         );
     }
 
@@ -624,12 +659,19 @@ mod tests {
         // Query = hub vec; hub ranks first (cosine=1.0), hi and lo rank below.
         let query = node_vec("hub");
         let results = retriever.retrieve(&query, 3, 1);
-        let hi = results.iter().find(|r| r.node_id == "hi").expect("hi must appear");
-        let lo = results.iter().find(|r| r.node_id == "lo").expect("lo must appear");
+        let hi = results
+            .iter()
+            .find(|r| r.node_id == "hi")
+            .expect("hi must appear");
+        let lo = results
+            .iter()
+            .find(|r| r.node_id == "lo")
+            .expect("lo must appear");
         assert!(
             hi.score > lo.score,
             "high-confidence neighbour (0.9) must score above low-confidence (0.2): {} vs {}",
-            hi.score, lo.score
+            hi.score,
+            lo.score
         );
     }
 
@@ -648,7 +690,11 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("n1");
         let results = retriever.retrieve(&query, 3, 2);
-        assert_eq!(results.len(), 3, "retrieve must return exactly top_k results");
+        assert_eq!(
+            results.len(),
+            3,
+            "retrieve must return exactly top_k results"
+        );
     }
 
     // -----------------------------------------------------------------------
@@ -665,7 +711,12 @@ mod tests {
         let query = node_vec("a");
         let results = retriever.retrieve(&query, 2, 1);
         for r in &results {
-            assert!(r.score > 0.0, "score for {} must be positive, got {}", r.node_id, r.score);
+            assert!(
+                r.score > 0.0,
+                "score for {} must be positive, got {}",
+                r.node_id,
+                r.score
+            );
         }
     }
 
@@ -728,7 +779,11 @@ mod tests {
         let retriever = GraphRagRetriever::new(&dag);
         let query = node_vec("apple");
         let results = retriever.retrieve(&query, 3, 1);
-        assert_eq!(results.len(), 3, "single-word query must return all 3 nodes");
+        assert_eq!(
+            results.len(),
+            3,
+            "single-word query must return all 3 nodes"
+        );
         // Results must be sorted descending by score.
         for i in 0..results.len() - 1 {
             assert!(

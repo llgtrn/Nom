@@ -64,10 +64,17 @@ impl Platform for DesktopPlatform {
         }
     }
     fn adapter_options(&self) -> AdapterOptions {
-        AdapterOptions { power_preference: PowerPreference::HighPerformance, force_fallback: false }
+        AdapterOptions {
+            power_preference: PowerPreference::HighPerformance,
+            force_fallback: false,
+        }
     }
-    fn present_mode(&self) -> PresentMode { PresentMode::Fifo }
-    fn device_features(&self) -> u64 { 0 }
+    fn present_mode(&self) -> PresentMode {
+        PresentMode::Fifo
+    }
+    fn device_features(&self) -> u64 {
+        0
+    }
 }
 
 /// WebGPU platform (wgpu WebGPU via wasm-bindgen, web_sys canvas)
@@ -84,18 +91,29 @@ impl Platform for WebPlatform {
         }
     }
     fn adapter_options(&self) -> AdapterOptions {
-        AdapterOptions { power_preference: PowerPreference::LowPower, force_fallback: false }
+        AdapterOptions {
+            power_preference: PowerPreference::LowPower,
+            force_fallback: false,
+        }
     }
-    fn present_mode(&self) -> PresentMode { PresentMode::Fifo }
-    fn device_features(&self) -> u64 { 0 }
+    fn present_mode(&self) -> PresentMode {
+        PresentMode::Fifo
+    }
+    fn device_features(&self) -> u64 {
+        0
+    }
 }
 
 /// Get the default platform for the current target
 pub fn default_platform() -> Box<dyn Platform> {
     #[cfg(not(target_arch = "wasm32"))]
-    { Box::new(DesktopPlatform) }
+    {
+        Box::new(DesktopPlatform)
+    }
     #[cfg(target_arch = "wasm32")]
-    { Box::new(WebPlatform) }
+    {
+        Box::new(WebPlatform)
+    }
 }
 
 #[cfg(test)]
@@ -143,7 +161,10 @@ mod tests {
         {
             let p = DesktopPlatform;
             let opts = p.adapter_options();
-            assert!(matches!(opts.power_preference, PowerPreference::HighPerformance));
+            assert!(matches!(
+                opts.power_preference,
+                PowerPreference::HighPerformance
+            ));
             assert!(!opts.force_fallback);
         }
     }

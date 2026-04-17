@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub, Mul, Div, Neg};
+use std::ops::{Add, Div, Mul, Neg, Sub};
 
 // ---------------------------------------------------------------------------
 // Pixels — primary unit for GPU rendering coordinates
@@ -9,43 +9,67 @@ pub struct Pixels(pub f32);
 
 impl Add for Pixels {
     type Output = Pixels;
-    fn add(self, rhs: Pixels) -> Pixels { Pixels(self.0 + rhs.0) }
+    fn add(self, rhs: Pixels) -> Pixels {
+        Pixels(self.0 + rhs.0)
+    }
 }
 
 impl Sub for Pixels {
     type Output = Pixels;
-    fn sub(self, rhs: Pixels) -> Pixels { Pixels(self.0 - rhs.0) }
+    fn sub(self, rhs: Pixels) -> Pixels {
+        Pixels(self.0 - rhs.0)
+    }
 }
 
 impl Mul<f32> for Pixels {
     type Output = Pixels;
-    fn mul(self, rhs: f32) -> Pixels { Pixels(self.0 * rhs) }
+    fn mul(self, rhs: f32) -> Pixels {
+        Pixels(self.0 * rhs)
+    }
 }
 
 impl Div<f32> for Pixels {
     type Output = Pixels;
-    fn div(self, rhs: f32) -> Pixels { Pixels(self.0 / rhs) }
+    fn div(self, rhs: f32) -> Pixels {
+        Pixels(self.0 / rhs)
+    }
 }
 
 impl Neg for Pixels {
     type Output = Pixels;
-    fn neg(self) -> Pixels { Pixels(-self.0) }
+    fn neg(self) -> Pixels {
+        Pixels(-self.0)
+    }
 }
 
 impl From<f32> for Pixels {
-    fn from(v: f32) -> Pixels { Pixels(v) }
+    fn from(v: f32) -> Pixels {
+        Pixels(v)
+    }
 }
 
 impl From<u32> for Pixels {
-    fn from(v: u32) -> Pixels { Pixels(v as f32) }
+    fn from(v: u32) -> Pixels {
+        Pixels(v as f32)
+    }
 }
 
 impl Pixels {
-    pub fn new(v: f32) -> Self { Pixels(v) }
-    pub fn zero() -> Self { Pixels(0.0) }
-    pub fn floor(self) -> Self { Pixels(self.0.floor()) }
-    pub fn ceil(self) -> Self { Pixels(self.0.ceil()) }
-    pub fn abs(self) -> Self { Pixels(self.0.abs()) }
+    pub fn new(v: f32) -> Self {
+        Pixels(v)
+    }
+    pub fn zero() -> Self {
+        Pixels(0.0)
+    }
+    pub fn floor(self) -> Self {
+        Pixels(self.0.floor())
+    }
+    pub fn ceil(self) -> Self {
+        Pixels(self.0.ceil())
+    }
+    pub fn abs(self) -> Self {
+        Pixels(self.0.abs())
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -61,34 +85,55 @@ pub struct Point<T> {
 impl<T: Add<Output = T>> Add for Point<T> {
     type Output = Point<T>;
     fn add(self, rhs: Point<T>) -> Point<T> {
-        Point { x: self.x + rhs.x, y: self.y + rhs.y }
+        Point {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
     }
 }
 
 impl<T: Sub<Output = T>> Sub for Point<T> {
     type Output = Point<T>;
     fn sub(self, rhs: Point<T>) -> Point<T> {
-        Point { x: self.x - rhs.x, y: self.y - rhs.y }
+        Point {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
     }
 }
 
 impl<T: Default> Point<T> {
-    pub fn zero() -> Self { Point { x: T::default(), y: T::default() } }
+    pub fn zero() -> Self {
+        Point {
+            x: T::default(),
+            y: T::default(),
+        }
+    }
 }
 
 impl<T> Point<T> {
-    pub fn new(x: T, y: T) -> Self { Point { x, y } }
+    pub fn new(x: T, y: T) -> Self {
+        Point { x, y }
+    }
 }
 
 impl<T: Neg<Output = T>> Neg for Point<T> {
     type Output = Point<T>;
-    fn neg(self) -> Point<T> { Point { x: -self.x, y: -self.y } }
+    fn neg(self) -> Point<T> {
+        Point {
+            x: -self.x,
+            y: -self.y,
+        }
+    }
 }
 
 impl Mul<f32> for Point<Pixels> {
     type Output = Point<Pixels>;
     fn mul(self, rhs: f32) -> Point<Pixels> {
-        Point { x: self.x * rhs, y: self.y * rhs }
+        Point {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
     }
 }
 
@@ -105,18 +150,34 @@ pub struct Size<T> {
 }
 
 impl<T: Default> Size<T> {
-    pub fn zero() -> Self { Size { width: T::default(), height: T::default() } }
+    pub fn zero() -> Self {
+        Size {
+            width: T::default(),
+            height: T::default(),
+        }
+    }
 }
 
 impl<T> Size<T> {
-    pub fn new(width: T, height: T) -> Self { Size { width, height } }
+    pub fn new(width: T, height: T) -> Self {
+        Size { width, height }
+    }
 }
 
 impl Size<Pixels> {
-    pub fn area(&self) -> f32 { self.width.0 * self.height.0 }
+    pub fn area(&self) -> f32 {
+        self.width.0 * self.height.0
+    }
 
     pub fn contains(&self, other: &Size<Pixels>) -> bool {
         other.width.0 <= self.width.0 && other.height.0 <= self.height.0
+    }
+
+    pub fn aspect_ratio(&self) -> f32 {
+        if self.height.0 == 0.0 {
+            return 0.0;
+        }
+        self.width.0 / self.height.0
     }
 }
 
@@ -134,7 +195,9 @@ impl<T> Bounds<T>
 where
     T: Copy + Add<Output = T> + PartialOrd,
 {
-    pub fn new(origin: Point<T>, size: Size<T>) -> Self { Bounds { origin, size } }
+    pub fn new(origin: Point<T>, size: Size<T>) -> Self {
+        Bounds { origin, size }
+    }
 
     pub fn contains(&self, pt: &Point<T>) -> bool {
         pt.x >= self.origin.x
@@ -144,14 +207,52 @@ where
     }
 
     pub fn intersects(&self, other: &Bounds<T>) -> bool {
-        let self_right  = self.origin.x  + self.size.width;
-        let self_bottom = self.origin.y  + self.size.height;
-        let other_right  = other.origin.x + other.size.width;
+        let self_right = self.origin.x + self.size.width;
+        let self_bottom = self.origin.y + self.size.height;
+        let other_right = other.origin.x + other.size.width;
         let other_bottom = other.origin.y + other.size.height;
-        self.origin.x  < other_right
-            && self_right  > other.origin.x
-            && self.origin.y  < other_bottom
+        self.origin.x < other_right
+            && self_right > other.origin.x
+            && self.origin.y < other_bottom
             && self_bottom > other.origin.y
+    }
+}
+
+impl Bounds<Pixels> {
+    /// Returns the center point of this bounds.
+    pub fn center(&self) -> Point<Pixels> {
+        Point {
+            x: Pixels(self.origin.x.0 + self.size.width.0 / 2.0),
+            y: Pixels(self.origin.y.0 + self.size.height.0 / 2.0),
+        }
+    }
+
+    /// Returns a new Bounds expanded outward by `amount` on all sides.
+    pub fn expand(&self, amount: Pixels) -> Bounds<Pixels> {
+        Bounds {
+            origin: Point {
+                x: Pixels(self.origin.x.0 - amount.0),
+                y: Pixels(self.origin.y.0 - amount.0),
+            },
+            size: Size {
+                width: Pixels(self.size.width.0 + amount.0 * 2.0),
+                height: Pixels(self.size.height.0 + amount.0 * 2.0),
+            },
+        }
+    }
+
+    /// Returns the area (width * height) of this bounds.
+    pub fn area(&self) -> f32 {
+        self.size.area()
+    }
+}
+
+impl Point<Pixels> {
+    /// Euclidean distance to another point.
+    pub fn distance(&self, other: Point<Pixels>) -> f32 {
+        let dx = self.x.0 - other.x.0;
+        let dy = self.y.0 - other.y.0;
+        (dx * dx + dy * dy).sqrt()
     }
 }
 
@@ -171,7 +272,12 @@ pub struct Edges<T> {
 
 impl<T: Copy> Edges<T> {
     pub fn all(value: T) -> Self {
-        Edges { top: value, right: value, bottom: value, left: value }
+        Edges {
+            top: value,
+            right: value,
+            bottom: value,
+            left: value,
+        }
     }
 }
 
@@ -211,13 +317,36 @@ pub struct Hsla {
 }
 
 impl Hsla {
-    pub fn new(h: f32, s: f32, l: f32, a: f32) -> Self { Hsla { h, s, l, a } }
+    pub fn new(h: f32, s: f32, l: f32, a: f32) -> Self {
+        Hsla { h, s, l, a }
+    }
 
-    pub fn transparent() -> Self { Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.0 } }
+    pub fn transparent() -> Self {
+        Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: 0.0,
+        }
+    }
 
-    pub fn black() -> Self { Hsla { h: 0.0, s: 0.0, l: 0.0, a: 1.0 } }
+    pub fn black() -> Self {
+        Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 0.0,
+            a: 1.0,
+        }
+    }
 
-    pub fn white() -> Self { Hsla { h: 0.0, s: 0.0, l: 1.0, a: 1.0 } }
+    pub fn white() -> Self {
+        Hsla {
+            h: 0.0,
+            s: 0.0,
+            l: 1.0,
+            a: 1.0,
+        }
+    }
 
     pub fn with_alpha(mut self, a: f32) -> Self {
         self.a = a;
@@ -229,20 +358,39 @@ impl Hsla {
         let h = self.h / 360.0;
         let s = self.s;
         let l = self.l;
-        let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+        let q = if l < 0.5 {
+            l * (1.0 + s)
+        } else {
+            l + s - l * s
+        };
         let p = 2.0 * l - q;
         let hue_to_rgb = |mut t: f32| -> f32 {
-            if t < 0.0 { t += 1.0; }
-            if t > 1.0 { t -= 1.0; }
-            if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
-            if t < 1.0 / 2.0 { return q; }
-            if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+            if t < 0.0 {
+                t += 1.0;
+            }
+            if t > 1.0 {
+                t -= 1.0;
+            }
+            if t < 1.0 / 6.0 {
+                return p + (q - p) * 6.0 * t;
+            }
+            if t < 1.0 / 2.0 {
+                return q;
+            }
+            if t < 2.0 / 3.0 {
+                return p + (q - p) * (2.0 / 3.0 - t) * 6.0;
+            }
             p
         };
         if s == 0.0 {
             (l, l, l, self.a)
         } else {
-            (hue_to_rgb(h + 1.0 / 3.0), hue_to_rgb(h), hue_to_rgb(h - 1.0 / 3.0), self.a)
+            (
+                hue_to_rgb(h + 1.0 / 3.0),
+                hue_to_rgb(h),
+                hue_to_rgb(h - 1.0 / 3.0),
+                self.a,
+            )
         }
     }
 }
@@ -259,36 +407,62 @@ pub struct Vec2 {
 
 impl Add for Vec2 {
     type Output = Vec2;
-    fn add(self, rhs: Vec2) -> Vec2 { Vec2 { x: self.x + rhs.x, y: self.y + rhs.y } }
+    fn add(self, rhs: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x + rhs.x,
+            y: self.y + rhs.y,
+        }
+    }
 }
 
 impl Sub for Vec2 {
     type Output = Vec2;
-    fn sub(self, rhs: Vec2) -> Vec2 { Vec2 { x: self.x - rhs.x, y: self.y - rhs.y } }
+    fn sub(self, rhs: Vec2) -> Vec2 {
+        Vec2 {
+            x: self.x - rhs.x,
+            y: self.y - rhs.y,
+        }
+    }
 }
 
 impl Mul<f32> for Vec2 {
     type Output = Vec2;
-    fn mul(self, rhs: f32) -> Vec2 { Vec2 { x: self.x * rhs, y: self.y * rhs } }
+    fn mul(self, rhs: f32) -> Vec2 {
+        Vec2 {
+            x: self.x * rhs,
+            y: self.y * rhs,
+        }
+    }
 }
 
 impl Vec2 {
-    pub fn new(x: f32, y: f32) -> Self { Vec2 { x, y } }
+    pub fn new(x: f32, y: f32) -> Self {
+        Vec2 { x, y }
+    }
 
-    pub fn zero() -> Self { Vec2 { x: 0.0, y: 0.0 } }
+    pub fn zero() -> Self {
+        Vec2 { x: 0.0, y: 0.0 }
+    }
 
-    pub fn length(self) -> f32 { (self.x * self.x + self.y * self.y).sqrt() }
+    pub fn length(self) -> f32 {
+        (self.x * self.x + self.y * self.y).sqrt()
+    }
 
     pub fn normalize(self) -> Self {
         let len = self.length();
         if len == 0.0 {
             Vec2::zero()
         } else {
-            Vec2 { x: self.x / len, y: self.y / len }
+            Vec2 {
+                x: self.x / len,
+                y: self.y / len,
+            }
         }
     }
 
-    pub fn dot(self, rhs: Vec2) -> f32 { self.x * rhs.x + self.y * rhs.y }
+    pub fn dot(self, rhs: Vec2) -> f32 {
+        self.x * rhs.x + self.y * rhs.y
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -301,7 +475,9 @@ pub struct ContentMask<T> {
 }
 
 impl<T: Copy + Default> ContentMask<T> {
-    pub fn new(bounds: Bounds<T>) -> Self { ContentMask { bounds } }
+    pub fn new(bounds: Bounds<T>) -> Self {
+        ContentMask { bounds }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -318,7 +494,12 @@ pub struct AtlasBounds {
 
 impl AtlasBounds {
     pub fn new(left: u32, top: u32, right: u32, bottom: u32) -> Self {
-        AtlasBounds { left, top, right, bottom }
+        AtlasBounds {
+            left,
+            top,
+            right,
+            bottom,
+        }
     }
 }
 
@@ -335,7 +516,11 @@ pub struct AtlasTile {
 
 impl AtlasTile {
     pub fn new(texture_id: u32, bounds: AtlasBounds, padding: f32) -> Self {
-        AtlasTile { texture_id, bounds, padding }
+        AtlasTile {
+            texture_id,
+            bounds,
+            padding,
+        }
     }
 }
 
@@ -352,7 +537,9 @@ pub struct PathVertex<T> {
 }
 
 impl<T> PathVertex<T> {
-    pub fn new(x: T, y: T, z: T) -> Self { PathVertex { x, y, z } }
+    pub fn new(x: T, y: T, z: T) -> Self {
+        PathVertex { x, y, z }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -374,7 +561,9 @@ impl Default for TransformationMatrix {
 }
 
 impl TransformationMatrix {
-    pub fn identity() -> Self { Self::default() }
+    pub fn identity() -> Self {
+        Self::default()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -385,18 +574,26 @@ impl TransformationMatrix {
 pub struct ElementId(pub u64);
 
 impl ElementId {
-    pub fn new(id: u64) -> Self { ElementId(id) }
+    pub fn new(id: u64) -> Self {
+        ElementId(id)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct GlobalElementId(pub Vec<ElementId>);
 
 impl GlobalElementId {
-    pub fn new() -> Self { GlobalElementId(Vec::new()) }
+    pub fn new() -> Self {
+        GlobalElementId(Vec::new())
+    }
 
-    pub fn push(&mut self, id: ElementId) { self.0.push(id); }
+    pub fn push(&mut self, id: ElementId) {
+        self.0.push(id);
+    }
 
-    pub fn pop(&mut self) -> Option<ElementId> { self.0.pop() }
+    pub fn pop(&mut self) -> Option<ElementId> {
+        self.0.pop()
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -407,7 +604,9 @@ impl GlobalElementId {
 pub struct LayoutId(pub u64);
 
 impl LayoutId {
-    pub fn new(id: u64) -> Self { LayoutId(id) }
+    pub fn new(id: u64) -> Self {
+        LayoutId(id)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -720,6 +919,55 @@ mod tests {
         assert!((Vec2::new(3.0, 4.0).length() - 5.0).abs() < 1e-6);
     }
 
+    // ---- New tests: bounds_area, bounds_center, bounds_expand, point_distance, size_aspect_ratio ----
+
+    #[test]
+    fn bounds_area() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(4.0), Pixels(5.0)),
+        );
+        assert!((b.area() - 20.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn bounds_center() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        let c = b.center();
+        assert_eq!(c.x, Pixels(5.0));
+        assert_eq!(c.y, Pixels(5.0));
+    }
+
+    #[test]
+    fn bounds_expand() {
+        let b = Bounds::new(
+            Point::new(Pixels(10.0), Pixels(10.0)),
+            Size::new(Pixels(20.0), Pixels(20.0)),
+        );
+        let expanded = b.expand(Pixels(2.0));
+        assert_eq!(expanded.origin.x, Pixels(8.0));
+        assert_eq!(expanded.origin.y, Pixels(8.0));
+        assert_eq!(expanded.size.width, Pixels(24.0));
+        assert_eq!(expanded.size.height, Pixels(24.0));
+    }
+
+    #[test]
+    fn point_distance() {
+        let a = Point::new(Pixels(0.0), Pixels(0.0));
+        let b = Point::new(Pixels(3.0), Pixels(4.0));
+        assert!((a.distance(b) - 5.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn size_aspect_ratio() {
+        let s = Size::new(Pixels(16.0), Pixels(9.0));
+        let ratio = s.aspect_ratio();
+        assert!((ratio - 16.0 / 9.0).abs() < 1e-5, "ratio={ratio}");
+    }
+
     #[test]
     fn bounds_contains_point_on_edge() {
         let origin = Point::new(Pixels(10.0), Pixels(20.0));
@@ -727,19 +975,49 @@ mod tests {
         let bounds = Bounds::new(origin, size);
 
         // Points exactly on each edge must be considered inside (inclusive).
-        assert!(bounds.contains(&Point::new(Pixels(10.0), Pixels(30.0))),  "left edge");
-        assert!(bounds.contains(&Point::new(Pixels(110.0), Pixels(30.0))), "right edge");
-        assert!(bounds.contains(&Point::new(Pixels(60.0), Pixels(20.0))),  "top edge");
-        assert!(bounds.contains(&Point::new(Pixels(60.0), Pixels(70.0))),  "bottom edge");
+        assert!(
+            bounds.contains(&Point::new(Pixels(10.0), Pixels(30.0))),
+            "left edge"
+        );
+        assert!(
+            bounds.contains(&Point::new(Pixels(110.0), Pixels(30.0))),
+            "right edge"
+        );
+        assert!(
+            bounds.contains(&Point::new(Pixels(60.0), Pixels(20.0))),
+            "top edge"
+        );
+        assert!(
+            bounds.contains(&Point::new(Pixels(60.0), Pixels(70.0))),
+            "bottom edge"
+        );
 
         // Corners must also be inside.
-        assert!(bounds.contains(&Point::new(Pixels(10.0), Pixels(20.0))),   "top-left corner");
-        assert!(bounds.contains(&Point::new(Pixels(110.0), Pixels(70.0))),  "bottom-right corner");
+        assert!(
+            bounds.contains(&Point::new(Pixels(10.0), Pixels(20.0))),
+            "top-left corner"
+        );
+        assert!(
+            bounds.contains(&Point::new(Pixels(110.0), Pixels(70.0))),
+            "bottom-right corner"
+        );
 
         // One pixel outside each edge must be excluded.
-        assert!(!bounds.contains(&Point::new(Pixels(9.9), Pixels(30.0))),   "just outside left");
-        assert!(!bounds.contains(&Point::new(Pixels(110.1), Pixels(30.0))), "just outside right");
-        assert!(!bounds.contains(&Point::new(Pixels(60.0), Pixels(19.9))),  "just outside top");
-        assert!(!bounds.contains(&Point::new(Pixels(60.0), Pixels(70.1))),  "just outside bottom");
+        assert!(
+            !bounds.contains(&Point::new(Pixels(9.9), Pixels(30.0))),
+            "just outside left"
+        );
+        assert!(
+            !bounds.contains(&Point::new(Pixels(110.1), Pixels(30.0))),
+            "just outside right"
+        );
+        assert!(
+            !bounds.contains(&Point::new(Pixels(60.0), Pixels(19.9))),
+            "just outside top"
+        );
+        assert!(
+            !bounds.contains(&Point::new(Pixels(60.0), Pixels(70.1))),
+            "just outside bottom"
+        );
     }
 }

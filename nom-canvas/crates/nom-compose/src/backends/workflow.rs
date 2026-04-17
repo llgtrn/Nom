@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use nom_blocks::NomtuRef;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
+use nom_blocks::NomtuRef;
 
 pub struct WorkflowStep {
     pub node_id: String,
@@ -24,33 +24,55 @@ pub struct WorkflowOutput {
 pub struct WorkflowBackend;
 
 impl WorkflowBackend {
-    pub fn compose(input: WorkflowInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> WorkflowOutput {
-        sink.emit(ComposeEvent::Started { backend: "workflow".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: WorkflowInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> WorkflowOutput {
+        sink.emit(ComposeEvent::Started {
+            backend: "workflow".into(),
+            entity_id: input.entity.id.clone(),
+        });
         let total = input.steps.len();
         let mut context = input.initial_context.clone();
         for (i, step) in input.steps.iter().enumerate() {
-            context = serde_json::json!({ "step": step.node_id, "input": step.input, "prev": context });
-            sink.emit(ComposeEvent::Progress { percent: (i + 1) as f32 / total.max(1) as f32, stage: step.node_id.clone() });
+            context =
+                serde_json::json!({ "step": step.node_id, "input": step.input, "prev": context });
+            sink.emit(ComposeEvent::Progress {
+                percent: (i + 1) as f32 / total.max(1) as f32,
+                stage: step.node_id.clone(),
+            });
         }
         let bytes = serde_json::to_vec(&context).unwrap_or_default();
         let artifact_hash = store.write(&bytes);
         let byte_size = bytes.len() as u64;
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
-        WorkflowOutput { artifact_hash, steps_completed: total, final_value: context }
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
+        WorkflowOutput {
+            artifact_hash,
+            steps_completed: total,
+            final_value: context,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn workflow_empty_steps() {
         let mut store = InMemoryStore::new();
         let input = WorkflowInput {
-            entity: NomtuRef { id: "wf1".into(), word: "pipeline".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "wf1".into(),
+                word: "pipeline".into(),
+                kind: "concept".into(),
+            },
             steps: vec![],
             initial_context: serde_json::json!({"start": true}),
         };
@@ -63,10 +85,22 @@ mod tests {
     fn workflow_with_steps() {
         let mut store = InMemoryStore::new();
         let input = WorkflowInput {
-            entity: NomtuRef { id: "wf2".into(), word: "flow".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "wf2".into(),
+                word: "flow".into(),
+                kind: "concept".into(),
+            },
             steps: vec![
-                WorkflowStep { node_id: "step1".into(), kind: "transform".into(), input: serde_json::json!({"x": 1}) },
-                WorkflowStep { node_id: "step2".into(), kind: "filter".into(), input: serde_json::json!({"y": 2}) },
+                WorkflowStep {
+                    node_id: "step1".into(),
+                    kind: "transform".into(),
+                    input: serde_json::json!({"x": 1}),
+                },
+                WorkflowStep {
+                    node_id: "step2".into(),
+                    kind: "filter".into(),
+                    input: serde_json::json!({"y": 2}),
+                },
             ],
             initial_context: serde_json::json!({}),
         };
@@ -79,10 +113,16 @@ mod tests {
     fn workflow_final_value_reflects_last_step() {
         let mut store = InMemoryStore::new();
         let input = WorkflowInput {
-            entity: NomtuRef { id: "wf3".into(), word: "etl".into(), kind: "concept".into() },
-            steps: vec![
-                WorkflowStep { node_id: "extract".into(), kind: "extract".into(), input: serde_json::json!({"src": "db"}) },
-            ],
+            entity: NomtuRef {
+                id: "wf3".into(),
+                word: "etl".into(),
+                kind: "concept".into(),
+            },
+            steps: vec![WorkflowStep {
+                node_id: "extract".into(),
+                kind: "extract".into(),
+                input: serde_json::json!({"src": "db"}),
+            }],
             initial_context: serde_json::json!({}),
         };
         let out = WorkflowBackend::compose(input, &mut store, &LogProgressSink);
@@ -93,13 +133,19 @@ mod tests {
     #[test]
     fn workflow_steps_completed_count() {
         let mut store = InMemoryStore::new();
-        let steps: Vec<WorkflowStep> = (0..5).map(|i| WorkflowStep {
-            node_id: format!("step{i}"),
-            kind: "transform".into(),
-            input: serde_json::json!({"i": i}),
-        }).collect();
+        let steps: Vec<WorkflowStep> = (0..5)
+            .map(|i| WorkflowStep {
+                node_id: format!("step{i}"),
+                kind: "transform".into(),
+                input: serde_json::json!({"i": i}),
+            })
+            .collect();
         let input = WorkflowInput {
-            entity: NomtuRef { id: "wf4".into(), word: "batch".into(), kind: "concept".into() },
+            entity: NomtuRef {
+                id: "wf4".into(),
+                word: "batch".into(),
+                kind: "concept".into(),
+            },
             steps,
             initial_context: serde_json::json!({}),
         };

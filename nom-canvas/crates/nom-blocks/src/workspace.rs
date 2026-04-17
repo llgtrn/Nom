@@ -1,9 +1,9 @@
 #![deny(unsafe_code)]
-use std::collections::HashMap;
-use serde::{Deserialize, Serialize};
 use crate::block_model::{BlockId, BlockModel, NomtuRef};
-use crate::graph_node::{GraphNode, NodeId};
 use crate::connector::{Connector, ConnectorId};
+use crate::graph_node::{GraphNode, NodeId};
+use serde::{Deserialize, Serialize};
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CanvasObject {
@@ -17,7 +17,9 @@ impl CanvasObject {
         match self {
             CanvasObject::Block(b) => &b.entity,
             CanvasObject::Node(n) => &n.entity,
-            CanvasObject::Connector(_) => panic!("Connectors don't have a direct NomtuRef — use src/dst node entities"),
+            CanvasObject::Connector(_) => {
+                panic!("Connectors don't have a direct NomtuRef — use src/dst node entities")
+            }
         }
     }
 }
@@ -53,9 +55,15 @@ impl Workspace {
         self.blocks.remove(id)
     }
 
-    pub fn block_count(&self) -> usize { self.blocks.len() }
-    pub fn node_count(&self) -> usize { self.nodes.len() }
-    pub fn connector_count(&self) -> usize { self.connectors.len() }
+    pub fn block_count(&self) -> usize {
+        self.blocks.len()
+    }
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+    pub fn connector_count(&self) -> usize {
+        self.connectors.len()
+    }
 }
 
 #[cfg(test)]

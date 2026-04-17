@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::styled::StyleRefinement;
+use crate::types::*;
 
 /// Layout engine integration.
 ///
@@ -19,11 +19,7 @@ impl LayoutEngine {
     }
 
     /// Creates a layout node. Returns a unique `LayoutId` from the `LayoutEngine` registry.
-    pub fn request_layout(
-        &mut self,
-        _style: &StyleRefinement,
-        _children: &[LayoutId],
-    ) -> LayoutId {
+    pub fn request_layout(&mut self, _style: &StyleRefinement, _children: &[LayoutId]) -> LayoutId {
         let id = LayoutId(self.next_id);
         self.next_id += 1;
         self.layouts.insert(id, Bounds::default());
@@ -49,7 +45,9 @@ impl LayoutEngine {
 }
 
 impl Default for LayoutEngine {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -91,7 +89,10 @@ mod tests {
         let mut engine = LayoutEngine::new();
         let style = StyleRefinement::default();
         let id = engine.request_layout(&style, &[]);
-        let available = Size { width: Pixels(800.0), height: Pixels(600.0) };
+        let available = Size {
+            width: Pixels(800.0),
+            height: Pixels(600.0),
+        };
         engine.compute_layout(id, available);
         assert_eq!(engine.layout(id).size, available);
     }
@@ -118,7 +119,10 @@ mod tests {
         let style = StyleRefinement::default();
         let id1 = engine.request_layout(&style, &[]);
         let id2 = engine.request_layout(&style, &[]);
-        let available = Size { width: Pixels(1024.0), height: Pixels(768.0) };
+        let available = Size {
+            width: Pixels(1024.0),
+            height: Pixels(768.0),
+        };
         engine.compute_layout(id1, available);
         // id2 should remain default
         assert_eq!(engine.layout(id2), Bounds::default());
@@ -146,7 +150,10 @@ mod tests {
         let style = StyleRefinement::default();
         let child = engine.request_layout(&style, &[]);
         let parent = engine.request_layout(&style, &[child]);
-        let available = Size { width: Pixels(400.0), height: Pixels(300.0) };
+        let available = Size {
+            width: Pixels(400.0),
+            height: Pixels(300.0),
+        };
         engine.compute_layout(parent, available);
         // Parent receives the available size.
         assert_eq!(engine.layout(parent).size, available);
@@ -161,8 +168,14 @@ mod tests {
         let mut engine = LayoutEngine::new();
         let style = StyleRefinement::default();
         let id = engine.request_layout(&style, &[]);
-        let wide = Size { width: Pixels(1200.0), height: Pixels(400.0) };
-        let narrow = Size { width: Pixels(320.0), height: Pixels(400.0) };
+        let wide = Size {
+            width: Pixels(1200.0),
+            height: Pixels(400.0),
+        };
+        let narrow = Size {
+            width: Pixels(320.0),
+            height: Pixels(400.0),
+        };
         engine.compute_layout(id, wide);
         assert_eq!(engine.layout(id).size.width, Pixels(1200.0));
         // Re-computing with a narrower constraint overwrites the stored size.

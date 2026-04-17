@@ -10,7 +10,9 @@ pub struct StatusSlot {
 
 impl StatusSlot {
     pub fn new(content: impl Into<String>) -> Self {
-        Self { content: content.into() }
+        Self {
+            content: content.into(),
+        }
     }
 }
 
@@ -58,7 +60,9 @@ impl StatusBar {
 }
 
 impl Default for StatusBar {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]
@@ -128,7 +132,11 @@ mod tests {
         bar.paint_scene(1440.0, 900.0, &mut scene);
 
         // background + top border = 2 quads minimum
-        assert!(scene.quads.len() >= 2, "expected >=2 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 2,
+            "expected >=2 quads, got {}",
+            scene.quads.len()
+        );
 
         // First quad is the background — positioned at bottom of the viewport
         let bg = &scene.quads[0];

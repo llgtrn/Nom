@@ -1,6 +1,9 @@
-use std::sync::{Arc, atomic::{AtomicUsize, Ordering}};
-use std::collections::HashMap;
 use crate::types::*;
+use std::collections::HashMap;
+use std::sync::{
+    atomic::{AtomicUsize, Ordering},
+    Arc,
+};
 
 /// Focus handle — manages keyboard focus for UI elements
 /// Pattern: Zed FocusHandle (SlotMap + Arc<AtomicUsize> ref count)
@@ -35,7 +38,9 @@ impl FocusHandle {
 }
 
 impl PartialEq for FocusHandle {
-    fn eq(&self, other: &Self) -> bool { self.id == other.id }
+    fn eq(&self, other: &Self) -> bool {
+        self.id == other.id
+    }
 }
 
 /// Tracks focused element within a window
@@ -47,7 +52,11 @@ pub struct FocusManager {
 
 impl FocusManager {
     pub fn new() -> Self {
-        Self { focused: None, next_id: 1, handles: HashMap::new() }
+        Self {
+            focused: None,
+            next_id: 1,
+            handles: HashMap::new(),
+        }
     }
 
     pub fn create_handle(&mut self) -> FocusHandle {
@@ -62,7 +71,9 @@ impl FocusManager {
         self.focused = Some(handle.id);
     }
 
-    pub fn blur(&mut self) { self.focused = None; }
+    pub fn blur(&mut self) {
+        self.focused = None;
+    }
 
     pub fn is_focused(&self, handle: &FocusHandle) -> bool {
         self.focused == Some(handle.id)
@@ -71,14 +82,18 @@ impl FocusManager {
     /// Tab-order traversal: focus next tab-stop element
     pub fn focus_next(&mut self) {
         let ids: Vec<FocusId> = {
-            let mut sorted: Vec<_> = self.handles.values()
+            let mut sorted: Vec<_> = self
+                .handles
+                .values()
                 .filter(|h| h.tab_stop)
                 .map(|h| (h.tab_index, h.id))
                 .collect();
             sorted.sort_by_key(|(ti, _)| *ti);
             sorted.into_iter().map(|(_, id)| id).collect()
         };
-        if ids.is_empty() { return; }
+        if ids.is_empty() {
+            return;
+        }
         let next = match self.focused {
             None => ids[0],
             Some(current) => {
@@ -93,7 +108,11 @@ impl FocusManager {
     }
 }
 
-impl Default for FocusManager { fn default() -> Self { Self::new() } }
+impl Default for FocusManager {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 // Suppress unused import — Vec2 imported via types::* glob, may be needed by future extensions
 #[allow(unused_imports)]

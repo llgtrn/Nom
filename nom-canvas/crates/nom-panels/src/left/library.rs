@@ -17,7 +17,10 @@ pub struct LibraryPanel {
 
 impl LibraryPanel {
     pub fn new() -> Self {
-        Self { kinds: vec![], selected_kind: None }
+        Self {
+            kinds: vec![],
+            selected_kind: None,
+        }
     }
 
     /// Populate from a slice of `(name, description, entry_count)` tuples.
@@ -68,11 +71,21 @@ impl Default for LibraryPanel {
 }
 
 impl Panel for LibraryPanel {
-    fn id(&self) -> &str { "library" }
-    fn title(&self) -> &str { "Library" }
-    fn default_size(&self) -> f32 { 248.0 }
-    fn position(&self) -> DockPosition { DockPosition::Left }
-    fn activation_priority(&self) -> u32 { 20 }
+    fn id(&self) -> &str {
+        "library"
+    }
+    fn title(&self) -> &str {
+        "Library"
+    }
+    fn default_size(&self) -> f32 {
+        248.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Left
+    }
+    fn activation_priority(&self) -> u32 {
+        20
+    }
 }
 
 #[cfg(test)]

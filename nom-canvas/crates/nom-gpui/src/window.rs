@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::event::*;
+use crate::types::*;
 
 /// Window configuration
 pub struct WindowOptions {
@@ -98,8 +98,12 @@ impl Window {
         }
     }
 
-    pub fn request_redraw(&mut self) { self.frame_pending = true; }
-    pub fn take_frame_pending(&mut self) -> bool { std::mem::take(&mut self.frame_pending) }
+    pub fn request_redraw(&mut self) {
+        self.frame_pending = true;
+    }
+    pub fn take_frame_pending(&mut self) -> bool {
+        std::mem::take(&mut self.frame_pending)
+    }
 
     /// Handle device lost — rebuild swapchain + re-upload atlas
     pub fn handle_device_lost(&mut self) {
@@ -108,7 +112,9 @@ impl Window {
         self.frame_pending = true;
     }
 
-    pub fn set_cursor_position(&mut self, pos: Vec2) { self.cursor_position = pos; }
+    pub fn set_cursor_position(&mut self, pos: Vec2) {
+        self.cursor_position = pos;
+    }
     pub fn set_scale_factor(&mut self, factor: f32) {
         self.scale_factor = factor;
         self.frame_pending = true;
@@ -216,5 +222,48 @@ mod tests {
         assert_eq!(w.options.size, Vec2::new(1920.0, 1080.0));
         assert_eq!(w.content_size, Vec2::new(1920.0, 1080.0));
         assert!(w.options.resizable);
+    }
+
+    // ---- New tests ----
+
+    #[test]
+    fn window_transparent_option() {
+        let opts = WindowOptions {
+            transparent: true,
+            ..WindowOptions::default()
+        };
+        assert!(opts.transparent);
+    }
+
+    #[test]
+    fn window_min_size() {
+        let min = Vec2::new(320.0, 240.0);
+        let opts = WindowOptions {
+            min_size: Some(min),
+            ..WindowOptions::default()
+        };
+        assert_eq!(opts.min_size, Some(min));
+    }
+
+    #[test]
+    fn window_event_close_requested() {
+        let event = WindowEvent::CloseRequested;
+        // Pattern-match to confirm the variant is accessible and constructible.
+        match event {
+            WindowEvent::CloseRequested => {}
+            _ => panic!("expected CloseRequested"),
+        }
+    }
+
+    #[test]
+    fn window_event_resized() {
+        let new_size = Vec2::new(800.0, 600.0);
+        let event = WindowEvent::Resized { new_size };
+        match event {
+            WindowEvent::Resized { new_size: s } => {
+                assert_eq!(s, new_size);
+            }
+            _ => panic!("expected Resized"),
+        }
     }
 }

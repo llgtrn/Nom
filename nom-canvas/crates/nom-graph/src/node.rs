@@ -4,7 +4,10 @@ pub type NodeId = String;
 pub type PortId = String;
 
 #[derive(Clone, Debug)]
-pub enum PortDirection { Input, Output }
+pub enum PortDirection {
+    Input,
+    Output,
+}
 
 #[derive(Clone, Debug)]
 pub struct Port {
@@ -16,7 +19,14 @@ pub struct Port {
 }
 
 #[derive(Clone, Debug)]
-pub enum NodeState { Idle, Queued, Running, Completed, Error(String), Cached }
+pub enum NodeState {
+    Idle,
+    Queued,
+    Running,
+    Completed,
+    Error(String),
+    Cached,
+}
 
 /// Execution node in the DAG
 #[derive(Clone, Debug)]
@@ -32,12 +42,16 @@ pub struct ExecNode {
 /// ComfyUI IS_CHANGED hierarchy
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum IsChanged {
-    Always,           // always re-execute (e.g., random seed nodes)
-    HashInput,        // re-execute when inputs change (default)
-    Never,            // never re-execute (pure functions with same inputs)
+    Always,    // always re-execute (e.g., random seed nodes)
+    HashInput, // re-execute when inputs change (default)
+    Never,     // never re-execute (pure functions with same inputs)
 }
 
-impl Default for IsChanged { fn default() -> Self { Self::HashInput } }
+impl Default for IsChanged {
+    fn default() -> Self {
+        Self::HashInput
+    }
+}
 
 impl ExecNode {
     pub fn new(id: impl Into<String>, kind: impl Into<String>) -> Self {
@@ -51,12 +65,20 @@ impl ExecNode {
         }
     }
     pub fn input_ports(&self) -> Vec<&Port> {
-        self.ports.iter().filter(|p| matches!(p.direction, PortDirection::Input)).collect()
+        self.ports
+            .iter()
+            .filter(|p| matches!(p.direction, PortDirection::Input))
+            .collect()
     }
     pub fn output_ports(&self) -> Vec<&Port> {
-        self.ports.iter().filter(|p| matches!(p.direction, PortDirection::Output)).collect()
+        self.ports
+            .iter()
+            .filter(|p| matches!(p.direction, PortDirection::Output))
+            .collect()
     }
     pub fn is_ready(&self) -> bool {
-        self.input_ports().iter().all(|p| !p.required || p.connected)
+        self.input_ports()
+            .iter()
+            .all(|p| !p.required || p.connected)
     }
 }

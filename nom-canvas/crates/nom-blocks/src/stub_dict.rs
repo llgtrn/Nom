@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use std::collections::{HashMap, HashSet};
 use crate::block_model::NomtuRef;
 use crate::dict_reader::{ClauseShape, DictReader};
+use std::collections::{HashMap, HashSet};
 
 /// Wave B implementation: no DB required. Used in tests and until Wave C bridge exists.
 pub struct StubDictReader {
@@ -16,8 +16,20 @@ impl StubDictReader {
             seed_shapes: HashMap::new(),
         };
         // Seed with common AFFiNE block kinds + nom grammar kinds
-        for kind in &["verb", "concept", "metric", "constraint", "workflow", "agent",
-                       "noun", "relation", "attribute", "event", "document", "media"] {
+        for kind in &[
+            "verb",
+            "concept",
+            "metric",
+            "constraint",
+            "workflow",
+            "agent",
+            "noun",
+            "relation",
+            "attribute",
+            "event",
+            "document",
+            "media",
+        ] {
             reader.known_kinds.insert(kind.to_string());
         }
         reader
@@ -51,8 +63,18 @@ impl DictReader for StubDictReader {
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape> {
         self.seed_shapes.get(kind).cloned().unwrap_or_else(|| {
             vec![
-                ClauseShape { name: "input".into(), grammar_shape: "any".into(), is_required: false, description: "stub input".into() },
-                ClauseShape { name: "output".into(), grammar_shape: "any".into(), is_required: false, description: "stub output".into() },
+                ClauseShape {
+                    name: "input".into(),
+                    grammar_shape: "any".into(),
+                    is_required: false,
+                    description: "stub input".into(),
+                },
+                ClauseShape {
+                    name: "output".into(),
+                    grammar_shape: "any".into(),
+                    is_required: false,
+                    description: "stub output".into(),
+                },
             ]
         })
     }
@@ -102,10 +124,15 @@ mod tests {
 
     #[test]
     fn stub_dict_with_shapes_overrides_default() {
-        let dict = StubDictReader::new()
-            .with_shapes("verb", vec![
-                ClauseShape { name: "custom_port".into(), grammar_shape: "prose".into(), is_required: true, description: "custom".into() },
-            ]);
+        let dict = StubDictReader::new().with_shapes(
+            "verb",
+            vec![ClauseShape {
+                name: "custom_port".into(),
+                grammar_shape: "prose".into(),
+                is_required: true,
+                description: "custom".into(),
+            }],
+        );
         let shapes = dict.clause_shapes_for("verb");
         assert_eq!(shapes.len(), 1);
         assert_eq!(shapes[0].name, "custom_port");

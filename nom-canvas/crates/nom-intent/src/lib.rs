@@ -120,7 +120,11 @@ pub fn rank_hypotheses(hypotheses: &[&str], evidence: &[&str]) -> Vec<ScoredHypo
             }
         })
         .collect();
-    scored.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+    scored.sort_by(|a, b| {
+        b.score
+            .partial_cmp(&a.score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     scored
 }
 
@@ -182,7 +186,11 @@ mod tests {
 
     #[test]
     fn react_chain_produces_steps() {
-        let steps = react_chain("search query", &["search results found", "query matched"], 2);
+        let steps = react_chain(
+            "search query",
+            &["search results found", "query matched"],
+            2,
+        );
         assert_eq!(steps.len(), 2);
         assert!(steps[0].score >= 0.0);
     }
@@ -231,7 +239,13 @@ mod tests {
 
     #[test]
     fn react_chain_max_steps_respected() {
-        let evidence = &["step one", "step two", "step three", "step four", "step five"];
+        let evidence = &[
+            "step one",
+            "step two",
+            "step three",
+            "step four",
+            "step five",
+        ];
         let steps = react_chain("hypothesis", evidence, 3);
         assert_eq!(steps.len(), 3);
     }
@@ -299,7 +313,10 @@ mod tests {
         let signal = InterruptSignal::new();
         assert!(!signal.is_cancelled());
         signal.cancel();
-        assert!(signal.is_cancelled(), "signal must be cancelled after cancel()");
+        assert!(
+            signal.is_cancelled(),
+            "signal must be cancelled after cancel()"
+        );
     }
 
     #[test]
@@ -400,7 +417,11 @@ mod tests {
         // Cancel after 0 steps have been pushed — we cancel before the loop starts.
         signal.cancel();
         let steps = react_chain_interruptible("h", evidence, 5, &signal);
-        assert_eq!(steps.len(), 0, "cancelled before first step must yield empty");
+        assert_eq!(
+            steps.len(),
+            0,
+            "cancelled before first step must yield empty"
+        );
     }
 
     #[test]
@@ -467,7 +488,10 @@ mod tests {
         let cloned = original.clone();
         assert!(!cloned.is_cancelled());
         original.cancel();
-        assert!(cloned.is_cancelled(), "clone must see cancellation from original");
+        assert!(
+            cloned.is_cancelled(),
+            "clone must see cancellation from original"
+        );
     }
 
     #[test]
@@ -484,7 +508,8 @@ mod tests {
     fn react_chain_interruptible_returns_vec_of_react_step() {
         let signal = InterruptSignal::new();
         let evidence = &["item one", "item two"];
-        let result: Vec<ReactStep> = react_chain_interruptible("item one two", evidence, 2, &signal);
+        let result: Vec<ReactStep> =
+            react_chain_interruptible("item one two", evidence, 2, &signal);
         assert_eq!(result.len(), 2);
         assert!(result[0].score >= 0.0);
         assert!(result[1].score >= 0.0);
@@ -524,7 +549,10 @@ mod tests {
             assert!(
                 ranked[i].score >= ranked[i + 1].score,
                 "rank[{}]={} < rank[{}]={} — not sorted",
-                i, ranked[i].score, i + 1, ranked[i + 1].score
+                i,
+                ranked[i].score,
+                i + 1,
+                ranked[i + 1].score
             );
         }
         // Last item must be one of the zero-overlap hypotheses.
@@ -536,7 +564,11 @@ mod tests {
     #[test]
     fn react_chain_two_steps() {
         let steps = react_chain("search query", &["search term", "query result"], 2);
-        assert_eq!(steps.len(), 2, "2-step chain must complete with exactly 2 steps");
+        assert_eq!(
+            steps.len(),
+            2,
+            "2-step chain must complete with exactly 2 steps"
+        );
         assert!(steps[0].score >= 0.0);
         assert!(steps[1].score >= 0.0);
     }
@@ -548,7 +580,11 @@ mod tests {
             &["graph item", "node item", "edge item"],
             3,
         );
-        assert_eq!(steps.len(), 3, "3-step chain must complete with exactly 3 steps");
+        assert_eq!(
+            steps.len(),
+            3,
+            "3-step chain must complete with exactly 3 steps"
+        );
     }
 
     #[test]
@@ -598,7 +634,11 @@ mod tests {
         signal.cancel();
         let evidence = &["step a", "step b", "step c"];
         let steps = react_chain_interruptible("hypothesis", evidence, 3, &signal);
-        assert_eq!(steps.len(), 0, "cancelled before start must return empty vec");
+        assert_eq!(
+            steps.len(),
+            0,
+            "cancelled before start must return empty vec"
+        );
     }
 
     #[test]
@@ -610,7 +650,11 @@ mod tests {
         // boundary by cancelling mid-way using a clone shared with the loop.
         let signal = InterruptSignal::new();
         let signal_clone = signal.clone();
-        let evidence = &["step one evidence", "step two evidence", "step three evidence"];
+        let evidence = &[
+            "step one evidence",
+            "step two evidence",
+            "step three evidence",
+        ];
 
         // Run interruptible with a wrapper: cancel after 1 step by running manually.
         // Direct approach: run step 0 ourselves, cancel, then confirm interruptible yields 0.
@@ -768,7 +812,10 @@ mod tests {
         let s2 = InterruptSignal::new();
         s1.cancel();
         assert!(s1.is_cancelled());
-        assert!(!s2.is_cancelled(), "independent signals must not share cancellation state");
+        assert!(
+            !s2.is_cancelled(),
+            "independent signals must not share cancellation state"
+        );
     }
 
     #[test]
@@ -777,7 +824,10 @@ mod tests {
         let signal = InterruptSignal::new();
         signal.cancel();
         for _ in 0..10 {
-            assert!(signal.is_cancelled(), "is_cancelled must remain true after being set");
+            assert!(
+                signal.is_cancelled(),
+                "is_cancelled must remain true after being set"
+            );
         }
     }
 }

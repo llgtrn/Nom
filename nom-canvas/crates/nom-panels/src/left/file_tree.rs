@@ -4,7 +4,12 @@ use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum FileNodeKind { Directory, NomFile, NomtuFile, Asset }
+pub enum FileNodeKind {
+    Directory,
+    NomFile,
+    NomtuFile,
+    Asset,
+}
 
 #[derive(Debug, Clone)]
 pub struct FileNode {
@@ -14,21 +19,39 @@ pub struct FileNode {
     pub depth: u32,
     pub is_expanded: bool,
     pub children: Vec<FileNode>,
-    pub entity_id: Option<String>,  // NomtuRef.id when this is a .nomtu entry
+    pub entity_id: Option<String>, // NomtuRef.id when this is a .nomtu entry
 }
 
 impl FileNode {
     pub fn dir(name: impl Into<String>, depth: u32) -> Self {
         let name = name.into();
-        Self { id: name.clone(), name, kind: FileNodeKind::Directory, depth, is_expanded: false, children: vec![], entity_id: None }
+        Self {
+            id: name.clone(),
+            name,
+            kind: FileNodeKind::Directory,
+            depth,
+            is_expanded: false,
+            children: vec![],
+            entity_id: None,
+        }
     }
 
     pub fn file(name: impl Into<String>, depth: u32, kind: FileNodeKind) -> Self {
         let name = name.into();
-        Self { id: name.clone(), name, kind, depth, is_expanded: false, children: vec![], entity_id: None }
+        Self {
+            id: name.clone(),
+            name,
+            kind,
+            depth,
+            is_expanded: false,
+            children: vec![],
+            entity_id: None,
+        }
     }
 
-    pub fn toggle_expand(&mut self) { self.is_expanded = !self.is_expanded; }
+    pub fn toggle_expand(&mut self) {
+        self.is_expanded = !self.is_expanded;
+    }
 
     pub fn visible_nodes(&self) -> Vec<&FileNode> {
         let mut out = vec![self as &FileNode];
@@ -50,10 +73,17 @@ pub struct CollapsibleSection {
 
 impl CollapsibleSection {
     pub fn new(id: impl Into<String>, title: impl Into<String>) -> Self {
-        Self { id: id.into(), title: title.into(), is_open: true, nodes: vec![] }
+        Self {
+            id: id.into(),
+            title: title.into(),
+            is_open: true,
+            nodes: vec![],
+        }
     }
 
-    pub fn toggle(&mut self) { self.is_open = !self.is_open; }
+    pub fn toggle(&mut self) {
+        self.is_open = !self.is_open;
+    }
 
     pub fn visible_count(&self) -> usize {
         if self.is_open {
@@ -73,10 +103,15 @@ impl FileTreePanel {
     pub fn new() -> Self {
         let mut workspace = CollapsibleSection::new("workspace", "WORKSPACE");
         workspace.nodes.push(FileNode::dir("src", 0));
-        Self { sections: vec![workspace], selected_id: None }
+        Self {
+            sections: vec![workspace],
+            selected_id: None,
+        }
     }
 
-    pub fn select(&mut self, id: &str) { self.selected_id = Some(id.to_string()); }
+    pub fn select(&mut self, id: &str) {
+        self.selected_id = Some(id.to_string());
+    }
 }
 
 impl FileTreePanel {
@@ -112,14 +147,28 @@ impl FileTreePanel {
     }
 }
 
-impl Default for FileTreePanel { fn default() -> Self { Self::new() } }
+impl Default for FileTreePanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Panel for FileTreePanel {
-    fn id(&self) -> &str { "file-tree" }
-    fn title(&self) -> &str { "Explorer" }
-    fn default_size(&self) -> f32 { 248.0 }
-    fn position(&self) -> DockPosition { DockPosition::Left }
-    fn activation_priority(&self) -> u32 { 10 }
+    fn id(&self) -> &str {
+        "file-tree"
+    }
+    fn title(&self) -> &str {
+        "Explorer"
+    }
+    fn default_size(&self) -> f32 {
+        248.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Left
+    }
+    fn activation_priority(&self) -> u32 {
+        10
+    }
 }
 
 #[cfg(test)]
@@ -130,7 +179,8 @@ mod tests {
     fn collapsible_section_count() {
         let mut s = CollapsibleSection::new("s", "Section");
         let mut dir = FileNode::dir("src", 0);
-        dir.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
         dir.is_expanded = true;
         s.nodes.push(dir);
         assert_eq!(s.visible_count(), 2);
@@ -146,19 +196,77 @@ mod tests {
     }
 
     #[test]
+    fn file_tree_empty() {
+        let panel = FileTreePanel {
+            sections: vec![],
+            selected_id: None,
+        };
+        let total: usize = panel.sections.iter().map(|s| s.nodes.len()).sum();
+        assert_eq!(total, 0);
+    }
+
+    #[test]
+    fn file_tree_add_file() {
+        let mut section = CollapsibleSection::new("ws", "Workspace");
+        section
+            .nodes
+            .push(FileNode::file("main.nom", 0, FileNodeKind::NomFile));
+        let panel = FileTreePanel {
+            sections: vec![section],
+            selected_id: None,
+        };
+        let total: usize = panel.sections.iter().map(|s| s.nodes.len()).sum();
+        assert!(total > 0);
+    }
+
+    #[test]
+    fn file_tree_add_directory() {
+        let node = FileNode::dir("src", 0);
+        assert_eq!(node.kind, FileNodeKind::Directory);
+    }
+
+    #[test]
+    fn file_tree_expand() {
+        let mut node = FileNode::dir("src", 0);
+        node.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        node.toggle_expand();
+        assert!(node.is_expanded);
+        let visible = node.visible_nodes();
+        assert_eq!(visible.len(), 2); // dir + child
+    }
+
+    #[test]
+    fn file_tree_collapse() {
+        let mut node = FileNode::dir("src", 0);
+        node.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        node.is_expanded = true;
+        node.toggle_expand();
+        assert!(!node.is_expanded);
+        let visible = node.visible_nodes();
+        assert_eq!(visible.len(), 1); // only dir itself
+    }
+
+    #[test]
     fn file_tree_paint_has_quads() {
         let mut panel = FileTreePanel::new();
         let section = panel.sections.get_mut(0).unwrap();
         let dir = section.nodes.get_mut(0).unwrap();
         dir.is_expanded = true;
-        dir.children.push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
+        dir.children
+            .push(FileNode::file("main.nom", 1, FileNodeKind::NomFile));
         panel.selected_id = Some("src".to_string());
 
         let mut scene = Scene::new();
         panel.paint_scene(248.0, 600.0, &mut scene);
 
         // bg + selection highlight for "src" at least.
-        assert!(scene.quads.len() >= 2, "expected >=2 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 2,
+            "expected >=2 quads, got {}",
+            scene.quads.len()
+        );
 
         // First quad is the background.
         let bg = &scene.quads[0];

@@ -5,8 +5,22 @@ use std::collections::HashMap;
 /// Which compose backend to route to — DB-driven at runtime.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BackendKind {
-    Video, Audio, Image, Document, Data, App, Workflow, Scenario, RagQuery,
-    Transform, EmbedGen, Render, Export, Pipeline, CodeExec, WebScreen,
+    Video,
+    Audio,
+    Image,
+    Document,
+    Data,
+    App,
+    Workflow,
+    Scenario,
+    RagQuery,
+    Transform,
+    EmbedGen,
+    Render,
+    Export,
+    Pipeline,
+    CodeExec,
+    WebScreen,
 }
 
 impl BackendKind {
@@ -33,13 +47,22 @@ impl BackendKind {
     }
     pub fn name(&self) -> &'static str {
         match self {
-            Self::Video => "video", Self::Audio => "audio", Self::Image => "image",
-            Self::Document => "document", Self::Data => "data", Self::App => "app",
-            Self::Workflow => "workflow", Self::Scenario => "scenario",
-            Self::RagQuery => "rag_query", Self::Transform => "transform",
-            Self::EmbedGen => "embed_gen", Self::Render => "render",
-            Self::Export => "export", Self::Pipeline => "pipeline",
-            Self::CodeExec => "code_exec", Self::WebScreen => "web_screen",
+            Self::Video => "video",
+            Self::Audio => "audio",
+            Self::Image => "image",
+            Self::Document => "document",
+            Self::Data => "data",
+            Self::App => "app",
+            Self::Workflow => "workflow",
+            Self::Scenario => "scenario",
+            Self::RagQuery => "rag_query",
+            Self::Transform => "transform",
+            Self::EmbedGen => "embed_gen",
+            Self::Render => "render",
+            Self::Export => "export",
+            Self::Pipeline => "pipeline",
+            Self::CodeExec => "code_exec",
+            Self::WebScreen => "web_screen",
         }
     }
 }
@@ -57,7 +80,9 @@ pub struct BackendRegistry {
 
 impl BackendRegistry {
     pub fn new() -> Self {
-        Self { backends: HashMap::new() }
+        Self {
+            backends: HashMap::new(),
+        }
     }
 
     /// Register a backend, keyed by its own kind().
@@ -66,7 +91,12 @@ impl BackendRegistry {
     }
 
     /// Dispatch to the registered backend, or return Err if none registered.
-    pub fn dispatch(&self, kind: BackendKind, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
+    pub fn dispatch(
+        &self,
+        kind: BackendKind,
+        input: &str,
+        progress: &dyn Fn(f32),
+    ) -> Result<String, String> {
         match self.backends.get(&kind) {
             Some(b) => b.compose(input, progress),
             None => Err(format!("no backend registered for kind: {}", kind.name())),
@@ -80,7 +110,9 @@ impl BackendRegistry {
 }
 
 impl Default for BackendRegistry {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 /// Stub backend for testing — echoes the input with a kind prefix.
@@ -89,11 +121,15 @@ pub struct NoopBackend {
 }
 
 impl NoopBackend {
-    pub fn new(kind: BackendKind) -> Self { Self { kind } }
+    pub fn new(kind: BackendKind) -> Self {
+        Self { kind }
+    }
 }
 
 impl Backend for NoopBackend {
-    fn kind(&self) -> BackendKind { self.kind.clone() }
+    fn kind(&self) -> BackendKind {
+        self.kind.clone()
+    }
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
         Ok(format!("{}:{}", self.kind.name(), input))
@@ -105,7 +141,10 @@ mod tests {
     use super::*;
     #[test]
     fn dispatch_kind_from_name_roundtrip() {
-        assert_eq!(BackendKind::from_kind_name("video"), Some(BackendKind::Video));
+        assert_eq!(
+            BackendKind::from_kind_name("video"),
+            Some(BackendKind::Video)
+        );
         assert_eq!(BackendKind::from_kind_name("unknown"), None);
     }
     #[test]
@@ -115,10 +154,29 @@ mod tests {
     }
     #[test]
     fn all_16_backends_have_kind_names() {
-        let names = ["video","audio","image","document","data","app","workflow","scenario",
-                     "rag_query","transform","embed_gen","render","export","pipeline","code_exec","web_screen"];
+        let names = [
+            "video",
+            "audio",
+            "image",
+            "document",
+            "data",
+            "app",
+            "workflow",
+            "scenario",
+            "rag_query",
+            "transform",
+            "embed_gen",
+            "render",
+            "export",
+            "pipeline",
+            "code_exec",
+            "web_screen",
+        ];
         for name in names {
-            assert!(BackendKind::from_kind_name(name).is_some(), "missing: {name}");
+            assert!(
+                BackendKind::from_kind_name(name).is_some(),
+                "missing: {name}"
+            );
         }
     }
 
@@ -128,7 +186,9 @@ mod tests {
         let mut reg = BackendRegistry::new();
         reg.register(Box::new(NoopBackend::new(BackendKind::Video)));
         let called_with = Cell::new(0.0f32);
-        let result = reg.dispatch(BackendKind::Video, "test-input", &|p| { called_with.set(p); });
+        let result = reg.dispatch(BackendKind::Video, "test-input", &|p| {
+            called_with.set(p);
+        });
         assert_eq!(result, Ok("video:test-input".to_string()));
         assert!((called_with.get() - 1.0).abs() < f32::EPSILON);
     }

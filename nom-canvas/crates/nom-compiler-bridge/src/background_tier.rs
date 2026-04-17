@@ -1,10 +1,10 @@
 #![deny(unsafe_code)]
-use std::sync::Arc;
+use crate::shared::{PipelineOutput, SharedState};
 use crossbeam_channel::{Receiver, Sender};
-use crate::shared::{SharedState, PipelineOutput};
-use nom_blocks::shared_types::{CompositionPlan, DeepThinkEvent};
 #[allow(unused_imports)]
 pub use nom_blocks::shared_types::RunEvent;
+use nom_blocks::shared_types::{CompositionPlan, DeepThinkEvent};
+use std::sync::Arc;
 
 /// Background job variants (Refly BullMQ pattern ported to Rust crossbeam channels)
 pub enum BackgroundJob {
@@ -22,7 +22,7 @@ pub enum BackgroundJob {
     /// Verify a composition plan
     Verify {
         plan: CompositionPlan,
-        reply: Sender<Vec<String>>,  // diagnostic messages
+        reply: Sender<Vec<String>>, // diagnostic messages
     },
     /// Deep think: scored ReAct loop, max 10 steps
     DeepThink {
@@ -34,13 +34,23 @@ pub enum BackgroundJob {
 
 #[derive(Clone, Debug, Default)]
 pub struct CompileOpts {
-    pub max_stages: u8,           // 0 = run all stages (S1-S6)
+    pub max_stages: u8, // 0 = run all stages (S1-S6)
     pub cache_enabled: bool,
 }
 
 impl CompileOpts {
-    pub fn full() -> Self { Self { max_stages: 0, cache_enabled: true } }
-    pub fn fast() -> Self { Self { max_stages: 2, cache_enabled: true } }
+    pub fn full() -> Self {
+        Self {
+            max_stages: 0,
+            cache_enabled: true,
+        }
+    }
+    pub fn fast() -> Self {
+        Self {
+            max_stages: 2,
+            cache_enabled: true,
+        }
+    }
 }
 
 pub struct BackgroundTier {
@@ -54,23 +64,37 @@ impl BackgroundTier {
     }
 
     /// Submit a compile job. Returns immediately — result delivered via reply channel.
-    pub fn compile(&self, source: String, opts: CompileOpts) -> Receiver<Result<PipelineOutput, String>> {
+    pub fn compile(
+        &self,
+        source: String,
+        opts: CompileOpts,
+    ) -> Receiver<Result<PipelineOutput, String>> {
         let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
-        let _ = self.sender.send(BackgroundJob::Compile { source, opts, reply: reply_tx });
+        let _ = self.sender.send(BackgroundJob::Compile {
+            source,
+            opts,
+            reply: reply_tx,
+        });
         reply_rx
     }
 
     /// Submit a plan flow job
     pub fn plan_flow(&self, output: PipelineOutput) -> Receiver<Result<CompositionPlan, String>> {
         let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
-        let _ = self.sender.send(BackgroundJob::PlanFlow { output, reply: reply_tx });
+        let _ = self.sender.send(BackgroundJob::PlanFlow {
+            output,
+            reply: reply_tx,
+        });
         reply_rx
     }
 
     /// Submit a verify job
     pub fn verify(&self, plan: CompositionPlan) -> Receiver<Vec<String>> {
         let (reply_tx, reply_rx) = crossbeam_channel::bounded(1);
-        let _ = self.sender.send(BackgroundJob::Verify { plan, reply: reply_tx });
+        let _ = self.sender.send(BackgroundJob::Verify {
+            plan,
+            reply: reply_tx,
+        });
         reply_rx
     }
 
@@ -81,7 +105,11 @@ impl BackgroundTier {
         interrupt: Arc<std::sync::atomic::AtomicBool>,
     ) -> Receiver<DeepThinkEvent> {
         let (events_tx, events_rx) = crossbeam_channel::bounded(64);
-        let _ = self.sender.send(BackgroundJob::DeepThink { intent, interrupt, events: events_tx });
+        let _ = self.sender.send(BackgroundJob::DeepThink {
+            intent,
+            interrupt,
+            events: events_tx,
+        });
         events_rx
     }
 }
@@ -136,7 +164,11 @@ impl BackgroundWorker {
 
     fn handle(&self, job: BackgroundJob) {
         match job {
-            BackgroundJob::Compile { source, opts, reply } => {
+            BackgroundJob::Compile {
+                source,
+                opts,
+                reply,
+            } => {
                 let result = self.do_compile(&source, &opts);
                 let _ = reply.send(result);
             }
@@ -148,13 +180,21 @@ impl BackgroundWorker {
                 let diagnostics = self.do_verify(&plan);
                 let _ = reply.send(diagnostics);
             }
-            BackgroundJob::DeepThink { intent, interrupt, events } => {
+            BackgroundJob::DeepThink {
+                intent,
+                interrupt,
+                events,
+            } => {
                 self.do_deep_think(&intent, &interrupt, &events);
             }
         }
     }
 
-    pub(crate) fn do_compile(&self, source: &str, opts: &CompileOpts) -> Result<PipelineOutput, String> {
+    pub(crate) fn do_compile(
+        &self,
+        source: &str,
+        opts: &CompileOpts,
+    ) -> Result<PipelineOutput, String> {
         let version = self.state.grammar_version();
         let cache_key = SharedState::compile_cache_key(source, version);
 
@@ -168,9 +208,7 @@ impl BackgroundWorker {
         #[cfg(feature = "compiler")]
         {
             use nom_concept::stage1_tokenize;
-            let tok_count = stage1_tokenize(source)
-                .map(|s| s.toks.len())
-                .unwrap_or(0);
+            let tok_count = stage1_tokenize(source).map(|s| s.toks.len()).unwrap_or(0);
             let output = PipelineOutput {
                 source_hash: cache_key,
                 grammar_version: version,
@@ -222,13 +260,19 @@ impl BackgroundWorker {
 
         // Stub: emit 3 steps then Final
         for i in 0..3 {
-            if interrupt.load(std::sync::atomic::Ordering::Relaxed) { break; }
+            if interrupt.load(std::sync::atomic::Ordering::Relaxed) {
+                break;
+            }
             let step = DeepThinkStep {
                 hypothesis: format!("Hypothesis {i}: exploring intent '{intent}'"),
                 evidence: vec![format!("evidence_{i}_a"), format!("evidence_{i}_b")],
                 confidence: 0.3 + (i as f32) * 0.2,
                 counterevidence: vec![],
-                refined_from: if i > 0 { Some(format!("step_{}", i - 1)) } else { None },
+                refined_from: if i > 0 {
+                    Some(format!("step_{}", i - 1))
+                } else {
+                    None
+                },
             };
             let _ = events.send(DeepThinkEvent::Step(step));
         }
@@ -308,7 +352,10 @@ mod tests {
             BackgroundJob::Compile { source: s, .. } => {
                 assert_eq!(s, source);
             }
-            other => panic!("expected BackgroundJob::Compile, got a different variant: {:?}", std::mem::discriminant(&other)),
+            other => panic!(
+                "expected BackgroundJob::Compile, got a different variant: {:?}",
+                std::mem::discriminant(&other)
+            ),
         }
     }
 
@@ -327,7 +374,10 @@ mod tests {
                 assert_eq!(o.source_hash, output.source_hash);
                 assert_eq!(o.grammar_version, output.grammar_version);
             }
-            other => panic!("expected BackgroundJob::PlanFlow, got a different variant: {:?}", std::mem::discriminant(&other)),
+            other => panic!(
+                "expected BackgroundJob::PlanFlow, got a different variant: {:?}",
+                std::mem::discriminant(&other)
+            ),
         }
     }
 
@@ -336,9 +386,13 @@ mod tests {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         let worker = BackgroundWorker::new(state.clone());
         // First compile populates the cache
-        let first = worker.do_compile("define y that is 7", &CompileOpts::full()).unwrap();
+        let first = worker
+            .do_compile("define y that is 7", &CompileOpts::full())
+            .unwrap();
         // Second compile with cache enabled must return the same source_hash
-        let second = worker.do_compile("define y that is 7", &CompileOpts::full()).unwrap();
+        let second = worker
+            .do_compile("define y that is 7", &CompileOpts::full())
+            .unwrap();
         assert_eq!(first.source_hash, second.source_hash);
         assert_eq!(first.grammar_version, second.grammar_version);
     }
@@ -359,5 +413,50 @@ mod tests {
         let result = worker.do_compile("", &CompileOpts::fast());
         // Stub must return Ok even for empty source
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn background_tier_compile_returns_result() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // compile returns Result<PipelineOutput, String> — must not panic
+        let result: Result<PipelineOutput, String> =
+            worker.do_compile("define z that is 0", &CompileOpts::full());
+        assert!(result.is_ok());
+        let output = result.unwrap();
+        // output_json must be a non-empty string
+        assert!(!output.output_json.is_empty());
+    }
+
+    #[test]
+    fn background_tier_plan_flow_returns_result() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let fake_output = PipelineOutput {
+            source_hash: 0,
+            grammar_version: 0,
+            output_json: "{}".into(),
+        };
+        let result = worker.do_plan_flow(&fake_output);
+        // Must be Ok regardless of input in stub mode
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        // Plan has an intent field (may be empty string or "stub plan")
+        let _ = plan.intent.len();
+    }
+
+    #[test]
+    fn background_tier_verify_returns_result() {
+        use nom_blocks::shared_types::CompositionPlan;
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "test".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        // Stub verify always returns empty diagnostics — must be a Vec
+        assert!(diags.is_empty());
     }
 }

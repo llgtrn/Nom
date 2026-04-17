@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 use ropey::Rope;
-use std::ops::Range;
 use std::borrow::Cow;
+use std::ops::Range;
 
 pub type BufferId = u64;
 
@@ -18,12 +18,26 @@ pub struct Transaction {
 }
 
 impl Transaction {
-    pub fn new() -> Self { Self { patches: Vec::new(), active: true } }
-    pub fn add_patch(&mut self, patch: Patch) { self.patches.push(patch); }
-    pub fn commit(mut self) -> Vec<Patch> { self.active = false; self.patches }
+    pub fn new() -> Self {
+        Self {
+            patches: Vec::new(),
+            active: true,
+        }
+    }
+    pub fn add_patch(&mut self, patch: Patch) {
+        self.patches.push(patch);
+    }
+    pub fn commit(mut self) -> Vec<Patch> {
+        self.active = false;
+        self.patches
+    }
 }
 
-impl Default for Transaction { fn default() -> Self { Self::new() } }
+impl Default for Transaction {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 pub struct Buffer {
     pub id: BufferId,
@@ -46,15 +60,21 @@ impl Buffer {
         }
     }
 
-    pub fn len(&self) -> usize { self.rope.len_chars() }
-    pub fn is_empty(&self) -> bool { self.rope.len_chars() == 0 }
+    pub fn len(&self) -> usize {
+        self.rope.len_chars()
+    }
+    pub fn is_empty(&self) -> bool {
+        self.rope.len_chars() == 0
+    }
 
     pub fn text_for_range(&self, range: Range<usize>) -> Cow<'_, str> {
         let slice = self.rope.slice(range.start..range.end);
         Cow::Owned(slice.to_string())
     }
 
-    pub fn line_count(&self) -> usize { self.rope.len_lines() }
+    pub fn line_count(&self) -> usize {
+        self.rope.len_lines()
+    }
 
     pub fn char_to_line(&self, char_idx: usize) -> usize {
         self.rope.char_to_line(char_idx.min(self.rope.len_chars()))
@@ -74,7 +94,10 @@ impl Buffer {
             self.rope.insert(start, new_text);
         }
         self.version += 1;
-        Patch { old_range: start..start + new_text.len(), new_text: old_text }
+        Patch {
+            old_range: start..start + new_text.len(),
+            new_text: old_text,
+        }
     }
 
     pub fn insert_at(&mut self, offset: usize, text: &str) {
@@ -168,5 +191,40 @@ mod tests {
         let mut buf = Buffer::new(1, "helo");
         buf.insert_at(3, "l");
         assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
+
+    #[test]
+    fn buffer_delete_char() {
+        let mut buf = Buffer::new(1, "ab");
+        buf.delete_range(1..2);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "a");
+    }
+
+    #[test]
+    fn buffer_delete_range() {
+        let mut buf = Buffer::new(1, "hello");
+        buf.delete_range(0..3);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "lo");
+    }
+
+    #[test]
+    fn buffer_rope_lines() {
+        let buf = Buffer::new(1, "a\nb\nc");
+        assert_eq!(buf.line_count(), 3);
+    }
+
+    #[test]
+    fn buffer_char_at() {
+        let buf = Buffer::new(1, "hello");
+        // char_at via text_for_range(0..1)
+        let ch: char = buf.text_for_range(0..1).chars().next().unwrap();
+        assert_eq!(ch, 'h');
+    }
+
+    #[test]
+    fn buffer_replace_range() {
+        let mut buf = Buffer::new(1, "hello");
+        buf.edit(1..4, "XXX");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hXXXo");
     }
 }

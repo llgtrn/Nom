@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore;
 use nom_blocks::compose::image_block::ImageBlock;
 use nom_blocks::NomtuRef;
-use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 
 pub struct ImageInput {
     pub entity: NomtuRef,
@@ -15,12 +15,25 @@ pub struct ImageInput {
 pub struct ImageBackend;
 
 impl ImageBackend {
-    pub fn compose(input: ImageInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ImageBlock {
-        sink.emit(ComposeEvent::Started { backend: "image".into(), entity_id: input.entity.id.clone() });
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "rasterizing".into() });
+    pub fn compose(
+        input: ImageInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> ImageBlock {
+        sink.emit(ComposeEvent::Started {
+            backend: "image".into(),
+            entity_id: input.entity.id.clone(),
+        });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "rasterizing".into(),
+        });
         let artifact_hash = store.write(&input.pixel_data);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
         ImageBlock {
             entity: input.entity,
             artifact_hash,
@@ -34,14 +47,18 @@ impl ImageBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn image_compose_basic() {
         let mut store = InMemoryStore::new();
         let input = ImageInput {
-            entity: NomtuRef { id: "img1".into(), word: "banner".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "img1".into(),
+                word: "banner".into(),
+                kind: "media".into(),
+            },
             pixel_data: vec![255u8; 64],
             width: 8,
             height: 8,
@@ -58,7 +75,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let pixel_data: Vec<u8> = (0u8..=255).collect();
         let input = ImageInput {
-            entity: NomtuRef { id: "img2".into(), word: "gradient".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "img2".into(),
+                word: "gradient".into(),
+                kind: "media".into(),
+            },
             pixel_data: pixel_data.clone(),
             width: 16,
             height: 16,
@@ -76,7 +97,11 @@ mod tests {
     fn image_compose_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = ImageInput {
-            entity: NomtuRef { id: "img3".into(), word: "thumbnail".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "img3".into(),
+                word: "thumbnail".into(),
+                kind: "media".into(),
+            },
             pixel_data: vec![0u8; 16],
             width: 4,
             height: 4,

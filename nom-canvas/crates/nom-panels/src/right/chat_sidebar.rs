@@ -4,7 +4,12 @@ use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum ChatRole { User, Assistant, System, Tool }
+pub enum ChatRole {
+    User,
+    Assistant,
+    System,
+    Tool,
+}
 
 #[derive(Debug, Clone)]
 pub struct ToolCard {
@@ -17,7 +22,13 @@ pub struct ToolCard {
 
 impl ToolCard {
     pub fn new(tool_name: impl Into<String>, input_summary: impl Into<String>) -> Self {
-        Self { tool_name: tool_name.into(), input_summary: input_summary.into(), output_summary: None, duration_ms: None, is_expanded: false }
+        Self {
+            tool_name: tool_name.into(),
+            input_summary: input_summary.into(),
+            output_summary: None,
+            duration_ms: None,
+            is_expanded: false,
+        }
     }
 
     pub fn complete(&mut self, output: impl Into<String>, duration_ms: u64) {
@@ -37,18 +48,34 @@ pub struct ChatMessage {
 
 impl ChatMessage {
     pub fn user(id: impl Into<String>, content: impl Into<String>) -> Self {
-        Self { id: id.into(), role: ChatRole::User, content: content.into(), tool_cards: vec![], is_streaming: false }
+        Self {
+            id: id.into(),
+            role: ChatRole::User,
+            content: content.into(),
+            tool_cards: vec![],
+            is_streaming: false,
+        }
     }
 
     pub fn assistant_streaming(id: impl Into<String>) -> Self {
-        Self { id: id.into(), role: ChatRole::Assistant, content: String::new(), tool_cards: vec![], is_streaming: true }
+        Self {
+            id: id.into(),
+            role: ChatRole::Assistant,
+            content: String::new(),
+            tool_cards: vec![],
+            is_streaming: true,
+        }
     }
 
     pub fn append_delta(&mut self, delta: &str) {
-        if self.is_streaming { self.content.push_str(delta); }
+        if self.is_streaming {
+            self.content.push_str(delta);
+        }
     }
 
-    pub fn finalize(&mut self) { self.is_streaming = false; }
+    pub fn finalize(&mut self) {
+        self.is_streaming = false;
+    }
 }
 
 pub struct ChatSidebarPanel {
@@ -59,7 +86,11 @@ pub struct ChatSidebarPanel {
 
 impl ChatSidebarPanel {
     pub fn new() -> Self {
-        Self { messages: vec![], pending_tool: None, scroll_to_bottom: false }
+        Self {
+            messages: vec![],
+            pending_tool: None,
+            scroll_to_bottom: false,
+        }
     }
 
     pub fn push_message(&mut self, msg: ChatMessage) {
@@ -92,7 +123,9 @@ impl ChatSidebarPanel {
         }
     }
 
-    pub fn message_count(&self) -> usize { self.messages.len() }
+    pub fn message_count(&self) -> usize {
+        self.messages.len()
+    }
 
     pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
         // Panel background.
@@ -103,7 +136,7 @@ impl ChatSidebarPanel {
             let bubble_w = width * 0.75;
             let (bx, color) = match msg.role {
                 ChatRole::User => (width - bubble_w - 8.0, tokens::CTA),
-                _              => (8.0, tokens::BG2),
+                _ => (8.0, tokens::BG2),
             };
             scene.push_quad(fill_quad(bx, y, bubble_w, 44.0, color));
 
@@ -116,14 +149,28 @@ impl ChatSidebarPanel {
     }
 }
 
-impl Default for ChatSidebarPanel { fn default() -> Self { Self::new() } }
+impl Default for ChatSidebarPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Panel for ChatSidebarPanel {
-    fn id(&self) -> &str { "chat-sidebar" }
-    fn title(&self) -> &str { "Assistant" }
-    fn default_size(&self) -> f32 { 320.0 }
-    fn position(&self) -> DockPosition { DockPosition::Right }
-    fn activation_priority(&self) -> u32 { 10 }
+    fn id(&self) -> &str {
+        "chat-sidebar"
+    }
+    fn title(&self) -> &str {
+        "Assistant"
+    }
+    fn default_size(&self) -> f32 {
+        320.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Right
+    }
+    fn activation_priority(&self) -> u32 {
+        10
+    }
 }
 
 #[cfg(test)]
@@ -151,6 +198,37 @@ mod tests {
         let last = panel.messages.last().unwrap();
         assert_eq!(last.tool_cards.len(), 1);
         assert_eq!(last.tool_cards[0].tool_name, "stage1_tokenize");
+    }
+
+    #[test]
+    fn chat_sidebar_new_empty() {
+        let panel = ChatSidebarPanel::new();
+        assert_eq!(panel.message_count(), 0);
+    }
+
+    #[test]
+    fn chat_sidebar_add_message() {
+        let mut panel = ChatSidebarPanel::new();
+        panel.push_message(ChatMessage::user("u1", "hello"));
+        assert_eq!(panel.message_count(), 1);
+    }
+
+    #[test]
+    fn chat_sidebar_message_role() {
+        let mut panel = ChatSidebarPanel::new();
+        panel.push_message(ChatMessage::user("u1", "hello"));
+        panel.push_message(ChatMessage::assistant_streaming("a1"));
+        assert_eq!(panel.messages[0].role, ChatRole::User);
+        assert_eq!(panel.messages[1].role, ChatRole::Assistant);
+    }
+
+    #[test]
+    fn chat_sidebar_clear() {
+        let mut panel = ChatSidebarPanel::new();
+        panel.push_message(ChatMessage::user("u1", "hello"));
+        panel.push_message(ChatMessage::user("u2", "world"));
+        panel.messages.clear();
+        assert_eq!(panel.message_count(), 0);
     }
 
     #[test]

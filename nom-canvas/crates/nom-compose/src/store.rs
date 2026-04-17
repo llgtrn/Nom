@@ -8,7 +8,7 @@ pub struct ContentHash([u8; 32]);
 impl ContentHash {
     /// Derive a `ContentHash` from raw bytes using SHA-256 (spec §14).
     pub fn from_bytes(data: &[u8]) -> Self {
-        use sha2::{Sha256, Digest};
+        use sha2::{Digest, Sha256};
         let mut hasher = Sha256::new();
         hasher.update(data);
         let result = hasher.finalize();
@@ -23,15 +23,21 @@ impl ContentHash {
     }
 
     /// Raw byte array.
-    pub fn as_bytes(&self) -> &[u8; 32] { &self.0 }
+    pub fn as_bytes(&self) -> &[u8; 32] {
+        &self.0
+    }
 }
 
 impl From<[u8; 32]> for ContentHash {
-    fn from(b: [u8; 32]) -> Self { Self(b) }
+    fn from(b: [u8; 32]) -> Self {
+        Self(b)
+    }
 }
 
 impl From<ContentHash> for [u8; 32] {
-    fn from(h: ContentHash) -> Self { h.0 }
+    fn from(h: ContentHash) -> Self {
+        h.0
+    }
 }
 
 pub trait ArtifactStore: Send + Sync {
@@ -52,14 +58,39 @@ pub struct InMemoryStore {
 }
 
 impl InMemoryStore {
-    pub fn new() -> Self { Self { blobs: HashMap::new() } }
+    pub fn new() -> Self {
+        Self {
+            blobs: HashMap::new(),
+        }
+    }
 
     fn sha256(data: &[u8]) -> [u8; 32] {
         *ContentHash::from_bytes(data).as_bytes()
     }
 }
 
-impl Default for InMemoryStore { fn default() -> Self { Self::new() } }
+impl Default for InMemoryStore {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl InMemoryStore {
+    /// Remove all stored artifacts.
+    pub fn clear(&mut self) {
+        self.blobs.clear();
+    }
+
+    /// Number of stored artifacts.
+    pub fn len(&self) -> usize {
+        self.blobs.len()
+    }
+
+    /// Returns true if no artifacts are stored.
+    pub fn is_empty(&self) -> bool {
+        self.blobs.is_empty()
+    }
+}
 
 impl ArtifactStore for InMemoryStore {
     fn write(&mut self, data: &[u8]) -> [u8; 32] {
@@ -70,7 +101,9 @@ impl ArtifactStore for InMemoryStore {
     fn read(&self, hash: &[u8; 32]) -> Option<Vec<u8>> {
         self.blobs.get(hash).cloned()
     }
-    fn exists(&self, hash: &[u8; 32]) -> bool { self.blobs.contains_key(hash) }
+    fn exists(&self, hash: &[u8; 32]) -> bool {
+        self.blobs.contains_key(hash)
+    }
     fn byte_size(&self, hash: &[u8; 32]) -> Option<u64> {
         self.blobs.get(hash).map(|v| v.len() as u64)
     }
@@ -78,7 +111,9 @@ impl ArtifactStore for InMemoryStore {
     /// Store `data` keyed by its `ContentHash`; returns the hash.
     fn put_bytes(&mut self, data: &[u8]) -> ContentHash {
         let ch = ContentHash::from_bytes(data);
-        self.blobs.entry(*ch.as_bytes()).or_insert_with(|| data.to_vec());
+        self.blobs
+            .entry(*ch.as_bytes())
+            .or_insert_with(|| data.to_vec());
         ch
     }
 }
@@ -117,7 +152,10 @@ mod tests {
         // SHA-256("") = e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855
         let h = ContentHash::from_bytes(b"");
         let hex = h.as_hex();
-        assert_eq!(hex, "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855");
+        assert_eq!(
+            hex,
+            "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+        );
     }
 
     #[test]
@@ -175,5 +213,30 @@ mod tests {
         s.put_bytes(b"two");
         s.put_bytes(b"three");
         assert_eq!(s.blobs.len(), 3);
+    }
+
+    #[test]
+    fn artifact_store_overwrite() {
+        // Content-addressed store: writing the same bytes twice yields the same
+        // hash and keeps the first stored value (idempotent).
+        let mut s = InMemoryStore::new();
+        let h1 = s.write(b"payload");
+        let h2 = s.write(b"payload");
+        assert_eq!(h1, h2, "same content must map to same hash");
+        // Only one entry should exist.
+        assert_eq!(s.len(), 1);
+        // The stored data must match the original payload.
+        assert_eq!(s.read(&h1).unwrap(), b"payload");
+    }
+
+    #[test]
+    fn artifact_store_clear() {
+        let mut s = InMemoryStore::new();
+        s.write(b"artifact-a");
+        s.write(b"artifact-b");
+        assert_eq!(s.len(), 2);
+        s.clear();
+        assert!(s.is_empty(), "clear() must remove all artifacts");
+        assert_eq!(s.len(), 0);
     }
 }

@@ -1,11 +1,11 @@
 // Integration tests: nom-canvas-core ↔ nom-gpui ↔ nom-theme pipeline
 
-use nom_canvas_core::viewport::Viewport;
-use nom_canvas_core::selection::RubberBand;
 use nom_canvas_core::elements::ElementBounds;
-use nom_gpui::scene::{Scene, Quad, Shadow, FrostedRect};
-use nom_gpui::types::{Bounds, Hsla, Pixels, Point, Size};
+use nom_canvas_core::selection::RubberBand;
+use nom_canvas_core::viewport::Viewport;
 use nom_gpui::renderer::{LinearRgba, Renderer};
+use nom_gpui::scene::{FrostedRect, Quad, Scene, Shadow};
+use nom_gpui::types::{Bounds, Hsla, Pixels, Point, Size};
 use nom_theme::tokens;
 
 // ── 1. viewport → scene quad ─────────────────────────────────────────────────
@@ -19,8 +19,14 @@ fn integration_viewport_to_scene_quad() {
     let mut scene = Scene::new();
     scene.push_quad(Quad {
         bounds: Bounds {
-            origin: Point { x: Pixels(screen[0]), y: Pixels(screen[1]) },
-            size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+            origin: Point {
+                x: Pixels(screen[0]),
+                y: Pixels(screen[1]),
+            },
+            size: Size {
+                width: Pixels(50.0),
+                height: Pixels(50.0),
+            },
         },
         ..Default::default()
     });
@@ -89,8 +95,14 @@ fn integration_viewport_zoom_affects_bounds() {
 fn integration_frosted_rect_uses_tokens() {
     let rect = FrostedRect {
         bounds: Bounds {
-            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-            size: Size { width: Pixels(200.0), height: Pixels(100.0) },
+            origin: Point {
+                x: Pixels(0.0),
+                y: Pixels(0.0),
+            },
+            size: Size {
+                width: Pixels(200.0),
+                height: Pixels(100.0),
+            },
         },
         blur_radius: tokens::FROSTED_BLUR_RADIUS,
         bg_alpha: tokens::FROSTED_BG_ALPHA,
@@ -115,8 +127,16 @@ fn integration_selection_in_viewport() {
     let mut rb = RubberBand::new([-50.0, -50.0]);
     rb.update([50.0, 50.0]);
 
-    let inside = ElementBounds { id: 1, min: [-10.0, -10.0], max: [10.0, 10.0] };
-    let outside = ElementBounds { id: 2, min: [900.0, 900.0], max: [950.0, 950.0] };
+    let inside = ElementBounds {
+        id: 1,
+        min: [-10.0, -10.0],
+        max: [10.0, 10.0],
+    };
+    let outside = ElementBounds {
+        id: 2,
+        min: [900.0, 900.0],
+        max: [950.0, 950.0],
+    };
 
     assert!(rb.intersects(&inside));
     assert!(!rb.intersects(&outside));
@@ -152,10 +172,7 @@ fn integration_renderer_draws_scene() {
 fn integration_theme_cta_distinct_from_bg() {
     let bg: [f32; 4] = tokens::BG;
     let cta: [f32; 4] = tokens::CTA;
-    assert_ne!(
-        bg, cta,
-        "CTA token must differ from BG token"
-    );
+    assert_ne!(bg, cta, "CTA token must differ from BG token");
 }
 
 // ── 10. fresh viewport: canvas origin maps to screen centre ──────────────────

@@ -4,7 +4,12 @@ use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub enum SearchResultKind { NomtuEntry, Command, File, RecentDoc }
+pub enum SearchResultKind {
+    NomtuEntry,
+    Command,
+    File,
+    RecentDoc,
+}
 
 #[derive(Debug, Clone)]
 pub struct SearchResult {
@@ -12,7 +17,7 @@ pub struct SearchResult {
     pub label: String,
     pub detail: Option<String>,
     pub kind: SearchResultKind,
-    pub score: u32,  // higher = better match
+    pub score: u32, // higher = better match
 }
 
 pub struct QuickSearchPanel {
@@ -24,24 +29,46 @@ pub struct QuickSearchPanel {
 
 impl QuickSearchPanel {
     pub fn new() -> Self {
-        Self { query: String::new(), results: vec![], selected: None, is_open: false }
+        Self {
+            query: String::new(),
+            results: vec![],
+            selected: None,
+            is_open: false,
+        }
     }
 
-    pub fn open(&mut self) { self.is_open = true; self.query.clear(); self.results.clear(); self.selected = None; }
-    pub fn close(&mut self) { self.is_open = false; }
+    pub fn open(&mut self) {
+        self.is_open = true;
+        self.query.clear();
+        self.results.clear();
+        self.selected = None;
+    }
+    pub fn close(&mut self) {
+        self.is_open = false;
+    }
 
     pub fn set_query(&mut self, q: impl Into<String>) {
         self.query = q.into();
-        self.selected = if self.results.is_empty() { None } else { Some(0) };
+        self.selected = if self.results.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
     }
 
     pub fn load_results(&mut self, results: Vec<SearchResult>) {
         self.results = results;
-        self.selected = if self.results.is_empty() { None } else { Some(0) };
+        self.selected = if self.results.is_empty() {
+            None
+        } else {
+            Some(0)
+        };
     }
 
     pub fn move_selection(&mut self, delta: i32) {
-        if self.results.is_empty() { return; }
+        if self.results.is_empty() {
+            return;
+        }
         let n = self.results.len() as i32;
         let current = self.selected.unwrap_or(0) as i32;
         self.selected = Some(((current + delta).rem_euclid(n)) as usize);
@@ -71,14 +98,28 @@ impl QuickSearchPanel {
     }
 }
 
-impl Default for QuickSearchPanel { fn default() -> Self { Self::new() } }
+impl Default for QuickSearchPanel {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 impl Panel for QuickSearchPanel {
-    fn id(&self) -> &str { "quick-search" }
-    fn title(&self) -> &str { "Search" }
-    fn default_size(&self) -> f32 { 248.0 }
-    fn position(&self) -> DockPosition { DockPosition::Left }
-    fn activation_priority(&self) -> u32 { 20 }
+    fn id(&self) -> &str {
+        "quick-search"
+    }
+    fn title(&self) -> &str {
+        "Search"
+    }
+    fn default_size(&self) -> f32 {
+        248.0
+    }
+    fn position(&self) -> DockPosition {
+        DockPosition::Left
+    }
+    fn activation_priority(&self) -> u32 {
+        20
+    }
 }
 
 #[cfg(test)]
@@ -127,16 +168,121 @@ mod tests {
     }
 
     #[test]
+    fn quick_search_empty_query() {
+        let mut qs = QuickSearchPanel::new();
+        qs.load_results(vec![
+            SearchResult {
+                id: "a".into(),
+                label: "alpha".into(),
+                detail: None,
+                kind: SearchResultKind::File,
+                score: 10,
+            },
+            SearchResult {
+                id: "b".into(),
+                label: "beta".into(),
+                detail: None,
+                kind: SearchResultKind::Command,
+                score: 8,
+            },
+        ]);
+        // empty query means all items are present in results
+        assert_eq!(qs.results.len(), 2);
+    }
+
+    #[test]
+    fn quick_search_filter() {
+        let mut qs = QuickSearchPanel::new();
+        qs.load_results(vec![
+            SearchResult {
+                id: "fn_main".into(),
+                label: "fn main".into(),
+                detail: None,
+                kind: SearchResultKind::NomtuEntry,
+                score: 10,
+            },
+            SearchResult {
+                id: "readme".into(),
+                label: "README.md".into(),
+                detail: None,
+                kind: SearchResultKind::File,
+                score: 5,
+            },
+        ]);
+        qs.set_query("fn");
+        // After setting query, results still hold all loaded items; filtering is caller-side
+        // but selected resets to Some(0) when results are non-empty
+        assert_eq!(qs.selected, Some(0));
+        // The label of first result contains "fn"
+        assert!(qs.results[0].label.contains("fn"));
+    }
+
+    #[test]
+    fn quick_search_select() {
+        let mut qs = QuickSearchPanel::new();
+        qs.load_results(vec![
+            SearchResult {
+                id: "a".into(),
+                label: "alpha".into(),
+                detail: None,
+                kind: SearchResultKind::Command,
+                score: 10,
+            },
+            SearchResult {
+                id: "b".into(),
+                label: "beta".into(),
+                detail: None,
+                kind: SearchResultKind::Command,
+                score: 8,
+            },
+        ]);
+        qs.move_selection(1);
+        assert_eq!(qs.selected, Some(1));
+        assert_eq!(qs.selected_result().unwrap().id, "b");
+    }
+
+    #[test]
+    fn quick_search_clear() {
+        let mut qs = QuickSearchPanel::new();
+        qs.load_results(vec![SearchResult {
+            id: "a".into(),
+            label: "alpha".into(),
+            detail: None,
+            kind: SearchResultKind::File,
+            score: 10,
+        }]);
+        qs.set_query("alpha");
+        assert_eq!(qs.query, "alpha");
+        // Re-open clears query and results
+        qs.open();
+        assert!(qs.query.is_empty());
+        assert!(qs.results.is_empty());
+        assert_eq!(qs.selected, None);
+    }
+
+    #[test]
     fn quick_search_navigation() {
         let mut qs = QuickSearchPanel::new();
         qs.load_results(vec![
-            SearchResult { id: "a".into(), label: "alpha".into(), detail: None, kind: SearchResultKind::Command, score: 10 },
-            SearchResult { id: "b".into(), label: "beta".into(), detail: None, kind: SearchResultKind::NomtuEntry, score: 8 },
+            SearchResult {
+                id: "a".into(),
+                label: "alpha".into(),
+                detail: None,
+                kind: SearchResultKind::Command,
+                score: 10,
+            },
+            SearchResult {
+                id: "b".into(),
+                label: "beta".into(),
+                detail: None,
+                kind: SearchResultKind::NomtuEntry,
+                score: 8,
+            },
         ]);
         assert_eq!(qs.selected_result().unwrap().id, "a");
         qs.move_selection(1);
         assert_eq!(qs.selected_result().unwrap().id, "b");
-        qs.move_selection(1);  // wraps
+        qs.move_selection(1); // wraps
         assert_eq!(qs.selected_result().unwrap().id, "a");
     }
 }

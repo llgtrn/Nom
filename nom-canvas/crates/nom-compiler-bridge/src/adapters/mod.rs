@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
+pub mod completion;
 pub mod highlight;
 pub mod lsp;
-pub mod completion;
 pub mod score;
 
 use crate::interactive_tier::InteractiveTierOps;
@@ -33,7 +33,7 @@ impl<'a> LspAdapter<'a> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shared::{SharedState, GrammarKind};
+    use crate::shared::{GrammarKind, SharedState};
 
     #[test]
     fn lsp_adapter_complete_empty_cache_returns_nothing() {
@@ -49,9 +49,18 @@ mod tests {
     fn lsp_adapter_complete_with_cached_kinds() {
         let state = SharedState::new("a.db", "b.db");
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "render".into(), description: "output action".into() },
-            GrammarKind { name: "resolve".into(), description: "lookup action".into() },
-            GrammarKind { name: "concept".into(), description: "abstract idea".into() },
+            GrammarKind {
+                name: "render".into(),
+                description: "output action".into(),
+            },
+            GrammarKind {
+                name: "resolve".into(),
+                description: "lookup action".into(),
+            },
+            GrammarKind {
+                name: "concept".into(),
+                description: "abstract idea".into(),
+            },
         ]);
         let ops = InteractiveTierOps::new(&state);
         let adapter = LspAdapter::new(ops);

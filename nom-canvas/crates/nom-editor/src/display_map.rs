@@ -16,11 +16,17 @@ pub struct DisplayMap {
 
 impl DisplayMap {
     pub fn new(tab_size: usize) -> Self {
-        Self { tab_size, folds: Vec::new() }
+        Self {
+            tab_size,
+            folds: Vec::new(),
+        }
     }
 
     pub fn add_fold(&mut self, range: Range<usize>, placeholder: impl Into<String>) {
-        self.folds.push(FoldRegion { buffer_range: range, placeholder: placeholder.into() });
+        self.folds.push(FoldRegion {
+            buffer_range: range,
+            placeholder: placeholder.into(),
+        });
         self.folds.sort_by_key(|f| f.buffer_range.start);
     }
 
@@ -62,9 +68,14 @@ impl DisplayMap {
         let mut row = 0usize;
         let mut col = 0usize;
         for ch in text.chars() {
-            if ch == '\n' { row += 1; col = 0; }
-            else if ch == '\t' { col += self.tab_size - (col % self.tab_size); }
-            else { col += 1; }
+            if ch == '\n' {
+                row += 1;
+                col = 0;
+            } else if ch == '\t' {
+                col += self.tab_size - (col % self.tab_size);
+            } else {
+                col += 1;
+            }
         }
         (row, col)
     }

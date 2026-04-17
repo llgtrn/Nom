@@ -26,21 +26,51 @@ pub struct StyleRefinement {
 impl StyleRefinement {
     /// Merge `other` into `self`: only override fields that `other` has set.
     pub fn merge(&mut self, other: &StyleRefinement) {
-        if other.width.is_some()          { self.width          = other.width; }
-        if other.height.is_some()         { self.height         = other.height; }
-        if other.min_width.is_some()      { self.min_width      = other.min_width; }
-        if other.min_height.is_some()     { self.min_height     = other.min_height; }
-        if other.flex_grow.is_some()      { self.flex_grow      = other.flex_grow; }
-        if other.flex_shrink.is_some()    { self.flex_shrink    = other.flex_shrink; }
-        if other.padding.is_some()        { self.padding        = other.padding; }
-        if other.margin.is_some()         { self.margin         = other.margin; }
-        if other.background.is_some()     { self.background     = other.background; }
-        if other.border_color.is_some()   { self.border_color   = other.border_color; }
-        if other.border_widths.is_some()  { self.border_widths  = other.border_widths; }
-        if other.corner_radii.is_some()   { self.corner_radii   = other.corner_radii; }
-        if other.text_color.is_some()     { self.text_color     = other.text_color; }
-        if other.opacity.is_some()        { self.opacity        = other.opacity; }
-        if other.overflow_hidden.is_some(){ self.overflow_hidden = other.overflow_hidden; }
+        if other.width.is_some() {
+            self.width = other.width;
+        }
+        if other.height.is_some() {
+            self.height = other.height;
+        }
+        if other.min_width.is_some() {
+            self.min_width = other.min_width;
+        }
+        if other.min_height.is_some() {
+            self.min_height = other.min_height;
+        }
+        if other.flex_grow.is_some() {
+            self.flex_grow = other.flex_grow;
+        }
+        if other.flex_shrink.is_some() {
+            self.flex_shrink = other.flex_shrink;
+        }
+        if other.padding.is_some() {
+            self.padding = other.padding;
+        }
+        if other.margin.is_some() {
+            self.margin = other.margin;
+        }
+        if other.background.is_some() {
+            self.background = other.background;
+        }
+        if other.border_color.is_some() {
+            self.border_color = other.border_color;
+        }
+        if other.border_widths.is_some() {
+            self.border_widths = other.border_widths;
+        }
+        if other.corner_radii.is_some() {
+            self.corner_radii = other.corner_radii;
+        }
+        if other.text_color.is_some() {
+            self.text_color = other.text_color;
+        }
+        if other.opacity.is_some() {
+            self.opacity = other.opacity;
+        }
+        if other.overflow_hidden.is_some() {
+            self.overflow_hidden = other.overflow_hidden;
+        }
     }
 }
 
@@ -110,7 +140,9 @@ pub trait Styled: Sized {
     }
 
     /// Shadow is emitted as a drop-shadow primitive; this is a no-op marker.
-    fn shadow(self) -> Self { self }
+    fn shadow(self) -> Self {
+        self
+    }
 }
 
 #[cfg(test)]
@@ -119,22 +151,35 @@ mod tests {
 
     #[test]
     fn bg_sets_background() {
-        struct S { style: StyleRefinement }
-        impl Styled for S {
-            fn style(&mut self) -> &mut StyleRefinement { &mut self.style }
+        struct S {
+            style: StyleRefinement,
         }
-        let s = S { style: StyleRefinement::default() }
-            .bg(Hsla::new(120.0, 0.5, 0.5, 1.0));
+        impl Styled for S {
+            fn style(&mut self) -> &mut StyleRefinement {
+                &mut self.style
+            }
+        }
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .bg(Hsla::new(120.0, 0.5, 0.5, 1.0));
         assert_eq!(s.style.background, Some(Hsla::new(120.0, 0.5, 0.5, 1.0)));
     }
 
     #[test]
     fn rounded_sets_corner_radii() {
-        struct S { style: StyleRefinement }
-        impl Styled for S {
-            fn style(&mut self) -> &mut StyleRefinement { &mut self.style }
+        struct S {
+            style: StyleRefinement,
         }
-        let s = S { style: StyleRefinement::default() }.rounded(Pixels(8.0));
+        impl Styled for S {
+            fn style(&mut self) -> &mut StyleRefinement {
+                &mut self.style
+            }
+        }
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .rounded(Pixels(8.0));
         assert_eq!(s.style.corner_radii, Some(Corners::all(Pixels(8.0))));
     }
 
@@ -163,5 +208,118 @@ mod tests {
         base.merge(&empty);
 
         assert_eq!(base.background, Some(Hsla::white()));
+    }
+
+    // ---- New tests ----
+
+    // Helper struct used across new tests
+    struct S {
+        style: StyleRefinement,
+    }
+    impl Styled for S {
+        fn style(&mut self) -> &mut StyleRefinement {
+            &mut self.style
+        }
+    }
+
+    #[test]
+    fn styled_default() {
+        let s = StyleRefinement::default();
+        assert!(s.background.is_none());
+        assert!(s.border_widths.is_none());
+        assert!(s.padding.is_none());
+        assert!(s.margin.is_none());
+        assert!(s.opacity.is_none());
+    }
+
+    #[test]
+    fn styled_background() {
+        let color = Hsla::new(200.0, 0.8, 0.5, 1.0);
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .bg(color);
+        assert_eq!(s.style.background, Some(color));
+    }
+
+    #[test]
+    fn styled_border() {
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .border(Pixels(2.0));
+        let widths = s.style.border_widths.expect("border_widths should be set");
+        assert_eq!(widths.top, Pixels(2.0));
+        assert_eq!(widths.right, Pixels(2.0));
+        assert_eq!(widths.bottom, Pixels(2.0));
+        assert_eq!(widths.left, Pixels(2.0));
+    }
+
+    #[test]
+    fn styled_padding() {
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .p(Pixels(8.0));
+        let padding = s.style.padding.expect("padding should be set");
+        assert_eq!(padding.top, Pixels(8.0));
+        assert_eq!(padding.left, Pixels(8.0));
+    }
+
+    #[test]
+    fn styled_margin() {
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .m(Pixels(4.0));
+        let margin = s.style.margin.expect("margin should be set");
+        assert_eq!(margin.top, Pixels(4.0));
+        assert_eq!(margin.bottom, Pixels(4.0));
+    }
+
+    #[test]
+    fn styled_chain() {
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .bg(Hsla::black())
+        .border(Pixels(1.0))
+        .p(Pixels(10.0))
+        .m(Pixels(5.0))
+        .opacity(0.5);
+        assert!(s.style.background.is_some());
+        assert!(s.style.border_widths.is_some());
+        assert!(s.style.padding.is_some());
+        assert!(s.style.margin.is_some());
+        assert!((s.style.opacity.unwrap() - 0.5).abs() < 1e-6);
+    }
+
+    #[test]
+    fn styled_override_previous() {
+        let first = Hsla::new(0.0, 1.0, 0.5, 1.0);
+        let second = Hsla::new(120.0, 1.0, 0.5, 1.0);
+        let s = S {
+            style: StyleRefinement::default(),
+        }
+        .bg(first)
+        .bg(second);
+        assert_eq!(s.style.background, Some(second));
+    }
+
+    #[test]
+    fn styled_merge_second_wins_on_conflict() {
+        let mut base = StyleRefinement::default();
+        base.background = Some(Hsla::black());
+        base.opacity = Some(0.9);
+
+        let mut patch = StyleRefinement::default();
+        patch.background = Some(Hsla::white());
+
+        base.merge(&patch);
+
+        // second wins on conflict
+        assert_eq!(base.background, Some(Hsla::white()));
+        // non-conflicting field preserved
+        assert_eq!(base.opacity, Some(0.9));
     }
 }

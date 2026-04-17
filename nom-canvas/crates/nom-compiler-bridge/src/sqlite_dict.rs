@@ -2,8 +2,8 @@
 // SqliteDictReader: Wave C concrete DictReader backed by nom-dict + nom-grammar
 // Only compiled when `compiler` feature is enabled
 
-use nom_blocks::dict_reader::{ClauseShape, DictReader};
 use nom_blocks::block_model::NomtuRef;
+use nom_blocks::dict_reader::{ClauseShape, DictReader};
 
 /// Wave C concrete DictReader using nom-grammar's SQLite connection.
 /// Owned by BridgeState; the bridge holds the ONLY writer connection.
@@ -27,7 +27,8 @@ impl SqliteDictReader {
         rusqlite::Connection::open_with_flags(
             &self.state.dict_path,
             rusqlite::OpenFlags::SQLITE_OPEN_READ_ONLY | rusqlite::OpenFlags::SQLITE_OPEN_NO_MUTEX,
-        ).ok()
+        )
+        .ok()
     }
 }
 
@@ -52,21 +53,25 @@ impl DictReader for SqliteDictReader {
     }
 
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape> {
-        let Some(conn) = self.open_grammar_conn() else { return vec![]; };
+        let Some(conn) = self.open_grammar_conn() else {
+            return vec![];
+        };
         let mut stmt = match conn.prepare(
             "SELECT name, grammar_shape, is_required, description FROM clause_shapes WHERE kind = ?1 ORDER BY name"
         ) {
             Ok(s) => s,
             Err(_) => return vec![],
         };
-        let shapes: Vec<ClauseShape> = stmt.query_map(rusqlite::params![kind], |row| {
-            Ok(ClauseShape {
-                name: row.get(0)?,
-                grammar_shape: row.get(1)?,
-                is_required: row.get::<_, i64>(2)? != 0,
-                description: row.get(3)?,
+        let shapes: Vec<ClauseShape> = stmt
+            .query_map(rusqlite::params![kind], |row| {
+                Ok(ClauseShape {
+                    name: row.get(0)?,
+                    grammar_shape: row.get(1)?,
+                    is_required: row.get::<_, i64>(2)? != 0,
+                    description: row.get(3)?,
+                })
             })
-        }).ok()
+            .ok()
             .map(|rows| rows.filter_map(|r| r.ok()).collect())
             .unwrap_or_default();
         shapes
@@ -79,7 +84,9 @@ impl DictReader for SqliteDictReader {
             rusqlite::params![word, kind],
             |row| Ok((row.get(0)?, row.get(1)?, row.get(2)?)),
         );
-        result.ok().map(|(id, word, kind)| NomtuRef::new(id, word, kind))
+        result
+            .ok()
+            .map(|(id, word, kind)| NomtuRef::new(id, word, kind))
     }
 }
 
@@ -89,14 +96,22 @@ pub struct SqliteDictReader;
 
 #[cfg(not(feature = "compiler"))]
 impl SqliteDictReader {
-    pub fn new_stub() -> Self { Self }
+    pub fn new_stub() -> Self {
+        Self
+    }
 }
 
 #[cfg(not(feature = "compiler"))]
 impl DictReader for SqliteDictReader {
-    fn is_known_kind(&self, _kind: &str) -> bool { false }
-    fn clause_shapes_for(&self, _kind: &str) -> Vec<ClauseShape> { vec![] }
-    fn lookup_entity(&self, _word: &str, _kind: &str) -> Option<NomtuRef> { None }
+    fn is_known_kind(&self, _kind: &str) -> bool {
+        false
+    }
+    fn clause_shapes_for(&self, _kind: &str) -> Vec<ClauseShape> {
+        vec![]
+    }
+    fn lookup_entity(&self, _word: &str, _kind: &str) -> Option<NomtuRef> {
+        None
+    }
 }
 
 #[cfg(test)]

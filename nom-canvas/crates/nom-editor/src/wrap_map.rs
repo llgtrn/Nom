@@ -1,6 +1,10 @@
 #![deny(unsafe_code)]
 
-pub struct WrapPoint { pub display_row: usize, pub buffer_row: usize, pub wrap_column: usize }
+pub struct WrapPoint {
+    pub display_row: usize,
+    pub buffer_row: usize,
+    pub wrap_column: usize,
+}
 
 pub struct WrapMap {
     pub column_width: usize,
@@ -9,7 +13,10 @@ pub struct WrapMap {
 
 impl WrapMap {
     pub fn new(column_width: usize) -> Self {
-        Self { column_width, wrap_points: Vec::new() }
+        Self {
+            column_width,
+            wrap_points: Vec::new(),
+        }
     }
     /// Rebuild wrap points for a set of display rows given their visual widths
     pub fn rebuild(&mut self, rows: &[(usize, usize)]) {
@@ -27,7 +34,9 @@ impl WrapMap {
             }
         }
     }
-    pub fn wrap_count(&self) -> usize { self.wrap_points.len() }
+    pub fn wrap_count(&self) -> usize {
+        self.wrap_points.len()
+    }
 }
 
 #[cfg(test)]

@@ -1,5 +1,5 @@
-use crate::types::*;
 use crate::styled::{StyleRefinement, Styled};
+use crate::types::*;
 
 // ---------------------------------------------------------------------------
 // LayoutRegistry — hands out unique, incrementing LayoutIds
@@ -45,18 +45,20 @@ pub struct WindowContext {
 
 impl WindowContext {
     pub fn new(scale_factor: f32, viewport_size: Vec2) -> Self {
-        Self { scale_factor, viewport_size, layout_registry: LayoutRegistry::new() }
+        Self {
+            scale_factor,
+            viewport_size,
+            layout_registry: LayoutRegistry::new(),
+        }
     }
 
-    pub fn rem_size(&self) -> Pixels { Pixels(16.0 * self.scale_factor) }
+    pub fn rem_size(&self) -> Pixels {
+        Pixels(16.0 * self.scale_factor)
+    }
 
     /// Delegates to taffy via the layout engine (stub implementation).
     /// Returns a unique, non-zero `LayoutId` per call.
-    pub fn request_layout(
-        &mut self,
-        _style: &StyleRefinement,
-        _children: &[LayoutId],
-    ) -> LayoutId {
+    pub fn request_layout(&mut self, _style: &StyleRefinement, _children: &[LayoutId]) -> LayoutId {
         self.layout_registry.next_id()
     }
 
@@ -158,11 +160,15 @@ impl Div {
 }
 
 impl Default for Div {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 impl Styled for Div {
-    fn style(&mut self) -> &mut StyleRefinement { &mut self.style }
+    fn style(&mut self) -> &mut StyleRefinement {
+        &mut self.style
+    }
 }
 
 impl Element for Div {
@@ -297,5 +303,32 @@ mod tests {
         assert_eq!(registry.next_id(), LayoutId(1));
         assert_eq!(registry.next_id(), LayoutId(2));
         assert_eq!(registry.next_id(), LayoutId(3));
+    }
+
+    // ---- New tests ----
+
+    #[test]
+    fn window_context_has_layout_registry() {
+        // WindowContext::new should succeed and layout_registry field works
+        // (accessed via request_layout which delegates to it).
+        let mut cx = WindowContext::new(1.0, Vec2::new(640.0, 480.0));
+        let style = crate::styled::StyleRefinement::default();
+        let id = cx.request_layout(&style, &[]);
+        // The registry starts at 1, so first id >= 1
+        assert!(id.0 >= 1, "layout id from registry must be >= 1");
+    }
+
+    #[test]
+    fn window_context_request_layout_returns_id() {
+        let mut cx = make_cx();
+        let style = crate::styled::StyleRefinement::default();
+        let id = cx.request_layout(&style, &[]);
+        assert_ne!(id, LayoutId(0), "returned LayoutId must not be zero");
+    }
+
+    #[test]
+    fn layout_id_numeric() {
+        let id = LayoutId(5);
+        assert_eq!(id.0, 5);
     }
 }

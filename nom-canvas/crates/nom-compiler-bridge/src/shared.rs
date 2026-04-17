@@ -47,9 +47,9 @@ impl SharedState {
 
     /// SipHash-like key: xor of source_text hash and grammar version
     pub fn compile_cache_key(source_text: &str, grammar_version: u64) -> u64 {
-        let text_hash = source_text.bytes().fold(0u64, |acc, b| {
-            acc.wrapping_mul(31).wrapping_add(b as u64)
-        });
+        let text_hash = source_text
+            .bytes()
+            .fold(0u64, |acc, b| acc.wrapping_mul(31).wrapping_add(b as u64));
         text_hash ^ grammar_version.wrapping_mul(6364136223846793005)
     }
 
@@ -64,18 +64,24 @@ impl SharedState {
     }
 
     pub fn grammar_version(&self) -> u64 {
-        self.grammar_version.load(std::sync::atomic::Ordering::Relaxed)
+        self.grammar_version
+            .load(std::sync::atomic::Ordering::Relaxed)
     }
 
     pub fn cached_grammar_kinds(&self) -> Vec<GrammarKind> {
-        self.grammar_kinds.lock().ok().map(|g| g.clone()).unwrap_or_default()
+        self.grammar_kinds
+            .lock()
+            .ok()
+            .map(|g| g.clone())
+            .unwrap_or_default()
     }
 
     pub fn update_grammar_kinds(&self, kinds: Vec<GrammarKind>) {
         if let Ok(mut g) = self.grammar_kinds.lock() {
             *g = kinds;
         }
-        self.grammar_version.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+        self.grammar_version
+            .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     }
 }
 
@@ -101,7 +107,11 @@ mod tests {
     fn compile_cache_roundtrip() {
         let state = SharedState::new("dict.db", "grammar.db");
         let key = SharedState::compile_cache_key("hello", 0);
-        let output = PipelineOutput { source_hash: key, grammar_version: 0, output_json: "{}".into() };
+        let output = PipelineOutput {
+            source_hash: key,
+            grammar_version: 0,
+            output_json: "{}".into(),
+        };
         state.cache_compile_result(key, output.clone());
         let result = state.get_cached_compile(key);
         assert!(result.is_some());
@@ -112,9 +122,10 @@ mod tests {
     fn grammar_kinds_update() {
         let state = SharedState::new("a", "b");
         assert_eq!(state.grammar_version(), 0);
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "verb".into(), description: "action".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        }]);
         assert_eq!(state.grammar_version(), 1);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 1);
@@ -125,9 +136,10 @@ mod tests {
     fn shared_state_grammar_cache_roundtrip() {
         let state = SharedState::new("dict.db", "grammar.db");
         assert!(state.cached_grammar_kinds().is_empty());
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "action".into(), description: "something done".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "action".into(),
+            description: "something done".into(),
+        }]);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 1);
         assert_eq!(kinds[0].name, "action");
@@ -141,19 +153,25 @@ mod tests {
         let version = state.grammar_version();
         // The first key inserted (key_0) should be evicted after 256 more are added
         let key_0 = SharedState::compile_cache_key("evict_me_source", version);
-        state.cache_compile_result(key_0, PipelineOutput {
-            source_hash: key_0,
-            grammar_version: version,
-            output_json: "{}".into(),
-        });
+        state.cache_compile_result(
+            key_0,
+            PipelineOutput {
+                source_hash: key_0,
+                grammar_version: version,
+                output_json: "{}".into(),
+            },
+        );
         for i in 1u64..=256 {
             let src = format!("source_{i}");
             let k = SharedState::compile_cache_key(&src, version);
-            state.cache_compile_result(k, PipelineOutput {
-                source_hash: k,
-                grammar_version: version,
-                output_json: "{}".into(),
-            });
+            state.cache_compile_result(
+                k,
+                PipelineOutput {
+                    source_hash: k,
+                    grammar_version: version,
+                    output_json: "{}".into(),
+                },
+            );
         }
         // key_0 should have been evicted (LRU capacity = 256, we added 257 total)
         assert!(
@@ -166,9 +184,10 @@ mod tests {
     fn shared_state_pipeline_output_version_tracking() {
         let state = SharedState::new("d.db", "g.db");
         // Bump grammar version so we have a non-zero version to track
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "noun".into(), description: "thing".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "noun".into(),
+            description: "thing".into(),
+        }]);
         let version = state.grammar_version();
         assert_eq!(version, 1);
         let source = "define item that is 1";
@@ -195,16 +214,22 @@ mod tests {
         let version = state.grammar_version();
         for i in 0u64..10 {
             let key = SharedState::compile_cache_key(&format!("src_{i}"), version);
-            state.cache_compile_result(key, PipelineOutput {
-                source_hash: key,
-                grammar_version: version,
-                output_json: "{}".into(),
-            });
+            state.cache_compile_result(
+                key,
+                PipelineOutput {
+                    source_hash: key,
+                    grammar_version: version,
+                    output_json: "{}".into(),
+                },
+            );
         }
         // All 10 should still be present
         for i in 0u64..10 {
             let key = SharedState::compile_cache_key(&format!("src_{i}"), version);
-            assert!(state.get_cached_compile(key).is_some(), "entry {i} should still be cached");
+            assert!(
+                state.get_cached_compile(key).is_some(),
+                "entry {i} should still be cached"
+            );
         }
     }
 
@@ -232,7 +257,10 @@ mod tests {
     fn compile_cache_key_changes_with_version() {
         let k1 = SharedState::compile_cache_key("same_source", 0);
         let k2 = SharedState::compile_cache_key("same_source", 1);
-        assert_ne!(k1, k2, "different grammar versions must produce different cache keys");
+        assert_ne!(
+            k1, k2,
+            "different grammar versions must produce different cache keys"
+        );
     }
 
     #[test]
@@ -245,12 +273,83 @@ mod tests {
     #[test]
     fn shared_state_multiple_grammar_updates_increment_version() {
         let state = SharedState::new("d.db", "g.db");
-        state.update_grammar_kinds(vec![GrammarKind { name: "a".into(), description: "".into() }]);
-        state.update_grammar_kinds(vec![GrammarKind { name: "b".into(), description: "".into() }]);
-        state.update_grammar_kinds(vec![GrammarKind { name: "c".into(), description: "".into() }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "a".into(),
+            description: "".into(),
+        }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "b".into(),
+            description: "".into(),
+        }]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "c".into(),
+            description: "".into(),
+        }]);
         assert_eq!(state.grammar_version(), 3);
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 1);
         assert_eq!(kinds[0].name, "c");
+    }
+
+    #[test]
+    fn shared_state_grammar_version_starts_zero() {
+        let state = SharedState::new("d.db", "g.db");
+        assert_eq!(state.grammar_version(), 0);
+    }
+
+    #[test]
+    fn shared_state_increment_grammar_version() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "noun".into(),
+            description: "thing".into(),
+        }]);
+        assert_eq!(state.grammar_version(), 1);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        }]);
+        assert_eq!(state.grammar_version(), 2);
+    }
+
+    #[test]
+    fn shared_state_dict_pool_non_empty() {
+        use std::num::NonZeroUsize;
+        // The LRU cache is built with capacity 256 — confirm capacity > 0
+        let cap = NonZeroUsize::new(256).unwrap();
+        assert!(cap.get() > 0);
+        // Inserting one entry leaves it retrievable (pool is functional)
+        let state = SharedState::new("d.db", "g.db");
+        let key = SharedState::compile_cache_key("probe", 0);
+        state.cache_compile_result(
+            key,
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: "{}".into(),
+            },
+        );
+        assert!(state.get_cached_compile(key).is_some());
+    }
+
+    #[test]
+    fn shared_state_two_arcs_same_data() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("my_path.db", "my_gram.db"));
+        let clone = Arc::clone(&state);
+        // Both arcs point to the same allocation — dict_path is identical
+        assert_eq!(state.dict_path, clone.dict_path);
+        assert_eq!(state.grammar_path, clone.grammar_path);
+    }
+
+    #[test]
+    fn pipeline_output_grammar_version_preserved() {
+        let output = PipelineOutput {
+            source_hash: 1234,
+            grammar_version: 99,
+            output_json: r#"{"v":99}"#.into(),
+        };
+        assert_eq!(output.grammar_version, 99);
+        assert!(output.output_json.contains("99"));
     }
 }

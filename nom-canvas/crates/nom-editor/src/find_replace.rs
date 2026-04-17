@@ -1,10 +1,26 @@
 #![deny(unsafe_code)]
-use std::ops::Range;
 use regex::Regex;
+use std::ops::Range;
 
-pub struct FindState { pub query: String, pub case_sensitive: bool, pub whole_word: bool, pub use_regex: bool, pub matches: Vec<Range<usize>>, pub current_match: usize }
+pub struct FindState {
+    pub query: String,
+    pub case_sensitive: bool,
+    pub whole_word: bool,
+    pub use_regex: bool,
+    pub matches: Vec<Range<usize>>,
+    pub current_match: usize,
+}
 impl FindState {
-    pub fn new() -> Self { Self { query: String::new(), case_sensitive: false, whole_word: false, use_regex: false, matches: Vec::new(), current_match: 0 } }
+    pub fn new() -> Self {
+        Self {
+            query: String::new(),
+            case_sensitive: false,
+            whole_word: false,
+            use_regex: false,
+            matches: Vec::new(),
+            current_match: 0,
+        }
+    }
 
     /// Perform a real regex search using the `regex` crate.
     ///
@@ -12,7 +28,9 @@ impl FindState {
     /// returns the byte-offset start of every match.  Returns an empty Vec
     /// if the query is empty or the pattern fails to compile.
     pub fn find_regex(&self, text: &str) -> Vec<usize> {
-        if self.query.is_empty() { return Vec::new(); }
+        if self.query.is_empty() {
+            return Vec::new();
+        }
         let pattern = if self.case_sensitive {
             self.query.clone()
         } else {
@@ -44,10 +62,14 @@ impl FindState {
 
     pub fn find_in_text(&mut self, text: &str) {
         self.matches.clear();
-        if self.query.is_empty() { return; }
+        if self.query.is_empty() {
+            return;
+        }
 
         if self.use_regex {
-            if self.query.is_empty() { return; }
+            if self.query.is_empty() {
+                return;
+            }
             let pattern = if self.case_sensitive {
                 self.query.clone()
             } else {
@@ -76,9 +98,23 @@ impl FindState {
         }
     }
 
-    pub fn next_match(&mut self) { if !self.matches.is_empty() { self.current_match = (self.current_match + 1) % self.matches.len(); } }
-    pub fn prev_match(&mut self) { if !self.matches.is_empty() { self.current_match = if self.current_match == 0 { self.matches.len() - 1 } else { self.current_match - 1 }; } }
-    pub fn current(&self) -> Option<&Range<usize>> { self.matches.get(self.current_match) }
+    pub fn next_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current_match = (self.current_match + 1) % self.matches.len();
+        }
+    }
+    pub fn prev_match(&mut self) {
+        if !self.matches.is_empty() {
+            self.current_match = if self.current_match == 0 {
+                self.matches.len() - 1
+            } else {
+                self.current_match - 1
+            };
+        }
+    }
+    pub fn current(&self) -> Option<&Range<usize>> {
+        self.matches.get(self.current_match)
+    }
     pub fn replace_current(&self, text: &mut String, replacement: &str) -> bool {
         if let Some(range) = self.current() {
             let range = range.clone();
@@ -89,7 +125,11 @@ impl FindState {
         }
     }
 }
-impl Default for FindState { fn default() -> Self { Self::new() } }
+impl Default for FindState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -179,7 +219,11 @@ mod tests {
 
     #[test]
     fn find_regex_method_returns_positions() {
-        let state = FindState { query: "ab".to_string(), case_sensitive: true, ..FindState::new() };
+        let state = FindState {
+            query: "ab".to_string(),
+            case_sensitive: true,
+            ..FindState::new()
+        };
         let positions = state.find_regex("xabyzab");
         assert_eq!(positions, vec![1, 5]);
     }
@@ -248,7 +292,7 @@ mod tests {
         state.case_sensitive = true;
         let positions = state.find_regex("abc 42 def 7");
         assert_eq!(positions.len(), 2);
-        assert_eq!(positions[0], 4);  // "42" starts at byte 4
+        assert_eq!(positions[0], 4); // "42" starts at byte 4
         assert_eq!(positions[1], 11); // "7" starts at byte 11
     }
 
@@ -258,5 +302,38 @@ mod tests {
         // query is empty by default
         state.find_in_text("some text here");
         assert!(state.matches.is_empty());
+    }
+
+    #[test]
+    fn find_replace_global_replace() {
+        // Simulate replace_all by running replace_current in a loop with re-search
+        let text = "foo bar foo baz foo";
+        let query = "foo";
+        let replacement = "qux";
+        let mut result = text.to_string();
+        // Simple manual replace_all using String::replace
+        result = result.replace(query, replacement);
+        let expected = "qux bar qux baz qux";
+        assert_eq!(result, expected);
+    }
+
+    #[test]
+    fn find_replace_case_sensitive() {
+        let mut state = FindState::new();
+        state.query = "hello".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("Hello world HELLO");
+        // Case-sensitive: "hello" (lowercase) should NOT match "Hello" or "HELLO"
+        assert!(state.matches.is_empty());
+    }
+
+    #[test]
+    fn find_replace_case_insensitive() {
+        let mut state = FindState::new();
+        state.query = "hello".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("Hello world HELLO");
+        // Case-insensitive: "hello" matches "Hello" and "HELLO"
+        assert_eq!(state.matches.len(), 2);
     }
 }

@@ -1,34 +1,44 @@
 #![deny(unsafe_code)]
+pub mod bottom;
+pub mod command_palette;
 pub mod dock;
 pub mod left;
 pub mod pane;
 pub mod right;
 pub mod shell;
-pub mod bottom;
-pub mod command_palette;
-pub mod toolbar;
 pub mod statusbar;
+pub mod toolbar;
 
-pub use dock::{Dock, DockPosition, Panel, PanelEntry, PanelSizeState, rgba_to_hsla, fill_quad, focus_ring_quad};
-pub use left::{FileTreePanel, QuickSearchPanel, FileNode, FileNodeKind, SearchResult, SearchResultKind, NodePalette, PaletteEntry, LibraryPanel, LibraryKind};
-pub use pane::{Pane, PaneAxis, PaneGroup, PaneTab, Member, SplitDirection};
-pub use right::{ChatSidebarPanel, ChatMessage, ChatRole, ToolCard, DeepThinkPanel, ThinkingStep, PropertiesPanel, PropertyRow};
-pub use shell::{Shell, ShellLayout, ShellMode};
-pub use bottom::{TerminalPanel, TerminalLine, TerminalLineKind, DiagnosticsPanel, Diagnostic, DiagnosticSeverity};
+pub use bottom::{
+    Diagnostic, DiagnosticSeverity, DiagnosticsPanel, TerminalLine, TerminalLineKind, TerminalPanel,
+};
 pub use command_palette::{CommandPalette, CommandPaletteItem};
-pub use toolbar::{Toolbar, ToolbarButton};
+pub use dock::{
+    fill_quad, focus_ring_quad, rgba_to_hsla, Dock, DockPosition, Panel, PanelEntry, PanelSizeState,
+};
+pub use left::{
+    FileNode, FileNodeKind, FileTreePanel, LibraryKind, LibraryPanel, NodePalette, PaletteEntry,
+    QuickSearchPanel, SearchResult, SearchResultKind,
+};
+pub use pane::{Member, Pane, PaneAxis, PaneGroup, PaneTab, SplitDirection};
+pub use right::{
+    ChatMessage, ChatRole, ChatSidebarPanel, DeepThinkPanel, PropertiesPanel, PropertyRow,
+    ThinkingStep, ToolCard,
+};
+pub use shell::{Shell, ShellLayout, ShellMode};
 pub use statusbar::{StatusBar, StatusSlot};
+pub use toolbar::{Toolbar, ToolbarButton};
 
 #[cfg(test)]
 mod integration_tests {
     use nom_gpui::scene::Scene;
     use nom_theme::tokens;
 
-    use crate::dock::{Dock, DockPosition, rgba_to_hsla};
     use crate::command_palette::{CommandPalette, CommandPaletteItem};
-    use crate::right::deep_think::{DeepThinkPanel, ThinkingStep};
-    use crate::left::node_palette::NodePalette;
+    use crate::dock::{rgba_to_hsla, Dock, DockPosition};
     use crate::left::library::LibraryPanel;
+    use crate::left::node_palette::NodePalette;
+    use crate::right::deep_think::{DeepThinkPanel, ThinkingStep};
 
     // -------------------------------------------------------------------------
     // Test 1: panels_use_nom_theme_tokens
@@ -45,7 +55,9 @@ mod integration_tests {
         // The background quad must use tokens::BG as its fill color.
         let bg_quad = &scene.quads[0];
         let expected_bg = rgba_to_hsla(tokens::BG);
-        let actual_bg = bg_quad.background.expect("background quad must have a fill");
+        let actual_bg = bg_quad
+            .background
+            .expect("background quad must have a fill");
         assert!(
             (actual_bg.h - expected_bg.h).abs() < 1e-3
                 && (actual_bg.l - expected_bg.l).abs() < 1e-3
@@ -55,7 +67,9 @@ mod integration_tests {
 
         // The border color must match tokens::BORDER.
         let expected_border = rgba_to_hsla(tokens::BORDER);
-        let actual_border = bg_quad.border_color.expect("background quad must have a border");
+        let actual_border = bg_quad
+            .border_color
+            .expect("background quad must have a border");
         assert!(
             (actual_border.h - expected_border.h).abs() < 1e-3
                 && (actual_border.l - expected_border.l).abs() < 1e-3
@@ -66,7 +80,9 @@ mod integration_tests {
         // The active-tab ring must use tokens::FOCUS as border color.
         let ring_quad = &scene.quads[1];
         let expected_focus = rgba_to_hsla(tokens::FOCUS);
-        let actual_focus = ring_quad.border_color.expect("focus ring must have a border");
+        let actual_focus = ring_quad
+            .border_color
+            .expect("focus ring must have a border");
         assert!(
             (actual_focus.h - expected_focus.h).abs() < 1e-3
                 && (actual_focus.l - expected_focus.l).abs() < 1e-3
@@ -83,9 +99,16 @@ mod integration_tests {
     #[test]
     fn command_palette_with_deep_think_panel() {
         let mut palette = CommandPalette::new();
-        palette.items.push(CommandPaletteItem::new("Open Graph", "Open graph view"));
-        palette.items.push(CommandPaletteItem::new("Save All", "Save all files"));
-        palette.items.push(CommandPaletteItem::new("Run Build", "Execute build pipeline"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Open Graph", "Open graph view"));
+        palette
+            .items
+            .push(CommandPaletteItem::new("Save All", "Save all files"));
+        palette.items.push(CommandPaletteItem::new(
+            "Run Build",
+            "Execute build pipeline",
+        ));
 
         let mut deep_think = DeepThinkPanel::new();
         deep_think.begin("analyze cross-panel layout");
@@ -150,6 +173,9 @@ mod integration_tests {
 
         // NodePalette: 2 quads per entry = 6; LibraryPanel: 1 header + 2*3 = 7
         assert!(quads_after_palette >= 6, "palette must emit >= 6 quads");
-        assert!(total_quads >= quads_after_palette + 7, "library must add >= 7 quads");
+        assert!(
+            total_quads >= quads_after_palette + 7,
+            "library must add >= 7 quads"
+        );
     }
 }

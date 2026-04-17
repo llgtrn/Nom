@@ -1,17 +1,30 @@
 #![deny(unsafe_code)]
-use std::sync::Arc;
 use crate::shared::SharedState;
 #[allow(unused_imports)]
 use nom_blocks::block_model::NomtuRef;
-use nom_editor::lsp_bridge::{CompletionItem, CompletionKind, HoverResult};
 use nom_editor::highlight::{HighlightSpan, TokenRole};
+use nom_editor::lsp_bridge::{CompletionItem, CompletionKind, HoverResult};
+use std::sync::Arc;
 
 #[derive(Debug)]
 pub enum InteractiveRequest {
-    Tokenize { source: String, reply: tokio::sync::oneshot::Sender<Vec<TokenSpan>> },
-    HighlightSpans { source: String, reply: tokio::sync::oneshot::Sender<Vec<HighlightSpan>> },
-    CompletePrefix { prefix: String, kind_filter: Option<String>, reply: tokio::sync::oneshot::Sender<Vec<CompletionItem>> },
-    Hover { word: String, reply: tokio::sync::oneshot::Sender<Option<HoverResult>> },
+    Tokenize {
+        source: String,
+        reply: tokio::sync::oneshot::Sender<Vec<TokenSpan>>,
+    },
+    HighlightSpans {
+        source: String,
+        reply: tokio::sync::oneshot::Sender<Vec<HighlightSpan>>,
+    },
+    CompletePrefix {
+        prefix: String,
+        kind_filter: Option<String>,
+        reply: tokio::sync::oneshot::Sender<Vec<CompletionItem>>,
+    },
+    Hover {
+        word: String,
+        reply: tokio::sync::oneshot::Sender<Option<HoverResult>>,
+    },
 }
 
 /// A tokenized span (simplified — Wave C adds real Tok variants)
@@ -40,28 +53,48 @@ impl InteractiveTier {
     /// Request tokenization asynchronously
     pub async fn tokenize(&self, source: String) -> Vec<TokenSpan> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.sender.send(InteractiveRequest::Tokenize { source, reply: tx }).await;
+        let _ = self
+            .sender
+            .send(InteractiveRequest::Tokenize { source, reply: tx })
+            .await;
         rx.await.unwrap_or_default()
     }
 
     /// Request highlight spans asynchronously
     pub async fn highlight_spans(&self, source: String) -> Vec<HighlightSpan> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.sender.send(InteractiveRequest::HighlightSpans { source, reply: tx }).await;
+        let _ = self
+            .sender
+            .send(InteractiveRequest::HighlightSpans { source, reply: tx })
+            .await;
         rx.await.unwrap_or_default()
     }
 
     /// Request completions asynchronously
-    pub async fn complete_prefix(&self, prefix: String, kind_filter: Option<String>) -> Vec<CompletionItem> {
+    pub async fn complete_prefix(
+        &self,
+        prefix: String,
+        kind_filter: Option<String>,
+    ) -> Vec<CompletionItem> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.sender.send(InteractiveRequest::CompletePrefix { prefix, kind_filter, reply: tx }).await;
+        let _ = self
+            .sender
+            .send(InteractiveRequest::CompletePrefix {
+                prefix,
+                kind_filter,
+                reply: tx,
+            })
+            .await;
         rx.await.unwrap_or_default()
     }
 
     /// Request hover info asynchronously
     pub async fn hover(&self, word: String) -> Option<HoverResult> {
         let (tx, rx) = tokio::sync::oneshot::channel();
-        let _ = self.sender.send(InteractiveRequest::Hover { word, reply: tx }).await;
+        let _ = self
+            .sender
+            .send(InteractiveRequest::Hover { word, reply: tx })
+            .await;
         rx.await.unwrap_or(None)
     }
 }
@@ -92,7 +125,11 @@ impl InteractiveWorker {
                 let spans = self.do_highlight(&source);
                 let _ = reply.send(spans);
             }
-            InteractiveRequest::CompletePrefix { prefix, kind_filter, reply } => {
+            InteractiveRequest::CompletePrefix {
+                prefix,
+                kind_filter,
+                reply,
+            } => {
                 let items = self.do_complete(&prefix, kind_filter.as_deref());
                 let _ = reply.send(items);
             }
@@ -135,7 +172,8 @@ impl InteractiveWorker {
         }
         #[cfg(not(feature = "compiler"))]
         {
-            self.state.cached_grammar_kinds()
+            self.state
+                .cached_grammar_kinds()
                 .into_iter()
                 .filter(|k| k.name.starts_with(prefix))
                 .map(|k| CompletionItem {
@@ -185,7 +223,8 @@ impl<'a> InteractiveTierOps<'a> {
 
     /// Classify the kind for a token using the grammar cache
     pub fn classify_kind(&self, token: &str) -> Option<String> {
-        self.shared.cached_grammar_kinds()
+        self.shared
+            .cached_grammar_kinds()
             .into_iter()
             .find(|k| k.name == token)
             .map(|k| k.name)
@@ -201,7 +240,10 @@ fn simple_tokenize_stub(source: &str) -> Vec<TokenSpan> {
     let mut spans = Vec::new();
     let mut offset = 0usize;
     for word in source.split_whitespace() {
-        let start = source[offset..].find(word).map(|i| offset + i).unwrap_or(offset);
+        let start = source[offset..]
+            .find(word)
+            .map(|i| offset + i)
+            .unwrap_or(offset);
         let end = start + word.len();
         spans.push(TokenSpan {
             start,
@@ -257,5 +299,51 @@ mod tests {
         let ops = InteractiveTierOps::new(&state);
         let tokens = ops.tokenize_line("");
         assert!(tokens.is_empty());
+    }
+
+    #[test]
+    fn interactive_tier_tokenize_simple() {
+        // simple_tokenize_stub returns a non-empty vec for non-empty input
+        let spans = simple_tokenize_stub("hello");
+        assert!(!spans.is_empty());
+        assert_eq!(spans[0].text, "hello");
+    }
+
+    #[test]
+    fn interactive_tier_highlight_empty() {
+        // InteractiveWorker::do_highlight("") returns empty vec without panic
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = InteractiveWorker::new(state);
+        let spans = worker.do_highlight("");
+        assert!(spans.is_empty());
+    }
+
+    #[test]
+    fn interactive_tier_complete_prefix_vec() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "fn_run".into(),
+                description: "run action".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "fn_emit".into(),
+                description: "emit action".into(),
+            },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("fn", None);
+        // Both kinds match prefix "fn" — must be a non-empty Vec
+        assert!(!items.is_empty());
+        assert!(items.iter().all(|i| i.label.starts_with("fn")));
+    }
+
+    #[test]
+    fn interactive_tier_hover_position() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = InteractiveWorker::new(state);
+        // In stub mode, hover returns None — must not panic
+        let result = worker.do_hover("any_word");
+        let _ = result; // None is acceptable in stub mode
     }
 }

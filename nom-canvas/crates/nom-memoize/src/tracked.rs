@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
-use std::sync::Arc;
 use crate::hash::Hash128;
+use std::sync::Arc;
 
 /// A single recorded method invocation: which method was called and what it returned.
 /// Used by constraints to validate that cached results are still correct.
@@ -35,13 +35,19 @@ impl<T: Clone> Tracked<T> {
     /// Record a method call with its return hash for constraint validation.
     pub fn record_call(&self, method_id: u32, return_hash: Hash128) {
         if let Ok(mut calls) = self.method_calls.lock() {
-            calls.push(MethodCall { method_id, return_hash });
+            calls.push(MethodCall {
+                method_id,
+                return_hash,
+            });
         }
     }
 
     /// Drain and return all recorded method calls (resets the list).
     pub fn take_calls(&self) -> Vec<MethodCall> {
-        self.method_calls.lock().map(|mut v| std::mem::take(&mut *v)).unwrap_or_default()
+        self.method_calls
+            .lock()
+            .map(|mut v| std::mem::take(&mut *v))
+            .unwrap_or_default()
     }
 
     /// Number of method calls recorded since last take_calls.
@@ -51,10 +57,15 @@ impl<T: Clone> Tracked<T> {
 
     /// Create a constraint snapshot capturing current call state
     pub fn snapshot(&self) -> TrackedSnapshot {
-        let calls = self.method_calls.lock()
+        let calls = self
+            .method_calls
+            .lock()
             .map(|v| v.iter().map(|c| (c.method_id, c.return_hash)).collect())
             .unwrap_or_default();
-        TrackedSnapshot { version: self.version, method_call_pairs: calls }
+        TrackedSnapshot {
+            version: self.version,
+            method_call_pairs: calls,
+        }
     }
 }
 
@@ -178,7 +189,10 @@ mod tests {
 
     #[test]
     fn method_call_fields() {
-        let mc = MethodCall { method_id: 42, return_hash: Hash128::of_str("out") };
+        let mc = MethodCall {
+            method_id: 42,
+            return_hash: Hash128::of_str("out"),
+        };
         assert_eq!(mc.method_id, 42);
         assert_eq!(mc.return_hash, Hash128::of_str("out"));
     }

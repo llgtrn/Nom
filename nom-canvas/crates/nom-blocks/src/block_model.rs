@@ -13,7 +13,11 @@ pub struct NomtuRef {
 
 impl NomtuRef {
     pub fn new(id: impl Into<String>, word: impl Into<String>, kind: impl Into<String>) -> Self {
-        Self { id: id.into(), word: word.into(), kind: kind.into() }
+        Self {
+            id: id.into(),
+            word: word.into(),
+            kind: kind.into(),
+        }
     }
 }
 
@@ -27,14 +31,19 @@ pub struct BlockMeta {
 
 impl Default for BlockMeta {
     fn default() -> Self {
-        Self { created_at: 0, updated_at: 0, author: String::new(), version: 1 }
+        Self {
+            created_at: 0,
+            updated_at: 0,
+            author: String::new(),
+            version: 1,
+        }
     }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockModel {
     pub id: BlockId,
-    pub entity: NomtuRef,          // NON-OPTIONAL: blocks without DB entity do not exist
+    pub entity: NomtuRef, // NON-OPTIONAL: blocks without DB entity do not exist
     pub flavour: String,
     pub slots: Vec<(String, crate::slot::SlotValue)>,
     pub children: Vec<BlockId>,
@@ -68,7 +77,11 @@ impl BlockModel {
         }
     }
 
-    pub fn insert(entity: NomtuRef, flavour: impl Into<String>, dict: &dyn crate::dict_reader::DictReader) -> Self {
+    pub fn insert(
+        entity: NomtuRef,
+        flavour: impl Into<String>,
+        dict: &dyn crate::dict_reader::DictReader,
+    ) -> Self {
         let kind = entity.kind.clone();
         debug_assert!(dict.is_known_kind(&kind), "Unknown grammar kind: {kind}");
         let id = uuid_v4();
@@ -79,7 +92,10 @@ impl BlockModel {
 fn uuid_v4() -> String {
     // Simple deterministic ID for Wave B — real UUID in Wave C
     use std::time::{SystemTime, UNIX_EPOCH};
-    let t = SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_nanos();
+    let t = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
     format!("{:032x}", t)
 }
 
@@ -138,7 +154,10 @@ mod tests {
         let e2 = NomtuRef::new("e2", "store", "verb");
         let b1 = BlockModel::insert(e1, "affine:paragraph", &dict);
         let b2 = BlockModel::insert(e2, "affine:paragraph", &dict);
-        assert_ne!(b1.id, b2.id, "Two successive insert() calls must produce distinct IDs");
+        assert_ne!(
+            b1.id, b2.id,
+            "Two successive insert() calls must produce distinct IDs"
+        );
     }
 
     /// NomtuRef id field round-trips through a hex-format string (matching uuid_v4 format).
@@ -199,8 +218,16 @@ mod tests {
     #[test]
     fn block_model_id_unique() {
         let dict = StubDictReader::new();
-        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "affine:paragraph", &dict);
-        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "affine:paragraph", &dict);
+        let b1 = BlockModel::insert(
+            NomtuRef::new("e1", "fetch", "verb"),
+            "affine:paragraph",
+            &dict,
+        );
+        let b2 = BlockModel::insert(
+            NomtuRef::new("e2", "store", "verb"),
+            "affine:paragraph",
+            &dict,
+        );
         assert_ne!(b1.id, b2.id, "insert() must generate unique IDs");
     }
 
@@ -232,6 +259,9 @@ mod tests {
         // Only one entry for "key"
         let count = block.slots.iter().filter(|(k, _)| k == "key").count();
         assert_eq!(count, 1);
-        assert_eq!(block.get_slot("key").and_then(|v| v.as_text()), Some("second"));
+        assert_eq!(
+            block.get_slot("key").and_then(|v| v.as_text()),
+            Some("second")
+        );
     }
 }

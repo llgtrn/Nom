@@ -39,7 +39,13 @@ impl InlayHintProvider {
     }
 
     pub fn add_hint(&mut self, line: u32, col: u32, label: impl Into<String>, kind: HintKind) {
-        self.hints.push(InlayHint { line, col, label: label.into(), kind, tooltip: None });
+        self.hints.push(InlayHint {
+            line,
+            col,
+            label: label.into(),
+            kind,
+            tooltip: None,
+        });
     }
 
     pub fn hints_for_line(&self, line: u32) -> Vec<&InlayHint> {

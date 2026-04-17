@@ -31,6 +31,16 @@ pub enum EventKind {
     DeepThinkStarted,
     /// Canvas zoom level changed.
     CanvasZoom { level: f32 },
+    /// A block was inserted onto the canvas.
+    BlockInserted { kind: String },
+    /// The canvas viewport was panned.
+    CanvasPan { dx: f32, dy: f32 },
+    /// The selection set changed.
+    SelectionChanged { count: usize },
+    /// A file was opened.
+    FileOpened { path: String },
+    /// A search query was executed.
+    SearchQuery { query: String, results_count: usize },
 }
 
 // ---------------------------------------------------------------------------
@@ -71,15 +81,29 @@ impl TelemetryEvent {
         trace_id: [u8; 16],
         span_id: [u8; 8],
     ) -> Self {
-        Self { kind, timestamp_ms, session_id, trace_id, span_id }
+        Self {
+            kind,
+            timestamp_ms,
+            session_id,
+            trace_id,
+            span_id,
+        }
     }
 
     /// Format as a W3C traceparent header value.
     ///
     /// Format: `"00-{trace_id_32hex}-{span_id_16hex}-01"` (sampled).
     pub fn traceparent(&self) -> String {
-        let trace = self.trace_id.iter().map(|b| format!("{b:02x}")).collect::<String>();
-        let span = self.span_id.iter().map(|b| format!("{b:02x}")).collect::<String>();
+        let trace = self
+            .trace_id
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
+        let span = self
+            .span_id
+            .iter()
+            .map(|b| format!("{b:02x}"))
+            .collect::<String>();
         format!("00-{trace}-{span}-01")
     }
 
@@ -151,6 +175,32 @@ impl TelemetrySink for NullSink {
 }
 
 // ---------------------------------------------------------------------------
+// MultiSink — fans out to two sinks
+// ---------------------------------------------------------------------------
+
+/// Fan-out sink that forwards every event to two inner sinks.
+pub struct MultiSink {
+    a: Arc<dyn TelemetrySink + Send + Sync>,
+    b: Arc<dyn TelemetrySink + Send + Sync>,
+}
+
+impl MultiSink {
+    pub fn new(
+        a: Arc<dyn TelemetrySink + Send + Sync>,
+        b: Arc<dyn TelemetrySink + Send + Sync>,
+    ) -> Self {
+        Self { a, b }
+    }
+}
+
+impl TelemetrySink for MultiSink {
+    fn record(&self, event: TelemetryEvent) {
+        self.a.record(event.clone());
+        self.b.record(event);
+    }
+}
+
+// ---------------------------------------------------------------------------
 // InMemorySink — captures events for testing
 // ---------------------------------------------------------------------------
 
@@ -163,22 +213,33 @@ pub struct InMemorySink {
 impl InMemorySink {
     /// Create a new, empty in-memory sink.
     pub fn new() -> Self {
-        Self { events: Arc::new(Mutex::new(Vec::new())) }
+        Self {
+            events: Arc::new(Mutex::new(Vec::new())),
+        }
     }
 
     /// Return a cloned snapshot of all recorded events.
     pub fn events(&self) -> Vec<TelemetryEvent> {
-        self.events.lock().expect("InMemorySink mutex poisoned").clone()
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .clone()
     }
 
     /// Return the number of events recorded so far.
     pub fn count(&self) -> usize {
-        self.events.lock().expect("InMemorySink mutex poisoned").len()
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .len()
     }
 
     /// Discard all recorded events (simulate a flush).
     pub fn clear(&self) {
-        self.events.lock().expect("InMemorySink mutex poisoned").clear();
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .clear();
     }
 
     /// Filter events by a predicate on `EventKind`, returning a cloned subset.
@@ -204,7 +265,10 @@ impl Default for InMemorySink {
 
 impl TelemetrySink for InMemorySink {
     fn record(&self, event: TelemetryEvent) {
-        self.events.lock().expect("InMemorySink mutex poisoned").push(event);
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .push(event);
     }
 }
 
@@ -228,7 +292,8 @@ impl Telemetry {
 
     /// Build a [`TelemetryEvent`] and forward it to the sink.
     pub fn emit(&self, kind: EventKind, timestamp_ms: u64, session_id: u64) {
-        self.sink.record(TelemetryEvent::new(kind, timestamp_ms, session_id));
+        self.sink
+            .record(TelemetryEvent::new(kind, timestamp_ms, session_id));
     }
 }
 
@@ -246,7 +311,9 @@ mod tests {
         sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
         sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
         sink.record(TelemetryEvent::new(
-            EventKind::CanvasAction { action: "pan".into() },
+            EventKind::CanvasAction {
+                action: "pan".into(),
+            },
             2,
             1,
         ));
@@ -257,7 +324,10 @@ mod tests {
         ));
         sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 5 }, 4, 1));
         sink.record(TelemetryEvent::new(
-            EventKind::Error { code: 404, message: "not found".into() },
+            EventKind::Error {
+                code: 404,
+                message: "not found".into(),
+            },
             5,
             1,
         ));
@@ -270,7 +340,9 @@ mod tests {
 
         sink.record(TelemetryEvent::new(EventKind::SessionStart, 100, 42));
         sink.record(TelemetryEvent::new(
-            EventKind::CanvasAction { action: "zoom".into() },
+            EventKind::CanvasAction {
+                action: "zoom".into(),
+            },
             101,
             42,
         ));
@@ -284,7 +356,9 @@ mod tests {
         assert_eq!(events[0].session_id, 42);
         assert_eq!(
             events[1].kind,
-            EventKind::CanvasAction { action: "zoom".into() }
+            EventKind::CanvasAction {
+                action: "zoom".into()
+            }
         );
         assert_eq!(events[2].kind, EventKind::SessionEnd);
         assert_eq!(events[2].timestamp_ms, 200);
@@ -302,7 +376,10 @@ mod tests {
         telemetry.emit(EventKind::CompilerInvoke { duration_ms: 150 }, 50, 7);
         telemetry.emit(EventKind::RagQuery { top_k: 10 }, 60, 7);
         telemetry.emit(
-            EventKind::Error { code: 500, message: "internal".into() },
+            EventKind::Error {
+                code: 500,
+                message: "internal".into(),
+            },
             70,
             7,
         );
@@ -312,11 +389,17 @@ mod tests {
 
         let events = inner.events();
         assert_eq!(events[0].kind, EventKind::SessionStart);
-        assert_eq!(events[1].kind, EventKind::CompilerInvoke { duration_ms: 150 });
+        assert_eq!(
+            events[1].kind,
+            EventKind::CompilerInvoke { duration_ms: 150 }
+        );
         assert_eq!(events[2].kind, EventKind::RagQuery { top_k: 10 });
         assert_eq!(
             events[3].kind,
-            EventKind::Error { code: 500, message: "internal".into() }
+            EventKind::Error {
+                code: 500,
+                message: "internal".into()
+            }
         );
         assert_eq!(events[4].kind, EventKind::SessionEnd);
     }
@@ -325,10 +408,15 @@ mod tests {
     fn event_kinds_are_distinct() {
         let start = EventKind::SessionStart;
         let end = EventKind::SessionEnd;
-        let action = EventKind::CanvasAction { action: "select".into() };
+        let action = EventKind::CanvasAction {
+            action: "select".into(),
+        };
         let compile = EventKind::CompilerInvoke { duration_ms: 0 };
         let rag = EventKind::RagQuery { top_k: 1 };
-        let err = EventKind::Error { code: 0, message: String::new() };
+        let err = EventKind::Error {
+            code: 0,
+            message: String::new(),
+        };
 
         assert_ne!(start, end);
         assert_ne!(start, action);
@@ -348,12 +436,20 @@ mod tests {
 
         // Same-variant equality with identical field values.
         assert_eq!(
-            EventKind::CanvasAction { action: "pan".into() },
-            EventKind::CanvasAction { action: "pan".into() }
+            EventKind::CanvasAction {
+                action: "pan".into()
+            },
+            EventKind::CanvasAction {
+                action: "pan".into()
+            }
         );
         assert_ne!(
-            EventKind::CanvasAction { action: "pan".into() },
-            EventKind::CanvasAction { action: "zoom".into() }
+            EventKind::CanvasAction {
+                action: "pan".into()
+            },
+            EventKind::CanvasAction {
+                action: "zoom".into()
+            }
         );
         assert_eq!(
             EventKind::CompilerInvoke { duration_ms: 10 },
@@ -364,8 +460,14 @@ mod tests {
             EventKind::RagQuery { top_k: 3 }
         );
         assert_eq!(
-            EventKind::Error { code: 1, message: "x".into() },
-            EventKind::Error { code: 1, message: "x".into() }
+            EventKind::Error {
+                code: 1,
+                message: "x".into()
+            },
+            EventKind::Error {
+                code: 1,
+                message: "x".into()
+            }
         );
     }
 
@@ -376,17 +478,11 @@ mod tests {
     #[test]
     fn traceparent_format_correct() {
         let trace_id = [
-            0x4b, 0xf9, 0x2f, 0x3b, 0x77, 0xb3, 0x41, 0x26,
-            0xa8, 0x4c, 0x84, 0x35, 0x4e, 0x70, 0x5a, 0x9c,
+            0x4b, 0xf9, 0x2f, 0x3b, 0x77, 0xb3, 0x41, 0x26, 0xa8, 0x4c, 0x84, 0x35, 0x4e, 0x70,
+            0x5a, 0x9c,
         ];
         let span_id = [0x00, 0xf0, 0x67, 0xaa, 0x0b, 0xa9, 0x02, 0xb7];
-        let event = TelemetryEvent::with_trace(
-            EventKind::SessionStart,
-            0,
-            1,
-            trace_id,
-            span_id,
-        );
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
         let tp = event.traceparent();
         // Must be "00-{32 hex}-{16 hex}-01"
         let parts: Vec<&str> = tp.split('-').collect();
@@ -396,7 +492,10 @@ mod tests {
         assert_eq!(parts[2].len(), 16);
         assert_eq!(parts[3], "01");
         // Exact value check
-        assert_eq!(tp, "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01");
+        assert_eq!(
+            tp,
+            "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01"
+        );
     }
 
     #[test]
@@ -417,11 +516,16 @@ mod tests {
         // Wrong version prefix
         assert!(TelemetryEvent::parse_traceparent("ff-short-span-01").is_none());
         // Too few parts
-        assert!(TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-01").is_none());
+        assert!(
+            TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-01").is_none()
+        );
         // Trace ID too short (not 32 hex chars)
         assert!(TelemetryEvent::parse_traceparent("00-4bf9-00f067aa0ba902b7-01").is_none());
         // Span ID too short (not 16 hex chars)
-        assert!(TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-00f0-01").is_none());
+        assert!(
+            TelemetryEvent::parse_traceparent("00-4bf92f3b77b34126a84c84354e705a9c-00f0-01")
+                .is_none()
+        );
     }
 
     // -------------------------------------------------------------------------
@@ -433,7 +537,10 @@ mod tests {
         // TelemetryEvent carries structured data via EventKind::Error (code + message).
         // Verify the key/value round-trips through construction and retrieval.
         let event = TelemetryEvent::new(
-            EventKind::Error { code: 42, message: "context=canvas;user=7".into() },
+            EventKind::Error {
+                code: 42,
+                message: "context=canvas;user=7".into(),
+            },
             500,
             99,
         );
@@ -451,7 +558,9 @@ mod tests {
     #[test]
     fn telemetry_event_clone_independence() {
         let mut original = TelemetryEvent::new(
-            EventKind::CanvasAction { action: "pan".into() },
+            EventKind::CanvasAction {
+                action: "pan".into(),
+            },
             100,
             1,
         );
@@ -464,7 +573,12 @@ mod tests {
         assert_eq!(clone.timestamp_ms, 100);
         assert_ne!(original.timestamp_ms, clone.timestamp_ms);
         // Kind is independent too.
-        assert_eq!(clone.kind, EventKind::CanvasAction { action: "pan".into() });
+        assert_eq!(
+            clone.kind,
+            EventKind::CanvasAction {
+                action: "pan".into()
+            }
+        );
     }
 
     #[test]
@@ -483,18 +597,12 @@ mod tests {
     #[test]
     fn telemetry_traceparent_consistent_with_ids() {
         let trace_id: [u8; 16] = [
-            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef,
-            0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54, 0x32, 0x10,
+            0x01, 0x23, 0x45, 0x67, 0x89, 0xab, 0xcd, 0xef, 0xfe, 0xdc, 0xba, 0x98, 0x76, 0x54,
+            0x32, 0x10,
         ];
         let span_id: [u8; 8] = [0x11, 0x22, 0x33, 0x44, 0x55, 0x66, 0x77, 0x88];
 
-        let event = TelemetryEvent::with_trace(
-            EventKind::SessionStart,
-            0,
-            1,
-            trace_id,
-            span_id,
-        );
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
         let tp = event.traceparent();
 
         // Round-trip: parse should give back the same bytes.
@@ -548,7 +656,11 @@ mod tests {
     #[test]
     fn rag_query_top_k_preserved() {
         let sink = InMemorySink::new();
-        sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 20 }, 30, 2));
+        sink.record(TelemetryEvent::new(
+            EventKind::RagQuery { top_k: 20 },
+            30,
+            2,
+        ));
         let events = sink.events();
         match &events[0].kind {
             EventKind::RagQuery { top_k } => assert_eq!(*top_k, 20),
@@ -589,7 +701,9 @@ mod tests {
 
     #[test]
     fn canvas_action_empty_string_is_valid() {
-        let kind = EventKind::CanvasAction { action: String::new() };
+        let kind = EventKind::CanvasAction {
+            action: String::new(),
+        };
         let event = TelemetryEvent::new(kind.clone(), 0, 1);
         assert_eq!(event.kind, kind);
     }
@@ -597,7 +711,9 @@ mod tests {
     #[test]
     fn canvas_action_unicode_payload() {
         let action = "拖动-canvas 🎨".to_string();
-        let kind = EventKind::CanvasAction { action: action.clone() };
+        let kind = EventKind::CanvasAction {
+            action: action.clone(),
+        };
         let event = TelemetryEvent::new(kind, 10, 3);
         match &event.kind {
             EventKind::CanvasAction { action: a } => assert_eq!(a, &action),
@@ -614,7 +730,9 @@ mod tests {
 
     #[test]
     fn compiler_invoke_large_duration() {
-        let kind = EventKind::CompilerInvoke { duration_ms: u64::MAX };
+        let kind = EventKind::CompilerInvoke {
+            duration_ms: u64::MAX,
+        };
         let event = TelemetryEvent::new(kind.clone(), 99, 1);
         match &event.kind {
             EventKind::CompilerInvoke { duration_ms } => assert_eq!(*duration_ms, u64::MAX),
@@ -641,14 +759,20 @@ mod tests {
 
     #[test]
     fn error_zero_code_empty_message() {
-        let kind = EventKind::Error { code: 0, message: String::new() };
+        let kind = EventKind::Error {
+            code: 0,
+            message: String::new(),
+        };
         let event = TelemetryEvent::new(kind.clone(), 0, 1);
         assert_eq!(event.kind, kind);
     }
 
     #[test]
     fn error_max_code() {
-        let kind = EventKind::Error { code: u32::MAX, message: "overflow".into() };
+        let kind = EventKind::Error {
+            code: u32::MAX,
+            message: "overflow".into(),
+        };
         let event = TelemetryEvent::new(kind, 5, 2);
         match &event.kind {
             EventKind::Error { code, message } => {
@@ -698,7 +822,11 @@ mod tests {
     fn in_memory_sink_multi_session_ids_coexist() {
         let sink = InMemorySink::new();
         for session in 0u64..5 {
-            sink.record(TelemetryEvent::new(EventKind::SessionStart, session, session));
+            sink.record(TelemetryEvent::new(
+                EventKind::SessionStart,
+                session,
+                session,
+            ));
         }
         let events = sink.events();
         for (i, ev) in events.iter().enumerate() {
@@ -817,7 +945,10 @@ mod tests {
         let span_id = [0xffu8; 8];
         let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
         let tp = ev.traceparent();
-        assert_eq!(tp, "00-ffffffffffffffffffffffffffffffff-ffffffffffffffff-01");
+        assert_eq!(
+            tp,
+            "00-ffffffffffffffffffffffffffffffff-ffffffffffffffff-01"
+        );
         let (t, s, f) = TelemetryEvent::parse_traceparent(&tp).unwrap();
         assert_eq!(t, trace_id);
         assert_eq!(s, span_id);
@@ -832,13 +963,8 @@ mod tests {
     fn with_trace_stores_all_fields() {
         let trace_id: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
         let span_id: [u8; 8] = [17, 18, 19, 20, 21, 22, 23, 24];
-        let ev = TelemetryEvent::with_trace(
-            EventKind::RagQuery { top_k: 7 },
-            42,
-            99,
-            trace_id,
-            span_id,
-        );
+        let ev =
+            TelemetryEvent::with_trace(EventKind::RagQuery { top_k: 7 }, 42, 99, trace_id, span_id);
         assert_eq!(ev.timestamp_ms, 42);
         assert_eq!(ev.session_id, 99);
         assert_eq!(ev.trace_id, trace_id);
@@ -864,7 +990,9 @@ mod tests {
         let n = 1_000usize;
         for i in 0..n {
             sink.record(TelemetryEvent::new(
-                EventKind::CanvasAction { action: format!("action-{i}") },
+                EventKind::CanvasAction {
+                    action: format!("action-{i}"),
+                },
                 i as u64,
                 1,
             ));
@@ -879,7 +1007,9 @@ mod tests {
     #[test]
     fn event_kind_hover_with_entity() {
         let entity = "nomtu://canvas/block-42".to_string();
-        let kind = EventKind::Hover { entity: entity.clone() };
+        let kind = EventKind::Hover {
+            entity: entity.clone(),
+        };
         let event = TelemetryEvent::new(kind, 10, 1);
         match &event.kind {
             EventKind::Hover { entity: e } => assert_eq!(e, &entity),
@@ -904,10 +1034,16 @@ mod tests {
     #[test]
     fn event_kind_compile_invoked_with_path() {
         let path = "/workspace/main.nom".to_string();
-        let kind = EventKind::CompilerInvokeWithPath { duration_ms: 99, path: path.clone() };
+        let kind = EventKind::CompilerInvokeWithPath {
+            duration_ms: 99,
+            path: path.clone(),
+        };
         let event = TelemetryEvent::new(kind, 40, 4);
         match &event.kind {
-            EventKind::CompilerInvokeWithPath { duration_ms, path: p } => {
+            EventKind::CompilerInvokeWithPath {
+                duration_ms,
+                path: p,
+            } => {
                 assert_eq!(*duration_ms, 99);
                 assert_eq!(p, &path);
             }
@@ -962,10 +1098,17 @@ mod tests {
 
         let session_id = 42u64;
         for i in 0..5u64 {
-            tel.emit(EventKind::CanvasAction { action: format!("act-{i}") }, i, session_id);
+            tel.emit(
+                EventKind::CanvasAction {
+                    action: format!("act-{i}"),
+                },
+                i,
+                session_id,
+            );
         }
 
-        let session_events: Vec<_> = sink.events()
+        let session_events: Vec<_> = sink
+            .events()
             .into_iter()
             .filter(|e| e.session_id == session_id)
             .collect();
@@ -992,12 +1135,32 @@ mod tests {
         let tel = Telemetry::new(shared);
 
         tel.emit(EventKind::SessionStart, 0, 10);
-        tel.emit(EventKind::CanvasAction { action: "pan".into() }, 1, 10);
+        tel.emit(
+            EventKind::CanvasAction {
+                action: "pan".into(),
+            },
+            1,
+            10,
+        );
         tel.emit(EventKind::SessionStart, 2, 20);
-        tel.emit(EventKind::CanvasAction { action: "zoom".into() }, 3, 20);
+        tel.emit(
+            EventKind::CanvasAction {
+                action: "zoom".into(),
+            },
+            3,
+            20,
+        );
 
-        let s10: Vec<_> = sink.events().into_iter().filter(|e| e.session_id == 10).collect();
-        let s20: Vec<_> = sink.events().into_iter().filter(|e| e.session_id == 20).collect();
+        let s10: Vec<_> = sink
+            .events()
+            .into_iter()
+            .filter(|e| e.session_id == 10)
+            .collect();
+        let s20: Vec<_> = sink
+            .events()
+            .into_iter()
+            .filter(|e| e.session_id == 20)
+            .collect();
         assert_eq!(s10.len(), 2);
         assert_eq!(s20.len(), 2);
         // Events of different sessions must not mix
@@ -1013,13 +1176,26 @@ mod tests {
     fn sink_filter_by_kind() {
         let sink = InMemorySink::new();
         sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
-        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "pan".into() }, 1, 1));
+        sink.record(TelemetryEvent::new(
+            EventKind::CanvasAction {
+                action: "pan".into(),
+            },
+            1,
+            1,
+        ));
         sink.record(TelemetryEvent::new(EventKind::SessionEnd, 2, 1));
-        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "zoom".into() }, 3, 1));
+        sink.record(TelemetryEvent::new(
+            EventKind::CanvasAction {
+                action: "zoom".into(),
+            },
+            3,
+            1,
+        ));
 
         let actions = sink.filter_by(|k| matches!(k, EventKind::CanvasAction { .. }));
         assert_eq!(actions.len(), 2);
-        let sessions = sink.filter_by(|k| matches!(k, EventKind::SessionStart | EventKind::SessionEnd));
+        let sessions =
+            sink.filter_by(|k| matches!(k, EventKind::SessionStart | EventKind::SessionEnd));
         assert_eq!(sessions.len(), 2);
     }
 
@@ -1032,8 +1208,12 @@ mod tests {
 
         let events = sink.events();
         for window in events.windows(2) {
-            assert!(window[0].timestamp_ms <= window[1].timestamp_ms,
-                "events out of order: {} > {}", window[0].timestamp_ms, window[1].timestamp_ms);
+            assert!(
+                window[0].timestamp_ms <= window[1].timestamp_ms,
+                "events out of order: {} > {}",
+                window[0].timestamp_ms,
+                window[1].timestamp_ms
+            );
         }
     }
 
@@ -1054,7 +1234,9 @@ mod tests {
         let sink = InMemorySink::new();
         for i in 0..1000u64 {
             sink.record(TelemetryEvent::new(
-                EventKind::CanvasAction { action: format!("a-{i}") },
+                EventKind::CanvasAction {
+                    action: format!("a-{i}"),
+                },
                 i,
                 1,
             ));
@@ -1076,7 +1258,11 @@ mod tests {
 
         // Adding to sink_a after snapshot must not affect the snapshot.
         sink_a.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
-        assert_eq!(snapshot.len(), 1, "snapshot must not grow after more records");
+        assert_eq!(
+            snapshot.len(),
+            1,
+            "snapshot must not grow after more records"
+        );
         assert_eq!(sink_a.count(), 2);
     }
 
@@ -1088,7 +1274,10 @@ mod tests {
     fn event_session_id_nonempty() {
         // session_id must be non-zero for a real session
         let event = TelemetryEvent::new(EventKind::SessionStart, 0, 99);
-        assert_ne!(event.session_id, 0, "session_id 0 is reserved; real sessions use nonzero ids");
+        assert_ne!(
+            event.session_id, 0,
+            "session_id 0 is reserved; real sessions use nonzero ids"
+        );
     }
 
     #[test]
@@ -1100,11 +1289,7 @@ mod tests {
 
     #[test]
     fn event_kind_field_accessible() {
-        let event = TelemetryEvent::new(
-            EventKind::CompilerInvoke { duration_ms: 77 },
-            0,
-            1,
-        );
+        let event = TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 77 }, 0, 1);
         // The `kind` field must be directly accessible (pub).
         match event.kind {
             EventKind::CompilerInvoke { duration_ms } => assert_eq!(duration_ms, 77),
@@ -1122,9 +1307,14 @@ mod tests {
         let (trace, span, flags) = TelemetryEvent::parse_traceparent(s).expect("valid v00");
         let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, span);
         let rebuilt = ev.traceparent();
-        assert_eq!(rebuilt, format!("00-{}-{}-01",
-            trace.iter().map(|b| format!("{b:02x}")).collect::<String>(),
-            span.iter().map(|b| format!("{b:02x}")).collect::<String>()));
+        assert_eq!(
+            rebuilt,
+            format!(
+                "00-{}-{}-01",
+                trace.iter().map(|b| format!("{b:02x}")).collect::<String>(),
+                span.iter().map(|b| format!("{b:02x}")).collect::<String>()
+            )
+        );
         assert_eq!(flags, 0x01);
     }
 
@@ -1148,7 +1338,10 @@ mod tests {
         // Parser may accept the format — the caller is responsible for
         // rejecting the all-zeros span. Verify the parsed span is indeed zeros.
         if let Some((_, span, _)) = result {
-            assert_eq!(span, [0u8; 8], "all-zeros parent-id parsed correctly for caller check");
+            assert_eq!(
+                span, [0u8; 8],
+                "all-zeros parent-id parsed correctly for caller check"
+            );
         }
         // If None, the implementation already rejected it — also acceptable.
     }
@@ -1175,5 +1368,283 @@ mod tests {
         );
         let (_, _, flags2) = TelemetryEvent::parse_traceparent(&tp_unsampled).unwrap();
         assert_eq!(flags2 & 0x01, 0x00, "sampled flag bit must be clear");
+    }
+
+    // =========================================================================
+    // NEW 25 TESTS
+    // =========================================================================
+
+    // --- EventKind completeness ---
+
+    #[test]
+    fn event_kind_block_inserted() {
+        let kind = EventKind::BlockInserted {
+            kind: "prose".to_string(),
+        };
+        let event = TelemetryEvent::new(kind, 1, 1);
+        match &event.kind {
+            EventKind::BlockInserted { kind: k } => assert_eq!(k, "prose"),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_canvas_pan() {
+        let kind = EventKind::CanvasPan { dx: 10.5, dy: -3.2 };
+        let event = TelemetryEvent::new(kind, 2, 1);
+        match &event.kind {
+            EventKind::CanvasPan { dx, dy } => {
+                assert!((dx - 10.5f32).abs() < f32::EPSILON);
+                assert!((dy - (-3.2f32)).abs() < f32::EPSILON);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_selection_changed() {
+        let kind = EventKind::SelectionChanged { count: 3 };
+        let event = TelemetryEvent::new(kind, 3, 1);
+        match &event.kind {
+            EventKind::SelectionChanged { count } => assert_eq!(*count, 3),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_file_opened() {
+        let path = "/workspace/canvas.nom".to_string();
+        let kind = EventKind::FileOpened { path: path.clone() };
+        let event = TelemetryEvent::new(kind, 4, 1);
+        match &event.kind {
+            EventKind::FileOpened { path: p } => assert_eq!(p, &path),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_search_query() {
+        let kind = EventKind::SearchQuery {
+            query: "canvas block".into(),
+            results_count: 7,
+        };
+        let event = TelemetryEvent::new(kind, 5, 1);
+        match &event.kind {
+            EventKind::SearchQuery {
+                query,
+                results_count,
+            } => {
+                assert_eq!(query, "canvas block");
+                assert_eq!(*results_count, 7);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn event_kind_all_variants_debug_no_panic() {
+        // format!("{:?}") must not panic for any variant.
+        let variants: Vec<EventKind> = vec![
+            EventKind::CanvasAction {
+                action: "test".into(),
+            },
+            EventKind::CompilerInvoke { duration_ms: 0 },
+            EventKind::CompilerInvokeWithPath {
+                duration_ms: 1,
+                path: "p".into(),
+            },
+            EventKind::RagQuery { top_k: 1 },
+            EventKind::Error {
+                code: 0,
+                message: "e".into(),
+            },
+            EventKind::SessionStart,
+            EventKind::SessionEnd,
+            EventKind::Hover { entity: "e".into() },
+            EventKind::CommandPaletteOpened,
+            EventKind::DeepThinkStarted,
+            EventKind::CanvasZoom { level: 1.0 },
+            EventKind::BlockInserted { kind: "k".into() },
+            EventKind::CanvasPan { dx: 0.0, dy: 0.0 },
+            EventKind::SelectionChanged { count: 0 },
+            EventKind::FileOpened { path: "f".into() },
+            EventKind::SearchQuery {
+                query: "q".into(),
+                results_count: 0,
+            },
+        ];
+        for v in &variants {
+            let dbg = format!("{v:?}");
+            assert!(!dbg.is_empty(), "debug output must be non-empty");
+        }
+    }
+
+    // --- Sink chaining ---
+
+    #[test]
+    fn multi_sink_both_receive() {
+        let sink_a = InMemorySink::new();
+        let sink_b = InMemorySink::new();
+        let multi = MultiSink::new(Arc::new(sink_a.clone()), Arc::new(sink_b.clone()));
+        multi.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        multi.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(sink_a.count(), 2);
+        assert_eq!(sink_b.count(), 2);
+        assert_eq!(sink_a.events()[0].kind, EventKind::SessionStart);
+        assert_eq!(sink_b.events()[0].kind, EventKind::SessionStart);
+    }
+
+    #[test]
+    fn null_sink_no_panic() {
+        let sink = NullSink;
+        // Send every variant through NullSink to confirm no panic
+        sink.record(TelemetryEvent::new(
+            EventKind::BlockInserted { kind: "x".into() },
+            0,
+            1,
+        ));
+        sink.record(TelemetryEvent::new(
+            EventKind::CanvasPan { dx: 1.0, dy: 2.0 },
+            1,
+            1,
+        ));
+        sink.record(TelemetryEvent::new(
+            EventKind::FileOpened {
+                path: "/tmp/x".into(),
+            },
+            2,
+            1,
+        ));
+    }
+
+    #[test]
+    fn sink_error_recovery_null_sink_does_not_affect_caller() {
+        // NullSink.record() is infallible (returns ()). Demonstrate that even
+        // calling it 10_000 times doesn't raise any panic / OOM.
+        let sink = NullSink;
+        for i in 0u64..10_000 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+    }
+
+    // --- TelemetryEvent construction ---
+
+    #[test]
+    fn event_builder_kind_stored() {
+        let kind = EventKind::DeepThinkStarted;
+        let event = TelemetryEvent::new(kind.clone(), 0, 1);
+        assert_eq!(event.kind, kind);
+    }
+
+    #[test]
+    fn event_builder_session_id_stored() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 0xABCD);
+        assert_eq!(event.session_id, 0xABCD);
+    }
+
+    #[test]
+    fn event_builder_timestamp_stored() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 999_999, 1);
+        assert_eq!(event.timestamp_ms, 999_999);
+    }
+
+    #[test]
+    fn event_default_trace_zeros() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.trace_id, [0u8; 16]);
+        assert_eq!(event.span_id, [0u8; 8]);
+    }
+
+    // --- Flush behavior (via InMemorySink::clear) ---
+
+    #[test]
+    fn flush_returns_count_via_clear() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        let before = sink.count();
+        sink.clear();
+        let after = sink.count();
+        assert_eq!(before, 2);
+        assert_eq!(after, 0);
+    }
+
+    #[test]
+    fn flush_empty_is_zero() {
+        let sink = InMemorySink::new();
+        assert_eq!(sink.count(), 0);
+        sink.clear(); // flush on empty
+        assert_eq!(sink.count(), 0);
+    }
+
+    #[test]
+    fn flush_twice_second_is_zero() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.clear(); // first flush
+        assert_eq!(sink.count(), 0);
+        sink.clear(); // second flush — still zero
+        assert_eq!(sink.count(), 0);
+    }
+
+    // --- Traceparent edge cases ---
+
+    #[test]
+    fn traceparent_from_event_with_trace() {
+        let trace_id = [0x10u8; 16];
+        let span_id = [0x20u8; 8];
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let tp = event.traceparent();
+        // Must parse back without error
+        assert!(TelemetryEvent::parse_traceparent(&tp).is_some());
+    }
+
+    #[test]
+    fn traceparent_parent_id_16_hex_chars() {
+        let event =
+            TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0xabu8; 16], [0xcdu8; 8]);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[2].len(), 16, "parent-id must be exactly 16 hex chars");
+    }
+
+    #[test]
+    fn traceparent_trace_id_32_hex_chars() {
+        let event =
+            TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0x0fu8; 16], [0xefu8; 8]);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[1].len(), 32, "trace-id must be exactly 32 hex chars");
+    }
+
+    #[test]
+    fn traceparent_format_is_four_parts() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(
+            parts.len(),
+            4,
+            "traceparent must have exactly 4 dash-separated parts"
+        );
+    }
+
+    #[test]
+    fn traceparent_version_is_00() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = event.traceparent();
+        let version = tp.split('-').next().unwrap();
+        assert_eq!(version, "00", "version prefix must be 00");
+    }
+
+    #[test]
+    fn traceparent_clone_is_equal() {
+        // Traceparent is a String; verify that two events built with the same
+        // trace/span produce identical traceparent strings.
+        let trace_id = [0x55u8; 16];
+        let span_id = [0xaau8; 8];
+        let ev_a = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let ev_b = ev_a.clone();
+        assert_eq!(ev_a.traceparent(), ev_b.traceparent());
     }
 }

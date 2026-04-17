@@ -16,7 +16,10 @@ pub struct Constraint {
 impl Constraint {
     /// Create a new constraint for tracking
     pub fn new(input_hash: u64) -> Self {
-        Self { snapshots: Vec::new(), input_hash }
+        Self {
+            snapshots: Vec::new(),
+            input_hash,
+        }
     }
 
     /// Record a tracked snapshot
@@ -27,21 +30,41 @@ impl Constraint {
     /// Validate: cached result is valid if the input hash matches
     /// and all tracked value snapshots have matching (method_id, return_hash) pairs.
     pub fn validate(&self, current_input_hash: u64, current_snapshots: &[TrackedSnapshot]) -> bool {
-        if self.input_hash != current_input_hash { return false; }
-        if current_snapshots.len() < self.snapshots.len() { return false; }
+        if self.input_hash != current_input_hash {
+            return false;
+        }
+        if current_snapshots.len() < self.snapshots.len() {
+            return false;
+        }
         for (recorded, current) in self.snapshots.iter().zip(current_snapshots) {
-            if recorded.version != current.version { return false; }
-            if recorded.method_call_pairs.len() != current.method_call_pairs.len() { return false; }
-            for (rec_pair, cur_pair) in recorded.method_call_pairs.iter().zip(&current.method_call_pairs) {
-                if rec_pair.0 != cur_pair.0 { return false; } // method_id mismatch
-                if rec_pair.1 != cur_pair.1 { return false; } // return_hash mismatch
+            if recorded.version != current.version {
+                return false;
+            }
+            if recorded.method_call_pairs.len() != current.method_call_pairs.len() {
+                return false;
+            }
+            for (rec_pair, cur_pair) in recorded
+                .method_call_pairs
+                .iter()
+                .zip(&current.method_call_pairs)
+            {
+                if rec_pair.0 != cur_pair.0 {
+                    return false;
+                } // method_id mismatch
+                if rec_pair.1 != cur_pair.1 {
+                    return false;
+                } // return_hash mismatch
             }
         }
         true
     }
 
-    pub fn snapshot_count(&self) -> usize { self.snapshots.len() }
-    pub fn input_hash(&self) -> u64 { self.input_hash }
+    pub fn snapshot_count(&self) -> usize {
+        self.snapshots.len()
+    }
+    pub fn input_hash(&self) -> u64 {
+        self.input_hash
+    }
 }
 
 #[cfg(test)]
@@ -51,7 +74,10 @@ mod tests {
     use crate::tracked::TrackedSnapshot;
 
     fn snap(version: u64, pairs: Vec<(u32, Hash128)>) -> TrackedSnapshot {
-        TrackedSnapshot { version, method_call_pairs: pairs }
+        TrackedSnapshot {
+            version,
+            method_call_pairs: pairs,
+        }
     }
 
     #[test]

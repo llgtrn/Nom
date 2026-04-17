@@ -2,8 +2,7 @@
 ///
 /// Provides O(log n) region queries and nearest-neighbour lookup.
 /// Uses the `rstar` crate with `AABB<[f32; 2]>` envelopes.
-
-use rstar::{RTree, RTreeObject, PointDistance, AABB};
+use rstar::{PointDistance, RTree, RTreeObject, AABB};
 
 use crate::elements::ElementBounds;
 
@@ -46,9 +45,7 @@ pub struct SpatialIndex {
 
 impl SpatialIndex {
     pub fn new() -> Self {
-        Self {
-            tree: RTree::new(),
-        }
+        Self { tree: RTree::new() }
     }
 
     /// Insert an element into the index.
@@ -140,7 +137,11 @@ mod tests {
         // Element 1 (0-50) and element 3 (25-75) both overlap [0-60]
         assert!(found.contains(&1), "expected id 1, got {:?}", found);
         assert!(found.contains(&3), "expected id 3, got {:?}", found);
-        assert!(!found.contains(&2), "id 2 should not appear, got {:?}", found);
+        assert!(
+            !found.contains(&2),
+            "id 2 should not appear, got {:?}",
+            found
+        );
     }
 
     #[test]
@@ -226,7 +227,11 @@ mod tests {
         // Query region that covers only element 10
         let found = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
         assert!(found.contains(&10), "expected id 10, got {:?}", found);
-        assert!(!found.contains(&20), "id 20 should not appear, got {:?}", found);
+        assert!(
+            !found.contains(&20),
+            "id 20 should not appear, got {:?}",
+            found
+        );
     }
 
     #[test]
@@ -284,7 +289,7 @@ mod tests {
     fn spatial_index_range_query_partial() {
         // Insert A and B in non-overlapping regions; query rect overlaps only A.
         let mut idx = SpatialIndex::new();
-        idx.insert(make_bounds(10, [0.0, 0.0], [20.0, 20.0]));   // A
+        idx.insert(make_bounds(10, [0.0, 0.0], [20.0, 20.0])); // A
         idx.insert(make_bounds(20, [200.0, 200.0], [220.0, 220.0])); // B
         let found = idx.query_in_bounds([0.0, 0.0], [25.0, 25.0]);
         assert!(found.contains(&10), "expected A in results");
@@ -298,7 +303,10 @@ mod tests {
         idx.insert(make_bounds(5, [10.0, 10.0], [30.0, 30.0]));
         let center = [20.0, 20.0]; // centre of element 5
         let found = idx.query_in_bounds(center, center);
-        assert!(found.contains(&5), "point query at element centre must return the element");
+        assert!(
+            found.contains(&5),
+            "point query at element centre must return the element"
+        );
     }
 
     #[test]

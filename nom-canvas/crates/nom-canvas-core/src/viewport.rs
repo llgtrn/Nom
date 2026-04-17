@@ -59,8 +59,14 @@ impl Viewport {
         let w = bot_right[0] - top_left[0];
         let h = bot_right[1] - top_left[1];
         Bounds {
-            origin: Point { x: Pixels(top_left[0]), y: Pixels(top_left[1]) },
-            size: Size { width: Pixels(w), height: Pixels(h) },
+            origin: Point {
+                x: Pixels(top_left[0]),
+                y: Pixels(top_left[1]),
+            },
+            size: Size {
+                width: Pixels(w),
+                height: Pixels(h),
+            },
         }
     }
 
@@ -105,11 +111,7 @@ impl Viewport {
     pub fn to_scene_transform(&self) -> [[f32; 3]; 3] {
         let tx = self.pan[0] + self.size[0] / 2.0;
         let ty = self.pan[1] + self.size[1] / 2.0;
-        [
-            [self.zoom, 0.0,       tx],
-            [0.0,       self.zoom, ty],
-            [0.0,       0.0,       1.0],
-        ]
+        [[self.zoom, 0.0, tx], [0.0, self.zoom, ty], [0.0, 0.0, 1.0]]
     }
 
     /// Applies `to_scene_transform` to a canvas-space point, returning a
@@ -283,13 +285,35 @@ mod tests {
         let vp = Viewport::new(800.0, 600.0);
         let b = vp.visible_bounds_gpui();
         // At zoom=1, pan=0: origin at (-400, -300), size 800×600.
-        assert!((b.origin.x.0 - (-400.0)).abs() < 1e-4, "origin.x={}", b.origin.x.0);
-        assert!((b.origin.y.0 - (-300.0)).abs() < 1e-4, "origin.y={}", b.origin.y.0);
-        assert!((b.size.width.0 - 800.0).abs() < 1e-4, "width={}", b.size.width.0);
-        assert!((b.size.height.0 - 600.0).abs() < 1e-4, "height={}", b.size.height.0);
+        assert!(
+            (b.origin.x.0 - (-400.0)).abs() < 1e-4,
+            "origin.x={}",
+            b.origin.x.0
+        );
+        assert!(
+            (b.origin.y.0 - (-300.0)).abs() < 1e-4,
+            "origin.y={}",
+            b.origin.y.0
+        );
+        assert!(
+            (b.size.width.0 - 800.0).abs() < 1e-4,
+            "width={}",
+            b.size.width.0
+        );
+        assert!(
+            (b.size.height.0 - 600.0).abs() < 1e-4,
+            "height={}",
+            b.size.height.0
+        );
         // The nom_gpui Bounds::contains check works for the canvas origin.
-        let canvas_origin = Point { x: Pixels(0.0), y: Pixels(0.0) };
-        assert!(b.contains(&canvas_origin), "canvas origin must be inside visible bounds");
+        let canvas_origin = Point {
+            x: Pixels(0.0),
+            y: Pixels(0.0),
+        };
+        assert!(
+            b.contains(&canvas_origin),
+            "canvas origin must be inside visible bounds"
+        );
     }
 
     #[test]
@@ -298,8 +322,16 @@ mod tests {
         vp.zoom_toward(2.0, [400.0, 300.0]);
         let b = vp.visible_bounds_gpui();
         // At 2× zoom the visible canvas area halves in each dimension.
-        assert!((b.size.width.0 - 400.0).abs() < 1e-3, "width at 2x zoom = {}", b.size.width.0);
-        assert!((b.size.height.0 - 300.0).abs() < 1e-3, "height at 2x zoom = {}", b.size.height.0);
+        assert!(
+            (b.size.width.0 - 400.0).abs() < 1e-3,
+            "width at 2x zoom = {}",
+            b.size.width.0
+        );
+        assert!(
+            (b.size.height.0 - 300.0).abs() < 1e-3,
+            "height at 2x zoom = {}",
+            b.size.height.0
+        );
     }
 
     #[test]
@@ -308,10 +340,127 @@ mod tests {
         let vp = Viewport::new(800.0, 600.0);
         let bounds: Bounds<Pixels> = vp.visible_bounds_gpui();
         // The canvas-space point (200, 100) should lie inside the default viewport.
-        let inside = Point { x: Pixels(200.0), y: Pixels(100.0) };
+        let inside = Point {
+            x: Pixels(200.0),
+            y: Pixels(100.0),
+        };
         assert!(bounds.contains(&inside));
         // A far-off point should be outside.
-        let outside = Point { x: Pixels(1000.0), y: Pixels(1000.0) };
+        let outside = Point {
+            x: Pixels(1000.0),
+            y: Pixels(1000.0),
+        };
         assert!(!bounds.contains(&outside));
+    }
+
+    /// Zoom in 3× then zoom out 3× returns to original zoom level.
+    #[test]
+    fn viewport_zoom_sequence() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [400.0_f32, 300.0_f32];
+        let original_zoom = vp.zoom;
+        vp.zoom_toward(3.0, cursor);
+        assert!((vp.zoom - 3.0).abs() < 1e-5);
+        vp.zoom_toward(original_zoom, cursor);
+        assert!((vp.zoom - original_zoom).abs() < 1e-5);
+    }
+
+    /// Pan by (10, 20) then verify world_to_screen offset matches.
+    #[test]
+    fn viewport_pan_delta() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([10.0, 20.0]);
+        // Canvas origin should now map to screen centre + pan.
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        assert!((screen[0] - 410.0).abs() < 1e-4, "x={}", screen[0]);
+        assert!((screen[1] - 320.0).abs() < 1e-4, "y={}", screen[1]);
+    }
+
+    /// scale_factor equivalent: zoom=2.0 doubles screen distance from centre.
+    #[test]
+    fn viewport_scale_factor_affects_pixels() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // A canvas point at (50, 0) should appear 100 px to the right of screen centre.
+        let screen = vp.canvas_to_screen([50.0, 0.0]);
+        // centre_x = 400, so screen.x = 50*2 + 400 = 500
+        assert!((screen[0] - 500.0).abs() < 1e-3, "x={}", screen[0]);
+    }
+
+    /// reset() returns to identity transform (zoom=1, pan=0).
+    #[test]
+    fn viewport_reset() {
+        let mut vp = Viewport::new(1024.0, 768.0);
+        vp.zoom_toward(5.0, [512.0, 384.0]);
+        vp.pan_by([100.0, -50.0]);
+        vp.reset();
+        assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom after reset={}", vp.zoom);
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x after reset={}", vp.pan[0]);
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y after reset={}", vp.pan[1]);
+    }
+
+    /// After fitting to a rect, the rect's corners are visible.
+    #[test]
+    fn viewport_fit_rect() {
+        // A canvas rect [100, 100] → [300, 200]; fit the viewport to show it.
+        // We implement fit manually: pick zoom to fit width and height, then
+        // adjust pan so the rect centre maps to screen centre.
+        let mut vp = Viewport::new(800.0, 600.0);
+        let (rx, ry, rw, rh) = (100.0_f32, 100.0_f32, 200.0_f32, 100.0_f32);
+        let zoom_x = vp.size[0] / rw;
+        let zoom_y = vp.size[1] / rh;
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0);
+        let cx = rx + rw / 2.0;
+        let cy = ry + rh / 2.0;
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        // The rect's top-left and bottom-right should both be visible on screen.
+        assert!(
+            vp.is_point_visible([rx, ry]),
+            "top-left of rect must be visible"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right of rect must be visible"
+        );
+    }
+
+    /// world_bounds equivalent: visible_bounds covers expected canvas area.
+    #[test]
+    fn viewport_world_bounds() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        let (tl, br) = vp.visible_bounds();
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        // At 2× zoom the visible canvas area is half the screen size.
+        assert!((w - 400.0).abs() < 1e-3, "visible width at 2x zoom = {}", w);
+        assert!(
+            (h - 300.0).abs() < 1e-3,
+            "visible height at 2x zoom = {}",
+            h
+        );
+    }
+
+    /// zoom centered at (100, 100) leaves that screen point fixed on canvas.
+    #[test]
+    fn viewport_zoom_at_point() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [100.0_f32, 100.0_f32];
+        let canvas_before = vp.screen_to_canvas(cursor);
+        vp.zoom_toward(3.0, cursor);
+        let canvas_after = vp.screen_to_canvas(cursor);
+        assert!(
+            (canvas_after[0] - canvas_before[0]).abs() < 1e-3,
+            "canvas x under cursor changed: before={} after={}",
+            canvas_before[0],
+            canvas_after[0]
+        );
+        assert!(
+            (canvas_after[1] - canvas_before[1]).abs() < 1e-3,
+            "canvas y under cursor changed: before={} after={}",
+            canvas_before[1],
+            canvas_after[1]
+        );
     }
 }

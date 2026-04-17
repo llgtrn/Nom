@@ -102,7 +102,9 @@ pub struct Scene {
 }
 
 impl Scene {
-    pub fn new() -> Self { Self::default() }
+    pub fn new() -> Self {
+        Self::default()
+    }
 
     /// Painter's algorithm: sort by type for minimal texture switches, no depth
     /// buffer.
@@ -117,19 +119,33 @@ impl Scene {
         self.polychrome_sprites.sort_by_key(|s| s.tile.texture_id);
     }
 
-    pub fn push_quad(&mut self, q: Quad) { self.quads.push(q); }
+    pub fn push_quad(&mut self, q: Quad) {
+        self.quads.push(q);
+    }
 
-    pub fn push_sprite(&mut self, s: MonochromeSprite) { self.monochrome_sprites.push(s); }
+    pub fn push_sprite(&mut self, s: MonochromeSprite) {
+        self.monochrome_sprites.push(s);
+    }
 
-    pub fn push_poly_sprite(&mut self, s: PolychromeSprite) { self.polychrome_sprites.push(s); }
+    pub fn push_poly_sprite(&mut self, s: PolychromeSprite) {
+        self.polychrome_sprites.push(s);
+    }
 
-    pub fn push_path(&mut self, p: Path) { self.paths.push(p); }
+    pub fn push_path(&mut self, p: Path) {
+        self.paths.push(p);
+    }
 
-    pub fn push_shadow(&mut self, s: Shadow) { self.shadows.push(s); }
+    pub fn push_shadow(&mut self, s: Shadow) {
+        self.shadows.push(s);
+    }
 
-    pub fn push_underline(&mut self, u: Underline) { self.underlines.push(u); }
+    pub fn push_underline(&mut self, u: Underline) {
+        self.underlines.push(u);
+    }
 
-    pub fn push_frosted_rect(&mut self, r: FrostedRect) { self.frosted_rects.push(r); }
+    pub fn push_frosted_rect(&mut self, r: FrostedRect) {
+        self.frosted_rects.push(r);
+    }
 
     pub fn clear(&mut self) {
         self.quads.clear();
@@ -201,8 +217,11 @@ mod tests {
         // Must not panic; sprites should be ordered by texture_id afterwards.
         scene.sort_and_batch();
 
-        let ids: Vec<u32> =
-            scene.monochrome_sprites.iter().map(|s| s.tile.texture_id).collect();
+        let ids: Vec<u32> = scene
+            .monochrome_sprites
+            .iter()
+            .map(|s| s.tile.texture_id)
+            .collect();
         assert_eq!(ids, vec![1, 2, 3]);
 
         // Shadow sort should also be stable.
@@ -253,8 +272,11 @@ mod tests {
             });
         }
         scene.sort_and_batch();
-        let ids: Vec<u32> =
-            scene.monochrome_sprites.iter().map(|s| s.tile.texture_id).collect();
+        let ids: Vec<u32> = scene
+            .monochrome_sprites
+            .iter()
+            .map(|s| s.tile.texture_id)
+            .collect();
         assert_eq!(ids, vec![1, 2, 3, 5, 8]);
     }
 

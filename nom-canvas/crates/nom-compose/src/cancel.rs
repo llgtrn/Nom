@@ -1,6 +1,9 @@
 #![deny(unsafe_code)]
 
-use std::sync::{Arc, atomic::{AtomicBool, Ordering}};
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc,
+};
 
 /// A shareable flag that signals cancellation / interrupt to a long-running compose operation.
 #[derive(Clone, Debug)]
@@ -11,7 +14,9 @@ pub struct InterruptFlag {
 impl InterruptFlag {
     /// Create a new flag in the "not set" state.
     pub fn new() -> Self {
-        Self { inner: Arc::new(AtomicBool::new(false)) }
+        Self {
+            inner: Arc::new(AtomicBool::new(false)),
+        }
     }
 
     /// Signal cancellation. Idempotent — safe to call multiple times.
@@ -31,7 +36,9 @@ impl InterruptFlag {
 }
 
 impl Default for InterruptFlag {
-    fn default() -> Self { Self::new() }
+    fn default() -> Self {
+        Self::new()
+    }
 }
 
 #[cfg(test)]

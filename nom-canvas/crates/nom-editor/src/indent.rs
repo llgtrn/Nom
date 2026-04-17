@@ -1,6 +1,9 @@
 #![deny(unsafe_code)]
 pub fn auto_indent_text(prev_line: &str, _tab_size: usize) -> String {
-    let leading = prev_line.chars().take_while(|c| c.is_whitespace()).collect::<String>();
+    let leading = prev_line
+        .chars()
+        .take_while(|c| c.is_whitespace())
+        .collect::<String>();
     leading
 }
 pub fn indent_line(line: &str, tab_size: usize) -> String {

@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
-use std::collections::{HashMap, HashSet, VecDeque};
 use crate::node::{ExecNode, NodeId};
+use std::collections::{HashMap, HashSet, VecDeque};
 
 pub struct Edge {
     pub src_node: NodeId,
@@ -18,18 +18,28 @@ pub struct Dag {
 
 impl Dag {
     pub fn new() -> Self {
-        Self { nodes: HashMap::new(), edges: Vec::new() }
+        Self {
+            nodes: HashMap::new(),
+            edges: Vec::new(),
+        }
     }
 
     pub fn add_node(&mut self, node: ExecNode) {
         self.nodes.insert(node.id.clone(), node);
     }
 
-    pub fn add_edge(&mut self, src_node: impl Into<String>, src_port: impl Into<String>,
-                    dst_node: impl Into<String>, dst_port: impl Into<String>) {
+    pub fn add_edge(
+        &mut self,
+        src_node: impl Into<String>,
+        src_port: impl Into<String>,
+        dst_node: impl Into<String>,
+        dst_port: impl Into<String>,
+    ) {
         self.edges.push(Edge {
-            src_node: src_node.into(), src_port: src_port.into(),
-            dst_node: dst_node.into(), dst_port: dst_port.into(),
+            src_node: src_node.into(),
+            src_port: src_port.into(),
+            dst_node: dst_node.into(),
+            dst_port: dst_port.into(),
             confidence: 1.0,
         });
     }
@@ -67,10 +77,14 @@ impl Dag {
 
         for edge in &self.edges {
             *block_count.entry(edge.dst_node.clone()).or_insert(0) += 1;
-            blocking.entry(edge.src_node.clone()).or_insert_with(Vec::new).push(edge.dst_node.clone());
+            blocking
+                .entry(edge.src_node.clone())
+                .or_insert_with(Vec::new)
+                .push(edge.dst_node.clone());
         }
 
-        let mut queue: VecDeque<String> = block_count.iter()
+        let mut queue: VecDeque<String> = block_count
+            .iter()
             .filter(|(_, &count)| count == 0)
             .map(|(id, _)| id.clone())
             .collect();
@@ -96,7 +110,9 @@ impl Dag {
         } else {
             // Cycle: return unresolved nodes
             let resolved: HashSet<&str> = result.iter().map(|s| s.as_ref()).collect();
-            let cycle_nodes = self.nodes.keys()
+            let cycle_nodes = self
+                .nodes
+                .keys()
                 .filter(|id| !resolved.contains(id.as_str()))
                 .cloned()
                 .collect();
@@ -104,11 +120,19 @@ impl Dag {
         }
     }
 
-    pub fn node_count(&self) -> usize { self.nodes.len() }
-    pub fn edge_count(&self) -> usize { self.edges.len() }
+    pub fn node_count(&self) -> usize {
+        self.nodes.len()
+    }
+    pub fn edge_count(&self) -> usize {
+        self.edges.len()
+    }
 }
 
-impl Default for Dag { fn default() -> Self { Self::new() } }
+impl Default for Dag {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -201,7 +225,8 @@ mod tests {
         assert_eq!(dag.edge_count(), 1);
         // Remove "alpha" and any edges that reference it.
         dag.nodes.remove("alpha");
-        dag.edges.retain(|e| e.src_node != "alpha" && e.dst_node != "alpha");
+        dag.edges
+            .retain(|e| e.src_node != "alpha" && e.dst_node != "alpha");
         assert_eq!(dag.node_count(), 1);
         assert_eq!(dag.edge_count(), 0);
     }
@@ -213,7 +238,10 @@ mod tests {
         dag.add_node(ExecNode::new("dst", "verb"));
         dag.add_edge_weighted("src", "out", "dst", "in", 1.5);
         assert_eq!(dag.edge_count(), 1);
-        assert_eq!(dag.edges[0].confidence, 1.0, "confidence above 1.0 must be clamped to 1.0");
+        assert_eq!(
+            dag.edges[0].confidence, 1.0,
+            "confidence above 1.0 must be clamped to 1.0"
+        );
     }
 
     #[test]
@@ -222,7 +250,10 @@ mod tests {
         dag.add_node(ExecNode::new("a", "verb"));
         dag.add_node(ExecNode::new("b", "verb"));
         dag.add_edge("a", "out", "b", "in");
-        assert_eq!(dag.edges[0].confidence, 1.0, "unweighted add_edge must set confidence to 1.0");
+        assert_eq!(
+            dag.edges[0].confidence, 1.0,
+            "unweighted add_edge must set confidence to 1.0"
+        );
     }
 
     #[test]
@@ -237,7 +268,10 @@ mod tests {
         assert_eq!(dag.edges[0].confidence, 0.0);
         // Filter by confidence > 0.0 — simulates BFS pruning low-confidence edges.
         let active_edges: Vec<_> = dag.edges.iter().filter(|e| e.confidence > 0.0).collect();
-        assert!(active_edges.is_empty(), "zero-confidence edge must be pruned by confidence filter");
+        assert!(
+            active_edges.is_empty(),
+            "zero-confidence edge must be pruned by confidence filter"
+        );
     }
 
     #[test]
@@ -247,7 +281,10 @@ mod tests {
         dag.add_node(ExecNode::new("u", "verb"));
         dag.add_node(ExecNode::new("v", "verb"));
         dag.add_edge("u", "out", "v", "in");
-        assert_eq!(dag.edges[0].confidence, 1.0, "default add_edge must produce confidence=1.0");
+        assert_eq!(
+            dag.edges[0].confidence, 1.0,
+            "default add_edge must produce confidence=1.0"
+        );
     }
 
     #[test]
@@ -257,7 +294,10 @@ mod tests {
         dag.add_node(ExecNode::new("a", "verb"));
         dag.add_node(ExecNode::new("b", "verb"));
         dag.add_edge_weighted("a", "out", "b", "in", 1.5);
-        assert_eq!(dag.edges[0].confidence, 1.0, "confidence 1.5 must clamp to 1.0");
+        assert_eq!(
+            dag.edges[0].confidence, 1.0,
+            "confidence 1.5 must clamp to 1.0"
+        );
     }
 
     #[test]
@@ -267,7 +307,10 @@ mod tests {
         dag.add_node(ExecNode::new("p", "verb"));
         dag.add_node(ExecNode::new("q", "verb"));
         dag.add_edge_weighted("p", "out", "q", "in", -0.1);
-        assert_eq!(dag.edges[0].confidence, 0.0, "confidence -0.1 must clamp to 0.0");
+        assert_eq!(
+            dag.edges[0].confidence, 0.0,
+            "confidence -0.1 must clamp to 0.0"
+        );
     }
 
     #[test]
@@ -277,7 +320,10 @@ mod tests {
         dag.add_node(ExecNode::new("m", "verb"));
         dag.add_node(ExecNode::new("n", "verb"));
         dag.add_edge_weighted("m", "out", "n", "in", 0.5);
-        assert_eq!(dag.edges[0].confidence, 0.5, "confidence 0.5 must be stored as-is");
+        assert_eq!(
+            dag.edges[0].confidence, 0.5,
+            "confidence 0.5 must be stored as-is"
+        );
     }
 
     #[test]
@@ -303,7 +349,10 @@ mod tests {
         dag.add_node(ExecNode::new("B", "verb"));
         dag.add_edge("A", "out", "B", "in");
         dag.add_edge("B", "out", "A", "in");
-        assert!(dag.topological_sort().is_err(), "cycle A→B→A must be detected");
+        assert!(
+            dag.topological_sort().is_err(),
+            "cycle A→B→A must be detected"
+        );
     }
 
     #[test]
@@ -338,7 +387,8 @@ mod tests {
         assert_eq!(dag.edge_count(), 2);
         // Remove "mid" and all its incident edges.
         dag.nodes.remove("mid");
-        dag.edges.retain(|e| e.src_node != "mid" && e.dst_node != "mid");
+        dag.edges
+            .retain(|e| e.src_node != "mid" && e.dst_node != "mid");
         assert_eq!(dag.node_count(), 2);
         assert_eq!(dag.edge_count(), 0);
     }
@@ -433,7 +483,10 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("A", "verb"));
         dag.add_edge("A", "out", "A", "in");
-        assert!(dag.topological_sort().is_err(), "self-loop A→A must be detected as cycle");
+        assert!(
+            dag.topological_sort().is_err(),
+            "self-loop A→A must be detected as cycle"
+        );
     }
 
     #[test]
@@ -493,7 +546,10 @@ mod tests {
         dag.add_node(ExecNode::new("X", "verb"));
         dag.add_node(ExecNode::new("Y", "verb"));
         dag.add_edge("X", "out", "Y", "in");
-        assert!(dag.topological_sort().is_ok(), "valid DAG must return Ok from topological_sort");
+        assert!(
+            dag.topological_sort().is_ok(),
+            "valid DAG must return Ok from topological_sort"
+        );
     }
 
     #[test]
@@ -506,6 +562,9 @@ mod tests {
         dag.add_edge("A", "out", "B", "in");
         dag.add_edge("B", "out", "C", "in");
         dag.add_edge("C", "out", "A", "in");
-        assert!(dag.topological_sort().is_err(), "A→B→C→A cycle must cause topological_sort to return Err");
+        assert!(
+            dag.topological_sort().is_err(),
+            "A→B→C→A cycle must cause topological_sort to return Err"
+        );
     }
 }

@@ -51,8 +51,10 @@ impl DeepThinkStream {
             let hypothesis = format!("hypothesis_{}: {}", step_id, &input[..input.len().min(30)]);
 
             // Build evidence from previous step hypotheses (ReAct: each step observes prior)
-            let prev_evidence: Vec<&str> =
-                steps.iter().map(|s: &DeepThinkStep| s.hypothesis.as_str()).collect();
+            let prev_evidence: Vec<&str> = steps
+                .iter()
+                .map(|s: &DeepThinkStep| s.hypothesis.as_str())
+                .collect();
 
             let confidence = if prev_evidence.is_empty() {
                 0.5
@@ -95,7 +97,11 @@ impl DeepThinkStream {
     /// and produce different confidence trajectories.  A `ComposeEvent::Progress`
     /// is emitted after each beam completes; a final `ComposeEvent::Completed`
     /// is emitted once all beams are done.
-    pub fn think_beam(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<Vec<DeepThinkStep>> {
+    pub fn think_beam(
+        &self,
+        input_hash: u64,
+        progress: &dyn ProgressSink,
+    ) -> Vec<Vec<DeepThinkStep>> {
         let input = format!("intent_{:016x}", input_hash);
         let mut beams: Vec<Vec<DeepThinkStep>> = Vec::with_capacity(self.config.beam_width);
 
@@ -104,11 +110,17 @@ impl DeepThinkStream {
 
             for step_id in 0..self.config.max_steps {
                 // Include beam_i in hypothesis so each beam diverges
-                let hypothesis =
-                    format!("beam{}_hypothesis_{}: {}", beam_i, step_id, &input[..input.len().min(24)]);
+                let hypothesis = format!(
+                    "beam{}_hypothesis_{}: {}",
+                    beam_i,
+                    step_id,
+                    &input[..input.len().min(24)]
+                );
 
-                let prev_evidence: Vec<&str> =
-                    chain.iter().map(|s: &DeepThinkStep| s.hypothesis.as_str()).collect();
+                let prev_evidence: Vec<&str> = chain
+                    .iter()
+                    .map(|s: &DeepThinkStep| s.hypothesis.as_str())
+                    .collect();
 
                 let confidence = if prev_evidence.is_empty() {
                     0.5 + beam_i as f32 * 0.02
@@ -118,8 +130,7 @@ impl DeepThinkStream {
                 };
 
                 let react_ev = react_chain(&hypothesis, &[input.as_str()], 1);
-                let evidence: Vec<String> =
-                    react_ev.into_iter().map(|r| r.observation).collect();
+                let evidence: Vec<String> = react_ev.into_iter().map(|r| r.observation).collect();
 
                 chain.push(DeepThinkStep {
                     hypothesis,
@@ -216,13 +227,21 @@ mod tests {
 
     #[test]
     fn deep_think_beam_returns_multiple_chains() {
-        let cfg = DeepThinkConfig { max_steps: 4, beam_width: 3, token_budget: 400 };
+        let cfg = DeepThinkConfig {
+            max_steps: 4,
+            beam_width: 3,
+            token_budget: 400,
+        };
         let stream = DeepThinkStream::new(cfg.clone());
         let sink = VecProgressSink::new();
         let beams = stream.think_beam(0xbeef_cafe, &sink);
 
         // Must return exactly beam_width chains.
-        assert_eq!(beams.len(), cfg.beam_width, "number of chains must equal beam_width");
+        assert_eq!(
+            beams.len(),
+            cfg.beam_width,
+            "number of chains must equal beam_width"
+        );
 
         // Each chain must have exactly max_steps steps.
         for (i, chain) in beams.iter().enumerate() {
@@ -242,13 +261,20 @@ mod tests {
         // Events: one Progress per beam + one Completed.
         let events = sink.take();
         assert_eq!(events.len(), cfg.beam_width + 1);
-        assert!(matches!(events[cfg.beam_width], ComposeEvent::Completed { .. }));
+        assert!(matches!(
+            events[cfg.beam_width],
+            ComposeEvent::Completed { .. }
+        ));
     }
 
     #[test]
     fn deep_think_beam_width_respected() {
         // beam_width=1 → single chain, same as think() with rotated seed.
-        let cfg = DeepThinkConfig { max_steps: 3, beam_width: 1, token_budget: 300 };
+        let cfg = DeepThinkConfig {
+            max_steps: 3,
+            beam_width: 1,
+            token_budget: 300,
+        };
         let stream = DeepThinkStream::new(cfg.clone());
         let sink = VecProgressSink::new();
         let beams = stream.think_beam(0x1111, &sink);
@@ -256,7 +282,11 @@ mod tests {
         assert_eq!(beams[0].len(), cfg.max_steps);
 
         // beam_width=5 → five chains.
-        let cfg5 = DeepThinkConfig { max_steps: 2, beam_width: 5, token_budget: 200 };
+        let cfg5 = DeepThinkConfig {
+            max_steps: 2,
+            beam_width: 5,
+            token_budget: 200,
+        };
         let stream5 = DeepThinkStream::new(cfg5.clone());
         let sink5 = VecProgressSink::new();
         let beams5 = stream5.think_beam(0x2222, &sink5);
@@ -268,7 +298,11 @@ mod tests {
 
     #[test]
     fn deep_think_step_fields_are_correct() {
-        let cfg = DeepThinkConfig { max_steps: 3, beam_width: 2, token_budget: 300 };
+        let cfg = DeepThinkConfig {
+            max_steps: 3,
+            beam_width: 2,
+            token_budget: 300,
+        };
         let stream = DeepThinkStream::new(cfg.clone());
         let sink = VecProgressSink::new();
 

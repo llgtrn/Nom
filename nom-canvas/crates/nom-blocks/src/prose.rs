@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use serde::{Deserialize, Serialize};
-use crate::block_model::{NomtuRef, BlockId};
+use crate::block_model::{BlockId, NomtuRef};
 use crate::slot::SlotValue;
+use serde::{Deserialize, Serialize};
 
 pub const FLAVOUR_PARAGRAPH: &str = "affine:paragraph";
 pub const FLAVOUR_HEADING: &str = "affine:heading";
@@ -22,54 +22,146 @@ pub const FLAVOUR_NOTE: &str = "affine:note";
 // Quill Delta op (simplified subset — insert/delete/retain with attrs)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum DeltaOp {
-    Insert { text: String, attrs: std::collections::HashMap<String, String> },
-    Delete { count: usize },
-    Retain { count: usize, attrs: std::collections::HashMap<String, String> },
+    Insert {
+        text: String,
+        attrs: std::collections::HashMap<String, String>,
+    },
+    Delete {
+        count: usize,
+    },
+    Retain {
+        count: usize,
+        attrs: std::collections::HashMap<String, String>,
+    },
 }
 
 pub type Delta = Vec<DeltaOp>;
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
-pub enum ListType { Bulleted, Numbered, Todo, Toggle }
+pub enum ListType {
+    Bulleted,
+    Numbered,
+    Todo,
+    Toggle,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub enum CalloutStyle { Info, Warning, Error, Success, Note }
+pub enum CalloutStyle {
+    Info,
+    Warning,
+    Error,
+    Success,
+    Note,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct Column { pub id: String, pub name: String, pub col_type: String }
+pub struct Column {
+    pub id: String,
+    pub name: String,
+    pub col_type: String,
+}
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DatabaseView { pub id: String, pub mode: String }  // mode: table, kanban, gallery, etc.
+pub struct DatabaseView {
+    pub id: String,
+    pub mode: String,
+} // mode: table, kanban, gallery, etc.
 
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ParagraphBlock { pub entity: NomtuRef, pub text: Delta, pub children: Vec<BlockId> }
+pub struct ParagraphBlock {
+    pub entity: NomtuRef,
+    pub text: Delta,
+    pub children: Vec<BlockId>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct HeadingBlock  { pub entity: NomtuRef, pub text: Delta, pub level: u8, pub children: Vec<BlockId> }
+pub struct HeadingBlock {
+    pub entity: NomtuRef,
+    pub text: Delta,
+    pub level: u8,
+    pub children: Vec<BlockId>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ListBlock { pub entity: NomtuRef, pub text: Delta, pub list_type: ListType, pub checked: Option<bool>, pub children: Vec<BlockId> }
+pub struct ListBlock {
+    pub entity: NomtuRef,
+    pub text: Delta,
+    pub list_type: ListType,
+    pub checked: Option<bool>,
+    pub children: Vec<BlockId>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct QuoteBlock { pub entity: NomtuRef, pub text: Delta, pub children: Vec<BlockId> }
+pub struct QuoteBlock {
+    pub entity: NomtuRef,
+    pub text: Delta,
+    pub children: Vec<BlockId>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DividerBlock { pub entity: NomtuRef }
+pub struct DividerBlock {
+    pub entity: NomtuRef,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CalloutBlock { pub entity: NomtuRef, pub text: Delta, pub emoji: String, pub style: CalloutStyle }
+pub struct CalloutBlock {
+    pub entity: NomtuRef,
+    pub text: Delta,
+    pub emoji: String,
+    pub style: CalloutStyle,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct DatabaseBlock { pub entity: NomtuRef, pub title: String, pub views: Vec<DatabaseView>, pub columns: Vec<Column>, pub rows: Vec<Vec<SlotValue>> }
+pub struct DatabaseBlock {
+    pub entity: NomtuRef,
+    pub title: String,
+    pub views: Vec<DatabaseView>,
+    pub columns: Vec<Column>,
+    pub rows: Vec<Vec<SlotValue>>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct LinkedDocBlock { pub entity: NomtuRef, pub page_id: String, pub params: String }
+pub struct LinkedDocBlock {
+    pub entity: NomtuRef,
+    pub page_id: String,
+    pub params: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct BookmarkBlock { pub entity: NomtuRef, pub url: String, pub title: Option<String>, pub description: Option<String>, pub favicon: Option<String> }
+pub struct BookmarkBlock {
+    pub entity: NomtuRef,
+    pub url: String,
+    pub title: Option<String>,
+    pub description: Option<String>,
+    pub favicon: Option<String>,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct AttachmentBlock { pub entity: NomtuRef, pub name: String, pub size: u64, pub blob_hash: [u8; 32], pub mime: String }
+pub struct AttachmentBlock {
+    pub entity: NomtuRef,
+    pub name: String,
+    pub size: u64,
+    pub blob_hash: [u8; 32],
+    pub mime: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct ImageBlock { pub entity: NomtuRef, pub blob_hash: [u8; 32], pub width: Option<f32>, pub height: Option<f32>, pub caption: String }
+pub struct ImageBlock {
+    pub entity: NomtuRef,
+    pub blob_hash: [u8; 32],
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub caption: String,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct CodeBlock { pub entity: NomtuRef, pub language: String, pub text: Delta, pub wrap: bool }
+pub struct CodeBlock {
+    pub entity: NomtuRef,
+    pub language: String,
+    pub text: Delta,
+    pub wrap: bool,
+}
 #[derive(Clone, Debug, Serialize, Deserialize)]
-pub struct EmbedBlock { pub entity: NomtuRef, pub url: String, pub embed_type: String, pub aspect_ratio: f32 }
+pub struct EmbedBlock {
+    pub entity: NomtuRef,
+    pub url: String,
+    pub embed_type: String,
+    pub aspect_ratio: f32,
+}
 
 impl HeadingBlock {
-    pub fn level_clamped(&self) -> u8 { self.level.clamp(1, 6) }
+    pub fn level_clamped(&self) -> u8 {
+        self.level.clamp(1, 6)
+    }
 }
 
 #[cfg(test)]
@@ -134,7 +226,11 @@ mod tests {
             text: s.into(),
             attrs: std::collections::HashMap::new(),
         };
-        let children = vec!["item-1".to_string(), "item-2".to_string(), "item-3".to_string()];
+        let children = vec![
+            "item-1".to_string(),
+            "item-2".to_string(),
+            "item-3".to_string(),
+        ];
         let block = ListBlock {
             entity,
             text: vec![make_insert("• items")],
@@ -209,12 +305,25 @@ mod tests {
     #[test]
     fn block_type_display_flavour_constants_are_distinct() {
         let flavours = [
-            FLAVOUR_PARAGRAPH, FLAVOUR_HEADING, FLAVOUR_LIST, FLAVOUR_QUOTE,
-            FLAVOUR_DIVIDER, FLAVOUR_CALLOUT, FLAVOUR_DATABASE, FLAVOUR_LINKED_DOC,
-            FLAVOUR_BOOKMARK, FLAVOUR_ATTACHMENT, FLAVOUR_IMAGE, FLAVOUR_CODE,
+            FLAVOUR_PARAGRAPH,
+            FLAVOUR_HEADING,
+            FLAVOUR_LIST,
+            FLAVOUR_QUOTE,
+            FLAVOUR_DIVIDER,
+            FLAVOUR_CALLOUT,
+            FLAVOUR_DATABASE,
+            FLAVOUR_LINKED_DOC,
+            FLAVOUR_BOOKMARK,
+            FLAVOUR_ATTACHMENT,
+            FLAVOUR_IMAGE,
+            FLAVOUR_CODE,
         ];
         let unique: std::collections::HashSet<_> = flavours.iter().collect();
-        assert_eq!(unique.len(), flavours.len(), "every block flavour constant must be distinct");
+        assert_eq!(
+            unique.len(),
+            flavours.len(),
+            "every block flavour constant must be distinct"
+        );
     }
 
     #[test]

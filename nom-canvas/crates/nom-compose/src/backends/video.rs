@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore;
 use nom_blocks::compose::video_block::VideoBlock;
 use nom_blocks::NomtuRef;
-use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 
 /// A single frame descriptor in the video timeline.
 #[derive(Debug, Clone)]
@@ -25,14 +25,22 @@ pub struct VideoSpec {
 impl VideoSpec {
     pub fn new(fps: u32, width: u32, height: u32, duration_secs: f32) -> Self {
         let duration_frames = (fps as f32 * duration_secs) as u32;
-        Self { fps, width, height, duration_frames, frames: Vec::new() }
+        Self {
+            fps,
+            width,
+            height,
+            duration_frames,
+            frames: Vec::new(),
+        }
     }
 
     pub fn duration_ms(&self) -> u32 {
         (self.duration_frames * 1000) / self.fps.max(1)
     }
 
-    pub fn add_frame(&mut self, frame: VideoFrame) { self.frames.push(frame); }
+    pub fn add_frame(&mut self, frame: VideoFrame) {
+        self.frames.push(frame);
+    }
 }
 
 pub struct VideoInput {
@@ -46,8 +54,15 @@ pub struct VideoInput {
 pub struct VideoBackend;
 
 impl VideoBackend {
-    pub fn compose(input: VideoInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> VideoBlock {
-        sink.emit(ComposeEvent::Started { backend: "video".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: VideoInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> VideoBlock {
+        sink.emit(ComposeEvent::Started {
+            backend: "video".into(),
+            entity_id: input.entity.id.clone(),
+        });
 
         let frame_count = input.frames.len() as u32;
         let fps = input.fps.max(1);
@@ -58,7 +73,10 @@ impl VideoBackend {
         for (i, raw_frame) in input.frames.iter().enumerate() {
             // Use FNV-1a over the raw frame bytes as the scene hash.
             let mut h: u64 = 14695981039346656037;
-            for &b in raw_frame { h ^= b as u64; h = h.wrapping_mul(1099511628211); }
+            for &b in raw_frame {
+                h ^= b as u64;
+                h = h.wrapping_mul(1099511628211);
+            }
             spec.add_frame(VideoFrame {
                 frame_index: i as u32,
                 duration_ms: if fps > 0 { 1000 / fps } else { 0 },
@@ -73,7 +91,11 @@ impl VideoBackend {
                 / frame_count.max(1) as f32;
             sink.emit(ComposeEvent::Progress {
                 percent: pct,
-                stage: format!("encoding frames {}-{}", batch_start, (batch_start + batch_size).min(frame_count)),
+                stage: format!(
+                    "encoding frames {}-{}",
+                    batch_start,
+                    (batch_start + batch_size).min(frame_count)
+                ),
             });
         }
 
@@ -90,7 +112,10 @@ impl VideoBackend {
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
 
         let duration_ms = spec.duration_ms() as u64;
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
 
         VideoBlock {
             entity: input.entity,
@@ -106,8 +131,8 @@ impl VideoBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn video_spec_creation() {
@@ -134,7 +159,11 @@ mod tests {
     fn video_compose_returns_artifact() {
         let mut store = InMemoryStore::new();
         let input = VideoInput {
-            entity: NomtuRef { id: "vid1".into(), word: "clip".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "vid1".into(),
+                word: "clip".into(),
+                kind: "media".into(),
+            },
             frames: vec![vec![0u8; 4], vec![128u8; 4], vec![255u8; 4]],
             fps: 24,
             width: 1920,
@@ -150,7 +179,11 @@ mod tests {
     fn video_compose_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = VideoInput {
-            entity: NomtuRef { id: "vid2".into(), word: "intro".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "vid2".into(),
+                word: "intro".into(),
+                kind: "media".into(),
+            },
             frames: vec![vec![0u8; 4]],
             fps: 30,
             width: 1280,
@@ -167,7 +200,11 @@ mod tests {
         // 30 frames at 30 fps = 1000 ms
         let frames: Vec<Vec<u8>> = (0..30).map(|_| vec![0u8; 4]).collect();
         let input = VideoInput {
-            entity: NomtuRef { id: "vid3".into(), word: "second".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "vid3".into(),
+                word: "second".into(),
+                kind: "media".into(),
+            },
             frames,
             fps: 30,
             width: 640,
@@ -180,7 +217,11 @@ mod tests {
     #[test]
     fn video_spec_add_frame() {
         let mut spec = VideoSpec::new(24, 1920, 1080, 1.0);
-        spec.add_frame(VideoFrame { frame_index: 0, duration_ms: 41, scene_hash: "abc".into() });
+        spec.add_frame(VideoFrame {
+            frame_index: 0,
+            duration_ms: 41,
+            scene_hash: "abc".into(),
+        });
         assert_eq!(spec.frames.len(), 1);
         assert_eq!(spec.frames[0].frame_index, 0);
     }

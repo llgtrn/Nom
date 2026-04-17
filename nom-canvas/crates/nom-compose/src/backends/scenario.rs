@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
-use nom_blocks::NomtuRef;
+use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
+use nom_blocks::NomtuRef;
 
 pub struct ScenarioScene {
     pub id: String,
@@ -24,8 +24,15 @@ pub struct ScenarioOutput {
 pub struct ScenarioBackend;
 
 impl ScenarioBackend {
-    pub fn compose(input: ScenarioInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ScenarioOutput {
-        sink.emit(ComposeEvent::Started { backend: "scenario".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: ScenarioInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> ScenarioOutput {
+        sink.emit(ComposeEvent::Started {
+            backend: "scenario".into(),
+            entity_id: input.entity.id.clone(),
+        });
         let total = input.scenes.len();
         let mut content = format!("# {}\n\n", input.title);
         for (i, scene) in input.scenes.iter().enumerate() {
@@ -43,30 +50,44 @@ impl ScenarioBackend {
             });
         }
         let hash = store.write(content.as_bytes());
-        sink.emit(ComposeEvent::Completed { artifact_hash: hash, byte_size: content.len() as u64 });
-        ScenarioOutput { artifact_hash: hash, scene_count: total }
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash: hash,
+            byte_size: content.len() as u64,
+        });
+        ScenarioOutput {
+            artifact_hash: hash,
+            scene_count: total,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn scenario_compose() {
         let mut store = InMemoryStore::new();
-        let out = ScenarioBackend::compose(ScenarioInput {
-            entity: NomtuRef { id: "s1".into(), word: "login-flow".into(), kind: "concept".into() },
-            title: "Login".into(),
-            scenes: vec![ScenarioScene {
-                id: "open".into(),
-                description: "user opens app".into(),
-                actors: vec!["user".into()],
-                duration_ms: 500,
-            }],
-        }, &mut store, &LogProgressSink);
+        let out = ScenarioBackend::compose(
+            ScenarioInput {
+                entity: NomtuRef {
+                    id: "s1".into(),
+                    word: "login-flow".into(),
+                    kind: "concept".into(),
+                },
+                title: "Login".into(),
+                scenes: vec![ScenarioScene {
+                    id: "open".into(),
+                    description: "user opens app".into(),
+                    actors: vec!["user".into()],
+                    duration_ms: 500,
+                }],
+            },
+            &mut store,
+            &LogProgressSink,
+        );
         assert_eq!(out.scene_count, 1);
         assert!(store.exists(&out.artifact_hash));
     }
@@ -74,11 +95,19 @@ mod tests {
     #[test]
     fn scenario_empty() {
         let mut store = InMemoryStore::new();
-        let out = ScenarioBackend::compose(ScenarioInput {
-            entity: NomtuRef { id: "s2".into(), word: "empty".into(), kind: "concept".into() },
-            title: "Empty".into(),
-            scenes: vec![],
-        }, &mut store, &LogProgressSink);
+        let out = ScenarioBackend::compose(
+            ScenarioInput {
+                entity: NomtuRef {
+                    id: "s2".into(),
+                    word: "empty".into(),
+                    kind: "concept".into(),
+                },
+                title: "Empty".into(),
+                scenes: vec![],
+            },
+            &mut store,
+            &LogProgressSink,
+        );
         assert_eq!(out.scene_count, 0);
         assert!(store.exists(&out.artifact_hash));
     }

@@ -5,7 +5,10 @@ use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum SplitDirection { Horizontal, Vertical }
+pub enum SplitDirection {
+    Horizontal,
+    Vertical,
+}
 
 #[derive(Debug, Clone)]
 pub struct PaneTab {
@@ -23,7 +26,11 @@ pub struct Pane {
 
 impl Pane {
     pub fn new(id: impl Into<String>) -> Self {
-        Self { id: id.into(), tabs: vec![], active_tab: None }
+        Self {
+            id: id.into(),
+            tabs: vec![],
+            active_tab: None,
+        }
     }
 
     pub fn open_tab(&mut self, id: impl Into<String>, title: impl Into<String>) {
@@ -31,7 +38,11 @@ impl Pane {
         if let Some(pos) = self.tabs.iter().position(|t| t.id == id) {
             self.active_tab = Some(pos);
         } else {
-            self.tabs.push(PaneTab { id, title: title.into(), is_dirty: false });
+            self.tabs.push(PaneTab {
+                id,
+                title: title.into(),
+                is_dirty: false,
+            });
             self.active_tab = Some(self.tabs.len() - 1);
         }
     }
@@ -58,12 +69,16 @@ impl Pane {
 pub struct PaneAxis {
     pub direction: SplitDirection,
     pub members: Vec<Member>,
-    pub flexes: Vec<f32>,  // proportions summing to 1.0
+    pub flexes: Vec<f32>, // proportions summing to 1.0
 }
 
 impl PaneAxis {
     pub fn new(direction: SplitDirection) -> Self {
-        Self { direction, members: vec![], flexes: vec![] }
+        Self {
+            direction,
+            members: vec![],
+            flexes: vec![],
+        }
     }
 
     pub fn push(&mut self, member: Member) {
@@ -74,7 +89,9 @@ impl PaneAxis {
     }
 
     pub fn adjust_flex(&mut self, idx: usize, delta: f32) {
-        if idx + 1 >= self.flexes.len() { return; }
+        if idx + 1 >= self.flexes.len() {
+            return;
+        }
         let moved = delta.clamp(-self.flexes[idx], self.flexes[idx + 1]);
         self.flexes[idx] += moved;
         self.flexes[idx + 1] -= moved;
@@ -101,10 +118,14 @@ pub struct PaneGroup {
 
 impl PaneGroup {
     pub fn single(id: impl Into<String>) -> Self {
-        Self { root: Member::Pane(Pane::new(id)) }
+        Self {
+            root: Member::Pane(Pane::new(id)),
+        }
     }
 
-    pub fn pane_count(&self) -> usize { self.root.pane_count() }
+    pub fn pane_count(&self) -> usize {
+        self.root.pane_count()
+    }
 
     pub fn split(&mut self, direction: SplitDirection, new_id: impl Into<String>) {
         let existing = std::mem::replace(&mut self.root, Member::Pane(Pane::new("")));
@@ -143,7 +164,9 @@ fn paint_pane(pane: &Pane, x: f32, y: f32, w: f32, _h: f32, scene: &mut Scene) {
 
 fn paint_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32, scene: &mut Scene) {
     let n = axis.members.len();
-    if n == 0 { return; }
+    if n == 0 {
+        return;
+    }
 
     let mut offset = 0.0;
     for (i, (member, &flex)) in axis.members.iter().zip(axis.flexes.iter()).enumerate() {
@@ -175,7 +198,7 @@ fn paint_axis(axis: &PaneAxis, x: f32, y: f32, w: f32, h: f32, scene: &mut Scene
 
         match axis.direction {
             SplitDirection::Horizontal => offset += flex * w,
-            SplitDirection::Vertical   => offset += flex * h,
+            SplitDirection::Vertical => offset += flex * h,
         }
     }
 }
@@ -282,8 +305,14 @@ mod tests {
         }
         let mut cx = WindowContext::new(1.0, Vec2::new(800.0, 600.0));
         let bounds = Bounds {
-            origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
-            size: Size { width: Pixels(800.0), height: Pixels(600.0) },
+            origin: Point {
+                x: Pixels(0.0),
+                y: Pixels(0.0),
+            },
+            size: Size {
+                width: Pixels(800.0),
+                height: Pixels(600.0),
+            },
         };
 
         // Phase 1: request_layout returns a valid LayoutId.
@@ -304,7 +333,11 @@ mod tests {
         let mut scene = Scene::new();
         g.paint_scene(800.0, 600.0, &mut scene);
         // >=2 pane tab bars + 1 split divider.
-        assert!(scene.quads.len() >= 3, "expected >=3 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 3,
+            "expected >=3 quads, got {}",
+            scene.quads.len()
+        );
     }
 
     #[test]

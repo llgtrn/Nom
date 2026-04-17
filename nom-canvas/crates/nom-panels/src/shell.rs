@@ -5,7 +5,10 @@ use nom_gpui::scene::Scene;
 use nom_theme::tokens::{self, PANEL_RIGHT_WIDTH, SIDEBAR_W, STATUSBAR_H, TOOLBAR_H};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub enum ShellMode { Normal, Insert }
+pub enum ShellMode {
+    Normal,
+    Insert,
+}
 
 pub struct ShellLayout {
     pub toolbar_h: f32,
@@ -70,9 +73,15 @@ impl Shell {
         }
     }
 
-    pub fn left_visible(&self) -> bool { self.left.is_open }
-    pub fn right_visible(&self) -> bool { self.right.is_open }
-    pub fn bottom_visible(&self) -> bool { self.bottom.is_open }
+    pub fn left_visible(&self) -> bool {
+        self.left.is_open
+    }
+    pub fn right_visible(&self) -> bool {
+        self.right.is_open
+    }
+    pub fn bottom_visible(&self) -> bool {
+        self.bottom.is_open
+    }
 
     /// Paint the shell chrome (status bar + optional mode/file strip) into the
     /// shared GPU scene.
@@ -99,7 +108,11 @@ impl Shell {
     }
 }
 
-impl Default for Shell { fn default() -> Self { Self::new() } }
+impl Default for Shell {
+    fn default() -> Self {
+        Self::new()
+    }
+}
 
 #[cfg(test)]
 mod tests {
@@ -133,7 +146,11 @@ mod tests {
         shell.paint_scene(1440.0, 900.0, &mut scene);
 
         // bg + status bar + mode accent + active-file strip = 4 quads.
-        assert!(scene.quads.len() >= 4, "expected >=4 quads, got {}", scene.quads.len());
+        assert!(
+            scene.quads.len() >= 4,
+            "expected >=4 quads, got {}",
+            scene.quads.len()
+        );
     }
 
     #[test]

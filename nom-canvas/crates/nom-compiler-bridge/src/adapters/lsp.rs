@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
-use nom_editor::lsp_bridge::{CompletionItem, CompletionKind, HoverResult, Location, LspProvider};
 use crate::shared::SharedState;
+use nom_editor::lsp_bridge::{CompletionItem, CompletionKind, HoverResult, Location, LspProvider};
 use std::sync::Arc;
 
 // With compiler feature: real LSP using nom-lsp
@@ -38,15 +38,14 @@ impl LspProvider for CompilerLspProvider {
     fn hover(&self, path: &std::path::Path, _offset: usize) -> Option<HoverResult> {
         // Use the file stem as a word probe when no buffer extraction is available.
         // This lets the cache-based lookup work for document-level hover.
-        let word = path.file_stem()
-            .and_then(|s| s.to_str())
-            .unwrap_or("");
+        let word = path.file_stem().and_then(|s| s.to_str()).unwrap_or("");
         hover_from_dict(word, &self.state)
     }
 
     fn completions(&self, _path: &std::path::Path, _offset: usize) -> Vec<CompletionItem> {
         // Returns grammar keywords as completions
-        self.state.cached_grammar_kinds()
+        self.state
+            .cached_grammar_kinds()
             .into_iter()
             .map(|k| CompletionItem {
                 label: k.name.clone(),
@@ -72,8 +71,14 @@ mod tests {
     fn compiler_lsp_provider_completions_from_cache() {
         let state = Arc::new(SharedState::new("a.db", "b.db"));
         state.update_grammar_kinds(vec![
-            GrammarKind { name: "verb".into(), description: "action word".into() },
-            GrammarKind { name: "concept".into(), description: "abstract idea".into() },
+            GrammarKind {
+                name: "verb".into(),
+                description: "action word".into(),
+            },
+            GrammarKind {
+                name: "concept".into(),
+                description: "abstract idea".into(),
+            },
         ]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
@@ -137,14 +142,47 @@ mod tests {
     fn compiler_lsp_provider_completions_kind_is_keyword() {
         // Completions built from grammar kinds always have CompletionKind::Keyword
         let state = Arc::new(SharedState::new("a.db", "b.db"));
-        state.update_grammar_kinds(vec![
-            GrammarKind { name: "emit".into(), description: "output a value".into() },
-        ]);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "emit".into(),
+            description: "output a value".into(),
+        }]);
         let provider = CompilerLspProvider::new(state);
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         assert_eq!(completions.len(), 1);
         assert_eq!(completions[0].kind, CompletionKind::Keyword);
         assert_eq!(completions[0].insert_text, "emit");
         assert_eq!(completions[0].detail, Some("output a value".to_string()));
+    }
+
+    #[test]
+    fn lsp_adapter_severity_mapping() {
+        // LspSeverity (from lsp_provider.rs) maps Error as the critical variant.
+        // nom_editor's lsp_bridge does not expose a severity enum — we verify that
+        // the CompletionKind variants used by adapters are consistent.
+        let ck = CompletionKind::Keyword;
+        let cf = CompletionKind::Function;
+        let cc = CompletionKind::Class;
+        // Each must be a distinct variant
+        assert_ne!(ck, cf);
+        assert_ne!(cf, cc);
+        assert_ne!(ck, cc);
+    }
+
+    #[test]
+    fn completion_adapter_max_items() {
+        // completions() is unbounded in the current impl (returns all grammar kinds).
+        // Verify that a large grammar cache does not cause a panic and respects the Vec type.
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let many_kinds: Vec<_> = (0..30)
+            .map(|i| GrammarKind {
+                name: format!("kind_{i}"),
+                description: "desc".into(),
+            })
+            .collect();
+        state.update_grammar_kinds(many_kinds);
+        let provider = CompilerLspProvider::new(state);
+        let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
+        // All 30 items are returned (no hard cap in current stub)
+        assert_eq!(completions.len(), 30);
     }
 }

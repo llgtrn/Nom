@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore;
 use nom_blocks::compose::audio_block::AudioBlock;
 use nom_blocks::NomtuRef;
-use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 
 /// Audio composition spec.
 #[derive(Debug, Clone)]
@@ -30,8 +30,15 @@ pub struct AudioInput {
 pub struct AudioBackend;
 
 impl AudioBackend {
-    pub fn compose(input: AudioInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> AudioBlock {
-        sink.emit(ComposeEvent::Started { backend: "audio".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: AudioInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> AudioBlock {
+        sink.emit(ComposeEvent::Started {
+            backend: "audio".into(),
+            entity_id: input.entity.id.clone(),
+        });
 
         let sample_rate = input.sample_rate.max(1);
         let duration_ms = ((input.pcm_samples.len() as u64) * 1000 / sample_rate as u64) as u32;
@@ -44,11 +51,16 @@ impl AudioBackend {
         };
 
         // Encode f32 PCM samples to little-endian bytes.
-        let raw: Vec<u8> = input.pcm_samples.iter()
+        let raw: Vec<u8> = input
+            .pcm_samples
+            .iter()
             .flat_map(|s| s.to_le_bytes())
             .collect();
 
-        sink.emit(ComposeEvent::Progress { percent: 0.5, stage: "encoding".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "encoding".into(),
+        });
 
         // Write spec metadata as JSON alongside the raw audio.
         let spec_json = serde_json::json!({
@@ -65,7 +77,10 @@ impl AudioBackend {
         let artifact_hash = store.write(&payload);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
 
-        sink.emit(ComposeEvent::Completed { artifact_hash, byte_size });
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        });
 
         AudioBlock {
             entity: input.entity,
@@ -79,8 +94,8 @@ impl AudioBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::LogProgressSink;
+    use crate::store::InMemoryStore;
 
     #[test]
     fn audio_spec_bitrate_kbps() {
@@ -107,7 +122,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         let samples: Vec<f32> = (0..44100).map(|i| (i as f32 / 44100.0).sin()).collect();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud1".into(), word: "tone".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud1".into(),
+                word: "tone".into(),
+                kind: "media".into(),
+            },
             pcm_samples: samples,
             sample_rate: 44100,
             codec: "pcm_f32le".into(),
@@ -122,7 +141,11 @@ mod tests {
     fn audio_compose_entity_propagated() {
         let mut store = InMemoryStore::new();
         let input = AudioInput {
-            entity: NomtuRef { id: "aud2".into(), word: "jingle".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud2".into(),
+                word: "jingle".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.0f32; 8000],
             sample_rate: 8000,
             codec: "opus".into(),
@@ -137,7 +160,11 @@ mod tests {
         let mut store = InMemoryStore::new();
         // 22050 samples at 22050 Hz = 1000 ms
         let input = AudioInput {
-            entity: NomtuRef { id: "aud3".into(), word: "beep".into(), kind: "media".into() },
+            entity: NomtuRef {
+                id: "aud3".into(),
+                word: "beep".into(),
+                kind: "media".into(),
+            },
             pcm_samples: vec![0.5f32; 22050],
             sample_rate: 22050,
             codec: "mp3".into(),
@@ -148,7 +175,12 @@ mod tests {
 
     #[test]
     fn audio_spec_mono_bitrate() {
-        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 1000, codec: "aac".into() };
+        let spec = AudioSpec {
+            sample_rate: 48000,
+            channels: 1,
+            duration_ms: 1000,
+            codec: "aac".into(),
+        };
         // 48000 * 1 * 16 / 1000 = 768 kbps
         assert_eq!(spec.bitrate_kbps(), 768);
     }

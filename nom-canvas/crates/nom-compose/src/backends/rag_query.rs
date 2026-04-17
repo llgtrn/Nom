@@ -1,8 +1,8 @@
 #![deny(unsafe_code)]
-use nom_blocks::NomtuRef;
-use crate::store::ArtifactStore;
-use crate::progress::{ProgressSink, ComposeEvent};
 use crate::deep_think::{DeepThinkConfig, DeepThinkStream};
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore;
+use nom_blocks::NomtuRef;
 use nom_graph::{Dag, GraphRagRetriever, QueryVec, RetrievedNode};
 
 pub struct RagChunk {
@@ -36,7 +36,11 @@ pub struct RagPipeline {
 
 impl RagPipeline {
     pub fn new(input_hash: u64) -> Self {
-        Self { input_hash, top_k: 5, max_hops: 3 }
+        Self {
+            input_hash,
+            top_k: 5,
+            max_hops: 3,
+        }
     }
 }
 
@@ -47,7 +51,10 @@ pub struct RagQueryBackend {
 
 impl Default for RagQueryBackend {
     fn default() -> Self {
-        Self { deep_think_config: None, top_k: None }
+        Self {
+            deep_think_config: None,
+            top_k: None,
+        }
     }
 }
 
@@ -58,17 +65,39 @@ impl RagQueryBackend {
         self
     }
 
-    pub fn compose(input: RagQueryInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> RagQueryOutput {
-        sink.emit(ComposeEvent::Started { backend: "rag_query".into(), entity_id: input.entity.id.clone() });
+    pub fn compose(
+        input: RagQueryInput,
+        store: &mut dyn ArtifactStore,
+        sink: &dyn ProgressSink,
+    ) -> RagQueryOutput {
+        sink.emit(ComposeEvent::Started {
+            backend: "rag_query".into(),
+            entity_id: input.entity.id.clone(),
+        });
         let mut top: Vec<&RagChunk> = input.chunks.iter().collect();
-        top.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        top.sort_by(|a, b| {
+            b.score
+                .partial_cmp(&a.score)
+                .unwrap_or(std::cmp::Ordering::Equal)
+        });
         top.truncate(input.top_k);
-        let context = top.iter().map(|c| c.text.as_str()).collect::<Vec<_>>().join("\n---\n");
+        let context = top
+            .iter()
+            .map(|c| c.text.as_str())
+            .collect::<Vec<_>>()
+            .join("\n---\n");
         let answer = format!("Query: {}\n\nContext:\n{}", input.query, context);
         let hash = store.write(answer.as_bytes());
         let used_ids: Vec<String> = top.iter().map(|c| c.id.clone()).collect();
-        sink.emit(ComposeEvent::Completed { artifact_hash: hash, byte_size: answer.len() as u64 });
-        RagQueryOutput { artifact_hash: hash, answer, chunks_used: used_ids }
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash: hash,
+            byte_size: answer.len() as u64,
+        });
+        RagQueryOutput {
+            artifact_hash: hash,
+            answer,
+            chunks_used: used_ids,
+        }
     }
 
     /// Retrieve graph nodes from `dag` most relevant to `input_hash`.
@@ -98,11 +127,17 @@ impl RagQueryBackend {
             qvec[i] = ((input_hash >> (i * 4)) & 0xF) as f32 / 15.0;
         }
 
-        sink.emit(ComposeEvent::Progress { percent: 50.0, stage: "graph_rag_retrieve".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 50.0,
+            stage: "graph_rag_retrieve".into(),
+        });
 
         let results = retriever.retrieve(&qvec, self.top_k.unwrap_or(5), 3);
 
-        sink.emit(ComposeEvent::Progress { percent: 100.0, stage: "graph_rag_done".into() });
+        sink.emit(ComposeEvent::Progress {
+            percent: 100.0,
+            stage: "graph_rag_done".into(),
+        });
 
         results
     }
@@ -111,24 +146,44 @@ impl RagQueryBackend {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::store::InMemoryStore;
     use crate::progress::{LogProgressSink, VecProgressSink};
+    use crate::store::InMemoryStore;
     use nom_graph::{Dag, ExecNode};
 
     #[test]
     fn rag_top_k_selection() {
         let mut store = InMemoryStore::new();
         let chunks = vec![
-            RagChunk { id: "a".into(), text: "low".into(), score: 0.3 },
-            RagChunk { id: "b".into(), text: "high".into(), score: 0.9 },
-            RagChunk { id: "c".into(), text: "mid".into(), score: 0.6 },
+            RagChunk {
+                id: "a".into(),
+                text: "low".into(),
+                score: 0.3,
+            },
+            RagChunk {
+                id: "b".into(),
+                text: "high".into(),
+                score: 0.9,
+            },
+            RagChunk {
+                id: "c".into(),
+                text: "mid".into(),
+                score: 0.6,
+            },
         ];
-        let out = RagQueryBackend::compose(RagQueryInput {
-            entity: NomtuRef { id: "r1".into(), word: "search".into(), kind: "verb".into() },
-            query: "what is high?".into(),
-            top_k: 2,
-            chunks,
-        }, &mut store, &LogProgressSink);
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef {
+                    id: "r1".into(),
+                    word: "search".into(),
+                    kind: "verb".into(),
+                },
+                query: "what is high?".into(),
+                top_k: 2,
+                chunks,
+            },
+            &mut store,
+            &LogProgressSink,
+        );
         assert_eq!(out.chunks_used.len(), 2);
         assert_eq!(out.chunks_used[0], "b");
     }
@@ -136,12 +191,20 @@ mod tests {
     #[test]
     fn rag_empty_chunks() {
         let mut store = InMemoryStore::new();
-        let out = RagQueryBackend::compose(RagQueryInput {
-            entity: NomtuRef { id: "r2".into(), word: "search".into(), kind: "verb".into() },
-            query: "anything".into(),
-            top_k: 3,
-            chunks: vec![],
-        }, &mut store, &LogProgressSink);
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef {
+                    id: "r2".into(),
+                    word: "search".into(),
+                    kind: "verb".into(),
+                },
+                query: "anything".into(),
+                top_k: 3,
+                chunks: vec![],
+            },
+            &mut store,
+            &LogProgressSink,
+        );
         assert_eq!(out.chunks_used.len(), 0);
         assert!(store.exists(&out.artifact_hash));
     }
@@ -167,7 +230,10 @@ mod tests {
         dag.add_edge("node_a", "out", "node_b", "in");
         dag.add_edge("node_b", "out", "node_c", "in");
 
-        let backend = RagQueryBackend { top_k: Some(2), ..Default::default() };
+        let backend = RagQueryBackend {
+            top_k: Some(2),
+            ..Default::default()
+        };
         let results = backend.compose_with_dag(&dag, 0x1234567890abcdef, &LogProgressSink);
 
         assert_eq!(results.len(), 2, "top_k=2 must return exactly 2 nodes");
@@ -185,7 +251,11 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("dt_node", "verb"));
 
-        let config = DeepThinkConfig { max_steps: 2, beam_width: 1, token_budget: 128 };
+        let config = DeepThinkConfig {
+            max_steps: 2,
+            beam_width: 1,
+            token_budget: 128,
+        };
         let backend = RagQueryBackend::default().with_deep_think(config);
         let sink = VecProgressSink::new();
         let _ = backend.compose_with_dag(&dag, 0xaabb_ccdd_eeff_0011, &sink);
@@ -226,7 +296,10 @@ mod tests {
         let _ = backend.compose_with_dag(&dag, 0xffffffff00000000, &sink);
 
         let events = sink.take();
-        let progress_events: Vec<_> = events.iter().filter(|e| matches!(e, ComposeEvent::Progress { .. })).collect();
+        let progress_events: Vec<_> = events
+            .iter()
+            .filter(|e| matches!(e, ComposeEvent::Progress { .. }))
+            .collect();
         assert!(
             progress_events.len() >= 2,
             "must emit at least 2 Progress events, got {}",
@@ -234,10 +307,17 @@ mod tests {
         );
         // First event must be at 50%, last at 100%.
         if let ComposeEvent::Progress { percent, .. } = &progress_events[0] {
-            assert!((*percent - 50.0).abs() < 0.01, "first progress must be 50%, got {percent}");
+            assert!(
+                (*percent - 50.0).abs() < 0.01,
+                "first progress must be 50%, got {percent}"
+            );
         }
-        if let ComposeEvent::Progress { percent, .. } = &progress_events[progress_events.len() - 1] {
-            assert!((*percent - 100.0).abs() < 0.01, "last progress must be 100%, got {percent}");
+        if let ComposeEvent::Progress { percent, .. } = &progress_events[progress_events.len() - 1]
+        {
+            assert!(
+                (*percent - 100.0).abs() < 0.01,
+                "last progress must be 100%, got {percent}"
+            );
         }
     }
 }

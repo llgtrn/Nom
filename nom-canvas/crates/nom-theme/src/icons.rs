@@ -197,7 +197,11 @@ pub fn icon_path(icon: Icon) -> IconPath {
             circles: &[(0.5, 0.5, 0.42), (0.5, 0.32, 0.03)],
         },
         Icon::Play => IconPath {
-            lines: &[(0.25, 0.15, 0.25, 0.85), (0.25, 0.15, 0.80, 0.50), (0.80, 0.50, 0.25, 0.85)],
+            lines: &[
+                (0.25, 0.15, 0.25, 0.85),
+                (0.25, 0.15, 0.80, 0.50),
+                (0.80, 0.50, 0.25, 0.85),
+            ],
             circles: &[],
         },
         Icon::Pause => IconPath {
@@ -256,7 +260,11 @@ pub fn icon_path(icon: Icon) -> IconPath {
             circles: &[],
         },
         Icon::Zap => IconPath {
-            lines: &[(0.60, 0.05, 0.30, 0.50), (0.30, 0.50, 0.55, 0.50), (0.55, 0.50, 0.25, 0.95)],
+            lines: &[
+                (0.60, 0.05, 0.30, 0.50),
+                (0.30, 0.50, 0.55, 0.50),
+                (0.55, 0.50, 0.25, 0.95),
+            ],
             circles: &[],
         },
         Icon::Link => IconPath {
@@ -498,7 +506,12 @@ pub fn icon_path(icon: Icon) -> IconPath {
                 (0.70, 0.15, 0.70, 0.42),
                 (0.30, 0.30, 0.70, 0.30),
             ],
-            circles: &[(0.30, 0.15, 0.07), (0.30, 0.85, 0.07), (0.70, 0.15, 0.07), (0.70, 0.50, 0.07)],
+            circles: &[
+                (0.30, 0.15, 0.07),
+                (0.30, 0.85, 0.07),
+                (0.70, 0.15, 0.07),
+                (0.70, 0.50, 0.07),
+            ],
         },
         Icon::Brain => IconPath {
             lines: &[
@@ -594,14 +607,32 @@ mod tests {
         for icon in Icon::all() {
             let path = icon_path(*icon);
             for &(x1, y1, x2, y2) in path.lines {
-                assert!((0.0..=1.0).contains(&x1), "{icon:?} line x1={x1} out of [0,1]");
-                assert!((0.0..=1.0).contains(&y1), "{icon:?} line y1={y1} out of [0,1]");
-                assert!((0.0..=1.0).contains(&x2), "{icon:?} line x2={x2} out of [0,1]");
-                assert!((0.0..=1.0).contains(&y2), "{icon:?} line y2={y2} out of [0,1]");
+                assert!(
+                    (0.0..=1.0).contains(&x1),
+                    "{icon:?} line x1={x1} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&y1),
+                    "{icon:?} line y1={y1} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&x2),
+                    "{icon:?} line x2={x2} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&y2),
+                    "{icon:?} line y2={y2} out of [0,1]"
+                );
             }
             for &(cx, cy, r) in path.circles {
-                assert!((0.0..=1.0).contains(&cx), "{icon:?} circle cx={cx} out of [0,1]");
-                assert!((0.0..=1.0).contains(&cy), "{icon:?} circle cy={cy} out of [0,1]");
+                assert!(
+                    (0.0..=1.0).contains(&cx),
+                    "{icon:?} circle cx={cx} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&cy),
+                    "{icon:?} circle cy={cy} out of [0,1]"
+                );
                 assert!(r > 0.0, "{icon:?} circle radius must be positive");
                 assert!(r <= 0.5, "{icon:?} circle radius={r} exceeds half-viewport");
             }
@@ -658,7 +689,11 @@ mod tests {
         let path = icon_path(Icon::X);
         assert!(!path.lines.is_empty(), "Icon::X (close) must have lines");
         // Close icon is typically two crossing lines.
-        assert_eq!(path.lines.len(), 2, "Icon::X should have exactly 2 crossing lines");
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "Icon::X should have exactly 2 crossing lines"
+        );
     }
 
     #[test]
@@ -679,7 +714,10 @@ mod tests {
     fn icon_search_has_circle() {
         // Search icon must have a circle (the magnifying glass lens).
         let path = icon_path(Icon::Search);
-        assert!(!path.circles.is_empty(), "Search icon must have at least one circle");
+        assert!(
+            !path.circles.is_empty(),
+            "Search icon must have at least one circle"
+        );
     }
 
     #[test]
@@ -690,12 +728,88 @@ mod tests {
         for icon in Icon::all() {
             let path = icon_path(*icon);
             for &(x1, y1, x2, y2) in path.lines {
-                let is_degenerate = (x1 - x2).abs() < f32::EPSILON && (y1 - y2).abs() < f32::EPSILON;
+                let is_degenerate =
+                    (x1 - x2).abs() < f32::EPSILON && (y1 - y2).abs() < f32::EPSILON;
                 assert!(
                     !is_degenerate,
                     "{icon:?} has a degenerate zero-length line ({x1},{y1})->({x2},{y2})"
                 );
             }
         }
+    }
+
+    #[test]
+    fn icon_add_exists() {
+        // Plus is the "add" action icon.
+        let all = Icon::all();
+        assert!(
+            all.contains(&Icon::Plus),
+            "Icon::Plus (add) must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_check_exists() {
+        let all = Icon::all();
+        assert!(
+            all.contains(&Icon::Check),
+            "Icon::Check must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_arrow_right_exists() {
+        // ChevronRight serves as the arrow-right icon.
+        let all = Icon::all();
+        assert!(
+            all.contains(&Icon::ChevronRight),
+            "Icon::ChevronRight (arrow right) must exist"
+        );
+    }
+
+    #[test]
+    fn icon_all_unique() {
+        // No two icons should have the same name string.
+        let all = Icon::all();
+        let mut names: Vec<&str> = all.iter().map(|i| i.name()).collect();
+        let total = names.len();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(
+            names.len(),
+            total,
+            "all icon names must be unique; found duplicates"
+        );
+    }
+
+    #[test]
+    fn icon_folder_exists() {
+        let all = Icon::all();
+        assert!(
+            all.contains(&Icon::Folder),
+            "Icon::Folder must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_check_has_two_lines() {
+        // Check mark is a two-segment path (tick shape).
+        let path = icon_path(Icon::Check);
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "Icon::Check should have exactly 2 line segments"
+        );
+    }
+
+    #[test]
+    fn icon_plus_has_two_lines() {
+        // Plus is a horizontal + vertical line.
+        let path = icon_path(Icon::Plus);
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "Icon::Plus should have exactly 2 lines (H + V)"
+        );
     }
 }
