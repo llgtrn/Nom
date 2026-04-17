@@ -36,6 +36,9 @@ impl AppState {
 }
 
 // Module-level execution cache (ComfyUI IS_CHANGED pattern)
+// NOTE: Tauri command invocations are serialized per-window by default.
+// Cache thundering herd is not an issue unless commands are made async
+// with concurrent spawning. If that changes, add a per-key Mutex.
 static PLAN_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, PlanFlowResult>>> =
     std::sync::LazyLock::new(|| Mutex::new(HashMap::new()));
 
@@ -44,6 +47,29 @@ static COMPILE_CACHE: std::sync::LazyLock<Mutex<HashMap<u64, CompileResult>>> =
 
 fn stable_hash(s: &str) -> u64 {
     stable_hash_bytes(s.as_bytes())
+}
+
+fn hash_file_streaming(path: &std::path::Path) -> Result<u64, String> {
+    use std::io::Read;
+    let mut file = std::fs::File::open(path).map_err(|e| format!("{e}"))?;
+    let mut hash: u64 = 0xcbf29ce484222325;
+    let mut buf = [0u8; 8192];
+    loop {
+        let n = file.read(&mut buf).map_err(|e| format!("{e}"))?;
+        if n == 0 {
+            break;
+        }
+        for &byte in &buf[..n] {
+            hash ^= byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+    }
+    Ok(hash)
+}
+
+fn safe_path(input: &str) -> Result<std::path::PathBuf, String> {
+    let path = std::path::PathBuf::from(input);
+    path.canonicalize().map_err(|e| format!("invalid path: {e}"))
 }
 
 fn stable_hash_bytes(data: &[u8]) -> u64 {
@@ -604,8 +630,20 @@ fn resolve_intent(_input: &str) -> IntentResult {
 
 #[tauri::command]
 fn ingest_media(path: &str) -> MediaIngestResult {
+    // Reject path traversal attempts by canonicalizing first.
+    let canonical = match safe_path(path) {
+        Ok(p) => p,
+        Err(_) => {
+            return MediaIngestResult {
+                hash: String::new(),
+                mime: "application/octet-stream".into(),
+                size_bytes: 0,
+            }
+        }
+    };
+
     // Detect modality from extension and read file metadata.
-    let ext = std::path::Path::new(path)
+    let ext = canonical
         .extension()
         .and_then(|e| e.to_str())
         .unwrap_or("");
@@ -621,13 +659,15 @@ fn ingest_media(path: &str) -> MediaIngestResult {
         None => "application/octet-stream",
     };
 
-    let (hash, size_bytes) = std::fs::read(path)
-        .map(|bytes| {
-            let h = format!("{:016x}", stable_hash_bytes(&bytes));
-            let sz = bytes.len() as u64;
-            (h, sz)
-        })
-        .unwrap_or_else(|_| (String::new(), 0));
+    // Stream the file to compute the hash (avoids loading large files into RAM).
+    let hash = hash_file_streaming(&canonical)
+        .map(|h| format!("{h:016x}"))
+        .unwrap_or_default();
+
+    // Read only metadata for the size — no full read into memory.
+    let size_bytes = std::fs::metadata(&canonical)
+        .map(|m| m.len())
+        .unwrap_or(0);
 
     MediaIngestResult {
         hash,
@@ -638,7 +678,17 @@ fn ingest_media(path: &str) -> MediaIngestResult {
 
 #[tauri::command]
 fn extract_atoms(path: &str) -> ExtractResult {
-    let p = std::path::Path::new(path);
+    // Reject path traversal attempts by canonicalizing first.
+    let canonical = match safe_path(path) {
+        Ok(p) => p,
+        Err(_) => {
+            return ExtractResult {
+                entities_found: 0,
+                languages: vec![],
+            }
+        }
+    };
+    let p = canonical.as_path();
     if p.is_dir() {
         match nom_extract::extract_from_dir(p) {
             Ok(atoms) => {
@@ -661,15 +711,16 @@ fn extract_atoms(path: &str) -> ExtractResult {
         }
     } else {
         // Single file — detect language and parse
-        let lang = nom_extract::detect_language(path).unwrap_or("");
+        let canonical_str = canonical.to_string_lossy();
+        let lang = nom_extract::detect_language(canonical_str.as_ref()).unwrap_or("");
         if lang.is_empty() {
             return ExtractResult {
                 entities_found: 0,
                 languages: vec![],
             };
         }
-        match std::fs::read_to_string(path) {
-            Ok(source) => match nom_extract::parse_file(&source, path, lang) {
+        match std::fs::read_to_string(p) {
+            Ok(source) => match nom_extract::parse_file(&source, canonical_str.as_ref(), lang) {
                 Ok(atoms) => ExtractResult {
                     entities_found: atoms.len(),
                     languages: vec![lang.to_string()],
@@ -904,6 +955,11 @@ pub fn run() {
                 )?;
             }
             Ok(())
+        })
+        .on_window_event(|_window, event| {
+            if let tauri::WindowEvent::Destroyed = event {
+                lsp::shutdown_lsp();
+            }
         })
         .invoke_handler(tauri::generate_handler![
             compile_block,

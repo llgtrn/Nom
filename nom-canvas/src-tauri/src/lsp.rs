@@ -51,19 +51,25 @@ impl LspClient {
         let mut reader = BufReader::new(stdout);
 
         // Read headers
-        let mut content_length = 0usize;
+        let mut content_length: Option<usize> = None;
         loop {
             let mut line = String::new();
             reader.read_line(&mut line).map_err(|e| format!("Read error: {e}"))?;
             let trimmed = line.trim();
             if trimmed.is_empty() { break; }
-            if let Some(len) = trimmed.strip_prefix("Content-Length: ") {
-                content_length = len.parse().unwrap_or(0);
+            if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
+                let len: usize = len_str.parse().map_err(|_| {
+                    format!("invalid content length: {len_str}")
+                })?;
+                content_length = Some(len);
             }
         }
 
+        let content_length = content_length
+            .ok_or_else(|| "malformed header: missing Content-Length".to_string())?;
+
         if content_length == 0 {
-            return Err("Empty response".to_string());
+            return Err("empty response body".to_string());
         }
 
         // Read body
@@ -114,6 +120,7 @@ impl LspClient {
             let mut content_length = 0usize;
 
             // Read LSP headers.
+            let mut found_content_length = false;
             loop {
                 let mut line = String::new();
                 match reader.read_line(&mut line) {
@@ -131,13 +138,27 @@ impl LspClient {
                 if trimmed.is_empty() {
                     break;
                 }
-                if let Some(len) = trimmed.strip_prefix("Content-Length: ") {
-                    content_length = len.parse().unwrap_or(0);
+                if let Some(len_str) = trimmed.strip_prefix("Content-Length: ") {
+                    match len_str.parse::<usize>() {
+                        Ok(len) => {
+                            content_length = len;
+                            found_content_length = true;
+                        }
+                        Err(_) => {
+                            let _ = tx.send(Err(format!("invalid content length: {len_str}")));
+                            return;
+                        }
+                    }
                 }
             }
 
+            if !found_content_length {
+                let _ = tx.send(Err("malformed header: missing Content-Length".to_string()));
+                return;
+            }
+
             if content_length == 0 {
-                let _ = tx.send(Err("Empty response (content-length 0)".to_string()));
+                let _ = tx.send(Err("empty response body".to_string()));
                 return;
             }
 
@@ -225,12 +246,23 @@ impl Drop for LspClient {
 static LSP_CLIENT: std::sync::LazyLock<Mutex<Option<LspClient>>> =
     std::sync::LazyLock::new(|| Mutex::new(None));
 
+/// Shut down the global LSP client if one is running.
+pub fn shutdown_lsp() {
+    if let Ok(mut guard) = LSP_CLIENT.lock() {
+        if let Some(client) = guard.as_mut() {
+            let _ = client.shutdown();
+        }
+        *guard = None;
+    }
+}
+
 /// Get or spawn the LSP client
 pub fn get_or_spawn_lsp() -> Result<std::sync::MutexGuard<'static, Option<LspClient>>, String> {
     let mut guard = LSP_CLIENT.lock().map_err(|e| format!("Lock error: {e}"))?;
     if guard.is_none() || !guard.as_mut().map(|c| c.is_alive()).unwrap_or(false) {
-        // Try to find nom binary
-        let nom_binary = which_nom_binary();
+        // Try to find nom binary — only absolute paths accepted
+        let nom_binary = which_nom_binary()
+            .ok_or_else(|| "LSP binary not found at any known absolute path".to_string())?;
         match LspClient::spawn(&nom_binary) {
             Ok(mut client) => {
                 let _ = client.initialize();
@@ -245,18 +277,43 @@ pub fn get_or_spawn_lsp() -> Result<std::sync::MutexGuard<'static, Option<LspCli
     Ok(guard)
 }
 
-fn which_nom_binary() -> String {
-    // Try common locations
-    for candidate in ["nom", "nom.exe", "./target/debug/nom", "./target/release/nom"] {
-        if std::path::Path::new(candidate).exists() {
-            return candidate.to_string();
-        }
-    }
-    // Try the compiler workspace
-    let workspace = std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../nom-compiler/target/debug/nom");
-    if workspace.exists() {
-        return workspace.to_string_lossy().to_string();
-    }
-    "nom".to_string() // fallback to PATH
+fn which_nom_binary() -> Option<String> {
+    // Only use absolute paths — never bare "nom" from PATH
+    let candidates: &[Option<String>] = &[
+        std::env::current_exe().ok().and_then(|p| {
+            p.parent().map(|d| d.join("nom").to_string_lossy().to_string())
+        }),
+        std::env::current_exe().ok().and_then(|p| {
+            p.parent().map(|d| d.join("nom.exe").to_string_lossy().to_string())
+        }),
+        Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../nom-compiler/target/debug/nom")
+                .to_string_lossy()
+                .to_string(),
+        ),
+        Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../nom-compiler/target/debug/nom.exe")
+                .to_string_lossy()
+                .to_string(),
+        ),
+        Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../nom-compiler/target/release/nom")
+                .to_string_lossy()
+                .to_string(),
+        ),
+        Some(
+            std::path::PathBuf::from(env!("CARGO_MANIFEST_DIR"))
+                .join("../../nom-compiler/target/release/nom.exe")
+                .to_string_lossy()
+                .to_string(),
+        ),
+    ];
+    candidates
+        .iter()
+        .filter_map(|c| c.as_ref())
+        .find(|p| std::path::Path::new(p.as_str()).exists())
+        .cloned()
 }

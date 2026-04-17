@@ -12,6 +12,7 @@ export class StreamingPipeline {
   private listeners: StreamCallback[] = [];
   private isStreaming = false;
   private abortController: AbortController | null = null;
+  private generation = 0;
 
   onChunk(callback: StreamCallback): void {
     this.listeners.push(callback);
@@ -30,10 +31,13 @@ export class StreamingPipeline {
       this.cancel();
     }
 
+    this.generation++;
+    const myGeneration = this.generation;
     this.isStreaming = true;
     this.abortController = new AbortController();
 
     // Emit start
+    if (myGeneration !== this.generation) return; // stale — newer stream started
     this.emit({ type: "token", content: "// compiling...", timestamp: Date.now() });
 
     try {
@@ -41,6 +45,7 @@ export class StreamingPipeline {
       const words = source.split(/\s+/).filter(w => w.length > 0);
       for (const word of words) {
         if (this.abortController.signal.aborted) break;
+        if (myGeneration !== this.generation) return; // stale — newer stream started
         this.emit({ type: "token", content: word, timestamp: Date.now() });
       }
 
@@ -52,23 +57,30 @@ export class StreamingPipeline {
           entities: string[];
         }>("compile_block", { source });
 
+        if (myGeneration !== this.generation) return; // stale — newer stream started
+
         if (result.success) {
           for (const entity of result.entities) {
+            if (myGeneration !== this.generation) return; // stale — newer stream started
             this.emit({ type: "entity", content: entity, timestamp: Date.now() });
           }
           this.emit({ type: "complete", content: `${result.entities.length} entities`, timestamp: Date.now() });
         } else {
           for (const diag of result.diagnostics) {
+            if (myGeneration !== this.generation) return; // stale — newer stream started
             this.emit({ type: "diagnostic", content: diag, timestamp: Date.now() });
           }
           this.emit({ type: "error", content: result.diagnostics[0] || "compilation failed", timestamp: Date.now() });
         }
       }
     } catch (e) {
+      if (myGeneration !== this.generation) return; // stale — newer stream started
       this.emit({ type: "error", content: String(e), timestamp: Date.now() });
     } finally {
-      this.isStreaming = false;
-      this.abortController = null;
+      if (myGeneration === this.generation) {
+        this.isStreaming = false;
+        this.abortController = null;
+      }
     }
   }
 

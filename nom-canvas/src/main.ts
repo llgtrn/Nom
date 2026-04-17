@@ -52,11 +52,15 @@ function resizeCanvas() {
   canvasEl.height = container.clientHeight;
   renderer.markDirty();
 }
+// Note: resize listener is intentionally not removed — this is a single-page app
+// with a single canvas instance that lives for the full page lifetime.
 window.addEventListener("resize", resizeCanvas);
 resizeCanvas();
 
 function renderLoop() {
-  renderer.renderAll(elementStore.getAll(), new Set());
+  if (!document.hidden) {
+    renderer.renderAll(elementStore.getAll(), new Set());
+  }
   requestAnimationFrame(renderLoop);
 }
 requestAnimationFrame(renderLoop);

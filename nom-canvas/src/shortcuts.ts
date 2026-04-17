@@ -51,6 +51,7 @@ export class ShortcutManager {
   private shortcuts: Shortcut[];
   private handlers: Map<string, ShortcutHandler[]> = new Map();
   private enabled = true;
+  private handler: ((e: KeyboardEvent) => void) | null = null;
 
   constructor(customShortcuts?: Shortcut[]) {
     this.shortcuts = customShortcuts || [...DEFAULT_SHORTCUTS];
@@ -86,8 +87,15 @@ export class ShortcutManager {
     return parts.join("+");
   }
 
+  destroy(): void {
+    if (this.handler) {
+      document.removeEventListener("keydown", this.handler);
+      this.handler = null;
+    }
+  }
+
   private setupListener(): void {
-    document.addEventListener("keydown", (e) => {
+    this.handler = (e: KeyboardEvent) => {
       if (!this.enabled) return;
       // Don't capture when typing in input/textarea
       const target = e.target as HTMLElement;
@@ -104,7 +112,8 @@ export class ShortcutManager {
           break;
         }
       }
-    });
+    };
+    document.addEventListener("keydown", this.handler);
   }
 
   private matches(e: KeyboardEvent, s: Shortcut): boolean {

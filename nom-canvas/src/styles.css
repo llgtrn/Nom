@@ -1507,3 +1507,32 @@ button:active {
     .nom-toolbar { overflow-x: auto; }
     .canvas-block { min-width: 280px; }
 }
+
+/* ── Audit Fix: cursor + focus ─────────────────────────── */
+
+/* All clickable elements need cursor:pointer */
+.library-item,
+.palette-item,
+.preview-tab,
+.fold-indicator,
+.cheatsheet-row,
+.notification-close,
+.credential-close,
+.settings-close,
+.block-handle,
+.block-port {
+    cursor: pointer;
+}
+
+/* Focus-visible states for keyboard navigation */
+.library-item:focus-visible,
+.palette-item:focus-visible,
+.preview-tab:focus-visible,
+.toolbar-btn:focus-visible,
+.credential-input:focus-visible,
+.settings-input:focus-visible,
+.library-search:focus-visible,
+.palette-input:focus-visible {
+    outline: 2px solid var(--color-cta);
+    outline-offset: 2px;
+}

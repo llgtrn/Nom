@@ -71,64 +71,14 @@ pub fn parse_action_response(response: &str) -> Option<(String, String)> {
     }
 }
 
-/// Default tool metadata for nom-intent's 5 built-in tools
-pub fn default_tool_metadata() -> Vec<ToolMetadata> {
-    vec![
-        ToolMetadata {
-            name: "Query".into(),
-            description: "Search the dictionary for entities matching a query".into(),
-            parameters: vec![ToolParameter {
-                name: "query".into(),
-                param_type: "string".into(),
-                required: true,
-            }],
-        },
-        ToolMetadata {
-            name: "Render".into(),
-            description: "Compile and render an entity to its target artifact".into(),
-            parameters: vec![ToolParameter {
-                name: "hash".into(),
-                param_type: "string".into(),
-                required: true,
-            }],
-        },
-        ToolMetadata {
-            name: "Verify".into(),
-            description: "Verify that a rendered artifact meets quality criteria".into(),
-            parameters: vec![ToolParameter {
-                name: "hash".into(),
-                param_type: "string".into(),
-                required: true,
-            }],
-        },
-        ToolMetadata {
-            name: "Reject".into(),
-            description: "Reject the current approach and try a different strategy".into(),
-            parameters: vec![ToolParameter {
-                name: "reason".into(),
-                param_type: "string".into(),
-                required: true,
-            }],
-        },
-        ToolMetadata {
-            name: "Answer".into(),
-            description: "Provide the final answer to the task".into(),
-            parameters: vec![ToolParameter {
-                name: "answer".into(),
-                param_type: "string".into(),
-                required: true,
-            }],
-        },
-    ]
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::tool_registry::ToolRegistry;
 
     #[test]
     fn format_prompt_includes_all_tools() {
-        let tools = default_tool_metadata();
+        let tools = ToolRegistry::with_defaults().export_metadata();
         let prompt = format_react_prompt(&tools, "Find a function for hashing");
         assert!(prompt.contains("Query"));
         assert!(prompt.contains("Render"));
