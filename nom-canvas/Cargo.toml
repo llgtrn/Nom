@@ -13,6 +13,7 @@ members = [
     "crates/nom-collab",
     "crates/nom-graph-v2",
     "crates/nom-compose",
+    "crates/nom-cli",
 ]
 
 [workspace.package]

@@ -28,6 +28,7 @@ pub mod sidebar;
 pub mod statusbar;
 pub mod toolbar;
 pub mod diagnostics_panel;
+pub mod breadcrumb;
 
 /// Opaque document identifier used across all panels.
 pub type DocumentId = u64;

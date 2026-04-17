@@ -5,8 +5,7 @@
 
 use crate::block_schema::{BlockSchema, Role};
 use crate::flavour::{EMBED, NOTE, SURFACE};
-
-pub type BlobId = String;
+use crate::media::BlobId;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum EmbedKind {

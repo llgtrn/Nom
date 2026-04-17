@@ -16,6 +16,7 @@ pub mod prose;
 pub mod table;
 pub mod schema_registry;
 pub mod tree_query;
+pub mod transformers;
 pub mod validators;
 
 // ── Public re-exports ────────────────────────────────────────────────────────

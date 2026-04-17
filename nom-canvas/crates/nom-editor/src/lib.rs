@@ -3,6 +3,8 @@
 #![deny(unsafe_code)]
 
 pub mod anchor;
+pub mod scroll;
+pub mod clipboard;
 pub mod buffer;
 pub mod commands;
 pub mod completion;

@@ -1035,6 +1035,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-cli"
+version = "0.1.0"
+dependencies = [
+ "nom-compose",
+ "nom-lint",
+]
+
+[[package]]
 name = "nom-collab"
 version = "0.1.0"
 dependencies = [

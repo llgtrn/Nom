@@ -2,9 +2,7 @@
 #![deny(unsafe_code)]
 
 use std::collections::{HashMap, HashSet};
-use crate::element::ElementId;
-
-pub type GroupId = u64;
+use crate::element::{ElementId, GroupId};
 
 #[derive(Clone, Debug, PartialEq)]
 pub struct Group {
