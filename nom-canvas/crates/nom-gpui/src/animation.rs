@@ -91,14 +91,25 @@ pub mod easing {
         }
     }
 
-    /// Spring animation approximated with exponential-decay oscillation.
+    /// Spring animation — correct underdamped spring oscillator.
     /// Defaults: stiffness = 400, damping = 28 (AFFiNE motion token).
+    /// y(t) = 1 - e^(-zeta*omega*t) * (cos(omega_d*t) + (zeta*omega/omega_d)*sin(omega_d*t))
+    /// where omega_d = omega * sqrt(1 - zeta^2)
     pub fn spring(stiffness: f32, damping: f32) -> impl Fn(f32) -> f32 + Send + Sync {
-        move |t| {
-            let omega = (stiffness / damping).sqrt();
-            let decay = (-damping * 0.5 * t).exp();
-            1.0 - decay * (omega * t).cos()
+        move |t| spring_value(stiffness, damping, t)
+    }
+
+    /// Evaluate the underdamped spring formula at time `t` ∈ [0, 1].
+    pub fn spring_value(stiffness: f32, damping: f32, t: f32) -> f32 {
+        let omega = stiffness.sqrt();
+        let zeta = damping / (2.0 * stiffness.sqrt());
+        if zeta >= 1.0 {
+            return 1.0 - (-omega * t).exp() * (1.0 + omega * t);
         }
+        let omega_d = omega * (1.0 - zeta * zeta).sqrt();
+        1.0 - (-zeta * omega * t).exp() * (
+            (omega_d * t).cos() + (zeta * omega / omega_d) * (omega_d * t).sin()
+        )
     }
 
     /// NomCanvas connect animation: spring(400, 28).

@@ -42,6 +42,7 @@ impl ValidationError {
 // Sealed trait pattern (yara-x style)
 mod sealed { pub trait Sealed {} }
 trait BlockValidatorInternal: sealed::Sealed {}
+#[allow(private_bounds)]
 pub trait BlockValidator: BlockValidatorInternal {
     fn validate(&self, block: &BlockModel, dict: &dyn crate::dict_reader::DictReader) -> Vec<ValidationError>;
 }

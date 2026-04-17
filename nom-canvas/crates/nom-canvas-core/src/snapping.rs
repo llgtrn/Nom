@@ -5,7 +5,7 @@
 ///   - GRID_SIZE      = 24 px (distance between grid lines)
 
 pub const SNAP_THRESHOLD: f32 = 8.0;
-pub const GRID_SIZE: f32 = 24.0;
+pub const GRID_SIZE: f32 = 20.0;
 
 // ─── Guide lines ────────────────────────────────────────────────────────────
 
@@ -168,19 +168,19 @@ mod tests {
 
     #[test]
     fn snap_to_grid_rounds_to_nearest() {
-        // 13px is closer to 24 (grid) than 0; nearest grid = 24
-        let snapped = snap_to_grid([13.0, 0.0]);
+        // 11px is closer to 20 (grid) than 0; nearest grid = 20
+        let snapped = snap_to_grid([11.0, 0.0]);
         assert!(
-            (snapped[0] - 24.0).abs() < 1e-6,
-            "expected 24, got {}",
+            (snapped[0] - 20.0).abs() < 1e-6,
+            "expected 20, got {}",
             snapped[0]
         );
     }
 
     #[test]
     fn snap_to_grid_rounds_down() {
-        // 11px is closer to 0 than 24
-        let snapped = snap_to_grid([11.0, 0.0]);
+        // 9px is closer to 0 than 20
+        let snapped = snap_to_grid([9.0, 0.0]);
         assert!(
             snapped[0].abs() < 1e-6,
             "expected 0, got {}",
@@ -190,16 +190,16 @@ mod tests {
 
     #[test]
     fn snap_to_grid_two_cells() {
-        let snapped = snap_to_grid([48.0, 48.0]);
-        assert!((snapped[0] - 48.0).abs() < 1e-6);
-        assert!((snapped[1] - 48.0).abs() < 1e-6);
+        let snapped = snap_to_grid([40.0, 40.0]);
+        assert!((snapped[0] - 40.0).abs() < 1e-6);
+        assert!((snapped[1] - 40.0).abs() < 1e-6);
     }
 
     #[test]
     fn snap_to_grid_negative() {
-        // -13 rounds to -24
-        let snapped = snap_to_grid([-13.0, 0.0]);
-        assert!((snapped[0] - (-24.0)).abs() < 1e-6, "got {}", snapped[0]);
+        // -11 rounds to -20
+        let snapped = snap_to_grid([-11.0, 0.0]);
+        assert!((snapped[0] - (-20.0)).abs() < 1e-6, "got {}", snapped[0]);
     }
 
     // ── snap_with_guides ─────────────────────────────────────────────────────

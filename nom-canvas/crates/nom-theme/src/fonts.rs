@@ -81,10 +81,10 @@ impl TypeStyle {
         }
     }
 
-    /// H1 heading — Inter SemiBold 24px / 1.2 lh.
+    /// H1 heading — Inter Bold 24px / 1.2 lh.
     pub fn heading1(fonts: &FontRegistry) -> Self {
         Self {
-            font_id: fonts.inter_semibold,
+            font_id: fonts.inter_bold,
             size: crate::tokens::FONT_SIZE_H1,
             line_height: crate::tokens::LINE_HEIGHT_HEADING,
             letter_spacing: -0.5,

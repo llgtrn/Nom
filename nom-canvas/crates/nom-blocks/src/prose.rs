@@ -16,6 +16,8 @@ pub const FLAVOUR_ATTACHMENT: &str = "affine:attachment";
 pub const FLAVOUR_IMAGE: &str = "affine:image";
 pub const FLAVOUR_CODE: &str = "affine:code";
 pub const FLAVOUR_EMBED: &str = "affine:embed-*";
+pub const FLAVOUR_SURFACE: &str = "affine:surface";
+pub const FLAVOUR_NOTE: &str = "affine:note";
 
 // Quill Delta op (simplified subset — insert/delete/retain with attrs)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]

@@ -28,9 +28,37 @@ impl DisplayMap {
         self.folds.retain(|f| &f.buffer_range != range);
     }
 
-    /// Convert buffer offset to display position (row, col), accounting for folds and tabs
+    /// Apply folds to a raw text slice, replacing folded ranges with '…'.
+    pub fn fold_text(&self, text: &str) -> String {
+        if self.folds.is_empty() {
+            return text.to_string();
+        }
+        let mut sorted_folds = self.folds.clone();
+        sorted_folds.sort_by_key(|f| f.buffer_range.start);
+        let mut result = String::new();
+        let mut pos = 0usize;
+        for fold in &sorted_folds {
+            let start = fold.buffer_range.start;
+            let end = fold.buffer_range.end;
+            if start > pos {
+                let slice_end = start.min(text.len());
+                result.push_str(&text[pos..slice_end]);
+            }
+            if start < text.len() {
+                result.push('\u{2026}'); // fold placeholder '…'
+            }
+            pos = end.min(text.len());
+        }
+        if pos < text.len() {
+            result.push_str(&text[pos..]);
+        }
+        result
+    }
+
+    /// Convert buffer offset to display position (row, col), accounting for folds and tabs.
     pub fn buffer_to_display(&self, buffer: &Buffer, offset: usize) -> (usize, usize) {
-        let text = buffer.text_for_range(0..offset.min(buffer.len()));
+        let raw = buffer.text_for_range(0..offset.min(buffer.len()));
+        let text = self.fold_text(&raw);
         let mut row = 0usize;
         let mut col = 0usize;
         for ch in text.chars() {

@@ -1,66 +1,112 @@
-# Nom Programming Language — Context
+# Nom — Session Context
 
-> **HEAD:** `56604c4` on main (wave-10 landed — 1272 workspace tests, 13 crates) | **Date:** 2026-04-17
-> **Compiler:** 29 crates, 1067 tests (unchanged) | **Canvas v1:** ARCHIVED (`.archive/nom-canvas-v1-typescript/`)
-> **NomCanvas (render + edit substrate):** 13 crates shipped, **1272 tests** green under `RUSTFLAGS=-D warnings`. Phase 1 + Phase 2 (100%) + Phase 3 (~100%, line_layout.rs landed in wave-6) + Phase 4 scaffolds (nom-compose) + Phase 5 scaffolds (nom-lint, nom-memoize, nom-telemetry, nom-collab) shipped.
-> **⚠️ "Compose by natural language on canvas" promise: 0% delivered.** Despite 12 crates + 1028 tests + 11 compose-backend stubs: (a) input path DEAD — user keystrokes reach `Buffer` then die as `String`; no `use nom_concept::`/`nom_grammar::`/`nom_lsp::` anywhere; no syntax highlighting producer; (b) output path DEAD — `ComposeDispatcher::dispatch()` only called in tests, two disconnected `CompositionPlan` structs (canvas + compiler), backends return empty bytes, `ArtifactStore::put` has 0 non-test callers, preview blocks don't read from store. **Keystone wire (architect pick):** `nom_concept::stage1_tokenize` → `Highlighter::color_runs` adapter. Both endpoints exist + compatible + pure. Est. ~200 LOC + cross-workspace Cargo path-dep. Unlocks first user-visible compiler behavior (keywords highlight as user types). All subsequent integrations chain from here.
-> **19-repo vendoring: 58% integrated** (+5pp this cycle). **8 DEEP**: Zed/AFFiNE/yara-x/typst/WrenAI/9router/**n8n** (new: AST sandbox in nom-graph-v2/sandbox.rs)/**Remotion** (promoted: VideoComposition concrete in nom-compose/video_composition.rs). 3 PATTERN: ComfyUI/waoowaoo/ArcReel. 6 REFERENCED-ONLY. 2 NOT-USED. Next-tick target: LlamaIndex REF→PATTERN.
-> **Foundation:** Everything built around Nom language. Compiler IS the IDE *(aspirational — currently 0% wired)*. Dictionary IS the knowledge base.
+> **Date:** 2026-04-18 | **State:** fresh build — all previous nom-canvas code deleted, rebuilding correctly
+> **nom-compiler:** 29 crates UNCHANGED — this is the CORE. Direct workspace deps for everything.
+> **NomCanvas:** starting fresh — GPUI substrate from scratch, correct architecture from day 1
 
-## NomCanvas — Full Rust GPU-Native Universal Composition Engine
+---
 
-**Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines)
+## Foundation
 
-**Architecture:** Custom GPUI (NOT Dioxus — Dioxus desktop = webview). wgpu + winit + taffy + cosmic-text.
-**Core:** Compiler IS the IDE. 10 crates → 3 thread tiers (UI <1ms, Interactive <100ms, Background >100ms).
-**Modes:** Code + Doc + Canvas + Graph + Draw — all on one infinite GPU surface.
-**Composition:** Universal — write Nom → get video/image/PDF/data/app/audio/3D.
-**Video:** Remotion pattern in Rust — GPU scene graph renders frames → FFmpeg pipe → MP4 (no browser).
-**Targets:** Desktop (Vulkan/Metal/DX12) + Browser (WebGPU) from same binary.
+Everything composed through natural language — words, sentences, grammar.
 
-**19 repos read end-to-end:** Zed (GPUI), AFFiNE (design), ComfyUI (DAG), Refly (skill+MCP), LlamaIndex (RAG), Haystack (pipeline), ToolJet (components), n8n (workflow), yara-x (linter), typst (incremental compile), Dioxus (confirmed webview), ArcReel (video agents), waoowaoo (storyboard), Open-Higgsfield (200+ models), opendataloader-pdf (data extraction), WrenAI (semantic layer), Huly (collaboration), 9router (provider routing), Remotion (programmatic video via DeepWiki).
+**The compiler IS the IDE.** Zero IPC. Zero subprocesses. nom-compiler crates are direct workspace dependencies of nom-canvas. Every keystroke is a compile event. Every block is a compiler concept. The canvas IS the compiler rendered.
 
-## Compiler (29 crates, unchanged)
+**The DB IS the workflow engine.** `grammar.kinds` = node-type library. `clause_shapes` = wire type system. `.nomx` = workflow definition language. `nom-compose/dispatch` = execution runtime. No N8N, no Dify, no external orchestrator — the DB does it natively.
 
-GAP-4/5a/5b/6/7/8/12 shipped. 1067 tests. GAP-1c in progress. GAP-2/3 blocked. GAP-9/10 planned. bootstrap.rs (GAP-10 real impl) landed.
+**Deep thinking is first-class.** `nom-intent::deep_think()` is a compiler operation — scored ReAct loop, max 10 hypothesis steps, streamed to the right dock as Rowboat reasoning cards.
 
-## NON-NEGOTIABLE Rules
+**GPUI fully Rust — one binary.** wgpu + winit + taffy + cosmic-text. Desktop + browser (WebGPU). No webview, no Electron, no Tauri.
 
-1. Everything built around Nom language foundation (9 kinds compose everything)
-2. Executing agents MUST read source repos end-to-end before writing ANY code
-3. Always use `ui-ux-pro-max` skill for ALL UI design
-4. Zero foreign identities in Nom codebase
-5. MACRO point of view every iteration
-6. Spawn subagents to plan/structure/create tasks
-7. Strict external comparison (study from source paths)
+---
 
-## Session 2026-04-17 — Waves 4→10 (+1068 tests, +10 crates)
+## Six Architectural Invariants
 
-**8 commits on main:** `c2d7090` → `24f7e05` → `4592b85` → `9f3df57` → `2e47d5d` → `365db9b` → `4096db9` → `56604c4`.
+1. **Canvas = AFFiNE for RAG** — graph mode: nomtu entities as knowledge node cards, edges carry `confidence + reason`, RAG retrieval context as colored arc overlays, AFFiNE design tokens (frosted glass, blur, bezier routing)
+2. **Doc mode = Zed + Rowboat + AFFiNE** — rope buffer (Zed), AFFiNE block model (heading/para/callout/database/linked-block), Rowboat inline AI cards in right dock
+3. **DB-driven = N8N/Dify via `.nomx`** — `grammar.kinds` + `clause_shapes` + `nom-compose` = the workflow engine; no external orchestrator
+4. **Deep thinking = compiler op** — `nom-intent::deep_think()`, streamed hypothesis chain, user can interrupt
+5. **GPUI fully Rust — one binary** — no webview anywhere
+6. **nom-compiler is CORE** — direct workspace deps, zero IPC, all canvas objects are DB entries
 
-**Test growth:** 204 → 376 → 519 → 751 → 870 → 1028 → 1155 → **1272 workspace tests** across 13 crates, all green under `NOM_SKIP_GPU_TESTS=1 RUSTFLAGS="-D warnings -A deprecated"`.
+---
 
-**10 new crates** added to `nom-canvas/crates/`: `nom-theme`, `nom-panels`, `nom-blocks`, `nom-graph-v2`, `nom-compose`, `nom-lint`, `nom-memoize`, `nom-telemetry`, `nom-collab` (Phase 3-5 scaffolds).
+## Build Order
 
-**Phase coverage:**
-- Phase 1 (`nom-gpui`) — added `animation.rs`, `cursor.rs`, `transition.rs`, `hit_test_tests` module, 3 pixel-diff tests for shadow/polychrome/subpixel.
-- Phase 2 (`nom-canvas-core` + `nom-editor`) — COMPLETE. Added: selection/marquee/transform_handles/snapping/history/rendering_hints (canvas-core); anchor/selection/selections_collection/movement/editing/syntax_map/display_map/lsp_bridge/inlay_hints/wrap_map/tab_map/line_layout/commands (editor).
-- Phase 3 (blocks/panels/theme) — shipped: block_schema/model/transformer/selection/config + 7 block types (prose, nomx, media, graph_node, drawing, table, embed) + 6 compose-preview blocks + tree_query + validators; 8 panels + shortcuts + command_history + layout; 73 tokens + color + mode + fonts + icons + typography + motion.
-- Phase 4 (compose) — all 11 `NomKind` variants have stub backends (video, image, web_screen, native_screen, data_extract, data_query, storyboard_narrative, audio, data_frame, mesh, scenario_workflow) + `register_all_stubs()` + dispatcher + task_queue + provider_router + credential_store + artifact_store + vendor_trait + video_composition + format_translator + semantic + plugin_registry.
-- Phase 5 (production) — scaffolds for: `nom-graph-v2` (Kahn topology + 4 caches + sandbox + execution), `nom-lint` (sealed-trait linter + 2 concrete rules + watcher), `nom-memoize` (thread-local cache), `nom-telemetry` (W3C traceparent + rayon bridge), `nom-collab` (CRDT protocol + presence).
+| Wave | What | Key output |
+|------|------|-----------|
+| **Wave A** | GPUI substrate + basic canvas | nom-gpui · nom-canvas-core · nom-theme |
+| **Wave B** | Editor + nomtu-backed blocks | nom-editor · nom-blocks (NomtuRef non-optional) |
+| **Wave C** | Compiler bridge (KEYSTONE) | nom-compiler-bridge · stage1→Highlighter first wire · can_wire() · DB-driven node palette |
+| **Wave D** | 3-column shell | nom-panels: dock + pane + shell + AFFiNE left dock + Rowboat right dock |
+| **Wave E** | Compose backends (real) | 16 backends: video · document · data · web · workflow · image · audio · ... |
+| **Wave F** | Graph RAG + deep thinking | AFFiNE graph mode · confidence edges · RAG overlay · deep_think() UI |
 
-**Integration tests added:** pixel-diff (gpu_integration.rs) + diamond DAG end-to-end (nom-graph-v2/tests/end_to_end.rs) + dispatcher-all-kinds (nom-compose/tests/dispatch_all_kinds.rs) + commands (nom-editor/tests/commands_integration.rs).
+---
 
-**Audit findings resolved (2 HIGH, 5 MEDIUM, 1 LOW):**
-- HIGH animation.rs `Duration::ZERO` → NaN propagation (wave-6)
-- HIGH `NarrativeResult::completed_phase()` skipped `Storyboard` phase → added `video_output_hash` field (wave-9)
-- MEDIUM `EmbedKind::Youtube/Figma` brand-name identifiers → `VideoStream/DesignFile` (wave-6)
-- MEDIUM three colliding `Rgba` types → `drawing::Rgba` renamed `SrgbColor` (wave-9)
-- MEDIUM `FractionalIndex` duplicated across 3 files → hoisted to `block_model.rs` (wave-9)
-- MEDIUM CI canvas job missing `NOM_SKIP_GPU_TESTS=1` env → added (wave-6)
-- MEDIUM `RUSTFLAGS=-D warnings` turned dead_code/unused_import into errors → 5 sites fixed (24f7e05)
-- LOW `CommandError::Failed` variant unconstructed → `#[allow(dead_code)]` (56604c4)
+## What a `.nomx` sentence does
 
-**CI status:** Canvas job went from consistently-failing → consistently-green starting at 24f7e05. Waves 5/6/7 all verified green on main. Waves 8/9/10 pending at session end.
+```
+the media intro_video is
+  intended to create a 30-second brand intro.
+  uses the @media matching 'logo animation' with at-least 0.8 confidence.
+  composes title_card, logo_reveal, tagline_fade.
+```
 
-**Still 0%:** Compose-by-natural-language user promise (iter-17 audit) — render substrate + 1272 tests + 11 backend stubs exist, but input path (prose → compiler) and output path (artifact → canvas preview) are fully disconnected. Keystone wire identified: `nom_concept::stage1_tokenize → Highlighter::color_runs` adapter (~200 LOC), blocked on cross-workspace cargo path-dep decision.
+1. **Document** (Doc mode): rendered as AFFiNE prose block
+2. **DB entry**: `entries { word: "intro_video", kind: "media", output_type: "video/mp4" }`
+3. **Graph node** (Graph mode): `GraphNode` with ports from `clause_shapes WHERE kind='media'`
+4. **Workflow step** (Compose): `NomKind::MediaVideo → video_backend::compose()`
+5. **RAG node** (Canvas mode): shown as knowledge card, edges to `logo_animation` and 3 sub-scenes
+
+---
+
+## Canonical Tracking Docs
+
+| File | Role |
+|------|------|
+| `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` | NORTH STAR: full architecture, all modes, crate structure, reference repos, 12 non-negotiables |
+| `implementation_plan.md` | Build waves A–F + vendoring plan + non-negotiable rules |
+| `task.md` | Execution checklist with checkboxes — all waves |
+| `nom_state_machine_report.md` | Iteration log — why fresh build, architecture lessons, compiler status |
+| `INIT.md` | This file — quick orientation |
+
+**Read the spec first every session.** Plan and spec diverge → update plan, not spec.
+
+---
+
+## Non-Negotiable Rules
+
+1. Agents MUST read source repos end-to-end before writing ANY code
+2. Always use `ui-ux-pro-max` skill at `.agent/skills/ui-ux-pro-max/` for ALL UI work
+3. Zero foreign identities in public API
+4. nom-compiler is CORE — zero IPC, direct workspace deps, linked not spawned
+5. DB IS the workflow engine — never add an external orchestrator
+6. Every canvas object = DB entry — `entity: NomtuRef` non-optional from day 1
+7. Canvas = AFFiNE for RAG — confidence-scored edges, frosted glass, bezier routing
+8. Doc mode = Zed + Rowboat + AFFiNE — all three, not just one
+9. Deep thinking = compiler op — `deep_think()` in nom-intent, streamed to right dock
+10. GPUI fully Rust — one binary, no webview
+11. Spawn parallel subagents for all multi-file work
+12. Run `gitnexus_impact` before editing any symbol; never ignore HIGH/CRITICAL
+
+---
+
+## Reference Repos (end-to-end reads required)
+
+| Repo | What to adopt | Path |
+|------|---------------|------|
+| Zed | GPU scene graph + shell (Dock/Panel/PaneGroup) | `APP/zed-main/crates/gpui/` + `crates/workspace/` |
+| AFFiNE | Design tokens + left sidebar patterns | `APP/AFFiNE-canary/` |
+| rowboat-main | Right dock: ChatSidebar + tool cards + multi-agent | `APP/rowboat-main/apps/x/apps/renderer/` |
+| GitNexus | Graph schema: confidence+reason edges, typed nodes | `.gitnexus/` + MCP tools |
+| ComfyUI | DAG execution: 4-tier cache, Kahn sort | `APP/Accelworld/services/other2/ComfyUI-master/` |
+| n8n | AST sandbox, Code node, credential injection | `APP/Accelworld/services/automation/n8n/` |
+| dify | Typed workflow nodes, event-generator pattern | `APP/Accelworld/services/other4/dify-main/` |
+| yara-x | Sealed linter trait | `APP/Accelworld/upstreams/yara-x/` |
+| typst | Incremental compile (comemo pattern) | `APP/Accelworld/services/other5/typst-main/` |
+| WrenAI | Semantic MDL + 5-stage query pipeline | `APP/wrenai/` |
+| 9router | 3-tier provider fallback + quota | `APP/Accelworld/services/other4/9router-master/` |
+| Remotion | Programmatic video: GPU→frame→FFmpeg | DeepWiki |
+| ToolJet | Component registry, 55 widgets | `APP/ToolJet-develop/` |
+| graphify | Data visualization patterns | `APP/graphify-master/` |

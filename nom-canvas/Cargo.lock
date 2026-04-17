@@ -1171,9 +1171,14 @@ dependencies = [
  "nom-blocks",
  "nom-concept",
  "nom-dict",
+ "nom-editor",
  "nom-grammar",
+ "nom-planner",
  "nom-score",
  "nom-search",
+ "nom-types",
+ "rusqlite",
+ "serde_json",
  "tokio",
 ]
 
@@ -1271,6 +1276,36 @@ dependencies = [
 ]
 
 [[package]]
+name = "nom-planner"
+version = "0.1.0"
+dependencies = [
+ "nom-ast",
+ "nom-concept",
+ "nom-resolver",
+ "nom-score",
+ "nom-types",
+ "nom-verifier",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.18",
+]
+
+[[package]]
+name = "nom-resolver"
+version = "0.1.0"
+dependencies = [
+ "nom-ast",
+ "nom-concept",
+ "nom-dict",
+ "nom-types",
+ "rusqlite",
+ "serde",
+ "serde_json",
+ "sha2",
+ "thiserror 2.0.18",
+]
+
+[[package]]
 name = "nom-score"
 version = "0.1.0"
 dependencies = [
@@ -1313,6 +1348,15 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+]
+
+[[package]]
+name = "nom-verifier"
+version = "0.1.0"
+dependencies = [
+ "nom-ast",
+ "nom-resolver",
+ "thiserror 2.0.18",
 ]
 
 [[package]]

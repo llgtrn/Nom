@@ -1,21 +1,49 @@
 # NomCanvas — Full Rust GPU-Native IDE Design Specification
 
-> **CANONICAL TRACKING DOC — MAIN DESIGN SPEC** (Planner/Auditor refreshes every cycle)
-> **Date:** 2026-04-17 | **HEAD:** `56604c4` (wave-10 landed, **1272 tests**, 13 crates shipped). **⚠️ "Compose by natural language on canvas" promise: 0% delivered** (iter-17 audit) — input path (prose→compiler) dead in 6 wires, output path (artifact→canvas) dead in 5 wires. Keystone: `stage1_tokenize → Highlighter` adapter (~200 LOC).
-> **Status:** DESIGN → IMPLEMENTATION. Phase 1 ✅ · Phase 2 100% ✅ · Phase 3 ~100% ✅ · Phase 4/5 scaffolded (nom-compose 94 tests, nom-graph-v2 64, nom-lint 39, nom-telemetry 36, nom-collab 33, nom-memoize 17). **Compiler-as-core integration still 0% runtime** (bridge crate spec designed iter-16, not yet implemented). **Vendoring 58% integrated** (8 DEEP · 3 PATTERN · 6 REF · 2 NOT-USED).
-> **Sibling tracking docs:** `implementation_plan.md`, `nom_state_machine_report.md`, `task.md` (all 4 MUST stay in sync)
-> **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text) — Zed's approach
-> **FOUNDATION:** Everything is built around the Nom language. The compiler IS the IDE. The dictionary IS the knowledge base. The grammar IS the type system. The .nomx format IS the universal input. External patterns are studied and ABSTRACTED into Nom-native implementations — zero foreign identities, zero wrappers, zero adapters.
-> **End-to-end readings:** 9 repos fully read (Zed, AFFiNE, ComfyUI, Refly, LlamaIndex, Haystack, ToolJet, n8n, yara-x, typst, Dioxus) + all 10 nom-compiler crates
-> **NON-NEGOTIABLE:** Executing agents MUST read source repos end-to-end before writing ANY code. Always use ui-ux-pro-max skill.
+> **NORTH STAR** — every session reads this first, plans against it, updates it when the vision sharpens.
+> **Date:** 2026-04-18 | **State:** Wave A+B+E-prep COMMITTED (commit 8c7d32e, 174 tests) · Wave C (nom-compiler-bridge) is the current target
+> **Foundation:** nom-compiler (29 crates) is UNCHANGED and is the CORE. NomCanvas is built on top of it.
+> **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text) — Zed's approach. One binary. Fully Rust.
+> **Sibling docs:** `implementation_plan.md` · `nom_state_machine_report.md` · `task.md` · `INIT.md`
+> **NON-NEGOTIABLE:** Agents MUST read source repos end-to-end before writing ANY code. Always use ui-ux-pro-max skill.
 
 ---
 
 ## 1. Vision
 
-One binary. Fully Rust. GPU-rendered. Browser + desktop from same codebase. The nom-compiler doesn't run "when you click compile" — it runs **continuously**, rendering its own state as the UI. Every pixel is a compiler concept.
+One binary. Fully Rust. GPU-rendered. Desktop + browser (WebGPU) from the same codebase.
 
-**5 unified modes on one infinite canvas:** Code + Doc + Canvas + Graph + Draw. No mode switching — all coexist spatially.
+**The nom-compiler IS the IDE.** It does not run "when you click compile." It runs continuously. Every keystroke is a compile event. Every block on the canvas is a compiler concept. Every pixel is a nomtu entity. Zero IPC, zero subprocesses — compiler crates are direct workspace dependencies.
+
+**The DB IS the workflow engine.** Having just `nom-dict` + `nom-grammar` enables N8N/Dify-like workflow composition through `.nomx`. No external orchestrator needed:
+- `grammar.kinds` = the node-type library (every kind is a draggable node)
+- `clause_shapes` = the wire type system (every slot has a typed grammar shape)
+- `.nomx` prose = the workflow definition language (natural language → grammar productions)
+- `nom-compose/dispatch` = the execution runtime (kind → backend, DB-driven)
+
+**Deep thinking is first-class.** `nom-intent::deep_think()` runs a scored ReAct loop — multi-step hypothesis chain — before committing to a `CompositionPlan`. Streamed as reasoning cards in the right dock. User can interrupt or steer mid-thought.
+
+**GPUI fully Rust — one binary.** No webview, no Electron, no Tauri, no DOM, no JS. Custom GPUI: wgpu + winit + taffy + cosmic-text. Zed proves this works at production scale.
+
+**6 unified modes on one infinite canvas:** Code · Doc · Canvas · Graph · Draw · Compose. No mode switching — all coexist spatially on the same GPU surface.
+
+**3-column shell** (Zed `Workspace` pattern):
+- Left dock: AFFiNE-style dictionary browser + search (248px, collapsible)
+- Center: Zed `PaneGroup` recursive split hosting the infinite canvas
+- Right dock: Rowboat-style AI assistant + tool inspector + composition progress (320px, collapsible)
+- Bottom dock: terminal · diagnostics · command history
+- Status bar: left/center/right slots
+
+**Compose everything from `.nomx`:**
+
+| Category | Outputs |
+|---|---|
+| **Media** | video · picture · audio · 3D mesh · storyboard · novel→video |
+| **Screen** | web app · native app · mobile app (iOS/Android) · presentation (slides) |
+| **App** | full app bundle (frontend + backend + deploy) · ad creative (video/static/interactive) |
+| **Data** | extract (PDF→JSON+tables) · transform (Polars-like) · query (WrenAI MDL) |
+| **Concept** | document (PDF/DOCX) |
+| **Scenario** | workflow (n8n-pattern + AST sandbox) |
 
 ---
 
@@ -23,22 +51,24 @@ One binary. Fully Rust. GPU-rendered. Browser + desktop from same codebase. The 
 
 | Decision | Choice | Why | Source |
 |----------|--------|-----|--------|
-| Framework | **Custom GPUI** (no Dioxus) | Dioxus Desktop = webview. We need GPU-native. Zed proves custom GPUI works. | `zed-main/crates/gpui/` end-to-end reading |
-| GPU API | **wgpu** | Cross-platform (Vulkan/Metal/DX12/WebGPU). Compiles to browser via WebGPU. | `upstreams/wgpu/` |
-| Layout | **taffy** (flexbox/grid) | Same as Zed. Rust-native. No CSS parser needed. | `zed-main/crates/gpui/src/styled.rs` |
-| Text | **cosmic-text** | Font shaping + layout. No platform dependency. Works in WASM. | Replaces Zed's platform text system |
-| Window | **winit** | Cross-platform window/event loop. Desktop + (future) web via wasm-bindgen. | Standard Rust windowing |
-| Rendering | **Zed's Scene Graph pattern** | Primitives (Quad, Text, Path, Shadow) → batched by type → wgpu render passes | `zed-main/crates/gpui/src/scene.rs` |
-| Design language | **AFFiNE tokens** | Inter + Source Code Pro, 73 CSS variables extracted, 24px icons | `AFFiNE-canary/` end-to-end reading |
-| Compiler integration | **Direct function calls** | No IPC. No JSON. Compiler crates linked as dependencies. | 10 crates mapped to 3 thread tiers |
+| Framework | **Custom GPUI** (no Dioxus) | Dioxus Desktop = webview. We need GPU-native. | `zed-main/crates/gpui/` |
+| GPU API | **wgpu** | Cross-platform: Vulkan/Metal/DX12/WebGPU | `upstreams/wgpu/` |
+| Layout | **taffy** (flexbox/grid) | Rust-native, same as Zed, no CSS parser needed | `zed-main/crates/gpui/src/styled.rs` |
+| Text | **cosmic-text** | Font shaping + layout, no platform dep, works in WASM | Replaces Zed's platform text |
+| Window | **winit** | Cross-platform event loop, desktop + web via wasm-bindgen | Standard Rust |
+| Rendering | **Zed scene graph** | Primitives → batched by type → wgpu render passes | `zed-main/crates/gpui/src/scene.rs` |
+| Design | **AFFiNE tokens** | Inter + Source Code Pro, 73 CSS vars extracted, 24px icons | `AFFiNE-canary/` |
+| Compiler | **Direct function calls** | No IPC, no JSON, compiler crates as workspace deps | 29 crates mapped to 3 thread tiers |
+| Workflow | **DB-driven via nom-compose** | `grammar.kinds` = node library, no hardcoded node enum | `nom-grammar` + `nom-compose` |
+| Dioxus | **NO** | Desktop = webview wrapper, not GPU-native | confirmed by end-to-end read |
 
 ---
 
-## 3. System Architecture
+## 3. System Architecture — Threading Model
 
 ```
 ┌──────────────────────────────────────────────────────────────┐
-│                     NomCanvas Binary                       │
+│                     NomCanvas Binary                          │
 │                                                               │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │              Render Thread (60fps)                      │  │
@@ -51,12 +81,12 @@ One binary. Fully Rust. GPU-rendered. Browser + desktop from same codebase. The 
 │  │              UI Thread (winit event loop)               │  │
 │  │  Input → Layout (taffy) → Paint → Scene                │  │
 │  │                                                         │  │
-│  │  COMPILER ON UI THREAD (<1ms):                          │  │
+│  │  COMPILER ON UI THREAD (<1ms, pure stateless):          │  │
 │  │  • nom_grammar::resolve_synonym                         │  │
 │  │  • nom_grammar::is_known_kind                           │  │
 │  │  • nom_dict::find_entities_by_word (cached read conn)   │  │
-│  │  • nom_score::score_atom (pure, stateless)              │  │
-│  │  • nom_score::can_wire (pure, stateless)                │  │
+│  │  • nom_score::score_atom                                │  │
+│  │  • nom_score::can_wire                                  │  │
 │  │  • nom_search::BM25Index::search (in-memory)            │  │
 │  └──────────────────────────↕─────────────────────────────┘  │
 │                              │ channels                       │
@@ -66,59 +96,186 @@ One binary. Fully Rust. GPU-rendered. Browser + desktop from same codebase. The 
 │  │  INTERACTIVE (<100ms):                                  │  │
 │  │  • nom_concept::stage1_tokenize (syntax highlighting)   │  │
 │  │  • nom_concept::stage2_kind_classify (block kind)       │  │
-│  │  • nom_lsp::handle_hover (dict lookup + markdown)       │  │
-│  │  • nom_lsp::handle_completion (entities + patterns)     │  │
-│  │  • nom_lsp::handle_definition (source location)         │  │
-│  │  • nom_resolver::resolve (3-stage: exact→word→semantic) │  │
-│  │  • nom_resolver::infer_flow_contracts (type propagation)│  │
+│  │  • nom_lsp::handle_hover / handle_completion            │  │
+│  │  • nom_resolver::resolve (exact→word→semantic)          │  │
+│  │  • nom_resolver::infer_flow_contracts                   │  │
 │  │                                                         │  │
 │  │  BACKGROUND (>100ms):                                   │  │
 │  │  • nom_concept::run_pipeline (full S1-S6)               │  │
 │  │  • nom_planner::plan_from_pipeline_output               │  │
-│  │  • nom_verifier::verify                                 │  │
-│  │  • nom_app::dream_report                                │  │
-│  │  • nom_security::scan_body                              │  │
 │  │  • nom_intent::classify_with_react (ReAct loop)         │  │
+│  │  • nom_intent::deep_think (scored hypothesis chain)     │  │
+│  │  • nom_app::dream_report                                │  │
 │  │  • nom_llvm::compile (LLVM codegen)                     │  │
-│  │  • nom_extract::extract_from_dir (tree-sitter)          │  │
 │  └────────────────────────────────────────────────────────┘  │
 │                              │                                │
 │  ┌────────────────────────────────────────────────────────┐  │
 │  │           Shared State (Arc<RwLock>)                    │  │
-│  │  • Dict pool: 1 write + N read connections (WAL mode)  │  │
+│  │  • Dict pool: 1 write + N read connections (WAL)        │  │
 │  │  • Grammar: 1 read connection                           │  │
 │  │  • Compile cache: LRU<u64, PipelineOutput>              │  │
 │  │  • BM25 index: in-memory, rebuilt on dict change        │  │
-│  │  • Canvas state: blocks, elements, selections, wires   │  │
+│  │  • Canvas state: blocks, elements, selections, wires    │  │
 │  └────────────────────────────────────────────────────────┘  │
 └──────────────────────────────────────────────────────────────┘
 ```
 
 ---
 
-## 4. GPU Rendering Pipeline (from Zed end-to-end reading)
+## 4. 3-Column Shell Architecture
+
+Pattern sources: Zed `crates/workspace/` · AFFiNE `packages/frontend/core/src/components/root-app-sidebar/` · rowboat-main `apps/x/apps/renderer/`.
+
+```
+┌──────────────────────────────────────────────────────────────────┐
+│  Title bar  [workspace-switcher]            [sync · cloud · user] │
+├──────────┬──────────────────────────────────┬────────────────────┤
+│ LEFT     │     CENTER (CANVAS)              │  RIGHT             │
+│ DOCK     │                                  │  DOCK              │
+│ (AFFiNE) │     Zed PaneGroup tree           │  (Rowboat)         │
+│ 248px    │     hosting infinite canvas      │  320px default     │
+│ default  │     with 6 modes spatial         │  collapse to 56px  │
+│ collapse │                                  │                    │
+│ to 56px  │     Blocks (nomtu-backed):        │  - AI assistant    │
+│          │       prose · nomx · media        │    conversation    │
+│ - dict   │       graph_node · drawing       │  - deep-think      │
+│   tree   │       table · embed              │    reasoning stream│
+│ - pinned │       + compose-preview          │  - tool-call       │
+│ - recent │                                  │    inspector cards │
+│ - search │     Command palette (Cmd+K)       │  - nomtu entity    │
+│   modal  │     Dirty-region renderer        │    details viewer  │
+│ - settgs │                                  │  - composition     │
+│          │                                  │    progress        │
+├──────────┴──────────────────────────────────┴────────────────────┤
+│  BOTTOM DOCK (terminal · diagnostics · command history)           │
+├──────────────────────────────────────────────────────────────────┤
+│  Status bar (left · center · right slots)                         │
+└──────────────────────────────────────────────────────────────────┘
+```
+
+### Shell structs (Zed `Workspace` pattern)
 
 ```rust
-// Per-frame cycle (target: <16ms)
+pub struct Shell {
+    center: PaneGroup,                    // recursive split tree
+    left_dock: Arc<Dock>,                 // AFFiNE-style dict + search
+    right_dock: Arc<Dock>,                // Rowboat-style AI + inspector
+    bottom_dock: Arc<Dock>,               // terminal + diagnostics
+    active_pane: Arc<Pane>,
+    status_bar: Arc<StatusBar>,
+    modal_layer: Arc<ModalLayer>,
+}
+
+pub enum DockPosition { Left, Right, Bottom }
+
+pub struct Dock {
+    position: DockPosition,
+    panel_entries: Vec<PanelEntry>,
+    is_open: bool,
+    active_panel_index: Option<usize>,
+}
+
+pub trait Panel: Focusable + Render {
+    fn persistent_name() -> &'static str;
+    fn position(&self) -> DockPosition;
+    fn default_size(&self) -> Pixels;
+    fn toggle_action(&self) -> Box<dyn Action>;
+    fn icon(&self) -> Option<IconName>;
+    fn is_agent_panel(&self) -> bool { false }
+}
+
+pub enum Member { Pane(Arc<Pane>), Axis(PaneAxis) }
+pub struct PaneGroup { root: Member, is_center: bool }
+```
+
+### Left dock (AFFiNE pattern — `root-app-sidebar/index.tsx`)
+
+1. Logo + workspace switcher
+2. QuickSearchInput button (Cmd+K → command palette modal)
+3. Action buttons (new block · "all entries" · settings)
+4. Pinned section (`CollapsibleSection`, path-keyed state)
+5. **Dictionary tree** — nomtu entries organized by `grammar.kinds`
+6. Recent / trash
+7. Settings button
+
+Primitives: `CollapsibleSection` · `MenuItem` with inline collapse toggle · `ResizePanel` (248px default, 4 states: open/floating/floating-with-mask/close) · `SidebarScrollableContainer` (scroll-shadow border)
+
+### Right dock (Rowboat pattern — `renderer/src/components/chat-sidebar.tsx`)
+
+1. Tab bar — multi-chat switcher
+2. Conversation stream — anchored scroll messages
+3. **Deep-think reasoning stream** — collapsible cards per `DeepThinkStep` (hypothesis + evidence + confidence badge)
+4. Tool inspector — collapsible cards: status badge (Pending/Running/Completed/Error) + tabbed Input/Output viewers
+5. Permission / ask-human overlays
+6. Chat input — mentions, file attachments, suggestions
+
+Multi-things (4 axes):
+- Multi-conversation: `chatTabs: Vec<ChatTab>` (runId + draft)
+- Multi-tool: `toolOpenByTab: HashMap<(TabId, ToolId), bool>`
+- Multi-agent: `RunEvent` union with `SpawnSubFlow { agentName }`
+- Multi-run: sidebar history list
+
+---
+
+## 5. DB-Driven Composition Engine — "The DB IS N8N / Dify"
+
+NomCanvas does NOT need N8N, Dify, or any external workflow engine. The DB is the workflow engine.
+
+### Equivalence table
+
+| N8N / Dify concept | Nom DB equivalent | Crate / table |
+|---|---|---|
+| Node-type library | `grammar.kinds` — every row is a draggable node | `nom-grammar`, `kinds` table |
+| Wire type checking | `clause_shapes` — every slot has a `grammar_shape` | `nom-grammar`, `clause_shapes` |
+| Workflow definition | `.nomx` prose → grammar productions via S1-S6 | `nom-concept` |
+| Node execution | `nom-compose/dispatch.rs` routes `NomKind → backend` | `nom-compose` |
+| Function expression | `{{ expr }}` evaluated via AST sandbox (4 sanitizers) | `nom-graph-v2/sandbox.rs` |
+| Credential store | Kind-keyed secrets | `nom-compose/credential_store.rs` |
+| Plugin/node registry | `grammar.kinds` + `plugin_registry.rs` | `nom-compose` |
+| Workflow state | `entries` table — every entity is a persistent state node | `nom-dict` (WAL SQLite) |
+| AI node | Any `NomKind` calling `nom-intent::classify_with_react` | `nom-intent` |
+| Event-generator node | Background tier, crossbeam channel | `nom-compiler-bridge/background_tier.rs` |
+
+### The DB execution loop (replaces N8N/Dify executor)
+
+```
+User writes .nomx on canvas
+  ↓
+S1-S6 pipeline → entries upsert (DB write, nom-dict)
+  ↓
+Grammar productions resolved → clause_shapes filled (nom-grammar)
+  ↓
+can_wire() validates connections:
+  entries.output_type ↔ clause_shapes.grammar_shape (DB read)
+  ↓
+nom-compose/dispatch.rs routes NomKind → backend (DB-driven)
+  ↓
+Backend produces artifact → ~/.nom/store/<hash>/body.*
+  ↓
+Canvas preview block renders artifact from store (GPU scene)
+```
+
+**The key insight:** every `.nomx` sentence is simultaneously:
+- A **document** (Doc mode: AFFiNE block)
+- A **node** (Graph mode: typed DAG node with DB-derived ports)
+- A **DB entry** (entries: `kind`, `word`, `output_type`)
+- A **workflow step** (Compose: dispatched to backend by kind)
+
+The same `.nomx` source composes a video, generates a web app, or runs a data pipeline — determined solely by the `kind` field in the DB.
+
+---
+
+## 6. GPU Rendering Pipeline (Zed pattern)
+
+```rust
 fn frame(&mut self) {
-    // 1. Process input events (winit)
-    self.handle_events();
-    
-    // 2. Update reactive state (compiler results arrive via channels)
-    self.process_compiler_results();
-    
-    // 3. Layout pass (taffy flexbox/grid)
-    self.layout_tree.compute_layout();
-    
-    // 4. Paint pass — components emit scene primitives
+    self.handle_events();                    // winit
+    self.process_compiler_results();         // channels from worker pool
+    self.layout_tree.compute_layout();       // taffy
     let mut scene = Scene::new();
-    self.root.paint(&mut scene, &self.layout_tree);
-    
-    // 5. Sort + batch primitives (group by type + texture)
-    scene.sort_and_batch();
-    
-    // 6. Submit to wgpu
-    self.renderer.draw(&scene);
+    self.root.paint(&mut scene, &self.layout_tree);  // components → primitives
+    scene.sort_and_batch();                  // group by type + texture
+    self.renderer.draw(&scene);              // wgpu submit
 }
 ```
 
@@ -130,18 +287,17 @@ fn frame(&mut self) {
 - `Shadow` — box shadows with blur
 - `Underline` — text underlines
 
-**Glyph Atlas** (from Zed):
+**Glyph Atlas** (Zed pattern):
 - cosmic-text shapes text → glyph IDs + positions
-- Glyphs rasterized to bitmap, packed into atlas via `etagere` (BucketedAtlasAllocator)
+- Glyphs rasterized → packed into atlas via `etagere` (BucketedAtlasAllocator)
 - 4×4 subpixel variants for pixel-perfect antialiasing
-- Atlas is a wgpu texture, shared across all text primitives
+- Atlas = wgpu texture, shared across all text primitives
 
 ---
 
-## 5. Design Tokens (from AFFiNE end-to-end reading)
+## 7. Design Tokens (AFFiNE — extracted from source)
 
 ```rust
-// Extracted from AFFiNE source — pixel-perfect values
 pub mod tokens {
     // Layout
     pub const SIDEBAR_W: f32 = 248.0;
@@ -154,152 +310,438 @@ pub mod tokens {
     pub const BTN_H_LG: f32 = 32.0;
     pub const BTN_H_XL: f32 = 40.0;
     pub const ICON: f32 = 24.0;
-    
+
     // Typography (Inter + Source Code Pro)
     pub const H1_WEIGHT: u16 = 700;
-    pub const H1_SPACING: f32 = -0.02; // em
+    pub const H1_SPACING: f32 = -0.02;
     pub const H2_WEIGHT: u16 = 600;
     pub const BODY_WEIGHT: u16 = 400;
-    pub const QUOTE_LINE_H: f32 = 26.0;
-    pub const QUOTE_BAR_W: f32 = 2.0;
-    pub const QUOTE_BAR_R: f32 = 18.0;
-    
-    // Colors (Nom dark theme)
-    pub const BG: [f32; 4] = [0.059, 0.090, 0.165, 1.0];       // #0F172A
-    pub const BG2: [f32; 4] = [0.118, 0.161, 0.251, 1.0];      // #1E293B
-    pub const TEXT: [f32; 4] = [0.973, 0.980, 0.988, 1.0];      // #F8FAFC
-    pub const CTA: [f32; 4] = [0.133, 0.773, 0.369, 1.0];      // #22C55E
-    pub const BORDER: [f32; 4] = [0.200, 0.255, 0.333, 1.0];   // #334155
-    pub const FOCUS: [f32; 4] = [0.118, 0.588, 0.922, 0.3];    // rgba(30,150,235,0.30)
-    
+
+    // Colors (dark theme)
+    pub const BG:     [f32; 4] = [0.059, 0.090, 0.165, 1.0]; // #0F172A
+    pub const BG2:    [f32; 4] = [0.118, 0.161, 0.251, 1.0]; // #1E293B
+    pub const TEXT:   [f32; 4] = [0.973, 0.980, 0.988, 1.0]; // #F8FAFC
+    pub const CTA:    [f32; 4] = [0.133, 0.773, 0.369, 1.0]; // #22C55E
+    pub const BORDER: [f32; 4] = [0.200, 0.255, 0.333, 1.0]; // #334155
+    pub const FOCUS:  [f32; 4] = [0.118, 0.588, 0.922, 0.3]; // rgba(30,150,235,0.30)
+
+    // Graph mode: confidence-scored edge colors (AFFiNE-inspired)
+    pub const EDGE_HIGH:   [f32; 4] = [0.133, 0.773, 0.369, 0.9]; // confidence ≥ 0.8
+    pub const EDGE_MED:    [f32; 4] = [0.957, 0.702, 0.078, 0.7]; // confidence 0.5–0.8
+    pub const EDGE_LOW:    [f32; 4] = [0.937, 0.267, 0.267, 0.5]; // confidence < 0.5
+
     // Animation
     pub const ANIM_DEFAULT: f32 = 300.0; // ms
-    pub const ANIM_FAST: f32 = 200.0;
-    pub const ANIM_SWITCH: &str = "cubic-bezier(0.27, 0.2, 0.25, 1.51)";
-    
-    // Shadows (from AFFiNE)
-    pub const SHADOW_BTN: Shadow = Shadow { x: 0.0, y: 1.0, blur: 5.0, color: [0,0,0,0.12] };
+    pub const ANIM_FAST:    f32 = 200.0;
 }
 ```
 
 ---
 
-## 6. Five Unified Modes
+## 8. Six Unified Modes
 
-All modes share the same GPU canvas surface. Mode = which tools/interactions are active.
+All modes share the same GPU canvas surface. Mode = which tools/interactions are active. Every mode reads/writes nomtu-backed blocks.
 
-| Mode | Block Types | Compiler Crates Used | Tool Palette |
-|------|------------|---------------------|-------------|
-| **Code** | .nomx blocks with syntax highlighting | S1-S2 (tokenize+classify), nom-lsp, nom-resolver | Compile, Score, Plan |
-| **Doc** | Rich text (headings, lists, quotes, tables) | nom-grammar (keyword resolution) | Format, Insert, Style |
-| **Canvas** | Shapes, connectors, images, spatial layout | nom-score (can_wire for connections) | Shape, Arrow, Text, Image |
-| **Graph** | DAG nodes with typed ports, wires | nom-planner (plan_from_pipeline_output), nom-intent | Run, Debug, Step |
-| **Draw** | Freeform pen/brush strokes | nom-media (codec for export) | Pen, Brush, Eraser, Color |
+### Code mode
+`.nomx` blocks with syntax highlighting driven by `stage1_tokenize`. LSP hover, completion, definition. Compile → score → plan. Compiler crates: S1-S2, nom-lsp, nom-resolver.
+
+### Doc mode — Zed quality + Rowboat AI + AFFiNE block model
+
+Three-way fusion:
+- **AFFiNE block model**: heading (h1–h6) · paragraph · bulleted-list · numbered-list · quote · divider · callout · code-block · database · linked-block. Every block is nomtu-backed (`BlockModel.entity: NomtuRef`).
+- **Zed editor quality** for code blocks: rope buffer (ropey), multi-cursor, real-time syntax highlighting from `stage1_tokenize`, completion from `nom-resolver`, inlay hints from `nom-lsp`.
+- **Rowboat inline AI**: `/ai` command or selection opens AI conversation thread scoped to that block in the right dock. AI suggestions appear as Rowboat tool cards.
+- Typography: AFFiNE tokens (Inter, Source Code Pro, 16-level scale).
+
+Compiler crates: nom-grammar (keyword resolution), nom-lsp (hover/completion on code blocks), nom-resolver, nom-intent (inline AI).
+
+### Canvas mode — AFFiNE-inspired for RAG + beautiful graph mode
+
+AFFiNE's block-as-knowledge-unit model applied to infinite spatial canvas:
+- **Graph mode** (primary visual for RAG): nomtu entities as AFFiNE-style knowledge node cards with frosted-glass panels, blur shadows, Inter font. Edges carry `confidence: f32` + `reason: String` (GitNexus pattern) rendered as colored opacity arcs:
+  - Green (≥0.8): strong semantic connection
+  - Amber (0.5–0.8): inferred connection
+  - Red (<0.5): weak / heuristic
+- **RAG visualization layer**: `nom-search` retrieval context overlaid on graph as colored connection paths. Shows which dictionary entries informed a composition decision.
+- Beautiful by default: AFFiNE design tokens (frosted glass, blur, smooth bezier edge routing, spring animations).
+- Node palette is **DB-driven**: live query `grammar.kinds` → every kind = a draggable node. No hardcoded node list.
+
+Compiler crates: nom-score (can_wire), nom-search (BM25+vector for RAG overlay), nom-intent (retrieval context).
+
+### Graph mode — DB-driven workflow (N8N/Dify-native)
+
+DAG nodes with typed ports. Wires = grammar slot-fills validated by `can_wire()`. This is N8N/Dify built natively from the DB:
+- Nodes = `NomKind` instances derived from `grammar.kinds` (zero hardcoded)
+- Ports = `clause_shapes` rows for that kind's grammar slots
+- Wires = `can_wire(src_ref, src_slot, dst_ref, dst_slot, grammar_conn, entries_conn)`
+- Execution = `nom-compose/dispatch.rs` routes kind → backend
+- Expression nodes: `{{ expr }}` via `nom-graph-v2/sandbox.rs` (4 AST sanitizers)
+
+Compiler crates: nom-planner, nom-intent, nom-score (can_wire), nom-compose.
+
+### Draw mode
+Freeform pen/brush strokes. Compiler crates: nom-media (codec for export).
+
+### Compose mode
+Triggers composition from any block on canvas. Deep thinking available: `deep_think()` runs scored ReAct loop before committing plan. Progress streamed to right dock as reasoning cards. Compiler crates: nom-compose, nom-planner, nom-intent (deep_think), nom-compiler-bridge.
 
 ---
 
-## 7. Compiler-as-Core Integration
+## 9. Compiler-as-Core Integration
 
-**The compiler doesn't "run when you click compile." It runs continuously.**
+> **nom-compiler is NOT a separate service. It is the IDE. Compiler crates are direct workspace dependencies of nom-canvas. Zero IPC. Zero subprocesses. The canvas IS the compiler rendered.**
 
-| User Action | Compiler Response | Latency | Thread |
-|-------------|------------------|---------|--------|
+| User action | Compiler response | Latency | Thread tier |
+|---|---|---|---|
 | Type a character | `stage1_tokenize` → syntax highlighting | <10ms | Interactive |
-| Hover a word | `handle_hover` → tooltip with contracts/effects | <10ms | Interactive |
-| Pause typing (500ms) | `run_pipeline` S1-S6 → diagnostics | <100ms | Background |
-| Drag wire between blocks | `can_wire` → green/amber/red | <1ms | UI |
-| Click "Run" | `compile` → LLVM bitcode → execute | >1s | Background |
+| Hover a word | `handle_hover` → tooltip | <10ms | Interactive |
+| Pause typing 500ms | `run_pipeline` S1-S6 → diagnostics | <100ms | Background |
+| Drag wire | `can_wire` → green/amber/red | <1ms | UI |
+| Click "Run" | `compile` → LLVM → execute | >1s | Background |
 | Type in command bar | `classify_with_react` → NomIntent | <2s | Background |
-| Open dream dashboard | `dream_report` → score + proposals | <1s | Background |
+| Click "Deep Think" | `deep_think` → scored hypothesis chain | <10s | Background |
+| Open compose | `dream_report` → score + proposals | <1s | Background |
 
-**Dict Connection Pool:**
-- SQLite WAL mode allows concurrent readers
-- 1 write connection (serialized via channel) for `upsert_entity`, `add_graph_edge`
-- N read connections (N = CPU cores) for hover, completion, resolve
-- UI thread gets dedicated read connection (never contends)
+**Dict Connection Pool** (SQLite WAL mode):
+- 1 write connection (serialized via channel): `upsert_entity`, `add_graph_edge`
+- N read connections (N = CPU cores): hover, completion, resolve
+- UI thread: dedicated read connection (never contends)
 
 ---
 
-## 8. Crate Structure
+## 10. Deep Thinking — First-Class Compiler Operation
+
+Deep thinking is a compiler operation, not a separate AI mode. It is an extended ReAct loop that reasons about canvas state before committing to a composition plan.
+
+```rust
+// nom-intent/src/deep.rs
+pub struct DeepThinkStep {
+    pub hypothesis: String,
+    pub evidence: Vec<String>,       // supporting nomtu refs
+    pub confidence: f32,             // scored by nom-score::score_atom
+    pub counterevidence: Vec<String>,
+    pub refined_from: Option<usize>, // index of prior step this refines
+}
+
+pub async fn deep_think(
+    intent: &str,
+    canvas: &Workspace,
+    grammar: &Connection,
+    entries: &Connection,
+    interrupt: &InterruptFlag,
+) -> Result<(CompositionPlan, Vec<DeepThinkStep>)>
+// ReAct loop: max 10 steps
+// Each step: generate hypothesis → score via score_atom → refine
+// Best hypothesis becomes the CompositionPlan
+// Steps streamed to right dock as Rowboat tool cards
+```
+
+| Trigger | Deep think operation | Output |
+|---|---|---|
+| Complex `.nomx` composition | Multi-step plan reasoning | Annotated `CompositionPlan` with confidence scores |
+| Ambiguous wire connection | Grammar derivation exploration | `Connector { confidence, reason chain }` |
+| Unclear compose target | Output space exploration | Ranked `CompositionPlan[]` with tradeoffs |
+| "Explain this" hover | Derivation chain tracing | Rich markdown with reasoning steps |
+
+**UI (right dock):** each `DeepThinkStep` = one Rowboat tool card with hypothesis input + evidence output + confidence badge. User can click "interrupt" at any step. Collapsed by default, expandable.
+
+---
+
+## 11. Crate Structure (target build)
 
 ```
-nom-canvas/
-├── Cargo.toml              # workspace
+nom-canvas/                     ← new workspace (fresh build)
+├── Cargo.toml
 ├── crates/
-│   ├── nom-gpui/           # Custom GPU framework (Zed pattern)
-│   │   ├── scene.rs        # Quad, Text, Path, Shadow, Sprite
-│   │   ├── renderer.rs     # wgpu render passes, primitive batching
-│   │   ├── atlas.rs        # Glyph atlas (etagere + cosmic-text)
-│   │   ├── element.rs      # Element trait (request_layout, prepaint, paint)
-│   │   ├── styled.rs       # Style builder (like Zed's Styled trait)
-│   │   ├── window.rs       # winit window + event loop + frame timing
-│   │   ├── layout.rs       # taffy integration
-│   │   ├── animation.rs    # Timestamp-based interpolation + easing
-│   │   └── platform.rs     # Desktop (native) vs Web (WebGPU) abstraction
+│   ├── nom-gpui/               Custom GPU framework (Zed pattern)
+│   │   ├── scene.rs            Quad, Text, Path, Shadow, Sprite
+│   │   ├── renderer.rs         wgpu render passes, primitive batching
+│   │   ├── atlas.rs            Glyph atlas (etagere + cosmic-text)
+│   │   ├── element.rs          Element trait (request_layout, prepaint, paint)
+│   │   ├── styled.rs           Style builder (Zed Styled trait pattern)
+│   │   ├── window.rs           winit window + event loop + frame timing
+│   │   ├── layout.rs           taffy integration
+│   │   ├── animation.rs        Timestamp-based interpolation + easing
+│   │   └── platform.rs         Desktop vs Web (WebGPU) abstraction
 │   │
-│   ├── nom-canvas-core/    # Canvas engine
-│   │   ├── viewport.rs     # Infinite canvas: zoom, pan, transforms
-│   │   ├── elements.rs     # Shapes (rect, ellipse, arrow, line, connector)
-│   │   ├── selection.rs    # Multi-select, rubber-band, transform handles
-│   │   ├── snapping.rs     # Grid + edge/center alignment
-│   │   ├── hit_test.rs     # Two-phase: AABB → precise geometry
-│   │   └── spatial_index.rs # R-tree for fast element lookup
+│   ├── nom-canvas-core/        Infinite canvas engine
+│   │   ├── viewport.rs         Zoom, pan, transforms
+│   │   ├── elements.rs         Shapes (rect, ellipse, arrow, connector)
+│   │   ├── selection.rs        Multi-select, rubber-band, transform handles
+│   │   ├── snapping.rs         Grid + edge/center alignment
+│   │   ├── hit_test.rs         Two-phase: AABB → precise geometry
+│   │   └── spatial_index.rs    R-tree for fast element lookup
 │   │
-│   ├── nom-editor/         # Code/doc editor (Zed quality)
-│   │   ├── buffer.rs       # Rope-based (ropey crate)
-│   │   ├── cursor.rs       # Multi-cursor + selections
-│   │   ├── highlight.rs    # S1-S2 driven syntax highlighting
-│   │   ├── hints.rs        # Inlay hints from nom-lsp
-│   │   ├── completion.rs   # Completion from nom-resolver + nom-grammar
-│   │   └── input.rs        # Keyboard/IME handling
+│   ├── nom-editor/             Code/doc editor (Zed quality)
+│   │   ├── buffer.rs           Rope-based (ropey)
+│   │   ├── cursor.rs           Multi-cursor + selections
+│   │   ├── highlight.rs        stage1_tokenize-driven syntax highlighting
+│   │   ├── hints.rs            Inlay hints from nom-lsp
+│   │   ├── completion.rs       Completion from nom-resolver + nom-grammar
+│   │   └── input.rs            Keyboard/IME handling
 │   │
-│   ├── nom-blocks/         # Block types (AFFiNE pattern)
-│   │   ├── prose.rs        # Rich text (headings, lists, quotes)
-│   │   ├── nomx.rs         # .nomx code (with editor)
-│   │   ├── graph_node.rs   # DAG node (ComfyUI pattern)
-│   │   ├── media.rs        # Image/video/audio
-│   │   ├── drawing.rs      # Freeform strokes
-│   │   ├── table.rs        # Data table
-│   │   └── embed.rs        # Embedded content
+│   ├── nom-blocks/             Block types — ALL nomtu-backed
+│   │   ├── block_model.rs      BlockModel { entity: NomtuRef, slots, children }
+│   │   ├── prose.rs            AFFiNE block types (heading/para/list/quote/callout/db)
+│   │   ├── nomx.rs             .nomx code (with nom-editor)
+│   │   ├── graph_node.rs       DAG node (grammar-production instance, DB-derived ports)
+│   │   ├── media.rs            Image/video/audio
+│   │   ├── drawing.rs          Freeform strokes
+│   │   ├── table.rs            Data table
+│   │   └── embed.rs            Embedded content
 │   │
-│   ├── nom-graph/          # DAG execution (ComfyUI+n8n patterns)
-│   │   ├── engine.rs       # Kahn sort, IS_CHANGED, VariablePool
-│   │   ├── execution.rs    # Partial execution, cancel, progress
-│   │   ├── cache.rs        # LRU + RAM-pressure (ComfyUI pattern)
-│   │   └── nodes.rs        # Built-in node types
+│   ├── nom-graph/              DAG execution (N8N/Dify-native, DB-driven)
+│   │   ├── engine.rs           Kahn sort, IS_CHANGED, VariablePool
+│   │   ├── execution.rs        Partial execution, cancel, progress
+│   │   ├── cache.rs            4-tier cache (NoCache/LRU/RamPressure/Classic)
+│   │   ├── nodes.rs            DB-driven node types (query grammar.kinds at runtime)
+│   │   └── sandbox.rs          Expression eval (4 AST sanitizers, n8n pattern)
 │   │
-│   ├── nom-panels/         # UI panels
-│   │   ├── sidebar.rs      # 248px collapsible (AFFiNE)
-│   │   ├── toolbar.rs      # 48px top bar
-│   │   ├── preview.rs      # Output preview (6 modes)
-│   │   ├── library.rs      # Dictionary browser
-│   │   ├── properties.rs   # Property inspector
-│   │   ├── command.rs      # Command palette
-│   │   └── statusbar.rs    # 24px bottom bar
+│   ├── nom-panels/             UI panels
+│   │   ├── shell.rs            3-column Shell composition
+│   │   ├── dock.rs             DockPosition + Dock + Panel trait (Zed pattern)
+│   │   ├── pane.rs             PaneGroup recursive split + tab strip
+│   │   ├── sidebar.rs          AFFiNE left dock (CollapsibleSection + MenuItem + ResizePanel)
+│   │   ├── chat.rs             Rowboat right dock (ChatSidebar + tool cards + deep-think stream)
+│   │   ├── toolbar.rs          48px top bar
+│   │   ├── statusbar.rs        24px bottom bar (left/center/right slots)
+│   │   ├── command_palette.rs  Cmd+K → fuzzy picker (Zed pattern)
+│   │   ├── library.rs          Dictionary browser (grammar.kinds tree)
+│   │   └── properties.rs       Nomtu entity detail viewer
 │   │
-│   └── nom-theme/          # Design system
-│       ├── tokens.rs       # AFFiNE values (73 variables)
-│       ├── fonts.rs        # Inter + Source Code Pro (GPU)
-│       └── icons.rs        # Lucide 24px SVG → GPU paths
-│
-├── nom-compiler/           # UNCHANGED — 29 crates, linked as deps
-│   └── crates/
-│       ├── nom-dict/       # → Shared state (Dict pool)
-│       ├── nom-grammar/    # → UI thread (resolve_synonym)
-│       ├── nom-concept/    # → Interactive + background (S1-S6)
-│       ├── nom-lsp/        # → Interactive (hover, completion)
-│       ├── nom-resolver/   # → Interactive (resolve, type inference)
-│       ├── nom-score/      # → UI thread (score_atom, can_wire)
-│       ├── nom-intent/     # → Background (ReAct loop)
-│       ├── nom-planner/    # → Background (plan generation)
-│       ├── nom-app/        # → Background (dream_report, build)
-│       ├── nom-llvm/       # → Background (LLVM codegen)
-│       └── ... (19 more)
+│   ├── nom-compose/            Universal composition engine
+│   │   ├── dispatch.rs         NomKind → backend router
+│   │   ├── plan.rs             CompositionPlan + PlanStep
+│   │   ├── kind.rs             NomKind variants (DB-derived at runtime)
+│   │   ├── task_queue.rs       Async task lifecycle (Queued→Running→Done)
+│   │   ├── provider_router.rs  3-tier fallback (9router pattern)
+│   │   ├── credential_store.rs Kind-keyed secrets
+│   │   ├── artifact_store.rs   Content-addressed SHA-256 (~/.nom/store/)
+│   │   ├── vendor_trait.rs     MediaVendor + Cost + Capability
+│   │   ├── semantic.rs         WrenAI MDL semantic layer
+│   │   └── backends/           One file per compose target
+│   │       ├── video.rs        Remotion pattern (GPU scene → FFmpeg)
+│   │       ├── image.rs        Multi-model dispatch (200+ models)
+│   │       ├── audio.rs        Synthesis + codec
+│   │       ├── mesh.rs         glTF 2.0
+│   │       ├── storyboard.rs   ArcReel 5-phase + waoowaoo 4-phase
+│   │       ├── web_screen.rs   ToolJet widgets + Dify workflow
+│   │       ├── native_screen.rs nom-llvm LLVM codegen
+│   │       ├── mobile_screen.rs iOS/Android
+│   │       ├── presentation.rs  Slide deck (typst pattern)
+│   │       ├── app_bundle.rs   Frontend + backend + deploy
+│   │       ├── ad_creative.rs  Multi-platform ad variants
+│   │       ├── document.rs     PDF/DOCX (typst-memoize)
+│   │       ├── data_extract.rs XY-Cut++ (opendataloader)
+│   │       ├── data_frame.rs   Polars-like columnar
+│   │       ├── data_query.rs   WrenAI 5-stage pipeline
+│   │       └── scenario_workflow.rs n8n DAG + sandbox
+│   │
+│   ├── nom-compiler-bridge/    Cross-workspace linker (KEYSTONE)
+│   │   ├── lib.rs              CompilerBridge::new() + 3-tier accessors
+│   │   ├── shared.rs           Arc<RwLock<SharedState>> (dict_pool + grammar_conn + cache)
+│   │   ├── ui_tier.rs          Sync cached reads (lookup_nomtu, can_wire, search_bm25)
+│   │   ├── interactive_tier.rs tokio::runtime + mpsc (tokenize, highlight, complete, hover)
+│   │   ├── background_tier.rs  crossbeam-channel + workers (compile, plan, verify, deep_think)
+│   │   └── adapters/
+│   │       ├── highlight.rs    stage1_tokenize → Highlighter::color_runs
+│   │       ├── lsp.rs          CompilerLspProvider impl (replaces StubLspProvider)
+│   │       ├── completion.rs   nom-dict prefix search → CompletionItem
+│   │       └── score.rs        score_atom → StatusBar::CompileStatus
+│   │
+│   ├── nom-theme/              Design system
+│   │   ├── tokens.rs           AFFiNE values (73 vars + graph edge colors)
+│   │   ├── fonts.rs            Inter + Source Code Pro (GPU)
+│   │   └── icons.rs            Lucide 24px SVG → GPU paths
+│   │
+│   ├── nom-lint/               Sealed-trait linter (yara-x pattern)
+│   ├── nom-memoize/            Incremental compile (comemo pattern, no dep)
+│   ├── nom-telemetry/          W3C traceparent + spans
+│   └── nom-collab/             CRDT types (no yrs dep yet)
+
+nom-compiler/                   ← UNCHANGED peer workspace (29 crates)
+├── nom-dict/                   entries table (nomtu source of truth, SQLite+WAL)
+├── nom-grammar/                kinds + clause_shapes (grammar source of truth)
+├── nom-concept/                S1-S6 pipeline (stage1_tokenize through run_pipeline)
+├── nom-lsp/                    hover + completion + definition
+├── nom-resolver/               3-stage resolve (exact → word → semantic)
+├── nom-score/                  score_atom + can_wire (pure stateless)
+├── nom-search/                 BM25 + vector indexes
+├── nom-intent/                 ReAct loop + deep_think
+├── nom-planner/                CompositionPlan from pipeline output
+├── nom-app/                    dream_report
+├── nom-llvm/                   LLVM codegen
+└── 18 more crates
 ```
 
 ---
 
-## 9. Browser + Desktop from Same Codebase
+## 12. Nomtu Entity Backing — Every Canvas Object = DB Entry
+
+**Blueprint promise:** *"Every pixel is a compiler concept."* This means every visual object on the canvas MUST represent a concrete `.nom` nomtu entity from `nom-dict/entries`. Every flow node MUST represent a grammar production from `clause_shapes`. Every wire MUST be a valid slot-fill via `can_wire()`.
+
+### Core identity type
+
+```rust
+pub struct NomtuRef {
+    pub id: String,    // entries.id (content-addressed hash)
+    pub word: String,  // entries.word
+    pub kind: String,  // entries.kind — MUST exist in grammar.kinds
+}
+```
+
+### Block = nomtu projection
+
+```rust
+pub struct BlockModel {
+    pub id: BlockId,
+    pub entity: NomtuRef,                   // non-optional: every block has a DB entry
+    pub slots: Vec<(String, SlotValue)>,    // from clause_shapes WHERE kind = entity.kind
+    pub children: Vec<BlockId>,
+    pub meta: BlockMeta,
+}
+```
+
+### GraphNode = grammar production instance
+
+```rust
+pub struct GraphNode {
+    pub production_kind: String,     // grammar.kinds.name
+    pub entity: NomtuRef,
+    pub slots: Vec<SlotBinding>,     // from clause_shapes
+    pub position: (f64, f64, f64, f64),
+}
+
+pub struct SlotBinding {
+    pub clause_name: String,         // clause_shapes.clause_name
+    pub grammar_shape: String,       // clause_shapes.grammar_shape
+    pub value: Option<SlotValue>,
+    pub is_required: bool,
+    pub confidence: f32,             // 1.0=explicit, 0.8=inferred, 0.6=heuristic
+    pub reason: String,
+}
+```
+
+### Wire = slot-fill validated by grammar
+
+```rust
+pub fn can_wire(
+    src: &NomtuRef, src_slot: &str,
+    dst: &NomtuRef, dst_slot: &str,
+    grammar: &Connection,
+    entries: &Connection,
+) -> Result<(bool, f32, String)>   // (valid, confidence, reason)
+```
+
+### Build order (waves)
+
+**Wave A:** ✅ COMMITTED — `entity: NomtuRef` on every block/element (non-optional from day 1 — fresh build, no legacy). nom-gpui, nom-canvas-core (61 tests), nom-theme all landed in commit 8c7d32e.
+
+**Wave B:** ✅ COMMITTED — Grammar-typed nodes. `NomtuRef` non-optional. `GraphNode.production_kind` DB-validated. `Connector.can_wire_result` non-optional. `DictReader` trait isolation. nom-blocks, nom-editor (14 tests), Wave E-prep nom-graph (12 tests) + nom-memoize (11 tests) all landed in commit 8c7d32e.
+
+**Wave C:** `nom-compiler-bridge` crate. First wire: `stage1_tokenize → Highlighter::color_runs`. Dict pool opened (1 write + N read WAL). `StubLspProvider` replaced with `CompilerLspProvider`.
+
+**Wave D:** 3-column shell assembly (nom-panels dock + pane + shell). AFFiNE CollapsibleSection + MenuItem + ResizePanel for left dock. Rowboat ChatSidebar + tool inspector + deep-think stream for right dock.
+
+**Wave E:** Compose targets made real (replace stub bytes with actual backend logic). Start with video (Remotion pattern) and document (typst pattern) — highest ROI.
+
+---
+
+## 13. Natural Language → Canvas Pipeline (Wave C keystone flow)
+
+```
+USER INPUT
+    ↓
+keystroke (winit KeyEvent)
+    ↓
+nom-editor/input.rs → EditorCommand
+    ↓
+nom-editor/buffer.rs → Rope::insert
+    ↓
+═══════════ nom-compiler-bridge (Wave C) ═══════════
+    ↓
+Interactive tier (tokio mpsc)
+    ↓
+nom_concept::stage1_tokenize(&str) → TokenStream
+    ↓
+adapters/highlight.rs: Tok variant → TokenRole
+    ↓
+nom-editor/highlight.rs → Highlighter::color_runs
+    ↓
+[USER-VISIBLE: keywords highlight real-time]
+
+═══════════ On pause (500ms) ═══════════
+    ↓
+nom_concept::stage2_kind_classify → block kind
+    ↓
+nom_dict::find_entities_by_word → Option<NomtuEntry>
+    ↓
+IF entity exists: bind BlockModel.entity = NomtuRef { id, word, kind }
+IF not: nom_dict::insert_entry(word, kind) → NomtuRef
+    ↓
+Query grammar.clause_shapes WHERE kind = entity.kind → Vec<SlotBinding>
+    ↓
+Parse prose → fill slots
+    ↓
+Block persisted with entity: NomtuRef (non-optional)
+
+═══════════ User opens compose ═══════════
+    ↓
+[Optional] Deep Think: nom_intent::deep_think()
+  → scored ReAct loop → streamed to right dock
+    ↓
+nom-compose/dispatch.rs: build CompositionPlan from canvas state
+    ↓
+Background tier (crossbeam): nom_planner::plan_from_pipeline_output
+    ↓
+ComposeDispatcher::dispatch(spec) → backend
+    ↓
+Backend produces bytes → ArtifactStore::put(artifact) → ContentHash
+    ↓
+Event: ArtifactReady(hash) → canvas preview block renders
+    ↓
+[USER-VISIBLE: artifact appears in canvas]
+```
+
+---
+
+## 14. Reference Repos (read end-to-end before writing code)
+
+### System Architecture
+
+| Pattern | Repo | Path | What to adopt |
+|---|---|---|---|
+| GPU rendering + shell | **Zed** | `APP/zed-main/crates/gpui/` + `crates/workspace/` | Scene graph, Dock/Panel trait, PaneGroup, FocusHandle, StatusBar |
+| Design system + left sidebar | **AFFiNE** | `APP/AFFiNE-canary/` | 73 tokens, Inter+SCP, CollapsibleSection, MenuItem, ResizePanel |
+| Right sidebar + AI chat | **rowboat-main** | `APP/rowboat-main/apps/x/apps/renderer/` | ChatSidebar, tool cards, multi-tab, spawn-subflow |
+| DAG execution | **ComfyUI** | `APP/Accelworld/services/other2/ComfyUI-master/` | 4-tier cache, Kahn sort, IS_CHANGED, VariablePool |
+| Grammar-typed graph schema | **GitNexus** | `.gitnexus/` + GitNexus MCP | 31 node tables, polymorphic edge table, confidence+reason |
+| Workflow nodes + expression | **dify** | `APP/Accelworld/services/other4/dify-main/` | typed Node, `_run()` event-generator, expression template |
+| AST sandbox | **n8n** | `APP/Accelworld/services/automation/n8n/` | JsTaskRunnerSandbox, 4 AST sanitizers, Code node |
+| RAG pipelines | **LlamaIndex** + **Haystack** | `APP/Accelworld/upstreams/` | 50+ retrievers, pipeline composition, postprocessors |
+| Component registry | **ToolJet** | `APP/ToolJet-develop/` | 55 widgets, dependency graph, combineProperties |
+| Linter framework | **yara-x** | `APP/Accelworld/upstreams/yara-x/` | Sealed Rule trait, WASM codegen |
+| Incremental compile | **typst** | `APP/Accelworld/services/other5/typst-main/` | comemo memoization pattern |
+| Semantic data layer | **WrenAI** | `APP/wrenai/` | MDL, 5-stage intent→execute pipeline |
+| Provider routing | **9router** | `APP/Accelworld/services/other4/9router-master/` | 3-tier fallback, quota tracking, format translation |
+| Data visualization | **graphify** | `APP/graphify-master/` | 6 chart types, Redux slice, SVG export |
+| Skill/MCP engine | **Refly** | `APP/Accelworld/upstreams/refly-main/` | 46 NestJS modules, LangGraph, BullMQ |
+
+### Composition Backends
+
+| Output | Repo | Path | Pattern |
+|---|---|---|---|
+| Video | **Remotion** | DeepWiki | GPU scene → frame capture → FFmpeg parallel encode |
+| Image | **Open-Higgsfield** | `APP/Accelworld/upstreams/` | 200+ models, 4 studios, auto mode switch |
+| Storyboard/Novel→Video | **ArcReel** | `APP/Accelworld/services/other4/ArcReel-main/` | 5-phase orchestration |
+| Storyboard phases | **waoowaoo** | `APP/Accelworld/services/media/waoowaoo/` | 4-phase parallel cinematography+acting |
+| Document | **typst** | `APP/Accelworld/services/other5/typst-main/` | comemo incremental layout |
+| Data extract | **opendataloader** | reference | XY-Cut++ 0.015s/page, hybrid-AI +90% table accuracy |
+| Web app | **ToolJet** + **Dify** | `APP/ToolJet-develop/` + `APP/Accelworld/services/other4/dify-main/` | widgets + workflow editor |
+
+---
+
+## 15. Browser + Desktop from Same Codebase
 
 ```rust
 fn main() {
@@ -307,438 +749,34 @@ fn main() {
     {
         // Desktop: winit window + wgpu (Vulkan/Metal/DX12)
         let window = winit::window::WindowBuilder::new()
-            .with_title("NomCanvas")
-            .build(&event_loop);
-        let renderer = WgpuRenderer::new(&window);
-        run_app(renderer);
+            .with_title("NomCanvas").build(&event_loop);
+        run_app(WgpuRenderer::new(&window));
     }
-    
     #[cfg(target_arch = "wasm32")]
     {
-        // Browser: wasm-bindgen + wgpu (WebGPU)
+        // Browser: wasm-bindgen + wgpu WebGPU
         let canvas = web_sys::window().unwrap()
             .document().unwrap()
             .get_element_by_id("canvas").unwrap();
-        let renderer = WgpuRenderer::from_canvas(&canvas);
-        run_app(renderer);
+        run_app(WgpuRenderer::from_canvas(&canvas));
     }
 }
-```
-
-**Same `run_app()`, same scene graph, same compiler calls.** Only the window/surface creation differs.
-
----
-
-## 10. 60 Patterns Integration Map
-
-| Pattern | Where in v2 | Crate |
-|---------|------------|-------|
-| R1-R4 (RAG + hybrid search) | nom-canvas-core search panel | nom-search + new vector module |
-| A1-A2 (Skill + MCP) | nom-graph node types | nom-intent + new skill registry |
-| U1 (Damage rects) | nom-gpui/renderer.rs | Dirty-region tracking |
-| U7 (Element map) | nom-canvas-core/spatial_index.rs | R-tree lookup |
-| M1-M2 (DAG + cache) | nom-graph/engine.rs + cache.rs | ComfyUI 4-tier pattern |
-| S2 (Linter framework) | nom-compiler/nom-concept | yara-x sealed trait pattern |
-| S4 (File watcher) | nom-canvas-core/project.rs | typst comemo + batch debounce |
-| D1-D2 (Component registry + dep graph) | nom-blocks/ + nom-graph/ | ToolJet combineProperties |
-| D6 (Sandboxed eval) | nom-graph/expression.rs | n8n AST-based sandbox |
-
----
-
-## 11. Migration from v1
-
-The current 45 TypeScript modules + Tauri backend are **replaced entirely**. The 29 nom-compiler crates are **unchanged** — they become direct dependencies of nom-canvas.
-
-| v1 (TypeScript + Tauri) | v2 (Full Rust + wgpu) |
-|------------------------|----------------------|
-| 45 .ts modules | ~12 Rust crates |
-| 20 Tauri IPC commands | Direct function calls |
-| Prosemirror (JS) | Custom editor (Rust) |
-| DOM + Canvas overlay | GPU scene graph |
-| JSON serialization | Zero-copy Rust structs |
-| 250KB JS bundle | Single native binary |
-| Desktop only | Desktop + Browser (WebGPU) |
-
----
-
-## 12. Universal Composition Engine — "Compose Everything"
-
-NomCanvas is not just an IDE. It's a **universal composition engine**. Write Nom → get ANYTHING:
-
-```
-"the media intro_video is
- intended to create a 30-second brand intro.
- uses the @media matching 'logo animation' with at-least 0.8 confidence.
- composes title_card, logo_reveal, tagline_fade."
-```
-→ Compiler S1-S6 → CompositionPlan → **video output**
-
-### Output Backends (new crate: `nom-compose/`)
-
-| Nom Kind | Output | Backend | Source Repo (end-to-end read) |
-|----------|--------|---------|-------------------------------|
-| `media` video | MP4/WebM | ComfyUI DAG + async queue | `ComfyUI-master/` — 4 cache tiers, 100+ nodes |
-| `media` image | PNG/AVIF | Diffusion pipeline (50+ models) | `Open-Higgsfield-AI-main/` — multi-studio, auto mode switch |
-| `media` storyboard | Video sequence | 4-phase AI orchestration | `waoowaoo/` — script→scenes→cinematography→composite |
-| `media` novel→video | Full film | Agent workflow (Claude SDK) | `ArcReel-main/` — novel→script→characters→storyboard→video |
-| `media` audio | FLAC/AAC | Audio synthesis | `waoowaoo/` voice workers + nom-media codecs |
-| `screen` web | HTML/WASM | App manifest → deploy | `ToolJet-develop/` 55 widgets + `dify-main/` workflow |
-| `screen` native | Binary | LLVM codegen | `nom-llvm/` compile() + link_bitcodes() |
-| `data` extract | JSON/CSV/MD | PDF/doc extraction (80+ langs) | `opendataloader-pdf-main/` — XY-Cut++ reading order |
-| `data` transform | Tables | Polars-like pipeline | `polars/` — SIMD columnar processing |
-| `concept` document | PDF/DOCX | Typst-like layout engine | `typst-main/` — comemo incremental compilation |
-| `scenario` workflow | Execution trace | n8n-like DAG execution | `n8n/` — 304 node types + AST sandbox |
-| `media` 3D | glTF | Mesh composition | nom-media MeshGeometry kind |
-
-### Composition Pipeline
-
-```
-User writes Nom on canvas
-     ↓
-S1-S6 Pipeline (classify kind, extract shape, resolve refs)
-     ↓
-nom-planner: Generate CompositionPlan
-     ↓
-nom-compose: Route to correct backend
-     ↓
-┌─────────────────────────────────────────────────────┐
-│  Backend Dispatch (protocol-based, from ArcReel)     │
-│                                                       │
-│  trait CompositionBackend {                            │
-│    fn capabilities(&self) -> Vec<Capability>;         │
-│    async fn compose(&self, plan: &CompositionPlan)     │
-│      -> Result<Artifact>;                             │
-│    fn progress(&self) -> ProgressStream;               │
-│  }                                                    │
-│                                                       │
-│  Implementations:                                     │
-│  • VideoBackend (ComfyUI DAG pattern)                 │
-│  • ImageBackend (multi-model dispatch)                │
-│  • StoryboardBackend (4-phase waoowaoo pipeline)      │
-│  • DocumentBackend (typst layout engine)              │
-│  • DataBackend (extraction + transform)               │
-│  • AppBackend (LLVM compile or web deploy)            │
-│  • AudioBackend (synthesis + codec)                   │
-│  • ThreeDBackend (mesh composition)                   │
-└─────────────────────────────────────────────────────┘
-     ↓
-Content-addressed artifact: ~/.nom/store/<hash>/body.*
-     ↓
-Canvas preview: GPU-rendered in preview panel
-```
-
-### Task Queue (from ArcReel + waoowaoo patterns)
-
-Media generation is async (>10s). Need a task queue:
-
-```rust
-// nom-compose/queue.rs
-pub struct CompositionQueue {
-    workers: Vec<Worker>,      // per-backend worker pool
-    tasks: TaskStore,          // SQLite task lifecycle
-    rate_limiter: RateLimiter, // per-vendor RPM limits
-    cost_tracker: CostTracker, // multi-currency usage tracking
-}
-
-// Task lifecycle: Queued → Running → Succeeded/Failed/Cancelled
-// Progress streaming: SSE or channel-based for canvas UI updates
-```
-
-### Phase Orchestration (from waoowaoo 4-phase pattern)
-
-Complex compositions (novel→video) need multi-phase execution:
-
-```
-Phase 1: Planning (script analysis, clip extraction)
-Phase 2a: Cinematography (composition, lighting, color)  } parallel
-Phase 2b: Acting (character directions, expressions)     }
-Phase 3: Detail enrichment + prompt generation
-Phase 4: Asset generation (images→video) via task queue
-Phase 5: FFmpeg composite + audio sync
-```
-
-### Vendor Abstraction (from ArcReel protocol pattern)
-
-```rust
-// nom-compose/vendors.rs
-pub trait MediaVendor: Send + Sync {
-    fn name(&self) -> &str;
-    fn capabilities(&self) -> Vec<MediaCapability>;
-    async fn generate(&self, request: GenerateRequest) -> Result<GenerateResponse>;
-    fn cost_per_request(&self) -> Cost;
-}
-
-// Built-in vendors: local (nom-llvm), cloud (API-based)
-// User configures API keys via credential store
-```
-
-### Data Extraction (from opendataloader pattern)
-
-```rust
-// nom-compose/data.rs — PDF/doc → structured data
-pub trait DataExtractor {
-    fn extract(&self, input: &[u8], format: DataFormat) -> Result<ExtractedData>;
-    fn supported_formats(&self) -> Vec<&str>; // pdf, docx, xlsx, html, csv
-}
-
-// Modes: deterministic (XY-Cut++, 0.015s/page) or hybrid-AI (0.463s/page, +90% table accuracy)
-// Output: Markdown (reading order) + JSON (bounding boxes) + tables
-```
-
-### Canvas Integration
-
-On the NomCanvas canvas, all composition types render as blocks:
-- **Video block**: Timeline preview with scrubber, generated frames
-- **Image block**: Generated image with variant picker
-- **Document block**: Paginated preview (typst-rendered)
-- **Data block**: Table view with column types
-- **App block**: Live app preview (web) or binary info (native)
-- **Audio block**: Waveform visualizer with playback
-
-All blocks are content-addressed (SHA-256 hash) and stored in `~/.nom/store/`.
-
----
-
-## 13. The Nom Language as Universal Composition
-
-Every output type uses the **same Nom syntax**:
-
-```nomx
-the media product_showcase is
-  intended to create a 60-second product video with 3D rotation.
-  requires the data product_specs matching "product dimensions" with at-least 0.9 confidence.
-  uses the @media matching "3D product turntable" with at-least 0.8 confidence.
-  composes intro_card, product_spin, feature_callouts, outro_cta.
-  favor visual_quality.
-  favor brand_consistency.
-```
-
-The compiler handles the rest: resolves `product_specs` from the dictionary, finds the best `3D product turntable` media template, composes the 4 sections, scores quality, and produces a video artifact.
-
-**This is what makes Nom different from every other tool.** You don't need to learn video editing, image generation, PDF tools, data pipelines, or app frameworks. You write English sentences describing what you want, and the compiler — which has a dictionary of 100M+ nomtu entries — figures out how to build it.
-
----
-
-## 14. Semantic Data Layer (from WrenAI end-to-end reading)
-
-NomCanvas needs a **semantic layer** so the compiler understands data context — not just code structure.
-
-```rust
-// nom-compose/semantic.rs — WrenAI MDL pattern adapted for Nom
-pub struct SemanticModel {
-    pub entities: Vec<SemanticEntity>,      // tables/models with business meaning
-    pub metrics: Vec<DerivedMetric>,         // computed facts (revenue = sum(price * qty))
-    pub relationships: Vec<EntityRelation>,  // joins between entities
-}
-
-// When user writes: "the data sales_report is intended to show monthly revenue"
-// The semantic layer grounds "monthly revenue" to:
-//   metric: revenue = SUM(orders.price * orders.quantity)
-//   grouped by: orders.created_at (monthly)
-//   source: orders table
-// No LLM hallucination — grounded by schema context.
-```
-
-**Pipeline** (Hamilton+Haystack pattern from WrenAI):
-1. Intent classification (is this a query, chart, or insight request?)
-2. Vector retrieval from semantic model (Qdrant)
-3. LLM generates query grounded by MDL context
-4. Correction loop validates syntax
-5. Execute against data source
-
----
-
-## 15. Provider Router (from 9router end-to-end reading)
-
-NomCanvas dispatches to multiple AI/media providers with intelligent fallback:
-
-```rust
-// nom-compose/router.rs — 9router 3-tier pattern
-pub struct ProviderRouter {
-    tiers: Vec<ProviderTier>,           // subscription → cheap → free
-    quotas: QuotaTracker,               // per-provider RPM + token limits
-    format_translator: FormatTranslator, // Claude ↔ OpenAI ↔ Gemini formats
-    combo_strategies: HashMap<String, FallbackStrategy>, // per-combo routing
-}
-
-pub enum FallbackStrategy {
-    Fallback,   // try 1 → 2 → 3
-    RoundRobin, // load balance across tiers
-    FillFirst,  // drain tier 1 quota before tier 2
-}
-
-// User configures providers in credentials panel:
-// Tier 1: Claude API (subscription) — used first
-// Tier 2: Local Ollama (cheap) — fallback
-// Tier 3: Free API (rate-limited) — last resort
+// Same run_app(), same scene graph, same compiler calls.
 ```
 
 ---
 
-## 16. Real-Time Collaboration (from Huly end-to-end reading)
+## 16. Non-Negotiable Rules
 
-For multi-user canvas editing (v3+):
-
-```rust
-// nom-canvas-core/collab.rs — Huly CRDT pattern
-pub struct CollaborationEngine {
-    crdt: YDoc,                         // Yrs (Rust port of Yjs)
-    event_bus: EventBus,                // Redpanda/channel-based events
-    presence: PresenceTracker,          // cursor positions, selections
-    transactor: TransactionLog,         // immutable event log
-}
-
-// Architecture: Client ←→ CRDT sync ←→ Event bus ←→ Persistence
-// 50+ Huly packages show plugin-per-domain is the right granularity
-```
-
----
-
-## 17. Fully Functional Backend Summary
-
-Every subsystem maps to a real production pattern from an end-to-end-read repo:
-
-| Subsystem | Pattern Source | Read Level |
-|-----------|---------------|------------|
-| GPU rendering | Zed GPUI (scene.rs, renderer, atlas, text) | Full crate |
-| Design system | AFFiNE (73 CSS vars, Inter, Source Code Pro) | Full theme |
-| DAG execution | ComfyUI (4 caches, 100+ nodes, dynamic graph) | Full repo |
-| RAG retrieval | LlamaIndex (50+ stores, 8 postprocessors) + Haystack (pipeline) | Full repos |
-| Skill composition | Refly (46 NestJS modules, LangGraph, BullMQ) | Full repo |
-| Component registry | ToolJet (55 widgets, Zustand, @dnd-kit) | Full repo |
-| Workflow engine | n8n (304 nodes, AST sandbox, credential encryption) | Full repo |
-| Linter framework | yara-x (sealed trait, WASM codegen) | Full compiler |
-| Incremental compile | typst (comemo memoization, rayon parallelism) | Full compiler |
-| Video generation | ArcReel (Claude agents), waoowaoo (4-phase storyboard) | Full repos |
-| Image generation | Open-Higgsfield (200+ models, 4 studios) | Full repo |
-| Data extraction | opendataloader-pdf (XY-Cut++, hybrid AI) | Full repo |
-| Semantic data | WrenAI (MDL, Hamilton pipelines, provider abstraction) | Full repo |
-| Provider routing | 9router (3-tier fallback, quota tracking, format translation) | Full repo |
-| Collaboration | Huly (30 services, CRDT, Redpanda events, 50 plugins) | Full repo |
-| Framework decision | Dioxus (confirmed: Desktop=webview, NOT GPU-native) | Full repo |
-
-**Total: 19 repos read end-to-end.** Not README-only. Not surface scans. Every module, every dependency, every data flow.
-
----
-
-## 18. Programmatic Video (from Remotion deep-dive via DeepWiki)
-
-Remotion proves **video = code**. In Nom: **video = .nomx source**.
-
-### Remotion's Architecture (React-based)
-```
-React composition → webpack bundle → headless Puppeteer browser
-→ seekToFrame(N) → screenshot → frame buffer
-→ FFmpeg stdin (parallel encoding) → MP4
-```
-
-Key patterns:
-- **Frame = function(time)** — component receives frame number, returns visual
-- **Dual coordinate system** — absolute frames (composition) + relative frames (per Sequence)
-- **Concurrency via page pool** — N browser pages render frames in parallel
-- **Parallel encoding** — frames pipe to pre-spawned FFmpeg stdin (no disk temp files)
-- **Offthread compositor** — native binary extracts video frames without browser main thread
-
-### Nom's Equivalent (GPU-native, no browser)
-
-```rust
-// nom-compose/video.rs — Remotion pattern in Rust
-
-pub struct VideoComposition {
-    fps: u32,
-    duration_frames: u32,
-    width: u32,
-    height: u32,
-    scenes: Vec<SceneEntry>,  // each scene = a nomtu entity
-}
-
-pub struct SceneEntry {
-    from_frame: u32,          // Remotion's Sequence.from
-    duration: u32,            // Remotion's Sequence.durationInFrames
-    entity_hash: String,      // content-addressed nomtu reference
-}
-
-impl VideoComposition {
-    /// Render one frame — the scene graph IS the frame
-    fn render_frame(&self, frame: u32, scene: &mut Scene) {
-        // 1. Find active scenes at this frame (Remotion's Sequence visibility)
-        let active = self.scenes.iter()
-            .filter(|s| frame >= s.from_frame && frame < s.from_frame + s.duration);
-        
-        // 2. Each scene paints to the GPU scene graph
-        for scene_entry in active {
-            let relative_frame = frame - scene_entry.from_frame;
-            scene_entry.paint(relative_frame, scene);
-        }
-    }
-    
-    /// Export video — GPU capture → codec → file
-    pub fn export(&self, output_path: &str) -> Result<()> {
-        // Pre-spawn FFmpeg for parallel encoding (Remotion pattern)
-        let mut ffmpeg = prespawn_ffmpeg(output_path, self.fps, self.width, self.height);
-        
-        // Render each frame via GPU scene graph (no browser!)
-        for frame in 0..self.duration_frames {
-            let mut scene = Scene::new();
-            self.render_frame(frame, &mut scene);
-            
-            // Capture GPU framebuffer → raw pixels
-            let pixels = self.renderer.capture_frame(&scene);
-            
-            // Pipe to FFmpeg stdin (Remotion's parallel encoding pattern)
-            ffmpeg.stdin.write_all(&pixels)?;
-        }
-        
-        ffmpeg.wait()?;
-        Ok(())
-    }
-}
-```
-
-### Why this is better than Remotion:
-- **No browser** — Remotion needs Puppeteer (Chrome). NomCanvas renders directly via wgpu.
-- **No JavaScript** — Pure Rust, no V8 overhead.
-- **GPU-accelerated** — wgpu renders scenes at GPU speed, not DOM layout speed.
-- **Content-addressed** — Each scene is a nomtu entity with hash. Cache individual scene renders.
-- **Same renderer** — The canvas preview AND the video export use the exact same GPU pipeline.
-
-### How it works in Nom language:
-
-```nomx
-the media product_video is
-  intended to create a 60-second product showcase.
-  composes intro_card, product_spin, feature_list, cta_outro.
-
-the media intro_card is
-  intended to show the brand logo for 3 seconds.
-  uses the @media matching "logo animation fade-in" with at-least 0.8 confidence.
-
-the media product_spin is
-  intended to show the product rotating 360 degrees over 15 seconds.
-  uses the @media matching "3D turntable animation" with at-least 0.7 confidence.
-```
-
-The compiler resolves each `uses` reference against the dictionary, builds a `VideoComposition` with `SceneEntry` per media entity, and calls `export()` — rendering every frame through the same GPU scene graph that powers the canvas IDE.
-
----
-
-## 21. Session 2026-04-17 Implementation Log — Waves 4→10
-
-This appendix tracks what landed against the spec during the 2026-04-17 execution session. Architectural content above is canonical; this section records commit → spec-clause coverage.
-
-**8 commits on main, 204 → 1272 tests, 3 → 13 crates.**
-
-| Commit | Wave | Spec sections advanced |
-|--------|------|------------------------|
-| `c2d7090` | 4 | §8 Phase 3 (nom-theme tokens/color/mode, nom-panels shell, nom-blocks shared infra + prose + nomx) · §5 animation curves |
-| `24f7e05` | CI | `.github/workflows/ci.yml` canvas job brought into line with §19 headless-GPU discipline |
-| `4592b85` | 5 | §8 Phase 3 remaining blocks (media, graph_node, drawing, table, embed) · §7 editor display pipeline (syntax_map, display_map, lsp_bridge, inlay_hints, wrap_map, tab_map) · §9 theme fonts + icons |
-| `9f3df57` | 6 | §10-12 Phase 4/5 scaffolds: nom-graph-v2 (§11 DAG + 4 caches) · nom-compose (§12 dispatch + queue + router + credential) · nom-lint (§13 sealed-trait linter) · nom-memoize (§14 comemo pattern without dep) · nom-telemetry (§15 W3C traceparent) · nom-collab (§16 CRDT types) · nom-editor line_layout (§7 cosmic-text interface) · nom-blocks compose/*_block preview types (§12 canvas integration) |
-| `2e47d5d` | 7 | §12 artifact_store / vendor_trait / video_composition / format_translator · §14 semantic (WrenAI MDL types) · §15 rayon_bridge · §13 file-watcher scaffold · §11 AST-sandbox data-structure sanitizers · §9 typography scale · §6 command history |
-| `365db9b` | 8 | §12 all 10 concrete backends stubbed + `register_all_stubs()`: video, image, web_screen, native_screen, data_extract (XY-Cut++), data_query (WrenAI 5-stage), storyboard_narrative (4-phase + 5-phase typed pipelines), audio, data_frame (Polars-inspired minimal), mesh (glTF 2.0) |
-| `4096db9` | 9 | §12 last backend: scenario_workflow (n8n-style retry + webhook resume) · §15 plugin_registry · §6 cursor primitive · §6 shortcut registry + platform normalize · §8 tree_query + whole-tree validators · integration tests for §11 DAG + §12 dispatcher |
-| `56604c4` | 10 | §5 transition primitive · §9 motion tokens · §6 panels layout solver · §6 rendering_hints (hover/select overlay layer) · §16 presence sibling to awareness · §7 command handlers · §13 2 concrete lint rules (trailing whitespace, double blank lines) |
-
-**Audit findings resolved this session:** 2 HIGH (animation `Duration::ZERO` NaN, `NarrativeResult::completed_phase()` skip) + 5 MEDIUM (EmbedKind brand names → `VideoStream`/`DesignFile`, three `Rgba` types → `SrgbColor` rename, `FractionalIndex` dedup to `block_model.rs`, CI `NOM_SKIP_GPU_TESTS` env var, `RUSTFLAGS=-D warnings` dead_code cleanup) + 1 LOW (`CommandError::Failed` `#[allow(dead_code)]`).
-
-**Still 0% per the spec's Vision (§1):** the render substrate exists, but the natural-language → compiler → canvas pipe remains fully disconnected — see iter-17 audit in `nom_state_machine_report.md`. The keystone unlock is the `nom_concept::stage1_tokenize → Highlighter::color_runs` adapter (~200 LOC), blocked on the cross-workspace cargo path-dep decision between `nom-compiler/` and `nom-canvas/`.
+1. **Agents MUST read source repos end-to-end** before writing ANY code — not README-only, not surface scans
+2. **Always use `ui-ux-pro-max` skill** at `.agent/skills/ui-ux-pro-max/` for ALL UI work
+3. **Zero foreign identities** in public API — external patterns adopted, origin hidden
+4. **nom-compiler is CORE** — zero IPC, direct workspace deps, linked not spawned
+5. **DB IS the workflow engine** — `grammar.kinds` + `clause_shapes` + `nom-compose` = N8N/Dify; never add an external orchestrator
+6. **Every canvas object = DB entry** — `entity: NomtuRef` non-optional from day 1 (fresh build, no legacy)
+7. **Canvas = AFFiNE for RAG** — graph mode uses AFFiNE tokens + confidence-scored edges for RAG visualization
+8. **Doc mode = Zed + Rowboat + AFFiNE** — rope buffer, inline AI cards, AFFiNE block model
+9. **Deep thinking = compiler op** — `deep_think()` is in `nom-intent`, streamed to right dock
+10. **GPUI fully Rust — one binary** — no webview, no Electron, no Tauri
+11. **Spawn parallel subagents** (nom-workflow skill mandate) for all multi-file work
+12. **Run `gitnexus_impact`** before editing any symbol; never ignore HIGH/CRITICAL

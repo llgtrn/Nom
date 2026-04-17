@@ -5,15 +5,20 @@ edition = "2021"
 
 [features]
 default = []
-compiler = ["nom-concept", "nom-dict", "nom-grammar", "nom-score", "nom-search"]
+compiler = ["nom-concept", "nom-dict", "nom-grammar", "nom-score", "nom-types", "nom-search", "rusqlite", "nom-planner"]
 
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
+nom-editor = { path = "../nom-editor" }
 crossbeam-channel = { workspace = true }
 tokio = { workspace = true }
 lru = { workspace = true }
+rusqlite     = { workspace = true, optional = true }
 nom-concept  = { path = "../../../nom-compiler/crates/nom-concept",  optional = true }
 nom-dict     = { path = "../../../nom-compiler/crates/nom-dict",     optional = true }
 nom-grammar  = { path = "../../../nom-compiler/crates/nom-grammar",  optional = true }
 nom-score    = { path = "../../../nom-compiler/crates/nom-score",    optional = true }
+nom-types    = { path = "../../../nom-compiler/crates/nom-types",    optional = true }
 nom-search   = { path = "../../../nom-compiler/crates/nom-search",   optional = true }
+nom-planner  = { path = "../../../nom-compiler/crates/nom-planner",  optional = true }
+serde_json = { workspace = true }

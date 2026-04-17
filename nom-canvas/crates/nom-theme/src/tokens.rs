@@ -203,3 +203,33 @@ pub fn edge_color_for_confidence(confidence: f32) -> Hsla {
         edge_color_low_confidence()
     }
 }
+
+// ---------------------------------------------------------------------------
+// Spec-required named constants (layout, typography, color, animation)
+// ---------------------------------------------------------------------------
+
+pub const SIDEBAR_W: f32 = 248.0;
+pub const TOOLBAR_H: f32 = 48.0;
+pub const STATUSBAR_H: f32 = 24.0;
+pub const BLOCK_RADIUS: f32 = 4.0;
+pub const MODAL_RADIUS: f32 = 22.0;
+pub const POPOVER_RADIUS: f32 = 12.0;
+pub const BTN_H: f32 = 28.0;
+pub const BTN_H_LG: f32 = 32.0;
+pub const BTN_H_XL: f32 = 40.0;
+pub const ICON_SIZE: f32 = 24.0;
+pub const H1_WEIGHT: u16 = 700;
+pub const H1_LETTER_SPACING: f32 = -0.02;
+pub const H2_WEIGHT: u16 = 600;
+pub const BODY_WEIGHT: u16 = 400;
+pub const BG: [f32; 4] = [0.059, 0.090, 0.165, 1.0];
+pub const BG2: [f32; 4] = [0.118, 0.161, 0.251, 1.0];
+pub const TEXT: [f32; 4] = [0.973, 0.980, 0.988, 1.0];
+pub const CTA: [f32; 4] = [0.133, 0.773, 0.369, 1.0];
+pub const BORDER: [f32; 4] = [0.200, 0.255, 0.333, 1.0];
+pub const FOCUS: [f32; 4] = [0.118, 0.588, 0.922, 0.3];
+pub const EDGE_HIGH: [f32; 4] = [0.133, 0.773, 0.369, 0.9];
+pub const EDGE_MED: [f32; 4] = [0.957, 0.702, 0.078, 0.7];
+pub const EDGE_LOW: [f32; 4] = [0.937, 0.267, 0.267, 0.5];
+pub const ANIM_DEFAULT_MS: f32 = 300.0;
+pub const ANIM_FAST_MS: f32 = 200.0;
