@@ -6,6 +6,23 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Wave M (2026-04-18 Iter 42) — infrastructure modules complete
+- [x] nom-lint: sealed LintRule supertrait (yara-x pattern) + Range<u32> span
+- [x] nom-compiler-bridge: UiTierOps + InteractiveTierOps + BackgroundTierOps + LspAdapter
+- [x] nom-compose: dispatch.rs (BackendKind), plan.rs (CompositionPlan + Kahn topo), task_queue.rs (lifecycle states)
+- [x] nom-graph/cache.rs: 4-tier cache (NoCache/Lru/RamPressure/Classic) + IS_CHANGED flags
+- [x] nom-compose video/audio/document backends: VideoSpec + DocSpec + AudioSpec domain models
+
+**Remaining open (WAVE N targets):**
+- nom-compose/vendor_trait.rs + provider_router.rs + credential_store.rs (9router infra)
+- nom-graph/sandbox.rs: 4 AST sanitizers (n8n pattern)
+- nom-compiler-bridge: CompilerLspProvider replaces StubLspProvider
+- Artifact store: SHA-256 (not FNV-1a) per spec §14
+
+**Test count: 498 total — 0 failures**
+
+---
+
 ## Wave L (2026-04-18 Iter 41) — MEDIUM items closed
 
 - [x] with_deep_think: compose_with_dag now invokes DeepThinkStream::think when config present

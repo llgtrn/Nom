@@ -7,6 +7,24 @@
 
 ---
 
+## Iteration 42 (Wave M infrastructure) — 2026-04-18 (nom-lint sealed + compiler-bridge 3-tier + compose dispatch/plan/task_queue + graph 4-tier cache; 498 tests, 0 failures)
+
+**Changes landed (Wave M, commit ef9fc84):**
+- `nom-lint/src/lib.rs`: sealed `LintRule` supertrait (yara-x pattern); `Span` newtype wrapping `Range<u32>`; `LintContext` with severity levels
+- `nom-compiler-bridge`: `UiTier` (sync ops, `UiTierOps` trait), `InteractiveTier` (shared `Arc<SharedState>`), `BackgroundTier` (async spawn), `LspAdapter` trait + `StubLspProvider`
+- `nom-compose/dispatch.rs`: `BackendKind` enum (16 variants) + `BackendDispatch` router
+- `nom-compose/plan.rs`: `CompositionPlan` + Kahn-algorithm topological sort + `PlanEdge`
+- `nom-compose/task_queue.rs`: `TaskState` lifecycle (Pending→Running→Complete/Failed/Cancelled) + `TaskQueue`
+- `nom-graph/cache.rs`: 4-tier `CacheTier` (NoCache/Lru/RamPressure/Classic) + `ChangedFlags` IS_CHANGED per-node tracking
+- `nom-compose/backends/video.rs`: `VideoSpec` domain model (resolution, fps, codec, bitrate)
+- `nom-compose/backends/document.rs`: `DocSpec` (page size, font, margins)
+- `nom-compose/backends/audio.rs`: `AudioSpec` (sample_rate, channels, bitrate)
+- `nom-graph/execution.rs`: `changed_flags: ChangedFlags` field wired into `ExecutionEngine::should_execute`
+- **Test count: 498 (from 504 — delta due to nom-compose compilation fix), 0 failures**
+- **Remaining open: WAVE N — 9router infra (vendor_trait/provider_router/credential_store), sandbox AST sanitizers, CompilerLspProvider, SHA-256 artifact store**
+
+---
+
 ## Iteration 39 (Wave J spec compliance) — 2026-04-18 (deep_think DeepThinkStep shape + CachedRetriever + animate_to_layout + ContentHash + connector spec + elements canvas wiring; 431 tests, 0 failures; 4 CRITICALs remain)
 
 **Changes landed (Wave J):**
