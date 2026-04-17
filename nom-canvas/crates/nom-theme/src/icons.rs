@@ -812,4 +812,233 @@ mod tests {
             "Icon::Plus should have exactly 2 lines (H + V)"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Extended icon tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn icon_minus_has_one_line() {
+        let path = icon_path(Icon::Minus);
+        assert_eq!(path.lines.len(), 1, "Icon::Minus should have exactly 1 line");
+    }
+
+    #[test]
+    fn icon_all_variant_count() {
+        // Exact count must match the declared enum variants (42).
+        assert_eq!(
+            Icon::all().len(),
+            42,
+            "Icon::all() must return exactly 42 variants"
+        );
+    }
+
+    #[test]
+    fn icon_name_no_spaces() {
+        // Icon names must not contain spaces (kebab-case, no whitespace).
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                !name.contains(' '),
+                "{icon:?}.name() = {name:?} must not contain spaces"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_name_no_underscores() {
+        // Names follow kebab-case convention; underscores are forbidden.
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                !name.contains('_'),
+                "{icon:?}.name() = {name:?} must not contain underscores"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_name_starts_with_letter() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            let first = name.chars().next().unwrap();
+            assert!(
+                first.is_ascii_lowercase(),
+                "{icon:?}.name() = {name:?} must start with a lowercase letter"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_circle_radii_within_viewport() {
+        // Circle centers ± radius must stay within [0,1].
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(cx, cy, r) in path.circles {
+                assert!(
+                    cx - r >= 0.0,
+                    "{icon:?} circle left edge ({:.3}) extends outside viewport",
+                    cx - r
+                );
+                assert!(
+                    cx + r <= 1.0,
+                    "{icon:?} circle right edge ({:.3}) extends outside viewport",
+                    cx + r
+                );
+                assert!(
+                    cy - r >= 0.0,
+                    "{icon:?} circle top edge ({:.3}) extends outside viewport",
+                    cy - r
+                );
+                assert!(
+                    cy + r <= 1.0,
+                    "{icon:?} circle bottom edge ({:.3}) extends outside viewport",
+                    cy + r
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn icon_git_branch_has_circles() {
+        // GitBranch icon represents commit nodes — must have circles.
+        let path = icon_path(Icon::GitBranch);
+        assert!(
+            !path.circles.is_empty(),
+            "GitBranch icon must have circles for commit nodes"
+        );
+    }
+
+    #[test]
+    fn icon_network_has_circles() {
+        let path = icon_path(Icon::Network);
+        assert!(
+            !path.circles.is_empty(),
+            "Network icon must have circles for graph nodes"
+        );
+    }
+
+    #[test]
+    fn icon_brain_has_circles() {
+        let path = icon_path(Icon::Brain);
+        assert!(
+            !path.circles.is_empty(),
+            "Brain icon must have circles for neuron depiction"
+        );
+    }
+
+    #[test]
+    fn icon_info_has_two_circles() {
+        // Info icon: outer ring + small dot above.
+        let path = icon_path(Icon::Info);
+        assert_eq!(
+            path.circles.len(),
+            2,
+            "Info icon should have exactly 2 circles (ring + dot)"
+        );
+    }
+
+    #[test]
+    fn icon_alert_circle_has_one_circle() {
+        let path = icon_path(Icon::AlertCircle);
+        assert_eq!(
+            path.circles.len(),
+            1,
+            "AlertCircle should have exactly 1 outer circle"
+        );
+    }
+
+    #[test]
+    fn icon_chevron_right_has_two_lines() {
+        let path = icon_path(Icon::ChevronRight);
+        assert_eq!(
+            path.lines.len(),
+            2,
+            "ChevronRight should have exactly 2 line segments"
+        );
+    }
+
+    #[test]
+    fn icon_stop_has_four_lines() {
+        // Stop icon is a square — four edges.
+        let path = icon_path(Icon::Stop);
+        assert_eq!(
+            path.lines.len(),
+            4,
+            "Stop icon should have exactly 4 lines (square outline)"
+        );
+    }
+
+    #[test]
+    fn icon_list_has_circles_and_lines() {
+        let path = icon_path(Icon::List);
+        assert!(!path.lines.is_empty(), "List icon must have lines");
+        assert!(!path.circles.is_empty(), "List icon must have bullet circles");
+    }
+
+    #[test]
+    fn icon_sparkles_has_circles() {
+        let path = icon_path(Icon::Sparkles);
+        assert!(
+            !path.circles.is_empty(),
+            "Sparkles icon must have circles (star dots)"
+        );
+    }
+
+    #[test]
+    fn icon_workflow_has_circles() {
+        let path = icon_path(Icon::Workflow);
+        assert!(
+            !path.circles.is_empty(),
+            "Workflow icon must have circles (node endpoints)"
+        );
+    }
+
+    #[test]
+    fn icon_all_names_non_empty_and_ascii() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(!name.is_empty(), "{icon:?}.name() must not be empty");
+            assert!(
+                name.is_ascii(),
+                "{icon:?}.name() must be pure ASCII, got {name:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn icon_copy_has_lines_and_no_circles() {
+        let path = icon_path(Icon::Copy);
+        assert!(!path.lines.is_empty(), "Copy icon must have lines");
+        assert!(path.circles.is_empty(), "Copy icon must have no circles");
+    }
+
+    #[test]
+    fn icon_trash_has_lines_and_no_circles() {
+        let path = icon_path(Icon::Trash);
+        assert!(!path.lines.is_empty(), "Trash icon must have lines");
+        assert!(path.circles.is_empty(), "Trash icon must have no circles");
+    }
+
+    #[test]
+    fn icon_eye_has_circle() {
+        let path = icon_path(Icon::Eye);
+        assert!(!path.circles.is_empty(), "Eye icon must have a circle (pupil)");
+    }
+
+    #[test]
+    fn icon_lock_has_circles() {
+        let path = icon_path(Icon::Lock);
+        assert!(
+            !path.circles.is_empty(),
+            "Lock icon must have circles (keyhole + shackle)"
+        );
+    }
+
+    #[test]
+    fn icon_search_has_one_line() {
+        // Search: one handle line + one circle.
+        let path = icon_path(Icon::Search);
+        assert_eq!(path.lines.len(), 1, "Search icon should have exactly 1 handle line");
+    }
 }

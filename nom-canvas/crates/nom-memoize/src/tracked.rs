@@ -234,4 +234,96 @@ mod tests {
         assert_eq!(t.version, 0);
         assert_eq!(t.call_count(), 0);
     }
+
+    // ── additional coverage ────────────────────────────────────────────────
+
+    #[test]
+    fn tracked_change_detection_via_version() {
+        // Simulated "dirty" detection: a higher version number signals a change.
+        let t_old = Tracked::new(42u32, 1);
+        let t_new = Tracked::new(42u32, 2);
+        assert!(t_new.version > t_old.version, "version bump signals change");
+    }
+
+    #[test]
+    fn tracked_mark_dirty_by_bumping_version() {
+        // Conventional pattern: re-wrap with version+1 to mark dirty.
+        let val = 99u64;
+        let t = Tracked::new(val, 5);
+        let t_dirty = Tracked::new(*t.get(), t.version + 1);
+        assert_eq!(t_dirty.version, 6);
+        assert_eq!(*t_dirty.get(), val);
+    }
+
+    #[test]
+    fn tracked_clear_dirty_by_taking_calls() {
+        let t = Tracked::new("data", 1);
+        t.record_call(1, Hash128::of_str("r1"));
+        t.record_call(2, Hash128::of_str("r2"));
+        // take_calls() acts as "clear dirty"
+        let cleared = t.take_calls();
+        assert_eq!(cleared.len(), 2);
+        assert_eq!(t.call_count(), 0, "calls cleared after take");
+    }
+
+    #[test]
+    fn tracked_nested_tracked_values() {
+        // Outer Tracked wraps inner Tracked; both track independently.
+        let inner = Tracked::new(vec![1, 2, 3], 1);
+        let outer = Tracked::new(inner, 2);
+        assert_eq!(outer.version, 2);
+        assert_eq!(outer.get().version, 1);
+        // Record on outer doesn't affect inner
+        outer.record_call(10, Hash128::of_str("outer_result"));
+        assert_eq!(outer.call_count(), 1);
+        assert_eq!(outer.get().call_count(), 0);
+    }
+
+    #[test]
+    fn tracked_snapshot_pairs_match_recorded_calls() {
+        let t = Tracked::new("snap_test", 3);
+        let h1 = Hash128::of_str("out1");
+        let h2 = Hash128::of_str("out2");
+        t.record_call(10, h1);
+        t.record_call(20, h2);
+        let snap = t.snapshot();
+        assert_eq!(snap.method_call_pairs.len(), 2);
+        assert_eq!(snap.method_call_pairs[0], (10, h1));
+        assert_eq!(snap.method_call_pairs[1], (20, h2));
+    }
+
+    #[test]
+    fn tracked_snapshot_not_consumed() {
+        // snapshot() does NOT drain calls; take_calls() does.
+        let t = Tracked::new("x", 1);
+        t.record_call(1, Hash128::of_str("r"));
+        let _snap = t.snapshot();
+        assert_eq!(t.call_count(), 1, "snapshot must not drain calls");
+    }
+
+    #[test]
+    fn tracked_get_returns_same_reference_value() {
+        let t = Tracked::new(String::from("hello"), 1);
+        let a = t.get().clone();
+        let b = t.get().clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn tracked_concurrent_record_calls() {
+        use std::sync::Arc;
+        use std::thread;
+        let t = Arc::new(Tracked::new(0u64, 1));
+        let mut handles = vec![];
+        for i in 0u32..8 {
+            let tc = Arc::clone(&t);
+            handles.push(thread::spawn(move || {
+                tc.record_call(i, Hash128::of_u64(i as u64));
+            }));
+        }
+        for h in handles {
+            h.join().unwrap();
+        }
+        assert_eq!(t.call_count(), 8);
+    }
 }

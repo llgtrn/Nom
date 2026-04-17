@@ -316,4 +316,90 @@ mod tests {
         );
         assert!(called.get());
     }
+
+    #[test]
+    fn fallback_level_ordering() {
+        assert!(FallbackLevel::Primary < FallbackLevel::Secondary);
+        assert!(FallbackLevel::Secondary < FallbackLevel::Tertiary);
+    }
+
+    #[test]
+    fn provider_router_vendor_count_tracks_registrations() {
+        let mut r = ProviderRouter::new();
+        assert_eq!(r.vendor_count(), 0);
+        r.register(
+            StubVendor {
+                name: "a",
+                kind: BackendKind::Data,
+            },
+            FallbackLevel::Primary,
+        );
+        assert_eq!(r.vendor_count(), 1);
+        r.register(
+            StubVendor {
+                name: "b",
+                kind: BackendKind::Data,
+            },
+            FallbackLevel::Secondary,
+        );
+        assert_eq!(r.vendor_count(), 2);
+    }
+
+    #[test]
+    fn provider_router_route_picks_highest_priority_among_multiple() {
+        let mut r = ProviderRouter::new();
+        // Register tertiary before primary intentionally.
+        r.register(
+            StubVendor {
+                name: "tertiary",
+                kind: BackendKind::Document,
+            },
+            FallbackLevel::Tertiary,
+        );
+        r.register(
+            StubVendor {
+                name: "primary",
+                kind: BackendKind::Document,
+            },
+            FallbackLevel::Primary,
+        );
+        r.register(
+            StubVendor {
+                name: "secondary",
+                kind: BackendKind::Document,
+            },
+            FallbackLevel::Secondary,
+        );
+        let v = r.route(&BackendKind::Document).unwrap();
+        assert_eq!(v.name(), "primary");
+    }
+
+    #[test]
+    fn provider_router_all_failing_returns_last_error() {
+        let mut r = ProviderRouter::new();
+        r.register(
+            FailingVendor {
+                name: "f1",
+                kind: BackendKind::Workflow,
+            },
+            FallbackLevel::Primary,
+        );
+        let result = r.compose_with_fallback(&BackendKind::Workflow, "x", &|_| {}, true);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn provider_router_vendors_for_empty_when_no_match() {
+        let mut r = ProviderRouter::new();
+        r.register(
+            StubVendor {
+                name: "v",
+                kind: BackendKind::Image,
+            },
+            FallbackLevel::Primary,
+        );
+        // Request kind that has no registered vendor.
+        let vs = r.vendors_for(&BackendKind::Video);
+        assert!(vs.is_empty());
+    }
 }

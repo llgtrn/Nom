@@ -64,4 +64,63 @@ mod tests {
         assert_eq!(code.language, "nomx");
         assert!(!code.text.is_empty());
     }
+
+    #[test]
+    fn nomx_block_source_preserved() {
+        let entity = NomtuRef::new("nx-01", "compile", "verb");
+        let src = "define area that width * height";
+        let block = NomxBlock::new(entity, src);
+        assert_eq!(block.source, src);
+    }
+
+    #[test]
+    fn nomx_block_defaults() {
+        let entity = NomtuRef::new("nx-02", "run", "verb");
+        let block = NomxBlock::new(entity, "x");
+        assert!(!block.wrap);
+        assert!(block.show_line_numbers);
+    }
+
+    #[test]
+    fn nomx_to_code_block_text_contains_source() {
+        let entity = NomtuRef::new("nx-03", "eval", "verb");
+        let src = "define y that 99";
+        let block = NomxBlock::new(entity, src);
+        let code = block.to_code_block();
+        // The single Insert delta op should contain the source text
+        if let crate::prose::DeltaOp::Insert { text, .. } = &code.text[0] {
+            assert_eq!(text, src);
+        } else {
+            panic!("expected Insert delta op");
+        }
+    }
+
+    #[test]
+    fn nomx_to_code_block_wrap_matches() {
+        let entity = NomtuRef::new("nx-04", "format", "verb");
+        let mut block = NomxBlock::new(entity, "x");
+        block.wrap = true;
+        let code = block.to_code_block();
+        assert!(code.wrap);
+    }
+
+    #[test]
+    fn nomx_block_entity_preserved() {
+        let entity = NomtuRef::new("nx-05", "parse", "verb");
+        let block = NomxBlock::new(entity, "");
+        assert_eq!(block.entity.id, "nx-05");
+        assert_eq!(block.entity.word, "parse");
+        assert_eq!(block.entity.kind, "verb");
+    }
+
+    /// NomX serialization roundtrip: serialize to JSON then deserialize back
+    #[test]
+    fn nomx_block_json_roundtrip() {
+        let entity = NomtuRef::new("nx-rt", "serialize", "verb");
+        let block = NomxBlock::new(entity, "define z that 7");
+        let json = serde_json::to_string(&block).expect("serialize");
+        let back: NomxBlock = serde_json::from_str(&json).expect("deserialize");
+        assert_eq!(back.source, "define z that 7");
+        assert_eq!(back.entity.id, "nx-rt");
+    }
 }

@@ -235,4 +235,72 @@ mod tests {
         reg.register(Box::new(NoopBackend::new(BackendKind::Transform)));
         assert_eq!(reg.registered_kinds().len(), 3);
     }
+
+    #[test]
+    fn backend_registry_default_is_empty() {
+        let reg = BackendRegistry::default();
+        assert!(reg.registered_kinds().is_empty());
+    }
+
+    #[test]
+    fn all_16_kind_names_roundtrip() {
+        // Every kind's name() must parse back to the same kind via from_kind_name().
+        let kinds = [
+            BackendKind::Video,
+            BackendKind::Audio,
+            BackendKind::Image,
+            BackendKind::Document,
+            BackendKind::Data,
+            BackendKind::App,
+            BackendKind::Workflow,
+            BackendKind::Scenario,
+            BackendKind::RagQuery,
+            BackendKind::Transform,
+            BackendKind::EmbedGen,
+            BackendKind::Render,
+            BackendKind::Export,
+            BackendKind::Pipeline,
+            BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in kinds {
+            let name = kind.name();
+            let parsed = BackendKind::from_kind_name(name);
+            assert_eq!(parsed.as_ref(), Some(&kind), "roundtrip failed for {name}");
+        }
+    }
+
+    #[test]
+    fn noop_backend_kind_echoed_in_output() {
+        let b = NoopBackend::new(BackendKind::Scenario);
+        let result = b.compose("input_data", &|_| {});
+        assert_eq!(result, Ok("scenario:input_data".to_string()));
+    }
+
+    #[test]
+    fn noop_backend_progress_callback_called_with_one() {
+        use std::cell::Cell;
+        let b = NoopBackend::new(BackendKind::EmbedGen);
+        let progress_val = Cell::new(-1.0f32);
+        b.compose("x", &|p| progress_val.set(p)).unwrap();
+        assert!((progress_val.get() - 1.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn registry_overwrite_same_kind() {
+        // Registering a second backend for the same kind must replace the first.
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
+        assert_eq!(reg.registered_kinds().len(), 1, "duplicate kind must not grow list");
+        let result = reg.dispatch(BackendKind::Audio, "clip", &|_| {});
+        assert_eq!(result, Ok("audio:clip".to_string()));
+    }
+
+    #[test]
+    fn from_kind_name_unknown_returns_none() {
+        assert_eq!(BackendKind::from_kind_name(""), None);
+        assert_eq!(BackendKind::from_kind_name("VIDEO"), None); // case sensitive
+        assert_eq!(BackendKind::from_kind_name("unknown_kind"), None);
+    }
 }

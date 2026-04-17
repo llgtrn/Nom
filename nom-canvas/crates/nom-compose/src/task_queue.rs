@@ -202,4 +202,71 @@ mod tests {
         q.complete(id1);
         assert_eq!(q.pending_count(), 2);
     }
+
+    #[test]
+    fn task_queue_default_is_empty() {
+        let q = TaskQueue::default();
+        assert_eq!(q.pending_count(), 0);
+        assert_eq!(q.running_count(), 0);
+    }
+
+    #[test]
+    fn task_queue_cancel_only_from_running() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Render, "scene");
+        // Cannot cancel a Pending task.
+        assert!(!q.cancel(id), "cancel() must fail on Pending task");
+        assert_eq!(q.get(id).unwrap().state, TaskState::Pending);
+        q.start(id);
+        assert!(q.cancel(id), "cancel() must succeed on Running task");
+        assert_eq!(q.get(id).unwrap().state, TaskState::Cancelled);
+        // Cannot cancel again once Cancelled.
+        assert!(!q.cancel(id), "cancel() must fail on Cancelled task");
+    }
+
+    #[test]
+    fn task_queue_start_only_from_pending() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "v");
+        assert!(q.start(id));
+        // Already Running — start() must fail.
+        assert!(!q.start(id), "start() must fail on Running task");
+    }
+
+    #[test]
+    fn task_queue_progress_pct_at_completion() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Audio, "track");
+        assert_eq!(q.get(id).unwrap().progress_pct, 0);
+        q.start(id);
+        q.complete(id);
+        assert_eq!(q.get(id).unwrap().progress_pct, 100);
+    }
+
+    #[test]
+    fn task_queue_many_tasks_running_count() {
+        let mut q = TaskQueue::new();
+        let ids: Vec<u64> = (0..5).map(|_| q.enqueue(BackendKind::Transform, "t")).collect();
+        assert_eq!(q.pending_count(), 5);
+        for &id in &ids[..3] {
+            q.start(id);
+        }
+        assert_eq!(q.running_count(), 3);
+        assert_eq!(q.pending_count(), 2);
+    }
+
+    #[test]
+    fn task_queue_get_returns_correct_input() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Render, "my-scene-input");
+        let task = q.get(id).unwrap();
+        assert_eq!(task.input, "my-scene-input");
+        assert_eq!(task.backend, BackendKind::Render);
+    }
+
+    #[test]
+    fn task_queue_get_unknown_id_returns_none() {
+        let q = TaskQueue::new();
+        assert!(q.get(9999).is_none());
+    }
 }

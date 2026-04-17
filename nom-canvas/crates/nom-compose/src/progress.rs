@@ -181,4 +181,70 @@ mod tests {
         assert!(last_progress.is_some());
         assert!((last_progress.unwrap() - 0.9).abs() < 1e-5);
     }
+
+    #[test]
+    fn compose_event_failed_reason_preserved() {
+        let sink = VecProgressSink::new();
+        sink.emit(ComposeEvent::Failed {
+            reason: "timeout after 30s".into(),
+        });
+        let events = sink.take();
+        assert_eq!(events.len(), 1);
+        if let ComposeEvent::Failed { reason } = &events[0] {
+            assert_eq!(reason, "timeout after 30s");
+        } else {
+            panic!("expected Failed event");
+        }
+    }
+
+    #[test]
+    fn compose_event_completed_fields_preserved() {
+        let sink = VecProgressSink::new();
+        let hash = [0xffu8; 32];
+        sink.emit(ComposeEvent::Completed {
+            artifact_hash: hash,
+            byte_size: 8192,
+        });
+        let events = sink.take();
+        if let ComposeEvent::Completed {
+            artifact_hash,
+            byte_size,
+        } = events[0].clone()
+        {
+            assert_eq!(artifact_hash, hash);
+            assert_eq!(byte_size, 8192);
+        } else {
+            panic!("expected Completed event");
+        }
+    }
+
+    #[test]
+    fn compose_event_started_fields_preserved() {
+        let sink = VecProgressSink::new();
+        sink.emit(ComposeEvent::Started {
+            backend: "render".into(),
+            entity_id: "e42".into(),
+        });
+        let events = sink.take();
+        if let ComposeEvent::Started { backend, entity_id } = &events[0] {
+            assert_eq!(backend, "render");
+            assert_eq!(entity_id, "e42");
+        } else {
+            panic!("expected Started event");
+        }
+    }
+
+    #[test]
+    fn vec_progress_sink_many_events() {
+        let sink = VecProgressSink::new();
+        for i in 0..20u32 {
+            sink.emit(ComposeEvent::Progress {
+                percent: i as f32 * 5.0,
+                stage: format!("step_{i}"),
+            });
+        }
+        let events = sink.take();
+        assert_eq!(events.len(), 20);
+        assert!(sink.take().is_empty(), "take() must clear after drain");
+    }
 }

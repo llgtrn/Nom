@@ -353,4 +353,153 @@ mod tests {
         assert_eq!(cache.get(&key, 0, &[]), None);
         assert_eq!(cache.miss_count(), 0);
     }
+
+    // ── additional coverage ────────────────────────────────────────────────
+
+    #[test]
+    fn memo_cache_overwrite_updates_constraint() {
+        // First put uses input_hash=1, second uses 2; after overwrite only hash=2 passes.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("overwrite");
+        cache.put(key, 10, Constraint::new(1));
+        cache.put(key, 20, Constraint::new(2));
+        assert_eq!(cache.get(&key, 1, &[]), None); // old constraint gone
+        assert_eq!(cache.get(&key, 2, &[]), Some(20));
+    }
+
+    #[test]
+    fn memo_cache_hit_count_accumulates() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("acc");
+        cache.put(key, 7, Constraint::new(1));
+        for _ in 0..5 {
+            cache.get(&key, 1, &[]);
+        }
+        assert_eq!(cache.hit_count(), 5);
+    }
+
+    #[test]
+    fn memo_cache_miss_count_accumulates() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("acc_miss");
+        cache.put(key, 7, Constraint::new(1));
+        for i in 2u64..7 {
+            cache.get(&key, i, &[]); // always stale
+        }
+        assert_eq!(cache.miss_count(), 5);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_zero_total() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_all_misses() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("misses_only");
+        cache.put(key, 1, Constraint::new(99));
+        cache.get(&key, 0, &[]); // stale
+        cache.get(&key, 1, &[]); // stale (wrong hash — wait, 99 was stored)
+        // 99 was the stored hash, so hash 0 and 1 are both stale → 2 misses
+        assert_eq!(cache.miss_count(), 2);
+        assert_eq!(cache.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn memo_cache_invalidate_then_reinsert() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("reinsertion");
+        cache.put(key, 5, Constraint::new(1));
+        cache.invalidate(&key);
+        cache.put(key, 99, Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some(99));
+    }
+
+    #[test]
+    fn memo_cache_clear_resets_length() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i), i as u8, Constraint::new(i));
+        }
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn memo_cache_tracked_snapshot_validates() {
+        use crate::tracked::{Tracked, TrackedSnapshot};
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("snap_key");
+
+        let tracked = Tracked::new("state", 1u64);
+        tracked.record_call(42, Hash128::of_str("output"));
+        let snap = tracked.snapshot();
+
+        let mut constraint = Constraint::new(7);
+        constraint.record(snap.clone());
+        cache.put(key, "cached_value".into(), constraint);
+
+        // Re-create matching snapshot for validation
+        let t2 = Tracked::new("state", 1u64);
+        t2.record_call(42, Hash128::of_str("output"));
+        let snap2 = t2.snapshot();
+
+        let result = cache.get(&key, 7, &[snap2]);
+        assert_eq!(result, Some("cached_value".into()));
+    }
+
+    #[test]
+    fn memo_cache_tracked_snapshot_invalidated_on_change() {
+        use crate::tracked::Tracked;
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("snap_invalid_key");
+
+        let tracked = Tracked::new("state", 1u64);
+        tracked.record_call(42, Hash128::of_str("output_v1"));
+        let snap = tracked.snapshot();
+
+        let mut constraint = Constraint::new(7);
+        constraint.record(snap);
+        cache.put(key, "cached_v1".into(), constraint);
+
+        // Now the tracked value changed — different return hash
+        let t2 = Tracked::new("state", 1u64);
+        t2.record_call(42, Hash128::of_str("output_v2")); // changed
+        let snap2 = t2.snapshot();
+
+        let result = cache.get(&key, 7, &[snap2]);
+        assert_eq!(result, None);
+    }
+
+    #[test]
+    fn memo_cache_empty_input_key() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str(""); // empty string key
+        cache.put(key, 77, Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(77));
+    }
+
+    #[test]
+    fn memo_cache_singleton_input() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let key = Hash128::of_bytes(&[0x01]);
+        cache.put(key, 1, Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some(1));
+        assert_eq!(cache.get(&key, 0, &[]), None);
+    }
+
+    #[test]
+    fn memo_cache_large_entry_count() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..100 {
+            cache.put(Hash128::of_u64(i), i, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 100);
+        // Spot-check a few
+        for i in [0u64, 49, 99] {
+            assert_eq!(cache.get(&Hash128::of_u64(i), i, &[]), Some(i));
+        }
+    }
 }

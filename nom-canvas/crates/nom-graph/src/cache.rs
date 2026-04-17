@@ -556,4 +556,75 @@ mod tests {
         // L1 has 2, L2 has 2 → total len = 4.
         assert_eq!(cache.len(), 4, "len() must sum L1 and L2 counts");
     }
+
+    // ------------------------------------------------------------------
+    // BasicCache: len tracks entries correctly
+    // ------------------------------------------------------------------
+    #[test]
+    fn basic_cache_len_tracks_inserts_and_evictions() {
+        let mut cache = BasicCache::new();
+        assert_eq!(cache.len(), 0);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        assert_eq!(cache.len(), 2);
+        cache.invalidate(1);
+        assert_eq!(cache.len(), 1);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: overwrite same key keeps len stable
+    // ------------------------------------------------------------------
+    #[test]
+    fn basic_cache_overwrite_same_key_keeps_len() {
+        let mut cache = BasicCache::new();
+        cache.put(42, CachedValue::String("first".into()));
+        cache.put(42, CachedValue::String("second".into()));
+        assert_eq!(cache.len(), 1, "overwriting key must not grow len");
+        match cache.get(42).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "second"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // ChangedFlags: changed_count with multiple nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn changed_flags_count_multiple_nodes() {
+        let mut flags = ChangedFlags::new();
+        flags.mark_changed("n1".to_string());
+        flags.mark_changed("n2".to_string());
+        flags.mark_changed("n3".to_string());
+        assert_eq!(flags.changed_count(), 3);
+        flags.mark_clean("n2".to_string());
+        assert_eq!(flags.changed_count(), 2);
+    }
+
+    // ------------------------------------------------------------------
+    // NullCache: len always zero, put is a noop
+    // ------------------------------------------------------------------
+    #[test]
+    fn null_cache_len_always_zero() {
+        let mut cache = NullCache;
+        cache.put(1, CachedValue::String("x".into()));
+        assert_eq!(cache.len(), 0, "NullCache.len() must always be 0");
+        cache.invalidate(1);
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: invalidate removes entry
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_invalidate_removes_entry() {
+        let mut cache = LruCache::new(10);
+        cache.put(7, CachedValue::String("seven".into()));
+        assert!(cache.get(7).is_some());
+        cache.invalidate(7);
+        assert!(cache.get(7).is_none(), "invalidated key must not be retrievable");
+        assert_eq!(cache.len(), 0);
+    }
 }

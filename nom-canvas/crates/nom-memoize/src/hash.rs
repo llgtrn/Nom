@@ -194,4 +194,109 @@ mod tests {
         let h2 = Hash128::of_bytes(&data);
         assert_eq!(h1, h2);
     }
+
+    // ── additional coverage ────────────────────────────────────────────────
+
+    #[test]
+    fn hash128_deterministic_multiple_calls() {
+        // Calling of_str three times with the same input must always agree.
+        let s = "determinism_check";
+        let h1 = Hash128::of_str(s);
+        let h2 = Hash128::of_str(s);
+        let h3 = Hash128::of_str(s);
+        assert_eq!(h1, h2);
+        assert_eq!(h2, h3);
+    }
+
+    #[test]
+    fn hash128_of_u64_deterministic_multiple_calls() {
+        let v: u64 = 0xfedcba9876543210;
+        let h1 = Hash128::of_u64(v);
+        let h2 = Hash128::of_u64(v);
+        let h3 = Hash128::of_u64(v);
+        assert_eq!(h1, h2);
+        assert_eq!(h2, h3);
+    }
+
+    #[test]
+    fn hash128_collision_avoidance_strings() {
+        // A large set of distinct strings must produce distinct hashes.
+        let inputs: Vec<String> = (0..50).map(|i| format!("input_{}", i)).collect();
+        let hashes: std::collections::HashSet<(u64, u64)> = inputs
+            .iter()
+            .map(|s| {
+                let h = Hash128::of_str(s);
+                (h.0, h.1)
+            })
+            .collect();
+        assert_eq!(hashes.len(), 50, "no collisions expected among 50 distinct strings");
+    }
+
+    #[test]
+    fn hash128_collision_avoidance_u64() {
+        // Distinct u64 values must produce distinct hashes.
+        let hashes: std::collections::HashSet<(u64, u64)> = (0u64..50)
+            .map(|v| {
+                let h = Hash128::of_u64(v);
+                (h.0, h.1)
+            })
+            .collect();
+        assert_eq!(hashes.len(), 50);
+    }
+
+    #[test]
+    fn hash128_different_byte_lengths_differ() {
+        // "a" vs "aa" — same byte, different length — must differ.
+        let h1 = Hash128::of_bytes(b"a");
+        let h2 = Hash128::of_bytes(b"aa");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn hash128_of_str_empty_vs_space() {
+        let empty = Hash128::of_str("");
+        let space = Hash128::of_str(" ");
+        assert_ne!(empty, space);
+    }
+
+    #[test]
+    fn hash128_combine_self_is_deterministic() {
+        let h = Hash128::of_str("self_combine");
+        let c1 = h.combine(h);
+        let c2 = h.combine(h);
+        assert_eq!(c1, c2);
+    }
+
+    #[test]
+    fn hash128_combine_chain_differs_from_single() {
+        // h.combine(h).combine(h) should differ from h alone.
+        let h = Hash128::of_str("chain");
+        let chained = h.combine(h).combine(h);
+        assert_ne!(chained, h);
+    }
+
+    #[test]
+    fn hash128_of_singleton_byte_array() {
+        let h1 = Hash128::of_bytes(&[42]);
+        let h2 = Hash128::of_bytes(&[42]);
+        assert_eq!(h1, h2);
+        assert_ne!(h1, Hash128::of_bytes(&[43]));
+    }
+
+    #[test]
+    fn hash128_as_u64_differs_for_distinct_hashes() {
+        let h1 = Hash128::of_str("foo");
+        let h2 = Hash128::of_str("bar");
+        // as_u64 folding must yield different values for clearly distinct hashes.
+        assert_ne!(h1.as_u64(), h2.as_u64());
+    }
+
+    #[test]
+    fn hash128_clone_copy_equals_original() {
+        let h = Hash128::of_str("copy_test");
+        let copied = h;
+        let cloned = h;
+        assert_eq!(h, copied);
+        assert_eq!(h, cloned);
+    }
 }

@@ -194,4 +194,69 @@ mod tests {
         assert!(v.supports(&BackendKind::Audio));
         assert!(!v.supports(&BackendKind::Video));
     }
+
+    #[test]
+    fn stub_vendor_compose_echoes_with_stub_prefix() {
+        let v = StubVendor {
+            name: "echo",
+            kind: BackendKind::Data,
+        };
+        let result = v.compose(&BackendKind::Data, "my_payload", &|_| {});
+        assert_eq!(result, Ok("stub:my_payload".to_string()));
+    }
+
+    #[test]
+    fn failing_vendor_always_errors() {
+        let v = FailingVendor {
+            name: "broken",
+            kind: BackendKind::Video,
+        };
+        let result = v.compose(&BackendKind::Video, "anything", &|_| {});
+        assert!(result.is_err());
+        assert_eq!(result.unwrap_err(), "error");
+    }
+
+    #[test]
+    fn failing_vendor_supports_its_kind() {
+        let v = FailingVendor {
+            name: "broken",
+            kind: BackendKind::Export,
+        };
+        assert!(v.supports(&BackendKind::Export));
+        assert!(!v.supports(&BackendKind::Image));
+    }
+
+    #[test]
+    fn cost_estimate_new_stores_values() {
+        let c = CostEstimate::new(500, 50_000);
+        assert_eq!(c.microcents_per_call, 500);
+        assert_eq!(c.max_microcents, 50_000);
+        let expected = 500.0 / 100_000.0;
+        assert!((c.dollars_per_call() - expected).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn vendor_capability_default_quality_tier() {
+        let cap = VendorCapability::default();
+        assert_eq!(cap.quality_tier, 0);
+        assert!(!cap.supports_streaming);
+        assert!(!cap.supports_batch);
+    }
+
+    #[test]
+    fn stub_media_vendor_progress_callback_reaches_one() {
+        use std::cell::Cell;
+        let v = StubMediaVendor {
+            name: "v",
+            kind: BackendKind::Render,
+        };
+        let max_p = Cell::new(0.0f32);
+        v.compose(&BackendKind::Render, "x", &|p| {
+            if p > max_p.get() {
+                max_p.set(p);
+            }
+        })
+        .unwrap();
+        assert!((max_p.get() - 1.0).abs() < f32::EPSILON);
+    }
 }

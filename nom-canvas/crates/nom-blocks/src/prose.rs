@@ -347,4 +347,167 @@ mod tests {
         assert!(block.title.is_some());
         assert!(block.description.is_none());
     }
+
+    #[test]
+    fn paragraph_block_nesting_via_children() {
+        let parent = ParagraphBlock {
+            entity: NomtuRef::new("p-parent", "contain", "verb"),
+            text: vec![],
+            children: vec!["child-1".to_string(), "child-2".to_string()],
+        };
+        assert_eq!(parent.children.len(), 2);
+        assert_eq!(parent.children[0], "child-1");
+    }
+
+    #[test]
+    fn quote_block_text_content() {
+        let entity = NomtuRef::new("q-01", "cite", "verb");
+        let text = vec![DeltaOp::Insert {
+            text: "To be or not to be".into(),
+            attrs: Default::default(),
+        }];
+        let block = QuoteBlock {
+            entity,
+            text,
+            children: vec![],
+        };
+        assert_eq!(block.text.len(), 1);
+        if let DeltaOp::Insert { text: t, .. } = &block.text[0] {
+            assert_eq!(t, "To be or not to be");
+        }
+    }
+
+    #[test]
+    fn delta_op_delete_and_retain_variants() {
+        let delete_op = DeltaOp::Delete { count: 5 };
+        let retain_op = DeltaOp::Retain {
+            count: 3,
+            attrs: Default::default(),
+        };
+        assert_eq!(delete_op, DeltaOp::Delete { count: 5 });
+        assert_ne!(delete_op, DeltaOp::Delete { count: 3 });
+        assert_eq!(
+            retain_op,
+            DeltaOp::Retain {
+                count: 3,
+                attrs: Default::default(),
+            }
+        );
+    }
+
+    #[test]
+    fn list_block_todo_checked_field() {
+        let entity = NomtuRef::new("lst-01", "track", "verb");
+        let block = ListBlock {
+            entity,
+            text: vec![],
+            list_type: ListType::Todo,
+            checked: Some(true),
+            children: vec![],
+        };
+        assert_eq!(block.list_type, ListType::Todo);
+        assert_eq!(block.checked, Some(true));
+    }
+
+    #[test]
+    fn database_block_columns_and_rows() {
+        let entity = NomtuRef::new("db-01", "store", "verb");
+        let columns = vec![
+            Column {
+                id: "c1".into(),
+                name: "Name".into(),
+                col_type: "text".into(),
+            },
+            Column {
+                id: "c2".into(),
+                name: "Score".into(),
+                col_type: "number".into(),
+            },
+        ];
+        let block = DatabaseBlock {
+            entity,
+            title: "My DB".into(),
+            views: vec![DatabaseView {
+                id: "v1".into(),
+                mode: "table".into(),
+            }],
+            columns,
+            rows: vec![vec![
+                crate::slot::SlotValue::Text("Alice".into()),
+                crate::slot::SlotValue::Number(95.0),
+            ]],
+        };
+        assert_eq!(block.columns.len(), 2);
+        assert_eq!(block.rows.len(), 1);
+        assert_eq!(block.title, "My DB");
+        assert_eq!(block.views[0].mode, "table");
+    }
+
+    #[test]
+    fn attachment_block_fields() {
+        let entity = NomtuRef::new("att-01", "attach", "verb");
+        let block = AttachmentBlock {
+            entity,
+            name: "report.pdf".into(),
+            size: 204800,
+            blob_hash: [0xCCu8; 32],
+            mime: "application/pdf".into(),
+        };
+        assert_eq!(block.name, "report.pdf");
+        assert_eq!(block.size, 204800);
+        assert_eq!(block.mime, "application/pdf");
+        assert_eq!(block.blob_hash, [0xCCu8; 32]);
+    }
+
+    #[test]
+    fn image_block_caption_and_dimensions() {
+        let entity = NomtuRef::new("img-01", "display", "verb");
+        let block = ImageBlock {
+            entity,
+            blob_hash: [0x01u8; 32],
+            width: Some(800.0),
+            height: Some(600.0),
+            caption: "A sunset".into(),
+        };
+        assert_eq!(block.caption, "A sunset");
+        assert_eq!(block.width, Some(800.0));
+        assert_eq!(block.height, Some(600.0));
+    }
+
+    #[test]
+    fn embed_block_in_prose_aspect_ratio() {
+        let entity = NomtuRef::new("emb-01", "embed", "concept");
+        let block = EmbedBlock {
+            entity,
+            url: "https://youtube.com/watch?v=abc".into(),
+            embed_type: "youtube".into(),
+            aspect_ratio: 16.0 / 9.0,
+        };
+        let expected = 16.0_f32 / 9.0_f32;
+        assert!((block.aspect_ratio - expected).abs() < 0.001);
+    }
+
+    #[test]
+    fn heading_level_range_valid_range() {
+        for level in 1u8..=6 {
+            let h = HeadingBlock {
+                entity: NomtuRef::new("h", "t", "concept"),
+                text: vec![],
+                level,
+                children: vec![],
+            };
+            assert_eq!(h.level_clamped(), level);
+        }
+    }
+
+    #[test]
+    fn heading_level_zero_clamps_to_one() {
+        let h = HeadingBlock {
+            entity: NomtuRef::new("h0", "title", "concept"),
+            text: vec![],
+            level: 0,
+            children: vec![],
+        };
+        assert_eq!(h.level_clamped(), 1);
+    }
 }

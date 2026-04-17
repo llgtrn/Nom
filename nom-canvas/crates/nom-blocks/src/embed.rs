@@ -66,4 +66,59 @@ mod tests {
         );
         assert_eq!(EmbedType::from_url("https://example.com"), EmbedType::Web);
     }
+
+    #[test]
+    fn embed_type_twitter_and_x() {
+        assert_eq!(
+            EmbedType::from_url("https://twitter.com/user/status/123"),
+            EmbedType::Tweet
+        );
+        assert_eq!(
+            EmbedType::from_url("https://x.com/user/status/456"),
+            EmbedType::Tweet
+        );
+    }
+
+    #[test]
+    fn embed_type_github() {
+        assert_eq!(
+            EmbedType::from_url("https://github.com/org/repo"),
+            EmbedType::Github
+        );
+    }
+
+    #[test]
+    fn embed_type_youtu_be_short() {
+        assert_eq!(
+            EmbedType::from_url("https://youtu.be/abc123"),
+            EmbedType::Youtube
+        );
+    }
+
+    #[test]
+    fn embed_block_new_sets_aspect_ratio() {
+        let entity = crate::block_model::NomtuRef::new("em-01", "embed", "concept");
+        let block = EmbedBlock::new(entity, "https://example.com");
+        // default aspect ratio is 16/9
+        let expected = 16.0_f32 / 9.0_f32;
+        assert!((block.aspect_ratio - expected).abs() < 0.001);
+        assert!(block.title.is_none());
+    }
+
+    #[test]
+    fn embed_block_url_preserved() {
+        let entity = crate::block_model::NomtuRef::new("em-02", "embed", "concept");
+        let url = "https://youtube.com/watch?v=xyz";
+        let block = EmbedBlock::new(entity, url);
+        assert_eq!(block.url, url);
+        assert_eq!(block.embed_type, EmbedType::Youtube);
+    }
+
+    #[test]
+    fn embed_block_entity_is_present() {
+        let entity = crate::block_model::NomtuRef::new("em-03", "display", "verb");
+        let block = EmbedBlock::new(entity, "https://figma.com/proto/abc");
+        assert_eq!(block.entity.id, "em-03");
+        assert_eq!(block.embed_type, EmbedType::Figma);
+    }
 }

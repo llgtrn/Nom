@@ -858,4 +858,457 @@ mod tests {
             "PANEL_LEFT_WIDTH ({PANEL_LEFT_WIDTH}) must equal SIDEBAR_W ({SIDEBAR_W})"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // Extended token tests — ranges, ordering, semantics
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn tokens_spacing_all_multiples_of_four() {
+        // The design system uses a 4px base grid; every spacing constant must be
+        // an exact multiple of 4.
+        let spacings = [
+            ("SPACING_1", SPACING_1),
+            ("SPACING_2", SPACING_2),
+            ("SPACING_3", SPACING_3),
+            ("SPACING_4", SPACING_4),
+            ("SPACING_6", SPACING_6),
+            ("SPACING_8", SPACING_8),
+            ("SPACING_12", SPACING_12),
+        ];
+        for (name, v) in spacings {
+            let remainder = v % 4.0;
+            assert!(
+                remainder.abs() < f32::EPSILON,
+                "{name} ({v}) must be a multiple of 4"
+            );
+        }
+    }
+
+    #[test]
+    fn tokens_radius_none_is_zero() {
+        assert_eq!(RADIUS_NONE, 0.0, "RADIUS_NONE must be exactly 0.0");
+    }
+
+    #[test]
+    fn tokens_radius_full_is_very_large() {
+        assert!(
+            RADIUS_FULL >= 999.0,
+            "RADIUS_FULL ({RADIUS_FULL}) must be >= 999 (pill shape)"
+        );
+    }
+
+    #[test]
+    fn tokens_radius_sm_equals_spacing_1() {
+        // RADIUS_SM and SPACING_1 are both 4px; they must match.
+        assert_eq!(
+            RADIUS_SM, SPACING_1,
+            "RADIUS_SM ({RADIUS_SM}) should equal SPACING_1 ({SPACING_1})"
+        );
+    }
+
+    #[test]
+    fn tokens_modal_radius_larger_than_block_radius() {
+        assert!(
+            MODAL_RADIUS > BLOCK_RADIUS,
+            "MODAL_RADIUS ({MODAL_RADIUS}) must be > BLOCK_RADIUS ({BLOCK_RADIUS})"
+        );
+    }
+
+    #[test]
+    fn tokens_popover_radius_positive() {
+        assert!(POPOVER_RADIUS > 0.0, "POPOVER_RADIUS must be positive");
+    }
+
+    #[test]
+    fn tokens_btn_heights_ordered() {
+        // Button height variants must be strictly ascending.
+        assert!(BTN_H < BTN_H_LG, "BTN_H ({BTN_H}) must be < BTN_H_LG ({BTN_H_LG})");
+        assert!(
+            BTN_H_LG < BTN_H_XL,
+            "BTN_H_LG ({BTN_H_LG}) must be < BTN_H_XL ({BTN_H_XL})"
+        );
+    }
+
+    #[test]
+    fn tokens_btn_h_positive() {
+        assert!(BTN_H > 0.0, "BTN_H must be positive");
+        assert!(BTN_H_LG > 0.0, "BTN_H_LG must be positive");
+        assert!(BTN_H_XL > 0.0, "BTN_H_XL must be positive");
+    }
+
+    #[test]
+    fn tokens_font_size_all_positive() {
+        let sizes = [
+            ("CAPTION", FONT_SIZE_CAPTION),
+            ("BODY", FONT_SIZE_BODY),
+            ("CODE", FONT_SIZE_CODE),
+            ("H3", FONT_SIZE_H3),
+            ("H2", FONT_SIZE_H2),
+            ("H1", FONT_SIZE_H1),
+        ];
+        for (name, v) in sizes {
+            assert!(v > 0.0, "FONT_SIZE_{name} ({v}) must be positive");
+        }
+    }
+
+    #[test]
+    fn tokens_font_size_caption_is_12() {
+        assert_eq!(FONT_SIZE_CAPTION, 12.0, "FONT_SIZE_CAPTION must be 12.0");
+    }
+
+    #[test]
+    fn tokens_font_size_body_is_14() {
+        assert_eq!(FONT_SIZE_BODY, 14.0, "FONT_SIZE_BODY must be 14.0");
+    }
+
+    #[test]
+    fn tokens_font_size_h1_is_24() {
+        assert_eq!(FONT_SIZE_H1, 24.0, "FONT_SIZE_H1 must be 24.0");
+    }
+
+    #[test]
+    fn tokens_line_height_code_widest() {
+        // Code needs the most vertical space; must be >= all other line heights.
+        assert!(
+            LINE_HEIGHT_CODE >= LINE_HEIGHT_BODY,
+            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) must be >= LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY})"
+        );
+        assert!(
+            LINE_HEIGHT_CODE >= LINE_HEIGHT_CAPTION,
+            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) >= LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION})"
+        );
+        assert!(
+            LINE_HEIGHT_CODE >= LINE_HEIGHT_HEADING,
+            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) >= LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING})"
+        );
+    }
+
+    #[test]
+    fn tokens_line_height_heading_tightest() {
+        // Headings use tighter leading than body or code text.
+        assert!(
+            LINE_HEIGHT_HEADING <= LINE_HEIGHT_BODY,
+            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) must be <= LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY})"
+        );
+        assert!(
+            LINE_HEIGHT_HEADING <= LINE_HEIGHT_CAPTION,
+            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) <= LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION})"
+        );
+    }
+
+    #[test]
+    fn tokens_shadow_offsets_non_negative() {
+        // All shadow tokens use vertical-only offsets (no horizontal offset).
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            assert_eq!(t.offset_x, 0.0, "{name}.offset_x must be 0.0");
+            assert!(
+                t.offset_y >= 0.0,
+                "{name}.offset_y ({}) must be >= 0",
+                t.offset_y
+            );
+        }
+    }
+
+    #[test]
+    fn tokens_shadow_blur_positive() {
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            assert!(t.blur > 0.0, "{name}.blur must be positive");
+        }
+    }
+
+    #[test]
+    fn tokens_shadow_spread_zero() {
+        // Spec requires spread = 0 for all shadow tokens.
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            assert_eq!(t.spread, 0.0, "{name}.spread must be 0.0");
+        }
+    }
+
+    #[test]
+    fn tokens_shadow_alpha_ordering() {
+        // Larger shadows are darker — alphas must increase.
+        let sm_a = (SHADOW_SM.color)().a;
+        let md_a = (SHADOW_MD.color)().a;
+        let lg_a = (SHADOW_LG.color)().a;
+        let xl_a = (SHADOW_XL.color)().a;
+        assert!(md_a > sm_a, "SHADOW_MD alpha must exceed SHADOW_SM alpha");
+        assert!(lg_a > md_a, "SHADOW_LG alpha must exceed SHADOW_MD alpha");
+        assert!(xl_a > lg_a, "SHADOW_XL alpha must exceed SHADOW_LG alpha");
+    }
+
+    #[test]
+    fn tokens_shadow_colors_are_black() {
+        // All shadow tokens use black (h=0, s=0, l=0) with varying alpha.
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            let c = (t.color)();
+            assert_eq!(c.h, 0.0, "{name} shadow hue must be 0.0 (black)");
+            assert_eq!(c.s, 0.0, "{name} shadow saturation must be 0.0");
+            assert_eq!(c.l, 0.0, "{name} shadow lightness must be 0.0");
+        }
+    }
+
+    #[test]
+    fn tokens_motion_spring_stiffness_positive() {
+        assert!(
+            MOTION_SPRING_STIFFNESS > 0.0,
+            "MOTION_SPRING_STIFFNESS must be positive"
+        );
+    }
+
+    #[test]
+    fn tokens_motion_spring_damping_positive() {
+        assert!(
+            MOTION_SPRING_DAMPING > 0.0,
+            "MOTION_SPRING_DAMPING must be positive"
+        );
+    }
+
+    #[test]
+    fn tokens_panel_right_wider_than_left() {
+        assert!(
+            PANEL_RIGHT_WIDTH > PANEL_LEFT_WIDTH,
+            "PANEL_RIGHT_WIDTH ({PANEL_RIGHT_WIDTH}) must be > PANEL_LEFT_WIDTH ({PANEL_LEFT_WIDTH})"
+        );
+    }
+
+    #[test]
+    fn tokens_panel_bottom_height_positive() {
+        assert!(
+            PANEL_BOTTOM_HEIGHT > 0.0,
+            "PANEL_BOTTOM_HEIGHT must be positive"
+        );
+    }
+
+    #[test]
+    fn tokens_panel_min_less_than_max() {
+        assert!(
+            PANEL_MIN_WIDTH < PANEL_MAX_WIDTH,
+            "PANEL_MIN_WIDTH ({PANEL_MIN_WIDTH}) must be < PANEL_MAX_WIDTH ({PANEL_MAX_WIDTH})"
+        );
+    }
+
+    #[test]
+    fn tokens_h1_letter_spacing_negative() {
+        assert!(
+            H1_LETTER_SPACING < 0.0,
+            "H1_LETTER_SPACING ({H1_LETTER_SPACING}) must be negative (tight tracking)"
+        );
+    }
+
+    #[test]
+    fn tokens_h1_weight_exceeds_h2_weight() {
+        assert!(
+            H1_WEIGHT > H2_WEIGHT,
+            "H1_WEIGHT ({H1_WEIGHT}) must exceed H2_WEIGHT ({H2_WEIGHT})"
+        );
+    }
+
+    #[test]
+    fn tokens_body_weight_lower_than_heading_weights() {
+        assert!(
+            BODY_WEIGHT < H2_WEIGHT,
+            "BODY_WEIGHT ({BODY_WEIGHT}) must be < H2_WEIGHT ({H2_WEIGHT})"
+        );
+        assert!(
+            BODY_WEIGHT < H1_WEIGHT,
+            "BODY_WEIGHT ({BODY_WEIGHT}) must be < H1_WEIGHT ({H1_WEIGHT})"
+        );
+    }
+
+    #[test]
+    fn tokens_bg_is_dark() {
+        // BG luminance approximation: R*0.299 + G*0.587 + B*0.114 < 0.5 for dark.
+        let lum = BG[0] * 0.299 + BG[1] * 0.587 + BG[2] * 0.114;
+        assert!(
+            lum < 0.5,
+            "BG luminance ({lum:.3}) must be < 0.5 (dark background)"
+        );
+    }
+
+    #[test]
+    fn tokens_text_is_light() {
+        // TEXT luminance must be > 0.5 for a light-on-dark scheme.
+        let lum = TEXT[0] * 0.299 + TEXT[1] * 0.587 + TEXT[2] * 0.114;
+        assert!(
+            lum > 0.5,
+            "TEXT luminance ({lum:.3}) must be > 0.5 (light foreground)"
+        );
+    }
+
+    #[test]
+    fn tokens_edge_confidence_colors_distinct() {
+        // High, medium, low confidence edge colors must be mutually distinct.
+        let high = edge_color_high_confidence();
+        let med = edge_color_medium_confidence();
+        let low = edge_color_low_confidence();
+        let high_med_diff = (high.h - med.h).abs();
+        let high_low_diff = (high.h - low.h).abs();
+        let med_low_diff = (med.h - low.h).abs();
+        assert!(
+            high_med_diff > 0.01,
+            "high and medium confidence colors must have distinct hues"
+        );
+        assert!(
+            high_low_diff > 0.01,
+            "high and low confidence colors must have distinct hues"
+        );
+        assert!(
+            med_low_diff > 0.01,
+            "medium and low confidence colors must have distinct hues"
+        );
+    }
+
+    #[test]
+    fn tokens_edge_color_boundary_zero_is_low() {
+        // confidence = 0.0 → low
+        let c = edge_color_for_confidence(0.0);
+        let expected = edge_color_low_confidence();
+        assert!(
+            (c.h - expected.h).abs() < f32::EPSILON,
+            "confidence 0.0 must map to low confidence color"
+        );
+    }
+
+    #[test]
+    fn tokens_edge_color_boundary_one_is_high() {
+        // confidence = 1.0 → high
+        let c = edge_color_for_confidence(1.0);
+        let expected = edge_color_high_confidence();
+        assert!(
+            (c.h - expected.h).abs() < f32::EPSILON,
+            "confidence 1.0 must map to high confidence color"
+        );
+    }
+
+    #[test]
+    fn tokens_hsla_bg_colors_have_full_alpha() {
+        // All non-overlay Hsla bg colors must have alpha = 1.0.
+        let colors = [
+            ("bg_primary", color_bg_primary()),
+            ("bg_secondary", color_bg_secondary()),
+            ("bg_tertiary", color_bg_tertiary()),
+            ("text_primary", color_text_primary()),
+            ("text_secondary", color_text_secondary()),
+            ("text_tertiary", color_text_tertiary()),
+            ("border_subtle", color_border_subtle()),
+            ("border_normal", color_border_normal()),
+            ("accent_blue", color_accent_blue()),
+            ("accent_purple", color_accent_purple()),
+            ("accent_green", color_accent_green()),
+        ];
+        for (name, c) in colors {
+            assert_eq!(c.a, 1.0, "{name} must have alpha = 1.0");
+        }
+    }
+
+    #[test]
+    fn tokens_surface_overlay_alpha_partial() {
+        let c = color_surface_overlay();
+        assert!(c.a < 1.0, "surface overlay alpha must be < 1.0");
+        assert!(c.a > 0.0, "surface overlay alpha must be > 0.0");
+    }
+
+    #[test]
+    fn tokens_bg_lightness_ascending() {
+        // Primary bg is darkest; tertiary bg is lightest (higher lightness = lighter in HSL).
+        let p = color_bg_primary();
+        let s = color_bg_secondary();
+        let t = color_bg_tertiary();
+        assert!(s.l > p.l, "bg_secondary must be lighter than bg_primary");
+        assert!(t.l > s.l, "bg_tertiary must be lighter than bg_secondary");
+    }
+
+    #[test]
+    fn tokens_text_primary_near_white() {
+        // Primary text should be very light (lightness close to 1.0).
+        let c = color_text_primary();
+        assert!(
+            c.l > 0.9,
+            "text_primary lightness ({:.3}) must be > 0.9",
+            c.l
+        );
+    }
+
+    #[test]
+    fn tokens_accent_blue_saturated() {
+        // Accent blue must be highly saturated.
+        let c = color_accent_blue();
+        assert!(
+            c.s >= 0.9,
+            "accent_blue saturation ({:.3}) must be >= 0.9",
+            c.s
+        );
+    }
+
+    #[test]
+    fn tokens_n_tokens_constant_value() {
+        // N_TOKENS is a documented constant; its exact value must stay stable.
+        assert_eq!(N_TOKENS, 73, "N_TOKENS must be 73 per module documentation");
+    }
+
+    #[test]
+    fn tokens_hsla_components_in_range() {
+        // Every Hsla color function must return values in valid ranges.
+        let fns: &[(&str, fn() -> nom_gpui::Hsla)] = &[
+            ("bg_primary", color_bg_primary),
+            ("bg_secondary", color_bg_secondary),
+            ("bg_tertiary", color_bg_tertiary),
+            ("text_primary", color_text_primary),
+            ("text_secondary", color_text_secondary),
+            ("text_tertiary", color_text_tertiary),
+            ("border_subtle", color_border_subtle),
+            ("border_normal", color_border_normal),
+            ("accent_blue", color_accent_blue),
+            ("accent_purple", color_accent_purple),
+            ("accent_green", color_accent_green),
+            ("surface_overlay", color_surface_overlay),
+            ("edge_high", edge_color_high_confidence),
+            ("edge_med", edge_color_medium_confidence),
+            ("edge_low", edge_color_low_confidence),
+        ];
+        for (name, f) in fns {
+            let c = f();
+            assert!(
+                (0.0..=1.0).contains(&c.h),
+                "{name}.h ({}) out of [0,1]",
+                c.h
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.s),
+                "{name}.s ({}) out of [0,1]",
+                c.s
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.l),
+                "{name}.l ({}) out of [0,1]",
+                c.l
+            );
+            assert!(
+                (0.0..=1.0).contains(&c.a),
+                "{name}.a ({}) out of [0,1]",
+                c.a
+            );
+        }
+    }
 }

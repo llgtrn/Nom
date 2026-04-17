@@ -517,4 +517,117 @@ mod tests {
         state.set_confidence(-0.5);
         assert!((state.confidence - 0.0).abs() < 1e-6, "should clamp to 0.0");
     }
+
+    // ------------------------------------------------------------------
+    // layout_dag: single-node DAG produces one-entry layout at origin
+    // ------------------------------------------------------------------
+    #[test]
+    fn layout_dag_single_node_placed_at_origin() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("only", "verb"));
+        let layout = layout_dag(&dag);
+        assert_eq!(layout.len(), 1);
+        let (x, y) = layout["only"];
+        // Single root node: topo_index=0 → x=0.0; depth=0 → y=0.0.
+        assert_eq!(x, 0.0);
+        assert_eq!(y, 0.0);
+    }
+
+    // ------------------------------------------------------------------
+    // layout_dag: empty DAG produces empty layout
+    // ------------------------------------------------------------------
+    #[test]
+    fn layout_dag_empty_dag_produces_empty_layout() {
+        let dag = Dag::new();
+        let layout = layout_dag(&dag);
+        assert!(layout.is_empty(), "empty DAG must produce empty layout");
+    }
+
+    // ------------------------------------------------------------------
+    // node_at_point: empty layout returns None
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_at_point_empty_layout_returns_none() {
+        let layout: GraphLayout = HashMap::new();
+        let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 100.0);
+        assert!(result.is_none(), "empty layout must return None");
+    }
+
+    // ------------------------------------------------------------------
+    // node_at_point: picks closest when two nodes within radius
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_at_point_picks_closest_node() {
+        let mut layout: GraphLayout = HashMap::new();
+        layout.insert("close".to_string(), (10.0, 0.0));
+        layout.insert("far".to_string(), (30.0, 0.0));
+        // Query at origin with radius=50 — both nodes hit, but "close" is nearer.
+        let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 50.0);
+        assert_eq!(result.as_deref(), Some("close"), "should pick the nearer node");
+    }
+
+    // ------------------------------------------------------------------
+    // change_mode: returns correct GraphEvent variant
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_change_mode_returns_event() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        let event = state.change_mode(GraphViewMode::Canvas);
+        assert_eq!(event, GraphEvent::ModeChanged(GraphViewMode::Canvas));
+    }
+
+    // ------------------------------------------------------------------
+    // tick_animations: completed animations are cleaned up
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_tick_animations_cleans_up_completed() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.layout.insert("a".to_string(), (0.0, 0.0));
+
+        let mut target: GraphLayout = HashMap::new();
+        target.insert("a".to_string(), (50.0, 50.0));
+        state.animate_to_layout(&target, 0.0);
+
+        // A very large dt should complete the animation.
+        state.tick_animations(10.0);
+        assert!(
+            state.animations.get("a").is_none(),
+            "animation for 'a' should be removed after completion"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // process_click: miss clears selection
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_process_click_miss_clears_selection() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        state.selected = Some("a".to_string());
+
+        // Click far from any node — should clear selection, return None.
+        let event = state.process_click(99999.0, 99999.0, 5.0);
+        assert!(event.is_none());
+        assert!(state.selected.is_none(), "miss must clear selection");
+    }
+
+    // ------------------------------------------------------------------
+    // layout_dag: cycle fallback positions all nodes at y=0
+    // ------------------------------------------------------------------
+    #[test]
+    fn layout_dag_cycle_fallback_all_y_zero() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "X", "in"); // creates cycle
+
+        let layout = layout_dag(&dag);
+        assert_eq!(layout.len(), 2, "cycle fallback must include all nodes");
+        for (id, (_, y)) in &layout {
+            assert_eq!(*y, 0.0, "cycle fallback must place all nodes at y=0 (got y={y} for {id})");
+        }
+    }
 }

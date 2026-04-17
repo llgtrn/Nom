@@ -44,4 +44,56 @@ mod tests {
         assert!(m.is_video());
         assert!(!m.is_audio());
     }
+
+    #[test]
+    fn media_block_is_audio() {
+        let entity = NomtuRef::new("aud-01", "play", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "audio/mp3");
+        assert!(m.is_audio());
+        assert!(!m.is_video());
+        assert!(!m.is_image());
+    }
+
+    #[test]
+    fn media_block_is_image() {
+        let entity = NomtuRef::new("img-01", "display", "verb");
+        let m = MediaBlock::new(entity, [1u8; 32], "image/png");
+        assert!(m.is_image());
+        assert!(!m.is_video());
+        assert!(!m.is_audio());
+    }
+
+    #[test]
+    fn media_block_optional_fields_default_none() {
+        let entity = NomtuRef::new("med-02", "record", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "video/webm");
+        assert!(m.width.is_none());
+        assert!(m.height.is_none());
+        assert!(m.duration_ms.is_none());
+    }
+
+    #[test]
+    fn media_block_blob_hash_stored() {
+        let entity = NomtuRef::new("med-03", "encode", "verb");
+        let hash = [0xABu8; 32];
+        let m = MediaBlock::new(entity, hash, "image/jpeg");
+        assert_eq!(m.blob_hash, [0xABu8; 32]);
+    }
+
+    #[test]
+    fn media_block_entity_preserved() {
+        let entity = NomtuRef::new("med-04", "stream", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "video/mp4");
+        assert_eq!(m.entity.id, "med-04");
+        assert_eq!(m.entity.word, "stream");
+    }
+
+    #[test]
+    fn media_block_mime_generic_not_video_audio_image() {
+        let entity = NomtuRef::new("med-05", "attach", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "application/pdf");
+        assert!(!m.is_video());
+        assert!(!m.is_audio());
+        assert!(!m.is_image());
+    }
 }

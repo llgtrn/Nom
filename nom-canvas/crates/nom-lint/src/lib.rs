@@ -860,4 +860,553 @@ mod tests {
         // offending region should be all whitespace
         assert!(offending.chars().all(|c| c == ' ' || c == '\t'));
     }
+
+    // --- Unicode / multi-byte character handling ---
+
+    #[test]
+    fn trailing_whitespace_after_unicode_word() {
+        // "héllo  " — 'é' is 2 bytes; trailing spaces start at byte 6.
+        let diag = TrailingWhitespaceRule.check("héllo  ", 1).unwrap();
+        assert_eq!(diag.span.start, 6); // byte offset after 'h'(1)+'é'(2)+'l'(1)+'l'(1)+'o'(1)
+        assert_eq!(diag.span.end, 8);
+    }
+
+    #[test]
+    fn trailing_whitespace_pure_unicode_line_no_trailing() {
+        assert!(TrailingWhitespaceRule.check("こんにちは", 1).is_none());
+    }
+
+    #[test]
+    fn empty_block_rule_with_unicode_prefix() {
+        // Braces must still be found regardless of multi-byte prefix.
+        let diag = EmptyBlockRule.check("日本語テスト {}", 1).unwrap();
+        assert!(diag.message.contains("empty block"));
+    }
+
+    #[test]
+    fn line_too_long_emoji_bytes() {
+        // Each emoji is 4 bytes in UTF-8; 31 emojis = 124 bytes > 120.
+        let rule = LineTooLongRule::new();
+        let line: String = std::iter::repeat('😀').take(31).collect();
+        let diag = rule.check(&line, 1).unwrap();
+        assert!(diag.span.end > 120);
+    }
+
+    #[test]
+    fn line_at_unicode_boundary_no_diag() {
+        // 30 emojis = 120 bytes, exactly at limit — must NOT fire.
+        let rule = LineTooLongRule::new();
+        let line: String = std::iter::repeat('😀').take(30).collect();
+        assert!(rule.check(&line, 1).is_none());
+    }
+
+    #[test]
+    fn trailing_whitespace_emoji_followed_by_space() {
+        // "🎉 " — emoji (4 bytes) + space (1 byte), trailing space at byte 4.
+        let diag = TrailingWhitespaceRule.check("🎉 ", 1).unwrap();
+        assert_eq!(diag.span.start, 4);
+        assert_eq!(diag.span.end, 5);
+    }
+
+    // --- Whitespace-only and blank-line edge cases ---
+
+    #[test]
+    fn trailing_whitespace_single_space_only() {
+        let diag = TrailingWhitespaceRule.check(" ", 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 1);
+    }
+
+    #[test]
+    fn trailing_whitespace_single_tab_only() {
+        let diag = TrailingWhitespaceRule.check("\t", 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 1);
+    }
+
+    #[test]
+    fn lint_runner_whitespace_only_lines_detected() {
+        let source = "   \n   \n   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 3);
+        assert_eq!(diags[0].line, 1);
+        assert_eq!(diags[1].line, 2);
+        assert_eq!(diags[2].line, 3);
+    }
+
+    #[test]
+    fn runner_blank_line_no_diag() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        // A single blank line (\n) produces an empty line; nothing should fire.
+        let diags = runner.run("\n");
+        assert!(diags.is_empty());
+    }
+
+    // --- Very long lines ---
+
+    #[test]
+    fn line_too_long_very_long_line_10000_chars() {
+        let rule = LineTooLongRule::new();
+        let line = "a".repeat(10_000);
+        let diag = rule.check(&line, 1).unwrap();
+        assert_eq!(diag.span.end, 10_000);
+        assert!(diag.message.contains("10000"));
+    }
+
+    #[test]
+    fn runner_very_long_line_single_diag() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        let line = "x".repeat(5_000);
+        let diags = runner.run(&line);
+        assert_eq!(diags.len(), 1);
+    }
+
+    // --- LintLevel debug / clone ---
+
+    #[test]
+    fn lint_level_debug_not_empty() {
+        assert!(!format!("{:?}", LintLevel::Error).is_empty());
+        assert!(!format!("{:?}", LintLevel::Warning).is_empty());
+        assert!(!format!("{:?}", LintLevel::Info).is_empty());
+    }
+
+    #[test]
+    fn lint_level_info_clone() {
+        let a = LintLevel::Info;
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn lint_level_error_clone() {
+        let a = LintLevel::Error;
+        assert_eq!(a.clone(), LintLevel::Error);
+    }
+
+    // --- LintDiagnostic debug ---
+
+    #[test]
+    fn lint_diagnostic_debug_not_empty() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        assert!(!format!("{:?}", diag).is_empty());
+    }
+
+    // --- Batch linting / aggregation ---
+
+    #[test]
+    fn batch_lint_multiple_sources() {
+        let sources = [
+            "ok line\n",
+            "trailing   \n",
+            "fn empty() {}\n",
+        ];
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+
+        let all_diags: Vec<LintDiagnostic> = sources
+            .iter()
+            .flat_map(|src| runner.run(src))
+            .collect();
+        // sources[1] → trailing, sources[2] → empty-block
+        assert_eq!(all_diags.len(), 2);
+    }
+
+    #[test]
+    fn batch_lint_no_issues_produces_empty_aggregate() {
+        let sources = ["hello\n", "world\n", "no issues here\n"];
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let all_diags: Vec<LintDiagnostic> = sources
+            .iter()
+            .flat_map(|src| runner.run(src))
+            .collect();
+        assert!(all_diags.is_empty());
+    }
+
+    #[test]
+    fn batch_lint_count_by_level() {
+        // All three rules produce Warning; verify aggregation of levels.
+        let source = format!("trailing   \n{}\nfn e() {{}}\n", "x".repeat(130));
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(&source);
+        let warning_count = diags.iter().filter(|d| d.level == LintLevel::Warning).count();
+        assert_eq!(warning_count, diags.len()); // all are warnings
+        assert!(diags.len() >= 3);
+    }
+
+    // --- Line number accuracy across larger files ---
+
+    #[test]
+    fn line_numbers_accurate_50_lines() {
+        // Every 10th line has trailing whitespace.
+        let source: String = (1..=50)
+            .map(|i| {
+                if i % 10 == 0 {
+                    "content   \n".to_string()
+                } else {
+                    "content\n".to_string()
+                }
+            })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 5);
+        let expected_lines = [10u32, 20, 30, 40, 50];
+        for (diag, expected) in diags.iter().zip(expected_lines.iter()) {
+            assert_eq!(diag.line, *expected);
+        }
+    }
+
+    #[test]
+    fn line_numbers_start_at_1() {
+        let source = "trailing   \nok";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    #[test]
+    fn last_line_without_newline_detected() {
+        let source = "ok\nok\ntrailing   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 3);
+    }
+
+    // --- Error message quality ---
+
+    #[test]
+    fn trailing_whitespace_message_describes_issue() {
+        let diag = TrailingWhitespaceRule.check("code   ", 1).unwrap();
+        let msg = diag.message.to_lowercase();
+        assert!(msg.contains("trailing") || msg.contains("whitespace"));
+    }
+
+    #[test]
+    fn line_too_long_message_describes_issue() {
+        let rule = LineTooLongRule { max_len: 5 };
+        let diag = rule.check("hello world", 1).unwrap();
+        let msg = diag.message.to_lowercase();
+        // Should mention line or length or characters
+        assert!(msg.contains("line") || msg.contains("character") || msg.contains("exceed"));
+    }
+
+    #[test]
+    fn empty_block_message_describes_issue() {
+        let diag = EmptyBlockRule.check("fn f() {}", 1).unwrap();
+        let msg = diag.message.to_lowercase();
+        assert!(msg.contains("empty") || msg.contains("block") || msg.contains("{}"));
+    }
+
+    #[test]
+    fn all_rule_names_are_nonempty() {
+        let names = [
+            TrailingWhitespaceRule.name(),
+            LineTooLongRule::new().name(),
+            EmptyBlockRule.name(),
+        ];
+        for name in &names {
+            assert!(!name.is_empty());
+        }
+    }
+
+    #[test]
+    fn all_rule_names_are_kebab_case() {
+        // Rule names should be lowercase and use hyphens, not underscores.
+        let names = [
+            TrailingWhitespaceRule.name(),
+            LineTooLongRule::new().name(),
+            EmptyBlockRule.name(),
+        ];
+        for name in &names {
+            assert_eq!(name.to_lowercase(), *name, "name should be lowercase: {name}");
+            assert!(!name.contains('_'), "name should use hyphens not underscores: {name}");
+        }
+    }
+
+    // --- Severity level assignment per rule ---
+
+    #[test]
+    fn empty_block_level_is_warning_not_error() {
+        let diag = EmptyBlockRule.check("{}", 1).unwrap();
+        assert_ne!(diag.level, LintLevel::Error);
+        assert_eq!(diag.level, LintLevel::Warning);
+    }
+
+    #[test]
+    fn line_too_long_level_is_warning_not_info() {
+        let rule = LineTooLongRule { max_len: 1 };
+        let diag = rule.check("hi", 1).unwrap();
+        assert_ne!(diag.level, LintLevel::Info);
+        assert_eq!(diag.level, LintLevel::Warning);
+    }
+
+    #[test]
+    fn trailing_whitespace_level_not_info() {
+        let diag = TrailingWhitespaceRule.check("x  ", 1).unwrap();
+        assert_ne!(diag.level, LintLevel::Info);
+    }
+
+    // --- Enabling / disabling rules (by inclusion / exclusion in runner) ---
+
+    #[test]
+    fn disabling_rule_by_not_adding_it() {
+        // If we only add LineTooLongRule, trailing whitespace is silently ignored.
+        let source = "trailing   \nno_issue\n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        let diags = runner.run(source);
+        // TrailingWhitespace not registered → no diag for it.
+        assert!(!diags.iter().any(|d| d.message.contains("trailing")));
+    }
+
+    #[test]
+    fn enabling_only_empty_block_rule() {
+        let source = "fn a() {}\nok line\nfn b() {}\n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 2);
+        assert!(diags.iter().all(|d| d.message.contains("empty block")));
+    }
+
+    #[test]
+    fn enabling_only_trailing_whitespace_rule() {
+        let source = format!("trailing   \n{}\nfn f() {{}}\n", "x".repeat(200));
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(&source);
+        // Only trailing whitespace on line 1 should be caught.
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    // --- Multiple violations on same line ---
+
+    #[test]
+    fn same_line_trailing_and_empty_block() {
+        let line = "fn f() {}   "; // empty block + trailing whitespace
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(line, 1);
+        assert_eq!(diags.len(), 2);
+    }
+
+    #[test]
+    fn same_line_all_three_violations_distinct_spans() {
+        let line = format!("fn f() {{}} {}   ", "x".repeat(115));
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule { max_len: 10 });
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(&line, 5);
+        assert_eq!(diags.len(), 3);
+        // All on the same reported line.
+        assert!(diags.iter().all(|d| d.line == 5));
+        // Spans should all be valid (start <= end).
+        for d in &diags {
+            assert!(d.span.start <= d.span.end);
+        }
+    }
+
+    // --- Span precision ---
+
+    #[test]
+    fn empty_block_span_is_exactly_2_bytes() {
+        let line = "let x = {};";
+        let diag = EmptyBlockRule.check(line, 1).unwrap();
+        assert_eq!(diag.span.end - diag.span.start, 2);
+    }
+
+    #[test]
+    fn trailing_whitespace_span_length_matches_trailing_count() {
+        let line = "abc     "; // 5 trailing spaces
+        let diag = TrailingWhitespaceRule.check(line, 1).unwrap();
+        assert_eq!(diag.span.end - diag.span.start, 5);
+    }
+
+    #[test]
+    fn line_too_long_span_is_full_line() {
+        let rule = LineTooLongRule { max_len: 3 };
+        let line = "hello";
+        let diag = rule.check(line, 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end as usize, line.len());
+    }
+
+    // --- Additional edge cases ---
+
+    #[test]
+    fn runner_with_only_line_too_long_ignores_empty_block() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        // Short line with empty block — no line-too-long diag.
+        let diags = runner.run("fn f() {}");
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn empty_block_no_diag_for_non_empty_braces() {
+        let lines = [
+            "fn f() { x }",
+            "if true { return; }",
+            "{ /* comment */ }",
+            "{ 1 + 2 }",
+        ];
+        for line in &lines {
+            assert!(
+                EmptyBlockRule.check(line, 1).is_none(),
+                "should not flag: {line}"
+            );
+        }
+    }
+
+    #[test]
+    fn line_too_long_zero_max_fires_on_any_nonempty_line() {
+        let rule = LineTooLongRule { max_len: 0 };
+        let diag = rule.check("a", 1).unwrap();
+        assert_eq!(diag.span.end, 1);
+    }
+
+    #[test]
+    fn line_too_long_zero_max_no_diag_on_empty_line() {
+        let rule = LineTooLongRule { max_len: 0 };
+        assert!(rule.check("", 1).is_none());
+    }
+
+    #[test]
+    fn runner_diag_order_follows_line_order() {
+        // Violations on lines 1, 3, 5 — check they arrive in that order.
+        let source = "a  \nb\nc  \nd\ne  ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 3);
+        assert_eq!(diags[0].line, 1);
+        assert_eq!(diags[1].line, 3);
+        assert_eq!(diags[2].line, 5);
+    }
+
+    #[test]
+    fn runner_diag_order_within_line_follows_rule_registration_order() {
+        // Register trailing-whitespace first, then empty-block.
+        let line = "fn f() {}   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_line(line, 1);
+        assert_eq!(diags.len(), 2);
+        // First diag is from the first registered rule.
+        assert!(diags[0].message.contains("trailing whitespace"));
+        assert!(diags[1].message.contains("empty block"));
+    }
+
+    #[test]
+    fn trailing_whitespace_many_tabs() {
+        let line = "code\t\t\t\t\t"; // 5 trailing tabs
+        let diag = TrailingWhitespaceRule.check(line, 1).unwrap();
+        assert_eq!(diag.span.end - diag.span.start, 5);
+    }
+
+    #[test]
+    fn line_too_long_message_mentions_exceeds() {
+        let rule = LineTooLongRule { max_len: 10 };
+        let diag = rule.check("a".repeat(11).as_str(), 1).unwrap();
+        // "exceeds" appears in the format string
+        assert!(diag.message.contains("exceeds") || diag.message.contains("11"));
+    }
+
+    #[test]
+    fn runner_check_line_high_line_number() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line("hello   ", 999_999);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 999_999);
+    }
+
+    #[test]
+    fn check_file_single_line_no_newline_gets_line_1() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file("{}");
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+    }
+
+    #[test]
+    fn empty_block_rule_fires_on_all_occurrences_via_runner() {
+        // Each line triggers exactly one empty-block; three lines → three diags.
+        let source = "fn a() {}\nfn b() {}\nfn c() {}";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 3);
+    }
+
+    #[test]
+    fn trailing_whitespace_first_char_is_space() {
+        // " x" — leading space is NOT trailing; no diag expected.
+        assert!(TrailingWhitespaceRule.check(" x", 1).is_none());
+    }
+
+    #[test]
+    fn trailing_whitespace_space_between_words_no_diag() {
+        assert!(TrailingWhitespaceRule.check("hello world", 1).is_none());
+    }
+
+    #[test]
+    fn lint_runner_run_and_check_file_same_result_for_complex_source() {
+        let source = "fn f() {}   \n".repeat(20);
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.run(&source), runner.check_file(&source));
+    }
+
+    #[test]
+    fn internal_rule_multiplier_all_rules_return_one() {
+        // Confirm all three concrete rules report 1.0 regardless of construction.
+        let rules: Vec<Box<dyn InternalRule>> = vec![
+            Box::new(TrailingWhitespaceRule),
+            Box::new(LineTooLongRule { max_len: 80 }),
+            Box::new(EmptyBlockRule),
+        ];
+        for r in &rules {
+            assert_eq!(r.severity_multiplier(), 1.0_f32);
+        }
+    }
+
+    #[test]
+    fn runner_produces_diag_per_line_not_per_file() {
+        // 100 lines each with trailing whitespace → exactly 100 diagnostics.
+        let source: String = std::iter::repeat("x   \n").take(100).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 100);
+    }
+
+    #[test]
+    fn empty_block_not_triggered_by_open_brace_alone() {
+        // "fn f() {" does not contain "{}" — should not fire.
+        assert!(EmptyBlockRule.check("fn f() {", 1).is_none());
+    }
 }

@@ -203,4 +203,51 @@ mod tests {
         names.sort();
         assert_eq!(names, vec!["alpha", "beta"]);
     }
+
+    #[test]
+    fn credential_store_default_is_empty() {
+        let s = CredentialStore::default();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+    }
+
+    #[test]
+    fn credential_store_remove_nonexistent_returns_false() {
+        let mut s = CredentialStore::new();
+        assert!(!s.remove("ghost"), "removing non-existent vendor must return false");
+    }
+
+    #[test]
+    fn credential_kind_field_preserved() {
+        let mut s = CredentialStore::new();
+        s.set(
+            "svc",
+            Credential {
+                kind: "bearer_token".into(),
+                value: "tok123".into(),
+            },
+        );
+        let cred = s.get("svc").unwrap();
+        assert_eq!(cred.kind, "bearer_token");
+        assert_eq!(cred.value, "tok123");
+    }
+
+    #[test]
+    fn credential_store_many_vendors() {
+        let mut s = CredentialStore::new();
+        let vendors = ["openai", "anthropic", "cohere", "gemini", "mistral"];
+        for v in &vendors {
+            s.set(
+                *v,
+                Credential {
+                    kind: "api_key".into(),
+                    value: format!("key-{v}"),
+                },
+            );
+        }
+        assert_eq!(s.len(), vendors.len());
+        for v in &vendors {
+            assert!(s.get(v).is_some(), "vendor {v} must be present");
+        }
+    }
 }

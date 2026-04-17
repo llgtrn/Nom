@@ -357,4 +357,184 @@ mod tests {
             );
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Extended font tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn font_registry_has_six_entries() {
+        // The placeholder registry must expose exactly 6 font IDs.
+        let reg = FontRegistry::placeholder();
+        let ids = [
+            reg.inter_regular,
+            reg.inter_medium,
+            reg.inter_semibold,
+            reg.inter_bold,
+            reg.source_code_pro_regular,
+            reg.source_code_pro_semibold,
+        ];
+        assert_eq!(ids.len(), 6, "FontRegistry must have 6 font slots");
+    }
+
+    #[test]
+    fn font_registry_clone_matches_original() {
+        // Clone must produce equal IDs.
+        let reg = FontRegistry::placeholder();
+        let cloned = reg.clone();
+        assert_eq!(reg.inter_regular, cloned.inter_regular);
+        assert_eq!(reg.inter_bold, cloned.inter_bold);
+        assert_eq!(reg.source_code_pro_regular, cloned.source_code_pro_regular);
+        assert_eq!(reg.source_code_pro_semibold, cloned.source_code_pro_semibold);
+    }
+
+    #[test]
+    fn font_type_style_heading1_uses_bold() {
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        assert_eq!(
+            h1.font_id, reg.inter_bold,
+            "H1 must use inter_bold font"
+        );
+    }
+
+    #[test]
+    fn font_type_style_heading2_uses_semibold() {
+        let reg = FontRegistry::placeholder();
+        let h2 = TypeStyle::heading2(&reg);
+        assert_eq!(
+            h2.font_id, reg.inter_semibold,
+            "H2 must use inter_semibold font"
+        );
+    }
+
+    #[test]
+    fn font_type_style_heading3_uses_medium() {
+        let reg = FontRegistry::placeholder();
+        let h3 = TypeStyle::heading3(&reg);
+        assert_eq!(
+            h3.font_id, reg.inter_medium,
+            "H3 must use inter_medium font"
+        );
+    }
+
+    #[test]
+    fn font_type_style_body_uses_regular() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        assert_eq!(
+            body.font_id, reg.inter_regular,
+            "body must use inter_regular font"
+        );
+    }
+
+    #[test]
+    fn font_type_style_caption_uses_regular() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        assert_eq!(
+            caption.font_id, reg.inter_regular,
+            "caption must use inter_regular font"
+        );
+    }
+
+    #[test]
+    fn font_type_style_code_zero_letter_spacing() {
+        // Monospace code must not have letter-spacing adjustments.
+        let reg = FontRegistry::placeholder();
+        let code = TypeStyle::code(&reg);
+        let code_bold = TypeStyle::code_semibold(&reg);
+        assert_eq!(code.letter_spacing, 0.0, "code letter_spacing must be 0.0");
+        assert_eq!(
+            code_bold.letter_spacing, 0.0,
+            "code_semibold letter_spacing must be 0.0"
+        );
+    }
+
+    #[test]
+    fn font_type_style_body_zero_letter_spacing() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        assert_eq!(body.letter_spacing, 0.0, "body letter_spacing must be 0.0");
+    }
+
+    #[test]
+    fn font_caption_zero_letter_spacing() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        assert_eq!(
+            caption.letter_spacing, 0.0,
+            "caption letter_spacing must be 0.0"
+        );
+    }
+
+    #[test]
+    fn font_heading_letter_spacing_tighter_at_larger_size() {
+        // H1 (24px) must have tighter tracking than H3 (18px).
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        let h3 = TypeStyle::heading3(&reg);
+        assert!(
+            h1.letter_spacing <= h3.letter_spacing,
+            "H1 letter_spacing ({}) must be <= H3 letter_spacing ({}) — larger headings track tighter",
+            h1.letter_spacing,
+            h3.letter_spacing
+        );
+    }
+
+    #[test]
+    fn font_code_semibold_larger_font_id_than_regular() {
+        // In placeholder ordering, semibold has a higher ID than regular for same family.
+        let reg = FontRegistry::placeholder();
+        assert!(
+            reg.source_code_pro_semibold > reg.source_code_pro_regular,
+            "source_code_pro_semibold ID must be > source_code_pro_regular ID"
+        );
+    }
+
+    #[test]
+    fn font_inter_ids_before_source_code_pro_ids() {
+        // Placeholder ordering: Inter IDs 0-3, SourceCodePro IDs 4-5.
+        let reg = FontRegistry::placeholder();
+        assert!(reg.inter_bold < reg.source_code_pro_regular);
+        assert!(reg.inter_semibold < reg.source_code_pro_regular);
+    }
+
+    #[test]
+    fn font_type_style_heading_sizes_match_tokens() {
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        let h3 = TypeStyle::heading3(&reg);
+        assert_eq!(h1.size, tokens::FONT_SIZE_H1);
+        assert_eq!(h2.size, tokens::FONT_SIZE_H2);
+        assert_eq!(h3.size, tokens::FONT_SIZE_H3);
+    }
+
+    #[test]
+    fn font_type_style_heading_line_heights_match_token() {
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        let h3 = TypeStyle::heading3(&reg);
+        assert_eq!(h1.line_height, tokens::LINE_HEIGHT_HEADING);
+        assert_eq!(h2.line_height, tokens::LINE_HEIGHT_HEADING);
+        assert_eq!(h3.line_height, tokens::LINE_HEIGHT_HEADING);
+    }
+
+    #[test]
+    fn font_caption_matches_token_size() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        assert_eq!(caption.size, tokens::FONT_SIZE_CAPTION);
+        assert_eq!(caption.line_height, tokens::LINE_HEIGHT_CAPTION);
+    }
+
+    #[test]
+    fn font_code_matches_token_size() {
+        let reg = FontRegistry::placeholder();
+        let code = TypeStyle::code(&reg);
+        assert_eq!(code.size, tokens::FONT_SIZE_CODE);
+        assert_eq!(code.line_height, tokens::LINE_HEIGHT_CODE);
+    }
 }

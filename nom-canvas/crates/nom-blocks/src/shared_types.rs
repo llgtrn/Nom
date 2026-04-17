@@ -137,4 +137,98 @@ mod tests {
         let event = DeepThinkEvent::Step(step.clone());
         assert!(matches!(event, DeepThinkEvent::Step(_)));
     }
+
+    #[test]
+    fn run_event_interrupt_is_terminal() {
+        let ev = RunEvent::Interrupt {
+            reason: "user cancelled".into(),
+        };
+        assert!(ev.is_terminal());
+    }
+
+    #[test]
+    fn run_event_llm_stream_not_terminal() {
+        let ev = RunEvent::LLMStream {
+            delta: "hello".into(),
+            model: "sonnet".into(),
+        };
+        assert!(!ev.is_terminal());
+    }
+
+    #[test]
+    fn run_event_tool_invocation_not_terminal() {
+        let ev = RunEvent::ToolInvocation {
+            tool_name: "grep".into(),
+            input: serde_json::json!({"pattern": "x"}),
+        };
+        assert!(!ev.is_terminal());
+    }
+
+    #[test]
+    fn run_event_thinking_stream_not_terminal() {
+        let ev = RunEvent::ThinkingStream {
+            delta: "...".into(),
+        };
+        assert!(!ev.is_terminal());
+    }
+
+    #[test]
+    fn composition_plan_default() {
+        let plan = CompositionPlan::default();
+        assert!(plan.intent.is_empty());
+        assert!(plan.steps.is_empty());
+        assert_eq!(plan.confidence, 0.0);
+    }
+
+    #[test]
+    fn plan_step_depends_on() {
+        let step = PlanStep {
+            id: "step-2".into(),
+            description: "second".into(),
+            kind: "action".into(),
+            depends_on: vec!["step-1".into()],
+        };
+        assert_eq!(step.depends_on.len(), 1);
+        assert_eq!(step.depends_on[0], "step-1");
+    }
+
+    #[test]
+    fn deep_think_event_final_variant() {
+        let plan = CompositionPlan {
+            intent: "build app".into(),
+            steps: vec![],
+            confidence: 0.9,
+        };
+        let ev = DeepThinkEvent::Final(plan);
+        assert!(matches!(ev, DeepThinkEvent::Final(_)));
+    }
+
+    #[test]
+    fn deep_think_step_with_refined_from() {
+        let step = DeepThinkStep {
+            hypothesis: "refined hypo".into(),
+            evidence: vec![],
+            confidence: 0.8,
+            counterevidence: vec!["counter-1".into()],
+            refined_from: Some("original-hypo".into()),
+        };
+        assert!(step.refined_from.is_some());
+        assert_eq!(step.refined_from.as_deref(), Some("original-hypo"));
+        assert_eq!(step.counterevidence.len(), 1);
+    }
+
+    #[test]
+    fn run_event_run_completed_has_artifact_hashes() {
+        let ev = RunEvent::RunCompleted {
+            summary: "all done".into(),
+            artifact_hashes: vec![[0xFFu8; 32]],
+        };
+        assert!(ev.is_terminal());
+        if let RunEvent::RunCompleted { artifact_hashes, .. } = &ev {
+            assert_eq!(artifact_hashes.len(), 1);
+            assert_eq!(artifact_hashes[0], [0xFFu8; 32]);
+        } else {
+            panic!("expected RunCompleted");
+        }
+    }
 }

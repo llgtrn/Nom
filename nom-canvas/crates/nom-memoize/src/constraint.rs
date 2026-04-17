@@ -208,4 +208,127 @@ mod tests {
         // validate with matching snapshots confirms both recorded correctly
         assert!(c.validate(100, &[snap(1, vec![(1, h), (2, h)]), snap(2, vec![(3, h)])]));
     }
+
+    // ── additional coverage ────────────────────────────────────────────────
+
+    #[test]
+    fn constraint_satisfiable_no_snapshots() {
+        // A constraint with no recorded snapshots and correct input_hash must pass.
+        let c = Constraint::new(0xABCD);
+        assert!(c.validate(0xABCD, &[]));
+    }
+
+    #[test]
+    fn constraint_unsatisfiable_wrong_input_hash() {
+        let c = Constraint::new(1);
+        assert!(!c.validate(2, &[]));
+    }
+
+    #[test]
+    fn constraint_unsatisfiable_mismatched_pair_count() {
+        let h = Hash128::of_str("v");
+        let mut c = Constraint::new(10);
+        c.record(snap(1, vec![(1, h), (2, h)])); // 2 pairs
+        // Current snapshot only has 1 pair → length mismatch → invalid.
+        assert!(!c.validate(10, &[snap(1, vec![(1, h)])]));
+    }
+
+    #[test]
+    fn constraint_dependency_chain_valid() {
+        // Chain: A depends on B, B depends on C — all matching → valid.
+        let h = Hash128::of_str("shared");
+        let mut c = Constraint::new(5);
+        c.record(snap(1, vec![(100, h)])); // A reads B.method(100) = h
+        c.record(snap(2, vec![(200, h)])); // B reads C.method(200) = h
+        assert!(c.validate(5, &[snap(1, vec![(100, h)]), snap(2, vec![(200, h)])]));
+    }
+
+    #[test]
+    fn constraint_dependency_chain_broken() {
+        // Same chain but C's return value changed.
+        let h_old = Hash128::of_str("old_c");
+        let h_new = Hash128::of_str("new_c");
+        let mut c = Constraint::new(5);
+        c.record(snap(1, vec![(100, Hash128::of_str("a"))]));
+        c.record(snap(2, vec![(200, h_old)])); // recorded with old_c
+        // Now C returns new_c → chain is broken.
+        assert!(!c.validate(5, &[snap(1, vec![(100, Hash128::of_str("a"))]), snap(2, vec![(200, h_new)])]));
+    }
+
+    #[test]
+    fn constraint_cache_invalidation_on_version_change() {
+        // Simulates: tracked value version bumps → constraint invalidated.
+        let h = Hash128::of_str("result");
+        let mut c = Constraint::new(1);
+        c.record(snap(1, vec![(7, h)])); // recorded with version=1
+        // Version bumped to 2 → stale.
+        assert!(!c.validate(1, &[snap(2, vec![(7, h)])]));
+    }
+
+    #[test]
+    fn constraint_cache_invalidation_on_return_hash_change() {
+        let h1 = Hash128::of_str("v1");
+        let h2 = Hash128::of_str("v2");
+        let mut c = Constraint::new(1);
+        c.record(snap(1, vec![(3, h1)]));
+        assert!(!c.validate(1, &[snap(1, vec![(3, h2)])]));
+    }
+
+    #[test]
+    fn constraint_extra_current_snapshots_allowed() {
+        // More current snapshots than recorded is acceptable (zip stops at recorded).
+        let h = Hash128::of_str("x");
+        let mut c = Constraint::new(9);
+        c.record(snap(1, vec![(1, h)]));
+        // Provide 2 current snapshots even though only 1 was recorded.
+        assert!(c.validate(9, &[snap(1, vec![(1, h)]), snap(2, vec![])]));
+    }
+
+    #[test]
+    fn constraint_validate_with_empty_pair_snapshot() {
+        let mut c = Constraint::new(7);
+        c.record(snap(3, vec![])); // no method calls recorded
+        assert!(c.validate(7, &[snap(3, vec![])]));
+        assert!(!c.validate(7, &[snap(4, vec![])])); // version differs
+    }
+
+    #[test]
+    fn constraint_many_pairs_all_matching() {
+        let pairs: Vec<(u32, Hash128)> = (0u32..20)
+            .map(|i| (i, Hash128::of_u64(i as u64)))
+            .collect();
+        let mut c = Constraint::new(42);
+        c.record(snap(1, pairs.clone()));
+        assert!(c.validate(42, &[snap(1, pairs)]));
+    }
+
+    #[test]
+    fn constraint_many_pairs_one_differs() {
+        let pairs_recorded: Vec<(u32, Hash128)> = (0u32..10)
+            .map(|i| (i, Hash128::of_u64(i as u64)))
+            .collect();
+        let mut pairs_current = pairs_recorded.clone();
+        // Corrupt the last pair's return hash.
+        pairs_current[9].1 = Hash128::of_str("corrupted");
+
+        let mut c = Constraint::new(1);
+        c.record(snap(1, pairs_recorded.clone()));
+        assert!(!c.validate(1, &[snap(1, pairs_current)]));
+
+        // Sanity: original passes.
+        let mut c2 = Constraint::new(1);
+        c2.record(snap(1, pairs_recorded.clone()));
+        assert!(c2.validate(1, &[snap(1, pairs_recorded)]));
+    }
+
+    #[test]
+    fn constraint_clone_is_independent() {
+        let h = Hash128::of_str("c");
+        let mut c = Constraint::new(3);
+        c.record(snap(1, vec![(1, h)]));
+        let c2 = c.clone();
+        // Both should validate with matching args.
+        assert!(c.validate(3, &[snap(1, vec![(1, h)])]));
+        assert!(c2.validate(3, &[snap(1, vec![(1, h)])]));
+    }
 }

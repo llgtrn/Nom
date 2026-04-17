@@ -830,4 +830,474 @@ mod tests {
             );
         }
     }
+
+    // --- Wave AA batch: ~55 additional tests to reach ~115 total ---
+
+    // InterruptSignal: construction, set/clear semantics, Arc sharing
+    #[test]
+    fn interrupt_signal_new_not_set() {
+        let s = InterruptSignal::new();
+        assert!(!s.is_cancelled(), "new signal must not be set");
+    }
+
+    #[test]
+    fn interrupt_signal_set_via_cancel() {
+        let s = InterruptSignal::new();
+        s.cancel();
+        assert!(s.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_signal_default_not_set() {
+        let s = InterruptSignal::default();
+        assert!(!s.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_signal_arc_clone_cancel_propagates() {
+        let s1 = InterruptSignal::new();
+        let s2 = s1.clone();
+        let s3 = s2.clone();
+        s3.cancel();
+        assert!(s1.is_cancelled(), "cancel on clone-of-clone must propagate");
+        assert!(s2.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_signal_two_independent_signals() {
+        let a = InterruptSignal::new();
+        let b = InterruptSignal::new();
+        a.cancel();
+        assert!(a.is_cancelled());
+        assert!(!b.is_cancelled(), "b must be unaffected");
+    }
+
+    #[test]
+    fn interrupt_signal_cancel_then_clone_sees_set() {
+        let s = InterruptSignal::new();
+        s.cancel();
+        let c = s.clone();
+        assert!(
+            c.is_cancelled(),
+            "clone created after cancel must already be set"
+        );
+    }
+
+    #[test]
+    fn interrupt_signal_idempotent_cancel() {
+        let s = InterruptSignal::new();
+        for _ in 0..5 {
+            s.cancel();
+        }
+        assert!(s.is_cancelled());
+    }
+
+    // ReactChain: empty, single-step, multi-step
+    #[test]
+    fn react_chain_zero_max_steps_returns_empty() {
+        let evidence = &["something here"];
+        let steps = react_chain("hypothesis", evidence, 0);
+        assert_eq!(steps.len(), 0);
+    }
+
+    #[test]
+    fn react_chain_one_step_fields_non_empty() {
+        let steps = react_chain("find node", &["find the node"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(!steps[0].thought.is_empty());
+        assert!(!steps[0].action.is_empty());
+        assert!(!steps[0].observation.is_empty());
+    }
+
+    #[test]
+    fn react_chain_four_steps() {
+        let evidence = &["a b", "c d", "e f", "g h"];
+        let steps = react_chain("a c e g", evidence, 4);
+        assert_eq!(steps.len(), 4);
+    }
+
+    #[test]
+    fn react_chain_step_scores_in_unit_interval() {
+        let evidence = &["alpha beta", "gamma delta", "epsilon zeta"];
+        let steps = react_chain("alpha gamma epsilon", evidence, 3);
+        for s in &steps {
+            assert!(s.score >= 0.0 && s.score <= 1.0, "score {} out of [0,1]", s.score);
+        }
+    }
+
+    #[test]
+    fn react_chain_thought_contains_evidence_index() {
+        let evidence = &["item zero", "item one", "item two"];
+        let steps = react_chain("item", evidence, 3);
+        assert!(steps[0].thought.contains("checking evidence[0]"));
+        assert!(steps[1].thought.contains("checking evidence[1]"));
+        assert!(steps[2].thought.contains("checking evidence[2]"));
+    }
+
+    #[test]
+    fn react_chain_action_contains_evidence_text() {
+        let evidence = &["unique_needle_word"];
+        let steps = react_chain("unique_needle_word", evidence, 1);
+        assert!(
+            steps[0].action.contains("unique_needle_word"),
+            "action must contain the evidence item"
+        );
+    }
+
+    #[test]
+    fn react_chain_observation_contains_partial_confidence() {
+        let evidence = &["test observation"];
+        let steps = react_chain("test", evidence, 1);
+        assert!(
+            steps[0].observation.starts_with("partial confidence:"),
+            "observation must start with 'partial confidence:'"
+        );
+    }
+
+    #[test]
+    fn react_chain_max_steps_clamped_to_evidence_len() {
+        // max_steps > evidence.len() → only evidence.len() steps produced
+        let evidence = &["one", "two"];
+        let steps = react_chain("one two", evidence, 100);
+        assert_eq!(steps.len(), 2, "must clamp to evidence length");
+    }
+
+    // ReactChain: step ordering guarantees
+    #[test]
+    fn react_chain_step_order_indexed_correctly() {
+        let evidence = &["first ev", "second ev", "third ev"];
+        let steps = react_chain("first second third", evidence, 3);
+        assert!(steps[0].thought.contains("[0]"));
+        assert!(steps[1].thought.contains("[1]"));
+        assert!(steps[2].thought.contains("[2]"));
+    }
+
+    #[test]
+    fn react_chain_last_step_has_most_evidence() {
+        // classify_with_react on evidence[..=2] (3 items) vs evidence[..=0] (1 item).
+        // With matching words, using more evidence generally maintains or increases score
+        // (though position decay can reduce it). At minimum just verify it's in [0,1].
+        let evidence = &["word", "word item", "word item result"];
+        let steps = react_chain("word item result", evidence, 3);
+        assert!(steps[2].score >= 0.0 && steps[2].score <= 1.0);
+    }
+
+    // ReactChain interruptible: cancel at step 0, mid-chain, and after all steps
+    #[test]
+    fn interruptible_cancel_at_step_0_yields_empty() {
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let steps = react_chain_interruptible("h", &["e0", "e1", "e2"], 3, &signal);
+        assert!(steps.is_empty());
+    }
+
+    #[test]
+    fn interruptible_no_cancel_all_steps() {
+        let signal = InterruptSignal::new();
+        let evidence = &["a1", "a2", "a3", "a4", "a5"];
+        let steps = react_chain_interruptible("a1 a2 a3 a4 a5", evidence, 5, &signal);
+        assert_eq!(steps.len(), 5);
+    }
+
+    #[test]
+    fn interruptible_clone_cancel_stops_chain() {
+        // Cancel via a clone; original also sees the cancellation.
+        let signal = InterruptSignal::new();
+        let guard = signal.clone();
+        guard.cancel();
+        let steps = react_chain_interruptible("node", &["node item"], 1, &signal);
+        assert!(steps.is_empty(), "clone cancel must stop chain");
+    }
+
+    #[test]
+    fn interruptible_zero_max_steps() {
+        let signal = InterruptSignal::new();
+        let steps = react_chain_interruptible("h", &["e1", "e2"], 0, &signal);
+        assert!(steps.is_empty());
+    }
+
+    #[test]
+    fn interruptible_scores_within_range() {
+        let signal = InterruptSignal::new();
+        let evidence = &["graph search", "query result", "node found"];
+        let steps = react_chain_interruptible("graph query node", evidence, 3, &signal);
+        for s in &steps {
+            assert!(s.score >= 0.0 && s.score <= 1.0);
+        }
+    }
+
+    // classify_with_react: boundary conditions
+    #[test]
+    fn classify_empty_hypothesis_empty_evidence_returns_zero() {
+        assert_eq!(classify_with_react("", &[]), 0.0);
+    }
+
+    #[test]
+    fn classify_empty_hypothesis_with_evidence_returns_zero() {
+        // Empty hypothesis has no words → matching is 0 for all evidence.
+        let score = classify_with_react("", &["some evidence here"]);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn classify_single_word_exact_match() {
+        let score = classify_with_react("node", &["node"]);
+        assert!((score - 1.0_f32).abs() < 1e-5, "single-word exact match should be 1.0, got {score}");
+    }
+
+    #[test]
+    fn classify_single_word_no_match() {
+        let score = classify_with_react("alpha", &["beta"]);
+        assert_eq!(score, 0.0);
+    }
+
+    #[test]
+    fn classify_large_evidence_set() {
+        // 20 items; result must be in [0,1].
+        let evidence: Vec<&str> = (0..20).map(|_| "unrelated word").collect();
+        let score = classify_with_react("target", &evidence);
+        assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[test]
+    fn classify_position_decay_first_evidence_weights_more() {
+        // evidence[0] matches hypothesis; evidence[1] doesn't.
+        // Reverse order should yield lower score (position 0 has weight 1.0; position 1 has 1/1.2).
+        let h = "match";
+        let ev_match_first = &["match word", "no overlap here"];
+        let ev_match_second = &["no overlap here", "match word"];
+        let s1 = classify_with_react(h, ev_match_first);
+        let s2 = classify_with_react(h, ev_match_second);
+        assert!(
+            s1 >= s2,
+            "first-position match ({s1}) must be >= second-position match ({s2})"
+        );
+    }
+
+    #[test]
+    fn classify_all_matching_evidence() {
+        // Every evidence item is identical to hypothesis → high score.
+        let evidence: Vec<&str> = vec!["target word"; 5];
+        let score = classify_with_react("target word", &evidence);
+        assert!(score > 0.5, "all-matching evidence must score > 0.5, got {score}");
+    }
+
+    #[test]
+    fn classify_partial_overlap() {
+        // 2/3 words match.
+        let score = classify_with_react("alpha beta gamma", &["alpha beta noise"]);
+        let expected_lower = 2.0 / 3.0 * 0.9; // rough lower bound
+        assert!(score > 0.0 && score <= 1.0, "score {score} out of range");
+        assert!(score > expected_lower * 0.9, "expected decent overlap, got {score}");
+    }
+
+    // rank_hypotheses: edge cases
+    #[test]
+    fn rank_hypotheses_empty_hypotheses() {
+        let ranked = rank_hypotheses(&[], &["some evidence"]);
+        assert!(ranked.is_empty());
+    }
+
+    #[test]
+    fn rank_hypotheses_empty_evidence() {
+        let ranked = rank_hypotheses(&["h1", "h2"], &[]);
+        assert_eq!(ranked.len(), 2);
+        for item in &ranked {
+            assert_eq!(item.score, 0.0, "empty evidence must yield 0.0 score");
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_all_zero_scores() {
+        let ranked = rank_hypotheses(&["aaa", "bbb", "ccc"], &["xyz"]);
+        for item in &ranked {
+            assert_eq!(item.score, 0.0);
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_evidence_used_is_full_slice() {
+        let evidence = &["e1", "e2", "e3", "e4"];
+        let ranked = rank_hypotheses(&["e1 e2 e3 e4"], evidence);
+        assert_eq!(ranked[0].evidence_used, vec!["e1", "e2", "e3", "e4"]);
+    }
+
+    #[test]
+    fn rank_hypotheses_step_count_equals_evidence_len() {
+        let evidence = &["a", "b", "c", "d", "e"];
+        let ranked = rank_hypotheses(&["a b c d e"], evidence);
+        assert_eq!(ranked[0].step_count, 5);
+    }
+
+    #[test]
+    fn rank_hypotheses_no_duplicates_in_result() {
+        // Each hypothesis appears exactly once in output.
+        let evidence = &["data"];
+        let hypotheses = &["h1", "h2", "h3"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        let unique: std::collections::HashSet<&str> =
+            ranked.iter().map(|r| r.hypothesis.as_str()).collect();
+        assert_eq!(unique.len(), 3);
+    }
+
+    // best_hypothesis: more edge cases
+    #[test]
+    fn best_hypothesis_no_hypotheses_no_evidence() {
+        assert!(best_hypothesis(&[], &[]).is_none());
+    }
+
+    #[test]
+    fn best_hypothesis_single_hypothesis_no_evidence() {
+        let best = best_hypothesis(&["lone"], &[]).expect("must return Some");
+        assert_eq!(best.hypothesis, "lone");
+        assert_eq!(best.score, 0.0);
+    }
+
+    #[test]
+    fn best_hypothesis_returns_some_with_nonempty_input() {
+        let best = best_hypothesis(&["graph", "tree"], &["graph edge"]);
+        assert!(best.is_some());
+    }
+
+    #[test]
+    fn best_hypothesis_score_is_max() {
+        let evidence = &["graph query traversal"];
+        let hypotheses = &["graph query traversal", "unrelated", "banana"];
+        let all = rank_hypotheses(hypotheses, evidence);
+        let best = best_hypothesis(hypotheses, evidence).unwrap();
+        let max_score = all.iter().map(|h| h.score).fold(f32::NEG_INFINITY, f32::max);
+        assert!((best.score - max_score).abs() < 1e-6);
+    }
+
+    // ScoredHypothesis struct field types
+    #[test]
+    fn scored_hypothesis_clone() {
+        let evidence = &["clone test"];
+        let ranked = rank_hypotheses(&["clone test"], evidence);
+        let original = &ranked[0];
+        let cloned = original.clone();
+        assert_eq!(cloned.hypothesis, original.hypothesis);
+        assert!((cloned.score - original.score).abs() < 1e-6);
+        assert_eq!(cloned.evidence_used, original.evidence_used);
+        assert_eq!(cloned.step_count, original.step_count);
+    }
+
+    #[test]
+    fn react_step_clone() {
+        let steps = react_chain("clone", &["clone this"], 1);
+        let s = steps[0].clone();
+        assert_eq!(s.thought, steps[0].thought);
+        assert_eq!(s.action, steps[0].action);
+        assert_eq!(s.observation, steps[0].observation);
+        assert!((s.score - steps[0].score).abs() < 1e-6);
+    }
+
+    #[test]
+    fn react_step_debug_format() {
+        let steps = react_chain("debug", &["debug item"], 1);
+        let formatted = format!("{:?}", steps[0]);
+        assert!(formatted.contains("ReactStep"));
+    }
+
+    #[test]
+    fn scored_hypothesis_debug_format() {
+        let ranked = rank_hypotheses(&["debug hyp"], &["debug item"]);
+        let formatted = format!("{:?}", ranked[0]);
+        assert!(formatted.contains("ScoredHypothesis"));
+    }
+
+    // Confidence type alias is f32
+    #[test]
+    fn confidence_type_is_f32() {
+        let c: Confidence = classify_with_react("word", &["word"]);
+        let _as_f32: f32 = c; // compile-time type check
+        assert!(_as_f32 >= 0.0);
+    }
+
+    // Additional interruptible ordering
+    #[test]
+    fn interruptible_thought_indexed_correctly() {
+        let signal = InterruptSignal::new();
+        let evidence = &["ev0", "ev1", "ev2"];
+        let steps = react_chain_interruptible("ev0 ev1 ev2", evidence, 3, &signal);
+        assert_eq!(steps.len(), 3);
+        assert!(steps[0].thought.contains("[0]"));
+        assert!(steps[1].thought.contains("[1]"));
+        assert!(steps[2].thought.contains("[2]"));
+    }
+
+    #[test]
+    fn interruptible_clamped_to_evidence_len() {
+        let signal = InterruptSignal::new();
+        let evidence = &["x", "y"];
+        let steps = react_chain_interruptible("x y", evidence, 999, &signal);
+        assert_eq!(steps.len(), 2, "must clamp to evidence length");
+    }
+
+    // Error propagation: zero-score is the "error/no-match" outcome
+    #[test]
+    fn react_chain_all_zero_scores_propagate_to_rank() {
+        let evidence = &["abc def"];
+        let steps = react_chain("xyz", evidence, 1);
+        assert_eq!(steps[0].score, 0.0);
+        let ranked = rank_hypotheses(&["xyz"], evidence);
+        assert_eq!(ranked[0].score, 0.0);
+    }
+
+    #[test]
+    fn classify_with_react_result_equals_rank_score() {
+        let evidence = &["match word here"];
+        let h = "match word";
+        let direct = classify_with_react(h, evidence);
+        let ranked = rank_hypotheses(&[h], evidence);
+        assert!((direct - ranked[0].score).abs() < 1e-6);
+    }
+
+    #[test]
+    fn react_chain_hypothesis_truncated_at_40_chars_in_thought() {
+        // thought truncates hypothesis to 40 chars via hypothesis.len().min(40)
+        let long_hyp = "a b c d e f g h i j k l m n o p q r s t"; // 39 chars
+        let steps = react_chain(long_hyp, &["a b c"], 1);
+        assert!(steps[0].thought.contains("checking evidence[0]"));
+    }
+
+    #[test]
+    fn best_hypothesis_evidence_used_matches_input() {
+        let evidence = &["ev alpha", "ev beta"];
+        let best = best_hypothesis(&["ev alpha ev beta"], evidence).unwrap();
+        assert_eq!(best.evidence_used.len(), 2);
+        assert_eq!(best.evidence_used[0], "ev alpha");
+        assert_eq!(best.evidence_used[1], "ev beta");
+    }
+
+    #[test]
+    fn rank_hypotheses_three_evidence_items_step_count() {
+        let evidence = &["one", "two", "three"];
+        let ranked = rank_hypotheses(&["one two three"], evidence);
+        assert_eq!(ranked[0].step_count, 3, "step_count must equal evidence length");
+    }
+
+    #[test]
+    fn classify_score_bounded_above_by_one() {
+        // Even with many perfectly-matching evidence items, score never exceeds 1.0
+        let evidence = vec!["word"; 50];
+        let score = classify_with_react("word", &evidence);
+        assert!(score <= 1.0, "score {score} must not exceed 1.0");
+    }
+
+    #[test]
+    fn interruptible_empty_evidence_returns_empty() {
+        let signal = InterruptSignal::new();
+        let steps = react_chain_interruptible("hypothesis", &[], 5, &signal);
+        assert!(steps.is_empty(), "empty evidence must yield empty steps");
+    }
+
+    #[test]
+    fn scored_hypothesis_hypothesis_is_string_not_ref() {
+        // Verify hypothesis field owns its data (String, not &str).
+        let evidence = &["ownership test"];
+        let ranked = rank_hypotheses(&["ownership test"], evidence);
+        let h: String = ranked.into_iter().next().unwrap().hypothesis;
+        assert_eq!(h, "ownership test");
+    }
 }

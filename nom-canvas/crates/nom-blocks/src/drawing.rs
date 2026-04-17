@@ -112,4 +112,84 @@ mod tests {
         assert_eq!(bb.0, [0.0, 0.0]);
         assert_eq!(bb.1, [100.0, 50.0]);
     }
+
+    #[test]
+    fn stroke_bounding_box_empty_returns_none() {
+        let s = Stroke::new(StrokeColor::black(), 1.0);
+        assert!(s.bounding_box().is_none());
+    }
+
+    #[test]
+    fn stroke_add_point_increments_count() {
+        let mut s = Stroke::new(StrokeColor::white(), 1.5);
+        assert!(s.points.is_empty());
+        s.add_point([10.0, 20.0], 0.8);
+        s.add_point([30.0, 40.0], 0.9);
+        assert_eq!(s.points.len(), 2);
+        assert_eq!(s.pressure.len(), 2);
+        assert_eq!(s.points[0], [10.0, 20.0]);
+        assert!((s.pressure[1] - 0.9).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn stroke_color_black_and_white() {
+        let black = StrokeColor::black();
+        assert_eq!(black.l, 0.0);
+        assert_eq!(black.a, 1.0);
+        let white = StrokeColor::white();
+        assert_eq!(white.l, 1.0);
+        assert_eq!(white.a, 1.0);
+    }
+
+    #[test]
+    fn drawing_block_add_clear() {
+        let entity = crate::block_model::NomtuRef::new("draw-01", "sketch", "verb");
+        let mut d = DrawingBlock::new(entity);
+        assert!(d.strokes.is_empty());
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        s.add_point([0.0, 0.0], 1.0);
+        d.add_stroke(s);
+        assert_eq!(d.strokes.len(), 1);
+        d.clear();
+        assert!(d.strokes.is_empty());
+    }
+
+    #[test]
+    fn drawing_block_entity_non_empty() {
+        let entity = crate::block_model::NomtuRef::new("draw-02", "draw", "verb");
+        let d = DrawingBlock::new(entity);
+        assert_eq!(d.entity.id, "draw-02");
+        assert_eq!(d.entity.word, "draw");
+    }
+
+    #[test]
+    fn stroke_bounding_box_single_point() {
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        s.add_point([5.0, 7.0], 0.5);
+        let bb = s.bounding_box().unwrap();
+        assert_eq!(bb.0, [5.0, 7.0]);
+        assert_eq!(bb.1, [5.0, 7.0]);
+    }
+
+    #[test]
+    fn stroke_bounding_box_negative_coords() {
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        s.add_point([-10.0, -20.0], 1.0);
+        s.add_point([5.0, 15.0], 1.0);
+        let bb = s.bounding_box().unwrap();
+        assert_eq!(bb.0, [-10.0, -20.0]);
+        assert_eq!(bb.1, [5.0, 15.0]);
+    }
+
+    #[test]
+    fn drawing_block_multiple_strokes() {
+        let entity = crate::block_model::NomtuRef::new("draw-03", "annotate", "verb");
+        let mut d = DrawingBlock::new(entity);
+        for i in 0..5 {
+            let mut s = Stroke::new(StrokeColor::black(), 1.0);
+            s.add_point([i as f32, i as f32], 1.0);
+            d.add_stroke(s);
+        }
+        assert_eq!(d.strokes.len(), 5);
+    }
 }

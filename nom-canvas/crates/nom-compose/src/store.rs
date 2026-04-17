@@ -239,4 +239,77 @@ mod tests {
         assert!(s.is_empty(), "clear() must remove all artifacts");
         assert_eq!(s.len(), 0);
     }
+
+    #[test]
+    fn content_hash_as_bytes_roundtrip() {
+        let original = [0xabu8; 32];
+        let ch = ContentHash::from(original);
+        assert_eq!(ch.as_bytes(), &original);
+        let back: [u8; 32] = ch.into();
+        assert_eq!(back, original);
+    }
+
+    #[test]
+    fn content_hash_hex_is_lowercase() {
+        let h = ContentHash::from_bytes(b"CaseSensitiveInput");
+        let hex = h.as_hex();
+        assert!(
+            hex.chars().all(|c| !c.is_alphabetic() || c.is_lowercase()),
+            "hex must be lowercase, got: {hex}"
+        );
+    }
+
+    #[test]
+    fn content_hash_empty_vs_nonempty() {
+        let empty = ContentHash::from_bytes(b"");
+        let nonempty = ContentHash::from_bytes(b"x");
+        assert_ne!(empty, nonempty, "empty and non-empty must hash differently");
+    }
+
+    #[test]
+    fn in_memory_store_default_is_empty() {
+        let s = InMemoryStore::default();
+        assert!(s.is_empty());
+        assert_eq!(s.len(), 0);
+    }
+
+    #[test]
+    fn store_byte_size_after_put_bytes() {
+        let mut s = InMemoryStore::new();
+        let payload = b"measure me";
+        let ch = s.put_bytes(payload);
+        assert_eq!(s.byte_size(ch.as_bytes()), Some(payload.len() as u64));
+    }
+
+    #[test]
+    fn store_multiple_distinct_payloads() {
+        let mut s = InMemoryStore::new();
+        let h1 = s.put_bytes(b"alpha");
+        let h2 = s.put_bytes(b"beta");
+        let h3 = s.put_bytes(b"gamma");
+        assert_ne!(h1, h2);
+        assert_ne!(h2, h3);
+        assert_ne!(h1, h3);
+        assert_eq!(s.len(), 3);
+    }
+
+    #[test]
+    fn store_large_payload() {
+        let mut s = InMemoryStore::new();
+        let large: Vec<u8> = (0u8..=255).cycle().take(4096).collect();
+        let ch = s.put_bytes(&large);
+        let retrieved = s.read(ch.as_bytes()).unwrap();
+        assert_eq!(retrieved.len(), 4096);
+        assert_eq!(retrieved, large);
+    }
+
+    #[test]
+    fn content_hash_known_sha256_non_empty() {
+        // SHA-256("abc") = ba7816bf8f01cfea414140de5dae2ec73b00361bbef0469f (...)
+        // Just verify prefix to avoid full constant, and verify length stays 64.
+        let h = ContentHash::from_bytes(b"abc");
+        let hex = h.as_hex();
+        assert_eq!(hex.len(), 64);
+        assert!(hex.starts_with("ba7816bf"));
+    }
 }

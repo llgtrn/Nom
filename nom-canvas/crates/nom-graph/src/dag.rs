@@ -567,4 +567,458 @@ mod tests {
             "A→B→C→A cycle must cause topological_sort to return Err"
         );
     }
+
+    // ------------------------------------------------------------------
+    // Graph construction: single-node graph
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_single_node_no_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("solo", "verb"));
+        assert_eq!(dag.node_count(), 1);
+        assert_eq!(dag.edge_count(), 0);
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted, vec!["solo"]);
+    }
+
+    // ------------------------------------------------------------------
+    // Graph construction: empty graph operations
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_empty_node_count_zero() {
+        let dag = Dag::new();
+        assert_eq!(dag.node_count(), 0);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    #[test]
+    fn dag_default_creates_empty_dag() {
+        let dag = Dag::default();
+        assert_eq!(dag.node_count(), 0);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Graph construction: directed edges (src → dst, not dst → src)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_is_directed() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        dag.add_edge("src", "out", "dst", "in");
+        // Only one edge stored, and it points src→dst, not dst→src.
+        assert_eq!(dag.edge_count(), 1);
+        let e = &dag.edges[0];
+        assert_eq!(e.src_node, "src");
+        assert_eq!(e.dst_node, "dst");
+        // No edge from dst→src.
+        let reverse = dag.edges.iter().any(|e| e.src_node == "dst" && e.dst_node == "src");
+        assert!(!reverse, "directed DAG must not have implicit reverse edge");
+    }
+
+    // ------------------------------------------------------------------
+    // Graph construction: multiple edges between same pair of nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_parallel_edges_same_pair() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("u", "verb"));
+        dag.add_node(ExecNode::new("v", "verb"));
+        dag.add_edge("u", "out1", "v", "in1");
+        dag.add_edge("u", "out2", "v", "in2");
+        assert_eq!(dag.edge_count(), 2, "two parallel edges must both be stored");
+    }
+
+    // ------------------------------------------------------------------
+    // BFS traversal: reachability from a source node
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_bfs_reachable_nodes() {
+        // Graph: root → a, root → b, a → c
+        let mut dag = Dag::new();
+        for name in &["root", "a", "b", "c", "isolated"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("root", "out", "a", "in");
+        dag.add_edge("root", "out", "b", "in");
+        dag.add_edge("a", "out", "c", "in");
+
+        // BFS from root using a manual walk over edges (DAG has directed edges).
+        let mut visited = std::collections::HashSet::new();
+        let mut queue = std::collections::VecDeque::new();
+        queue.push_back("root".to_string());
+        visited.insert("root".to_string());
+        while let Some(current) = queue.pop_front() {
+            for edge in &dag.edges {
+                if edge.src_node == current && !visited.contains(&edge.dst_node) {
+                    visited.insert(edge.dst_node.clone());
+                    queue.push_back(edge.dst_node.clone());
+                }
+            }
+        }
+        assert!(visited.contains("a"), "BFS must reach a");
+        assert!(visited.contains("b"), "BFS must reach b");
+        assert!(visited.contains("c"), "BFS must reach c");
+        assert!(!visited.contains("isolated"), "BFS must not reach isolated node");
+    }
+
+    // ------------------------------------------------------------------
+    // DFS traversal: post-order from a source node
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_dfs_visits_all_reachable() {
+        // Chain: start → mid → end
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("start", "verb"));
+        dag.add_node(ExecNode::new("mid", "verb"));
+        dag.add_node(ExecNode::new("end", "verb"));
+        dag.add_edge("start", "out", "mid", "in");
+        dag.add_edge("mid", "out", "end", "in");
+
+        // Iterative DFS.
+        let mut visited: Vec<String> = Vec::new();
+        let mut stack = vec!["start".to_string()];
+        let mut seen = std::collections::HashSet::new();
+        while let Some(node) = stack.pop() {
+            if seen.insert(node.clone()) {
+                visited.push(node.clone());
+                for edge in dag.edges.iter().rev() {
+                    if edge.src_node == node && !seen.contains(&edge.dst_node) {
+                        stack.push(edge.dst_node.clone());
+                    }
+                }
+            }
+        }
+        assert!(visited.contains(&"start".to_string()));
+        assert!(visited.contains(&"mid".to_string()));
+        assert!(visited.contains(&"end".to_string()));
+        assert_eq!(visited.len(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // Subgraph extraction
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_subgraph_extraction() {
+        // Full graph: a → b → c → d; extract subgraph containing only {b, c}.
+        let mut dag = Dag::new();
+        for name in &["a", "b", "c", "d"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        dag.add_edge("c", "out", "d", "in");
+
+        let keep: std::collections::HashSet<&str> = ["b", "c"].iter().copied().collect();
+        let mut sub = Dag::new();
+        for (id, node) in &dag.nodes {
+            if keep.contains(id.as_str()) {
+                sub.add_node(node.clone());
+            }
+        }
+        for edge in &dag.edges {
+            if keep.contains(edge.src_node.as_str()) && keep.contains(edge.dst_node.as_str()) {
+                sub.add_edge(
+                    edge.src_node.clone(),
+                    edge.src_port.clone(),
+                    edge.dst_node.clone(),
+                    edge.dst_port.clone(),
+                );
+            }
+        }
+
+        assert_eq!(sub.node_count(), 2, "subgraph must contain exactly {{b, c}}");
+        assert_eq!(sub.edge_count(), 1, "subgraph must contain only b→c edge");
+        assert!(sub.nodes.contains_key("b"), "subgraph must contain b");
+        assert!(sub.nodes.contains_key("c"), "subgraph must contain c");
+        assert!(!sub.nodes.contains_key("a"), "subgraph must not contain a");
+        assert!(!sub.nodes.contains_key("d"), "subgraph must not contain d");
+    }
+
+    // ------------------------------------------------------------------
+    // Edge weight operations
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_weight_midpoint_stored_correctly() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        dag.add_edge_weighted("x", "out", "y", "in", 0.75);
+        assert!((dag.edges[0].confidence - 0.75).abs() < 1e-6);
+    }
+
+    #[test]
+    fn dag_edge_weight_zero_is_valid() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge_weighted("a", "out", "b", "in", 0.0);
+        assert_eq!(dag.edges[0].confidence, 0.0);
+    }
+
+    #[test]
+    fn dag_edge_weight_one_is_valid() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_edge_weighted("a", "out", "b", "in", 1.0);
+        assert_eq!(dag.edges[0].confidence, 1.0);
+    }
+
+    #[test]
+    fn dag_filter_edges_by_weight_threshold() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge_weighted("a", "out", "b", "in", 0.9);
+        dag.add_edge_weighted("a", "out", "c", "in", 0.1);
+        // Only edges above 0.5 threshold.
+        let high: Vec<_> = dag.edges.iter().filter(|e| e.confidence > 0.5).collect();
+        assert_eq!(high.len(), 1);
+        assert_eq!(high[0].dst_node, "b");
+    }
+
+    // ------------------------------------------------------------------
+    // Node removal and dangling edge cleanup
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_remove_middle_node_removes_both_incident_edges() {
+        let mut dag = Dag::new();
+        for name in &["a", "b", "c"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        assert_eq!(dag.edge_count(), 2);
+
+        dag.nodes.remove("b");
+        dag.edges.retain(|e| e.src_node != "b" && e.dst_node != "b");
+
+        assert_eq!(dag.node_count(), 2);
+        assert_eq!(dag.edge_count(), 0, "both edges referencing b must be removed");
+    }
+
+    #[test]
+    fn dag_remove_leaf_node_removes_incoming_edge() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("leaf", "verb"));
+        dag.add_edge("root", "out", "leaf", "in");
+
+        dag.nodes.remove("leaf");
+        dag.edges.retain(|e| e.src_node != "leaf" && e.dst_node != "leaf");
+
+        assert_eq!(dag.node_count(), 1);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    #[test]
+    fn dag_remove_nonexistent_node_is_noop() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        let removed = dag.nodes.remove("does_not_exist");
+        assert!(removed.is_none());
+        assert_eq!(dag.node_count(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // Graph merge / union
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_merge_two_dags_combines_nodes_and_edges() {
+        let mut dag1 = Dag::new();
+        dag1.add_node(ExecNode::new("a", "verb"));
+        dag1.add_node(ExecNode::new("b", "verb"));
+        dag1.add_edge("a", "out", "b", "in");
+
+        let mut dag2 = Dag::new();
+        dag2.add_node(ExecNode::new("c", "verb"));
+        dag2.add_node(ExecNode::new("d", "verb"));
+        dag2.add_edge("c", "out", "d", "in");
+
+        // Merge dag2 into dag1.
+        for (id, node) in dag2.nodes {
+            dag1.nodes.insert(id, node);
+        }
+        for edge in dag2.edges {
+            dag1.edges.push(edge);
+        }
+
+        assert_eq!(dag1.node_count(), 4, "merged dag must have 4 nodes");
+        assert_eq!(dag1.edge_count(), 2, "merged dag must have 2 edges");
+        assert!(dag1.nodes.contains_key("a"));
+        assert!(dag1.nodes.contains_key("c"));
+    }
+
+    #[test]
+    fn dag_merge_into_empty_dag() {
+        let mut empty = Dag::new();
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_edge("x", "out", "x", "in"); // self-loop
+
+        for (id, node) in dag.nodes {
+            empty.nodes.insert(id, node);
+        }
+        for edge in dag.edges {
+            empty.edges.push(edge);
+        }
+
+        assert_eq!(empty.node_count(), 1);
+        assert_eq!(empty.edge_count(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // Serialization roundtrip (manual field-by-field check, no serde dep)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_serialization_roundtrip_via_fields() {
+        // Construct a dag, capture its structural data, reconstruct, and verify equality.
+        let mut original = Dag::new();
+        original.add_node(ExecNode::new("p", "verb"));
+        original.add_node(ExecNode::new("q", "verb"));
+        original.add_edge_weighted("p", "out", "q", "in", 0.8);
+
+        // Capture data.
+        let node_ids: Vec<String> = {
+            let mut ids: Vec<_> = original.nodes.keys().cloned().collect();
+            ids.sort();
+            ids
+        };
+        let edge_data: Vec<(String, String, String, String, f32)> = original
+            .edges
+            .iter()
+            .map(|e| {
+                (
+                    e.src_node.clone(),
+                    e.src_port.clone(),
+                    e.dst_node.clone(),
+                    e.dst_port.clone(),
+                    e.confidence,
+                )
+            })
+            .collect();
+
+        // Reconstruct.
+        let mut reconstructed = Dag::new();
+        for id in &node_ids {
+            reconstructed.add_node(ExecNode::new(id.clone(), "verb"));
+        }
+        for (src, sp, dst, dp, conf) in &edge_data {
+            reconstructed.add_edge_weighted(src.clone(), sp.clone(), dst.clone(), dp.clone(), *conf);
+        }
+
+        // Verify.
+        assert_eq!(reconstructed.node_count(), original.node_count());
+        assert_eq!(reconstructed.edge_count(), original.edge_count());
+        let rec_ids: Vec<String> = {
+            let mut ids: Vec<_> = reconstructed.nodes.keys().cloned().collect();
+            ids.sort();
+            ids
+        };
+        assert_eq!(rec_ids, node_ids);
+        assert!((reconstructed.edges[0].confidence - 0.8).abs() < 1e-6);
+    }
+
+    // ------------------------------------------------------------------
+    // Dense vs sparse graphs
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_sparse_graph_few_edges() {
+        // 10 nodes, only 2 edges → sparse
+        let mut dag = Dag::new();
+        for i in 0..10u32 {
+            dag.add_node(ExecNode::new(format!("n{i}"), "verb"));
+        }
+        dag.add_edge("n0", "out", "n1", "in");
+        dag.add_edge("n5", "out", "n6", "in");
+        assert_eq!(dag.node_count(), 10);
+        assert_eq!(dag.edge_count(), 2);
+        // Each isolated node has no edges.
+        let isolated_count = (0..10u32)
+            .filter(|&i| {
+                let name = format!("n{i}");
+                !dag.edges.iter().any(|e| e.src_node == name || e.dst_node == name)
+            })
+            .count();
+        assert_eq!(isolated_count, 6, "6 nodes should have no edges in sparse graph");
+    }
+
+    #[test]
+    fn dag_dense_graph_many_edges() {
+        // 4-node complete DAG (all forward edges in topological order): 6 edges
+        let mut dag = Dag::new();
+        let nodes = ["a", "b", "c", "d"];
+        for name in &nodes {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        for i in 0..nodes.len() {
+            for j in (i + 1)..nodes.len() {
+                dag.add_edge(nodes[i], "out", nodes[j], "in");
+            }
+        }
+        assert_eq!(dag.node_count(), 4);
+        assert_eq!(dag.edge_count(), 6, "complete 4-node DAG should have 6 edges");
+        // Topological sort should still succeed (all forward edges, no cycle).
+        assert!(dag.topological_sort().is_ok(), "dense DAG with all forward edges must be acyclic");
+    }
+
+    // ------------------------------------------------------------------
+    // Graph clone/copy correctness
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_clone_is_independent() {
+        // Clone a node and verify modifying the clone doesn't affect the original.
+        let original = ExecNode::new("node1", "kind_a");
+        let mut cloned = original.clone();
+        cloned.kind = "kind_b".to_string();
+        assert_eq!(original.kind, "kind_a", "original kind must be unchanged after clone mutation");
+        assert_eq!(cloned.kind, "kind_b");
+    }
+
+    #[test]
+    fn dag_node_ids_are_unique_in_dag() {
+        // Adding a node with the same id twice overwrites the first (HashMap semantics).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("dup", "verb"));
+        dag.add_node(ExecNode::new("dup", "noun")); // same id, different kind
+        // HashMap insert overwrites; node_count stays at 1.
+        assert_eq!(dag.node_count(), 1, "duplicate node id must overwrite, not add");
+        assert_eq!(dag.nodes["dup"].kind, "noun", "second insert must win");
+    }
+
+    // ------------------------------------------------------------------
+    // Topological sort: cycle returns error with the cycle nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_cycle_error_contains_cycle_nodes() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "X", "in");
+        match dag.topological_sort() {
+            Err(cycle_nodes) => {
+                assert!(cycle_nodes.contains(&"X".to_string()), "X must be in cycle nodes");
+                assert!(cycle_nodes.contains(&"Y".to_string()), "Y must be in cycle nodes");
+            }
+            Ok(_) => panic!("expected Err from cycle X→Y→X"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Ports: edge carries src_port and dst_port
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_stores_port_names() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("producer", "verb"));
+        dag.add_node(ExecNode::new("consumer", "verb"));
+        dag.add_edge("producer", "result_port", "consumer", "input_port");
+        let e = &dag.edges[0];
+        assert_eq!(e.src_port, "result_port");
+        assert_eq!(e.dst_port, "input_port");
+    }
 }

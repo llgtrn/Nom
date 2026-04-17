@@ -168,4 +168,77 @@ mod tests {
         let result = ws.remove_block("no-such-id");
         assert!(result.is_none());
     }
+
+    /// Block IDs inserted into workspace remain distinct (get_by_id correctness)
+    #[test]
+    fn workspace_block_ids_are_unique() {
+        let mut ws = Workspace::new();
+        let ids = ["id-a", "id-b", "id-c"];
+        for id in &ids {
+            let block = BlockModel::new(*id, NomtuRef::new(*id, "w", "verb"), "affine:paragraph");
+            ws.insert_block(block);
+        }
+        assert_eq!(ws.block_count(), 3);
+        for id in &ids {
+            assert!(ws.blocks.contains_key(*id));
+        }
+    }
+
+    /// Parent-child relationship: set block.parent = Some(parent_id) and add child to parent.children
+    #[test]
+    fn workspace_parent_child_relationship() {
+        let mut ws = Workspace::new();
+        let parent = BlockModel::new(
+            "parent",
+            NomtuRef::new("ep", "parent_word", "concept"),
+            "affine:note",
+        );
+        let mut child = BlockModel::new(
+            "child",
+            NomtuRef::new("ec", "child_word", "verb"),
+            "affine:paragraph",
+        );
+        child.parent = Some("parent".to_string());
+        ws.insert_block(parent);
+        ws.insert_block(child);
+        // Add child ref to parent's children list
+        ws.blocks
+            .get_mut("parent")
+            .unwrap()
+            .children
+            .push("child".to_string());
+        let parent_block = ws.blocks.get("parent").unwrap();
+        assert_eq!(parent_block.children.len(), 1);
+        assert_eq!(parent_block.children[0], "child");
+        let child_block = ws.blocks.get("child").unwrap();
+        assert_eq!(child_block.parent.as_deref(), Some("parent"));
+    }
+
+    /// Workspace serializes and deserializes correctly (roundtrip)
+    #[test]
+    fn workspace_json_roundtrip() {
+        let mut ws = Workspace::new();
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "affine:note");
+        ws.insert_block(block);
+        let json = serde_json::to_string(&ws).expect("serialize workspace");
+        let ws2: Workspace = serde_json::from_str(&json).expect("deserialize workspace");
+        assert_eq!(ws2.block_count(), 1);
+        assert!(ws2.blocks.contains_key("b1"));
+    }
+
+    /// Multiple nodes can be inserted and retrieved
+    #[test]
+    fn workspace_multiple_nodes() {
+        let mut ws = Workspace::new();
+        for i in 0..4u8 {
+            let node = GraphNode::new(
+                format!("n{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "verb",
+                [i as f32 * 50.0, 0.0],
+            );
+            ws.insert_node(node);
+        }
+        assert_eq!(ws.node_count(), 4);
+    }
 }

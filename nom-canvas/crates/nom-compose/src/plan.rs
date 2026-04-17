@@ -173,4 +173,77 @@ mod tests {
         }
         assert_eq!(plan.steps.len(), 5);
     }
+
+    #[test]
+    fn plan_default_is_empty() {
+        let plan = CompositionPlan::default();
+        assert!(plan.steps.is_empty());
+        assert!(plan.is_valid_dag(), "empty plan is a valid DAG");
+    }
+
+    #[test]
+    fn plan_single_step_is_valid_dag() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Image, "src", "img");
+        assert!(plan.is_valid_dag());
+        assert_eq!(plan.topo_order(), vec![0]);
+    }
+
+    #[test]
+    fn plan_diamond_dependency() {
+        // A → B, A → C, B → D, C → D
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "src", "v");
+        let b = plan.add_step_after(BackendKind::Audio, "v", "a", vec![a]);
+        let c = plan.add_step_after(BackendKind::Image, "v", "img", vec![a]);
+        let d = plan.add_step_after(BackendKind::Export, "a", "out", vec![b, c]);
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        let pos = |id: usize| order.iter().position(|&x| x == id).unwrap();
+        assert!(pos(a) < pos(b));
+        assert!(pos(a) < pos(c));
+        assert!(pos(b) < pos(d));
+        assert!(pos(c) < pos(d));
+    }
+
+    #[test]
+    fn plan_step_depends_on_preserved() {
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Audio, "in", "a");
+        let b = plan.add_step_after(BackendKind::Export, "a", "out", vec![a]);
+        assert_eq!(plan.steps[b].depends_on, vec![a]);
+        assert!(plan.steps[a].depends_on.is_empty());
+    }
+
+    #[test]
+    fn plan_step_ids_match_indices() {
+        let mut plan = CompositionPlan::new();
+        for i in 0..6usize {
+            let id = plan.add_step(BackendKind::Render, "i", "o");
+            assert_eq!(id, i, "step_id must equal insertion index");
+        }
+    }
+
+    #[test]
+    fn plan_large_linear_chain_topo_order() {
+        // 20-step linear chain: each step depends on the previous.
+        let mut plan = CompositionPlan::new();
+        let first = plan.add_step(BackendKind::Video, "in", "s0");
+        let mut prev = first;
+        for i in 1..20usize {
+            prev = plan.add_step_after(
+                BackendKind::Transform,
+                &format!("s{}", i - 1),
+                &format!("s{i}"),
+                vec![prev],
+            );
+        }
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        assert_eq!(order.len(), 20);
+        // Verify strict ordering: each element must be smaller than next in chain.
+        for window in order.windows(2) {
+            assert!(window[0] < window[1], "linear chain must be in order");
+        }
+    }
 }
