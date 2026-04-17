@@ -92,4 +92,50 @@ mod tests {
         assert_eq!(kind_to_completion_kind("concept"), CompletionKind::Class);
         assert_eq!(kind_to_completion_kind("metric"), CompletionKind::Value);
     }
+
+    #[test]
+    fn completion_adapter_prefix_filter() {
+        // Only items whose name starts with the prefix are returned
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "alpha".into(), description: "first".into() },
+            crate::shared::GrammarKind { name: "beta".into(), description: "second".into() },
+            crate::shared::GrammarKind { name: "aleph".into(), description: "letter".into() },
+        ]);
+        let items = complete_from_dict("al", None, &state);
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|i| i.label.starts_with("al")));
+    }
+
+    #[test]
+    fn completion_adapter_returns_items_for_non_empty_cache() {
+        // Non-empty grammar cache produces non-empty items when prefix matches
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "flow".into(), description: "movement".into() },
+        ]);
+        let items = complete_from_dict("", None, &state);
+        assert!(!items.is_empty());
+    }
+
+    #[test]
+    fn completion_adapter_empty_prefix_returns_all() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "x".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "y".into(), description: "".into() },
+        ]);
+        let items = complete_from_dict("", None, &state);
+        assert_eq!(items.len(), 2);
+    }
+
+    #[test]
+    fn completion_adapter_no_match_returns_empty() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "zeta".into(), description: "".into() },
+        ]);
+        let items = complete_from_dict("abc", None, &state);
+        assert!(items.is_empty());
+    }
 }

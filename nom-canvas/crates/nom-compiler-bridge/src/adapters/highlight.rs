@@ -88,4 +88,21 @@ mod tests {
         let spans = tokenize_to_spans("", &state);
         assert!(spans.is_empty());
     }
+
+    #[test]
+    fn highlight_adapter_empty_input() {
+        // empty input → 0 color runs (HighlightSpan vec is empty)
+        let state = SharedState::new("a.db", "b.db");
+        let spans = highlight_source("", &state);
+        assert_eq!(spans.len(), 0);
+    }
+
+    #[test]
+    fn highlight_adapter_non_empty_source_no_panic() {
+        // Without compiler feature, any source returns empty vec without panic
+        let state = SharedState::new("a.db", "b.db");
+        let spans = highlight_source("define something", &state);
+        // stub returns empty; the real impl may return spans — either is acceptable
+        let _ = spans; // no panic is the invariant
+    }
 }

@@ -98,3 +98,49 @@ impl DictReader for SqliteDictReader {
     fn clause_shapes_for(&self, _kind: &str) -> Vec<ClauseShape> { vec![] }
     fn lookup_entity(&self, _word: &str, _kind: &str) -> Option<NomtuRef> { None }
 }
+
+#[cfg(test)]
+#[cfg(not(feature = "compiler"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn sqlite_dict_stub_is_known_kind_false() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(!reader.is_known_kind("verb"));
+        assert!(!reader.is_known_kind("concept"));
+        assert!(!reader.is_known_kind(""));
+    }
+
+    #[test]
+    fn sqlite_dict_stub_clause_shapes_empty() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(reader.clause_shapes_for("verb").is_empty());
+        assert!(reader.clause_shapes_for("anything").is_empty());
+    }
+
+    #[test]
+    fn sqlite_dict_stub_lookup_none() {
+        let reader = SqliteDictReader::new_stub();
+        assert!(reader.lookup_entity("run", "verb").is_none());
+        assert!(reader.lookup_entity("", "").is_none());
+    }
+
+    #[test]
+    fn sqlite_dict_stub_reader_trait_implemented() {
+        // Calling via trait reference proves the trait impl is complete
+        let reader = SqliteDictReader::new_stub();
+        let boxed: &dyn DictReader = &reader;
+        assert!(!boxed.is_known_kind("anything"));
+        assert!(boxed.clause_shapes_for("anything").is_empty());
+        assert!(boxed.lookup_entity("word", "kind").is_none());
+    }
+
+    #[test]
+    fn sqlite_dict_new_stub_creates_reader() {
+        // new_stub() does not panic and returns a usable reader
+        let reader = SqliteDictReader::new_stub();
+        // basic smoke: trait methods callable
+        let _ = reader.is_known_kind("test");
+    }
+}

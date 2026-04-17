@@ -70,4 +70,54 @@ mod tests {
         menu.select_prev();
         assert_eq!(menu.selected_item().unwrap().label, "a");
     }
+
+    #[test]
+    fn completion_provider_empty_prefix_returns_all_items() {
+        let menu = CompletionMenu::new(vec![make_item("alpha"), make_item("beta"), make_item("gamma")], 0);
+        // empty filter → all items visible
+        assert_eq!(menu.visible_items().len(), 3);
+    }
+
+    #[test]
+    fn completion_item_label_nonempty() {
+        let items = vec![make_item("fn"), make_item("let"), make_item("define")];
+        for item in &items {
+            assert!(!item.label.is_empty(), "completion label must not be empty");
+        }
+    }
+
+    #[test]
+    fn completion_provider_filters_by_fn_prefix() {
+        let mut menu = CompletionMenu::new(
+            vec![make_item("fn_call"), make_item("fn_def"), make_item("let_bind"), make_item("function")],
+            0,
+        );
+        menu.filter_items("fn");
+        let visible = menu.visible_items();
+        assert_eq!(visible.len(), 2);
+        assert!(visible.iter().all(|i| i.label.starts_with("fn")));
+    }
+
+    #[test]
+    fn completion_item_kind_set() {
+        use crate::lsp_bridge::CompletionKind;
+        let item = make_item("foo");
+        // make_item always produces CompletionKind::Function
+        assert_eq!(item.kind, CompletionKind::Function);
+    }
+
+    #[test]
+    fn completion_select_prev_at_start_stays() {
+        let mut menu = CompletionMenu::new(vec![make_item("x"), make_item("y")], 0);
+        menu.select_prev(); // already at 0, should stay
+        assert_eq!(menu.selected, 0);
+    }
+
+    #[test]
+    fn completion_select_next_at_end_stays() {
+        let mut menu = CompletionMenu::new(vec![make_item("x"), make_item("y")], 0);
+        menu.select_next();
+        menu.select_next(); // already at last item
+        assert_eq!(menu.selected, 1);
+    }
 }

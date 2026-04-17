@@ -130,4 +130,28 @@ mod tests {
         let status = score_to_status("some_word", "some_kind", &state);
         assert_eq!(status, CompileStatus::NotChecked);
     }
+
+    #[test]
+    fn score_adapter_returns_float_via_from_score() {
+        // CompileStatus::from_score maps f32 in [0.0, 1.0] to a discriminant without panic
+        let high = CompileStatus::from_score(1.0);
+        let mid = CompileStatus::from_score(0.65);
+        let low = CompileStatus::from_score(0.1);
+        assert_eq!(high, CompileStatus::Valid);
+        assert_eq!(mid, CompileStatus::LowConfidence);
+        assert_eq!(low, CompileStatus::Unknown);
+    }
+
+    #[test]
+    fn score_adapter_known_word_scores_higher_than_unknown() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "render".into(), description: "output".into() },
+        ]);
+        let known_status = score_to_status("render", "other", &state);
+        let unknown_status = score_to_status("zzz_unknown", "zzz_kind", &state);
+        // known word → Valid (0.9); unknown → Unknown (0.3)
+        assert_eq!(known_status, CompileStatus::Valid);
+        assert_eq!(unknown_status, CompileStatus::Unknown);
+    }
 }

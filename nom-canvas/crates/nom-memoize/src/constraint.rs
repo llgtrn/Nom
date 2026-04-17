@@ -101,4 +101,50 @@ mod tests {
         // method_id changed from 7 to 8
         assert!(!c.validate(42, &[snap(1, vec![(8, h)])]));
     }
+
+    #[test]
+    fn constraint_input_hash_accessor() {
+        let c = Constraint::new(99);
+        assert_eq!(c.input_hash(), 99);
+    }
+
+    #[test]
+    fn constraint_snapshot_count_zero_initially() {
+        let c = Constraint::new(1);
+        assert_eq!(c.snapshot_count(), 0);
+    }
+
+    #[test]
+    fn constraint_snapshot_count_increments_on_record() {
+        let mut c = Constraint::new(1);
+        c.record(snap(1, vec![]));
+        assert_eq!(c.snapshot_count(), 1);
+        c.record(snap(2, vec![]));
+        assert_eq!(c.snapshot_count(), 2);
+    }
+
+    #[test]
+    fn constraint_validates_no_snapshots_matching_input() {
+        // No recorded snapshots, matching input → valid
+        let c = Constraint::new(7);
+        assert!(c.validate(7, &[]));
+    }
+
+    #[test]
+    fn constraint_rejects_fewer_current_snapshots_than_recorded() {
+        let mut c = Constraint::new(1);
+        c.record(snap(1, vec![]));
+        c.record(snap(2, vec![]));
+        // Only provide 1 current snapshot when 2 were recorded
+        assert!(!c.validate(1, &[snap(1, vec![])]));
+    }
+
+    #[test]
+    fn constraint_validates_multiple_matching_snapshots() {
+        let h = Hash128::of_str("v");
+        let mut c = Constraint::new(5);
+        c.record(snap(1, vec![(3, h)]));
+        c.record(snap(2, vec![(4, h)]));
+        assert!(c.validate(5, &[snap(1, vec![(3, h)]), snap(2, vec![(4, h)])]));
+    }
 }

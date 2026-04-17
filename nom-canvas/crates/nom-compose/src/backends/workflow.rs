@@ -74,4 +74,36 @@ mod tests {
         assert_eq!(out.steps_completed, 2);
         assert!(store.exists(&out.artifact_hash));
     }
+
+    #[test]
+    fn workflow_final_value_reflects_last_step() {
+        let mut store = InMemoryStore::new();
+        let input = WorkflowInput {
+            entity: NomtuRef { id: "wf3".into(), word: "etl".into(), kind: "concept".into() },
+            steps: vec![
+                WorkflowStep { node_id: "extract".into(), kind: "extract".into(), input: serde_json::json!({"src": "db"}) },
+            ],
+            initial_context: serde_json::json!({}),
+        };
+        let out = WorkflowBackend::compose(input, &mut store, &LogProgressSink);
+        // The final_value JSON object must carry the last step's node_id
+        assert_eq!(out.final_value["step"], "extract");
+    }
+
+    #[test]
+    fn workflow_steps_completed_count() {
+        let mut store = InMemoryStore::new();
+        let steps: Vec<WorkflowStep> = (0..5).map(|i| WorkflowStep {
+            node_id: format!("step{i}"),
+            kind: "transform".into(),
+            input: serde_json::json!({"i": i}),
+        }).collect();
+        let input = WorkflowInput {
+            entity: NomtuRef { id: "wf4".into(), word: "batch".into(), kind: "concept".into() },
+            steps,
+            initial_context: serde_json::json!({}),
+        };
+        let out = WorkflowBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(out.steps_completed, 5);
+    }
 }

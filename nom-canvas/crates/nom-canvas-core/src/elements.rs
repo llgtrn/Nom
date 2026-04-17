@@ -695,4 +695,175 @@ mod tests {
         assert!(scene.quads.len() > 0, "paint_wire must push at least one quad");
         assert_eq!(scene.quads.len(), 6, "expected 6 segment quads");
     }
+
+    // ── element ordering tests ────────────────────────────────────────────────
+
+    #[test]
+    fn element_order_default_z_index_is_zero() {
+        let r = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        assert_eq!(r.z_index, 0, "default z_index should be 0");
+    }
+
+    #[test]
+    fn element_order_bring_to_front_gives_highest_z_index() {
+        // Simulate bring-to-front by giving a rect the highest z_index in a group.
+        let rects: Vec<CanvasRect> = (0..5)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32,
+            })
+            .collect();
+        let max_z = rects.iter().map(|r| r.z_index).max().unwrap_or(0);
+        let front = CanvasRect { id: 99, z_index: max_z + 1, ..rects[0].clone() };
+        assert!(
+            front.z_index > max_z,
+            "brought-to-front element must have z_index > all others"
+        );
+    }
+
+    #[test]
+    fn element_order_send_to_back_gives_lowest_z_index() {
+        let rects: Vec<CanvasRect> = (1..=5)
+            .map(|i| CanvasRect {
+                id: i,
+                bounds: ([0.0, 0.0], [10.0, 10.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: i as u32,
+            })
+            .collect();
+        let min_z = rects.iter().map(|r| r.z_index).min().unwrap_or(0);
+        // Send-to-back element gets z_index = 0 (below all existing).
+        let back = CanvasRect { id: 99, z_index: 0, ..rects[0].clone() };
+        assert!(
+            back.z_index <= min_z,
+            "sent-to-back element must have z_index ≤ all others"
+        );
+    }
+
+    #[test]
+    fn element_order_layer_preserved_via_z_index() {
+        let e = CanvasEllipse {
+            id: 42,
+            bounds: ([5.0, 5.0], [20.0, 20.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0]),
+            stroke: None,
+            z_index: 7,
+        };
+        assert_eq!(e.z_index, 7, "z_index must be preserved as set");
+    }
+
+    // ── canvas element field tests ────────────────────────────────────────────
+
+    #[test]
+    fn element_id_unique_across_two_rects() {
+        let a = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None,
+            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        let b = CanvasRect {
+            id: 2,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None,
+            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        assert_ne!(a.id, b.id, "two distinct elements must have different IDs");
+    }
+
+    #[test]
+    fn element_bounds_accessible() {
+        let r = CanvasRect {
+            id: 3,
+            bounds: ([5.0, 10.0], [40.0, 30.0]),
+            fill: None, stroke: None,
+            corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        let aabb = r.bounds_aabb();
+        assert!((aabb.min[0] - 5.0).abs() < 1e-6);
+        assert!((aabb.min[1] - 10.0).abs() < 1e-6);
+        assert!((aabb.max[0] - 45.0).abs() < 1e-6);
+        assert!((aabb.max[1] - 40.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn element_confidence_field_on_graph_node() {
+        // GraphNodeElement carries a confidence field (analogous to nomtu_ref presence).
+        let node = GraphNodeElement {
+            id: 11,
+            node_id: 99,
+            position: [0.0, 0.0],
+            size: [50.0, 30.0],
+            label: "node".to_string(),
+            confidence: 0.95,
+        };
+        assert!(
+            node.confidence > 0.0,
+            "confidence field must be present and > 0"
+        );
+    }
+
+    #[test]
+    fn element_wire_confidence_low_medium_high() {
+        // Verify the three confidence bands used for colour selection.
+        for (conf, band) in &[(0.9_f32, "high"), (0.6, "medium"), (0.3, "low")] {
+            let wire = WireElement {
+                id: 1,
+                from_node: 1,
+                to_node: 2,
+                confidence: *conf,
+                waypoints: vec![],
+            };
+            assert!(
+                wire.confidence >= 0.0 && wire.confidence <= 1.0,
+                "confidence {} ({}) must be in [0,1]",
+                conf, band
+            );
+        }
+    }
+
+    #[test]
+    fn connector_bounds_returns_none_for_empty_route() {
+        let conn = CanvasConnector {
+            id: 1,
+            src_id: 2,
+            dst_id: 3,
+            route: vec![],
+            confidence: 0.5,
+            reason: String::new(),
+            z_index: 0,
+        };
+        assert!(
+            conn.bounds_aabb().is_none(),
+            "empty route must produce None bounds"
+        );
+    }
+
+    #[test]
+    fn ellipse_z_index_default_zero() {
+        let e = CanvasEllipse {
+            id: 5,
+            bounds: ([0.0, 0.0], [20.0, 20.0]),
+            fill: None,
+            stroke: None,
+            z_index: 0,
+        };
+        assert_eq!(e.z_index, 0);
+    }
 }

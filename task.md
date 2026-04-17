@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `29cb808` | **Tests:** 824 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `fc20fc8` | **Tests:** 1044 | **Workspace:** clean
 
 ## Wave V (2026-04-18) — GPU library wiring + test coverage push ✅ (29cb808, 824 tests)
 - [x] **ETAGERE-WIRE** — atlas.rs uses BucketedAtlasAllocator from etagere (not manual shelf)
@@ -13,6 +13,29 @@
 - [x] **TEST-COMPOSE** — nom-compose: +13 tests → 127
 - [x] **TEST-INTENT-COLLAB-MEMO** — +16 tests (intent 20, collab 23, memoize 27)
 - [x] **LINEAR-RGBA** — LinearRgba + ColorSpace enum added to nom-gpui renderer.rs
+
+## Wave X (2026-04-18) — in progress
+- [ ] nom-intent: 20→40+ tests
+- [ ] nom-collab: 23→45+ tests
+- [ ] nom-memoize: 27→50+ tests
+- [ ] nom-theme: 33→55+ tests
+- [ ] nom-gpui types.rs: +20 tests → 181+
+- [ ] nom-editor display/wrap/highlight: +20 → 100+
+- [ ] nom-compose cancel/credential/backends: +20 → 165+
+- [ ] nom-canvas-core spatial/snapping: +20 → 118+
+- [ ] nom-compiler-bridge adapters/sqlite: +20 → 90+
+
+## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
+- [x] nom-lint: +28 → 45 tests
+- [x] nom-telemetry: +26 → 44 tests
+- [x] nom-blocks: +32 → 70 tests
+- [x] nom-compiler-bridge: +18 → 70 tests
+- [x] nom-panels: +18 → 81 tests
+- [x] nom-gpui platform/focus/animation/event: +51 → 161 tests
+- [x] nom-graph dag/sandbox/graph_rag: +17 → 105 tests
+- [x] nom-compose semantic/store/plan/task_queue: +18 → 145 tests
+- [x] nom-canvas-core integration test suite (tests/integration.rs): +12
+- [x] nom-gpui shaders.rs WGSL stubs: +8 shader tests; scene: +7
 
 ## Wave P (2026-04-18 Iter 45) — E2+11 fixes: paint bodies + all HIGHs + MEDIUMs
 - [x] E2 CRITICAL: GraphNodeElement::paint() + WireElement::paint() push real Quads (5 body+port, 6 wire segments)
@@ -64,7 +87,9 @@
 | [x] S Spec align | ✅ | c4d6252 — 5 panels+10 backends+FrostedRect+hints+renderer (686 tests) |
 | [x] T Cleanup | ✅ | 0b0d48e — scenario_workflow+renderer+integration+31 (717 tests) |
 | [x] U Coverage | ✅ | ef5e058 — intent/telemetry/collab+16 (733 tests) |
-| [ ] V GPU wiring | ⏳ | bytemuck+etagere wired, +80 tests |
+| [x] V GPU wiring | ✅ | bytemuck+etagere+LinearRgba+CLI, 824 tests |
+| [x] W Coverage | ✅ | fc20fc8 — lint+telemetry+blocks+gpui+graph, 1044 tests |
+| [ ] X Deep coverage | ⏳ | intent/collab/memoize/theme/types |
 
 ### Integrity Grep
 

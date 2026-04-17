@@ -60,4 +60,61 @@ mod tests {
         s.set("a", Credential { kind: "k".into(), value: "v".into() });
         assert_eq!(s.len(), 1);
     }
+
+    #[test]
+    fn credential_store_store_retrieve() {
+        let mut s = CredentialStore::new();
+        s.set("openai", Credential { kind: "api_key".into(), value: "sk-xxx".into() });
+        let cred = s.get("openai").unwrap();
+        assert_eq!(cred.value, "sk-xxx");
+        assert_eq!(cred.kind, "api_key");
+    }
+
+    #[test]
+    fn credential_store_miss_returns_none() {
+        let s = CredentialStore::new();
+        assert!(s.get("nonexistent").is_none());
+    }
+
+    #[test]
+    fn credential_store_overwrite() {
+        let mut s = CredentialStore::new();
+        s.set("svc", Credential { kind: "bearer".into(), value: "first".into() });
+        s.set("svc", Credential { kind: "bearer".into(), value: "second".into() });
+        assert_eq!(s.get("svc").unwrap().value, "second");
+        assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn credential_store_remove_retrieves_none() {
+        let mut s = CredentialStore::new();
+        s.set("k", Credential { kind: "api_key".into(), value: "val".into() });
+        assert!(s.remove("k"));
+        assert!(s.get("k").is_none());
+    }
+
+    #[test]
+    fn credential_store_count() {
+        let mut s = CredentialStore::new();
+        s.set("a", Credential { kind: "api_key".into(), value: "1".into() });
+        s.set("b", Credential { kind: "api_key".into(), value: "2".into() });
+        s.set("c", Credential { kind: "api_key".into(), value: "3".into() });
+        assert_eq!(s.len(), 3);
+    }
+
+    #[test]
+    fn credential_store_is_empty_on_new() {
+        let s = CredentialStore::new();
+        assert!(s.is_empty());
+    }
+
+    #[test]
+    fn credential_store_vendor_names() {
+        let mut s = CredentialStore::new();
+        s.set("alpha", Credential { kind: "api_key".into(), value: "x".into() });
+        s.set("beta", Credential { kind: "api_key".into(), value: "y".into() });
+        let mut names = s.vendor_names();
+        names.sort();
+        assert_eq!(names, vec!["alpha", "beta"]);
+    }
 }

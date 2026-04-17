@@ -177,4 +177,60 @@ mod tests {
         assert_eq!(code.size, code_bold.size);
         assert_eq!(code.line_height, code_bold.line_height);
     }
+
+    #[test]
+    fn font_registry_placeholder_ids_start_at_zero() {
+        let reg = FontRegistry::placeholder();
+        assert_eq!(reg.inter_regular, 0, "inter_regular placeholder ID must be 0");
+    }
+
+    #[test]
+    fn font_type_style_headings_have_negative_tracking() {
+        let reg = FontRegistry::placeholder();
+        let h1 = TypeStyle::heading1(&reg);
+        let h2 = TypeStyle::heading2(&reg);
+        let h3 = TypeStyle::heading3(&reg);
+        // Headings use tight letter-spacing (negative values).
+        assert!(h1.letter_spacing < 0.0, "H1 letter_spacing ({}) must be negative", h1.letter_spacing);
+        assert!(h2.letter_spacing < 0.0, "H2 letter_spacing ({}) must be negative", h2.letter_spacing);
+        assert!(h3.letter_spacing < 0.0, "H3 letter_spacing ({}) must be negative", h3.letter_spacing);
+    }
+
+    #[test]
+    fn font_type_style_caption_line_height_positive() {
+        let reg = FontRegistry::placeholder();
+        let caption = TypeStyle::caption(&reg);
+        assert!(caption.line_height > 0.0, "caption line_height must be positive");
+    }
+
+    #[test]
+    fn font_type_style_code_line_height_wider_than_body() {
+        let reg = FontRegistry::placeholder();
+        let body = TypeStyle::body(&reg);
+        let code = TypeStyle::code(&reg);
+        // Code blocks need more vertical breathing room than prose.
+        assert!(
+            code.line_height > body.line_height,
+            "code line_height ({}) should be wider than body line_height ({})",
+            code.line_height, body.line_height
+        );
+    }
+
+    #[test]
+    fn font_type_style_all_sizes_positive() {
+        let reg = FontRegistry::placeholder();
+        let styles = [
+            TypeStyle::body(&reg),
+            TypeStyle::caption(&reg),
+            TypeStyle::heading1(&reg),
+            TypeStyle::heading2(&reg),
+            TypeStyle::heading3(&reg),
+            TypeStyle::code(&reg),
+            TypeStyle::code_semibold(&reg),
+        ];
+        for (i, s) in styles.iter().enumerate() {
+            assert!(s.size > 0.0, "TypeStyle[{i}].size must be positive, got {}", s.size);
+            assert!(s.line_height > 0.0, "TypeStyle[{i}].line_height must be positive, got {}", s.line_height);
+        }
+    }
 }

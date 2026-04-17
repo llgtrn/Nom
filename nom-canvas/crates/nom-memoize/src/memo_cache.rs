@@ -174,4 +174,95 @@ mod tests {
         assert_eq!(t1.version, 1);
         assert_eq!(t2.version, 2);
     }
+
+    #[test]
+    fn memo_cache_hit_rate_zero_empty() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.hit_rate(), 0.0);
+    }
+
+    #[test]
+    fn memo_cache_insert_same_key_updates() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("dup_key");
+        cache.put(key, 1, Constraint::new(10));
+        cache.put(key, 2, Constraint::new(10));
+        // Second put overwrites; get should return the latest value
+        let result = cache.get(&key, 10, &[]);
+        assert_eq!(result, Some(2));
+    }
+
+    #[test]
+    fn memo_cache_invalidate_key() {
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("to_invalidate");
+        cache.put(key, "value".into(), Constraint::new(1));
+        cache.invalidate(&key);
+        assert_eq!(cache.get(&key, 1, &[]), None);
+    }
+
+    #[test]
+    fn memo_cache_multiple_keys_independent() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let k1 = Hash128::of_str("k1");
+        let k2 = Hash128::of_str("k2");
+        cache.put(k1, 10, Constraint::new(1));
+        cache.put(k2, 20, Constraint::new(2));
+        assert_eq!(cache.get(&k1, 1, &[]), Some(10));
+        assert_eq!(cache.get(&k2, 2, &[]), Some(20));
+        assert_eq!(cache.len(), 2);
+    }
+
+    #[test]
+    fn memo_cache_default_equals_new() {
+        let cache_default: MemoCache<u32> = MemoCache::default();
+        assert_eq!(cache_default.len(), 0);
+        assert_eq!(cache_default.hit_count(), 0);
+        assert_eq!(cache_default.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_cache_miss_increments_miss_count() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("present");
+        cache.put(key, 5, Constraint::new(100));
+        // stale input → miss
+        cache.get(&key, 999, &[]);
+        assert_eq!(cache.miss_count(), 1);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_all_hits() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("all_hits");
+        cache.put(key, 1, Constraint::new(7));
+        cache.get(&key, 7, &[]);
+        cache.get(&key, 7, &[]);
+        assert_eq!(cache.hit_count(), 2);
+        assert_eq!(cache.miss_count(), 0);
+        assert!((cache.hit_rate() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn memo_cache_invalidate_absent_key_is_noop() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("absent");
+        // Should not panic on removing a key that was never inserted
+        cache.invalidate(&key);
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn memo_cache_many_entries_stored() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..20 {
+            let key = Hash128::of_u64(i);
+            cache.put(key, i * 2, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 20);
+        for i in 0u64..20 {
+            let key = Hash128::of_u64(i);
+            assert_eq!(cache.get(&key, i, &[]), Some(i * 2));
+        }
+    }
 }

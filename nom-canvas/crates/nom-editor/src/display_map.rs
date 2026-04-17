@@ -136,4 +136,52 @@ mod tests {
         let text = "hello world!";
         assert_eq!(dm.fold_text(text), text);
     }
+
+    #[test]
+    fn display_map_empty_rope() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "");
+        // An empty buffer has no newlines, so row stays 0 and col stays 0
+        let (row, col) = dm.buffer_to_display(&buf, 0);
+        assert_eq!((row, col), (0, 0));
+    }
+
+    #[test]
+    fn display_map_single_line() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "hello");
+        // Scanning all 5 chars, no newline encountered — still row 0
+        let (row, _col) = dm.buffer_to_display(&buf, buf.len());
+        assert_eq!(row, 0);
+    }
+
+    #[test]
+    fn display_map_two_lines() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "hello\nworld");
+        // After the newline we are on row 1
+        let (row, _col) = dm.buffer_to_display(&buf, buf.len());
+        assert_eq!(row, 1);
+    }
+
+    #[test]
+    fn display_map_line_text_first_line() {
+        let dm = DisplayMap::new(4);
+        let buf = Buffer::new(1, "hello\n");
+        // Position 0..5 should yield col 5, still row 0
+        let (row, col) = dm.buffer_to_display(&buf, 5);
+        assert_eq!(row, 0);
+        assert_eq!(col, 5);
+    }
+
+    #[test]
+    fn display_map_line_count_matches_newlines() {
+        let dm = DisplayMap::new(4);
+        let text = "line1\nline2\nline3";
+        let buf = Buffer::new(1, text);
+        // After scanning all text there should be 2 newlines → row 2
+        let (row, _col) = dm.buffer_to_display(&buf, buf.len());
+        let newline_count = text.chars().filter(|&c| c == '\n').count();
+        assert_eq!(row, newline_count);
+    }
 }

@@ -74,4 +74,60 @@ mod tests {
         assert_eq!(runs[0].1.h, SpanColor::KEYWORD.h);
         assert_eq!(runs[1].1.h, SpanColor::NOMTU_REF.h);
     }
+
+    #[test]
+    fn highlighter_empty_returns_empty_runs() {
+        let runs = Highlighter::color_runs(&[]);
+        assert!(runs.is_empty());
+    }
+
+    #[test]
+    fn highlighter_assigns_color_run() {
+        let spans = vec![HighlightSpan::new(0..5, TokenRole::Literal)];
+        let runs = Highlighter::color_runs(&spans);
+        assert_eq!(runs.len(), 1);
+    }
+
+    #[test]
+    fn color_run_range_nonempty() {
+        let spans = vec![
+            HighlightSpan::new(0..3, TokenRole::Keyword),
+            HighlightSpan::new(4..10, TokenRole::Comment),
+        ];
+        let runs = Highlighter::color_runs(&spans);
+        for (range, _color) in &runs {
+            assert!(range.end > range.start, "run range must be non-empty");
+        }
+    }
+
+    #[test]
+    fn color_run_color_is_valid_hsla() {
+        let spans = vec![
+            HighlightSpan::new(0..4, TokenRole::Operator),
+            HighlightSpan::new(5..9, TokenRole::Literal),
+            HighlightSpan::new(10..15, TokenRole::Comment),
+        ];
+        let runs = Highlighter::color_runs(&spans);
+        for (_range, color) in &runs {
+            assert!((0.0..=1.0).contains(&color.h), "hue must be 0..=1");
+            assert!((0.0..=1.0).contains(&color.s), "saturation must be 0..=1");
+            assert!((0.0..=1.0).contains(&color.l), "lightness must be 0..=1");
+            assert!((0.0..=1.0).contains(&color.a), "alpha must be 0..=1");
+        }
+    }
+
+    #[test]
+    fn highlight_clause_connective_uses_keyword_color() {
+        let spans = vec![HighlightSpan::new(0..4, TokenRole::ClauseConnective)];
+        let runs = Highlighter::color_runs(&spans);
+        assert_eq!(runs[0].1.h, SpanColor::KEYWORD.h);
+    }
+
+    #[test]
+    fn highlight_unknown_uses_default_color() {
+        let spans = vec![HighlightSpan::new(0..3, TokenRole::Unknown)];
+        let runs = Highlighter::color_runs(&spans);
+        assert_eq!(runs[0].1.h, SpanColor::DEFAULT.h);
+        assert_eq!(runs[0].1.a, 1.0);
+    }
 }

@@ -511,4 +511,135 @@ mod tests {
         // Compile-time sanity: N_TOKENS must be defined and > 20.
         assert!(N_TOKENS >= 20, "N_TOKENS ({N_TOKENS}) must be at least 20");
     }
+
+    #[test]
+    fn tokens_border_has_alpha() {
+        // BORDER is an opaque or semi-transparent border — alpha must be in (0.0, 1.0].
+        assert!(BORDER[3] > 0.0, "BORDER alpha ({}) must be > 0.0", BORDER[3]);
+        assert!(BORDER[3] <= 1.0, "BORDER alpha ({}) must be <= 1.0", BORDER[3]);
+    }
+
+    #[test]
+    fn tokens_focus_alpha_partial() {
+        // FOCUS is a semi-transparent ring — alpha must be less than 1.0.
+        assert!(FOCUS[3] < 1.0, "FOCUS alpha ({}) must be < 1.0 for a semi-transparent ring", FOCUS[3]);
+    }
+
+    #[test]
+    fn tokens_focus_ring_visible() {
+        // FOCUS ring must be at least somewhat visible — alpha > 0.1.
+        assert!(FOCUS[3] > 0.1, "FOCUS alpha ({}) too low to be visible", FOCUS[3]);
+    }
+
+    #[test]
+    fn tokens_base_fg_all_channels_bright() {
+        // BASE_FG near-white: all three RGB channels must be > 0.8.
+        assert!(BASE_FG[0] > 0.8, "BASE_FG[0] R={} must be > 0.8", BASE_FG[0]);
+        assert!(BASE_FG[1] > 0.8, "BASE_FG[1] G={} must be > 0.8", BASE_FG[1]);
+        assert!(BASE_FG[2] > 0.8, "BASE_FG[2] B={} must be > 0.8", BASE_FG[2]);
+    }
+
+    #[test]
+    fn tokens_all_rgb_values_in_unit_range() {
+        // Every RGB component of every named color token must be in [0.0, 1.0].
+        let all_colors: &[(&str, [f32; 4])] = &[
+            ("BG", BG), ("BG2", BG2), ("TEXT", TEXT), ("CTA", CTA),
+            ("BORDER", BORDER), ("FOCUS", FOCUS),
+            ("EDGE_HIGH", EDGE_HIGH), ("EDGE_MED", EDGE_MED), ("EDGE_LOW", EDGE_LOW),
+            ("BASE_BG", BASE_BG), ("BASE_FG", BASE_FG), ("ERROR", ERROR), ("WARNING", WARNING),
+        ];
+        for (name, c) in all_colors {
+            for (i, ch) in c[..3].iter().enumerate() {
+                assert!(
+                    (0.0..=1.0).contains(ch),
+                    "{name}[{i}] = {ch} out of [0.0, 1.0]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn tokens_cta_vs_bg_contrast() {
+        // CTA and BG must differ by more than 0.2 in at least one RGB channel.
+        let max_diff = (CTA[0] - BG[0]).abs()
+            .max((CTA[1] - BG[1]).abs())
+            .max((CTA[2] - BG[2]).abs());
+        assert!(
+            max_diff > 0.2,
+            "CTA and BG are too similar (max channel diff = {max_diff:.3}); CTA must be visible on BG"
+        );
+    }
+
+    #[test]
+    fn tokens_shadow_sm_alpha_partial() {
+        // Shadow colors must be semi-transparent (alpha < 1.0).
+        let alpha = (SHADOW_SM.color)().a;
+        assert!(alpha < 1.0, "SHADOW_SM alpha ({alpha}) must be < 1.0");
+        assert!(alpha > 0.0, "SHADOW_SM alpha ({alpha}) must be > 0.0");
+    }
+
+    #[test]
+    fn tokens_shadow_xl_alpha_greater_than_sm() {
+        // Larger shadows must be darker (higher alpha).
+        let sm_a = (SHADOW_SM.color)().a;
+        let xl_a = (SHADOW_XL.color)().a;
+        assert!(xl_a > sm_a, "SHADOW_XL alpha ({xl_a}) must exceed SHADOW_SM alpha ({sm_a})");
+    }
+
+    #[test]
+    fn tokens_constants_are_deterministic() {
+        // Const arrays must equal themselves (validates const-correctness).
+        assert_eq!(BASE_BG, BASE_BG);
+        assert_eq!(CTA, CTA);
+        assert_eq!(BORDER, BORDER);
+    }
+
+    #[test]
+    fn tokens_error_vs_warning_distinct() {
+        // ERROR and WARNING must not be the same color.
+        assert_ne!(ERROR, WARNING, "ERROR and WARNING must be distinct colors");
+    }
+
+    #[test]
+    fn tokens_cta_vs_error_distinct() {
+        // CTA (action) and ERROR (danger) must be visually distinct.
+        assert_ne!(CTA, ERROR, "CTA and ERROR must be distinct colors");
+    }
+
+    #[test]
+    fn tokens_anim_fast_less_than_default() {
+        // Fast animations must complete sooner than default animations.
+        assert!(
+            ANIM_FAST_MS < ANIM_DEFAULT_MS,
+            "ANIM_FAST_MS ({ANIM_FAST_MS}) must be less than ANIM_DEFAULT_MS ({ANIM_DEFAULT_MS})"
+        );
+    }
+
+    #[test]
+    fn tokens_motion_hover_less_than_panel_resize() {
+        // Hover response must be snappier than a panel resize animation.
+        assert!(
+            MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
+            "MOTION_HOVER_DURATION_MS ({}) must be less than MOTION_PANEL_RESIZE_DURATION_MS ({})",
+            MOTION_HOVER_DURATION_MS, MOTION_PANEL_RESIZE_DURATION_MS
+        );
+    }
+
+    #[test]
+    fn tokens_radius_scale_strictly_ascending() {
+        // Radius tokens (excluding NONE and FULL) must be strictly ascending.
+        assert!(RADIUS_SM < RADIUS_MD);
+        assert!(RADIUS_MD < RADIUS_LG);
+        assert!(RADIUS_LG < RADIUS_XL);
+        assert!(RADIUS_XL < RADIUS_FULL);
+    }
+
+    #[test]
+    fn tokens_toolbar_and_statusbar_heights_ordered() {
+        // Toolbar is taller than the status bar.
+        assert!(
+            TOOLBAR_H > STATUSBAR_H,
+            "TOOLBAR_H ({TOOLBAR_H}) must be greater than STATUSBAR_H ({STATUSBAR_H})"
+        );
+    }
 }

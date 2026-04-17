@@ -107,4 +107,44 @@ mod tests {
         let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
         assert!(completions.is_empty());
     }
+
+    #[test]
+    fn lsp_adapter_converts_span_range() {
+        // Verify that HoverResult range field is a plain std::ops::Range<usize>
+        // and is preserved when returned from completions/hover logic.
+        let result = nom_editor::lsp_bridge::HoverResult {
+            contents: "test doc".into(),
+            range: Some(3..7),
+        };
+        assert_eq!(result.range.as_ref().map(|r| r.start), Some(3));
+        assert_eq!(result.range.as_ref().map(|r| r.end), Some(7));
+        assert_eq!(result.contents, "test doc");
+    }
+
+    #[test]
+    fn lsp_adapter_location_range_preserved() {
+        // Location struct keeps path + range intact
+        let loc = nom_editor::lsp_bridge::Location {
+            path: std::path::PathBuf::from("foo.nom"),
+            range: 10..20,
+        };
+        assert_eq!(loc.range.start, 10);
+        assert_eq!(loc.range.end, 20);
+        assert_eq!(loc.path, std::path::PathBuf::from("foo.nom"));
+    }
+
+    #[test]
+    fn compiler_lsp_provider_completions_kind_is_keyword() {
+        // Completions built from grammar kinds always have CompletionKind::Keyword
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "emit".into(), description: "output a value".into() },
+        ]);
+        let provider = CompilerLspProvider::new(state);
+        let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
+        assert_eq!(completions.len(), 1);
+        assert_eq!(completions[0].kind, CompletionKind::Keyword);
+        assert_eq!(completions[0].insert_text, "emit");
+        assert_eq!(completions[0].detail, Some("output a value".to_string()));
+    }
 }

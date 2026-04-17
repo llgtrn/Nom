@@ -125,4 +125,61 @@ mod tests {
         let t = Tracked::new(42u32, 99);
         assert_eq!(t.version, 99);
     }
+
+    #[test]
+    fn tracked_inner_accessible() {
+        let t = Tracked::new("hello", 1);
+        assert_eq!(*t.get(), "hello");
+    }
+
+    #[test]
+    fn tracked_call_count_starts_zero() {
+        let t = Tracked::new(0u32, 0);
+        assert_eq!(t.call_count(), 0);
+    }
+
+    #[test]
+    fn tracked_take_calls_drains() {
+        let t = Tracked::new("x", 5);
+        t.record_call(1, Hash128::of_str("r1"));
+        t.record_call(2, Hash128::of_str("r2"));
+        t.record_call(3, Hash128::of_str("r3"));
+        assert_eq!(t.call_count(), 3);
+        let drained = t.take_calls();
+        assert_eq!(drained.len(), 3);
+        assert_eq!(t.call_count(), 0);
+    }
+
+    #[test]
+    fn tracked_snapshot_empty_pairs() {
+        let t = Tracked::new("fresh", 10);
+        let snap = t.snapshot();
+        assert!(snap.method_call_pairs.is_empty());
+    }
+
+    #[test]
+    fn tracked_snapshot_version_matches() {
+        let t = Tracked::new("data", 77);
+        t.record_call(9, Hash128::of_u64(1));
+        let snap = t.snapshot();
+        assert_eq!(snap.version, 77);
+    }
+
+    #[test]
+    fn tracked_clone_does_not_share_calls() {
+        let t = Tracked::new("original", 3);
+        t.record_call(1, Hash128::of_str("v"));
+        let t2 = t.clone();
+        // original still has its call
+        assert_eq!(t.call_count(), 1);
+        // clone starts fresh
+        assert_eq!(t2.call_count(), 0);
+    }
+
+    #[test]
+    fn method_call_fields() {
+        let mc = MethodCall { method_id: 42, return_hash: Hash128::of_str("out") };
+        assert_eq!(mc.method_id, 42);
+        assert_eq!(mc.return_hash, Hash128::of_str("out"));
+    }
 }

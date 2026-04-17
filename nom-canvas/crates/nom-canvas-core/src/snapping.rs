@@ -335,4 +335,117 @@ mod tests {
             result.y
         );
     }
+
+    // ── new tests ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn snap_to_grid_aligns_point_4px_grid() {
+        // GRID_SIZE=20; (3.7, 5.2) → nearest grid = (0, 0) since both < 10
+        // Actually snap_to_grid uses GRID_SIZE=20, so (3.7/20).round()*20 = 0
+        let snapped = snap_to_grid([3.7, 5.2]);
+        assert!(
+            snapped[0].abs() < 1e-6,
+            "3.7 on 20px grid -> 0, got {}",
+            snapped[0]
+        );
+        assert!(
+            snapped[1].abs() < 1e-6,
+            "5.2 on 20px grid -> 0, got {}",
+            snapped[1]
+        );
+    }
+
+    #[test]
+    fn snap_to_grid_already_aligned_unchanged() {
+        // (20.0, 40.0) are exact grid intersections — must remain unchanged.
+        let snapped = snap_to_grid([20.0, 40.0]);
+        assert!((snapped[0] - 20.0).abs() < 1e-6, "got {}", snapped[0]);
+        assert!((snapped[1] - 40.0).abs() < 1e-6, "got {}", snapped[1]);
+    }
+
+    #[test]
+    fn snap_threshold_no_snap_when_far() {
+        // GRID_SIZE=20; x=9.5 → nearest grid is 20, delta=10.5 > SNAP_THRESHOLD(8)
+        // Using grid_snap=true, position must stay at 9.5
+        let result = snap_with_guides([9.5, 9.5], [5.0, 5.0], &[], true);
+        assert!(
+            (result.x - 9.5).abs() < 1e-6,
+            "no snap expected far from grid, got x={}",
+            result.x
+        );
+        assert!(
+            (result.y - 9.5).abs() < 1e-6,
+            "no snap expected far from grid, got y={}",
+            result.y
+        );
+    }
+
+    #[test]
+    fn snap_guides_from_multiple_elements_fires_guide() {
+        // Two elements both at x=100; moving element at x=103 snaps to x=100 → guide fires
+        let result = snap_with_guides(
+            [103.0, 200.0],
+            [40.0, 30.0],
+            &[
+                ([100.0, 50.0], [40.0, 30.0]),
+                ([100.0, 150.0], [40.0, 30.0]),
+            ],
+            false,
+        );
+        assert!(!result.guides.is_empty(), "expected snap guide from element alignment");
+        assert!(
+            (result.x - 100.0).abs() < 1e-6,
+            "expected snap to x=100, got {}",
+            result.x
+        );
+    }
+
+    #[test]
+    fn snap_nearest_guide_center_to_center() {
+        // Moving element centre should snap to target centre when within threshold.
+        // moving origin=(90, 50), size=(20, 20) → centre=(100, 60)
+        // target origin=(100, 50), size=(20, 20) → centre=(110, 60)
+        // delta centre-x = |100 - 110| = 10 > SNAP_THRESHOLD; use closer distance.
+        // moving origin=(103, 50), size=(20, 20) → centre=(113, 60)
+        // target origin=(100, 50), size=(20, 20) → centre=(110, 60), delta=3 < 8 → snap
+        let result = snap_with_guides(
+            [103.0, 50.0],
+            [20.0, 20.0],
+            &[([100.0, 50.0], [20.0, 20.0])],
+            false,
+        );
+        // left-left pair: |103 - 100| = 3 < threshold → snaps to 100
+        assert!(
+            (result.x - 100.0).abs() < 1e-6,
+            "expected x=100, got {}",
+            result.x
+        );
+    }
+
+    #[test]
+    fn snap_guide_axis_is_horizontal_for_y_snap() {
+        // Move element y=103, target y=100 → within 8px → horizontal guide fires
+        let result = snap_with_guides(
+            [200.0, 103.0],
+            [40.0, 30.0],
+            &[([200.0, 100.0], [40.0, 30.0])],
+            false,
+        );
+        let has_horizontal = result.guides.iter().any(|g| g.axis == SnapAxis::Horizontal);
+        assert!(has_horizontal, "expected a horizontal guide for Y snap");
+    }
+
+    #[test]
+    fn snap_guide_color_is_set() {
+        let result = snap_with_guides(
+            [102.0, 50.0],
+            [40.0, 30.0],
+            &[([100.0, 50.0], [40.0, 30.0])],
+            false,
+        );
+        assert!(!result.guides.is_empty());
+        let guide = &result.guides[0];
+        // Excalidraw green: alpha > 0
+        assert!(guide.color[3] > 0.0, "guide color alpha must be > 0");
+    }
 }

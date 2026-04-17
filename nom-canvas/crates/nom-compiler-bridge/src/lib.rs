@@ -99,4 +99,93 @@ mod tests {
         assert!(reader.clause_shapes_for("verb").is_empty());
         assert!(reader.lookup_entity("run", "verb").is_none());
     }
+
+    #[test]
+    fn bridge_state_ui_tier_available() {
+        let bridge = BridgeState::new("test.db", "test.grammar");
+        let ops = bridge.ui_tier();
+        // UiTierOps is available — is_known_kind returns false on empty cache
+        assert!(!ops.is_known_kind("verb"));
+    }
+
+    #[test]
+    fn bridge_state_interactive_tier_available() {
+        let bridge = BridgeState::new("test.db", "test.grammar");
+        let ops = bridge.interactive_tier();
+        // InteractiveTierOps is available — hover_info returns something without panic
+        let _ = ops.hover_info("define");
+    }
+
+    #[test]
+    fn bridge_state_background_tier_available() {
+        let bridge = BridgeState::new("test.db", "test.grammar");
+        let _ops = bridge.background_tier();
+        // BackgroundTierOps constructed without panic
+    }
+
+    #[test]
+    fn bridge_state_lsp_provider_available() {
+        let bridge = BridgeState::new("test.db", "test.grammar");
+        let provider = bridge.lsp_provider();
+        // lsp_provider() returns a CompilerLspProvider — hover on empty word returns None
+        let result = provider.hover("");
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn bridge_state_two_instances_independent() {
+        let bridge_a = BridgeState::new("a.db", "a.grammar");
+        let bridge_b = BridgeState::new("b.db", "b.grammar");
+        // Each bridge has its own Arc — strong count on each is 1
+        assert_eq!(std::sync::Arc::strong_count(&bridge_a.shared), 1);
+        assert_eq!(std::sync::Arc::strong_count(&bridge_b.shared), 1);
+        // Their dict paths differ
+        assert_ne!(bridge_a.shared.dict_path, bridge_b.shared.dict_path);
+    }
+
+    #[test]
+    fn grammar_kind_clone() {
+        let kind = GrammarKind {
+            name: "transform".into(),
+            description: "converts one form to another".into(),
+        };
+        let cloned = kind.clone();
+        assert_eq!(cloned.name, kind.name);
+        assert_eq!(cloned.description, kind.description);
+    }
+
+    #[test]
+    fn grammar_kind_debug_format() {
+        let kind = GrammarKind {
+            name: "emit".into(),
+            description: "outputs a value".into(),
+        };
+        let debug_str = format!("{:?}", kind);
+        // Debug impl produces a non-empty string and doesn't panic
+        assert!(!debug_str.is_empty());
+        assert!(debug_str.contains("emit"));
+    }
+
+    #[test]
+    fn pipeline_output_json_field() {
+        let output = PipelineOutput {
+            source_hash: 1,
+            grammar_version: 2,
+            output_json: r#"{"status":"ok","count":3}"#.into(),
+        };
+        assert_eq!(output.output_json, r#"{"status":"ok","count":3}"#);
+    }
+
+    #[test]
+    fn pipeline_output_clone() {
+        let output = PipelineOutput {
+            source_hash: 99,
+            grammar_version: 5,
+            output_json: "cloned".into(),
+        };
+        let cloned = output.clone();
+        assert_eq!(cloned.source_hash, output.source_hash);
+        assert_eq!(cloned.grammar_version, output.grammar_version);
+        assert_eq!(cloned.output_json, output.output_json);
+    }
 }

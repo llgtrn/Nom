@@ -186,4 +186,43 @@ mod tests {
         let result = DocumentBackend::compose_safe(input, &mut store, &LogProgressSink);
         assert!(result.is_ok(), "compose_safe must return Ok(()) on success");
     }
+
+    #[test]
+    fn document_compose_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = DocumentInput {
+            entity: NomtuRef { id: "doc3".into(), word: "charter".into(), kind: "concept".into() },
+            content_blocks: vec!["content here".into()],
+            target_mime: "text/html".into(),
+        };
+        let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "doc3");
+        assert_eq!(block.entity.word, "charter");
+    }
+
+    #[test]
+    fn document_compose_page_count_minimum_one() {
+        let mut store = InMemoryStore::new();
+        // A single short block should yield at least 1 page
+        let input = DocumentInput {
+            entity: NomtuRef { id: "doc4".into(), word: "note".into(), kind: "concept".into() },
+            content_blocks: vec!["hello".into()],
+            target_mime: "text/plain".into(),
+        };
+        let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(block.page_count >= 1);
+    }
+
+    #[test]
+    fn doc_spec_page_count_for_long_document() {
+        let long_body = vec!["word"; 500].join(" ");
+        let spec = DocSpec {
+            title: "Long".into(),
+            author: "".into(),
+            sections: vec![DocSection { heading: None, body: long_body, page_break: false }],
+            page_count: 0,
+        };
+        // 500 words / 250 = 2 pages
+        assert_eq!(spec.page_count_estimate(), 2);
+    }
 }

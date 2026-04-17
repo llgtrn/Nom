@@ -59,4 +59,28 @@ mod tests {
         wm.rebuild(&[(0, 10)]);
         assert_eq!(wm.wrap_count(), 0);
     }
+
+    #[test]
+    fn wrap_map_no_wrap_short_line() {
+        // A line exactly at the wrap column should not produce a wrap point
+        let mut wm = WrapMap::new(80);
+        wm.rebuild(&[(0, 80)]);
+        assert_eq!(wm.wrap_count(), 0);
+    }
+
+    #[test]
+    fn wrap_map_wraps_long_line_produces_multiple_points() {
+        // 160-wide line at col_width 80 → exactly 2 wrap points
+        let mut wm = WrapMap::new(80);
+        wm.rebuild(&[(0, 160)]);
+        assert!(wm.wrap_count() >= 2);
+    }
+
+    #[test]
+    fn wrap_map_single_char_columns() {
+        // column_width=1: every character is its own "column", so a 5-wide line produces 5 wrap points
+        let mut wm = WrapMap::new(1);
+        wm.rebuild(&[(0, 5)]);
+        assert_eq!(wm.wrap_count(), 5); // 5/1 = 5
+    }
 }

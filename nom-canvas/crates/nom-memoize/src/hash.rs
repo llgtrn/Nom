@@ -100,4 +100,56 @@ mod tests {
         };
         assert_eq!(h, expected);
     }
+
+    #[test]
+    fn hash128_zero_constant() {
+        assert_eq!(Hash128::ZERO, Hash128(0, 0));
+    }
+
+    #[test]
+    fn hash128_as_u64_xor_pattern() {
+        let a: u64 = 0xdeadbeef_cafebabe;
+        let b: u64 = 0x12345678_87654321;
+        let h = Hash128(a, b);
+        assert_eq!(h.as_u64(), a ^ b.rotate_left(32));
+    }
+
+    #[test]
+    fn hash128_combine_not_commutative() {
+        let a = Hash128::of_str("alpha");
+        let b = Hash128::of_str("beta");
+        // combine is defined to be order-sensitive
+        assert_ne!(a.combine(b), b.combine(a));
+    }
+
+    #[test]
+    fn hash128_of_bytes_matches_of_str() {
+        let via_bytes = Hash128::of_bytes("hello".as_bytes());
+        let via_str = Hash128::of_str("hello");
+        assert_eq!(via_bytes, via_str);
+    }
+
+    #[test]
+    fn hash128_of_u64_vs_of_bytes() {
+        let v: u64 = 42;
+        let via_u64 = Hash128::of_u64(v);
+        let via_bytes = Hash128::of_bytes(&v.to_le_bytes());
+        assert_eq!(via_u64, via_bytes);
+    }
+
+    #[test]
+    fn hash128_zero_as_u64() {
+        // ZERO has both halves 0, so as_u64 should also be 0
+        assert_eq!(Hash128::ZERO.as_u64(), 0u64 ^ 0u64.rotate_left(32));
+    }
+
+    #[test]
+    fn hash128_display_hex_lowercase() {
+        // Display must emit exactly 32 lowercase hex chars
+        let h = Hash128(0x0011223344556677, 0x8899aabbccddeeff);
+        let s = format!("{}", h);
+        assert_eq!(s.len(), 32);
+        assert!(s.chars().all(|c| c.is_ascii_hexdigit()));
+        assert_eq!(s, "00112233445566778899aabbccddeeff");
+    }
 }

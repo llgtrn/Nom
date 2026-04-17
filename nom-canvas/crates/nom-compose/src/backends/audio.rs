@@ -117,4 +117,39 @@ mod tests {
         assert_eq!(block.duration_ms, 1000);
         assert!(store.exists(&block.artifact_hash));
     }
+
+    #[test]
+    fn audio_compose_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud2".into(), word: "jingle".into(), kind: "media".into() },
+            pcm_samples: vec![0.0f32; 8000],
+            sample_rate: 8000,
+            codec: "opus".into(),
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "aud2");
+        assert_eq!(block.entity.word, "jingle");
+    }
+
+    #[test]
+    fn audio_compose_duration_ms_correct() {
+        let mut store = InMemoryStore::new();
+        // 22050 samples at 22050 Hz = 1000 ms
+        let input = AudioInput {
+            entity: NomtuRef { id: "aud3".into(), word: "beep".into(), kind: "media".into() },
+            pcm_samples: vec![0.5f32; 22050],
+            sample_rate: 22050,
+            codec: "mp3".into(),
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 1000);
+    }
+
+    #[test]
+    fn audio_spec_mono_bitrate() {
+        let spec = AudioSpec { sample_rate: 48000, channels: 1, duration_ms: 1000, codec: "aac".into() };
+        // 48000 * 1 * 16 / 1000 = 768 kbps
+        assert_eq!(spec.bitrate_kbps(), 768);
+    }
 }

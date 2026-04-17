@@ -324,4 +324,210 @@ mod tests {
         assert_eq!(best.hypothesis, "graph query node");
         assert!(best.score > 0.0);
     }
+
+    // --- 20 new tests ---
+
+    #[test]
+    fn scored_hypothesis_evidence_vec() {
+        let evidence = &["alpha one", "beta two", "gamma three"];
+        let ranked = rank_hypotheses(&["alpha beta gamma"], evidence);
+        assert_eq!(ranked[0].evidence_used.len(), 3);
+        assert_eq!(ranked[0].evidence_used[0], "alpha one");
+        assert_eq!(ranked[0].evidence_used[1], "beta two");
+        assert_eq!(ranked[0].evidence_used[2], "gamma three");
+    }
+
+    #[test]
+    fn scored_hypothesis_step_count() {
+        let evidence = &["step a", "step b", "step c"];
+        let ranked = rank_hypotheses(&["step a b c"], evidence);
+        // step_count == number of react steps == evidence.len()
+        assert_eq!(ranked[0].step_count, 3);
+    }
+
+    #[test]
+    fn rank_hypotheses_single_item() {
+        let evidence = &["only evidence"];
+        let ranked = rank_hypotheses(&["only hypothesis"], evidence);
+        assert_eq!(ranked.len(), 1);
+    }
+
+    #[test]
+    fn rank_hypotheses_tie_preserves_order() {
+        // Both hypotheses have zero overlap with evidence → scores both 0.0
+        // Stable sort must preserve original order.
+        let evidence = &["completely unrelated"];
+        let hypotheses = &["first zero", "second zero"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 2);
+        // With equal scores the stable sort keeps first before second.
+        assert_eq!(ranked[0].hypothesis, "first zero");
+        assert_eq!(ranked[1].hypothesis, "second zero");
+    }
+
+    #[test]
+    fn best_hypothesis_empty_returns_none_v2() {
+        let result = best_hypothesis(&[], &[]);
+        assert!(result.is_none());
+    }
+
+    #[test]
+    fn best_hypothesis_single_returns_it() {
+        let evidence = &["lone wolf evidence"];
+        let best = best_hypothesis(&["lone wolf"], evidence).expect("must return Some");
+        assert_eq!(best.hypothesis, "lone wolf");
+    }
+
+    #[test]
+    fn react_chain_empty_evidence_returns_empty() {
+        // When evidence slice is empty, react_chain returns zero steps (no context).
+        let steps = react_chain("any hypothesis", &[], 5);
+        assert_eq!(steps.len(), 0);
+    }
+
+    #[test]
+    fn react_chain_single_step() {
+        let steps = react_chain("search node", &["search node result"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(steps[0].score >= 0.0);
+        assert!(steps[0].score <= 1.0);
+    }
+
+    #[test]
+    fn react_chain_interruptible_cancel_mid() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4"];
+        // Cancel after 0 steps have been pushed — we cancel before the loop starts.
+        signal.cancel();
+        let steps = react_chain_interruptible("h", evidence, 5, &signal);
+        assert_eq!(steps.len(), 0, "cancelled before first step must yield empty");
+    }
+
+    #[test]
+    fn react_chain_interruptible_not_cancelled_completes() {
+        let signal = InterruptSignal::new(); // never cancelled
+        let evidence = &["alpha", "beta", "gamma"];
+        let steps = react_chain_interruptible("alpha beta gamma", evidence, 3, &signal);
+        assert_eq!(steps.len(), 3);
+    }
+
+    #[test]
+    fn scored_hypothesis_score_zero() {
+        // A hypothesis with no word overlap scores 0.0.
+        let evidence = &["completely different words here"];
+        let ranked = rank_hypotheses(&["xyz qrs uvw"], evidence);
+        assert_eq!(ranked[0].score, 0.0);
+    }
+
+    #[test]
+    fn scored_hypothesis_score_one() {
+        // Perfect match: hypothesis == evidence → score should be 1.0.
+        let evidence = &["exact match words"];
+        let ranked = rank_hypotheses(&["exact match words"], evidence);
+        assert!((ranked[0].score - 1.0_f32).abs() < 1e-5);
+    }
+
+    #[test]
+    fn rank_hypotheses_five_items_sorted() {
+        let evidence = &["graph node query traversal result"];
+        let hypotheses = &[
+            "unrelated one",
+            "graph node",
+            "completely different",
+            "graph node query traversal result",
+            "banana",
+        ];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 5);
+        assert!(ranked[0].score >= ranked[4].score);
+    }
+
+    #[test]
+    fn best_hypothesis_returns_first_of_tied() {
+        // All hypotheses have zero overlap → all score 0.0.
+        // best_hypothesis returns the first in the tied group.
+        let evidence = &["irrelevant content"];
+        let hypotheses = &["aaa bbb", "ccc ddd", "eee fff"];
+        let best = best_hypothesis(hypotheses, evidence).expect("must return Some");
+        assert_eq!(best.hypothesis, "aaa bbb");
+    }
+
+    #[test]
+    fn interrupt_signal_multiple_cancels_idempotent() {
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        signal.cancel();
+        signal.cancel();
+        assert!(signal.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_signal_clone_shares_state() {
+        let original = InterruptSignal::new();
+        let cloned = original.clone();
+        assert!(!cloned.is_cancelled());
+        original.cancel();
+        assert!(cloned.is_cancelled(), "clone must see cancellation from original");
+    }
+
+    #[test]
+    fn react_chain_returns_string_fields() {
+        let steps = react_chain("test hypothesis", &["test evidence item"], 1);
+        assert_eq!(steps.len(), 1);
+        // thought / action / observation are all non-empty Strings
+        assert!(!steps[0].thought.is_empty());
+        assert!(!steps[0].action.is_empty());
+        assert!(!steps[0].observation.is_empty());
+    }
+
+    #[test]
+    fn react_chain_interruptible_returns_vec_of_react_step() {
+        let signal = InterruptSignal::new();
+        let evidence = &["item one", "item two"];
+        let result: Vec<ReactStep> = react_chain_interruptible("item one two", evidence, 2, &signal);
+        assert_eq!(result.len(), 2);
+        assert!(result[0].score >= 0.0);
+        assert!(result[1].score >= 0.0);
+    }
+
+    #[test]
+    fn rank_hypotheses_preserves_evidence() {
+        let evidence = &["preserve alpha", "preserve beta"];
+        let ranked = rank_hypotheses(&["preserve alpha beta", "unrelated"], evidence);
+        // After sorting, evidence_used on every item must still equal the original slice.
+        for item in &ranked {
+            assert_eq!(item.evidence_used.len(), 2);
+            assert_eq!(item.evidence_used[0], "preserve alpha");
+            assert_eq!(item.evidence_used[1], "preserve beta");
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_ten_items() {
+        let evidence = &["node graph query traversal search result path weight edge vertex"];
+        let hypotheses: Vec<&str> = vec![
+            "node graph",
+            "query traversal",
+            "search result",
+            "path weight",
+            "edge vertex",
+            "banana",
+            "orange",
+            "mango",
+            "random words",
+            "node graph query traversal search result path weight edge vertex",
+        ];
+        let ranked = rank_hypotheses(&hypotheses, evidence);
+        assert_eq!(ranked.len(), 10);
+        // Sorted descending: every adjacent pair must satisfy first >= second.
+        for i in 0..ranked.len() - 1 {
+            assert!(
+                ranked[i].score >= ranked[i + 1].score,
+                "rank[{}]={} < rank[{}]={} — not sorted",
+                i, ranked[i].score, i + 1, ranked[i + 1].score
+            );
+        }
+        // Last item must be one of the zero-overlap hypotheses.
+        assert_eq!(ranked[9].score, 0.0);
+    }
 }

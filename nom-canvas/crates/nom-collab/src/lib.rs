@@ -689,4 +689,346 @@ mod tests {
         doc.local_delete(op_second.id);
         assert_eq!(doc.text(), "");
     }
+
+    // ── extended coverage (wave expand) ─────────────────────────────────────
+
+    #[test]
+    fn crdt_insert_at_head() {
+        // Insert at RgaPos::Head on a fresh doc; verify id, text, pos.
+        let mut doc = DocState::new(PeerId(100));
+        let op = doc.local_insert(RgaPos::Head, "first");
+        assert_eq!(doc.text(), "first");
+        assert_eq!(op.id.peer, PeerId(100));
+        assert_eq!(op.id.counter, 1);
+        match &op.kind {
+            OpKind::Insert { pos, text } => {
+                assert_eq!(*pos, RgaPos::Head);
+                assert_eq!(text, "first");
+            }
+            other => panic!("expected Insert, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn crdt_insert_multiple_ordering() {
+        // Three sequential inserts; combined text must match insertion order.
+        let mut doc = DocState::new(PeerId(101));
+        let op1 = doc.local_insert(RgaPos::Head, "A");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "B");
+        doc.local_insert(RgaPos::After(op2.id), "C");
+        assert_eq!(doc.text(), "ABC");
+        assert_eq!(doc.op_log().len(), 3);
+    }
+
+    #[test]
+    fn crdt_delete_first_char() {
+        // Delete the head node; only the remaining nodes survive.
+        let mut doc = DocState::new(PeerId(102));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+        assert_eq!(doc.text(), "ABC");
+
+        doc.local_delete(op_a.id);
+        assert_eq!(doc.text(), "BC");
+    }
+
+    #[test]
+    fn crdt_delete_last_char() {
+        // Delete the tail node; leading nodes survive.
+        let mut doc = DocState::new(PeerId(103));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+        assert_eq!(doc.text(), "ABC");
+
+        doc.local_delete(op_c.id);
+        assert_eq!(doc.text(), "AB");
+    }
+
+    #[test]
+    fn crdt_delete_middle_char() {
+        // Delete the middle node; surrounding nodes are preserved and adjacent.
+        let mut doc = DocState::new(PeerId(104));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+        assert_eq!(doc.text(), "ABC");
+
+        doc.local_delete(op_b.id);
+        assert_eq!(doc.text(), "AC");
+        // op_c is still live
+        let _ = op_c;
+    }
+
+    #[test]
+    fn crdt_insert_after_deleted_op() {
+        // Even after a node is tombstoned, a subsequent insert anchored After it
+        // must still appear in the text (the anchor position is logical, not visual).
+        let mut doc = DocState::new(PeerId(105));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        doc.local_delete(op_a.id);
+        assert_eq!(doc.text(), "");
+
+        // Insert after the deleted op — the new node is live.
+        doc.local_insert(RgaPos::After(op_a.id), "B");
+        assert_eq!(doc.text(), "B");
+    }
+
+    #[test]
+    fn crdt_concurrent_insert_same_pos_deterministic() {
+        // Two peers concurrently insert at Head. Regardless of merge order the
+        // result must be identical (CRDT commutativity).
+        let mut peer_a = DocState::new(PeerId(110));
+        let op_a = peer_a.local_insert(RgaPos::Head, "P");
+
+        let mut peer_b = DocState::new(PeerId(111));
+        let op_b = peer_b.local_insert(RgaPos::Head, "Q");
+
+        // Merge A→B then B→A.
+        let mut doc_ab = DocState::new(PeerId(200));
+        doc_ab.apply(op_a.clone());
+        doc_ab.apply(op_b.clone());
+
+        let mut doc_ba = DocState::new(PeerId(200));
+        doc_ba.apply(op_b.clone());
+        doc_ba.apply(op_a.clone());
+
+        assert_eq!(doc_ab.text(), doc_ba.text(),
+            "concurrent inserts at same pos must converge regardless of apply order");
+        assert_eq!(doc_ab.text().len(), 2);
+    }
+
+    #[test]
+    fn crdt_len_excludes_tombstones() {
+        // op_log length counts all ops (including deletes), but text() length
+        // only counts live characters.
+        let mut doc = DocState::new(PeerId(120));
+        let op_a = doc.local_insert(RgaPos::Head, "X");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "Y");
+        doc.local_insert(RgaPos::After(op_b.id), "Z");
+        assert_eq!(doc.text().len(), 3);
+
+        doc.local_delete(op_a.id);
+        // Visible length drops by one.
+        assert_eq!(doc.text().len(), 2);
+
+        doc.local_delete(op_b.id);
+        assert_eq!(doc.text().len(), 1);
+        // op_log has 5 entries: 3 inserts + 2 deletes.
+        assert_eq!(doc.op_log().len(), 5);
+    }
+
+    #[test]
+    fn crdt_to_text_skips_tombstones() {
+        // text() must return only live nodes and skip tombstoned ones.
+        let mut doc = DocState::new(PeerId(121));
+        let op_hello = doc.local_insert(RgaPos::Head, "hello");
+        let op_space = doc.local_insert(RgaPos::After(op_hello.id), " ");
+        let op_world = doc.local_insert(RgaPos::After(op_space.id), "world");
+        assert_eq!(doc.text(), "hello world");
+
+        doc.local_delete(op_space.id);
+        assert_eq!(doc.text(), "helloworld", "tombstoned space must not appear");
+
+        doc.local_delete(op_hello.id);
+        assert_eq!(doc.text(), "world");
+
+        doc.local_delete(op_world.id);
+        assert_eq!(doc.text(), "");
+    }
+
+    #[test]
+    fn crdt_op_id_monotonic() {
+        // Each successive local_insert must yield a strictly higher counter.
+        let mut doc = DocState::new(PeerId(130));
+        let op1 = doc.local_insert(RgaPos::Head, "a");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "b");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "c");
+        let op4 = doc.local_insert(RgaPos::After(op3.id), "d");
+
+        assert!(op1.id.counter < op2.id.counter);
+        assert!(op2.id.counter < op3.id.counter);
+        assert!(op3.id.counter < op4.id.counter);
+        // All belong to the same peer.
+        assert_eq!(op1.id.peer, PeerId(130));
+        assert_eq!(op4.id.peer, PeerId(130));
+    }
+
+    // ── session / peer-management simulation ────────────────────────────────
+
+    #[test]
+    fn session_new_has_no_ops() {
+        // A freshly created DocState has an empty op log (no peers have contributed).
+        let doc = DocState::new(PeerId(200));
+        assert_eq!(doc.op_log().len(), 0);
+        assert_eq!(doc.text(), "");
+    }
+
+    #[test]
+    fn session_add_peer_contributes_ops() {
+        // Simulating a peer join: after merge the receiving doc has the peer's ops.
+        let mut doc_host = DocState::new(PeerId(201));
+        doc_host.local_insert(RgaPos::Head, "from_host");
+
+        let mut doc_peer = DocState::new(PeerId(202));
+        // Peer joins by merging the host's state.
+        doc_peer.merge(&doc_host);
+        assert_eq!(doc_peer.text(), "from_host");
+        // Peer doc now has the host's op.
+        assert_eq!(doc_peer.op_log().len(), 1);
+    }
+
+    #[test]
+    fn session_remove_peer_leaves_text_intact() {
+        // Peer "leaving" is modelled by stop merging; existing text is unaffected.
+        let mut doc_host = DocState::new(PeerId(203));
+        let op = doc_host.local_insert(RgaPos::Head, "shared");
+
+        let mut doc_peer = DocState::new(PeerId(204));
+        doc_peer.merge(&doc_host);
+        assert_eq!(doc_peer.text(), "shared");
+
+        // Peer inserts one more op then stops syncing.
+        doc_peer.local_insert(RgaPos::After(op.id), "_peer");
+        assert_eq!(doc_peer.text(), "shared_peer");
+
+        // Host has not received the peer's op — host text is unchanged.
+        assert_eq!(doc_host.text(), "shared");
+    }
+
+    #[test]
+    fn session_peer_id_preserved_in_ops() {
+        // All ops authored on a doc carry the doc's PeerId.
+        let mut doc = DocState::new(PeerId(205));
+        let op1 = doc.local_insert(RgaPos::Head, "x");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "y");
+
+        assert_eq!(op1.id.peer, PeerId(205));
+        assert_eq!(op2.id.peer, PeerId(205));
+    }
+
+    // ── vector-clock properties (modelled via Lamport counter) ───────────────
+
+    #[test]
+    fn vector_clock_counter_increments_on_each_op() {
+        // The Lamport counter advances by 1 for each local operation.
+        let mut doc = DocState::new(PeerId(300));
+        let op1 = doc.local_insert(RgaPos::Head, "a");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "b");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "c");
+        assert_eq!(op1.id.counter, 1);
+        assert_eq!(op2.id.counter, 2);
+        assert_eq!(op3.id.counter, 3);
+    }
+
+    #[test]
+    fn vector_clock_merge_advances_to_max() {
+        // Applying a remote op with a higher counter must advance the local counter
+        // so future local ops are strictly greater.
+        let mut doc_a = DocState::new(PeerId(301));
+        // Create a remote op with counter = 50.
+        let remote_op = make_insert(302, 50, RgaPos::Head, "remote");
+        doc_a.apply(remote_op);
+
+        // Next local op counter must be > 50.
+        let local_op = doc_a.local_insert(RgaPos::Head, "local");
+        assert!(local_op.id.counter > 50,
+            "local counter must exceed the remote op's counter after merge");
+    }
+
+    #[test]
+    fn vector_clock_happens_before_ordering() {
+        // Op authored later on the same peer has a strictly greater counter
+        // — classic happens-before for a single peer.
+        let mut doc = DocState::new(PeerId(303));
+        let earlier = doc.local_insert(RgaPos::Head, "e");
+        let later = doc.local_insert(RgaPos::After(earlier.id), "l");
+
+        assert!(earlier.id < later.id,
+            "earlier op must sort before later op (happens-before)");
+        assert!(earlier.id.counter < later.id.counter);
+    }
+
+    #[test]
+    fn vector_clock_concurrent_ops_on_different_peers() {
+        // Two ops on different peers with the same counter are concurrent
+        // (neither happens-before the other in the causal sense); the Ord
+        // tie-break is by peer.0.
+        let op_p1 = OpId { peer: PeerId(1), counter: 7 };
+        let op_p2 = OpId { peer: PeerId(2), counter: 7 };
+
+        // They are not equal.
+        assert_ne!(op_p1, op_p2);
+        // The sort order is deterministic (peer 1 < peer 2 at same counter).
+        assert!(op_p1 < op_p2);
+        assert!(op_p2 > op_p1);
+    }
+
+    #[test]
+    fn vector_clock_empty_doc_counter_starts_at_zero() {
+        // A fresh doc has no ops, so the internal counter has never fired.
+        // The first op must carry counter = 1.
+        let mut doc = DocState::new(PeerId(304));
+        let first = doc.local_insert(RgaPos::Head, "z");
+        assert_eq!(first.id.counter, 1);
+    }
+
+    // ── awareness / cursor simulation ────────────────────────────────────────
+
+    #[test]
+    fn awareness_cursor_encoded_in_op_meta() {
+        // Cursor positions can be communicated via SetMeta ops keyed by user id.
+        let mut doc = DocState::new(PeerId(400));
+        let cursor_op = Op {
+            id: OpId { peer: PeerId(400), counter: 99 },
+            kind: OpKind::SetMeta {
+                key: "cursor:400".to_string(),
+                value: "5".to_string(),
+            },
+        };
+        doc.apply(cursor_op);
+        // SetMeta does not change text.
+        assert_eq!(doc.text(), "");
+        // But it is recorded in the op log.
+        assert_eq!(doc.op_log().len(), 1);
+        match &doc.op_log()[0].kind {
+            OpKind::SetMeta { key, value } => {
+                assert_eq!(key, "cursor:400");
+                assert_eq!(value, "5");
+            }
+            other => panic!("expected SetMeta, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn awareness_two_users_cursors_coexist() {
+        // Two SetMeta cursor ops from different peers both land in the op log.
+        let mut doc = DocState::new(PeerId(401));
+        let cursor_a = Op {
+            id: OpId { peer: PeerId(401), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:401".to_string(),
+                value: "3".to_string(),
+            },
+        };
+        let cursor_b = Op {
+            id: OpId { peer: PeerId(402), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:402".to_string(),
+                value: "7".to_string(),
+            },
+        };
+        doc.apply(cursor_a);
+        doc.apply(cursor_b);
+        assert_eq!(doc.op_log().len(), 2);
+        // Text unaffected.
+        assert_eq!(doc.text(), "");
+
+        // Both cursors are retrievable from the op log.
+        let cursors: Vec<&Op> = doc.op_log().iter()
+            .filter(|op| matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:")))
+            .collect();
+        assert_eq!(cursors.len(), 2);
+    }
 }

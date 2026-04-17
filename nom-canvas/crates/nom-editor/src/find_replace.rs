@@ -207,4 +207,56 @@ mod tests {
         // Must return empty matches rather than panicking or erroring.
         assert!(state.matches.is_empty());
     }
+
+    #[test]
+    fn find_match_in_multiline() {
+        let mut state = FindState::new();
+        state.query = "world".to_string();
+        state.find_in_text("hello\nworld\nend");
+        assert_eq!(state.matches.len(), 1);
+        assert_eq!(state.matches[0].start, 6);
+    }
+
+    #[test]
+    fn find_replace_replaces_first_match_rest_unchanged() {
+        let mut state = FindState::new();
+        state.query = "x".to_string();
+        state.find_in_text("x y x z x");
+        // current_match starts at 0
+        let mut text = "x y x z x".to_string();
+        let replaced = state.replace_current(&mut text, "Q");
+        assert!(replaced);
+        // Only the first "x" was replaced
+        assert!(text.starts_with('Q'));
+        // The rest of the original string still has 'x' characters
+        assert!(text.contains('x'));
+    }
+
+    #[test]
+    fn find_replace_no_match_returns_zero() {
+        let mut state = FindState::new();
+        state.query = "zzz".to_string();
+        state.find_in_text("hello world");
+        assert_eq!(state.matches.len(), 0);
+    }
+
+    #[test]
+    fn regex_find_captures_group_position() {
+        let mut state = FindState::new();
+        // Match a digit sequence; we check the start positions via find_regex
+        state.query = r"(\d+)".to_string();
+        state.case_sensitive = true;
+        let positions = state.find_regex("abc 42 def 7");
+        assert_eq!(positions.len(), 2);
+        assert_eq!(positions[0], 4);  // "42" starts at byte 4
+        assert_eq!(positions[1], 11); // "7" starts at byte 11
+    }
+
+    #[test]
+    fn find_empty_query_returns_no_matches() {
+        let mut state = FindState::new();
+        // query is empty by default
+        state.find_in_text("some text here");
+        assert!(state.matches.is_empty());
+    }
 }

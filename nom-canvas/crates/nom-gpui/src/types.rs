@@ -1,4 +1,4 @@
-use std::ops::{Add, Sub, Mul, Div};
+use std::ops::{Add, Sub, Mul, Div, Neg};
 
 // ---------------------------------------------------------------------------
 // Pixels — primary unit for GPU rendering coordinates
@@ -27,6 +27,11 @@ impl Div<f32> for Pixels {
     fn div(self, rhs: f32) -> Pixels { Pixels(self.0 / rhs) }
 }
 
+impl Neg for Pixels {
+    type Output = Pixels;
+    fn neg(self) -> Pixels { Pixels(-self.0) }
+}
+
 impl From<f32> for Pixels {
     fn from(v: f32) -> Pixels { Pixels(v) }
 }
@@ -38,6 +43,9 @@ impl From<u32> for Pixels {
 impl Pixels {
     pub fn new(v: f32) -> Self { Pixels(v) }
     pub fn zero() -> Self { Pixels(0.0) }
+    pub fn floor(self) -> Self { Pixels(self.0.floor()) }
+    pub fn ceil(self) -> Self { Pixels(self.0.ceil()) }
+    pub fn abs(self) -> Self { Pixels(self.0.abs()) }
 }
 
 // ---------------------------------------------------------------------------
@@ -64,8 +72,24 @@ impl<T: Sub<Output = T>> Sub for Point<T> {
     }
 }
 
+impl<T: Default> Point<T> {
+    pub fn zero() -> Self { Point { x: T::default(), y: T::default() } }
+}
+
 impl<T> Point<T> {
     pub fn new(x: T, y: T) -> Self { Point { x, y } }
+}
+
+impl<T: Neg<Output = T>> Neg for Point<T> {
+    type Output = Point<T>;
+    fn neg(self) -> Point<T> { Point { x: -self.x, y: -self.y } }
+}
+
+impl Mul<f32> for Point<Pixels> {
+    type Output = Point<Pixels>;
+    fn mul(self, rhs: f32) -> Point<Pixels> {
+        Point { x: self.x * rhs, y: self.y * rhs }
+    }
 }
 
 pub type PixelPoint = Point<Pixels>;
@@ -80,8 +104,20 @@ pub struct Size<T> {
     pub height: T,
 }
 
+impl<T: Default> Size<T> {
+    pub fn zero() -> Self { Size { width: T::default(), height: T::default() } }
+}
+
 impl<T> Size<T> {
     pub fn new(width: T, height: T) -> Self { Size { width, height } }
+}
+
+impl Size<Pixels> {
+    pub fn area(&self) -> f32 { self.width.0 * self.height.0 }
+
+    pub fn contains(&self, other: &Size<Pixels>) -> bool {
+        other.width.0 <= self.width.0 && other.height.0 <= self.height.0
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -105,6 +141,17 @@ where
             && pt.x <= self.origin.x + self.size.width
             && pt.y >= self.origin.y
             && pt.y <= self.origin.y + self.size.height
+    }
+
+    pub fn intersects(&self, other: &Bounds<T>) -> bool {
+        let self_right  = self.origin.x  + self.size.width;
+        let self_bottom = self.origin.y  + self.size.height;
+        let other_right  = other.origin.x + other.size.width;
+        let other_bottom = other.origin.y + other.size.height;
+        self.origin.x  < other_right
+            && self_right  > other.origin.x
+            && self.origin.y  < other_bottom
+            && self_bottom > other.origin.y
     }
 }
 
@@ -176,6 +223,28 @@ impl Hsla {
         self.a = a;
         self
     }
+
+    /// Convert to (r, g, b, a) in [0, 1].
+    pub fn to_rgba(self) -> (f32, f32, f32, f32) {
+        let h = self.h / 360.0;
+        let s = self.s;
+        let l = self.l;
+        let q = if l < 0.5 { l * (1.0 + s) } else { l + s - l * s };
+        let p = 2.0 * l - q;
+        let hue_to_rgb = |mut t: f32| -> f32 {
+            if t < 0.0 { t += 1.0; }
+            if t > 1.0 { t -= 1.0; }
+            if t < 1.0 / 6.0 { return p + (q - p) * 6.0 * t; }
+            if t < 1.0 / 2.0 { return q; }
+            if t < 2.0 / 3.0 { return p + (q - p) * (2.0 / 3.0 - t) * 6.0; }
+            p
+        };
+        if s == 0.0 {
+            (l, l, l, self.a)
+        } else {
+            (hue_to_rgb(h + 1.0 / 3.0), hue_to_rgb(h), hue_to_rgb(h - 1.0 / 3.0), self.a)
+        }
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -218,6 +287,8 @@ impl Vec2 {
             Vec2 { x: self.x / len, y: self.y / len }
         }
     }
+
+    pub fn dot(self, rhs: Vec2) -> f32 { self.x * rhs.x + self.y * rhs.y }
 }
 
 // ---------------------------------------------------------------------------
@@ -451,6 +522,202 @@ mod tests {
         gid.push(ElementId::new(2));
         assert_eq!(gid.pop(), Some(ElementId::new(2)));
         assert_eq!(gid.0.len(), 1);
+    }
+
+    // ---- Pixels extended ----
+
+    #[test]
+    fn pixels_add() {
+        assert_eq!(Pixels(2.0) + Pixels(3.0), Pixels(5.0));
+    }
+
+    #[test]
+    fn pixels_sub() {
+        assert_eq!(Pixels(5.0) - Pixels(2.0), Pixels(3.0));
+    }
+
+    #[test]
+    fn pixels_mul_f32() {
+        assert_eq!(Pixels(4.0) * 2.0, Pixels(8.0));
+    }
+
+    #[test]
+    fn pixels_zero() {
+        assert_eq!(Pixels::zero(), Pixels(0.0));
+    }
+
+    #[test]
+    fn pixels_floor() {
+        assert_eq!(Pixels(3.7).floor(), Pixels(3.0));
+    }
+
+    #[test]
+    fn pixels_ceil() {
+        assert_eq!(Pixels(3.2).ceil(), Pixels(4.0));
+    }
+
+    #[test]
+    fn pixels_abs() {
+        assert_eq!(Pixels(-3.0).abs(), Pixels(3.0));
+    }
+
+    #[test]
+    fn pixels_ord() {
+        assert!(Pixels(1.0) < Pixels(2.0));
+        assert!(!(Pixels(2.0) < Pixels(1.0)));
+    }
+
+    // ---- Point<Pixels> ----
+
+    #[test]
+    fn point_add() {
+        let a = Point::new(Pixels(1.0), Pixels(2.0));
+        let b = Point::new(Pixels(3.0), Pixels(4.0));
+        let c = a + b;
+        assert_eq!(c.x, Pixels(4.0));
+        assert_eq!(c.y, Pixels(6.0));
+    }
+
+    #[test]
+    fn point_scale() {
+        let p = Point::new(Pixels(3.0), Pixels(5.0)) * 2.0;
+        assert_eq!(p.x, Pixels(6.0));
+        assert_eq!(p.y, Pixels(10.0));
+    }
+
+    #[test]
+    fn point_zero() {
+        let p: Point<Pixels> = Point::zero();
+        assert_eq!(p.x, Pixels(0.0));
+        assert_eq!(p.y, Pixels(0.0));
+    }
+
+    #[test]
+    fn point_negate() {
+        let p = -Point::new(Pixels(1.0), Pixels(2.0));
+        assert_eq!(p.x, Pixels(-1.0));
+        assert_eq!(p.y, Pixels(-2.0));
+    }
+
+    // ---- Size<Pixels> ----
+
+    #[test]
+    fn size_area() {
+        let s = Size::new(Pixels(3.0), Pixels(4.0));
+        assert!((s.area() - 12.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn size_zero() {
+        let s: Size<Pixels> = Size::zero();
+        assert_eq!(s.width, Pixels(0.0));
+        assert_eq!(s.height, Pixels(0.0));
+    }
+
+    #[test]
+    fn size_contains_smaller() {
+        let big = Size::new(Pixels(10.0), Pixels(10.0));
+        let small = Size::new(Pixels(5.0), Pixels(5.0));
+        assert!(big.contains(&small));
+        assert!(!small.contains(&big));
+    }
+
+    // ---- Bounds<Pixels> ----
+
+    #[test]
+    fn bounds_contains_point() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        assert!(b.contains(&Point::new(Pixels(5.0), Pixels(5.0))));
+    }
+
+    #[test]
+    fn bounds_contains_edge() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        assert!(b.contains(&Point::new(Pixels(0.0), Pixels(0.0))));
+        assert!(b.contains(&Point::new(Pixels(10.0), Pixels(10.0))));
+    }
+
+    #[test]
+    fn bounds_does_not_contain_outside() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        assert!(!b.contains(&Point::new(Pixels(11.0), Pixels(5.0))));
+    }
+
+    #[test]
+    fn bounds_intersects() {
+        let a = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        let b = Bounds::new(
+            Point::new(Pixels(5.0), Pixels(5.0)),
+            Size::new(Pixels(10.0), Pixels(10.0)),
+        );
+        assert!(a.intersects(&b));
+    }
+
+    #[test]
+    fn bounds_no_intersect() {
+        let a = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(5.0), Pixels(5.0)),
+        );
+        let b = Bounds::new(
+            Point::new(Pixels(10.0), Pixels(10.0)),
+            Size::new(Pixels(5.0), Pixels(5.0)),
+        );
+        assert!(!a.intersects(&b));
+    }
+
+    // ---- Hsla ----
+
+    #[test]
+    fn hsla_fields() {
+        let c = Hsla::new(120.0, 0.5, 0.4, 0.8);
+        assert_eq!(c.h, 120.0);
+        assert_eq!(c.s, 0.5);
+        assert_eq!(c.l, 0.4);
+        assert_eq!(c.a, 0.8);
+    }
+
+    #[test]
+    fn hsla_to_rgba_gray() {
+        // s==0 means achromatic: r==g==b==l
+        let (r, g, b, a) = Hsla::new(0.0, 0.0, 0.5, 1.0).to_rgba();
+        assert!((r - 0.5).abs() < 1e-5, "r={r}");
+        assert!((g - 0.5).abs() < 1e-5, "g={g}");
+        assert!((b - 0.5).abs() < 1e-5, "b={b}");
+        assert!((a - 1.0).abs() < 1e-5, "a={a}");
+    }
+
+    #[test]
+    fn hsla_alpha_range() {
+        let c = Hsla::new(200.0, 0.3, 0.6, 0.75);
+        assert!(c.a >= 0.0 && c.a <= 1.0);
+    }
+
+    // ---- Vec2 ----
+
+    #[test]
+    fn vec2_dot() {
+        let a = Vec2::new(1.0, 0.0);
+        let b = Vec2::new(0.0, 1.0);
+        assert!((a.dot(b)).abs() < 1e-6);
+        assert!((Vec2::new(2.0, 3.0).dot(Vec2::new(4.0, 5.0)) - 23.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_length() {
+        assert!((Vec2::new(3.0, 4.0).length() - 5.0).abs() < 1e-6);
     }
 
     #[test]

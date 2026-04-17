@@ -632,4 +632,70 @@ mod tests {
         sorted.dedup();
         assert_eq!(sorted.len(), original_len, "icon names must be unique");
     }
+
+    #[test]
+    fn icon_count_at_least_twenty() {
+        // The icon set must have at least 20 variants to be useful.
+        assert!(
+            Icon::all().len() >= 20,
+            "expected at least 20 icons, got {}",
+            Icon::all().len()
+        );
+    }
+
+    #[test]
+    fn icon_chevron_down_has_geometry() {
+        let path = icon_path(Icon::ChevronDown);
+        assert!(
+            !path.lines.is_empty(),
+            "ChevronDown must have at least one line"
+        );
+    }
+
+    #[test]
+    fn icon_close_has_geometry() {
+        // Icon::X is the close/dismiss icon.
+        let path = icon_path(Icon::X);
+        assert!(!path.lines.is_empty(), "Icon::X (close) must have lines");
+        // Close icon is typically two crossing lines.
+        assert_eq!(path.lines.len(), 2, "Icon::X should have exactly 2 crossing lines");
+    }
+
+    #[test]
+    fn icon_all_names_are_kebab_case() {
+        // Names must contain only lowercase ASCII letters, digits, and hyphens.
+        for icon in Icon::all() {
+            let name = icon.name();
+            for ch in name.chars() {
+                assert!(
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-',
+                    "{icon:?}.name() = {name:?} contains invalid char {ch:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn icon_search_has_circle() {
+        // Search icon must have a circle (the magnifying glass lens).
+        let path = icon_path(Icon::Search);
+        assert!(!path.circles.is_empty(), "Search icon must have at least one circle");
+    }
+
+    #[test]
+    fn icon_line_endpoints_normalized() {
+        // Every line endpoint must be in [0.0, 1.0] — already in icon_size_matches_spec,
+        // but this specifically checks that no endpoint is exactly equal (degenerate line).
+        // A line from (x,y) to (x,y) has zero length and would be invisible.
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(x1, y1, x2, y2) in path.lines {
+                let is_degenerate = (x1 - x2).abs() < f32::EPSILON && (y1 - y2).abs() < f32::EPSILON;
+                assert!(
+                    !is_degenerate,
+                    "{icon:?} has a degenerate zero-length line ({x1},{y1})->({x2},{y2})"
+                );
+            }
+        }
+    }
 }

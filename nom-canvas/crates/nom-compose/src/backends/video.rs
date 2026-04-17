@@ -145,4 +145,43 @@ mod tests {
         assert_eq!(block.height, 1080);
         assert!(store.exists(&block.artifact_hash));
     }
+
+    #[test]
+    fn video_compose_entity_propagated() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "vid2".into(), word: "intro".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 4]],
+            fps: 30,
+            width: 1280,
+            height: 720,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.entity.id, "vid2");
+        assert_eq!(block.entity.word, "intro");
+    }
+
+    #[test]
+    fn video_compose_duration_ms() {
+        let mut store = InMemoryStore::new();
+        // 30 frames at 30 fps = 1000 ms
+        let frames: Vec<Vec<u8>> = (0..30).map(|_| vec![0u8; 4]).collect();
+        let input = VideoInput {
+            entity: NomtuRef { id: "vid3".into(), word: "second".into(), kind: "media".into() },
+            frames,
+            fps: 30,
+            width: 640,
+            height: 480,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 1000);
+    }
+
+    #[test]
+    fn video_spec_add_frame() {
+        let mut spec = VideoSpec::new(24, 1920, 1080, 1.0);
+        spec.add_frame(VideoFrame { frame_index: 0, duration_ms: 41, scene_hash: "abc".into() });
+        assert_eq!(spec.frames.len(), 1);
+        assert_eq!(spec.frames[0].frame_index, 0);
+    }
 }

@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 pub mod store;
 pub mod progress;
+pub mod cancel;
 pub mod deep_think;
 pub mod backends;
 pub mod dispatch;
