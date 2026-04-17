@@ -6,7 +6,7 @@
 
 #![deny(unsafe_code)]
 
-use nom_gpui::{Bounds, Pixels, Point, Size};
+use nom_gpui::{Bounds, Pixels, Point};
 use crate::element::Element;
 use crate::shapes::Shape;
 

@@ -13,7 +13,9 @@
 #![deny(unsafe_code)]
 
 use std::collections::HashMap;
-use nom_gpui::{Bounds, Pixels, Point, Size};
+use nom_gpui::{Bounds, Pixels};
+#[cfg(test)]
+use nom_gpui::{Point, Size};
 use crate::element::ElementId;
 
 // ── constants ─────────────────────────────────────────────────────────────────

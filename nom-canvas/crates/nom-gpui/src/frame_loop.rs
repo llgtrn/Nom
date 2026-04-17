@@ -399,6 +399,7 @@ mod tests {
     fn frame_handler_receives_element_state() {
         use crate::element::ElementId;
 
+        #[allow(dead_code)]
         struct WritingHandler {
             target_id: ElementId,
         }

@@ -192,6 +192,7 @@ fn scaled_bounds_to_i32(b: Bounds<ScaledPixels>) -> Bounds<i32> {
 /// point at sub-pixel position `(4.7, 3.2)` is inside any rect whose
 /// origin.x ≤ 4 and right > 4, which is exactly what a 1×1 query at `(4, 3)`
 /// tests against integer-rounded rects).
+#[allow(dead_code)]
 fn point_to_query(point: Point<ScaledPixels>) -> Bounds<i32> {
     let x = point.x.0 as i32;
     let y = point.y.0 as i32;
@@ -409,6 +410,7 @@ impl Scene {
     }
 
     /// Retrieve the `.order` field of the primitive identified by `(kind, index)`.
+    #[allow(dead_code)]
     fn primitive_order(&self, kind: PrimitiveKind, index: usize) -> DrawOrder {
         match kind {
             PrimitiveKind::Shadow => self.shadows[index].order,
