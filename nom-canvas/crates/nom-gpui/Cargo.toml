@@ -18,5 +18,11 @@ smallvec.workspace = true
 taffy.workspace = true
 thiserror.workspace = true
 
+# GPU substrate (batch-2)
+wgpu.workspace = true
+pollster.workspace = true
+raw-window-handle.workspace = true
+
 [dev-dependencies]
 anyhow.workspace = true
+naga = { version = "22", features = ["wgsl-in"] }

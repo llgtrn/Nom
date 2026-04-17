@@ -1,10 +1,10 @@
 # Remaining Work — Execution Tracker
 
 > **CANONICAL TRACKING DOC — MAIN** (Planner/Auditor refreshes every cycle)
-> **HEAD:** `e2b7ecb` on main | **CI:** canvas job GREEN (cargo check + test 23s on ubuntu-latest); compiler matrix still running | **Date:** 2026-04-17
+> **HEAD:** `1daa80e` on main (audit-fix CI in_progress) | **CI e2b7ecb + 5cb9a60:** GREEN ✅ | **Date:** 2026-04-17
 > **Spec:** `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` (719 lines) — canonical
 > **Sibling docs:** `implementation_plan.md`, `nom_state_machine_report.md` (all 4 MUST stay in sync)
-> **v1 archived** to `.archive/nom-canvas-v1-typescript/`. `nom-canvas/` Phase 1 batch-1 landed on main (31/31 tests pass).
+> **v1 archived** to `.archive/nom-canvas-v1-typescript/`. Phase 1 batch-1 + audit iteration landed (44/44 tests). batch-2 wave-1 (shaders + buffers + context) starting now.
 
 ---
 
@@ -19,37 +19,44 @@
 - [x] Element trait (request_layout → prepaint → paint with caller-owned state) — [element.rs](nom-canvas/crates/nom-gpui/src/element.rs)
 - [x] taffy layout wrapper (LayoutEngine + to_taffy conversion) — [taffy_layout.rs](nom-canvas/crates/nom-gpui/src/taffy_layout.rs)
 - [x] Styled fluent builder (.flex_col().w().padding().bg().rounded()) — [styled.rs](nom-canvas/crates/nom-gpui/src/styled.rs)
-### Phase 1 batch-1 AUDIT FIXES (PREREQUISITE — fix before batch-2 GPU work)
+### Phase 1 batch-1 AUDIT FIXES (landed in `1daa80e`, 44/44 tests)
 
-**CRITICAL — wrong rendering without these:**
-- [ ] `scene.rs` BatchIterator: stop emitting all-remaining-of-kind; use `Peekable`+`next_if` advancing only until next kind's order (ref [zed scene.rs:316-373](APP/zed-main/crates/gpui/src/scene.rs#L316-L373))
-- [ ] `bounds_tree.rs` insert: replace monotonic `saturating_add(1)` with overlap-aware `max_intersecting + 1` (ref [zed bounds_tree.rs:119-135](APP/zed-main/crates/gpui/src/bounds_tree.rs#L119-L135)); panic or Result on `next_order` overflow
-- [ ] `scene.rs` PrimitiveBatch sprite variants: add `texture_id`; sort sprites by `(order, tile_id)` in `finish()`; break batches on `texture_id` change
+**CRITICAL — all VERIFIED-CORRECT by iter-4 audit ✅:**
+- [x] `scene.rs` BatchIterator: cutoff = min-other-kind-order, `advance_while(order <= cutoff)`; trace `[shadow@1, quad@5, shadow@10]` verified → 3 correct batches
+- [x] `bounds_tree.rs` insert: `topmost_intersecting(bounds).map_or(1, |o| o.checked_add(1).expect(...))` with explicit overflow panic + doc; 50-rect non-overlap reuse verified
+- [x] `scene.rs` PrimitiveBatch sprite variants: `texture_id` field on Mono/Poly struct variants; `finish()` sorts by `(order, tile_tex_id)`; iterator breaks on texture change
 
-**HIGH — API shape fixes (do before downstream crates depend on nom-gpui):**
-- [ ] `color.rs` Hsla: adopt `[0,1]` hue convention OR add explicit `from_degrees`/`from_normalized` constructors
-- [ ] `styled.rs` all 40+ fluent setters: change from `fn m(mut self, ...) -> Self` to `fn m(&mut self, ...) -> &mut Self`
-- [ ] `geometry.rs` Pixels: remove `From<f32>` + `From<Pixels> for f32`; Styled setters take `impl Into<Pixels>`
-- [ ] `taffy_layout.rs` request_layout: return `Result<LayoutId, LayoutError>` (match `compute_layout` contract)
+**HIGH — all VERIFIED ✅:**
+- [x] `color.rs` Hsla: canonical `[0,360)` storage + both `from_degrees`/`from_normalized` constructors (divergent-but-ok vs Zed's `[0,1]`)
+- [x] `styled.rs` all 40+ fluent setters migrated to `&mut self -> &mut Self`; `Sized` bound dropped; new `mut_ref_setters_compose_with_element_lifecycle` test proves borrow-release
+- [x] `geometry.rs` Pixels: both `From<f32>` impls deleted; `Pixels(x)` is only ctor; consistent across ScaledPixels/DevicePixels
+- [x] `taffy_layout.rs`: `try_request_layout -> Result<LayoutId, LayoutError>` with `#[from] taffy::TaffyError`; infallible `request_layout` wrapper preserves callers
 
-**MEDIUM — pattern backfills from Zed:**
-- [ ] Add `request_measured_layout` + `NodeContext` measure closure (ref [zed taffy.rs:80-104](APP/zed-main/crates/gpui/src/taffy.rs#L80-L104))
-- [ ] Add `SubpixelSprite` + `Surface` primitive kinds to Scene (8 vecs total)
+**MEDIUM — 1 DONE opportunistically, 8 OPEN:**
+- [ ] Add `request_measured_layout` + `NodeContext` measure closure — ⚠️ **blocks content-sized text/image elements**
+- [ ] Add `SubpixelSprite` + `Surface` primitive kinds to Scene (8 vecs total) — ⚠️ **blocks crisp subpixel text rendering**
 - [ ] Add `PlatformAtlas::remove(key)` for per-tile eviction
 - [ ] Change `AtlasKey.bytes: Vec<u8>` → `Arc<[u8]>` or `Borrow`-based key
 - [ ] Make `Scene` primitive fields `pub(crate)`; expose read-only accessors
-- [ ] Replace BoundsTree recursive walk with explicit `Vec<u32>` stack
+- [ ] Replace BoundsTree recursive `walk()` with explicit `Vec<u32>` stack — stack-overflow risk on >1000 overlapping layers
 - [ ] Add `half_perimeter` area heuristic to BoundsTree child selection
-- [ ] Wire `max_leaf` fast-path in `topmost_intersecting`
+- [x] Wire `max_leaf` fast-path in `topmost_intersecting` — landed with overlap-aware rework ([bounds_tree.rs:227-231](nom-canvas/crates/nom-gpui/src/bounds_tree.rs#L227-L231))
 - [ ] Fix `draw_element` to call `compute_layout` between phases OR document caller responsibility
 
-**LOW:**
+**LOW — all still OPEN:**
 - [ ] Add vertical-overflow check to InMemoryAtlas shelf wrap
 - [ ] Remove unused `bytemuck` dep until batch-2 needs it
 - [ ] Remove `pub` from `PrimitiveKind` (or document consumers)
 - [ ] Collapse ~25 Styled setters into `style_setter!` macro
 - [ ] Add `Debug` derives to `BatchIterator`, `ElementCx`, `LayoutEngine`
 - [ ] Doc comments on `ElementCx.rem_size`/`scale_factor`, `AtlasTileRef.uv`, `NodeContext`
+
+### Test gaps identified in iter-4 audit (add BEFORE batch-2 merges)
+- [ ] Sprite **ABA texture pattern** test: `(tex_a, order_1), (tex_b, order_2), (tex_a, order_3)` → 3 distinct batches (proves no silent merge of non-adjacent same-texture runs)
+- [ ] Hsla **hue boundary** + `rgb→hsl→rgb` round-trip (0°, 360° wrap, saturation/lightness extremes)
+- [ ] `try_request_layout` **error path** — trigger taffy with NaN/infinite dims; assert `Err(LayoutError::Taffy(_))`
+- [ ] Rewrite `pixels_explicit_construction_only` as **trybuild compile-fail** harness (current test is tautological — asserts `Pixels(42.0).0 == 42.0`, passes even with `From<f32>` re-added)
+- [ ] Consider adding **proptest/quickcheck** fuzzing to BoundsTree (random insert sequences + invariant checks)
 
 ### Phase 1 batch-2 (NEXT) — GPU substrate (Zed `crates/gpui_wgpu/` reference)
 

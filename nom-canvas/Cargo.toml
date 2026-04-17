@@ -11,16 +11,18 @@ license = "Apache-2.0"
 authors = ["Nom"]
 
 [workspace.dependencies]
-# GPU rendering (versions aligned with Zed's GPUI)
+# GPU rendering (versions aligned with Zed's gpui_wgpu crate)
 wgpu = "22"
 etagere = "0.2"
 bytemuck = { version = "1.16", features = ["derive"] }
+pollster = "0.3"
 
 # Layout
 taffy = "0.6"
 
-# Text shaping + rasterization
+# Text shaping + rasterization (versions from Zed gpui_wgpu end-to-end read)
 cosmic-text = "0.12"
+swash = "0.2"
 
 # Windowing
 winit = "0.30"

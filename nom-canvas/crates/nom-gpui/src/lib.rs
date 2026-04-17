@@ -18,7 +18,9 @@
 //!
 //! See `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md`.
 
+pub mod shaders;
 pub mod atlas;
+pub mod buffers;
 pub mod bounds_tree;
 pub mod color;
 pub mod element;
