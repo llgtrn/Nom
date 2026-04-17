@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave Z complete — 1679 tests across 15 crates. Wave AA in progress (~1900 target).
+**Last updated:** Wave AA complete — 2219 tests across 15 crates. Wave AB in progress (~2600 target).
 
 ## Current finalization snapshot
 
@@ -9,28 +9,28 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 71% | 100% | 29pp | 1679 total, Wave AA →~1900 |
-| D · Overall platform | 58% | 100% | 42pp | 15/15 crates have tests |
+| C · nom-canvas ↔ compiler integration | 73% | 100% | 27pp | 2219 total, Wave AB →~2600 |
+| D · Overall platform | 61% | 100% | 39pp | 15/15 crates have tests |
 
-**Per-crate test counts (Wave Z baseline):**
-| Crate | Tests | Wave AA target |
+**Per-crate test counts (Wave AA → Wave AB):**
+| Crate | Wave AA | Wave AB target |
 |---|---|---|
-| nom-blocks | 93 | 150 |
-| nom-canvas-core | 145 | 165 |
-| nom-cli | 55 | 110 |
-| nom-collab | 90 | 145 |
-| nom-compiler-bridge | 121 | 140 |
-| nom-compose | 197 | 240 |
-| nom-editor | 128 | 150 |
-| nom-gpui | 211 | 240 |
-| nom-graph | 125 | 175 |
-| nom-intent | 60 | 115 |
-| nom-lint | 70 | 125 |
-| nom-memoize | 75 | 130 |
-| nom-panels | 125 | 145 |
-| nom-telemetry | 87 | 145 |
-| nom-theme | 85 | 140 |
-| **TOTAL** | **1679** | **~1920** |
+| nom-blocks | 150 | 195 |
+| nom-canvas-core | 145 | 200 |
+| nom-cli | 105 | 120 |
+| nom-collab | 129 | 175 |
+| nom-compiler-bridge | 121 | 175 |
+| nom-compose | 252 | 295 |
+| nom-editor | 128 | 185 |
+| nom-gpui | 211 | 265 |
+| nom-graph | 175 | 220 |
+| nom-intent | 115 | 140 |
+| nom-lint | 125 | 155 |
+| nom-memoize | 118 | 145 |
+| nom-panels | 125 | 180 |
+| nom-telemetry | 145 | 175 |
+| nom-theme | 163 | 200 |
+| **TOTAL** | **2219** | **~2625** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
@@ -409,8 +409,9 @@ All four axes reach 100% when:
 - Axis C: 8 waves (wires + backend depth; C1/C6/C7 partially done)
 - Axis D: 15 waves (UI polish + CI + docs)
 
-**Current velocity:** ~217 tests/wave (Waves V–Z average). At this rate:
-- nom-canvas test suite hits 3000 tests in ~6 more waves
+**Current velocity:** ~270 tests/wave (Waves V–AA average, accelerating). At this rate:
+- nom-canvas test suite hits 3000 tests in ~3 more waves
+- Wave AB targets ~2600 (+380 from current 2219)
 - Axis C functional completeness needs real backend wiring (C5) + golden demos (D3)
 
 **Critical path:** A7 (fixpoint proof) + C5 (real backends) + D3 (golden demos).

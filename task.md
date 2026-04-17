@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `59f3a30` | **Tests:** 1679 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `de12f4d` | **Tests:** 2219 | **Workspace:** clean
 
 **Master roadmap to 100%:** [`ROADMAP_TO_100.md`](ROADMAP_TO_100.md) — every remaining `[ ]` across 4 axes (compiler/language/integration/platform).
 
@@ -49,17 +49,29 @@
 - [x] nom-editor: 105→128 tests
 - [x] nom-gpui: 186→211 tests
 
-## Wave AA (2026-04-18) — in progress
-- [ ] nom-cli: 55→110+ tests (error cases, edge paths)
-- [ ] nom-intent: 60→115+ tests (signals, react chain, interrupt)
-- [ ] nom-lint: 70→125+ tests (all rule variants, severity)
-- [ ] nom-memoize: 75→130+ tests (hash, cache, tracked, constraint)
-- [ ] nom-theme: 85→140+ tests (full token validation)
-- [ ] nom-collab: 90→145+ tests (3-peer CRDT, large docs)
-- [ ] nom-blocks: 93→150+ tests (all block types, workspace ops)
-- [ ] nom-telemetry: 87→145+ tests (event kinds, multi-sink)
-- [ ] nom-graph: 125→175+ tests (topo sort, BFS/DFS, merge)
-- [ ] nom-compose: 197→240+ tests (content hash, store, progress)
+## Wave AA (2026-04-18) — COMPLETE ✅ (de12f4d, 2219 tests)
+- [x] nom-cli: 55→105 tests (+50)
+- [x] nom-intent: 60→115 tests (+55)
+- [x] nom-lint: 70→125 tests (+55)
+- [x] nom-memoize: 75→118 tests (+43)
+- [x] nom-theme: 85→163 tests (+78)
+- [x] nom-collab: 90→129 tests (+39)
+- [x] nom-blocks: 93→150 tests (+57)
+- [x] nom-telemetry: 87→145 tests (+58)
+- [x] nom-graph: 125→175 tests (+50)
+- [x] nom-compose: 197→252 tests (+55)
+
+## Wave AB (2026-04-18) — in progress
+- [ ] nom-canvas-core: 145→200+ tests (viewport edge cases, spatial index, rubber band)
+- [ ] nom-compiler-bridge: 121→175+ tests (SharedState race, LSP completions, adapters)
+- [ ] nom-editor: 128→185+ tests (multi-cursor, tab map, hints, find/replace regex)
+- [ ] nom-gpui: 211→265+ tests (layout engine depth, styled chaining, atlas reuse)
+- [ ] nom-panels: 125→180+ tests (deep-think card stream, palette search, properties)
+- [ ] nom-collab: 129→175+ tests (3-way merge, op log replay, YJS-style convergence)
+- [ ] nom-theme: 163→200+ tests (WCAG contrast ratios, animation spring physics)
+- [ ] nom-graph: 175→220+ tests (sandbox AST sanitizers, execution engine cancel)
+- [ ] nom-compose: 252→295+ tests (semantic MDL, credential store, provider router depth)
+- [ ] nom-blocks: 150→195+ tests (DictReader integration, can_wire grammar backend)
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
@@ -128,7 +140,8 @@
 | [x] X Deep coverage | ✅ | d63bc35 — intent/collab/memoize/theme/types, 1266 tests |
 | [x] Y Coverage | ✅ | 2b73744 — cli/collab/telemetry/lint/intent/blocks, 1462 tests |
 | [x] Z Coverage | ✅ | 59f3a30 — theme/collab/telemetry/bridge/compose/panels/editor/gpui, 1679 tests |
-| [ ] AA Coverage | ⏳ | cli/intent/lint/memoize/theme/collab/blocks/telemetry/graph/compose |
+| [x] AA Coverage | ✅ | de12f4d — +540 across 10 crates, 2219 tests |
+| [ ] AB Coverage | ⏳ | canvas-core/bridge/editor/gpui/panels/collab/theme/graph/compose/blocks |
 
 ### Integrity Grep
 
