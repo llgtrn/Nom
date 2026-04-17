@@ -14,3 +14,6 @@ pub mod embed_gen;
 pub mod render;
 pub mod export;
 pub mod pipeline;
+
+/// Uniform error-wrapping return type for safe compose wrappers.
+pub type ComposeResult = Result<(), String>;

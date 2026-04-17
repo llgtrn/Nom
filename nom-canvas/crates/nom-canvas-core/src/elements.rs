@@ -146,6 +146,68 @@ impl CanvasArrow {
     }
 }
 
+// ─── Graph Node ─────────────────────────────────────────────────────────────
+
+/// A DAG node element in graph mode.  Carries the semantic `node_id` from the
+/// block graph plus display geometry and a confidence score.
+#[derive(Debug, Clone)]
+pub struct GraphNodeElement {
+    pub id: u64,
+    /// Semantic node identifier from the block graph.
+    pub node_id: u64,
+    /// Top-left corner in canvas space.
+    pub position: [f32; 2],
+    /// Width and height of the node box.
+    pub size: [f32; 2],
+    /// Human-readable label shown inside the node.
+    pub label: String,
+    /// Confidence score in [0.0, 1.0].
+    pub confidence: f32,
+}
+
+/// Returns `(top_left, bottom_right)` axis-aligned bounding box for a graph node.
+pub fn bounding_box(elem: &GraphNodeElement) -> ([f32; 2], [f32; 2]) {
+    let top_left = elem.position;
+    let bottom_right = [
+        elem.position[0] + elem.size[0],
+        elem.position[1] + elem.size[1],
+    ];
+    (top_left, bottom_right)
+}
+
+// ─── Wire ────────────────────────────────────────────────────────────────────
+
+/// A directed wire between two graph nodes.  Optional waypoints define the
+/// routed path; the logical endpoints are the node positions supplied at
+/// render time.
+#[derive(Debug, Clone)]
+pub struct WireElement {
+    pub id: u64,
+    /// Source node id.
+    pub from_node: u64,
+    /// Destination node id.
+    pub to_node: u64,
+    /// Edge confidence in [0.0, 1.0].
+    pub confidence: f32,
+    /// Intermediate waypoints along the wire path (excluding endpoints).
+    pub waypoints: Vec<[f32; 2]>,
+}
+
+/// Returns the midpoint between `from_pos` and `to_pos`.
+///
+/// Waypoints are not considered — this gives the straight-line midpoint
+/// between the two connected node positions, suitable for label placement.
+pub fn wire_midpoint(
+    _wire: &WireElement,
+    from_pos: [f32; 2],
+    to_pos: [f32; 2],
+) -> [f32; 2] {
+    [
+        (from_pos[0] + to_pos[0]) / 2.0,
+        (from_pos[1] + to_pos[1]) / 2.0,
+    ]
+}
+
 // ─── Connector ──────────────────────────────────────────────────────────────
 
 /// A typed connector between two graph-node elements (replaces Arrow for
@@ -276,6 +338,51 @@ mod tests {
         let _closed = ArrowHead::Closed;
         let _filled = ArrowHead::Filled;
         assert_ne!(ArrowHead::Open, ArrowHead::Filled);
+    }
+
+    #[test]
+    fn graph_node_element_bounding_box() {
+        let node = GraphNodeElement {
+            id: 10,
+            node_id: 42,
+            position: [5.0, 10.0],
+            size: [80.0, 40.0],
+            label: "Block A".to_string(),
+            confidence: 0.9,
+        };
+        let (tl, br) = bounding_box(&node);
+        assert!((tl[0] - 5.0).abs() < 1e-6);
+        assert!((tl[1] - 10.0).abs() < 1e-6);
+        assert!((br[0] - 85.0).abs() < 1e-6, "br x should be 5+80=85, got {}", br[0]);
+        assert!((br[1] - 50.0).abs() < 1e-6, "br y should be 10+40=50, got {}", br[1]);
+    }
+
+    #[test]
+    fn wire_element_midpoint() {
+        let wire = WireElement {
+            id: 1,
+            from_node: 10,
+            to_node: 20,
+            confidence: 0.8,
+            waypoints: vec![[25.0, 25.0]],
+        };
+        let mid = wire_midpoint(&wire, [0.0, 0.0], [100.0, 60.0]);
+        assert!((mid[0] - 50.0).abs() < 1e-6);
+        assert!((mid[1] - 30.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn graph_node_element_confidence_field() {
+        let node = GraphNodeElement {
+            id: 7,
+            node_id: 1,
+            position: [0.0, 0.0],
+            size: [50.0, 30.0],
+            label: String::new(),
+            confidence: 0.75,
+        };
+        assert!((node.confidence - 0.75).abs() < 1e-6);
+        assert_eq!(node.node_id, 1);
     }
 
     #[test]

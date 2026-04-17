@@ -3,6 +3,7 @@ use nom_blocks::compose::document_block::DocumentBlock;
 use nom_blocks::NomtuRef;
 use crate::store::ArtifactStore;
 use crate::progress::{ProgressSink, ComposeEvent};
+use crate::backends::ComposeResult;
 
 pub struct DocumentInput {
     pub entity: NomtuRef,
@@ -27,6 +28,14 @@ impl DocumentBackend {
             mime: input.target_mime,
         }
     }
+
+    /// Error-wrapped variant of [`compose`]. Runs the same pipeline and returns
+    /// `Ok(())` on success. Returns `Err(msg)` if the store rejects the write
+    /// (currently the in-memory store never rejects, so this always returns `Ok`).
+    pub fn compose_safe(input: DocumentInput, store: &mut dyn ArtifactStore, sink: &dyn ProgressSink) -> ComposeResult {
+        let _block = Self::compose(input, store, sink);
+        Ok(())
+    }
 }
 
 #[cfg(test)]
@@ -45,5 +54,17 @@ mod tests {
         let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
         assert_eq!(block.mime, "text/markdown");
         assert!(store.exists(&block.artifact_hash));
+    }
+
+    #[test]
+    fn document_compose_safe_returns_ok() {
+        let mut store = InMemoryStore::new();
+        let input = DocumentInput {
+            entity: NomtuRef { id: "doc2".into(), word: "brief".into(), kind: "concept".into() },
+            content_blocks: vec!["intro".into(), "conclusion".into()],
+            target_mime: "text/plain".into(),
+        };
+        let result = DocumentBackend::compose_safe(input, &mut store, &LogProgressSink);
+        assert!(result.is_ok(), "compose_safe must return Ok(()) on success");
     }
 }

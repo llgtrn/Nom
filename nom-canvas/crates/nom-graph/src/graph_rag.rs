@@ -227,6 +227,62 @@ impl<'a> GraphRagRetriever<'a> {
 }
 
 // ---------------------------------------------------------------------------
+// CachedRetriever — memoized wrapper using nom-memoize Hash128
+// ---------------------------------------------------------------------------
+
+use nom_memoize::Hash128;
+
+/// A caching wrapper around [`GraphRagRetriever`] that avoids re-computing
+/// results for identical (query, top_k, max_hops) inputs.
+///
+/// The cache key is derived by hashing the raw bytes of the `QueryVec` together
+/// with `top_k` and `max_hops` using [`Hash128::of_bytes`] / [`Hash128::combine`].
+pub struct CachedRetriever<'a> {
+    retriever: GraphRagRetriever<'a>,
+    cache: std::collections::HashMap<u64, Vec<RetrievedNode>>,
+}
+
+impl<'a> CachedRetriever<'a> {
+    /// Create a new `CachedRetriever` wrapping a fresh [`GraphRagRetriever`] for `dag`.
+    pub fn new(dag: &'a Dag) -> Self {
+        Self {
+            retriever: GraphRagRetriever::new(dag),
+            cache: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Return retrieval results for `(query, top_k, max_hops)`, re-using a
+    /// cached result when the same inputs were seen before.
+    pub fn retrieve_cached(
+        &mut self,
+        query: &QueryVec,
+        top_k: usize,
+        max_hops: usize,
+    ) -> Vec<RetrievedNode> {
+        // Build a stable cache key: hash the 16 × f32 bytes, then mix in top_k
+        // and max_hops so that different parameters on the same query stay
+        // distinct.
+        let query_bytes: &[u8] = {
+            // SAFETY-free: reinterpret the f32 array as a byte slice via copy.
+            &query.iter()
+                .flat_map(|f| f.to_le_bytes())
+                .collect::<Vec<u8>>()
+        };
+        let h = Hash128::of_bytes(query_bytes)
+            .combine(Hash128::of_u64(top_k as u64))
+            .combine(Hash128::of_u64(max_hops as u64));
+        let key = h.as_u64();
+
+        if let Some(cached) = self.cache.get(&key) {
+            return cached.clone();
+        }
+        let result = self.retriever.retrieve(query, top_k, max_hops);
+        self.cache.insert(key, result.clone());
+        result
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -318,6 +374,44 @@ mod tests {
             root_result.unwrap().score,
             leaf_result.unwrap().score,
         );
+    }
+
+    // -----------------------------------------------------------------------
+    // cached_retriever_returns_same_as_uncached
+    // -----------------------------------------------------------------------
+    #[test]
+    fn cached_retriever_returns_same_as_uncached() {
+        let dag = three_node_dag();
+        let query = node_vec("alpha");
+        let expected = GraphRagRetriever::new(&dag).retrieve(&query, 2, 2);
+        let mut cached = CachedRetriever::new(&dag);
+        let got = cached.retrieve_cached(&query, 2, 2);
+        assert_eq!(got.len(), expected.len(), "length mismatch");
+        for (a, b) in got.iter().zip(expected.iter()) {
+            assert_eq!(a.node_id, b.node_id, "node_id mismatch");
+            assert!((a.score - b.score).abs() < 1e-6, "score mismatch");
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // cached_retriever_second_call_uses_cache
+    // -----------------------------------------------------------------------
+    #[test]
+    fn cached_retriever_second_call_uses_cache() {
+        let dag = three_node_dag();
+        let query = node_vec("beta");
+        let mut cached = CachedRetriever::new(&dag);
+        let first = cached.retrieve_cached(&query, 3, 2);
+        // Cache should now hold one entry.
+        assert_eq!(cached.cache.len(), 1, "cache should have one entry after first call");
+        let second = cached.retrieve_cached(&query, 3, 2);
+        // Cache should still hold exactly one entry — no new insertion.
+        assert_eq!(cached.cache.len(), 1, "cache should not grow on repeated call");
+        assert_eq!(first.len(), second.len(), "results length should match");
+        for (a, b) in first.iter().zip(second.iter()) {
+            assert_eq!(a.node_id, b.node_id);
+            assert!((a.score - b.score).abs() < 1e-6);
+        }
     }
 
     // -----------------------------------------------------------------------

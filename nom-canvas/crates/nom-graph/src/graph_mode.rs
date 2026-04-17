@@ -87,6 +87,34 @@ pub fn layout_dag(dag: &Dag) -> GraphLayout {
 }
 
 // ---------------------------------------------------------------------------
+// Spring animation helper (underdamped, stiffness=400, damping=28)
+// ---------------------------------------------------------------------------
+
+/// Inline spring value — no external dependency required.
+///
+/// Returns a smooth easing factor in [0, 1] for a given normalised time `t`.
+/// Uses an underdamped spring with stiffness=400 and damping=28.
+fn spring_v(t: f32) -> f32 {
+    let omega = (400.0f32).sqrt(); // ~20.0
+    let zeta = 28.0 / (2.0 * omega); // ~0.7
+    let t = t.max(0.0).min(1.0);
+    1.0 - (-zeta * omega * t).exp() * (1.0 - t * omega * zeta).max(0.0)
+}
+
+// ---------------------------------------------------------------------------
+// Per-node animation state
+// ---------------------------------------------------------------------------
+
+/// Tracks an in-progress animated layout transition for a single node.
+#[derive(Clone, Debug)]
+pub struct NodeAnimation {
+    pub start_pos: [f32; 2],
+    pub target_pos: [f32; 2],
+    /// Normalised animation time in [0, 1].
+    pub t: f32,
+}
+
+// ---------------------------------------------------------------------------
 // State
 // ---------------------------------------------------------------------------
 
@@ -99,6 +127,10 @@ pub struct GraphModeState {
     pub selected: Option<NodeId>,
     /// Node under the pointer, if any.
     pub hovered: Option<NodeId>,
+    /// Overall graph confidence score in [0, 1].
+    pub confidence: f32,
+    /// Active animated layout transitions keyed by node id.
+    pub animations: HashMap<NodeId, NodeAnimation>,
 }
 
 impl GraphModeState {
@@ -110,6 +142,60 @@ impl GraphModeState {
             layout: layout_dag(dag),
             selected: None,
             hovered: None,
+            confidence: 0.0,
+            animations: HashMap::new(),
+        }
+    }
+
+    /// Store the graph confidence score, clamped to [0, 1].
+    pub fn set_confidence(&mut self, score: f32) {
+        self.confidence = score.max(0.0).min(1.0);
+    }
+
+    /// Begin an animated transition toward `new_layout`.
+    ///
+    /// For each node that has a current position the animation starts from
+    /// that position; new nodes start from the target position (instant).
+    /// Call [`tick_animations`] each frame with the elapsed seconds to drive
+    /// the transition.
+    pub fn animate_to_layout(&mut self, new_layout: &GraphLayout, dt: f32) {
+        // Advance any already-running animations first.
+        self.tick_animations(dt);
+
+        for (id, &(tx, ty)) in new_layout {
+            let (sx, sy) = self.layout.get(id).copied().unwrap_or((tx, ty));
+            self.animations.insert(
+                id.clone(),
+                NodeAnimation {
+                    start_pos: [sx, sy],
+                    target_pos: [tx, ty],
+                    t: 0.0,
+                },
+            );
+        }
+    }
+
+    /// Advance all running animations by `dt` seconds (300 ms full duration).
+    ///
+    /// Nodes whose animations complete are removed from `animations` and their
+    /// final position is written into `layout`.
+    pub fn tick_animations(&mut self, dt: f32) {
+        let step = dt / 0.3; // normalise to [0,1] over 300 ms
+        let mut done: Vec<NodeId> = Vec::new();
+
+        for (id, anim) in &mut self.animations {
+            anim.t = (anim.t + step).min(1.0);
+            let factor = spring_v(anim.t);
+            let x = anim.start_pos[0] + (anim.target_pos[0] - anim.start_pos[0]) * factor;
+            let y = anim.start_pos[1] + (anim.target_pos[1] - anim.start_pos[1]) * factor;
+            self.layout.insert(id.clone(), (x, y));
+            if anim.t >= 1.0 {
+                done.push(id.clone());
+            }
+        }
+
+        for id in done {
+            self.animations.remove(&id);
         }
     }
 
@@ -377,5 +463,62 @@ mod tests {
         let event2 = state.change_mode(GraphViewMode::Split);
         assert_eq!(event2, GraphEvent::ModeChanged(GraphViewMode::Split));
         assert_eq!(state.mode, GraphViewMode::Split);
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_animate_moves_toward_target
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_animate_moves_toward_target() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+
+        // Place "a" at a known start position.
+        state.layout.insert("a".to_string(), (0.0, 0.0));
+
+        // Build a target layout that moves "a" to (100, 100).
+        let mut target: GraphLayout = HashMap::new();
+        target.insert("a".to_string(), (100.0, 100.0));
+
+        // Start the animation (dt=0 means we just register start, no advance yet).
+        state.animate_to_layout(&target, 0.0);
+
+        // After a very small tick (5 ms) the node should have moved away from
+        // origin but not yet reached the target — spring_v(t) is still in (0,1).
+        state.tick_animations(0.005);
+        let (ax, ay) = state.layout["a"];
+        assert!(ax > 0.0, "x should have moved from origin, got {ax}");
+        assert!(ax < 100.0, "x should not yet be at target after 5 ms, got {ax}");
+        assert!(ay > 0.0, "y should have moved from origin, got {ay}");
+        assert!(ay < 100.0, "y should not yet be at target after 5 ms, got {ay}");
+
+        // After a full second the animation should be complete.
+        state.tick_animations(1.0);
+        let (ax2, ay2) = state.layout["a"];
+        assert!((ax2 - 100.0).abs() < 1e-3, "x should reach target, got {ax2}");
+        assert!((ay2 - 100.0).abs() < 1e-3, "y should reach target, got {ay2}");
+        // Animation entry should be removed once complete.
+        assert!(state.animations.get("a").is_none(), "completed animation should be removed");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_confidence_clamps
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_confidence_clamps() {
+        let dag = three_node_dag();
+        let mut state = GraphModeState::new(&dag);
+        assert_eq!(state.confidence, 0.0);
+
+        state.set_confidence(0.75);
+        assert!((state.confidence - 0.75).abs() < 1e-6);
+
+        // Values above 1.0 must be clamped.
+        state.set_confidence(2.5);
+        assert!((state.confidence - 1.0).abs() < 1e-6, "should clamp to 1.0");
+
+        // Values below 0.0 must be clamped.
+        state.set_confidence(-0.5);
+        assert!((state.confidence - 0.0).abs() < 1e-6, "should clamp to 0.0");
     }
 }

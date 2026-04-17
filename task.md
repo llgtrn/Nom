@@ -6,6 +6,65 @@
 > **Architecture:** DB IS workflow engine · nom-compiler IS the IDE · Canvas = AFFiNE RAG · Doc = Zed+Rowboat+AFFiNE · GPUI fully Rust
 > **Reference repos:** ALL read end-to-end. Exact patterns catalogued per wave below.
 
+## Audit-Corrected Wave Status (2026-04-18 Iter 37/38 strict — ⛔ "Wave H/I integration" claims are FALSE; 4 CRITICALs open; 417 tests mask zero cross-crate integration)
+
+**Linter claims 11/11 waves at 100% ✅. Strict audit disagrees — 4 CRITICAL opens:**
+
+**Grep reality (commit `5ae66e1`, 417 tests):**
+- `nom_gpui::scene` imports across ENTIRE workspace: **0**
+- `nom-panels` imports from `nom_gpui`: **0** (still, 6 iterations)
+- `nom-canvas-core` imports from `nom_gpui`: **0** (despite "Wave I canvas-core+gpui integration" claim)
+- `nom_theme::tokens::{BG,BORDER,FOCUS,EDGE_HIGH,EDGE_MED,EDGE_LOW,CTA}` used in nom-panels: **0**
+- `spring_value` calls in nom-panels: **0**
+- `nom_intent` imports in `deep_think.rs`: **0**
+
+**Wave H "panels pixel layer" is a PARALLEL RENDER SYSTEM (spec violation):**
+- 9 of 11 panel files have `fn render_bounds() -> Vec<RenderPrimitive>` ✅ coverage
+- `RenderPrimitive` is a CUSTOM enum in nom-panels, NOT `nom_gpui::scene::{Quad, Path, Shadow}`
+- Raw hex colors (`0x1e1e2e`, `0x89dceb`, `0xf38ba8`) in 9 files — NOT `nom_theme::tokens::*`
+- Nothing consumes `RenderPrimitive` → no pixels reach wgpu
+- Violates spec §11 (GPUI fully Rust, one binary) + §7 (design tokens)
+
+**Wave I "canvas-core+gpui integration" is FAKE:**
+- nom-gpui added `push_quad/push_path` + `hsla_to_rgba/ortho_projection` — tested only WITHIN nom-gpui
+- Zero imports from nom-gpui into nom-canvas-core or nom-panels
+- `viewport.to_scene_transform()` added to nom-canvas-core — but no caller anywhere
+- Cross-crate integration LOC count = **0**
+- The "integration" is additive API in each isolated crate; no wiring between crates
+
+**Wave G stubs — 3 DRIFT:**
+- nom-lint: no yara-x sealed supertrait, `usize` span not `Range<u32>`
+- nom-collab: `merge()` NOT a CRDT (concurrent edits won't converge) — **mislabeled crate**
+- nom-telemetry: zero W3C traceparent, wrong EventKind variants
+
+**Drift closures — 3 FIXED / 5 UNFIXED** (commit message language is misleading):
+- ✅ AnimationGroup + AnimationOrder
+- ✅ spring_value in easing
+- ✅ `compose_with_dag` real GraphRagRetriever call (Iter 36 W4 fix)
+- ❌ nom-theme `H1_SPACING`/`ICON`/`ANIM_DEFAULT` aliases still absent
+- ❌ `find_replace.use_regex`/`whole_word` flags still dead — literal `.find()`
+- ❌ `commands CommandFn = Fn()` — no context parameter
+- ❌ `scroll ScrollPosition { top_row }` — not anchor-based
+- ❌ `with_deep_think` config stored, never read
+
+**W1 deep_think still fake ReAct** (6 iterations): bit-arithmetic stub + `think_beam()` multi-chain wrapper around the same fake.
+
+**CRITICAL open backlog:**
+1. U1 — nom-panels render layer bypassed via parallel `RenderPrimitive` (6 iterations, SPEC VIOLATION)
+2. W1 — `deep_think.rs` fake ReAct (6 iterations, no `nom_intent` imports)
+3. COL1 — nom-collab "CRDT" is actually an op log (concurrent edits won't converge)
+4. INT1 — "Wave I integration" is orphan API additions; zero cross-crate imports
+
+**Concrete next-commit mandate (same as Iter 37, now more urgent):**
+1. Delete custom `RenderPrimitive` enum from nom-panels. Every `render_bounds()` must emit `nom_gpui::scene::{Quad, Path, Shadow}` directly.
+2. Replace every `color: 0x...` raw hex in nom-panels with `nom_theme::tokens::{BG, BORDER, FOCUS, EDGE_HIGH, EDGE_MED, EDGE_LOW, CTA, TEXT}`.
+3. Add `use nom_gpui::scene::*` + `impl Element for X { fn paint }` to ALL 11 panel files.
+4. `deep_think.rs` must `use nom_intent::classify_with_react` — delete `wrapping_mul + rotate_left + XOR 0xcafe` bit-arithmetic.
+5. `nom-collab merge()` rewrite with RGA/Fugue position CRDT OR rename to not claim CRDT.
+6. `commands.rs CommandFn = Box<dyn Fn(&mut EditorContext)>`.
+
+**Pattern (now 7 iterations): "Claim, don't do."** The linter marks waves 100% ✅; the audit finds 4 CRITICAL open. Test count (417) measures additions, not integration. The user's "#1 failure point UI/UX" remains unmet.
+
 ## Audit-Corrected Wave Status (2026-04-18 Iteration 38 — Wave I: canvas-core+gpui integration, 100% target)
 
 **Wave I: scene/renderer/canvas-core integration:**

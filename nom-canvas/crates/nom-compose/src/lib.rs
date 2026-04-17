@@ -6,7 +6,7 @@ pub mod backends;
 
 pub use store::{ArtifactStore, InMemoryStore};
 pub use progress::{ProgressSink, LogProgressSink, ComposeEvent};
-pub use deep_think::{DeepThinkStream, DeepThinkConfig, ThinkStep};
+pub use deep_think::{DeepThinkStream, DeepThinkConfig, DeepThinkStep};
 pub use backends::{
     document::DocumentBackend,
     video::VideoBackend,

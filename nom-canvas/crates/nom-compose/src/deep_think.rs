@@ -3,12 +3,13 @@
 use crate::progress::{ComposeEvent, ProgressSink};
 
 /// One step in a chain-of-thought pipeline.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub struct ThinkStep {
-    pub step_id: u32,
-    pub prompt_hash: u64,
-    pub output_hash: u64,
-    pub token_count: u32,
+#[derive(Debug, Clone, PartialEq)]
+pub struct DeepThinkStep {
+    pub hypothesis: String,
+    pub evidence: Vec<String>,
+    pub confidence: f32,
+    pub counterevidence: Vec<String>,
+    pub refined_from: Option<usize>,
 }
 
 /// Configures the deep-think streaming pipeline.
@@ -41,22 +42,19 @@ impl DeepThinkStream {
 
     /// Generates `config.max_steps` think steps, emitting `ComposeEvent::Progress` at each step
     /// and `ComposeEvent::Completed` at the end.
-    pub fn think(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<ThinkStep> {
+    pub fn think(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<DeepThinkStep> {
         let mut steps = Vec::with_capacity(self.config.max_steps);
-        let tokens_per_step = self.config.token_budget / self.config.max_steps as u32;
 
         for i in 0..self.config.max_steps {
-            let step_id = i as u32;
-            let prompt_hash = input_hash
-                .wrapping_mul(step_id as u64 + 1)
-                .rotate_left(17);
-            let output_hash = prompt_hash ^ (step_id as u64 * 0xcafe);
+            let step_id = i;
+            let evidence_hash = input_hash.rotate_left(step_id as u32 * 3);
 
-            steps.push(ThinkStep {
-                step_id,
-                prompt_hash,
-                output_hash,
-                token_count: tokens_per_step,
+            steps.push(DeepThinkStep {
+                hypothesis: format!("hypothesis_{}", step_id),
+                evidence: vec![format!("nomtu_{:x}", evidence_hash)],
+                confidence: 0.5 + (step_id as f32 * 0.1).min(0.4),
+                counterevidence: vec![],
+                refined_from: if step_id > 0 { Some(step_id - 1) } else { None },
             });
 
             let pct = ((i + 1) as f32 / self.config.max_steps as f32) * 100.0;
@@ -69,7 +67,7 @@ impl DeepThinkStream {
         // Signal completion with a zeroed artifact hash (no artifact stored by this wire).
         progress.emit(ComposeEvent::Completed {
             artifact_hash: [0u8; 32],
-            byte_size: steps.len() as u64 * std::mem::size_of::<ThinkStep>() as u64,
+            byte_size: steps.len() as u64 * std::mem::size_of::<DeepThinkStep>() as u64,
         });
 
         steps
@@ -82,25 +80,22 @@ impl DeepThinkStream {
     /// `beam_i * 7` bits.  A `ComposeEvent::Progress` is emitted after each
     /// beam completes; a final `ComposeEvent::Completed` is emitted once all
     /// beams are done.
-    pub fn think_beam(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<Vec<ThinkStep>> {
-        let mut beams: Vec<Vec<ThinkStep>> = Vec::with_capacity(self.config.beam_width);
-        let tokens_per_step = self.config.token_budget / self.config.max_steps as u32;
+    pub fn think_beam(&self, input_hash: u64, progress: &dyn ProgressSink) -> Vec<Vec<DeepThinkStep>> {
+        let mut beams: Vec<Vec<DeepThinkStep>> = Vec::with_capacity(self.config.beam_width);
 
         for beam_i in 0..self.config.beam_width {
             let seed = input_hash.rotate_left(beam_i as u32 * 7);
             let mut chain = Vec::with_capacity(self.config.max_steps);
 
             for i in 0..self.config.max_steps {
-                let step_id = i as u32;
-                let prompt_hash = seed
-                    .wrapping_mul(step_id as u64 + 1)
-                    .rotate_left(17);
-                let output_hash = prompt_hash ^ (step_id as u64 * 0xcafe);
-                chain.push(ThinkStep {
-                    step_id,
-                    prompt_hash,
-                    output_hash,
-                    token_count: tokens_per_step,
+                let step_id = i;
+                let evidence_hash = seed.rotate_left(step_id as u32 * 3);
+                chain.push(DeepThinkStep {
+                    hypothesis: format!("hypothesis_{}", step_id),
+                    evidence: vec![format!("nomtu_{:x}", evidence_hash)],
+                    confidence: 0.5 + (step_id as f32 * 0.1).min(0.4),
+                    counterevidence: vec![],
+                    refined_from: if step_id > 0 { Some(step_id - 1) } else { None },
                 });
             }
 
@@ -116,7 +111,7 @@ impl DeepThinkStream {
         progress.emit(ComposeEvent::Completed {
             artifact_hash: [0u8; 32],
             byte_size: beams.iter().map(|c| c.len()).sum::<usize>() as u64
-                * std::mem::size_of::<ThinkStep>() as u64,
+                * std::mem::size_of::<DeepThinkStep>() as u64,
         });
 
         beams
@@ -139,7 +134,7 @@ mod tests {
         let steps = stream.think(0xdeadbeef, &sink);
         assert_eq!(steps.len(), DeepThinkConfig::default().max_steps);
         for (i, step) in steps.iter().enumerate() {
-            assert_eq!(step.step_id, i as u32);
+            assert_eq!(step.hypothesis, format!("hypothesis_{}", i));
         }
     }
 
@@ -236,23 +231,30 @@ mod tests {
     }
 
     #[test]
-    fn deep_think_step_hashes_are_deterministic() {
+    fn deep_think_step_fields_are_correct() {
         let cfg = DeepThinkConfig { max_steps: 3, beam_width: 2, token_budget: 300 };
         let stream = DeepThinkStream::new(cfg.clone());
-        let sink1 = VecProgressSink::new();
-        let sink2 = VecProgressSink::new();
+        let sink = VecProgressSink::new();
 
-        let run1 = stream.think(0xabcd_ef01, &sink1);
+        let steps = stream.think(0xabcd_ef01, &sink);
+
+        // First step: no refined_from, confidence=0.5
+        assert_eq!(steps[0].refined_from, None);
+        assert!((steps[0].confidence - 0.5).abs() < 1e-6);
+        assert_eq!(steps[0].counterevidence, Vec::<String>::new());
+
+        // Second step: refined_from=Some(0), confidence=0.6
+        assert_eq!(steps[1].refined_from, Some(0));
+        assert!((steps[1].confidence - 0.6).abs() < 1e-6);
+
+        // Third step: refined_from=Some(1), confidence=0.7
+        assert_eq!(steps[2].refined_from, Some(1));
+        assert!((steps[2].confidence - 0.7).abs() < 1e-6);
+
+        // Deterministic: same input → same output
         let stream2 = DeepThinkStream::new(cfg);
-        let run2 = stream2.think(0xabcd_ef01, &sink2);
-
-        assert_eq!(run1, run2, "same input must produce identical steps");
-
-        // Verify the hash formula for step 0.
-        let input_hash: u64 = 0xabcd_ef01;
-        let expected_prompt = input_hash.wrapping_mul(1).rotate_left(17);
-        let expected_output = expected_prompt ^ (0u64 * 0xcafe);
-        assert_eq!(run1[0].prompt_hash, expected_prompt);
-        assert_eq!(run1[0].output_hash, expected_output);
+        let sink2 = VecProgressSink::new();
+        let steps2 = stream2.think(0xabcd_ef01, &sink2);
+        assert_eq!(steps, steps2, "same input must produce identical steps");
     }
 }

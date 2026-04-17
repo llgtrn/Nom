@@ -1255,6 +1255,7 @@ dependencies = [
  "crossbeam-channel",
  "lru",
  "nom-blocks",
+ "nom-memoize",
 ]
 
 [[package]]
