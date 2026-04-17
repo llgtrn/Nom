@@ -1,265 +1,559 @@
-//! Icon metadata registry — viewbox + style policy only.
-//!
-//! Actual SVG→path tessellation or raster atlas upload happens in nom-gpui.
-//! This module holds the canonical icon list + metadata so that UI code can
-//! reference icons by stable ids (e.g. "chevron-down") without embedding SVG.
 #![deny(unsafe_code)]
 
-pub type IconId = &'static str;
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum IconStyle {
-    Stroke,
-    Fill,
-    Both,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct ViewBox {
-    pub x: i32,
-    pub y: i32,
-    pub width: u32,
-    pub height: u32,
-}
-
-impl ViewBox {
-    pub const fn new(x: i32, y: i32, width: u32, height: u32) -> Self {
-        ViewBox { x, y, width, height }
-    }
-    pub const LUCIDE_24: ViewBox = ViewBox::new(0, 0, 24, 24);
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub struct IconMeta {
-    pub id: IconId,
-    pub viewbox: ViewBox,
-    pub style: IconStyle,
-    /// Default stroke width for Stroke/Both; ignored for Fill.
-    pub stroke_width_px: f32,
-    pub category: IconCategory,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq)]
-pub enum IconCategory {
-    Arrow,
-    Navigation,
-    Action,
+/// All icons available in the NomCanvas icon set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum Icon {
+    ChevronRight,
+    ChevronDown,
+    Plus,
+    Minus,
+    X,
+    Search,
+    Settings,
+    Brain,
+    Network,
     File,
-    Text,
-    Layout,
-    Media,
-    Status,
-    Communication,
-    Misc,
+    Folder,
+    Play,
+    Pause,
+    Stop,
+    Zap,
+    Link,
+    Unlink,
+    Lock,
+    Unlock,
+    Eye,
+    EyeOff,
+    Copy,
+    Trash,
+    Edit2,
+    Check,
+    AlertCircle,
+    Info,
+    Terminal,
+    Code,
+    Database,
+    Layers,
+    Grid,
+    List,
+    Sidebar,
+    PanelLeft,
+    PanelRight,
+    MessageSquare,
+    Tool,
+    Cpu,
+    GitBranch,
+    Sparkles,
+    Workflow,
 }
 
-impl IconMeta {
-    pub const fn stroke_24(id: IconId, category: IconCategory) -> Self {
-        IconMeta {
-            id,
-            viewbox: ViewBox::LUCIDE_24,
-            style: IconStyle::Stroke,
-            stroke_width_px: 2.0,
-            category,
+impl Icon {
+    /// All icon variants in declaration order.
+    pub fn all() -> &'static [Icon] {
+        &[
+            Icon::ChevronRight,
+            Icon::ChevronDown,
+            Icon::Plus,
+            Icon::Minus,
+            Icon::X,
+            Icon::Search,
+            Icon::Settings,
+            Icon::Brain,
+            Icon::Network,
+            Icon::File,
+            Icon::Folder,
+            Icon::Play,
+            Icon::Pause,
+            Icon::Stop,
+            Icon::Zap,
+            Icon::Link,
+            Icon::Unlink,
+            Icon::Lock,
+            Icon::Unlock,
+            Icon::Eye,
+            Icon::EyeOff,
+            Icon::Copy,
+            Icon::Trash,
+            Icon::Edit2,
+            Icon::Check,
+            Icon::AlertCircle,
+            Icon::Info,
+            Icon::Terminal,
+            Icon::Code,
+            Icon::Database,
+            Icon::Layers,
+            Icon::Grid,
+            Icon::List,
+            Icon::Sidebar,
+            Icon::PanelLeft,
+            Icon::PanelRight,
+            Icon::MessageSquare,
+            Icon::Tool,
+            Icon::Cpu,
+            Icon::GitBranch,
+            Icon::Sparkles,
+            Icon::Workflow,
+        ]
+    }
+
+    /// Kebab-case name suitable for asset lookup or debug output.
+    pub fn name(&self) -> &'static str {
+        match self {
+            Icon::ChevronRight => "chevron-right",
+            Icon::ChevronDown => "chevron-down",
+            Icon::Plus => "plus",
+            Icon::Minus => "minus",
+            Icon::X => "x",
+            Icon::Search => "search",
+            Icon::Settings => "settings",
+            Icon::Brain => "brain",
+            Icon::Network => "network",
+            Icon::File => "file",
+            Icon::Folder => "folder",
+            Icon::Play => "play",
+            Icon::Pause => "pause",
+            Icon::Stop => "stop",
+            Icon::Zap => "zap",
+            Icon::Link => "link",
+            Icon::Unlink => "unlink",
+            Icon::Lock => "lock",
+            Icon::Unlock => "unlock",
+            Icon::Eye => "eye",
+            Icon::EyeOff => "eye-off",
+            Icon::Copy => "copy",
+            Icon::Trash => "trash",
+            Icon::Edit2 => "edit-2",
+            Icon::Check => "check",
+            Icon::AlertCircle => "alert-circle",
+            Icon::Info => "info",
+            Icon::Terminal => "terminal",
+            Icon::Code => "code",
+            Icon::Database => "database",
+            Icon::Layers => "layers",
+            Icon::Grid => "grid",
+            Icon::List => "list",
+            Icon::Sidebar => "sidebar",
+            Icon::PanelLeft => "panel-left",
+            Icon::PanelRight => "panel-right",
+            Icon::MessageSquare => "message-square",
+            Icon::Tool => "tool",
+            Icon::Cpu => "cpu",
+            Icon::GitBranch => "git-branch",
+            Icon::Sparkles => "sparkles",
+            Icon::Workflow => "workflow",
         }
     }
-
-    pub const fn fill_24(id: IconId, category: IconCategory) -> Self {
-        IconMeta {
-            id,
-            viewbox: ViewBox::LUCIDE_24,
-            style: IconStyle::Fill,
-            stroke_width_px: 0.0,
-            category,
-        }
-    }
 }
 
-/// Canonical core icon list — ~40 ids covering the UI essentials from the
-/// Lucide 24-pixel stroke family. Full 1400-icon catalog is lazy-loaded
-/// from disk (future work).
-pub const CORE_ICONS: &[IconMeta] = &[
-    // Arrow
-    IconMeta::stroke_24("chevron-up", IconCategory::Arrow),
-    IconMeta::stroke_24("chevron-down", IconCategory::Arrow),
-    IconMeta::stroke_24("chevron-left", IconCategory::Arrow),
-    IconMeta::stroke_24("chevron-right", IconCategory::Arrow),
-    IconMeta::stroke_24("arrow-up", IconCategory::Arrow),
-    IconMeta::stroke_24("arrow-down", IconCategory::Arrow),
-    IconMeta::stroke_24("arrow-left", IconCategory::Arrow),
-    IconMeta::stroke_24("arrow-right", IconCategory::Arrow),
-    // Navigation
-    IconMeta::stroke_24("menu", IconCategory::Navigation),
-    IconMeta::stroke_24("home", IconCategory::Navigation),
-    IconMeta::stroke_24("search", IconCategory::Navigation),
-    IconMeta::stroke_24("settings", IconCategory::Navigation),
-    // Action
-    IconMeta::stroke_24("plus", IconCategory::Action),
-    IconMeta::stroke_24("minus", IconCategory::Action),
-    IconMeta::stroke_24("x", IconCategory::Action),
-    IconMeta::stroke_24("check", IconCategory::Action),
-    IconMeta::stroke_24("edit", IconCategory::Action),
-    IconMeta::stroke_24("trash", IconCategory::Action),
-    IconMeta::stroke_24("copy", IconCategory::Action),
-    IconMeta::stroke_24("save", IconCategory::Action),
-    // File
-    IconMeta::stroke_24("file", IconCategory::File),
-    IconMeta::stroke_24("folder", IconCategory::File),
-    IconMeta::stroke_24("file-plus", IconCategory::File),
-    IconMeta::stroke_24("download", IconCategory::File),
-    IconMeta::stroke_24("upload", IconCategory::File),
-    // Text
-    IconMeta::stroke_24("bold", IconCategory::Text),
-    IconMeta::stroke_24("italic", IconCategory::Text),
-    IconMeta::stroke_24("underline", IconCategory::Text),
-    IconMeta::stroke_24("list", IconCategory::Text),
-    IconMeta::stroke_24("heading-1", IconCategory::Text),
-    IconMeta::stroke_24("heading-2", IconCategory::Text),
-    // Layout
-    IconMeta::stroke_24("sidebar", IconCategory::Layout),
-    IconMeta::stroke_24("columns", IconCategory::Layout),
-    IconMeta::stroke_24("grid", IconCategory::Layout),
-    // Media
-    IconMeta::stroke_24("image", IconCategory::Media),
-    IconMeta::stroke_24("video", IconCategory::Media),
-    IconMeta::stroke_24("music", IconCategory::Media),
-    // Status
-    IconMeta::stroke_24("alert-circle", IconCategory::Status),
-    IconMeta::stroke_24("info", IconCategory::Status),
-    IconMeta::stroke_24("check-circle", IconCategory::Status),
-    // Communication
-    IconMeta::stroke_24("message", IconCategory::Communication),
-    IconMeta::stroke_24("bell", IconCategory::Communication),
-];
+// ---------------------------------------------------------------------------
+// Icon path data — normalized 0.0–1.0 viewport, scaled at render time.
+// lines: (from_x, from_y, to_x, to_y)
+// circles: (center_x, center_y, radius)  — all normalized
+// ---------------------------------------------------------------------------
 
-pub struct IconRegistry {
-    items: Vec<IconMeta>,
+/// Resolved draw primitives for an icon.
+pub struct IconPath {
+    pub lines: &'static [(f32, f32, f32, f32)],
+    pub circles: &'static [(f32, f32, f32)],
 }
 
-impl IconRegistry {
-    pub fn new() -> Self {
-        Self { items: CORE_ICONS.to_vec() }
-    }
-
-    pub fn get(&self, id: IconId) -> Option<&IconMeta> {
-        self.items.iter().find(|i| i.id == id)
-    }
-
-    pub fn by_category(&self, category: IconCategory) -> Vec<&IconMeta> {
-        self.items.iter().filter(|i| i.category == category).collect()
-    }
-
-    /// Inserts or replaces an icon by id.
-    pub fn register(&mut self, meta: IconMeta) {
-        self.items.retain(|i| i.id != meta.id);
-        self.items.push(meta);
-    }
-
-    pub fn len(&self) -> usize {
-        self.items.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.items.is_empty()
-    }
-}
-
-impl Default for IconRegistry {
-    fn default() -> Self {
-        Self::new()
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn viewbox_lucide_24_values() {
-        assert_eq!(ViewBox::LUCIDE_24.x, 0);
-        assert_eq!(ViewBox::LUCIDE_24.y, 0);
-        assert_eq!(ViewBox::LUCIDE_24.width, 24);
-        assert_eq!(ViewBox::LUCIDE_24.height, 24);
-    }
-
-    #[test]
-    fn stroke_24_has_correct_stroke_width() {
-        let m = IconMeta::stroke_24("test", IconCategory::Misc);
-        assert_eq!(m.stroke_width_px, 2.0);
-        assert_eq!(m.style, IconStyle::Stroke);
-    }
-
-    #[test]
-    fn fill_24_has_fill_style_and_zero_stroke() {
-        let m = IconMeta::fill_24("test-fill", IconCategory::Misc);
-        assert_eq!(m.style, IconStyle::Fill);
-        assert_eq!(m.stroke_width_px, 0.0);
-    }
-
-    #[test]
-    fn core_icons_has_all_8_arrow_ids() {
-        let arrow_ids = ["chevron-up", "chevron-down", "chevron-left", "chevron-right",
-                         "arrow-up", "arrow-down", "arrow-left", "arrow-right"];
-        for id in &arrow_ids {
-            assert!(
-                CORE_ICONS.iter().any(|i| i.id == *id && i.category == IconCategory::Arrow),
-                "missing arrow icon: {id}"
-            );
-        }
-    }
-
-    #[test]
-    fn registry_new_has_at_least_40_icons() {
-        let reg = IconRegistry::new();
-        assert!(reg.len() >= 40, "expected >= 40 icons, got {}", reg.len());
-    }
-
-    #[test]
-    fn get_returns_some_for_chevron_down() {
-        let reg = IconRegistry::new();
-        assert!(reg.get("chevron-down").is_some());
-    }
-
-    #[test]
-    fn get_returns_none_for_nonexistent() {
-        let reg = IconRegistry::new();
-        assert!(reg.get("nonexistent-icon-xyz").is_none());
-    }
-
-    #[test]
-    fn by_category_arrow_returns_8_icons() {
-        let reg = IconRegistry::new();
-        assert_eq!(reg.by_category(IconCategory::Arrow).len(), 8);
-    }
-
-    #[test]
-    fn by_category_status_returns_3_icons() {
-        let reg = IconRegistry::new();
-        assert_eq!(reg.by_category(IconCategory::Status).len(), 3);
-    }
-
-    #[test]
-    fn register_replaces_existing_id() {
-        let mut reg = IconRegistry::new();
-        let before_len = reg.len();
-        let replacement = IconMeta::fill_24("chevron-down", IconCategory::Arrow);
-        reg.register(replacement);
-        // Length unchanged (replaced, not added)
-        assert_eq!(reg.len(), before_len);
-        let got = reg.get("chevron-down").unwrap();
-        assert_eq!(got.style, IconStyle::Fill);
-    }
-
-    #[test]
-    fn register_new_id_increases_len() {
-        let mut reg = IconRegistry::new();
-        let before = reg.len();
-        reg.register(IconMeta::stroke_24("brand-new-icon", IconCategory::Misc));
-        assert_eq!(reg.len(), before + 1);
-    }
-
-    #[test]
-    fn is_empty_false_for_new_registry() {
-        assert!(!IconRegistry::new().is_empty());
+/// Returns the line/circle geometry for `icon` in a normalized 0–1 viewport.
+pub fn icon_path(icon: Icon) -> IconPath {
+    match icon {
+        Icon::X => IconPath {
+            lines: &[(0.2, 0.2, 0.8, 0.8), (0.8, 0.2, 0.2, 0.8)],
+            circles: &[],
+        },
+        Icon::Plus => IconPath {
+            lines: &[(0.5, 0.1, 0.5, 0.9), (0.1, 0.5, 0.9, 0.5)],
+            circles: &[],
+        },
+        Icon::Minus => IconPath {
+            lines: &[(0.1, 0.5, 0.9, 0.5)],
+            circles: &[],
+        },
+        Icon::Check => IconPath {
+            lines: &[(0.1, 0.5, 0.4, 0.8), (0.4, 0.8, 0.9, 0.2)],
+            circles: &[],
+        },
+        Icon::ChevronRight => IconPath {
+            lines: &[(0.3, 0.2, 0.7, 0.5), (0.7, 0.5, 0.3, 0.8)],
+            circles: &[],
+        },
+        Icon::ChevronDown => IconPath {
+            lines: &[(0.2, 0.3, 0.5, 0.7), (0.5, 0.7, 0.8, 0.3)],
+            circles: &[],
+        },
+        Icon::Search => IconPath {
+            lines: &[(0.65, 0.65, 0.85, 0.85)],
+            circles: &[(0.4, 0.4, 0.28)],
+        },
+        Icon::AlertCircle => IconPath {
+            lines: &[(0.5, 0.3, 0.5, 0.55), (0.5, 0.68, 0.5, 0.70)],
+            circles: &[(0.5, 0.5, 0.42)],
+        },
+        Icon::Info => IconPath {
+            lines: &[(0.5, 0.45, 0.5, 0.72)],
+            circles: &[(0.5, 0.5, 0.42), (0.5, 0.32, 0.03)],
+        },
+        Icon::Play => IconPath {
+            lines: &[(0.25, 0.15, 0.25, 0.85), (0.25, 0.15, 0.80, 0.50), (0.80, 0.50, 0.25, 0.85)],
+            circles: &[],
+        },
+        Icon::Pause => IconPath {
+            lines: &[
+                (0.30, 0.15, 0.30, 0.85),
+                (0.30, 0.15, 0.42, 0.15),
+                (0.42, 0.15, 0.42, 0.85),
+                (0.42, 0.85, 0.30, 0.85),
+                (0.58, 0.15, 0.58, 0.85),
+                (0.58, 0.15, 0.70, 0.15),
+                (0.70, 0.15, 0.70, 0.85),
+                (0.70, 0.85, 0.58, 0.85),
+            ],
+            circles: &[],
+        },
+        Icon::Stop => IconPath {
+            lines: &[
+                (0.20, 0.20, 0.80, 0.20),
+                (0.80, 0.20, 0.80, 0.80),
+                (0.80, 0.80, 0.20, 0.80),
+                (0.20, 0.80, 0.20, 0.20),
+            ],
+            circles: &[],
+        },
+        Icon::Settings => IconPath {
+            lines: &[
+                (0.50, 0.10, 0.50, 0.90),
+                (0.10, 0.50, 0.90, 0.50),
+                (0.18, 0.18, 0.82, 0.82),
+                (0.82, 0.18, 0.18, 0.82),
+            ],
+            circles: &[(0.5, 0.5, 0.18)],
+        },
+        Icon::File => IconPath {
+            lines: &[
+                (0.20, 0.05, 0.65, 0.05),
+                (0.65, 0.05, 0.80, 0.20),
+                (0.80, 0.20, 0.80, 0.95),
+                (0.80, 0.95, 0.20, 0.95),
+                (0.20, 0.95, 0.20, 0.05),
+                (0.65, 0.05, 0.65, 0.20),
+                (0.65, 0.20, 0.80, 0.20),
+            ],
+            circles: &[],
+        },
+        Icon::Folder => IconPath {
+            lines: &[
+                (0.05, 0.30, 0.05, 0.90),
+                (0.05, 0.90, 0.95, 0.90),
+                (0.95, 0.90, 0.95, 0.30),
+                (0.95, 0.30, 0.45, 0.30),
+                (0.45, 0.30, 0.35, 0.15),
+                (0.35, 0.15, 0.05, 0.15),
+                (0.05, 0.15, 0.05, 0.30),
+            ],
+            circles: &[],
+        },
+        Icon::Zap => IconPath {
+            lines: &[(0.60, 0.05, 0.30, 0.50), (0.30, 0.50, 0.55, 0.50), (0.55, 0.50, 0.25, 0.95)],
+            circles: &[],
+        },
+        Icon::Link => IconPath {
+            lines: &[
+                (0.55, 0.30, 0.70, 0.15),
+                (0.70, 0.15, 0.85, 0.30),
+                (0.85, 0.30, 0.70, 0.45),
+                (0.70, 0.45, 0.55, 0.30),
+                (0.45, 0.70, 0.30, 0.85),
+                (0.30, 0.85, 0.15, 0.70),
+                (0.15, 0.70, 0.30, 0.55),
+                (0.30, 0.55, 0.45, 0.70),
+                (0.40, 0.60, 0.60, 0.40),
+            ],
+            circles: &[],
+        },
+        Icon::Unlink => IconPath {
+            lines: &[
+                (0.55, 0.30, 0.70, 0.15),
+                (0.85, 0.30, 0.70, 0.45),
+                (0.45, 0.70, 0.30, 0.85),
+                (0.15, 0.70, 0.30, 0.55),
+                (0.20, 0.20, 0.40, 0.40),
+                (0.60, 0.60, 0.80, 0.80),
+            ],
+            circles: &[],
+        },
+        Icon::Lock => IconPath {
+            lines: &[
+                (0.25, 0.50, 0.25, 0.90),
+                (0.25, 0.90, 0.75, 0.90),
+                (0.75, 0.90, 0.75, 0.50),
+                (0.75, 0.50, 0.25, 0.50),
+            ],
+            circles: &[(0.5, 0.32, 0.22), (0.5, 0.68, 0.05)],
+        },
+        Icon::Unlock => IconPath {
+            lines: &[
+                (0.25, 0.50, 0.25, 0.90),
+                (0.25, 0.90, 0.75, 0.90),
+                (0.75, 0.90, 0.75, 0.50),
+                (0.75, 0.50, 0.25, 0.50),
+                (0.30, 0.28, 0.70, 0.28),
+            ],
+            circles: &[(0.5, 0.68, 0.05)],
+        },
+        Icon::Eye => IconPath {
+            lines: &[
+                (0.05, 0.50, 0.20, 0.30),
+                (0.20, 0.30, 0.50, 0.20),
+                (0.50, 0.20, 0.80, 0.30),
+                (0.80, 0.30, 0.95, 0.50),
+                (0.95, 0.50, 0.80, 0.70),
+                (0.80, 0.70, 0.50, 0.80),
+                (0.50, 0.80, 0.20, 0.70),
+                (0.20, 0.70, 0.05, 0.50),
+            ],
+            circles: &[(0.5, 0.5, 0.15)],
+        },
+        Icon::EyeOff => IconPath {
+            lines: &[
+                (0.05, 0.50, 0.20, 0.30),
+                (0.80, 0.30, 0.95, 0.50),
+                (0.10, 0.10, 0.90, 0.90),
+            ],
+            circles: &[],
+        },
+        Icon::Copy => IconPath {
+            lines: &[
+                (0.35, 0.05, 0.95, 0.05),
+                (0.95, 0.05, 0.95, 0.65),
+                (0.95, 0.65, 0.35, 0.65),
+                (0.35, 0.65, 0.35, 0.05),
+                (0.05, 0.35, 0.35, 0.35),
+                (0.05, 0.35, 0.05, 0.95),
+                (0.05, 0.95, 0.65, 0.95),
+                (0.65, 0.95, 0.65, 0.65),
+            ],
+            circles: &[],
+        },
+        Icon::Trash => IconPath {
+            lines: &[
+                (0.10, 0.25, 0.90, 0.25),
+                (0.30, 0.25, 0.30, 0.90),
+                (0.70, 0.25, 0.70, 0.90),
+                (0.30, 0.90, 0.70, 0.90),
+                (0.40, 0.10, 0.60, 0.10),
+                (0.50, 0.40, 0.50, 0.80),
+            ],
+            circles: &[],
+        },
+        Icon::Edit2 => IconPath {
+            lines: &[
+                (0.15, 0.75, 0.70, 0.20),
+                (0.70, 0.20, 0.85, 0.35),
+                (0.85, 0.35, 0.30, 0.90),
+                (0.30, 0.90, 0.10, 0.95),
+                (0.10, 0.95, 0.15, 0.75),
+            ],
+            circles: &[],
+        },
+        Icon::Terminal => IconPath {
+            lines: &[
+                (0.10, 0.30, 0.45, 0.55),
+                (0.10, 0.80, 0.45, 0.55),
+                (0.50, 0.80, 0.80, 0.80),
+            ],
+            circles: &[],
+        },
+        Icon::Code => IconPath {
+            lines: &[
+                (0.35, 0.25, 0.15, 0.50),
+                (0.15, 0.50, 0.35, 0.75),
+                (0.65, 0.25, 0.85, 0.50),
+                (0.85, 0.50, 0.65, 0.75),
+            ],
+            circles: &[],
+        },
+        Icon::Database => IconPath {
+            lines: &[
+                (0.50, 0.15, 0.80, 0.25),
+                (0.80, 0.25, 0.80, 0.75),
+                (0.80, 0.75, 0.50, 0.85),
+                (0.50, 0.85, 0.20, 0.75),
+                (0.20, 0.75, 0.20, 0.25),
+                (0.20, 0.25, 0.50, 0.15),
+                (0.20, 0.45, 0.80, 0.45),
+                (0.20, 0.62, 0.80, 0.62),
+            ],
+            circles: &[],
+        },
+        Icon::Layers => IconPath {
+            lines: &[
+                (0.50, 0.10, 0.90, 0.30),
+                (0.90, 0.30, 0.50, 0.50),
+                (0.50, 0.50, 0.10, 0.30),
+                (0.10, 0.30, 0.50, 0.10),
+                (0.10, 0.50, 0.50, 0.70),
+                (0.50, 0.70, 0.90, 0.50),
+                (0.10, 0.70, 0.50, 0.90),
+                (0.50, 0.90, 0.90, 0.70),
+            ],
+            circles: &[],
+        },
+        Icon::Grid => IconPath {
+            lines: &[
+                (0.33, 0.10, 0.33, 0.90),
+                (0.67, 0.10, 0.67, 0.90),
+                (0.10, 0.33, 0.90, 0.33),
+                (0.10, 0.67, 0.90, 0.67),
+                (0.10, 0.10, 0.90, 0.10),
+                (0.90, 0.10, 0.90, 0.90),
+                (0.90, 0.90, 0.10, 0.90),
+                (0.10, 0.90, 0.10, 0.10),
+            ],
+            circles: &[],
+        },
+        Icon::List => IconPath {
+            lines: &[
+                (0.25, 0.25, 0.85, 0.25),
+                (0.25, 0.50, 0.85, 0.50),
+                (0.25, 0.75, 0.85, 0.75),
+            ],
+            circles: &[(0.12, 0.25, 0.04), (0.12, 0.50, 0.04), (0.12, 0.75, 0.04)],
+        },
+        Icon::Sidebar => IconPath {
+            lines: &[
+                (0.05, 0.05, 0.95, 0.05),
+                (0.95, 0.05, 0.95, 0.95),
+                (0.95, 0.95, 0.05, 0.95),
+                (0.05, 0.95, 0.05, 0.05),
+                (0.35, 0.05, 0.35, 0.95),
+            ],
+            circles: &[],
+        },
+        Icon::PanelLeft => IconPath {
+            lines: &[
+                (0.05, 0.05, 0.95, 0.05),
+                (0.95, 0.05, 0.95, 0.95),
+                (0.95, 0.95, 0.05, 0.95),
+                (0.05, 0.95, 0.05, 0.05),
+                (0.38, 0.05, 0.38, 0.95),
+            ],
+            circles: &[],
+        },
+        Icon::PanelRight => IconPath {
+            lines: &[
+                (0.05, 0.05, 0.95, 0.05),
+                (0.95, 0.05, 0.95, 0.95),
+                (0.95, 0.95, 0.05, 0.95),
+                (0.05, 0.95, 0.05, 0.05),
+                (0.62, 0.05, 0.62, 0.95),
+            ],
+            circles: &[],
+        },
+        Icon::MessageSquare => IconPath {
+            lines: &[
+                (0.10, 0.10, 0.90, 0.10),
+                (0.90, 0.10, 0.90, 0.70),
+                (0.90, 0.70, 0.30, 0.70),
+                (0.30, 0.70, 0.10, 0.90),
+                (0.10, 0.90, 0.10, 0.10),
+            ],
+            circles: &[],
+        },
+        Icon::Tool => IconPath {
+            lines: &[
+                (0.65, 0.15, 0.85, 0.35),
+                (0.85, 0.35, 0.35, 0.85),
+                (0.35, 0.85, 0.15, 0.65),
+                (0.15, 0.65, 0.65, 0.15),
+            ],
+            circles: &[],
+        },
+        Icon::Cpu => IconPath {
+            lines: &[
+                (0.25, 0.25, 0.75, 0.25),
+                (0.75, 0.25, 0.75, 0.75),
+                (0.75, 0.75, 0.25, 0.75),
+                (0.25, 0.75, 0.25, 0.25),
+                (0.35, 0.10, 0.35, 0.25),
+                (0.50, 0.10, 0.50, 0.25),
+                (0.65, 0.10, 0.65, 0.25),
+                (0.35, 0.75, 0.35, 0.90),
+                (0.50, 0.75, 0.50, 0.90),
+                (0.65, 0.75, 0.65, 0.90),
+                (0.10, 0.35, 0.25, 0.35),
+                (0.10, 0.50, 0.25, 0.50),
+                (0.10, 0.65, 0.25, 0.65),
+                (0.75, 0.35, 0.90, 0.35),
+                (0.75, 0.50, 0.90, 0.50),
+                (0.75, 0.65, 0.90, 0.65),
+            ],
+            circles: &[],
+        },
+        Icon::GitBranch => IconPath {
+            lines: &[
+                (0.30, 0.15, 0.30, 0.85),
+                (0.70, 0.15, 0.70, 0.42),
+                (0.30, 0.30, 0.70, 0.30),
+            ],
+            circles: &[(0.30, 0.15, 0.07), (0.30, 0.85, 0.07), (0.70, 0.15, 0.07), (0.70, 0.50, 0.07)],
+        },
+        Icon::Brain => IconPath {
+            lines: &[
+                (0.50, 0.15, 0.50, 0.85),
+                (0.20, 0.40, 0.50, 0.30),
+                (0.80, 0.40, 0.50, 0.30),
+                (0.20, 0.60, 0.50, 0.70),
+                (0.80, 0.60, 0.50, 0.70),
+            ],
+            circles: &[
+                (0.50, 0.20, 0.12),
+                (0.18, 0.45, 0.14),
+                (0.82, 0.45, 0.14),
+                (0.18, 0.65, 0.12),
+                (0.82, 0.65, 0.12),
+            ],
+        },
+        Icon::Network => IconPath {
+            lines: &[
+                (0.50, 0.15, 0.20, 0.50),
+                (0.50, 0.15, 0.80, 0.50),
+                (0.50, 0.15, 0.50, 0.85),
+                (0.20, 0.50, 0.50, 0.85),
+                (0.80, 0.50, 0.50, 0.85),
+            ],
+            circles: &[
+                (0.50, 0.15, 0.08),
+                (0.20, 0.50, 0.08),
+                (0.80, 0.50, 0.08),
+                (0.50, 0.85, 0.08),
+            ],
+        },
+        Icon::Sparkles => IconPath {
+            lines: &[
+                (0.50, 0.05, 0.55, 0.40),
+                (0.55, 0.40, 0.50, 0.95),
+                (0.50, 0.95, 0.45, 0.40),
+                (0.45, 0.40, 0.50, 0.05),
+                (0.05, 0.50, 0.40, 0.45),
+                (0.40, 0.45, 0.95, 0.50),
+                (0.95, 0.50, 0.40, 0.55),
+                (0.40, 0.55, 0.05, 0.50),
+            ],
+            circles: &[(0.50, 0.50, 0.06), (0.20, 0.20, 0.04), (0.80, 0.80, 0.04)],
+        },
+        Icon::Workflow => IconPath {
+            lines: &[
+                (0.10, 0.30, 0.35, 0.30),
+                (0.35, 0.30, 0.35, 0.70),
+                (0.35, 0.70, 0.65, 0.70),
+                (0.65, 0.70, 0.65, 0.30),
+                (0.65, 0.30, 0.90, 0.30),
+                (0.90, 0.30, 0.90, 0.70),
+            ],
+            circles: &[(0.10, 0.30, 0.07), (0.90, 0.70, 0.07)],
+        },
     }
 }

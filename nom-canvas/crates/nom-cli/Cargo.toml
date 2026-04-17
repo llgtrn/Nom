@@ -1,19 +1,12 @@
 [package]
 name = "nom-cli"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "Nom command-line entry point"
-
-[lints]
-workspace = true
+edition = "2021"
 
 [[bin]]
-name = "nom"
+name = "nom-canvas"
 path = "src/main.rs"
 
 [dependencies]
-nom-compose = { path = "../nom-compose" }
-nom-lint = { path = "../nom-lint" }
+nom-panels = { path = "../nom-panels" }
+tokio = { workspace = true }

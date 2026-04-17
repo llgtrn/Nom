@@ -1,15 +1,5 @@
 [package]
 name = "nom-collab"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "CRDT snapshot + protocol scaffolding for Nom collab server"
-
-[lints]
-workspace = true
-
-[dependencies]
-thiserror = { workspace = true }
-parking_lot = { workspace = true }
+edition = "2021"
+# Empty stub — reserved for future CRDT/yrs work. DO NOT add yrs yet.

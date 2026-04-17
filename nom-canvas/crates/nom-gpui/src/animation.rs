@@ -1,145 +1,139 @@
-//! Timestamp-based animation with easing.
-#![deny(unsafe_code)]
+use std::time::Duration;
+use crate::types::*;
 
-use std::time::{Duration, Instant};
+// ---------------------------------------------------------------------------
+// Animation
+// ---------------------------------------------------------------------------
 
-/// Easing curve for [0.0..=1.0] progress values.
-#[derive(Clone, Copy, Debug)]
-pub enum Easing {
-    Linear,
-    EaseInQuad,
-    EaseOutQuad,
-    EaseInOutQuad,
-    CubicBezier { x1: f32, y1: f32, x2: f32, y2: f32 },
-}
-
-impl Easing {
-    /// Mode-switch easing preset (blueprint section 5).
-    pub const MODE_SWITCH: Easing = Easing::CubicBezier {
-        x1: 0.27,
-        y1: 0.2,
-        x2: 0.25,
-        y2: 1.51,
-    };
-
-    pub fn apply(self, t: f32) -> f32 {
-        let t = t.clamp(0.0, 1.0);
-        match self {
-            Easing::Linear => t,
-            Easing::EaseInQuad => t * t,
-            Easing::EaseOutQuad => 1.0 - (1.0 - t) * (1.0 - t),
-            Easing::EaseInOutQuad => {
-                if t < 0.5 {
-                    2.0 * t * t
-                } else {
-                    1.0 - 2.0 * (1.0 - t) * (1.0 - t)
-                }
-            }
-            Easing::CubicBezier { x1, y1, x2, y2 } => cubic_bezier_eval(x1, y1, x2, y2, t),
-        }
-    }
-}
-
-fn cubic_bezier_eval(x1: f32, y1: f32, x2: f32, y2: f32, t: f32) -> f32 {
-    fn sample_x(x1: f32, x2: f32, u: f32) -> f32 {
-        let inv = 1.0 - u;
-        3.0 * inv * inv * u * x1 + 3.0 * inv * u * u * x2 + u * u * u
-    }
-
-    fn sample_y(y1: f32, y2: f32, u: f32) -> f32 {
-        let inv = 1.0 - u;
-        3.0 * inv * inv * u * y1 + 3.0 * inv * u * u * y2 + u * u * u
-    }
-
-    fn dx_du(x1: f32, x2: f32, u: f32) -> f32 {
-        let inv = 1.0 - u;
-        3.0 * inv * inv * x1 + 6.0 * inv * u * (x2 - x1) + 3.0 * u * u * (1.0 - x2)
-    }
-
-    let mut u = t;
-    for _ in 0..8 {
-        let x_err = sample_x(x1, x2, u) - t;
-        let deriv = dx_du(x1, x2, u);
-        if deriv.abs() < 1e-6 {
-            break;
-        }
-        u -= x_err / deriv;
-        u = u.clamp(0.0, 1.0);
-    }
-
-    let x_err = (sample_x(x1, x2, u) - t).abs();
-    if x_err > 1e-5 {
-        let mut lo = 0.0_f32;
-        let mut hi = 1.0_f32;
-        for _ in 0..20 {
-            let mid = (lo + hi) * 0.5;
-            let x_mid = sample_x(x1, x2, mid);
-            if x_mid < t {
-                lo = mid;
-            } else {
-                hi = mid;
-            }
-        }
-        u = (lo + hi) * 0.5;
-    }
-
-    sample_y(y1, y2, u)
-}
-
-#[derive(Clone)]
+/// Animation with closure-based easing.
+/// Pattern: Zed (APP/zed-main/crates/gpui/src/elements/animation.rs)
+/// Zed uses `Rc<dyn Fn(f32)->f32>` — we use `Box` for `Send + Sync` across threads.
 pub struct Animation {
-    start: Instant,
-    duration: Duration,
-    easing: Easing,
-    from: f32,
-    to: f32,
+    pub duration: Duration,
+    /// `true` = play once and stop; `false` = loop forever.
+    pub oneshot: bool,
+    pub easing: Box<dyn Fn(f32) -> f32 + Send + Sync>,
 }
 
 impl Animation {
-    pub fn new(duration: Duration, easing: Easing, from: f32, to: f32) -> Self {
-        Self { start: Instant::now(), duration, easing, from, to }
-    }
-
-    pub fn now(&self) -> f32 {
-        self.sample(Instant::now())
-    }
-
-    pub fn sample(&self, now: Instant) -> f32 {
-        // Zero-duration animation is treated as already finished, mapping to `to`.
-        // Without this guard, `elapsed / Duration::ZERO` produces NaN which
-        // propagates through easing into the caller's render state.
-        if self.duration.is_zero() {
-            return self.to;
+    pub fn new(
+        duration: Duration,
+        easing: impl Fn(f32) -> f32 + Send + Sync + 'static,
+    ) -> Self {
+        Self {
+            duration,
+            oneshot: true,
+            easing: Box::new(easing),
         }
-        let elapsed = now.saturating_duration_since(self.start);
-        let t = (elapsed.as_secs_f32() / self.duration.as_secs_f32()).clamp(0.0, 1.0);
-        let eased = self.easing.apply(t);
-        self.from + (self.to - self.from) * eased
     }
 
-    pub fn progress(&self, now: Instant) -> f32 {
-        if self.duration.is_zero() {
-            return 1.0;
+    /// Convert this animation to a looping animation.
+    pub fn looping(mut self) -> Self {
+        self.oneshot = false;
+        self
+    }
+
+    /// Evaluate the easing function at `delta` ∈ [0, 1].
+    pub fn evaluate(&self, delta: f32) -> f32 {
+        (self.easing)(delta.clamp(0.0, 1.0))
+    }
+
+    /// Compute interpolation delta from elapsed time.
+    ///
+    /// - One-shot: clamped to [0, 1].
+    /// - Looping: fractional part gives the repeating 0→1 ramp.
+    pub fn delta(&self, elapsed: Duration) -> f32 {
+        let t = elapsed.as_secs_f32() / self.duration.as_secs_f32();
+        if self.oneshot {
+            t.clamp(0.0, 1.0)
+        } else {
+            t.fract()
         }
-        let elapsed = now.saturating_duration_since(self.start);
-        (elapsed.as_secs_f32() / self.duration.as_secs_f32()).clamp(0.0, 1.0)
     }
 
-    pub fn is_finished(&self, now: Instant) -> bool {
-        now.saturating_duration_since(self.start) >= self.duration
-    }
-
-    pub fn restart(&mut self) {
-        self.start = Instant::now();
+    /// Returns `true` when a one-shot animation has finished playing.
+    pub fn is_complete(&self, elapsed: Duration) -> bool {
+        self.oneshot && elapsed >= self.duration
     }
 }
 
+// ---------------------------------------------------------------------------
+// Standard easing functions — closures, not an enum
+// ---------------------------------------------------------------------------
+
+pub mod easing {
+    pub fn linear() -> impl Fn(f32) -> f32 + Send + Sync {
+        |t| t
+    }
+
+    pub fn ease_in() -> impl Fn(f32) -> f32 + Send + Sync {
+        |t| t * t
+    }
+
+    pub fn ease_out() -> impl Fn(f32) -> f32 + Send + Sync {
+        |t| t * (2.0 - t)
+    }
+
+    pub fn ease_in_out() -> impl Fn(f32) -> f32 + Send + Sync {
+        |t| {
+            if t < 0.5 {
+                2.0 * t * t
+            } else {
+                -1.0 + (4.0 - 2.0 * t) * t
+            }
+        }
+    }
+
+    pub fn ease_out_quint() -> impl Fn(f32) -> f32 + Send + Sync {
+        |t| {
+            let t1 = t - 1.0;
+            1.0 + t1 * t1 * t1 * t1 * t1
+        }
+    }
+
+    /// Spring animation approximated with exponential-decay oscillation.
+    /// Defaults: stiffness = 400, damping = 28 (AFFiNE motion token).
+    pub fn spring(stiffness: f32, damping: f32) -> impl Fn(f32) -> f32 + Send + Sync {
+        move |t| {
+            let omega = (stiffness / damping).sqrt();
+            let decay = (-damping * 0.5 * t).exp();
+            1.0 - decay * (omega * t).cos()
+        }
+    }
+
+    /// NomCanvas connect animation: spring(400, 28).
+    pub fn nom_connect() -> impl Fn(f32) -> f32 + Send + Sync {
+        spring(400.0, 28.0)
+    }
+
+    /// NomCanvas hover animation: ease-out (120 ms).
+    pub fn nom_hover() -> impl Fn(f32) -> f32 + Send + Sync {
+        ease_out()
+    }
+
+    /// NomCanvas panel-resize animation: ease-in-out (200 ms).
+    pub fn nom_panel_resize() -> impl Fn(f32) -> f32 + Send + Sync {
+        ease_in_out()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Interpolation helpers
+// ---------------------------------------------------------------------------
+
+/// Linearly interpolate between two `f32` values.
 pub fn lerp(from: f32, to: f32, t: f32) -> f32 {
     from + (to - from) * t
 }
 
-pub fn ease_lerp(from: f32, to: f32, t: f32, easing: Easing) -> f32 {
-    lerp(from, to, easing.apply(t))
+/// Linearly interpolate between two `Hsla` colors.
+pub fn lerp_hsla(from: Hsla, to: Hsla, t: f32) -> Hsla {
+    Hsla {
+        h: lerp(from.h, to.h, t),
+        s: lerp(from.s, to.s, t),
+        l: lerp(from.l, to.l, t),
+        a: lerp(from.a, to.a, t),
+    }
 }
 
 #[cfg(test)]
@@ -147,96 +141,71 @@ mod tests {
     use super::*;
 
     #[test]
-    fn linear_apply_zero() { assert_eq!(Easing::Linear.apply(0.0), 0.0); }
-
-    #[test]
-    fn linear_apply_half() { assert_eq!(Easing::Linear.apply(0.5), 0.5); }
-
-    #[test]
-    fn linear_apply_one() { assert_eq!(Easing::Linear.apply(1.0), 1.0); }
-
-    #[test]
-    fn ease_in_quad_half() {
-        assert!((Easing::EaseInQuad.apply(0.5) - 0.25).abs() < 1e-6);
+    fn linear_easing_midpoint() {
+        let anim = Animation::new(Duration::from_millis(200), easing::linear());
+        let result = anim.evaluate(0.5);
+        assert!((result - 0.5).abs() < 1e-6);
     }
 
     #[test]
-    fn ease_out_quad_half() {
-        assert!((Easing::EaseOutQuad.apply(0.5) - 0.75).abs() < 1e-6);
+    fn ease_in_easing_midpoint() {
+        let anim = Animation::new(Duration::from_millis(200), easing::ease_in());
+        // t * t at t=0.5 → 0.25
+        let result = anim.evaluate(0.5);
+        assert!((result - 0.25).abs() < 1e-6);
     }
 
     #[test]
-    fn cubic_bezier_zero() {
-        let e = Easing::CubicBezier { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
-        assert!(e.apply(0.0).abs() < 1e-5);
+    fn delta_at_half_duration() {
+        let dur = Duration::from_millis(400);
+        let anim = Animation::new(dur, easing::linear());
+        let half = Duration::from_millis(200);
+        let delta = anim.delta(half);
+        assert!((delta - 0.5).abs() < 1e-6);
     }
 
     #[test]
-    fn cubic_bezier_one() {
-        let e = Easing::CubicBezier { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
-        assert!((e.apply(1.0) - 1.0).abs() < 1e-4);
+    fn is_complete_after_full_duration() {
+        let dur = Duration::from_millis(300);
+        let anim = Animation::new(dur, easing::linear());
+        assert!(!anim.is_complete(Duration::from_millis(200)));
+        assert!(anim.is_complete(Duration::from_millis(300)));
+        assert!(anim.is_complete(Duration::from_millis(500)));
     }
 
     #[test]
-    fn cubic_bezier_half_in_range() {
-        let e = Easing::CubicBezier { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 };
-        let v = e.apply(0.5);
-        assert!(v > 0.3 && v < 0.85, "expected 0.3 < {} < 0.85", v);
+    fn looping_anim_not_complete() {
+        let dur = Duration::from_millis(300);
+        let anim = Animation::new(dur, easing::linear()).looping();
+        assert!(!anim.is_complete(Duration::from_millis(1000)));
     }
 
     #[test]
-    fn mode_switch_zero() {
-        assert!(Easing::MODE_SWITCH.apply(0.0).abs() < 1e-5);
+    fn lerp_midpoint() {
+        assert!((lerp(0.0, 10.0, 0.5) - 5.0).abs() < 1e-6);
     }
 
     #[test]
-    fn mode_switch_one_near_one() {
-        assert!((Easing::MODE_SWITCH.apply(1.0) - 1.0).abs() < 1e-4);
+    fn lerp_endpoints() {
+        assert!((lerp(3.0, 7.0, 0.0) - 3.0).abs() < 1e-6);
+        assert!((lerp(3.0, 7.0, 1.0) - 7.0).abs() < 1e-6);
     }
 
     #[test]
-    fn animation_sample_at_start_equals_from() {
-        let anim = Animation::new(Duration::from_millis(100), Easing::Linear, 0.0, 100.0);
-        let v = anim.sample(anim.start);
-        assert!(v.abs() < 1e-4, "expected ~0, got {}", v);
+    fn lerp_hsla_midpoint() {
+        let from = Hsla::new(0.0, 0.0, 0.0, 0.0);
+        let to = Hsla::new(360.0, 1.0, 1.0, 1.0);
+        let mid = lerp_hsla(from, to, 0.5);
+        assert!((mid.h - 180.0).abs() < 1e-5);
+        assert!((mid.s - 0.5).abs() < 1e-5);
+        assert!((mid.l - 0.5).abs() < 1e-5);
+        assert!((mid.a - 0.5).abs() < 1e-5);
     }
 
     #[test]
-    fn animation_sample_at_end_equals_to() {
-        let anim = Animation::new(Duration::from_millis(100), Easing::Linear, 0.0, 100.0);
-        let end = anim.start + Duration::from_millis(100);
-        let v = anim.sample(end);
-        assert!((v - 100.0).abs() < 1e-4, "expected ~100, got {}", v);
-    }
-
-    #[test]
-    fn animation_sample_past_end_clamps_to_to() {
-        let anim = Animation::new(Duration::from_millis(100), Easing::Linear, 0.0, 100.0);
-        let past = anim.start + Duration::from_millis(500);
-        let v = anim.sample(past);
-        assert!((v - 100.0).abs() < 1e-4, "expected 100 clamped, got {}", v);
-    }
-
-    #[test]
-    fn animation_is_finished_false_at_start() {
-        let anim = Animation::new(Duration::from_millis(100), Easing::Linear, 0.0, 1.0);
-        assert!(!anim.is_finished(anim.start));
-    }
-
-    #[test]
-    fn animation_is_finished_true_after_duration() {
-        let anim = Animation::new(Duration::from_millis(100), Easing::Linear, 0.0, 1.0);
-        let done = anim.start + Duration::from_millis(100);
-        assert!(anim.is_finished(done));
-    }
-
-    #[test]
-    fn lerp_basic() {
-        assert!((lerp(0.0, 10.0, 0.3) - 3.0).abs() < 1e-6);
-    }
-
-    #[test]
-    fn ease_lerp_linear() {
-        assert!((ease_lerp(0.0, 10.0, 0.5, Easing::Linear) - 5.0).abs() < 1e-6);
+    fn evaluate_clamps_out_of_range() {
+        let anim = Animation::new(Duration::from_millis(100), easing::linear());
+        assert!((anim.evaluate(-0.5) - 0.0).abs() < 1e-6);
+        assert!((anim.evaluate(1.5) - 1.0).abs() < 1e-6);
     }
 }

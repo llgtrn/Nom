@@ -1,85 +1,89 @@
-use crate::buffer::Buffer;
+#![deny(unsafe_code)]
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub struct Cursor {
-    /// Primary position (where new text is typed).
-    pub head: usize,
-    /// Optional selection anchor (None == no selection).
-    pub anchor: Option<usize>,
-    /// Goal column for vertical navigation (remembered so moving up-down
-    /// preserves intent when a shorter line is encountered).
-    pub goal_column: GoalColumn,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Bias { Left, Right }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Anchor {
+    pub offset: usize,
+    pub bias: Bias,
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum GoalColumn {
-    /// Use the current column.
-    Current,
-    /// Use this remembered column when moving vertically.
-    Sticky(usize),
+impl Anchor {
+    pub fn at(offset: usize) -> Self { Self { offset, bias: Bias::Left } }
+    pub fn at_right(offset: usize) -> Self { Self { offset, bias: Bias::Right } }
 }
 
-impl Cursor {
-    pub fn at(head: usize) -> Self {
-        Self { head, anchor: None, goal_column: GoalColumn::Current }
+#[derive(Clone, Debug, PartialEq)]
+pub struct Selection {
+    pub start: Anchor,
+    pub end: Anchor,
+    pub goal_column: Option<u32>,
+    pub reversed: bool,
+}
+
+impl Selection {
+    pub fn caret(offset: usize) -> Self {
+        let anchor = Anchor::at(offset);
+        Self { start: anchor, end: anchor, goal_column: None, reversed: false }
     }
 
-    pub fn select(head: usize, anchor: usize) -> Self {
-        Self { head, anchor: Some(anchor), goal_column: GoalColumn::Current }
+    pub fn range(start: usize, end: usize) -> Self {
+        let (start, end, reversed) = if start <= end {
+            (Anchor::at(start), Anchor::at_right(end), false)
+        } else {
+            (Anchor::at(end), Anchor::at_right(start), true)
+        };
+        Self { start, end, goal_column: None, reversed }
     }
 
-    pub fn has_selection(&self) -> bool {
-        self.anchor.is_some() && self.anchor != Some(self.head)
-    }
+    pub fn is_empty(&self) -> bool { self.start.offset == self.end.offset }
+    pub fn head(&self) -> usize { if self.reversed { self.start.offset } else { self.end.offset } }
+    pub fn tail(&self) -> usize { if self.reversed { self.end.offset } else { self.start.offset } }
+    pub fn min_offset(&self) -> usize { self.start.offset.min(self.end.offset) }
+    pub fn max_offset(&self) -> usize { self.start.offset.max(self.end.offset) }
 
-    pub fn range(&self) -> std::ops::Range<usize> {
-        match self.anchor {
-            Some(a) if a <= self.head => a..self.head,
-            Some(a) => self.head..a,
-            None => self.head..self.head,
-        }
+    /// Check if this selection overlaps with another
+    pub fn overlaps(&self, other: &Self) -> bool {
+        self.min_offset() < other.max_offset() && other.min_offset() < self.max_offset()
     }
 }
 
+/// Multi-cursor selection set — always kept disjoint and sorted
 pub struct CursorSet {
-    pub cursors: smallvec::SmallVec<[Cursor; 4]>,
+    pub selections: Vec<Selection>,
 }
 
 impl CursorSet {
-    pub fn single(c: Cursor) -> Self {
-        Self { cursors: smallvec::smallvec![c] }
+    pub fn single(offset: usize) -> Self {
+        Self { selections: vec![Selection::caret(offset)] }
     }
 
-    /// Apply an edit atomically: ascending-offset pattern — insert from lowest
-    /// to highest, shifting all subsequent cursor positions by the inserted length.
-    /// This preserves all cursor heads correctly after multi-cursor insert.
-    pub fn insert_at_each(&mut self, buffer: &mut Buffer, text: &str) {
-        let delta = text.chars().count();
-        // Sort ascending so we can shift later cursors after each insert.
-        self.cursors.sort_by(|a, b| a.head.cmp(&b.head));
-        let mut accumulated_shift: usize = 0;
-        for cursor in &mut self.cursors {
-            let insert_at = cursor.head + accumulated_shift;
-            buffer.insert(insert_at, text);
-            cursor.head = insert_at + delta;
-            cursor.anchor = None;
-            accumulated_shift += delta;
-        }
+    pub fn add(&mut self, sel: Selection) {
+        self.selections.push(sel);
+        self.merge_overlapping();
+        self.selections.sort_by_key(|s| s.min_offset());
     }
 
-    pub fn delete_selections(&mut self, buffer: &mut Buffer) {
-        // Reverse-offset: delete from highest offset first.
-        self.cursors.sort_by(|a, b| b.head.cmp(&a.head));
-        for cursor in &mut self.cursors {
-            if cursor.has_selection() {
-                let r = cursor.range();
-                let new_head = buffer.delete(r);
-                cursor.head = new_head;
-                cursor.anchor = None;
+    fn merge_overlapping(&mut self) {
+        self.selections.sort_by_key(|s| s.min_offset());
+        let mut merged: Vec<Selection> = Vec::new();
+        for sel in self.selections.drain(..) {
+            if let Some(last) = merged.last_mut() {
+                if last.overlaps(&sel) {
+                    let new_max = last.max_offset().max(sel.max_offset());
+                    *last = Selection::range(last.min_offset(), new_max);
+                    continue;
+                }
             }
+            merged.push(sel);
         }
-        self.cursors.sort_by(|a, b| a.head.cmp(&b.head));
+        self.selections = merged;
     }
+
+    pub fn len(&self) -> usize { self.selections.len() }
+    pub fn is_empty(&self) -> bool { self.selections.is_empty() }
+    pub fn primary(&self) -> Option<&Selection> { self.selections.last() }
 }
 
 #[cfg(test)]
@@ -87,39 +91,25 @@ mod tests {
     use super::*;
 
     #[test]
-    fn single_cursor_insert_moves_head() {
-        let mut buf = Buffer::new();
-        let mut cs = CursorSet::single(Cursor::at(0));
-        cs.insert_at_each(&mut buf, "hi");
-        assert_eq!(cs.cursors[0].head, 2);
-        assert_eq!(buf.to_string(), "hi");
+    fn selection_caret_is_empty() {
+        let sel = Selection::caret(5);
+        assert!(sel.is_empty());
+        assert_eq!(sel.head(), 5);
     }
 
     #[test]
-    fn two_cursors_atomic_insert_preserves_both() {
-        // Buffer: "ab"  cursors at 0 and 2.
-        // Reverse-offset insert: process offset=2 first → "abX" (head→3),
-        // then offset=0 → "XabX" (head→1).
-        // Both cursors survive; neither invalidates the other.
-        let mut buf = Buffer::from_str("ab");
-        let mut cs = CursorSet {
-            cursors: smallvec::smallvec![Cursor::at(0), Cursor::at(2)],
-        };
-        cs.insert_at_each(&mut buf, "X");
-        // After re-sort ascending: cursor[0].head=1, cursor[1].head=4.
-        assert_eq!(buf.to_string(), "XabX");
-        assert_eq!(cs.cursors[0].head, 1);
-        assert_eq!(cs.cursors[1].head, 4);
+    fn selection_range() {
+        let sel = Selection::range(3, 8);
+        assert!(!sel.is_empty());
+        assert_eq!(sel.min_offset(), 3);
+        assert_eq!(sel.max_offset(), 8);
     }
 
     #[test]
-    fn selection_delete_shrinks_buffer() {
-        let mut buf = Buffer::from_str("hello world");
-        // Select " world" (chars 5..11).
-        let mut cs = CursorSet::single(Cursor::select(11, 5));
-        cs.delete_selections(&mut buf);
-        assert_eq!(buf.to_string(), "hello");
-        assert_eq!(cs.cursors[0].head, 5);
-        assert!(!cs.cursors[0].has_selection());
+    fn cursor_set_merges_overlapping() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::range(5, 10));
+        cs.add(Selection::range(8, 15));
+        assert_eq!(cs.len(), 2); // [caret@0], [5..15] merged
     }
 }

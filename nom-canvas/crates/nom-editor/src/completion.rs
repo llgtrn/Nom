@@ -1,92 +1,46 @@
-//! Completion candidates from nom-resolver (entities by prefix) and
-//! nom-grammar (keywords / patterns). MVP stub; real wiring lands with
-//! compiler integration.
-
 #![deny(unsafe_code)]
+use crate::lsp_bridge::CompletionItem;
 
-/// A single completion candidate shown in the popup list.
-#[derive(Clone, Debug)]
-pub struct CompletionItem {
-    /// Text shown in the list.
-    pub label: String,
-    /// Optional detail line (e.g. type signature).
-    pub detail: Option<String>,
-    pub kind: CompletionKind,
-    /// Text actually inserted when the item is accepted.
-    pub insert_text: String,
-    /// Lower value = shown first. Ties broken by `label` lexicographic order.
-    pub sort_priority: i32,
+pub struct CompletionMenu {
+    pub items: Vec<CompletionItem>,
+    pub selected: usize,
+    pub trigger_pos: usize,
+    pub filter: String,
 }
 
-/// Origin of a completion candidate; callers may use this for icon rendering.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CompletionKind {
-    /// Reserved word from the fixed keyword set.
-    Keyword,
-    /// Entity (function, kind, field) from nom-resolver.
-    Entity,
-    /// Structural pattern from nom-grammar.
-    Pattern,
-    /// Multi-token expansion snippet.
-    Snippet,
-}
-
-/// Sort `items` in-place: ascending by `sort_priority`, then by `label`.
-pub fn rank(items: &mut Vec<CompletionItem>) {
-    items.sort_by(|a, b| {
-        a.sort_priority
-            .cmp(&b.sort_priority)
-            .then_with(|| a.label.cmp(&b.label))
-    });
+impl CompletionMenu {
+    pub fn new(items: Vec<CompletionItem>, trigger_pos: usize) -> Self {
+        Self { items, selected: 0, trigger_pos, filter: String::new() }
+    }
+    pub fn is_empty(&self) -> bool { self.items.is_empty() }
+    pub fn select_next(&mut self) { if self.selected + 1 < self.items.len() { self.selected += 1; } }
+    pub fn select_prev(&mut self) { if self.selected > 0 { self.selected -= 1; } }
+    pub fn selected_item(&self) -> Option<&CompletionItem> { self.items.get(self.selected) }
+    pub fn filter_items(&mut self, prefix: &str) {
+        self.filter = prefix.to_lowercase();
+        self.selected = 0;
+    }
+    pub fn visible_items(&self) -> Vec<&CompletionItem> {
+        if self.filter.is_empty() {
+            self.items.iter().collect()
+        } else {
+            self.items.iter().filter(|item| item.label.to_lowercase().starts_with(&self.filter)).collect()
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-
-    fn item(label: &str, priority: i32) -> CompletionItem {
-        CompletionItem {
-            label: label.into(),
-            detail: None,
-            kind: CompletionKind::Keyword,
-            insert_text: label.into(),
-            sort_priority: priority,
-        }
+    fn make_item(label: &str) -> CompletionItem {
+        use crate::lsp_bridge::CompletionKind;
+        CompletionItem { label: label.into(), kind: CompletionKind::Function, detail: None, insert_text: label.into(), sort_text: None }
     }
-
     #[test]
-    fn rank_sorts_by_priority_then_label() {
-        let mut items = vec![item("z", 1), item("a", 2), item("b", 1)];
-        rank(&mut items);
-        assert_eq!(items[0].label, "b"); // priority 1, "b" < "z"
-        assert_eq!(items[1].label, "z"); // priority 1, "z" > "b"
-        assert_eq!(items[2].label, "a"); // priority 2 (last)
-    }
-
-    #[test]
-    fn rank_stable_on_equal_priority_and_label() {
-        let mut items = vec![item("x", 0), item("x", 0)];
-        rank(&mut items);
-        assert_eq!(items.len(), 2);
-    }
-
-    #[test]
-    fn rank_single_item() {
-        let mut items = vec![item("only", 5)];
-        rank(&mut items);
-        assert_eq!(items[0].label, "only");
-    }
-
-    #[test]
-    fn rank_empty_no_panic() {
-        let mut items: Vec<CompletionItem> = vec![];
-        rank(&mut items);
-        assert!(items.is_empty());
-    }
-
-    #[test]
-    fn completion_kinds_are_distinct() {
-        assert_ne!(CompletionKind::Keyword, CompletionKind::Entity);
-        assert_ne!(CompletionKind::Pattern, CompletionKind::Snippet);
+    fn completion_filter() {
+        let mut menu = CompletionMenu::new(vec![make_item("summarize"), make_item("search"), make_item("transform")], 5);
+        menu.filter_items("su");
+        assert_eq!(menu.visible_items().len(), 1);
+        assert_eq!(menu.visible_items()[0].label, "summarize");
     }
 }

@@ -1,15 +1,8 @@
 [package]
 name = "nom-telemetry"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "Tracing span taxonomy + samplers for Nom (OpenTelemetry-compatible)"
-
-[lints]
-workspace = true
+edition = "2021"
 
 [dependencies]
-parking_lot = { workspace = true }
-thiserror = { workspace = true }
+nom-blocks = { path = "../nom-blocks" }
+crossbeam-channel = { workspace = true }

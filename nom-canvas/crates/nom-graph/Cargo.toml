@@ -1,0 +1,9 @@
+[package]
+name = "nom-graph"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+nom-blocks = { path = "../nom-blocks" }
+crossbeam-channel = { workspace = true }
+lru = { workspace = true }

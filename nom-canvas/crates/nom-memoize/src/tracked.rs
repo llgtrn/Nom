@@ -1,65 +1,81 @@
-use crate::constraint::Constraint;
+#![deny(unsafe_code)]
+use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 
-/// A thin wrapper over a shared reference that optionally carries a
-/// [`Constraint`] recorder so that field accesses can be tracked.
-pub struct Tracked<'a, T: ?Sized> {
-    pub(crate) inner: &'a T,
-    // Consumed by the proc-macro runtime in `nom-memoize-macros`; not yet read
-    // inside this library crate.
-    #[allow(dead_code)]
-    pub(crate) constraint: Option<&'a Constraint<T>>,
+/// Typst comemo-pattern: Tracked<T> wraps a value and tracks access for validation.
+/// Every read through the tracker is recorded so the constraint can verify
+/// that cached computation results are still valid.
+pub struct Tracked<T> {
+    inner: Arc<T>,
+    /// Access counter — increments on each read (used for constraint validation)
+    access_count: Arc<AtomicU64>,
+    /// Version of the value when this Tracked<T> was created
+    pub version: u64,
 }
 
-impl<'a, T: ?Sized> std::ops::Deref for Tracked<'a, T> {
-    type Target = T;
+impl<T: Clone> Tracked<T> {
+    pub fn new(value: T, version: u64) -> Self {
+        Self {
+            inner: Arc::new(value),
+            access_count: Arc::new(AtomicU64::new(0)),
+            version,
+        }
+    }
 
-    fn deref(&self) -> &T {
-        self.inner
+    /// Access the tracked value. Records one access for constraint validation.
+    pub fn get(&self) -> &T {
+        self.access_count.fetch_add(1, Ordering::Relaxed);
+        &self.inner
+    }
+
+    pub fn access_count(&self) -> u64 {
+        self.access_count.load(Ordering::Relaxed)
+    }
+
+    /// Create a constraint snapshot capturing current access count
+    pub fn snapshot(&self) -> TrackedSnapshot {
+        TrackedSnapshot {
+            version: self.version,
+            access_count_at_snapshot: self.access_count.load(Ordering::Relaxed),
+        }
     }
 }
 
-/// Wrap `value` without any constraint recorder.
-pub fn track<'a, T: ?Sized>(value: &'a T) -> Tracked<'a, T> {
-    Tracked { inner: value, constraint: None }
+impl<T: Clone + Send + Sync> Clone for Tracked<T> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+            access_count: Arc::new(AtomicU64::new(0)),
+            version: self.version,
+        }
+    }
 }
 
-/// Wrap `value` and attach a constraint recorder so that accesses can be
-/// observed and replayed for cache validation.
-pub fn track_with<'a, T: ?Sized>(value: &'a T, constraint: &'a Constraint<T>) -> Tracked<'a, T> {
-    Tracked { inner: value, constraint: Some(constraint) }
+#[derive(Clone, Debug)]
+pub struct TrackedSnapshot {
+    pub version: u64,
+    pub access_count_at_snapshot: u64,
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::constraint::Constraint;
 
     #[test]
-    fn deref_works() {
-        let value = String::from("hello");
-        let tracked = track(value.as_str());
-        assert_eq!(&*tracked, "hello");
+    fn tracked_access_counting() {
+        let t = Tracked::new(vec![1, 2, 3], 1);
+        assert_eq!(t.access_count(), 0);
+        let _ = t.get();
+        let _ = t.get();
+        assert_eq!(t.access_count(), 2);
     }
 
     #[test]
-    fn address_preserved() {
-        let value = 42u32;
-        let tracked = track(&value);
-        assert_eq!(tracked.inner as *const u32, &value as *const u32);
-    }
-
-    #[test]
-    fn constraint_none_by_default() {
-        let value = 0u8;
-        let tracked = track(&value);
-        assert!(tracked.constraint.is_none());
-    }
-
-    #[test]
-    fn track_with_sets_constraint() {
-        let value = 0u8;
-        let c: Constraint<u8> = Constraint::new();
-        let tracked = track_with(&value, &c);
-        assert!(tracked.constraint.is_some());
+    fn tracked_snapshot() {
+        let t = Tracked::new("hello", 42);
+        let _ = t.get();
+        let snap = t.snapshot();
+        assert_eq!(snap.version, 42);
+        assert_eq!(snap.access_count_at_snapshot, 1);
     }
 }

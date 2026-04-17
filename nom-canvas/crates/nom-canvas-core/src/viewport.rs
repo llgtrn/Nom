@@ -1,98 +1,166 @@
-//! Viewport — model-space center + zoom + pixel size.
-//!
-//! The viewport is the lens through which the infinite canvas is observed.
-//! It holds three pieces of state:
-//!
-//! - `center`  — the model-space point that appears at the middle of the screen.
-//! - `zoom`    — scale factor: 1 model unit → `zoom` pixels.
-//! - `size`    — the current pixel dimensions of the rendering surface.
-//!
-//! All coordinate-transform helpers live in [`crate::coords`].
-
-#![deny(unsafe_code)]
-
-use nom_gpui::{Pixels, Point, Size};
-
-/// The active view of the canvas.
-#[derive(Clone, Debug)]
+/// Infinite-canvas viewport: maps between screen and canvas coordinate systems.
+///
+/// Coordinate convention (matches Excalidraw):
+///   screen_to_canvas(pt) = (pt - size/2 - pan) / zoom
+///   canvas_to_screen(pt) = pt * zoom + pan + size/2
+#[derive(Debug, Clone)]
 pub struct Viewport {
-    /// Model-space point shown at the centre of the screen.
-    pub center: Point<Pixels>,
-    /// Scale factor: 1 model unit → `zoom` screen pixels.  Clamped to
-    /// `[ZOOM_MIN, ZOOM_MAX]` on every write.
+    /// Zoom level, clamped to [0.1, 32.0]
     pub zoom: f32,
-    /// Pixel dimensions of the rendering surface.
-    pub size: Size<Pixels>,
+    /// Canvas pan offset (screen pixels)
+    pub pan: [f32; 2],
+    /// Screen dimensions in pixels
+    pub size: [f32; 2],
 }
 
 impl Viewport {
-    /// Minimum zoom (10 % — enough to see very large diagrams).
-    pub const ZOOM_MIN: f32 = 0.1;
-    /// Maximum zoom (10 × — deeper than most canvas tools for map-like views).
-    pub const ZOOM_MAX: f32 = 10.0;
-
-    /// Create a viewport centred on the model origin with zoom = 1.
-    pub fn new(size: Size<Pixels>) -> Self {
+    pub fn new(width: f32, height: f32) -> Self {
         Self {
-            center: Point::new(Pixels(0.0), Pixels(0.0)),
             zoom: 1.0,
-            size,
+            pan: [0.0, 0.0],
+            size: [width, height],
         }
     }
 
-    /// Move the model-space centre shown at the middle of the screen.
-    pub fn center_on(&mut self, model_point: Point<Pixels>) {
-        self.center = model_point;
+    /// Convert a screen-space point to canvas-space.
+    pub fn screen_to_canvas(&self, pt: [f32; 2]) -> [f32; 2] {
+        [
+            (pt[0] - self.size[0] / 2.0 - self.pan[0]) / self.zoom,
+            (pt[1] - self.size[1] / 2.0 - self.pan[1]) / self.zoom,
+        ]
     }
 
-    /// Set the zoom level, clamping to `[ZOOM_MIN, ZOOM_MAX]`.
-    pub fn set_zoom(&mut self, z: f32) {
-        self.zoom = z.clamp(Self::ZOOM_MIN, Self::ZOOM_MAX);
+    /// Convert a canvas-space point to screen-space.
+    pub fn canvas_to_screen(&self, pt: [f32; 2]) -> [f32; 2] {
+        [
+            pt[0] * self.zoom + self.pan[0] + self.size[0] / 2.0,
+            pt[1] * self.zoom + self.pan[1] + self.size[1] / 2.0,
+        ]
     }
 
-    /// Update the pixel dimensions of the rendering surface (e.g. on window
-    /// resize).  Does not move the centre.
-    pub fn set_size(&mut self, size: Size<Pixels>) {
-        self.size = size;
+    /// Returns the canvas-space bounding box visible on screen — used for culling.
+    /// Returns `(top_left, bottom_right)` in canvas coordinates.
+    pub fn visible_bounds(&self) -> ([f32; 2], [f32; 2]) {
+        let top_left = self.screen_to_canvas([0.0, 0.0]);
+        let bot_right = self.screen_to_canvas(self.size);
+        (top_left, bot_right)
+    }
+
+    /// Zoom toward a screen-space cursor position so the canvas point under the
+    /// cursor stays fixed on screen (standard pinch-to-zoom / scroll-wheel behaviour).
+    pub fn zoom_toward(&mut self, new_zoom: f32, cursor: [f32; 2]) {
+        let canvas_pt = self.screen_to_canvas(cursor);
+        self.zoom = new_zoom.clamp(0.1, 32.0);
+        // Re-derive pan so `canvas_pt` maps back to `cursor` at the new zoom.
+        self.pan = [
+            cursor[0] - self.size[0] / 2.0 - canvas_pt[0] * self.zoom,
+            cursor[1] - self.size[1] / 2.0 - canvas_pt[1] * self.zoom,
+        ];
+    }
+
+    /// Translate the viewport by a screen-space delta.
+    pub fn pan_by(&mut self, delta: [f32; 2]) {
+        self.pan[0] += delta[0];
+        self.pan[1] += delta[1];
+    }
+
+    /// Reset to 1× zoom, no pan.
+    pub fn reset(&mut self) {
+        self.zoom = 1.0;
+        self.pan = [0.0, 0.0];
     }
 }
-
-// ─── tests ────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
 mod tests {
     use super::*;
 
-    fn make_vp() -> Viewport {
-        Viewport::new(Size::new(Pixels(800.0), Pixels(600.0)))
+    /// Screen centre should map to canvas origin when pan=[0,0] zoom=1.
+    #[test]
+    fn screen_center_maps_to_canvas_origin() {
+        let vp = Viewport::new(800.0, 600.0);
+        let canvas = vp.screen_to_canvas([400.0, 300.0]);
+        assert!((canvas[0]).abs() < 1e-5, "x={}", canvas[0]);
+        assert!((canvas[1]).abs() < 1e-5, "y={}", canvas[1]);
+    }
+
+    /// screen_to_canvas(canvas_to_screen(pt)) should be identity.
+    #[test]
+    fn round_trip_identity() {
+        let vp = Viewport::new(1024.0, 768.0);
+        let pt = [123.0_f32, -456.0_f32];
+        let screen = vp.canvas_to_screen(pt);
+        let back = vp.screen_to_canvas(screen);
+        assert!((back[0] - pt[0]).abs() < 1e-4, "x round-trip error");
+        assert!((back[1] - pt[1]).abs() < 1e-4, "y round-trip error");
+    }
+
+    /// canvas_to_screen(screen_to_canvas(pt)) should be identity.
+    #[test]
+    fn round_trip_reverse_identity() {
+        let vp = Viewport::new(800.0, 600.0);
+        let screen_pt = [200.0_f32, 150.0_f32];
+        let canvas = vp.screen_to_canvas(screen_pt);
+        let back = vp.canvas_to_screen(canvas);
+        assert!((back[0] - screen_pt[0]).abs() < 1e-4);
+        assert!((back[1] - screen_pt[1]).abs() < 1e-4);
+    }
+
+    /// zoom_toward clamps to 0.1.
+    #[test]
+    fn zoom_toward_clamps_min() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(0.0, [400.0, 300.0]);
+        assert!((vp.zoom - 0.1).abs() < 1e-6);
+    }
+
+    /// zoom_toward clamps to 32.0.
+    #[test]
+    fn zoom_toward_clamps_max() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(999.0, [400.0, 300.0]);
+        assert!((vp.zoom - 32.0).abs() < 1e-6);
+    }
+
+    /// After zoom_toward, the canvas point originally under the cursor stays put.
+    #[test]
+    fn zoom_toward_preserves_cursor_canvas_point() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [300.0_f32, 200.0_f32];
+        let canvas_before = vp.screen_to_canvas(cursor);
+        vp.zoom_toward(2.0, cursor);
+        let canvas_after = vp.screen_to_canvas(cursor);
+        assert!((canvas_after[0] - canvas_before[0]).abs() < 1e-4);
+        assert!((canvas_after[1] - canvas_before[1]).abs() < 1e-4);
     }
 
     #[test]
-    fn new_has_zoom_1() {
-        let vp = make_vp();
-        assert!((vp.zoom - 1.0).abs() < f32::EPSILON);
+    fn pan_by_shifts_pan() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([10.0, -5.0]);
+        assert!((vp.pan[0] - 10.0).abs() < 1e-6);
+        assert!((vp.pan[1] - (-5.0)).abs() < 1e-6);
     }
 
     #[test]
-    fn set_zoom_clamps_to_range() {
-        let mut vp = make_vp();
+    fn reset_restores_defaults() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(4.0, [100.0, 100.0]);
+        vp.pan_by([50.0, 50.0]);
+        vp.reset();
+        assert!((vp.zoom - 1.0).abs() < 1e-6);
+        assert!((vp.pan[0]).abs() < 1e-6);
+        assert!((vp.pan[1]).abs() < 1e-6);
+    }
 
-        vp.set_zoom(0.0);
-        assert!(
-            (vp.zoom - Viewport::ZOOM_MIN).abs() < f32::EPSILON,
-            "below ZOOM_MIN should clamp to ZOOM_MIN"
-        );
-
-        vp.set_zoom(999.0);
-        assert!(
-            (vp.zoom - Viewport::ZOOM_MAX).abs() < f32::EPSILON,
-            "above ZOOM_MAX should clamp to ZOOM_MAX"
-        );
-
-        vp.set_zoom(2.5);
-        assert!(
-            (vp.zoom - 2.5).abs() < f32::EPSILON,
-            "in-range value should be stored as-is"
-        );
+    #[test]
+    fn visible_bounds_covers_screen() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (tl, br) = vp.visible_bounds();
+        // At zoom=1, pan=0 the canvas bounds should be [-400,-300] to [400,300]
+        assert!((tl[0] - (-400.0)).abs() < 1e-4);
+        assert!((tl[1] - (-300.0)).abs() < 1e-4);
+        assert!((br[0] - 400.0).abs() < 1e-4);
+        assert!((br[1] - 300.0).abs() < 1e-4);
     }
 }

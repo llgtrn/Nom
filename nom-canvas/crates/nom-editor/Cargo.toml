@@ -1,17 +1,9 @@
 [package]
 name = "nom-editor"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "Rope-based editor with multi-cursor + syntax highlight + completion for NomCanvas"
-
-[lints]
-workspace = true
+edition = "2021"
 
 [dependencies]
+ropey = { workspace = true }
 nom-gpui = { path = "../nom-gpui" }
-ropey.workspace = true
-smallvec.workspace = true
-thiserror.workspace = true
+nom-theme = { path = "../nom-theme" }

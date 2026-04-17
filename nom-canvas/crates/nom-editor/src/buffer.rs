@@ -1,64 +1,107 @@
+#![deny(unsafe_code)]
 use ropey::Rope;
+use std::ops::Range;
+use std::borrow::Cow;
+
+pub type BufferId = u64;
+
+#[derive(Clone, Debug)]
+pub struct Patch {
+    pub old_range: Range<usize>,
+    pub new_text: String,
+}
+
+#[derive(Clone, Debug)]
+pub struct Transaction {
+    patches: Vec<Patch>,
+    active: bool,
+}
+
+impl Transaction {
+    pub fn new() -> Self { Self { patches: Vec::new(), active: true } }
+    pub fn add_patch(&mut self, patch: Patch) { self.patches.push(patch); }
+    pub fn commit(mut self) -> Vec<Patch> { self.active = false; self.patches }
+}
+
+impl Default for Transaction { fn default() -> Self { Self::new() } }
 
 pub struct Buffer {
-    rope: Rope,
-    version: u64,
+    pub id: BufferId,
+    pub rope: Rope,
+    pub version: u64,
+    pub path: Option<std::path::PathBuf>,
+    transaction_stack: Vec<Transaction>,
+    undo_stack: Vec<Vec<Patch>>,
 }
 
 impl Buffer {
-    pub fn new() -> Self {
-        Self { rope: Rope::new(), version: 0 }
+    pub fn new(id: BufferId, text: &str) -> Self {
+        Self {
+            id,
+            rope: Rope::from_str(text),
+            version: 0,
+            path: None,
+            transaction_stack: Vec::new(),
+            undo_stack: Vec::new(),
+        }
     }
 
-    pub fn from_str(s: &str) -> Self {
-        Self { rope: Rope::from_str(s), version: 0 }
+    pub fn len(&self) -> usize { self.rope.len_chars() }
+    pub fn is_empty(&self) -> bool { self.rope.len_chars() == 0 }
+
+    pub fn text_for_range(&self, range: Range<usize>) -> Cow<'_, str> {
+        let slice = self.rope.slice(range.start..range.end);
+        Cow::Owned(slice.to_string())
     }
 
-    pub fn len_chars(&self) -> usize {
-        self.rope.len_chars()
+    pub fn line_count(&self) -> usize { self.rope.len_lines() }
+
+    pub fn char_to_line(&self, char_idx: usize) -> usize {
+        self.rope.char_to_line(char_idx.min(self.rope.len_chars()))
     }
 
-    pub fn len_lines(&self) -> usize {
-        self.rope.len_lines()
+    pub fn line_to_char(&self, line: usize) -> usize {
+        self.rope.line_to_char(line.min(self.rope.len_lines()))
     }
 
-    pub fn line(&self, idx: usize) -> String {
-        self.rope.line(idx).to_string()
-    }
-
-    /// Insert at character offset. Returns new cursor position.
-    pub fn insert(&mut self, char_offset: usize, text: &str) -> usize {
-        self.rope.insert(char_offset, text);
+    /// Atomic edit: replace range with new_text. Returns undo patch.
+    pub fn edit(&mut self, range: Range<usize>, new_text: &str) -> Patch {
+        let old_text = self.text_for_range(range.clone()).into_owned();
+        let start = range.start;
+        let end = range.end;
+        self.rope.remove(start..end);
+        if !new_text.is_empty() {
+            self.rope.insert(start, new_text);
+        }
         self.version += 1;
-        char_offset + text.chars().count()
+        Patch { old_range: start..start + new_text.len(), new_text: old_text }
     }
 
-    /// Delete a character range. Returns the char_offset after deletion.
-    pub fn delete(&mut self, range: std::ops::Range<usize>) -> usize {
-        self.rope.remove(range.clone());
+    pub fn insert_at(&mut self, offset: usize, text: &str) {
+        let offset = offset.min(self.rope.len_chars());
+        self.rope.insert(offset, text);
         self.version += 1;
-        range.start
     }
 
-    /// Convert (line, column) to char offset. Both 0-based.
-    pub fn line_col_to_offset(&self, line: usize, col: usize) -> usize {
-        let line_start = self.rope.line_to_char(line);
-        line_start + col
+    pub fn delete_range(&mut self, range: Range<usize>) {
+        let end = range.end.min(self.rope.len_chars());
+        if range.start < end {
+            self.rope.remove(range.start..end);
+            self.version += 1;
+        }
     }
 
-    /// Inverse: char offset to (line, column).
-    pub fn offset_to_line_col(&self, offset: usize) -> (usize, usize) {
-        let line = self.rope.char_to_line(offset);
-        let line_start = self.rope.line_to_char(line);
-        (line, offset - line_start)
+    pub fn start_transaction(&mut self) {
+        self.transaction_stack.push(Transaction::new());
     }
 
-    pub fn version(&self) -> u64 {
-        self.version
-    }
-
-    pub fn to_string(&self) -> String {
-        self.rope.to_string()
+    pub fn end_transaction(&mut self) {
+        if let Some(txn) = self.transaction_stack.pop() {
+            let patches = txn.commit();
+            if !patches.is_empty() {
+                self.undo_stack.push(patches);
+            }
+        }
     }
 }
 
@@ -67,35 +110,28 @@ mod tests {
     use super::*;
 
     #[test]
-    fn new_buffer_is_empty() {
-        let buf = Buffer::new();
-        assert_eq!(buf.len_chars(), 0);
-        assert_eq!(buf.version(), 0);
+    fn buffer_edit_and_len() {
+        let mut buf = Buffer::new(1, "hello world");
+        assert_eq!(buf.len(), 11);
+        buf.edit(6..11, "Nom");
+        assert_eq!(buf.text_for_range(0..buf.len()), "hello Nom");
+        assert_eq!(buf.version, 1);
     }
 
     #[test]
-    fn insert_then_read_matches() {
-        let mut buf = Buffer::new();
-        buf.insert(0, "hello");
-        assert_eq!(buf.to_string(), "hello");
-        assert_eq!(buf.len_chars(), 5);
+    fn buffer_line_navigation() {
+        let buf = Buffer::new(1, "line1\nline2\nline3");
+        assert_eq!(buf.line_count(), 3);
+        assert_eq!(buf.char_to_line(0), 0);
+        assert_eq!(buf.char_to_line(6), 1);
     }
 
     #[test]
-    fn delete_shrinks_buffer() {
-        let mut buf = Buffer::from_str("hello world");
-        buf.delete(5..11);
-        assert_eq!(buf.to_string(), "hello");
-    }
-
-    #[test]
-    fn line_col_round_trip() {
-        let mut buf = Buffer::new();
-        buf.insert(0, "abc\ndef\nghi");
-        // line 1, col 2 → offset 6
-        let offset = buf.line_col_to_offset(1, 2);
-        assert_eq!(offset, 6);
-        let (line, col) = buf.offset_to_line_col(6);
-        assert_eq!((line, col), (1, 2));
+    fn buffer_insert_delete() {
+        let mut buf = Buffer::new(1, "hello");
+        buf.insert_at(5, " world");
+        assert_eq!(buf.text_for_range(0..11), "hello world");
+        buf.delete_range(5..11);
+        assert_eq!(buf.text_for_range(0..5), "hello");
     }
 }

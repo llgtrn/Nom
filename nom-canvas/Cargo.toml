@@ -1,58 +1,38 @@
 [workspace]
 resolver = "2"
 members = [
-    "crates/nom-gpui",
-    "crates/nom-canvas-core",
-    "crates/nom-editor",
-    "crates/nom-theme",
-    "crates/nom-panels",
-    "crates/nom-blocks",
-    "crates/nom-memoize",
-    "crates/nom-lint",
-    "crates/nom-telemetry",
-    "crates/nom-collab",
-    "crates/nom-graph-v2",
-    "crates/nom-compose",
-    "crates/nom-cli",
+  "crates/nom-gpui",
+  "crates/nom-canvas-core",
+  "crates/nom-theme",
+  "crates/nom-editor",
+  "crates/nom-blocks",
+  "crates/nom-compiler-bridge",
+  "crates/nom-panels",
+  "crates/nom-compose",
+  "crates/nom-graph",
+  "crates/nom-memoize",
+  "crates/nom-telemetry",
+  "crates/nom-collab",
+  "crates/nom-lint",
+  "crates/nom-cli",
 ]
 
-[workspace.package]
-edition = "2021"
-rust-version = "1.75"
-license = "Apache-2.0"
-authors = ["Nom"]
-
 [workspace.dependencies]
-# GPU rendering (versions aligned with Zed's gpui_wgpu crate)
-wgpu = "22"
+wgpu = "0.19"
+winit = "0.29"
+taffy = "0.4"
+cosmic-text = "0.11"
 etagere = "0.2"
-bytemuck = { version = "1.16", features = ["derive"] }
-pollster = "0.3"
-
-# Layout
-taffy = "0.6"
-
-# Text shaping + rasterization (versions from Zed gpui_wgpu end-to-end read)
-cosmic-text = "0.12"
-swash = "0.2"
-
-# Windowing
-winit = "0.30"
-raw-window-handle = "0.6"
-
-# Shared utilities
-parking_lot = "0.12"
-smallvec = "1.13"
-thiserror = "1.0"
+rusqlite = { version = "0.31", features = ["bundled"] }
+sqlx = { version = "0.7", features = ["sqlite", "runtime-tokio-rustls"] }
+tokio = { version = "1", features = ["full"] }
+crossbeam-channel = "0.5"
+bytemuck = { version = "1", features = ["derive"] }
 ropey = "1.6"
-
-# Dev
-anyhow = "1.0"
+rstar = "0.12"
+lru = "0.12"
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
-
-[workspace.lints.clippy]
-# Allow some pragmatic patterns in GPU code
-too_many_arguments = "allow"
-new_without_default = "allow"

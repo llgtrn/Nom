@@ -1,35 +1,26 @@
 #![deny(unsafe_code)]
-
-pub mod block_config;
 pub mod block_model;
-pub mod block_schema;
-pub mod block_selection;
-pub mod block_transformer;
-pub mod compose;
-pub mod drawing;
-pub mod embed;
-pub mod flavour;
-pub mod graph_node;
-pub mod media;
-pub mod nomx;
+pub mod slot;
+pub mod shared_types;
+pub mod dict_reader;
+pub mod stub_dict;
 pub mod prose;
-pub mod table;
-pub mod schema_registry;
-pub mod tree_query;
-pub mod transformers;
+pub mod nomx;
+pub mod graph_node;
+pub mod connector;
 pub mod validators;
+pub mod media;
+pub mod drawing;
+pub mod table;
+pub mod embed;
+pub mod compose;
+pub mod workspace;
 
-// ── Public re-exports ────────────────────────────────────────────────────────
-
-pub use block_model::{BlockComment, BlockId, BlockMeta, BlockModel, FractionalIndex};
-pub use block_schema::{BlockSchema, Role, SchemaError};
-pub use block_selection::{BlockSelection, SelectionSet};
-pub use block_transformer::{BlockTransformer, Snapshot, TransformError};
-pub use block_config::{BlockConfig, ConfigRegistry};
-pub use flavour::Flavour;
-pub use flavour::{
-    CALLOUT, DRAWING, EMBED, GRAPH_NODE, MEDIA_ATTACHMENT, MEDIA_IMAGE, NOTE, NOMX, PROSE,
-    SURFACE, TABLE,
-};
-pub use nomx::{NomxLang, NomxProps};
-pub use prose::{ProseKind, ProseProps, TextAlign};
+pub use block_model::{BlockId, BlockModel, BlockMeta, NomtuRef};
+pub use slot::{SlotValue, SlotBinding};
+pub use shared_types::{DeepThinkStep, DeepThinkEvent, CompositionPlan, PlanStep, RunEvent};
+pub use dict_reader::{ClauseShape, DictReader};
+pub use stub_dict::StubDictReader;
+pub use graph_node::{GraphNode, NodeId};
+pub use connector::{Connector, ConnectorId};
+pub use workspace::{Workspace, CanvasObject};

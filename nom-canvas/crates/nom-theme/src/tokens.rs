@@ -1,291 +1,205 @@
-//! Design tokens extracted from the AFFiNE / blocksuite design system.
-//!
-//! All color tokens are HSLA tuples `(hue, saturation, lightness, alpha)`
-//! where all values are normalised to `[0.0, 1.0]`. Hue = degrees / 360.
-//!
-//! Light-mode values are the defaults. `mode.rs` provides the mode-aware
-//! `Theme` type that swaps to dark-mode variants.
-//!
-//! Naming rules: SCREAMING_SNAKE_CASE, Nom-native identifiers only.
+#![deny(unsafe_code)]
+use nom_gpui::Hsla;
 
-// ─── Primary / brand family ──────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Spacing scale (4px base grid)
+// ---------------------------------------------------------------------------
 
-/// Core brand hue — mid-blue used for interactive elements and selection.
-pub const PRIMARY_BRAND: (f32, f32, f32, f32) = (0.597, 0.832, 0.582, 1.0);
-/// Slightly lighter brand variant used for hover-state fills.
-pub const PRIMARY_BRAND_LIGHT: (f32, f32, f32, f32) = (0.597, 0.832, 0.650, 1.0);
-/// Secondary emphasis — violet / indigo for secondary actions.
-pub const SECONDARY_BRAND: (f32, f32, f32, f32) = (0.700, 0.700, 0.580, 1.0);
-/// Tertiary muted hue for supporting chrome.
-pub const TERTIARY_BRAND: (f32, f32, f32, f32) = (0.583, 0.400, 0.700, 1.0);
-/// Quaternary neutral-blue for decorative regions.
-pub const QUATERNARY_BRAND: (f32, f32, f32, f32) = (0.583, 0.200, 0.850, 1.0);
-
-// ─── Text tones ──────────────────────────────────────────────────────────────
-
-/// Primary text — near-black, highest contrast.
-pub const TEXT_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.102, 1.0);
-/// Secondary text — medium-dark, used for labels and metadata.
-pub const TEXT_SECONDARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.400, 1.0);
-/// Tertiary / placeholder text — lighter weight hints.
-pub const TEXT_TERTIARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.600, 1.0);
-/// Disabled text — barely-legible intentionally.
-pub const TEXT_DISABLED: (f32, f32, f32, f32) = (0.0, 0.0, 0.749, 1.0);
-/// Emphasis / highlight text colour used on selected items.
-pub const TEXT_EMPHASIS: (f32, f32, f32, f32) = (0.597, 0.832, 0.420, 1.0);
-
-// ─── Surface / background levels ─────────────────────────────────────────────
-
-/// Page background — pure white in light mode.
-pub const SURFACE_BACKGROUND: (f32, f32, f32, f32) = (0.0, 0.0, 1.0, 1.0);
-/// Primary panel background (sidebar, toolbars).
-pub const SURFACE_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.980, 1.0);
-/// Secondary card / container surface.
-pub const SURFACE_SECONDARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.961, 1.0);
-/// Tertiary inset surface (code blocks, quoted regions).
-pub const SURFACE_TERTIARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.941, 1.0);
-/// Modal / overlay backdrop surface.
-pub const SURFACE_MODAL: (f32, f32, f32, f32) = (0.0, 0.0, 1.0, 0.90);
-/// Floating panel (popovers, tooltips, context menus).
-pub const SURFACE_OVERLAY: (f32, f32, f32, f32) = (0.0, 0.0, 1.0, 0.95);
-/// Processing / loading state tint.
-pub const SURFACE_PROCESSING: (f32, f32, f32, f32) = (0.583, 0.700, 0.960, 1.0);
-/// Code-block background — slightly warm grey.
-pub const SURFACE_CODE_BLOCK: (f32, f32, f32, f32) = (0.0, 0.0, 0.949, 1.0);
-
-// ─── Border levels ────────────────────────────────────────────────────────────
-
-/// Primary divider / hairline border.
-pub const BORDER_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.878, 1.0);
-/// Secondary lighter separation line.
-pub const BORDER_SECONDARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.918, 1.0);
-/// Hover-state border brightening.
-pub const BORDER_HOVER: (f32, f32, f32, f32) = (0.597, 0.600, 0.800, 1.0);
-/// Focus ring border for accessibility.
-pub const BORDER_FOCUS: (f32, f32, f32, f32) = (0.597, 0.832, 0.582, 1.0);
-/// Divider between logical sections (same as border primary, kept distinct for semantics).
-pub const BORDER_DIVIDER: (f32, f32, f32, f32) = (0.0, 0.0, 0.898, 1.0);
-
-// ─── Semantic colours ────────────────────────────────────────────────────────
-
-/// Positive / success green.
-pub const SEMANTIC_SUCCESS: (f32, f32, f32, f32) = (0.361, 0.690, 0.502, 1.0);
-/// Warning amber.
-pub const SEMANTIC_WARNING: (f32, f32, f32, f32) = (0.097, 0.850, 0.600, 1.0);
-/// Error / destructive red.
-pub const SEMANTIC_ERROR: (f32, f32, f32, f32) = (0.0, 0.832, 0.582, 1.0);
-/// Informational blue.
-pub const SEMANTIC_INFO: (f32, f32, f32, f32) = (0.597, 0.700, 0.600, 1.0);
-/// Positive sentiment / upvote tint.
-pub const SEMANTIC_POSITIVE: (f32, f32, f32, f32) = (0.361, 0.600, 0.600, 1.0);
-/// Negative sentiment / downvote tint.
-pub const SEMANTIC_NEGATIVE: (f32, f32, f32, f32) = (0.0, 0.700, 0.600, 1.0);
-
-// ─── Semantic surface backgrounds ────────────────────────────────────────────
-
-/// Success-state background tint.
-pub const SURFACE_SUCCESS: (f32, f32, f32, f32) = (0.361, 0.600, 0.941, 1.0);
-/// Warning-state background tint.
-pub const SURFACE_WARNING: (f32, f32, f32, f32) = (0.097, 0.850, 0.961, 1.0);
-/// Error-state background tint.
-pub const SURFACE_ERROR: (f32, f32, f32, f32) = (0.0, 0.832, 0.961, 1.0);
-/// Info-state background tint.
-pub const SURFACE_INFO_BG: (f32, f32, f32, f32) = (0.597, 0.700, 0.961, 1.0);
-
-// ─── Brand accent hues ────────────────────────────────────────────────────────
-
-/// Tag: vivid blue accent.
-pub const ACCENT_BLUE: (f32, f32, f32, f32) = (0.597, 0.800, 0.600, 1.0);
-/// Tag: teal / cyan accent.
-pub const ACCENT_TEAL: (f32, f32, f32, f32) = (0.500, 0.700, 0.600, 1.0);
-/// Tag: green accent.
-pub const ACCENT_GREEN: (f32, f32, f32, f32) = (0.361, 0.700, 0.580, 1.0);
-/// Tag: amber / orange accent.
-pub const ACCENT_AMBER: (f32, f32, f32, f32) = (0.083, 0.850, 0.580, 1.0);
-/// Tag: rose / red accent.
-pub const ACCENT_ROSE: (f32, f32, f32, f32) = (0.0, 0.760, 0.600, 1.0);
-/// Tag: violet / purple accent.
-pub const ACCENT_VIOLET: (f32, f32, f32, f32) = (0.736, 0.700, 0.600, 1.0);
-
-// ─── Selection tones ─────────────────────────────────────────────────────────
-
-/// Selection highlight background (text selection, node selection).
-pub const SELECTION_BG: (f32, f32, f32, f32) = (0.597, 0.832, 0.800, 0.3);
-/// Selection outline ring.
-pub const SELECTION_RING: (f32, f32, f32, f32) = (0.597, 0.832, 0.582, 1.0);
-/// Hover preview selection tint.
-pub const SELECTION_HOVER: (f32, f32, f32, f32) = (0.597, 0.600, 0.900, 0.15);
-/// Active pressed state during a drag-select.
-pub const SELECTION_ACTIVE: (f32, f32, f32, f32) = (0.597, 0.832, 0.700, 0.4);
-
-// ─── Hover / active state modifiers ─────────────────────────────────────────
-
-/// Default hover fill tint (laid over any surface).
-pub const STATE_HOVER: (f32, f32, f32, f32) = (0.0, 0.0, 0.0, 0.04);
-/// Pressed / active fill tint.
-pub const STATE_ACTIVE: (f32, f32, f32, f32) = (0.0, 0.0, 0.0, 0.08);
-/// Focused keyboard-navigation highlight.
-pub const STATE_FOCUS: (f32, f32, f32, f32) = (0.597, 0.832, 0.582, 0.2);
-/// Selected-row fill tint.
-pub const STATE_SELECTED: (f32, f32, f32, f32) = (0.597, 0.700, 0.900, 0.12);
-
-// ─── Shadow depths (HSLA approximations for box-shadow colours) ──────────────
-
-/// Level 0 — no visible shadow (transparent).
-pub const SHADOW_0: (f32, f32, f32, f32) = (0.0, 0.0, 0.0, 0.0);
-/// Level 1 — card lift shadow.
-pub const SHADOW_1: (f32, f32, f32, f32) = (0.583, 0.120, 0.420, 0.08);
-/// Level 2 — popover / dropdown shadow.
-pub const SHADOW_2: (f32, f32, f32, f32) = (0.583, 0.150, 0.380, 0.12);
-/// Level 3 — modal / dialog shadow.
-pub const SHADOW_3: (f32, f32, f32, f32) = (0.583, 0.180, 0.340, 0.18);
-/// Level 4 — tooltip above shadow.
-pub const SHADOW_4: (f32, f32, f32, f32) = (0.583, 0.200, 0.300, 0.22);
-/// Float button shadow.
-pub const SHADOW_FLOAT: (f32, f32, f32, f32) = (0.583, 0.220, 0.260, 0.28);
-
-// ─── Spacing multiples (pixels, represented as f32) ──────────────────────────
-
-/// 4 px — base spacing atom.
 pub const SPACING_1: f32 = 4.0;
-/// 8 px.
 pub const SPACING_2: f32 = 8.0;
-/// 12 px.
 pub const SPACING_3: f32 = 12.0;
-/// 16 px.
 pub const SPACING_4: f32 = 16.0;
-/// 20 px.
-pub const SPACING_5: f32 = 20.0;
-/// 24 px.
 pub const SPACING_6: f32 = 24.0;
-/// 32 px.
 pub const SPACING_8: f32 = 32.0;
-/// 48 px.
 pub const SPACING_12: f32 = 48.0;
 
-// ─── Font sizes (pixels, f32) ─────────────────────────────────────────────────
+// ---------------------------------------------------------------------------
+// Radius scale
+// ---------------------------------------------------------------------------
 
-/// xs — 12 px.
-pub const FONT_SIZE_XS: f32 = 12.0;
-/// sm — 14 px.
-pub const FONT_SIZE_SM: f32 = 14.0;
-/// base — 15 px (AFFiNE default body size).
-pub const FONT_SIZE_BASE: f32 = 15.0;
-/// lg — 18 px.
-pub const FONT_SIZE_LG: f32 = 18.0;
-/// xl — 24 px (section headings).
-pub const FONT_SIZE_XL: f32 = 24.0;
-
-// ─── Font weights (CSS numeric, stored as f32) ───────────────────────────────
-
-/// Light weight — 300.
-pub const FONT_WEIGHT_LIGHT: f32 = 300.0;
-/// Regular body weight — 400.
-pub const FONT_WEIGHT_REGULAR: f32 = 400.0;
-/// Medium / label weight — 500.
-pub const FONT_WEIGHT_MEDIUM: f32 = 500.0;
-/// Bold / heading weight — 600.
-pub const FONT_WEIGHT_BOLD: f32 = 600.0;
-
-// ─── Corner radii (pixels, f32) ───────────────────────────────────────────────
-
-/// Extra-small radius — 2 px (hairline chips).
-pub const RADIUS_XS: f32 = 2.0;
-/// Small radius — 4 px (buttons, inputs).
+pub const RADIUS_NONE: f32 = 0.0;
 pub const RADIUS_SM: f32 = 4.0;
-/// Medium radius — 8 px (cards, panels).
 pub const RADIUS_MD: f32 = 8.0;
-/// Large radius — 16 px (modals, dialogs).
-pub const RADIUS_LG: f32 = 16.0;
+pub const RADIUS_LG: f32 = 12.0;
+pub const RADIUS_XL: f32 = 16.0;
+pub const RADIUS_FULL: f32 = 9999.0;
 
-// ─── Dark-mode overrides ─────────────────────────────────────────────────────
-// Provide dark equivalents for the most frequently mode-switched tokens.
-// The `mode.rs` layer uses these to populate `ThemeTokens`.
+// ---------------------------------------------------------------------------
+// Typography (size in px)
+// ---------------------------------------------------------------------------
 
-/// Dark mode — primary text (near-white).
-pub const DARK_TEXT_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.898, 1.0);
-/// Dark mode — secondary text.
-pub const DARK_TEXT_SECONDARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.600, 1.0);
-/// Dark mode — page background.
-pub const DARK_SURFACE_BACKGROUND: (f32, f32, f32, f32) = (0.0, 0.0, 0.110, 1.0);
-/// Dark mode — primary panel background.
-pub const DARK_SURFACE_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.137, 1.0);
-/// Dark mode — secondary surface.
-pub const DARK_SURFACE_SECONDARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.157, 1.0);
-/// Dark mode — primary border.
-pub const DARK_BORDER_PRIMARY: (f32, f32, f32, f32) = (0.0, 0.0, 0.220, 1.0);
-/// Dark mode — brand primary (unchanged hue, slightly brighter).
-pub const DARK_PRIMARY_BRAND: (f32, f32, f32, f32) = (0.597, 0.832, 0.620, 1.0);
+pub const FONT_SIZE_CAPTION: f32 = 12.0;
+pub const FONT_SIZE_BODY: f32 = 14.0;
+pub const FONT_SIZE_H3: f32 = 18.0;
+pub const FONT_SIZE_H2: f32 = 20.0;
+pub const FONT_SIZE_H1: f32 = 24.0;
+pub const FONT_SIZE_CODE: f32 = 13.0;
+pub const LINE_HEIGHT_CAPTION: f32 = 1.4;
+pub const LINE_HEIGHT_BODY: f32 = 1.5;
+pub const LINE_HEIGHT_HEADING: f32 = 1.2;
+pub const LINE_HEIGHT_CODE: f32 = 1.6;
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+// ---------------------------------------------------------------------------
+// Frosted glass
+// ---------------------------------------------------------------------------
 
-    #[test]
-    fn spacing_values_are_multiples_of_four() {
-        let spacings = [
-            SPACING_1, SPACING_2, SPACING_3, SPACING_4, SPACING_5, SPACING_6, SPACING_8,
-            SPACING_12,
-        ];
-        for s in spacings {
-            assert_eq!(s % 4.0, 0.0, "spacing {s} is not a multiple of 4");
-        }
-    }
+pub const FROSTED_BLUR_RADIUS: f32 = 12.0;
+pub const FROSTED_BG_ALPHA: f32 = 0.85;
+pub const FROSTED_BORDER_ALPHA: f32 = 0.12;
 
-    #[test]
-    fn corner_radii_are_in_ascending_order() {
-        assert!(RADIUS_XS < RADIUS_SM);
-        assert!(RADIUS_SM < RADIUS_MD);
-        assert!(RADIUS_MD < RADIUS_LG);
-    }
+// ---------------------------------------------------------------------------
+// Motion tokens (AFFiNE spring motion)
+// ---------------------------------------------------------------------------
 
-    #[test]
-    fn font_weights_are_in_ascending_order() {
-        assert!(FONT_WEIGHT_LIGHT < FONT_WEIGHT_REGULAR);
-        assert!(FONT_WEIGHT_REGULAR < FONT_WEIGHT_MEDIUM);
-        assert!(FONT_WEIGHT_MEDIUM < FONT_WEIGHT_BOLD);
-    }
+pub const MOTION_SPRING_STIFFNESS: f32 = 400.0;
+pub const MOTION_SPRING_DAMPING: f32 = 28.0;
+pub const MOTION_HOVER_DURATION_MS: u64 = 120;
+pub const MOTION_PANEL_RESIZE_DURATION_MS: u64 = 200;
 
-    #[test]
-    fn font_sizes_are_in_ascending_order() {
-        assert!(FONT_SIZE_XS < FONT_SIZE_SM);
-        assert!(FONT_SIZE_SM < FONT_SIZE_BASE);
-        assert!(FONT_SIZE_BASE < FONT_SIZE_LG);
-        assert!(FONT_SIZE_LG < FONT_SIZE_XL);
-    }
+// ---------------------------------------------------------------------------
+// Panel sizes
+// ---------------------------------------------------------------------------
 
-    #[test]
-    fn color_tokens_alpha_in_range() {
-        let tokens: &[(f32, f32, f32, f32)] = &[
-            PRIMARY_BRAND,
-            TEXT_PRIMARY,
-            TEXT_DISABLED,
-            SURFACE_BACKGROUND,
-            BORDER_PRIMARY,
-            SEMANTIC_SUCCESS,
-            SEMANTIC_ERROR,
-            ACCENT_BLUE,
-            SELECTION_BG,
-            STATE_HOVER,
-            SHADOW_1,
-        ];
-        for &(h, s, l, a) in tokens {
-            assert!((0.0..=1.0).contains(&h), "hue {h} out of range");
-            assert!((0.0..=1.0).contains(&s), "saturation {s} out of range");
-            assert!((0.0..=1.0).contains(&l), "lightness {l} out of range");
-            assert!((0.0..=1.0).contains(&a), "alpha {a} out of range");
-        }
-    }
+pub const PANEL_LEFT_WIDTH: f32 = 248.0;
+pub const PANEL_RIGHT_WIDTH: f32 = 320.0;
+pub const PANEL_BOTTOM_HEIGHT: f32 = 200.0;
+pub const PANEL_MIN_WIDTH: f32 = 160.0;
+pub const PANEL_MAX_WIDTH: f32 = 480.0;
 
-    #[test]
-    fn dark_background_darker_than_light() {
-        // Dark surface background lightness < light surface background lightness
-        assert!(DARK_SURFACE_BACKGROUND.2 < SURFACE_BACKGROUND.2);
-        assert!(DARK_SURFACE_PRIMARY.2 < SURFACE_PRIMARY.2);
-    }
+// ---------------------------------------------------------------------------
+// Shadow tokens
+// ---------------------------------------------------------------------------
 
-    #[test]
-    fn selection_bg_is_semi_transparent() {
-        assert!(SELECTION_BG.3 < 1.0, "selection background should be semi-transparent");
+pub struct ShadowToken {
+    pub offset_x: f32,
+    pub offset_y: f32,
+    pub blur: f32,
+    pub spread: f32,
+    pub color: fn() -> Hsla,
+}
+
+pub const SHADOW_SM: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 1.0,
+    blur: 2.0,
+    spread: 0.0,
+    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.15 },
+};
+
+pub const SHADOW_MD: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 4.0,
+    blur: 8.0,
+    spread: 0.0,
+    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.20 },
+};
+
+pub const SHADOW_LG: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 8.0,
+    blur: 24.0,
+    spread: 0.0,
+    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.25 },
+};
+
+pub const SHADOW_XL: ShadowToken = ShadowToken {
+    offset_x: 0.0,
+    offset_y: 16.0,
+    blur: 48.0,
+    spread: 0.0,
+    color: || Hsla { h: 0.0, s: 0.0, l: 0.0, a: 0.30 },
+};
+
+// ---------------------------------------------------------------------------
+// Dark theme colors (AFFiNE dark palette) — runtime color functions
+// ---------------------------------------------------------------------------
+
+/// Primary background: hsl(220°, 13%, 11%)
+pub fn color_bg_primary() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.13, 0.11, 1.0)
+}
+
+/// Secondary background: hsl(220°, 11%, 14%)
+pub fn color_bg_secondary() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.11, 0.14, 1.0)
+}
+
+/// Tertiary background: hsl(220°, 10%, 17%)
+pub fn color_bg_tertiary() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.10, 0.17, 1.0)
+}
+
+/// Primary text: near-white
+pub fn color_text_primary() -> Hsla {
+    Hsla::new(0.0, 0.0, 0.98, 1.0)
+}
+
+/// Secondary text: hsl(220°, 9%, 65%)
+pub fn color_text_secondary() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.09, 0.65, 1.0)
+}
+
+/// Tertiary / muted text: hsl(220°, 7%, 45%)
+pub fn color_text_tertiary() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.07, 0.45, 1.0)
+}
+
+/// Subtle border: hsl(220°, 13%, 22%)
+pub fn color_border_subtle() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.13, 0.22, 1.0)
+}
+
+/// Normal border: hsl(220°, 11%, 30%)
+pub fn color_border_normal() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.11, 0.30, 1.0)
+}
+
+/// Accent blue (~#1E90FF): hsl(211°, 100%, 60%)
+pub fn color_accent_blue() -> Hsla {
+    Hsla::new(211.0 / 360.0, 1.0, 0.60, 1.0)
+}
+
+/// Accent purple (nomtu references): hsl(270°, 91%, 70%)
+pub fn color_accent_purple() -> Hsla {
+    Hsla::new(270.0 / 360.0, 0.91, 0.70, 1.0)
+}
+
+/// Accent green (literals, #22C55E): hsl(145°, 63%, 49%)
+pub fn color_accent_green() -> Hsla {
+    Hsla::new(145.0 / 360.0, 0.63, 0.49, 1.0)
+}
+
+/// Surface overlay (panel backgrounds): hsl(220°, 14%, 8%, 85%)
+pub fn color_surface_overlay() -> Hsla {
+    Hsla::new(220.0 / 360.0, 0.14, 0.08, 0.85)
+}
+
+// ---------------------------------------------------------------------------
+// Graph edge confidence colors (exact from spec)
+// ---------------------------------------------------------------------------
+
+/// High confidence >= 0.8: #22C55E — hsl(142.1°, 70.6%, 45.3%)
+pub fn edge_color_high_confidence() -> Hsla {
+    Hsla::new(142.1 / 360.0, 0.706, 0.453, 1.0)
+}
+
+/// Medium confidence 0.5–0.8: #F59E0B — hsl(37.7°, 92.1%, 50.2%)
+pub fn edge_color_medium_confidence() -> Hsla {
+    Hsla::new(37.7 / 360.0, 0.921, 0.502, 1.0)
+}
+
+/// Low confidence < 0.5: #EF4444 — hsl(0°, 84.2%, 60.2%)
+pub fn edge_color_low_confidence() -> Hsla {
+    Hsla::new(0.0, 0.842, 0.602, 1.0)
+}
+
+/// Select the correct edge color for a given confidence score.
+pub fn edge_color_for_confidence(confidence: f32) -> Hsla {
+    if confidence >= 0.8 {
+        edge_color_high_confidence()
+    } else if confidence >= 0.5 {
+        edge_color_medium_confidence()
+    } else {
+        edge_color_low_confidence()
     }
 }

@@ -1,107 +1,97 @@
-//! Keyboard and IME input dispatch.
-//!
-//! `translate` converts a `KeyEvent` into an `EditorCommand`. IME composition
-//! state (pre-edit strings) is tracked as a TODO for a later winit integration
-//! pass; the types are already stubbed here so callers can handle that path.
-
 #![deny(unsafe_code)]
+use std::collections::HashMap;
 
-/// Logical key identity, independent of physical layout.
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum Key {
-    Char(char),
-    Backspace,
-    Delete,
-    Return,
-    Tab,
-    Escape,
-    ArrowLeft,
-    ArrowRight,
-    ArrowUp,
-    ArrowDown,
-    Home,
-    End,
-    PageUp,
-    PageDown,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum KeyCode {
+    Char(char), Enter, Escape, Backspace, Delete,
+    ArrowLeft, ArrowRight, ArrowUp, ArrowDown,
+    Home, End, PageUp, PageDown, Tab,
+    F1, F2, F3, F4, F5, F6, F7, F8, F9, F10, F11, F12,
 }
 
-/// Active modifier keys at the moment of the event.
-///
-/// Design note: each modifier is an independent `bool` field rather than a
-/// bitfield so that pattern matching is exhaustive and field names remain
-/// readable. The overhead is negligible at four bytes per event.
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
-pub struct Modifiers {
-    pub shift: bool,
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub struct KeyBinding {
+    pub key: KeyCode,
     pub ctrl: bool,
     pub alt: bool,
-    /// Cmd on macOS, Win key on Windows.
+    pub shift: bool,
     pub meta: bool,
 }
 
-/// A complete keyboard event: the logical key plus any held modifiers.
-#[derive(Clone, Debug)]
-pub struct KeyEvent {
-    pub key: Key,
-    pub mods: Modifiers,
+impl KeyBinding {
+    pub fn key(key: KeyCode) -> Self { Self { key, ctrl: false, alt: false, shift: false, meta: false } }
+    pub fn ctrl(key: KeyCode) -> Self { Self { key, ctrl: true, alt: false, shift: false, meta: false } }
+    pub fn ctrl_shift(key: KeyCode) -> Self { Self { key, ctrl: true, alt: false, shift: true, meta: false } }
 }
 
-/// High-level editor operations derived from raw key events.
-///
-/// Variants are intentionally granular — each maps to exactly one logical
-/// editing intent — so that the buffer layer does not need to re-interpret
-/// modifier state.
-#[derive(Clone, Debug)]
-pub enum EditorCommand {
+#[derive(Clone, Debug, PartialEq, Eq, Hash)]
+pub enum KeyAction {
     InsertChar(char),
-    InsertString(String),
-    Backspace,
-    Delete,
-    NewLine,
-    Tab,
-    MoveLeft,
-    MoveRight,
-    MoveUp,
-    MoveDown,
-    MoveLineStart,
-    MoveLineEnd,
-    SelectLeft,
-    SelectRight,
-    SelectUp,
-    SelectDown,
-    SelectLineStart,
-    SelectLineEnd,
-    /// Key combination that has no bound action in the current context.
-    Noop,
+    DeleteBackward, DeleteForward,
+    MoveLeft, MoveRight, MoveUp, MoveDown,
+    MoveWordLeft, MoveWordRight,
+    MoveToLineStart, MoveToLineEnd,
+    SelectLeft, SelectRight, SelectAll,
+    SelectWordLeft, SelectWordRight,
+    Undo, Redo,
+    DuplicateCursor,
+    ToggleComment,
+    Newline,
+    Indent, Dedent,
+    Copy, Cut, Paste,
+    TriggerCompletion,
+    Escape,
 }
 
-/// Translate a raw `KeyEvent` into an `EditorCommand`.
-///
-/// Modifier-sensitive bindings (shift + arrow = select) are resolved here so
-/// callers receive a fully-resolved intent without inspecting `Modifiers`.
-pub fn translate(ev: &KeyEvent) -> EditorCommand {
-    match ev.key {
-        Key::Char(c) => EditorCommand::InsertChar(c),
-        Key::Backspace => EditorCommand::Backspace,
-        Key::Delete    => EditorCommand::Delete,
-        Key::Return    => EditorCommand::NewLine,
-        Key::Tab       => EditorCommand::Tab,
+pub struct ActionRegistry {
+    bindings: HashMap<KeyBinding, KeyAction>,
+}
 
-        Key::ArrowLeft  if ev.mods.shift => EditorCommand::SelectLeft,
-        Key::ArrowLeft                   => EditorCommand::MoveLeft,
-        Key::ArrowRight if ev.mods.shift => EditorCommand::SelectRight,
-        Key::ArrowRight                  => EditorCommand::MoveRight,
-        Key::ArrowUp    if ev.mods.shift => EditorCommand::SelectUp,
-        Key::ArrowUp                     => EditorCommand::MoveUp,
-        Key::ArrowDown  if ev.mods.shift => EditorCommand::SelectDown,
-        Key::ArrowDown                   => EditorCommand::MoveDown,
+impl ActionRegistry {
+    pub fn default_bindings() -> Self {
+        let mut bindings = HashMap::new();
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('z')), KeyAction::Undo);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('y')), KeyAction::Redo);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('d')), KeyAction::DuplicateCursor);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('/')), KeyAction::ToggleComment);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('c')), KeyAction::Copy);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('x')), KeyAction::Cut);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('v')), KeyAction::Paste);
+        bindings.insert(KeyBinding::ctrl(KeyCode::Char('a')), KeyAction::SelectAll);
+        bindings.insert(KeyBinding::key(KeyCode::Backspace), KeyAction::DeleteBackward);
+        bindings.insert(KeyBinding::key(KeyCode::Delete), KeyAction::DeleteForward);
+        bindings.insert(KeyBinding::key(KeyCode::ArrowLeft), KeyAction::MoveLeft);
+        bindings.insert(KeyBinding::key(KeyCode::ArrowRight), KeyAction::MoveRight);
+        bindings.insert(KeyBinding::key(KeyCode::ArrowUp), KeyAction::MoveUp);
+        bindings.insert(KeyBinding::key(KeyCode::ArrowDown), KeyAction::MoveDown);
+        bindings.insert(KeyBinding::key(KeyCode::Home), KeyAction::MoveToLineStart);
+        bindings.insert(KeyBinding::key(KeyCode::End), KeyAction::MoveToLineEnd);
+        bindings.insert(KeyBinding::key(KeyCode::Enter), KeyAction::Newline);
+        bindings.insert(KeyBinding::key(KeyCode::Tab), KeyAction::Indent);
+        bindings.insert(KeyBinding::key(KeyCode::Escape), KeyAction::Escape);
+        bindings.insert(KeyBinding { key: KeyCode::Char(' '), ctrl: true, alt: false, shift: false, meta: false }, KeyAction::TriggerCompletion);
+        Self { bindings }
+    }
 
-        Key::Home if ev.mods.shift => EditorCommand::SelectLineStart,
-        Key::Home                  => EditorCommand::MoveLineStart,
-        Key::End  if ev.mods.shift => EditorCommand::SelectLineEnd,
-        Key::End                   => EditorCommand::MoveLineEnd,
+    pub fn resolve(&self, binding: &KeyBinding) -> Option<&KeyAction> {
+        self.bindings.get(binding)
+    }
+}
 
-        _ => EditorCommand::Noop,
+/// IME composition state
+#[derive(Clone, Debug, Default)]
+pub struct ImeState {
+    pub composing: bool,
+    pub composition_text: String,
+    pub cursor_in_composition: usize,
+}
+
+impl ImeState {
+    pub fn start(&mut self) { self.composing = true; self.composition_text.clear(); }
+    pub fn update(&mut self, text: impl Into<String>) { self.composition_text = text.into(); }
+    pub fn commit(&mut self) -> String {
+        self.composing = false;
+        std::mem::take(&mut self.composition_text)
     }
 }
 
@@ -109,84 +99,21 @@ pub fn translate(ev: &KeyEvent) -> EditorCommand {
 mod tests {
     use super::*;
 
-    fn ev(key: Key) -> KeyEvent {
-        KeyEvent { key, mods: Modifiers::default() }
-    }
-
-    fn ev_shift(key: Key) -> KeyEvent {
-        KeyEvent { key, mods: Modifiers { shift: true, ..Modifiers::default() } }
+    #[test]
+    fn action_registry_undo_redo() {
+        let reg = ActionRegistry::default_bindings();
+        assert_eq!(reg.resolve(&KeyBinding::ctrl(KeyCode::Char('z'))), Some(&KeyAction::Undo));
+        assert_eq!(reg.resolve(&KeyBinding::ctrl(KeyCode::Char('y'))), Some(&KeyAction::Redo));
     }
 
     #[test]
-    fn char_becomes_insert_char() {
-        assert!(matches!(translate(&ev(Key::Char('a'))), EditorCommand::InsertChar('a')));
-    }
-
-    #[test]
-    fn backspace_and_delete() {
-        assert!(matches!(translate(&ev(Key::Backspace)), EditorCommand::Backspace));
-        assert!(matches!(translate(&ev(Key::Delete)),    EditorCommand::Delete));
-    }
-
-    #[test]
-    fn return_becomes_new_line() {
-        assert!(matches!(translate(&ev(Key::Return)), EditorCommand::NewLine));
-    }
-
-    #[test]
-    fn tab_becomes_tab() {
-        assert!(matches!(translate(&ev(Key::Tab)), EditorCommand::Tab));
-    }
-
-    #[test]
-    fn shift_arrow_left_is_select_left() {
-        assert!(matches!(translate(&ev_shift(Key::ArrowLeft)), EditorCommand::SelectLeft));
-    }
-
-    #[test]
-    fn unshift_arrow_left_is_move_left() {
-        assert!(matches!(translate(&ev(Key::ArrowLeft)), EditorCommand::MoveLeft));
-    }
-
-    #[test]
-    fn shift_arrow_right_is_select_right() {
-        assert!(matches!(translate(&ev_shift(Key::ArrowRight)), EditorCommand::SelectRight));
-    }
-
-    #[test]
-    fn shift_home_is_select_line_start() {
-        assert!(matches!(translate(&ev_shift(Key::Home)), EditorCommand::SelectLineStart));
-    }
-
-    #[test]
-    fn home_is_move_line_start() {
-        assert!(matches!(translate(&ev(Key::Home)), EditorCommand::MoveLineStart));
-    }
-
-    #[test]
-    fn shift_end_is_select_line_end() {
-        assert!(matches!(translate(&ev_shift(Key::End)), EditorCommand::SelectLineEnd));
-    }
-
-    #[test]
-    fn end_is_move_line_end() {
-        assert!(matches!(translate(&ev(Key::End)), EditorCommand::MoveLineEnd));
-    }
-
-    #[test]
-    fn escape_is_noop() {
-        assert!(matches!(translate(&ev(Key::Escape)), EditorCommand::Noop));
-    }
-
-    #[test]
-    fn page_up_down_are_noop() {
-        assert!(matches!(translate(&ev(Key::PageUp)),   EditorCommand::Noop));
-        assert!(matches!(translate(&ev(Key::PageDown)), EditorCommand::Noop));
-    }
-
-    #[test]
-    fn modifiers_default_is_all_false() {
-        let m = Modifiers::default();
-        assert!(!m.shift && !m.ctrl && !m.alt && !m.meta);
+    fn ime_state_lifecycle() {
+        let mut ime = ImeState::default();
+        ime.start();
+        assert!(ime.composing);
+        ime.update("にほ");
+        let text = ime.commit();
+        assert_eq!(text, "にほ");
+        assert!(!ime.composing);
     }
 }

@@ -1,20 +1,9 @@
 [package]
 name = "nom-canvas-core"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "Infinite-canvas element model + spatial index + viewport for NomCanvas"
-
-[lints]
-workspace = true
+edition = "2021"
 
 [dependencies]
+rstar = { workspace = true }
+bytemuck = { workspace = true }
 nom-gpui = { path = "../nom-gpui" }
-thiserror.workspace = true
-smallvec.workspace = true
-parking_lot.workspace = true
-
-[dev-dependencies]
-anyhow.workspace = true

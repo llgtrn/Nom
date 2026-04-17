@@ -1,209 +1,281 @@
-//! Element selection state.
-//!
-//! Tracks which elements are currently selected, the hovered element, and
-//! any in-progress marquee drag.  Locked and soft-deleted elements are
-//! silently skipped during selection so callers never need to guard.
+use std::collections::BTreeSet;
 
-#![deny(unsafe_code)]
+use crate::elements::ElementBounds;
 
-use std::collections::HashSet;
+// ─── Selection ──────────────────────────────────────────────────────────────
 
-use crate::element::{Element, ElementId};
-
-// ── Selection ─────────────────────────────────────────────────────────────────
-
-/// Active selection state for the canvas.
-#[derive(Debug, Default)]
+/// Tracks which canvas elements are currently selected together with their
+/// shared transform origin.
 pub struct Selection {
-    /// IDs of currently selected elements (in stable iteration order via HashSet).
-    pub selected_ids: HashSet<ElementId>,
-    /// The element the pointer is currently hovering over, if any.
-    pub hovered: Option<ElementId>,
-    /// A marquee drag in progress, if any.
-    pub pending: Option<crate::marquee::Marquee>,
+    /// IDs of the selected elements (ordered for deterministic iteration).
+    pub ids: BTreeSet<u64>,
+    /// The anchor point used when scaling or rotating the selection.
+    pub transform_origin: [f32; 2],
 }
 
 impl Selection {
-    /// Create an empty selection.
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Add `id` to the selection unconditionally.
-    ///
-    /// Callers that want to respect element flags (locked / deleted) should use
-    /// [`Self::select_respecting_flags`] instead.
-    pub fn select(&mut self, id: ElementId) {
-        self.selected_ids.insert(id);
-    }
-
-    /// Add every id from `ids` to the selection unconditionally.
-    pub fn select_many(&mut self, ids: impl IntoIterator<Item = ElementId>) {
-        self.selected_ids.extend(ids);
-    }
-
-    /// Remove `id` from the selection.  No-op if not selected.
-    pub fn deselect(&mut self, id: ElementId) {
-        self.selected_ids.remove(&id);
-    }
-
-    /// Remove all selected ids.
-    pub fn clear(&mut self) {
-        self.selected_ids.clear();
-    }
-
-    /// Return `true` if `id` is currently selected.
-    pub fn is_selected(&self, id: ElementId) -> bool {
-        self.selected_ids.contains(&id)
-    }
-
-    /// Number of selected elements.
-    pub fn len(&self) -> usize {
-        self.selected_ids.len()
-    }
-
-    /// Return `true` when nothing is selected.
-    pub fn is_empty(&self) -> bool {
-        self.selected_ids.is_empty()
-    }
-
-    /// Update the hovered element.  Pass `None` to clear.
-    pub fn hover(&mut self, id: Option<ElementId>) {
-        self.hovered = id;
-    }
-
-    /// Add `id` to the selection only if the element is neither locked nor
-    /// soft-deleted.  `elements` is a caller-supplied lookup function so this
-    /// module stays independent of any storage layer.
-    pub fn select_respecting_flags<'a>(
-        &mut self,
-        id: ElementId,
-        elements: impl Fn(ElementId) -> Option<&'a Element>,
-    ) {
-        if let Some(elem) = elements(id) {
-            if !elem.locked && !elem.is_deleted {
-                self.selected_ids.insert(id);
-            }
+    pub fn empty() -> Self {
+        Self {
+            ids: BTreeSet::new(),
+            transform_origin: [0.0, 0.0],
         }
+    }
+
+    pub fn single(id: u64, origin: [f32; 2]) -> Self {
+        let mut ids = BTreeSet::new();
+        ids.insert(id);
+        Self {
+            ids,
+            transform_origin: origin,
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ids.is_empty()
+    }
+
+    pub fn contains(&self, id: u64) -> bool {
+        self.ids.contains(&id)
+    }
+
+    pub fn add(&mut self, id: u64) {
+        self.ids.insert(id);
+    }
+
+    pub fn remove(&mut self, id: u64) {
+        self.ids.remove(&id);
+    }
+
+    pub fn clear(&mut self) {
+        self.ids.clear();
+        self.transform_origin = [0.0, 0.0];
+    }
+
+    pub fn len(&self) -> usize {
+        self.ids.len()
     }
 }
 
-// ── tests ─────────────────────────────────────────────────────────────────────
+// ─── Rubber-band ────────────────────────────────────────────────────────────
+
+/// Tracks an in-progress rubber-band (marquee) drag selection.
+#[derive(Debug, Clone)]
+pub struct RubberBand {
+    /// Canvas-space start point (where the drag began).
+    pub start: [f32; 2],
+    /// Canvas-space current end point (updates with mouse move).
+    pub end: [f32; 2],
+}
+
+impl RubberBand {
+    pub fn new(start: [f32; 2]) -> Self {
+        Self { start, end: start }
+    }
+
+    pub fn update(&mut self, end: [f32; 2]) {
+        self.end = end;
+    }
+
+    /// Returns the normalised AABB of the rubber-band rectangle
+    /// as `(min, max)` such that `min.x <= max.x` and `min.y <= max.y`.
+    pub fn aabb(&self) -> ([f32; 2], [f32; 2]) {
+        (
+            [
+                self.start[0].min(self.end[0]),
+                self.start[1].min(self.end[1]),
+            ],
+            [
+                self.start[0].max(self.end[0]),
+                self.start[1].max(self.end[1]),
+            ],
+        )
+    }
+
+    /// Returns `true` if `bounds` overlaps (or touches) the rubber-band AABB.
+    pub fn intersects(&self, bounds: &ElementBounds) -> bool {
+        let (min, max) = self.aabb();
+        // Separation-axis test — not overlapping if separated along either axis.
+        !(bounds.max[0] < min[0]
+            || bounds.min[0] > max[0]
+            || bounds.max[1] < min[1]
+            || bounds.min[1] > max[1])
+    }
+}
+
+// ─── Transform handles ──────────────────────────────────────────────────────
+
+/// The 9 handles drawn around a selected element (8 resize + 1 rotate).
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum HandleKind {
+    NW,
+    N,
+    NE,
+    E,
+    SE,
+    S,
+    SW,
+    W,
+    /// Rotate handle — rendered above the centre of the selection.
+    Rotate,
+}
+
+/// A single transform handle with its canvas-space position.
+pub struct TransformHandle {
+    pub kind: HandleKind,
+    pub position: [f32; 2],
+}
+
+/// Compute the 9 standard transform handles for a bounding box.
+///
+/// `bounds` is `(origin, size)` in canvas space.  The returned positions are
+/// the top-left corners of each 8×8 handle square (half-size = 4 px).
+pub fn compute_handles(bounds: ([f32; 2], [f32; 2])) -> Vec<TransformHandle> {
+    let (origin, size) = bounds;
+    let (x, y, w, h) = (origin[0], origin[1], size[0], size[1]);
+    let hs = 4.0_f32; // half handle size
+
+    vec![
+        TransformHandle {
+            kind: HandleKind::NW,
+            position: [x - hs, y - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::N,
+            position: [x + w / 2.0 - hs, y - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::NE,
+            position: [x + w - hs, y - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::E,
+            position: [x + w - hs, y + h / 2.0 - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::SE,
+            position: [x + w - hs, y + h - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::S,
+            position: [x + w / 2.0 - hs, y + h - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::SW,
+            position: [x - hs, y + h - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::W,
+            position: [x - hs, y + h / 2.0 - hs],
+        },
+        TransformHandle {
+            kind: HandleKind::Rotate,
+            position: [x + w / 2.0 - hs, y - 30.0],
+        },
+    ]
+}
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::shapes::{Rectangle, Shape};
-    use nom_gpui::{Bounds, Pixels, Point, Size};
-
-    fn bounds_100() -> Bounds<Pixels> {
-        Bounds::new(
-            Point::new(Pixels(0.0), Pixels(0.0)),
-            Size::new(Pixels(100.0), Pixels(100.0)),
-        )
-    }
-
-    fn rect_elem(id: ElementId) -> Element {
-        Element::new(id, Shape::Rectangle(Rectangle {}), bounds_100())
-    }
-
-    // --- 1. new() yields empty selection -----------------------------------------
 
     #[test]
-    fn new_is_empty() {
-        let sel = Selection::new();
+    fn selection_empty_initially() {
+        let sel = Selection::empty();
         assert!(sel.is_empty());
         assert_eq!(sel.len(), 0);
-        assert!(sel.hovered.is_none());
-        assert!(sel.pending.is_none());
     }
 
-    // --- 2. select / deselect roundtrip ------------------------------------------
-
     #[test]
-    fn select_deselect_roundtrip() {
-        let mut sel = Selection::new();
-        sel.select(1);
-        assert!(sel.is_selected(1));
+    fn selection_single_contains_id() {
+        let sel = Selection::single(42, [10.0, 20.0]);
+        assert!(!sel.is_empty());
+        assert!(sel.contains(42));
+        assert!(!sel.contains(43));
         assert_eq!(sel.len(), 1);
-
-        sel.deselect(1);
-        assert!(!sel.is_selected(1));
-        assert!(sel.is_empty());
     }
 
-    // --- 3. select_many ----------------------------------------------------------
-
     #[test]
-    fn select_many_adds_all() {
-        let mut sel = Selection::new();
-        sel.select_many([10, 20, 30]);
+    fn selection_add_remove() {
+        let mut sel = Selection::empty();
+        sel.add(1);
+        sel.add(2);
+        sel.add(3);
         assert_eq!(sel.len(), 3);
-        assert!(sel.is_selected(10));
-        assert!(sel.is_selected(20));
-        assert!(sel.is_selected(30));
+        sel.remove(2);
+        assert_eq!(sel.len(), 2);
+        assert!(!sel.contains(2));
     }
 
-    // --- 4. clear ----------------------------------------------------------------
-
     #[test]
-    fn clear_removes_all() {
-        let mut sel = Selection::new();
-        sel.select_many([1, 2, 3]);
+    fn selection_clear_resets() {
+        let mut sel = Selection::single(7, [5.0, 5.0]);
         sel.clear();
         assert!(sel.is_empty());
+        assert!((sel.transform_origin[0]).abs() < 1e-6);
+        assert!((sel.transform_origin[1]).abs() < 1e-6);
     }
 
-    // --- 5. is_selected miss -----------------------------------------------------
-
     #[test]
-    fn is_selected_miss() {
-        let sel = Selection::new();
-        assert!(!sel.is_selected(99));
+    fn rubber_band_aabb_normalised_when_dragged_left() {
+        let mut rb = RubberBand::new([100.0, 100.0]);
+        rb.update([50.0, 60.0]); // drag up-left
+        let (min, max) = rb.aabb();
+        assert!(min[0] <= max[0], "min.x must be <= max.x");
+        assert!(min[1] <= max[1], "min.y must be <= max.y");
+        assert!((min[0] - 50.0).abs() < 1e-6);
+        assert!((min[1] - 60.0).abs() < 1e-6);
+        assert!((max[0] - 100.0).abs() < 1e-6);
+        assert!((max[1] - 100.0).abs() < 1e-6);
     }
 
-    // --- 6. select_respecting_flags skips locked element -------------------------
-
     #[test]
-    fn respecting_flags_skips_locked() {
-        let mut elem = rect_elem(42);
-        elem.locked = true;
-
-        let mut sel = Selection::new();
-        sel.select_respecting_flags(42, |_id| Some(&elem));
-        assert!(!sel.is_selected(42));
+    fn rubber_band_intersects_overlapping_element() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [100.0, 100.0],
+        };
+        let elem = ElementBounds {
+            id: 1,
+            min: [50.0, 50.0],
+            max: [150.0, 150.0],
+        };
+        assert!(rb.intersects(&elem));
     }
 
-    // --- 7. select_respecting_flags skips deleted element ------------------------
-
     #[test]
-    fn respecting_flags_skips_deleted() {
-        let mut elem = rect_elem(43);
-        elem.is_deleted = true;
-
-        let mut sel = Selection::new();
-        sel.select_respecting_flags(43, |_id| Some(&elem));
-        assert!(!sel.is_selected(43));
+    fn rubber_band_does_not_intersect_distant_element() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [40.0, 40.0],
+        };
+        let elem = ElementBounds {
+            id: 2,
+            min: [100.0, 100.0],
+            max: [200.0, 200.0],
+        };
+        assert!(!rb.intersects(&elem));
     }
 
-    // --- 8. select_respecting_flags adds normal element --------------------------
-
     #[test]
-    fn respecting_flags_adds_normal() {
-        let elem = rect_elem(44);
-        let mut sel = Selection::new();
-        sel.select_respecting_flags(44, |_id| Some(&elem));
-        assert!(sel.is_selected(44));
+    fn compute_handles_returns_nine() {
+        let handles = compute_handles(([0.0, 0.0], [100.0, 80.0]));
+        assert_eq!(handles.len(), 9);
     }
 
-    // --- 9. hover round-trip -----------------------------------------------------
+    #[test]
+    fn compute_handles_rotate_above_top_edge() {
+        let handles = compute_handles(([0.0, 0.0], [100.0, 80.0]));
+        let rotate = handles.iter().find(|h| h.kind == HandleKind::Rotate).unwrap();
+        // Rotate handle should be above y=0 (negative y)
+        assert!(rotate.position[1] < 0.0, "Rotate handle should be above top edge");
+    }
 
     #[test]
-    fn hover_roundtrip() {
-        let mut sel = Selection::new();
-        sel.hover(Some(7));
-        assert_eq!(sel.hovered, Some(7));
-        sel.hover(None);
-        assert!(sel.hovered.is_none());
+    fn compute_handles_nw_at_top_left() {
+        let handles = compute_handles(([10.0, 20.0], [60.0, 40.0]));
+        let nw = handles.iter().find(|h| h.kind == HandleKind::NW).unwrap();
+        // NW is at (x - hs, y - hs) = (10 - 4, 20 - 4) = (6, 16)
+        assert!((nw.position[0] - 6.0).abs() < 1e-6);
+        assert!((nw.position[1] - 16.0).abs() < 1e-6);
     }
 }

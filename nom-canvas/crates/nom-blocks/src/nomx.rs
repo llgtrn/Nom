@@ -1,71 +1,67 @@
-use crate::block_schema::{BlockSchema, Role};
-use crate::flavour::{NOMX, NOTE};
+#![deny(unsafe_code)]
+use serde::{Deserialize, Serialize};
+use crate::block_model::NomtuRef;
+use crate::prose::{CodeBlock, FLAVOUR_CODE};
 
-/// Which Nom dialect the source is written in.
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum NomxLang {
-    /// `.nom` source files (concept-level).
-    Nom,
-    /// `.nomx` source files (expression-level / inline).
-    Nomx,
-}
+pub const NOMX_LANGUAGE: &str = "nomx";
 
-/// Props for a code block that holds Nom/Nomx source.
-#[derive(Debug, Clone)]
-pub struct NomxProps {
+/// A .nomx code block — backed by nom-editor buffer (Wave B)
+/// Uses affine:code flavour with language="nomx"
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct NomxBlock {
+    pub entity: NomtuRef,
     pub source: String,
-    pub lang: NomxLang,
     pub wrap: bool,
-    pub caption: Option<String>,
-    pub line_numbers: bool,
+    pub show_line_numbers: bool,
 }
 
-impl Default for NomxProps {
-    fn default() -> Self {
+impl NomxBlock {
+    pub fn new(entity: NomtuRef, source: impl Into<String>) -> Self {
         Self {
-            source: String::new(),
-            lang: NomxLang::Nomx,
+            entity,
+            source: source.into(),
             wrap: false,
-            caption: None,
-            line_numbers: true,
+            show_line_numbers: true,
         }
     }
-}
 
-/// Static schema for Nom/Nomx source blocks.
-pub fn nomx_schema() -> BlockSchema {
-    BlockSchema {
-        flavour: NOMX,
-        version: 1,
-        role: Role::Content,
-        parents: &[NOTE],
-        children: &[],
+    pub fn flavour() -> &'static str {
+        FLAVOUR_CODE
+    }
+
+    pub fn language() -> &'static str {
+        NOMX_LANGUAGE
+    }
+
+    pub fn to_code_block(&self) -> CodeBlock {
+        CodeBlock {
+            entity: self.entity.clone(),
+            language: NOMX_LANGUAGE.into(),
+            text: vec![crate::prose::DeltaOp::Insert {
+                text: self.source.clone(),
+                attrs: Default::default(),
+            }],
+            wrap: self.wrap,
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::block_schema::{validate_child, validate_parent};
-    use crate::flavour::NOTE;
 
     #[test]
-    fn schema_defaults_sensibly() {
-        let s = nomx_schema();
-        assert_eq!(s.flavour, NOMX);
-        assert_eq!(s.version, 1);
-        assert_eq!(s.role, Role::Content);
-        assert!(validate_parent(&s, NOTE).is_ok());
-        assert!(validate_child(&s, NOTE).is_err());
+    fn nomx_block_flavour() {
+        assert_eq!(NomxBlock::flavour(), "affine:code");
+        assert_eq!(NomxBlock::language(), "nomx");
     }
 
     #[test]
-    fn source_persists() {
-        let mut props = NomxProps::default();
-        props.source = "define add that x + y".to_string();
-        props.lang = NomxLang::Nom;
-        assert_eq!(props.source, "define add that x + y");
-        assert_eq!(props.lang, NomxLang::Nom);
-        assert!(props.caption.is_none());
+    fn nomx_converts_to_code_block() {
+        let entity = NomtuRef::new("id", "summarize", "verb");
+        let block = NomxBlock::new(entity, "define x that is 42");
+        let code = block.to_code_block();
+        assert_eq!(code.language, "nomx");
+        assert!(!code.text.is_empty());
     }
 }

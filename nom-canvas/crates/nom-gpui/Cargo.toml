@@ -1,41 +1,13 @@
 [package]
 name = "nom-gpui"
 version = "0.1.0"
-edition.workspace = true
-rust-version.workspace = true
-license.workspace = true
-authors.workspace = true
-description = "GPU-native scene graph, layout, and element framework for NomCanvas"
-
-[lints]
-workspace = true
-
-[features]
-default = ["native"]
-# Desktop target: winit + wgpu with native backends (Vulkan, Metal, DX12).
-native = ["dep:winit"]
-# Browser target: wgpu with WebGPU backend. Excludes winit (uses web-sys via wasm-bindgen).
-web = []
+edition = "2021"
 
 [dependencies]
-bytemuck.workspace = true
-etagere.workspace = true
-parking_lot.workspace = true
-smallvec.workspace = true
-taffy.workspace = true
-thiserror.workspace = true
-
-# GPU substrate (batch-2)
-wgpu.workspace = true
-pollster.workspace = true
-raw-window-handle.workspace = true
-winit = { workspace = true, optional = true }
-
-# Text shaping + rasterization
-cosmic-text.workspace = true
-swash.workspace = true
-
-[dev-dependencies]
-anyhow.workspace = true
-naga = { version = "22", features = ["wgsl-in"] }
-static_assertions = "1.1"
+wgpu = { workspace = true }
+winit = { workspace = true }
+taffy = { workspace = true }
+cosmic-text = { workspace = true }
+etagere = { workspace = true }
+bytemuck = { workspace = true }
+lru = { workspace = true }

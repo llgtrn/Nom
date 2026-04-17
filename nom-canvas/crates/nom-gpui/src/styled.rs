@@ -1,184 +1,116 @@
-//! Fluent style builder trait. Any element that exposes `&mut Style` gets
-//! the full API automatically: `.flex_col().padding(8.0).bg(colors::BG)`.
+use crate::types::*;
 
-use crate::color::LinearRgba;
-use crate::geometry::{Corners, Edges, Pixels};
-use crate::style::{
-    AlignItems, Display, FlexDirection, JustifyContent, Length, Overflow, Style,
-};
+/// Style values for layout and visual rendering.
+/// Pattern: Zed StyleRefinement (macro-generated; this is the explicit version).
+#[derive(Debug, Clone, Default)]
+pub struct StyleRefinement {
+    // Layout
+    pub width: Option<f32>,
+    pub height: Option<f32>,
+    pub min_width: Option<f32>,
+    pub min_height: Option<f32>,
+    pub flex_grow: Option<f32>,
+    pub flex_shrink: Option<f32>,
+    pub padding: Option<Edges<Pixels>>,
+    pub margin: Option<Edges<Pixels>>,
+    // Visual
+    pub background: Option<Hsla>,
+    pub border_color: Option<Hsla>,
+    pub border_widths: Option<Edges<Pixels>>,
+    pub corner_radii: Option<Corners<Pixels>>,
+    pub text_color: Option<Hsla>,
+    pub opacity: Option<f32>,
+    pub overflow_hidden: Option<bool>,
+}
 
-/// Marker trait for types that own a [`Style`] value. Provides fluent setters.
-///
-/// Any UI element (see [`crate::element::Element`]) should implement this so
-/// that callers can chain CSS-like method calls.
-///
-/// All setters take `&mut self` and return `&mut Self`, so they compose
-/// correctly with `Element`'s `&mut self` lifecycle phases. Callers start a
-/// chain via a `let mut` binding:
-///
-/// ```ignore
-/// let mut b = StyledBox::default();
-/// b.flex_col().w(100.0).bg(colors::BG);
-/// ```
-pub trait Styled {
-    fn style(&mut self) -> &mut Style;
+impl StyleRefinement {
+    /// Merge `other` into `self`: only override fields that `other` has set.
+    pub fn merge(&mut self, other: &StyleRefinement) {
+        if other.width.is_some()          { self.width          = other.width; }
+        if other.height.is_some()         { self.height         = other.height; }
+        if other.min_width.is_some()      { self.min_width      = other.min_width; }
+        if other.min_height.is_some()     { self.min_height     = other.min_height; }
+        if other.flex_grow.is_some()      { self.flex_grow      = other.flex_grow; }
+        if other.flex_shrink.is_some()    { self.flex_shrink    = other.flex_shrink; }
+        if other.padding.is_some()        { self.padding        = other.padding; }
+        if other.margin.is_some()         { self.margin         = other.margin; }
+        if other.background.is_some()     { self.background     = other.background; }
+        if other.border_color.is_some()   { self.border_color   = other.border_color; }
+        if other.border_widths.is_some()  { self.border_widths  = other.border_widths; }
+        if other.corner_radii.is_some()   { self.corner_radii   = other.corner_radii; }
+        if other.text_color.is_some()     { self.text_color     = other.text_color; }
+        if other.opacity.is_some()        { self.opacity        = other.opacity; }
+        if other.overflow_hidden.is_some(){ self.overflow_hidden = other.overflow_hidden; }
+    }
+}
 
-    // ─── Display / overflow ─────────────────────────────────────────────
-    fn display(&mut self, d: Display) -> &mut Self {
-        self.style().display = d;
-        self
-    }
-    fn block(&mut self) -> &mut Self {
-        self.style().display = Display::Block;
-        self
-    }
-    fn flex(&mut self) -> &mut Self {
-        self.style().display = Display::Flex;
-        self
-    }
-    fn hidden(&mut self) -> &mut Self {
-        self.style().display = Display::None;
-        self
-    }
-    fn overflow(&mut self, o: Overflow) -> &mut Self {
-        self.style().overflow_x = o;
-        self.style().overflow_y = o;
-        self
-    }
-    fn overflow_hidden(&mut self) -> &mut Self {
-        self.overflow(Overflow::Hidden)
-    }
+/// Fluent style builder trait.
+/// Pattern: Zed Styled (APP/zed-main/crates/gpui/src/styled.rs)
+pub trait Styled: Sized {
+    fn style(&mut self) -> &mut StyleRefinement;
 
-    // ─── Flex layout ────────────────────────────────────────────────────
-    fn flex_direction(&mut self, d: FlexDirection) -> &mut Self {
-        self.style().flex_direction = d;
-        self
-    }
-    fn flex_row(&mut self) -> &mut Self {
-        self.flex_direction(FlexDirection::Row)
-    }
-    fn flex_col(&mut self) -> &mut Self {
-        self.flex_direction(FlexDirection::Column)
-    }
-    fn flex_grow(&mut self, g: f32) -> &mut Self {
-        self.style().flex_grow = g;
-        self
-    }
-    fn flex_shrink(&mut self, s: f32) -> &mut Self {
-        self.style().flex_shrink = s;
-        self
-    }
-    fn flex_1(&mut self) -> &mut Self {
-        self.flex_grow(1.0).flex_shrink(1.0)
-    }
-    fn gap(&mut self, v: f32) -> &mut Self {
-        let p = Pixels(v);
-        self.style().gap_row = p;
-        self.style().gap_col = p;
-        self
-    }
-    fn align_items(&mut self, a: AlignItems) -> &mut Self {
-        self.style().align_items = a;
-        self
-    }
-    fn items_center(&mut self) -> &mut Self {
-        self.align_items(AlignItems::Center)
-    }
-    fn justify_content(&mut self, j: JustifyContent) -> &mut Self {
-        self.style().justify_content = j;
-        self
-    }
-    fn justify_center(&mut self) -> &mut Self {
-        self.justify_content(JustifyContent::Center)
-    }
-    fn justify_between(&mut self) -> &mut Self {
-        self.justify_content(JustifyContent::SpaceBetween)
-    }
-
-    // ─── Size ───────────────────────────────────────────────────────────
-    fn w(&mut self, v: f32) -> &mut Self {
-        self.style().width = Length::Pixels(Pixels(v));
-        self
-    }
-    fn h(&mut self, v: f32) -> &mut Self {
-        self.style().height = Length::Pixels(Pixels(v));
-        self
-    }
-    fn w_full(&mut self) -> &mut Self {
-        self.style().width = Length::Percent(1.0);
-        self
-    }
-    fn h_full(&mut self) -> &mut Self {
-        self.style().height = Length::Percent(1.0);
-        self
-    }
-    fn min_w(&mut self, v: f32) -> &mut Self {
-        self.style().min_width = Length::Pixels(Pixels(v));
-        self
-    }
-    fn max_w(&mut self, v: f32) -> &mut Self {
-        self.style().max_width = Length::Pixels(Pixels(v));
+    fn bg(mut self, color: impl Into<Hsla>) -> Self {
+        self.style().background = Some(color.into());
         self
     }
 
-    // ─── Spacing ────────────────────────────────────────────────────────
-    fn padding(&mut self, v: f32) -> &mut Self {
-        self.style().padding = Edges::all(Pixels(v));
-        self
-    }
-    fn px(&mut self, v: f32) -> &mut Self {
-        self.style().padding.left = Pixels(v);
-        self.style().padding.right = Pixels(v);
-        self
-    }
-    fn py(&mut self, v: f32) -> &mut Self {
-        self.style().padding.top = Pixels(v);
-        self.style().padding.bottom = Pixels(v);
-        self
-    }
-    fn margin(&mut self, v: f32) -> &mut Self {
-        self.style().margin = Edges::all(Pixels(v));
+    fn border_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.style().border_color = Some(color.into());
         self
     }
 
-    // ─── Paint ──────────────────────────────────────────────────────────
-    fn bg(&mut self, color: LinearRgba) -> &mut Self {
-        self.style().background = Some(color);
+    fn border(mut self, width: impl Into<Pixels>) -> Self {
+        self.style().border_widths = Some(Edges::all(width.into()));
         self
     }
-    fn text_color(&mut self, color: LinearRgba) -> &mut Self {
-        self.style().text_color = Some(color);
+
+    fn rounded(mut self, radius: impl Into<Pixels>) -> Self {
+        self.style().corner_radii = Some(Corners::all(radius.into()));
         self
     }
-    fn font_size(&mut self, v: f32) -> &mut Self {
-        self.style().font_size = Some(Pixels(v));
+
+    fn p(mut self, pixels: impl Into<Pixels>) -> Self {
+        self.style().padding = Some(Edges::all(pixels.into()));
         self
     }
-    fn border(&mut self, width: f32, color: LinearRgba) -> &mut Self {
-        self.style().border_widths = Edges::all(Pixels(width));
-        self.style().border_color = Some(color);
+
+    fn m(mut self, pixels: impl Into<Pixels>) -> Self {
+        self.style().margin = Some(Edges::all(pixels.into()));
         self
     }
-    fn rounded(&mut self, radius: f32) -> &mut Self {
-        self.style().corner_radii = Corners::all(Pixels(radius));
+
+    fn text_color(mut self, color: impl Into<Hsla>) -> Self {
+        self.style().text_color = Some(color.into());
         self
     }
-    fn opacity(&mut self, v: f32) -> &mut Self {
+
+    fn opacity(mut self, v: f32) -> Self {
         self.style().opacity = Some(v.clamp(0.0, 1.0));
         self
     }
-}
 
-/// Plain owner of a Style that any test can use directly.
-#[derive(Clone, Copy, Debug, Default)]
-pub struct StyledBox {
-    pub style: Style,
-}
-
-impl Styled for StyledBox {
-    fn style(&mut self) -> &mut Style {
-        &mut self.style
+    fn overflow_hidden(mut self) -> Self {
+        self.style().overflow_hidden = Some(true);
+        self
     }
+
+    fn w(mut self, width: impl Into<f32>) -> Self {
+        self.style().width = Some(width.into());
+        self
+    }
+
+    fn h(mut self, height: impl Into<f32>) -> Self {
+        self.style().height = Some(height.into());
+        self
+    }
+
+    fn flex_grow(mut self) -> Self {
+        self.style().flex_grow = Some(1.0);
+        self
+    }
+
+    /// Shadow is emitted as a drop-shadow primitive; this is a no-op marker.
+    fn shadow(self) -> Self { self }
 }
 
 #[cfg(test)]
@@ -186,41 +118,50 @@ mod tests {
     use super::*;
 
     #[test]
-    fn chained_calls_accumulate() {
-        let mut b = StyledBox::default();
-        b.flex_col()
-            .w(100.0)
-            .h(50.0)
-            .padding(8.0)
-            .bg(LinearRgba::WHITE)
-            .rounded(4.0);
-        assert_eq!(b.style.flex_direction, FlexDirection::Column);
-        assert_eq!(b.style.width, Length::Pixels(Pixels(100.0)));
-        assert_eq!(b.style.padding.top, Pixels(8.0));
-        assert_eq!(b.style.background, Some(LinearRgba::WHITE));
-        assert_eq!(b.style.corner_radii.top_left, Pixels(4.0));
-    }
-
-    #[test]
-    fn opacity_clamps_to_unit_range() {
-        let mut b = StyledBox::default();
-        b.opacity(1.5);
-        assert_eq!(b.style.opacity, Some(1.0));
-        let mut b = StyledBox::default();
-        b.opacity(-0.2);
-        assert_eq!(b.style.opacity, Some(0.0));
-    }
-
-    #[test]
-    fn mut_ref_setters_compose_with_element_lifecycle() {
-        // Verify that setters on a &mut reference accumulate without consuming the value.
-        let mut b = StyledBox::default();
-        {
-            let r: &mut StyledBox = b.flex_row().gap(4.0).items_center();
-            let _ = r; // borrow ends here
+    fn bg_sets_background() {
+        struct S { style: StyleRefinement }
+        impl Styled for S {
+            fn style(&mut self) -> &mut StyleRefinement { &mut self.style }
         }
-        assert_eq!(b.style.flex_direction, FlexDirection::Row);
-        assert_eq!(b.style.gap_row, Pixels(4.0));
-        assert_eq!(b.style.align_items, AlignItems::Center);
+        let s = S { style: StyleRefinement::default() }
+            .bg(Hsla::new(120.0, 0.5, 0.5, 1.0));
+        assert_eq!(s.style.background, Some(Hsla::new(120.0, 0.5, 0.5, 1.0)));
+    }
+
+    #[test]
+    fn rounded_sets_corner_radii() {
+        struct S { style: StyleRefinement }
+        impl Styled for S {
+            fn style(&mut self) -> &mut StyleRefinement { &mut self.style }
+        }
+        let s = S { style: StyleRefinement::default() }.rounded(Pixels(8.0));
+        assert_eq!(s.style.corner_radii, Some(Corners::all(Pixels(8.0))));
+    }
+
+    #[test]
+    fn merge_combines_two_refinements() {
+        let mut base = StyleRefinement::default();
+        base.opacity = Some(0.8);
+
+        let mut patch = StyleRefinement::default();
+        patch.background = Some(Hsla::white());
+        patch.text_color = Some(Hsla::black());
+
+        base.merge(&patch);
+
+        assert_eq!(base.opacity, Some(0.8));
+        assert_eq!(base.background, Some(Hsla::white()));
+        assert_eq!(base.text_color, Some(Hsla::black()));
+    }
+
+    #[test]
+    fn merge_does_not_override_with_none() {
+        let mut base = StyleRefinement::default();
+        base.background = Some(Hsla::white());
+
+        let empty = StyleRefinement::default();
+        base.merge(&empty);
+
+        assert_eq!(base.background, Some(Hsla::white()));
     }
 }

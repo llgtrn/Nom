@@ -1,89 +1,65 @@
-use parking_lot::Mutex;
-use std::marker::PhantomData;
+#![deny(unsafe_code)]
+use crate::tracked::TrackedSnapshot;
 
-/// A single tracked read: which method was called and the hash of the result.
-pub struct Read {
-    pub method_name: &'static str,
-    pub hash: u64,
+/// Captures what a memoized function read and validates that those reads
+/// are still valid before returning a cached result (typst comemo pattern)
+#[derive(Clone, Debug)]
+pub struct Constraint {
+    /// All snapshots taken from Tracked<T> during computation
+    snapshots: Vec<TrackedSnapshot>,
+    /// Hash of all inputs at computation time
+    input_hash: u64,
 }
 
-/// Accumulates the set of reads made through a [`Tracked`](crate::tracked::Tracked) wrapper
-/// during one memoized computation, and can later validate that the same reads
-/// still produce the same hashes (i.e. the underlying data is unchanged).
-pub struct Constraint<T: ?Sized> {
-    reads: Mutex<Vec<Read>>,
-    _marker: PhantomData<T>,
-}
-
-impl<T: ?Sized> Constraint<T> {
-    /// Create an empty constraint set.
-    pub fn new() -> Self {
-        Self { reads: Mutex::new(Vec::new()), _marker: PhantomData }
+impl Constraint {
+    /// Create a new constraint for tracking
+    pub fn new(input_hash: u64) -> Self {
+        Self { snapshots: Vec::new(), input_hash }
     }
 
-    /// Record that `method_name` was accessed and produced a value whose hash
-    /// is `hash`.
-    pub fn record(&self, method_name: &'static str, hash: u64) {
-        self.reads.lock().push(Read { method_name, hash });
+    /// Record a tracked read
+    pub fn record(&mut self, snapshot: TrackedSnapshot) {
+        self.snapshots.push(snapshot);
     }
 
-    /// Returns `true` iff every previously recorded read still hashes to its
-    /// stored value according to `new_value_hash_at_method`.
-    pub fn validate(&self, new_value_hash_at_method: &dyn Fn(&'static str) -> u64) -> bool {
-        let reads = self.reads.lock();
-        reads.iter().all(|r| new_value_hash_at_method(r.method_name) == r.hash)
+    /// Validate: cached result is valid if the input hash matches
+    /// and all tracked values have the same version
+    pub fn validate(&self, current_input_hash: u64, current_versions: &[u64]) -> bool {
+        if self.input_hash != current_input_hash { return false; }
+        if current_versions.len() < self.snapshots.len() { return false; }
+        for (snap, &current_version) in self.snapshots.iter().zip(current_versions) {
+            if snap.version != current_version { return false; }
+        }
+        true
     }
+
+    pub fn snapshot_count(&self) -> usize { self.snapshots.len() }
+    pub fn input_hash(&self) -> u64 { self.input_hash }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::hash::fast_hash;
+    use crate::tracked::TrackedSnapshot;
 
     #[test]
-    fn new_validates_true_with_no_reads() {
-        let c: Constraint<str> = Constraint::new();
-        assert!(c.validate(&|_| 0));
+    fn constraint_validates_matching() {
+        let mut c = Constraint::new(12345);
+        c.record(TrackedSnapshot { version: 1, access_count_at_snapshot: 0 });
+        assert!(c.validate(12345, &[1]));
     }
 
     #[test]
-    fn record_then_validate_same_hash_returns_true() {
-        let c: Constraint<str> = Constraint::new();
-        let h = fast_hash(&"value");
-        c.record("field_a", h);
-        assert!(c.validate(&|_name| fast_hash(&"value")));
+    fn constraint_rejects_stale_version() {
+        let mut c = Constraint::new(12345);
+        c.record(TrackedSnapshot { version: 1, access_count_at_snapshot: 0 });
+        // version changed from 1 to 2 → cache miss
+        assert!(!c.validate(12345, &[2]));
     }
 
     #[test]
-    fn changed_hash_returns_false() {
-        let c: Constraint<str> = Constraint::new();
-        c.record("field_a", fast_hash(&"original"));
-        assert!(!c.validate(&|_name| fast_hash(&"changed")));
-    }
-
-    #[test]
-    fn multiple_reads_and_composed() {
-        let c: Constraint<str> = Constraint::new();
-        c.record("field_a", fast_hash(&"a"));
-        c.record("field_b", fast_hash(&"b"));
-        // Both match → true
-        assert!(c.validate(&|name| match name {
-            "field_a" => fast_hash(&"a"),
-            "field_b" => fast_hash(&"b"),
-            _ => 0,
-        }));
-        // One differs → false
-        assert!(!c.validate(&|name| match name {
-            "field_a" => fast_hash(&"a"),
-            "field_b" => fast_hash(&"CHANGED"),
-            _ => 0,
-        }));
-    }
-
-    #[test]
-    fn phantom_data_variance() {
-        // Constraint<str> and Constraint<[u8]> are distinct types — compile-time check.
-        let _a: Constraint<str> = Constraint::new();
-        let _b: Constraint<[u8]> = Constraint::new();
+    fn constraint_rejects_changed_input() {
+        let c = Constraint::new(12345);
+        assert!(!c.validate(99999, &[]));
     }
 }
