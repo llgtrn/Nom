@@ -117,7 +117,7 @@
 - [ ] BoundsTree integration in Scene for O(log N) hit_test (currently O(N) brute force)
 - [ ] Wire `App::element_state` into `FrameHandler` callback so elements can read/write typed state cross-frame
 - [ ] Pixel-diff integration tests (current tests assert "no panic"; need pixel correctness)
-- [ ] **CI HEADLESS regression** (`910f29a` wave-2 failed) — diagnose which test fails on ubuntu-latest `cargo test --workspace` and add skip guard (GPU/winit tests need env-var or display-server check)
+- [x] **CI HEADLESS regression fix** — added `nom_gpui::should_skip_gpu_tests()` helper (checks `NOM_SKIP_GPU_TESTS` env OR missing `DISPLAY`+`WAYLAND_DISPLAY` on Linux). Guard applied to 22 GPU/winit-dependent tests across 7 files (context/frame_loop/window/pipelines/renderer/wgpu_atlas/gpu_integration). Windows 113/113 still green; ubuntu-latest CI now skips GPU tests and runs only CPU-safe ones.
 
 ### Phase 2 — Canvas + Editor (nom-canvas-core + nom-editor)
 

@@ -564,6 +564,10 @@ mod tests {
 
     #[test]
     fn renderer_constructs() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -573,6 +577,10 @@ mod tests {
 
     #[test]
     fn empty_scene_renders_without_panic() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -593,6 +601,10 @@ mod tests {
 
     #[test]
     fn single_quad_renders() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             eprintln!("SKIP: no GPU adapter");
             return;

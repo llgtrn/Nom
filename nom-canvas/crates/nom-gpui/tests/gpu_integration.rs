@@ -108,6 +108,10 @@ fn make_underline(order: u32) -> Underline {
 /// calling rasterize again. The rasterize closure is called exactly once.
 #[test]
 fn atlas_round_trip_single_glyph_bytes() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;
@@ -161,6 +165,10 @@ fn atlas_round_trip_single_glyph_bytes() {
 /// Inserting 65 unique tiles guarantees a second slab is opened.
 #[test]
 fn atlas_overflow_allocates_new_slab() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;
@@ -205,6 +213,10 @@ fn atlas_overflow_allocates_new_slab() {
 /// times to reach the clamp at `max_buffer_size` (or exhaust reasonable iterations).
 #[test]
 fn buffer_growth_doubles_and_clamps() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;
@@ -344,6 +356,10 @@ fn scene_batches_iterator_exhausts_cleanly() {
 /// in RGBA byte order.  We assert that every pixel in the read-back matches.
 #[test]
 fn headless_clear_to_color() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;
@@ -516,6 +532,10 @@ fn headless_clear_to_color() {
 /// and assert both succeed without panic.
 #[test]
 fn pipelines_construct_on_bgra_and_rgba() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;
@@ -615,6 +635,10 @@ fn in_memory_atlas_overflow_allocates_new_slab() {
 /// This is the GPU analog of test 8.
 #[test]
 fn gpu_atlas_overflow_allocates_new_slab() {
+    if nom_gpui::should_skip_gpu_tests() {
+        eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+        return;
+    }
     let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
         eprintln!("SKIP: no GPU adapter");
         return;

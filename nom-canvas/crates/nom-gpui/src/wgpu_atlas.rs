@@ -485,6 +485,10 @@ mod tests {
 
     #[test]
     fn round_trip_single_tile() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -520,6 +524,10 @@ mod tests {
 
     #[test]
     fn overflow_allocates_new_texture() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -555,6 +563,10 @@ mod tests {
 
     #[test]
     fn three_kinds_have_separate_storage() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -590,6 +602,10 @@ mod tests {
 
     #[test]
     fn memory_usage_non_zero_after_insert() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -611,6 +627,10 @@ mod tests {
 
     #[test]
     fn clear_drops_all_tiles() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;
@@ -643,6 +663,10 @@ mod tests {
 
     #[test]
     fn texture_view_returns_for_valid_id() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Some((device, queue)) = gpu_pair() else {
             eprintln!("SKIP: no GPU adapter");
             return;

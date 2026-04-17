@@ -322,6 +322,10 @@ mod tests {
     /// renderer) the test exits silently rather than failing.
     #[test]
     fn pipelines_compile_successfully() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let ctx = match pollster::block_on(GpuContext::new()) {
             Ok(c) => c,
             Err(_) => return, // no GPU in this environment — skip
@@ -335,6 +339,10 @@ mod tests {
     /// common fallback format on platforms that do not expose `Bgra8Unorm`.
     #[test]
     fn pipelines_support_rgba8_format_fallback() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let ctx = match pollster::block_on(GpuContext::new()) {
             Ok(c) => c,
             Err(_) => return,
@@ -346,6 +354,10 @@ mod tests {
     /// texture, sampler).  wgpu exposes this as the `count` on `entries()`.
     #[test]
     fn sprite_bgl_has_three_entries() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let ctx = match pollster::block_on(GpuContext::new()) {
             Ok(c) => c,
             Err(_) => return,

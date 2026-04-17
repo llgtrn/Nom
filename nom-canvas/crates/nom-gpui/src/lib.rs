@@ -54,3 +54,32 @@ pub use frame_loop::ElementStateMap;
 pub use style::{AlignItems, Display, FlexDirection, JustifyContent, Length, Overflow, Style};
 pub use styled::{Styled, StyledBox};
 pub use taffy_layout::{LayoutEngine, LayoutError, LayoutId, MeasureFn, NodeContext};
+
+// ── CI skip helper ────────────────────────────────────────────────────────────
+
+/// Returns `true` when GPU-dependent or display-dependent tests should be
+/// skipped in the current environment.
+///
+/// Conditions that trigger a skip:
+/// - `NOM_SKIP_GPU_TESTS` env-var is set (explicit opt-out, any value).
+/// - On Linux, neither `DISPLAY` nor `WAYLAND_DISPLAY` is set — this is the
+///   default state on GitHub Actions `ubuntu-latest` headless runners where
+///   winit's `EventLoop::new()` would otherwise panic.
+///
+/// On Windows and macOS, this function always returns `false` so tests run
+/// normally on those platforms.
+///
+/// Integration tests in `tests/` can call this as `nom_gpui::should_skip_gpu_tests()`.
+#[doc(hidden)]
+pub fn should_skip_gpu_tests() -> bool {
+    if std::env::var("NOM_SKIP_GPU_TESTS").is_ok() {
+        return true;
+    }
+    #[cfg(target_os = "linux")]
+    {
+        if std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err() {
+            return true;
+        }
+    }
+    false
+}

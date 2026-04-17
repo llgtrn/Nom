@@ -310,6 +310,10 @@ mod tests {
     /// used. In either case, failure to build (headless CI) is a graceful skip.
     #[test]
     fn window_surface_constructs_when_display_available() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: no display server (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         build_test_event_loop();
     }
 

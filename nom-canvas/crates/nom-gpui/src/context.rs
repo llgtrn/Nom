@@ -246,6 +246,10 @@ mod tests {
     /// fallback) the test skips gracefully instead of failing.
     #[test]
     fn context_creates_when_adapter_available() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             eprintln!("SKIP: no GPU adapter in this environment");
             return;
@@ -258,6 +262,10 @@ mod tests {
     /// feature set reported by the device after construction.
     #[test]
     fn dual_source_blending_flag_is_set_consistently() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             return;
         };
@@ -272,6 +280,10 @@ mod tests {
     /// The device-lost flag must start cleared immediately after construction.
     #[test]
     fn device_lost_flag_starts_false() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
         let Ok(ctx) = pollster::block_on(GpuContext::new()) else {
             return;
         };
