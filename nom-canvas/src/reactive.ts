@@ -72,19 +72,27 @@ export class ReactiveGraph {
     /** Check for circular dependencies */
     hasCycle(startId: string): boolean {
         const visited = new Set<string>();
-        const stack = [startId];
-        while (stack.length > 0) {
-            const id = stack.pop()!;
-            if (visited.has(id)) return true;
+        const inStack = new Set<string>();
+
+        const dfs = (id: string): boolean => {
+            if (inStack.has(id)) return true; // back edge = cycle
+            if (visited.has(id)) return false; // already explored, not on stack = diamond
+
             visited.add(id);
+            inStack.add(id);
+
             const node = this.nodes.get(id);
             if (node) {
                 for (const dep of node.dependents) {
-                    stack.push(dep);
+                    if (dfs(dep)) return true;
                 }
             }
-        }
-        return false;
+
+            inStack.delete(id);
+            return false;
+        };
+
+        return dfs(startId);
     }
 
     /** Get all node IDs */

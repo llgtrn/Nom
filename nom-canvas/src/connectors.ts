@@ -31,6 +31,23 @@ export function getAvailableConnectors(): ConnectorType[] {
   return Array.from(registry.keys());
 }
 
+// More comprehensive private IP check
+function isPrivateHost(hostname: string): boolean {
+  const h = hostname.toLowerCase();
+  // Loopback
+  if (h === "localhost" || h === "127.0.0.1" || h === "0.0.0.0" || h === "[::1]" || h === "::1") return true;
+  // RFC 1918
+  if (h.startsWith("10.") || h.startsWith("192.168.")) return true;
+  if (/^172\.(1[6-9]|2\d|3[01])\./.test(h)) return true;
+  // Link-local
+  if (h.startsWith("169.254.")) return true;
+  // Octal notation (0177.0.0.1 = 127.0.0.1)
+  if (/^0\d/.test(h)) return true;
+  // IPv6 private
+  if (h.startsWith("fe80:") || h.startsWith("fc") || h.startsWith("fd")) return true;
+  return false;
+}
+
 // Built-in connectors
 import { invoke } from "@tauri-apps/api/core";
 
@@ -57,15 +74,7 @@ registerConnector("http", async (config) => {
       return { success: false, data: null, error: "Only http/https URLs allowed" };
     }
     // Block localhost/private IPs
-    const host = parsed.hostname.toLowerCase();
-    if (
-      host === "localhost" ||
-      host === "127.0.0.1" ||
-      host === "0.0.0.0" ||
-      host.startsWith("192.168.") ||
-      host.startsWith("10.") ||
-      host.startsWith("172.")
-    ) {
+    if (isPrivateHost(parsed.hostname)) {
       return { success: false, data: null, error: "Private/local URLs not allowed" };
     }
   } catch {

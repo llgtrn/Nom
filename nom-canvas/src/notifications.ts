@@ -57,6 +57,10 @@ export class NotificationManager {
     }
   }
 
+  destroy(): void {
+    this.container.remove();
+  }
+
   success(msg: string): string { return this.show(msg, "success"); }
   error(msg: string): string { return this.show(msg, "error", 5000); }
   warning(msg: string): string { return this.show(msg, "warning"); }

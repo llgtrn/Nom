@@ -14,6 +14,7 @@ pub struct ToolParameter {
     pub name: String,
     pub param_type: String,
     pub required: bool,
+    pub description: String,
 }
 
 /// Format a ReAct system prompt with tool descriptions
@@ -30,7 +31,7 @@ pub fn format_react_prompt(tools: &[ToolMetadata], task: &str) -> String {
             prompt.push_str("Parameters:\n");
             for param in &tool.parameters {
                 let req = if param.required { "required" } else { "optional" };
-                prompt.push_str(&format!("  - {} ({}): {}\n", param.name, param.param_type, req));
+                prompt.push_str(&format!("  - {} ({}, {}): {}\n", param.name, param.param_type, req, param.description));
             }
         }
         prompt.push('\n');

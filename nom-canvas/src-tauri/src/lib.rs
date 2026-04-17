@@ -264,7 +264,10 @@ fn compile_block(source: &str) -> CompileResult {
     // Store in cache
     if let Ok(mut cache) = COMPILE_CACHE.lock() {
         if cache.len() > 1000 {
-            cache.clear();
+            let to_remove: Vec<u64> = cache.keys().take(250).cloned().collect();
+            for key in to_remove {
+                cache.remove(&key);
+            }
         }
         cache.insert(hash, result.clone());
     }
@@ -790,7 +793,10 @@ fn plan_flow(source: &str) -> PlanFlowResult {
     // Store in cache
     if let Ok(mut cache) = PLAN_CACHE.lock() {
         if cache.len() > 1000 {
-            cache.clear();
+            let to_remove: Vec<u64> = cache.keys().take(250).cloned().collect();
+            for key in to_remove {
+                cache.remove(&key);
+            }
         }
         cache.insert(hash, result.clone());
     }

@@ -70,7 +70,7 @@ impl ToolRegistry {
                 properties: t.metadata.parameters.iter().map(|p| {
                     (p.name.clone(), McpProperty {
                         param_type: p.param_type.clone(),
-                        description: p.name.clone(),
+                        description: p.description.clone(),
                     })
                 }).collect(),
                 required: t.metadata.parameters.iter()
@@ -127,38 +127,38 @@ fn default_tools() -> Vec<(ToolMetadata, ToolCategory)> {
             name: "Query".into(),
             description: "Search the dictionary for entities matching a query string".into(),
             parameters: vec![
-                ToolParameter { name: "query".into(), param_type: "string".into(), required: true },
-                ToolParameter { name: "kind".into(), param_type: "string".into(), required: false },
-                ToolParameter { name: "limit".into(), param_type: "integer".into(), required: false },
+                ToolParameter { name: "query".into(), param_type: "string".into(), required: true, description: "Search term to match against entity words and descriptions".into() },
+                ToolParameter { name: "kind".into(), param_type: "string".into(), required: false, description: "Entity kind filter (function/module/concept/etc.) to narrow results".into() },
+                ToolParameter { name: "limit".into(), param_type: "integer".into(), required: false, description: "Maximum number of results to return (default: 10)".into() },
             ],
         }, ToolCategory::Query),
         (ToolMetadata {
             name: "Render".into(),
             description: "Compile an entity to its target artifact (LLVM bitcode, media, etc.)".into(),
             parameters: vec![
-                ToolParameter { name: "hash".into(), param_type: "string".into(), required: true },
+                ToolParameter { name: "hash".into(), param_type: "string".into(), required: true, description: "SHA-256 hash identifying the entity to compile".into() },
             ],
         }, ToolCategory::Transform),
         (ToolMetadata {
             name: "Verify".into(),
             description: "Check that a rendered artifact meets quality and correctness criteria".into(),
             parameters: vec![
-                ToolParameter { name: "hash".into(), param_type: "string".into(), required: true },
-                ToolParameter { name: "threshold".into(), param_type: "number".into(), required: false },
+                ToolParameter { name: "hash".into(), param_type: "string".into(), required: true, description: "SHA-256 hash identifying the artifact to verify".into() },
+                ToolParameter { name: "threshold".into(), param_type: "number".into(), required: false, description: "Minimum quality score (0.0–1.0) required to pass verification".into() },
             ],
         }, ToolCategory::Verify),
         (ToolMetadata {
             name: "Reject".into(),
             description: "Reject the current approach with a reason and try a different strategy".into(),
             parameters: vec![
-                ToolParameter { name: "reason".into(), param_type: "string".into(), required: true },
+                ToolParameter { name: "reason".into(), param_type: "string".into(), required: true, description: "Explanation of why the current approach failed and what to try instead".into() },
             ],
         }, ToolCategory::Control),
         (ToolMetadata {
             name: "Answer".into(),
             description: "Provide the final answer to the task, ending the ReAct loop".into(),
             parameters: vec![
-                ToolParameter { name: "answer".into(), param_type: "string".into(), required: true },
+                ToolParameter { name: "answer".into(), param_type: "string".into(), required: true, description: "The final result or conclusion to return to the caller".into() },
             ],
         }, ToolCategory::Control),
     ]

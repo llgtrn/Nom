@@ -220,6 +220,10 @@ export class SpatialCanvas {
     this.viewportEl.style.transformOrigin = "0 0";
   }
 
+  destroy(): void {
+    this.viewportEl.remove();
+  }
+
   private setupEventListeners() {
     // Zoom with Ctrl+scroll — zoom toward cursor position
     this.container.addEventListener("wheel", (e) => {

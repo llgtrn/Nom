@@ -7,6 +7,11 @@ const BLOCKED_GLOBALS = new Set([
     "importScripts", "Worker", "SharedWorker",
     "localStorage", "sessionStorage", "indexedDB",
     "navigator", "location", "history",
+    // Prototype chain escape vectors
+    "constructor", "prototype", "__proto__", "__defineGetter__", "__defineSetter__",
+    "__lookupGetter__", "__lookupSetter__",
+    // Reflection / meta-programming escape vectors
+    "this", "Proxy", "Reflect", "Symbol",
 ]);
 
 const ALLOWED_MATH = {
@@ -48,9 +53,10 @@ export function safeEval(expression: string, context: EvalContext = {}): EvalRes
         }
     }
 
-    // Reject assignment, function creation
-    if (/[^=!<>]=[^=]/.test(expression) && !expression.includes("=>")) {
-        return { success: false, value: null, error: "Assignment not allowed" };
+    // Reject assignment operators (simple = and all compound: += -= *= /= %= **= <<= >>= >>>= &= |= ^= &&= ||= ??=)
+    const ASSIGNMENT_OPS = /(?<![=!<>])=(?!=)|(\+=|-=|\*=|\/=|%=|\*\*=|<<=|>>=|>>>=|&=|\|=|\^=|&&=|\|\|=|\?\?=)/;
+    if (ASSIGNMENT_OPS.test(expression) && !expression.includes("=>")) {
+        return { success: false, value: null, error: "Assignment not allowed in expressions" };
     }
 
     try {

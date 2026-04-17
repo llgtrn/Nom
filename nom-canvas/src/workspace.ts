@@ -53,9 +53,29 @@ export class WorkspaceManager {
   /** Import workspace from JSON string */
   static importWorkspace(json: string): WorkspaceData | null {
     try {
-      const data = JSON.parse(json) as WorkspaceData;
-      if (!data.version || !data.blocks) return null;
-      return data;
+      const data = JSON.parse(json);
+      // Schema validation
+      if (typeof data !== "object" || data === null) return null;
+      if (typeof data.version !== "string") return null;
+      if (!Array.isArray(data.blocks)) return null;
+      if (!Array.isArray(data.wires)) return null;
+
+      // Validate blocks have required fields
+      for (const block of data.blocks) {
+        if (typeof block.id !== "string") return null;
+        if (typeof block.type !== "string") return null;
+        if (typeof block.x !== "number") return null;
+        if (typeof block.y !== "number") return null;
+      }
+
+      // Validate wires have required fields
+      for (const wire of data.wires) {
+        if (typeof wire.id !== "string") return null;
+        if (typeof wire.fromBlockId !== "string") return null;
+        if (typeof wire.toBlockId !== "string") return null;
+      }
+
+      return data as WorkspaceData;
     } catch {
       return null;
     }

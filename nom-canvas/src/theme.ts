@@ -56,6 +56,8 @@ const BUILT_IN_THEMES: Theme[] = [DARK_THEME, LIGHT_THEME, HIGH_CONTRAST_THEME, 
 export class ThemeManager {
   private current: Theme;
   private customThemes: Theme[] = [];
+  private mediaQuery: MediaQueryList | null = null;
+  private mediaHandler: ((e: MediaQueryListEvent) => void) | null = null;
 
   constructor(initial?: Theme) {
     this.current = initial || DARK_THEME;
@@ -102,9 +104,15 @@ export class ThemeManager {
 
   /** Listen for system theme changes */
   watchSystemPreference(): void {
-    window.matchMedia("(prefers-color-scheme: dark)").addEventListener("change", (e) => {
-      this.apply(e.matches ? DARK_THEME : LIGHT_THEME);
-    });
+    this.mediaQuery = window.matchMedia("(prefers-color-scheme: dark)");
+    this.mediaHandler = (e) => this.apply(e.matches ? DARK_THEME : LIGHT_THEME);
+    this.mediaQuery.addEventListener("change", this.mediaHandler);
+  }
+
+  destroy(): void {
+    if (this.mediaQuery && this.mediaHandler) {
+      this.mediaQuery.removeEventListener("change", this.mediaHandler);
+    }
   }
 
   /** Serialize current theme for persistence */

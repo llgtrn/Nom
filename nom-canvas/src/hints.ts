@@ -68,7 +68,7 @@ function buildHintDecorations(doc: any): Decoration[] {
 
     // Inlay hints: after keywords, show type hint as widget
     for (const [keyword, hint] of Object.entries(TYPE_HINTS)) {
-      const regex = new RegExp(`\b${keyword}\b`, "gi");
+      const regex = new RegExp(`\\b${keyword}\\b`, "gi");
       let match;
       while ((match = regex.exec(text)) !== null) {
         const end = pos + match.index + match[0].length;

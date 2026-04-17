@@ -1536,3 +1536,34 @@ button:active {
     outline: 2px solid var(--color-cta);
     outline-offset: 2px;
 }
+
+/* ── Layout Grid Fix ───────────────────────────────────── */
+
+/* Fix #app-body grid — panels should be side by side */
+#app-body {
+    display: grid;
+    grid-template-columns: 1fr;
+    grid-template-rows: 1fr;
+    flex: 1;
+    overflow: hidden;
+    position: relative;
+}
+
+/* Preview pane needs bottom padding for fixed status bar */
+#preview-pane {
+    padding-bottom: 32px;
+}
+
+/* ── Z-Index Reference ─────────────────────────────────── */
+/*
+  Z-Index Layer Map:
+  10     - canvas-overlay (Canvas 2D rendering layer)
+  100    - canvas-block (spatial blocks)
+  500    - component-library (right panel)
+  600    - minimap (bottom-right)
+  700    - status-bar (bottom)
+  1000   - wiring-layer (SVG wires)
+  9998   - notification-container
+  9999   - command-palette, settings-panel, credential-panel, cheatsheet
+  10000  - lsp-tooltip, lsp-completions
+*/

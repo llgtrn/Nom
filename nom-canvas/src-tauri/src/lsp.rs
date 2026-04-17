@@ -72,6 +72,11 @@ impl LspClient {
             return Err("empty response body".to_string());
         }
 
+        const MAX_LSP_BODY: usize = 10 * 1024 * 1024; // 10MB
+        if content_length > MAX_LSP_BODY {
+            return Err(format!("LSP body too large: {content_length} bytes (max {MAX_LSP_BODY})"));
+        }
+
         // Read body
         let mut body_buf = vec![0u8; content_length];
         std::io::Read::read_exact(&mut reader, &mut body_buf)
@@ -162,6 +167,14 @@ impl LspClient {
                 return;
             }
 
+            const MAX_LSP_BODY: usize = 10 * 1024 * 1024; // 10MB
+            if content_length > MAX_LSP_BODY {
+                let _ = tx.send(Err(format!(
+                    "LSP body too large: {content_length} bytes (max {MAX_LSP_BODY})"
+                )));
+                return;
+            }
+
             // Read body.
             let mut buf = vec![0u8; content_length];
             match std::io::Read::read_exact(&mut reader, &mut buf) {
@@ -188,7 +201,8 @@ impl LspClient {
                 Err(e)
             }
             Err(_) => {
-                // Timeout — stdout is gone; the child will be considered dead on next call.
+                // Timeout — kill the child to prevent zombie
+                let _ = self.child.kill();
                 Err(format!("LSP request timed out after {timeout_ms}ms"))
             }
         }

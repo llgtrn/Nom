@@ -382,6 +382,11 @@ export class GraphEngine {
     this.pool.clear();
     this.results.clear();
 
+    if (hasCycles(graph)) {
+      this.emit({ type: "node_error", nodeId: "validation", error: "Graph contains cycles" });
+      return this.results;
+    }
+
     const validation = validateGraph(graph);
     if (!validation.valid) {
       for (const error of validation.errors) {
