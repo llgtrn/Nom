@@ -1,15 +1,19 @@
-//! Render pipeline registry for `nom-gpui` batch-2 MVP.
+//! Render pipeline registry for `nom-gpui` batch-3 MVP.
 //!
-//! Three pipelines are provided:
-//! - **quads** — rounded-rectangle fills and borders.
-//! - **mono_sprites** — monochrome atlas glyphs (text rendering).
-//! - **underlines** — straight horizontal stroke underlines.
+//! Six pipelines are provided:
+//! - **quads**           — rounded-rectangle fills and borders.
+//! - **mono_sprites**    — monochrome atlas glyphs (text rendering).
+//! - **underlines**      — straight horizontal stroke underlines.
+//! - **shadows**         — rounded-rect Gaussian-falloff drop shadows.
+//! - **poly_sprites**    — polychrome RGBA atlas sprites (emoji / color images).
+//! - **subpixel_sprites** — LCD subpixel-positioned text (dual-source blending,
+//!                          `None` when the adapter lacks the feature).
 //!
 //! All pipelines share a common `@group(0)` bind group layout carrying the
 //! per-frame [`RenderParams`] uniform (viewport size + premultiplied-alpha
-//! flag).  The instance data at `@group(1)` differs: quads and underlines use
-//! a plain storage-read buffer; mono sprites add a texture and sampler for
-//! the glyph atlas.
+//! flag).  The instance data at `@group(1)` differs: quads, underlines, and
+//! shadows use a plain storage-read buffer; sprite pipelines add a texture and
+//! sampler for the atlas.
 //!
 //! # Example (headless)
 //!
@@ -25,15 +29,15 @@
 #![deny(unsafe_code)]
 
 use crate::context::GpuContext;
-use crate::shaders::{MONO_SPRITE_SHADER, QUAD_SHADER, UNDERLINE_SHADER};
+use crate::shaders::{MONO_SPRITE_SHADER, POLY_SPRITE_SHADER, QUAD_SHADER, SHADOW_SHADER, SUBPIXEL_SPRITE_SHADER, UNDERLINE_SHADER};
 
 // ── pipeline registry ─────────────────────────────────────────────────────────
 
-/// Compiled wgpu render pipelines and shared bind-group layouts for batch-2.
+/// Compiled wgpu render pipelines and shared bind-group layouts for batch-3.
 ///
 /// Constructed once per surface format change (rare) via [`Pipelines::new`].
-/// The three [`wgpu::RenderPipeline`] objects are ready to be recorded into
-/// any render pass that targets a texture with the same [`wgpu::TextureFormat`]
+/// All [`wgpu::RenderPipeline`] objects are ready to be recorded into any
+/// render pass that targets a texture with the same [`wgpu::TextureFormat`]
 /// that was supplied at construction time.
 pub struct Pipelines {
     /// Rounded-rectangle fill + border pipeline.
@@ -45,24 +49,37 @@ pub struct Pipelines {
     /// Straight horizontal underline stroke pipeline.
     pub underlines: wgpu::RenderPipeline,
 
+    /// Rounded-rect Gaussian-falloff drop shadow pipeline.
+    pub shadows: wgpu::RenderPipeline,
+
+    /// Polychrome RGBA atlas sprite pipeline (emoji, color images).
+    pub poly_sprites: wgpu::RenderPipeline,
+
+    /// LCD subpixel-positioned text pipeline using dual-source blending.
+    /// `None` when the adapter does not support `DUAL_SOURCE_BLENDING`.
+    pub subpixel_sprites: Option<wgpu::RenderPipeline>,
+
     /// `@group(0)` layout — one uniform buffer entry carrying `RenderParams`
-    /// (viewport size + premultiplied-alpha flag).  Shared by all three pipelines.
+    /// (viewport size + premultiplied-alpha flag).  Shared by all pipelines.
     pub globals_bgl: wgpu::BindGroupLayout,
 
-    /// `@group(1)` layout for quads and underlines — one storage-read buffer
-    /// carrying a tightly-packed array of instance structs.
+    /// `@group(1)` layout for quads, underlines, and shadows — one
+    /// storage-read buffer carrying a tightly-packed array of instance structs.
     pub instances_bgl: wgpu::BindGroupLayout,
 
-    /// `@group(1)` layout for mono sprites — storage-read buffer plus a
-    /// `texture_2d<f32>` and a `sampler` for the glyph atlas.
+    /// `@group(1)` layout for sprite pipelines — storage-read buffer plus a
+    /// `texture_2d<f32>` and a `sampler` for the atlas.
     pub sprite_instances_bgl: wgpu::BindGroupLayout,
 }
 
 impl Pipelines {
-    /// Build all three render pipelines for the given surface pixel format.
+    /// Build all render pipelines for the given surface pixel format.
     ///
     /// This is an inexpensive synchronous call (wgpu compiles shaders lazily in
     /// most back-ends) but must be repeated if the surface format ever changes.
+    ///
+    /// The `subpixel_sprites` pipeline is created only when
+    /// `ctx.dual_source_blending` is `true`; otherwise it is `None`.
     pub fn new(ctx: &GpuContext, surface_format: wgpu::TextureFormat) -> Self {
         let device = &ctx.device;
 
@@ -194,7 +211,7 @@ impl Pipelines {
             })
         };
 
-        // ── compile the three pipelines ───────────────────────────────────────
+        // ── compile the six pipelines ─────────────────────────────────────────
 
         let quads = build_pipeline(
             "nom_gpui_quads",
@@ -220,10 +237,50 @@ impl Pipelines {
             &instances_bgl,
         );
 
+        // batch-3 ─────────────────────────────────────────────────────────────
+
+        let shadows = build_pipeline(
+            "nom_gpui_shadows",
+            "vs_shadow",
+            "fs_shadow",
+            SHADOW_SHADER,
+            &instances_bgl,
+        );
+
+        let poly_sprites = build_pipeline(
+            "nom_gpui_poly_sprites",
+            "vs_poly_sprite",
+            "fs_poly_sprite",
+            POLY_SPRITE_SHADER,
+            &sprite_instances_bgl,
+        );
+
+        // Subpixel sprites are created only when the device was initialised
+        // with DUAL_SOURCE_BLENDING (indicating hardware support for LCD-style
+        // per-channel blending).  On wgpu 22 / naga 22 the @blend_src WGSL
+        // extension is not yet available, so the pipeline uses standard
+        // premultiplied-alpha blending with averaged subpixel coverage.
+        // When wgpu ≥ 23 ships @blend_src support, upgrade the shader and
+        // blend state to use BlendFactor::Src1 / OneMinusSrc1 per-channel.
+        let subpixel_sprites = if ctx.dual_source_blending {
+            Some(build_pipeline(
+                "nom_gpui_subpixel_sprites",
+                "vs_subpixel_sprite",
+                "fs_subpixel_sprite",
+                SUBPIXEL_SPRITE_SHADER,
+                &sprite_instances_bgl,
+            ))
+        } else {
+            None
+        };
+
         Self {
             quads,
             mono_sprites,
             underlines,
+            shadows,
+            poly_sprites,
+            subpixel_sprites,
             globals_bgl,
             instances_bgl,
             sprite_instances_bgl,
@@ -369,5 +426,62 @@ mod tests {
         let _ = &pipelines.sprite_instances_bgl;
         let _ = &pipelines.instances_bgl;
         let _ = &pipelines.globals_bgl;
+    }
+
+    /// Verify that the `shadows` pipeline compiles for the standard surface format.
+    #[test]
+    fn shadows_pipeline_compiles() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        // Constructing Pipelines without a panic proves the pipeline compiled.
+        let _ = &pipelines.shadows;
+    }
+
+    /// Verify that the `poly_sprites` pipeline compiles for the standard surface format.
+    #[test]
+    fn poly_sprites_pipeline_compiles() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        let _ = &pipelines.poly_sprites;
+    }
+
+    /// Verify the `subpixel_sprites` pipeline: `Some` when the device has
+    /// `DUAL_SOURCE_BLENDING`, `None` otherwise.  Both states are valid.
+    #[test]
+    fn subpixel_sprites_pipeline_consistent_with_feature() {
+        if crate::should_skip_gpu_tests() {
+            eprintln!("SKIP: GPU tests disabled (headless CI or NOM_SKIP_GPU_TESTS)");
+            return;
+        }
+        let ctx = match pollster::block_on(GpuContext::new()) {
+            Ok(c) => c,
+            Err(_) => return,
+        };
+        let pipelines = Pipelines::new(&ctx, wgpu::TextureFormat::Bgra8Unorm);
+        if ctx.dual_source_blending {
+            assert!(
+                pipelines.subpixel_sprites.is_some(),
+                "dual_source_blending enabled but pipeline is None"
+            );
+        } else {
+            assert!(
+                pipelines.subpixel_sprites.is_none(),
+                "dual_source_blending disabled but pipeline is Some"
+            );
+        }
     }
 }

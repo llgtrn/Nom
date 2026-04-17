@@ -410,6 +410,10 @@ impl PlatformAtlas for GpuAtlas {
         total
     }
 
+    fn remove(&self, key: &AtlasKey) -> bool {
+        self.0.lock().tiles_by_key.remove(key).is_some()
+    }
+
     fn clear(&self) {
         let mut state = self.0.lock();
         state.tiles_by_key.clear();
@@ -463,21 +467,21 @@ mod tests {
     fn mono_key(tag: u8) -> AtlasKey {
         AtlasKey {
             kind: AtlasTextureKind::Monochrome,
-            bytes: vec![tag],
+            bytes: vec![tag].into(),
         }
     }
 
     fn poly_key(tag: u8) -> AtlasKey {
         AtlasKey {
             kind: AtlasTextureKind::Polychrome,
-            bytes: vec![tag],
+            bytes: vec![tag].into(),
         }
     }
 
     fn sub_key(tag: u8) -> AtlasKey {
         AtlasKey {
             kind: AtlasTextureKind::Subpixel,
-            bytes: vec![tag],
+            bytes: vec![tag].into(),
         }
     }
 

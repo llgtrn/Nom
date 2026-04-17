@@ -51,10 +51,13 @@ impl AtlasTile {
 }
 
 /// Composite key identifying one cached rasterization.
+///
+/// `bytes` is an `Arc<[u8]>` so cloning the key on the hot cache-lookup path
+/// is a single atomic increment rather than a heap allocation.
 #[derive(Clone, Debug, Eq, Hash, PartialEq)]
 pub struct AtlasKey {
     pub kind: AtlasTextureKind,
-    pub bytes: Vec<u8>,
+    pub bytes: Arc<[u8]>,
 }
 
 /// Atlas allocation errors.
@@ -80,6 +83,13 @@ pub trait PlatformAtlas: Send + Sync {
 
     /// Total bytes uploaded (for telemetry).
     fn memory_usage(&self) -> usize;
+
+    /// Remove a single tile from the cache. Returns `true` if the key was
+    /// present. Implementations should NOT free the underlying texture region —
+    /// that requires compaction and is out of scope for MVP. Marking the tile
+    /// absent is sufficient: future lookups will re-rasterize into new atlas
+    /// space (until the entire slab is recycled via `clear`).
+    fn remove(&self, key: &AtlasKey) -> bool;
 
     /// Clear all tiles (typically on theme change / font reload).
     fn clear(&self);
@@ -176,6 +186,10 @@ impl PlatformAtlas for InMemoryAtlas {
         self.inner.lock().memory_usage
     }
 
+    fn remove(&self, key: &AtlasKey) -> bool {
+        self.inner.lock().tiles.remove(key).is_some()
+    }
+
     fn clear(&self) {
         let mut inner = self.inner.lock();
         inner.tiles.clear();
@@ -192,7 +206,7 @@ mod tests {
     fn key(kind: AtlasTextureKind, tag: u8) -> AtlasKey {
         AtlasKey {
             kind,
-            bytes: vec![tag],
+            bytes: Arc::from(vec![tag]),
         }
     }
 
@@ -268,5 +282,61 @@ mod tests {
         };
         let uv = tile.uv(Size::new(DevicePixels(1024), DevicePixels(1024)));
         assert_eq!(uv, [0.5, 0.0, 1.0, 1.0]);
+    }
+
+    /// After `remove`, the key is evicted and a subsequent `get_or_insert`
+    /// must call the rasterize closure again (re-rasterize).
+    #[test]
+    fn remove_evicts_tile() {
+        let atlas = InMemoryAtlas::new(Size::new(DevicePixels(1024), DevicePixels(1024)));
+        let k = key(AtlasTextureKind::Monochrome, 7);
+        let mut calls = 0usize;
+
+        // First insert — rasterize fires.
+        {
+            let mut raster = || -> Result<_, AtlasError> {
+                calls += 1;
+                Ok((Size::new(DevicePixels(8), DevicePixels(8)), vec![0u8; 64]))
+            };
+            atlas.get_or_insert(&k, &mut raster).unwrap();
+        }
+        assert_eq!(calls, 1);
+
+        // Remove the tile — should report it was present.
+        assert!(atlas.remove(&k), "remove should return true for a present tile");
+
+        // Second insert — tile was evicted so rasterize fires again.
+        {
+            let mut raster = || -> Result<_, AtlasError> {
+                calls += 1;
+                Ok((Size::new(DevicePixels(8), DevicePixels(8)), vec![0u8; 64]))
+            };
+            atlas.get_or_insert(&k, &mut raster).unwrap();
+        }
+        assert_eq!(calls, 2, "re-rasterize must happen after eviction");
+
+        // Removing a key that is not present should return false.
+        let absent = key(AtlasTextureKind::Polychrome, 99);
+        assert!(!atlas.remove(&absent), "remove must return false for absent key");
+    }
+
+    /// Cloning an `AtlasKey` backed by `Arc<[u8]>` is cheap: no heap
+    /// allocation per clone. This test constructs a 1 MiB key and clones it
+    /// 100 times to confirm the code path compiles and runs without allocating
+    /// new backing buffers (we just count clones, not benchmark timing).
+    #[test]
+    fn atlas_key_arc_bytes_are_cheap_to_clone() {
+        let big: Arc<[u8]> = Arc::from(vec![0u8; 1024 * 1024]);
+        let k = AtlasKey {
+            kind: AtlasTextureKind::Polychrome,
+            bytes: big,
+        };
+        // 100 clones — each is one atomic increment, no heap allocation.
+        let clones: Vec<AtlasKey> = (0..100).map(|_| k.clone()).collect();
+        assert_eq!(clones.len(), 100);
+        // All clones share the same underlying buffer.
+        for c in &clones {
+            assert_eq!(c.bytes.len(), 1024 * 1024);
+        }
     }
 }

@@ -25,6 +25,8 @@ pub mod wgpu_atlas;
 pub mod buffers;
 pub mod context;
 #[cfg(feature = "native")]
+pub mod device_lost;
+#[cfg(feature = "native")]
 pub mod frame_loop;
 pub mod pipelines;
 pub mod bounds_tree;

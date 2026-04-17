@@ -219,6 +219,10 @@ impl BoundsTree {
     ///
     /// Fast-path: if the globally highest-order leaf (`max_leaf`) intersects
     /// `query`, return its order immediately in O(1) without walking the tree.
+    ///
+    /// Slow-path uses an explicit `Vec<u32>` stack rather than recursion to
+    /// avoid stack overflows on degenerate overflow-bucket chains (thousands of
+    /// deeply nested internal nodes).
     pub fn topmost_intersecting(&self, query: Bounds<i32>) -> Option<DrawOrder> {
         let root = self.root?;
 
@@ -231,34 +235,35 @@ impl BoundsTree {
             }
         }
 
-        // Slow-path: walk the tree.
+        // Slow-path: explicit stack walk — no recursion, no stack-overflow risk.
         let mut best: Option<DrawOrder> = None;
-        self.walk(root, query, &mut best);
+        let mut stack: Vec<u32> = Vec::with_capacity(32);
+        stack.push(root);
+        while let Some(id) = stack.pop() {
+            let node = &self.nodes[id as usize];
+            // Prune: this subtree cannot beat the current best.
+            if let Some(b) = best {
+                if node.max_order <= b {
+                    continue;
+                }
+            }
+            if !node.bounds.intersects(&query) {
+                continue;
+            }
+            match node.kind {
+                NodeKind::Leaf { order } => {
+                    if best.map_or(true, |b| order > b) {
+                        best = Some(order);
+                    }
+                }
+                NodeKind::Internal { children } => {
+                    for &c in children.as_slice() {
+                        stack.push(c);
+                    }
+                }
+            }
+        }
         best
-    }
-
-    fn walk(&self, node_id: u32, query: Bounds<i32>, best: &mut Option<DrawOrder>) {
-        let node = &self.nodes[node_id as usize];
-        if let Some(b) = best {
-            if node.max_order <= *b {
-                return;
-            }
-        }
-        if !node.bounds.intersects(&query) {
-            return;
-        }
-        match node.kind {
-            NodeKind::Leaf { order } => {
-                if best.map_or(true, |b| order > b) {
-                    *best = Some(order);
-                }
-            }
-            NodeKind::Internal { children } => {
-                for &c in children.as_slice() {
-                    self.walk(c, query, best);
-                }
-            }
-        }
     }
 }
 
@@ -372,5 +377,23 @@ mod tests {
         // A wide rect that covers all three → order must be 2.
         let d = t.insert(rect(0, 0, 50, 10));
         assert_eq!(d, 2, "rect overlapping all existing order-1 rects should be order 2");
+    }
+
+    /// Inserting 100 000 overlapping rects all at the same point creates a
+    /// maximally degenerate overflow-bucket chain. The explicit-stack
+    /// `topmost_intersecting` must return a result without stack-overflowing.
+    #[test]
+    fn deep_tree_does_not_stack_overflow() {
+        let mut t = BoundsTree::new();
+        // All rects share the same single point — every insert overlaps every
+        // previous one, driving order up and creating a deeply nested internal
+        // node chain via the overflow-bucket path.
+        let n = 100_000u32;
+        for _ in 0..n {
+            t.insert(rect(0, 0, 1, 1));
+        }
+        // The topmost order must equal n (each insert adds 1 over the previous).
+        let found = t.topmost_intersecting(rect(0, 0, 1, 1));
+        assert_eq!(found, Some(n), "topmost order should equal number of inserted rects");
     }
 }
