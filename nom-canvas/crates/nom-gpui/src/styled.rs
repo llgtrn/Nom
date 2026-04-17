@@ -1,7 +1,7 @@
 //! Fluent style builder trait. Any element that exposes `&mut Style` gets
 //! the full API automatically: `.flex_col().padding(8.0).bg(colors::BG)`.
 
-use crate::color::Rgba;
+use crate::color::LinearRgba;
 use crate::geometry::{Corners, Edges, Pixels};
 use crate::style::{
     AlignItems, Display, FlexDirection, JustifyContent, Length, Overflow, Style,
@@ -142,11 +142,11 @@ pub trait Styled {
     }
 
     // ─── Paint ──────────────────────────────────────────────────────────
-    fn bg(&mut self, color: Rgba) -> &mut Self {
+    fn bg(&mut self, color: LinearRgba) -> &mut Self {
         self.style().background = Some(color);
         self
     }
-    fn text_color(&mut self, color: Rgba) -> &mut Self {
+    fn text_color(&mut self, color: LinearRgba) -> &mut Self {
         self.style().text_color = Some(color);
         self
     }
@@ -154,7 +154,7 @@ pub trait Styled {
         self.style().font_size = Some(Pixels(v));
         self
     }
-    fn border(&mut self, width: f32, color: Rgba) -> &mut Self {
+    fn border(&mut self, width: f32, color: LinearRgba) -> &mut Self {
         self.style().border_widths = Edges::all(Pixels(width));
         self.style().border_color = Some(color);
         self
@@ -192,12 +192,12 @@ mod tests {
             .w(100.0)
             .h(50.0)
             .padding(8.0)
-            .bg(Rgba::WHITE)
+            .bg(LinearRgba::WHITE)
             .rounded(4.0);
         assert_eq!(b.style.flex_direction, FlexDirection::Column);
         assert_eq!(b.style.width, Length::Pixels(Pixels(100.0)));
         assert_eq!(b.style.padding.top, Pixels(8.0));
-        assert_eq!(b.style.background, Some(Rgba::WHITE));
+        assert_eq!(b.style.background, Some(LinearRgba::WHITE));
         assert_eq!(b.style.corner_radii.top_left, Pixels(4.0));
     }
 

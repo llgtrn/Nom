@@ -1,7 +1,7 @@
 //! Layout style: the Nom equivalent of Zed's `Style`. Mirrors taffy fields so
 //! a `Style` value can be converted to `taffy::Style` for layout computation.
 
-use crate::color::Rgba;
+use crate::color::LinearRgba;
 use crate::geometry::{Corners, Edges, Pixels};
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -91,10 +91,10 @@ pub struct Style {
     pub justify_content: JustifyContent,
 
     // Paint
-    pub background: Option<Rgba>,
-    pub border_color: Option<Rgba>,
+    pub background: Option<LinearRgba>,
+    pub border_color: Option<LinearRgba>,
     pub corner_radii: Corners<Pixels>,
-    pub text_color: Option<Rgba>,
+    pub text_color: Option<LinearRgba>,
     pub font_size: Option<Pixels>,
     pub opacity: Option<f32>,
 }

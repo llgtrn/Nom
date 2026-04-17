@@ -7,7 +7,7 @@
 //! # Modules
 //!
 //! - [`geometry`]  — `Point`, `Size`, `Bounds`, `Pixels`, `TransformationMatrix`.
-//! - [`color`]     — `Rgba`, `Hsla`, alpha compositing.
+//! - [`color`]     — `LinearRgba`, `Hsla`, alpha compositing.
 //! - [`bounds_tree`] — R-tree assigning stable `DrawOrder` to paint calls.
 //! - [`scene`]     — 7 typed primitive collections with batched iteration.
 //! - [`atlas`]     — Texture atlas trait + in-memory implementation.
@@ -35,6 +35,7 @@ pub mod color;
 pub mod element;
 pub mod geometry;
 pub mod scene;
+pub mod scene_builder;
 pub mod style;
 pub mod styled;
 pub mod taffy_layout;
@@ -46,7 +47,7 @@ pub mod window;
 
 pub use atlas::{AtlasKey, AtlasTextureId, AtlasTextureKind, AtlasTile, InMemoryAtlas, PlatformAtlas};
 pub use bounds_tree::{BoundsTree, DrawOrder};
-pub use color::{Hsla, Rgba};
+pub use color::{Hsla, LinearRgba};
 pub use element::{draw_element, Element, ElementCx, ElementId};
 pub use geometry::{
     Bounds, Corners, DevicePixels, Edges, Pixels, Point, ScaledPixels, Size, TransformationMatrix,

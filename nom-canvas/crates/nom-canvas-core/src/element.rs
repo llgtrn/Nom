@@ -4,7 +4,7 @@
 //! and the `Shape` variant that drives rendering. Every mutation goes through
 //! [`crate::mutation`] so the version counters stay consistent.
 
-use nom_gpui::{Bounds, Pixels, Rgba};
+use nom_gpui::{Bounds, Pixels, LinearRgba};
 
 use crate::shapes::Shape;
 
@@ -34,10 +34,10 @@ pub struct Element {
     pub angle: f32,
 
     /// Stroke colour; `None` means the shape has no visible border.
-    pub stroke: Option<Rgba>,
+    pub stroke: Option<LinearRgba>,
 
     /// Fill colour; `None` means the shape interior is transparent.
-    pub fill: Option<Rgba>,
+    pub fill: Option<LinearRgba>,
 
     /// Opacity multiplier applied on top of stroke/fill alpha (0.0 – 1.0).
     pub opacity: f32,

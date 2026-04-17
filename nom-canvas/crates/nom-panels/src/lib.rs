@@ -22,10 +22,12 @@ pub mod library;
 pub mod mode_switcher;
 pub mod preview;
 pub mod properties;
+pub mod settings_panel;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod statusbar;
 pub mod toolbar;
+pub mod diagnostics_panel;
 
 /// Opaque document identifier used across all panels.
 pub type DocumentId = u64;

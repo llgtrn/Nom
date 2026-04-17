@@ -189,7 +189,7 @@ struct GpuSubpixelSprite {
 
 // ── Conversion helpers ────────────────────────────────────────────────────────
 
-fn rgba_to_array(c: crate::color::Rgba) -> [f32; 4] {
+fn rgba_to_array(c: crate::color::LinearRgba) -> [f32; 4] {
     [c.r, c.g, c.b, c.a]
 }
 
@@ -994,7 +994,7 @@ mod tests {
     use crate::context::GpuContext;
     use crate::scene::{Quad, Shadow, Scene};
     use crate::geometry::{Bounds, Corners, Point, ScaledPixels, Size};
-    use crate::color::Rgba;
+    use crate::color::LinearRgba;
     use crate::bounds_tree::DrawOrder;
 
     fn make_offscreen_target(device: &wgpu::Device) -> (wgpu::Texture, wgpu::TextureView) {
@@ -1081,8 +1081,8 @@ mod tests {
             bounds: sp_bounds(0.0, 0.0, 32.0, 32.0),
             clip_bounds: sp_bounds(0.0, 0.0, 64.0, 64.0),
             corner_radii: Corners::all(ScaledPixels(0.0)),
-            background: Rgba::new(1.0, 0.0, 0.0, 1.0),
-            border_color: Rgba::TRANSPARENT,
+            background: LinearRgba::new(1.0, 0.0, 0.0, 1.0),
+            border_color: LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         });
         scene.finish();
@@ -1154,7 +1154,7 @@ mod tests {
             bounds: sp_bounds(2.0, 2.0, 30.0, 30.0),
             clip_bounds: sp_bounds(0.0, 0.0, 64.0, 64.0),
             corner_radii: Corners::all(ScaledPixels(4.0)),
-            color: Rgba::new(0.0, 0.0, 0.0, 0.5),
+            color: LinearRgba::new(0.0, 0.0, 0.0, 0.5),
             blur_radius: ScaledPixels(8.0),
         });
         scene.insert_quad(Quad {
@@ -1162,8 +1162,8 @@ mod tests {
             bounds: sp_bounds(0.0, 0.0, 32.0, 32.0),
             clip_bounds: sp_bounds(0.0, 0.0, 64.0, 64.0),
             corner_radii: Corners::all(ScaledPixels(4.0)),
-            background: Rgba::new(0.2, 0.4, 0.8, 1.0),
-            border_color: Rgba::TRANSPARENT,
+            background: LinearRgba::new(0.2, 0.4, 0.8, 1.0),
+            border_color: LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         });
         scene.finish();

@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod artifact_store;
+pub mod cost_estimator;
 pub mod backends;
 pub mod backend_trait;
 pub mod credential_store;

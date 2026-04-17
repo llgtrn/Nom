@@ -40,7 +40,7 @@ use nom_gpui::scene::{
     AtlasTileRef, MonochromeSprite, PrimitiveBatch, Quad, Scene, Underline,
 };
 use nom_gpui::wgpu_atlas::GpuAtlas;
-use nom_gpui::{AtlasTextureId, Rgba};
+use nom_gpui::{AtlasTextureId, LinearRgba};
 
 // ── helpers ───────────────────────────────────────────────────────────────────
 
@@ -70,8 +70,8 @@ fn make_quad(order: u32) -> Quad {
         bounds: sp_bounds(0.0, 0.0, 10.0, 10.0),
         clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
         corner_radii: Corners::all(ScaledPixels(0.0)),
-        background: Rgba::WHITE,
-        border_color: Rgba::TRANSPARENT,
+        background: LinearRgba::WHITE,
+        border_color: LinearRgba::TRANSPARENT,
         border_widths: [ScaledPixels(0.0); 4],
     }
 }
@@ -81,7 +81,7 @@ fn make_mono_sprite(order: u32, texture_index: u32) -> MonochromeSprite {
         order,
         bounds: sp_bounds(0.0, 0.0, 8.0, 8.0),
         clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
-        color: Rgba::WHITE,
+        color: LinearRgba::WHITE,
         tile: AtlasTileRef {
             texture: AtlasTextureId {
                 kind: AtlasTextureKind::Monochrome,
@@ -98,7 +98,7 @@ fn make_underline(order: u32) -> Underline {
         order,
         bounds: sp_bounds(0.0, 20.0, 50.0, 2.0),
         clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
-        color: Rgba::BLACK,
+        color: LinearRgba::BLACK,
         thickness: ScaledPixels(1.0),
         wavy: false,
     }

@@ -8,7 +8,7 @@ use std::collections::HashMap;
 
 use crate::atlas::AtlasTextureId;
 use crate::bounds_tree::{BoundsTree, DrawOrder};
-use crate::color::Rgba;
+use crate::color::LinearRgba;
 use crate::geometry::{Bounds, Corners, Point, ScaledPixels, Size, TransformationMatrix};
 
 /// Filled/stroked rounded rectangle with optional shadow/border.
@@ -18,8 +18,8 @@ pub struct Quad {
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
     pub corner_radii: Corners<ScaledPixels>,
-    pub background: Rgba,
-    pub border_color: Rgba,
+    pub background: LinearRgba,
+    pub border_color: LinearRgba,
     pub border_widths: [ScaledPixels; 4], // top, right, bottom, left
 }
 
@@ -30,7 +30,7 @@ pub struct Shadow {
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
     pub corner_radii: Corners<ScaledPixels>,
-    pub color: Rgba,
+    pub color: LinearRgba,
     pub blur_radius: ScaledPixels,
 }
 
@@ -40,7 +40,7 @@ pub struct MonochromeSprite {
     pub order: DrawOrder,
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
-    pub color: Rgba,
+    pub color: LinearRgba,
     pub tile: AtlasTileRef,
     pub transform: TransformationMatrix,
 }
@@ -53,7 +53,7 @@ pub struct SubpixelSprite {
     pub order: DrawOrder,
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
-    pub color: Rgba,
+    pub color: LinearRgba,
     pub tile: AtlasTileRef,
     pub transform: TransformationMatrix,
 }
@@ -83,7 +83,7 @@ pub struct Underline {
     pub order: DrawOrder,
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
-    pub color: Rgba,
+    pub color: LinearRgba,
     pub thickness: ScaledPixels,
     pub wavy: bool,
 }
@@ -95,7 +95,7 @@ pub struct Path {
     pub bounds: Bounds<ScaledPixels>,
     pub clip_bounds: Bounds<ScaledPixels>,
     pub vertices: Vec<Point<ScaledPixels>>,
-    pub color: Rgba,
+    pub color: LinearRgba,
 }
 
 /// Enum discriminant for batched iteration.
@@ -743,7 +743,7 @@ impl SceneBuilder {
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
         corner_radii: Corners<ScaledPixels>,
-        background: Rgba,
+        background: LinearRgba,
     ) -> DrawOrder {
         let order = self.next_order(bounds);
         self.scene.insert_quad(Quad {
@@ -752,7 +752,7 @@ impl SceneBuilder {
             clip_bounds,
             corner_radii,
             background,
-            border_color: Rgba::TRANSPARENT,
+            border_color: LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         });
         order
@@ -764,7 +764,7 @@ impl SceneBuilder {
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
         corner_radii: Corners<ScaledPixels>,
-        color: Rgba,
+        color: LinearRgba,
         blur_radius: ScaledPixels,
     ) -> DrawOrder {
         let order = self.next_order(bounds);
@@ -784,7 +784,7 @@ impl SceneBuilder {
         &mut self,
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
-        color: Rgba,
+        color: LinearRgba,
         thickness: ScaledPixels,
         wavy: bool,
     ) -> DrawOrder {
@@ -806,7 +806,7 @@ impl SceneBuilder {
         &mut self,
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
-        color: Rgba,
+        color: LinearRgba,
         tile: AtlasTileRef,
         transform: TransformationMatrix,
     ) -> DrawOrder {
@@ -828,7 +828,7 @@ impl SceneBuilder {
         &mut self,
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
-        color: Rgba,
+        color: LinearRgba,
         tile: AtlasTileRef,
         transform: TransformationMatrix,
     ) -> DrawOrder {
@@ -872,7 +872,7 @@ impl SceneBuilder {
         bounds: Bounds<ScaledPixels>,
         clip_bounds: Bounds<ScaledPixels>,
         vertices: Vec<Point<ScaledPixels>>,
-        color: Rgba,
+        color: LinearRgba,
     ) -> DrawOrder {
         let order = self.next_order(bounds);
         self.scene.insert_path(Path {
@@ -941,8 +941,8 @@ mod tests {
             bounds: sp_bounds(0.0, 0.0, 10.0, 10.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
             corner_radii: Corners::all(ScaledPixels(0.0)),
-            background: Rgba::WHITE,
-            border_color: Rgba::TRANSPARENT,
+            background: LinearRgba::WHITE,
+            border_color: LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         }
     }
@@ -953,7 +953,7 @@ mod tests {
             bounds: sp_bounds(0.0, 0.0, 10.0, 10.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
             corner_radii: Corners::all(ScaledPixels(0.0)),
-            color: Rgba::BLACK,
+            color: LinearRgba::BLACK,
             blur_radius: ScaledPixels(4.0),
         }
     }
@@ -984,7 +984,7 @@ mod tests {
             order,
             bounds: sp_bounds(0.0, 0.0, 8.0, 8.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
-            color: Rgba::WHITE,
+            color: LinearRgba::WHITE,
             tile: AtlasTileRef {
                 texture: tex(texture_index),
                 uv: [0.0, 0.0, 1.0, 1.0],
@@ -998,7 +998,7 @@ mod tests {
             order,
             bounds: sp_bounds(0.0, 0.0, 8.0, 8.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
-            color: Rgba::WHITE,
+            color: LinearRgba::WHITE,
             tile: AtlasTileRef {
                 texture: subpixel_tex(texture_index),
                 uv: [0.0, 0.0, 1.0, 1.0],
@@ -1316,8 +1316,8 @@ mod tests {
             bounds: sp_bounds(x, y, w, h),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
             corner_radii: Corners::all(ScaledPixels(0.0)),
-            background: Rgba::WHITE,
-            border_color: Rgba::TRANSPARENT,
+            background: LinearRgba::WHITE,
+            border_color: LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         }
     }
@@ -1374,7 +1374,7 @@ mod tests {
             order: 3,
             bounds: sp_bounds(0.0, 0.0, 10.0, 2.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
-            color: Rgba::BLACK,
+            color: LinearRgba::BLACK,
             thickness: ScaledPixels(1.0),
             wavy: false,
         });
@@ -1386,7 +1386,7 @@ mod tests {
             bounds: sp_bounds(0.0, 0.0, 10.0, 10.0),
             clip_bounds: sp_bounds(0.0, 0.0, 1000.0, 1000.0),
             vertices: vec![],
-            color: Rgba::BLACK,
+            color: LinearRgba::BLACK,
         });
 
         assert_eq!(s.shadows().len(), 1);
@@ -1544,8 +1544,8 @@ mod hit_test_tests {
             bounds: sp(x, y, w, h),
             clip_bounds: sp(0.0, 0.0, 10000.0, 10000.0),
             corner_radii: crate::geometry::Corners::all(ScaledPixels(0.0)),
-            background: crate::color::Rgba::WHITE,
-            border_color: crate::color::Rgba::TRANSPARENT,
+            background: crate::color::LinearRgba::WHITE,
+            border_color: crate::color::LinearRgba::TRANSPARENT,
             border_widths: [ScaledPixels(0.0); 4],
         }
     }

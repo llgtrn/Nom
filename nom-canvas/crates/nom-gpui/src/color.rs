@@ -3,14 +3,14 @@
 /// Linear-space RGBA color with components in [0, 1].
 #[derive(Clone, Copy, Debug, PartialEq)]
 #[repr(C)]
-pub struct Rgba {
+pub struct LinearRgba {
     pub r: f32,
     pub g: f32,
     pub b: f32,
     pub a: f32,
 }
 
-impl Rgba {
+impl LinearRgba {
     pub const TRANSPARENT: Self = Self {
         r: 0.0,
         g: 0.0,
@@ -103,7 +103,7 @@ impl Hsla {
         }
     }
 
-    pub fn to_rgba(self) -> Rgba {
+    pub fn to_linear_rgba(self) -> LinearRgba {
         let c = (1.0 - (2.0 * self.l - 1.0).abs()) * self.s;
         let h_prime = (self.h.rem_euclid(360.0)) / 60.0;
         let x = c * (1.0 - (h_prime.rem_euclid(2.0) - 1.0).abs());
@@ -116,7 +116,7 @@ impl Hsla {
             _ => (c, 0.0, x),
         };
         let m = self.l - c / 2.0;
-        Rgba {
+        LinearRgba {
             r: r1 + m,
             g: g1 + m,
             b: b1 + m,
@@ -131,7 +131,7 @@ mod tests {
 
     #[test]
     fn hex_parses_rgb() {
-        let c = Rgba::hex(0xFF8040);
+        let c = LinearRgba::hex(0xFF8040);
         let [r, g, b, a] = c.to_u8();
         assert_eq!(r, 255);
         assert_eq!(g, 128);
@@ -141,8 +141,8 @@ mod tests {
 
     #[test]
     fn blend_over_opaque_keeps_alpha_one() {
-        let top = Rgba::new(1.0, 0.0, 0.0, 0.5);
-        let bot = Rgba::BLACK;
+        let top = LinearRgba::new(1.0, 0.0, 0.0, 0.5);
+        let bot = LinearRgba::BLACK;
         let out = top.blend(bot);
         assert!((out.a - 1.0).abs() < 1e-6);
         assert!((out.r - 0.5).abs() < 1e-6);
@@ -150,13 +150,13 @@ mod tests {
 
     #[test]
     fn blend_transparent_over_anything_returns_below() {
-        let out = Rgba::TRANSPARENT.blend(Rgba::WHITE);
-        assert_eq!(out, Rgba::WHITE);
+        let out = LinearRgba::TRANSPARENT.blend(LinearRgba::WHITE);
+        assert_eq!(out, LinearRgba::WHITE);
     }
 
     #[test]
     fn hsla_red_converts_to_rgba() {
-        let red = Hsla::new(0.0, 1.0, 0.5, 1.0).to_rgba();
+        let red = Hsla::new(0.0, 1.0, 0.5, 1.0).to_linear_rgba();
         assert!((red.r - 1.0).abs() < 1e-4);
         assert!(red.g < 1e-4);
         assert!(red.b < 1e-4);
@@ -164,8 +164,8 @@ mod tests {
 
     #[test]
     fn from_normalized_matches_from_degrees() {
-        let a = Hsla::from_normalized(0.5, 0.8, 0.4, 1.0).to_rgba();
-        let b = Hsla::from_degrees(180.0, 0.8, 0.4, 1.0).to_rgba();
+        let a = Hsla::from_normalized(0.5, 0.8, 0.4, 1.0).to_linear_rgba();
+        let b = Hsla::from_degrees(180.0, 0.8, 0.4, 1.0).to_linear_rgba();
         assert!((a.r - b.r).abs() < 1e-5);
         assert!((a.g - b.g).abs() < 1e-5);
         assert!((a.b - b.b).abs() < 1e-5);
@@ -175,7 +175,7 @@ mod tests {
     #[test]
     fn theme_style_normalized_hue_produces_correct_color() {
         // A theme using Zed-convention h=0.0833… (30°) should give an orange-ish tone.
-        let c = Hsla::from_normalized(30.0 / 360.0, 1.0, 0.5, 1.0).to_rgba();
+        let c = Hsla::from_normalized(30.0 / 360.0, 1.0, 0.5, 1.0).to_linear_rgba();
         // 30° HSL with s=1, l=0.5 → RGB (1.0, 0.5, 0.0)
         assert!((c.r - 1.0).abs() < 1e-4, "r={}", c.r);
         assert!((c.g - 0.5).abs() < 1e-4, "g={}", c.g);
@@ -186,8 +186,8 @@ mod tests {
     /// `rem_euclid(360.0)` — 360 wraps to 0 before the sector match.
     #[test]
     fn hsla_hue_wraps_at_360() {
-        let a = Hsla::from_degrees(0.0, 1.0, 0.5, 1.0).to_rgba();
-        let b = Hsla::from_degrees(360.0, 1.0, 0.5, 1.0).to_rgba();
+        let a = Hsla::from_degrees(0.0, 1.0, 0.5, 1.0).to_linear_rgba();
+        let b = Hsla::from_degrees(360.0, 1.0, 0.5, 1.0).to_linear_rgba();
         assert!(
             (a.r - b.r).abs() < 1e-4,
             "r mismatch: {:.6} vs {:.6}",
@@ -212,7 +212,7 @@ mod tests {
     /// are gray (r == g == b, modulated only by lightness).
     #[test]
     fn hsla_saturation_zero_produces_gray() {
-        let gray = Hsla::from_degrees(180.0, 0.0, 0.5, 1.0).to_rgba();
+        let gray = Hsla::from_degrees(180.0, 0.0, 0.5, 1.0).to_linear_rgba();
         assert!(
             (gray.r - gray.g).abs() < 1e-4,
             "r={:.6} g={:.6} should be equal",
@@ -230,7 +230,7 @@ mod tests {
     /// Lightness 0 → black; lightness 1 → white (regardless of hue/saturation).
     #[test]
     fn hsla_lightness_extremes() {
-        let black = Hsla::from_degrees(180.0, 1.0, 0.0, 1.0).to_rgba();
+        let black = Hsla::from_degrees(180.0, 1.0, 0.0, 1.0).to_linear_rgba();
         assert!(
             black.r < 1e-4,
             "black.r should be ~0, got {:.6}",
@@ -246,7 +246,7 @@ mod tests {
             "black.b should be ~0, got {:.6}",
             black.b
         );
-        let white = Hsla::from_degrees(180.0, 1.0, 1.0, 1.0).to_rgba();
+        let white = Hsla::from_degrees(180.0, 1.0, 1.0, 1.0).to_linear_rgba();
         assert!(
             (white.r - 1.0).abs() < 1e-4,
             "white.r should be ~1, got {:.6}",

@@ -94,7 +94,7 @@ pub fn draw_element<E: Element>(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::color::Rgba;
+    use crate::color::LinearRgba;
     use crate::geometry::{Corners, Point, Size};
     use crate::scene::Quad;
     use crate::style::Style;
@@ -133,8 +133,8 @@ mod tests {
                 bounds,
                 clip_bounds: bounds,
                 corner_radii: Corners::all(ScaledPixels(0.0)),
-                background: self.style.background.unwrap_or(Rgba::TRANSPARENT),
-                border_color: Rgba::TRANSPARENT,
+                background: self.style.background.unwrap_or(LinearRgba::TRANSPARENT),
+                border_color: LinearRgba::TRANSPARENT,
                 border_widths: [ScaledPixels(0.0); 4],
             });
         }
@@ -149,7 +149,7 @@ mod tests {
             style: Style {
                 width: crate::style::Length::Pixels(crate::geometry::Pixels(50.0)),
                 height: crate::style::Length::Pixels(crate::geometry::Pixels(30.0)),
-                background: Some(Rgba::WHITE),
+                background: Some(LinearRgba::WHITE),
                 ..Default::default()
             },
         };

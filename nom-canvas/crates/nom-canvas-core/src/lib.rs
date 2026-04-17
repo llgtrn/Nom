@@ -14,6 +14,7 @@
 
 pub mod coords;
 pub mod element;
+pub mod groups;
 pub mod fit;
 pub mod history;
 pub mod hit_testing;
