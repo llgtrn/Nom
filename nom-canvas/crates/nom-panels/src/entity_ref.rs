@@ -238,4 +238,70 @@ mod tests {
         clone.hash(&mut h2);
         assert_eq!(h1.finish(), h2.finish());
     }
+
+    // ── PanelEntityRef preserves all NomtuRef fields ──────────────────────────
+
+    #[test]
+    fn panel_entity_ref_preserves_id_field() {
+        let inner = NomtuRef::new("id-preserve-01", "word", "Kind");
+        let e = PanelEntityRef::nomtu(inner);
+        assert_eq!(e.id(), Some("id-preserve-01"));
+    }
+
+    #[test]
+    fn panel_entity_ref_preserves_word_field() {
+        let inner = NomtuRef::new("id", "my-special-word", "Kind");
+        let e = PanelEntityRef::nomtu(inner);
+        let nomtu = e.as_nomtu().unwrap();
+        assert_eq!(nomtu.word, "my-special-word");
+    }
+
+    #[test]
+    fn panel_entity_ref_preserves_kind_field() {
+        let inner = NomtuRef::new("id", "word", "my-special-kind");
+        let e = PanelEntityRef::nomtu(inner);
+        assert_eq!(e.kind(), Some("my-special-kind"));
+    }
+
+    #[test]
+    fn panel_entity_ref_all_three_fields_preserved() {
+        let inner = NomtuRef::new("triple-id", "triple-word", "triple-kind");
+        let e = PanelEntityRef::nomtu(inner);
+        let nomtu = e.as_nomtu().unwrap();
+        assert_eq!(nomtu.id, "triple-id");
+        assert_eq!(nomtu.word, "triple-word");
+        assert_eq!(nomtu.kind, "triple-kind");
+    }
+
+    #[test]
+    fn panel_entity_ref_from_nomtu_ref_via_into_option() {
+        let inner = NomtuRef::new("io-id", "io-word", "io-kind");
+        let e = PanelEntityRef::nomtu(inner.clone());
+        let result = e.into_option().unwrap();
+        assert_eq!(result.id, inner.id);
+        assert_eq!(result.word, inner.word);
+        assert_eq!(result.kind, inner.kind);
+    }
+
+    #[test]
+    fn panel_entity_ref_none_into_option_yields_none() {
+        let e: PanelEntityRef = PanelEntityRef::None;
+        assert!(e.into_option().is_none());
+    }
+
+    #[test]
+    fn panel_entity_ref_nomtu_debug_format_non_empty() {
+        let inner = NomtuRef::new("debug-id", "w", "k");
+        let e = PanelEntityRef::nomtu(inner);
+        let s = format!("{:?}", e);
+        assert!(s.contains("debug-id"), "debug output must include the id");
+    }
+
+    #[test]
+    fn panel_entity_ref_preserves_unicode_word() {
+        let inner = NomtuRef::new("uni-id", "synthetize", "Concept");
+        let e = PanelEntityRef::nomtu(inner);
+        let nomtu = e.as_nomtu().unwrap();
+        assert_eq!(nomtu.word, "synthetize");
+    }
 }

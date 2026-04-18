@@ -1156,4 +1156,159 @@ mod tests {
             );
         }
     }
+
+    // =========================================================================
+    // WAVE-AF AGENT-8 ADDITIONS
+    // =========================================================================
+
+    // --- Icon set has at least 10 icons defined ---
+
+    #[test]
+    fn icon_set_has_at_least_10_icons() {
+        assert!(
+            Icon::all().len() >= 10,
+            "icon set must define at least 10 icons, got {}",
+            Icon::all().len()
+        );
+    }
+
+    #[test]
+    fn icon_set_has_at_least_20_icons() {
+        assert!(
+            Icon::all().len() >= 20,
+            "icon set must define at least 20 icons, got {}",
+            Icon::all().len()
+        );
+    }
+
+    #[test]
+    fn icon_set_has_at_least_30_icons() {
+        assert!(
+            Icon::all().len() >= 30,
+            "icon set must define at least 30 icons, got {}",
+            Icon::all().len()
+        );
+    }
+
+    #[test]
+    fn icon_set_ten_specific_icons_present() {
+        // Verify at least 10 specific named icons exist.
+        let required = [
+            Icon::Plus, Icon::Minus, Icon::X, Icon::Search, Icon::Settings,
+            Icon::Brain, Icon::Network, Icon::File, Icon::Folder, Icon::Play,
+        ];
+        let all = Icon::all();
+        for icon in required {
+            assert!(
+                all.contains(&icon),
+                "{icon:?} must be present in the icon set"
+            );
+        }
+    }
+
+    // --- Mixed-case icon name lookup ---
+
+    /// Look up an icon by its kebab-case name (case-insensitive).
+    fn find_icon_by_name_case_insensitive(query: &str) -> Option<Icon> {
+        Icon::all()
+            .iter()
+            .find(|icon| icon.name().eq_ignore_ascii_case(query))
+            .copied()
+    }
+
+    #[test]
+    fn mixed_case_lookup_exact_lowercase() {
+        // "search" → Icon::Search
+        let result = find_icon_by_name_case_insensitive("search");
+        assert_eq!(result, Some(Icon::Search), "lowercase 'search' must find Icon::Search");
+    }
+
+    #[test]
+    fn mixed_case_lookup_all_uppercase() {
+        // "SEARCH" → Icon::Search (case-insensitive)
+        let result = find_icon_by_name_case_insensitive("SEARCH");
+        assert_eq!(result, Some(Icon::Search), "uppercase 'SEARCH' must find Icon::Search");
+    }
+
+    #[test]
+    fn mixed_case_lookup_title_case() {
+        // "Search" → Icon::Search
+        let result = find_icon_by_name_case_insensitive("Search");
+        assert_eq!(result, Some(Icon::Search), "title-case 'Search' must find Icon::Search");
+    }
+
+    #[test]
+    fn mixed_case_lookup_mixed() {
+        // "sEaRcH" → Icon::Search
+        let result = find_icon_by_name_case_insensitive("sEaRcH");
+        assert_eq!(result, Some(Icon::Search), "mixed-case 'sEaRcH' must find Icon::Search");
+    }
+
+    #[test]
+    fn mixed_case_lookup_hyphenated_name_lowercase() {
+        // "chevron-right" → Icon::ChevronRight
+        let result = find_icon_by_name_case_insensitive("chevron-right");
+        assert_eq!(result, Some(Icon::ChevronRight));
+    }
+
+    #[test]
+    fn mixed_case_lookup_hyphenated_name_uppercase() {
+        // "CHEVRON-RIGHT" → Icon::ChevronRight
+        let result = find_icon_by_name_case_insensitive("CHEVRON-RIGHT");
+        assert_eq!(result, Some(Icon::ChevronRight));
+    }
+
+    #[test]
+    fn mixed_case_lookup_hyphenated_name_mixed() {
+        // "ChEvRoN-RiGhT" → Icon::ChevronRight
+        let result = find_icon_by_name_case_insensitive("ChEvRoN-RiGhT");
+        assert_eq!(result, Some(Icon::ChevronRight));
+    }
+
+    #[test]
+    fn mixed_case_lookup_nonexistent_returns_none() {
+        let result = find_icon_by_name_case_insensitive("nonexistent-icon");
+        assert!(result.is_none(), "unknown icon name must return None");
+    }
+
+    #[test]
+    fn mixed_case_lookup_empty_string_returns_none() {
+        let result = find_icon_by_name_case_insensitive("");
+        assert!(result.is_none(), "empty string must return None");
+    }
+
+    #[test]
+    fn mixed_case_lookup_multiple_icons() {
+        // Verify multiple icons can be found case-insensitively.
+        let queries = [
+            ("BRAIN", Icon::Brain),
+            ("network", Icon::Network),
+            ("Git-Branch", Icon::GitBranch),
+            ("WORKFLOW", Icon::Workflow),
+            ("sparkles", Icon::Sparkles),
+        ];
+        for (query, expected) in queries {
+            let result = find_icon_by_name_case_insensitive(query);
+            assert_eq!(
+                result,
+                Some(expected),
+                "case-insensitive lookup for '{query}' must find {expected:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn mixed_case_lookup_all_icons_findable_case_insensitive() {
+        // Every icon's canonical name must be findable case-insensitively.
+        for icon in Icon::all() {
+            let name = icon.name();
+            let upper = name.to_uppercase();
+            let result = find_icon_by_name_case_insensitive(&upper);
+            assert_eq!(
+                result,
+                Some(*icon),
+                "uppercase version of '{name}' must find {icon:?}"
+            );
+        }
+    }
 }

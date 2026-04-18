@@ -189,6 +189,55 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-compose: →295 tests (+43, semantic MDL, credential store, fallback backoff)
 - [x] nom-blocks: →211 tests (+61, DictReader integration, connector grammar, workspace)
 
+## Wave AF (2026-04-18, planned) — Minimalist UI Design
+**Design mandate:** Simple but strong. Zed-dark-first, font = classical editorial (Libre Baskerville/EB Garamond), all surfaces minimal until content fills them. Theme is swappable.
+
+**Shell chrome — Zed-style:**
+- [ ] **AF-HEADER** — top bar: 36px height, workspace name left, mode switcher center (Code·Doc·Canvas·Graph·Draw·Compose), search/command right, 1px bottom border only
+- [ ] **AF-STATUS** — status bar: 24px, monospace, left=branch+lsp, right=errors/warnings/position, borderless except 1px top
+- [ ] **AF-TITLEBAR** — platform frame integration: custom title area with traffic-light (macOS) / drag-region (Windows)
+
+**Left sidebar — AFFiNE+Zed blend:**
+- [ ] **AF-LEFT-ICONS** — 48px icon rail: file-tree · search · git · extensions · settings (Lucide, 20px, `text_secondary` tint)
+- [ ] **AF-LEFT-PANEL** — expandable panel (248px default): collapsible sections (Explorer / Outline / Library / RAG Context), frosted glass overlay on hover
+- [ ] **AF-LEFT-PALETTE** — node palette (DB-driven from grammar.kinds): search box + category groups, opens from icon rail
+
+**Center workspace:**
+- [ ] **AF-CENTER-EDITOR** — Code mode: rope buffer, gutter (line numbers 40px), syntax highlighting via compiler-bridge, classical serif font for prose blocks, mono for code
+- [ ] **AF-CENTER-CANVAS** — Canvas mode: infinite viewport, AFFiNE card aesthetic (frosted glass, shadow-md), bezier edges with confidence-color tint
+- [ ] **AF-CENTER-TABS** — tab strip: 32px, no-underline active indicator is 2px accent bottom, close-on-hover only
+
+**Right sidebar — Rowboat chat:**
+- [ ] **AF-RIGHT-CHAT** — 320px panel: top = conversation history (scrollable cards), bottom = sticky input box (textarea + send button + tool toggles)
+- [ ] **AF-RIGHT-DEEP** — deep-think stream: reasoning card stack, each card 1px border-left accent colored by hypothesis confidence
+- [ ] **AF-RIGHT-PROPS** — properties panel: shows selected block/node metadata (NomtuRef word+kind+id), inline edit fields
+
+**Typography system — classical editorial:**
+- [ ] **AF-FONT-PROSE** — body/doc text: Libre Baskerville 15px / EB Garamond 16px (serif, Medium-publication feel)
+- [ ] **AF-FONT-CODE** — code/monospace: Berkeley Mono or JetBrains Mono 13px
+- [ ] **AF-FONT-UI** — UI chrome: Inter 13px (already in nom-theme)
+- [ ] **AF-FONT-SCALE** — type scale: xs=11 sm=12 base=13 md=15 lg=18 xl=24 2xl=32 (px)
+
+**Color themes — swappable:**
+- [ ] **AF-THEME-DARK** — default: `#0d1117` bg, `#161b22` surface, `#21262d` elevated, `#58a6ff` accent, `#f0f6fc` text
+- [ ] **AF-THEME-LIGHT** — alternate: `#ffffff` bg, `#f6f8fa` surface, `#eaeef2` elevated, `#0969da` accent, `#1f2328` text
+- [ ] **AF-THEME-OLED** — pure black: `#000000` bg, `#0a0a0a` surface, `#111111` elevated
+- [ ] **AF-THEME-TOGGLE** — theme switcher in settings panel + command palette (`theme dark/light/oled`)
+
+**Settings panel:**
+- [ ] **AF-SETTINGS-PANEL** — full-screen overlay (not sidebar): sections = Editor · Canvas · Theme · Keybindings · Extensions · Advanced
+- [ ] **AF-SETTINGS-EDITOR** — font family/size/tab-size/wrap toggles
+- [ ] **AF-SETTINGS-CANVAS** — grid snap/background pattern/zoom sensitivity
+- [ ] **AF-SETTINGS-KEYBIND** — searchable keybinding list, rebind on click
+- [ ] **AF-SETTINGS-OPEN** — opens via `Cmd/Ctrl+,` and from bottom status bar settings icon
+
+**Minimalism principles (enforced in each item above):**
+- Zero decorative borders — only functional 1px separators
+- No gradients except frosted-glass blur overlay
+- Icons only in icon rail — no icon+label duplication
+- No placeholder text left visible in production surfaces
+- Motion ≤ 200ms except deep-think card entry (300ms ease-out)
+
 ## Wave AC (planned) — clippy + pixel-diff + codec + nom-dict
 - [ ] Broad workspace clippy sweep (nom-theme constants, nom-gpui shader/style tests)
 - [ ] Pixel-diff assertion for .omx/visual/nom-gpui-window-first-paint.png
@@ -264,7 +313,8 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 | [x] Y Coverage | ✅ | 2b73744 — cli/collab/telemetry/lint/intent/blocks, 1462 tests |
 | [x] Z Coverage | ✅ | 59f3a30 — theme/collab/telemetry/bridge/compose/panels/editor/gpui, 1679 tests |
 | [x] AA Coverage | ✅ | de12f4d — +540 across 10 crates, 2219 tests |
-| [ ] AB Coverage | ⏳ | canvas-core/bridge/editor/gpui/panels/collab/theme/graph/compose/blocks |
+| [x] AB Coverage | ✅ | e1aa03b — canvas-core/bridge/editor/gpui/panels/collab/theme/graph/compose/blocks, 3233 tests |
+| [ ] AF Minimalist UI | 🎨 | Wave AF design direction — Zed chrome + Rowboat right + classical typography + swappable themes |
 
 ### Integrity Grep
 

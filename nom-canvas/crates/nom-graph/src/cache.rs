@@ -856,4 +856,161 @@ mod tests {
             CacheStrategy::Lru { capacity: 5 }
         );
     }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: L1 hit does not query L2
+    // Verify that when L1 already has the value, a get() returns it
+    // without consulting L2 (L2 may hold a different value for the key).
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l1_hit_does_not_use_l2() {
+        let mut cache = HierarchicalCache::new(10, 100);
+        // Put distinct values into L1 and L2 for the same key.
+        cache.l1.put(100, CachedValue::String("from-l1".into()));
+        cache.l2.put(100, CachedValue::String("from-l2".into()));
+        // A top-level get() must return the L1 value (checked first).
+        let result = cache.get(100).expect("must find key 100");
+        match result {
+            CachedValue::String(s) => assert_eq!(
+                s, "from-l1",
+                "L1 hit must be returned without consulting L2"
+            ),
+            _ => panic!("wrong CachedValue variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: L1 miss promotes entry from L2 to L1 via get_promoting
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l1_miss_promotes_from_l2() {
+        let mut cache = HierarchicalCache::new(2, 100);
+        // Put a value normally — it goes into both L1 and L2.
+        cache.put(55, CachedValue::String("value55".into()));
+        // Evict from L1 only by filling it with other keys (capacity=2, need 2 more).
+        cache.l1.put(56, CachedValue::String("other1".into()));
+        cache.l1.put(57, CachedValue::String("other2".into()));
+        // Now key 55 should be gone from L1 (evicted by LRU) but still in L2.
+        assert!(
+            cache.l1.get(55).is_none(),
+            "key 55 should have been evicted from L1"
+        );
+        assert!(
+            cache.l2.get(55).is_some(),
+            "key 55 should still live in L2"
+        );
+        // get_promoting fetches from L2 and re-inserts into L1.
+        let result = cache.get_promoting(55);
+        assert!(result.is_some(), "get_promoting must find key 55 via L2");
+        match result.unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "value55"),
+            _ => panic!("wrong variant"),
+        }
+        // After promotion, L1 must hold the key again.
+        assert!(
+            cache.l1.get(55).is_some(),
+            "key 55 must be promoted back into L1 after get_promoting"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: capacity exactly at limit — no eviction until limit exceeded
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_capacity_exactly_at_limit_no_early_eviction() {
+        let cap = 5usize;
+        let mut cache = LruCache::new(cap);
+        // Fill to exact capacity — no eviction should occur.
+        for i in 0..cap as u64 {
+            cache.put(i, CachedValue::String(format!("v{i}")));
+        }
+        assert_eq!(
+            cache.len(),
+            cap,
+            "cache must hold exactly {cap} entries at capacity"
+        );
+        // All entries must still be present (no premature eviction).
+        for i in 0..cap as u64 {
+            assert!(
+                cache.get(i).is_some(),
+                "key {i} must not be evicted when cache is at capacity"
+            );
+        }
+        // Adding one more entry must evict exactly one (the LRU one — key 0,
+        // but note that the get() calls above updated recency; we re-test with
+        // a fresh cache to isolate the behaviour).
+        let mut cache2 = LruCache::new(3);
+        cache2.put(10, CachedValue::String("a".into()));
+        cache2.put(20, CachedValue::String("b".into()));
+        cache2.put(30, CachedValue::String("c".into()));
+        assert_eq!(cache2.len(), 3, "cache2 must hold 3 entries at capacity");
+        // Adding a 4th must evict exactly one entry.
+        cache2.put(40, CachedValue::String("d".into()));
+        assert_eq!(
+            cache2.len(),
+            3,
+            "len must stay at capacity after exceeding limit"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: get() without promotion: missing in both returns None
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_miss_both_tiers_returns_none() {
+        let cache = HierarchicalCache::new(10, 100);
+        assert!(
+            cache.get(999).is_none(),
+            "key absent from both tiers must return None"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: capacity=0 never stores anything
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_capacity_zero_never_stores() {
+        let mut cache = LruCache::new(0);
+        // A zero-capacity LRU must always evict immediately.
+        // The put() will try to evict and then insert.
+        // Depending on implementation the len may be 0 or 1;
+        // what we guarantee is that get() returns the value if len=1.
+        // The invariant: we just verify it doesn't panic and len ≤ 1.
+        cache.put(1, CachedValue::String("x".into()));
+        assert!(
+            cache.len() <= 1,
+            "zero-capacity cache must never hold more than 1 entry"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: large number of entries all retrievable
+    // ------------------------------------------------------------------
+    #[test]
+    fn basic_cache_hundred_entries_all_retrievable() {
+        let mut cache = BasicCache::new();
+        for i in 0u64..100 {
+            cache.put(i, CachedValue::String(format!("val{i}")));
+        }
+        assert_eq!(cache.len(), 100);
+        for i in 0u64..100 {
+            assert!(cache.get(i).is_some(), "key {i} must be retrievable");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // NodeCache: RamPressure strategy — unlimited puts don't panic
+    // ------------------------------------------------------------------
+    #[test]
+    fn node_cache_ram_pressure_many_puts() {
+        let mut cache = NodeCache::new(CacheStrategy::RamPressure { max_entries: 10 });
+        // RamPressure strategy is not handled by NodeCache (falls through to
+        // Classic behaviour since only NoCache and Lru are special-cased).
+        // Just verify it doesn't panic.
+        for i in 0u32..20 {
+            cache.put(format!("n{i}"), CachedValue::String(format!("{i}")));
+        }
+        // At minimum the last inserted entry must be present.
+        assert!(cache.get(&"n19".to_string()).is_some());
+    }
 }

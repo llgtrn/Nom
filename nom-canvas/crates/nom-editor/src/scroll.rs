@@ -313,4 +313,117 @@ mod tests {
         assert_eq!(pos.top_row, 50);
         assert_eq!(pos.anchor_row, 50);
     }
+
+    // ── wave AF-6: ensure cursor visible when cursor moves down 1 line ────────
+
+    /// Cursor at line 0, moves down 1 to line 1. Viewport is 5 rows starting at 0.
+    /// Line 1 is already visible; top_row must not change.
+    #[test]
+    fn scroll_cursor_down_1_line_already_visible() {
+        let mut pos = ScrollPosition::default(); // top_row = 0
+        let new_line = 1usize;
+        let viewport = 5usize;
+        pos.scroll_to_line(new_line, viewport);
+        // line 1 is within [0, 5) → already visible, top_row stays 0.
+        assert_eq!(pos.top_row, 0, "top_row must not change when cursor is already visible");
+        assert_eq!(pos.anchor_row, 1);
+    }
+
+    /// Cursor at last visible line moves down 1, falling just outside viewport.
+    #[test]
+    fn scroll_cursor_moves_down_1_to_just_outside_viewport() {
+        // Viewport [0, 5). Cursor moves from line 4 to line 5.
+        let mut pos = ScrollPosition::default();
+        pos.scroll_to_line(5, 5); // line 5 is first invisible line
+        // top_row = 5 + 1 - 5 = 1
+        assert_eq!(pos.top_row, 1, "viewport must scroll when cursor moves beyond bottom edge");
+        assert!(pos.top_row <= 5 && 5 < pos.top_row + 5, "cursor must be visible after scroll");
+    }
+
+    /// Cursor at line N, viewport = 10; moving down 1 to N+1 when N+1 is still in viewport.
+    #[test]
+    fn scroll_cursor_down_1_within_large_viewport() {
+        let mut pos = ScrollPosition::with_anchor(5, 0); // top_row = 5
+        let new_line = 14usize; // still within [5, 15)
+        pos.scroll_to_line(new_line, 10);
+        // line 14 < 5 + 10 = 15, so still visible.
+        assert_eq!(pos.top_row, 5, "top_row must stay when cursor is in viewport");
+        assert_eq!(pos.anchor_row, 14);
+    }
+
+    /// Cursor exactly at bottom edge of viewport moves down 1 → scrolls.
+    #[test]
+    fn scroll_cursor_at_bottom_edge_moves_down_1() {
+        let viewport = 8usize;
+        // top_row = 0; bottom edge is line 7 (last visible). cursor was at 7, moves to 8.
+        let mut pos = ScrollPosition::default();
+        let new_cursor = 8usize;
+        pos.scroll_to_line(new_cursor, viewport);
+        // top_row = 8 + 1 - 8 = 1
+        assert_eq!(pos.top_row, 1);
+        assert!(pos.top_row <= new_cursor && new_cursor < pos.top_row + viewport);
+    }
+
+    /// ensure_visible: cursor moved down 1 line, still inside viewport.
+    #[test]
+    fn ensure_visible_cursor_down_1_still_in_viewport() {
+        let mut pos = ScrollPosition::with_anchor(2, 0); // top_row = 2
+        let new_line = 3usize; // within [2, 12)
+        pos.ensure_visible(new_line, 10);
+        assert_eq!(pos.top_row, 2, "top_row must not change");
+    }
+
+    /// ensure_visible: cursor moved down 1 to just outside viewport.
+    #[test]
+    fn ensure_visible_cursor_down_1_just_outside() {
+        let viewport = 5usize;
+        let mut pos = ScrollPosition::with_anchor(0, 0); // [0, 5)
+        pos.ensure_visible(5, viewport); // line 5 is outside
+        // top_row = 5 + 1 - 5 = 1
+        assert_eq!(pos.top_row, 1);
+    }
+
+    /// scroll_to_line invariant: after any single-line cursor-down move, the cursor row
+    /// is always visible (top_row <= row < top_row + viewport).
+    #[test]
+    fn scroll_cursor_down_1_invariant_holds_for_many_starting_positions() {
+        let viewport = 5usize;
+        for starting_top in 0usize..20 {
+            // Cursor starts at the bottom of the viewport, moves down 1.
+            let cursor_was = starting_top + viewport - 1;
+            let cursor_now = cursor_was + 1;
+            let mut pos = ScrollPosition::with_anchor(starting_top, 0);
+            pos.scroll_to_line(cursor_now, viewport);
+            assert!(
+                pos.top_row <= cursor_now && cursor_now < pos.top_row + viewport,
+                "cursor must be visible after down-1 from top_row={starting_top}"
+            );
+        }
+    }
+
+    /// Cursor moves down 1 from line 0 in an empty-style viewport (viewport=1).
+    #[test]
+    fn scroll_cursor_down_1_single_line_viewport() {
+        let mut pos = ScrollPosition::default(); // top_row = 0
+        pos.scroll_to_line(1, 1); // viewport of 1 line, cursor at line 1
+        // top_row = 1 + 1 - 1 = 1
+        assert_eq!(pos.top_row, 1);
+        assert_eq!(pos.anchor_row, 1);
+    }
+
+    /// Cursor moves down 1 when already at a deep line (regression: no overflow).
+    #[test]
+    fn scroll_cursor_down_1_from_deep_line() {
+        let viewport = 10usize;
+        let deep_top = 1_000usize;
+        let mut pos = ScrollPosition::with_anchor(deep_top, 0);
+        // Cursor at last visible line of the deep viewport.
+        let cursor_was = deep_top + viewport - 1;
+        let cursor_now = cursor_was + 1;
+        pos.scroll_to_line(cursor_now, viewport);
+        assert!(
+            pos.top_row <= cursor_now && cursor_now < pos.top_row + viewport,
+            "cursor must be visible at deep scroll position"
+        );
+    }
 }

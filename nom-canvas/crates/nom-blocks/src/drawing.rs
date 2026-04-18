@@ -320,4 +320,106 @@ mod tests {
             "drawing output must reflect current theme token value"
         );
     }
+
+    #[test]
+    fn stroke_width_stored() {
+        let s = Stroke::new(StrokeColor::black(), 3.5);
+        assert!((s.width - 3.5).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn stroke_pressure_count_matches_point_count() {
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        for i in 0..10 {
+            s.add_point([i as f32, i as f32], 0.5);
+        }
+        assert_eq!(s.points.len(), s.pressure.len());
+        assert_eq!(s.points.len(), 10);
+    }
+
+    #[test]
+    fn stroke_color_clone_equality() {
+        let c = StrokeColor { h: 0.1, s: 0.5, l: 0.4, a: 1.0 };
+        let cloned = c.clone();
+        assert!((c.h - cloned.h).abs() < f32::EPSILON);
+        assert!((c.s - cloned.s).abs() < f32::EPSILON);
+        assert!((c.l - cloned.l).abs() < f32::EPSILON);
+        assert!((c.a - cloned.a).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn drawing_block_add_multiple_strokes_count() {
+        let entity = crate::block_model::NomtuRef::new("draw-10", "sketch", "verb");
+        let mut d = DrawingBlock::new(entity);
+        for _ in 0..3 {
+            d.add_stroke(Stroke::new(StrokeColor::black(), 1.0));
+        }
+        assert_eq!(d.strokes.len(), 3);
+    }
+
+    #[test]
+    fn drawing_block_clear_after_adding() {
+        let entity = crate::block_model::NomtuRef::new("draw-11", "erase", "verb");
+        let mut d = DrawingBlock::new(entity);
+        d.add_stroke(Stroke::new(StrokeColor::white(), 2.0));
+        d.add_stroke(Stroke::new(StrokeColor::black(), 1.0));
+        assert_eq!(d.strokes.len(), 2);
+        d.clear();
+        assert!(d.strokes.is_empty());
+    }
+
+    #[test]
+    fn block_selected_color_matches_accent_blue_token() {
+        let expected = nom_theme::tokens::color_accent_blue();
+        let actual = super::block_selected_color();
+        assert!(
+            (actual[0] - expected.h).abs() < f32::EPSILON,
+            "selected h mismatch"
+        );
+    }
+
+    #[test]
+    fn all_four_theme_colors_are_distinct() {
+        let fill = super::block_fill_color();
+        let border = super::block_border_color();
+        let selected = super::block_selected_color();
+        let error = super::block_error_color();
+        // All 4 should not all be identical — at least 2 must differ
+        let colors = [fill, border, selected, error];
+        let mut found_diff = false;
+        'outer: for i in 0..colors.len() {
+            for j in (i + 1)..colors.len() {
+                if colors[i].iter().zip(colors[j].iter()).any(|(a, b)| (a - b).abs() > 0.01) {
+                    found_diff = true;
+                    break 'outer;
+                }
+            }
+        }
+        assert!(found_diff, "at least two theme colors must differ");
+    }
+
+    #[test]
+    fn stroke_bounding_box_multiple_points() {
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        s.add_point([3.0, 1.0], 1.0);
+        s.add_point([7.0, 9.0], 1.0);
+        s.add_point([2.0, 5.0], 1.0);
+        let bb = s.bounding_box().unwrap();
+        assert_eq!(bb.0, [2.0, 1.0]); // min x=2, min y=1
+        assert_eq!(bb.1, [7.0, 9.0]); // max x=7, max y=9
+    }
+
+    #[test]
+    fn stroke_color_white_hue_zero() {
+        let white = StrokeColor::white();
+        assert_eq!(white.h, 0.0);
+        assert_eq!(white.s, 0.0);
+    }
+
+    #[test]
+    fn drawing_block_new_has_empty_strokes() {
+        let entity = crate::block_model::NomtuRef::new("draw-20", "init", "verb");
+        let d = DrawingBlock::new(entity);
+        assert!(d.strokes.is_empty());
+    }
 }

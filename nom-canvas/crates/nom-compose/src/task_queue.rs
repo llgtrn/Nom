@@ -271,4 +271,108 @@ mod tests {
         let q = TaskQueue::new();
         assert!(q.get(9999).is_none());
     }
+
+    #[test]
+    fn task_queue_queued_to_running_to_done_state_machine() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "input");
+        assert_eq!(q.get(id).unwrap().state, TaskState::Pending);
+        q.start(id);
+        assert_eq!(q.get(id).unwrap().state, TaskState::Running);
+        q.complete(id);
+        assert_eq!(q.get(id).unwrap().state, TaskState::Completed);
+    }
+
+    #[test]
+    fn task_queue_cancel_transition_running_to_cancelled() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Audio, "clip");
+        q.start(id);
+        assert_eq!(q.get(id).unwrap().state, TaskState::Running);
+        assert!(q.cancel(id));
+        assert_eq!(q.get(id).unwrap().state, TaskState::Cancelled);
+    }
+
+    #[test]
+    fn task_queue_depth_limit_via_pending_count() {
+        // Simulate a max-depth-5 policy: enqueue 5, each pending.
+        let mut q = TaskQueue::new();
+        for i in 0..5u64 {
+            q.enqueue(BackendKind::Transform, format!("t{i}"));
+        }
+        assert_eq!(q.pending_count(), 5, "queue depth must be 5");
+        // Adding one more makes it 6 — caller is responsible for enforcing limit.
+        q.enqueue(BackendKind::Data, "extra");
+        assert_eq!(q.pending_count(), 6);
+    }
+
+    #[test]
+    fn task_queue_failed_state_stores_reason() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Render, "scene");
+        // Directly mutate state to Failed for validation.
+        if let Some(t) = q.tasks.iter_mut().find(|t| t.id == id) {
+            t.state = TaskState::Failed("disk full".to_string());
+        }
+        assert!(matches!(q.get(id).unwrap().state, TaskState::Failed(_)));
+        if let TaskState::Failed(reason) = &q.get(id).unwrap().state {
+            assert_eq!(reason, "disk full");
+        }
+    }
+
+    #[test]
+    fn task_queue_running_count_tracks_multiple_concurrent() {
+        let mut q = TaskQueue::new();
+        let ids: Vec<u64> = (0..8).map(|i| q.enqueue(BackendKind::Transform, format!("t{i}"))).collect();
+        for &id in &ids[..6] {
+            q.start(id);
+        }
+        assert_eq!(q.running_count(), 6);
+        assert_eq!(q.pending_count(), 2);
+    }
+
+    #[test]
+    fn task_queue_complete_sets_progress_to_100() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Video, "stream");
+        q.start(id);
+        assert_eq!(q.get(id).unwrap().progress_pct, 0);
+        q.complete(id);
+        assert_eq!(q.get(id).unwrap().progress_pct, 100);
+    }
+
+    #[test]
+    fn task_queue_cancel_does_not_set_progress_to_100() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Audio, "track");
+        q.start(id);
+        q.cancel(id);
+        // Progress must remain 0 for a cancelled task.
+        assert_eq!(q.get(id).unwrap().progress_pct, 0, "cancelled task must not have 100% progress");
+    }
+
+    #[test]
+    fn task_queue_start_nonexistent_id_returns_false() {
+        let mut q = TaskQueue::new();
+        assert!(!q.start(9999), "start on nonexistent id must return false");
+    }
+
+    #[test]
+    fn task_queue_complete_nonexistent_id_returns_false() {
+        let mut q = TaskQueue::new();
+        assert!(!q.complete(9999), "complete on nonexistent id must return false");
+    }
+
+    #[test]
+    fn task_queue_cancel_nonexistent_id_returns_false() {
+        let mut q = TaskQueue::new();
+        assert!(!q.cancel(9999), "cancel on nonexistent id must return false");
+    }
+
+    #[test]
+    fn task_queue_enqueue_stores_backend_kind() {
+        let mut q = TaskQueue::new();
+        let id = q.enqueue(BackendKind::Export, "data");
+        assert_eq!(q.get(id).unwrap().backend, BackendKind::Export);
+    }
 }

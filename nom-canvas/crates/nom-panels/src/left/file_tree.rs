@@ -395,4 +395,193 @@ mod tests {
         let node = FileNode::file("logo.png", 0, FileNodeKind::Asset);
         assert_eq!(node.kind, FileNodeKind::Asset);
     }
+
+    // ── deep nesting (5 levels) ───────────────────────────────────────────────
+
+    #[test]
+    fn file_tree_five_levels_deep_expanded() {
+        // a/b/c/d/leaf.nom — all expanded
+        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let mut d = FileNode::dir("d", 3);
+        d.children.push(leaf);
+        d.is_expanded = true;
+        let mut c = FileNode::dir("c", 2);
+        c.children.push(d);
+        c.is_expanded = true;
+        let mut b = FileNode::dir("b", 1);
+        b.children.push(c);
+        b.is_expanded = true;
+        let mut a = FileNode::dir("a", 0);
+        a.children.push(b);
+        a.is_expanded = true;
+        let visible = a.visible_nodes();
+        // a + b + c + d + leaf = 5
+        assert_eq!(visible.len(), 5, "5-level fully expanded tree should show 5 nodes");
+    }
+
+    #[test]
+    fn file_tree_five_levels_deep_middle_collapsed() {
+        // a/b/c/d/leaf.nom — c is collapsed, d and leaf are hidden
+        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let mut d = FileNode::dir("d", 3);
+        d.children.push(leaf);
+        d.is_expanded = true;
+        let mut c = FileNode::dir("c", 2);
+        c.children.push(d);
+        c.is_expanded = false; // collapsed here
+        let mut b = FileNode::dir("b", 1);
+        b.children.push(c);
+        b.is_expanded = true;
+        let mut a = FileNode::dir("a", 0);
+        a.children.push(b);
+        a.is_expanded = true;
+        let visible = a.visible_nodes();
+        // a + b + c = 3 (d and leaf hidden under collapsed c)
+        assert_eq!(visible.len(), 3, "collapsing level 2 hides levels 3 and 4");
+    }
+
+    #[test]
+    fn file_tree_five_levels_depth_values_correct() {
+        let mut d3 = FileNode::dir("d3", 3);
+        d3.is_expanded = true;
+        d3.children.push(FileNode::file("f4.nom", 4, FileNodeKind::NomFile));
+        let mut d2 = FileNode::dir("d2", 2);
+        d2.is_expanded = true;
+        d2.children.push(d3);
+        let mut d1 = FileNode::dir("d1", 1);
+        d1.is_expanded = true;
+        d1.children.push(d2);
+        let mut d0 = FileNode::dir("d0", 0);
+        d0.is_expanded = true;
+        d0.children.push(d1);
+        let visible = d0.visible_nodes();
+        // d0, d1, d2, d3, f4 = 5 nodes
+        assert_eq!(visible.len(), 5);
+        assert_eq!(visible[0].depth, 0);
+        assert_eq!(visible[1].depth, 1);
+        assert_eq!(visible[2].depth, 2);
+        assert_eq!(visible[3].depth, 3);
+        assert_eq!(visible[4].depth, 4);
+    }
+
+    // ── file rename in tree ───────────────────────────────────────────────────
+
+    #[test]
+    fn file_node_rename_updates_name() {
+        let mut node = FileNode::file("old.nom", 0, FileNodeKind::NomFile);
+        node.name = "new.nom".to_string();
+        assert_eq!(node.name, "new.nom");
+    }
+
+    #[test]
+    fn file_node_rename_id_independent_of_name() {
+        let mut node = FileNode::file("original.nom", 0, FileNodeKind::NomFile);
+        let original_id = node.id.clone();
+        node.name = "renamed.nom".to_string();
+        // id is set at construction time; renaming name does not auto-change id
+        assert_eq!(node.id, original_id);
+        assert_eq!(node.name, "renamed.nom");
+    }
+
+    #[test]
+    fn file_node_rename_via_id_update() {
+        let mut node = FileNode::file("alpha.nom", 0, FileNodeKind::NomFile);
+        node.id = "beta.nom".to_string();
+        node.name = "beta.nom".to_string();
+        assert_eq!(node.id, "beta.nom");
+        assert_eq!(node.name, "beta.nom");
+    }
+
+    #[test]
+    fn file_tree_select_renamed_node() {
+        let mut panel = FileTreePanel::new();
+        let section = &mut panel.sections[0];
+        let mut node = FileNode::file("old.nom", 0, FileNodeKind::NomFile);
+        node.id = "new.nom".to_string();
+        node.name = "new.nom".to_string();
+        section.nodes.push(node);
+        panel.select("new.nom");
+        assert_eq!(panel.selected_id.as_deref(), Some("new.nom"));
+    }
+
+    // ── sort order: directories before files ──────────────────────────────────
+
+    #[test]
+    fn sort_order_dirs_before_files_manual() {
+        let mut nodes = vec![
+            FileNode::file("zebra.nom", 0, FileNodeKind::NomFile),
+            FileNode::dir("alpha", 0),
+            FileNode::file("main.nom", 0, FileNodeKind::NomFile),
+            FileNode::dir("src", 0),
+        ];
+        // Sort: directories first, then files
+        nodes.sort_by_key(|n| if n.kind == FileNodeKind::Directory { 0u8 } else { 1u8 });
+        assert_eq!(nodes[0].kind, FileNodeKind::Directory, "first entry must be a directory");
+        assert_eq!(nodes[1].kind, FileNodeKind::Directory, "second entry must be a directory");
+        assert_eq!(nodes[2].kind, FileNodeKind::NomFile, "third entry must be a file");
+    }
+
+    #[test]
+    fn sort_order_dirs_before_files_within_section() {
+        let mut section = CollapsibleSection::new("ws", "Workspace");
+        section.nodes.push(FileNode::file("main.nom", 0, FileNodeKind::NomFile));
+        section.nodes.push(FileNode::dir("src", 0));
+        section.nodes.push(FileNode::file("config.nom", 0, FileNodeKind::NomFile));
+        section.nodes.push(FileNode::dir("tests", 0));
+        section.nodes.sort_by_key(|n| if n.kind == FileNodeKind::Directory { 0u8 } else { 1u8 });
+        assert_eq!(section.nodes[0].name, "src");
+        assert_eq!(section.nodes[1].name, "tests");
+    }
+
+    #[test]
+    fn sort_order_alphabetical_within_dirs() {
+        let mut dirs = vec![
+            FileNode::dir("zoo", 0),
+            FileNode::dir("alpha", 0),
+            FileNode::dir("beta", 0),
+        ];
+        dirs.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(dirs[0].name, "alpha");
+        assert_eq!(dirs[1].name, "beta");
+        assert_eq!(dirs[2].name, "zoo");
+    }
+
+    #[test]
+    fn sort_order_files_alphabetical() {
+        let mut files = vec![
+            FileNode::file("z.nom", 0, FileNodeKind::NomFile),
+            FileNode::file("a.nom", 0, FileNodeKind::NomFile),
+            FileNode::file("m.nom", 0, FileNodeKind::NomFile),
+        ];
+        files.sort_by(|a, b| a.name.cmp(&b.name));
+        assert_eq!(files[0].name, "a.nom");
+        assert_eq!(files[1].name, "m.nom");
+        assert_eq!(files[2].name, "z.nom");
+    }
+
+    #[test]
+    fn file_tree_paint_with_five_level_depth() {
+        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let mut d = FileNode::dir("d", 3);
+        d.children.push(leaf);
+        d.is_expanded = true;
+        let mut c = FileNode::dir("c", 2);
+        c.children.push(d);
+        c.is_expanded = true;
+        let mut b = FileNode::dir("b", 1);
+        b.children.push(c);
+        b.is_expanded = true;
+        let mut root = FileNode::dir("root", 0);
+        root.children.push(b);
+        root.is_expanded = true;
+
+        let mut section = CollapsibleSection::new("ws", "WS");
+        section.nodes.push(root);
+
+        let panel = FileTreePanel { sections: vec![section], selected_id: None };
+        let mut scene = nom_gpui::scene::Scene::new();
+        panel.paint_scene(248.0, 600.0, &mut scene);
+        // background + alternating BG2 rows (5 nodes → rows 1,3 get BG2 = 2 extra)
+        assert!(scene.quads.len() >= 3, "deep tree should emit background + row quads");
+    }
 }

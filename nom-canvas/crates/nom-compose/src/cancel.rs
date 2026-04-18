@@ -130,4 +130,110 @@ mod tests {
         flag.set();
         assert!(flag.is_set(), "after set→clear→set the flag must be set");
     }
+
+    #[test]
+    fn cancel_token_initially_not_cancelled() {
+        let token = InterruptFlag::new();
+        assert!(!token.is_set(), "fresh token must report not cancelled");
+    }
+
+    #[test]
+    fn cancel_sets_cancelled_flag() {
+        let token = InterruptFlag::new();
+        token.set();
+        assert!(token.is_set(), "after cancel, flag must be set");
+    }
+
+    #[test]
+    fn cancelled_check_is_thread_safe() {
+        use std::sync::Arc;
+        use std::thread;
+        let token = Arc::new(InterruptFlag::new());
+        let t = token.clone();
+        let handle = thread::spawn(move || {
+            t.set();
+        });
+        handle.join().unwrap();
+        assert!(token.is_set(), "flag set from another thread must be visible");
+    }
+
+    #[test]
+    fn cancel_clear_after_set_from_thread() {
+        use std::sync::Arc;
+        use std::thread;
+        let token = Arc::new(InterruptFlag::new());
+        let t = token.clone();
+        let h = thread::spawn(move || { t.set(); });
+        h.join().unwrap();
+        assert!(token.is_set());
+        token.clear();
+        assert!(!token.is_set(), "clear after thread-set must work");
+    }
+
+    #[test]
+    fn multiple_threads_all_see_cancelled_state() {
+        use std::sync::Arc;
+        use std::thread;
+        let token = Arc::new(InterruptFlag::new());
+        token.set();
+        let handles: Vec<_> = (0..4).map(|_| {
+            let t = token.clone();
+            thread::spawn(move || t.is_set())
+        }).collect();
+        for h in handles {
+            assert!(h.join().unwrap(), "all threads must see the cancelled state");
+        }
+    }
+
+    #[test]
+    fn interrupt_flag_new_creates_unique_flags() {
+        let a = InterruptFlag::new();
+        let b = InterruptFlag::new();
+        a.set();
+        // b is independent — must not be affected.
+        assert!(!b.is_set(), "separate InterruptFlag instances must be independent");
+    }
+
+    #[test]
+    fn interrupt_flag_multiple_clears_are_idempotent() {
+        let flag = InterruptFlag::new();
+        flag.clear();
+        flag.clear();
+        flag.clear();
+        assert!(!flag.is_set(), "multiple clears must leave flag unset");
+    }
+
+    #[test]
+    fn cancel_token_toggle_multiple_times() {
+        let flag = InterruptFlag::new();
+        for i in 0..10 {
+            if i % 2 == 0 { flag.set(); } else { flag.clear(); }
+        }
+        // After 10 toggles (0-9), last was odd so clear was last.
+        assert!(!flag.is_set(), "after even number of toggles ending on clear, must be unset");
+    }
+
+    #[test]
+    fn two_independent_tokens_do_not_share_state() {
+        let a = InterruptFlag::new();
+        let b = InterruptFlag::new();
+        a.set();
+        assert!(a.is_set());
+        assert!(!b.is_set(), "b must be independent from a");
+        b.set();
+        assert!(b.is_set());
+        a.clear();
+        assert!(!a.is_set());
+        assert!(b.is_set(), "clearing a must not affect b");
+    }
+
+    #[test]
+    fn interrupt_flag_thread_set_main_reads() {
+        use std::sync::Arc;
+        use std::thread;
+        let flag = Arc::new(InterruptFlag::new());
+        let f = flag.clone();
+        thread::spawn(move || f.set()).join().unwrap();
+        assert!(flag.is_set(), "flag set in thread must be visible in main");
+    }
 }

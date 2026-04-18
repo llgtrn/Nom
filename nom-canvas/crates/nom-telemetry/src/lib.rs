@@ -3247,4 +3247,439 @@ mod tests {
         }
         // If None, implementation rejects all-zeros (also acceptable).
     }
+
+    // =========================================================================
+    // WAVE-AF AGENT-9 ADDITIONS
+    // =========================================================================
+
+    // --- Span nested 3 levels — parent IDs form chain ---
+
+    #[test]
+    fn nested_span_three_levels_trace_id_chain() {
+        let trace_id = [0xCCu8; 16];
+        let root_span_id = [0x01u8; 8];
+        let child_span_id = [0x02u8; 8];
+        let grandchild_span_id = [0x03u8; 8];
+
+        let root = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, root_span_id);
+        let child = TelemetryEvent::with_trace(EventKind::CompilerInvoke { duration_ms: 10 }, 5, 1, trace_id, child_span_id);
+        let grandchild = TelemetryEvent::with_trace(EventKind::RagQuery { top_k: 5 }, 7, 1, trace_id, grandchild_span_id);
+
+        // All three share the same trace_id.
+        assert_eq!(root.trace_id, child.trace_id);
+        assert_eq!(child.trace_id, grandchild.trace_id);
+
+        // All three have distinct span IDs (unique positions in the chain).
+        assert_ne!(root.span_id, child.span_id);
+        assert_ne!(child.span_id, grandchild.span_id);
+        assert_ne!(root.span_id, grandchild.span_id);
+    }
+
+    #[test]
+    fn nested_span_parent_id_preserved_in_traceparent() {
+        // W3C traceparent's parent-id field is the span_id of the CURRENT event.
+        // A child event carries the parent's span_id as its "parent-id" context.
+        let trace_id = [0xDDu8; 16];
+        let parent_span = [0x01u8; 8];
+        let child_span = [0x02u8; 8];
+
+        let parent_ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, parent_span);
+        let child_ev = TelemetryEvent::with_trace(EventKind::SessionEnd, 10, 1, trace_id, child_span);
+
+        // Extract parent-id field (parts[2]) from each traceparent.
+        let parent_tp = parent_ev.traceparent();
+        let child_tp = child_ev.traceparent();
+
+        let parent_parts: Vec<&str> = parent_tp.split('-').collect();
+        let child_parts: Vec<&str> = child_tp.split('-').collect();
+
+        // Parent's parent-id == its own span_id encoded as hex.
+        assert_eq!(parent_parts[2].len(), 16);
+        assert_eq!(child_parts[2].len(), 16);
+        // The two span IDs must differ (different positions in chain).
+        assert_ne!(parent_parts[2], child_parts[2]);
+    }
+
+    #[test]
+    fn nested_span_three_levels_timestamps_ordered() {
+        // root → child → grandchild: timestamps must be non-decreasing.
+        let trace_id = [0xEEu8; 16];
+        let root = TelemetryEvent::with_trace(EventKind::SessionStart, 100, 1, trace_id, [0x01u8; 8]);
+        let child = TelemetryEvent::with_trace(EventKind::CompilerInvoke { duration_ms: 5 }, 110, 1, trace_id, [0x02u8; 8]);
+        let grandchild = TelemetryEvent::with_trace(EventKind::SessionEnd, 120, 1, trace_id, [0x03u8; 8]);
+
+        assert!(root.timestamp_ms <= child.timestamp_ms);
+        assert!(child.timestamp_ms <= grandchild.timestamp_ms);
+    }
+
+    // --- InMemorySink capacity 1000, overflow behavior ---
+
+    #[test]
+    fn in_memory_sink_capacity_1000_no_overflow() {
+        let sink = InMemorySink::new();
+        for i in 0u64..1000 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 1000, "InMemorySink holds exactly 1000 events");
+    }
+
+    #[test]
+    fn in_memory_sink_over_1000_still_stores_all() {
+        // InMemorySink has no fixed capacity — it is unbounded.
+        let sink = InMemorySink::new();
+        for i in 0u64..1001 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 1001, "InMemorySink is unbounded; all 1001 events stored");
+    }
+
+    #[test]
+    fn in_memory_sink_2000_events_all_stored_no_panic() {
+        let sink = InMemorySink::new();
+        for i in 0u64..2000 {
+            sink.record(TelemetryEvent::new(
+                EventKind::CanvasAction { action: format!("a-{i}") },
+                i,
+                1,
+            ));
+        }
+        assert_eq!(sink.count(), 2000);
+        // Spot-check first and last.
+        let events = sink.events();
+        assert_eq!(events[0].timestamp_ms, 0);
+        assert_eq!(events[1999].timestamp_ms, 1999);
+    }
+
+    // --- W3C traceparent parent-id field preserved in re-export ---
+
+    #[test]
+    fn traceparent_parent_id_field_is_span_id() {
+        let span_id: [u8; 8] = [0x0A, 0x0B, 0x0C, 0x0D, 0x0E, 0x0F, 0x10, 0x11];
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0u8; 16], span_id);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        // parts[2] is the parent-id field.
+        assert_eq!(parts[2].len(), 16, "parent-id must be 16 hex chars");
+        // Verify the parent-id encodes the span_id correctly.
+        let expected: String = span_id.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(parts[2], expected, "parent-id must match span_id hex encoding");
+    }
+
+    #[test]
+    fn traceparent_re_export_parent_id_preserved_across_clone() {
+        let span_id = [0xAAu8; 8];
+        let ev_a = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0u8; 16], span_id);
+        let ev_b = ev_a.clone();
+        // Cloned event must produce identical traceparent.
+        assert_eq!(ev_a.traceparent(), ev_b.traceparent());
+        // And the parent-id must survive the clone.
+        let tp = ev_b.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        let expected: String = span_id.iter().map(|b| format!("{b:02x}")).collect();
+        assert_eq!(parts[2], expected);
+    }
+
+    // --- Error event Display contains error code ---
+
+    #[test]
+    fn error_event_debug_contains_code() {
+        let ev = TelemetryEvent::new(
+            EventKind::Error { code: 42, message: "something went wrong".into() },
+            0,
+            1,
+        );
+        // The Debug representation must surface the code.
+        let dbg = format!("{ev:?}");
+        assert!(dbg.contains("42"), "debug must contain error code 42");
+    }
+
+    #[test]
+    fn error_event_debug_contains_message() {
+        let msg = "connection timeout after 30s";
+        let ev = TelemetryEvent::new(
+            EventKind::Error { code: 503, message: msg.into() },
+            0,
+            1,
+        );
+        let dbg = format!("{ev:?}");
+        assert!(dbg.contains("503"), "debug must contain status code 503");
+        assert!(dbg.contains("timeout"), "debug must contain keyword from message");
+    }
+
+    #[test]
+    fn error_event_kind_debug_contains_code_and_message() {
+        let kind = EventKind::Error { code: 1234, message: "err_payload".into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("1234"), "EventKind::Error debug must contain code");
+        assert!(dbg.contains("err_payload"), "EventKind::Error debug must contain message text");
+    }
+
+    // --- Multiple sinks in parallel don't interfere ---
+
+    #[test]
+    fn multiple_sinks_parallel_no_interference() {
+        let sink_a = InMemorySink::new();
+        let sink_b = InMemorySink::new();
+        let sink_c = InMemorySink::new();
+
+        // Record different events into each independent sink.
+        for i in 0u64..10 {
+            sink_a.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        for i in 0u64..5 {
+            sink_b.record(TelemetryEvent::new(EventKind::SessionEnd, i, 2));
+        }
+        for i in 0u64..20 {
+            sink_c.record(TelemetryEvent::new(EventKind::CommandPaletteOpened, i, 3));
+        }
+
+        // Each sink must only contain what was recorded into it.
+        assert_eq!(sink_a.count(), 10);
+        assert_eq!(sink_b.count(), 5);
+        assert_eq!(sink_c.count(), 20);
+
+        // Verify sink_a has only SessionStart events.
+        assert!(sink_a.events().iter().all(|e| e.kind == EventKind::SessionStart));
+        // Verify sink_b has only SessionEnd events.
+        assert!(sink_b.events().iter().all(|e| e.kind == EventKind::SessionEnd));
+    }
+
+    #[test]
+    fn multiple_sinks_clearing_one_does_not_affect_others() {
+        let sink_a = InMemorySink::new();
+        let sink_b = InMemorySink::new();
+
+        sink_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink_b.record(TelemetryEvent::new(EventKind::SessionStart, 0, 2));
+
+        sink_a.clear();
+
+        assert_eq!(sink_a.count(), 0, "sink_a must be empty after clear");
+        assert_eq!(sink_b.count(), 1, "sink_b must not be affected by sink_a.clear()");
+    }
+
+    #[test]
+    fn multiple_sinks_drain_one_does_not_affect_others() {
+        let sink_a = InMemorySink::new();
+        let sink_b = InMemorySink::new();
+
+        sink_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink_b.record(TelemetryEvent::new(EventKind::SessionEnd, 0, 2));
+
+        let drained = sink_a.drain();
+        assert_eq!(drained.len(), 1);
+        assert_eq!(sink_a.count(), 0);
+        assert_eq!(sink_b.count(), 1, "drain on sink_a must not affect sink_b");
+    }
+
+    // --- Additional telemetry coverage for WAVE-AF targets ---
+
+    #[test]
+    fn nested_span_three_levels_all_recorded_in_sink() {
+        // Three events forming a parent→child→grandchild chain are all stored.
+        let sink = InMemorySink::new();
+        let trace_id = [0x11u8; 16];
+        let root_id = [0x01u8; 8];
+        let child_id = [0x02u8; 8];
+        let grandchild_id = [0x03u8; 8];
+
+        sink.record(TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, root_id));
+        sink.record(TelemetryEvent::with_trace(EventKind::CompilerInvoke { duration_ms: 10 }, 5, 1, trace_id, child_id));
+        sink.record(TelemetryEvent::with_trace(EventKind::RagQuery { top_k: 3 }, 8, 1, trace_id, grandchild_id));
+
+        assert_eq!(sink.count(), 3);
+        let events = sink.events();
+        // All share the same trace_id.
+        for ev in &events {
+            assert_eq!(ev.trace_id, trace_id);
+        }
+        // Span IDs are distinct.
+        assert_ne!(events[0].span_id, events[1].span_id);
+        assert_ne!(events[1].span_id, events[2].span_id);
+        assert_ne!(events[0].span_id, events[2].span_id);
+    }
+
+    #[test]
+    fn sink_capacity_1000_exact_then_drain() {
+        let sink = InMemorySink::new();
+        for i in 0u64..1000 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 1000);
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 1000, "drain must return all 1000 events");
+        assert_eq!(sink.count(), 0, "sink must be empty after drain");
+    }
+
+    #[test]
+    fn sink_capacity_1001_all_stored() {
+        // InMemorySink is unbounded; 1001 events must all be stored.
+        let sink = InMemorySink::new();
+        for i in 0u64..1001 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 1001, "InMemorySink must store all 1001 events");
+    }
+
+    #[test]
+    fn traceparent_parent_id_16_hex_lower() {
+        // The parent-id part (parts[2]) must be 16 lowercase hex characters.
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0xABu8; 16], [0xCDu8; 8]);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        let parent_id = parts[2];
+        assert_eq!(parent_id.len(), 16);
+        assert!(parent_id.chars().all(|c| c.is_ascii_hexdigit()), "parent-id must be hex");
+        assert_eq!(parent_id, "cdcdcdcdcdcdcdcd", "parent-id must encode span_id correctly");
+    }
+
+    #[test]
+    fn error_event_code_preserved_through_sink() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::Error { code: 9999, message: "test error".into() },
+            0,
+            1,
+        ));
+        match &sink.events()[0].kind {
+            EventKind::Error { code, .. } => assert_eq!(*code, 9999),
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn error_event_message_contains_code_when_formatted() {
+        // EventKind debug includes both code and message fields.
+        let code = 4200u32;
+        let msg = "disk_full";
+        let kind = EventKind::Error { code, message: msg.into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("4200"), "debug must contain error code");
+        assert!(dbg.contains("disk_full"), "debug must contain error message");
+    }
+
+    #[test]
+    fn multi_sink_three_sinks_all_receive() {
+        // Use two MultiSink layers to fan out to three memory sinks.
+        let a = InMemorySink::new();
+        let b = InMemorySink::new();
+        let c = InMemorySink::new();
+        let ab = Arc::new(MultiSink::new(Arc::new(a.clone()), Arc::new(b.clone())));
+        let abc = MultiSink::new(ab, Arc::new(c.clone()));
+        abc.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(a.count(), 1, "sink a must receive");
+        assert_eq!(b.count(), 1, "sink b must receive");
+        assert_eq!(c.count(), 1, "sink c must receive");
+    }
+
+    #[test]
+    fn multi_sink_parallel_no_interference_between_two_pairs() {
+        // Two independent MultiSink pairs must not interfere with each other.
+        let a1 = InMemorySink::new();
+        let a2 = InMemorySink::new();
+        let multi_a = MultiSink::new(Arc::new(a1.clone()), Arc::new(a2.clone()));
+
+        let b1 = InMemorySink::new();
+        let b2 = InMemorySink::new();
+        let multi_b = MultiSink::new(Arc::new(b1.clone()), Arc::new(b2.clone()));
+
+        multi_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 10));
+        multi_b.record(TelemetryEvent::new(EventKind::SessionEnd, 0, 20));
+
+        assert_eq!(a1.count(), 1);
+        assert_eq!(a2.count(), 1);
+        assert_eq!(b1.count(), 1);
+        assert_eq!(b2.count(), 1);
+        // Events must not cross over.
+        assert_eq!(a1.events()[0].session_id, 10);
+        assert_eq!(b1.events()[0].session_id, 20);
+    }
+
+    #[test]
+    fn sink_empty_is_true_on_new() {
+        let sink = InMemorySink::new();
+        assert_eq!(sink.count(), 0);
+        assert!(sink.events().is_empty());
+    }
+
+    #[test]
+    fn sink_record_then_drain_then_record_works() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let _ = sink.drain();
+        // After drain, record again.
+        sink.record(TelemetryEvent::new(EventKind::DeepThinkStarted, 1, 1));
+        assert_eq!(sink.count(), 1);
+        assert_eq!(sink.events()[0].kind, EventKind::DeepThinkStarted);
+    }
+
+    #[test]
+    fn span_nested_parent_child_grandchild_duration_ordering() {
+        // Grandchild (shortest) ≤ child ≤ parent (longest).
+        let mut grandchild = Span::start(10);
+        grandchild.end(20);
+        let mut child = Span::start(5);
+        child.end(25);
+        let mut parent = Span::start(0);
+        parent.end(30);
+
+        let gd = grandchild.duration_ms().unwrap();
+        let cd = child.duration_ms().unwrap();
+        let pd = parent.duration_ms().unwrap();
+
+        assert!(gd <= cd, "grandchild duration must be <= child duration");
+        assert!(cd <= pd, "child duration must be <= parent duration");
+    }
+
+    #[test]
+    fn error_event_display_code_variety() {
+        // Various error codes — all must be stored correctly.
+        for code in [0u32, 1, 404, 500, u32::MAX] {
+            let kind = EventKind::Error { code, message: format!("msg-{code}") };
+            let dbg = format!("{kind:?}");
+            assert!(dbg.contains(&code.to_string()), "debug must contain code {code}");
+        }
+    }
+
+    #[test]
+    fn sink_1000_capacity_spot_checks() {
+        let sink = InMemorySink::new();
+        for i in 0u64..1000 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let events = sink.events();
+        assert_eq!(events.len(), 1000);
+        // Spot-check first, middle, last timestamps.
+        assert_eq!(events[0].timestamp_ms, 0);
+        assert_eq!(events[499].timestamp_ms, 499);
+        assert_eq!(events[999].timestamp_ms, 999);
+    }
+
+    #[test]
+    fn sink_overflow_1001_events_all_present() {
+        // InMemorySink is unbounded. 1001 events must all persist.
+        let sink = InMemorySink::new();
+        for i in 0u64..1001 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: format!("a{i}") }, i, 1));
+        }
+        assert_eq!(sink.count(), 1001);
+        let events = sink.events();
+        assert_eq!(events[1000].timestamp_ms, 1000);
+    }
+
+    #[test]
+    fn error_event_code_zero_debug_shows_zero() {
+        let kind = EventKind::Error { code: 0, message: "zero".into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains('0'), "code 0 must appear in debug output");
+    }
+
+    #[test]
+    fn traceparent_parent_id_from_fresh_event_is_all_zeros() {
+        // TelemetryEvent::new() sets span_id to [0u8;8] so parent-id is 16 zeros.
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[2], "0000000000000000", "fresh event parent-id must be all zeros");
+    }
 }

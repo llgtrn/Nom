@@ -37,7 +37,7 @@ mod integration_tests {
     use nom_theme::tokens;
 
     use crate::command_palette::{CommandPalette, CommandPaletteItem};
-    use crate::dock::{rgba_to_hsla, Dock, DockPosition};
+    use crate::dock::{rgba_to_hsla, Dock, DockPosition, Panel};
     use crate::left::file_tree::{FileNode, FileNodeKind, FileTreePanel};
     use crate::left::library::LibraryPanel;
     use crate::left::node_palette::NodePalette;
@@ -181,6 +181,168 @@ mod integration_tests {
             total_quads >= quads_after_palette + 7,
             "library must add >= 7 quads"
         );
+    }
+
+    // ── Panel trait: all kinds paint without panic ────────────────────────────
+
+    #[test]
+    fn file_tree_panel_paints_without_panic() {
+        let panel = FileTreePanel::new();
+        let mut scene = Scene::new();
+        panel.paint_scene(248.0, 600.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "file tree panel must emit quads");
+    }
+
+    #[test]
+    fn library_panel_paints_without_panic() {
+        let dict = StubDictReader::with_kinds(&["Function"]);
+        let mut panel = crate::left::LibraryPanel::new();
+        panel.load_from_dict(&dict);
+        let mut scene = Scene::new();
+        panel.paint_scene(248.0, 500.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "library panel must emit quads");
+    }
+
+    #[test]
+    fn node_palette_paints_without_panic() {
+        let dict = StubDictReader::with_kinds(&["Concept"]);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        let mut scene = Scene::new();
+        palette.paint_scene(248.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "node palette must emit quads");
+    }
+
+    #[test]
+    fn properties_panel_paints_without_panic() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("e1", "Concept");
+        let mut scene = Scene::new();
+        panel.paint_scene(280.0, 400.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "properties panel must emit quads");
+    }
+
+    #[test]
+    fn chat_sidebar_panel_paints_without_panic() {
+        let mut panel = crate::right::ChatSidebarPanel::new();
+        panel.push_message(crate::right::ChatMessage::assistant_streaming("hi"));
+        panel.finalize_last();
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 400.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "chat sidebar panel must emit quads");
+    }
+
+    #[test]
+    fn deep_think_panel_paints_without_panic() {
+        let mut panel = DeepThinkPanel::new();
+        panel.begin("test reasoning");
+        panel.push_step(ThinkingStep::new("step1", 0.7));
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 400.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "deep think panel must emit quads");
+    }
+
+    #[test]
+    fn command_palette_paints_without_panic() {
+        let mut palette = CommandPalette::new();
+        palette.items.push(CommandPaletteItem::new("Test", "description"));
+        let mut scene = Scene::new();
+        palette.paint_scene(800.0, 600.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "command palette must emit quads");
+    }
+
+    // ── Panel trait: resize respects min_width ────────────────────────────────
+
+    #[test]
+    fn panel_size_state_fixed_effective_size() {
+        let state = crate::dock::PanelSizeState::fixed(248.0);
+        let effective = state.effective_size(1440.0);
+        assert!((effective - 248.0).abs() < 0.001, "fixed size must return its value");
+    }
+
+    #[test]
+    fn panel_size_state_flex_effective_size() {
+        let state = crate::dock::PanelSizeState::flex(0.25);
+        let effective = state.effective_size(1000.0);
+        assert!((effective - 250.0).abs() < 0.001, "flex 0.25 of 1000 = 250");
+    }
+
+    #[test]
+    fn panel_size_state_flex_clamped_to_one() {
+        let state = crate::dock::PanelSizeState::flex(2.0);
+        let effective = state.effective_size(1000.0);
+        assert!(effective <= 1000.0, "flex must be clamped to 1.0 max");
+    }
+
+    #[test]
+    fn panel_size_state_flex_zero() {
+        let state = crate::dock::PanelSizeState::flex(0.0);
+        let effective = state.effective_size(1000.0);
+        assert_eq!(effective, 0.0, "flex 0 always yields 0");
+    }
+
+    #[test]
+    fn panel_min_width_file_tree_is_positive() {
+        let panel = FileTreePanel::new();
+        assert!(panel.default_size() > 0.0, "file tree default_size must be positive");
+        // min_width is conventionally half of default_size (>=120px)
+        assert!(panel.default_size() >= 120.0, "file tree min width must be at least 120px");
+    }
+
+    #[test]
+    fn dock_resize_does_not_shrink_below_zero() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        // Simulate a resize to a very small container — effective_size must not panic
+        let entry = &dock.entries[0];
+        let effective = entry.size_state.effective_size(0.0);
+        assert!(effective >= 0.0, "effective size must be non-negative");
+    }
+
+    #[test]
+    fn dock_panel_count_after_multiple_adds() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("a", 100.0);
+        dock.add_panel("b", 200.0);
+        dock.add_panel("c", 150.0);
+        assert_eq!(dock.panel_count(), 3);
+    }
+
+    #[test]
+    fn dock_activate_sets_active_panel() {
+        let mut dock = Dock::new(DockPosition::Right);
+        dock.add_panel("props", 280.0);
+        dock.add_panel("chat", 320.0);
+        let activated = dock.activate("chat");
+        assert!(activated, "activate must return true for a known panel");
+        assert_eq!(dock.active_panel_id(), Some("chat"));
+    }
+
+    #[test]
+    fn dock_activate_unknown_panel_returns_false() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        let result = dock.activate("unknown-panel");
+        assert!(!result, "activating unknown panel must return false");
+    }
+
+    #[test]
+    fn dock_toggle_open_close() {
+        let mut dock = Dock::new(DockPosition::Bottom);
+        assert!(dock.is_open, "dock starts open");
+        dock.toggle();
+        assert!(!dock.is_open);
+        dock.toggle();
+        assert!(dock.is_open);
+    }
+
+    #[test]
+    fn dock_paint_when_closed_emits_no_quads() {
+        let mut dock = Dock::new(DockPosition::Left);
+        dock.add_panel("file-tree", 248.0);
+        dock.is_open = false;
+        let mut scene = Scene::new();
+        dock.paint_scene(1440.0, 900.0, &mut scene);
+        assert!(scene.quads.is_empty(), "closed dock must not emit any quads");
     }
 
     #[test]

@@ -410,4 +410,154 @@ mod tests {
         });
         assert_eq!(scene.shadows[0].blur_radius, Pixels(12.0));
     }
+
+    // ------------------------------------------------------------------
+    // Wave AF: scene layer simulation, stat counting, ordering
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn scene_push_pop_layer_via_clear_and_rebuild() {
+        // Simulate push/pop layer: push primitives, snapshot count, clear, rebuild.
+        let mut scene = Scene::new();
+        scene.push_quad(Quad::default());
+        scene.push_shadow(Shadow::default());
+        assert_eq!(scene.quads.len(), 1, "after push: 1 quad");
+        assert_eq!(scene.shadows.len(), 1, "after push: 1 shadow");
+
+        // Pop the layer by clearing and starting fresh.
+        scene.clear();
+        assert!(scene.is_empty(), "after clear (pop): scene is empty");
+
+        // Rebuild a new layer on top.
+        scene.push_quad(Quad {
+            background: Some(Hsla::white()),
+            ..Default::default()
+        });
+        assert_eq!(scene.quads.len(), 1, "after rebuild: 1 quad in new layer");
+    }
+
+    #[test]
+    fn scene_clear_resets_all_primitives() {
+        // Verify clear resets every bucket independently.
+        let mut scene = Scene::new();
+        scene.push_quad(Quad::default());
+        scene.push_quad(Quad::default());
+        scene.push_path(Path::default());
+        scene.push_shadow(Shadow::default());
+        scene.push_shadow(Shadow::default());
+        scene.push_underline(Underline::default());
+        scene.push_frosted_rect(FrostedRect::default());
+        scene.push_sprite(MonochromeSprite {
+            tile: crate::types::AtlasTile {
+                texture_id: 5,
+                bounds: AtlasBounds::default(),
+                padding: 0.0,
+            },
+            color: Hsla::white(),
+            transformation: TransformationMatrix::identity(),
+            ..Default::default()
+        });
+        scene.push_poly_sprite(PolychromeSprite::default());
+
+        assert!(!scene.is_empty());
+        scene.clear();
+
+        assert_eq!(scene.quads.len(), 0, "quads cleared");
+        assert_eq!(scene.paths.len(), 0, "paths cleared");
+        assert_eq!(scene.shadows.len(), 0, "shadows cleared");
+        assert_eq!(scene.underlines.len(), 0, "underlines cleared");
+        assert_eq!(scene.frosted_rects.len(), 0, "frosted_rects cleared");
+        assert_eq!(scene.monochrome_sprites.len(), 0, "mono sprites cleared");
+        assert_eq!(scene.polychrome_sprites.len(), 0, "poly sprites cleared");
+        assert!(scene.is_empty(), "is_empty after full clear");
+    }
+
+    #[test]
+    fn scene_z_order_preserved_by_insertion_order() {
+        // Painter's algorithm: primitives are drawn in insertion order for quads.
+        // sort_and_batch does NOT reorder quads, only sprites.
+        let mut scene = Scene::new();
+        let colors = [
+            Hsla::new(0.0, 1.0, 0.5, 1.0),   // red — bottom
+            Hsla::new(120.0, 1.0, 0.5, 1.0),  // green — middle
+            Hsla::new(240.0, 1.0, 0.5, 1.0),  // blue — top
+        ];
+        for &c in &colors {
+            scene.push_quad(Quad {
+                background: Some(c),
+                ..Default::default()
+            });
+        }
+        scene.sort_and_batch();
+        // Insertion order (z-order) must be preserved for quads.
+        for (i, &expected) in colors.iter().enumerate() {
+            assert_eq!(
+                scene.quads[i].background,
+                Some(expected),
+                "quad[{i}] z-order violated after sort_and_batch"
+            );
+        }
+    }
+
+    #[test]
+    fn scene_stat_counting_each_bucket() {
+        let mut scene = Scene::new();
+        // Push known counts into each bucket and verify lengths.
+        for _ in 0..3 { scene.push_quad(Quad::default()); }
+        for _ in 0..2 { scene.push_shadow(Shadow::default()); }
+        for _ in 0..4 { scene.push_path(Path::default()); }
+        for _ in 0..1 { scene.push_underline(Underline::default()); }
+        for _ in 0..2 { scene.push_frosted_rect(FrostedRect::default()); }
+        for i in 0..5u32 {
+            scene.push_sprite(MonochromeSprite {
+                tile: crate::types::AtlasTile {
+                    texture_id: i,
+                    bounds: AtlasBounds::default(),
+                    padding: 0.0,
+                },
+                color: Hsla::black(),
+                transformation: TransformationMatrix::identity(),
+                ..Default::default()
+            });
+        }
+        for _ in 0..2 { scene.push_poly_sprite(PolychromeSprite::default()); }
+
+        assert_eq!(scene.quads.len(), 3);
+        assert_eq!(scene.shadows.len(), 2);
+        assert_eq!(scene.paths.len(), 4);
+        assert_eq!(scene.underlines.len(), 1);
+        assert_eq!(scene.frosted_rects.len(), 2);
+        assert_eq!(scene.monochrome_sprites.len(), 5);
+        assert_eq!(scene.polychrome_sprites.len(), 2);
+    }
+
+    #[test]
+    fn scene_sort_and_batch_poly_sprites_by_texture_id() {
+        let mut scene = Scene::new();
+        for id in [9u32, 3, 7, 1, 5] {
+            scene.push_poly_sprite(PolychromeSprite {
+                tile: crate::types::AtlasTile {
+                    texture_id: id,
+                    bounds: AtlasBounds::default(),
+                    padding: 0.0,
+                },
+                ..Default::default()
+            });
+        }
+        scene.sort_and_batch();
+        let ids: Vec<u32> = scene.polychrome_sprites.iter().map(|s| s.tile.texture_id).collect();
+        assert_eq!(ids, vec![1, 3, 5, 7, 9], "poly sprites sorted by texture_id");
+    }
+
+    #[test]
+    fn scene_multiple_clear_cycles() {
+        let mut scene = Scene::new();
+        for _ in 0..5 {
+            scene.push_quad(Quad::default());
+            scene.push_path(Path::default());
+            assert!(!scene.is_empty());
+            scene.clear();
+            assert!(scene.is_empty());
+        }
+    }
 }

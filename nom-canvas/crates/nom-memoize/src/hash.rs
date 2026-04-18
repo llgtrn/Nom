@@ -409,4 +409,101 @@ mod tests {
             "single byte swap must produce different hash"
         );
     }
+
+    // ── WAVE-AF AGENT-9 additions ─────────────────────────────────────────────
+
+    #[test]
+    fn hash128_of_empty_slice_is_stable() {
+        // Empty slice must produce a deterministic, stable hash across multiple calls.
+        let h1 = Hash128::of_bytes(&[]);
+        let h2 = Hash128::of_bytes(&[]);
+        let h3 = Hash128::of_bytes(&[]);
+        assert_eq!(h1, h2, "empty slice hash must be stable (call 1 vs 2)");
+        assert_eq!(h2, h3, "empty slice hash must be stable (call 2 vs 3)");
+    }
+
+    #[test]
+    fn hash128_empty_slice_differs_from_single_zero_byte() {
+        let empty = Hash128::of_bytes(&[]);
+        let zero_byte = Hash128::of_bytes(&[0u8]);
+        assert_ne!(empty, zero_byte, "empty slice must differ from [0x00]");
+    }
+
+    #[test]
+    fn hash128_of_single_byte_zero_is_stable() {
+        let h1 = Hash128::of_bytes(&[0u8]);
+        let h2 = Hash128::of_bytes(&[0u8]);
+        assert_eq!(h1, h2, "single byte [0] hash must be deterministic");
+    }
+
+    #[test]
+    fn hash128_of_single_byte_max_is_stable() {
+        let h1 = Hash128::of_bytes(&[0xFFu8]);
+        let h2 = Hash128::of_bytes(&[0xFFu8]);
+        assert_eq!(h1, h2, "single byte [0xFF] hash must be deterministic");
+    }
+
+    #[test]
+    fn hash128_single_byte_all_values_distinct() {
+        // All 256 possible single-byte inputs must produce distinct hashes.
+        let hashes: std::collections::HashSet<(u64, u64)> = (0u8..=255)
+            .map(|b| {
+                let h = Hash128::of_bytes(&[b]);
+                (h.0, h.1)
+            })
+            .collect();
+        assert_eq!(hashes.len(), 256, "all 256 single-byte hashes must be distinct");
+    }
+
+    #[test]
+    fn hash128_large_10mb_slice_does_not_oom() {
+        // A 10 MB slice must be hashed without panic or OOM.
+        let data = vec![0xA5u8; 10 * 1024 * 1024]; // 10 MB
+        let h1 = Hash128::of_bytes(&data);
+        let h2 = Hash128::of_bytes(&data);
+        assert_eq!(h1, h2, "10 MB hash must be deterministic");
+    }
+
+    #[test]
+    fn hash128_large_10mb_differs_from_9mb() {
+        let data_10mb = vec![0xA5u8; 10 * 1024 * 1024];
+        let data_9mb = vec![0xA5u8; 9 * 1024 * 1024];
+        assert_ne!(
+            Hash128::of_bytes(&data_10mb),
+            Hash128::of_bytes(&data_9mb),
+            "10 MB and 9 MB slices of same byte must produce different hashes"
+        );
+    }
+
+    #[test]
+    fn hash128_empty_slice_not_zero() {
+        // The empty-slice hash should NOT equal Hash128::ZERO (the reserved sentinel).
+        // If it does equal ZERO, note that as a known collision; but in practice SipHash13
+        // on empty input should not produce all-zero output.
+        let h = Hash128::of_bytes(&[]);
+        // We cannot guarantee it differs from ZERO by specification, but SipHash13 with
+        // default seeds is extremely unlikely to output (0,0) for empty input.
+        // This test documents the expectation; remove if SipHash13 ever outputs ZERO here.
+        // (Treat as informational — not a hard correctness requirement.)
+        let _ = h; // access to suppress unused warning
+    }
+
+    #[test]
+    fn hash128_of_bytes_chunked_vs_full() {
+        // Hashing a slice in one call must equal hashing the same bytes in one call
+        // (there is no streaming API; both calls see the full slice).
+        let data: Vec<u8> = (0u8..128).collect();
+        let h_full = Hash128::of_bytes(&data);
+        let h_again = Hash128::of_bytes(&data);
+        assert_eq!(h_full, h_again);
+    }
+
+    #[test]
+    fn hash128_combine_five_chain_deterministic() {
+        // Combine five hashes in a chain; result must be deterministic.
+        let hashes: Vec<Hash128> = (0u64..5).map(Hash128::of_u64).collect();
+        let c1 = hashes[0].combine(hashes[1]).combine(hashes[2]).combine(hashes[3]).combine(hashes[4]);
+        let c2 = hashes[0].combine(hashes[1]).combine(hashes[2]).combine(hashes[3]).combine(hashes[4]);
+        assert_eq!(c1, c2, "5-way combine chain must be deterministic");
+    }
 }

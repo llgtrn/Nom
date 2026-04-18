@@ -1556,4 +1556,122 @@ mod tests {
         assert!((rgba[1] - 0.5).abs() < 1e-6, "mid-grey G must be 0.5, got {}", rgba[1]);
         assert!((rgba[2] - 0.5).abs() < 1e-6, "mid-grey B must be 0.5, got {}", rgba[2]);
     }
+
+    // ------------------------------------------------------------------
+    // Wave AF: draw_quads zero-quads no-op, FrameStats reset,
+    //          ortho_projection at 1x1 viewport
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn draw_quads_gpu_zero_quads_is_noop() {
+        // Submitting an empty slice must not change any stats or pending_quads.
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        renderer.draw_quads_gpu(&[]).unwrap();
+        assert_eq!(renderer.pending_quads().len(), 0, "pending_quads must stay empty");
+        assert_eq!(renderer.stats().quads_drawn, 0, "quads_drawn must stay zero");
+        renderer.end_frame().unwrap();
+        assert_eq!(renderer.stats().quads_drawn, 0, "quads_drawn stays zero after frame");
+    }
+
+    #[test]
+    fn frame_stats_independent_per_field_after_reset_simulation() {
+        // FrameStats::default() zeroes every counter; a new Renderer::new()
+        // effectively resets stats to zero for a fresh start.
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(crate::scene::Quad::default());
+        scene.push_shadow(crate::scene::Shadow::default());
+        renderer.draw(&mut scene);
+
+        // Simulate "reset between frames" by creating a new renderer.
+        let fresh = Renderer::new();
+        let s = fresh.stats();
+        assert_eq!(s.quads_drawn, 0, "fresh renderer: quads_drawn = 0");
+        assert_eq!(s.shadows_drawn, 0, "fresh renderer: shadows_drawn = 0");
+        assert_eq!(s.frames, 0, "fresh renderer: frames = 0");
+        assert_eq!(s.paths_drawn, 0, "fresh renderer: paths_drawn = 0");
+        assert_eq!(s.mono_sprites_drawn, 0, "fresh renderer: mono_sprites = 0");
+        assert_eq!(s.sprites_drawn, 0, "fresh renderer: sprites = 0");
+        assert_eq!(s.underlines_drawn, 0, "fresh renderer: underlines = 0");
+        assert_eq!(s.frosted_drawn, 0, "fresh renderer: frosted = 0");
+    }
+
+    #[test]
+    fn ortho_projection_1x1_viewport() {
+        // Width=1, height=1: x_scale=2.0, y_scale=-2.0, translation=(-1, 1).
+        // Top-left corner (0,0) maps to NDC (-1, 1); bottom-right (1,1) maps to (1, -1).
+        let m = ortho_projection(1.0, 1.0);
+        let x_scale = m[0][0];
+        let y_scale = m[1][1];
+        let x_trans = m[3][0];
+        let y_trans = m[3][1];
+
+        assert!((x_scale - 2.0).abs() < 1e-6, "x_scale must be 2.0 for width=1, got {x_scale}");
+        assert!((y_scale - (-2.0)).abs() < 1e-6, "y_scale must be -2.0 for height=1, got {y_scale}");
+        assert!((x_trans - (-1.0)).abs() < 1e-6, "x_trans must be -1, got {x_trans}");
+        assert!((y_trans - 1.0).abs() < 1e-6, "y_trans must be 1, got {y_trans}");
+
+        // Verify: top-left (0,0) → NDC x = 0*2 + (-1) = -1, NDC y = 0*(-2) + 1 = 1
+        let ndc_tl_x = 0.0 * x_scale + x_trans;
+        let ndc_tl_y = 0.0 * y_scale + y_trans;
+        assert!((ndc_tl_x - (-1.0)).abs() < 1e-6, "top-left NDC x = -1, got {ndc_tl_x}");
+        assert!((ndc_tl_y - 1.0).abs() < 1e-6, "top-left NDC y = 1, got {ndc_tl_y}");
+
+        // Verify: bottom-right (1,1) → NDC x = 1*2 + (-1) = 1, NDC y = 1*(-2) + 1 = -1
+        let ndc_br_x = 1.0 * x_scale + x_trans;
+        let ndc_br_y = 1.0 * y_scale + y_trans;
+        assert!((ndc_br_x - 1.0).abs() < 1e-6, "bottom-right NDC x = 1, got {ndc_br_x}");
+        assert!((ndc_br_y - (-1.0)).abs() < 1e-6, "bottom-right NDC y = -1, got {ndc_br_y}");
+    }
+
+    #[test]
+    fn ortho_projection_point_mapping() {
+        // ortho(800, 600): center point (400, 300) should map to NDC (0, 0).
+        let m = ortho_projection(800.0, 600.0);
+        let x_scale = m[0][0];
+        let y_scale = m[1][1];
+        let x_trans = m[3][0];
+        let y_trans = m[3][1];
+
+        let ndc_x = 400.0 * x_scale + x_trans;
+        let ndc_y = 300.0 * y_scale + y_trans;
+        assert!((ndc_x - 0.0).abs() < 1e-5, "center maps to NDC x=0, got {ndc_x}");
+        assert!((ndc_y - 0.0).abs() < 1e-5, "center maps to NDC y=0, got {ndc_y}");
+    }
+
+    #[test]
+    fn draw_scene_with_only_shadows_increments_shadow_count() {
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+        for _ in 0..4 {
+            scene.push_shadow(crate::scene::Shadow::default());
+        }
+        renderer.draw(&mut scene);
+        assert_eq!(renderer.stats().shadows_drawn, 4, "4 shadows must be counted");
+        assert_eq!(renderer.stats().quads_drawn, 0, "no quads in shadow-only scene");
+    }
+
+    #[test]
+    fn draw_empty_scene_increments_frame_not_primitives() {
+        let mut renderer = Renderer::new();
+        let mut scene = Scene::new();
+        renderer.draw(&mut scene);
+        assert_eq!(renderer.frame_count, 1, "frame count increments");
+        assert_eq!(renderer.stats().quads_drawn, 0);
+        assert_eq!(renderer.stats().shadows_drawn, 0);
+        assert_eq!(renderer.stats().paths_drawn, 0);
+    }
+
+    #[test]
+    fn frame_stats_cumulate_across_multiple_draws() {
+        let mut renderer = Renderer::new();
+        for _ in 0..3 {
+            let mut scene = Scene::new();
+            scene.push_quad(crate::scene::Quad::default());
+            renderer.draw(&mut scene);
+        }
+        assert_eq!(renderer.stats().quads_drawn, 3, "cumulative 3 quads across 3 draws");
+        assert_eq!(renderer.stats().frames, 3, "3 frames");
+    }
 }

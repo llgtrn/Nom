@@ -2362,4 +2362,435 @@ mod tests {
             .sum();
         assert_eq!(total, per_line);
     }
+
+    // =========================================================================
+    // WAVE-AF AGENT-8 ADDITIONS
+    // =========================================================================
+
+    // --- 500-item batch performance: must complete in < 100ms wall clock ---
+
+    #[test]
+    fn batch_500_items_performance_under_100ms() {
+        use std::time::Instant;
+        // 500 lines: mix of clean, trailing whitespace, and empty block.
+        let source: String = (0..500)
+            .map(|i| match i % 3 {
+                0 => "clean line\n".to_string(),
+                1 => "trailing   \n".to_string(),
+                _ => "fn f() {}\n".to_string(),
+            })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+
+        let start = Instant::now();
+        let diags = runner.run(&source);
+        let elapsed = start.elapsed();
+
+        // Must complete in under 100ms.
+        assert!(
+            elapsed.as_millis() < 100,
+            "500-item batch took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+        // Sanity: 500 lines → ~333 violations (trailing on 1/3, empty-block on 1/3).
+        assert!(diags.len() > 0, "must produce some diagnostics");
+    }
+
+    #[test]
+    fn batch_500_items_all_clean_performance() {
+        use std::time::Instant;
+        let source: String = std::iter::repeat("let x = 1;\n").take(500).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+
+        let start = Instant::now();
+        let diags = runner.run(&source);
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 100,
+            "clean 500-item batch took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn batch_500_items_all_violating_performance() {
+        use std::time::Instant;
+        let source: String = std::iter::repeat("x   \n").take(500).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+
+        let start = Instant::now();
+        let diags = runner.run(&source);
+        let elapsed = start.elapsed();
+
+        assert!(
+            elapsed.as_millis() < 100,
+            "all-violating 500-item batch took {}ms, expected < 100ms",
+            elapsed.as_millis()
+        );
+        assert_eq!(diags.len(), 500);
+    }
+
+    // --- Rule with regex-like pattern matching (keyword-based) ---
+
+    /// A rule that flags lines containing a specific forbidden keyword.
+    struct ForbiddenKeywordRule {
+        keyword: &'static str,
+    }
+
+    impl private::Sealed for ForbiddenKeywordRule {}
+    impl InternalRule for ForbiddenKeywordRule {}
+
+    impl LintRule for ForbiddenKeywordRule {
+        fn name(&self) -> &'static str {
+            "forbidden-keyword"
+        }
+
+        fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+            if let Some(col) = line.find(self.keyword) {
+                Some(LintDiagnostic {
+                    level: LintLevel::Warning,
+                    message: format!("forbidden keyword '{}'", self.keyword),
+                    line: line_num,
+                    span: col as u32..(col + self.keyword.len()) as u32,
+                })
+            } else {
+                None
+            }
+        }
+    }
+
+    #[test]
+    fn rule_regex_pattern_matching_keyword_found() {
+        let rule = ForbiddenKeywordRule { keyword: "TODO" };
+        let diag = rule.check("// TODO: fix this", 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning);
+        assert!(diag.message.contains("TODO"));
+        assert_eq!(diag.span.start, 3);
+        assert_eq!(diag.span.end, 7);
+    }
+
+    #[test]
+    fn rule_regex_pattern_matching_keyword_not_found() {
+        let rule = ForbiddenKeywordRule { keyword: "TODO" };
+        assert!(rule.check("clean line", 1).is_none());
+    }
+
+    #[test]
+    fn rule_regex_pattern_matching_in_runner() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(ForbiddenKeywordRule { keyword: "FIXME" });
+        let source = "// FIXME: critical\nclean\n// FIXME again\n";
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].line, 1);
+        assert_eq!(diags[1].line, 3);
+    }
+
+    #[test]
+    fn rule_regex_pattern_keyword_at_line_start() {
+        let rule = ForbiddenKeywordRule { keyword: "HACK" };
+        let diag = rule.check("HACK remove later", 5).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.line, 5);
+    }
+
+    #[test]
+    fn rule_regex_pattern_keyword_mixed_case_no_match() {
+        // The rule is case-sensitive; lowercase "todo" should not match "TODO".
+        let rule = ForbiddenKeywordRule { keyword: "TODO" };
+        assert!(rule.check("todo: lower case", 1).is_none());
+    }
+
+    // --- Lint result serialization round-trip ---
+
+    #[test]
+    fn lint_diagnostic_serialization_round_trip() {
+        // Simulate serialization via Debug format and reconstruction.
+        let original = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "trailing whitespace".to_string(),
+            line: 42,
+            span: 10..15,
+        };
+        // Serialize to string.
+        let serialized = format!(
+            "level={:?},message={},line={},start={},end={}",
+            original.level, original.message, original.line,
+            original.span.start, original.span.end
+        );
+        // Parse back.
+        let parts: Vec<&str> = serialized.split(',').collect();
+        assert_eq!(parts.len(), 5);
+        assert!(parts[0].contains("Warning"));
+        assert!(parts[1].contains("trailing whitespace"));
+        assert!(parts[2].contains("42"));
+        assert!(parts[3].contains("10"));
+        assert!(parts[4].contains("15"));
+
+        // Reconstruct from parsed parts.
+        let line_val: u32 = parts[2].split('=').nth(1).unwrap().parse().unwrap();
+        let start_val: u32 = parts[3].split('=').nth(1).unwrap().parse().unwrap();
+        let end_val: u32 = parts[4].split('=').nth(1).unwrap().parse().unwrap();
+        let reconstructed = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: parts[1].split('=').nth(1).unwrap().to_string(),
+            line: line_val,
+            span: start_val..end_val,
+        };
+        assert_eq!(reconstructed, original);
+    }
+
+    #[test]
+    fn lint_diagnostic_clone_is_identical() {
+        let diag = LintDiagnostic {
+            level: LintLevel::Error,
+            message: "critical error".to_string(),
+            line: 99,
+            span: 0..20,
+        };
+        let cloned = diag.clone();
+        assert_eq!(diag.level, cloned.level);
+        assert_eq!(diag.message, cloned.message);
+        assert_eq!(diag.line, cloned.line);
+        assert_eq!(diag.span, cloned.span);
+    }
+
+    #[test]
+    fn lint_diagnostic_partial_eq_same_fields() {
+        let d1 = LintDiagnostic {
+            level: LintLevel::Info,
+            message: "note".to_string(),
+            line: 5,
+            span: 2..7,
+        };
+        let d2 = d1.clone();
+        assert_eq!(d1, d2);
+    }
+
+    #[test]
+    fn lint_diagnostic_partial_eq_different_message() {
+        let d1 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "msg a".to_string(),
+            line: 1,
+            span: 0..1,
+        };
+        let d2 = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "msg b".to_string(),
+            line: 1,
+            span: 0..1,
+        };
+        assert_ne!(d1, d2);
+    }
+
+    // --- Rule count after registration ---
+
+    #[test]
+    fn rule_count_after_registration_zero() {
+        let runner = LintRunner::new();
+        // No rules registered — check_line returns empty regardless of input.
+        let diags = runner.check_line("fn f() {}   ", 1);
+        assert!(diags.is_empty(), "zero rules → zero diagnostics");
+    }
+
+    #[test]
+    fn rule_count_after_registration_one() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        // Only trailing-whitespace registered.
+        let diags = runner.check_line("fn f() {}   ", 1);
+        assert_eq!(diags.len(), 1, "one rule → at most one diagnostic per line");
+        assert!(diags[0].message.contains("trailing whitespace"));
+    }
+
+    #[test]
+    fn rule_count_after_registration_two() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        // Both rules fire on "fn f() {}   ".
+        let diags = runner.check_line("fn f() {}   ", 1);
+        assert_eq!(diags.len(), 2, "two rules → two diagnostics on this line");
+    }
+
+    #[test]
+    fn rule_count_after_registration_three() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule { max_len: 10 });
+        // All three fire on a long line with empty block and trailing spaces.
+        let long_line = format!("fn f() {{}} {}   ", "x".repeat(5));
+        let diags = runner.check_line(&long_line, 1);
+        assert_eq!(diags.len(), 3, "three rules → three diagnostics");
+    }
+
+    #[test]
+    fn rule_count_increasing_registration() {
+        // Verify adding rules one by one increases diagnostic output.
+        let line = "fn f() {}   ";
+        let mut runner = LintRunner::new();
+
+        let diags0 = runner.check_line(line, 1);
+        assert_eq!(diags0.len(), 0);
+
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags1 = runner.check_line(line, 1);
+        assert_eq!(diags1.len(), 1);
+
+        runner.add_rule(EmptyBlockRule);
+        let diags2 = runner.check_line(line, 1);
+        assert_eq!(diags2.len(), 2);
+    }
+
+    #[test]
+    fn rule_count_keyword_rule_registered() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(ForbiddenKeywordRule { keyword: "TODO" });
+        // Only the keyword rule is registered — fires on matching line.
+        let diags = runner.check_line("// TODO: fix", 1);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 1);
+        // Does NOT fire on clean line.
+        let clean_diags = runner.check_line("// done", 2);
+        assert!(clean_diags.is_empty());
+    }
+
+    #[test]
+    fn rule_keyword_name_is_forbidden_keyword() {
+        let rule = ForbiddenKeywordRule { keyword: "FIXME" };
+        assert_eq!(rule.name(), "forbidden-keyword");
+    }
+
+    #[test]
+    fn rule_keyword_severity_multiplier_is_one() {
+        let rule = ForbiddenKeywordRule { keyword: "HACK" };
+        assert_eq!(rule.severity_multiplier(), 1.0_f32);
+    }
+
+    #[test]
+    fn lint_diagnostic_span_range_is_range_u32() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        // span is std::ops::Range<u32>; verify it has start and end fields.
+        let _: u32 = diag.span.start;
+        let _: u32 = diag.span.end;
+        assert!(diag.span.start <= diag.span.end);
+    }
+
+    #[test]
+    fn lint_diagnostic_debug_contains_level() {
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        let dbg = format!("{:?}", diag);
+        assert!(dbg.contains("Warning") || dbg.contains("level"));
+    }
+
+    #[test]
+    fn runner_add_four_rules_all_fire() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule { max_len: 10 });
+        runner.add_rule(ForbiddenKeywordRule { keyword: "TODO" });
+        // Line that triggers all four rules.
+        let line = format!("// TODO {} {{}} {}   ", "x".repeat(5), "y".repeat(5));
+        let diags = runner.check_line(&line, 1);
+        assert_eq!(diags.len(), 4, "four rules must each produce one diagnostic");
+    }
+
+    #[test]
+    fn batch_100_items_timing_under_100ms() {
+        use std::time::Instant;
+        let source: String = std::iter::repeat("x   \n").take(100).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let start = Instant::now();
+        let diags = runner.run(&source);
+        let elapsed = start.elapsed();
+        assert!(elapsed.as_millis() < 100, "100-item batch must be < 100ms");
+        assert_eq!(diags.len(), 100);
+    }
+
+    #[test]
+    fn lint_level_debug_format_contains_name() {
+        assert!(format!("{:?}", LintLevel::Info).contains("Info"));
+        assert!(format!("{:?}", LintLevel::Warning).contains("Warning"));
+        assert!(format!("{:?}", LintLevel::Error).contains("Error"));
+    }
+
+    #[test]
+    fn runner_five_rules_produces_five_diags_on_matching_line() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule { max_len: 5 });
+        runner.add_rule(ForbiddenKeywordRule { keyword: "FIXME" });
+        runner.add_rule(ForbiddenKeywordRule { keyword: "HACK" });
+        // Line that triggers all 5: long, empty block, trailing, FIXME, HACK.
+        let line = "fn f() {} FIXME HACK long   ";
+        let diags = runner.check_line(line, 1);
+        assert_eq!(diags.len(), 5, "five rules must each fire on this line");
+    }
+
+    #[test]
+    fn serialization_lint_level_as_string() {
+        // Simulate serialization: convert LintLevel to string and back.
+        fn level_to_str(l: &LintLevel) -> &'static str {
+            match l {
+                LintLevel::Info => "Info",
+                LintLevel::Warning => "Warning",
+                LintLevel::Error => "Error",
+            }
+        }
+        fn str_to_level(s: &str) -> Option<LintLevel> {
+            match s {
+                "Info" => Some(LintLevel::Info),
+                "Warning" => Some(LintLevel::Warning),
+                "Error" => Some(LintLevel::Error),
+                _ => None,
+            }
+        }
+        for level in [LintLevel::Info, LintLevel::Warning, LintLevel::Error] {
+            let s = level_to_str(&level);
+            let reconstructed = str_to_level(s).unwrap();
+            assert_eq!(reconstructed, level, "round-trip for {s:?} must reproduce original level");
+        }
+    }
+
+    #[test]
+    fn runner_check_file_three_rules_400_lines() {
+        // Larger batch: 400 lines, every 5th has trailing whitespace.
+        let source: String = (1..=400)
+            .map(|i| if i % 5 == 0 { "x   \n".to_string() } else { "x\n".to_string() })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_file(&source);
+        assert_eq!(diags.len(), 80, "400 lines / 5 = 80 trailing-whitespace violations");
+    }
+
+    #[test]
+    fn rule_keyword_span_covers_keyword() {
+        let rule = ForbiddenKeywordRule { keyword: "FIXME" };
+        let line = "code FIXME more";
+        let diag = rule.check(line, 1).unwrap();
+        // "FIXME" starts at byte 5, length 5.
+        assert_eq!(diag.span.start, 5);
+        assert_eq!(diag.span.end, 10);
+    }
+
+    #[test]
+    fn rule_keyword_no_match_returns_none() {
+        let rule = ForbiddenKeywordRule { keyword: "DEPRECATED" };
+        assert!(rule.check("clean code line", 1).is_none());
+    }
 }

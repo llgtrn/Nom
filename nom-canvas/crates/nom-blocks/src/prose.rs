@@ -510,4 +510,160 @@ mod tests {
         };
         assert_eq!(h.level_clamped(), 1);
     }
+
+    // ── plain text extraction helpers ─────────────────────────────────────────
+
+    fn delta_plain_text(delta: &Delta) -> String {
+        delta
+            .iter()
+            .filter_map(|op| {
+                if let DeltaOp::Insert { text, .. } = op {
+                    Some(text.as_str())
+                } else {
+                    None
+                }
+            })
+            .collect::<Vec<_>>()
+            .join("")
+    }
+
+    fn word_count(delta: &Delta) -> usize {
+        let text = delta_plain_text(delta);
+        text.split_whitespace().count()
+    }
+
+    #[test]
+    fn plain_text_extraction_single_insert() {
+        let delta = vec![DeltaOp::Insert {
+            text: "hello world".into(),
+            attrs: Default::default(),
+        }];
+        assert_eq!(delta_plain_text(&delta), "hello world");
+    }
+
+    #[test]
+    fn plain_text_extraction_multiple_inserts() {
+        let delta = vec![
+            DeltaOp::Insert { text: "foo".into(), attrs: Default::default() },
+            DeltaOp::Insert { text: " bar".into(), attrs: Default::default() },
+        ];
+        assert_eq!(delta_plain_text(&delta), "foo bar");
+    }
+
+    #[test]
+    fn plain_text_extraction_ignores_delete_ops() {
+        let delta = vec![
+            DeltaOp::Insert { text: "hello".into(), attrs: Default::default() },
+            DeltaOp::Delete { count: 3 },
+        ];
+        // delete ops contribute no text
+        assert_eq!(delta_plain_text(&delta), "hello");
+    }
+
+    #[test]
+    fn plain_text_extraction_ignores_retain_ops() {
+        let delta = vec![
+            DeltaOp::Retain { count: 5, attrs: Default::default() },
+            DeltaOp::Insert { text: "world".into(), attrs: Default::default() },
+        ];
+        assert_eq!(delta_plain_text(&delta), "world");
+    }
+
+    #[test]
+    fn plain_text_empty_delta_yields_empty_string() {
+        let delta: Delta = vec![];
+        assert_eq!(delta_plain_text(&delta), "");
+    }
+
+    #[test]
+    fn word_count_single_word() {
+        let delta = vec![DeltaOp::Insert { text: "nom".into(), attrs: Default::default() }];
+        assert_eq!(word_count(&delta), 1);
+    }
+
+    #[test]
+    fn word_count_multiple_words() {
+        let delta = vec![DeltaOp::Insert {
+            text: "one two three four five".into(),
+            attrs: Default::default(),
+        }];
+        assert_eq!(word_count(&delta), 5);
+    }
+
+    #[test]
+    fn word_count_empty_delta_is_zero() {
+        let delta: Delta = vec![];
+        assert_eq!(word_count(&delta), 0);
+    }
+
+    #[test]
+    fn word_count_whitespace_only_delta_is_zero() {
+        let delta = vec![DeltaOp::Insert { text: "   ".into(), attrs: Default::default() }];
+        assert_eq!(word_count(&delta), 0);
+    }
+
+    #[test]
+    fn word_count_splits_across_ops() {
+        let delta = vec![
+            DeltaOp::Insert { text: "hello ".into(), attrs: Default::default() },
+            DeltaOp::Insert { text: "world".into(), attrs: Default::default() },
+        ];
+        assert_eq!(word_count(&delta), 2);
+    }
+
+    #[test]
+    fn paragraph_block_plain_text_roundtrip() {
+        let entity = NomtuRef::new("p-rt", "write", "verb");
+        let block = ParagraphBlock {
+            entity,
+            text: vec![DeltaOp::Insert {
+                text: "Nom is a language".into(),
+                attrs: Default::default(),
+            }],
+            children: vec![],
+        };
+        let plain = delta_plain_text(&block.text);
+        assert_eq!(plain, "Nom is a language");
+        assert_eq!(word_count(&block.text), 4);
+    }
+
+    #[test]
+    fn code_block_text_preserved_verbatim() {
+        let entity = NomtuRef::new("code-rt", "compile", "verb");
+        let src = "fn foo() -> u32 { 42 }";
+        let block = CodeBlock {
+            entity,
+            language: "nom".into(),
+            text: vec![DeltaOp::Insert { text: src.into(), attrs: Default::default() }],
+            wrap: false,
+        };
+        assert_eq!(delta_plain_text(&block.text), src);
+    }
+
+    #[test]
+    fn list_block_numbered_variant() {
+        let entity = NomtuRef::new("lst-num", "list", "verb");
+        let block = ListBlock {
+            entity,
+            text: vec![],
+            list_type: ListType::Numbered,
+            checked: None,
+            children: vec![],
+        };
+        assert_eq!(block.list_type, ListType::Numbered);
+        assert!(block.checked.is_none());
+    }
+
+    #[test]
+    fn list_block_toggle_variant() {
+        let entity = NomtuRef::new("lst-tog", "toggle", "verb");
+        let block = ListBlock {
+            entity,
+            text: vec![],
+            list_type: ListType::Toggle,
+            checked: None,
+            children: vec![],
+        };
+        assert_eq!(block.list_type, ListType::Toggle);
+    }
 }

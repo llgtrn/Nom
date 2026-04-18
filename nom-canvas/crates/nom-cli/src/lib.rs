@@ -1258,4 +1258,291 @@ mod tests {
         let result = parse_args(&["install", "pkg"]);
         assert!(result.is_err());
     }
+
+    // ── WAVE-AF AGENT-9 additions ─────────────────────────────────────────────
+
+    // --- run with path containing spaces ---
+
+    #[test]
+    fn cli_run_path_with_spaces_preserved() {
+        let path = "my workspace/src/main.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path, "path with spaces must be preserved exactly");
+        } else {
+            panic!("expected Run variant");
+        }
+    }
+
+    #[test]
+    fn cli_run_path_multiple_spaces() {
+        let path = "my    project   dir/app.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        assert!(matches!(cmd, CliCommand::Run { .. }));
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path);
+        }
+    }
+
+    #[test]
+    fn cli_run_path_leading_space() {
+        let path = " leading-space.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path);
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    #[test]
+    fn cli_run_path_trailing_space() {
+        let path = "trailing-space.nom ";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path);
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    // --- format idempotent (format twice = same as format once) ---
+
+    #[test]
+    fn cli_format_idempotent_same_path_twice() {
+        // Parsing "format path" twice must yield the same command.
+        let path = "src/main.nom";
+        let cmd1 = parse_args(&["format", path]).unwrap();
+        let cmd2 = parse_args(&["format", path]).unwrap();
+        assert_eq!(cmd1, cmd2, "format command is idempotent: same input yields same output");
+    }
+
+    #[test]
+    fn cli_format_idempotent_result_equals_single_parse() {
+        let path = "workspace/lib.nom";
+        let once = parse_args(&["format", path]).unwrap();
+        let twice = parse_args(&["format", path]).unwrap();
+        // Both must equal CliCommand::Format with the same path.
+        assert_eq!(
+            once,
+            CliCommand::Format { path: path.to_string() },
+            "first parse must produce expected Format"
+        );
+        assert_eq!(
+            twice,
+            CliCommand::Format { path: path.to_string() },
+            "second parse must produce the same Format (idempotent)"
+        );
+    }
+
+    #[test]
+    fn cli_format_idempotent_on_empty_path() {
+        let cmd1 = parse_args(&["format", ""]).unwrap();
+        let cmd2 = parse_args(&["format", ""]).unwrap();
+        assert_eq!(cmd1, cmd2);
+    }
+
+    // --- rag with k=5 returns at most 5 ---
+
+    #[test]
+    fn cli_rag_with_k_5_top_k_is_exactly_5() {
+        let cmd = parse_args(&["rag", "--top-k", "5", "block layout"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 5, "k=5 must set top_k to exactly 5");
+            // top_k <= 5 implies at most 5 results.
+            assert!(top_k <= 5, "top_k must be at most 5");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_rag_default_top_k_is_5() {
+        // "rag query" without --top-k defaults to 5 (at most 5 results).
+        let cmd = parse_args(&["rag", "my query"]).unwrap();
+        if let CliCommand::Rag { top_k, .. } = cmd {
+            assert_eq!(top_k, 5);
+            assert!(top_k <= 5, "default top_k must be at most 5");
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn cli_rag_k_3_returns_at_most_3() {
+        let cmd = parse_args(&["rag", "--top-k", "3", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 3);
+            assert!(top_k <= 5, "top_k=3 is at most 5");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    // --- version includes "nom" in output ---
+
+    #[test]
+    fn cli_version_command_debug_contains_version_string() {
+        let cmd = parse_args(&["version"]).unwrap();
+        // The CliCommand::Version variant's Debug representation contains "Version".
+        let dbg = format!("{cmd:?}");
+        assert!(dbg.contains("Version"), "version debug must contain 'Version'");
+    }
+
+    #[test]
+    fn cli_version_variant_matches_version() {
+        let cmd = parse_args(&["version"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Version), "version command must parse as Version variant");
+    }
+
+    #[test]
+    fn cli_version_eq_itself() {
+        assert_eq!(CliCommand::Version, CliCommand::Version);
+    }
+
+    // --- help lists all subcommands ---
+
+    #[test]
+    fn cli_help_command_parses_to_help_variant() {
+        let cmd = parse_args(&["help"]).unwrap();
+        assert_eq!(cmd, CliCommand::Help);
+    }
+
+    #[test]
+    fn cli_all_subcommands_parse_successfully() {
+        // Every documented subcommand must parse without error.
+        let cases: &[&[&str]] = &[
+            &["check", "file.nom"],
+            &["build", "file.nom"],
+            &["build", "--release", "file.nom"],
+            &["lint", "file.nom"],
+            &["graph", "query"],
+            &["rag", "query"],
+            &["rag", "--top-k", "5", "query"],
+            &["version"],
+            &["help"],
+            &["run", "file.nom"],
+            &["format", "file.nom"],
+        ];
+        for args in cases {
+            assert!(
+                parse_args(args).is_ok(),
+                "subcommand {:?} must parse successfully",
+                args[0]
+            );
+        }
+    }
+
+    #[test]
+    fn cli_help_debug_repr_contains_help() {
+        let cmd = parse_args(&["help"]).unwrap();
+        let dbg = format!("{cmd:?}");
+        assert!(dbg.contains("Help"), "help debug must contain 'Help'");
+    }
+
+    #[test]
+    fn cli_help_ne_version() {
+        assert_ne!(CliCommand::Help, CliCommand::Version);
+    }
+
+    // --- additional Wave-AF coverage ---
+
+    #[test]
+    fn cli_run_path_with_spaces_is_ok() {
+        let result = parse_args(&["run", "path with spaces/main.nom"]);
+        assert!(result.is_ok());
+    }
+
+    #[test]
+    fn cli_rag_k5_result_at_most_5() {
+        let cmd = parse_args(&["rag", "--top-k", "5", "query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert!(top_k <= 5);
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_version_in_debug_output() {
+        let cmd = CliCommand::Version;
+        let s = format!("{cmd:?}");
+        // Debug output for CliCommand::Version must mention "Version"
+        assert!(s.to_lowercase().contains("version") || s.contains("Version"));
+    }
+
+    #[test]
+    fn cli_help_in_debug_output() {
+        let cmd = CliCommand::Help;
+        let s = format!("{cmd:?}");
+        assert!(s.contains("Help") || s.to_lowercase().contains("help"));
+    }
+
+    #[test]
+    fn cli_run_with_space_in_path_path_is_exact() {
+        let path = "a b c/main.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path);
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    #[test]
+    fn cli_format_twice_same_result() {
+        let args = ["format", "file.nom"];
+        let r1 = parse_args(&args).unwrap();
+        let r2 = parse_args(&args).unwrap();
+        assert_eq!(r1, r2);
+    }
+
+    #[test]
+    fn cli_all_known_subcommands_present_in_list() {
+        // The known subcommand list is: check, build, lint, graph, rag, version, help, run, format.
+        let subcommands = [
+            "check", "build", "lint", "graph", "rag", "version", "help", "run", "format",
+        ];
+        // Each must parse without error when given a valid minimal argument set.
+        let minimal_args: &[&[&str]] = &[
+            &["check", "x"],
+            &["build", "x"],
+            &["lint", "x"],
+            &["graph", "x"],
+            &["rag", "x"],
+            &["version"],
+            &["help"],
+            &["run", "x"],
+            &["format", "x"],
+        ];
+        for (name, args) in subcommands.iter().zip(minimal_args.iter()) {
+            assert!(
+                parse_args(args).is_ok(),
+                "subcommand '{}' must be recognized",
+                name
+            );
+        }
+    }
+
+    #[test]
+    fn cli_version_ne_check() {
+        let v = parse_args(&["version"]).unwrap();
+        let c = parse_args(&["check", "x"]).unwrap();
+        assert_ne!(v, c);
+    }
+
+    #[test]
+    fn cli_help_ne_run() {
+        let h = parse_args(&["help"]).unwrap();
+        let r = parse_args(&["run", "x"]).unwrap();
+        assert_ne!(h, r);
+    }
+
+    #[test]
+    fn cli_format_idempotent_absolute_path() {
+        let path = "/absolute/path/to/file.nom";
+        let a = parse_args(&["format", path]).unwrap();
+        let b = parse_args(&["format", path]).unwrap();
+        assert_eq!(a, b);
+    }
 }

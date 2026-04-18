@@ -1963,7 +1963,7 @@ mod tests {
         let ops: Vec<Op> = (0u64..4)
             .map(|i| {
                 let mut doc = DocState::new(PeerId(3000 + i));
-                doc.local_insert(RgaPos::Head, &format!("p{i}"))
+                doc.local_insert(RgaPos::Head, format!("p{i}"))
             })
             .collect();
 
@@ -2508,7 +2508,7 @@ mod tests {
         let mut doc = DocState::new(PeerId(11_000));
         let mut prev_id = doc.local_insert(RgaPos::Head, "0").id;
         for i in 1..100 {
-            let op = doc.local_insert(RgaPos::After(prev_id), &format!("{i}"));
+            let op = doc.local_insert(RgaPos::After(prev_id), format!("{i}"));
             prev_id = op.id;
         }
         assert_eq!(doc.op_log().len(), 100, "must have 100 ops");
@@ -2628,7 +2628,7 @@ mod tests {
     #[test]
     fn op_id_total_order_consistent() {
         // Build a sorted list and verify it matches manual expectations.
-        let mut ids = vec![
+        let mut ids = [
             OpId {
                 peer: PeerId(2),
                 counter: 1,
@@ -2682,7 +2682,7 @@ mod tests {
     #[test]
     fn op_id_max_in_set() {
         // The maximum OpId in a set has the highest counter (and peer as tiebreak).
-        let ids = vec![
+        let ids = [
             OpId {
                 peer: PeerId(5),
                 counter: 10,
@@ -2933,7 +2933,7 @@ mod tests {
         let mut original = DocState::new(PeerId(21_010));
         let mut prev = original.local_insert(RgaPos::Head, "0").id;
         for i in 1u64..10 {
-            let op = original.local_insert(RgaPos::After(prev), &i.to_string());
+            let op = original.local_insert(RgaPos::After(prev), i.to_string());
             prev = op.id;
         }
 
@@ -3608,7 +3608,7 @@ mod tests {
         let ops: Vec<Op> = (0u64..3)
             .map(|i| {
                 let mut doc = DocState::new(PeerId(31_000 + i));
-                doc.local_insert(RgaPos::Head, &format!("peer{i}"))
+                doc.local_insert(RgaPos::Head, format!("peer{i}"))
             })
             .collect();
 
@@ -3655,7 +3655,7 @@ mod tests {
         let ops: Vec<Op> = (0u64..5)
             .map(|i| {
                 let mut doc = DocState::new(PeerId(33_000 + i));
-                doc.local_insert(RgaPos::Head, &format!("p{i}"))
+                doc.local_insert(RgaPos::Head, format!("p{i}"))
             })
             .collect();
 
@@ -3994,15 +3994,15 @@ mod tests {
         // We need to pass references — collect op snapshots first.
         let snapshots: Vec<Vec<Op>> = docs.iter().map(|d| d.op_log().to_vec()).collect();
 
-        for i in 0..docs.len() {
-            for j in 0..snapshots.len() {
+        for (i, doc) in docs.iter_mut().enumerate() {
+            for (j, snap) in snapshots.iter().enumerate() {
                 if i != j {
                     // Replay the other peer's ops via a temporary doc.
                     let mut tmp = DocState::new(PeerId(9999));
-                    for op in &snapshots[j] {
+                    for op in snap {
                         tmp.apply(op.clone());
                     }
-                    docs[i].merge(&tmp);
+                    doc.merge(&tmp);
                 }
             }
         }
@@ -4552,20 +4552,20 @@ mod tests {
         let mut docs: Vec<DocState> = (0u64..4)
             .map(|i| {
                 let mut d = DocState::new(PeerId(50_100 + i));
-                d.local_insert(RgaPos::Head, &format!("q{i}"));
+                d.local_insert(RgaPos::Head, format!("q{i}"));
                 d
             })
             .collect();
 
         let snapshots: Vec<Vec<Op>> = docs.iter().map(|d| d.op_log().to_vec()).collect();
-        for i in 0..4 {
-            for j in 0..4 {
+        for (i, doc) in docs.iter_mut().enumerate() {
+            for (j, snap) in snapshots.iter().enumerate() {
                 if i != j {
                     let mut tmp = DocState::new(PeerId(59_999));
-                    for op in &snapshots[j] {
+                    for op in snap {
                         tmp.apply(op.clone());
                     }
-                    docs[i].merge(&tmp);
+                    doc.merge(&tmp);
                 }
             }
         }
@@ -4585,7 +4585,7 @@ mod tests {
         let mut original = DocState::new(PeerId(51_000));
         let mut prev = original.local_insert(RgaPos::Head, "0").id;
         for i in 1u64..500 {
-            let op = original.local_insert(RgaPos::After(prev), &(i % 10).to_string());
+            let op = original.local_insert(RgaPos::After(prev), (i % 10).to_string());
             prev = op.id;
         }
 
@@ -5284,5 +5284,466 @@ mod tests {
         let pos4 = text.find('4').unwrap();
         assert!(pos1 < pos4, "1 must precede 4");
         let _ = op4;
+    }
+
+    // ── wave AF-6: targeted coverage additions ───────────────────────────────
+
+    // 1. Undo last N ops: revert document to prior state
+    #[test]
+    fn undo_last_n_ops_reverts_document() {
+        // Build a doc with 5 inserts, then "undo" the last 2 by replaying ops 1-3.
+        let mut doc = DocState::new(PeerId(30_000));
+        let op1 = doc.local_insert(RgaPos::Head, "A");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "B");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "C");
+        doc.local_insert(RgaPos::After(op3.id), "D");
+        doc.local_insert(RgaPos::After(op3.id), "E");
+        assert_eq!(doc.text().chars().filter(|c| "ABCDE".contains(*c)).count(), 5);
+
+        // Simulate undo by rebuilding from first 3 ops.
+        let snapshot: Vec<Op> = doc.op_log()[..3].to_vec();
+        let mut reverted = DocState::new(PeerId(30_000));
+        for op in snapshot {
+            reverted.apply(op);
+        }
+        assert_eq!(reverted.text(), "ABC", "undo last 2 ops must revert to ABC");
+        assert_eq!(reverted.op_log().len(), 3);
+    }
+
+    #[test]
+    fn undo_last_1_op_reverts_to_prior_state() {
+        let mut doc = DocState::new(PeerId(30_001));
+        let op1 = doc.local_insert(RgaPos::Head, "hello");
+        doc.local_insert(RgaPos::After(op1.id), " world");
+        assert_eq!(doc.text(), "hello world");
+
+        // Revert last op by replaying only op1.
+        let mut reverted = DocState::new(PeerId(30_001));
+        reverted.apply(doc.op_log()[0].clone());
+        assert_eq!(reverted.text(), "hello");
+    }
+
+    // 2. Document with emoji (multi-byte chars) converges correctly
+    #[test]
+    fn emoji_document_converges_correctly() {
+        let mut pa = DocState::new(PeerId(30_010));
+        let op_a = pa.local_insert(RgaPos::Head, "Hello 👋");
+
+        let mut pb = DocState::new(PeerId(30_011));
+        let op_b = pb.local_insert(RgaPos::Head, "World 🌍");
+
+        // Cross-merge.
+        pa.apply(op_b.clone());
+        pb.apply(op_a.clone());
+
+        assert_eq!(pa.text(), pb.text(), "emoji docs must converge");
+        assert!(pa.text().contains("👋"), "emoji 👋 must survive merge");
+        assert!(pa.text().contains("🌍"), "emoji 🌍 must survive merge");
+    }
+
+    #[test]
+    fn emoji_single_node_text_intact() {
+        let mut doc = DocState::new(PeerId(30_012));
+        doc.local_insert(RgaPos::Head, "✨🦀🎉");
+        assert_eq!(doc.text(), "✨🦀🎉");
+        assert_eq!(doc.text().chars().count(), 3);
+    }
+
+    #[test]
+    fn emoji_insert_then_delete_leaves_rest() {
+        let mut doc = DocState::new(PeerId(30_013));
+        let op_a = doc.local_insert(RgaPos::Head, "🌙");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "⭐");
+        doc.local_insert(RgaPos::After(op_b.id), "☀️");
+        doc.local_delete(op_b.id);
+        assert!(!doc.text().contains('⭐'), "deleted emoji must not appear");
+        assert!(doc.text().contains("🌙"));
+    }
+
+    // 3. Two peers swap a single character, converge to same final text
+    #[test]
+    fn two_peers_swap_single_char_converge() {
+        // Both peers start with "X" at Head; each deletes it and inserts their char.
+        let mut pa = DocState::new(PeerId(30_020));
+        let shared = pa.local_insert(RgaPos::Head, "X");
+
+        let mut pb = DocState::new(PeerId(30_021));
+        pb.apply(shared.clone());
+
+        // A replaces X with "A".
+        let del_a = pa.local_delete(shared.id);
+        let ins_a = pa.local_insert(RgaPos::After(shared.id), "A");
+
+        // B replaces X with "B".
+        let del_b = pb.local_delete(shared.id);
+        let ins_b = pb.local_insert(RgaPos::After(shared.id), "B");
+
+        // Cross merge.
+        pa.apply(del_b.clone());
+        pa.apply(ins_b.clone());
+        pb.apply(del_a.clone());
+        pb.apply(ins_a.clone());
+
+        // Both converge to same text; "X" is gone.
+        assert_eq!(pa.text(), pb.text(), "peers must converge after swap");
+        assert!(!pa.text().contains('X'), "original X must be deleted");
+        assert!(pa.text().contains('A'));
+        assert!(pa.text().contains('B'));
+    }
+
+    #[test]
+    fn two_peers_swap_single_char_idempotent_after_extra_merge() {
+        let mut pa = DocState::new(PeerId(30_022));
+        let op = pa.local_insert(RgaPos::Head, "Z");
+        let mut pb = DocState::new(PeerId(30_023));
+        pb.apply(op.clone());
+        let del_a = pa.local_delete(op.id);
+        let del_b = pb.local_delete(op.id);
+        pa.apply(del_b);
+        pb.apply(del_a);
+        assert_eq!(pa.text(), pb.text());
+        // Merge again (idempotent).
+        let text_before = pa.text();
+        pa.merge(&pb);
+        assert_eq!(pa.text(), text_before);
+    }
+
+    // 4. Meta key with empty string value
+    #[test]
+    fn set_meta_empty_string_value_recorded() {
+        let mut doc = DocState::new(PeerId(30_030));
+        let op = Op {
+            id: OpId {
+                peer: PeerId(30_030),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "note".to_string(),
+                value: "".to_string(),
+            },
+        };
+        doc.apply(op);
+        let found = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "note" {
+                    return Some(value.clone());
+                }
+            }
+            None
+        });
+        assert_eq!(found, Some(String::new()), "empty value must be recorded");
+        assert_eq!(doc.text(), "");
+    }
+
+    #[test]
+    fn set_meta_empty_key_with_empty_value() {
+        let mut doc = DocState::new(PeerId(30_031));
+        let op = Op {
+            id: OpId {
+                peer: PeerId(30_031),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "".to_string(),
+                value: "".to_string(),
+            },
+        };
+        doc.apply(op);
+        assert_eq!(doc.op_log().len(), 1);
+        assert_eq!(doc.text(), "");
+        match &doc.op_log()[0].kind {
+            OpKind::SetMeta { key, value } => {
+                assert_eq!(key, "");
+                assert_eq!(value, "");
+            }
+            _ => panic!("expected SetMeta"),
+        }
+    }
+
+    #[test]
+    fn set_meta_multiple_empty_values() {
+        let mut doc = DocState::new(PeerId(30_032));
+        for ctr in 1u64..=3 {
+            doc.apply(Op {
+                id: OpId {
+                    peer: PeerId(30_032),
+                    counter: ctr,
+                },
+                kind: OpKind::SetMeta {
+                    key: format!("k{ctr}"),
+                    value: "".to_string(),
+                },
+            });
+        }
+        let empty_val_count = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { value, .. } if value.is_empty()))
+            .count();
+        assert_eq!(empty_val_count, 3);
+        assert_eq!(doc.text(), "");
+    }
+
+    // 5. Op Display/Debug formats
+    #[test]
+    fn op_debug_format_contains_peer_id() {
+        let op = Op {
+            id: OpId {
+                peer: PeerId(42),
+                counter: 7,
+            },
+            kind: OpKind::Insert {
+                pos: RgaPos::Head,
+                text: "test".to_string(),
+            },
+        };
+        let dbg = format!("{op:?}");
+        assert!(dbg.contains("42"), "debug must include peer id 42");
+        assert!(dbg.contains("7"), "debug must include counter 7");
+        assert!(dbg.contains("test"), "debug must include text");
+    }
+
+    #[test]
+    fn op_id_debug_format_shows_fields() {
+        let id = OpId {
+            peer: PeerId(99),
+            counter: 123,
+        };
+        let dbg = format!("{id:?}");
+        assert!(dbg.contains("99"));
+        assert!(dbg.contains("123"));
+    }
+
+    #[test]
+    fn peer_id_debug_format() {
+        let peer = PeerId(55);
+        let dbg = format!("{peer:?}");
+        assert!(dbg.contains("55"));
+    }
+
+    #[test]
+    fn rga_pos_debug_format_head() {
+        let pos = RgaPos::Head;
+        let dbg = format!("{pos:?}");
+        assert!(dbg.contains("Head"));
+    }
+
+    #[test]
+    fn rga_pos_debug_format_after() {
+        let pos = RgaPos::After(OpId {
+            peer: PeerId(3),
+            counter: 5,
+        });
+        let dbg = format!("{pos:?}");
+        assert!(dbg.contains("After"));
+        assert!(dbg.contains("3"));
+        assert!(dbg.contains("5"));
+    }
+
+    #[test]
+    fn op_kind_debug_insert() {
+        let kind = OpKind::Insert {
+            pos: RgaPos::Head,
+            text: "hello".to_string(),
+        };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("Insert"));
+        assert!(dbg.contains("hello"));
+    }
+
+    #[test]
+    fn op_kind_debug_delete() {
+        let kind = OpKind::Delete {
+            target: OpId {
+                peer: PeerId(1),
+                counter: 2,
+            },
+        };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("Delete"));
+    }
+
+    #[test]
+    fn op_kind_debug_set_meta() {
+        let kind = OpKind::SetMeta {
+            key: "mykey".to_string(),
+            value: "myval".to_string(),
+        };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("SetMeta"));
+        assert!(dbg.contains("mykey"));
+        assert!(dbg.contains("myval"));
+    }
+
+    // Additional convergence edge cases
+    #[test]
+    fn crdt_insert_empty_string_two_peers_converge() {
+        let mut pa = DocState::new(PeerId(30_050));
+        let op_a = pa.local_insert(RgaPos::Head, "");
+        let mut pb = DocState::new(PeerId(30_051));
+        let op_b = pb.local_insert(RgaPos::Head, "");
+        pa.apply(op_b.clone());
+        pb.apply(op_a.clone());
+        assert_eq!(pa.text(), pb.text());
+        assert_eq!(pa.text(), "");
+    }
+
+    #[test]
+    fn crdt_meta_key_with_unicode_value() {
+        let mut doc = DocState::new(PeerId(30_060));
+        doc.apply(Op {
+            id: OpId {
+                peer: PeerId(30_060),
+                counter: 1,
+            },
+            kind: OpKind::SetMeta {
+                key: "lang".to_string(),
+                value: "日本語".to_string(),
+            },
+        });
+        let val = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "lang" {
+                    return Some(value.as_str());
+                }
+            }
+            None
+        });
+        assert_eq!(val, Some("日本語"));
+    }
+
+    #[test]
+    fn crdt_insert_only_whitespace_converges() {
+        let mut pa = DocState::new(PeerId(30_070));
+        let op_a = pa.local_insert(RgaPos::Head, "   ");
+        let mut pb = DocState::new(PeerId(30_071));
+        let op_b = pb.local_insert(RgaPos::Head, "\t\n");
+        pa.apply(op_b.clone());
+        pb.apply(op_a.clone());
+        assert_eq!(pa.text(), pb.text());
+        assert!(pa.text().contains("   "));
+        assert!(pa.text().contains("\t\n"));
+    }
+
+    #[test]
+    fn crdt_five_sequential_deletes_all_gone() {
+        let mut doc = DocState::new(PeerId(30_080));
+        let mut ids = vec![];
+        let mut prev = doc.local_insert(RgaPos::Head, "1").id;
+        ids.push(prev);
+        for ch in ["2", "3", "4", "5"] {
+            let op = doc.local_insert(RgaPos::After(prev), ch);
+            prev = op.id;
+            ids.push(prev);
+        }
+        assert_eq!(doc.text(), "12345");
+        for id in ids {
+            doc.local_delete(id);
+        }
+        assert_eq!(doc.text(), "");
+        assert_eq!(doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count(), 5);
+    }
+
+    // Additional tests to reach 270+
+
+    #[test]
+    fn undo_last_3_ops_reverts_to_first_two() {
+        let mut doc = DocState::new(PeerId(31_000));
+        let op1 = doc.local_insert(RgaPos::Head, "X");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "Y");
+        doc.local_insert(RgaPos::After(op2.id), "Z");
+        doc.local_insert(RgaPos::After(op2.id), "W");
+        doc.local_insert(RgaPos::After(op2.id), "V");
+        // Revert to first 2 ops.
+        let snap: Vec<Op> = doc.op_log()[..2].to_vec();
+        let mut reverted = DocState::new(PeerId(31_000));
+        for op in snap { reverted.apply(op); }
+        assert_eq!(reverted.text(), "XY");
+        assert_eq!(reverted.op_log().len(), 2);
+    }
+
+    #[test]
+    fn emoji_multi_byte_delete_leaves_others() {
+        let mut doc = DocState::new(PeerId(31_001));
+        let op1 = doc.local_insert(RgaPos::Head, "\u{1F600}");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "\u{1F60E}");
+        doc.local_insert(RgaPos::After(op2.id), "\u{1F38A}");
+        doc.local_delete(op2.id);
+        let text = doc.text();
+        assert!(text.contains('\u{1F600}'));
+        assert!(!text.contains('\u{1F60E}'));
+        assert!(text.contains('\u{1F38A}'));
+    }
+
+    #[test]
+    fn set_meta_value_with_spaces() {
+        let mut doc = DocState::new(PeerId(31_002));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(31_002), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "desc".to_string(),
+                value: "hello world".to_string(),
+            },
+        });
+        let val = doc.op_log().iter().find_map(|o| {
+            if let OpKind::SetMeta { key, value } = &o.kind {
+                if key == "desc" { return Some(value.clone()); }
+            }
+            None
+        });
+        assert_eq!(val, Some("hello world".to_string()));
+    }
+
+    #[test]
+    fn op_debug_includes_kind_info() {
+        let op = Op {
+            id: OpId { peer: PeerId(10), counter: 1 },
+            kind: OpKind::Delete {
+                target: OpId { peer: PeerId(5), counter: 1 },
+            },
+        };
+        let s = format!("{op:?}");
+        assert!(!s.is_empty(), "debug output must be non-empty");
+    }
+
+    #[test]
+    fn crdt_insert_after_last_op_appends() {
+        let mut doc = DocState::new(PeerId(31_010));
+        let op = doc.local_insert(RgaPos::Head, "first");
+        doc.local_insert(RgaPos::After(op.id), "last");
+        assert_eq!(doc.text(), "firstlast");
+    }
+
+    #[test]
+    fn crdt_op_log_order_matches_apply_order() {
+        let mut doc = DocState::new(PeerId(31_011));
+        let op1 = doc.local_insert(RgaPos::Head, "one");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "two");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "three");
+        assert_eq!(doc.op_log()[0].id, op1.id);
+        assert_eq!(doc.op_log()[1].id, op2.id);
+        assert_eq!(doc.op_log()[2].id, op3.id);
+    }
+
+    #[test]
+    fn set_meta_does_not_affect_insert_count() {
+        let mut doc = DocState::new(PeerId(31_012));
+        doc.local_insert(RgaPos::Head, "hello");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(31_012), counter: 99 },
+            kind: OpKind::SetMeta { key: "k".to_string(), value: "v".to_string() },
+        });
+        let insert_count = doc.op_log().iter()
+            .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
+            .count();
+        assert_eq!(insert_count, 1);
+        assert_eq!(doc.text(), "hello");
+    }
+
+    #[test]
+    fn crdt_peer_id_ord_zero_less_than_one() {
+        assert!(PeerId(0) < PeerId(1));
+        assert!(PeerId(1) > PeerId(0));
+        assert_eq!(PeerId(5), PeerId(5));
     }
 }

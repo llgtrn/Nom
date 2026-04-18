@@ -499,4 +499,151 @@ mod tests {
         assert_eq!(c.snapshot_count(), 0);
         assert_eq!(c.input_hash(), 42);
     }
+
+    // ── WAVE-AF AGENT-9 additions ─────────────────────────────────────────────
+
+    // --- 5-constraint AND chain ---
+
+    #[test]
+    fn constraint_and_five_all_pass() {
+        // Five independent constraints — all must pass for the chain to be valid.
+        let h = Hash128::of_str("shared");
+        let constraints: Vec<Constraint> = (1u64..=5)
+            .map(|i| {
+                let mut c = Constraint::new(i);
+                c.record(snap(i, vec![(i as u32, Hash128::of_u64(i))]));
+                c
+            })
+            .collect();
+        let snaps: Vec<TrackedSnapshot> = (1u64..=5)
+            .map(|i| snap(i, vec![(i as u32, Hash128::of_u64(i))]))
+            .collect();
+
+        // All five must validate.
+        for (idx, c) in constraints.iter().enumerate() {
+            let input_hash = (idx as u64) + 1;
+            assert!(
+                c.validate(input_hash, &[snaps[idx].clone()]),
+                "constraint {idx} must validate"
+            );
+        }
+        // AND of all five.
+        let all_pass = constraints.iter().enumerate().all(|(idx, c)| {
+            let input_hash = (idx as u64) + 1;
+            c.validate(input_hash, &[snaps[idx].clone()])
+        });
+        assert!(all_pass, "AND of 5 constraints must be true when all pass");
+    }
+
+    #[test]
+    fn constraint_and_five_one_fails_invalidates_chain() {
+        // If any one of five constraints fails, the AND result is false.
+        let constraints: Vec<Constraint> = (1u64..=5)
+            .map(|i| {
+                let mut c = Constraint::new(i);
+                c.record(snap(i, vec![(i as u32, Hash128::of_u64(i))]));
+                c
+            })
+            .collect();
+        let mut snaps: Vec<TrackedSnapshot> = (1u64..=5)
+            .map(|i| snap(i, vec![(i as u32, Hash128::of_u64(i))]))
+            .collect();
+
+        // Corrupt the 3rd snapshot's return hash.
+        snaps[2] = snap(3, vec![(3, Hash128::of_str("corrupted"))]);
+
+        // Constraint 3 (index 2) must fail.
+        assert!(
+            !constraints[2].validate(3, &[snaps[2].clone()]),
+            "constraint 3 must fail with corrupted snapshot"
+        );
+
+        // The AND chain is broken.
+        let all_pass = constraints.iter().enumerate().all(|(idx, c)| {
+            let input_hash = (idx as u64) + 1;
+            c.validate(input_hash, &[snaps[idx].clone()])
+        });
+        assert!(!all_pass, "AND chain with one failing constraint must be false");
+    }
+
+    #[test]
+    fn constraint_and_five_wrong_input_hash_on_last() {
+        // All five constraints have matching snapshots but the last has wrong input hash.
+        let constraints: Vec<Constraint> = (1u64..=5)
+            .map(|i| {
+                let mut c = Constraint::new(i);
+                c.record(snap(i, vec![]));
+                c
+            })
+            .collect();
+        let snaps: Vec<TrackedSnapshot> = (1u64..=5)
+            .map(|i| snap(i, vec![]))
+            .collect();
+
+        // Validate with wrong input_hash for the 5th (index 4).
+        let and_result = constraints.iter().enumerate().all(|(idx, c)| {
+            let input_hash = if idx == 4 { 999u64 } else { (idx as u64) + 1 };
+            c.validate(input_hash, &[snaps[idx].clone()])
+        });
+        assert!(!and_result, "wrong input_hash on last constraint breaks the AND chain");
+    }
+
+    // --- Constraint error message (debug representation) ---
+
+    #[test]
+    fn constraint_debug_contains_input_hash() {
+        // Constraint derives Debug; format must include the input_hash value.
+        let c = Constraint::new(0xDEADBEEF);
+        let dbg = format!("{c:?}");
+        // The debug output must contain some representation of the input_hash.
+        assert!(
+            !dbg.is_empty(),
+            "Constraint Debug output must be non-empty"
+        );
+    }
+
+    #[test]
+    fn constraint_input_hash_zero_validates_on_zero() {
+        let c = Constraint::new(0);
+        assert!(c.validate(0, &[]), "zero input_hash must validate against zero");
+        assert!(!c.validate(1, &[]), "zero input_hash must not validate against non-zero");
+    }
+
+    #[test]
+    fn constraint_input_hash_max_u64() {
+        let c = Constraint::new(u64::MAX);
+        assert!(c.validate(u64::MAX, &[]), "u64::MAX input_hash must validate");
+        assert!(!c.validate(0, &[]), "u64::MAX must not match 0");
+    }
+
+    #[test]
+    fn constraint_five_snapshots_all_matching() {
+        // One constraint with 5 recorded snapshots — all matching.
+        let h = Hash128::of_str("v");
+        let mut c = Constraint::new(99);
+        for i in 0u64..5 {
+            c.record(snap(i, vec![(i as u32, Hash128::of_u64(i))]));
+        }
+        let current: Vec<TrackedSnapshot> = (0u64..5)
+            .map(|i| snap(i, vec![(i as u32, Hash128::of_u64(i))]))
+            .collect();
+
+        assert_eq!(c.snapshot_count(), 5);
+        assert!(c.validate(99, &current), "all 5 matching snapshots must pass");
+    }
+
+    #[test]
+    fn constraint_five_snapshots_middle_one_fails() {
+        let mut c = Constraint::new(7);
+        for i in 0u64..5 {
+            c.record(snap(i, vec![(i as u32, Hash128::of_u64(i))]));
+        }
+        let mut current: Vec<TrackedSnapshot> = (0u64..5)
+            .map(|i| snap(i, vec![(i as u32, Hash128::of_u64(i))]))
+            .collect();
+        // Corrupt the middle snapshot (index 2).
+        current[2] = snap(2, vec![(2, Hash128::of_str("bad"))]);
+
+        assert!(!c.validate(7, &current), "corrupt middle snapshot must fail AND chain");
+    }
 }

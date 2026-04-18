@@ -860,4 +860,197 @@ mod tests {
         assert_eq!(cache.hit_count(), 1);
         assert_eq!(cache.miss_count(), 0);
     }
+
+    // ── WAVE-AF AGENT-9 additions ─────────────────────────────────────────────
+
+    #[test]
+    fn stats_returns_correct_hit_count_after_multiple_hits() {
+        // stats() = hit_count() and miss_count() reflect every operation.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("stats_hit");
+        cache.put(key, 7, Constraint::new(1));
+
+        // Three hits.
+        cache.get(&key, 1, &[]);
+        cache.get(&key, 1, &[]);
+        cache.get(&key, 1, &[]);
+
+        assert_eq!(cache.hit_count(), 3, "stats must show 3 hits");
+        assert_eq!(cache.miss_count(), 0, "stats must show 0 misses");
+    }
+
+    #[test]
+    fn stats_returns_correct_miss_count_after_stale_inputs() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("stats_miss");
+        cache.put(key, 99, Constraint::new(42));
+
+        // Five misses (stale input hash).
+        for i in 0u64..5 {
+            cache.get(&key, i, &[]); // all stale — constraint expects 42
+        }
+
+        assert_eq!(cache.miss_count(), 5, "stats must show 5 misses");
+        assert_eq!(cache.hit_count(), 0, "stats must show 0 hits");
+    }
+
+    #[test]
+    fn stats_mixed_hits_and_misses() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("stats_mixed");
+        cache.put(key, 5, Constraint::new(10));
+
+        cache.get(&key, 10, &[]); // hit
+        cache.get(&key, 99, &[]); // miss
+        cache.get(&key, 10, &[]); // hit
+        cache.get(&key, 0, &[]); // miss
+        cache.get(&key, 10, &[]); // hit
+
+        assert_eq!(cache.hit_count(), 3);
+        assert_eq!(cache.miss_count(), 2);
+    }
+
+    #[test]
+    fn stats_hit_rate_exact_fraction() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("rate_exact");
+        cache.put(key, 1, Constraint::new(1));
+
+        // 1 hit, 3 misses → rate = 0.25
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 2, &[]); // miss
+        cache.get(&key, 3, &[]); // miss
+        cache.get(&key, 4, &[]); // miss
+
+        let expected = 1.0 / 4.0;
+        assert!(
+            (cache.hit_rate() - expected).abs() < 1e-10,
+            "hit_rate must be exactly 0.25"
+        );
+    }
+
+    // --- LRU order: least-recently-used evicted first (simulated) ---
+
+    #[test]
+    fn lru_order_oldest_entry_evicted_first() {
+        // MemoCache does not implement LRU natively; simulate by manually tracking
+        // insertion order and evicting the least-recently-used entry.
+        let capacity = 3usize;
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let mut lru_order: std::collections::VecDeque<Hash128> = Default::default();
+
+        // Helper: "access" = promote key to back of LRU order.
+        let access = |order: &mut std::collections::VecDeque<Hash128>, key: Hash128| {
+            order.retain(|k| *k != key);
+            order.push_back(key);
+        };
+
+        // Insert k0, k1, k2.
+        for i in 0u64..3 {
+            let key = Hash128::of_u64(i);
+            if lru_order.len() == capacity {
+                let evict = lru_order.pop_front().unwrap();
+                cache.invalidate(&evict);
+            }
+            cache.put(key, i as u32, Constraint::new(i));
+            access(&mut lru_order, key);
+        }
+        assert_eq!(cache.len(), 3);
+
+        // Access k0 (promote it). LRU order is now k1 < k2 < k0.
+        access(&mut lru_order, Hash128::of_u64(0));
+
+        // Insert k3 — k1 is now least-recently-used and should be evicted.
+        let key3 = Hash128::of_u64(3);
+        let evict = lru_order.pop_front().unwrap(); // k1
+        cache.invalidate(&evict);
+        cache.put(key3, 3, Constraint::new(3));
+        access(&mut lru_order, key3);
+
+        assert_eq!(cache.len(), capacity);
+        // k1 was evicted.
+        assert_eq!(cache.get(&Hash128::of_u64(1), 1, &[]), None, "k1 must be evicted (LRU)");
+        // k0 was promoted so it stays.
+        assert_eq!(cache.get(&Hash128::of_u64(0), 0, &[]), Some(0), "k0 must survive (MRU)");
+        // k2 and k3 stay.
+        assert_eq!(cache.get(&Hash128::of_u64(2), 2, &[]), Some(2));
+        assert_eq!(cache.get(&Hash128::of_u64(3), 3, &[]), Some(3));
+    }
+
+    #[test]
+    fn lru_order_five_entries_two_evictions() {
+        // Insert 5 entries with capacity 3; oldest two are evicted.
+        let capacity = 3usize;
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+
+        for i in 0u64..5 {
+            let key = Hash128::of_u64(i);
+            if order.len() == capacity {
+                let oldest = order.pop_front().unwrap();
+                cache.invalidate(&oldest);
+            }
+            cache.put(key, i, Constraint::new(i));
+            order.push_back(key);
+        }
+
+        // After 5 inserts with cap 3: entries 0 and 1 evicted; 2, 3, 4 remain.
+        assert_eq!(cache.len(), capacity);
+        assert_eq!(cache.get(&Hash128::of_u64(0), 0, &[]), None);
+        assert_eq!(cache.get(&Hash128::of_u64(1), 1, &[]), None);
+        assert_eq!(cache.get(&Hash128::of_u64(2), 2, &[]), Some(2));
+        assert_eq!(cache.get(&Hash128::of_u64(3), 3, &[]), Some(3));
+        assert_eq!(cache.get(&Hash128::of_u64(4), 4, &[]), Some(4));
+    }
+
+    #[test]
+    fn lru_order_promoted_entry_not_evicted() {
+        // Access (promote) an entry before capacity is hit; it must survive.
+        let capacity = 2usize;
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+
+        let k0 = Hash128::of_u64(0);
+        let k1 = Hash128::of_u64(1);
+        let k2 = Hash128::of_u64(2);
+
+        cache.put(k0, 0, Constraint::new(0));
+        order.push_back(k0);
+        cache.put(k1, 1, Constraint::new(1));
+        order.push_back(k1);
+
+        // Promote k0 (simulate access).
+        order.retain(|k| *k != k0);
+        order.push_back(k0);
+
+        // Insert k2 — k1 is now the LRU entry.
+        let evict = order.pop_front().unwrap(); // k1
+        cache.invalidate(&evict);
+        cache.put(k2, 2, Constraint::new(2));
+        order.push_back(k2);
+
+        assert_eq!(cache.len(), capacity);
+        assert_eq!(cache.get(&k0, 0, &[]), Some(0), "promoted k0 must survive");
+        assert_eq!(cache.get(&k1, 1, &[]), None, "k1 must be evicted (LRU)");
+        assert_eq!(cache.get(&k2, 2, &[]), Some(2), "k2 must be present");
+    }
+
+    #[test]
+    fn stats_hit_count_after_zero_operations() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.hit_count(), 0, "new cache must start with hit_count=0");
+        assert_eq!(cache.miss_count(), 0, "new cache must start with miss_count=0");
+    }
+
+    #[test]
+    fn stats_single_entry_single_hit_single_miss() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("single");
+        cache.put(key, 1, Constraint::new(5));
+        cache.get(&key, 5, &[]); // hit
+        cache.get(&key, 9, &[]); // miss
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 1);
+        assert!((cache.hit_rate() - 0.5).abs() < f64::EPSILON);
+    }
 }

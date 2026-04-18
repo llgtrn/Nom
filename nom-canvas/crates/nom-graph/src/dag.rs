@@ -1411,4 +1411,296 @@ mod tests {
             assert!(sorted.contains(name), "{name} must be in sort");
         }
     }
+
+    // ------------------------------------------------------------------
+    // Diamond DAG toposort valid: A→B, A→C, B→D, C→D
+    // A must precede both B and C; both B and C must precede D.
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_toposort_all_constraints_satisfied() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+
+        let sorted = dag.topological_sort().expect("diamond DAG must not have a cycle");
+        assert_eq!(sorted.len(), 4, "all 4 nodes must appear in topological sort");
+
+        let pos = |id: &str| sorted.iter().position(|x| x == id).expect(id);
+        // A must appear before B, C, and D.
+        assert!(pos("A") < pos("B"), "A must precede B");
+        assert!(pos("A") < pos("C"), "A must precede C");
+        assert!(pos("A") < pos("D"), "A must precede D");
+        // B and C must appear before D.
+        assert!(pos("B") < pos("D"), "B must precede D");
+        assert!(pos("C") < pos("D"), "C must precede D");
+        // D must be last.
+        assert_eq!(pos("D"), 3, "D must be last in diamond toposort");
+    }
+
+    // ------------------------------------------------------------------
+    // Parallel execution sets: independent nodes (same depth in diamond)
+    // share no ordering constraint between them.
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_parallel_nodes_no_ordering_constraint() {
+        // B and C are both depth-1 in the diamond: neither depends on the other.
+        // Topological sort may place them in any relative order — we just verify
+        // both appear, that A is before both, and D is after both.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+
+        let sorted = dag.topological_sort().expect("diamond must sort without error");
+        let pos = |id: &str| sorted.iter().position(|x| x == id).expect(id);
+
+        let pos_a = pos("A");
+        let pos_b = pos("B");
+        let pos_c = pos("C");
+        let pos_d = pos("D");
+
+        // A before both parallel nodes; both parallel nodes before D.
+        assert!(pos_a < pos_b, "A must precede B");
+        assert!(pos_a < pos_c, "A must precede C");
+        assert!(pos_b < pos_d, "B must precede D");
+        assert!(pos_c < pos_d, "C must precede D");
+
+        // B and C can be in either order — the parallel execution set {B, C}
+        // has no internal ordering constraint. Both appear in positions 1 and 2.
+        let parallel_positions: std::collections::HashSet<usize> = [pos_b, pos_c].into();
+        assert_eq!(
+            parallel_positions,
+            [1, 2].into(),
+            "B and C must occupy the two middle positions (parallel execution set)"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Parallel root nodes: multiple sources, no mutual dependency
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_parallel_roots_all_before_sink() {
+        // Four independent roots all feed into one sink.
+        let mut dag = Dag::new();
+        for r in &["r1", "r2", "r3", "r4"] {
+            dag.add_node(ExecNode::new(*r, "verb"));
+        }
+        dag.add_node(ExecNode::new("sink", "verb"));
+        for r in &["r1", "r2", "r3", "r4"] {
+            dag.add_edge(*r, "out", "sink", "in");
+        }
+
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 5, "5 nodes must all appear");
+        let sink_pos = sorted.iter().position(|x| x == "sink").unwrap();
+        for r in &["r1", "r2", "r3", "r4"] {
+            let rp = sorted.iter().position(|x| x == *r).unwrap();
+            assert!(rp < sink_pos, "{r} must precede sink in topological order");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond DAG: exactly 4 edges stored
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_edge_count_four() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        assert_eq!(dag.edge_count(), 4, "diamond DAG must have exactly 4 edges");
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond DAG: no cycle (topological_sort returns Ok)
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_is_acyclic() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        assert!(
+            dag.topological_sort().is_ok(),
+            "diamond DAG A→B, A→C, B→D, C→D must be acyclic"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond DAG: A appears first, D appears last
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_a_first_d_last() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.first().map(|s| s.as_str()), Some("A"), "A must be first");
+        assert_eq!(sorted.last().map(|s| s.as_str()), Some("D"), "D must be last");
+    }
+
+    // ------------------------------------------------------------------
+    // Parallel execution set size: B and C form a set of 2 independents
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_parallel_set_size_two() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+
+        // B and C have no edge between them — they are independent (parallel set).
+        let bc_edge = dag.edges.iter().any(|e| {
+            (e.src_node == "B" && e.dst_node == "C")
+                || (e.src_node == "C" && e.dst_node == "B")
+        });
+        assert!(!bc_edge, "B and C must have no direct edge (independent parallel nodes)");
+    }
+
+    // ------------------------------------------------------------------
+    // Parallel execution: three-way fan-out from one source
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_three_way_fan_out_parallel_execution() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("w1", "verb"));
+        dag.add_node(ExecNode::new("w2", "verb"));
+        dag.add_node(ExecNode::new("w3", "verb"));
+        dag.add_edge("src", "out", "w1", "in");
+        dag.add_edge("src", "out", "w2", "in");
+        dag.add_edge("src", "out", "w3", "in");
+
+        let sorted = dag.topological_sort().unwrap();
+        let src_pos = sorted.iter().position(|x| x == "src").unwrap();
+        // All three workers must follow src.
+        for w in &["w1", "w2", "w3"] {
+            let wp = sorted.iter().position(|x| x == *w).unwrap();
+            assert!(src_pos < wp, "src must precede {w}");
+        }
+        // None of the workers depends on any other (no edges among them).
+        for &a in &["w1", "w2", "w3"] {
+            for &b in &["w1", "w2", "w3"] {
+                if a != b {
+                    assert!(
+                        !dag.edges.iter().any(|e| e.src_node == a && e.dst_node == b),
+                        "parallel workers {a} and {b} must have no dependency edge"
+                    );
+                }
+            }
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Nested diamonds: two consecutive diamond structures
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_nested_diamonds_toposort_valid() {
+        // First diamond: A→B, A→C, B→D, C→D
+        // Second diamond: D→E, D→F, E→G, F→G
+        let mut dag = Dag::new();
+        for name in &["A", "B", "C", "D", "E", "F", "G"] {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        dag.add_edge("D", "out", "E", "in");
+        dag.add_edge("D", "out", "F", "in");
+        dag.add_edge("E", "out", "G", "in");
+        dag.add_edge("F", "out", "G", "in");
+
+        let sorted = dag.topological_sort().expect("nested diamonds must sort");
+        assert_eq!(sorted.len(), 7, "all 7 nodes must appear");
+        let pos = |id: &str| sorted.iter().position(|x| x == id).unwrap();
+        assert!(pos("A") < pos("B") && pos("A") < pos("C"), "A before B and C");
+        assert!(pos("B") < pos("D") && pos("C") < pos("D"), "B,C before D");
+        assert!(pos("D") < pos("E") && pos("D") < pos("F"), "D before E and F");
+        assert!(pos("E") < pos("G") && pos("F") < pos("G"), "E,F before G");
+        assert_eq!(pos("G"), 6, "G must be last");
+    }
+
+    // ------------------------------------------------------------------
+    // add_node overwrites existing node — node_count stays the same
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_add_node_overwrite_stable_count() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("key", "kind_a"));
+        dag.add_node(ExecNode::new("key", "kind_b")); // overwrites
+        assert_eq!(dag.node_count(), 1, "overwrite must not increase node count");
+        assert_eq!(dag.nodes["key"].kind, "kind_b", "second insert must win");
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond DAG: node_count is exactly 4
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_node_count_four() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        assert_eq!(dag.node_count(), 4, "diamond DAG must have exactly 4 nodes");
+    }
+
+    // ------------------------------------------------------------------
+    // Wide fan-in: 5 parents feed 1 child
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_wide_fan_in_five_parents() {
+        let mut dag = Dag::new();
+        for i in 0..5 {
+            dag.add_node(ExecNode::new(format!("p{i}"), "verb"));
+        }
+        dag.add_node(ExecNode::new("child", "verb"));
+        for i in 0..5 {
+            dag.add_edge(format!("p{i}"), "out", "child", "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 6);
+        let child_pos = sorted.iter().position(|x| x == "child").unwrap();
+        for i in 0..5 {
+            let pp = sorted.iter().position(|x| x == &format!("p{i}")).unwrap();
+            assert!(pp < child_pos, "p{i} must precede child");
+        }
+    }
 }

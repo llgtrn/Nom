@@ -645,4 +645,173 @@ mod tests {
         assert_eq!(state.matches[0].start, 0);
         assert_eq!(state.matches[1].start, 7);
     }
+
+    // ── wave AF-6: case-insensitive find and find-all count/positions ─────────
+
+    /// Case-insensitive: "Rust" matches "rust", "RUST", "Rust".
+    #[test]
+    fn find_case_insensitive_mixed_case_all_match() {
+        let mut state = FindState::new();
+        state.query = "rust".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("Rust RUST rust rUsT");
+        assert_eq!(state.matches.len(), 4, "all 4 case variants must match");
+    }
+
+    #[test]
+    fn find_case_insensitive_start_positions_correct() {
+        let mut state = FindState::new();
+        state.query = "ab".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("AB ab Ab aB");
+        // "AB"=0, "ab"=3, "Ab"=6, "aB"=9
+        assert_eq!(state.matches.len(), 4);
+        assert_eq!(state.matches[0].start, 0);
+        assert_eq!(state.matches[1].start, 3);
+        assert_eq!(state.matches[2].start, 6);
+        assert_eq!(state.matches[3].start, 9);
+    }
+
+    #[test]
+    fn find_case_insensitive_only_lowercase_query_matches_upper() {
+        let mut state = FindState::new();
+        state.query = "hello".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("HELLO");
+        assert_eq!(state.matches.len(), 1);
+        assert_eq!(state.matches[0].start, 0);
+        assert_eq!(state.matches[0].end, 5);
+    }
+
+    #[test]
+    fn find_case_insensitive_no_false_positive_with_sensitive_mode() {
+        // Switching to case_sensitive=true means uppercase won't match lowercase query.
+        let mut state = FindState::new();
+        state.query = "hello".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("HELLO Hello HeLLo");
+        // Exact "hello" not present.
+        assert!(state.matches.is_empty());
+    }
+
+    #[test]
+    fn find_case_insensitive_query_mixed_case() {
+        // Query "FoO" should match "foo", "FOO", "Foo", "fOo", etc.
+        let mut state = FindState::new();
+        state.query = "FoO".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("foo FOO Foo fOo");
+        assert_eq!(state.matches.len(), 4);
+    }
+
+    /// find-all returns correct count.
+    #[test]
+    fn find_all_returns_correct_count_three_occurrences() {
+        let mut state = FindState::new();
+        state.query = "abc".to_string();
+        state.find_in_text("abc xyz abc mno abc");
+        assert_eq!(state.matches.len(), 3, "find-all must return 3 matches");
+    }
+
+    #[test]
+    fn find_all_returns_correct_count_zero() {
+        let mut state = FindState::new();
+        state.query = "zzz".to_string();
+        state.find_in_text("hello world");
+        assert_eq!(state.matches.len(), 0);
+    }
+
+    #[test]
+    fn find_all_returns_correct_count_one() {
+        let mut state = FindState::new();
+        state.query = "only".to_string();
+        state.find_in_text("this is the only one");
+        assert_eq!(state.matches.len(), 1);
+    }
+
+    /// find-all returns correct positions.
+    #[test]
+    fn find_all_positions_correct_for_three_matches() {
+        let mut state = FindState::new();
+        state.query = "x".to_string();
+        state.find_in_text("xax bx c"); // "x" at 0, 2, 5
+        // positions: 0, 2, 5
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.matches[0].start, 0);
+        assert_eq!(state.matches[1].start, 2);
+        assert_eq!(state.matches[2].start, 5);
+    }
+
+    #[test]
+    fn find_all_positions_non_overlapping() {
+        let mut state = FindState::new();
+        state.query = "ab".to_string();
+        state.case_sensitive = true;
+        // Text with clear gaps: "ab--ab--ab" (no adjacent or overlapping)
+        state.find_in_text("ab--ab--ab");
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.matches[0], 0..2);
+        assert_eq!(state.matches[1], 4..6);
+        assert_eq!(state.matches[2], 8..10);
+    }
+
+    #[test]
+    fn find_all_case_insensitive_positions() {
+        let mut state = FindState::new();
+        state.query = "hi".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("hi HI Hi");
+        // positions: 0, 3, 6
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.matches[0].start, 0);
+        assert_eq!(state.matches[1].start, 3);
+        assert_eq!(state.matches[2].start, 6);
+    }
+
+    #[test]
+    fn find_all_single_char_many_occurrences() {
+        let text = "aaaa";
+        let mut state = FindState::new();
+        state.query = "a".to_string();
+        state.find_in_text(text);
+        assert_eq!(state.matches.len(), 4);
+        for (i, m) in state.matches.iter().enumerate() {
+            assert_eq!(m.start, i, "match {i} must start at byte {i}");
+        }
+    }
+
+    #[test]
+    fn find_all_count_equals_str_matches_count() {
+        // Verify find_in_text count matches str::matches count for a simple query.
+        let text = "foo_bar_foo_baz_foo_qux_foo";
+        let query = "foo";
+        let expected = text.matches(query).count();
+
+        let mut state = FindState::new();
+        state.query = query.to_string();
+        state.case_sensitive = true;
+        state.find_in_text(text);
+        assert_eq!(state.matches.len(), expected);
+    }
+
+    #[test]
+    fn find_case_insensitive_at_word_boundary_with_whole_word() {
+        let mut state = FindState::new();
+        state.query = "word".to_string();
+        state.case_sensitive = false;
+        state.whole_word = true;
+        state.find_in_text("WORD word Word wording");
+        // "wording" is not a whole-word match; "WORD", "word", "Word" are.
+        assert_eq!(state.matches.len(), 3);
+    }
+
+    #[test]
+    fn find_all_regex_case_insensitive_count() {
+        let mut state = FindState::new();
+        state.query = "hello".to_string();
+        state.case_sensitive = false;
+        state.use_regex = true;
+        state.find_in_text("hello HELLO Hello hElLo");
+        assert_eq!(state.matches.len(), 4);
+    }
 }

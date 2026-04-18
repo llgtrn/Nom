@@ -96,4 +96,85 @@ mod tests {
         assert!(!m.is_audio());
         assert!(!m.is_image());
     }
+
+    #[test]
+    fn media_block_with_dimensions_set() {
+        let entity = NomtuRef::new("med-06", "frame", "verb");
+        let mut m = MediaBlock::new(entity, [0u8; 32], "image/webp");
+        m.width = Some(1920);
+        m.height = Some(1080);
+        assert_eq!(m.width, Some(1920));
+        assert_eq!(m.height, Some(1080));
+    }
+
+    #[test]
+    fn media_block_with_duration_set() {
+        let entity = NomtuRef::new("med-07", "play", "verb");
+        let mut m = MediaBlock::new(entity, [0u8; 32], "audio/ogg");
+        m.duration_ms = Some(300_000);
+        assert_eq!(m.duration_ms, Some(300_000));
+    }
+
+    #[test]
+    fn media_block_is_image_jpeg() {
+        let entity = NomtuRef::new("med-08", "display", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "image/jpeg");
+        assert!(m.is_image());
+        assert!(!m.is_video());
+        assert!(!m.is_audio());
+    }
+
+    #[test]
+    fn media_block_is_video_webm() {
+        let entity = NomtuRef::new("med-09", "stream", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "video/webm");
+        assert!(m.is_video());
+    }
+
+    #[test]
+    fn media_block_is_audio_wav() {
+        let entity = NomtuRef::new("med-10", "record", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "audio/wav");
+        assert!(m.is_audio());
+    }
+
+    #[test]
+    fn media_block_clone_preserves_all_fields() {
+        let entity = NomtuRef::new("med-11", "encode", "verb");
+        let hash = [0x42u8; 32];
+        let mut m = MediaBlock::new(entity, hash, "video/mp4");
+        m.width = Some(640);
+        m.height = Some(480);
+        m.duration_ms = Some(5000);
+        let cloned = m.clone();
+        assert_eq!(cloned.entity.id, "med-11");
+        assert_eq!(cloned.blob_hash, hash);
+        assert_eq!(cloned.width, Some(640));
+        assert_eq!(cloned.height, Some(480));
+        assert_eq!(cloned.duration_ms, Some(5000));
+    }
+
+    #[test]
+    fn media_block_mime_text_not_media() {
+        let entity = NomtuRef::new("med-12", "read", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "text/plain");
+        assert!(!m.is_video());
+        assert!(!m.is_audio());
+        assert!(!m.is_image());
+    }
+
+    #[test]
+    fn media_block_mime_stored_exactly() {
+        let entity = NomtuRef::new("med-13", "store", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "image/svg+xml");
+        assert_eq!(m.mime, "image/svg+xml");
+        assert!(m.is_image());
+    }
+
+    #[test]
+    fn media_block_entity_kind_stored() {
+        let entity = NomtuRef::new("med-14", "capture", "MediaUnit");
+        let m = MediaBlock::new(entity, [0u8; 32], "video/mp4");
+        assert_eq!(m.entity.kind, "MediaUnit");
+    }
 }

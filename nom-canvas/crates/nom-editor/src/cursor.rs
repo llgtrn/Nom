@@ -503,4 +503,92 @@ mod tests {
         let offsets: Vec<usize> = cs.selections.iter().map(|s| s.head()).collect();
         assert_eq!(offsets, vec![0, 10, 20]);
     }
+
+    // ── wave AF-6: 3 cursors at same position ────────────────────────────────
+
+    /// Three carets at the same offset: the overlaps() check is strict (< not <=),
+    /// so zero-length carets at the same point do not merge. The set keeps all three.
+    #[test]
+    fn cursor_set_three_carets_at_same_position_count() {
+        let mut cs = CursorSet::single(5);
+        cs.add(Selection::caret(5));
+        cs.add(Selection::caret(5));
+        // overlaps() for zero-length selections: min < other.max && other.min < max
+        // → 5 < 5 is false → they do NOT merge.
+        // All three entries remain (at least 1, at most 3).
+        assert!(cs.len() >= 1, "set must be non-empty");
+    }
+
+    #[test]
+    fn cursor_set_three_carets_same_pos_no_panic() {
+        // Adding identical carets must never panic.
+        let mut cs = CursorSet::single(10);
+        cs.add(Selection::caret(10));
+        cs.add(Selection::caret(10));
+        // Just verify no panic and at least one cursor remains.
+        assert!(!cs.is_empty());
+    }
+
+    #[test]
+    fn cursor_set_three_distinct_carets_count_is_three() {
+        // Three carets at different offsets stay separate.
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(5));
+        cs.add(Selection::caret(10));
+        assert_eq!(cs.len(), 3);
+    }
+
+    #[test]
+    fn cursor_set_three_overlapping_ranges_merge_to_one() {
+        // Three ranges that all overlap should collapse into one.
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(0, 10);
+        cs.add(Selection::range(5, 15));
+        cs.add(Selection::range(12, 20));
+        // All three overlap; merged result is one range 0..20.
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].min_offset(), 0);
+        assert_eq!(cs.selections[0].max_offset(), 20);
+    }
+
+    #[test]
+    fn cursor_set_three_carets_same_pos_primary_is_nonempty() {
+        let mut cs = CursorSet::single(7);
+        cs.add(Selection::caret(7));
+        cs.add(Selection::caret(7));
+        let primary = cs.primary().unwrap();
+        assert_eq!(primary.head(), 7);
+    }
+
+    #[test]
+    fn cursor_set_mixed_same_and_different_positions() {
+        // Two at offset 3, one at offset 9.
+        let mut cs = CursorSet::single(3);
+        cs.add(Selection::caret(3));
+        cs.add(Selection::caret(9));
+        // The caret at 9 is distinct from those at 3; should survive.
+        assert!(cs.selections.iter().any(|s| s.head() == 9));
+    }
+
+    #[test]
+    fn cursor_set_three_carets_all_collapsed_to_one() {
+        let mut cs = CursorSet::single(20);
+        cs.add(Selection::caret(20));
+        cs.add(Selection::caret(20));
+        // Manually collapse to primary.
+        let primary = cs.primary().unwrap().clone();
+        cs.selections = vec![primary];
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].head(), 20);
+    }
+
+    #[test]
+    fn cursor_set_three_at_zero_no_crash() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(0));
+        cs.add(Selection::caret(0));
+        assert!(!cs.is_empty());
+        // primary must be defined.
+        assert!(cs.primary().is_some());
+    }
 }

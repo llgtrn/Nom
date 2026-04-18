@@ -217,4 +217,109 @@ mod tests {
         let _count = spans.len();
         // No panic is the invariant for stub mode
     }
+
+    /// highlight_source with only whitespace returns empty without panic.
+    #[test]
+    fn highlight_whitespace_only_source() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = highlight_source("   \t\n  ", &state);
+        // Stub always returns empty; real impl may return empty for whitespace-only input.
+        // Invariant: no panic, result is a valid Vec.
+        let _ = spans.len();
+    }
+
+    /// tokenize_to_spans with only whitespace returns empty without panic.
+    #[test]
+    fn tokenize_whitespace_only_source() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = tokenize_to_spans("   ", &state);
+        let _ = spans.len(); // no panic
+    }
+
+    /// Multi-token spans must be non-overlapping: end of span[i] <= start of span[i+1].
+    #[test]
+    fn multi_token_spans_non_overlapping() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = tokenize_to_spans("the is with", &state);
+        // In stub mode spans is empty — invariant trivially holds.
+        // In compiler mode spans are produced in source order without overlap.
+        for window in spans.windows(2) {
+            let prev = &window[0];
+            let next = &window[1];
+            assert!(
+                prev.end <= next.start,
+                "spans overlap: prev.end={} next.start={}",
+                prev.end,
+                next.start
+            );
+        }
+    }
+
+    /// Each TokenSpan produced by tokenize_to_spans must have start < end (non-zero width).
+    #[test]
+    fn token_spans_have_positive_width() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = tokenize_to_spans("the concept", &state);
+        for span in &spans {
+            assert!(
+                span.start < span.end,
+                "span has zero or negative width: start={} end={}",
+                span.start,
+                span.end
+            );
+        }
+    }
+
+    /// highlight_source with a repeated keyword produces spans without panicking.
+    #[test]
+    fn highlight_repeated_keyword() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = highlight_source("the the the", &state);
+        let _ = spans.len(); // no panic, valid Vec
+    }
+
+    /// tokenize_to_spans result is a Vec of TokenSpan (field access works).
+    #[test]
+    fn tokenize_spans_fields_accessible() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = tokenize_to_spans("the", &state);
+        for span in &spans {
+            let _ = span.start;
+            let _ = span.end;
+            let _ = &span.role;
+            let _ = &span.text;
+        }
+    }
+
+    /// highlight_source with a very long source string does not panic.
+    #[test]
+    fn highlight_very_long_source_no_panic() {
+        let state = SharedState::new("a.db", "b.db");
+        let long_src = "word ".repeat(1000);
+        let spans = highlight_source(&long_src, &state);
+        let _ = spans.len();
+    }
+
+    /// highlight_source and tokenize_to_spans agree on the number of tokens for the same input.
+    #[test]
+    fn highlight_and_tokenize_same_token_count() {
+        let state = SharedState::new("a.db", "b.db");
+        let source = "the is with";
+        let hl_spans = highlight_source(source, &state);
+        let tok_spans = tokenize_to_spans(source, &state);
+        // Both derive from the same tokenizer — counts must match.
+        assert_eq!(
+            hl_spans.len(),
+            tok_spans.len(),
+            "highlight and tokenize must produce the same number of tokens"
+        );
+    }
+
+    /// tokenize_to_spans with an ASCII punctuation-only string does not panic.
+    #[test]
+    fn tokenize_punctuation_only_no_panic() {
+        let state = SharedState::new("a.db", "b.db");
+        let spans = tokenize_to_spans(",,,..", &state);
+        let _ = spans.len();
+    }
 }

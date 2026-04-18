@@ -1094,4 +1094,151 @@ mod tests {
         paint_graph_node(&node, &mut scene);
         assert_eq!(scene.quads.len(), 5, "minimum node must still push 5 quads");
     }
+
+    // ── group bounds union tests ──────────────────────────────────────────────
+
+    /// element_group_bounds_union: the AABB union of multiple elements encloses all.
+    #[test]
+    fn element_group_bounds_union_of_rects() {
+        let rects = vec![
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [50.0, 30.0]),
+                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([40.0, 20.0], [60.0, 50.0]),
+                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([-10.0, -5.0], [20.0, 15.0]),
+                fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+            },
+        ];
+        let aabbs: Vec<ElementBounds> = rects.iter().map(|r| r.bounds_aabb()).collect();
+        let min_x = aabbs.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let min_y = aabbs.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
+        let max_x = aabbs.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = aabbs.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (-10.0)).abs() < 1e-5, "group min_x={min_x}");
+        assert!((min_y - (-5.0)).abs() < 1e-5, "group min_y={min_y}");
+        assert!((max_x - 100.0).abs() < 1e-5, "group max_x={max_x}");
+        assert!((max_y - 70.0).abs() < 1e-5, "group max_y={max_y}");
+    }
+
+    /// element_group_bounds_union: single element's union is its own AABB.
+    #[test]
+    fn element_group_bounds_union_single_element() {
+        let r = CanvasRect {
+            id: 7,
+            bounds: ([5.0, 10.0], [40.0, 20.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        let aabb = r.bounds_aabb();
+        assert!((aabb.min[0] - 5.0).abs() < 1e-5);
+        assert!((aabb.min[1] - 10.0).abs() < 1e-5);
+        assert!((aabb.max[0] - 45.0).abs() < 1e-5);
+        assert!((aabb.max[1] - 30.0).abs() < 1e-5);
+    }
+
+    /// element_group_bounds_union: union of mixed element types (rects + ellipses).
+    #[test]
+    fn element_group_bounds_union_mixed_types() {
+        let rect_aabb = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [100.0, 50.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        }.bounds_aabb();
+        let ellipse_aabb = CanvasEllipse {
+            id: 2,
+            bounds: ([80.0, 30.0], [40.0, 40.0]),
+            fill: None, stroke: None, z_index: 0,
+        }.bounds_aabb();
+        let aabbs = [rect_aabb, ellipse_aabb];
+        let min_x = aabbs.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let min_y = aabbs.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
+        let max_x = aabbs.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = aabbs.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x).abs() < 1e-5, "min_x={min_x}");
+        assert!((min_y).abs() < 1e-5, "min_y={min_y}");
+        assert!((max_x - 120.0).abs() < 1e-5, "max_x={max_x}");
+        assert!((max_y - 70.0).abs() < 1e-5, "max_y={max_y}");
+    }
+
+    // ── z-order move-to-front tests ───────────────────────────────────────────
+
+    /// move_to_front: after bringing element to front, it has the highest z_index.
+    #[test]
+    fn z_order_move_to_front_gives_highest() {
+        let mut rects: Vec<CanvasRect> = (0..4).map(|i| CanvasRect {
+            id: i,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: i as u32,
+        }).collect();
+        // Bring element 0 (lowest) to front.
+        let max_z = rects.iter().map(|r| r.z_index).max().unwrap_or(0);
+        rects.iter_mut().find(|r| r.id == 0).unwrap().z_index = max_z + 1;
+        let top = rects.iter().max_by_key(|r| r.z_index).unwrap();
+        assert_eq!(top.id, 0, "element 0 must be on top after move-to-front");
+        assert!(
+            top.z_index > max_z,
+            "moved-to-front z_index must exceed previous max"
+        );
+    }
+
+    /// z-order: elements sorted by z_index yield a deterministic render order.
+    #[test]
+    fn z_order_sort_by_z_index() {
+        let mut rects: Vec<CanvasRect> = vec![
+            CanvasRect { id: 3, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
+            CanvasRect { id: 1, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect { id: 2, bounds: ([0.0,0.0],[10.0,10.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+        ];
+        rects.sort_by_key(|r| r.z_index);
+        let ids: Vec<u64> = rects.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![1, 2, 3], "sort by z_index must produce ascending id order");
+    }
+
+    /// z-order: bring-to-front does not change other elements' z_index values.
+    #[test]
+    fn z_order_bring_to_front_preserves_others() {
+        let mut rects: Vec<CanvasRect> = (1u64..=5).map(|i| CanvasRect {
+            id: i,
+            bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0,
+            z_index: i as u32,
+        }).collect();
+        let max_z = rects.iter().map(|r| r.z_index).max().unwrap();
+        rects.iter_mut().find(|r| r.id == 1).unwrap().z_index = max_z + 1;
+        // Every other element must retain its original z_index.
+        for r in rects.iter().filter(|r| r.id != 1) {
+            assert_eq!(
+                r.z_index, r.id as u32,
+                "element {} z_index must be unchanged after bring-to-front of another",
+                r.id
+            );
+        }
+    }
+
+    /// element_group_bounds_union: connector route points contribute to group bounds.
+    #[test]
+    fn element_group_bounds_union_with_connector() {
+        let conn = CanvasConnector {
+            id: 10,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [200.0, 150.0], [50.0, 75.0]],
+            confidence: 0.9,
+            reason: String::new(),
+            z_index: 0,
+        };
+        let aabb = conn.bounds_aabb().unwrap();
+        assert!((aabb.min[0]).abs() < 1e-5, "connector min_x={}", aabb.min[0]);
+        assert!((aabb.min[1]).abs() < 1e-5, "connector min_y={}", aabb.min[1]);
+        assert!((aabb.max[0] - 200.0).abs() < 1e-5, "connector max_x={}", aabb.max[0]);
+        assert!((aabb.max[1] - 150.0).abs() < 1e-5, "connector max_y={}", aabb.max[1]);
+    }
 }

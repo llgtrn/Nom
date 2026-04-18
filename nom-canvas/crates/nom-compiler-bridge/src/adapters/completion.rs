@@ -287,4 +287,109 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].label, "définir");
     }
+
+    // ── AF4 additions ──────────────────────────────────────────────────────
+
+    /// Completion with exactly 10 candidates returns all 10 items.
+    #[test]
+    fn completion_ten_candidates_returns_all_ten() {
+        let state = SharedState::new("a.db", "b.db");
+        let kinds: Vec<_> = (0..10)
+            .map(|i| crate::shared::GrammarKind {
+                name: format!("item_{i:02}"),
+                description: format!("desc {i}"),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        let items = complete_from_dict("item", None, &state);
+        assert_eq!(items.len(), 10, "all 10 matching items must be returned");
+    }
+
+    /// Completion label equals kind name for each returned item.
+    #[test]
+    fn completion_label_equals_kind_name() {
+        let state = SharedState::new("a.db", "b.db");
+        let names = vec!["run", "jump", "fly"];
+        state.update_grammar_kinds(
+            names
+                .iter()
+                .map(|n| crate::shared::GrammarKind { name: n.to_string(), description: "action".into() })
+                .collect(),
+        );
+        let items = complete_from_dict("", None, &state);
+        assert_eq!(items.len(), 3);
+        for item in &items {
+            assert!(
+                names.contains(&item.label.as_str()),
+                "label '{}' must match a kind name",
+                item.label
+            );
+            // label and insert_text must be equal
+            assert_eq!(item.label, item.insert_text);
+        }
+    }
+
+    /// Completion kind for cached kinds is always Keyword.
+    #[test]
+    fn completion_kind_is_keyword_for_cached_kinds() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "resolve".into(), description: "lookup".into() },
+            crate::shared::GrammarKind { name: "compose".into(), description: "combine".into() },
+        ]);
+        let items = complete_from_dict("", None, &state);
+        for item in &items {
+            assert_eq!(
+                item.kind,
+                CompletionKind::Keyword,
+                "cached-kind completions must have Keyword kind"
+            );
+        }
+    }
+
+    /// Complete from dict with kind_filter matching a substring selects correctly.
+    #[test]
+    fn completion_kind_filter_substring_match() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "verb_run".into(), description: "run".into() },
+            crate::shared::GrammarKind { name: "verb_jump".into(), description: "jump".into() },
+            crate::shared::GrammarKind { name: "noun_thing".into(), description: "thing".into() },
+        ]);
+        let items = complete_from_dict("", Some("verb"), &state);
+        assert_eq!(items.len(), 2, "only verb_* kinds should match");
+        for item in &items {
+            assert!(item.label.contains("verb"));
+        }
+    }
+
+    /// Completions with prefix filter returns subset of matching items.
+    #[test]
+    fn completion_prefix_filter_subset() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "stream".into(), description: "flow".into() },
+            crate::shared::GrammarKind { name: "string".into(), description: "text".into() },
+            crate::shared::GrammarKind { name: "select".into(), description: "choose".into() },
+        ]);
+        let items = complete_from_dict("str", None, &state);
+        assert_eq!(items.len(), 2);
+        assert!(items.iter().all(|i| i.label.starts_with("str")));
+    }
+
+    /// Complete from dict returns items with non-empty label and insert_text.
+    #[test]
+    fn completion_non_empty_label_and_insert_text() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "produce".into(),
+            description: "generate output".into(),
+        }]);
+        let items = complete_from_dict("p", None, &state);
+        assert!(!items.is_empty());
+        for item in &items {
+            assert!(!item.label.is_empty());
+            assert!(!item.insert_text.is_empty());
+        }
+    }
 }

@@ -1007,4 +1007,116 @@ mod tests {
         // separation-axis: rb max[0]=50 == elem min[0]=50 → not separated → intersects.
         assert!(rb.intersects(&elem), "corner-touching element must intersect rubber-band");
     }
+
+    // ── additional selection tests ────────────────────────────────────────────
+
+    /// select_all: adding all ids one by one gives correct total count.
+    #[test]
+    fn select_all_elements() {
+        let all_ids = [1u64, 2, 3, 4, 5, 6, 7, 8, 9, 10];
+        let mut sel = Selection::empty();
+        for &id in &all_ids {
+            sel.add(id);
+        }
+        assert_eq!(
+            sel.len(),
+            all_ids.len(),
+            "select_all must contain every element"
+        );
+        for &id in &all_ids {
+            assert!(sel.contains(id), "id {id} must be selected after select_all");
+        }
+    }
+
+    /// deselect_all: clear() resets selection to empty.
+    #[test]
+    fn deselect_all_elements() {
+        let mut sel = Selection::empty();
+        for id in [10u64, 20, 30] {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), 3);
+        sel.clear();
+        assert!(sel.is_empty(), "deselect_all must leave selection empty");
+        assert_eq!(sel.len(), 0, "len must be 0 after deselect_all");
+        for id in [10u64, 20, 30] {
+            assert!(!sel.contains(id), "id {id} must not be present after deselect_all");
+        }
+    }
+
+    /// toggle_selection: adding an already-selected element again is idempotent,
+    /// but removing it deselects.
+    #[test]
+    fn toggle_selection_on_already_selected() {
+        let mut sel = Selection::empty();
+        sel.add(42);
+        assert!(sel.contains(42), "must be selected after first add");
+        assert_eq!(sel.len(), 1);
+        // Adding the same id again must not change the count (BTreeSet semantics).
+        sel.add(42);
+        assert_eq!(sel.len(), 1, "duplicate add must be idempotent");
+        // Now toggle-off (remove).
+        sel.remove(42);
+        assert!(!sel.contains(42), "must be deselected after remove");
+        assert_eq!(sel.len(), 0);
+        // Toggle back on.
+        sel.add(42);
+        assert!(sel.contains(42), "must be re-selected after second add");
+    }
+
+    /// rubber_band with zero area (start == end) does not intersect an element
+    /// that doesn't cover that exact point.
+    #[test]
+    fn rubber_band_zero_area_no_intersect_outside() {
+        // Zero-area band at (50, 50); element entirely to the right.
+        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let elem = ElementBounds { id: 1, min: [100.0, 100.0], max: [200.0, 200.0] };
+        assert!(
+            !rb.intersects(&elem),
+            "zero-area rubber-band must not intersect distant element"
+        );
+    }
+
+    /// rubber_band with zero area at a point inside an element's bounds returns intersects=true.
+    #[test]
+    fn rubber_band_zero_area_inside_element_intersects() {
+        // Zero-area band at (50, 50); element wraps around that point.
+        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let elem = ElementBounds { id: 2, min: [0.0, 0.0], max: [100.0, 100.0] };
+        // Separation axis: rb [50,50] vs elem [0,100] — no separation on either axis.
+        assert!(
+            rb.intersects(&elem),
+            "zero-area rubber-band inside element must intersect"
+        );
+    }
+
+    /// selection_size: len() tracks additions and removals precisely.
+    #[test]
+    fn selection_size_tracks_changes() {
+        let mut sel = Selection::empty();
+        assert_eq!(sel.len(), 0);
+        sel.add(1);
+        assert_eq!(sel.len(), 1);
+        sel.add(2);
+        assert_eq!(sel.len(), 2);
+        sel.remove(1);
+        assert_eq!(sel.len(), 1);
+        sel.remove(999); // nonexistent
+        assert_eq!(sel.len(), 1);
+        sel.clear();
+        assert_eq!(sel.len(), 0);
+    }
+
+    /// Adding many elements and checking none are missing.
+    #[test]
+    fn selection_bulk_add_all_present() {
+        let mut sel = Selection::empty();
+        for id in 100u64..=120 {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), 21);
+        for id in 100u64..=120 {
+            assert!(sel.contains(id), "bulk-added id {id} must be present");
+        }
+    }
 }

@@ -121,4 +121,83 @@ mod tests {
         assert_eq!(block.entity.id, "em-03");
         assert_eq!(block.embed_type, EmbedType::Figma);
     }
+
+    #[test]
+    fn embed_type_generic_for_unknown_url() {
+        assert_eq!(EmbedType::from_url("https://notion.so/page"), EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_type_from_empty_url_returns_web() {
+        assert_eq!(EmbedType::from_url(""), EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_block_default_aspect_ratio_is_16_9() {
+        let entity = crate::block_model::NomtuRef::new("em-04", "embed", "concept");
+        let block = EmbedBlock::new(entity, "https://github.com/org/repo");
+        assert!((block.aspect_ratio - (16.0 / 9.0)).abs() < 0.001);
+    }
+
+    #[test]
+    fn embed_block_title_starts_as_none() {
+        let entity = crate::block_model::NomtuRef::new("em-05", "embed", "concept");
+        let block = EmbedBlock::new(entity, "https://example.com");
+        assert!(block.title.is_none());
+    }
+
+    #[test]
+    fn embed_block_github_type_detected() {
+        let entity = crate::block_model::NomtuRef::new("em-06", "code", "concept");
+        let block = EmbedBlock::new(entity, "https://github.com/rust-lang/rust");
+        assert_eq!(block.embed_type, EmbedType::Github);
+    }
+
+    #[test]
+    fn embed_type_all_variants_reachable() {
+        assert_eq!(EmbedType::from_url("https://youtube.com/"), EmbedType::Youtube);
+        assert_eq!(EmbedType::from_url("https://figma.com/"), EmbedType::Figma);
+        assert_eq!(EmbedType::from_url("https://twitter.com/"), EmbedType::Tweet);
+        assert_eq!(EmbedType::from_url("https://github.com/"), EmbedType::Github);
+        assert_eq!(EmbedType::from_url("https://other.com/"), EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_block_entity_word_preserved() {
+        let entity = crate::block_model::NomtuRef::new("em-07", "visualize", "verb");
+        let block = EmbedBlock::new(entity, "https://example.com");
+        assert_eq!(block.entity.word, "visualize");
+    }
+
+    #[test]
+    fn embed_size_zero_aspect_ratio_allowed() {
+        let entity = crate::block_model::NomtuRef::new("em-08", "embed", "concept");
+        let mut block = EmbedBlock::new(entity, "https://example.com");
+        block.aspect_ratio = 0.0;
+        assert_eq!(block.aspect_ratio, 0.0);
+    }
+
+    #[test]
+    fn embed_type_equality() {
+        assert_eq!(EmbedType::Youtube, EmbedType::Youtube);
+        assert_ne!(EmbedType::Youtube, EmbedType::Figma);
+        assert_eq!(EmbedType::Generic, EmbedType::Generic);
+    }
+
+    #[test]
+    fn embed_block_clone_preserves_url() {
+        let entity = crate::block_model::NomtuRef::new("em-09", "embed", "concept");
+        let block = EmbedBlock::new(entity, "https://youtu.be/test");
+        let cloned = block.clone();
+        assert_eq!(cloned.url, block.url);
+        assert_eq!(cloned.embed_type, EmbedType::Youtube);
+    }
+
+    #[test]
+    fn embed_block_with_title_set() {
+        let entity = crate::block_model::NomtuRef::new("em-10", "embed", "concept");
+        let mut block = EmbedBlock::new(entity, "https://example.com");
+        block.title = Some("My Embed".to_string());
+        assert_eq!(block.title.as_deref(), Some("My Embed"));
+    }
 }

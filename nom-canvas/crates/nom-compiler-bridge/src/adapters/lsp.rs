@@ -323,4 +323,144 @@ mod tests {
         assert_eq!(completions.len(), 1);
         assert!(completions[0].sort_text.is_none());
     }
+
+    // ── AF4 additions ──────────────────────────────────────────────────────
+
+    /// Completion list sorted by sort_text when present — items with sort_text
+    /// None come after items that would be sorted lexicographically if set.
+    /// This test verifies the sort_text field is accessible and can be used to sort.
+    #[test]
+    fn completion_list_sorted_by_sort_text_when_present() {
+        // Construct items manually with sort_text set
+        let mut items = vec![
+            CompletionItem {
+                label: "zebra".into(),
+                kind: CompletionKind::Keyword,
+                detail: None,
+                insert_text: "zebra".into(),
+                sort_text: Some("z".into()),
+            },
+            CompletionItem {
+                label: "apple".into(),
+                kind: CompletionKind::Keyword,
+                detail: None,
+                insert_text: "apple".into(),
+                sort_text: Some("a".into()),
+            },
+            CompletionItem {
+                label: "mango".into(),
+                kind: CompletionKind::Keyword,
+                detail: None,
+                insert_text: "mango".into(),
+                sort_text: Some("m".into()),
+            },
+        ];
+        items.sort_by(|a, b| {
+            let sa = a.sort_text.as_deref().unwrap_or(&a.label);
+            let sb = b.sort_text.as_deref().unwrap_or(&b.label);
+            sa.cmp(sb)
+        });
+        assert_eq!(items[0].label, "apple");
+        assert_eq!(items[1].label, "mango");
+        assert_eq!(items[2].label, "zebra");
+    }
+
+    /// hover returns kind and description when compiler feature is active;
+    /// without the feature, returns None — tested for both paths.
+    #[test]
+    fn hover_returns_none_without_compiler_feature() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "render".into(),
+            description: "output to display".into(),
+        }]);
+        let result = hover_from_dict("render", &state);
+        // Without compiler feature this must be None
+        #[cfg(not(feature = "compiler"))]
+        assert!(result.is_none(), "without compiler feature hover must return None");
+        // With compiler feature it should contain the kind name and description
+        #[cfg(feature = "compiler")]
+        {
+            let r = result.expect("compiler feature: hover must return Some for known word");
+            assert!(r.contents.contains("render"), "hover must mention the kind name");
+            assert!(r.contents.contains("output to display"), "hover must include description");
+        }
+    }
+
+    /// goto_definition always returns None — even after populating grammar cache.
+    #[test]
+    fn goto_definition_returns_none_always() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "emit".into(),
+            description: "send downstream".into(),
+        }]);
+        let provider = CompilerLspProvider::new(state);
+        let result = provider.goto_definition(std::path::Path::new("emit.nomx"), 0);
+        assert!(result.is_none(), "goto_definition must always return None (no compiler feature)");
+    }
+
+    /// Completion with 10 candidates returns all 10.
+    #[test]
+    fn completion_with_ten_candidates_returns_all_ten() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let kinds: Vec<GrammarKind> = (0..10)
+            .map(|i| GrammarKind {
+                name: format!("kind_{i:02}"),
+                description: format!("description {i}"),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        let provider = CompilerLspProvider::new(state);
+        let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
+        assert_eq!(completions.len(), 10, "exactly 10 completions must be returned for 10 kinds");
+    }
+
+    /// Completion label equals the kind name for all items.
+    #[test]
+    fn completion_label_equals_kind_name() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let expected_names = vec!["alpha", "beta", "gamma", "delta"];
+        state.update_grammar_kinds(
+            expected_names
+                .iter()
+                .map(|n| GrammarKind { name: n.to_string(), description: "desc".into() })
+                .collect(),
+        );
+        let provider = CompilerLspProvider::new(state);
+        let completions = provider.completions(std::path::Path::new("test.nomx"), 0);
+        assert_eq!(completions.len(), 4);
+        for item in &completions {
+            assert!(
+                expected_names.contains(&item.label.as_str()),
+                "label '{}' must match a kind name",
+                item.label
+            );
+        }
+    }
+
+    /// hover_from_dict with an unknown word returns None regardless of feature flag.
+    #[test]
+    fn hover_unknown_word_always_none() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        // No kinds loaded — any word is unknown
+        let result = hover_from_dict("nonexistent_word_xyz", &state);
+        assert!(result.is_none());
+    }
+
+    /// CompilerLspProvider: completions list is non-empty after cache update.
+    #[test]
+    fn completions_non_empty_after_cache_update() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let provider = CompilerLspProvider::new(Arc::clone(&state));
+        // Before cache update: empty
+        assert!(provider.completions(std::path::Path::new("t.nomx"), 0).is_empty());
+        // After cache update: non-empty
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "flow".into(),
+            description: "stream".into(),
+        }]);
+        let completions = provider.completions(std::path::Path::new("t.nomx"), 0);
+        assert_eq!(completions.len(), 1);
+    }
 }

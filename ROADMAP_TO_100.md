@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AE complete — HEAD `be66c32`, 3689 tests (+456). All 15 crates exceeded targets. Next: Wave AF — 3689→4100+.
+**Last updated:** Wave AB complete — HEAD `e1aa03b`, 3233 tests. Wave AF (Minimalist UI) planned — design direction confirmed: Zed chrome + Rowboat right dock + classical editorial typography + swappable dark/light/OLED themes. Next: Wave AF UI surfaces + Wave AE remaining CRITICALs.
 
 ## Current finalization snapshot
 
@@ -9,8 +9,8 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 91% | 100% | 9pp | 3689 tests; wgpu GPU pipeline, RwLock pool, BM25, WCAG tokens, codec enums all wired |
-| D · Overall platform | 74% | 100% | 26pp | 15/15 crates; 4-peer CRDT convergence, eval depth guard, scroll/cursor coverage |
+| C · nom-canvas ↔ compiler integration | 87% | 100% | 13pp | 3233 tests; Wave AB closed |
+| D · Overall platform | 70% | 100% | 30pp | 15/15 crates; Wave AF UI design planned |
 
 **Per-crate test counts (Wave AE actuals → Wave AF targets):**
 | Crate | Wave AE actual | Wave AF target |
@@ -397,6 +397,56 @@
 ### D7. State hygiene
 - [ ] Weekly `task.md` compaction ritual
 - [ ] Weekly state-report trim
+
+### D8. Minimalist UI Design (Wave AF — design confirmed 2026-04-18)
+
+**Aesthetic mandate:** Simple but strong. Every surface earns its space. Theme = Zed-dark by default, swappable.
+
+**Shell chrome:**
+- [ ] AF-HEADER: 36px top bar — workspace name · mode switcher (Code·Doc·Canvas·Graph·Draw·Compose) · search; 1px bottom border only
+- [ ] AF-STATUS: 24px bottom bar — branch+lsp left, errors/position right; 1px top border only
+- [ ] AF-TITLEBAR: platform-native frame integration (macOS traffic-light / Windows drag-region)
+
+**Left sidebar:**
+- [ ] AF-LEFT-ICONS: 48px icon rail, Lucide 20px icons, `text_secondary` tint, active = `accent` fill
+- [ ] AF-LEFT-PANEL: 248px expandable panel; collapsible sections (Explorer · Outline · Library · RAG Context); frosted glass hover overlay
+- [ ] AF-LEFT-PALETTE: DB-driven node palette (live `SELECT` from `grammar.kinds`); search box + category groups
+
+**Center workspace:**
+- [ ] AF-CENTER-EDITOR: Code mode — rope buffer, 40px gutter, compiler-bridge syntax highlighting, serif font for prose blocks
+- [ ] AF-CENTER-CANVAS: Canvas mode — infinite viewport, frosted-glass AFFiNE cards (shadow-md), bezier edges with confidence-color tint
+- [ ] AF-CENTER-TABS: 32px tab strip — 2px accent bottom for active tab, close icon on hover only
+
+**Right sidebar (Rowboat pattern):**
+- [ ] AF-RIGHT-CHAT: 320px panel — scrollable history cards top, sticky textarea + send + tool toggles bottom
+- [ ] AF-RIGHT-DEEP: deep-think card stack — each card has 1px border-left colored by hypothesis confidence
+- [ ] AF-RIGHT-PROPS: selected block/node metadata panel — NomtuRef word+kind+id, inline edit fields
+
+**Typography — classical editorial:**
+- [ ] AF-FONT-PROSE: Libre Baskerville 15px or EB Garamond 16px for doc/prose blocks
+- [ ] AF-FONT-CODE: Berkeley Mono or JetBrains Mono 13px for all code surfaces
+- [ ] AF-FONT-UI: Inter 13px for all chrome (already in nom-theme)
+- [ ] AF-FONT-SCALE: xs=11 sm=12 base=13 md=15 lg=18 xl=24 2xl=32 (px) — locked in nom-theme tokens
+
+**Swappable color themes:**
+- [ ] AF-THEME-DARK: `#0d1117` bg · `#161b22` surface · `#21262d` elevated · `#58a6ff` accent · `#f0f6fc` text (default)
+- [ ] AF-THEME-LIGHT: `#ffffff` bg · `#f6f8fa` surface · `#eaeef2` elevated · `#0969da` accent · `#1f2328` text
+- [ ] AF-THEME-OLED: `#000000` bg · `#0a0a0a` surface · `#111111` elevated (OLED power savings)
+- [ ] AF-THEME-TOGGLE: `Cmd/Ctrl+K T` shortcut + settings panel + command palette (`theme <name>`)
+
+**Settings panel:**
+- [ ] AF-SETTINGS-PANEL: full-screen overlay (not sidebar); sections = Editor · Canvas · Theme · Keybindings · Extensions · Advanced
+- [ ] AF-SETTINGS-EDITOR: font family/size/tab-size/line-wrap toggles
+- [ ] AF-SETTINGS-CANVAS: grid snap · background pattern · zoom sensitivity
+- [ ] AF-SETTINGS-KEYBIND: searchable, rebind on double-click
+- [ ] AF-SETTINGS-OPEN: `Cmd/Ctrl+,` keybind + settings icon in status bar
+
+**Minimalism enforcement rules (each item above must pass all):**
+- Zero decorative borders — only functional 1px hairlines (`border_color` token)
+- No gradients except frosted-glass `blur_radius` = 24px backdrop filter
+- Icon rail = icon only (no label duplication)
+- No visible placeholder content in shipped surfaces
+- Motion: ≤200ms standard, 300ms ease-out for deep-think card entry, 0 for reduced-motion preference
 - [ ] `npx gitnexus analyze --embeddings` post every push
 - [ ] Memory pruning of stale facts
 

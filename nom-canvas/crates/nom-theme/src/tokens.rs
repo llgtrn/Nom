@@ -1928,4 +1928,162 @@ mod tests {
             assert!(a > 0.0 && a < 1.0, "{name} alpha ({a}) must be in (0, 1)");
         }
     }
+
+    // =========================================================================
+    // WAVE-AF AGENT-8 ADDITIONS
+    // =========================================================================
+
+    // --- Accent colors hue in expected ranges ---
+
+    #[test]
+    fn accent_blue_hue_in_210_to_230_range() {
+        // Blue accent must have hue in 210–230°.
+        let c = color_accent_blue();
+        assert!(
+            c.h >= 210.0 && c.h <= 230.0,
+            "accent_blue hue ({:.1}°) must be in [210, 230]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn accent_purple_hue_in_270_to_290_range() {
+        // Purple accent must have hue in 270–290°.
+        let c = color_accent_purple();
+        assert!(
+            c.h >= 270.0 && c.h <= 290.0,
+            "accent_purple hue ({:.1}°) must be in [270, 290]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn accent_green_hue_in_120_to_150_range() {
+        // Green accent must have hue in 120–150°.
+        let c = color_accent_green();
+        assert!(
+            c.h >= 120.0 && c.h <= 150.0,
+            "accent_green hue ({:.1}°) must be in [120, 150]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn accent_blue_hue_strictly_less_than_purple() {
+        // Blue (210-230) must have lower hue than purple (270-290).
+        let blue = color_accent_blue();
+        let purple = color_accent_purple();
+        assert!(
+            blue.h < purple.h,
+            "blue hue ({:.1}) must be < purple hue ({:.1})",
+            blue.h, purple.h
+        );
+    }
+
+    #[test]
+    fn accent_green_hue_strictly_less_than_blue() {
+        // Green (120-150) must have lower hue than blue (210-230).
+        let green = color_accent_green();
+        let blue = color_accent_blue();
+        assert!(
+            green.h < blue.h,
+            "green hue ({:.1}) must be < blue hue ({:.1})",
+            green.h, blue.h
+        );
+    }
+
+    #[test]
+    fn accent_colors_all_three_hues_distinct() {
+        let blue = color_accent_blue();
+        let purple = color_accent_purple();
+        let green = color_accent_green();
+        assert!((blue.h - purple.h).abs() > 20.0, "blue and purple hues must differ by > 20°");
+        assert!((blue.h - green.h).abs() > 20.0, "blue and green hues must differ by > 20°");
+        assert!((purple.h - green.h).abs() > 20.0, "purple and green hues must differ by > 20°");
+    }
+
+    // --- Frosted overlay alpha < 1.0 ---
+
+    #[test]
+    fn frosted_overlay_alpha_strictly_less_than_one() {
+        const { assert!(FROSTED_BG_ALPHA < 1.0, "FROSTED_BG_ALPHA must be < 1.0 for transparency") };
+    }
+
+    #[test]
+    fn frosted_border_alpha_strictly_less_than_one() {
+        const { assert!(FROSTED_BORDER_ALPHA < 1.0, "FROSTED_BORDER_ALPHA must be < 1.0") };
+    }
+
+    #[test]
+    fn frosted_surface_overlay_alpha_less_than_one() {
+        let c = color_surface_overlay();
+        assert!(
+            c.a < 1.0,
+            "surface_overlay alpha ({:.3}) must be < 1.0",
+            c.a
+        );
+    }
+
+    #[test]
+    fn frosted_bg_alpha_greater_than_border_alpha() {
+        // Background alpha must dominate border alpha for proper frosted effect.
+        assert!(
+            FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
+            "FROSTED_BG_ALPHA ({}) must be > FROSTED_BORDER_ALPHA ({})",
+            FROSTED_BG_ALPHA, FROSTED_BORDER_ALPHA
+        );
+    }
+
+    #[test]
+    fn frosted_all_alphas_positive() {
+        const { assert!(FROSTED_BG_ALPHA > 0.0, "FROSTED_BG_ALPHA must be > 0.0") };
+        const { assert!(FROSTED_BORDER_ALPHA > 0.0, "FROSTED_BORDER_ALPHA must be > 0.0") };
+    }
+
+    // --- Font size H1 > H2 > H3 > body > caption ---
+
+    #[test]
+    fn font_size_h1_greater_than_h2() {
+        const { assert!(FONT_SIZE_H1 > FONT_SIZE_H2, "H1 must be > H2") };
+    }
+
+    #[test]
+    fn font_size_h2_greater_than_h3() {
+        const { assert!(FONT_SIZE_H2 > FONT_SIZE_H3, "H2 must be > H3") };
+    }
+
+    #[test]
+    fn font_size_h3_greater_than_body() {
+        const { assert!(FONT_SIZE_H3 > FONT_SIZE_BODY, "H3 must be > body") };
+    }
+
+    #[test]
+    fn font_size_body_greater_than_caption() {
+        const { assert!(FONT_SIZE_BODY > FONT_SIZE_CAPTION, "body must be > caption") };
+    }
+
+    #[test]
+    fn font_size_hierarchy_full_chain_h1_gt_h2_gt_h3_gt_body_gt_caption() {
+        // Full hierarchy assertion in one test.
+        const { assert!(FONT_SIZE_H1 > FONT_SIZE_H2) };
+        const { assert!(FONT_SIZE_H2 > FONT_SIZE_H3) };
+        const { assert!(FONT_SIZE_H3 > FONT_SIZE_BODY) };
+        const { assert!(FONT_SIZE_BODY > FONT_SIZE_CAPTION) };
+    }
+
+    #[test]
+    fn font_size_h1_is_largest_of_all_heading_and_body() {
+        let sizes = [FONT_SIZE_H2, FONT_SIZE_H3, FONT_SIZE_BODY, FONT_SIZE_CAPTION];
+        for s in sizes {
+            assert!(FONT_SIZE_H1 > s, "H1 ({}) must be > {}", FONT_SIZE_H1, s);
+        }
+    }
+
+    #[test]
+    fn font_size_caption_is_smallest_of_named_text_sizes() {
+        let sizes = [FONT_SIZE_BODY, FONT_SIZE_H3, FONT_SIZE_H2, FONT_SIZE_H1];
+        for s in sizes {
+            assert!(FONT_SIZE_CAPTION < s, "caption ({}) must be < {}", FONT_SIZE_CAPTION, s);
+        }
+    }
 }

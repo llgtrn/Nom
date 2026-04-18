@@ -2025,4 +2025,365 @@ mod tests {
             assert!(!step.observation.is_empty(), "step {i} observation must not be empty");
         }
     }
+
+    // =========================================================================
+    // WAVE-AF AGENT-8 ADDITIONS
+    // =========================================================================
+
+    // --- ReactChain with 0 steps completes immediately (returns empty) ---
+
+    #[test]
+    fn react_chain_zero_steps_completes_immediately() {
+        let evidence = &["some", "evidence", "here"];
+        let steps = react_chain("hypothesis", evidence, 0);
+        assert!(
+            steps.is_empty(),
+            "react_chain with 0 max_steps must return empty vec immediately"
+        );
+    }
+
+    #[test]
+    fn react_chain_zero_steps_zero_evidence_completes() {
+        let steps = react_chain("hypothesis", &[], 0);
+        assert!(steps.is_empty(), "0 steps + 0 evidence → empty");
+    }
+
+    #[test]
+    fn react_chain_interruptible_zero_steps_completes_immediately() {
+        let signal = InterruptSignal::new();
+        let steps = react_chain_interruptible("hypothesis", &["e1", "e2", "e3"], 0, &signal);
+        assert!(
+            steps.is_empty(),
+            "interruptible react_chain with 0 steps must return empty immediately"
+        );
+        // Signal should NOT be cancelled — 0 steps means nothing ran.
+        assert!(!signal.is_cancelled());
+    }
+
+    #[test]
+    fn react_chain_zero_steps_returns_not_none() {
+        // Specifically test return type is Vec (not Option), and empty is the sentinel.
+        let result = react_chain("test", &["evidence"], 0);
+        let is_empty: bool = result.is_empty();
+        assert!(is_empty, "zero steps must yield empty (not Some/None — it is a Vec)");
+    }
+
+    // --- Hypothesis with confidence exactly 0.0 sorts last ---
+
+    #[test]
+    fn hypothesis_confidence_zero_sorts_last_in_two() {
+        let evidence = &["graph node query"];
+        let hypotheses = &["graph node query", "zzz unrelated"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 2);
+        assert!(ranked[0].score > 0.0, "winner must have score > 0");
+        // The zero-score hypothesis must be at the end.
+        assert_eq!(
+            ranked[ranked.len() - 1].score, 0.0,
+            "hypothesis with score 0.0 must sort last"
+        );
+    }
+
+    #[test]
+    fn hypothesis_confidence_zero_sorts_last_in_five() {
+        let evidence = &["alpha beta gamma"];
+        let hypotheses = &[
+            "alpha beta gamma", // score > 0
+            "alpha",            // score > 0
+            "zzz",              // score 0
+            "qqq",              // score 0
+            "mmm",              // score 0
+        ];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 5);
+        // Top 2 must have score > 0.
+        assert!(ranked[0].score > 0.0, "rank[0] must have positive score");
+        assert!(ranked[1].score > 0.0, "rank[1] must have positive score");
+        // Bottom 3 must all have score 0.
+        assert_eq!(ranked[2].score, 0.0);
+        assert_eq!(ranked[3].score, 0.0);
+        assert_eq!(ranked[4].score, 0.0);
+    }
+
+    #[test]
+    fn hypothesis_exactly_zero_confidence_direct() {
+        // A hypothesis with zero word overlap must score exactly 0.0.
+        let score = classify_with_react("xyz_unique_word", &["totally_different_content"]);
+        assert_eq!(score, 0.0, "zero-overlap hypothesis must score exactly 0.0");
+    }
+
+    #[test]
+    fn hypothesis_zero_confidence_excluded_from_top_when_winner_exists() {
+        let evidence = &["match word"];
+        let hypotheses = &["match word", "zero overlap zzz"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        // Winner has score > 0; loser has 0.
+        assert!(ranked[0].score > ranked[1].score, "winner score must exceed zero-score");
+        assert_eq!(ranked[1].score, 0.0, "loser must be exactly 0.0");
+        assert_eq!(ranked[1].hypothesis, "zero overlap zzz");
+    }
+
+    #[test]
+    fn rank_hypotheses_all_zero_confidence_preserves_all() {
+        // If all hypotheses score 0.0, all must still be present in output.
+        let evidence = &["completely irrelevant"];
+        let hypotheses = &["aaa bbb", "ccc ddd", "eee fff"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3, "all hypotheses must be preserved even with zero scores");
+        for h in &ranked {
+            assert_eq!(h.score, 0.0, "all scores must be 0.0 with no overlap");
+        }
+    }
+
+    // --- InterruptSignal at step 1 of 10 stops chain immediately ---
+
+    #[test]
+    fn interrupt_at_step_1_of_10_stops_chain() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+
+        // Step 0 completes (signal not yet cancelled).
+        let step0 = react_chain_interruptible("hyp", &evidence[..1], 1, &signal);
+        assert_eq!(step0.len(), 1, "step 0 must complete before cancel");
+
+        // Cancel at step 1.
+        signal.cancel();
+
+        // Steps 1–9 must not run.
+        let remaining = react_chain_interruptible("hyp", &evidence[1..], 9, &signal);
+        assert_eq!(
+            remaining.len(), 0,
+            "after cancel at step 1, no further steps must run (0 of 9 remaining)"
+        );
+
+        // Total: exactly 1 step completed of 10.
+        assert_eq!(step0.len() + remaining.len(), 1);
+    }
+
+    #[test]
+    fn interrupt_at_step_1_of_10_score_from_step_0_valid() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+
+        let step0 = react_chain_interruptible("e0", &evidence[..1], 1, &signal);
+        assert_eq!(step0.len(), 1);
+        // Score from the single completed step must be in [0, 1].
+        assert!(step0[0].score >= 0.0 && step0[0].score <= 1.0);
+
+        signal.cancel();
+
+        // After cancel, signal is visible.
+        assert!(signal.is_cancelled());
+    }
+
+    #[test]
+    fn interrupt_at_step_1_of_10_via_clone() {
+        let signal = InterruptSignal::new();
+        let guard = signal.clone();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+
+        let first = react_chain_interruptible("hyp", &evidence[..1], 1, &signal);
+        assert_eq!(first.len(), 1);
+
+        // Cancel via clone (simulates external interrupt after step 1).
+        guard.cancel();
+
+        let rest = react_chain_interruptible("hyp", &evidence[1..], 9, &signal);
+        assert_eq!(rest.len(), 0, "clone cancel at step 1 must stop remaining 9 steps");
+    }
+
+    #[test]
+    fn interrupt_step_1_total_completed_is_one() {
+        let signal = InterruptSignal::new();
+        let evidence: Vec<&str> = (0..10).map(|i| if i == 0 {"ev0"} else if i == 1 {"ev1"} else if i == 2 {"ev2"} else if i == 3 {"ev3"} else if i == 4 {"ev4"} else if i == 5 {"ev5"} else if i == 6 {"ev6"} else if i == 7 {"ev7"} else if i == 8 {"ev8"} else {"ev9"}).collect();
+
+        let step0_result = react_chain_interruptible("test", &evidence[..1], 1, &signal);
+        signal.cancel();
+        let steps_1_9 = react_chain_interruptible("test", &evidence[1..], 9, &signal);
+
+        let total = step0_result.len() + steps_1_9.len();
+        assert_eq!(total, 1, "only step 0 of 10 must complete when cancelled at step 1");
+    }
+
+    // --- rank_hypotheses preserves all input hypotheses (none lost) ---
+
+    #[test]
+    fn rank_hypotheses_preserves_all_three_inputs() {
+        let evidence = &["word"];
+        let hypotheses = &["h1", "h2", "h3"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3, "all 3 input hypotheses must be preserved");
+        let names: Vec<&str> = ranked.iter().map(|r| r.hypothesis.as_str()).collect();
+        assert!(names.contains(&"h1"));
+        assert!(names.contains(&"h2"));
+        assert!(names.contains(&"h3"));
+    }
+
+    #[test]
+    fn rank_hypotheses_preserves_all_ten_inputs() {
+        let evidence = &["target"];
+        let hypotheses: Vec<String> = (0..10).map(|i| format!("hyp_{i}")).collect();
+        let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
+        let ranked = rank_hypotheses(&refs, evidence);
+        assert_eq!(ranked.len(), 10, "all 10 input hypotheses must be preserved");
+    }
+
+    #[test]
+    fn rank_hypotheses_preserves_all_with_duplicates() {
+        // Duplicate hypothesis strings are distinct inputs and both preserved.
+        let evidence = &["node"];
+        let hypotheses = &["node", "node", "other"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3, "3 input hypotheses including duplicates must all be in output");
+    }
+
+    #[test]
+    fn rank_hypotheses_none_dropped_after_sort() {
+        // After sorting by score, no hypothesis should be dropped.
+        let evidence = &["graph node query result traversal"];
+        let hypotheses = &[
+            "graph node",
+            "completely unrelated",
+            "query result",
+            "traversal graph",
+            "zzz",
+        ];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), hypotheses.len(), "ranked output must match input count — none dropped");
+        // Verify all hypotheses present in ranked output.
+        for h in hypotheses {
+            assert!(
+                ranked.iter().any(|r| r.hypothesis == *h),
+                "hypothesis '{h}' must appear in ranked output"
+            );
+        }
+    }
+
+    #[test]
+    fn rank_hypotheses_empty_preserves_empty() {
+        let ranked = rank_hypotheses(&[], &["evidence"]);
+        assert_eq!(ranked.len(), 0, "empty input → empty output (nothing dropped)");
+    }
+
+    #[test]
+    fn rank_hypotheses_single_item_preserved() {
+        let evidence = &["alpha"];
+        let ranked = rank_hypotheses(&["alpha"], evidence);
+        assert_eq!(ranked.len(), 1, "single hypothesis must be preserved");
+        assert_eq!(ranked[0].hypothesis, "alpha");
+    }
+
+    #[test]
+    fn rank_hypotheses_100_items_all_preserved() {
+        let evidence = &["target"];
+        let hypotheses: Vec<String> = (0..100).map(|i| format!("h{i}")).collect();
+        let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
+        let ranked = rank_hypotheses(&refs, evidence);
+        assert_eq!(ranked.len(), 100, "all 100 hypotheses must be preserved in output");
+    }
+
+    #[test]
+    fn react_chain_zero_steps_returns_empty_vec_type() {
+        let result: Vec<ReactStep> = react_chain("hyp", &["ev"], 0);
+        assert!(result.is_empty(), "return type is Vec<ReactStep>, which is empty for 0 steps");
+    }
+
+    #[test]
+    fn react_chain_zero_steps_large_evidence_still_empty() {
+        let evidence: Vec<&str> = (0..50).map(|_| "word").collect();
+        let steps = react_chain("word", &evidence, 0);
+        assert!(steps.is_empty(), "0 steps with 50 evidence items → empty");
+    }
+
+    #[test]
+    fn hypothesis_confidence_zero_last_in_three() {
+        let evidence = &["match"];
+        let hypotheses = &["match", "partial match", "unrelated zzz"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3);
+        // "unrelated zzz" has 0 overlap → must be last.
+        assert_eq!(ranked[2].hypothesis, "unrelated zzz");
+        assert_eq!(ranked[2].score, 0.0);
+    }
+
+    #[test]
+    fn interrupt_at_step_1_signal_is_set_after_cancel() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0"];
+        let _ = react_chain_interruptible("hyp", evidence, 1, &signal);
+        assert!(!signal.is_cancelled(), "running chain must not cancel signal");
+        signal.cancel();
+        assert!(signal.is_cancelled(), "signal must be set after explicit cancel");
+    }
+
+    #[test]
+    fn rank_hypotheses_output_length_equals_input_always() {
+        for n in [0, 1, 2, 5, 10, 20] {
+            let hypotheses: Vec<String> = (0..n).map(|i| format!("h{i}")).collect();
+            let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
+            let ranked = rank_hypotheses(&refs, &["evidence"]);
+            assert_eq!(
+                ranked.len(), n,
+                "rank_hypotheses output length must equal input length for n={n}"
+            );
+        }
+    }
+
+    #[test]
+    fn react_chain_zero_steps_does_not_call_classify() {
+        // If 0 steps, no classify_with_react is called — score never computed.
+        // Verify by checking the chain returns empty for any evidence.
+        let evidence = &["alpha", "beta", "gamma", "delta"];
+        let steps = react_chain("alpha beta gamma delta", evidence, 0);
+        assert!(steps.is_empty());
+        // Also verify 1 step DOES produce a score.
+        let one_step = react_chain("alpha", &["alpha"], 1);
+        assert_eq!(one_step.len(), 1);
+        assert!(one_step[0].score > 0.0);
+    }
+
+    #[test]
+    fn hypothesis_zero_confidence_is_exactly_zero_not_epsilon() {
+        // Zero overlap must produce exactly 0.0, not a tiny positive float.
+        let score = classify_with_react("xyz_unique_abc", &["totally_unrelated_content"]);
+        assert_eq!(score, 0.0_f32, "zero-overlap must be exactly 0.0, not near-zero");
+    }
+
+    #[test]
+    fn rank_hypotheses_all_names_in_output() {
+        // No hypothesis name should be missing from ranked output.
+        let evidence = &["graph"];
+        let input = &["graph query", "tree search", "bitmap scan", "hash lookup"];
+        let ranked = rank_hypotheses(input, evidence);
+        let output_names: Vec<&str> = ranked.iter().map(|r| r.hypothesis.as_str()).collect();
+        for name in input {
+            assert!(
+                output_names.contains(name),
+                "'{name}' must appear in ranked output"
+            );
+        }
+    }
+
+    #[test]
+    fn interrupt_at_step_1_of_10_first_step_score_in_range() {
+        let signal = InterruptSignal::new();
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7", "e8", "e9"];
+        let step0 = react_chain_interruptible("e0", &evidence[..1], 1, &signal);
+        signal.cancel();
+        let rest = react_chain_interruptible("e0", &evidence[1..], 9, &signal);
+        assert_eq!(step0.len(), 1);
+        assert_eq!(rest.len(), 0);
+        assert!(step0[0].score >= 0.0 && step0[0].score <= 1.0);
+    }
+
+    #[test]
+    fn react_chain_zero_steps_no_side_effects() {
+        // 0 steps must return empty without modifying any external state.
+        let evidence = &["alpha", "beta"];
+        let steps = react_chain("alpha", evidence, 0);
+        assert!(steps.is_empty());
+        // Running again with 0 steps should also be empty (idempotent).
+        let steps2 = react_chain("alpha", evidence, 0);
+        assert!(steps2.is_empty());
+    }
 }

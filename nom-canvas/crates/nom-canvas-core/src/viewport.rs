@@ -871,4 +871,158 @@ mod tests {
         let screen = vp.canvas_to_screen([0.0, 0.0]);
         assert!((screen[0] - 350.0).abs() < 1e-4, "screen.x={}", screen[0]);
     }
+
+    // ── additional viewport tests ─────────────────────────────────────────────
+
+    /// zoom_to_fit: after fitting a bounding box exactly, both corners are visible.
+    #[test]
+    fn zoom_to_fit_bounding_box_exactly() {
+        let mut vp = Viewport::new(400.0, 200.0);
+        // Fit the canvas rect [0,0]→[400,200] exactly into the viewport.
+        let (rx, ry, rw, rh) = (0.0_f32, 0.0, 400.0, 200.0);
+        let zoom_x = vp.size[0] / rw; // 1.0
+        let zoom_y = vp.size[1] / rh; // 1.0
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0); // 1.0
+        let cx = rx + rw / 2.0; // 200
+        let cy = ry + rh / 2.0; // 100
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        assert!(
+            vp.is_point_visible([rx, ry]),
+            "top-left corner must be visible after zoom_to_fit"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right corner must be visible after zoom_to_fit"
+        );
+        assert!(
+            (vp.zoom - 1.0).abs() < 1e-5,
+            "zoom must be 1.0 when rect matches viewport, got {}",
+            vp.zoom
+        );
+    }
+
+    /// zoom_to_fit with a non-square rect chooses the limiting axis.
+    #[test]
+    fn zoom_to_fit_selects_limiting_axis() {
+        let mut vp = Viewport::new(800.0, 400.0); // 2:1 viewport
+        // Very wide canvas rect: 400×100 — width-limited.
+        let (rx, ry, rw, rh) = (0.0_f32, 0.0, 400.0, 100.0);
+        let zoom_x = vp.size[0] / rw; // 2.0
+        let zoom_y = vp.size[1] / rh; // 4.0
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0); // 2.0 (width-limited)
+        let cx = rx + rw / 2.0;
+        let cy = ry + rh / 2.0;
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        assert!(
+            (vp.zoom - zoom_x).abs() < 1e-5,
+            "zoom must be width-limited ({zoom_x}), got {}",
+            vp.zoom
+        );
+        assert!(
+            vp.is_point_visible([rx, ry]),
+            "top-left must be visible after width-limited fit"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right must be visible after width-limited fit"
+        );
+    }
+
+    /// reset_to_identity: after arbitrary transforms, reset gives zoom=1, pan=[0,0].
+    #[test]
+    fn reset_to_identity_after_complex_transforms() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(7.5, [123.0, 456.0]);
+        vp.pan_by([333.0, -222.0]);
+        vp.zoom_toward(0.3, [200.0, 100.0]);
+        vp.pan_by([-50.0, 80.0]);
+        vp.reset();
+        assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom must be 1.0 after reset");
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x must be 0 after reset");
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
+        // Screen centre must map to canvas origin after reset.
+        let canvas = vp.screen_to_canvas([400.0, 300.0]);
+        assert!((canvas[0]).abs() < 1e-4, "canvas.x after reset={}", canvas[0]);
+        assert!((canvas[1]).abs() < 1e-4, "canvas.y after reset={}", canvas[1]);
+    }
+
+    /// nested_canvas_transform: apply two successive pan+zoom steps and verify
+    /// that visible_bounds narrows/shifts consistently.
+    #[test]
+    fn nested_canvas_transform_successive_zooms() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        // First transform: zoom to 2× at screen centre.
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        let (tl1, br1) = vp.visible_bounds();
+        let w1 = br1[0] - tl1[0];
+        // Second transform: zoom to 4× at screen centre.
+        vp.zoom_toward(4.0, [400.0, 300.0]);
+        let (tl2, br2) = vp.visible_bounds();
+        let w2 = br2[0] - tl2[0];
+        // Each successive 2× zoom should halve the visible canvas width.
+        assert!(
+            w2 < w1,
+            "zooming in further must reduce visible canvas width: w1={w1} w2={w2}"
+        );
+        assert!(
+            (w2 - w1 / 2.0).abs() < 1e-2,
+            "4× zoom must show half the canvas area of 2×: w1/2={} w2={}",
+            w1 / 2.0,
+            w2
+        );
+    }
+
+    /// Canvas transform composition: pan then zoom at pan offset.
+    #[test]
+    fn canvas_transform_pan_then_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([100.0, 50.0]);
+        let canvas_before = vp.screen_to_canvas([400.0, 300.0]);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // Canvas point under screen centre should be preserved by zoom_toward.
+        let canvas_after = vp.screen_to_canvas([400.0, 300.0]);
+        assert!(
+            (canvas_after[0] - canvas_before[0]).abs() < 1e-3,
+            "canvas x under cursor must stay fixed through zoom_toward"
+        );
+        assert!(
+            (canvas_after[1] - canvas_before[1]).abs() < 1e-3,
+            "canvas y under cursor must stay fixed through zoom_toward"
+        );
+    }
+
+    /// Identity transform: at zoom=1 and pan=[0,0], to_scene_transform is identity-translation.
+    #[test]
+    fn to_scene_transform_is_identity_at_reset() {
+        let vp = Viewport::new(800.0, 600.0);
+        let m = vp.to_scene_transform();
+        // Rotation part must be zoom=1.
+        assert!((m[0][0] - 1.0).abs() < 1e-6);
+        assert!((m[1][1] - 1.0).abs() < 1e-6);
+        // Off-diagonal must be zero.
+        assert!((m[0][1]).abs() < 1e-6);
+        assert!((m[1][0]).abs() < 1e-6);
+        // Homogeneous row.
+        assert!((m[2][0]).abs() < 1e-6);
+        assert!((m[2][1]).abs() < 1e-6);
+        assert!((m[2][2] - 1.0).abs() < 1e-6);
+    }
+
+    /// Zoom = 0.5 doubles the visible canvas area vs zoom = 1.
+    #[test]
+    fn zoom_half_doubles_visible_area() {
+        let vp1 = Viewport::new(800.0, 600.0);
+        let mut vp2 = Viewport::new(800.0, 600.0);
+        vp2.zoom_toward(0.5, [400.0, 300.0]);
+        let (tl1, br1) = vp1.visible_bounds();
+        let (tl2, br2) = vp2.visible_bounds();
+        let w1 = br1[0] - tl1[0];
+        let w2 = br2[0] - tl2[0];
+        assert!(
+            (w2 - w1 * 2.0).abs() < 1e-2,
+            "half-zoom must double visible width: got w1={w1} w2={w2}"
+        );
+    }
 }

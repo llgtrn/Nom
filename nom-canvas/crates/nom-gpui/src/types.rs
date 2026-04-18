@@ -1398,4 +1398,221 @@ mod tests {
         let id = ElementId::new(100);
         assert_eq!(id.0, 100);
     }
+
+    // ------------------------------------------------------------------
+    // Wave AF: Bounds inset/outset via expand, Corners::uniform,
+    //          Hsla saturation edge cases
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn bounds_inset_via_expand_negative_amount() {
+        // `inset` is a logical shrink. Simulate with expand(-amount).
+        // A 100x100 box inset by 10 → 80x80, origin shifted by +10.
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(100.0), Pixels(100.0)),
+        );
+        let inset = b.expand(Pixels(-10.0)); // negative expand = inset
+        assert_eq!(inset.origin.x, Pixels(10.0), "inset origin.x must shift right by 10");
+        assert_eq!(inset.origin.y, Pixels(10.0), "inset origin.y must shift down by 10");
+        assert_eq!(inset.size.width, Pixels(80.0), "inset width must shrink by 20 (2*10)");
+        assert_eq!(inset.size.height, Pixels(80.0), "inset height must shrink by 20 (2*10)");
+    }
+
+    #[test]
+    fn bounds_outset_via_expand_positive_amount() {
+        // `outset` is a logical grow. Simulate with expand(+amount).
+        // A 50x30 box outset by 5 → 60x40, origin shifted by -5.
+        let b = Bounds::new(
+            Point::new(Pixels(20.0), Pixels(10.0)),
+            Size::new(Pixels(50.0), Pixels(30.0)),
+        );
+        let outset = b.expand(Pixels(5.0));
+        assert_eq!(outset.origin.x, Pixels(15.0), "outset origin.x must shift left by 5");
+        assert_eq!(outset.origin.y, Pixels(5.0), "outset origin.y must shift up by 5");
+        assert_eq!(outset.size.width, Pixels(60.0), "outset width must grow by 10 (2*5)");
+        assert_eq!(outset.size.height, Pixels(40.0), "outset height must grow by 10 (2*5)");
+    }
+
+    #[test]
+    fn bounds_inset_by_half_size_produces_point() {
+        // Inset by half of width/height collapses the box to its center.
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(20.0), Pixels(20.0)),
+        );
+        let inset = b.expand(Pixels(-10.0));
+        // Size should be zero (degenerate point at center).
+        assert_eq!(inset.size.width, Pixels(0.0), "inset by half collapses width to 0");
+        assert_eq!(inset.size.height, Pixels(0.0), "inset by half collapses height to 0");
+        assert_eq!(inset.origin.x, Pixels(10.0), "collapsed origin is center x");
+        assert_eq!(inset.origin.y, Pixels(10.0), "collapsed origin is center y");
+    }
+
+    #[test]
+    fn corners_uniform_via_all_sets_every_corner() {
+        // `Corners::all` acts as a uniform-radius constructor.
+        let uniform_radius = Pixels(8.0);
+        let c = Corners::all(uniform_radius);
+        assert_eq!(c.top_left, uniform_radius, "top_left");
+        assert_eq!(c.top_right, uniform_radius, "top_right");
+        assert_eq!(c.bottom_right, uniform_radius, "bottom_right");
+        assert_eq!(c.bottom_left, uniform_radius, "bottom_left");
+    }
+
+    #[test]
+    fn corners_uniform_zero_is_sharp() {
+        let c = Corners::all(Pixels(0.0));
+        assert_eq!(c.top_left, Pixels(0.0));
+        assert_eq!(c.top_right, Pixels(0.0));
+        assert_eq!(c.bottom_right, Pixels(0.0));
+        assert_eq!(c.bottom_left, Pixels(0.0));
+    }
+
+    #[test]
+    fn corners_uniform_large_value_represents_circle() {
+        // A uniform radius of half the element's size produces a circle.
+        // Just verify the struct holds the value correctly.
+        let circle_radius = Pixels(50.0);
+        let c = Corners::all(circle_radius);
+        for corner in [c.top_left, c.top_right, c.bottom_right, c.bottom_left] {
+            assert_eq!(corner, circle_radius, "all corners must equal circle radius");
+        }
+    }
+
+    #[test]
+    fn hsla_saturation_zero_produces_achromatic_color() {
+        // s=0 collapses hue, so to_rgba must return r==g==b==l.
+        let c = Hsla::new(300.0, 0.0, 0.6, 1.0); // hue=300 (purple) but s=0
+        let (r, g, b, _a) = c.to_rgba();
+        assert!((r - 0.6).abs() < 1e-5, "R must equal lightness 0.6, got {r}");
+        assert!((g - 0.6).abs() < 1e-5, "G must equal lightness 0.6, got {g}");
+        assert!((b - 0.6).abs() < 1e-5, "B must equal lightness 0.6, got {b}");
+    }
+
+    #[test]
+    fn hsla_saturation_one_produces_fully_saturated_color() {
+        // s=1 at l=0.5: the most saturated color for that hue.
+        // Pure red: h=0, s=1, l=0.5 → R=1.0, G≈0, B≈0.
+        let c = Hsla::new(0.0, 1.0, 0.5, 1.0);
+        let (r, g, b, _a) = c.to_rgba();
+        assert!((r - 1.0).abs() < 1e-5, "R must be 1.0 for fully saturated red, got {r}");
+        assert!(g < 1e-4, "G must be ~0 for fully saturated red, got {g}");
+        assert!(b < 1e-4, "B must be ~0 for fully saturated red, got {b}");
+    }
+
+    #[test]
+    fn hsla_saturation_clamp_stays_within_valid_rgba_range() {
+        // All valid s values in [0,1] must produce RGBA channels in [-eps, 1+eps]
+        // (f32 rounding may push values marginally outside the strict [0,1] interval).
+        let eps = 1e-5_f32;
+        for s_tenth in 0..=10u32 {
+            let s = s_tenth as f32 / 10.0;
+            let c = Hsla::new(180.0, s, 0.5, 1.0);
+            let (r, g, b, a) = c.to_rgba();
+            for (ch, name) in [(r, "r"), (g, "g"), (b, "b"), (a, "a")] {
+                assert!(
+                    ch >= -eps && ch <= 1.0 + eps,
+                    "s={s:.1}: channel {name}={ch:.6} out of [-eps, 1+eps]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hsla_saturation_intermediate_values_produce_valid_colors() {
+        // Check s=0.5 at various hues produces channels in [0,1].
+        for h in [0.0_f32, 60.0, 120.0, 180.0, 240.0, 300.0] {
+            let c = Hsla::new(h, 0.5, 0.5, 1.0);
+            let (r, g, b, _) = c.to_rgba();
+            for (ch, name) in [(r, "r"), (g, "g"), (b, "b")] {
+                assert!(
+                    (0.0..=1.0).contains(&ch),
+                    "h={h}: channel {name}={ch:.4} out of [0,1]"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn bounds_inset_and_outset_are_symmetric() {
+        // Outset by N then inset by N must return the original bounds.
+        let original = Bounds::new(
+            Point::new(Pixels(10.0), Pixels(10.0)),
+            Size::new(Pixels(80.0), Pixels(60.0)),
+        );
+        let amount = Pixels(15.0);
+        let outset = original.expand(amount);
+        let back = outset.expand(Pixels(-amount.0));
+        assert_eq!(back.origin.x, original.origin.x, "round-trip origin.x");
+        assert_eq!(back.origin.y, original.origin.y, "round-trip origin.y");
+        assert_eq!(back.size.width, original.size.width, "round-trip width");
+        assert_eq!(back.size.height, original.size.height, "round-trip height");
+    }
+
+    #[test]
+    fn corners_uniform_f32_precision_preserved() {
+        // Verify that unusual f32 values round-trip exactly through Corners::all.
+        let r = Pixels(3.14159);
+        let c = Corners::all(r);
+        assert_eq!(c.top_left.0, r.0);
+        assert_eq!(c.top_right.0, r.0);
+        assert_eq!(c.bottom_right.0, r.0);
+        assert_eq!(c.bottom_left.0, r.0);
+    }
+
+    #[test]
+    fn bounds_inset_by_zero_is_unchanged() {
+        let b = Bounds::new(
+            Point::new(Pixels(5.0), Pixels(5.0)),
+            Size::new(Pixels(100.0), Pixels(80.0)),
+        );
+        let same = b.expand(Pixels(0.0));
+        assert_eq!(same, b, "expand by 0 (inset/outset by 0) must return identical bounds");
+    }
+
+    #[test]
+    fn hsla_full_hue_sweep_produces_bounded_rgba() {
+        // Sweep through 360 hue values at s=0.8, l=0.5; all channels must be in [0, 1+eps].
+        let eps = 1e-5_f32;
+        for h_deg in (0..360u32).step_by(10) {
+            let c = Hsla::new(h_deg as f32, 0.8, 0.5, 1.0);
+            let (r, g, b, a) = c.to_rgba();
+            for (ch, name) in [(r, "r"), (g, "g"), (b, "b"), (a, "a")] {
+                assert!(
+                    ch >= -eps && ch <= 1.0 + eps,
+                    "h={h_deg}: channel {name}={ch:.6} out of range"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn hsla_lightness_zero_produces_black() {
+        // l=0 means black regardless of hue/saturation.
+        let c = Hsla::new(200.0, 1.0, 0.0, 1.0);
+        let (r, g, b, _) = c.to_rgba();
+        assert!((r - 0.0).abs() < 1e-5, "l=0 R must be 0, got {r}");
+        assert!((g - 0.0).abs() < 1e-5, "l=0 G must be 0, got {g}");
+        assert!((b - 0.0).abs() < 1e-5, "l=0 B must be 0, got {b}");
+    }
+
+    #[test]
+    fn hsla_lightness_one_produces_white() {
+        // l=1 means white regardless of hue/saturation.
+        let c = Hsla::new(100.0, 1.0, 1.0, 1.0);
+        let (r, g, b, _) = c.to_rgba();
+        assert!((r - 1.0).abs() < 1e-5, "l=1 R must be 1, got {r}");
+        assert!((g - 1.0).abs() < 1e-5, "l=1 G must be 1, got {g}");
+        assert!((b - 1.0).abs() < 1e-5, "l=1 B must be 1, got {b}");
+    }
+
+    #[test]
+    fn edges_all_uniform_value() {
+        let e = Edges::all(Pixels(7.5));
+        assert_eq!(e.top.0, 7.5);
+        assert_eq!(e.right.0, 7.5);
+        assert_eq!(e.bottom.0, 7.5);
+        assert_eq!(e.left.0, 7.5);
+    }
 }

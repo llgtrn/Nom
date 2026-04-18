@@ -1015,4 +1015,135 @@ mod tests {
             "different top_k values must produce separate cache entries"
         );
     }
+
+    // -----------------------------------------------------------------------
+    // RRF with duplicate doc IDs deduplicated: diamond DAG with many hops
+    // ensures each node appears at most once across all BFS seeds.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_duplicate_doc_ids_deduplicated_diamond() {
+        // Diamond: A→B, A→C, B→D, C→D — "D" reachable via two paths from A.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("D");
+        let results = retriever.retrieve(&query, 4, 3);
+
+        // Each node must appear at most once (deduplication enforced by `best` map).
+        let mut seen = std::collections::HashSet::new();
+        for r in &results {
+            assert!(
+                seen.insert(r.node_id.clone()),
+                "node '{}' appeared more than once — duplicates not deduplicated",
+                r.node_id
+            );
+        }
+        assert_eq!(results.len(), 4, "all 4 nodes must appear exactly once");
+    }
+
+    // -----------------------------------------------------------------------
+    // top-k=1 returns only the single best result.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_top_k_one_returns_single_best() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("best", "verb"));
+        dag.add_node(ExecNode::new("second", "verb"));
+        dag.add_node(ExecNode::new("third", "verb"));
+        dag.add_edge("best", "out", "second", "in");
+        dag.add_edge("second", "out", "third", "in");
+
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query "best"'s own vec — it should be the top result.
+        let query = node_vec("best");
+        let results = retriever.retrieve(&query, 1, 2);
+
+        assert_eq!(results.len(), 1, "top_k=1 must return exactly 1 result");
+        assert_eq!(
+            results[0].node_id, "best",
+            "the single result must be the best-matching node"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Empty query (all-zero vector) on non-empty DAG: results returned but no
+    // cosine sim advantage → all nodes rank by BFS confidence only.
+    // Empty DAG with any query → empty results.
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_empty_dag_returns_empty_regardless_of_query() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        // A zero-magnitude vector simulates an "empty" query.
+        let zero_query = [0.0f32; 16];
+        let results = retriever.retrieve(&zero_query, 5, 2);
+        assert!(
+            results.is_empty(),
+            "empty DAG must return empty results for any query"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Zero-magnitude query vector: cosine_sim returns 0.0; results still
+    // returned (ranked purely by confidence/rank, not cosine).
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_zero_query_vector_non_empty_dag() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("node_a", "verb"));
+        dag.add_node(ExecNode::new("node_b", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let zero_query = [0.0f32; 16];
+        let results = retriever.retrieve(&zero_query, 2, 1);
+        // Both nodes should appear — even with zero cosine, BFS still visits them.
+        assert_eq!(results.len(), 2, "zero-magnitude query must still return all nodes");
+        // Scores must be positive (confidence/rrf formula).
+        for r in &results {
+            assert!(r.score > 0.0, "score for {} must be > 0 even with zero query", r.node_id);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // CachedRetriever: cache hit count — second call must not add a new entry
+    // -----------------------------------------------------------------------
+    #[test]
+    fn cached_retriever_hit_count_stable() {
+        let dag = three_node_dag();
+        let mut cached = CachedRetriever::new(&dag);
+        let query = node_vec("gamma");
+        cached.retrieve_cached(&query, 2, 1);
+        let count_after_first = cached.cache.len();
+        cached.retrieve_cached(&query, 2, 1);
+        assert_eq!(
+            cached.cache.len(),
+            count_after_first,
+            "cache must not grow on repeated identical call"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // top-k larger than node count: returns all nodes (no panic, no duplicate)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_top_k_larger_than_node_count() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("x", "verb"));
+        dag.add_node(ExecNode::new("y", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("x");
+        let results = retriever.retrieve(&query, 100, 2);
+        // Only 2 nodes exist; result must be exactly 2 (not 100).
+        assert_eq!(results.len(), 2, "top_k capped at node count");
+        let mut ids: Vec<&str> = results.iter().map(|r| r.node_id.as_str()).collect();
+        ids.sort();
+        assert_eq!(ids, vec!["x", "y"]);
+    }
 }

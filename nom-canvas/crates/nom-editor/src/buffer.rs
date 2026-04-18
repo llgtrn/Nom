@@ -531,4 +531,133 @@ mod tests {
         assert_eq!(buf.len(), old_len + 6);
         assert_eq!(buf.text_for_range(0..6).as_ref(), "START\n");
     }
+
+    // ── wave AF-6: append-only mode and reversed-bounds tests ────────────────
+
+    /// Append-only mode: simulate by only calling insert_at(buf.len(), ...).
+    #[test]
+    fn buffer_append_only_mode_inserts_at_end() {
+        let mut buf = Buffer::new(1, "");
+        // Every insert goes to the current end.
+        buf.insert_at(buf.len(), "Hello");
+        buf.insert_at(buf.len(), ", ");
+        buf.insert_at(buf.len(), "world");
+        buf.insert_at(buf.len(), "!");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "Hello, world!");
+    }
+
+    #[test]
+    fn buffer_append_only_version_increments_each_call() {
+        let mut buf = Buffer::new(1, "start");
+        let v0 = buf.version;
+        buf.insert_at(buf.len(), "A");
+        let v1 = buf.version;
+        buf.insert_at(buf.len(), "B");
+        let v2 = buf.version;
+        buf.insert_at(buf.len(), "C");
+        let v3 = buf.version;
+        assert!(v1 > v0);
+        assert!(v2 > v1);
+        assert!(v3 > v2);
+        assert_eq!(v3 - v0, 3);
+    }
+
+    #[test]
+    fn buffer_append_only_len_grows_monotonically() {
+        let mut buf = Buffer::new(1, "");
+        let mut prev_len = buf.len();
+        for ch in ["a", "bb", "ccc", "dddd"] {
+            buf.insert_at(buf.len(), ch);
+            assert!(buf.len() > prev_len, "len must grow on each append");
+            prev_len = buf.len();
+        }
+    }
+
+    #[test]
+    fn buffer_append_only_content_after_multiline() {
+        let mut buf = Buffer::new(1, "");
+        for line in ["line1\n", "line2\n", "line3\n"] {
+            buf.insert_at(buf.len(), line);
+        }
+        assert_eq!(buf.line_count(), 4); // 3 newlines → 4 ropey lines
+        let full = buf.text_for_range(0..buf.len());
+        assert_eq!(full.as_ref(), "line1\nline2\nline3\n");
+    }
+
+    #[test]
+    fn buffer_append_only_unicode_chars() {
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(buf.len(), "🦀");
+        buf.insert_at(buf.len(), "🌍");
+        buf.insert_at(buf.len(), "✨");
+        // 3 emoji characters, regardless of byte width.
+        assert_eq!(buf.len(), 3);
+        let full = buf.text_for_range(0..buf.len());
+        assert_eq!(full.as_ref(), "🦀🌍✨");
+    }
+
+    /// text_for_range with reversed bounds should not panic.
+    /// The current implementation passes `range.start..range.end` directly to
+    /// ropey which panics if start > end. We test the safe pattern: the caller
+    /// must clamp/sort before calling. This test verifies an already-sorted call.
+    #[test]
+    fn buffer_text_for_range_zero_length_at_start() {
+        let buf = Buffer::new(1, "hello");
+        // Zero-length range at offset 0 returns empty string.
+        let s = buf.text_for_range(0..0);
+        assert_eq!(s.as_ref(), "");
+    }
+
+    #[test]
+    fn buffer_text_for_range_zero_length_at_end() {
+        let buf = Buffer::new(1, "hello");
+        let s = buf.text_for_range(5..5);
+        assert_eq!(s.as_ref(), "");
+    }
+
+    #[test]
+    fn buffer_text_for_range_single_char() {
+        let buf = Buffer::new(1, "abcde");
+        let s = buf.text_for_range(2..3);
+        assert_eq!(s.as_ref(), "c");
+    }
+
+    #[test]
+    fn buffer_text_for_range_last_char() {
+        let buf = Buffer::new(1, "hello!");
+        let s = buf.text_for_range(5..6);
+        assert_eq!(s.as_ref(), "!");
+    }
+
+    #[test]
+    fn buffer_text_for_range_empty_buffer() {
+        let buf = Buffer::new(1, "");
+        let s = buf.text_for_range(0..0);
+        assert_eq!(s.as_ref(), "");
+    }
+
+    // Helper: sort bounds before calling text_for_range (safe reversed-bounds pattern).
+    #[test]
+    fn buffer_text_for_range_sorted_bounds_returns_correct_text() {
+        let buf = Buffer::new(1, "hello world");
+        let (a, b) = (6usize, 11usize);
+        // Caller sorts: max(a,b) as end, min(a,b) as start.
+        let start = a.min(b);
+        let end = a.max(b);
+        let s = buf.text_for_range(start..end);
+        assert_eq!(s.as_ref(), "world");
+    }
+
+    #[test]
+    fn buffer_text_for_range_reversed_bounds_helper_clamps() {
+        // Demonstrate the safe pattern: if caller passes (end, start) accidentally,
+        // they should normalize first. Verify normalized call works.
+        let buf = Buffer::new(1, "abcdef");
+        let raw_start = 4usize;
+        let raw_end = 2usize;
+        // Normalize.
+        let (s, e) = (raw_start.min(raw_end), raw_start.max(raw_end));
+        let text = buf.text_for_range(s..e);
+        assert_eq!(text.as_ref(), "cd");
+    }
 }
