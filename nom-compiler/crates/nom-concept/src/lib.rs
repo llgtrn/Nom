@@ -33,8 +33,9 @@ pub use strict::{
 pub mod stages;
 pub use lex::{Spanned, Tok};
 pub use stages::{
-    DefineThatExpr, NomxFormat, StageFailure, StageId, TokenStream, detect_format,
-    migrate_typed_to_natural, parse_define_that, stage1_tokenize,
+    ConceptNode, DefineThatExpr, NomxFormat, StageFailure, StageId, TokenStream,
+    define_that_to_concept_node, detect_format, migrate_typed_to_natural, parse_concept_source,
+    parse_define_that, stage1_tokenize,
 };
 
 pub mod flow_edge;
@@ -44,6 +45,11 @@ pub use flow_edge::{
 
 pub mod exhaustiveness;
 pub use exhaustiveness::{ExhaustivenessWarning, check_exhaustiveness};
+
+pub mod dream;
+pub use dream::{
+    DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind,
+};
 
 /// Closed kind set per doc 08 §8.1.
 ///
@@ -496,6 +502,61 @@ mod lex {
         /// Example: `@Function` → `AtKind("Function")`.
         /// Distinct from `At` (used for bare `@` before a hash hex-word).
         AtKind(String),
+    }
+
+    impl std::fmt::Display for Tok {
+        fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+            match self {
+                Tok::The => write!(f, "the"),
+                Tok::Is => write!(f, "is"),
+                Tok::Composes => write!(f, "composes"),
+                Tok::Then => write!(f, "then"),
+                Tok::With => write!(f, "with"),
+                Tok::Requires => write!(f, "requires"),
+                Tok::Ensures => write!(f, "ensures"),
+                Tok::Matching => write!(f, "matching"),
+                Tok::Benefit => write!(f, "benefit"),
+                Tok::Hazard => write!(f, "hazard"),
+                Tok::At => write!(f, "at"),
+                Tok::Dot => write!(f, "."),
+                Tok::Comma => write!(f, ","),
+                Tok::Intended => write!(f, "intended"),
+                Tok::To => write!(f, "to"),
+                Tok::Uses => write!(f, "uses"),
+                Tok::Extends => write!(f, "extends"),
+                Tok::Adding => write!(f, "adding"),
+                Tok::Removing => write!(f, "removing"),
+                Tok::Exposes => write!(f, "exposes"),
+                Tok::This => write!(f, "this"),
+                Tok::Works => write!(f, "works"),
+                Tok::When => write!(f, "when"),
+                Tok::Favor => write!(f, "favor"),
+                Tok::AtLeast => write!(f, "at-least"),
+                Tok::AtMost => write!(f, "at-most"),
+                Tok::Retry => write!(f, "retry"),
+                Tok::Format => write!(f, "format"),
+                Tok::Accesses => write!(f, "accesses"),
+                Tok::Shaped => write!(f, "shaped"),
+                Tok::Like => write!(f, "like"),
+                Tok::Field => write!(f, "field"),
+                Tok::Tagged => write!(f, "tagged"),
+                Tok::Watermark => write!(f, "watermark"),
+                Tok::Lag => write!(f, "lag"),
+                Tok::Seconds => write!(f, "seconds"),
+                Tok::Window => write!(f, "window"),
+                Tok::Clock => write!(f, "clock"),
+                Tok::Domain => write!(f, "domain"),
+                Tok::Mhz => write!(f, "mhz"),
+                Tok::Quality => write!(f, "quality"),
+                Tok::Define => write!(f, "define"),
+                Tok::That => write!(f, "that"),
+                Tok::NumberLit(n) => write!(f, "{n}"),
+                Tok::Kind(k) => write!(f, "{k}"),
+                Tok::Word(w) => write!(f, "{w}"),
+                Tok::Quoted(s) => write!(f, "\"{s}\""),
+                Tok::AtKind(k) => write!(f, "@{k}"),
+            }
+        }
     }
 
     /// Byte position in the source.

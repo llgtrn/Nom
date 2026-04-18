@@ -37,7 +37,7 @@ pub use backends::{
     document::DocumentBackend,
     embed_gen::EmbedGenBackend,
     export::ExportBackend,
-    image::ImageBackend,
+    image::{BlendMode, ImageBackend, ImageComposite, ImageLayer, PixelFormat},
     mesh::{MeshBackend, MeshPrimitive, MeshSpec},
     mobile_screen::{MobileScreenBackend, MobileScreenSpec},
     native_screen::{NativeScreenBackend, NativeScreenSpec},
@@ -47,7 +47,10 @@ pub use backends::{
     render::RenderBackend,
     scenario::ScenarioBackend,
     scenario_workflow::{compose as compose_scenario_workflow, ScenarioWorkflowSpec},
-    storyboard::{StoryboardBackend, StoryboardFrame, StoryboardSpec},
+    storyboard::{
+        Storyboard, StoryboardBackend, StoryboardFrame, StoryboardPanel, StoryboardSpec,
+        StoryboardTransition,
+    },
     transform::TransformBackend,
     video::VideoBackend,
     web_screen::WebScreenBackend,
@@ -62,7 +65,7 @@ pub use context::{
 };
 pub mod codec_validation;
 pub use codec_validation::{
-    VideoCodec as ValidationCodec, PixelFormat, validate_codec_pixel_format,
+    VideoCodec as ValidationCodec, PixelFormat as ValidationPixelFormat, validate_codec_pixel_format,
 };
 pub use dispatch::{Backend, BackendRegistry, NoopBackend, UnifiedDispatcher};
 pub use dispatch::ComposeContext as DispatchComposeContext;

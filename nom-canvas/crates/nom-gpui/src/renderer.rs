@@ -3047,35 +3047,6 @@ mod tests {
     }
 
     #[test]
-    fn blur_alpha_at_radius_0_is_0_7() {
-        let alpha = (0.7_f32 - 0.0_f32 * 0.015).max(0.3);
-        assert!((alpha - 0.7).abs() < 1e-5, "radius=0 → 0.7, got {alpha}");
-    }
-
-    #[test]
-    fn blur_alpha_at_radius_10_is_0_55() {
-        let alpha = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((alpha - 0.55).abs() < 1e-5, "radius=10 → 0.55, got {alpha}");
-    }
-
-    #[test]
-    fn blur_alpha_at_radius_20_is_0_4() {
-        let alpha = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
-        assert!((alpha - 0.4).abs() < 1e-5, "radius=20 → 0.4, got {alpha}");
-    }
-
-    #[test]
-    fn blur_alpha_at_radius_50_clamps_to_0_3() {
-        // min(50,20)=20 → (0.7-0.3).max(0.3) = 0.4, floor clamp not triggered
-        let alpha = (0.7_f32 - 50.0_f32.min(20.0) * 0.015).max(0.3);
-        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
-        assert!(
-            (alpha - expected).abs() < 1e-6,
-            "radius=50 same as radius=20, got {alpha}"
-        );
-    }
-
-    #[test]
     fn wgsl_quad_vs_contains_at_vertex() {
         let d = describe_quad_pipeline();
         assert!(

@@ -3106,6 +3106,81 @@ pub fn parse_define_that(tokens: &[Tok]) -> Result<DefineThatExpr, String> {
     }
 }
 
+// ── B1 (continued): ConceptNode + pipeline helpers ───────────────────────────
+
+/// The resolved form of a `define X that Y` statement.
+///
+/// `name` is the concept identifier; `body` is the prose that follows `that`.
+#[derive(Debug, Clone, PartialEq)]
+pub struct ConceptNode {
+    pub name: String,
+    pub body: String,
+}
+
+impl ConceptNode {
+    /// Construct a new node from string slices.
+    pub fn new(name: &str, body: &str) -> Self {
+        Self { name: name.to_string(), body: body.to_string() }
+    }
+
+    /// Returns `true` when the body contains no non-whitespace characters.
+    pub fn is_empty_body(&self) -> bool {
+        self.body.trim().is_empty()
+    }
+}
+
+/// Convert a `DefineThatExpr` into a `ConceptNode`.
+///
+/// The mapping is direct: `expr.name` → `node.name`,
+/// `expr.body` → `node.body`.
+pub fn define_that_to_concept_node(expr: &DefineThatExpr) -> ConceptNode {
+    ConceptNode { name: expr.name.clone(), body: expr.body.clone() }
+}
+
+/// Parse a multi-line source string into a `Vec<ConceptNode>`.
+///
+/// Each line is tokenized independently. Lines whose token stream matches
+/// the `define <name> that <body>` shape produce one `ConceptNode`.
+/// Lines that do not match (blank lines, comments, other declarations) are
+/// silently skipped — this is the correct resolver behavior for mixed-format
+/// `.nom` files where `define-that` lines coexist with other syntax.
+pub fn parse_concept_source(input: &str) -> Vec<ConceptNode> {
+    /// Render a single token as a human-readable surface string.
+    fn tok_text(tok: &Tok) -> String {
+        match tok {
+            Tok::Word(w) => w.clone(),
+            Tok::Quoted(q) => format!("\"{}\"", q),
+            Tok::NumberLit(n) => n.to_string(),
+            Tok::Kind(k) => k.clone(),
+            Tok::AtKind(k) => format!("@{k}"),
+            Tok::Dot => ".".to_string(),
+            // For any keyword token, fall back to the Debug tag — these are
+            // unlikely to appear in the body of a define-that line, but
+            // produce deterministic output if they do.
+            other => format!("{other:?}"),
+        }
+    }
+
+    let mut nodes = Vec::new();
+    for line in input.lines() {
+        let toks: Vec<Tok> = crate::lex::collect_all_tokens(line)
+            .into_iter()
+            .map(|s| s.tok)
+            .collect();
+        if let Ok(expr) = parse_define_that(&toks) {
+            // Re-derive the body as readable text.
+            // Skip the first three tokens (Define, Word(name), That).
+            let body_text = toks[3..]
+                .iter()
+                .map(tok_text)
+                .collect::<Vec<_>>()
+                .join(" ");
+            nodes.push(ConceptNode { name: expr.name, body: body_text });
+        }
+    }
+    nodes
+}
+
 // ── B2: .nomx migration helper ────────────────────────────────────────────────
 
 /// Convert Typed-format .nomx to Natural-format by replacing `->` with
@@ -4338,5 +4413,70 @@ the concept c_two is
         let out = super::migrate_typed_to_natural(src);
         assert!(out.contains("that"), "expected 'that' in: {out}");
         assert!(!out.contains("->"), "expected no '->' in: {out}");
+    }
+
+    // ── B1: ConceptNode + pipeline helpers ────────────────────────────────────
+
+    /// b1_define_that_to_concept_node: DefineThatExpr converts to ConceptNode
+    /// with matching name and body fields.
+    #[test]
+    fn test_b1_define_that_to_concept_node() {
+        let expr = super::DefineThatExpr {
+            name: "greet".into(),
+            body: "say hello".into(),
+        };
+        let node = super::define_that_to_concept_node(&expr);
+        assert_eq!(node.name, "greet");
+        assert_eq!(node.body, "say hello");
+    }
+
+    /// b1_concept_node_new_and_is_empty_body: ConceptNode::new + is_empty_body.
+    #[test]
+    fn test_b1_concept_node_new_and_is_empty_body() {
+        let filled = super::ConceptNode::new("greet", "say hello");
+        assert_eq!(filled.name, "greet");
+        assert!(!filled.is_empty_body(), "non-empty body must return false");
+
+        let empty = super::ConceptNode::new("noop", "");
+        assert!(empty.is_empty_body(), "empty body must return true");
+
+        let blank = super::ConceptNode::new("noop", "   ");
+        assert!(blank.is_empty_body(), "whitespace-only body must return true");
+    }
+
+    /// b1_parse_concept_source_single: one define-that line produces one ConceptNode.
+    #[test]
+    fn test_b1_parse_concept_source_single() {
+        let nodes = super::parse_concept_source("define greet that say hello");
+        assert_eq!(nodes.len(), 1, "expected 1 node, got: {:?}", nodes);
+        assert_eq!(nodes[0].name, "greet");
+    }
+
+    /// b1_parse_concept_source_multi: three define-that lines produce three nodes.
+    #[test]
+    fn test_b1_parse_concept_source_multi() {
+        let src = "define greet that say hello\ndefine add that sum two values\ndefine quit that exit program";
+        let nodes = super::parse_concept_source(src);
+        assert_eq!(nodes.len(), 3, "expected 3 nodes, got: {:?}", nodes);
+        assert_eq!(nodes[0].name, "greet");
+        assert_eq!(nodes[1].name, "add");
+        assert_eq!(nodes[2].name, "quit");
+    }
+
+    /// b1_parse_concept_source_mixed: non-define lines are silently skipped.
+    #[test]
+    fn test_b1_parse_concept_source_mixed() {
+        let src = "define greet that say hello\nthe function foo intent is bar.\nsome random text\ndefine quit that exit program";
+        let nodes = super::parse_concept_source(src);
+        assert_eq!(nodes.len(), 2, "expected 2 nodes from 2 define-that lines, got: {:?}", nodes);
+        assert_eq!(nodes[0].name, "greet");
+        assert_eq!(nodes[1].name, "quit");
+    }
+
+    /// b1_parse_concept_source_empty: empty input yields zero nodes.
+    #[test]
+    fn test_b1_parse_concept_source_empty() {
+        let nodes = super::parse_concept_source("");
+        assert!(nodes.is_empty(), "empty input must yield zero nodes");
     }
 }

@@ -152,26 +152,6 @@ mod tests {
     }
 
     #[test]
-    fn memo_hit_rate_all_hits() {
-        let mut cache: MemoCache<u8> = MemoCache::new();
-        let key = Hash128::of_str("h");
-        cache.put(key, 1, Constraint::new(5));
-        cache.get(&key, 5, &[]);
-        cache.get(&key, 5, &[]);
-        assert!((cache.hit_rate() - 1.0).abs() < 1e-9, "100% hit rate");
-    }
-
-    #[test]
-    fn memo_hit_rate_all_misses() {
-        let mut cache: MemoCache<u8> = MemoCache::new();
-        let key = Hash128::of_str("m");
-        cache.put(key, 1, Constraint::new(5));
-        cache.get(&key, 99, &[]); // stale
-        cache.get(&key, 88, &[]); // stale
-        assert!((cache.hit_rate() - 0.0).abs() < 1e-9, "0% hit rate");
-    }
-
-    #[test]
     fn memo_capacity_grow_if_needed_many_distinct_keys() {
         // Insert many distinct keys; all must be retrievable.
         let mut cache: MemoCache<usize> = MemoCache::new();

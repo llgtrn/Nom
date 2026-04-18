@@ -38,6 +38,81 @@ impl StoryboardSpec {
     }
 }
 
+// ── Storyboard pipeline types ────────────────────────────────────────────────
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum StoryboardTransition {
+    Cut,
+    Dissolve,
+    Wipe,
+    Fade,
+}
+
+#[derive(Debug, Clone)]
+pub struct StoryboardPanel {
+    pub index: u32,
+    pub description: String,
+    pub duration_ms: u64,
+    pub image_path: Option<String>,
+    pub transition: StoryboardTransition,
+}
+
+impl StoryboardPanel {
+    pub fn new(index: u32, description: &str, duration_ms: u64) -> Self {
+        Self {
+            index,
+            description: description.to_owned(),
+            duration_ms,
+            image_path: None,
+            transition: StoryboardTransition::Cut,
+        }
+    }
+
+    pub fn with_image(mut self, path: &str) -> Self {
+        self.image_path = Some(path.to_owned());
+        self
+    }
+
+    pub fn with_transition(mut self, t: StoryboardTransition) -> Self {
+        self.transition = t;
+        self
+    }
+}
+
+#[derive(Debug, Default)]
+pub struct Storyboard {
+    pub panels: Vec<StoryboardPanel>,
+    pub title: String,
+    pub fps: u32,
+}
+
+impl Storyboard {
+    pub fn new(title: &str) -> Self {
+        Self {
+            panels: Vec::new(),
+            title: title.to_owned(),
+            fps: 24,
+        }
+    }
+
+    pub fn push_panel(mut self, panel: StoryboardPanel) -> Self {
+        self.panels.push(panel);
+        self
+    }
+
+    pub fn total_duration_ms(&self) -> u64 {
+        self.panels.iter().map(|p| p.duration_ms).sum()
+    }
+
+    pub fn panel_count(&self) -> usize {
+        self.panels.len()
+    }
+
+    pub fn estimated_frames(&self) -> u64 {
+        (self.total_duration_ms() / 1000) * self.fps as u64
+    }
+}
+
 pub struct StoryboardBackend;
 
 impl StoryboardBackend {
@@ -95,6 +170,60 @@ mod tests {
     use super::*;
     use crate::progress::LogProgressSink;
     use crate::store::InMemoryStore;
+
+    // ── StoryboardPanel / Storyboard pipeline tests ───────────────────────────
+
+    #[test]
+    fn storyboard_pipeline_new_defaults() {
+        let sb = Storyboard::new("promo");
+        assert_eq!(sb.title, "promo");
+        assert_eq!(sb.fps, 24);
+        assert_eq!(sb.panel_count(), 0);
+    }
+
+    #[test]
+    fn storyboard_pipeline_push_panel() {
+        let sb = Storyboard::new("clip")
+            .push_panel(StoryboardPanel::new(0, "Opening scene", 2000))
+            .push_panel(StoryboardPanel::new(1, "Main action", 4000));
+        assert_eq!(sb.panel_count(), 2);
+    }
+
+    #[test]
+    fn storyboard_pipeline_total_duration_ms() {
+        let sb = Storyboard::new("film")
+            .push_panel(StoryboardPanel::new(0, "Act 1", 3000))
+            .push_panel(StoryboardPanel::new(1, "Act 2", 5000))
+            .push_panel(StoryboardPanel::new(2, "Act 3", 2000));
+        assert_eq!(sb.total_duration_ms(), 10_000);
+    }
+
+    #[test]
+    fn storyboard_pipeline_panel_count() {
+        let mut sb = Storyboard::new("teaser");
+        assert_eq!(sb.panel_count(), 0);
+        sb = sb.push_panel(StoryboardPanel::new(0, "Intro", 1000));
+        assert_eq!(sb.panel_count(), 1);
+    }
+
+    #[test]
+    fn storyboard_pipeline_estimated_frames() {
+        let sb = Storyboard::new("short")
+            .push_panel(StoryboardPanel::new(0, "Scene A", 2000))
+            .push_panel(StoryboardPanel::new(1, "Scene B", 3000));
+        // total 5000 ms / 1000 * 24 fps = 120 frames
+        assert_eq!(sb.estimated_frames(), 120);
+    }
+
+    #[test]
+    fn storyboard_panel_builder_methods() {
+        let panel = StoryboardPanel::new(0, "fade in", 1500)
+            .with_image("/frames/00.png")
+            .with_transition(StoryboardTransition::Fade);
+        assert_eq!(panel.image_path.as_deref(), Some("/frames/00.png"));
+        assert_eq!(panel.transition, StoryboardTransition::Fade);
+        assert_eq!(panel.duration_ms, 1500);
+    }
 
     #[test]
     fn storyboard_total_duration() {

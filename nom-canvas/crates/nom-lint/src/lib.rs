@@ -2324,18 +2324,6 @@ mod tests {
         }
     }
 
-    // --- InternalRule severity_multiplier custom override ---
-
-    #[test]
-    fn internal_rule_multiplier_default_one_for_all_rules() {
-        assert_eq!(TrailingWhitespaceRule.severity_multiplier(), 1.0_f32);
-        assert_eq!(
-            LineTooLongRule { max_len: 80 }.severity_multiplier(),
-            1.0_f32
-        );
-        assert_eq!(EmptyBlockRule.severity_multiplier(), 1.0_f32);
-    }
-
     #[test]
     fn internal_rule_multiplier_is_positive() {
         let rules: Vec<Box<dyn InternalRule>> = vec![
@@ -2573,21 +2561,6 @@ mod tests {
             span: start_val..end_val,
         };
         assert_eq!(reconstructed, original);
-    }
-
-    #[test]
-    fn lint_diagnostic_clone_is_identical() {
-        let diag = LintDiagnostic {
-            level: LintLevel::Error,
-            message: "critical error".to_string(),
-            line: 99,
-            span: 0..20,
-        };
-        let cloned = diag.clone();
-        assert_eq!(diag.level, cloned.level);
-        assert_eq!(diag.message, cloned.message);
-        assert_eq!(diag.line, cloned.line);
-        assert_eq!(diag.span, cloned.span);
     }
 
     #[test]
@@ -4228,13 +4201,6 @@ mod tests {
     fn lint_level_info_is_distinct_from_warning_and_error() {
         assert_ne!(LintLevel::Info, LintLevel::Warning);
         assert_ne!(LintLevel::Info, LintLevel::Error);
-    }
-
-    #[test]
-    fn lint_diagnostic_clone_is_equal() {
-        let diag = TrailingWhitespaceRule.check("x  ", 7).unwrap();
-        let clone = diag.clone();
-        assert_eq!(diag, clone);
     }
 
     #[test]

@@ -984,3 +984,244 @@ mod tests {
         assert_eq!(AudioCodec::FlacStub.to_string(), name);
     }
 }
+
+// ── Playback pipeline stub ────────────────────────────────────────────────────
+
+/// Supported source formats for the playback pipeline.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum AudioFormat {
+    Wav,
+    Mp3,
+    Ogg,
+    Flac,
+    Aac,
+}
+
+/// Describes an audio source file ready for playback.
+#[derive(Debug, Clone)]
+pub struct AudioSource {
+    pub path: String,
+    pub format: AudioFormat,
+    /// Samples per second, e.g. 44100.
+    pub sample_rate: u32,
+    /// 1 = mono, 2 = stereo.
+    pub channels: u8,
+    pub duration_ms: Option<u64>,
+}
+
+impl AudioSource {
+    /// Create a new source with default sample_rate=44100 and channels=2.
+    pub fn new(path: &str, format: AudioFormat) -> Self {
+        Self {
+            path: path.to_owned(),
+            format,
+            sample_rate: 44100,
+            channels: 2,
+            duration_ms: None,
+        }
+    }
+
+    pub fn with_sample_rate(mut self, rate: u32) -> Self {
+        self.sample_rate = rate;
+        self
+    }
+
+    pub fn with_duration(mut self, ms: u64) -> Self {
+        self.duration_ms = Some(ms);
+        self
+    }
+
+    pub fn is_stereo(&self) -> bool {
+        self.channels == 2
+    }
+}
+
+/// Playback lifecycle states.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum PlaybackState {
+    Stopped,
+    Playing,
+    Paused,
+}
+
+/// Wraps a source with runtime playback controls.
+#[derive(Debug, Clone)]
+pub struct AudioPlayback {
+    pub source: AudioSource,
+    pub state: PlaybackState,
+    /// Linear volume in 0.0..=1.0.
+    pub volume: f32,
+    /// Current playback position in milliseconds.
+    pub position_ms: u64,
+    pub looping: bool,
+}
+
+impl AudioPlayback {
+    pub fn new(source: AudioSource) -> Self {
+        Self {
+            source,
+            state: PlaybackState::Stopped,
+            volume: 1.0,
+            position_ms: 0,
+            looping: false,
+        }
+    }
+
+    pub fn play(mut self) -> Self {
+        self.state = PlaybackState::Playing;
+        self
+    }
+
+    pub fn pause(mut self) -> Self {
+        self.state = PlaybackState::Paused;
+        self
+    }
+
+    pub fn stop(mut self) -> Self {
+        self.state = PlaybackState::Stopped;
+        self.position_ms = 0;
+        self
+    }
+
+    /// Clamp volume to 0.0..=1.0.
+    pub fn set_volume(mut self, v: f32) -> Self {
+        self.volume = v.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn set_looping(mut self, looping: bool) -> Self {
+        self.looping = looping;
+        self
+    }
+
+    pub fn is_active(&self) -> bool {
+        self.state == PlaybackState::Playing
+    }
+}
+
+/// Multi-track mixer with a master volume fader.
+#[derive(Debug, Default)]
+pub struct AudioMixer {
+    pub tracks: Vec<AudioPlayback>,
+    pub master_volume: f32,
+}
+
+impl AudioMixer {
+    pub fn new() -> Self {
+        Self {
+            tracks: Vec::new(),
+            master_volume: 1.0,
+        }
+    }
+
+    pub fn add_track(mut self, track: AudioPlayback) -> Self {
+        self.tracks.push(track);
+        self
+    }
+
+    pub fn active_tracks(&self) -> Vec<&AudioPlayback> {
+        self.tracks.iter().filter(|t| t.is_active()).collect()
+    }
+
+    /// Clamp master volume to 0.0..=1.0.
+    pub fn set_master_volume(mut self, v: f32) -> Self {
+        self.master_volume = v.clamp(0.0, 1.0);
+        self
+    }
+
+    pub fn stop_all(mut self) -> Self {
+        self.tracks = self.tracks.into_iter().map(|t| t.stop()).collect();
+        self
+    }
+}
+
+#[cfg(test)]
+mod playback_tests {
+    use super::{AudioFormat, AudioMixer, AudioPlayback, AudioSource, PlaybackState};
+
+    fn make_source(path: &str) -> AudioSource {
+        AudioSource::new(path, AudioFormat::Wav)
+    }
+
+    #[test]
+    fn audio_source_new_is_stereo() {
+        let src = make_source("clip.wav");
+        assert_eq!(src.path, "clip.wav");
+        assert_eq!(src.format, AudioFormat::Wav);
+        assert_eq!(src.sample_rate, 44100);
+        assert_eq!(src.channels, 2);
+        assert!(src.is_stereo());
+    }
+
+    #[test]
+    fn audio_source_with_sample_rate_and_duration() {
+        let src = make_source("track.wav")
+            .with_sample_rate(48000)
+            .with_duration(3000);
+        assert_eq!(src.sample_rate, 48000);
+        assert_eq!(src.duration_ms, Some(3000));
+    }
+
+    #[test]
+    fn playback_new_and_play() {
+        let pb = AudioPlayback::new(make_source("a.wav"));
+        assert_eq!(pb.state, PlaybackState::Stopped);
+        assert_eq!(pb.volume, 1.0);
+        let pb = pb.play();
+        assert_eq!(pb.state, PlaybackState::Playing);
+        assert!(pb.is_active());
+    }
+
+    #[test]
+    fn playback_pause_and_stop() {
+        let pb = AudioPlayback::new(make_source("b.wav")).play().pause();
+        assert_eq!(pb.state, PlaybackState::Paused);
+        assert!(!pb.is_active());
+        let pb = pb.stop();
+        assert_eq!(pb.state, PlaybackState::Stopped);
+        assert_eq!(pb.position_ms, 0);
+    }
+
+    #[test]
+    fn playback_set_volume_clamped() {
+        let pb_hi = AudioPlayback::new(make_source("c.wav")).set_volume(2.5);
+        assert_eq!(pb_hi.volume, 1.0);
+        let pb_lo = AudioPlayback::new(make_source("c.wav")).set_volume(-0.5);
+        assert_eq!(pb_lo.volume, 0.0);
+        let pb_mid = AudioPlayback::new(make_source("c.wav")).set_volume(0.7);
+        assert!((pb_mid.volume - 0.7).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn playback_is_active_only_when_playing() {
+        let playing = AudioPlayback::new(make_source("d.wav")).play();
+        assert!(playing.is_active());
+        let paused = playing.pause();
+        assert!(!paused.is_active());
+        let stopped = paused.stop();
+        assert!(!stopped.is_active());
+    }
+
+    #[test]
+    fn mixer_new_add_track_active_tracks() {
+        let t1 = AudioPlayback::new(make_source("e.wav")).play();
+        let t2 = AudioPlayback::new(make_source("f.wav")); // Stopped
+        let mixer = AudioMixer::new().add_track(t1).add_track(t2);
+        assert_eq!(mixer.tracks.len(), 2);
+        assert_eq!(mixer.master_volume, 1.0);
+        let active = mixer.active_tracks();
+        assert_eq!(active.len(), 1);
+    }
+
+    #[test]
+    fn mixer_stop_all() {
+        let t1 = AudioPlayback::new(make_source("g.wav")).play();
+        let t2 = AudioPlayback::new(make_source("h.wav")).play();
+        let mixer = AudioMixer::new().add_track(t1).add_track(t2).stop_all();
+        assert_eq!(mixer.active_tracks().len(), 0);
+        for track in &mixer.tracks {
+            assert_eq!(track.state, PlaybackState::Stopped);
+            assert_eq!(track.position_ms, 0);
+        }
+    }
+}

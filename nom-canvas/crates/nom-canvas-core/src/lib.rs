@@ -25,6 +25,9 @@ pub mod viewport;
 /// WebGPU renderer variant for WASM targets.
 pub mod webgpu;
 pub use webgpu::{WebGpuConfig, WebGpuPowerPreference, WebGpuRenderer};
+/// Frosted-glass render pass descriptor (two-pass blur for panel backgrounds).
+pub mod frosted_pass;
+pub use frosted_pass::{FrostedPassConfig, FrostedPassState, FrostedRenderPass};
 
 #[cfg(test)]
 mod integration_tests {
