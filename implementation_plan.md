@@ -131,7 +131,7 @@ Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestra
 | Waves AF–AK | `8088889` | 6743 | Minimalist UI + 5 coverage waves (+3902 tests) |
 | Wave AL | `778b085` | 7241 | CommandStack + CRDT GC + panel serialization (+498 tests) |
 | Waves AM–AO | `679ce6b` | 8384 | DB-driven palette/library/SQL inject/CRDT fix/spatial/frame/theme (+1143 tests) |
-| Wave AP | uncommitted | 8391 | **ALL 4 CRITICALS FIXED**: renderer renders pixels, BackendKind deleted, GrammarKind.status, TaffyTree, atlas LRU, 21 items closed (+7 tests) |
+| Wave AP | `6ee53c6` | 8391 | **ALL 4 CRITICALS FIXED**: renderer renders pixels, BackendKind deleted, GrammarKind.status, TaffyTree, atlas LRU, 21 items closed (+7 tests) |
 
 ## Non-Negotiable Rules
 

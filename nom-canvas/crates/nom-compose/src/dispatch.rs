@@ -4,9 +4,21 @@ use std::collections::HashMap;
 
 use crate::store::ArtifactStore as _;
 
+/// Self-description of a backend, inspired by n8n's INodeTypeDescription.
+#[derive(Debug, Clone)]
+pub struct BackendDescriptor {
+    pub kind: String,
+    pub display_name: String,
+    pub version: u32,
+    pub description: String,
+    pub inputs: Vec<String>,
+    pub outputs: Vec<String>,
+}
+
 /// Trait every compose backend must implement.
 pub trait Backend: Send + Sync {
     fn kind(&self) -> String;
+    fn describe(&self) -> BackendDescriptor;
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String>;
 }
 
@@ -69,6 +81,16 @@ impl Backend for NoopBackend {
     fn kind(&self) -> String {
         self.kind.clone()
     }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: self.kind.clone(),
+            display_name: self.kind.clone(),
+            version: 1,
+            description: format!("Noop backend for kind: {}", self.kind),
+            inputs: vec!["*".to_string()],
+            outputs: vec!["*".to_string()],
+        }
+    }
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
         Ok(format!("{}:{}", self.kind, input))
@@ -82,6 +104,16 @@ impl Backend for NoopBackend {
 impl Backend for crate::backends::video::VideoBackend {
     fn kind(&self) -> String {
         "video".to_string()
+    }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "video".to_string(),
+            display_name: "Video Composer".to_string(),
+            version: 1,
+            description: "Composes raw video frames into a video artifact.".to_string(),
+            inputs: vec!["frame/raw".to_string()],
+            outputs: vec!["video/y4m".to_string()],
+        }
     }
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::video::{ContainerFormat, VideoBackend, VideoCodec, VideoInput};
@@ -112,6 +144,16 @@ impl Backend for crate::backends::audio::AudioBackend {
     fn kind(&self) -> String {
         "audio".to_string()
     }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "audio".to_string(),
+            display_name: "Audio Composer".to_string(),
+            version: 1,
+            description: "Composes PCM samples into an audio artifact.".to_string(),
+            inputs: vec!["audio/pcm".to_string()],
+            outputs: vec!["audio/wav".to_string()],
+        }
+    }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::audio::{AudioBackend, AudioCodec, AudioContainer, AudioInput};
         use crate::store::InMemoryStore;
@@ -138,6 +180,16 @@ impl Backend for crate::backends::audio::AudioBackend {
 impl Backend for crate::backends::document::DocumentBackend {
     fn kind(&self) -> String {
         "document".to_string()
+    }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "document".to_string(),
+            display_name: "Document Composer".to_string(),
+            version: 1,
+            description: "Composes content blocks into a document artifact.".to_string(),
+            inputs: vec!["text/plain".to_string(), "text/html".to_string()],
+            outputs: vec!["text/plain".to_string(), "text/html".to_string()],
+        }
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::document::{DocumentBackend, DocumentInput};
@@ -166,6 +218,16 @@ impl Backend for crate::backends::export::ExportBackend {
     fn kind(&self) -> String {
         "export".to_string()
     }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "export".to_string(),
+            display_name: "Export Backend".to_string(),
+            version: 1,
+            description: "Exports an artifact to an external format.".to_string(),
+            inputs: vec!["*".to_string()],
+            outputs: vec!["application/octet-stream".to_string()],
+        }
+    }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::export::{ExportBackend, ExportInput};
         use crate::store::InMemoryStore;
@@ -193,6 +255,16 @@ impl Backend for crate::backends::export::ExportBackend {
 impl Backend for crate::backends::rag_query::RagQueryBackend {
     fn kind(&self) -> String {
         "rag_query".to_string()
+    }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "rag_query".to_string(),
+            display_name: "RAG Query Backend".to_string(),
+            version: 1,
+            description: "Retrieves and ranks document chunks for a query.".to_string(),
+            inputs: vec!["text/query".to_string()],
+            outputs: vec!["text/chunks".to_string()],
+        }
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::rag_query::{RagChunk, RagQueryBackend, RagQueryInput};
@@ -226,6 +298,16 @@ impl Backend for crate::backends::mobile_screen::MobileScreenBackend {
     fn kind(&self) -> String {
         "web_screen".to_string()
     }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "web_screen".to_string(),
+            display_name: "Mobile Screen Backend".to_string(),
+            version: 1,
+            description: "Renders a mobile screen layout artifact.".to_string(),
+            inputs: vec!["screen/spec".to_string()],
+            outputs: vec!["image/png".to_string()],
+        }
+    }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::mobile_screen::{MobileScreenBackend, MobileScreenSpec};
         use crate::store::InMemoryStore;
@@ -245,6 +327,16 @@ impl Backend for crate::backends::mobile_screen::MobileScreenBackend {
 impl Backend for crate::backends::native_screen::NativeScreenBackend {
     fn kind(&self) -> String {
         "render".to_string()
+    }
+    fn describe(&self) -> BackendDescriptor {
+        BackendDescriptor {
+            kind: "render".to_string(),
+            display_name: "Native Screen Backend".to_string(),
+            version: 1,
+            description: "Renders a native desktop screen artifact.".to_string(),
+            inputs: vec!["screen/spec".to_string()],
+            outputs: vec!["image/png".to_string()],
+        }
     }
     fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
         use crate::backends::native_screen::{NativeScreenBackend, NativeScreenSpec};
@@ -308,12 +400,14 @@ pub struct UnifiedDispatcher {
         String,
         Box<dyn Fn(&ComposeContext) -> Result<String, String> + Send + Sync>,
     >,
+    descriptors: std::collections::HashMap<String, BackendDescriptor>,
 }
 
 impl UnifiedDispatcher {
     pub fn new() -> Self {
         Self {
             handlers: std::collections::HashMap::new(),
+            descriptors: std::collections::HashMap::new(),
         }
     }
 
@@ -324,6 +418,19 @@ impl UnifiedDispatcher {
     ) {
         self.handlers
             .insert(kind_name.to_string(), Box::new(handler));
+    }
+
+    /// Register a backend by trait object, storing its descriptor alongside the handler.
+    pub fn register_backend(&mut self, backend: Box<dyn Backend>) {
+        let kind = backend.kind();
+        let descriptor = backend.describe();
+        self.handlers.insert(kind.clone(), Box::new(move |ctx| backend.compose(&ctx.entity_id, &|_| {})));
+        self.descriptors.insert(kind, descriptor);
+    }
+
+    /// List descriptors for all registered backends that have one.
+    pub fn list_backends(&self) -> Vec<BackendDescriptor> {
+        self.descriptors.values().cloned().collect()
     }
 
     pub fn dispatch(&self, ctx: &ComposeContext) -> Result<String, String> {

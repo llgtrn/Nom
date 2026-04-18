@@ -1,3 +1,5 @@
+use crate::elements::ElementBounds;
+use crate::spatial_index::SpatialIndex;
 use nom_gpui::types::{Bounds, Pixels, Point, Size};
 
 /// Infinite-canvas viewport: maps between screen and canvas coordinate systems.
@@ -5,7 +7,10 @@ use nom_gpui::types::{Bounds, Pixels, Point, Size};
 /// Coordinate convention (matches Excalidraw):
 ///   screen_to_canvas(pt) = (pt - size/2 - pan) / zoom
 ///   canvas_to_screen(pt) = pt * zoom + pan + size/2
-#[derive(Debug, Clone)]
+///
+/// Note: `Clone` is implemented manually.  The cloned `spatial_index` is empty;
+/// re-insert elements after cloning if the index contents matter.
+#[derive(Debug)]
 pub struct Viewport {
     /// Zoom level, clamped to [0.1, 32.0]
     pub zoom: f32,
@@ -13,6 +18,22 @@ pub struct Viewport {
     pub pan: [f32; 2],
     /// Screen dimensions in pixels
     pub size: [f32; 2],
+    /// Spatial index for O(log n) element lookup by canvas-space bounds.
+    pub spatial_index: SpatialIndex,
+}
+
+// `rstar::RTree` is not `Clone`, so we implement `Clone` manually.
+// The cloned viewport preserves zoom/pan/size but starts with an empty
+// spatial index — re-insert elements into the clone if needed.
+impl Clone for Viewport {
+    fn clone(&self) -> Self {
+        Self {
+            zoom: self.zoom,
+            pan: self.pan,
+            size: self.size,
+            spatial_index: SpatialIndex::new(),
+        }
+    }
 }
 
 impl Viewport {
@@ -22,7 +43,20 @@ impl Viewport {
             zoom: 1.0,
             pan: [0.0, 0.0],
             size: [width, height],
+            spatial_index: SpatialIndex::new(),
         }
+    }
+
+    /// Insert an element into the spatial index.
+    pub fn insert_element(&mut self, bounds: ElementBounds) {
+        self.spatial_index.insert(bounds);
+    }
+
+    /// Return all element IDs whose canvas-space bounds intersect the current
+    /// visible viewport region.
+    pub fn elements_in_view(&self) -> Vec<u64> {
+        let (tl, br) = self.visible_bounds();
+        self.spatial_index.query_in_bounds(tl, br)
     }
 
     /// Convert a screen-space point to canvas-space.

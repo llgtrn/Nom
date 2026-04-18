@@ -10,6 +10,7 @@ use crate::elements::ElementBounds;
 
 /// Thin wrapper around `ElementBounds` that satisfies rstar's `RTreeObject`
 /// and `PointDistance` traits.
+#[derive(Debug)]
 pub struct CanvasElementEnvelope {
     /// Element identifier.
     pub id: u64,
@@ -41,6 +42,7 @@ impl PartialEq for CanvasElementEnvelope {
 // ─── SpatialIndex ────────────────────────────────────────────────────────────
 
 /// O(log n) spatial index for canvas elements.
+#[derive(Debug)]
 pub struct SpatialIndex {
     tree: RTree<CanvasElementEnvelope>,
 }

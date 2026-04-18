@@ -619,13 +619,24 @@ impl Renderer {
         if !self.in_frame {
             return Err(FrameError::NotInFrame);
         }
-        if let Some(gpu) = self.gpu.as_mut() {
+        if let Some(gpu) = self.gpu.as_ref() {
             if !self.pending_quads.is_empty() {
                 let bytes = bytemuck::cast_slice(self.pending_quads.as_slice());
-                gpu.queue.write_buffer(&gpu.instance_buffer, 0, bytes);
+                queue.write_buffer(&gpu.instance_buffer, 0, bytes);
             }
         }
-        let output = surface.get_current_texture().unwrap();
+        let output = match surface.get_current_texture() {
+            Ok(tex) => tex,
+            Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated) => {
+                // Surface needs reconfigure — skip this frame
+                return Ok(());
+            }
+            Err(wgpu::SurfaceError::Timeout) => return Ok(()),
+            Err(wgpu::SurfaceError::OutOfMemory) => {
+                eprintln!("[nom-gpui] GPU out of memory — cannot present frame");
+                return Ok(());
+            }
+        };
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());

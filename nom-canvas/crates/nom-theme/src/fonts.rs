@@ -4,10 +4,9 @@ use nom_gpui::FontId;
 /// Registry of font IDs loaded into the cosmic-text FontSystem.
 ///
 /// In full window initialization these IDs map to actual loaded font faces.
-/// `placeholder()` returns sequential sentinel IDs for compile-time wiring;
-/// replace with the results of `FontSystem::db_mut().load_font_data(...)` at
-/// window creation time.
-#[derive(Clone)]
+/// `placeholder()` returns sequential sentinel IDs for compile-time wiring.
+/// `new()` initializes a real `cosmic_text::FontSystem` and loads font data
+/// from the embedded byte constants into it.
 pub struct FontRegistry {
     pub inter_regular: FontId,
     pub inter_medium: FontId,
@@ -18,10 +17,75 @@ pub struct FontRegistry {
     pub libre_baskerville_regular: FontId,
     pub eb_garamond_regular: FontId,
     pub berkeley_mono_regular: FontId,
+    /// Initialized cosmic-text FontSystem with all registry fonts loaded.
+    /// `placeholder()` leaves this as a default (empty) system; `new()` loads
+    /// the embedded font bytes into it.
+    pub font_system: cosmic_text::FontSystem,
 }
 
+// `cosmic_text::FontSystem` is not `Clone`.  We implement `Clone` manually by
+// creating a fresh (empty) FontSystem for the clone — the integer font IDs are
+// preserved.  Use `FontRegistry::new()` when you need a system with fonts loaded.
+impl Clone for FontRegistry {
+    fn clone(&self) -> Self {
+        Self {
+            inter_regular: self.inter_regular,
+            inter_medium: self.inter_medium,
+            inter_semibold: self.inter_semibold,
+            inter_bold: self.inter_bold,
+            source_code_pro_regular: self.source_code_pro_regular,
+            source_code_pro_semibold: self.source_code_pro_semibold,
+            libre_baskerville_regular: self.libre_baskerville_regular,
+            eb_garamond_regular: self.eb_garamond_regular,
+            berkeley_mono_regular: self.berkeley_mono_regular,
+            font_system: cosmic_text::FontSystem::new(),
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Embedded font data
+// ---------------------------------------------------------------------------
+
+// TODO: replace these empty slices with real embedded font bytes once the
+// asset files are added to nom-theme/assets/.  e.g.:
+//   const INTER_REGULAR_BYTES: &[u8] = include_bytes!("../assets/Inter-Regular.ttf");
+const INTER_REGULAR_BYTES: &[u8] = &[];
+const LIBRE_BASKERVILLE_BYTES: &[u8] = &[];
+const BERKELEY_MONO_BYTES: &[u8] = &[];
+
 impl FontRegistry {
-    /// Placeholder registry — sequential IDs, no font data loaded.
+    /// Creates a `FontRegistry` with a fully-initialized `cosmic_text::FontSystem`.
+    ///
+    /// Loads embedded font bytes for Inter, Libre Baskerville, and Berkeley Mono into
+    /// the system database.  Font IDs are the same sequential sentinels as
+    /// `placeholder()`; swap them for real IDs from the DB at window-creation time.
+    pub fn new() -> Self {
+        let mut font_system = cosmic_text::FontSystem::new();
+        if !INTER_REGULAR_BYTES.is_empty() {
+            font_system.db_mut().load_font_data(INTER_REGULAR_BYTES.to_vec());
+        }
+        if !LIBRE_BASKERVILLE_BYTES.is_empty() {
+            font_system.db_mut().load_font_data(LIBRE_BASKERVILLE_BYTES.to_vec());
+        }
+        if !BERKELEY_MONO_BYTES.is_empty() {
+            font_system.db_mut().load_font_data(BERKELEY_MONO_BYTES.to_vec());
+        }
+        Self {
+            inter_regular: 0,
+            inter_medium: 1,
+            inter_semibold: 2,
+            inter_bold: 3,
+            source_code_pro_regular: 4,
+            source_code_pro_semibold: 5,
+            libre_baskerville_regular: 6,
+            eb_garamond_regular: 7,
+            berkeley_mono_regular: 8,
+            font_system,
+        }
+    }
+
+    /// Placeholder registry — sequential IDs, empty FontSystem (no font data loaded).
     /// Real loading happens in Window init via cosmic_text FontSystem.
     pub fn placeholder() -> Self {
         Self {
@@ -34,6 +98,7 @@ impl FontRegistry {
             libre_baskerville_regular: 6,
             eb_garamond_regular: 7,
             berkeley_mono_regular: 8,
+            font_system: cosmic_text::FontSystem::new(),
         }
     }
 }

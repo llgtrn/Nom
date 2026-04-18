@@ -11,4 +11,14 @@ path = "src/lib.rs"
 name = "nom-canvas"
 path = "src/main.rs"
 
+[features]
+serve = ["dep:axum", "dep:tokio"]
+
 [dependencies]
+axum = { version = "0.7", optional = true }
+tokio = { version = "1", features = ["full"], optional = true }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[dev-dependencies]
+tower = "0.5"

@@ -2,7 +2,7 @@
 use crate::cache::{ChangedFlags, ExecutionCache};
 use crate::dag::Dag;
 use crate::node::{ExecNode, IsChanged, NodeId};
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
@@ -13,6 +13,27 @@ pub struct NodeOutput {
     pub outputs: HashMap<String, Vec<u8>>, // port_name -> serialized output bytes
     pub cache_key: u64,
     pub was_cached: bool,
+}
+
+/// Collect all transitive ancestors of `node` (inclusive) via DFS over incoming edges.
+/// The returned list is sorted for deterministic cache-key derivation.
+pub fn collect_ancestors(dag: &Dag, node: &NodeId, visited: &mut HashSet<NodeId>) -> Vec<NodeId> {
+    if visited.contains(node) {
+        return vec![];
+    }
+    visited.insert(node.clone());
+    let mut ancestors = vec![node.clone()];
+    let parents: Vec<NodeId> = dag
+        .edges
+        .iter()
+        .filter(|e| &e.dst_node == node)
+        .map(|e| e.src_node.clone())
+        .collect();
+    for parent in parents {
+        ancestors.extend(collect_ancestors(dag, &parent, visited));
+    }
+    ancestors.sort();
+    ancestors
 }
 
 /// Execution engine: runs a DAG in topological order with caching
@@ -92,14 +113,16 @@ impl ExecutionEngine {
                 break;
             }
             if let Some(node) = dag.nodes.get(node_id) {
-                // Collect upstream output hashes as the combined input hash.
-                let input_hash = dag
-                    .edges
+                // Collect all transitive ancestors (excluding this node itself) and
+                // combine their cached output hashes into one deterministic input hash.
+                let mut visited = HashSet::new();
+                let all_ancestors = collect_ancestors(dag, node_id, &mut visited);
+                let input_hash = all_ancestors
                     .iter()
-                    .filter(|e| &e.dst_node == node_id)
-                    .fold(0u64, |acc, edge| {
+                    .filter(|id| *id != node_id)
+                    .fold(0u64, |acc, ancestor_id| {
                         let upstream_hash = results
-                            .get(&edge.src_node)
+                            .get(ancestor_id)
                             .map(|o| o.cache_key)
                             .unwrap_or(0);
                         acc.wrapping_add(upstream_hash.rotate_left(17))
@@ -165,6 +188,47 @@ impl ExecutionEngine {
 mod tests {
     use super::*;
     use crate::cache::BasicCache;
+
+    #[test]
+    fn test_transitive_ancestry_cache_key() {
+        // Chain: A -> B -> C
+        // Ancestry of C must include A and B (not just B).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+
+        let mut visited = HashSet::new();
+        let ancestors = collect_ancestors(&dag, &"c".to_string(), &mut visited);
+        assert!(ancestors.contains(&"a".to_string()), "a must be a transitive ancestor of c");
+        assert!(ancestors.contains(&"b".to_string()), "b must be a direct ancestor of c");
+        assert!(ancestors.contains(&"c".to_string()), "c is included (self)");
+        assert_eq!(ancestors.len(), 3);
+    }
+
+    #[test]
+    fn test_transitive_ancestry_no_duplicates() {
+        // Diamond: A -> B, A -> C, B -> D, C -> D
+        // Ancestry of D must include A exactly once.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_node(ExecNode::new("d", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("a", "out", "c", "in");
+        dag.add_edge("b", "out", "d", "in");
+        dag.add_edge("c", "out", "d", "in");
+
+        let mut visited = HashSet::new();
+        let ancestors = collect_ancestors(&dag, &"d".to_string(), &mut visited);
+        // All four nodes, each exactly once.
+        assert_eq!(ancestors.len(), 4);
+        let a_count = ancestors.iter().filter(|id| id.as_str() == "a").count();
+        assert_eq!(a_count, 1, "a must appear exactly once despite diamond topology");
+    }
 
     #[test]
     fn cache_key_deterministic() {
