@@ -42,3 +42,5 @@ pub mod wasm_bridge;
 pub use wasm_bridge::{WasmBridge, WasmFeatureGate, WasmModule, WasmTarget};
 pub mod flow_replay;
 pub use flow_replay::{ReplaySpeed, FlowReplayEntry, FlowReplay, ReplayController, ReplaySnapshot};
+pub mod semantic_cache;
+pub use semantic_cache::{SemanticKey, SemanticEntry, CacheEviction, SemanticCache, CacheStats};

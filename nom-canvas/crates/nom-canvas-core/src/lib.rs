@@ -80,6 +80,10 @@ pub use theme::{ThemeEntry, ThemeMode, ThemeToggle, ThemeTokenMap};
 pub mod animation_card;
 pub use animation_card::{AnimationCard, CardAnimator, CardKeyframe, CardState, CardTimeline};
 
+/// Region-level pixel diff: spatial regions, change ratios, thresholds, and diff reports.
+pub mod pixel_diff;
+pub use pixel_diff::{DiffReport, DiffThreshold, PixelDiff, PixelRegion, RegionDiffer};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

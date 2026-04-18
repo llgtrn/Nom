@@ -43,3 +43,5 @@ pub use hover_tooltip::{TooltipKind, TooltipContent, TooltipAnchor, HoverTooltip
 pub use diagnostic_squiggle::{DiagnosticSeverity, DiagnosticSpan, DiagnosticOverlay, SquiggleStyle};
 pub mod go_to_def;
 pub use go_to_def::{DefinitionKind, DefinitionLocation, DefinitionTarget, GoToDefRequest, GoToDefResolver};
+pub mod rename_preview;
+pub use rename_preview::{RenamePreviewKind, RenameChange, RenamePreviewModel, RenameConflict, RenameApplier};

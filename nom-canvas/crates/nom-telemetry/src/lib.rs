@@ -4,12 +4,14 @@ pub mod event_log;
 pub mod export;
 pub mod metrics;
 pub mod metrics_deep;
+pub mod perf_counter;
 pub mod spans;
 pub mod span_aggregator;
 pub mod trace_export;
 pub use event_log::{EventKind as LogEventKind, LoggedEvent, EventLog, EventLogStore};
 pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};
+pub use perf_counter::{CounterKind, PerfCounter, CounterSnapshot, CounterRegistry, RateCalculator};
 pub use span_aggregator::{P95Calculator, SpanAggregator, SpanSample, TraceReport};
 pub use trace_export::{JaegerSpan, OpenTelemetrySpan, SpanStatus, TraceExporter};
 

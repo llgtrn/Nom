@@ -145,6 +145,8 @@ pub use llama_compose::{
 };
 pub mod app_bundle;
 pub use app_bundle::{BundleArtifact, BundleBuilder, BundleManifest, BundleOutput, BundleTarget};
+pub mod completion_engine;
+pub use completion_engine::{CompletionEngine, CompletionItem, CompletionKind, CompletionList, CompletionQuery};
 
 #[cfg(test)]
 mod integration_tests {
