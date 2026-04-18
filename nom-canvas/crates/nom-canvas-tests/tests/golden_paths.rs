@@ -465,3 +465,54 @@ fn golden_lsp_io_buffer() {
     // buffer received bytes
     assert!(buf.buffered_len() > 0);
 }
+
+// Golden path 27: InspectPanel — inspect a GitHub URL, confirm canvas_mode and findings.
+#[test]
+fn golden_inspect_panel() {
+    use nom_panels::InspectPanel;
+    let mut panel = InspectPanel::new();
+    let result = panel.inspect("https://github.com/nom-lang/nom");
+    assert_eq!(result.canvas_mode, "canvas");
+    assert!(
+        result.findings_count > 0 || result.nomx_preview.contains("github-repo"),
+        "inspect result must have findings or nomx preview mentioning github-repo"
+    );
+}
+
+// Golden path 28: StrategyExtractor — extract signals from an open-source description.
+#[test]
+fn golden_strategy_extractor() {
+    use nom_intent::StrategyExtractor;
+    let report = StrategyExtractor::extract("open source developer tools on github");
+    assert!(
+        report.signal_count() > 0,
+        "StrategyExtractor must return at least one signal for an open-source query"
+    );
+}
+
+// Golden path 29: OpLog — push one insert op, assert op_count and insert_count.
+#[test]
+fn golden_op_log() {
+    use nom_collab::ops::{Op, OpLog};
+    let mut log = OpLog::new();
+    let op = Op::new_insert("op1", 0, "hello", "user1", 1000);
+    log.push(op);
+    assert_eq!(log.op_count(), 1);
+    assert_eq!(log.insert_count(), 1);
+}
+
+// Golden path 30: ContentStore dedup — same content inserted twice yields one entry.
+#[test]
+fn golden_content_hash() {
+    use nom_blocks::{ContentHash, ContentStore};
+    let mut store = ContentStore::new();
+    let (h1, _) = store.dedup_insert("define hello that world");
+    let (h2, is_new) = store.dedup_insert("define hello that world");
+    // Same content must produce the same hash (content-addressed)
+    assert_eq!(h1, h2, "identical content must hash to the same ContentHash");
+    // Second insert must not create a new entry
+    assert!(!is_new, "dedup_insert must report is_new=false for duplicate content");
+    assert_eq!(store.count(), 1, "store must hold exactly one entry after dedup");
+    // Suppress unused-import lint on ContentHash
+    let _: fn(&str) -> ContentHash = ContentHash::new;
+}

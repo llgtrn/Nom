@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod merge;
+pub mod ops;
 pub mod presence;
 pub mod session;
 pub use merge::{MergeRecord, MergeStrategy};

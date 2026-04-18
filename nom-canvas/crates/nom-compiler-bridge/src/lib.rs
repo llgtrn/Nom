@@ -20,6 +20,8 @@ pub mod dictwriter;
 pub mod interactive_tier;
 pub mod shared;
 pub mod sqlite_dict;
+pub mod repo_inspector;
+pub use repo_inspector::{RepoFile, RepoInspector, RepoLanguage, RepoProfile};
 pub mod ui_tier;
 
 pub use adapters::lsp::CompilerLspProvider;

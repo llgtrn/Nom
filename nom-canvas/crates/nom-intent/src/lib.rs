@@ -12,6 +12,9 @@ pub use pipeline::{IngestionEvent, IngestionPipeline, LifecycleManager, Lifecycl
 pub mod classify;
 pub use classify::{ClassifyResult, IntentClassifier, IntentLabel, MecePartition};
 
+pub mod strategy;
+pub use strategy::{BusinessModel, StrategyExtractor, StrategyReport, StrategySignal};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

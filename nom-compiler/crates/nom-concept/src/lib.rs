@@ -56,7 +56,12 @@ pub mod dream;
 pub use dream::{DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind};
 
 pub mod bootstrap;
-pub use bootstrap::{BootstrapProof, BootstrapStage, BootstrapRunner, FixpointAttempt, StageBuild};
+pub use bootstrap::{
+    BootstrapProof, BootstrapRunner, BootstrapStage, FixpointAttempt, FixpointVerifier, StageBuild,
+};
+
+pub mod native;
+pub use native::{NativeBinary, NativeCodegen, NativeTarget, TargetArch, TargetOs};
 
 pub mod ingest;
 pub use ingest::{IngestPipeline, IngestRecord, IngestSource};

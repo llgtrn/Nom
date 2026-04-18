@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 pub mod cache;
+pub mod content_dag;
 pub mod dag;
 pub mod execution;
 pub mod graph_mode;
@@ -12,6 +13,7 @@ pub mod traversal;
 pub mod weight;
 pub mod weighted_graph;
 
+pub use content_dag::{ContentDag, DagEdge, DagNode};
 pub use cache::{
     BasicCache, CacheStrategy, CachedValue, ChangedFlags, ExecutionCache, HierarchicalCache,
     LruCache, NodeCache, NullCache, RamPressureCache,

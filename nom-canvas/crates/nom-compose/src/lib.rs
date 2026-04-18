@@ -94,6 +94,10 @@ pub mod video;
 pub use video::{FrameCapture, PipelineStage, TwoStagePipeline};
 pub mod reverse;
 pub use reverse::{DetectedComponent, ReverseInput, ReverseOrchestrator, ReverseResult};
+pub mod inspector;
+pub use inspector::{InspectFinding, InspectReport, InspectTarget, NomInspector};
+pub mod sherlock;
+pub use sherlock::{SherlockAdapter, SherlockResult, SherlockSite, SherlockStatus};
 
 #[cfg(test)]
 mod integration_tests {

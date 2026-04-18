@@ -13,6 +13,7 @@ pub mod input;
 pub mod line_layout;
 pub mod lsp_bridge;
 pub mod scroll;
+pub mod selection;
 pub mod tab_map;
 pub mod wrap_map;
 
@@ -31,3 +32,4 @@ pub use lsp_bridge::{
     CompletionItem, CompletionKind, HoverResult, Location, LspProvider, StubLspProvider,
 };
 pub use scroll::ScrollPosition;
+pub use selection::{SelectionAnchor, SelectionManager, SelectionRange};

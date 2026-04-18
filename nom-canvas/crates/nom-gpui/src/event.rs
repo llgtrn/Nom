@@ -352,3 +352,176 @@ mod tests {
         assert_eq!(ev.position, pos);
     }
 }
+
+// ---------------------------------------------------------------------------
+// Integration-depth additions: KeyModifiers, InputEvent, EventQueue
+// ---------------------------------------------------------------------------
+
+/// Keyboard modifier state (shift/ctrl/alt/meta).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
+pub struct KeyModifiers {
+    pub shift: bool,
+    pub ctrl: bool,
+    pub alt: bool,
+    pub meta: bool,
+}
+
+impl KeyModifiers {
+    /// Returns a `KeyModifiers` with all fields set to `false`.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Returns a copy with `ctrl` set to `true`.
+    pub fn with_ctrl(self) -> Self {
+        Self { ctrl: true, ..self }
+    }
+}
+
+/// High-level input events used by the canvas event loop.
+#[derive(Debug, Clone, PartialEq)]
+pub enum InputEvent {
+    MousePress {
+        x: f32,
+        y: f32,
+        button: MouseButton,
+    },
+    MouseRelease {
+        x: f32,
+        y: f32,
+        button: MouseButton,
+    },
+    MouseMove {
+        x: f32,
+        y: f32,
+    },
+    KeyPress {
+        key: String,
+        modifiers: KeyModifiers,
+    },
+    Scroll {
+        dx: f32,
+        dy: f32,
+    },
+}
+
+/// FIFO queue of pending input events.
+#[derive(Debug, Default)]
+pub struct EventQueue {
+    events: Vec<InputEvent>,
+}
+
+impl EventQueue {
+    /// Creates an empty queue.
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Appends an event to the back of the queue.
+    pub fn push(&mut self, event: InputEvent) {
+        self.events.push(event);
+    }
+
+    /// Removes and returns all queued events, leaving the queue empty.
+    pub fn drain(&mut self) -> Vec<InputEvent> {
+        std::mem::take(&mut self.events)
+    }
+
+    /// Returns the number of events currently in the queue without removing them.
+    pub fn peek_count(&self) -> usize {
+        self.events.len()
+    }
+}
+
+#[cfg(test)]
+mod integration_depth_tests {
+    use super::*;
+
+    #[test]
+    fn mouse_button_variants() {
+        assert_eq!(MouseButton::Left, MouseButton::Left);
+        assert_ne!(MouseButton::Left, MouseButton::Right);
+        assert_ne!(MouseButton::Right, MouseButton::Middle);
+    }
+
+    #[test]
+    fn key_modifiers_with_ctrl() {
+        let m = KeyModifiers::new().with_ctrl();
+        assert!(m.ctrl);
+        assert!(!m.shift);
+        assert!(!m.alt);
+        assert!(!m.meta);
+    }
+
+    #[test]
+    fn input_event_mouse_press() {
+        let ev = InputEvent::MousePress {
+            x: 10.0,
+            y: 20.0,
+            button: MouseButton::Left,
+        };
+        if let InputEvent::MousePress { x, y, button } = ev {
+            assert_eq!(x, 10.0);
+            assert_eq!(y, 20.0);
+            assert_eq!(button, MouseButton::Left);
+        } else {
+            panic!("expected MousePress");
+        }
+    }
+
+    #[test]
+    fn input_event_key_press() {
+        let m = KeyModifiers::new().with_ctrl();
+        let ev = InputEvent::KeyPress {
+            key: "s".to_string(),
+            modifiers: m,
+        };
+        if let InputEvent::KeyPress { key, modifiers } = ev {
+            assert_eq!(key, "s");
+            assert!(modifiers.ctrl);
+        } else {
+            panic!("expected KeyPress");
+        }
+    }
+
+    #[test]
+    fn queue_push_and_drain() {
+        let mut q = EventQueue::new();
+        q.push(InputEvent::MouseMove { x: 1.0, y: 2.0 });
+        q.push(InputEvent::Scroll { dx: 0.0, dy: -10.0 });
+        let drained = q.drain();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(q.peek_count(), 0);
+    }
+
+    #[test]
+    fn queue_peek_count() {
+        let mut q = EventQueue::new();
+        assert_eq!(q.peek_count(), 0);
+        q.push(InputEvent::MouseMove { x: 0.0, y: 0.0 });
+        assert_eq!(q.peek_count(), 1);
+        q.push(InputEvent::MouseMove { x: 1.0, y: 1.0 });
+        assert_eq!(q.peek_count(), 2);
+    }
+
+    #[test]
+    fn queue_drain_empties() {
+        let mut q = EventQueue::new();
+        q.push(InputEvent::Scroll { dx: 5.0, dy: 0.0 });
+        let _ = q.drain();
+        assert_eq!(q.peek_count(), 0);
+        let second = q.drain();
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn scroll_event_fields() {
+        let ev = InputEvent::Scroll { dx: -3.0, dy: 7.5 };
+        if let InputEvent::Scroll { dx, dy } = ev {
+            assert_eq!(dx, -3.0);
+            assert_eq!(dy, 7.5);
+        } else {
+            panic!("expected Scroll");
+        }
+    }
+}

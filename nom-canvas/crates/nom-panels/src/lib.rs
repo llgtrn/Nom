@@ -33,7 +33,8 @@ pub use right::{
     AiChatSession, AiReviewCard, AnimatedReasoningCard, CanvasMode, CardState, ChatAttachment,
     ChatDispatch, ChatMessage, ChatPanel, ChatPanelMessage, ChatPanelRole, ChatRole,
     ChatSidebarPanel, DeepThinkPanel, DeepThinkRenderer, HypothesisNode, HypothesisTree,
-    HypothesisTreeNav, IntentPreviewCard, PropertiesPanel, PropertyEntry, PropertyRow,
+    HypothesisTreeNav, InspectKind, InspectPanel, InspectRequest, InspectResult,
+    IntentPreviewCard, PropertiesPanel, PropertyEntry, PropertyRow,
     PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
 };
 pub use shell::{Shell, ShellLayout, ShellMode};

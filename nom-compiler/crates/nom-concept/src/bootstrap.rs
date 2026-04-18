@@ -269,6 +269,34 @@ impl BootstrapRunner {
     }
 }
 
+// ── FixpointVerifier ──────────────────────────────────────────────────────────
+
+/// Verifies whether a `BootstrapRunner` has reached fixpoint and can produce a
+/// proof tuple.
+pub struct FixpointVerifier;
+
+impl FixpointVerifier {
+    /// Returns `true` if `runner` has at least one successful fixpoint attempt.
+    pub fn verify(runner: &BootstrapRunner) -> bool {
+        runner.achieved_fixpoint()
+    }
+
+    /// Returns `None` when no fixpoint has been achieved, or a formatted proof
+    /// string `"(s2={hash},s3={hash},at=fixpoint)"` when fixpoint is confirmed.
+    ///
+    /// Uses the hashes from the last fixpoint-matched attempt.
+    pub fn proof_tuple(runner: &BootstrapRunner) -> Option<String> {
+        if !runner.achieved_fixpoint() {
+            return None;
+        }
+        let attempt = runner.attempts.iter().find(|a| a.is_fixpoint())?;
+        Some(format!(
+            "(s2={},s3={},at=fixpoint)",
+            attempt.s2_hash, attempt.s3_hash
+        ))
+    }
+}
+
 // ── Tests ─────────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
@@ -394,5 +422,40 @@ mod tests {
         runner.run_attempt("x", "x");
         assert_eq!(runner.attempt_count(), 2);
         assert_eq!(runner.max_attempts, 10);
+    }
+
+    #[test]
+    fn verifier_not_fixpoint() {
+        let mut runner = BootstrapRunner::new(5);
+        runner.run_attempt("aaa", "bbb");
+        assert!(!FixpointVerifier::verify(&runner));
+    }
+
+    #[test]
+    fn verifier_fixpoint() {
+        let mut runner = BootstrapRunner::new(5);
+        runner.run_attempt("aaa", "bbb");
+        runner.run_attempt("xyz", "xyz");
+        assert!(FixpointVerifier::verify(&runner));
+    }
+
+    #[test]
+    fn proof_tuple_none() {
+        let mut runner = BootstrapRunner::new(3);
+        runner.run_attempt("h1", "h2");
+        assert!(FixpointVerifier::proof_tuple(&runner).is_none());
+    }
+
+    #[test]
+    fn proof_tuple_some() {
+        let mut runner = BootstrapRunner::new(3);
+        runner.run_attempt("h1", "h2");
+        runner.run_attempt("same_hash", "same_hash");
+        let tuple = FixpointVerifier::proof_tuple(&runner);
+        assert!(tuple.is_some());
+        let s = tuple.unwrap();
+        assert!(s.contains("s2=same_hash"));
+        assert!(s.contains("s3=same_hash"));
+        assert!(s.contains("at=fixpoint"));
     }
 }

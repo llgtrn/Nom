@@ -5,6 +5,9 @@
 /// Ancestry depth tracking and transitive ancestor caching.
 #[allow(missing_docs)]
 pub mod ancestry;
+/// FNV-1a content hashing and deduplicating content store.
+#[allow(missing_docs)]
+pub mod content_hash;
 pub mod block_model;
 /// Composition block types (app, audio, data, document, etc.).
 #[allow(missing_docs)]
@@ -49,6 +52,7 @@ pub mod validators;
 pub mod workspace;
 
 pub use ancestry::{AncestorEntry, AncestryCache};
+pub use content_hash::{ContentHash, ContentStore};
 pub use block_model::{BlockId, BlockMeta, BlockModel, NomtuRef};
 pub use connector::{Connector, ConnectorId};
 pub use dict_reader::{ClauseShape, DictReader};
