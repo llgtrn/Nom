@@ -1,36 +1,40 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AK complete — HEAD `8088889`, 6743 tests. Wave AL planned: render path + LSP wiring + ~7200 target.
+**Last updated:** Wave AL complete — HEAD `778b085`, 7241 tests. Wave AM planned: wgpu device init + ComposeContext + DB-driven fixes + ~7750 target.
 
 ## Current finalization snapshot
 
-| Axis | Today | Target | Gap | Tests |
-|---|---|---|---|---|
-| A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
-| B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 98% | 100% | 2pp | 6743 tests; Wave AK complete |
-| D · Overall platform | 86% | 100% | 14pp | 15/15 crates; Wave AL next |
+**Iteration 54 audit (8 agents, 2026-04-18) revised C and D percentages downward:**
 
-**Per-crate test counts (Wave AK actuals → Wave AL targets):**
-| Crate | Wave AK actual | Wave AL target |
+| Axis | Today | Target | Gap | Notes |
+|---|---|---|---|---|
+| A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
+| B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
+| C · nom-canvas ↔ compiler integration | **35%** | 100% | **65pp** | **REVISED DOWN** — AE1 never fixed (renders 0 pixels); 7/29 crates wired; ComposeContext/HybridResolver/GlueCache MISSING; BackendKind closed enum |
+| D · Overall platform | **72%** | 100% | **28pp** | **REVISED DOWN** — theme system stub; taffy stub; fonts stub; cosmic-text never called; DB-driven automation 35% |
+
+**C-axis revised from 98% → 35%** because: (1) renderer renders zero pixels — AE1 claim was false, (2) DB-driven automation pipeline 35% functional — ComposeContext/UnifiedDispatcher/HybridResolver/GlueCache all missing, (3) BackendKind is a closed 16-variant Rust enum (DB-driven mandate violation), (4) only 7/29 nom-compiler crates called from canvas.
+
+**Per-crate test counts (Wave AL actuals → Wave AM targets):**
+| Crate | Wave AL actual | Wave AM target |
 |---|---|---|
-| nom-blocks | 446 | 480 |
-| nom-canvas-core | 474 | 510 |
-| nom-cli | 310 | 340 |
-| nom-collab | 445 | 480 |
-| nom-compiler-bridge | 436 | 470 |
-| nom-compose | 590 | 625 |
-| nom-editor | 515 | 550 |
-| nom-gpui | 660 | 700 |
-| nom-graph | 494 | 530 |
-| nom-intent | 350 | 380 |
-| nom-lint | 370 | 400 |
-| nom-memoize | 355 | 385 |
-| nom-panels | 468 | 500 |
-| nom-telemetry | 385 | 415 |
-| nom-theme | 445 | 475 |
-| **TOTAL** | **6743** | **~7240** |
+| nom-blocks | 480 | 515 |
+| nom-canvas-core | 510 | 545 |
+| nom-cli | 340 | 370 |
+| nom-collab | 480 | 515 |
+| nom-compiler-bridge | 470 | 505 |
+| nom-compose | 625 | 660 |
+| nom-editor | 550 | 585 |
+| nom-gpui | 701 | 740 |
+| nom-graph | 530 | 565 |
+| nom-intent | 380 | 410 |
+| nom-lint | 400 | 430 |
+| nom-memoize | 385 | 415 |
+| nom-panels | 500 | 535 |
+| nom-telemetry | 415 | 445 |
+| nom-theme | 475 | 505 |
+| **TOTAL** | **7241** | **~7750** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 

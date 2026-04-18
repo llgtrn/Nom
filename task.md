@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `8088889` | **Tests:** 6743 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `778b085` | **Tests:** 7241 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -311,19 +311,36 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-lint: 338→370; nom-intent: 319→350; nom-memoize: 321→355
 - [x] nom-telemetry: 354→385; nom-cli: 285→310
 
-## Wave AL (planned) — deeper render path + LSP wiring + ~7200 target
-- [ ] nom-gpui: 660→700 (wgpu surface creation stubs, render pass descriptor, pipeline layout)
-- [ ] nom-blocks: 446→480 (block serialization round-trip, inter-block edge validation)
-- [ ] nom-canvas-core: 474→510 (undo/redo command stack, pointer capture state machine)
-- [ ] nom-compose: 590→625 (media pipeline chain, transcoding format matrix, artifact diffing)
-- [ ] nom-graph: 494→530 (strongly connected components, transitive reduction, weighted paths)
-- [ ] nom-collab: 445→480 (CRDT text editing, tombstone GC, awareness state serialization)
-- [ ] nom-editor: 515→550 (multi-cursor ops, breadcrumb nav, refactor rename coverage)
-- [ ] nom-compiler-bridge: 436→470 (workspace diagnostics API, code action kinds, diff apply)
-- [ ] nom-panels: 468→500 (panel state serialization, restore on reload, deep-think streaming)
-- [ ] nom-theme: 445→475 (responsive breakpoints, spacing scale, grid system tokens)
-- [ ] nom-lint: 370→400; nom-intent: 350→380; nom-memoize: 355→385
-- [ ] nom-telemetry: 385→415; nom-cli: 310→340
+## Wave AL (2026-04-18) — COMPLETE ✅ (778b085, 7241 tests)
+- [x] nom-gpui: 660→701 (RenderPassConfig, ortho_projection corners, atlas eviction, FrameStats merge)
+- [x] nom-blocks: 446→480 (block clone round-trip, connector edge validation, Workspace 1000-block scale)
+- [x] nom-canvas-core: 474→510 (CommandStack undo/redo, PointerState machine, spatial index bulk ops)
+- [x] nom-compose: 590→625 (media pipeline chain, transcoding format matrix, artifact diff, task queue)
+- [x] nom-graph: 494→530 (SCC, transitive reduction, weighted paths, graph_rag top-K)
+- [x] nom-collab: 445→480 (CRDT text editing, tombstone GC sweep, awareness state serialization)
+- [x] nom-editor: 515→550 (multi-cursor ops, breadcrumb nav, LSP bridge null/timeout handling)
+- [x] nom-compiler-bridge: 436→470 (workspace diagnostics, code action kinds, diff apply, pool stats)
+- [x] nom-panels: 468→500 (panel state serialization, deep-think streaming, file tree expand/collapse)
+- [x] nom-theme: 445→475 (responsive breakpoints, spacing scale, grid system tokens)
+- [x] nom-lint: 370→400; nom-intent: 350→380; nom-memoize: 355→385
+- [x] nom-telemetry: 385→415; nom-cli: 310→340
+
+## Wave AM (planned) — wgpu device init + ComposeContext + DB-driven fixes + ~7750 target
+- [ ] **CRITICAL**: nom-gpui renderer — begin wgpu device init (Adapter request, Device/Queue creation)
+- [ ] **CRITICAL**: nom-compose — add ComposeContext + UnifiedDispatcher (fix DB-driven mandate violation)
+- [ ] **CRITICAL**: nom-compose — replace BackendKind closed enum with DB-driven kind routing
+- [ ] nom-gpui: 701→740 (device adapter tests, surface format negotiation depth, render target stubs)
+- [ ] nom-blocks: 480→515 (block diff/patch, hierarchical block trees, AFFiNE edgeless bridge)
+- [ ] nom-canvas-core: 510→545 (gesture recognizer, pan/zoom gesture, pinch gesture stubs)
+- [ ] nom-compose: 625→660 (ComposeContext routing, UnifiedDispatcher wiring, kind-name dispatch)
+- [ ] nom-graph: 530→565 (graph merge strategies, edge weight normalization, path pruning)
+- [ ] nom-collab: 480→515 (multi-doc session, presence list, awareness GC)
+- [ ] nom-editor: 550→585 (semantic highlight, document symbols, folding ranges)
+- [ ] nom-compiler-bridge: 470→505 (LSP rename, prepare-rename, workspace symbol list)
+- [ ] nom-panels: 500→535 (panel persistence v2, floating panels, drag-between-panels)
+- [ ] nom-theme: 475→505 (animation curve tokens, focus visible tokens, forced-colors tokens)
+- [ ] nom-lint: 400→430; nom-intent: 380→410; nom-memoize: 385→415
+- [ ] nom-telemetry: 415→445; nom-cli: 340→370
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
@@ -571,6 +588,41 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] FROSTED-RENDERER: FrostedRect wired into Renderer::draw()
 - [x] HINTS: nom-editor hints.rs inlay hints module
 - [x] RENDERER-INFRA: Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+
+## Wave AL — Hard Audit Closures (2026-04-18, from Iteration 54 audit)
+
+### CRITICAL — Renderer (AE1 genuinely not fixed)
+- [ ] **AL-RENDER-1** — `nom-gpui/src/renderer.rs`: implement `CommandEncoder` + `begin_render_pass()` + `set_pipeline(quad_pipeline)` + `set_vertex_buffer(instance_buffer)` + `draw_instanced(quad_count)` + `encoder.finish()` + `queue.submit()` + `surface_texture.present()`
+- [ ] **AL-RENDER-2** — `nom-gpui/src/window.rs`: add wgpu init chain after winit window creation — `Instance::new()` → `create_surface()` → `request_adapter()` → `request_device()` → `Renderer::with_gpu(device, queue, surface)` 
+- [ ] **AL-RENDER-3** — `nom-gpui/src/shaders.rs`: replace degenerate vertex shaders with real instance-attribute unpacking — `@group(0) @binding(0)` GlobalUniforms, `VertexInput` from QuadInstance fields (position, size, color, border_color, border_widths, corner_radii, clip_bounds, order)
+- [ ] **AL-COSMIC** — `nom-theme/src/fonts.rs`: initialize `cosmic_text::FontSystem`, call `db_mut().load_font_data()` for Inter + Libre Baskerville + Berkeley Mono; replace placeholder integer IDs with real font handles
+
+### CRITICAL — DB-driven mandate
+- [ ] **AL-BACKEND-KIND** — `nom-compose/src/dispatch.rs`: replace closed `BackendKind` 16-variant enum with runtime newtype `pub struct BackendKind(pub String)`; register backends via `registry.register("video", Box::new(VideoBackend))` at startup; `from_kind_name` becomes `BackendKind::new(name)` 
+- [ ] **AL-GRAMMAR-STATUS** — `nom-compiler-bridge/src/shared.rs`: add `pub status: KindStatus` field to `GrammarKind`; add `pub enum KindStatus { Transient, Partial, Complete }`; update `list_kinds()` SQL to `SELECT name, description, status FROM kinds`
+- [ ] **AL-COMPOSE-BRIDGE** — create `ComposeContext { kind: BackendKind, input: String, entity_word: Option<String>, credentials: Option<CredentialRef>, constraints: ComposeConstraints, request_id: Uuid }` in `nom-compose/src/context.rs`; add `dispatch_with_context(&self, ctx: ComposeContext)` to `BackendRegistry`
+
+### HIGH — Security
+- [ ] **AL-SQL-INJECT** — `nom-compose/src/backends/data_query.rs:27-29` + `semantic.rs:72-75`: add `fn is_safe_identifier(s: &str) -> bool { s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.') }`; validate all table/column names before interpolation; return `Err` on invalid identifier
+- [ ] **AL-CRDT-OVERFLOW** — `nom-collab/src/lib.rs:95-100`: use `self.counter.checked_add(1).expect(...)` in `next_id()`; clamp remote counter in `apply()`: `self.counter = op.id.counter.min(u64::MAX - 1)`
+
+### HIGH — UI/UX
+- [ ] **AL-THEME-SYSTEM** — `nom-theme/src/tokens.rs`: add `pub struct Theme { ... }` holding all color tokens as fields; add `Theme::dark()`, `Theme::light()`, `Theme::oled()` constructors; pass `&Theme` through render context instead of bare const
+- [ ] **AL-FONTS** — `nom-theme/src/fonts.rs`: add `libre_baskerville_regular`, `eb_garamond_regular`, `berkeley_mono_regular` fields; update `TypeStyle::body()` to use prose fonts; update `TypeStyle::code()` to use Berkeley Mono
+- [ ] **AL-DEEPTHINK-CONFIDENCE** — `nom-panels/src/right/deep_think.rs:161-184`: use `tokens::edge_color_for_confidence(card.confidence)` for left border; set `border_widths.left = 2.0` only (other sides = 0 or hairline)
+- [ ] **AL-LAYOUT-TAFFY** — `nom-gpui/src/layout.rs`: replace HashMap stub with real `taffy::TaffyTree`; `request_layout` creates taffy nodes with style+children; `compute_layout` calls `taffy.compute_layout(root, available)` and propagates to all descendants
+
+### HIGH — Architecture
+- [ ] **AL-SEMANTIC-RELOCATE** — `nom-compose/src/semantic.rs` is WrenAI MDL/BI layer, NOT workflow composition; move to `nom-compose/src/bi/semantic.rs` or `nom-compose/src/data/` namespace; add clear doc comment distinguishing it from graph-node composition
+- [ ] **AL-INTENT-RESOLVER** — `nom-intent/src/lib.rs`: add `IntentResolver::resolve(input: &str, grammar_kinds: &[GrammarKind]) -> ResolvedIntent`; lexical scan (exact kind name match) → BM25 scoring → `classify_with_react()` for ambiguous (delta < 0.15)
+- [ ] **AL-UNIFIED-DISPATCHER** — `nom-compose/src/unified_dispatcher.rs`: type that wraps both `BackendRegistry` + `ProviderRouter`; resolves grammar kind name → BackendKind → picks best vendor via ProviderRouter → dispatches with ComposeContext + CredentialStore injection
+
+### MEDIUM
+- [ ] **AL-PALETTE-SEARCH-UI** — `nom-panels/src/left/node_palette.rs:77-86`: render 32px search box quad at top of palette (BG2 fill, placeholder text); render category group header rows between kind groups
+- [ ] **AL-TOOLBAR-HEIGHT** — `nom-theme/src/tokens.rs:232`: change `TOOLBAR_H` from 48.0 to 36.0 per mandate; document if intentional deviation
+- [ ] **AL-ATOMIC-ORDERING** — `nom-compiler-bridge/src/shared.rs:84,102`: change `grammar_version` load to `Ordering::Acquire`, store to `Ordering::Release`
+- [ ] **AL-TEST-FRAUD** — `nom-compose/src/semantic.rs`: delete `artifact_diff_*` tests (5 tests testing functions defined only in #[cfg(test)]); replace with real SQL injection edge case tests
+- [ ] **AL-FEATURE-TESTS** — `nom-compiler-bridge/src/ui_tier.rs`: add `#[cfg(feature = "compiler")]` test block that enables the feature and tests real `nom_score::score_atom()`, real `BM25Index::search()`, real `can_wire()` paths
 
 ## Wave AI-Composer — Universal Composer Platform Leap (2026-04-18, planned)
 **Spec:** `docs/superpowers/specs/2026-04-18-nom-universal-composer-design.md`
