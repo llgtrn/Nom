@@ -1,8 +1,25 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `6a41b2b` | **Tests:** 8891 | **Workspace:** clean — Waves AX+AY+AZ+ABA complete. 0 clippy warnings. A 55%, B 73%, C 83%, D 98%.
+**Date:** 2026-04-19 | **HEAD:** `8b11241` | **Tests:** 8957 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB complete. 0 clippy warnings. A 60%, B 76%, C 85%, D 99%.
 
 ---
+
+## Iteration 73 — Wave ABB COMPLETE (HEAD 8b11241, 8957 tests, 0 warnings)
+
+**10 parallel agents. A11 codegen + C5-V10 video + Haystack pipeline + C6 RAG + B1 parse + D3 golden paths + 40/100 corpus.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| A11 codegen | NomParser + AstToIr + IrPrinter | nom-concept |
+| C5-V10 | FrameCapture + TwoStagePipeline two-stage video | nom-compose |
+| B2 corpus | 40/100 .nomx golden examples in examples/ | examples/ |
+| C7/C4 visual | DeepThinkRenderer + EditorView stubs | nom-panels |
+| D5 README | README.md rewritten 126 lines + fmt clean | README.md |
+| D3 golden | 14 golden path integration tests | nom-canvas-tests |
+| D1 Haystack | ComponentPipeline + TextSplitter + DocumentRetriever | nom-compose |
+| C6 RAG | BM25Retriever + CosineSimilarityRetriever | nom-intent |
+| B1 parse | FullParser + BlockExpr implicit return | nom-concept |
+| Deeper tests | nom-blocks +6, nom-graph +5 | nom-blocks/nom-graph |
 
 ## Iteration 72 — Wave ABA COMPLETE (HEAD 6a41b2b, 8891 tests, 0 warnings)
 

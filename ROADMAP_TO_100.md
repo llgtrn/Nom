@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-19 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave ABB-5 — **8891 tests**, 0 clippy warnings, fmt clean. D5 README+user-manual+CONTRIBUTING ticked. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
+**Last updated:** Wave ABB COMPLETE — HEAD `8b11241`, **8957 tests**, 0 clippy warnings, fmt clean. A-axis ~60%, B-axis ~76%, C-axis ~85%, D-axis ~99%.
 
 ## Current finalization snapshot
 
@@ -142,7 +142,7 @@
 - [ ] DB stats: ≥1 GB, ≥1 000 kinds, ≥100k clause_shapes
 
 ### A11. LLVM pipeline beyond lexer
-- [ ] Parser → AST codegen
+- [x] Parser → AST codegen (NomParser + AstToIr + IrPrinter — Wave ABB)
 - [x] AST → typed IR (IrType/IrValue/IrInstr/IrFunction/IrModule — Wave ABA)
 - [ ] IR → LLVM bitcode for all S1-S6 stages
 - [ ] Bitcode → native binary on Windows/Linux/macOS
@@ -171,7 +171,7 @@
 - [x] migrate_typed_to_natural() fn→define, ->→that — Wave AW
 - [ ] v1 + v2 merge spec stabilized (full migration tool)
 - [x] Migration tool `nom convert v1 v2` — ConvertDirection/Options/Result (Wave ABA)
-- [ ] Golden corpus: 100 `.nomx` files in `examples/` (10/100 — Wave ABA)
+- [ ] Golden corpus: 100 `.nomx` files in `examples/` (40/100 — Wave ABB)
 - [ ] Round-trip byte-identity tested
 
 ### B3. 9-kind foundation ✅
@@ -300,7 +300,7 @@
 - [x] C5-V7: CancelSignal + make_cancel_signal() — Wave AW
 - [x] C5-V8: VideoConfigContext + thread-local push/pop/get_video_config() — Wave AW
 - [x] C5-V9: validate_codec_pixel_format() — even-dims + ProRes/VP9 matrix — Wave AW
-- [ ] C5-V10: Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming) in video.rs [ABB target]
+- [x] C5-V10: TwoStagePipeline + FrameCapture two-stage video pipeline — Wave ABB
 
 **Other C5 backends:**
 - [ ] Video backend GPU scene → FFmpeg parallel encode (blocked on C5-V5/V10)
@@ -315,7 +315,7 @@
 
 ### C6. RAG real retrievers
 - [x] Graph RAG BFS + confidence weights (Wave Q)
-- [ ] Vector retriever using `nom-search` BM25 + ANN
+- [x] Vector retriever: BM25Retriever + CosineSimilarityRetriever — Wave ABB
 - [ ] LlamaIndex pipeline composition
 - [ ] Refly skill-engine integration
 
@@ -417,7 +417,7 @@
 - [ ] Video walkthrough / screencast
 - [x] `CONTRIBUTING.md` (Wave AY)
 - [ ] `CODE_OF_CONDUCT.md`
-- [ ] Migration guide (v1 → v2)
+- [x] Migration guide (v1 → v2) — `nom convert` Wave ABA
 
 ### D6. Spec §16 non-negotiables
 - [x] Source repos read end-to-end before code

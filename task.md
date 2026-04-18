@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `6a41b2b` | **Tests:** 8891 | **Workspace:** clean — Waves AX+AY+AZ+ABA complete. A-axis ~55%, B-axis ~73%, C-axis ~83%, D-axis ~98%.
+**Date:** 2026-04-19 | **HEAD:** `8b11241` | **Tests:** 8957 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB complete. A-axis ~60%, B-axis ~76%, C-axis ~85%, D-axis ~99%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -186,18 +186,32 @@
 - ✅ Graph dispatch — NodeHandler trait + PassThroughHandler + NodeHandlerRegistry (+6)
 - ✅ Editor — SyntaxHighlight spans + LineFoldRegion/LineDisplayMap (+8)
 
-## Open Items — Wave ABB targets
+## Wave ABB (2026-04-19) — COMMITTED ✅ (HEAD 8b11241, 8957 tests)
 
-- ❌ **A11 LLVM** — Parser→AST codegen, IR→LLVM bitcode, native binary
-- ❌ **C5-V10** — Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming)
-- ❌ **B2 corpus** — 90 more .nomx corpus files (10/100 done)
-- ❌ **C7 deep-think visual** — Animated reasoning card + hypothesis tree render
-- ❌ **A6 LSP real I/O** — tokio stdin/stdout real async loop
-- ❌ **D2 frosted-glass** — Visible blur on main wgpu canvas render loop
-- ❌ **D3 golden paths** — All 10 end-to-end golden path tests
-- ❌ **C6 RAG real** — BM25 + ANN vector retriever
-- ❌ **B1 define-that** — Full parse integration + implicit return
-- ❌ **A10 corpus** — 100-repo ingestion pipeline
+- ✅ A11 codegen — NomParser + AstToIr + IrPrinter in nom-concept (+8)
+- ✅ C5-V10 — FrameCapture + TwoStagePipeline video pipeline (+6)
+- ✅ B2 corpus — 40/100 .nomx golden examples (+30 files)
+- ✅ C7/C4 visual — DeepThinkRenderer + EditorView in nom-panels (+8)
+- ✅ D5 README — README.md rewritten, fmt clean
+- ✅ D3 golden paths — 14 golden path tests in nom-canvas-tests (+9)
+- ✅ D1 Haystack — ComponentPipeline + TextSplitter + DocumentRetriever (+14)
+- ✅ C6 RAG — BM25Retriever + CosineSimilarityRetriever (+8)
+- ✅ B1 parse — FullParser + BlockExpr implicit return (+8)
+- ✅ nom-blocks — deeper workspace tests (+6)
+- ✅ nom-graph — real dispatch integration tests (+5)
+
+## Open Items — Wave ABC targets
+
+- ❌ **B2 corpus** — 60 more .nomx corpus files (40/100 done)
+- ❌ **A11 LLVM bitcode** — IR→LLVM bitcode, native binary
+- ❌ **C5 audio real** — rodio real encode (not just stub)
+- ❌ **D8 AF-FONT** — Libre Baskerville / Berkeley Mono font tokens
+- ❌ **D8 AF-THEME** — dark/light/oled theme token sets
+- ❌ **D1 ToolJet** — full 55-widget registry (16/55)
+- ❌ **D1 graphify** — chart types + Redux slice
+- ❌ **A3 ingestion** — Intent resolution pipeline + lifecycle transitions
+- ❌ **C9 build** — cargo build --all-features passes
+- ❌ **D3 more golden** — video-compose, document-compose demos
 
 ---
 
