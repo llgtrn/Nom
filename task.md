@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `d2b7b62` | **Tests:** 5712 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `003f895` | **Tests:** 6233 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -283,20 +283,33 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-lint: 280→310; nom-intent: 260→290; nom-memoize: 265→295
 - [x] nom-telemetry: 295→325; nom-cli: 226→255
 
-## Wave AJ (planned) — clippy style sweep + deeper GPU + ~6100 target
-- [ ] Fix ~14 clippy style warnings across workspace (map_or, div_ceil, char comparison)
-- [ ] nom-gpui: 570→610 (real wgpu instance/adapter probe, swapchain format negotiation)
-- [ ] nom-blocks: 365→400 (more connector validation paths, workspace merge/diff)
-- [ ] nom-canvas-core: 410→445 (bezier subdivision, quadtree depth, group-in-group)
-- [ ] nom-compose: 519→555 (video GPU frame path, audio DSP stubs, RAG multi-document)
-- [ ] nom-graph: 439→475 (topological sort stability, sandbox AST sanitizer impl)
-- [ ] nom-collab: 375→410 (Y-CRDT style merge, version vector compact encoding)
-- [ ] nom-editor: 425→460 (multi-file project search, go-to-definition jump, completion insert)
-- [ ] nom-compiler-bridge: 365→400 (inlay hints, code lens, semantic tokens full coverage)
-- [ ] nom-panels: 395→430 (panel layout persistence, drag-to-reorder, split view)
-- [ ] nom-theme: 374→410 (print stylesheet, custom CSS variable export, dark/light switch anim)
-- [ ] nom-lint: 310→340; nom-intent: 290→320; nom-memoize: 295→325
-- [ ] nom-telemetry: 325→355; nom-cli: 255→285
+## Wave AJ (2026-04-18) — COMPLETE ✅ (003f895, 6233 tests)
+- [x] nom-gpui: 570→610 (WgpuInstanceConfig, SwapchainConfig, negotiate_surface_format, clippy fixes)
+- [x] nom-blocks: 365→400 (connector validation depth, workspace merge/diff, validators)
+- [x] nom-canvas-core: 410→445 (bezier subdivision, spatial edge cases, group/layer operations)
+- [x] nom-compose: 519→555 (video GPU frames, RAG multi-document, audio DSP stubs, dispatch routing)
+- [x] nom-graph: 439→475 (topo sort stability, sandbox sanitizer depth, graph_rag hybrid)
+- [x] nom-collab: 375→410 (Y-CRDT version vector, compact encoding, merge protocol)
+- [x] nom-editor: 425→479 (completion, inlay hints, LSP bridge, indent — +54 exceeded)
+- [x] nom-compiler-bridge: 365→402 (bridge stress, semantic tokens, score adapter — +37 exceeded)
+- [x] nom-panels: 395→430 (layout persistence, drag-reorder, split view, panel depth)
+- [x] nom-theme: 374→410 (print stylesheet, CSS variable export, z-index/opacity/border tokens)
+- [x] nom-lint: 310→338; nom-intent: 290→319; nom-memoize: 295→321
+- [x] nom-telemetry: 325→354; nom-cli: 255→285
+
+## Wave AK (planned) — deep GPU wgpu path + composite event system + ~6700 target
+- [ ] nom-gpui: 610→650 (wgpu adapter enumeration, surface caps query, pipeline cache)
+- [ ] nom-blocks: 400→435 (frame block, edgeless-text block, latex block stubs)
+- [ ] nom-canvas-core: 445→480 (pointer event routing, rubber-band multi-select, undo/redo stack)
+- [ ] nom-compose: 555→590 (FFmpeg-stub transcoding, multi-format export, media pipeline)
+- [ ] nom-graph: 475→510 (cycle detection with path, subgraph extraction, graph diffing)
+- [ ] nom-collab: 410→445 (3-way merge, conflict resolution policy, snapshot/restore)
+- [ ] nom-editor: 479→515 (breadcrumb nav, multi-cursor edits, refactor rename wire-up)
+- [ ] nom-compiler-bridge: 402→435 (workspace diagnostics, code action resolution, diff apply)
+- [ ] nom-panels: 430→465 (panel tab overflow, keyboard nav, search-within-panel)
+- [ ] nom-theme: 410→445 (motion tokens, elevation scale, cursor/caret theme tokens)
+- [ ] nom-lint: 338→370; nom-intent: 319→350; nom-memoize: 321→355
+- [ ] nom-telemetry: 354→385; nom-cli: 285→310
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
