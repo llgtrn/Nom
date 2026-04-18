@@ -94,6 +94,8 @@ pub mod pipeline;
 pub use pipeline::{ComponentOutput, ComponentPipeline, DocumentRetriever, TextSplitter};
 pub mod video;
 pub use video::{FrameCapture, PipelineStage, TwoStagePipeline};
+pub mod video_capture;
+pub use video_capture::{FfmpegConfig, FfmpegEncoder, FrameCapture as VideoCaptureFrame, VideoCapturePipeline};
 pub mod reverse;
 pub use reverse::{DetectedComponent, ReverseInput, ReverseOrchestrator, ReverseResult};
 pub mod inspector;
@@ -107,6 +109,7 @@ pub mod layout;
 pub mod vision_orchestrator;
 pub mod donut_pipeline;
 pub mod codegen_pipeline;
+pub mod vision_bridge;
 
 #[cfg(test)]
 mod integration_tests {

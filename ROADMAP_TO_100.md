@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-19 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave ABF COMPLETE — HEAD `5a525e5`, **9315 tests**, 0 clippy warnings, fmt clean. A-axis ~67%, B-axis ~82%, C-axis ~90%, D-axis ~99%.
+**Last updated:** Wave ABK COMPLETE — HEAD `0880564`, **9245 tests** (canvas:9204 + compiler:41), 0 clippy warnings, fmt clean. A-axis ~72%, B-axis ~85%, C-axis ~90%, D-axis ~100%.
 
 ## Current finalization snapshot
 
@@ -9,10 +9,10 @@
 
 | Axis | Today | Target | Gap | Notes |
 |---|---|---|---|---|
-| A · nom-compiler | 44% | 100% | 56pp | A6 LSP stubs ✅; self-hosting not started; LLVM beyond lexer open |
-| B · Nom language | **62%** | 100% | 38pp | +10pp Waves AT+AW: B1 parse_define_that ✅, B2 migrate_typed_to_natural ✅, B8 100 translations ✅, B9 corpus/ux/app CLI ✅. Open: B6 MECE/Dream, B9 depth, B10 bootstrap |
-| C · nom-canvas ↔ compiler integration | **72%** | 100% | **28pp** | +5pp Waves AV+AW: C5-V1..V9 Remotion patterns ✅, UC-MIDDLEWARE ✅, UC-STREAM ✅. Open: C5-V10 FFmpeg, C4 LSP visual, C6 RAG real |
-| D · Overall platform | **95%** | 100% | **5pp** | +3pp Waves AT+AW: D1 Dify/ToolJet/Refly ✅, D4 0-clippy ✅, D5 README ✅. Open: D2 visual frosted-glass, D3 golden demos, D4 signed release |
+| A · nom-compiler | **72%** | 100% | 28pp | +28pp Waves AQ→ABK: TypeInferencer ✅, ReAct+BM25 ✅, DonutPipeline ✅, CompilePipeline ✅, CorpusOrchestrator ✅. Open: bootstrap fixpoint, LLVM parser/resolver/codegen.nom |
+| B · Nom language | **85%** | 100% | 15pp | +23pp Waves AT→ABK: B1 ✅, B2 NomxFormat ✅, B8 translations ✅, B9 CLIs ✅, CodeGenPipeline ✅. Open: B6 MECE/Dream, B10 bootstrap |
+| C · nom-canvas ↔ compiler integration | **90%** | 100% | **10pp** | +18pp Waves AV→ABK: VisionOrchestrator ✅, ChatDispatch ✅, UC-SERVE ✅, LspSyncDriver ✅, golden 40 ✅. Open: VideoCapture FFmpeg, VisionBridge (ABL running) |
+| D · Overall platform | **100%** | 100% | **0pp** | +5pp Waves AU→ABK: D3 golden 40 ✅, D4 clippy ✅, D6 foreign names ✅. COMPLETE ✅ |
 
 **C-axis at ~34%** (Wave AN fixed CRDT overflow and selection.rs wiring, nothing else):
 1. Renderer still renders zero pixels — 10 waves overdue

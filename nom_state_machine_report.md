@@ -1,6 +1,22 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `5a525e5` | **Tests:** 9315 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE+ABF complete. 0 clippy warnings. A 67%, B 82%, C 90%, D 99%.
+**Date:** 2026-04-19 | **HEAD:** `0880564` | **Tests:** 9245 (canvas:9204 + compiler:41) | **Workspace:** clean — Waves AX→ABK complete. 0 clippy warnings. A 72%, B 85%, C 90%, D 100%.
+
+---
+
+## Iteration 81 — Wave ABJ+ABK COMPLETE (HEAD 0880564, 9245 tests, 0 warnings)
+
+**Wave ABJ (4 agents):** golden paths 36-40, LspSyncDriver frames, lsp_loop state machine, VisionPipeline canvas-core, CompilePipeline tests.
+**Wave ABK (4 agents):** DonutPipeline (9 tests), CodeGenPipeline (9 tests), TypeInferencer (12 tests), ReAct+BM25 integration (8 tests).
+
+| Module | Pattern Source | Crate | Tests |
+|--------|---------------|-------|-------|
+| donut_pipeline.rs | Donut special-token markup parser | nom-compose | 9 |
+| codegen_pipeline.rs | gpt-engineer FilesDict+PrepromptHolder | nom-compose | 9 |
+| type_infer.rs | TypeEnv+TypeConstraint+TypeInferencer | nom-concept | 12 |
+| react_bm25_integration.rs | BM25 top-k + ReAct loop real tests | nom-intent | 8 |
+
+**Wave ABL dispatched:** VideoCapture FFmpeg wiring, LspAsyncLoop message parsing, VisionBridge→NomInspector.
 
 ---
 

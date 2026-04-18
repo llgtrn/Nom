@@ -14,6 +14,8 @@ pub use lsp_server::{
 };
 pub mod lsp_loop;
 pub use lsp_loop::{LspAsyncLoop, LspFrame, LspIoBuffer, LspLoopConfig};
+pub mod lsp_async;
+pub use lsp_async::{LspAsyncConfig, LspAsyncLoop as LspAsyncMessageLoop, LspAsyncMessage};
 pub mod benchmarks;
 #[cfg(feature = "compiler")]
 pub mod dictwriter;

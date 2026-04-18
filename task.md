@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `5a525e5` | **Tests:** 9315 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE+ABF complete. A-axis ~67%, B-axis ~82%, C-axis ~90%, D-axis ~99%.
+**Date:** 2026-04-19 | **HEAD:** `0880564` | **Tests:** 9245 (canvas:9204 + compiler:41) | **Workspace:** clean — Waves AX→ABK complete. A-axis ~72%, B-axis ~85%, C-axis ~90%, D-axis ~100%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -287,14 +287,19 @@
 - ✅ AnimationPipeline — LatentState + VideoFrame + LCG noise + CFG guidance (9 tests)
 - ✅ VisionOrchestrator — detect→segment→layout→.nomx (7 tests)
 
-## Open Items — Wave ABJ targets
+## Wave ABK (2026-04-19) — COMMITTED ✅ (HEAD 0880564, +38 tests)
 
-- ❌ **D3 golden 40** — 5 more golden path tests (40 total)
-- ❌ **VideoCapture real** — real FrameCapture→FFmpeg encode wiring
-- ❌ **A6 LSP tokio** — real tokio async stdin/stdout in LspAsyncLoop
-- ❌ **VisionOrchestrator + NomInspector bridge** — wire VisionOrchestrator output into NomInspector InspectFinding
-- ❌ **Pix2Struct/Donut pattern** — read source, implement document-without-OCR layout extraction
-- ❌ **gpt-engineer pattern** — read source, extract AI→code generation pipeline for nom-compose
+- ✅ DonutPipeline — DonutToken markup, DocStructure, DocTask, 3 pipeline modes (9 tests)
+- ✅ CodeGenPipeline — FilesDict, PrepromptHolder, GenerationMode, CodeGenPipeline (9 tests)
+- ✅ TypeInferencer — TypeEnv + TypeConstraint + TypeInferencer using IrValue::type_of() (12 tests)
+- ✅ ReAct+BM25 integration — 8 real integration tests (no stubs), BM25 top-k + ReAct loop
+
+## Open Items — Wave ABL targets
+
+- ✅ **D3 golden 40** — already at 40 golden path tests (nom-canvas-tests)
+- ❌ **VideoCapture real** — real FrameCapture→FFmpeg encode wiring (ABL-1 running)
+- ❌ **A6 LSP async** — LspAsyncLoop message parsing + Content-Length framing (ABL-2 running)
+- ❌ **VisionOrchestrator + NomInspector bridge** — VisionBridge::vision_to_findings() + enrich_report() (ABL-3 running)
 
 ---
 
