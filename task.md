@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests listed:** 2439 default; `--all-features` PASS | **Workspace:** dirty (uncommitted code edits present)
+**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean
 
 ## Wave AC Audit (2026-04-18) — DB-driven + UI/UX reliability gate
 
@@ -116,17 +116,24 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-graph: 125→175 tests (+50)
 - [x] nom-compose: 197→252 tests (+55)
 
-## Wave AB (2026-04-18) — in progress
-- [ ] nom-canvas-core: 145→200+ tests (viewport edge cases, spatial index, rubber band)
-- [ ] nom-compiler-bridge: 121→175+ tests (SharedState race, LSP completions, adapters)
-- [ ] nom-editor: 128→185+ tests (multi-cursor, tab map, hints, find/replace regex)
-- [ ] nom-gpui: 211→265+ tests (layout engine depth, styled chaining, atlas reuse)
-- [ ] nom-panels: 125→180+ tests (deep-think card stream, palette search, properties)
-- [ ] nom-collab: 129→175+ tests (3-way merge, op log replay, YJS-style convergence)
-- [ ] nom-theme: 163→200+ tests (WCAG contrast ratios, animation spring physics)
-- [ ] nom-graph: 175→220+ tests (sandbox AST sanitizers, execution engine cancel)
-- [ ] nom-compose: 252→295+ tests (semantic MDL, credential store, provider router depth)
-- [ ] nom-blocks: 150→195+ tests (DictReader integration, can_wire grammar backend)
+## Wave AB (2026-04-18) — COMPLETE ✅ (c3d2323, 2841 tests)
+- [x] nom-canvas-core: →212 tests (+67, viewport zoom/pan, spatial bulk, bezier hit)
+- [x] nom-compiler-bridge: →187 tests (+66, SharedState, completion/score adapters)
+- [x] nom-editor: →204 tests (+76, multi-cursor buffer, tab_map, indent, scroll, commands)
+- [x] nom-gpui: →302 tests (+91, deep flex layout, spring animation, styled chaining)
+- [x] nom-panels: →189 tests (+64, DB palette search, library, deep_think, properties)
+- [x] nom-collab: →175 tests (+46, 3-way merge, tombstone revival, YJS ordering)
+- [x] nom-theme: →202 tests (+39, WCAG contrast, font scale, icon viewBox invariants)
+- [x] nom-graph: →256 tests (+81, multi-root DAG, LRU cache, sandbox AST sanitizers)
+- [x] nom-compose: →295 tests (+43, semantic MDL, credential store, fallback backoff)
+- [x] nom-blocks: →211 tests (+61, DictReader integration, connector grammar, workspace)
+
+## Wave AC (planned) — clippy + pixel-diff + codec + nom-dict
+- [ ] Broad workspace clippy sweep (nom-theme constants, nom-gpui shader/style tests)
+- [ ] Pixel-diff assertion for .omx/visual/nom-gpui-window-first-paint.png
+- [ ] Replace Y4M/WAV backends with richer codec/container support
+- [ ] nom-dict API cleanup: single canonical type, migrate off find_by_word/get_entry
+- [ ] nom-dict: remove #[deprecated] exports, update docs, unified entries/entities tests
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
