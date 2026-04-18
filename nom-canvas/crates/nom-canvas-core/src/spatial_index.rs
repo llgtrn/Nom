@@ -418,4 +418,119 @@ mod tests {
         // Touching (degenerate overlap) should be included.
         assert!(found.contains(&1), "element touching query boundary must be returned");
     }
+
+    // ── nearest-k query ──────────────────────────────────────────────────────
+
+    #[test]
+    fn nearest_k_returns_closest_elements() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [2.0, 2.0]));    // near
+        idx.insert(make_bounds(2, [10.0, 10.0], [12.0, 12.0])); // medium
+        idx.insert(make_bounds(3, [50.0, 50.0], [52.0, 52.0])); // far
+        // nearest from [1, 1] should be element 1 (inside it).
+        let nearest = idx.nearest([1.0, 1.0], 100.0);
+        assert_eq!(nearest, Some(1));
+    }
+
+    #[test]
+    fn nearest_with_many_elements_returns_one() {
+        let mut idx = SpatialIndex::new();
+        for i in 0..20_u64 {
+            let base = i as f32 * 15.0 + 50.0;
+            idx.insert(make_bounds(i + 1, [base, base], [base + 10.0, base + 10.0]));
+        }
+        // Should return something, not None
+        let nearest = idx.nearest([55.0, 55.0], 500.0);
+        assert!(nearest.is_some());
+    }
+
+    #[test]
+    fn nearest_exceeds_max_dist_none() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [200.0, 200.0], [210.0, 210.0]));
+        let result = idx.nearest([0.0, 0.0], 10.0);
+        assert_eq!(result, None, "element beyond max_dist must not be returned");
+    }
+
+    #[test]
+    fn query_large_region_returns_all() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=8 {
+            let base = i as f32 * 10.0;
+            idx.insert(make_bounds(i, [base, base], [base + 5.0, base + 5.0]));
+        }
+        let found = idx.query_in_bounds([-1000.0, -1000.0], [1000.0, 1000.0]);
+        assert_eq!(found.len(), 8, "large query region must return all elements");
+    }
+
+    #[test]
+    fn insert_and_query_negative_coordinates() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [-100.0, -100.0], [-50.0, -50.0]));
+        let found = idx.query_in_bounds([-200.0, -200.0], [0.0, 0.0]);
+        assert!(found.contains(&1), "element at negative coords must be queryable");
+    }
+
+    #[test]
+    fn spatial_index_len_accurate_after_multiple_removes() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=6 {
+            let base = i as f32 * 20.0;
+            idx.insert(make_bounds(i, [base, base], [base + 10.0, base + 10.0]));
+        }
+        assert_eq!(idx.len(), 6);
+        idx.remove(1, make_bounds(1, [20.0, 20.0], [30.0, 30.0]));
+        idx.remove(3, make_bounds(3, [60.0, 60.0], [70.0, 70.0]));
+        idx.remove(5, make_bounds(5, [100.0, 100.0], [110.0, 110.0]));
+        assert_eq!(idx.len(), 3);
+    }
+
+    #[test]
+    fn is_empty_returns_true_initially() {
+        assert!(SpatialIndex::new().is_empty());
+    }
+
+    #[test]
+    fn is_empty_false_after_insert() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [1.0, 1.0]));
+        assert!(!idx.is_empty());
+    }
+
+    #[test]
+    fn query_single_element_exact_aabb() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(7, [10.0, 20.0], [30.0, 40.0]));
+        // Query exactly the element's own bounds.
+        let found = idx.query_in_bounds([10.0, 20.0], [30.0, 40.0]);
+        assert!(found.contains(&7));
+    }
+
+    #[test]
+    fn nearest_to_point_inside_element_is_zero_dist() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [100.0, 100.0]));
+        // Point inside the element has distance_2 = 0 to the AABB.
+        let near = idx.nearest([50.0, 50.0], 0.5);
+        assert_eq!(near, Some(1));
+    }
+
+    #[test]
+    fn query_zero_size_region_at_element_corner() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [20.0, 20.0]));
+        // Zero-size query at element's corner.
+        let found = idx.query_in_bounds([0.0, 0.0], [0.0, 0.0]);
+        assert!(found.contains(&1), "corner-touching zero-size query must hit element");
+    }
+
+    #[test]
+    fn two_elements_same_position_both_returnable() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [10.0, 10.0], [30.0, 30.0]));
+        idx.insert(make_bounds(2, [10.0, 10.0], [30.0, 30.0]));
+        let found = idx.query_in_bounds([10.0, 10.0], [30.0, 30.0]);
+        assert!(found.contains(&1), "element 1 must be returned");
+        assert!(found.contains(&2), "element 2 must be returned");
+    }
 }

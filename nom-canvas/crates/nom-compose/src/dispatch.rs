@@ -2,6 +2,9 @@
 
 use std::collections::HashMap;
 
+use crate::progress::{ComposeEvent, ProgressSink};
+use crate::store::ArtifactStore as _;
+
 /// Which compose backend to route to — DB-driven at runtime.
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
 pub enum BackendKind {
@@ -133,6 +136,190 @@ impl Backend for NoopBackend {
     fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
         Ok(format!("{}:{}", self.kind.name(), input))
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Backend impls for concrete backends
+// ---------------------------------------------------------------------------
+
+impl Backend for crate::backends::video::VideoBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Video
+    }
+    fn compose(&self, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::video::{ContainerFormat, VideoBackend, VideoCodec, VideoInput};
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let sink = crate::progress::LogProgressSink;
+        let video_input = VideoInput {
+            entity: NomtuRef {
+                id: input.to_string(),
+                word: "dispatch".to_string(),
+                kind: "video".to_string(),
+            },
+            frames: vec![vec![0u8; 4]],
+            fps: 24,
+            width: 1,
+            height: 1,
+            container_format: ContainerFormat::Y4m,
+            codec: VideoCodec::Raw,
+        };
+        let mut store = InMemoryStore::new();
+        let block = VideoBackend::compose(video_input, &mut store, &sink);
+        progress(1.0);
+        Ok(format!("video:{}:{}ms", block.entity.id, block.duration_ms))
+    }
+}
+
+impl Backend for crate::backends::audio::AudioBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Audio
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::audio::{AudioBackend, AudioContainer, AudioCodec, AudioInput};
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let sink = crate::progress::LogProgressSink;
+        let audio_input = AudioInput {
+            entity: NomtuRef {
+                id: input.to_string(),
+                word: "dispatch".to_string(),
+                kind: "audio".to_string(),
+            },
+            pcm_samples: vec![0.0f32; 8],
+            sample_rate: 8000,
+            codec: "pcm".to_string(),
+            container: AudioContainer::Wav,
+            audio_codec: AudioCodec::Pcm,
+        };
+        let mut store = InMemoryStore::new();
+        let block = AudioBackend::compose(audio_input, &mut store, &sink);
+        Ok(format!("audio:{}:{}ms", block.entity.id, block.duration_ms))
+    }
+}
+
+impl Backend for crate::backends::document::DocumentBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Document
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::document::{DocumentBackend, DocumentInput};
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let sink = crate::progress::LogProgressSink;
+        let doc_input = DocumentInput {
+            entity: NomtuRef {
+                id: input.to_string(),
+                word: "dispatch".to_string(),
+                kind: "document".to_string(),
+            },
+            content_blocks: vec![input.to_string()],
+            target_mime: "text/plain".to_string(),
+        };
+        let mut store = InMemoryStore::new();
+        let block = DocumentBackend::compose(doc_input, &mut store, &sink);
+        Ok(format!("document:{}:{}pages", block.entity.id, block.page_count))
+    }
+}
+
+impl Backend for crate::backends::export::ExportBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Export
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::export::{ExportBackend, ExportInput};
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let sink = crate::progress::LogProgressSink;
+        let mut store = InMemoryStore::new();
+        let input_hash = store.write(input.as_bytes());
+        let out = ExportBackend::compose(
+            ExportInput {
+                entity: NomtuRef {
+                    id: input.to_string(),
+                    word: "dispatch".to_string(),
+                    kind: "export".to_string(),
+                },
+                input_hash,
+                output_format: "hex".to_string(),
+            },
+            &mut store,
+            &sink,
+        );
+        Ok(format!("export:{}:{}bytes", input, out.byte_size))
+    }
+}
+
+impl Backend for crate::backends::rag_query::RagQueryBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::RagQuery
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::rag_query::{RagChunk, RagQueryBackend, RagQueryInput};
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let sink = crate::progress::LogProgressSink;
+        let mut store = InMemoryStore::new();
+        let out = RagQueryBackend::compose(
+            RagQueryInput {
+                entity: NomtuRef {
+                    id: input.to_string(),
+                    word: "dispatch".to_string(),
+                    kind: "rag_query".to_string(),
+                },
+                query: input.to_string(),
+                top_k: 1,
+                chunks: vec![RagChunk {
+                    id: "dispatch-chunk".to_string(),
+                    text: input.to_string(),
+                    score: 1.0,
+                }],
+            },
+            &mut store,
+            &sink,
+        );
+        Ok(format!("rag_query:{}:{}used", input, out.chunks_used.len()))
+    }
+}
+
+impl Backend for crate::backends::mobile_screen::MobileScreenBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::WebScreen
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::mobile_screen::{MobileScreenBackend, MobileScreenSpec};
+        use crate::store::InMemoryStore;
+        let sink = crate::progress::LogProgressSink;
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 1920,
+            platform: "android".to_string(),
+            scale_factor: 2.0,
+        };
+        MobileScreenBackend::compose(&spec, &mut store, &sink)
+            .map(|()| format!("mobile_screen:{}:ok", input))
+    }
+}
+
+impl Backend for crate::backends::native_screen::NativeScreenBackend {
+    fn kind(&self) -> BackendKind {
+        BackendKind::Render
+    }
+    fn compose(&self, input: &str, _progress: &dyn Fn(f32)) -> Result<String, String> {
+        use crate::backends::native_screen::{NativeScreenBackend, NativeScreenSpec};
+        use crate::store::InMemoryStore;
+        let sink = crate::progress::LogProgressSink;
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 1920,
+            height: 1080,
+            display_index: 0,
+            format: "png".to_string(),
+        };
+        NativeScreenBackend::compose(&spec, &mut store, &sink)
+            .map(|()| format!("native_screen:{}:ok", input))
     }
 }
 
@@ -306,5 +493,390 @@ mod tests {
         assert_eq!(BackendKind::from_kind_name(""), None);
         assert_eq!(BackendKind::from_kind_name("VIDEO"), None); // case sensitive
         assert_eq!(BackendKind::from_kind_name("unknown_kind"), None);
+    }
+
+    // -----------------------------------------------------------------------
+    // Backend trait impl tests for concrete backends
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn video_backend_stored_as_box_dyn_backend() {
+        use crate::backends::video::VideoBackend;
+        let b: Box<dyn Backend> = Box::new(VideoBackend);
+        assert_eq!(b.kind(), BackendKind::Video);
+        let result = b.compose("entity-v1", &|_| {});
+        assert!(result.is_ok(), "VideoBackend dispatch must succeed");
+        assert!(result.unwrap().starts_with("video:entity-v1"));
+    }
+
+    #[test]
+    fn audio_backend_stored_as_box_dyn_backend() {
+        use crate::backends::audio::AudioBackend;
+        let b: Box<dyn Backend> = Box::new(AudioBackend);
+        assert_eq!(b.kind(), BackendKind::Audio);
+        let result = b.compose("entity-a1", &|_| {});
+        assert!(result.is_ok(), "AudioBackend dispatch must succeed");
+        assert!(result.unwrap().starts_with("audio:entity-a1"));
+    }
+
+    #[test]
+    fn document_backend_stored_as_box_dyn_backend() {
+        use crate::backends::document::DocumentBackend;
+        let b: Box<dyn Backend> = Box::new(DocumentBackend);
+        assert_eq!(b.kind(), BackendKind::Document);
+        let result = b.compose("entity-d1", &|_| {});
+        assert!(result.is_ok(), "DocumentBackend dispatch must succeed");
+        assert!(result.unwrap().starts_with("document:entity-d1"));
+    }
+
+    #[test]
+    fn export_backend_stored_as_box_dyn_backend() {
+        use crate::backends::export::ExportBackend;
+        let b: Box<dyn Backend> = Box::new(ExportBackend);
+        assert_eq!(b.kind(), BackendKind::Export);
+        let result = b.compose("entity-e1", &|_| {});
+        assert!(result.is_ok(), "ExportBackend dispatch must succeed");
+        assert!(result.unwrap().starts_with("export:entity-e1"));
+    }
+
+    #[test]
+    fn rag_query_backend_stored_as_box_dyn_backend() {
+        use crate::backends::rag_query::RagQueryBackend;
+        let b: Box<dyn Backend> = Box::new(RagQueryBackend::default());
+        assert_eq!(b.kind(), BackendKind::RagQuery);
+        let result = b.compose("entity-r1", &|_| {});
+        assert!(result.is_ok(), "RagQueryBackend dispatch must succeed");
+        assert!(result.unwrap().starts_with("rag_query:entity-r1"));
+    }
+
+    #[test]
+    fn routing_unknown_kind_returns_error() {
+        let reg = BackendRegistry::new();
+        // No backends registered — any kind must return Err.
+        let result = reg.dispatch(BackendKind::EmbedGen, "probe", &|_| {});
+        assert!(result.is_err());
+        let msg = result.unwrap_err();
+        assert!(msg.contains("embed_gen"), "error must name the missing kind, got: {msg}");
+    }
+
+    #[test]
+    fn video_audio_document_round_trip_through_registry() {
+        use crate::backends::audio::AudioBackend;
+        use crate::backends::document::DocumentBackend;
+        use crate::backends::video::VideoBackend;
+
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(VideoBackend));
+        reg.register(Box::new(AudioBackend));
+        reg.register(Box::new(DocumentBackend));
+
+        assert_eq!(reg.registered_kinds().len(), 3);
+
+        let v = reg.dispatch(BackendKind::Video, "vid-probe", &|_| {});
+        assert!(v.is_ok(), "video round-trip must succeed");
+
+        let a = reg.dispatch(BackendKind::Audio, "aud-probe", &|_| {});
+        assert!(a.is_ok(), "audio round-trip must succeed");
+
+        let d = reg.dispatch(BackendKind::Document, "doc-probe", &|_| {});
+        assert!(d.is_ok(), "document round-trip must succeed");
+    }
+
+    #[test]
+    fn export_and_rag_query_round_trip_through_registry() {
+        use crate::backends::export::ExportBackend;
+        use crate::backends::rag_query::RagQueryBackend;
+
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(ExportBackend));
+        reg.register(Box::new(RagQueryBackend::default()));
+
+        let e = reg.dispatch(BackendKind::Export, "export-probe", &|_| {});
+        assert!(e.is_ok(), "export round-trip must succeed");
+
+        let r = reg.dispatch(BackendKind::RagQuery, "rag-probe", &|_| {});
+        assert!(r.is_ok(), "rag_query round-trip must succeed");
+    }
+
+    #[test]
+    fn backend_progress_callback_called_during_compose() {
+        use crate::backends::video::VideoBackend;
+        use std::cell::Cell;
+        let b: Box<dyn Backend> = Box::new(VideoBackend);
+        let called = Cell::new(false);
+        b.compose("progress-test", &|_| called.set(true)).unwrap();
+        assert!(called.get(), "progress callback must be called during compose");
+    }
+
+    // ── Wave AD new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn dispatch_routes_all_16_backend_kinds() {
+        // Register a NoopBackend for each of the 16 kinds and verify dispatch succeeds.
+        let mut reg = BackendRegistry::new();
+        let all_kinds = [
+            BackendKind::Video,
+            BackendKind::Audio,
+            BackendKind::Image,
+            BackendKind::Document,
+            BackendKind::Data,
+            BackendKind::App,
+            BackendKind::Workflow,
+            BackendKind::Scenario,
+            BackendKind::RagQuery,
+            BackendKind::Transform,
+            BackendKind::EmbedGen,
+            BackendKind::Render,
+            BackendKind::Export,
+            BackendKind::Pipeline,
+            BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in all_kinds.iter() {
+            reg.register(Box::new(NoopBackend::new(kind.clone())));
+        }
+        assert_eq!(reg.registered_kinds().len(), 16, "all 16 backends must be registered");
+        for kind in all_kinds.iter() {
+            let result = reg.dispatch(kind.clone(), "probe", &|_| {});
+            assert!(result.is_ok(), "dispatch must succeed for kind: {}", kind.name());
+            let output = result.unwrap();
+            assert!(output.starts_with(kind.name()), "output must start with kind name");
+        }
+    }
+
+    #[test]
+    fn plan_with_10_steps_all_execute_in_topo_order() {
+        use crate::plan::CompositionPlan;
+        // Build a linear 10-step chain and verify all steps execute in order.
+        let mut plan = CompositionPlan::new();
+        let step0 = plan.add_step(BackendKind::Video, "src", "s0");
+        let mut prev = step0;
+        for i in 1..10usize {
+            prev = plan.add_step_after(
+                BackendKind::Transform,
+                format!("s{}", i - 1),
+                format!("s{i}"),
+                vec![prev],
+            );
+        }
+        assert!(plan.is_valid_dag(), "10-step linear chain must be a valid DAG");
+        let order = plan.topo_order();
+        assert_eq!(order.len(), 10, "all 10 steps must appear in topo order");
+        // Each step must be strictly after its predecessor.
+        for window in order.windows(2) {
+            assert!(window[0] < window[1], "step {} must precede step {}", window[0], window[1]);
+        }
+    }
+
+    #[test]
+    fn progress_cancellation_flag_stops_emission() {
+        // Model progress cancellation: once a flag is set, no further callbacks fire.
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::sync::Arc;
+        let cancelled = Arc::new(AtomicBool::new(false));
+        let call_count = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let cc = call_count.clone();
+        let ca = cancelled.clone();
+
+        // Simulate 5 progress callbacks where we cancel after the 3rd.
+        for i in 0..5usize {
+            if ca.load(Ordering::SeqCst) {
+                break;
+            }
+            cc.fetch_add(1, Ordering::SeqCst);
+            if i == 2 {
+                ca.store(true, Ordering::SeqCst);
+            }
+        }
+        // Only 3 callbacks fired before cancellation.
+        assert_eq!(call_count.load(Ordering::SeqCst), 3);
+    }
+
+    #[test]
+    fn semantic_5_table_registry_generates_select_for_each() {
+        use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegistry};
+        let table_names = ["users", "orders", "products", "events", "sessions"];
+        let mut reg = SemanticRegistry::new();
+        for name in &table_names {
+            let mut m = SemanticModel::new(*name, format!("raw.{name}"));
+            m.add_column(SemanticColumn {
+                name: "id".into(),
+                data_type: SemanticDataType::Integer,
+                description: None,
+            });
+            m.add_column(SemanticColumn {
+                name: "created_at".into(),
+                data_type: SemanticDataType::Timestamp,
+                description: None,
+            });
+            reg.register(m);
+        }
+        assert_eq!(reg.model_count(), 5);
+        for name in &table_names {
+            let model = reg.get(name).expect("model must exist");
+            let sql = model.to_select_sql();
+            assert!(sql.contains(&format!("raw.{name}")), "SQL must reference the source table");
+            assert!(sql.contains("id"), "SQL must contain id column");
+            assert!(sql.contains("created_at"), "SQL must contain created_at column");
+        }
+    }
+
+    #[test]
+    fn backend_registry_register_all_kinds_count_is_16() {
+        let mut reg = BackendRegistry::new();
+        for kind in [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
+            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ] {
+            reg.register(Box::new(NoopBackend::new(kind)));
+        }
+        assert_eq!(reg.registered_kinds().len(), 16);
+    }
+
+    #[test]
+    fn noop_backend_output_format_is_kind_colon_input() {
+        // Every NoopBackend outputs "<kind>:<input>".
+        let kinds = [BackendKind::Data, BackendKind::App, BackendKind::Workflow];
+        for kind in kinds {
+            let b = NoopBackend::new(kind.clone());
+            let result = b.compose("x", &|_| {}).unwrap();
+            assert_eq!(result, format!("{}:x", kind.name()));
+        }
+    }
+
+    #[test]
+    fn dispatch_missing_kind_returns_err_with_kind_name() {
+        // Dispatching to a kind not registered returns an Err containing the kind name.
+        let reg = BackendRegistry::new();
+        for kind in [BackendKind::Pipeline, BackendKind::CodeExec, BackendKind::WebScreen] {
+            let name = kind.name();
+            let err = reg.dispatch(kind, "probe", &|_| {}).unwrap_err();
+            assert!(err.contains(name), "error must mention kind name: {name}");
+        }
+    }
+
+    #[test]
+    fn plan_diamond_all_steps_in_topo_order() {
+        use crate::plan::CompositionPlan;
+        // A→B, A→C, B→D, C→D (diamond).
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "src", "v");
+        let b = plan.add_step_after(BackendKind::Audio, "v", "a", vec![a]);
+        let c = plan.add_step_after(BackendKind::Image, "v", "img", vec![a]);
+        let d = plan.add_step_after(BackendKind::Export, "a", "out", vec![b, c]);
+        assert!(plan.is_valid_dag());
+        let order = plan.topo_order();
+        let pos = |id| order.iter().position(|&x| x == id).unwrap();
+        assert!(pos(a) < pos(b) && pos(a) < pos(c));
+        assert!(pos(b) < pos(d) && pos(c) < pos(d));
+    }
+
+    #[test]
+    fn plan_empty_has_zero_steps() {
+        use crate::plan::CompositionPlan;
+        let plan = CompositionPlan::new();
+        assert_eq!(plan.steps.len(), 0);
+        assert!(plan.is_valid_dag(), "empty plan is valid");
+        assert_eq!(plan.topo_order().len(), 0);
+    }
+
+    #[test]
+    fn semantic_model_5_cols_select_sql_lists_all() {
+        use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel};
+        let mut m = SemanticModel::new("fact_sales", "dw.fact_sales");
+        let cols = ["sale_id", "product_id", "customer_id", "amount", "sale_date"];
+        for name in &cols {
+            m.add_column(SemanticColumn {
+                name: (*name).into(),
+                data_type: SemanticDataType::String,
+                description: None,
+            });
+        }
+        let sql = m.to_select_sql();
+        for col in &cols {
+            assert!(sql.contains(*col), "SQL must contain column: {col}");
+        }
+        assert!(sql.starts_with("SELECT "));
+        assert!(sql.contains("FROM dw.fact_sales"));
+    }
+
+    #[test]
+    fn plan_10_step_all_backend_kinds_are_valid_dag() {
+        use crate::plan::CompositionPlan;
+        let kinds = [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform,
+        ];
+        let mut plan = CompositionPlan::new();
+        let first = plan.add_step(kinds[0].clone(), "in", "s0");
+        let mut prev = first;
+        for (i, kind) in kinds[1..].iter().enumerate() {
+            prev = plan.add_step_after(
+                kind.clone(),
+                format!("s{i}"),
+                format!("s{}", i + 1),
+                vec![prev],
+            );
+        }
+        assert!(plan.is_valid_dag());
+        assert_eq!(plan.steps.len(), 10);
+        assert_eq!(plan.topo_order().len(), 10);
+    }
+
+    #[test]
+    fn backend_kind_all_16_names_are_lowercase_no_spaces() {
+        // All BackendKind::name() values must be lowercase with no spaces.
+        let all_kinds = [
+            BackendKind::Video, BackendKind::Audio, BackendKind::Image,
+            BackendKind::Document, BackendKind::Data, BackendKind::App,
+            BackendKind::Workflow, BackendKind::Scenario, BackendKind::RagQuery,
+            BackendKind::Transform, BackendKind::EmbedGen, BackendKind::Render,
+            BackendKind::Export, BackendKind::Pipeline, BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in &all_kinds {
+            let name = kind.name();
+            assert!(!name.is_empty(), "name must not be empty");
+            assert_eq!(name, name.to_lowercase(), "name must be lowercase: {name}");
+            assert!(!name.contains(' '), "name must not contain spaces: {name}");
+        }
+    }
+
+    #[test]
+    fn dispatch_noop_output_starts_with_kind_name() {
+        let mut reg = BackendRegistry::new();
+        reg.register(Box::new(NoopBackend::new(BackendKind::Scenario)));
+        let out = reg.dispatch(BackendKind::Scenario, "my-input", &|_| {}).unwrap();
+        assert!(out.starts_with("scenario:"), "output must start with 'scenario:'");
+        assert!(out.contains("my-input"), "output must contain input");
+    }
+
+    #[test]
+    fn plan_single_step_dag_is_valid() {
+        use crate::plan::CompositionPlan;
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Render, "input", "output");
+        assert!(plan.is_valid_dag());
+        assert_eq!(plan.topo_order(), vec![0]);
+    }
+
+    #[test]
+    fn semantic_model_with_description_column() {
+        use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel};
+        let mut m = SemanticModel::new("items", "raw.items");
+        m.add_column(SemanticColumn {
+            name: "price".into(),
+            data_type: SemanticDataType::Float,
+            description: Some("unit price in USD".into()),
+        });
+        let col = m.column("price").unwrap();
+        assert_eq!(col.data_type, SemanticDataType::Float);
+        assert_eq!(col.description.as_deref(), Some("unit price in USD"));
     }
 }

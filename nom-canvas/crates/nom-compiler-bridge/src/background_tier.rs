@@ -3,7 +3,7 @@ use crate::shared::{PipelineOutput, SharedState};
 use crossbeam_channel::{Receiver, Sender};
 #[allow(unused_imports)]
 pub use nom_blocks::shared_types::RunEvent;
-use nom_blocks::shared_types::{CompositionPlan, DeepThinkEvent};
+use nom_blocks::shared_types::{CompositionPlan, DeepThinkEvent, PlanStep};
 use std::sync::Arc;
 
 /// Background job variants (Refly BullMQ pattern ported to Rust crossbeam channels)
@@ -237,17 +237,133 @@ impl BackgroundWorker {
     }
 
     fn do_plan_flow(&self, output: &PipelineOutput) -> Result<CompositionPlan, String> {
-        let _ = output;
+        // Parse the output_json to extract a goal/intent string for planning
+        let intent = Self::extract_intent_from_output(output);
+
+        // Split into sentences by punctuation, then words; count words for complexity
+        let word_count = intent.split_whitespace().count().max(1);
+        // 1 step per ~5 words, clamped to [1, 10]
+        let step_count = ((word_count + 4) / 5).clamp(1, 10);
+
+        // Grammar cache hit rate: known Nom keywords boost confidence
+        let known_keywords = [
+            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else",
+            "result", "each", "map", "filter", "reduce", "yield", "use", "from", "where",
+        ];
+        let words: Vec<&str> = intent.split_whitespace().collect();
+        let hits = words
+            .iter()
+            .filter(|w| known_keywords.contains(&w.to_lowercase().as_str()))
+            .count();
+        let confidence = if words.is_empty() {
+            0.1
+        } else {
+            0.4 + 0.5 * (hits as f32 / words.len() as f32)
+        };
+
+        let steps: Vec<PlanStep> = (0..step_count)
+            .map(|i| {
+                // Distribute words across steps for non-trivial descriptions
+                let chunk_size = (word_count + step_count - 1) / step_count;
+                let start = i * chunk_size;
+                let fragment: String = words
+                    .iter()
+                    .skip(start)
+                    .take(chunk_size)
+                    .cloned()
+                    .collect::<Vec<_>>()
+                    .join(" ");
+                let description = if fragment.is_empty() {
+                    format!("Step {}: refine result", i + 1)
+                } else {
+                    format!("Step {}: {}", i + 1, fragment)
+                };
+                PlanStep {
+                    id: format!("step_{i}"),
+                    description,
+                    kind: "plan".into(),
+                    depends_on: if i > 0 {
+                        vec![format!("step_{}", i - 1)]
+                    } else {
+                        vec![]
+                    },
+                }
+            })
+            .collect();
+
+        let rationale = format!(
+            "Goal has {} words → {} steps; grammar cache hits {}/{} → confidence {:.2}",
+            word_count,
+            step_count,
+            hits,
+            words.len(),
+            confidence
+        );
+
         Ok(CompositionPlan {
-            intent: "stub plan".into(),
-            steps: vec![],
-            confidence: 0.0,
+            intent: rationale,
+            steps,
+            confidence,
         })
     }
 
-    fn do_verify(&self, _plan: &CompositionPlan) -> Vec<String> {
-        // Wave C: use nom-verifier or nom-diagnostics
-        vec![]
+    fn extract_intent_from_output(output: &PipelineOutput) -> String {
+        // Try to parse output_json for a "source" or "intent" field
+        if let Ok(v) = serde_json::from_str::<serde_json::Value>(&output.output_json) {
+            if let Some(s) = v.get("intent").and_then(|x| x.as_str()) {
+                return s.to_string();
+            }
+            if let Some(s) = v.get("source").and_then(|x| x.as_str()) {
+                return s.to_string();
+            }
+        }
+        // Fallback: use output_json itself as a string hint
+        output.output_json.clone()
+    }
+
+    fn do_verify(&self, plan: &CompositionPlan) -> Vec<String> {
+        let code = &plan.intent;
+        let mut diagnostics: Vec<String> = vec![];
+
+        // Check 1: empty input
+        if code.trim().is_empty() {
+            diagnostics.push("ERROR EmptyInput: intent/code string is empty".into());
+            return diagnostics;
+        }
+
+        // Check 2: unbalanced braces
+        let open_braces = code.chars().filter(|&c| c == '{').count();
+        let close_braces = code.chars().filter(|&c| c == '}').count();
+        if open_braces != close_braces {
+            diagnostics.push(format!(
+                "ERROR UnbalancedBraces: {} opening vs {} closing braces",
+                open_braces, close_braces
+            ));
+        }
+
+        // Check 3: lines exceeding performance threshold
+        let line_count = code.lines().count();
+        if line_count > 1000 {
+            diagnostics.push(format!(
+                "WARN PerformanceCaution: input has {} lines (>1000), analysis may be slow",
+                line_count
+            ));
+        }
+
+        // Check 4: steps structural validation
+        for (i, step) in plan.steps.iter().enumerate() {
+            if step.id.is_empty() {
+                diagnostics.push(format!("ERROR StepMissingId: step at index {i} has empty id"));
+            }
+            if step.description.is_empty() {
+                diagnostics.push(format!(
+                    "ERROR StepMissingDescription: step '{}' has empty description",
+                    step.id
+                ));
+            }
+        }
+
+        diagnostics
     }
 
     fn do_deep_think(
@@ -258,15 +374,100 @@ impl BackgroundWorker {
     ) {
         use nom_blocks::shared_types::DeepThinkStep;
 
-        // Stub: emit 3 steps then Final
-        for i in 0..3 {
+        if interrupt.load(std::sync::atomic::Ordering::Relaxed) {
+            return;
+        }
+
+        // Extract key entities: words longer than 4 chars that are not common stop words
+        let stop_words = ["that", "with", "this", "from", "have", "will", "been", "they"];
+        let entities: Vec<&str> = intent
+            .split_whitespace()
+            .filter(|w| w.len() > 4 && !stop_words.contains(&w.to_lowercase().as_str()))
+            .take(5)
+            .collect();
+        let entities_str = if entities.is_empty() {
+            intent.split_whitespace().take(3).collect::<Vec<_>>().join(", ")
+        } else {
+            entities.join(", ")
+        };
+
+        // Sub-problems: split intent into clause fragments at punctuation or conjunctions
+        let sub_problems: Vec<&str> = intent
+            .split(|c: char| c == ',' || c == ';' || c == '.')
+            .map(str::trim)
+            .filter(|s| !s.is_empty())
+            .take(3)
+            .collect();
+        let sub_str = if sub_problems.is_empty() {
+            intent.to_string()
+        } else {
+            sub_problems.join(" | ")
+        };
+
+        let known_keywords = [
+            "define", "that", "is", "with", "and", "or", "not", "if", "then", "else",
+            "result", "each", "map", "filter", "reduce", "yield", "use", "from", "where",
+        ];
+        let words: Vec<&str> = intent.split_whitespace().collect();
+        let hits = words
+            .iter()
+            .filter(|w| known_keywords.contains(&w.to_lowercase().as_str()))
+            .count();
+        let cache_hit_rate = if words.is_empty() {
+            0.0
+        } else {
+            hits as f32 / words.len() as f32
+        };
+
+        let steps_data: &[(&str, Vec<String>, f32)] = &[
+            (
+                &format!("Analyzing: {intent}"),
+                vec![
+                    format!("input_length:{}", intent.len()),
+                    format!("word_count:{}", words.len()),
+                ],
+                0.3,
+            ),
+            (
+                "Decomposing into sub-problems",
+                vec![format!("sub_problems: {sub_str}")],
+                0.45,
+            ),
+            (
+                &format!("Identifying key entities: {entities_str}"),
+                vec![
+                    format!("entity_count:{}", entities.len()),
+                    format!("entities:[{entities_str}]"),
+                ],
+                0.55,
+            ),
+            (
+                "Forming hypothesis based on entity relationships",
+                vec![
+                    format!("dominant_entity:{}", entities.first().copied().unwrap_or(intent)),
+                    "relationship:compositional".into(),
+                ],
+                0.7,
+            ),
+            (
+                "Validating against grammar cache",
+                vec![
+                    format!("cache_hits:{hits}"),
+                    format!("cache_hit_rate:{cache_hit_rate:.2}"),
+                    format!("grammar_version:{}", self.state.grammar_version()),
+                ],
+                0.4 + 0.5 * cache_hit_rate,
+            ),
+        ];
+
+        for (i, (hypothesis, evidence, confidence)) in steps_data.iter().enumerate() {
             if interrupt.load(std::sync::atomic::Ordering::Relaxed) {
-                break;
+                return;
             }
             let step = DeepThinkStep {
-                hypothesis: format!("Hypothesis {i}: exploring intent '{intent}'"),
-                evidence: vec![format!("evidence_{i}_a"), format!("evidence_{i}_b")],
-                confidence: 0.3 + (i as f32) * 0.2,
+                hypothesis: hypothesis.to_string(),
+                evidence: evidence.clone(),
+                confidence: *confidence,
                 counterevidence: vec![],
                 refined_from: if i > 0 {
                     Some(format!("step_{}", i - 1))
@@ -278,10 +479,11 @@ impl BackgroundWorker {
         }
 
         if !interrupt.load(std::sync::atomic::Ordering::Relaxed) {
+            let final_confidence = 0.4 + 0.5 * cache_hit_rate;
             let _ = events.send(DeepThinkEvent::Final(CompositionPlan {
                 intent: intent.to_string(),
                 steps: vec![],
-                confidence: 0.9,
+                confidence: final_confidence,
             }));
         }
     }
@@ -307,7 +509,7 @@ mod tests {
         let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
         worker.do_deep_think("summarize document", &interrupt, &tx);
         let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
-        assert_eq!(events.len(), 4); // 3 steps + 1 Final
+        assert_eq!(events.len(), 6); // 5 steps + 1 Final
         assert!(matches!(events.last(), Some(DeepThinkEvent::Final(_))));
     }
 
@@ -456,7 +658,194 @@ mod tests {
             confidence: 0.5,
         };
         let diags = worker.do_verify(&plan);
-        // Stub verify always returns empty diagnostics — must be a Vec
+        // "test" is non-empty, balanced braces, 1 line -- no diagnostics expected
         assert!(diags.is_empty());
+    }
+
+    // --- 8 new tests for AE17 ---
+
+    #[test]
+    fn plan_flow_single_word_goal_produces_one_step() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 1,
+            grammar_version: 1,
+            output_json: r#"{"intent":"run"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert_eq!(plan.steps.len(), 1);
+        assert!(!plan.steps[0].description.is_empty());
+    }
+
+    #[test]
+    fn plan_flow_long_goal_produces_multiple_steps() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let goal =
+            "define result that is map each item with filter and reduce or yield if not from where use and";
+        let output = PipelineOutput {
+            source_hash: 2,
+            grammar_version: 1,
+            output_json: format!(r#"{{"intent":"{}"}}"#, goal),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(plan.steps.len() >= 2, "expected multiple steps for long goal");
+        assert!(plan.steps.len() <= 10, "capped at 10 steps");
+    }
+
+    #[test]
+    fn plan_flow_nom_keywords_raise_confidence() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output_nom = PipelineOutput {
+            source_hash: 3,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is"}"#.into(),
+        };
+        let plan_nom = worker.do_plan_flow(&output_nom).unwrap();
+        let output_plain = PipelineOutput {
+            source_hash: 4,
+            grammar_version: 1,
+            output_json: r#"{"intent":"xyzzy frobble quux blorp"}"#.into(),
+        };
+        let plan_plain = worker.do_plan_flow(&output_plain).unwrap();
+        assert!(
+            plan_nom.confidence > plan_plain.confidence,
+            "Nom keyword goal should have higher confidence: {:.2} vs {:.2}",
+            plan_nom.confidence,
+            plan_plain.confidence
+        );
+    }
+
+    #[test]
+    fn plan_flow_steps_have_sequential_dependencies() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 5,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define x that is map each item with filter"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(plan.steps[0].depends_on.is_empty());
+        if plan.steps.len() > 1 {
+            assert!(!plan.steps[1].depends_on.is_empty());
+        }
+    }
+
+    #[test]
+    fn verify_empty_intent_emits_empty_input_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "   ".into(),
+            steps: vec![],
+            confidence: 0.0,
+        };
+        let diags = worker.do_verify(&plan);
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].contains("EmptyInput"));
+    }
+
+    #[test]
+    fn verify_unbalanced_braces_emits_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define x { that is 42".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(
+            diags.iter().any(|d| d.contains("UnbalancedBraces")),
+            "expected UnbalancedBraces diagnostic, got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn verify_valid_plan_returns_no_diagnostics() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define result that is map each item".into(),
+            steps: vec![PlanStep {
+                id: "step_0".into(),
+                description: "map items".into(),
+                kind: "plan".into(),
+                depends_on: vec![],
+            }],
+            confidence: 0.7,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(
+            diags.is_empty(),
+            "valid plan should have no diagnostics: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn deep_think_steps_reference_input_prompt() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("define pipeline that transforms data", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let step_texts: Vec<String> = events
+            .iter()
+            .filter_map(|e| {
+                if let DeepThinkEvent::Step(s) = e {
+                    Some(format!("{} {:?}", s.hypothesis, s.evidence))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        let all_text = step_texts.join(" ");
+        assert!(
+            all_text.contains("pipeline")
+                || all_text.contains("transforms")
+                || all_text.contains("data"),
+            "steps should reference input entities; got: {}",
+            all_text
+        );
+    }
+
+    #[test]
+    fn deep_think_produces_at_least_five_steps() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("analyze and synthesize results", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let step_count = events
+            .iter()
+            .filter(|e| matches!(e, DeepThinkEvent::Step(_)))
+            .count();
+        assert!(step_count >= 5, "expected at least 5 steps, got {}", step_count);
+    }
+
+    #[test]
+    fn deep_think_final_event_confidence_is_nonzero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("define result that is map each item", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let final_confidence = events.iter().find_map(|e| {
+            if let DeepThinkEvent::Final(plan) = e {
+                Some(plan.confidence)
+            } else {
+                None
+            }
+        });
+        assert!(final_confidence.is_some(), "expected a Final event");
+        assert!(final_confidence.unwrap() > 0.0, "final confidence should be > 0");
     }
 }

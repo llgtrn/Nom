@@ -92,13 +92,17 @@ impl CodeExecBackend {
     /// Evaluate a code string through the sandbox evaluator.
     /// Handles the `eval:` prefix for integer literals; passes other input through unchanged.
     fn eval_code(input: &str) -> String {
-        use nom_graph::{eval_expr, EvalContext, Expr, SandboxValue};
+        use nom_graph::{eval_expr, sanitize, EvalContext, Expr, SandboxValue};
 
         if input.trim().starts_with("eval:") {
             let code = input.trim().trim_start_matches("eval:").trim();
             // Try integer literal first, then float, then fall back to a string literal.
             if let Ok(n) = code.parse::<i64>() {
                 let expr = Expr::Literal(SandboxValue::Int(n));
+                // Sanitize the expression before evaluation to enforce depth and allowlists.
+                if sanitize(&expr).is_err() {
+                    return code.to_string();
+                }
                 let ctx = EvalContext::new();
                 match eval_expr(&expr, &ctx) {
                     Ok(SandboxValue::Int(v)) => return format!("{v}"),

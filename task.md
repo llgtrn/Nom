@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean — Wave AE audit in progress
+**Date:** 2026-04-18 | **HEAD:** `d6d87c1` | **Tests:** 3026 | **Workspace:** clean — Wave AE fixes in progress
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 

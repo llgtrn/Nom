@@ -1,5 +1,7 @@
 use crate::scene::{FrostedRect, Scene};
+use crate::shaders::{QUAD_FRAG_WGSL, QUAD_VERT_WGSL};
 use crate::types::Hsla;
+use std::sync::Arc;
 
 // ---------------------------------------------------------------------------
 // Color space types
@@ -130,10 +132,144 @@ pub struct FrameStats {
 pub struct Renderer {
     /// Always 8 — one pipeline per `PipelineKind`.
     pub pipeline_count: usize,
-    /// Incremented each time `draw` is called; useful for frame-rate tracking.
+    /// Incremented each time `draw` or `end_frame` completes.
     pub frame_count: u64,
     /// Per-frame draw call statistics.
     pub frame_stats: FrameStats,
+    /// GPU resources — present when constructed via `with_gpu`.
+    pub gpu: Option<GpuResources>,
+    /// Quads queued during the current frame; flushed + cleared by
+    /// `end_frame`. Always present; in CPU-only mode the buffer still
+    /// absorbs queued instances so callers can inspect them in tests.
+    pending_quads: Vec<QuadInstance>,
+    /// True between `begin_frame` and `end_frame`.
+    in_frame: bool,
+}
+
+/// Initial capacity (in `QuadInstance` slots) for the per-frame quad
+/// buffer. Grown on demand when frames push more instances than fit.
+pub const QUAD_INSTANCE_INITIAL_CAPACITY: usize = 1024;
+
+/// Errors returned by the GPU-aware frame lifecycle.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum FrameError {
+    /// `end_frame` or `draw_quads_gpu` called without a matching
+    /// `begin_frame`.
+    NotInFrame,
+    /// `begin_frame` called twice without an intervening `end_frame`.
+    AlreadyInFrame,
+}
+
+impl std::fmt::Display for FrameError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            FrameError::NotInFrame => f.write_str("renderer is not inside a frame"),
+            FrameError::AlreadyInFrame => f.write_str("renderer already has an open frame"),
+        }
+    }
+}
+
+impl std::error::Error for FrameError {}
+
+/// GPU resources bound to a live wgpu device. Constructed by
+/// `Renderer::with_gpu`; absent in CPU-only / test mode.
+pub struct GpuResources {
+    pub device: Arc<wgpu::Device>,
+    pub queue: Arc<wgpu::Queue>,
+    pub surface_format: wgpu::TextureFormat,
+    pub quad_pipeline: wgpu::RenderPipeline,
+    /// Device-side storage for `QuadInstance` uploads.
+    pub instance_buffer: wgpu::Buffer,
+    /// Current capacity in slots (not bytes).
+    pub instance_buffer_capacity: usize,
+}
+
+impl GpuResources {
+    fn new(
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
+        surface_format: wgpu::TextureFormat,
+    ) -> Self {
+        let quad_pipeline = build_quad_pipeline(&device, surface_format);
+        let instance_buffer_capacity = QUAD_INSTANCE_INITIAL_CAPACITY;
+        let instance_buffer = device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("nom-gpui quad-instances"),
+            size: (instance_buffer_capacity * std::mem::size_of::<QuadInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        Self {
+            device,
+            queue,
+            surface_format,
+            quad_pipeline,
+            instance_buffer,
+            instance_buffer_capacity,
+        }
+    }
+
+    /// Grow the instance buffer to hold at least `required` slots. Doubles
+    /// capacity until satisfied so amortised cost stays O(1).
+    fn ensure_capacity(&mut self, required: usize) {
+        if required <= self.instance_buffer_capacity {
+            return;
+        }
+        let mut new_cap = self.instance_buffer_capacity.max(1);
+        while new_cap < required {
+            new_cap *= 2;
+        }
+        self.instance_buffer = self.device.create_buffer(&wgpu::BufferDescriptor {
+            label: Some("nom-gpui quad-instances"),
+            size: (new_cap * std::mem::size_of::<QuadInstance>()) as u64,
+            usage: wgpu::BufferUsages::VERTEX | wgpu::BufferUsages::COPY_DST,
+            mapped_at_creation: false,
+        });
+        self.instance_buffer_capacity = new_cap;
+    }
+}
+
+/// Build the minimal quad render pipeline from the WGSL stubs in
+/// `shaders.rs`. Proves the `Device` → `PipelineLayout` → `RenderPipeline`
+/// chain compiles against the caller's surface format.
+fn build_quad_pipeline(
+    device: &wgpu::Device,
+    surface_format: wgpu::TextureFormat,
+) -> wgpu::RenderPipeline {
+    let vs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui quad-vs"),
+        source: wgpu::ShaderSource::Wgsl(QUAD_VERT_WGSL.into()),
+    });
+    let fs_module = device.create_shader_module(wgpu::ShaderModuleDescriptor {
+        label: Some("nom-gpui quad-fs"),
+        source: wgpu::ShaderSource::Wgsl(QUAD_FRAG_WGSL.into()),
+    });
+    let layout = device.create_pipeline_layout(&wgpu::PipelineLayoutDescriptor {
+        label: Some("nom-gpui quad-layout"),
+        bind_group_layouts: &[],
+        push_constant_ranges: &[],
+    });
+    device.create_render_pipeline(&wgpu::RenderPipelineDescriptor {
+        label: Some("nom-gpui quad-pipeline"),
+        layout: Some(&layout),
+        vertex: wgpu::VertexState {
+            module: &vs_module,
+            entry_point: "vs_main",
+            buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+            module: &fs_module,
+            entry_point: "fs_main",
+            targets: &[Some(wgpu::ColorTargetState {
+                format: surface_format,
+                blend: Some(wgpu::BlendState::ALPHA_BLENDING),
+                write_mask: wgpu::ColorWrites::ALL,
+            })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+    })
 }
 
 impl Renderer {
@@ -142,7 +278,82 @@ impl Renderer {
             pipeline_count: 8,
             frame_count: 0,
             frame_stats: FrameStats::default(),
+            gpu: None,
+            pending_quads: Vec::new(),
+            in_frame: false,
         }
+    }
+
+    /// Construct a GPU-attached renderer bound to the given wgpu device,
+    /// queue, and surface format. Builds the quad render pipeline + a
+    /// pre-allocated instance buffer immediately.
+    pub fn with_gpu(
+        device: Arc<wgpu::Device>,
+        queue: Arc<wgpu::Queue>,
+        surface_format: wgpu::TextureFormat,
+    ) -> Self {
+        Self {
+            pipeline_count: 8,
+            frame_count: 0,
+            frame_stats: FrameStats::default(),
+            gpu: Some(GpuResources::new(device, queue, surface_format)),
+            pending_quads: Vec::with_capacity(QUAD_INSTANCE_INITIAL_CAPACITY),
+            in_frame: false,
+        }
+    }
+
+    /// Open a new frame. Clears `pending_quads` and arms the in-frame flag.
+    pub fn begin_frame(&mut self) -> Result<(), FrameError> {
+        if self.in_frame {
+            return Err(FrameError::AlreadyInFrame);
+        }
+        self.pending_quads.clear();
+        self.in_frame = true;
+        Ok(())
+    }
+
+    /// Queue a slice of `QuadInstance` records for upload when the frame
+    /// ends. In GPU mode also grows the device-side buffer on demand.
+    pub fn draw_quads_gpu(&mut self, quads: &[QuadInstance]) -> Result<(), FrameError> {
+        if !self.in_frame {
+            return Err(FrameError::NotInFrame);
+        }
+        self.pending_quads.extend_from_slice(quads);
+        self.frame_stats.quads_drawn += quads.len();
+        if let Some(gpu) = self.gpu.as_mut() {
+            gpu.ensure_capacity(self.pending_quads.len());
+        }
+        Ok(())
+    }
+
+    /// Close the current frame. Uploads `pending_quads` via
+    /// `Queue::write_buffer` when GPU-attached, disarms the in-frame flag,
+    /// and increments `frame_count` / `frame_stats.frames`.
+    pub fn end_frame(&mut self) -> Result<(), FrameError> {
+        if !self.in_frame {
+            return Err(FrameError::NotInFrame);
+        }
+        if let Some(gpu) = self.gpu.as_mut() {
+            if !self.pending_quads.is_empty() {
+                let bytes = bytemuck::cast_slice(self.pending_quads.as_slice());
+                gpu.queue.write_buffer(&gpu.instance_buffer, 0, bytes);
+            }
+        }
+        self.in_frame = false;
+        self.frame_count += 1;
+        self.frame_stats.frames += 1;
+        Ok(())
+    }
+
+    /// Whether a frame is currently open.
+    pub fn is_in_frame(&self) -> bool {
+        self.in_frame
+    }
+
+    /// Quads queued in the currently-open frame. Cleared on the next
+    /// `begin_frame`.
+    pub fn pending_quads(&self) -> &[QuadInstance] {
+        &self.pending_quads
     }
 
     /// Returns a reference to the current frame statistics.
@@ -219,8 +430,10 @@ impl Renderer {
     /// Frosted-glass software approximation pass.
     ///
     /// Each `FrostedRect` is decomposed into two `QuadInstance`s:
-    /// 1. **Background quad** — neutral grey fill at `bg_alpha` opacity,
-    ///    representing the blurred-background tint.
+    /// 1. **Background quad** — neutral grey fill whose alpha varies with
+    ///    `blur_radius`: higher blur → more transparent overlay.
+    ///    Formula: `alpha = (0.7 - blur_radius.min(20.0) * 0.015).max(0.3)`
+    ///    (blur_radius=0 → alpha≈0.7, blur_radius=20 → alpha≈0.4)
     /// 2. **Border quad** — white border at `border_alpha` opacity, representing
     ///    the highlight rim of the frosted surface.
     ///
@@ -238,10 +451,14 @@ impl Renderer {
                 rect.bounds.size.height.0,
             ];
 
-            // Background quad: neutral mid-grey at bg_alpha opacity.
+            // Vary tint alpha based on blur_radius: higher blur → more transparent.
+            // blur_radius=0 → alpha≈0.7, blur_radius=20 → alpha≈0.4, clamped to [0.3, 0.7].
+            let blur_alpha = (0.7 - rect.blur_radius.min(20.0) * 0.015).max(0.3);
+
+            // Background quad: neutral mid-grey at blur-modulated alpha opacity.
             quads.push(QuadInstance {
                 bounds,
-                bg_color: [0.5, 0.5, 0.5, rect.bg_alpha],
+                bg_color: [0.5, 0.5, 0.5, blur_alpha],
                 border_color: [0.0, 0.0, 0.0, 0.0],
                 border_widths: [0.0; 4],
                 corner_radii: [0.0; 4],
@@ -552,11 +769,13 @@ mod tests {
             "expected 2 quads (bg + border) per frosted rect"
         );
 
-        // Background quad: non-zero bg_alpha, zero border alpha.
+        // Background quad: blur_radius=12 → alpha=(0.7 - 12*0.015).max(0.3)=0.52.
+        // blur_alpha is derived from blur_radius, not bg_alpha directly.
+        let expected_blur_alpha = (0.7_f32 - 12.0_f32 * 0.015).max(0.3);
         let bg = &quads[0];
         assert!(
-            (bg.bg_color[3] - 0.7).abs() < 1e-6,
-            "bg quad alpha should equal bg_alpha (0.7), got {}",
+            (bg.bg_color[3] - expected_blur_alpha).abs() < 1e-5,
+            "bg quad alpha should equal blur-derived alpha ({expected_blur_alpha:.4}), got {}",
             bg.bg_color[3]
         );
         assert!(
@@ -844,6 +1063,212 @@ mod tests {
             renderer.stats().frosted_drawn,
             2,
             "frosted_drawn should count 2 FrostedRects"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // AE9: blur_radius influences bg quad alpha
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn frosted_rect_blur_radius_zero_gives_alpha_0_7() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+            },
+            blur_radius: 0.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.2,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        // alpha = (0.7 - 0.0 * 0.015).max(0.3) = 0.7
+        let expected = (0.7_f32 - 0.0_f32 * 0.015).max(0.3);
+        assert!(
+            (quads[0].bg_color[3] - expected).abs() < 1e-5,
+            "blur_radius=0 must yield bg alpha {expected:.4}, got {}",
+            quads[0].bg_color[3]
+        );
+    }
+
+    #[test]
+    fn frosted_rect_blur_radius_20_gives_alpha_approx_0_4() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+
+        let mut renderer = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+            },
+            blur_radius: 20.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.2,
+        };
+        let quads = renderer.draw_frosted_rects(&[rect]);
+        // alpha = (0.7 - 20.0 * 0.015).max(0.3) = (0.7 - 0.3).max(0.3) = 0.4
+        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
+        assert!(
+            (quads[0].bg_color[3] - expected).abs() < 1e-5,
+            "blur_radius=20 must yield bg alpha {expected:.4}, got {}",
+            quads[0].bg_color[3]
+        );
+        // Must be approximately 0.4
+        assert!(
+            (expected - 0.4).abs() < 1e-5,
+            "blur_radius=20 expected alpha ~0.4, formula gives {expected:.4}"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // AE16: Hsla.h uses 0-360 degrees; hsla_to_rgba normalises internally
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn hsla_h_range_is_0_to_360_degrees() {
+        // The Hsla type comment says h: 0-360. Verify that hsla_to_rgba
+        // produces correct output for a canonical 0-360 input.
+        // Pure green: h=120, s=1, l=0.5 → (0, 1, 0, 1)
+        let rgba = hsla_to_rgba(Hsla { h: 120.0, s: 1.0, l: 0.5, a: 1.0 });
+        assert!(rgba[0] < 0.01, "h=120 red must be ~0, got {}", rgba[0]);
+        assert!((rgba[1] - 1.0).abs() < 1e-4, "h=120 green must be ~1, got {}", rgba[1]);
+        assert!(rgba[2] < 0.01, "h=120 blue must be ~0, got {}", rgba[2]);
+    }
+
+    #[test]
+    fn hsla_h_roundtrip_consistent_with_tokens_convention() {
+        // tokens.rs stores hue in 0-360 degrees (e.g. 220.0 for blue).
+        // hsla_to_rgba divides h by 360 internally, so Hsla{h:220,...} should
+        // produce the same result as the CSS-standard hsl(220°, ...).
+        // hsl(220, 13%, 11%) — primary background from tokens.rs:
+        let c = Hsla { h: 220.0, s: 0.13, l: 0.11, a: 1.0 };
+        let [r, g, b, a] = hsla_to_rgba(c);
+        // All channels must be in [0.0, 1.0]
+        for ch in [r, g, b, a] {
+            assert!((0.0..=1.0).contains(&ch), "channel {ch} out of [0,1]");
+        }
+        // Must be a dark blueish colour: blue channel must exceed red channel.
+        assert!(b > r, "h=220 should be blueish (b={b:.4} > r={r:.4})");
+        assert_eq!(a, 1.0);
+    }
+
+    // ------------------------------------------------------------------
+    // AE1: Real wgpu frame lifecycle — begin_frame / draw_quads_gpu /
+    //      end_frame, instance buffer capacity, error paths.
+    //      Exercised without a real GPU; `gpu` field is `None` so the
+    //      code paths that require a `wgpu::Device` are bypassed while
+    //      the stats / lifecycle bookkeeping is fully covered.
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn draw_quads_gpu_increments_stats_counter() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().expect("begin_frame");
+        let q1 = QuadInstance::default();
+        let q2 = QuadInstance::default();
+        let q3 = QuadInstance::default();
+        renderer
+            .draw_quads_gpu(&[q1, q2, q3])
+            .expect("draw_quads_gpu");
+        assert_eq!(
+            renderer.stats().quads_drawn,
+            3,
+            "quads_drawn must reflect queued instances"
+        );
+        assert_eq!(
+            renderer.pending_quads().len(),
+            3,
+            "pending buffer must hold queued instances"
+        );
+    }
+
+    #[test]
+    fn begin_frame_clears_pending_quads() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        renderer
+            .draw_quads_gpu(&[QuadInstance::default(); 4])
+            .unwrap();
+        assert_eq!(renderer.pending_quads().len(), 4);
+        renderer.end_frame().unwrap();
+
+        // Second frame: begin_frame must wipe the previous frame's queue.
+        renderer.begin_frame().unwrap();
+        assert_eq!(
+            renderer.pending_quads().len(),
+            0,
+            "begin_frame must clear pending_quads"
+        );
+        assert!(renderer.is_in_frame(), "in_frame flag must be armed");
+    }
+
+    #[test]
+    fn end_frame_increments_frame_counter() {
+        let mut renderer = Renderer::new();
+        assert_eq!(renderer.frame_count, 0);
+        assert_eq!(renderer.stats().frames, 0);
+
+        renderer.begin_frame().unwrap();
+        renderer.end_frame().unwrap();
+        assert_eq!(renderer.frame_count, 1, "frame_count must advance");
+        assert_eq!(renderer.stats().frames, 1, "frame_stats.frames must advance");
+        assert!(
+            !renderer.is_in_frame(),
+            "end_frame must disarm the in-frame flag"
+        );
+
+        renderer.begin_frame().unwrap();
+        renderer.end_frame().unwrap();
+        assert_eq!(renderer.frame_count, 2);
+        assert_eq!(renderer.stats().frames, 2);
+    }
+
+    #[test]
+    fn instance_buffer_initial_capacity_is_documented() {
+        // The advertised initial capacity must match the constant so
+        // callers sizing their uploads against QUAD_INSTANCE_INITIAL_CAPACITY
+        // don't trigger a silent reallocation on the first frame.
+        assert_eq!(QUAD_INSTANCE_INITIAL_CAPACITY, 1024);
+
+        // Without a GPU bound there is no `instance_buffer`, but the
+        // CPU-only renderer must still accept the advertised capacity
+        // without panicking.
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        let batch = vec![QuadInstance::default(); QUAD_INSTANCE_INITIAL_CAPACITY];
+        renderer
+            .draw_quads_gpu(&batch)
+            .expect("must accept initial-capacity worth of quads");
+        assert_eq!(renderer.pending_quads().len(), QUAD_INSTANCE_INITIAL_CAPACITY);
+    }
+
+    #[test]
+    fn end_frame_without_begin_frame_errors() {
+        let mut renderer = Renderer::new();
+        assert_eq!(
+            renderer.end_frame(),
+            Err(FrameError::NotInFrame),
+            "end_frame before begin_frame must return NotInFrame"
+        );
+
+        // draw_quads_gpu must also refuse when no frame is open.
+        assert_eq!(
+            renderer.draw_quads_gpu(&[QuadInstance::default()]),
+            Err(FrameError::NotInFrame),
+            "draw_quads_gpu outside a frame must return NotInFrame"
+        );
+
+        // Double-begin must be rejected.
+        renderer.begin_frame().unwrap();
+        assert_eq!(
+            renderer.begin_frame(),
+            Err(FrameError::AlreadyInFrame),
+            "begin_frame inside a frame must return AlreadyInFrame"
         );
     }
 }

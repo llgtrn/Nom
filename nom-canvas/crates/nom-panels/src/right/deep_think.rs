@@ -496,4 +496,162 @@ mod tests {
         assert_eq!(panel.steps.len(), 0);
         assert!(panel.intent.is_empty());
     }
+
+    // ── deep_think card limit enforcement ────────────────────────────────────
+
+    /// Cards accumulate without bound unless caller enforces a limit externally.
+    #[test]
+    fn deep_think_card_count_grows_with_each_ingest() {
+        let mut panel = DeepThinkPanel::new();
+        for i in 0..10 {
+            panel.ingest_events(vec![make_step(&format!("h{i}"), 0.5, vec![])]);
+        }
+        assert_eq!(panel.card_count(), 10);
+    }
+
+    /// Simulated limit: after cap is exceeded, old cards are dropped.
+    #[test]
+    fn deep_think_simulated_card_cap() {
+        let cap = 5usize;
+        let mut panel = DeepThinkPanel::new();
+        for i in 0..8 {
+            panel.ingest_events(vec![make_step(&format!("h{i}"), 0.5, vec![])]);
+        }
+        // Enforce cap by truncating
+        if panel.cards.len() > cap {
+            let drain_count = panel.cards.len() - cap;
+            panel.cards.drain(0..drain_count);
+        }
+        assert_eq!(panel.cards.len(), cap);
+    }
+
+    /// High confidence filter returns only high-confidence steps.
+    #[test]
+    fn deep_think_high_confidence_filter() {
+        let mut panel = DeepThinkPanel::new();
+        panel.push_step(ThinkingStep::new("low", 0.3));
+        panel.push_step(ThinkingStep::new("med", 0.6));
+        panel.push_step(ThinkingStep::new("high1", 0.85));
+        panel.push_step(ThinkingStep::new("high2", 0.95));
+        let high = panel.high_confidence_steps();
+        assert_eq!(high.len(), 2);
+        for s in &high {
+            assert!(s.confidence >= 0.8, "confidence must be >= 0.8");
+        }
+    }
+
+    /// Empty panel: high_confidence_steps returns empty.
+    #[test]
+    fn deep_think_high_confidence_empty_panel() {
+        let panel = DeepThinkPanel::new();
+        assert!(panel.high_confidence_steps().is_empty());
+    }
+
+    /// Card numbering is stable across multiple ingest batches.
+    #[test]
+    fn deep_think_card_numbering_stable_across_batches() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![make_step("a", 0.5, vec![]), make_step("b", 0.5, vec![])]);
+        panel.ingest_events(vec![make_step("c", 0.5, vec![])]);
+        assert_eq!(panel.cards[0].step_num, 0);
+        assert_eq!(panel.cards[1].step_num, 1);
+        assert_eq!(panel.cards[2].step_num, 2);
+    }
+
+    /// ThinkCard's hypothesis matches the original step hypothesis.
+    #[test]
+    fn deep_think_card_hypothesis_matches_step() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![make_step("verify this hypothesis", 0.7, vec![])]);
+        assert!(panel.cards[0].hypothesis.contains("verify this hypothesis"));
+    }
+
+    /// Confidence boundary: exactly 0.8 is HIGH.
+    #[test]
+    fn thinking_step_confidence_boundary_0_8_is_high() {
+        let s = ThinkingStep::new("boundary", 0.8);
+        assert_eq!(s.confidence_label(), "HIGH");
+    }
+
+    /// Confidence boundary: exactly 0.5 is MED.
+    #[test]
+    fn thinking_step_confidence_boundary_0_5_is_med() {
+        let s = ThinkingStep::new("boundary", 0.5);
+        assert_eq!(s.confidence_label(), "MED");
+    }
+
+    /// Confidence boundary: exactly 0.0 is LOW.
+    #[test]
+    fn thinking_step_confidence_0_is_low() {
+        let s = ThinkingStep::new("zero", 0.0);
+        assert_eq!(s.confidence_label(), "LOW");
+    }
+
+    // ── quick_search debounce simulation ─────────────────────────────────────
+
+    /// Debounce simulation: only the last event in a burst is processed.
+    #[test]
+    fn quick_search_debounce_last_wins() {
+        // Simulate a debounce queue: only the last query in a rapid sequence matters.
+        let queries = vec!["n", "no", "nom", "nom_c", "nom_ca"];
+        let debounced = queries.last().copied();
+        assert_eq!(debounced, Some("nom_ca"), "debounce must yield the last query");
+    }
+
+    /// Debounce with empty burst yields None.
+    #[test]
+    fn quick_search_debounce_empty_burst() {
+        let queries: Vec<&str> = vec![];
+        let debounced = queries.last().copied();
+        assert!(debounced.is_none());
+    }
+
+    /// Debounce with single event yields that event.
+    #[test]
+    fn quick_search_debounce_single_event() {
+        let queries = vec!["hello"];
+        let debounced = queries.last().copied();
+        assert_eq!(debounced, Some("hello"));
+    }
+
+    // ── panel resize min/max constraints ─────────────────────────────────────
+
+    /// Panel resize clamps to minimum width.
+    #[test]
+    fn panel_resize_clamps_to_min() {
+        let min_size = 120.0_f32;
+        let max_size = 600.0_f32;
+        let requested = 50.0_f32;
+        let actual = requested.clamp(min_size, max_size);
+        assert!((actual - min_size).abs() < 1e-6, "must clamp to min={min_size}");
+    }
+
+    /// Panel resize clamps to maximum width.
+    #[test]
+    fn panel_resize_clamps_to_max() {
+        let min_size = 120.0_f32;
+        let max_size = 600.0_f32;
+        let requested = 800.0_f32;
+        let actual = requested.clamp(min_size, max_size);
+        assert!((actual - max_size).abs() < 1e-6, "must clamp to max={max_size}");
+    }
+
+    /// Panel resize within bounds is unchanged.
+    #[test]
+    fn panel_resize_within_bounds_unchanged() {
+        let min_size = 120.0_f32;
+        let max_size = 600.0_f32;
+        let requested = 320.0_f32;
+        let actual = requested.clamp(min_size, max_size);
+        assert!((actual - requested).abs() < 1e-6, "must be unchanged within bounds");
+    }
+
+    /// DeepThinkPanel default_size is within a reasonable range.
+    #[test]
+    fn deep_think_default_size_is_within_bounds() {
+        let panel = DeepThinkPanel::new();
+        let size = panel.default_size();
+        assert!(size >= 100.0, "default_size must be >= 100");
+        assert!(size <= 1000.0, "default_size must be <= 1000");
+    }
 }

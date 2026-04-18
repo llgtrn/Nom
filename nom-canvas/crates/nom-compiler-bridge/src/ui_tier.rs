@@ -41,6 +41,13 @@ impl CompileStatus {
     }
 }
 
+/// A single BM25 search result returned by `UiTier::search_bm25`.
+#[derive(Clone, Debug, PartialEq)]
+pub struct SearchHit {
+    pub word: String,
+    pub score: f32,
+}
+
 /// UI tier — all functions are sync and must complete in <1ms
 pub struct UiTier {
     state: Arc<SharedState>,
@@ -67,6 +74,52 @@ impl UiTier {
             return kinds.iter().any(|k| k.name == kind);
         }
         false
+    }
+
+    /// BM25 search over the grammar cache.
+    /// Under `compiler` feature, builds a real BM25 index over all cached grammar kinds
+    /// and returns scored hits. Without the feature, falls back to a simple prefix scan
+    /// returning score=1.0 for exact prefix matches.
+    pub fn search_bm25(&self, query: &str) -> Vec<SearchHit> {
+        if query.is_empty() {
+            return Vec::new();
+        }
+        #[cfg(feature = "compiler")]
+        {
+            use nom_search::BM25Index;
+            let kinds = self.state.cached_grammar_kinds();
+            if kinds.is_empty() {
+                return Vec::new();
+            }
+            let mut index = BM25Index::new();
+            for k in &kinds {
+                // Index word + description so both fields participate in scoring.
+                let text = format!("{} {}", k.name, k.description);
+                index.add_document(&k.name, &text);
+            }
+            let limit = 50;
+            index
+                .search(query, limit)
+                .into_iter()
+                .map(|r| SearchHit {
+                    word: r.doc_id,
+                    score: r.score as f32,
+                })
+                .collect()
+        }
+        #[cfg(not(feature = "compiler"))]
+        {
+            let q = query.to_lowercase();
+            let kinds = self.state.cached_grammar_kinds();
+            kinds
+                .into_iter()
+                .filter(|k| k.name.to_lowercase().contains(&q))
+                .map(|k| SearchHit {
+                    word: k.name,
+                    score: 1.0,
+                })
+                .collect()
+        }
     }
 }
 
@@ -485,5 +538,74 @@ mod tests {
         assert!(!r.is_valid);
         assert!((r.confidence - 0.42).abs() < f32::EPSILON);
         assert_eq!(r.reason, "type mismatch");
+    }
+
+    // AE12 — search_bm25 tests
+
+    /// An empty query must return an empty result set without panicking.
+    #[test]
+    fn search_bm25_empty_query_returns_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "output".into(),
+            },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("");
+        assert!(hits.is_empty(), "empty query must return no hits");
+    }
+
+    /// A known word present in the grammar cache must appear in the search results.
+    #[test]
+    fn search_bm25_known_word_returns_hit() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "output primitive for display".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "resolve".into(),
+                description: "lookup and return a value".into(),
+            },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("render");
+        assert!(!hits.is_empty(), "search for 'render' must return at least one hit");
+        let found = hits.iter().any(|h| h.word == "render");
+        assert!(found, "the 'render' word must appear in hits");
+    }
+
+    /// Results returned for a query that matches multiple words must be ordered
+    /// so that each hit has a non-negative score and the result set is well-formed.
+    #[test]
+    fn search_bm25_score_ordering_is_non_negative() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind {
+                name: "compute".into(),
+                description: "computation and calculation primitive".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "calculate".into(),
+                description: "calculate numeric result".into(),
+            },
+            crate::shared::GrammarKind {
+                name: "render".into(),
+                description: "render display output".into(),
+            },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("calculation");
+        // All returned scores must be non-negative and finite.
+        for hit in &hits {
+            assert!(
+                hit.score.is_finite() && hit.score >= 0.0,
+                "score must be finite and >= 0.0, got {}",
+                hit.score
+            );
+        }
     }
 }

@@ -1,7 +1,7 @@
 #![deny(unsafe_code)]
 use lru::LruCache;
 use std::num::NonZeroUsize;
-use std::sync::Mutex;
+use std::sync::{Arc, Mutex, RwLock};
 
 /// Compile result cached by source hash
 #[derive(Clone, Debug)]
@@ -18,30 +18,46 @@ pub struct GrammarKind {
     pub description: String,
 }
 
+/// A pooled reader slot: holds a pre-constructed Arc<SharedState> ready to wrap
+/// in SqliteDictReader::new(). Callers borrow a slot, use it, then return it.
+/// This avoids redundant Arc clones on the hot path when the pool is non-empty.
+pub struct ReaderSlot {
+    pub state: Arc<SharedState>,
+}
+
 /// SharedState: thread-safe state shared across all bridge tiers
 /// Owned by BridgeState, accessed via Arc<SharedState>
 pub struct SharedState {
     /// Compile result cache: key = SipHash of (source_text, grammar_version)
     pub compile_cache: Mutex<LruCache<u64, PipelineOutput>>,
-    /// Grammar kinds cache (loaded once at startup, refreshed on grammar DB change)
-    pub grammar_kinds: Mutex<Vec<GrammarKind>>,
+    /// Grammar kinds cache (loaded once at startup, refreshed on grammar DB change).
+    /// RwLock allows multiple concurrent readers; writer only blocks during updates.
+    pub grammar_kinds: RwLock<Vec<GrammarKind>>,
     /// Grammar version (incremented when grammar DB changes, used as cache key component)
     pub grammar_version: std::sync::atomic::AtomicU64,
     /// SQLite DB path for dict
     pub dict_path: String,
     /// SQLite DB path for grammar
     pub grammar_path: String,
+    /// Reader pool: up to MAX_POOL_SIZE pre-constructed slots.
+    /// Callers call borrow_reader() / return_reader() to reuse Arc<SharedState>
+    /// instances instead of cloning on every request.
+    reader_pool: Mutex<Vec<ReaderSlot>>,
 }
+
+/// Maximum number of reader slots kept alive in the pool.
+const MAX_POOL_SIZE: usize = 4;
 
 impl SharedState {
     pub fn new(dict_path: impl Into<String>, grammar_path: impl Into<String>) -> Self {
         let cache_capacity = NonZeroUsize::new(256).unwrap();
         Self {
             compile_cache: Mutex::new(LruCache::new(cache_capacity)),
-            grammar_kinds: Mutex::new(Vec::new()),
+            grammar_kinds: RwLock::new(Vec::new()),
             grammar_version: std::sync::atomic::AtomicU64::new(0),
             dict_path: dict_path.into(),
             grammar_path: grammar_path.into(),
+            reader_pool: Mutex::new(Vec::with_capacity(MAX_POOL_SIZE)),
         }
     }
 
@@ -68,20 +84,54 @@ impl SharedState {
             .load(std::sync::atomic::Ordering::Relaxed)
     }
 
+    /// Read grammar kinds — uses RwLock::read() so multiple threads can read concurrently.
     pub fn cached_grammar_kinds(&self) -> Vec<GrammarKind> {
         self.grammar_kinds
-            .lock()
+            .read()
             .ok()
             .map(|g| g.clone())
             .unwrap_or_default()
     }
 
+    /// Replace grammar kinds — acquires the write lock (exclusive).
     pub fn update_grammar_kinds(&self, kinds: Vec<GrammarKind>) {
-        if let Ok(mut g) = self.grammar_kinds.lock() {
+        if let Ok(mut g) = self.grammar_kinds.write() {
             *g = kinds;
         }
         self.grammar_version
             .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
+    }
+
+    /// Borrow a reader slot from the pool, or create a new one if the pool is empty.
+    /// The returned slot holds an Arc<SharedState> pointing back to self.
+    /// Callers MUST return the slot via return_reader() after use.
+    pub fn borrow_reader(self: &Arc<Self>) -> ReaderSlot {
+        if let Ok(mut pool) = self.reader_pool.lock() {
+            if let Some(slot) = pool.pop() {
+                return slot;
+            }
+        }
+        ReaderSlot {
+            state: Arc::clone(self),
+        }
+    }
+
+    /// Return a previously borrowed reader slot to the pool.
+    /// If the pool is already at MAX_POOL_SIZE, the slot is dropped.
+    pub fn return_reader(&self, slot: ReaderSlot) {
+        if let Ok(mut pool) = self.reader_pool.lock() {
+            if pool.len() < MAX_POOL_SIZE {
+                pool.push(slot);
+            }
+        }
+    }
+
+    /// Current number of slots sitting idle in the pool (for diagnostics/tests).
+    pub fn pool_idle_count(&self) -> usize {
+        self.reader_pool
+            .lock()
+            .map(|p| p.len())
+            .unwrap_or(0)
     }
 }
 
@@ -623,5 +673,157 @@ mod tests {
         state.update_grammar_kinds(kinds);
         assert_eq!(state.cached_grammar_kinds().len(), 100);
         assert_eq!(state.grammar_version(), 1);
+    }
+
+    // ── RwLock / reader-pool tests ──────────────────────────────────────────
+
+    /// Multiple concurrent readers must not block each other.
+    /// With RwLock, N read guards can all be held simultaneously.
+    #[test]
+    fn rwlock_multiple_readers_simultaneous() {
+        use std::sync::{Arc, RwLock};
+        use std::thread;
+
+        let lock: Arc<RwLock<Vec<GrammarKind>>> = Arc::new(RwLock::new(vec![
+            GrammarKind { name: "noun".into(), description: "thing".into() },
+        ]));
+
+        // Acquire 8 read guards in parallel — none should block the others.
+        let handles: Vec<_> = (0..8)
+            .map(|_| {
+                let l = Arc::clone(&lock);
+                thread::spawn(move || {
+                    let guard = l.read().expect("read lock poisoned");
+                    assert_eq!(guard.len(), 1);
+                    assert_eq!(guard[0].name, "noun");
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("reader thread panicked");
+        }
+    }
+
+    /// Write upgrade: after reads complete, a write lock can be acquired and
+    /// observed by a subsequent read.
+    #[test]
+    fn rwlock_write_upgrade_visible_to_readers() {
+        use std::sync::{Arc, RwLock};
+        use std::thread;
+
+        let lock: Arc<RwLock<Vec<GrammarKind>>> = Arc::new(RwLock::new(vec![]));
+
+        // Writer thread pushes one entry.
+        let wl = Arc::clone(&lock);
+        let writer = thread::spawn(move || {
+            let mut g = wl.write().expect("write lock poisoned");
+            g.push(GrammarKind { name: "verb".into(), description: "action".into() });
+        });
+        writer.join().expect("writer panicked");
+
+        // Reader sees the update.
+        let reader = lock.read().expect("read lock poisoned");
+        assert_eq!(reader.len(), 1);
+        assert_eq!(reader[0].name, "verb");
+    }
+
+    /// Grammar kinds accessible via RwLock::read() from 2 threads simultaneously.
+    #[test]
+    fn grammar_kinds_rwlock_two_threads_simultaneous_read() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "action".into(), description: "something done".into() },
+            GrammarKind { name: "entity".into(), description: "something that exists".into() },
+        ]);
+
+        let s1 = Arc::clone(&state);
+        let s2 = Arc::clone(&state);
+
+        let t1 = thread::spawn(move || s1.cached_grammar_kinds());
+        let t2 = thread::spawn(move || s2.cached_grammar_kinds());
+
+        let kinds1 = t1.join().expect("thread 1 panicked");
+        let kinds2 = t2.join().expect("thread 2 panicked");
+
+        assert_eq!(kinds1.len(), 2);
+        assert_eq!(kinds2.len(), 2);
+        assert_eq!(kinds1[0].name, "action");
+        assert_eq!(kinds2[1].name, "entity");
+    }
+
+    /// Borrowed reader slot is returned to the pool; second borrow gets it back.
+    #[test]
+    fn reader_pool_slot_reused_after_return() {
+        use std::sync::Arc;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        assert_eq!(state.pool_idle_count(), 0);
+
+        // Borrow, then return — pool grows to 1.
+        let slot = state.borrow_reader();
+        state.return_reader(slot);
+        assert_eq!(state.pool_idle_count(), 1);
+
+        // Second borrow pops from the pool — idle count drops back to 0.
+        let slot2 = state.borrow_reader();
+        assert_eq!(state.pool_idle_count(), 0);
+        // Return again.
+        state.return_reader(slot2);
+        assert_eq!(state.pool_idle_count(), 1);
+    }
+
+    /// Pool is capped at MAX_POOL_SIZE; excess returned slots are dropped.
+    #[test]
+    fn reader_pool_capped_at_max_size() {
+        use std::sync::Arc;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+
+        // Borrow 6 slots (> MAX_POOL_SIZE=4) and return them all.
+        let slots: Vec<_> = (0..6).map(|_| state.borrow_reader()).collect();
+        for slot in slots {
+            state.return_reader(slot);
+        }
+
+        // Pool must not exceed MAX_POOL_SIZE.
+        assert!(
+            state.pool_idle_count() <= 4,
+            "pool exceeded MAX_POOL_SIZE: got {}",
+            state.pool_idle_count()
+        );
+    }
+
+    /// Concurrent borrow/return cycle is race-free under many threads.
+    #[test]
+    fn reader_pool_concurrent_borrow_return_no_panic() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+
+        let handles: Vec<_> = (0..16)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..20 {
+                        let slot = s.borrow_reader();
+                        // Verify the slot points to the same state.
+                        assert_eq!(slot.state.dict_path, "d.db");
+                        s.return_reader(slot);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked");
+        }
+
+        // Pool must not exceed MAX_POOL_SIZE after all threads finish.
+        assert!(state.pool_idle_count() <= 4);
     }
 }

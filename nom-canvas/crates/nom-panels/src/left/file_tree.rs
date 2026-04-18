@@ -288,4 +288,111 @@ mod tests {
         assert_eq!(bg.bounds.size.width, nom_gpui::types::Pixels(248.0));
         assert_eq!(bg.bounds.size.height, nom_gpui::types::Pixels(600.0));
     }
+
+    // ── expand/collapse state persistence ────────────────────────────────────
+
+    #[test]
+    fn file_node_expand_collapse_toggle() {
+        let mut node = FileNode::dir("src", 0);
+        assert!(!node.is_expanded, "initially collapsed");
+        node.toggle_expand();
+        assert!(node.is_expanded);
+        node.toggle_expand();
+        assert!(!node.is_expanded);
+    }
+
+    #[test]
+    fn file_node_collapsed_shows_only_self() {
+        let mut node = FileNode::dir("src", 0);
+        node.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        node.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        // collapsed: visible_nodes returns only the dir itself
+        let visible = node.visible_nodes();
+        assert_eq!(visible.len(), 1, "collapsed dir shows only itself");
+    }
+
+    #[test]
+    fn file_node_expanded_shows_children() {
+        let mut node = FileNode::dir("src", 0);
+        node.children.push(FileNode::file("a.nom", 1, FileNodeKind::NomFile));
+        node.children.push(FileNode::file("b.nom", 1, FileNodeKind::NomFile));
+        node.is_expanded = true;
+        let visible = node.visible_nodes();
+        assert_eq!(visible.len(), 3, "expanded dir shows self + 2 children");
+    }
+
+    #[test]
+    fn collapsible_section_toggle_open_close() {
+        let mut section = CollapsibleSection::new("ws", "Workspace");
+        assert!(section.is_open, "sections start open");
+        section.toggle();
+        assert!(!section.is_open);
+        section.toggle();
+        assert!(section.is_open);
+    }
+
+    #[test]
+    fn collapsible_section_closed_visible_count_is_zero() {
+        let mut section = CollapsibleSection::new("ws", "Workspace");
+        section.nodes.push(FileNode::file("a.nom", 0, FileNodeKind::NomFile));
+        section.nodes.push(FileNode::file("b.nom", 0, FileNodeKind::NomFile));
+        section.is_open = false;
+        assert_eq!(section.visible_count(), 0);
+    }
+
+    #[test]
+    fn collapsible_section_open_shows_all_nodes() {
+        let mut section = CollapsibleSection::new("ws", "Workspace");
+        for i in 0..5 {
+            section.nodes.push(FileNode::file(format!("f{i}.nom"), 0, FileNodeKind::NomFile));
+        }
+        assert!(section.is_open);
+        assert_eq!(section.visible_count(), 5);
+    }
+
+    #[test]
+    fn file_tree_select_updates_selected_id() {
+        let mut panel = FileTreePanel::new();
+        panel.select("src");
+        assert_eq!(panel.selected_id.as_deref(), Some("src"));
+    }
+
+    #[test]
+    fn file_node_nested_expansion() {
+        // src/
+        //   lib/
+        //     types.nom
+        let mut lib = FileNode::dir("lib", 1);
+        lib.children.push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
+        lib.is_expanded = true;
+        let mut src = FileNode::dir("src", 0);
+        src.children.push(lib);
+        src.is_expanded = true;
+        // src expanded + lib expanded → visible = [src, lib, types.nom]
+        let visible = src.visible_nodes();
+        assert_eq!(visible.len(), 3);
+        assert_eq!(visible[0].name, "src");
+        assert_eq!(visible[1].name, "lib");
+        assert_eq!(visible[2].name, "types.nom");
+    }
+
+    #[test]
+    fn file_node_nested_parent_collapsed() {
+        // When parent is collapsed, children are hidden even if children are expanded.
+        let mut lib = FileNode::dir("lib", 1);
+        lib.children.push(FileNode::file("types.nom", 2, FileNodeKind::NomFile));
+        lib.is_expanded = true; // lib would show types.nom if expanded
+        let mut src = FileNode::dir("src", 0);
+        src.children.push(lib);
+        // src is NOT expanded
+        src.is_expanded = false;
+        let visible = src.visible_nodes();
+        assert_eq!(visible.len(), 1, "collapsed parent hides all descendants");
+    }
+
+    #[test]
+    fn file_node_kind_asset() {
+        let node = FileNode::file("logo.png", 0, FileNodeKind::Asset);
+        assert_eq!(node.kind, FileNodeKind::Asset);
+    }
 }

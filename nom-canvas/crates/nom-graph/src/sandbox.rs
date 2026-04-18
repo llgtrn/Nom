@@ -340,7 +340,22 @@ pub fn sanitize(expr: &Expr) -> Result<(), SandboxError> {
     Ok(())
 }
 
+/// Maximum evaluation recursion depth enforced at runtime.
+const EVAL_DEPTH_LIMIT: usize = 64;
+
+/// Public entry point: evaluates `expr` against `ctx` with a runtime depth limit of 64.
 pub fn eval_expr(expr: &Expr, ctx: &EvalContext) -> Result<SandboxValue, SandboxError> {
+    eval_expr_inner(expr, ctx, 0)
+}
+
+fn eval_expr_inner(
+    expr: &Expr,
+    ctx: &EvalContext,
+    depth: usize,
+) -> Result<SandboxValue, SandboxError> {
+    if depth > EVAL_DEPTH_LIMIT {
+        return Err(SandboxError::DepthLimitExceeded);
+    }
     match expr {
         Expr::Literal(v) => Ok(v.clone()),
         Expr::Var(name) => ctx
@@ -348,19 +363,20 @@ pub fn eval_expr(expr: &Expr, ctx: &EvalContext) -> Result<SandboxValue, Sandbox
             .cloned()
             .ok_or_else(|| SandboxError::UndefinedVar(name.clone())),
         Expr::BinOp { op, left, right } => {
-            let l = eval_expr(left, ctx)?;
-            let r = eval_expr(right, ctx)?;
+            let l = eval_expr_inner(left, ctx, depth + 1)?;
+            let r = eval_expr_inner(right, ctx, depth + 1)?;
             eval_binop(*op, l, r)
         }
         Expr::If { cond, then, else_ } => {
-            if eval_expr(cond, ctx)?.is_truthy() {
-                eval_expr(then, ctx)
+            if eval_expr_inner(cond, ctx, depth + 1)?.is_truthy() {
+                eval_expr_inner(then, ctx, depth + 1)
             } else {
-                eval_expr(else_, ctx)
+                eval_expr_inner(else_, ctx, depth + 1)
             }
         }
         Expr::Call { name, args } => {
-            let evaled: Result<Vec<_>, _> = args.iter().map(|a| eval_expr(a, ctx)).collect();
+            let evaled: Result<Vec<_>, _> =
+                args.iter().map(|a| eval_expr_inner(a, ctx, depth + 1)).collect();
             eval_call(name, evaled?)
         }
     }
@@ -1257,5 +1273,81 @@ mod tests {
             }],
         };
         assert!(AllowedFunctionsSanitizer::default_safe().check(&expr).is_err());
+    }
+
+    // ------------------------------------------------------------------
+    // AE8: eval_expr runtime depth enforcement
+    // ------------------------------------------------------------------
+
+    /// Depth 0: a simple integer literal evaluates without error.
+    #[test]
+    fn eval_depth_zero_literal_ok() {
+        let ctx = EvalContext::new();
+        let expr = Expr::Literal(SandboxValue::Int(1));
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(1)));
+    }
+
+    /// Depth limit: a BinOp chain 65 levels deep must return DepthLimitExceeded at eval time.
+    #[test]
+    fn eval_depth_65_levels_returns_depth_limit_exceeded() {
+        // Build BinOp chain 65 levels deep — exceeds EVAL_DEPTH_LIMIT of 64.
+        let deep = (0..65).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        // Note: sanitize() uses max_depth=16 so it would catch this first;
+        // we call eval_expr directly to test the runtime depth guard independently.
+        assert_eq!(
+            eval_expr(&deep, &ctx),
+            Err(SandboxError::DepthLimitExceeded),
+            "eval_expr must enforce EVAL_DEPTH_LIMIT=64 at runtime"
+        );
+    }
+
+    /// Depth 64: a BinOp chain exactly 64 levels deep — at the limit — must succeed.
+    #[test]
+    fn eval_depth_64_levels_at_limit_ok() {
+        // Build BinOp chain exactly 64 levels deep (depth counter reaches 64 == EVAL_DEPTH_LIMIT,
+        // which is not > EVAL_DEPTH_LIMIT, so it must succeed).
+        let at_limit = (0..64).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        let result = eval_expr(&at_limit, &ctx);
+        // Exactly at the depth limit: evaluates to Int(64).
+        assert_eq!(
+            result,
+            Ok(SandboxValue::Int(64)),
+            "eval_expr must allow exactly EVAL_DEPTH_LIMIT=64 levels of nesting"
+        );
+    }
+
+    /// DepthLimitExceeded Display must contain the word "depth" or "exceeded".
+    #[test]
+    fn sandbox_error_display_depth_limit_exceeded() {
+        let e = SandboxError::DepthLimitExceeded;
+        let msg = format!("{e}");
+        assert!(
+            msg.contains("depth") || msg.contains("exceeded"),
+            "Display for DepthLimitExceeded must mention depth/exceeded, got: {msg}"
+        );
+    }
+
+    /// sanitize() on a literal passes; eval_expr on the same literal succeeds.
+    /// This documents that sanitize-then-eval is the correct call sequence.
+    #[test]
+    fn sanitize_then_eval_expr_literal_passes() {
+        let expr = Expr::Literal(SandboxValue::Int(7));
+        let ctx = EvalContext::new();
+        assert!(sanitize(&expr).is_ok(), "sanitize must pass for a literal");
+        assert_eq!(
+            eval_expr(&expr, &ctx),
+            Ok(SandboxValue::Int(7)),
+            "eval_expr must succeed after sanitize passes"
+        );
     }
 }

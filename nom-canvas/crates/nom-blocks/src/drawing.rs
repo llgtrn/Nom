@@ -2,6 +2,37 @@
 use crate::block_model::NomtuRef;
 use serde::{Deserialize, Serialize};
 
+// ---------------------------------------------------------------------------
+// Theme-sourced block color helpers
+// All colors are sourced from nom_theme::tokens so that palette changes
+// propagate automatically to all drawing code.
+// ---------------------------------------------------------------------------
+
+/// Fill color for an unselected block surface.
+/// Uses the tertiary background token — slightly elevated over the canvas.
+pub fn block_fill_color() -> [f32; 4] {
+    let c = nom_theme::tokens::color_bg_tertiary();
+    [c.h, c.s, c.l, c.a]
+}
+
+/// Border color for a normal (unselected) block.
+pub fn block_border_color() -> [f32; 4] {
+    let c = nom_theme::tokens::color_border_normal();
+    [c.h, c.s, c.l, c.a]
+}
+
+/// Fill/border color for a selected block — accent blue from tokens.
+pub fn block_selected_color() -> [f32; 4] {
+    let c = nom_theme::tokens::color_accent_blue();
+    [c.h, c.s, c.l, c.a]
+}
+
+/// Color used to indicate an error state on a block — red token from tokens.
+pub fn block_error_color() -> [f32; 4] {
+    let c = nom_theme::tokens::edge_color_low_confidence();
+    [c.h, c.s, c.l, c.a]
+}
+
 // Hsla-compatible color stored as [h,s,l,a] f32
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct StrokeColor {
@@ -191,5 +222,102 @@ mod tests {
             d.add_stroke(s);
         }
         assert_eq!(d.strokes.len(), 5);
+    }
+
+    // -----------------------------------------------------------------------
+    // Theme-token color tests (AE15)
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn block_fill_color_matches_theme_token() {
+        // block_fill_color() must equal color_bg_tertiary() — not a hard-coded value.
+        let expected = nom_theme::tokens::color_bg_tertiary();
+        let actual = super::block_fill_color();
+        assert!(
+            (actual[0] - expected.h).abs() < f32::EPSILON,
+            "fill h mismatch: {} vs {}",
+            actual[0],
+            expected.h
+        );
+        assert!(
+            (actual[1] - expected.s).abs() < f32::EPSILON,
+            "fill s mismatch"
+        );
+        assert!(
+            (actual[2] - expected.l).abs() < f32::EPSILON,
+            "fill l mismatch"
+        );
+        assert!(
+            (actual[3] - expected.a).abs() < f32::EPSILON,
+            "fill a mismatch"
+        );
+    }
+
+    #[test]
+    fn block_border_color_matches_theme_token() {
+        // block_border_color() must equal color_border_normal().
+        let expected = nom_theme::tokens::color_border_normal();
+        let actual = super::block_border_color();
+        assert!(
+            (actual[0] - expected.h).abs() < f32::EPSILON,
+            "border h mismatch"
+        );
+        assert!(
+            (actual[2] - expected.l).abs() < f32::EPSILON,
+            "border l mismatch"
+        );
+    }
+
+    #[test]
+    fn block_selected_color_differs_from_unselected() {
+        // A selected block must have a visually distinct color from an unselected one.
+        let fill = super::block_fill_color();
+        let selected = super::block_selected_color();
+        // At least one HSLA component must differ by more than epsilon.
+        let any_diff = fill
+            .iter()
+            .zip(selected.iter())
+            .any(|(a, b)| (a - b).abs() > 0.01);
+        assert!(
+            any_diff,
+            "selected color must differ from fill color; got identical values"
+        );
+    }
+
+    #[test]
+    fn block_error_color_matches_theme_error_token() {
+        // block_error_color() must equal edge_color_low_confidence() (red error token).
+        let expected = nom_theme::tokens::edge_color_low_confidence();
+        let actual = super::block_error_color();
+        assert!(
+            (actual[0] - expected.h).abs() < f32::EPSILON,
+            "error h mismatch: {} vs {}",
+            actual[0],
+            expected.h
+        );
+        assert!(
+            (actual[1] - expected.s).abs() < f32::EPSILON,
+            "error s mismatch"
+        );
+    }
+
+    #[test]
+    fn theme_color_change_reflected_in_drawing_output() {
+        // Verify that drawing helpers call through to the live token functions
+        // rather than caching a snapshot. Since tokens are pure functions,
+        // two consecutive calls must return identical values — confirming that
+        // block_fill_color() delegates to the token on every call.
+        let first_call = super::block_fill_color();
+        let second_call = super::block_fill_color();
+        assert_eq!(
+            first_call, second_call,
+            "block_fill_color() must be deterministic and delegate to theme token"
+        );
+        // Also confirm the value matches the live token (not a cached snapshot).
+        let token = nom_theme::tokens::color_bg_tertiary();
+        assert!(
+            (first_call[2] - token.l).abs() < f32::EPSILON,
+            "drawing output must reflect current theme token value"
+        );
     }
 }

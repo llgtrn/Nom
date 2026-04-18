@@ -264,4 +264,49 @@ mod tests {
         fm.focus_next();
         assert!(fm.focused.is_some());
     }
+
+    // ── Wave AD new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn focus_ring_color_simulated_via_focus_state() {
+        // Simulate focus ring color: when a handle is focused, the UI renders the
+        // focus ring; here we confirm the focus state is correctly set as the
+        // source of truth for focus-ring rendering.
+        let mut fm = FocusManager::new();
+        let h = fm.create_handle();
+
+        // Before focus: no ring (not focused).
+        assert!(!h.is_focused(&fm), "handle must not be focused initially");
+
+        // After focus: ring active.
+        fm.focus(&h);
+        assert!(h.is_focused(&fm), "handle must be focused after fm.focus()");
+
+        // After blur: ring removed.
+        fm.blur();
+        assert!(!h.is_focused(&fm), "handle must be unfocused after fm.blur()");
+    }
+
+    #[test]
+    fn focus_manager_focus_switches_between_elements() {
+        // Switching focus from one handle to another must update fm.focused correctly.
+        let mut fm = FocusManager::new();
+        let h1 = fm.create_handle();
+        let h2 = fm.create_handle();
+
+        fm.focus(&h1);
+        assert!(fm.is_focused(&h1));
+        assert!(!fm.is_focused(&h2));
+
+        fm.focus(&h2);
+        assert!(!fm.is_focused(&h1));
+        assert!(fm.is_focused(&h2));
+    }
+
+    #[test]
+    fn focus_handle_tab_index_default_zero() {
+        let h = FocusHandle::new(FocusId(77));
+        assert_eq!(h.tab_index, 0, "default tab_index must be 0");
+        assert!(h.tab_stop, "default tab_stop must be true");
+    }
 }

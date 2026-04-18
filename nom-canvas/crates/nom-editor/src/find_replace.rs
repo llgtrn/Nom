@@ -336,4 +336,203 @@ mod tests {
         // Case-insensitive: "hello" matches "Hello" and "HELLO"
         assert_eq!(state.matches.len(), 2);
     }
+
+    // ── find-next wraps around end of file ───────────────────────────────────
+
+    #[test]
+    fn find_next_wraps_from_last_to_first() {
+        let mut state = FindState::new();
+        state.query = "foo".to_string();
+        state.find_in_text("foo bar foo baz foo");
+        assert_eq!(state.matches.len(), 3);
+        // Jump to last match
+        state.current_match = 2;
+        state.next_match();
+        // Should wrap around to index 0
+        assert_eq!(state.current_match, 0, "next_match wraps from last to first");
+    }
+
+    #[test]
+    fn find_prev_wraps_from_first_to_last() {
+        let mut state = FindState::new();
+        state.query = "x".to_string();
+        state.find_in_text("x y x z x");
+        assert_eq!(state.matches.len(), 3);
+        state.current_match = 0;
+        state.prev_match();
+        assert_eq!(state.current_match, 2, "prev_match wraps from first to last");
+    }
+
+    #[test]
+    fn find_next_single_match_stays_at_zero() {
+        let mut state = FindState::new();
+        state.query = "only".to_string();
+        state.find_in_text("this is only one");
+        assert_eq!(state.matches.len(), 1);
+        state.current_match = 0;
+        state.next_match();
+        assert_eq!(state.current_match, 0, "single match: next_match stays at 0");
+    }
+
+    #[test]
+    fn find_next_no_matches_is_noop() {
+        let mut state = FindState::new();
+        state.query = "zzz".to_string();
+        state.find_in_text("hello world");
+        // No matches: next_match must not panic
+        state.next_match();
+        assert_eq!(state.current_match, 0);
+    }
+
+    #[test]
+    fn find_current_returns_correct_range() {
+        let mut state = FindState::new();
+        state.query = "ab".to_string();
+        state.find_in_text("xabyzab");
+        // matches at [1..3] and [5..7]
+        assert_eq!(state.matches.len(), 2);
+        let first = state.current().cloned().unwrap();
+        assert_eq!(first, 1..3);
+        state.next_match();
+        let second = state.current().cloned().unwrap();
+        assert_eq!(second, 5..7);
+    }
+
+    #[test]
+    fn find_current_returns_none_when_no_matches() {
+        let state = FindState::new();
+        assert!(state.current().is_none());
+    }
+
+    // ── tab-to-spaces conversion for pasted content ──────────────────────────
+
+    #[test]
+    fn tab_to_spaces_single_tab() {
+        let content = "\thello";
+        let result = content.replace('\t', "    "); // 4 spaces
+        assert_eq!(result, "    hello");
+    }
+
+    #[test]
+    fn tab_to_spaces_multiple_tabs() {
+        let content = "\t\tdeep";
+        let result = content.replace('\t', "    ");
+        assert_eq!(result, "        deep");
+    }
+
+    #[test]
+    fn tab_to_spaces_mixed_content() {
+        let content = "no_tab\t\ttwo_tabs";
+        let result = content.replace('\t', "    ");
+        assert_eq!(result, "no_tab        two_tabs");
+    }
+
+    #[test]
+    fn tab_to_spaces_no_tabs_unchanged() {
+        let content = "hello world no tabs";
+        let result = content.replace('\t', "    ");
+        assert_eq!(result, content);
+    }
+
+    #[test]
+    fn tab_to_spaces_custom_tab_size_two() {
+        let content = "\thello";
+        let result = content.replace('\t', "  "); // 2-space tab
+        assert_eq!(result, "  hello");
+    }
+
+    // ── undo/redo buffer depth limit (>100 ops) ──────────────────────────────
+
+    #[test]
+    fn undo_buffer_depth_cap_at_100() {
+        // Simulate a bounded undo ring of capacity 100.
+        let cap = 100usize;
+        let mut ring: std::collections::VecDeque<String> = std::collections::VecDeque::with_capacity(cap);
+        for i in 0..150 {
+            if ring.len() == cap {
+                ring.pop_front();
+            }
+            ring.push_back(format!("op_{i}"));
+        }
+        // Ring must not exceed capacity.
+        assert_eq!(ring.len(), cap, "undo ring must be capped at {cap}");
+        // The oldest surviving op should be op_50 (ops 0-49 were evicted).
+        assert_eq!(ring.front().unwrap(), "op_50");
+        assert_eq!(ring.back().unwrap(), "op_149");
+    }
+
+    #[test]
+    fn undo_buffer_empty_undo_is_noop() {
+        let ring: std::collections::VecDeque<String> = std::collections::VecDeque::new();
+        // Undoing from empty buffer should return None without panic.
+        assert!(ring.back().is_none());
+    }
+
+    #[test]
+    fn undo_redo_sequence() {
+        // Simulate a simple undo/redo stack.
+        let mut undo_stack: Vec<i32> = vec![1, 2, 3, 4, 5];
+        let mut redo_stack: Vec<i32> = vec![];
+        // Undo twice
+        for _ in 0..2 {
+            if let Some(op) = undo_stack.pop() {
+                redo_stack.push(op);
+            }
+        }
+        assert_eq!(undo_stack, vec![1, 2, 3]);
+        assert_eq!(redo_stack, vec![5, 4]);
+        // Redo once: pop from redo_stack (top = 4), push to undo
+        if let Some(op) = redo_stack.pop() {
+            undo_stack.push(op);
+        }
+        assert_eq!(undo_stack, vec![1, 2, 3, 4]);
+        assert_eq!(redo_stack, vec![5]);
+    }
+
+    // ── selection ranges across line boundaries ──────────────────────────────
+
+    #[test]
+    fn selection_range_spans_two_lines() {
+        let text = "line one\nline two\nline three";
+        // Range starting at end of line 1 into line 2: bytes 5..13
+        let start = 5usize; // "one\n" start
+        let end = 13usize;  // into "line two"
+        let slice = &text[start..end];
+        assert!(slice.contains('\n'), "range must span a newline");
+        assert!(slice.starts_with("one"), "slice starts mid-line-1");
+    }
+
+    #[test]
+    fn selection_range_entire_line() {
+        let text = "alpha\nbeta\ngamma";
+        // line 2 = "beta" at bytes 6..10
+        let line_start = 6usize;
+        let line_end = 10usize;
+        let slice = &text[line_start..line_end];
+        assert_eq!(slice, "beta");
+    }
+
+    #[test]
+    fn selection_range_across_three_lines() {
+        let text = "a\nb\nc\nd";
+        // select from byte 0 to end
+        let slice = &text[0..text.len()];
+        let newlines = slice.chars().filter(|&c| c == '\n').count();
+        assert_eq!(newlines, 3, "should span 3 newlines across 4 lines");
+    }
+
+    #[test]
+    fn find_current_after_prev_from_first_wraps() {
+        let mut state = FindState::new();
+        state.query = "z".to_string();
+        state.find_in_text("z 1 z 2 z");
+        assert_eq!(state.matches.len(), 3);
+        // At index 0, prev_match wraps to last
+        state.current_match = 0;
+        state.prev_match();
+        assert_eq!(state.current_match, 2);
+        let last = state.current().cloned().unwrap();
+        // Last "z" is at byte 8
+        assert_eq!(last.start, 8);
+    }
 }

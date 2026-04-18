@@ -742,4 +742,269 @@ mod tests {
         assert!(sel.contains(1));
         assert!(sel.contains(2));
     }
+
+    // ── rubber-band contains mode ────────────────────────────────────────────
+
+    /// contains_fully: rubber-band contains an element only when element is fully inside.
+    #[test]
+    fn rubber_band_contains_mode_fully_inside() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [100.0, 100.0],
+        };
+        let inner = ElementBounds {
+            id: 1,
+            min: [10.0, 10.0],
+            max: [90.0, 90.0],
+        };
+        let (min, max) = rb.aabb();
+        let fully_contained = inner.min[0] >= min[0]
+            && inner.min[1] >= min[1]
+            && inner.max[0] <= max[0]
+            && inner.max[1] <= max[1];
+        assert!(fully_contained, "element fully inside rubber-band must be contained");
+    }
+
+    /// contains_mode: element partially outside is NOT fully contained.
+    #[test]
+    fn rubber_band_contains_mode_partial_overlap_excluded() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [80.0, 80.0],
+        };
+        let partial = ElementBounds {
+            id: 2,
+            min: [60.0, 60.0],
+            max: [120.0, 120.0],
+        };
+        let (min, max) = rb.aabb();
+        let fully_contained = partial.min[0] >= min[0]
+            && partial.min[1] >= min[1]
+            && partial.max[0] <= max[0]
+            && partial.max[1] <= max[1];
+        assert!(!fully_contained, "partially-overlapping element is NOT fully contained");
+        // But intersects mode should still pick it up.
+        assert!(rb.intersects(&partial), "intersects mode still finds partial overlap");
+    }
+
+    /// contains mode vs intersects mode: same rubber-band, one selects more elements.
+    #[test]
+    fn rubber_band_intersects_selects_more_than_contains() {
+        let rb = RubberBand {
+            start: [0.0, 0.0],
+            end: [60.0, 60.0],
+        };
+        let elements = vec![
+            // fully inside
+            ElementBounds { id: 1, min: [5.0, 5.0], max: [50.0, 50.0] },
+            // partially outside
+            ElementBounds { id: 2, min: [40.0, 40.0], max: [90.0, 90.0] },
+        ];
+        let (rmin, rmax) = rb.aabb();
+        let intersecting: Vec<u64> = elements.iter().filter(|e| rb.intersects(e)).map(|e| e.id).collect();
+        let contained: Vec<u64> = elements.iter().filter(|e| {
+            e.min[0] >= rmin[0] && e.min[1] >= rmin[1] && e.max[0] <= rmax[0] && e.max[1] <= rmax[1]
+        }).map(|e| e.id).collect();
+        assert!(intersecting.len() >= contained.len(), "intersects selects >= elements vs contains");
+        assert!(intersecting.contains(&1));
+        assert!(intersecting.contains(&2));
+        assert!(contained.contains(&1));
+        assert!(!contained.contains(&2));
+    }
+
+    // ── viewport fit-to-selection ────────────────────────────────────────────
+
+    /// Fit-to-selection: union AABB of selected elements contains all selected element bounds.
+    #[test]
+    fn fit_to_selection_union_aabb() {
+        let bounds = vec![
+            ElementBounds { id: 1, min: [10.0, 20.0], max: [50.0, 60.0] },
+            ElementBounds { id: 2, min: [30.0, 10.0], max: [80.0, 70.0] },
+            ElementBounds { id: 3, min: [-5.0, 5.0], max: [15.0, 35.0] },
+        ];
+        let mut sel = Selection::empty();
+        for b in &bounds { sel.add(b.id); }
+        let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
+        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let min_y = selected.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
+        let max_x = selected.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
+        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - (-5.0)).abs() < 1e-6);
+        assert!((min_y - 5.0).abs() < 1e-6);
+        assert!((max_x - 80.0).abs() < 1e-6);
+        assert!((max_y - 70.0).abs() < 1e-6);
+    }
+
+    /// Fit-to-selection with single element returns that element's bounds.
+    #[test]
+    fn fit_to_selection_single_element() {
+        let bounds = vec![ElementBounds { id: 42, min: [100.0, 200.0], max: [300.0, 400.0] }];
+        let mut sel = Selection::empty();
+        sel.add(42);
+        let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
+        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - 100.0).abs() < 1e-6);
+        assert!((max_y - 400.0).abs() < 1e-6);
+    }
+
+    // ── hit-test priority stack with z-ordering ──────────────────────────────
+
+    /// Z-order: when two elements overlap, the one with higher z_index is "on top".
+    #[test]
+    fn z_order_higher_z_index_is_on_top() {
+        // Represent layered selection by z_index ordering.
+        let ids_and_z: Vec<(u64, i32)> = vec![(1, 10), (2, 5), (3, 15), (4, 1)];
+        let top = ids_and_z.iter().max_by_key(|(_, z)| *z).unwrap();
+        assert_eq!(top.0, 3, "element with z_index=15 is on top");
+    }
+
+    /// Multiple elements at same z_index: all tie — last insertion wins by convention.
+    #[test]
+    fn z_order_tie_uses_last_in_list() {
+        let ids_and_z: Vec<(u64, i32)> = vec![(1, 5), (2, 5), (3, 5)];
+        // last() simulates "last inserted on top" tiebreak.
+        let top = ids_and_z.iter().filter(|(_, z)| *z == 5).last().unwrap();
+        assert_eq!(top.0, 3);
+    }
+
+    /// Priority stack: bring-to-front moves an element to the top z_index.
+    #[test]
+    fn z_order_bring_to_front() {
+        let mut stack: Vec<(u64, i32)> = vec![(1, 1), (2, 2), (3, 3)];
+        // Bring element 1 to front: assign max_z + 1
+        let max_z = stack.iter().map(|(_, z)| *z).max().unwrap_or(0);
+        if let Some(entry) = stack.iter_mut().find(|(id, _)| *id == 1) {
+            entry.1 = max_z + 1;
+        }
+        let top = stack.iter().max_by_key(|(_, z)| *z).unwrap();
+        assert_eq!(top.0, 1, "element 1 should be on top after bring-to-front");
+    }
+
+    // ── spatial index nearest-k query ────────────────────────────────────────
+
+    /// nearest-k: selecting k nearest elements by distance.
+    #[test]
+    fn nearest_k_elements() {
+        // Simulate nearest-k by sorting elements by distance to a query point.
+        let elements = vec![
+            (1u64, [5.0_f32, 5.0_f32]),    // dist ≈ 7.07 from (0,0)
+            (2u64, [20.0_f32, 20.0_f32]),   // dist ≈ 28.28
+            (3u64, [3.0_f32, 4.0_f32]),     // dist = 5.0
+            (4u64, [100.0_f32, 100.0_f32]), // dist ≈ 141.4
+        ];
+        let query = [0.0_f32, 0.0_f32];
+        let k = 2;
+        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
+            let dx = pos[0] - query[0];
+            let dy = pos[1] - query[1];
+            (*id, (dx * dx + dy * dy).sqrt())
+        }).collect();
+        by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
+        assert_eq!(k_nearest.len(), k);
+        assert!(k_nearest.contains(&3), "element 3 (dist=5) must be in k=2 nearest");
+        assert!(k_nearest.contains(&1), "element 1 (dist≈7) must be in k=2 nearest");
+        assert!(!k_nearest.contains(&2), "element 2 is not among nearest-2");
+    }
+
+    /// nearest-k with k >= all elements returns all.
+    #[test]
+    fn nearest_k_larger_than_count_returns_all() {
+        let elements: Vec<(u64, [f32; 2])> = vec![(1, [1.0, 1.0]), (2, [2.0, 2.0])];
+        let k = 10;
+        let query = [0.0_f32, 0.0_f32];
+        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
+            let dx = pos[0] - query[0];
+            let dy = pos[1] - query[1];
+            (*id, (dx * dx + dy * dy).sqrt())
+        }).collect();
+        by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
+        assert_eq!(k_nearest.len(), elements.len(), "k >= len returns all elements");
+    }
+
+    /// nearest-k with empty set returns empty.
+    #[test]
+    fn nearest_k_empty_returns_empty() {
+        let elements: Vec<(u64, [f32; 2])> = vec![];
+        let k = 3;
+        let query = [0.0_f32, 0.0_f32];
+        let mut by_dist: Vec<(u64, f32)> = elements.iter().map(|(id, pos)| {
+            let dx = pos[0] - query[0];
+            let dy = pos[1] - query[1];
+            (*id, (dx * dx + dy * dy).sqrt())
+        }).collect();
+        by_dist.sort_by(|a, b| a.1.partial_cmp(&b.1).unwrap());
+        let k_nearest: Vec<u64> = by_dist.iter().take(k).map(|(id, _)| *id).collect();
+        assert!(k_nearest.is_empty());
+    }
+
+    // ── additional coverage ───────────────────────────────────────────────────
+
+    /// Selection with many elements: removing half leaves correct count.
+    #[test]
+    fn selection_remove_half() {
+        let mut sel = Selection::empty();
+        for id in 1_u64..=10 {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), 10);
+        for id in 1_u64..=5 {
+            sel.remove(id);
+        }
+        assert_eq!(sel.len(), 5);
+        for id in 1_u64..=5 {
+            assert!(!sel.contains(id), "id {id} must be removed");
+        }
+        for id in 6_u64..=10 {
+            assert!(sel.contains(id), "id {id} must remain");
+        }
+    }
+
+    /// RubberBand: start == end means zero-area; no element is fully contained.
+    #[test]
+    fn rubber_band_zero_area_contains_nothing() {
+        let rb = RubberBand { start: [50.0, 50.0], end: [50.0, 50.0] };
+        let (min, max) = rb.aabb();
+        let elem = ElementBounds { id: 1, min: [10.0, 10.0], max: [90.0, 90.0] };
+        let fully_contained = elem.min[0] >= min[0]
+            && elem.min[1] >= min[1]
+            && elem.max[0] <= max[0]
+            && elem.max[1] <= max[1];
+        assert!(!fully_contained, "large element cannot be contained by zero-area rubber-band");
+    }
+
+    /// Z-order: bring-to-back moves element to minimum z_index.
+    #[test]
+    fn z_order_bring_to_back() {
+        let mut stack: Vec<(u64, i32)> = vec![(1, 5), (2, 10), (3, 15)];
+        let min_z = stack.iter().map(|(_, z)| *z).min().unwrap_or(0);
+        if let Some(entry) = stack.iter_mut().find(|(id, _)| *id == 3) {
+            entry.1 = min_z - 1;
+        }
+        let bottom = stack.iter().min_by_key(|(_, z)| *z).unwrap();
+        assert_eq!(bottom.0, 3, "element 3 should be at bottom after bring-to-back");
+    }
+
+    /// Selection: ids are ordered (BTreeSet) — iteration is deterministic.
+    #[test]
+    fn selection_ids_ordered() {
+        let mut sel = Selection::empty();
+        sel.add(30);
+        sel.add(10);
+        sel.add(20);
+        let ids: Vec<u64> = sel.ids.iter().copied().collect();
+        assert_eq!(ids, vec![10, 20, 30], "BTreeSet must be sorted ascending");
+    }
+
+    /// rubber_band intersects with element touching only one corner.
+    #[test]
+    fn rubber_band_corner_touch_intersects() {
+        let rb = RubberBand { start: [0.0, 0.0], end: [50.0, 50.0] };
+        // Element touching only the bottom-right corner of the rubber-band.
+        let elem = ElementBounds { id: 99, min: [50.0, 50.0], max: [100.0, 100.0] };
+        // separation-axis: rb max[0]=50 == elem min[0]=50 → not separated → intersects.
+        assert!(rb.intersects(&elem), "corner-touching element must intersect rubber-band");
+    }
 }

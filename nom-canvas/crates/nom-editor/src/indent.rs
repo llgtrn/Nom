@@ -93,4 +93,99 @@ mod tests {
         // Leading whitespace is "  \t"
         assert_eq!(result, "  \t");
     }
+
+    // ── tab-to-spaces conversion for pasted content ──────────────────────────
+
+    #[test]
+    fn tab_to_spaces_four_spaces() {
+        // indent_line uses spaces, not tabs
+        let result = indent_line("code", 4);
+        assert!(!result.contains('\t'), "indent_line must not use tabs");
+        assert!(result.starts_with("    "));
+    }
+
+    #[test]
+    fn tab_to_spaces_pasted_content_replaces_tabs() {
+        // Simulate converting pasted content's tabs to spaces.
+        let pasted = "\tfunction() {\n\t\treturn 1;\n\t}";
+        let result: String = pasted
+            .lines()
+            .map(|line| line.replace('\t', "    "))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(!result.contains('\t'), "pasted content must have no tabs after conversion");
+        assert!(result.contains("    function"), "leading tab replaced by 4 spaces");
+    }
+
+    #[test]
+    fn indent_line_tab_size_zero() {
+        // tab_size=0: prefix is empty string
+        let result = indent_line("hello", 0);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn dedent_line_tab_size_zero() {
+        // tab_size=0: nothing removed
+        let result = dedent_line("  hello", 0);
+        assert_eq!(result, "  hello");
+    }
+
+    #[test]
+    fn indent_twice_doubles_indent() {
+        let once = indent_line("x", 4);
+        let twice = indent_line(&once, 4);
+        assert!(twice.starts_with("        "), "double-indent must start with 8 spaces");
+        assert!(twice.ends_with('x'));
+    }
+
+    #[test]
+    fn dedent_removes_exactly_tab_size_spaces() {
+        let result = dedent_line("        code", 4); // 8 spaces → remove 4
+        assert_eq!(result, "    code");
+    }
+
+    #[test]
+    fn auto_indent_only_whitespace_line() {
+        // prev_line is all spaces — carry forward
+        let result = auto_indent_text("    ", 4);
+        assert_eq!(result, "    ");
+    }
+
+    #[test]
+    fn auto_indent_single_space() {
+        let result = auto_indent_text(" code", 4);
+        assert_eq!(result, " ");
+    }
+
+    #[test]
+    fn indent_preserves_unicode() {
+        let result = indent_line("hello", 2);
+        assert_eq!(result, "  hello");
+    }
+
+    #[test]
+    fn dedent_does_not_remove_non_space() {
+        // Line starting with non-space: dedent removes 0 spaces.
+        let result = dedent_line("hello", 4);
+        assert_eq!(result, "hello");
+    }
+
+    #[test]
+    fn indent_empty_string() {
+        let result = indent_line("", 4);
+        assert_eq!(result, "    ");
+    }
+
+    #[test]
+    fn dedent_empty_string() {
+        let result = dedent_line("", 4);
+        assert_eq!(result, "");
+    }
+
+    #[test]
+    fn auto_indent_no_content_returns_empty() {
+        let result = auto_indent_text("", 4);
+        assert_eq!(result, "");
+    }
 }

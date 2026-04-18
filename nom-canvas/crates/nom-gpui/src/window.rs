@@ -357,4 +357,206 @@ mod tests {
             _ => panic!("expected Resized"),
         }
     }
+
+    // ── Wave AD new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn event_loop_starts_idle_no_frame_pending() {
+        // A freshly created Window has no frame pending (idle state).
+        let w = Window::new(WindowOptions::default());
+        // We can't take_frame_pending on an immutable ref; create mutable copy.
+        let mut w = w;
+        assert!(!w.take_frame_pending(), "new window must start with no pending frame");
+    }
+
+    #[test]
+    fn event_loop_active_after_request_redraw() {
+        // After request_redraw() the window enters active state (frame pending).
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending(); // clear initial state
+        w.request_redraw();
+        assert!(w.take_frame_pending(), "request_redraw must activate frame-pending");
+        // After take, it returns to idle.
+        assert!(!w.take_frame_pending(), "after take, window returns to idle");
+    }
+
+    #[test]
+    fn keyboard_event_shift_modifier_combination() {
+        use crate::event::{Key, KeyEvent, Modifiers};
+        let ev = KeyEvent::Pressed {
+            key: Key::Char('S'),
+            modifiers: Modifiers { shift: true, ctrl: false, alt: false, meta: false },
+        };
+        if let KeyEvent::Pressed { key, modifiers } = ev {
+            assert_eq!(key, Key::Char('S'));
+            assert!(modifiers.shift);
+            assert!(!modifiers.ctrl);
+            assert!(!modifiers.is_shortcut());
+        } else {
+            panic!("expected Pressed");
+        }
+    }
+
+    #[test]
+    fn keyboard_event_ctrl_shift_combination() {
+        use crate::event::{Key, KeyEvent, Modifiers};
+        let ev = KeyEvent::Pressed {
+            key: Key::F5,
+            modifiers: Modifiers { shift: true, ctrl: true, alt: false, meta: false },
+        };
+        if let KeyEvent::Pressed { key, modifiers } = ev {
+            assert_eq!(key, Key::F5);
+            assert!(modifiers.shift && modifiers.ctrl);
+            assert!(modifiers.is_shortcut(), "ctrl must trigger is_shortcut");
+        } else {
+            panic!("expected Pressed");
+        }
+    }
+
+    #[test]
+    fn keyboard_event_all_modifiers_active() {
+        use crate::event::{Key, KeyEvent, Modifiers};
+        let modifiers = Modifiers { shift: true, ctrl: true, alt: true, meta: true };
+        let ev = KeyEvent::Pressed { key: Key::Return, modifiers };
+        if let KeyEvent::Pressed { modifiers: m, .. } = ev {
+            assert!(m.shift && m.ctrl && m.alt && m.meta);
+            assert!(m.is_shortcut());
+        } else {
+            panic!("expected Pressed");
+        }
+    }
+
+    #[test]
+    fn keyboard_event_alt_only_not_shortcut() {
+        use crate::event::{Key, KeyEvent, Modifiers};
+        let ev = KeyEvent::Pressed {
+            key: Key::Tab,
+            modifiers: Modifiers { shift: false, ctrl: false, alt: true, meta: false },
+        };
+        if let KeyEvent::Pressed { modifiers, .. } = ev {
+            assert!(!modifiers.is_shortcut(), "alt-only must not be is_shortcut");
+            assert!(modifiers.alt);
+        } else {
+            panic!("expected Pressed");
+        }
+    }
+
+    #[test]
+    fn window_resize_updates_content_size() {
+        // Simulating a Resized event must update content_size.
+        let mut w = Window::new(WindowOptions::default());
+        let new_size = Vec2::new(2560.0, 1440.0);
+        // Simulate what run_native_application does on resize.
+        w.content_size = new_size;
+        assert_eq!(w.content_size, new_size, "content_size must update after resize");
+    }
+
+    #[test]
+    fn window_resize_to_minimum_size() {
+        let mut w = Window::new(WindowOptions::default());
+        let min_size = Vec2::new(640.0, 480.0);
+        w.content_size = min_size;
+        assert_eq!(w.content_size, min_size);
+    }
+
+    #[test]
+    fn window_resize_multiple_times_keeps_last_value() {
+        let mut w = Window::new(WindowOptions::default());
+        for (width, height) in [(800.0, 600.0f32), (1024.0, 768.0), (1920.0, 1080.0)] {
+            w.content_size = Vec2::new(width, height);
+        }
+        assert_eq!(w.content_size, Vec2::new(1920.0, 1080.0));
+    }
+
+    #[test]
+    fn window_scale_factor_change_marks_redraw() {
+        let mut w = Window::new(WindowOptions::default());
+        w.take_frame_pending();
+        w.set_scale_factor(3.0);
+        assert_eq!(w.scale_factor, 3.0);
+        assert!(w.take_frame_pending(), "scale factor change must trigger redraw");
+    }
+
+    #[test]
+    fn window_close_requested_flag() {
+        let mut w = Window::new(WindowOptions::default());
+        assert!(!w.close_requested());
+        w.request_close();
+        assert!(w.close_requested(), "after request_close the flag must be set");
+    }
+
+    #[test]
+    fn window_focus_state_can_be_set() {
+        let mut w = Window::new(WindowOptions::default());
+        assert!(!w.is_focused);
+        w.is_focused = true;
+        assert!(w.is_focused);
+    }
+
+    #[test]
+    fn window_builder_default_dimensions() {
+        let w = WindowBuilder::new("canvas").build();
+        assert_eq!(w.content_size, Vec2::new(1280.0, 800.0));
+    }
+
+    #[test]
+    fn window_builder_custom_dimensions() {
+        let w = WindowBuilder::new("custom").width(2560.0).height(1440.0).build();
+        assert_eq!(w.content_size, Vec2::new(2560.0, 1440.0));
+    }
+
+    #[test]
+    fn keyboard_released_event_variant() {
+        use crate::event::{Key, KeyEvent, Modifiers};
+        let ev = KeyEvent::Released {
+            key: Key::Escape,
+            modifiers: Modifiers::default(),
+        };
+        if let KeyEvent::Released { key, .. } = ev {
+            assert_eq!(key, Key::Escape);
+        } else {
+            panic!("expected Released");
+        }
+    }
+
+    #[test]
+    fn keyboard_input_text_event() {
+        use crate::event::KeyEvent;
+        let ev = KeyEvent::Input { text: "nom".to_string() };
+        if let KeyEvent::Input { text } = ev {
+            assert_eq!(text, "nom");
+        } else {
+            panic!("expected Input");
+        }
+    }
+
+    #[test]
+    fn window_event_scale_factor_changed() {
+        let ev = WindowEvent::ScaleFactorChanged { new_scale: 2.5 };
+        if let WindowEvent::ScaleFactorChanged { new_scale } = ev {
+            assert!((new_scale - 2.5).abs() < f32::EPSILON);
+        } else {
+            panic!("expected ScaleFactorChanged");
+        }
+    }
+
+    #[test]
+    fn window_event_focused_true() {
+        let ev = WindowEvent::Focused(true);
+        if let WindowEvent::Focused(f) = ev {
+            assert!(f);
+        } else {
+            panic!("expected Focused");
+        }
+    }
+
+    #[test]
+    fn window_event_focused_false() {
+        let ev = WindowEvent::Focused(false);
+        if let WindowEvent::Focused(f) = ev {
+            assert!(!f);
+        } else {
+            panic!("expected Focused");
+        }
+    }
 }

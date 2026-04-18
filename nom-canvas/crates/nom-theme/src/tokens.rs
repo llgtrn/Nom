@@ -136,17 +136,17 @@ pub const SHADOW_XL: ShadowToken = ShadowToken {
 
 /// Primary background: hsl(220°, 13%, 11%)
 pub fn color_bg_primary() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.13, 0.11, 1.0)
+    Hsla::new(220.0, 0.13, 0.11, 1.0)
 }
 
 /// Secondary background: hsl(220°, 11%, 14%)
 pub fn color_bg_secondary() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.11, 0.14, 1.0)
+    Hsla::new(220.0, 0.11, 0.14, 1.0)
 }
 
 /// Tertiary background: hsl(220°, 10%, 17%)
 pub fn color_bg_tertiary() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.10, 0.17, 1.0)
+    Hsla::new(220.0, 0.10, 0.17, 1.0)
 }
 
 /// Primary text: near-white
@@ -156,42 +156,42 @@ pub fn color_text_primary() -> Hsla {
 
 /// Secondary text: hsl(220°, 9%, 65%)
 pub fn color_text_secondary() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.09, 0.65, 1.0)
+    Hsla::new(220.0, 0.09, 0.65, 1.0)
 }
 
 /// Tertiary / muted text: hsl(220°, 7%, 45%)
 pub fn color_text_tertiary() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.07, 0.45, 1.0)
+    Hsla::new(220.0, 0.07, 0.45, 1.0)
 }
 
 /// Subtle border: hsl(220°, 13%, 22%)
 pub fn color_border_subtle() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.13, 0.22, 1.0)
+    Hsla::new(220.0, 0.13, 0.22, 1.0)
 }
 
 /// Normal border: hsl(220°, 11%, 30%)
 pub fn color_border_normal() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.11, 0.30, 1.0)
+    Hsla::new(220.0, 0.11, 0.30, 1.0)
 }
 
 /// Accent blue (~#1E90FF): hsl(211°, 100%, 60%)
 pub fn color_accent_blue() -> Hsla {
-    Hsla::new(211.0 / 360.0, 1.0, 0.60, 1.0)
+    Hsla::new(211.0, 1.0, 0.60, 1.0)
 }
 
 /// Accent purple (nomtu references): hsl(270°, 91%, 70%)
 pub fn color_accent_purple() -> Hsla {
-    Hsla::new(270.0 / 360.0, 0.91, 0.70, 1.0)
+    Hsla::new(270.0, 0.91, 0.70, 1.0)
 }
 
 /// Accent green (literals, #22C55E): hsl(145°, 63%, 49%)
 pub fn color_accent_green() -> Hsla {
-    Hsla::new(145.0 / 360.0, 0.63, 0.49, 1.0)
+    Hsla::new(145.0, 0.63, 0.49, 1.0)
 }
 
 /// Surface overlay (panel backgrounds): hsl(220°, 14%, 8%, 85%)
 pub fn color_surface_overlay() -> Hsla {
-    Hsla::new(220.0 / 360.0, 0.14, 0.08, 0.85)
+    Hsla::new(220.0, 0.14, 0.08, 0.85)
 }
 
 // ---------------------------------------------------------------------------
@@ -200,12 +200,12 @@ pub fn color_surface_overlay() -> Hsla {
 
 /// High confidence >= 0.8: #22C55E — hsl(142.1°, 70.6%, 45.3%)
 pub fn edge_color_high_confidence() -> Hsla {
-    Hsla::new(142.1 / 360.0, 0.706, 0.453, 1.0)
+    Hsla::new(142.1, 0.706, 0.453, 1.0)
 }
 
 /// Medium confidence 0.5–0.8: #F59E0B — hsl(37.7°, 92.1%, 50.2%)
 pub fn edge_color_medium_confidence() -> Hsla {
-    Hsla::new(37.7 / 360.0, 0.921, 0.502, 1.0)
+    Hsla::new(37.7, 0.921, 0.502, 1.0)
 }
 
 /// Low confidence < 0.5: #EF4444 — hsl(0°, 84.2%, 60.2%)
@@ -1472,7 +1472,8 @@ mod tests {
         let a = color_bg_primary();
         let b = color_text_primary();
         let m = mix_hsla(a, b);
-        assert!((0.0..=1.0).contains(&m.h), "mixed h out of range");
+        // Hue is in 0-360 degrees; mixed value of two 0-360 hues stays in that range.
+        assert!((0.0..=360.0).contains(&m.h), "mixed h out of range (0-360 degrees)");
         assert!((0.0..=1.0).contains(&m.s), "mixed s out of range");
         assert!((0.0..=1.0).contains(&m.l), "mixed l out of range");
         assert!((0.0..=1.0).contains(&m.a), "mixed a out of range");
@@ -1536,8 +1537,8 @@ mod tests {
         for (name, f) in fns {
             let c = f();
             assert!(
-                (0.0..=1.0).contains(&c.h),
-                "{name}.h ({}) out of [0,1]",
+                (0.0..=360.0).contains(&c.h),
+                "{name}.h ({}) out of [0,360]",
                 c.h
             );
             assert!(

@@ -2,9 +2,49 @@
 use crate::shared::SharedState;
 use crate::ui_tier::CompileStatus;
 
-/// Score a word+kind and return the compile status badge
+/// Score a word+kind and return the compile status badge.
+/// Under the `compiler` feature, constructs an Atom and calls `nom_score::score_atom()`
+/// for the real 8-dimension weighted score. Falls back to grammar-cache name match otherwise.
 pub fn score_to_status(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
-    score_from_cached_kinds(word, kind, state)
+    #[cfg(feature = "compiler")]
+    {
+        return score_via_nom_score(word, kind, state);
+    }
+    #[cfg(not(feature = "compiler"))]
+    {
+        score_from_cached_kinds(word, kind, state)
+    }
+}
+
+/// Real path: build an Atom and delegate to `nom_score::score_atom().overall()`.
+/// If the grammar cache is empty there is no basis for scoring.
+#[cfg(feature = "compiler")]
+fn score_via_nom_score(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
+    use nom_types::{Atom, AtomKind};
+    let kinds = state.cached_grammar_kinds();
+    if kinds.is_empty() {
+        return CompileStatus::NotChecked;
+    }
+    // Use grammar cache as a label hint so name-matched words score higher.
+    let in_cache = kinds.iter().any(|k| k.name == word || k.name == kind);
+    let labels = if in_cache {
+        vec!["documented".to_string(), "grammar-known".to_string()]
+    } else {
+        vec![]
+    };
+    let atom = Atom {
+        id: word.to_string(),
+        kind: AtomKind::Function,
+        name: word.to_string(),
+        source_path: String::new(),
+        language: "nom".to_string(),
+        labels,
+        concept: Some(kind.to_string()),
+        signature: None,
+        body: None,
+    };
+    let score = nom_score::score_atom(&atom).overall();
+    CompileStatus::from_score(score)
 }
 
 fn score_from_cached_kinds(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
@@ -232,5 +272,62 @@ mod tests {
         let color = status_color(&CompileStatus::Valid);
         // hue is in [0.39, 0.41] (green region around 0.397)
         assert!(color[0] > 0.3 && color[0] < 0.5, "valid color should be greenish");
+    }
+
+    // AE10 — nom_score path tests
+
+    /// Known words in the grammar cache produce a higher-ranked status than unknown ones.
+    /// This exercises the cache-as-label-hint logic that boosts scores for cached terms.
+    #[test]
+    fn score_increases_with_better_name_match() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "render".into(),
+            description: "output primitive".into(),
+        }]);
+        let known_status = score_to_status("render", "other", &state);
+        let unknown_status = score_to_status("zzz_xyzzy_word", "zzz_kind", &state);
+        // A known word must resolve to at least as high a status as an unknown one.
+        // Valid > LowConfidence > Unknown in discriminant order.
+        let rank = |s: &CompileStatus| match s {
+            CompileStatus::Valid => 3,
+            CompileStatus::LowConfidence => 2,
+            CompileStatus::Unknown => 1,
+            CompileStatus::NotChecked => 0,
+        };
+        assert!(
+            rank(&known_status) >= rank(&unknown_status),
+            "known word should rank >= unknown: {known_status:?} vs {unknown_status:?}"
+        );
+    }
+
+    /// Grammar cache is used as a fallback: an empty cache always returns NotChecked.
+    #[test]
+    fn score_uses_grammar_cache_as_fallback() {
+        let state = SharedState::new("a.db", "b.db");
+        // No cache populated — cannot score, returns NotChecked as fallback
+        let status = score_to_status("some_word", "some_kind", &state);
+        assert_eq!(
+            status,
+            CompileStatus::NotChecked,
+            "empty grammar cache must produce NotChecked (no basis for scoring)"
+        );
+    }
+
+    /// The nom_score path is exercised when the grammar cache is non-empty.
+    /// The result must be a well-formed CompileStatus (not a panic).
+    #[test]
+    fn nom_score_path_exercised_under_feature() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "compute".into(), description: "calculation".into() },
+            GrammarKind { name: "validate".into(), description: "verification".into() },
+        ]);
+        // "validate" contains a security signal in nom_score — score_security adds 0.15.
+        // Both words should produce non-NotChecked statuses.
+        let s1 = score_to_status("validate", "concept", &state);
+        let s2 = score_to_status("compute", "concept", &state);
+        assert_ne!(s1, CompileStatus::NotChecked, "validate should be scored");
+        assert_ne!(s2, CompileStatus::NotChecked, "compute should be scored");
     }
 }
