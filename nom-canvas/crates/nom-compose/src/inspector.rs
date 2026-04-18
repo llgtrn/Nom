@@ -36,6 +36,7 @@ impl InspectTarget {
 }
 
 /// A detected pattern/component from inspection
+#[derive(Debug)]
 pub struct InspectFinding {
     pub category: String,
     pub key: String,

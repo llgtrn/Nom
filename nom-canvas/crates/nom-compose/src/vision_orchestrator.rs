@@ -87,6 +87,79 @@ impl Default for VisionOrchestrator {
     fn default() -> Self { Self::new() }
 }
 
+impl VisionOutput {
+    /// Convert vision pipeline output into InspectFindings for NomInspector.
+    pub fn to_inspect_findings(&self) -> Vec<crate::inspector::InspectFinding> {
+        let mut findings = Vec::new();
+        // One finding per detected component
+        for (i, bbox) in self.detection.boxes.iter().enumerate() {
+            let label = self.layout.tokens.get(i)
+                .map(|t| t.token.text.clone())
+                .unwrap_or_else(|| format!("component_{}", i));
+            let value = format!("x1={},y1={},x2={},y2={}", bbox.x1, bbox.y1, bbox.x2, bbox.y2);
+            findings.push(crate::inspector::InspectFinding::new(
+                "visual_component",
+                &label,
+                &value,
+                bbox.confidence,
+            ));
+        }
+        // One finding for the generated nomx source
+        if !self.nomx_source.is_empty() {
+            findings.push(crate::inspector::InspectFinding::new(
+                "nomx_generated",
+                "nomx_source",
+                &self.nomx_source,
+                0.95,
+            ));
+        }
+        findings
+    }
+}
+
+#[cfg(test)]
+mod bridge_tests {
+    use super::*;
+
+    fn make_box(x1: f32, y1: f32, x2: f32, y2: f32, conf: f32) -> crate::detection::BBox {
+        crate::detection::BBox::new(x1, y1, x2, y2, conf, 0)
+    }
+
+    #[test]
+    fn test_to_inspect_findings_produces_findings() {
+        let orch = VisionOrchestrator::new();
+        let input = VisionInput { width: 640, height: 480, component_labels: vec!["button".into()] };
+        let boxes = vec![make_box(10.0, 10.0, 100.0, 50.0, 0.9)];
+        let output = orch.process(&input, boxes);
+        let findings = output.to_inspect_findings();
+        assert!(!findings.is_empty());
+    }
+
+    #[test]
+    fn test_to_inspect_findings_includes_nomx() {
+        let orch = VisionOrchestrator::new();
+        let input = VisionInput { width: 640, height: 480, component_labels: vec!["nav".into()] };
+        let boxes = vec![make_box(0.0, 0.0, 640.0, 40.0, 0.95)];
+        let output = orch.process(&input, boxes);
+        let findings = output.to_inspect_findings();
+        let has_nomx = findings.iter().any(|f| {
+            // check category or value contains nomx
+            format!("{:?}", f).contains("nomx")
+        });
+        assert!(has_nomx, "expected a nomx_generated finding");
+    }
+
+    #[test]
+    fn test_empty_output_minimal_findings() {
+        let orch = VisionOrchestrator::new();
+        let input = VisionInput { width: 640, height: 480, component_labels: vec![] };
+        let output = orch.process(&input, vec![]);
+        let findings = output.to_inspect_findings();
+        // nomx_source for empty input has only the header line — still produces nomx finding
+        assert!(findings.len() <= 2);
+    }
+}
+
 #[cfg(test)]
 mod vision_orchestrator_tests {
     use super::*;

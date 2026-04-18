@@ -632,3 +632,118 @@ fn test_golden_chat_dispatch_inspect() {
         "ChatDispatch must route a compose message to CanvasMode::Compose"
     );
 }
+
+// --- Wave ABJ-2 golden paths (ABI vision pipeline) ---
+
+// Golden path 36: BBoxDetector postprocesses synthetic boxes and filters by confidence.
+#[test]
+fn test_golden_bbox_detector() {
+    use nom_canvas_core::{BBox, BBoxDetector};
+
+    let detector = BBoxDetector::new(0.6);
+    let raw = vec![
+        BBox::new(0.0, 0.0, 100.0, 50.0, 0.9),  // above threshold
+        BBox::new(10.0, 10.0, 40.0, 40.0, 0.4), // below threshold — filtered
+        BBox::new(20.0, 20.0, 30.0, 30.0, 0.75), // above threshold
+    ];
+    let result = detector.postprocess(raw);
+    assert_eq!(
+        result.box_count(),
+        2,
+        "BBoxDetector must return 2 boxes above the 0.6 threshold"
+    );
+    assert!(
+        result.boxes.iter().all(|b| b.confidence >= 0.6),
+        "all returned boxes must meet the confidence threshold"
+    );
+}
+
+// Golden path 37: SamPipeline predicts a non-empty mask for a bbox prompt.
+#[test]
+fn test_golden_sam_segment() {
+    use nom_canvas_core::{BBox, BBoxPrompt, SamPipeline};
+
+    let pipeline = SamPipeline::new();
+    let prompt = BBoxPrompt::new(BBox::new(5.0, 5.0, 120.0, 80.0, 0.88));
+    let mask = pipeline.predict(&prompt);
+    assert!(
+        mask.is_non_empty(),
+        "SamPipeline must return a non-empty mask for a valid bbox prompt"
+    );
+    assert!(
+        (mask.confidence - 0.88).abs() < 1e-4,
+        "mask confidence must match the prompt bbox confidence, got {}",
+        mask.confidence
+    );
+}
+
+// Golden path 38: LayoutAnalyzer analyzes 3 doc tokens and totals their word counts.
+#[test]
+fn test_golden_layout_analysis() {
+    use nom_canvas_core::{BBox, DocToken, LayoutAnalyzer};
+
+    let analyzer = LayoutAnalyzer::new();
+    let tokens = vec![
+        DocToken::new("define greeting that says hello", BBox::new(0.0, 0.0, 200.0, 20.0, 1.0)),
+        DocToken::new("world", BBox::new(0.0, 30.0, 60.0, 20.0, 1.0)),
+        DocToken::new("define farewell that says goodbye", BBox::new(0.0, 60.0, 200.0, 20.0, 1.0)),
+    ];
+    let result = analyzer.analyze(tokens);
+    assert_eq!(
+        result.blocks.len(),
+        3,
+        "LayoutAnalyzer must produce one block per token (3 tokens → 3 blocks)"
+    );
+    assert_eq!(
+        result.total_tokens(),
+        11, // "define greeting that says hello" = 5, "world" = 1, "define farewell that says goodbye" = 5
+        "LayoutAnalyzer must total all word-level token counts across all blocks"
+    );
+}
+
+// Golden path 39: AnimationPipeline with a 4-frame config generates 4 frames in order.
+#[test]
+fn test_golden_animation_pipeline() {
+    use nom_canvas_core::{AnimationConfig, AnimationPipeline};
+
+    let config = AnimationConfig::new(4, 24.0);
+    let pipeline = AnimationPipeline::new(config);
+    let frames = pipeline.generate();
+    assert_eq!(
+        frames.len(),
+        4,
+        "AnimationPipeline must generate exactly 4 frames"
+    );
+    assert_eq!(frames[0].index, 0, "first frame index must be 0");
+    assert_eq!(frames[3].index, 3, "last frame index must be 3");
+    assert!(
+        frames[0].timestamp_secs < frames[3].timestamp_secs,
+        "frame timestamps must be monotonically increasing"
+    );
+}
+
+// Golden path 40: VisionOrchestrator processes 2 boxes and produces a non-empty nomx output.
+#[test]
+fn test_golden_vision_orchestrator() {
+    use nom_canvas_core::{BBox, VisionOrchestrator};
+
+    let orchestrator = VisionOrchestrator::new();
+    let raw_boxes = vec![
+        BBox::new(0.0, 0.0, 100.0, 60.0, 0.92),
+        BBox::new(15.0, 15.0, 50.0, 50.0, 0.78),
+    ];
+    let output = orchestrator.process(raw_boxes);
+    assert_eq!(
+        output.processed_boxes,
+        2,
+        "VisionOrchestrator must process all 2 boxes that pass the threshold"
+    );
+    assert!(
+        output.has_nomx(),
+        "VisionOrchestrator must produce a non-empty nomx output"
+    );
+    assert!(
+        output.nomx_output.contains("define vision_result_"),
+        "nomx output must contain at least one vision_result define clause"
+    );
+}

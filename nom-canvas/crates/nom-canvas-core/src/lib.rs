@@ -37,6 +37,15 @@ pub use chart::{Chart, ChartConfig, ChartType, DataSeries};
 pub mod render_pipeline;
 pub use render_pipeline::{DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue};
 
+/// ABI vision pipeline stubs: bounding-box detection, SAM segmentation,
+/// layout analysis, animation generation, and orchestration.
+pub mod vision_pipeline;
+pub use vision_pipeline::{
+    AnimFrame, AnimationConfig, AnimationPipeline, BBox, BBoxDetector, BBoxPrompt, BBoxResult,
+    DocToken, LayoutAnalyzer, LayoutBlock, LayoutResult, SamPipeline, SegmentMask, VisionOrchestrator,
+    VisionOutput,
+};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

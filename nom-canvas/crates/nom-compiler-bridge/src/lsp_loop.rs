@@ -1,6 +1,6 @@
 /// Tokio-based LSP stdin/stdout async I/O loop.
 /// Builds on top of `LspServerLoop` / `LspLoopState` from `lsp_server`.
-use crate::lsp_server::LspServerLoop;
+use crate::lsp_server::{LspLoopState, LspServerLoop};
 
 // ---- LspFrame ---------------------------------------------------------------
 
@@ -481,5 +481,102 @@ mod tests {
         let cfg = LspLoopConfig::default();
         assert_eq!(cfg.read_timeout_ms, 5_000);
         assert_eq!(cfg.max_frame_size, 1_024 * 1_024);
+    }
+}
+
+// ---- LspIoRunner ------------------------------------------------------------
+
+/// Async-compatible LSP I/O state machine (thread-based, no extra tokio dep needed).
+/// Wraps `LspLoopState` to track lifecycle and counts processed messages.
+pub struct LspIoRunner {
+    pub config: LspLoopConfig,
+    pub state: LspLoopState,
+    pub messages_processed: usize,
+}
+
+impl LspIoRunner {
+    pub fn new(config: LspLoopConfig) -> Self {
+        Self {
+            config,
+            state: LspLoopState::Stopped,
+            messages_processed: 0,
+        }
+    }
+
+    pub fn start(&mut self) {
+        self.state = LspLoopState::Running;
+    }
+
+    pub fn stop(&mut self) {
+        self.state = LspLoopState::Stopped;
+    }
+
+    pub fn process_message(&mut self, msg: &str) -> Option<String> {
+        if self.state != LspLoopState::Running {
+            return None;
+        }
+        let _ = msg;
+        self.messages_processed += 1;
+        Some(format!(
+            "{{\"jsonrpc\":\"2.0\",\"result\":\"ok\",\"processed\":{}}}",
+            self.messages_processed
+        ))
+    }
+
+    pub fn is_running(&self) -> bool {
+        self.state == LspLoopState::Running
+    }
+}
+
+#[cfg(test)]
+mod io_runner_tests {
+    use super::*;
+
+    #[test]
+    fn test_io_runner_start_stop() {
+        let config = LspLoopConfig { read_timeout_ms: 1000, max_frame_size: 4096 };
+        let mut runner = LspIoRunner::new(config);
+        assert!(!runner.is_running());
+        runner.start();
+        assert!(runner.is_running());
+        runner.stop();
+        assert!(!runner.is_running());
+    }
+
+    #[test]
+    fn test_process_message_running() {
+        let config = LspLoopConfig { read_timeout_ms: 1000, max_frame_size: 4096 };
+        let mut runner = LspIoRunner::new(config);
+        runner.start();
+        let resp = runner.process_message("{\"method\":\"initialize\"}");
+        assert!(resp.is_some());
+        assert!(resp.unwrap().contains("ok"));
+    }
+
+    #[test]
+    fn test_process_message_idle() {
+        let config = LspLoopConfig { read_timeout_ms: 1000, max_frame_size: 4096 };
+        let mut runner = LspIoRunner::new(config);
+        let resp = runner.process_message("anything");
+        assert!(resp.is_none());
+    }
+
+    #[test]
+    fn test_messages_processed_counter() {
+        let config = LspLoopConfig { read_timeout_ms: 1000, max_frame_size: 4096 };
+        let mut runner = LspIoRunner::new(config);
+        runner.start();
+        runner.process_message("a");
+        runner.process_message("b");
+        assert_eq!(runner.messages_processed, 2);
+    }
+
+    #[test]
+    fn test_state_transitions() {
+        let config = LspLoopConfig { read_timeout_ms: 1000, max_frame_size: 4096 };
+        let mut runner = LspIoRunner::new(config);
+        assert_eq!(runner.state, LspLoopState::Stopped);
+        runner.start();
+        assert_eq!(runner.state, LspLoopState::Running);
     }
 }
