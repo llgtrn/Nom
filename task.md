@@ -422,13 +422,21 @@
 - ✅ MobileCompose — MobilePlatform+MobileScreen+MobileAppSpec+MobileComposer (9 tests)
 - ✅ TraceExport — SpanStatus+OpenTelemetrySpan+JaegerSpan+TraceExporter (9 tests)
 
-## Open Items — Wave ABAB targets
+## Wave ABAB — COMPLETE (2026-04-19, 9843 tests)
 
-- ❌ **nom-compose 3d-mesh** — MeshVertex + MeshFace + MeshComposer (3D-mesh-compose demo)
-- ❌ **nom-graph wasm-bridge** — WasmModule + WasmBridge + WasmFeatureGate
-- ❌ **nom-intent graphify-chart** — ChartSpec + ChartSeries + GraphifyComposer (graphify pattern)
-- ❌ **nom-canvas-core animation-card** — AnimationCard + CardTimeline + CardAnimator
-- ❌ **nom-collab presence** — PresenceUser + PresenceMap + PresenceBroadcast
+- ✅ MeshCompose — MeshVertex+MeshFace+Mesh+MeshComposer (9 tests)
+- ✅ WasmBridge — WasmTarget+WasmModule+WasmFeatureGate+WasmBridge (9 tests)
+- ✅ GraphifyChart — ChartType+ChartAxis+ChartSeries+ChartSpec+GraphifyComposer (9 tests)
+- ✅ AnimationCard — CardState+AnimationCard+CardKeyframe+CardTimeline+CardAnimator (9 tests)
+- ✅ Presence — PresenceUserStatus+PresenceUser+PresenceUserMap+PresenceBroadcast (9 tests)
+
+## Open Items — Wave ABAC targets
+
+- ❌ **nom-editor diagnostic_squiggle** — DiagnosticSeverity + DiagnosticSpan + SquiggleRenderer + DiagnosticOverlay (C4 LSP squiggle)
+- ❌ **nom-editor hover_tooltip** — TooltipContent + HoverTooltip + TooltipAnchor + TooltipRenderer (C4 LSP hover)
+- ❌ **nom-compose llama_compose** — PipelineStage + LlamaPipeline + PipelineCombinator + PipelineOutput (C6 LlamaIndex composition)
+- ❌ **nom-panels property_panel** — PropertyKind + PropertyField + PropertyGroup + PropertyPanel (UI panel for node properties)
+- ❌ **nom-telemetry event_log** — EventKind + LoggedEvent + EventLog + EventLogStore (structured event logging)
 
 ---
 

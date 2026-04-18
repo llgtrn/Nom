@@ -19,6 +19,8 @@ pub mod selection;
 pub mod tab_map;
 pub mod wrap_map;
 pub mod workspace_rename;
+pub mod hover_tooltip;
+pub mod diagnostic_squiggle;
 
 pub use buffer::{Buffer, BufferId, Patch};
 pub use clipboard::Clipboard;
@@ -37,3 +39,5 @@ pub use lsp_bridge::{
 pub use scroll::ScrollPosition;
 pub use selection::{SelectionAnchor, SelectionManager, SelectionRange};
 pub use workspace_rename::{RenameOp, RenamePreview, RenameScope, WorkspaceRenamer};
+pub use hover_tooltip::{TooltipKind, TooltipContent, TooltipAnchor, HoverTooltip, TooltipRenderer};
+pub use diagnostic_squiggle::{DiagnosticSeverity, DiagnosticSpan, DiagnosticOverlay, SquiggleStyle};

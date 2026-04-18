@@ -38,8 +38,10 @@ pub use right::{
     ChatSidebarPanel, DeepThinkPanel, DeepThinkRenderer, HypothesisNode, HypothesisTree,
     HypothesisTreeNav, InspectKind, InspectPanel, InspectRequest, InspectResult,
     IntentPreviewCard, PropertiesPanel, PropertyEntry, PropertyRow,
-    PropertyValue, ReasoningStep, ThinkingStep, ToolCard,
+    PropertyValue as RightPropertyValue, ReasoningStep, ThinkingStep, ToolCard,
 };
+pub mod property_panel;
+pub use property_panel::{PropertyKind, PropertyValue, PropertyField, PropertyGroup, PropertyPanel};
 pub use shell::{Shell, ShellLayout, ShellMode};
 pub use statusbar::{StatusBar, StatusSlot};
 pub use toolbar::{Toolbar, ToolbarButton};

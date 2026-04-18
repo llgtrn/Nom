@@ -138,6 +138,11 @@ pub mod mobile_compose;
 pub use mobile_compose::{MobileAppSpec, MobileComponent, MobileComposer, MobilePlatform, MobileScreen};
 pub mod mesh_compose;
 pub use mesh_compose::{Mesh, MeshComposer, MeshFace, MeshVertex};
+pub mod llama_compose;
+pub use llama_compose::{
+    LlamaPipeline, LlamaPipelineNode, PipelineCombinator, PipelineOutput,
+    PipelineStage as LlamaPipelineStage,
+};
 
 #[cfg(test)]
 mod integration_tests {
