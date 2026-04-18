@@ -7,6 +7,8 @@ pub mod composition;
 pub mod context;
 pub mod credential_store;
 pub mod deep_think;
+pub mod detection;
+pub mod diffusion;
 pub mod dispatch;
 pub mod flow_graph;
 pub mod glue;
@@ -98,8 +100,11 @@ pub mod inspector;
 pub use inspector::{InspectFinding, InspectReport, InspectTarget, NomInspector};
 pub mod sherlock;
 pub use sherlock::{SherlockAdapter, SherlockResult, SherlockSite, SherlockStatus};
+pub mod segmentation;
 pub mod sherlock_native;
 pub mod vision;
+pub mod layout;
+pub mod vision_orchestrator;
 
 #[cfg(test)]
 mod integration_tests {
