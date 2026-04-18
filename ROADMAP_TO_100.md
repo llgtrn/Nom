@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AB complete — HEAD `c3d2323`, 2841 tests (2410→2841, +431). Next: Wave AC clippy sweep + pixel-diff + codec + nom-dict cleanup.
+**Last updated:** Wave AD complete — HEAD `e1aa03b`, 3233 tests. All 17 AE audit findings closed. Next: Wave AE — deeper GPU path, real LSP integration, corpus work.
 
 ## Current finalization snapshot
 
@@ -9,28 +9,28 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 82% | 100% | 18pp | 2841 tests; Wave AB complete; clippy/pixel-diff/codec/nom-dict remain |
-| D · Overall platform | 65% | 100% | 35pp | 15/15 crates have tests |
+| C · nom-canvas ↔ compiler integration | 87% | 100% | 13pp | 3233 tests; AE1-AE17 all closed; wgpu pipeline, RwLock, BM25, theme tokens wired |
+| D · Overall platform | 70% | 100% | 30pp | 15/15 crates; real wgpu path, Backend trait, eval depth guard, pixel-diff |
 
-**Per-crate test counts (Wave AB actuals → Wave AC targets):**
-| Crate | Wave AB actual | Wave AC target |
+**Per-crate test counts (Wave AD actuals → Wave AE targets):**
+| Crate | Wave AD actual | Wave AE target |
 |---|---|---|
-| nom-blocks | 211 | 240 |
-| nom-canvas-core | 212 | 240 |
-| nom-cli | 105 | 130 |
-| nom-collab | 175 | 210 |
-| nom-compiler-bridge | 187 | 220 |
-| nom-compose | 295 | 335 |
-| nom-editor | 204 | 240 |
-| nom-gpui | 302 | 345 |
-| nom-graph | 256 | 290 |
-| nom-intent | 115 | 145 |
-| nom-lint | 125 | 155 |
-| nom-memoize | 118 | 145 |
-| nom-panels | 189 | 220 |
-| nom-telemetry | 145 | 175 |
-| nom-theme | 202 | 230 |
-| **TOTAL** | **2841** | **~3320** |
+| nom-blocks | 216 | 245 |
+| nom-canvas-core | 240 | 270 |
+| nom-cli | 138 | 160 |
+| nom-collab | 210 | 240 |
+| nom-compiler-bridge | 193 | 225 |
+| nom-compose | 340 | 375 |
+| nom-editor | 235 | 265 |
+| nom-gpui | 346 | 380 |
+| nom-graph | 261 | 290 |
+| nom-intent | 145 | 170 |
+| nom-lint | 164 | 190 |
+| nom-memoize | 150 | 175 |
+| nom-panels | 215 | 245 |
+| nom-telemetry | 178 | 205 |
+| nom-theme | 202 | 225 |
+| **TOTAL** | **3233** | **~3660** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
