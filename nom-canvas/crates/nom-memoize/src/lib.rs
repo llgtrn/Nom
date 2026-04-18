@@ -1601,4 +1601,253 @@ mod tests {
         }
         assert!(cache.is_empty(), "all evicted keys must leave cache empty");
     }
+
+    // =========================================================================
+    // Wave AO: eviction_count / resize / new coverage tests (+25)
+    // =========================================================================
+
+    #[test]
+    fn eviction_count_starts_at_zero() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.eviction_count(), 0);
+    }
+
+    #[test]
+    fn eviction_count_increments_on_invalidate() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let k = Hash128::of_str("evict_1");
+        cache.put(k, 1, Constraint::new(1));
+        cache.invalidate(&k);
+        assert_eq!(cache.eviction_count(), 1);
+    }
+
+    #[test]
+    fn eviction_count_does_not_increment_on_absent_key_invalidate() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.invalidate(&Hash128::of_str("never_inserted"));
+        assert_eq!(cache.eviction_count(), 0);
+    }
+
+    #[test]
+    fn eviction_count_accumulates_over_multiple_invalidations() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        for i in 0u64..3 {
+            cache.invalidate(&Hash128::of_u64(i));
+        }
+        assert_eq!(cache.eviction_count(), 3);
+    }
+
+    #[test]
+    fn eviction_count_not_incremented_by_clear() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        cache.clear();
+        assert_eq!(cache.eviction_count(), 0);
+    }
+
+    #[test]
+    fn eviction_count_after_five_invalidations_is_five() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let keys: Vec<Hash128> = (0u64..5).map(Hash128::of_u64).collect();
+        for (i, &k) in keys.iter().enumerate() {
+            cache.put(k, i as u32, Constraint::new(i as u64));
+        }
+        for k in &keys {
+            cache.invalidate(k);
+        }
+        assert_eq!(cache.eviction_count(), 5);
+    }
+
+    #[test]
+    fn eviction_count_only_counts_actual_removals() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let k = Hash128::of_str("real_key");
+        cache.put(k, 1, Constraint::new(1));
+        // Invalidate a key that doesn't exist (no increment expected).
+        cache.invalidate(&Hash128::of_str("fake_key"));
+        assert_eq!(cache.eviction_count(), 0);
+        // Invalidate the real key.
+        cache.invalidate(&k);
+        assert_eq!(cache.eviction_count(), 1);
+    }
+
+    #[test]
+    fn resize_does_not_lose_existing_entries() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        cache.resize(100);
+        // All entries must still be accessible.
+        for i in 0u64..10 {
+            assert_eq!(cache.get(&Hash128::of_u64(i), i, &[]), Some(i as u32));
+        }
+    }
+
+    #[test]
+    fn resize_smaller_than_len_is_noop() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        // resize to 5 (less than current 10) — entries must not be lost.
+        cache.resize(5);
+        assert_eq!(cache.len(), 10);
+    }
+
+    #[test]
+    fn resize_to_zero_is_noop_on_empty() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.resize(0);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn resize_then_insert_works() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.resize(50);
+        for i in 0u64..20 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 20);
+    }
+
+    #[test]
+    fn hit_rate_type_is_f64() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        // Just verify hit_rate returns f64 (compile-time check via binding).
+        let rate: f64 = cache.hit_rate();
+        assert!((rate - 0.0f64).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn lru_eviction_ordering_last_inserted_survives_invalidate_oldest() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let k1 = Hash128::of_str("lru_old");
+        let k2 = Hash128::of_str("lru_new");
+        cache.put(k1, 10, Constraint::new(1));
+        cache.put(k2, 20, Constraint::new(1));
+        // "Evict oldest" = invalidate k1.
+        cache.invalidate(&k1);
+        assert_eq!(cache.get(&k2, 1, &[]), Some(20), "newest entry must survive");
+        assert_eq!(cache.get(&k1, 1, &[]), None, "oldest entry must be gone");
+    }
+
+    #[test]
+    fn lru_eviction_count_tracks_removed_entries() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let keys: Vec<Hash128> = (0u64..10).map(|i| Hash128::of_u64(i + 500)).collect();
+        for (i, &k) in keys.iter().enumerate() {
+            cache.put(k, i as u32, Constraint::new(i as u64 + 500));
+        }
+        // Simulate LRU: evict 4 oldest.
+        for k in keys.iter().take(4) {
+            cache.invalidate(k);
+        }
+        assert_eq!(cache.eviction_count(), 4);
+        assert_eq!(cache.len(), 6);
+    }
+
+    #[test]
+    fn concurrent_key_patterns_all_store_independently() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let keys: Vec<Hash128> = (0u64..5)
+            .flat_map(|i| (0u64..5).map(move |j| Hash128::of_str(&format!("{i}:{j}"))))
+            .collect();
+        for (idx, &k) in keys.iter().enumerate() {
+            cache.put(k, idx as u32, Constraint::new(idx as u64));
+        }
+        assert_eq!(cache.len(), 25, "25 distinct composite keys must all be stored");
+    }
+
+    #[test]
+    fn concurrent_key_same_prefix_different_suffix_differ() {
+        let k1 = Hash128::of_str("fn:0");
+        let k2 = Hash128::of_str("fn:1");
+        assert_ne!(k1, k2);
+    }
+
+    #[test]
+    fn eviction_count_reset_after_new() {
+        let cache: MemoCache<u64> = MemoCache::new();
+        assert_eq!(cache.eviction_count(), 0);
+    }
+
+    #[test]
+    fn resize_does_not_change_len() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..7 {
+            cache.put(Hash128::of_u64(i), i as u32, Constraint::new(i));
+        }
+        let before = cache.len();
+        cache.resize(200);
+        assert_eq!(cache.len(), before);
+    }
+
+    #[test]
+    fn hit_rate_three_quarters() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("three_q");
+        cache.put(key, 5, Constraint::new(1));
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 2, &[]); // miss
+        let rate = cache.hit_rate();
+        assert!((rate - 0.75f64).abs() < 1e-9, "expected 75%, got {rate}");
+    }
+
+    #[test]
+    fn eviction_count_mixed_present_absent() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let present = Hash128::of_str("present");
+        let absent = Hash128::of_str("absent");
+        cache.put(present, 1, Constraint::new(1));
+        cache.invalidate(&absent); // no-op, count stays 0
+        assert_eq!(cache.eviction_count(), 0);
+        cache.invalidate(&present); // real eviction
+        assert_eq!(cache.eviction_count(), 1);
+    }
+
+    #[test]
+    fn resize_large_capacity_then_fill() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.resize(1000);
+        for i in 0u64..50 {
+            cache.put(Hash128::of_u64(i + 9000), i as u32, Constraint::new(i + 9000));
+        }
+        assert_eq!(cache.len(), 50);
+        for i in 0u64..50 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 9000), i + 9000, &[]), Some(i as u32));
+        }
+    }
+
+    #[test]
+    fn eviction_count_one_after_single_invalidate_real_key() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let k = Hash128::of_str("ev_single");
+        cache.put(k, 42, Constraint::new(7));
+        cache.invalidate(&k);
+        assert_eq!(cache.eviction_count(), 1, "one real eviction must increment counter");
+    }
+
+    #[test]
+    fn resize_then_evict_count_still_accurate() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let keys: Vec<Hash128> = (0u64..5).map(|i| Hash128::of_u64(i + 8000)).collect();
+        for (i, &k) in keys.iter().enumerate() {
+            cache.put(k, i as u32, Constraint::new(i as u64 + 8000));
+        }
+        cache.resize(200);
+        for k in keys.iter().take(2) {
+            cache.invalidate(k);
+        }
+        assert_eq!(cache.eviction_count(), 2);
+        assert_eq!(cache.len(), 3);
+    }
 }

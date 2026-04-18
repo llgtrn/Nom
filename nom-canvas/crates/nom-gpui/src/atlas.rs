@@ -165,6 +165,35 @@ impl TextureAtlas {
         self.access_order.clear();
         self.allocator.clear();
     }
+
+    /// Returns the number of cached glyph entries currently in the atlas.
+    pub fn entry_count(&self) -> usize {
+        self.cache.len()
+    }
+
+    /// Returns the maximum number of glyph entries that could theoretically
+    /// fit in the atlas at the minimum glyph size (1×1 px after padding).
+    ///
+    /// This is a conservative upper bound: `(width * height) / 9` because
+    /// every allocation has 1px padding on each side (3×3 padded footprint
+    /// minimum per glyph).
+    pub fn capacity(&self) -> usize {
+        let area = (self.width as usize) * (self.height as usize);
+        // Each glyph occupies at least a 3×3 padded region (1px + 2px padding).
+        area / 9
+    }
+
+    /// Returns the utilisation ratio of the atlas as a value in `[0.0, 1.0]`.
+    ///
+    /// Computed as `entry_count / capacity`.  Returns `0.0` when the atlas is
+    /// empty or capacity is zero.
+    pub fn utilization(&self) -> f32 {
+        let cap = self.capacity();
+        if cap == 0 {
+            return 0.0;
+        }
+        (self.entry_count() as f32) / (cap as f32)
+    }
 }
 
 // ---------------------------------------------------------------------------
@@ -620,5 +649,164 @@ mod tests {
         let atlas = TextureAtlas::new(0);
         assert_eq!(atlas.width, TextureAtlas::DEFAULT_SIZE);
         assert_eq!(atlas.height, TextureAtlas::DEFAULT_SIZE);
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AO: entry_count, capacity, utilization
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn entry_count_zero_on_new_atlas() {
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.entry_count(), 0, "new atlas must have 0 entries");
+    }
+
+    #[test]
+    fn entry_count_increases_after_pack() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(10001), 8, 8).unwrap();
+        assert_eq!(atlas.entry_count(), 1, "entry_count must be 1 after one pack");
+    }
+
+    #[test]
+    fn entry_count_increases_for_distinct_keys() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..5u32 {
+            atlas.pack_glyph(make_key(20000 + i), 8, 8).unwrap();
+        }
+        assert_eq!(atlas.entry_count(), 5, "5 distinct packs must give entry_count=5");
+    }
+
+    #[test]
+    fn entry_count_unchanged_for_cache_hit() {
+        let mut atlas = TextureAtlas::new(0);
+        let key = make_key(30001);
+        atlas.pack_glyph(key, 8, 8).unwrap();
+        // Same key again — cache hit, no new entry.
+        atlas.pack_glyph(key, 8, 8).unwrap();
+        assert_eq!(atlas.entry_count(), 1, "cache hit must not increase entry_count");
+    }
+
+    #[test]
+    fn entry_count_zero_after_clear() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(40001), 8, 8).unwrap();
+        assert_eq!(atlas.entry_count(), 1);
+        atlas.clear();
+        assert_eq!(atlas.entry_count(), 0, "entry_count must be 0 after clear");
+    }
+
+    #[test]
+    fn capacity_is_positive_for_default_atlas() {
+        let atlas = TextureAtlas::new(0);
+        assert!(atlas.capacity() > 0, "capacity must be > 0 for a 2048×2048 atlas");
+    }
+
+    #[test]
+    fn capacity_equals_area_div_nine() {
+        let atlas = TextureAtlas::new(0);
+        let expected = (atlas.width as usize) * (atlas.height as usize) / 9;
+        assert_eq!(atlas.capacity(), expected, "capacity must equal width*height/9");
+    }
+
+    #[test]
+    fn capacity_constant_regardless_of_packing() {
+        let mut atlas = TextureAtlas::new(0);
+        let cap_before = atlas.capacity();
+        for i in 0..10u32 {
+            atlas.pack_glyph(make_key(50000 + i), 16, 16).unwrap();
+        }
+        assert_eq!(atlas.capacity(), cap_before, "capacity must not change after packing glyphs");
+    }
+
+    #[test]
+    fn utilization_zero_on_empty_atlas() {
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.utilization(), 0.0, "empty atlas must have utilization = 0.0");
+    }
+
+    #[test]
+    fn utilization_increases_after_packing() {
+        let mut atlas = TextureAtlas::new(0);
+        let before = atlas.utilization();
+        atlas.pack_glyph(make_key(60001), 8, 8).unwrap();
+        let after = atlas.utilization();
+        assert!(after > before, "utilization must increase after packing: {} > {}", after, before);
+    }
+
+    #[test]
+    fn utilization_in_zero_to_one_range() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..20u32 {
+            atlas.pack_glyph(make_key(70000 + i), 8, 8).unwrap();
+        }
+        let u = atlas.utilization();
+        assert!(u >= 0.0 && u <= 1.0, "utilization must be in [0.0, 1.0], got {u}");
+    }
+
+    #[test]
+    fn utilization_zero_after_clear() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(80001), 8, 8).unwrap();
+        atlas.clear();
+        assert_eq!(atlas.utilization(), 0.0, "utilization must be 0.0 after clear");
+    }
+
+    #[test]
+    fn utilization_equals_entry_count_over_capacity() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..3u32 {
+            atlas.pack_glyph(make_key(90000 + i), 8, 8).unwrap();
+        }
+        let expected = (atlas.entry_count() as f32) / (atlas.capacity() as f32);
+        let actual = atlas.utilization();
+        assert!((actual - expected).abs() < 1e-6, "utilization must equal entry_count/capacity: expected {expected}, got {actual}");
+    }
+
+    #[test]
+    fn entry_count_matches_cache_len() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..7u32 {
+            atlas.pack_glyph(make_key(100000 + i), 8, 8).unwrap();
+        }
+        // entry_count is backed by cache.len()
+        assert_eq!(atlas.entry_count(), 7, "entry_count must equal number of distinct packs");
+    }
+
+    #[test]
+    fn capacity_for_2048_atlas_is_at_least_100000() {
+        // 2048*2048 / 9 = 466,489 — a reasonable lower bound for capacity.
+        let atlas = TextureAtlas::new(0);
+        assert!(atlas.capacity() >= 100_000, "2048×2048 atlas must have capacity >= 100_000");
+    }
+
+    #[test]
+    fn entry_count_reflects_multiple_font_variants() {
+        let mut atlas = TextureAtlas::new(0);
+        // Same glyph_id in two different fonts = two distinct entries.
+        let k_a = make_key_font(10, 65);
+        let k_b = make_key_font(11, 65);
+        atlas.pack_glyph(k_a, 8, 8).unwrap();
+        atlas.pack_glyph(k_b, 8, 8).unwrap();
+        assert_eq!(atlas.entry_count(), 2, "different font_ids must produce 2 distinct entries");
+    }
+
+    #[test]
+    fn utilization_greater_than_zero_after_single_pack() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(110001), 8, 8).unwrap();
+        assert!(atlas.utilization() > 0.0, "utilization must be > 0 after one pack");
+    }
+
+    #[test]
+    fn entry_count_and_utilization_consistent_after_many_packs() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..20u32 {
+            atlas.pack_glyph(make_key(120000 + i), 8, 8).unwrap();
+        }
+        assert_eq!(atlas.entry_count(), 20);
+        let u = atlas.utilization();
+        let expected = 20.0 / (atlas.capacity() as f32);
+        assert!((u - expected).abs() < 1e-6, "utilization {u} must equal 20/capacity {expected}");
     }
 }

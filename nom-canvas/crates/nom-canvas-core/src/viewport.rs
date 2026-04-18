@@ -135,6 +135,26 @@ impl Viewport {
             && screen[1] >= 0.0
             && screen[1] <= self.size[1]
     }
+
+    /// Returns the current zoom level (scale factor).
+    ///
+    /// Equivalent to reading `self.zoom` directly, but provided as a method
+    /// for ergonomic symmetry with other accessors.
+    pub fn scale_factor(&self) -> f32 {
+        self.zoom
+    }
+
+    /// Clamps a canvas-space point to the visible canvas bounds.
+    ///
+    /// Returns the nearest point within `[visible_tl, visible_br]` in canvas
+    /// coordinates.  If the point is already inside the visible region it is
+    /// returned unchanged.
+    pub fn clamp_to_bounds(&self, x: f32, y: f32) -> (f32, f32) {
+        let (tl, br) = self.visible_bounds();
+        let cx = x.clamp(tl[0], br[0]);
+        let cy = y.clamp(tl[1], br[1]);
+        (cx, cy)
+    }
 }
 
 #[cfg(test)]
@@ -1447,5 +1467,126 @@ mod tests {
         assert!((vp.pan[0]).abs() < 1e-6, "pan.x must be 0 after reset");
         assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
         assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom must be 1.0 after reset");
+    }
+
+    // ── Wave AO: scale_factor + clamp_to_bounds tests ───────────────────────
+
+    /// scale_factor returns the current zoom level.
+    #[test]
+    fn scale_factor_returns_zoom_at_default() {
+        let vp = Viewport::new(800.0, 600.0);
+        assert!((vp.scale_factor() - 1.0).abs() < 1e-6, "default scale_factor must be 1.0");
+    }
+
+    /// scale_factor reflects zoom changes.
+    #[test]
+    fn scale_factor_reflects_zoom_changes() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.5, [400.0, 300.0]);
+        assert!((vp.scale_factor() - 2.5).abs() < 1e-5, "scale_factor must match zoom=2.5, got {}", vp.scale_factor());
+    }
+
+    /// scale_factor after clamp to max returns 32.0.
+    #[test]
+    fn scale_factor_at_max_clamp() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(f32::MAX, [400.0, 300.0]);
+        assert!((vp.scale_factor() - 32.0).abs() < 1e-5, "scale_factor must be clamped to 32, got {}", vp.scale_factor());
+    }
+
+    /// scale_factor after clamp to min returns 0.1.
+    #[test]
+    fn scale_factor_at_min_clamp() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(0.0, [400.0, 300.0]);
+        assert!((vp.scale_factor() - 0.1).abs() < 1e-5, "scale_factor must be clamped to 0.1, got {}", vp.scale_factor());
+    }
+
+    /// scale_factor matches self.zoom after reset.
+    #[test]
+    fn scale_factor_after_reset_equals_one() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(5.0, [400.0, 300.0]);
+        vp.reset();
+        assert!((vp.scale_factor() - 1.0).abs() < 1e-6, "scale_factor must be 1 after reset");
+    }
+
+    /// clamp_to_bounds: a point inside visible bounds is returned unchanged.
+    #[test]
+    fn clamp_to_bounds_inside_is_unchanged() {
+        let vp = Viewport::new(800.0, 600.0);
+        // Canvas origin is inside visible bounds at default viewport.
+        let (cx, cy) = vp.clamp_to_bounds(0.0, 0.0);
+        assert!((cx).abs() < 1e-5, "clamped x must be 0 for interior point");
+        assert!((cy).abs() < 1e-5, "clamped y must be 0 for interior point");
+    }
+
+    /// clamp_to_bounds: a point to the right of visible bounds is clamped to the right edge.
+    #[test]
+    fn clamp_to_bounds_right_of_visible_clamped() {
+        let vp = Viewport::new(800.0, 600.0);
+        // At zoom=1, visible_bounds goes from (-400,-300) to (400,300).
+        // Point at x=1000 must clamp to 400.
+        let (cx, cy) = vp.clamp_to_bounds(1000.0, 0.0);
+        assert!((cx - 400.0).abs() < 1e-4, "x must clamp to right edge 400, got {cx}");
+        assert!((cy).abs() < 1e-4, "y must remain 0, got {cy}");
+    }
+
+    /// clamp_to_bounds: a point to the left of visible bounds is clamped to the left edge.
+    #[test]
+    fn clamp_to_bounds_left_of_visible_clamped() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (cx, cy) = vp.clamp_to_bounds(-1000.0, 0.0);
+        assert!((cx - (-400.0)).abs() < 1e-4, "x must clamp to left edge -400, got {cx}");
+        assert!((cy).abs() < 1e-4, "y must remain 0, got {cy}");
+    }
+
+    /// clamp_to_bounds: a point above visible bounds is clamped to the top edge.
+    #[test]
+    fn clamp_to_bounds_above_visible_clamped() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (cx, cy) = vp.clamp_to_bounds(0.0, -1000.0);
+        assert!((cx).abs() < 1e-4, "x must remain 0, got {cx}");
+        assert!((cy - (-300.0)).abs() < 1e-4, "y must clamp to top edge -300, got {cy}");
+    }
+
+    /// clamp_to_bounds: a point below visible bounds is clamped to the bottom edge.
+    #[test]
+    fn clamp_to_bounds_below_visible_clamped() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (cx, cy) = vp.clamp_to_bounds(0.0, 1000.0);
+        assert!((cx).abs() < 1e-4, "x must remain 0, got {cx}");
+        assert!((cy - 300.0).abs() < 1e-4, "y must clamp to bottom edge 300, got {cy}");
+    }
+
+    /// clamp_to_bounds at zoom=2: visible bounds are half-sized, clamping uses tighter range.
+    #[test]
+    fn clamp_to_bounds_at_zoom2_tighter_range() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // At zoom=2 visible canvas width = 400, so right edge ≈ 200.
+        let (tl, br) = vp.visible_bounds();
+        // Point outside the zoomed visible range must clamp to the right edge.
+        let (cx, _cy) = vp.clamp_to_bounds(br[0] + 100.0, 0.0);
+        assert!((cx - br[0]).abs() < 1e-3, "x must clamp to zoomed right edge {}, got {cx}", br[0]);
+    }
+
+    /// clamp_to_bounds is idempotent: clamping twice gives the same result.
+    #[test]
+    fn clamp_to_bounds_idempotent() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (cx1, cy1) = vp.clamp_to_bounds(9999.0, -9999.0);
+        let (cx2, cy2) = vp.clamp_to_bounds(cx1, cy1);
+        assert!((cx2 - cx1).abs() < 1e-5, "second clamp must not change x");
+        assert!((cy2 - cy1).abs() < 1e-5, "second clamp must not change y");
+    }
+
+    /// is_point_visible returns true for the clamped result (it lies on the boundary).
+    #[test]
+    fn clamped_point_is_visible() {
+        let vp = Viewport::new(800.0, 600.0);
+        let (cx, cy) = vp.clamp_to_bounds(99999.0, 99999.0);
+        // The clamped point is on the boundary — must be visible.
+        assert!(vp.is_point_visible([cx, cy]), "clamped boundary point must be visible");
     }
 }

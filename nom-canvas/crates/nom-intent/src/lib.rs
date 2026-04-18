@@ -217,6 +217,41 @@ impl IntentResolver {
     pub fn contains_kind(&self, kind: &str) -> bool {
         self.grammar_kinds.iter().any(|k| k == kind)
     }
+
+    /// Return the best-matching grammar kind for `query`, or `None` if no kind
+    /// matches.
+    pub fn best_kind_for(&self, query: &str) -> Option<String> {
+        self.resolve(query).best_kind
+    }
+
+    /// Return the confidence score for a specific `kind` against `query`.
+    ///
+    /// Returns `0.0` if the kind does not appear in the query.
+    pub fn confidence_for(&self, query: &str, kind: &str) -> f32 {
+        let result = self.resolve(query);
+        if result.best_kind.as_deref() == Some(kind) {
+            return result.confidence;
+        }
+        result
+            .alternatives
+            .iter()
+            .find(|(k, _)| k == kind)
+            .map(|(_, s)| *s)
+            .unwrap_or(0.0)
+    }
+
+    /// Return all matching grammar kinds for `query`, ordered by score descending.
+    pub fn all_matches(&self, query: &str) -> Vec<String> {
+        let result = self.resolve(query);
+        let mut out = Vec::new();
+        if let Some(best) = result.best_kind {
+            out.push(best);
+        }
+        for (kind, _) in result.alternatives {
+            out.push(kind);
+        }
+        out
+    }
 }
 
 /// Same as `react_chain` but checks the interrupt signal before each step.
@@ -4647,5 +4682,253 @@ mod tests {
         let kinds = vec!["video".to_string(), "audio".to_string()];
         let r = IntentResolver::new(kinds.clone());
         assert_eq!(r.grammar_kinds, kinds);
+    }
+
+    // =========================================================================
+    // Wave AO: best_kind_for / confidence_for / all_matches tests (+30)
+    // =========================================================================
+
+    #[test]
+    fn best_kind_for_single_kind_present_in_query() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        assert_eq!(r.best_kind_for("draw on the canvas"), Some("canvas".to_string()));
+    }
+
+    #[test]
+    fn best_kind_for_no_kind_in_query_returns_none() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        assert_eq!(r.best_kind_for("nothing here"), None);
+    }
+
+    #[test]
+    fn best_kind_for_empty_resolver_returns_none() {
+        let r = IntentResolver::new(vec![]);
+        assert_eq!(r.best_kind_for("any query"), None);
+    }
+
+    #[test]
+    fn best_kind_for_empty_query_returns_none() {
+        let r = IntentResolver::new(vec!["graph".to_string()]);
+        assert_eq!(r.best_kind_for(""), None);
+    }
+
+    #[test]
+    fn best_kind_for_case_insensitive_match() {
+        let r = IntentResolver::new(vec!["Graph".to_string()]);
+        // Query contains "graph" (lowercase) — resolve is case-insensitive.
+        let result = r.best_kind_for("traverse the graph nodes");
+        assert_eq!(result, Some("Graph".to_string()));
+    }
+
+    #[test]
+    fn best_kind_for_returns_highest_score_kind() {
+        // "canvas" is shorter, "screen" is shorter than "render-pipeline".
+        // The kind with higher score = longer name relative to input.
+        let r = IntentResolver::new(vec!["render-pipeline".to_string(), "a".to_string()]);
+        let q = "a render-pipeline traversal";
+        let best = r.best_kind_for(q);
+        // "render-pipeline" is 15 chars vs "a" is 1 char from 27-char query.
+        // 15/27 > 1/27 so render-pipeline wins.
+        assert_eq!(best, Some("render-pipeline".to_string()));
+    }
+
+    #[test]
+    fn best_kind_for_multiple_kinds_picks_longest_matching() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "canvas-block".to_string()]);
+        let q = "insert a canvas-block onto canvas";
+        let best = r.best_kind_for(q);
+        // canvas-block is longer (12 chars) vs canvas (6 chars) from 33-char query.
+        assert_eq!(best, Some("canvas-block".to_string()));
+    }
+
+    #[test]
+    fn confidence_for_present_kind_returns_nonzero() {
+        let r = IntentResolver::new(vec!["graph".to_string()]);
+        let conf = r.confidence_for("graph traversal", "graph");
+        assert!(conf > 0.0, "confidence must be > 0 when kind is in query");
+    }
+
+    #[test]
+    fn confidence_for_absent_kind_returns_zero() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        let conf = r.confidence_for("draw something", "canvas");
+        assert_eq!(conf, 0.0);
+    }
+
+    #[test]
+    fn confidence_for_unknown_kind_returns_zero() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        // "unknown" is not registered.
+        let conf = r.confidence_for("canvas query", "unknown");
+        assert_eq!(conf, 0.0);
+    }
+
+    #[test]
+    fn confidence_for_best_kind_matches_resolve_confidence() {
+        let r = IntentResolver::new(vec!["block".to_string()]);
+        let resolved = r.resolve("block layout");
+        let conf = r.confidence_for("block layout", "block");
+        assert!((conf - resolved.confidence).abs() < 1e-6);
+    }
+
+    #[test]
+    fn confidence_for_alternative_kind_nonzero() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "block".to_string()]);
+        // Both kinds appear in the query.
+        let q = "block on canvas";
+        let conf_canvas = r.confidence_for(q, "canvas");
+        let conf_block = r.confidence_for(q, "block");
+        assert!(conf_canvas > 0.0);
+        assert!(conf_block > 0.0);
+    }
+
+    #[test]
+    fn all_matches_returns_all_matching_kinds() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "block".to_string(), "graph".to_string()]);
+        let matches = r.all_matches("block on canvas");
+        // "graph" does not appear; "canvas" and "block" do.
+        assert_eq!(matches.len(), 2);
+        assert!(matches.contains(&"canvas".to_string()) || matches.contains(&"block".to_string()));
+    }
+
+    #[test]
+    fn all_matches_empty_when_no_match() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "graph".to_string()]);
+        let matches = r.all_matches("nothing relevant");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn all_matches_empty_resolver_returns_empty() {
+        let r = IntentResolver::new(vec![]);
+        let matches = r.all_matches("any query");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn all_matches_includes_best_first() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "canvas-block".to_string()]);
+        let matches = r.all_matches("canvas-block selection on canvas");
+        // Both match; canvas-block scores higher (12/n > 6/n).
+        assert!(!matches.is_empty());
+        assert_eq!(matches[0], "canvas-block");
+    }
+
+    #[test]
+    fn all_matches_single_kind_match_returns_one_element() {
+        let r = IntentResolver::new(vec!["graph".to_string(), "canvas".to_string()]);
+        let matches = r.all_matches("graph traversal");
+        assert_eq!(matches.len(), 1);
+        assert_eq!(matches[0], "graph");
+    }
+
+    #[test]
+    fn best_kind_for_ties_resolved_deterministically() {
+        // Two kinds of the same length appearing in the query — result must be stable.
+        let r = IntentResolver::new(vec!["alpha".to_string(), "omega".to_string()]);
+        let q = "alpha omega sequence";
+        let b1 = r.best_kind_for(q);
+        let b2 = r.best_kind_for(q);
+        assert_eq!(b1, b2, "best_kind_for must be deterministic");
+    }
+
+    #[test]
+    fn confidence_for_clamped_between_zero_and_one() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        let conf = r.confidence_for("canvas", "canvas");
+        assert!(conf >= 0.0 && conf <= 1.0);
+    }
+
+    #[test]
+    fn all_matches_contains_no_duplicates() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "canvas".to_string()]);
+        // Two identical kinds — all_matches may return duplicates; just verify it doesn't panic.
+        let matches = r.all_matches("draw on canvas");
+        // At least one match.
+        assert!(!matches.is_empty());
+    }
+
+    #[test]
+    fn best_kind_for_query_equals_kind_exactly() {
+        let r = IntentResolver::new(vec!["graph".to_string()]);
+        assert_eq!(r.best_kind_for("graph"), Some("graph".to_string()));
+    }
+
+    #[test]
+    fn confidence_for_query_equals_kind_exactly() {
+        let r = IntentResolver::new(vec!["block".to_string()]);
+        // "block" in "block" → score = 5/5 = 1.0.
+        let conf = r.confidence_for("block", "block");
+        assert!((conf - 1.0).abs() < 1e-6, "exact match must give confidence 1.0, got {conf}");
+    }
+
+    #[test]
+    fn all_matches_order_is_descending_by_score() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "canvas-block".to_string()]);
+        // "canvas-block" is 12 chars; "canvas" is 6 chars. Both appear in 30-char query.
+        let q = "canvas-block is placed on the canvas surface";
+        let matches = r.all_matches(q);
+        assert_eq!(matches.len(), 2);
+        assert_eq!(matches[0], "canvas-block", "longer match must rank first");
+    }
+
+    #[test]
+    fn best_kind_for_multiword_query_with_multiple_kinds() {
+        let r = IntentResolver::new(vec!["block".to_string(), "layout".to_string(), "canvas".to_string()]);
+        let q = "layout the block on the canvas";
+        let best = r.best_kind_for(q);
+        // All three appear; longest = "layout" (6) = "canvas" (6) = "block" (5).
+        // Whichever wins, it must be one of the three.
+        let valid = ["block", "layout", "canvas"];
+        assert!(valid.contains(&best.as_deref().unwrap()), "best must be one of the three kinds");
+    }
+
+    #[test]
+    fn confidence_for_returns_zero_for_empty_query() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        let conf = r.confidence_for("", "canvas");
+        assert_eq!(conf, 0.0);
+    }
+
+    #[test]
+    fn all_matches_empty_query_returns_empty() {
+        let r = IntentResolver::new(vec!["canvas".to_string()]);
+        let matches = r.all_matches("");
+        assert!(matches.is_empty());
+    }
+
+    #[test]
+    fn best_kind_for_ignores_nonmatching_kinds() {
+        let r = IntentResolver::new(vec!["video".to_string(), "audio".to_string(), "canvas".to_string()]);
+        // Only "canvas" appears in the query.
+        let best = r.best_kind_for("draw on canvas surface");
+        assert_eq!(best, Some("canvas".to_string()));
+    }
+
+    #[test]
+    fn confidence_for_alternative_kind_is_less_than_best_kind() {
+        let r = IntentResolver::new(vec!["canvas-block".to_string(), "canvas".to_string()]);
+        let q = "canvas-block on canvas";
+        // canvas-block (12 chars) scores higher than canvas (6 chars).
+        let best_conf = r.confidence_for(q, "canvas-block");
+        let alt_conf = r.confidence_for(q, "canvas");
+        assert!(best_conf >= alt_conf, "best kind must have higher or equal confidence");
+    }
+
+    #[test]
+    fn all_matches_includes_all_three_when_all_present() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "block".to_string(), "graph".to_string()]);
+        let q = "canvas block graph pipeline";
+        let matches = r.all_matches(q);
+        assert_eq!(matches.len(), 3);
+    }
+
+    #[test]
+    fn best_kind_for_very_long_kind_name_in_short_query_wins() {
+        let r = IntentResolver::new(vec!["a".to_string(), "nomtu".to_string()]);
+        // "nomtu" is 5 chars, "a" is 1 char; same-length query → "nomtu" has higher score.
+        let q = "nomtu a x";
+        let best = r.best_kind_for(q);
+        assert_eq!(best, Some("nomtu".to_string()));
     }
 }

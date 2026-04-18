@@ -1,6 +1,20 @@
 use std::collections::BTreeSet;
 
 use crate::elements::ElementBounds;
+use crate::spatial_index::SpatialIndex;
+
+// ─── NomtuRef ────────────────────────────────────────────────────────────────
+
+/// A lightweight reference to a dictionary entry: a numeric hash and a human
+/// word.  Used as the stable identity for canvas elements that are linked to
+/// `nomtu` entries.
+#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+pub struct NomtuRef {
+    /// Numeric hash of the `nomtu` entry.
+    pub hash: u64,
+    /// Human-readable word component of the entry.
+    pub word: String,
+}
 
 // ─── Selection ──────────────────────────────────────────────────────────────
 
@@ -62,6 +76,41 @@ impl Selection {
     pub fn len(&self) -> usize {
         self.ids.len()
     }
+
+    /// Returns the number of selected elements (alias for `len`).
+    pub fn selected_count(&self) -> usize {
+        self.ids.len()
+    }
+
+    /// Clears all selected element IDs and resets the transform origin (alias
+    /// for `clear` — provided for ergonomic naming consistency with
+    /// `selected_count` and `toggle_selection`).
+    pub fn clear_selection(&mut self) {
+        self.clear();
+    }
+
+    /// Toggles the selection state of the element identified by `id`.
+    ///
+    /// If the element's hash is currently selected it is removed; otherwise it
+    /// is added.
+    pub fn toggle_selection(&mut self, id: &NomtuRef) {
+        if self.ids.contains(&id.hash) {
+            self.ids.remove(&id.hash);
+        } else {
+            self.ids.insert(id.hash);
+        }
+    }
+}
+
+// ─── Spatial-index–backed region selection ──────────────────────────────────
+
+/// Returns the IDs of all elements whose bounding boxes intersect the given
+/// canvas-space region `[min, max]`, using the R-tree spatial index for
+/// O(log n) performance instead of brute-force iteration.
+///
+/// The returned `Vec<u64>` can be fed directly to `Selection::add`.
+pub fn select_in_region(index: &SpatialIndex, min: [f32; 2], max: [f32; 2]) -> Vec<u64> {
+    index.query_in_bounds(min, max)
 }
 
 // ─── Rubber-band ────────────────────────────────────────────────────────────
@@ -1439,5 +1488,255 @@ mod tests {
         for id in [2u64, 3, 4] {
             assert!(sel.contains(id), "appended id {id} must be selected");
         }
+    }
+
+    // ── Wave AO: NomtuRef + spatial-index selection tests ────────────────────
+
+    use super::super::spatial_index::SpatialIndex;
+    use super::super::elements::ElementBounds as EB;
+    use super::select_in_region;
+    use super::NomtuRef;
+
+    fn make_eb(id: u64, min: [f32; 2], max: [f32; 2]) -> EB {
+        EB { id, min, max }
+    }
+
+    /// selected_count returns 0 for an empty selection.
+    #[test]
+    fn selected_count_empty_is_zero() {
+        let sel = Selection::empty();
+        assert_eq!(sel.selected_count(), 0, "selected_count must be 0 for empty selection");
+    }
+
+    /// selected_count matches len() at all times.
+    #[test]
+    fn selected_count_matches_len() {
+        let mut sel = Selection::empty();
+        for id in [1u64, 2, 3, 4, 5] {
+            sel.add(id);
+        }
+        assert_eq!(sel.selected_count(), sel.len(), "selected_count must equal len()");
+    }
+
+    /// selected_count decreases after remove.
+    #[test]
+    fn selected_count_decreases_after_remove() {
+        let mut sel = Selection::empty();
+        sel.add(10);
+        sel.add(20);
+        assert_eq!(sel.selected_count(), 2);
+        sel.remove(10);
+        assert_eq!(sel.selected_count(), 1, "selected_count must decrease after remove");
+    }
+
+    /// clear_selection empties the selection.
+    #[test]
+    fn clear_selection_empties() {
+        let mut sel = Selection::empty();
+        for id in [1u64, 2, 3] {
+            sel.add(id);
+        }
+        sel.clear_selection();
+        assert!(sel.is_empty(), "selection must be empty after clear_selection");
+        assert_eq!(sel.selected_count(), 0, "selected_count must be 0 after clear_selection");
+    }
+
+    /// clear_selection resets transform_origin.
+    #[test]
+    fn clear_selection_resets_transform_origin() {
+        let mut sel = Selection::single(7, [5.0, 5.0]);
+        sel.clear_selection();
+        assert!((sel.transform_origin[0]).abs() < 1e-6, "origin.x must be 0 after clear_selection");
+        assert!((sel.transform_origin[1]).abs() < 1e-6, "origin.y must be 0 after clear_selection");
+    }
+
+    /// toggle_selection adds an unselected element.
+    #[test]
+    fn toggle_selection_adds_unselected() {
+        let mut sel = Selection::empty();
+        let id = NomtuRef { hash: 42, word: "test".to_string() };
+        sel.toggle_selection(&id);
+        assert!(sel.contains(42), "toggle on unselected must add the element");
+        assert_eq!(sel.selected_count(), 1);
+    }
+
+    /// toggle_selection removes an already-selected element.
+    #[test]
+    fn toggle_selection_removes_selected() {
+        let mut sel = Selection::empty();
+        let id = NomtuRef { hash: 99, word: "block".to_string() };
+        sel.add(99);
+        assert!(sel.contains(99), "element must be selected before toggle");
+        sel.toggle_selection(&id);
+        assert!(!sel.contains(99), "toggle on selected must remove the element");
+        assert_eq!(sel.selected_count(), 0);
+    }
+
+    /// toggle_selection twice returns to original state.
+    #[test]
+    fn toggle_selection_twice_is_idempotent() {
+        let mut sel = Selection::empty();
+        let id = NomtuRef { hash: 7, word: "node".to_string() };
+        sel.toggle_selection(&id);
+        assert!(sel.contains(7), "first toggle must add");
+        sel.toggle_selection(&id);
+        assert!(!sel.contains(7), "second toggle must remove");
+        assert_eq!(sel.selected_count(), 0, "count must be 0 after double-toggle");
+    }
+
+    /// toggle_selection on multiple refs works independently.
+    #[test]
+    fn toggle_selection_multiple_refs_independent() {
+        let mut sel = Selection::empty();
+        let a = NomtuRef { hash: 1, word: "a".to_string() };
+        let b = NomtuRef { hash: 2, word: "b".to_string() };
+        sel.toggle_selection(&a);
+        sel.toggle_selection(&b);
+        assert!(sel.contains(1), "a must be selected");
+        assert!(sel.contains(2), "b must be selected");
+        assert_eq!(sel.selected_count(), 2);
+        sel.toggle_selection(&a);
+        assert!(!sel.contains(1), "a must be deselected after second toggle");
+        assert!(sel.contains(2), "b must still be selected");
+    }
+
+    /// select_in_region returns elements within the query bounds from the spatial index.
+    #[test]
+    fn select_in_region_returns_elements_in_bounds() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_eb(1, [0.0, 0.0], [50.0, 50.0]));
+        idx.insert(make_eb(2, [100.0, 100.0], [200.0, 200.0]));
+        idx.insert(make_eb(3, [25.0, 25.0], [75.0, 75.0]));
+        let ids = select_in_region(&idx, [0.0, 0.0], [60.0, 60.0]);
+        assert!(ids.contains(&1), "element 1 must be in region");
+        assert!(ids.contains(&3), "element 3 must be in region");
+        assert!(!ids.contains(&2), "element 2 must NOT be in region");
+    }
+
+    /// select_in_region on an empty index returns empty vec.
+    #[test]
+    fn select_in_region_empty_index_returns_empty() {
+        let idx = SpatialIndex::new();
+        let ids = select_in_region(&idx, [0.0, 0.0], [1000.0, 1000.0]);
+        assert!(ids.is_empty(), "empty index must return no ids");
+    }
+
+    /// select_in_region with a region covering nothing returns empty.
+    #[test]
+    fn select_in_region_no_match_returns_empty() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_eb(1, [500.0, 500.0], [600.0, 600.0]));
+        let ids = select_in_region(&idx, [0.0, 0.0], [10.0, 10.0]);
+        assert!(ids.is_empty(), "no elements in small region far from all elements");
+    }
+
+    /// select_in_region: result can be fed directly to Selection::add.
+    #[test]
+    fn select_in_region_feeds_selection() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_eb(10, [0.0, 0.0], [40.0, 40.0]));
+        idx.insert(make_eb(20, [50.0, 50.0], [90.0, 90.0]));
+        idx.insert(make_eb(30, [200.0, 200.0], [300.0, 300.0]));
+        let mut sel = Selection::empty();
+        for id in select_in_region(&idx, [0.0, 0.0], [100.0, 100.0]) {
+            sel.add(id);
+        }
+        assert!(sel.contains(10), "element 10 must be selected");
+        assert!(sel.contains(20), "element 20 must be selected");
+        assert!(!sel.contains(30), "element 30 must not be selected (outside region)");
+        assert_eq!(sel.selected_count(), 2);
+    }
+
+    /// select_in_region covers entire space: all elements are returned.
+    #[test]
+    fn select_in_region_large_region_returns_all() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=5 {
+            let base = i as f32 * 30.0;
+            idx.insert(make_eb(i, [base, base], [base + 20.0, base + 20.0]));
+        }
+        let ids = select_in_region(&idx, [-1e6, -1e6], [1e6, 1e6]);
+        assert_eq!(ids.len(), 5, "large region must return all 5 elements");
+    }
+
+    /// selected_count stays at 0 when clear_selection called on empty.
+    #[test]
+    fn clear_selection_on_empty_is_safe() {
+        let mut sel = Selection::empty();
+        sel.clear_selection(); // must not panic
+        assert_eq!(sel.selected_count(), 0);
+    }
+
+    /// NomtuRef with the same hash selects the same slot regardless of word.
+    #[test]
+    fn toggle_selection_hash_is_key_not_word() {
+        let mut sel = Selection::empty();
+        let a = NomtuRef { hash: 100, word: "alpha".to_string() };
+        let b = NomtuRef { hash: 100, word: "beta".to_string() }; // same hash, different word
+        sel.toggle_selection(&a);
+        assert!(sel.contains(100), "toggle must add hash 100");
+        // b has the same hash: toggling it removes the selection.
+        sel.toggle_selection(&b);
+        assert!(!sel.contains(100), "toggle with same hash must remove the selection");
+    }
+
+    /// selected_count after adding and removing many elements is correct.
+    #[test]
+    fn selected_count_bulk_operations() {
+        let mut sel = Selection::empty();
+        for id in 1_u64..=20 {
+            sel.add(id);
+        }
+        assert_eq!(sel.selected_count(), 20, "must be 20 after bulk add");
+        for id in 1_u64..=10 {
+            sel.remove(id);
+        }
+        assert_eq!(sel.selected_count(), 10, "must be 10 after removing half");
+        sel.clear_selection();
+        assert_eq!(sel.selected_count(), 0, "must be 0 after clear_selection");
+    }
+
+    /// select_in_region with touching boundary includes the element.
+    #[test]
+    fn select_in_region_touching_boundary_included() {
+        let mut idx = SpatialIndex::new();
+        // Element at [50,50]→[100,100]; query rect right edge touches element's left edge.
+        idx.insert(make_eb(1, [50.0, 50.0], [100.0, 100.0]));
+        let ids = select_in_region(&idx, [0.0, 0.0], [50.0, 50.0]);
+        assert!(ids.contains(&1), "touching-boundary element must be included");
+    }
+
+    /// toggle_selection count increments and decrements correctly for many refs.
+    #[test]
+    fn toggle_selection_count_tracks_correctly() {
+        let mut sel = Selection::empty();
+        let refs: Vec<NomtuRef> = (1_u64..=5).map(|h| NomtuRef { hash: h, word: format!("w{h}") }).collect();
+        for r in &refs {
+            sel.toggle_selection(r);
+        }
+        assert_eq!(sel.selected_count(), 5, "all 5 must be selected after toggle-on");
+        // Toggle off all of them.
+        for r in &refs {
+            sel.toggle_selection(r);
+        }
+        assert_eq!(sel.selected_count(), 0, "all 5 must be deselected after toggle-off");
+    }
+
+    /// select_in_region with a single-element index returns that element when in range.
+    #[test]
+    fn select_in_region_single_element_in_range() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_eb(77, [10.0, 10.0], [30.0, 30.0]));
+        let ids = select_in_region(&idx, [5.0, 5.0], [35.0, 35.0]);
+        assert_eq!(ids, vec![77], "single element must be returned when in range");
+    }
+
+    /// select_in_region: point query at the element centre returns the element.
+    #[test]
+    fn select_in_region_point_query_at_element_centre() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_eb(55, [0.0, 0.0], [100.0, 100.0]));
+        let ids = select_in_region(&idx, [50.0, 50.0], [50.0, 50.0]);
+        assert!(ids.contains(&55), "point query at element centre must return the element");
     }
 }

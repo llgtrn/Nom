@@ -76,6 +76,50 @@ impl Buffer {
         self.rope.len_lines()
     }
 
+    /// Returns the total number of Unicode scalar value characters in the buffer.
+    pub fn char_count(&self) -> usize {
+        self.rope.len_chars()
+    }
+
+    /// Returns the text of the given logical line (0-indexed), without the trailing newline.
+    /// Returns `None` if `line` is out of range.
+    pub fn line_at(&self, line: usize) -> Option<String> {
+        let total = self.rope.len_lines();
+        if line >= total {
+            return None;
+        }
+        let slice = self.rope.line(line);
+        let s = slice.to_string();
+        let trimmed = s.trim_end_matches('\n').trim_end_matches('\r');
+        Some(trimmed.to_string())
+    }
+
+    /// Returns the word (run of alphanumeric / underscore chars) containing
+    /// char-offset `cursor`, or `None` if the cursor is not on a word character.
+    pub fn word_at_cursor(&self, cursor: usize) -> Option<String> {
+        let len = self.rope.len_chars();
+        if len == 0 || cursor > len {
+            return None;
+        }
+        let chars: Vec<char> = self.rope.chars().collect();
+        let idx = cursor.min(chars.len().saturating_sub(1));
+        let is_word = |c: char| c.is_alphanumeric() || c == '_';
+        if !is_word(chars[idx]) {
+            return None;
+        }
+        let start = chars[..=idx]
+            .iter()
+            .rposition(|c| !is_word(*c))
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        let end = chars[idx..]
+            .iter()
+            .position(|c| !is_word(*c))
+            .map(|p| idx + p)
+            .unwrap_or(chars.len());
+        Some(chars[start..end].iter().collect())
+    }
+
     pub fn char_to_line(&self, char_idx: usize) -> usize {
         self.rope.char_to_line(char_idx.min(self.rope.len_chars()))
     }
@@ -1315,5 +1359,142 @@ mod tests {
             }
         }
         assert_eq!(close_pos, Some(11));
+    }
+
+    // ── wave AO-6: char_count / line_at / word_at_cursor tests ──────────────
+
+    /// char_count equals len() for ASCII text.
+    #[test]
+    fn buffer_char_count_equals_len_for_ascii() {
+        let buf = Buffer::new(1, "hello");
+        assert_eq!(buf.char_count(), buf.len());
+    }
+
+    /// char_count for empty buffer is zero.
+    #[test]
+    fn buffer_char_count_empty_is_zero() {
+        let buf = Buffer::new(1, "");
+        assert_eq!(buf.char_count(), 0);
+    }
+
+    /// char_count for multi-line text counts newlines as chars.
+    #[test]
+    fn buffer_char_count_multiline() {
+        let buf = Buffer::new(1, "ab\ncd");
+        assert_eq!(buf.char_count(), 5); // 'a','b','\n','c','d'
+    }
+
+    /// char_count for unicode: emoji counts as 1 char (ropey char = code point).
+    #[test]
+    fn buffer_char_count_emoji_one_char() {
+        let buf = Buffer::new(1, "🦀");
+        assert_eq!(buf.char_count(), 1);
+    }
+
+    /// char_count after insert increases by the number of inserted chars.
+    #[test]
+    fn buffer_char_count_increases_after_insert() {
+        let mut buf = Buffer::new(1, "abc");
+        buf.insert_at(3, "de");
+        assert_eq!(buf.char_count(), 5);
+    }
+
+    /// line_at(0) on single-line text returns that line without newline.
+    #[test]
+    fn buffer_line_at_single_line() {
+        let buf = Buffer::new(1, "hello");
+        assert_eq!(buf.line_at(0).as_deref(), Some("hello"));
+    }
+
+    /// line_at(0) on multi-line text returns first line without newline.
+    #[test]
+    fn buffer_line_at_first_line_multiline() {
+        let buf = Buffer::new(1, "line1\nline2\nline3");
+        assert_eq!(buf.line_at(0).as_deref(), Some("line1"));
+    }
+
+    /// line_at(1) returns second line.
+    #[test]
+    fn buffer_line_at_second_line() {
+        let buf = Buffer::new(1, "a\nb\nc");
+        assert_eq!(buf.line_at(1).as_deref(), Some("b"));
+    }
+
+    /// line_at with out-of-range index returns None.
+    #[test]
+    fn buffer_line_at_oob_returns_none() {
+        let buf = Buffer::new(1, "hello");
+        assert!(buf.line_at(99).is_none());
+    }
+
+    /// line_at on empty buffer returns None.
+    #[test]
+    fn buffer_line_at_empty_buffer() {
+        let buf = Buffer::new(1, "");
+        // ropey len_lines for empty string is 1 (one empty line)
+        let result = buf.line_at(0);
+        assert_eq!(result.as_deref(), Some(""));
+    }
+
+    /// line_at strips CRLF line ending.
+    #[test]
+    fn buffer_line_at_strips_crlf() {
+        let buf = Buffer::new(1, "hello\r\nworld");
+        // line 0 should be "hello" without the CR
+        let line = buf.line_at(0).unwrap();
+        assert!(!line.contains('\r'));
+        assert!(!line.contains('\n'));
+    }
+
+    /// word_at_cursor on a simple word returns that word.
+    #[test]
+    fn buffer_word_at_cursor_simple_word() {
+        let buf = Buffer::new(1, "hello");
+        assert_eq!(buf.word_at_cursor(0).as_deref(), Some("hello"));
+        assert_eq!(buf.word_at_cursor(2).as_deref(), Some("hello"));
+        assert_eq!(buf.word_at_cursor(4).as_deref(), Some("hello"));
+    }
+
+    /// word_at_cursor on a space returns None.
+    #[test]
+    fn buffer_word_at_cursor_space_returns_none() {
+        let buf = Buffer::new(1, "hello world");
+        assert!(buf.word_at_cursor(5).is_none()); // space at index 5
+    }
+
+    /// word_at_cursor in "hello world" at cursor on 'w' returns "world".
+    #[test]
+    fn buffer_word_at_cursor_second_word() {
+        let buf = Buffer::new(1, "hello world");
+        assert_eq!(buf.word_at_cursor(6).as_deref(), Some("world"));
+    }
+
+    /// word_at_cursor handles underscores as word chars.
+    #[test]
+    fn buffer_word_at_cursor_underscore() {
+        let buf = Buffer::new(1, "my_var");
+        assert_eq!(buf.word_at_cursor(3).as_deref(), Some("my_var"));
+    }
+
+    /// word_at_cursor on empty buffer returns None.
+    #[test]
+    fn buffer_word_at_cursor_empty_buffer() {
+        let buf = Buffer::new(1, "");
+        assert!(buf.word_at_cursor(0).is_none());
+    }
+
+    /// word_at_cursor at start of text.
+    #[test]
+    fn buffer_word_at_cursor_at_start() {
+        let buf = Buffer::new(1, "foo bar");
+        assert_eq!(buf.word_at_cursor(0).as_deref(), Some("foo"));
+    }
+
+    /// word_at_cursor at end of last word.
+    #[test]
+    fn buffer_word_at_cursor_at_end_of_word() {
+        let buf = Buffer::new(1, "foo");
+        // cursor at index 2 (last char 'o')
+        assert_eq!(buf.word_at_cursor(2).as_deref(), Some("foo"));
     }
 }

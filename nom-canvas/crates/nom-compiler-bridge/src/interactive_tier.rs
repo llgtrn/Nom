@@ -42,17 +42,53 @@ pub struct InteractiveTier {
     #[allow(dead_code)]
     state: Arc<SharedState>,
     sender: tokio::sync::mpsc::Sender<InteractiveRequest>,
+    /// Tracks how many requests have been sent but not yet drained from the channel.
+    /// Incremented on send, not decremented (approximate — used for idle detection).
+    pending: std::sync::atomic::AtomicUsize,
 }
 
 impl InteractiveTier {
     pub fn new(state: Arc<SharedState>) -> (Self, tokio::sync::mpsc::Receiver<InteractiveRequest>) {
         let (sender, receiver) = tokio::sync::mpsc::channel(128);
-        (Self { state, sender }, receiver)
+        (
+            Self {
+                state,
+                sender,
+                pending: std::sync::atomic::AtomicUsize::new(0),
+            },
+            receiver,
+        )
+    }
+
+    /// Returns the number of requests that have been dispatched but not yet acknowledged.
+    /// This is an approximate count (incremented on send; not decremented on reply).
+    pub fn pending_count(&self) -> usize {
+        self.pending.load(std::sync::atomic::Ordering::Relaxed)
+    }
+
+    /// Returns `true` when no requests are pending (the tier is idle).
+    pub fn is_idle(&self) -> bool {
+        self.pending_count() == 0
+    }
+
+    /// Close the sender so the worker's recv loop terminates after draining pending work.
+    /// After calling this, further sends will fail silently.
+    pub fn cancel_all(&mut self) {
+        // Create a new channel whose receiver is immediately dropped.
+        // Once the receiver is gone, any send on `closed_sender` returns SendError.
+        let (closed_sender, closed_rx): (
+            tokio::sync::mpsc::Sender<InteractiveRequest>,
+            tokio::sync::mpsc::Receiver<InteractiveRequest>,
+        ) = tokio::sync::mpsc::channel(1);
+        drop(closed_rx);
+        self.sender = closed_sender;
+        self.pending.store(0, std::sync::atomic::Ordering::Relaxed);
     }
 
     /// Request tokenization asynchronously
     pub async fn tokenize(&self, source: String) -> Vec<TokenSpan> {
         let (tx, rx) = tokio::sync::oneshot::channel();
+        self.pending.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
         let _ = self
             .sender
             .send(InteractiveRequest::Tokenize { source, reply: tx })
@@ -1118,6 +1154,102 @@ mod tests {
         let pos = source.len() + 100; // well past end
         let word = find_word_at(source, pos);
         assert_eq!(word, None, "out-of-bounds position must return None");
+    }
+
+    // ── AO7: pending_count / is_idle / cancel_all tests ──────────────────────
+
+    #[test]
+    fn interactive_tier_new_is_idle() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        assert!(tier.is_idle(), "freshly created tier must be idle");
+        assert_eq!(tier.pending_count(), 0);
+    }
+
+    #[test]
+    fn interactive_tier_pending_count_starts_zero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        assert_eq!(tier.pending_count(), 0, "initial pending count must be 0");
+    }
+
+    #[test]
+    fn interactive_tier_is_idle_true_when_pending_zero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        // No requests sent — must be idle
+        assert!(tier.is_idle());
+    }
+
+    #[test]
+    fn interactive_tier_cancel_all_sets_pending_to_zero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (mut tier, _rx) = InteractiveTier::new(state);
+        tier.cancel_all();
+        assert_eq!(tier.pending_count(), 0, "cancel_all must reset pending count to 0");
+    }
+
+    #[test]
+    fn interactive_tier_cancel_all_makes_tier_idle() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (mut tier, _rx) = InteractiveTier::new(state);
+        tier.cancel_all();
+        assert!(tier.is_idle(), "cancel_all must leave tier in idle state");
+    }
+
+    #[test]
+    fn interactive_tier_cancel_all_twice_no_panic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (mut tier, _rx) = InteractiveTier::new(state);
+        tier.cancel_all();
+        tier.cancel_all(); // second call must not panic
+        assert!(tier.is_idle());
+    }
+
+    #[test]
+    fn interactive_tier_is_idle_and_pending_count_consistent() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        // is_idle iff pending_count == 0
+        assert_eq!(tier.is_idle(), tier.pending_count() == 0);
+    }
+
+    #[test]
+    fn interactive_tier_cancel_all_after_new_is_idle() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (mut tier, _rx) = InteractiveTier::new(state);
+        assert!(tier.is_idle());
+        tier.cancel_all();
+        assert!(tier.is_idle(), "idle before and after cancel_all");
+    }
+
+    #[test]
+    fn interactive_tier_pending_count_returns_usize() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        let count: usize = tier.pending_count();
+        // usize is always >= 0; this verifies the return type is correct
+        assert!(count < usize::MAX);
+    }
+
+    #[test]
+    fn interactive_tier_cancel_clears_pending_to_zero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (mut tier, _rx) = InteractiveTier::new(state);
+        // Simulate in-flight requests by using the atomic directly (same module)
+        tier.pending.store(5, std::sync::atomic::Ordering::Relaxed);
+        assert_eq!(tier.pending_count(), 5);
+        tier.cancel_all();
+        assert_eq!(tier.pending_count(), 0, "cancel_all must reset pending from 5 to 0");
+    }
+
+    #[test]
+    fn interactive_tier_is_idle_false_when_pending_nonzero() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let (tier, _rx) = InteractiveTier::new(state);
+        tier.pending.store(3, std::sync::atomic::Ordering::Relaxed);
+        assert!(!tier.is_idle(), "tier with pending=3 must not be idle");
+        assert_eq!(tier.pending_count(), 3);
     }
 }
 

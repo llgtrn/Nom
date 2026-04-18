@@ -187,6 +187,38 @@ impl LintRunner {
     pub fn run(&self, source: &str) -> Vec<LintDiagnostic> {
         self.check_file(source)
     }
+
+    /// Return the total number of registered rules.
+    pub fn rule_count(&self) -> usize {
+        self.rules.len()
+    }
+
+    /// Return the number of enabled rules (all rules are always enabled; this
+    /// returns the same value as `rule_count` and exists for API symmetry).
+    pub fn enabled_count(&self) -> usize {
+        self.rules.len()
+    }
+
+    /// Return the severity level of the first violation produced by the rule
+    /// whose name matches `rule_name` on a synthetic trigger line, or `None`
+    /// if no registered rule has that name.
+    pub fn severity_of(&self, rule_name: &str) -> Option<LintLevel> {
+        for rule in &self.rules {
+            if rule.name() == rule_name {
+                // Produce a known-triggering line per rule so we can read its level.
+                let trigger = match rule_name {
+                    "trailing-whitespace" => "x   ",
+                    "line-too-long" => &"a".repeat(200),
+                    "empty-block" => "fn f() {}",
+                    _ => "x   ",
+                };
+                if let Some(diag) = rule.check(trigger, 1) {
+                    return Some(diag.level);
+                }
+            }
+        }
+        None
+    }
 }
 
 impl Default for LintRunner {
@@ -5231,5 +5263,219 @@ mod tests {
         runner.add_rule(EmptyBlockRule);
         let source = "let result = compute();\nreturn result;\n";
         assert!(runner.run(source).is_empty());
+    }
+
+    // =========================================================================
+    // Wave AO: rule_count / enabled_count / severity_of tests (+25)
+    // =========================================================================
+
+    #[test]
+    fn rule_count_empty_runner_is_zero() {
+        let runner = LintRunner::new();
+        assert_eq!(runner.rule_count(), 0);
+    }
+
+    #[test]
+    fn rule_count_one_rule_is_one() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.rule_count(), 1);
+    }
+
+    #[test]
+    fn rule_count_three_rules_is_three() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        assert_eq!(runner.rule_count(), 3);
+    }
+
+    #[test]
+    fn rule_count_duplicate_rules_count_each() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.rule_count(), 2);
+    }
+
+    #[test]
+    fn enabled_count_matches_rule_count_empty() {
+        let runner = LintRunner::new();
+        assert_eq!(runner.enabled_count(), runner.rule_count());
+    }
+
+    #[test]
+    fn enabled_count_matches_rule_count_with_rules() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        assert_eq!(runner.enabled_count(), runner.rule_count());
+    }
+
+    #[test]
+    fn enabled_count_zero_on_new_runner() {
+        let runner = LintRunner::new();
+        assert_eq!(runner.enabled_count(), 0);
+    }
+
+    #[test]
+    fn enabled_count_one_after_add_rule() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        assert_eq!(runner.enabled_count(), 1);
+    }
+
+    #[test]
+    fn severity_of_trailing_whitespace_returns_warning() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let level = runner.severity_of("trailing-whitespace");
+        assert_eq!(level, Some(LintLevel::Warning));
+    }
+
+    #[test]
+    fn severity_of_line_too_long_returns_warning() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        let level = runner.severity_of("line-too-long");
+        assert_eq!(level, Some(LintLevel::Warning));
+    }
+
+    #[test]
+    fn severity_of_empty_block_returns_warning() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let level = runner.severity_of("empty-block");
+        assert_eq!(level, Some(LintLevel::Warning));
+    }
+
+    #[test]
+    fn severity_of_unknown_rule_returns_none() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.severity_of("no-such-rule"), None);
+    }
+
+    #[test]
+    fn severity_of_empty_runner_returns_none() {
+        let runner = LintRunner::new();
+        assert_eq!(runner.severity_of("trailing-whitespace"), None);
+    }
+
+    #[test]
+    fn severity_of_wrong_rule_name_returns_none() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        assert_eq!(runner.severity_of("trailing-whitespace"), None);
+    }
+
+    #[test]
+    fn rule_count_increases_with_each_add_rule() {
+        let mut runner = LintRunner::new();
+        assert_eq!(runner.rule_count(), 0);
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.rule_count(), 1);
+        runner.add_rule(LineTooLongRule::new());
+        assert_eq!(runner.rule_count(), 2);
+        runner.add_rule(EmptyBlockRule);
+        assert_eq!(runner.rule_count(), 3);
+    }
+
+    #[test]
+    fn empty_input_lint_produces_no_diagnostics_three_rules() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run("");
+        assert!(diags.is_empty());
+    }
+
+    #[test]
+    fn multi_violation_same_line_both_detected() {
+        // A line that is both too long AND has trailing whitespace.
+        let line = format!("{} ", "a".repeat(130));
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(&line, 1);
+        assert_eq!(diags.len(), 2, "expected 2 violations for too-long+trailing-space line");
+    }
+
+    #[test]
+    fn multi_violation_across_lines_all_found() {
+        let source = "fn a() {}  \nfn b() {}\nfn c() {}  ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 2, "trailing whitespace on lines 1 and 3");
+    }
+
+    #[test]
+    fn enabled_count_equals_rule_count_always() {
+        let mut runner = LintRunner::new();
+        for _ in 0..5 {
+            runner.add_rule(TrailingWhitespaceRule);
+        }
+        assert_eq!(runner.enabled_count(), runner.rule_count());
+        assert_eq!(runner.enabled_count(), 5);
+    }
+
+    #[test]
+    fn severity_of_returns_some_when_rule_present() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        assert!(runner.severity_of("trailing-whitespace").is_some());
+        assert!(runner.severity_of("line-too-long").is_some());
+        assert!(runner.severity_of("empty-block").is_some());
+    }
+
+    #[test]
+    fn rule_count_default_runner_zero() {
+        let runner = LintRunner::default();
+        assert_eq!(runner.rule_count(), 0);
+    }
+
+    #[test]
+    fn enabled_count_default_runner_zero() {
+        let runner = LintRunner::default();
+        assert_eq!(runner.enabled_count(), 0);
+    }
+
+    #[test]
+    fn lint_runner_run_empty_source_no_diags_with_all_rules() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule { max_len: 10 });
+        runner.add_rule(EmptyBlockRule);
+        assert!(runner.run("").is_empty());
+    }
+
+    #[test]
+    fn multi_violation_empty_block_and_long_line() {
+        let line = format!("fn f() {{}} {}", "x".repeat(130));
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let diags = runner.check_line(&line, 1);
+        assert_eq!(diags.len(), 2);
+    }
+
+    #[test]
+    fn severity_of_all_three_rules_returns_warning() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        for name in ["trailing-whitespace", "line-too-long", "empty-block"] {
+            assert_eq!(
+                runner.severity_of(name),
+                Some(LintLevel::Warning),
+                "rule '{name}' must have Warning severity"
+            );
+        }
     }
 }

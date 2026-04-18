@@ -261,6 +261,60 @@ impl InMemorySink {
         let mut guard = self.events.lock().expect("InMemorySink mutex poisoned");
         std::mem::take(&mut *guard)
     }
+
+    /// Return the number of events recorded so far (alias for `count`).
+    pub fn event_count(&self) -> usize {
+        self.count()
+    }
+
+    /// Drain all recorded events and return them, leaving the buffer empty.
+    ///
+    /// Equivalent to `drain`.
+    pub fn flush(&mut self) -> Vec<TelemetryEvent> {
+        let mut guard = self.events.lock().expect("InMemorySink mutex poisoned");
+        std::mem::take(&mut *guard)
+    }
+
+    /// Return a cloned subset of events whose `EventKind` variant name contains
+    /// `tag` (case-insensitive).
+    ///
+    /// The tag is matched against the debug discriminant of the variant
+    /// (`"SessionStart"`, `"CompilerInvoke"`, `"CanvasAction"`, …).
+    pub fn filter_by_tag(&self, tag: &str) -> Vec<TelemetryEvent> {
+        let tag_lower = tag.to_lowercase();
+        self.events
+            .lock()
+            .expect("InMemorySink mutex poisoned")
+            .iter()
+            .filter(|e| {
+                let kind_name = event_kind_tag(&e.kind);
+                kind_name.to_lowercase().contains(&tag_lower)
+            })
+            .cloned()
+            .collect()
+    }
+}
+
+/// Return a stable string tag for an `EventKind` variant.
+fn event_kind_tag(kind: &EventKind) -> &'static str {
+    match kind {
+        EventKind::CanvasAction { .. } => "CanvasAction",
+        EventKind::CompilerInvoke { .. } => "CompilerInvoke",
+        EventKind::CompilerInvokeWithPath { .. } => "CompilerInvokeWithPath",
+        EventKind::RagQuery { .. } => "RagQuery",
+        EventKind::Error { .. } => "Error",
+        EventKind::SessionStart => "SessionStart",
+        EventKind::SessionEnd => "SessionEnd",
+        EventKind::Hover { .. } => "Hover",
+        EventKind::CommandPaletteOpened => "CommandPaletteOpened",
+        EventKind::DeepThinkStarted => "DeepThinkStarted",
+        EventKind::CanvasZoom { .. } => "CanvasZoom",
+        EventKind::BlockInserted { .. } => "BlockInserted",
+        EventKind::CanvasPan { .. } => "CanvasPan",
+        EventKind::SelectionChanged { .. } => "SelectionChanged",
+        EventKind::FileOpened { .. } => "FileOpened",
+        EventKind::SearchQuery { .. } => "SearchQuery",
+    }
 }
 
 impl Default for InMemorySink {
@@ -6476,4 +6530,243 @@ mod tests {
         tel.emit(EventKind::RagQuery { top_k: 10 }, 50, 1);
         assert_eq!(inner.events()[0].kind, EventKind::RagQuery { top_k: 10 });
     }
+
+    // =========================================================================
+    // Wave AO: event_count / flush / filter_by_tag tests (+25)
+    // =========================================================================
+
+    #[test]
+    fn event_count_starts_at_zero() {
+        let sink = InMemorySink::new();
+        assert_eq!(sink.event_count(), 0);
+    }
+
+    #[test]
+    fn event_count_increments_on_record() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(sink.event_count(), 1);
+    }
+
+    #[test]
+    fn event_count_equals_count() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(sink.event_count(), sink.count());
+    }
+
+    #[test]
+    fn event_count_after_five_records_is_five() {
+        let sink = InMemorySink::new();
+        for i in 0u64..5 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "pan".into() }, i, 1));
+        }
+        assert_eq!(sink.event_count(), 5);
+    }
+
+    #[test]
+    fn flush_clears_buffer_and_returns_events() {
+        let mut sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        let drained = sink.flush();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(sink.event_count(), 0);
+    }
+
+    #[test]
+    fn flush_returns_events_in_insertion_order() {
+        let mut sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 10, 1));
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 5 }, 20, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 30, 1));
+        let events = sink.flush();
+        assert_eq!(events[0].kind, EventKind::SessionStart);
+        assert_eq!(events[1].kind, EventKind::CompilerInvoke { duration_ms: 5 });
+        assert_eq!(events[2].kind, EventKind::SessionEnd);
+    }
+
+    #[test]
+    fn flush_on_empty_sink_returns_empty_vec() {
+        let mut sink = InMemorySink::new();
+        let events = sink.flush();
+        assert!(events.is_empty());
+    }
+
+    #[test]
+    fn flush_then_event_count_is_zero() {
+        let mut sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.flush();
+        assert_eq!(sink.event_count(), 0);
+    }
+
+    #[test]
+    fn flush_twice_second_returns_empty() {
+        let mut sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.flush();
+        let second = sink.flush();
+        assert!(second.is_empty());
+    }
+
+    #[test]
+    fn filter_by_tag_session_start() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 10 }, 2, 1));
+        let filtered = sink.filter_by_tag("SessionStart");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].kind, EventKind::SessionStart);
+    }
+
+    #[test]
+    fn filter_by_tag_compiler_invoke() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 5 }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 10 }, 1, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 2, 1));
+        let filtered = sink.filter_by_tag("CompilerInvoke");
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_tag_no_match_returns_empty() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let filtered = sink.filter_by_tag("NonExistentTag");
+        assert!(filtered.is_empty());
+    }
+
+    #[test]
+    fn filter_by_tag_case_insensitive() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let filtered_lower = sink.filter_by_tag("sessionstart");
+        let filtered_upper = sink.filter_by_tag("SESSIONSTART");
+        assert_eq!(filtered_lower.len(), 1);
+        assert_eq!(filtered_upper.len(), 1);
+    }
+
+    #[test]
+    fn filter_by_tag_partial_match() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        // "Session" matches both SessionStart and SessionEnd.
+        let filtered = sink.filter_by_tag("session");
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_tag_canvas_action() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "zoom".into() }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CanvasZoom { level: 2.0 }, 1, 1));
+        let filtered = sink.filter_by_tag("CanvasAction");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].kind, EventKind::CanvasAction { action: "zoom".into() });
+    }
+
+    #[test]
+    fn event_count_after_flush_is_zero() {
+        let mut sink = InMemorySink::new();
+        for i in 0u64..10 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "pan".into() }, i, 1));
+        }
+        assert_eq!(sink.event_count(), 10);
+        sink.flush();
+        assert_eq!(sink.event_count(), 0);
+    }
+
+    #[test]
+    fn event_ordering_preserved_after_multiple_records() {
+        let sink = InMemorySink::new();
+        for i in 0u64..5 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasZoom { level: i as f32 }, i, 1));
+        }
+        let events = sink.events();
+        for (i, ev) in events.iter().enumerate() {
+            assert_eq!(ev.timestamp_ms, i as u64);
+        }
+    }
+
+    #[test]
+    fn counter_increment_pattern_event_count() {
+        let sink = InMemorySink::new();
+        for n in 1u64..=7 {
+            sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: n * 10 }, n, 1));
+            assert_eq!(sink.event_count(), n as usize);
+        }
+    }
+
+    #[test]
+    fn filter_by_tag_rag_query() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 5 }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 10 }, 1, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 2, 1));
+        let filtered = sink.filter_by_tag("RagQuery");
+        assert_eq!(filtered.len(), 2);
+    }
+
+    #[test]
+    fn flush_records_then_re_record_works() {
+        let mut sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.flush();
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        assert_eq!(sink.event_count(), 1);
+        assert_eq!(sink.events()[0].kind, EventKind::SessionEnd);
+    }
+
+    #[test]
+    fn filter_by_tag_empty_sink_returns_empty() {
+        let sink = InMemorySink::new();
+        assert!(sink.filter_by_tag("SessionStart").is_empty());
+    }
+
+    #[test]
+    fn event_count_alias_matches_count_always() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::DeepThinkStarted, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CommandPaletteOpened, 1, 1));
+        assert_eq!(sink.event_count(), sink.count());
+        assert_eq!(sink.event_count(), 2);
+    }
+
+    #[test]
+    fn filter_by_tag_error_kind() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::Error { code: 404, message: "not found".into() }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 1, 1));
+        let filtered = sink.filter_by_tag("Error");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].kind, EventKind::Error { code: 404, message: "not found".into() });
+    }
+
+    #[test]
+    fn filter_by_tag_hover_kind() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::Hover { entity: "block:1".into() }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 1, 1));
+        let filtered = sink.filter_by_tag("Hover");
+        assert_eq!(filtered.len(), 1);
+        assert_eq!(filtered[0].kind, EventKind::Hover { entity: "block:1".into() });
+    }
+
+    #[test]
+    fn event_count_after_record_and_flush_multiple_cycles() {
+        let mut sink = InMemorySink::new();
+        for _ in 0..3 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+            sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+            assert_eq!(sink.event_count(), 2);
+            sink.flush();
+            assert_eq!(sink.event_count(), 0);
+        }
+    }
+
 }

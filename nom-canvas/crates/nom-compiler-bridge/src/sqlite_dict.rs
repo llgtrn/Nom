@@ -129,6 +129,11 @@ impl SqliteDictReader {
     pub fn new_stub() -> Self {
         Self
     }
+
+    /// Returns the number of known grammar kinds (always 0 in stub mode).
+    pub fn kind_count(&self) -> usize {
+        self.list_kinds().len()
+    }
 }
 
 #[cfg(not(feature = "compiler"))]
@@ -241,5 +246,40 @@ mod tests {
         let reader = SqliteDictReader::new_stub();
         assert!(!reader.is_known_kind("définir"));
         assert!(!reader.is_known_kind("概念"));
+    }
+
+    // ── AO7: kind_count tests ──────────────────────────────────────────────
+
+    #[test]
+    fn sqlite_dict_stub_kind_count_is_zero() {
+        let reader = SqliteDictReader::new_stub();
+        assert_eq!(reader.kind_count(), 0, "stub kind_count must always be 0");
+    }
+
+    #[test]
+    fn sqlite_dict_stub_kind_count_equals_list_kinds_len() {
+        let reader = SqliteDictReader::new_stub();
+        assert_eq!(reader.kind_count(), reader.list_kinds().len());
+    }
+
+    #[test]
+    fn sqlite_dict_stub_kind_count_called_twice_consistent() {
+        let reader = SqliteDictReader::new_stub();
+        assert_eq!(reader.kind_count(), reader.kind_count(), "kind_count must be idempotent");
+    }
+
+    #[test]
+    fn sqlite_dict_stub_kind_count_is_usize() {
+        let reader = SqliteDictReader::new_stub();
+        let count: usize = reader.kind_count();
+        assert!(count < usize::MAX, "kind_count must return a valid usize");
+    }
+
+    #[test]
+    fn sqlite_dict_stub_kind_count_zero_means_empty_list() {
+        let reader = SqliteDictReader::new_stub();
+        if reader.kind_count() == 0 {
+            assert!(reader.list_kinds().is_empty(), "kind_count=0 implies list_kinds is empty");
+        }
     }
 }

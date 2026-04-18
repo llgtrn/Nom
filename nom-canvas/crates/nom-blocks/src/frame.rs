@@ -16,10 +16,21 @@ pub struct FrameBlock {
     pub background_color: Option<String>,
     /// Border width in logical pixels.
     pub border_width: f32,
+    /// Horizontal position of the frame's top-left corner in canvas coordinates.
+    pub x: f32,
+    /// Vertical position of the frame's top-left corner in canvas coordinates.
+    pub y: f32,
+    /// Width of the frame in canvas units.
+    pub width: f32,
+    /// Height of the frame in canvas units.
+    pub height: f32,
+    /// Z-order stacking index (higher = in front).
+    pub z_index: i32,
 }
 
 impl FrameBlock {
     /// Construct a new, empty [`FrameBlock`] with the given entity and label.
+    /// Spatial fields default to `(0.0, 0.0, 0.0, 0.0)` with `z_index = 0`.
     pub fn new(entity: NomtuRef, label: impl Into<String>) -> Self {
         Self {
             entity,
@@ -27,7 +38,27 @@ impl FrameBlock {
             children: Vec::new(),
             background_color: None,
             border_width: 1.0,
+            x: 0.0,
+            y: 0.0,
+            width: 0.0,
+            height: 0.0,
+            z_index: 0,
         }
+    }
+
+    /// Returns the bounding box as `(x, y, width, height)`.
+    pub fn bounds(&self) -> (f32, f32, f32, f32) {
+        (self.x, self.y, self.width, self.height)
+    }
+
+    /// Returns `true` if the point `(px, py)` lies inside the frame's bounding rectangle.
+    pub fn contains_point(&self, px: f32, py: f32) -> bool {
+        px >= self.x && px <= self.x + self.width && py >= self.y && py <= self.y + self.height
+    }
+
+    /// Returns the area of the frame (`width * height`).
+    pub fn area(&self) -> f32 {
+        self.width * self.height
     }
 
     /// Append a child entity reference to this frame.
@@ -321,5 +352,153 @@ mod tests {
     fn frame_label_stored_exactly() {
         let f = FrameBlock::new(entity("f-label"), "exact label text");
         assert_eq!(f.label, "exact label text");
+    }
+
+    // ── AN-FRAME-SPATIAL: spatial field tests ────────────────────────────────
+
+    #[test]
+    fn frame_spatial_defaults_to_zero() {
+        let f = FrameBlock::new(entity("sp1"), "label");
+        assert_eq!(f.x, 0.0);
+        assert_eq!(f.y, 0.0);
+        assert_eq!(f.width, 0.0);
+        assert_eq!(f.height, 0.0);
+        assert_eq!(f.z_index, 0);
+    }
+
+    #[test]
+    fn frame_bounds_returns_xywh() {
+        let mut f = FrameBlock::new(entity("sp2"), "label");
+        f.x = 10.0;
+        f.y = 20.0;
+        f.width = 100.0;
+        f.height = 50.0;
+        assert_eq!(f.bounds(), (10.0, 20.0, 100.0, 50.0));
+    }
+
+    #[test]
+    fn frame_area_correct() {
+        let mut f = FrameBlock::new(entity("sp3"), "label");
+        f.width = 4.0;
+        f.height = 5.0;
+        assert!((f.area() - 20.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn frame_area_zero_when_default() {
+        let f = FrameBlock::new(entity("sp4"), "label");
+        assert_eq!(f.area(), 0.0);
+    }
+
+    #[test]
+    fn frame_contains_point_inside() {
+        let mut f = FrameBlock::new(entity("sp5"), "label");
+        f.x = 0.0;
+        f.y = 0.0;
+        f.width = 100.0;
+        f.height = 100.0;
+        assert!(f.contains_point(50.0, 50.0));
+    }
+
+    #[test]
+    fn frame_contains_point_outside() {
+        let mut f = FrameBlock::new(entity("sp6"), "label");
+        f.x = 0.0;
+        f.y = 0.0;
+        f.width = 100.0;
+        f.height = 100.0;
+        assert!(!f.contains_point(150.0, 50.0));
+    }
+
+    #[test]
+    fn frame_contains_point_on_boundary() {
+        let mut f = FrameBlock::new(entity("sp7"), "label");
+        f.x = 10.0;
+        f.y = 10.0;
+        f.width = 80.0;
+        f.height = 80.0;
+        // exact corner is inclusive
+        assert!(f.contains_point(10.0, 10.0));
+        assert!(f.contains_point(90.0, 90.0));
+    }
+
+    #[test]
+    fn frame_contains_point_negative_coords() {
+        let mut f = FrameBlock::new(entity("sp8"), "label");
+        f.x = -50.0;
+        f.y = -50.0;
+        f.width = 100.0;
+        f.height = 100.0;
+        assert!(f.contains_point(0.0, 0.0));
+        assert!(!f.contains_point(60.0, 0.0));
+    }
+
+    #[test]
+    fn frame_z_index_can_be_negative() {
+        let mut f = FrameBlock::new(entity("sp9"), "label");
+        f.z_index = -5;
+        assert_eq!(f.z_index, -5);
+    }
+
+    #[test]
+    fn frame_z_index_can_be_large() {
+        let mut f = FrameBlock::new(entity("sp10"), "label");
+        f.z_index = 9999;
+        assert_eq!(f.z_index, 9999);
+    }
+
+    #[test]
+    fn frame_width_height_can_be_set_independently() {
+        let mut f = FrameBlock::new(entity("sp11"), "label");
+        f.width = 200.0;
+        f.height = 150.0;
+        assert!((f.width - 200.0).abs() < f32::EPSILON);
+        assert!((f.height - 150.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn frame_bounds_reflects_position_update() {
+        let mut f = FrameBlock::new(entity("sp12"), "label");
+        f.x = 5.0;
+        f.y = 15.0;
+        f.width = 30.0;
+        f.height = 40.0;
+        let (x, y, w, h) = f.bounds();
+        assert_eq!(x, 5.0);
+        assert_eq!(y, 15.0);
+        assert_eq!(w, 30.0);
+        assert_eq!(h, 40.0);
+    }
+
+    #[test]
+    fn frame_area_large_frame() {
+        let mut f = FrameBlock::new(entity("sp13"), "label");
+        f.width = 1920.0;
+        f.height = 1080.0;
+        assert!((f.area() - 1920.0 * 1080.0).abs() < 1.0);
+    }
+
+    #[test]
+    fn frame_spatial_fields_independent_of_children() {
+        let mut f = FrameBlock::new(entity("sp14"), "label");
+        f.x = 50.0;
+        f.y = 50.0;
+        f.width = 200.0;
+        f.height = 200.0;
+        f.add_child(entity("c1"));
+        f.add_child(entity("c2"));
+        assert_eq!(f.child_count(), 2);
+        assert_eq!(f.bounds(), (50.0, 50.0, 200.0, 200.0));
+    }
+
+    #[test]
+    fn frame_contains_point_just_outside_right_edge() {
+        let mut f = FrameBlock::new(entity("sp15"), "label");
+        f.x = 0.0;
+        f.y = 0.0;
+        f.width = 100.0;
+        f.height = 100.0;
+        // clearly outside by 1.0
+        assert!(!f.contains_point(101.0, 50.0));
     }
 }

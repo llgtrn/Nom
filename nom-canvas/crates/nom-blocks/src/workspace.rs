@@ -71,6 +71,22 @@ impl Workspace {
         self.blocks.remove(id)
     }
 
+    /// Returns `true` if a block with the given [`NomtuRef`] entity exists in the workspace.
+    pub fn contains(&self, entity: &NomtuRef) -> bool {
+        self.blocks.values().any(|b| &b.entity == entity)
+    }
+
+    /// Insert a block only if no block with the same `id` already exists.
+    /// Returns `true` if inserted, `false` if a duplicate was detected.
+    pub fn insert_block_dedup(&mut self, block: BlockModel) -> bool {
+        if self.blocks.contains_key(&block.id) {
+            return false;
+        }
+        self.doc_tree.push(block.id.clone());
+        self.blocks.insert(block.id.clone(), block);
+        true
+    }
+
     /// Number of blocks currently in the workspace.
     pub fn block_count(&self) -> usize {
         self.blocks.len()
@@ -1033,5 +1049,207 @@ mod tests {
         assert_eq!(ws.block_count(), 0);
         assert_eq!(ws.connector_count(), 0);
         assert!(ws.doc_tree.is_empty());
+    }
+
+    // ── AN-WORKSPACE-DUP: duplicate detection and contains() ─────────────────
+
+    #[test]
+    fn workspace_contains_true_when_present() {
+        let mut ws = Workspace::new();
+        let entity = NomtuRef::new("e-dup", "w", "verb");
+        ws.insert_block(BlockModel::new("b-dup", entity.clone(), "affine:paragraph"));
+        assert!(ws.contains(&entity));
+    }
+
+    #[test]
+    fn workspace_contains_false_when_absent() {
+        let ws = Workspace::new();
+        let entity = NomtuRef::new("e-miss", "w", "verb");
+        assert!(!ws.contains(&entity));
+    }
+
+    #[test]
+    fn workspace_contains_false_after_remove() {
+        let mut ws = Workspace::new();
+        let entity = NomtuRef::new("e-rem", "w", "verb");
+        ws.insert_block(BlockModel::new("b-rem", entity.clone(), "affine:paragraph"));
+        ws.remove_block("b-rem");
+        assert!(!ws.contains(&entity));
+    }
+
+    #[test]
+    fn workspace_dedup_first_insert_ok() {
+        let mut ws = Workspace::new();
+        let result = ws.insert_block_dedup(BlockModel::new(
+            "dd-1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert!(result);
+        assert_eq!(ws.block_count(), 1);
+        assert_eq!(ws.doc_tree.len(), 1);
+    }
+
+    #[test]
+    fn workspace_dedup_rejects_duplicate() {
+        let mut ws = Workspace::new();
+        let first = ws.insert_block_dedup(BlockModel::new(
+            "dup-id",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        let second = ws.insert_block_dedup(BlockModel::new(
+            "dup-id",
+            NomtuRef::new("e2", "x", "verb"),
+            "affine:paragraph",
+        ));
+        assert!(first);
+        assert!(!second);
+        assert_eq!(ws.block_count(), 1);
+        assert_eq!(ws.doc_tree.len(), 1);
+    }
+
+    #[test]
+    fn workspace_dedup_different_ids_both_accepted() {
+        let mut ws = Workspace::new();
+        let r1 = ws.insert_block_dedup(BlockModel::new(
+            "id-a",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        let r2 = ws.insert_block_dedup(BlockModel::new(
+            "id-b",
+            NomtuRef::new("e2", "x", "verb"),
+            "affine:paragraph",
+        ));
+        assert!(r1);
+        assert!(r2);
+        assert_eq!(ws.block_count(), 2);
+    }
+
+    #[test]
+    fn workspace_contains_multiple() {
+        let mut ws = Workspace::new();
+        let e1 = NomtuRef::new("ea", "a", "verb");
+        let e2 = NomtuRef::new("eb", "b", "concept");
+        ws.insert_block(BlockModel::new("ba", e1.clone(), "affine:paragraph"));
+        ws.insert_block(BlockModel::new("bb", e2.clone(), "affine:note"));
+        assert!(ws.contains(&e1));
+        assert!(ws.contains(&e2));
+    }
+
+    #[test]
+    fn workspace_contains_not_inserted() {
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert!(!ws.contains(&NomtuRef::new("other", "other", "concept")));
+    }
+
+    #[test]
+    fn workspace_dedup_preserves_original_entity() {
+        let mut ws = Workspace::new();
+        ws.insert_block_dedup(BlockModel::new(
+            "same-id",
+            NomtuRef::new("e-orig", "original", "verb"),
+            "affine:paragraph",
+        ));
+        ws.insert_block_dedup(BlockModel::new(
+            "same-id",
+            NomtuRef::new("e-coll", "collision", "concept"),
+            "affine:note",
+        ));
+        assert_eq!(ws.blocks.get("same-id").unwrap().entity.word, "original");
+    }
+
+    #[test]
+    fn workspace_dedup_5_unique_then_3_duplicates() {
+        let mut ws = Workspace::new();
+        for i in 0..5u8 {
+            ws.insert_block_dedup(BlockModel::new(
+                format!("dd-{i}"),
+                NomtuRef::new(format!("ee-{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        for i in 0..3u8 {
+            ws.insert_block_dedup(BlockModel::new(
+                format!("dd-{i}"),
+                NomtuRef::new(format!("dup-{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 5);
+        assert_eq!(ws.doc_tree.len(), 5);
+    }
+
+    #[test]
+    fn workspace_dedup_all_true_for_unique_ids() {
+        let mut ws = Workspace::new();
+        let results: Vec<bool> = (0..5u8)
+            .map(|i| {
+                ws.insert_block_dedup(BlockModel::new(
+                    format!("op-{i}"),
+                    NomtuRef::new(format!("oe-{i}"), "w", "verb"),
+                    "affine:paragraph",
+                ))
+            })
+            .collect();
+        assert!(results.iter().all(|&r| r));
+    }
+
+    #[test]
+    fn workspace_dedup_all_false_after_first_on_same_id() {
+        let mut ws = Workspace::new();
+        ws.insert_block_dedup(BlockModel::new(
+            "one",
+            NomtuRef::new("e0", "w", "verb"),
+            "affine:paragraph",
+        ));
+        for i in 1..5u8 {
+            let r = ws.insert_block_dedup(BlockModel::new(
+                "one",
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+            assert!(!r, "duplicate at step {i} must return false");
+        }
+        assert_eq!(ws.block_count(), 1);
+    }
+
+    #[test]
+    fn workspace_contains_checks_full_nomturef() {
+        let mut ws = Workspace::new();
+        let inserted = NomtuRef::new("sid", "word-a", "verb");
+        let diff_word = NomtuRef::new("sid", "word-b", "verb");
+        ws.insert_block(BlockModel::new("b1", inserted.clone(), "affine:paragraph"));
+        assert!(ws.contains(&inserted));
+        assert!(!ws.contains(&diff_word));
+    }
+
+    #[test]
+    fn workspace_dedup_doc_tree_matches_block_count() {
+        let mut ws = Workspace::new();
+        for i in 0..4u8 {
+            ws.insert_block_dedup(BlockModel::new(
+                format!("u-{i}"),
+                NomtuRef::new(format!("eu-{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        ws.insert_block_dedup(BlockModel::new(
+            "u-0",
+            NomtuRef::new("dup0", "w", "verb"),
+            "affine:paragraph",
+        ));
+        ws.insert_block_dedup(BlockModel::new(
+            "u-1",
+            NomtuRef::new("dup1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert_eq!(ws.block_count(), ws.doc_tree.len());
     }
 }

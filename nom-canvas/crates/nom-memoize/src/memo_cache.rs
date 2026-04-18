@@ -17,6 +17,7 @@ pub struct MemoCache<T: Clone> {
     entries: HashMap<u64, CachedResult<T>>,
     hit_count: u64,
     miss_count: u64,
+    eviction_count: usize,
 }
 
 impl<T: Clone> MemoCache<T> {
@@ -25,6 +26,7 @@ impl<T: Clone> MemoCache<T> {
             entries: HashMap::new(),
             hit_count: 0,
             miss_count: 0,
+            eviction_count: 0,
         }
     }
 
@@ -61,7 +63,9 @@ impl<T: Clone> MemoCache<T> {
     }
 
     pub fn invalidate(&mut self, key: &Hash128) {
-        self.entries.remove(&key.as_u64());
+        if self.entries.remove(&key.as_u64()).is_some() {
+            self.eviction_count += 1;
+        }
     }
 
     pub fn clear(&mut self) {
@@ -86,6 +90,20 @@ impl<T: Clone> MemoCache<T> {
         } else {
             self.hit_count as f64 / total as f64
         }
+    }
+
+    /// Return the number of entries that have been explicitly evicted via
+    /// `invalidate()`.  Entries removed by `clear()` are not counted.
+    pub fn eviction_count(&self) -> usize {
+        self.eviction_count
+    }
+
+    /// Resize the underlying entry map to the given capacity hint.
+    ///
+    /// This only grows the internal allocation; if `new_capacity` is less
+    /// than the current entry count, the call is a no-op.
+    pub fn resize(&mut self, new_capacity: usize) {
+        self.entries.reserve(new_capacity.saturating_sub(self.entries.len()));
     }
 }
 

@@ -583,6 +583,32 @@ impl Renderer {
         &self.frame_stats
     }
 
+    /// Returns the total number of frames rendered so far.
+    ///
+    /// Incremented by both `draw` and `end_frame`. Provides a read-only
+    /// accessor for code that wants to avoid accessing the public field
+    /// directly.
+    pub fn get_frame_count(&self) -> u64 {
+        self.frame_count
+    }
+
+    /// Returns the number of GPU render pipelines managed by this renderer.
+    ///
+    /// Always 8 in the current implementation (one per `PipelineKind`).
+    /// Provides a read-only accessor for the `pipeline_count` field.
+    pub fn get_pipeline_count(&self) -> usize {
+        self.pipeline_count
+    }
+
+    /// Reset all `FrameStats` counters to zero.
+    ///
+    /// Useful after a benchmark run or when starting a new measurement
+    /// window.  Does not reset `frame_count`; call sites that need a
+    /// fully clean slate should reset both fields explicitly.
+    pub fn reset_stats(&mut self) {
+        self.frame_stats = FrameStats::default();
+    }
+
     /// Build a `DeviceRequest` configured with the given power preference.
     ///
     /// `preference` should be `"high-performance"` or `"low-power"`.
@@ -4058,5 +4084,149 @@ mod tests {
         assert_eq!(r.stats().shadows_drawn, 10, "1 shadow per frame × 10 = 10");
         assert_eq!(r.stats().quads_drawn, 10, "1 quad per frame × 10 = 10");
         assert_eq!(r.stats().paths_drawn, 10, "1 path per frame × 10 = 10");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AO: get_frame_count, get_pipeline_count, reset_stats
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn get_frame_count_returns_zero_on_new_renderer() {
+        let r = Renderer::new();
+        assert_eq!(r.get_frame_count(), 0, "new renderer must have frame count = 0");
+    }
+
+    #[test]
+    fn get_frame_count_increments_after_draw() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        r.draw(&mut scene);
+        assert_eq!(r.get_frame_count(), 1, "one draw must give frame count = 1");
+    }
+
+    #[test]
+    fn get_frame_count_increments_after_end_frame() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.end_frame().unwrap();
+        assert_eq!(r.get_frame_count(), 1, "one end_frame must give frame count = 1");
+    }
+
+    #[test]
+    fn get_frame_count_matches_frame_count_field() {
+        let mut r = Renderer::new();
+        for _ in 0..5 {
+            let mut scene = Scene::new();
+            r.draw(&mut scene);
+        }
+        assert_eq!(r.get_frame_count(), r.frame_count, "get_frame_count must mirror frame_count field");
+    }
+
+    #[test]
+    fn get_pipeline_count_returns_eight() {
+        let r = Renderer::new();
+        assert_eq!(r.get_pipeline_count(), 8, "renderer must have 8 pipeline slots");
+    }
+
+    #[test]
+    fn get_pipeline_count_matches_pipeline_count_field() {
+        let r = Renderer::new();
+        assert_eq!(r.get_pipeline_count(), r.pipeline_count, "get_pipeline_count must mirror pipeline_count field");
+    }
+
+    #[test]
+    fn get_pipeline_count_unchanged_after_draw() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(crate::scene::Quad::default());
+        r.draw(&mut scene);
+        assert_eq!(r.get_pipeline_count(), 8, "pipeline_count must not change after draw");
+    }
+
+    #[test]
+    fn reset_stats_zeroes_all_counters() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(crate::scene::Quad::default());
+        scene.push_shadow(crate::scene::Shadow::default());
+        r.draw(&mut scene);
+        assert!(r.stats().quads_drawn > 0, "precondition: quads_drawn must be > 0");
+        assert!(r.stats().frames > 0, "precondition: frames must be > 0");
+        r.reset_stats();
+        let s = r.stats();
+        assert_eq!(s.quads_drawn, 0, "reset_stats must zero quads_drawn");
+        assert_eq!(s.shadows_drawn, 0, "reset_stats must zero shadows_drawn");
+        assert_eq!(s.frames, 0, "reset_stats must zero frames");
+        assert_eq!(s.frosted_drawn, 0, "reset_stats must zero frosted_drawn");
+        assert_eq!(s.paths_drawn, 0, "reset_stats must zero paths_drawn");
+        assert_eq!(s.mono_sprites_drawn, 0, "reset_stats must zero mono_sprites_drawn");
+        assert_eq!(s.sprites_drawn, 0, "reset_stats must zero sprites_drawn");
+        assert_eq!(s.underlines_drawn, 0, "reset_stats must zero underlines_drawn");
+    }
+
+    #[test]
+    fn reset_stats_does_not_reset_frame_count() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        r.draw(&mut scene);
+        r.draw(&mut scene);
+        assert_eq!(r.frame_count, 2);
+        r.reset_stats();
+        assert_eq!(r.frame_count, 2, "reset_stats must not change frame_count");
+    }
+
+    #[test]
+    fn reset_stats_allows_fresh_accumulation() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_quad(crate::scene::Quad::default());
+        r.draw(&mut scene);
+        r.reset_stats();
+        // After reset, a new draw must produce stats of 1, not 2.
+        let mut scene2 = Scene::new();
+        scene2.push_quad(crate::scene::Quad::default());
+        r.draw(&mut scene2);
+        assert_eq!(r.stats().quads_drawn, 1, "after reset, fresh draw must give quads_drawn=1");
+    }
+
+    #[test]
+    fn reset_stats_idempotent_when_already_zero() {
+        let mut r = Renderer::new();
+        // Stats are zero at start — reset must not panic and must keep them zero.
+        r.reset_stats();
+        r.reset_stats();
+        let s = r.stats();
+        assert_eq!(s.quads_drawn, 0);
+        assert_eq!(s.frames, 0);
+    }
+
+    #[test]
+    fn get_frame_count_accumulates_across_end_frame_cycles() {
+        let mut r = Renderer::new();
+        for _ in 0..7 {
+            r.begin_frame().unwrap();
+            r.end_frame().unwrap();
+        }
+        assert_eq!(r.get_frame_count(), 7, "7 end_frame calls must give frame count = 7");
+    }
+
+    #[test]
+    fn reset_stats_does_not_affect_pending_quads() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
+        // Stats are updated but pending_quads is not affected by reset_stats.
+        assert_eq!(r.stats().quads_drawn, 3);
+        r.reset_stats();
+        // pending_quads still holds the 3 queued instances.
+        assert_eq!(r.pending_quads().len(), 3, "reset_stats must not clear pending_quads");
+        r.end_frame().unwrap();
+    }
+
+    #[test]
+    fn get_pipeline_count_is_consistent_with_pipeline_kind_count() {
+        // PipelineKind has 8 variants (Quad=0 through Reserved7=7).
+        let r = Renderer::new();
+        assert_eq!(r.get_pipeline_count(), 8, "must have one slot per PipelineKind variant");
     }
 }

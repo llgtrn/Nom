@@ -1685,4 +1685,168 @@ mod tests {
             .collect();
         assert_eq!(hits.len(), 2, "both overlapping elements must be hit at shared region");
     }
+
+    // ── Wave AO: spatial-index–backed hit tests ──────────────────────────────
+
+    use crate::spatial_index::SpatialIndex;
+    use crate::elements::ElementBounds;
+
+    fn make_bounds_ht(id: u64, min: [f32; 2], max: [f32; 2]) -> ElementBounds {
+        ElementBounds { id, min, max }
+    }
+
+    /// SpatialIndex nearest finds the element closest to a click point.
+    #[test]
+    fn spatial_hit_nearest_finds_clicked_element() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [0.0, 0.0], [50.0, 50.0]));
+        idx.insert(make_bounds_ht(2, [200.0, 200.0], [250.0, 250.0]));
+        // Click near element 1.
+        let hit = idx.nearest([10.0, 10.0], 100.0);
+        assert_eq!(hit, Some(1), "nearest to (10,10) must be element 1");
+    }
+
+    /// SpatialIndex nearest with a miss radius returns None.
+    #[test]
+    fn spatial_hit_nearest_miss_returns_none() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [300.0, 300.0], [350.0, 350.0]));
+        // Click at origin — element is ~300px away, radius=5.
+        let hit = idx.nearest([0.0, 0.0], 5.0);
+        assert_eq!(hit, None, "no element within 5px of origin");
+    }
+
+    /// SpatialIndex query_in_bounds returns only elements in the region.
+    #[test]
+    fn spatial_hit_region_returns_only_inside_elements() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(10, [0.0, 0.0], [40.0, 40.0]));
+        idx.insert(make_bounds_ht(20, [50.0, 50.0], [90.0, 90.0]));
+        idx.insert(make_bounds_ht(30, [500.0, 500.0], [600.0, 600.0]));
+        let ids = idx.query_in_bounds([0.0, 0.0], [100.0, 100.0]);
+        assert!(ids.contains(&10), "element 10 must be in region");
+        assert!(ids.contains(&20), "element 20 must be in region");
+        assert!(!ids.contains(&30), "element 30 must not be in region");
+    }
+
+    /// hit_test_rect on a retrieved spatial element confirms precise hit.
+    #[test]
+    fn spatial_hit_broadphase_then_precise_rect_hit() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [0.0, 0.0], [80.0, 80.0]));
+        // Broadphase: query region containing click point.
+        let candidates = idx.query_in_bounds([40.0, 40.0], [40.0, 40.0]);
+        assert!(!candidates.is_empty(), "broadphase must return a candidate");
+        // Precise: hit_test_rect on the candidate.
+        let r = CanvasRect {
+            id: 1,
+            bounds: ([0.0, 0.0], [80.0, 80.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+        };
+        assert!(hit_test_rect([40.0, 40.0], &r, 0.0), "precise hit must confirm broadphase result");
+    }
+
+    /// Broadphase returns no candidate → precise test skipped → no hit.
+    #[test]
+    fn spatial_hit_broadphase_miss_skips_precise() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [200.0, 200.0], [280.0, 280.0]));
+        // Click at (0,0): broadphase returns nothing.
+        let candidates = idx.query_in_bounds([0.0, 0.0], [0.0, 0.0]);
+        assert!(candidates.is_empty(), "broadphase must return nothing for click far away");
+    }
+
+    /// Multiple elements in broadphase → precise test selects topmost z_index.
+    #[test]
+    fn spatial_hit_broadphase_multiple_precise_z_wins() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [0.0, 0.0], [100.0, 100.0]));
+        idx.insert(make_bounds_ht(2, [0.0, 0.0], [100.0, 100.0]));
+        let candidates = idx.query_in_bounds([50.0, 50.0], [50.0, 50.0]);
+        assert_eq!(candidates.len(), 2, "broadphase must return 2 overlapping elements");
+        let rects = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+        ];
+        let pt = [50.0, 50.0];
+        let topmost = rects.iter()
+            .filter(|r| candidates.contains(&r.id) && hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(topmost.is_some());
+        assert_eq!(topmost.unwrap().id, 2, "element with z_index=10 must win");
+    }
+
+    /// SpatialIndex: inserting then removing element leaves nothing for hit.
+    #[test]
+    fn spatial_hit_removed_element_not_hit() {
+        let mut idx = SpatialIndex::new();
+        let b = make_bounds_ht(1, [0.0, 0.0], [50.0, 50.0]);
+        idx.insert(b);
+        idx.remove(1, b);
+        let candidates = idx.query_in_bounds([0.0, 0.0], [50.0, 50.0]);
+        assert!(candidates.is_empty(), "removed element must not appear in broadphase");
+    }
+
+    /// Nearest returns element containing the query point (distance=0).
+    #[test]
+    fn spatial_hit_nearest_inside_element_distance_zero() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [0.0, 0.0], [100.0, 100.0]));
+        // Point inside the element: AABB distance_2=0.
+        let hit = idx.nearest([50.0, 50.0], 0.0);
+        assert_eq!(hit, Some(1), "point inside element must have distance=0 → nearest hit");
+    }
+
+    /// Hit test via broadphase + precise for a line connector.
+    #[test]
+    fn spatial_hit_broadphase_then_connector_precise() {
+        use crate::elements::CanvasConnector;
+        let mut idx = SpatialIndex::new();
+        // Add a bounding box around the connector path.
+        idx.insert(make_bounds_ht(30, [0.0, -5.0], [100.0, 5.0]));
+        let candidates = idx.query_in_bounds([50.0, 0.0], [50.0, 0.0]);
+        assert!(!candidates.is_empty(), "broadphase must return connector candidate");
+        let conn = CanvasConnector {
+            id: 30, src_id: 1, dst_id: 2,
+            route: vec![[0.0, 0.0], [33.0, 0.0], [66.0, 0.0], [100.0, 0.0]],
+            confidence: 1.0, reason: String::new(), z_index: 1,
+        };
+        assert!(hit_test_connector([50.0, 3.0], &conn, HIT_RADIUS), "precise connector hit must succeed");
+    }
+
+    /// Query a zero-size point region: only elements that contain the point are returned.
+    #[test]
+    fn spatial_hit_zero_size_point_query() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds_ht(1, [10.0, 10.0], [60.0, 60.0]));
+        idx.insert(make_bounds_ht(2, [70.0, 70.0], [120.0, 120.0]));
+        // Point query at (30, 30): inside element 1 only.
+        let candidates = idx.query_in_bounds([30.0, 30.0], [30.0, 30.0]);
+        assert!(candidates.contains(&1), "element 1 must contain the query point");
+        assert!(!candidates.contains(&2), "element 2 must not contain the query point");
+    }
+
+    /// Broadphase returns multiple candidates; precise test on all returns correct subset.
+    #[test]
+    fn spatial_hit_broadphase_returns_precise_subset() {
+        let mut idx = SpatialIndex::new();
+        // Element A: wide box.
+        idx.insert(make_bounds_ht(1, [0.0, 0.0], [200.0, 200.0]));
+        // Element B: small box inside A.
+        idx.insert(make_bounds_ht(2, [80.0, 80.0], [120.0, 120.0]));
+        // Click at (100, 100): both A and B contain it.
+        let candidates = idx.query_in_bounds([100.0, 100.0], [100.0, 100.0]);
+        assert_eq!(candidates.len(), 2, "broadphase must return both elements at (100,100)");
+        let rects = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [200.0, 200.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([80.0, 80.0], [40.0, 40.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+        ];
+        let pt = [100.0, 100.0];
+        let hits: Vec<u64> = rects.iter()
+            .filter(|r| candidates.contains(&r.id) && hit_test_rect(pt, r, 0.0))
+            .map(|r| r.id)
+            .collect();
+        assert!(hits.contains(&1), "element A must pass precise test");
+        assert!(hits.contains(&2), "element B must pass precise test");
+    }
 }

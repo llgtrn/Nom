@@ -466,4 +466,69 @@ mod tests {
         let order = plan.topo_order();
         assert_eq!(order, vec![id]);
     }
+
+    // ── Wave AO new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn plan_step_count_after_3_adds() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Video, "a", "b");
+        plan.add_step(BackendKind::Audio, "c", "d");
+        plan.add_step(BackendKind::Export, "e", "f");
+        assert_eq!(plan.steps.len(), 3, "three add_step calls must yield 3 steps");
+    }
+
+    #[test]
+    fn plan_two_step_chain_topo_preserves_order() {
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Image, "src", "img");
+        let b = plan.add_step_after(BackendKind::Document, "img", "doc", vec![a]);
+        let order = plan.topo_order();
+        let pa = order.iter().position(|&x| x == a).unwrap();
+        let pb = order.iter().position(|&x| x == b).unwrap();
+        assert!(pa < pb, "image step must come before document step");
+    }
+
+    #[test]
+    fn plan_step_depends_on_multiple_parents_all_recorded() {
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "v", "v_out");
+        let b = plan.add_step(BackendKind::Audio, "a", "a_out");
+        let c = plan.add_step(BackendKind::Image, "i", "i_out");
+        let d = plan.add_step_after(BackendKind::Export, "combo", "final", vec![a, b, c]);
+        assert_eq!(plan.steps[d].depends_on, vec![a, b, c]);
+        assert_eq!(plan.steps[d].depends_on.len(), 3);
+    }
+
+    #[test]
+    fn plan_topo_contains_all_step_ids() {
+        let mut plan = CompositionPlan::new();
+        let ids: Vec<usize> = (0..7).map(|_| plan.add_step(BackendKind::Transform, "x", "y")).collect();
+        let order = plan.topo_order();
+        for id in &ids {
+            assert!(order.contains(id), "topo order must contain step {id}");
+        }
+        assert_eq!(order.len(), 7);
+    }
+
+    #[test]
+    fn plan_is_valid_dag_true_for_tree() {
+        // A forks to B and C; B and C each feed D independently.
+        let mut plan = CompositionPlan::new();
+        let a = plan.add_step(BackendKind::Video, "v", "v_out");
+        let b = plan.add_step_after(BackendKind::Audio, "v_out", "a_out", vec![a]);
+        let c = plan.add_step_after(BackendKind::Image, "v_out", "i_out", vec![a]);
+        let _ = plan.add_step_after(BackendKind::Export, "merged", "final", vec![b, c]);
+        assert!(plan.is_valid_dag(), "fork-join must be a valid DAG");
+    }
+
+    #[test]
+    fn plan_output_key_preserved_per_step() {
+        let mut plan = CompositionPlan::new();
+        plan.add_step(BackendKind::Render, "input_frame", "rendered_frame");
+        plan.add_step(BackendKind::Export, "rendered_frame", "export_artifact");
+        assert_eq!(plan.steps[0].output_key, "rendered_frame");
+        assert_eq!(plan.steps[1].output_key, "export_artifact");
+        assert_eq!(plan.steps[1].input_key, "rendered_frame");
+    }
 }

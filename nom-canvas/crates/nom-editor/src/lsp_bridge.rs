@@ -136,6 +136,71 @@ pub fn compute_folding_ranges(source: &str) -> Vec<FoldingRange> {
     ranges
 }
 
+// ── LSP position / range conversion ─────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LspPosition {
+    pub line: u32,
+    pub character: u32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct LspRange {
+    pub start: LspPosition,
+    pub end: LspPosition,
+}
+
+/// Convert a byte offset in `text` to an LSP `LspPosition` (line/character).
+/// If `offset` exceeds the text length it is clamped to the end.
+pub fn byte_offset_to_lsp_position(text: &str, offset: usize) -> LspPosition {
+    let offset = offset.min(text.len());
+    let mut line = 0u32;
+    let mut character = 0u32;
+    for (i, ch) in text.char_indices() {
+        if i >= offset {
+            break;
+        }
+        if ch == '\n' {
+            line += 1;
+            character = 0;
+        } else {
+            character += ch.len_utf16() as u32;
+        }
+    }
+    LspPosition { line, character }
+}
+
+/// Convert an `LspPosition` back to a byte offset in `text`.
+/// If the position is beyond the text it is clamped to `text.len()`.
+pub fn lsp_position_to_byte_offset(text: &str, pos: LspPosition) -> usize {
+    let mut cur_line = 0u32;
+    let mut cur_char = 0u32;
+    for (byte_idx, ch) in text.char_indices() {
+        if cur_line == pos.line && cur_char == pos.character {
+            return byte_idx;
+        }
+        if ch == '\n' {
+            if cur_line == pos.line {
+                // character was past end of line — clamp to the newline byte
+                return byte_idx;
+            }
+            cur_line += 1;
+            cur_char = 0;
+        } else {
+            cur_char += ch.len_utf16() as u32;
+        }
+    }
+    text.len()
+}
+
+/// Convert a byte range in `text` to an `LspRange`.
+pub fn byte_range_to_lsp_range(text: &str, range: std::ops::Range<usize>) -> LspRange {
+    LspRange {
+        start: byte_offset_to_lsp_position(text, range.start),
+        end: byte_offset_to_lsp_position(text, range.end),
+    }
+}
+
 pub trait LspProvider: Send + Sync {
     fn hover(&self, path: &std::path::Path, offset: usize) -> Option<HoverResult>;
     fn completions(&self, path: &std::path::Path, offset: usize) -> Vec<CompletionItem>;
@@ -789,5 +854,221 @@ mod tests {
             kind: "region".to_string(),
         };
         assert_eq!(r.kind, "region");
+    }
+
+    // ── wave AO-6: LSP position conversion tests ─────────────────────────────
+
+    /// Empty string: byte offset 0 → line 0, character 0.
+    #[test]
+    fn lsp_pos_empty_string_offset_zero() {
+        let pos = byte_offset_to_lsp_position("", 0);
+        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+    }
+
+    /// Empty string: out-of-bounds offset is clamped → line 0, character 0.
+    #[test]
+    fn lsp_pos_empty_string_oob_clamped() {
+        let pos = byte_offset_to_lsp_position("", 999);
+        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+    }
+
+    /// Single line, offset at start → line 0, character 0.
+    #[test]
+    fn lsp_pos_single_line_offset_start() {
+        let pos = byte_offset_to_lsp_position("hello", 0);
+        assert_eq!(pos, LspPosition { line: 0, character: 0 });
+    }
+
+    /// Single line, offset in the middle.
+    #[test]
+    fn lsp_pos_single_line_offset_middle() {
+        let pos = byte_offset_to_lsp_position("hello", 3);
+        assert_eq!(pos, LspPosition { line: 0, character: 3 });
+    }
+
+    /// Single line, offset at end.
+    #[test]
+    fn lsp_pos_single_line_offset_end() {
+        let pos = byte_offset_to_lsp_position("hello", 5);
+        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+    }
+
+    /// Multi-line: offset at start of second line.
+    #[test]
+    fn lsp_pos_multiline_start_of_second_line() {
+        // "hello\nworld" — byte 6 is 'w' on line 1
+        let pos = byte_offset_to_lsp_position("hello\nworld", 6);
+        assert_eq!(pos, LspPosition { line: 1, character: 0 });
+    }
+
+    /// Multi-line: offset in the middle of the second line.
+    #[test]
+    fn lsp_pos_multiline_middle_of_second_line() {
+        let pos = byte_offset_to_lsp_position("hello\nworld", 8);
+        assert_eq!(pos, LspPosition { line: 1, character: 2 });
+    }
+
+    /// Multi-line: offset at the newline character (still on line 0).
+    #[test]
+    fn lsp_pos_multiline_at_newline_char() {
+        // '\n' is at byte 5; it belongs to line 0
+        let pos = byte_offset_to_lsp_position("hello\nworld", 5);
+        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+    }
+
+    /// Out-of-bounds offset is clamped to end of text.
+    #[test]
+    fn lsp_pos_oob_offset_clamped_to_end() {
+        let text = "abc";
+        let pos = byte_offset_to_lsp_position(text, 9999);
+        // clamped to len=3 → line 0, character 3
+        assert_eq!(pos, LspPosition { line: 0, character: 3 });
+    }
+
+    /// Unicode: two-byte UTF-8 char is counted as 1 UTF-16 unit.
+    #[test]
+    fn lsp_pos_unicode_two_byte_char_utf16_count() {
+        // "é" = U+00E9 = 2 UTF-8 bytes, 1 UTF-16 code unit
+        // "aéb" → byte offsets: a=0, é=1..3, b=3
+        let text = "aéb";
+        let pos_b = byte_offset_to_lsp_position(text, 3); // byte of 'b'
+        assert_eq!(pos_b, LspPosition { line: 0, character: 2 }); // 'a' + 'é' = 2 UTF-16
+    }
+
+    /// lsp_position_to_byte_offset: round-trip on single line.
+    #[test]
+    fn lsp_pos_roundtrip_single_line() {
+        let text = "hello";
+        for offset in 0..=5 {
+            let pos = byte_offset_to_lsp_position(text, offset);
+            let back = lsp_position_to_byte_offset(text, pos);
+            assert_eq!(back, offset, "round-trip failed for offset {offset}");
+        }
+    }
+
+    /// lsp_position_to_byte_offset: round-trip on multi-line text.
+    #[test]
+    fn lsp_pos_roundtrip_multiline() {
+        let text = "abc\nxyz\n12";
+        for offset in [0, 1, 3, 4, 7, 8, 9] {
+            let pos = byte_offset_to_lsp_position(text, offset);
+            let back = lsp_position_to_byte_offset(text, pos);
+            assert_eq!(back, offset, "round-trip failed for offset {offset}");
+        }
+    }
+
+    /// byte_range_to_lsp_range: single-line range has same line number.
+    #[test]
+    fn lsp_range_single_line_same_line() {
+        let range = byte_range_to_lsp_range("hello world", 6..11);
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.end.line, 0);
+        assert_eq!(range.start.character, 6);
+        assert_eq!(range.end.character, 11);
+    }
+
+    /// byte_range_to_lsp_range: cross-line range spans two lines.
+    #[test]
+    fn lsp_range_cross_line_span() {
+        let text = "hello\nworld";
+        let range = byte_range_to_lsp_range(text, 3..8);
+        assert_eq!(range.start.line, 0);
+        assert_eq!(range.end.line, 1);
+    }
+
+    /// byte_range_to_lsp_range: zero-length range has same start and end.
+    #[test]
+    fn lsp_range_zero_length_same_start_end() {
+        let range = byte_range_to_lsp_range("hello", 2..2);
+        assert_eq!(range.start, range.end);
+    }
+
+    /// LspPosition and LspRange implement Copy — can be used without move.
+    #[test]
+    fn lsp_position_and_range_are_copy() {
+        let pos = LspPosition { line: 1, character: 5 };
+        let _copy = pos; // copy
+        let _ = pos.line; // original still accessible
+        let r = LspRange { start: pos, end: pos };
+        let _r2 = r; // copy
+        let _ = r.start.line; // original still accessible
+    }
+
+    /// byte_offset_to_lsp_position: three-line text, offset at start of third line.
+    #[test]
+    fn lsp_pos_three_lines_start_of_third() {
+        // "a\nb\nc" — line 2 starts at byte 4
+        let text = "a\nb\nc";
+        let pos = byte_offset_to_lsp_position(text, 4);
+        assert_eq!(pos.line, 2);
+        assert_eq!(pos.character, 0);
+    }
+
+    /// byte_offset_to_lsp_position: offset exactly at text length.
+    #[test]
+    fn lsp_pos_offset_at_text_len() {
+        let text = "hello";
+        let pos = byte_offset_to_lsp_position(text, text.len());
+        assert_eq!(pos, LspPosition { line: 0, character: 5 });
+    }
+
+    /// lsp_position_to_byte_offset: position on empty string returns 0.
+    #[test]
+    fn lsp_pos_to_offset_empty_string() {
+        let offset = lsp_position_to_byte_offset("", LspPosition { line: 0, character: 0 });
+        assert_eq!(offset, 0);
+    }
+
+    /// LspPosition equality: same line/character are equal, different are not.
+    #[test]
+    fn lsp_position_equality() {
+        let a = LspPosition { line: 3, character: 7 };
+        let b = LspPosition { line: 3, character: 7 };
+        let c = LspPosition { line: 3, character: 8 };
+        assert_eq!(a, b);
+        assert_ne!(a, c);
+    }
+
+    /// byte_range_to_lsp_range on full text.
+    #[test]
+    fn lsp_range_full_text() {
+        let text = "hello";
+        let range = byte_range_to_lsp_range(text, 0..text.len());
+        assert_eq!(range.start, LspPosition { line: 0, character: 0 });
+        assert_eq!(range.end, LspPosition { line: 0, character: 5 });
+    }
+
+    /// LspRange start is before end in a forward range.
+    #[test]
+    fn lsp_range_start_before_end() {
+        let text = "line1\nline2";
+        let range = byte_range_to_lsp_range(text, 2..8);
+        // start is on line 0, end is on line 1; start line <= end line
+        assert!(range.start.line <= range.end.line);
+    }
+
+    /// byte_offset_to_lsp_position: newline-only text.
+    #[test]
+    fn lsp_pos_newline_only_text() {
+        let text = "\n\n";
+        // offset 0 = line 0, char 0
+        let pos0 = byte_offset_to_lsp_position(text, 0);
+        assert_eq!(pos0.line, 0);
+        // offset 1 = start of line 1
+        let pos1 = byte_offset_to_lsp_position(text, 1);
+        assert_eq!(pos1.line, 1);
+        // offset 2 = start of line 2
+        let pos2 = byte_offset_to_lsp_position(text, 2);
+        assert_eq!(pos2.line, 2);
+    }
+
+    /// lsp_position_to_byte_offset: second line offset.
+    #[test]
+    fn lsp_pos_to_offset_second_line() {
+        let text = "abc\nxyz";
+        let pos = LspPosition { line: 1, character: 1 };
+        let offset = lsp_position_to_byte_offset(text, pos);
+        // line 1 starts at byte 4; char 1 → byte 5 ('y')
+        assert_eq!(offset, 5);
     }
 }

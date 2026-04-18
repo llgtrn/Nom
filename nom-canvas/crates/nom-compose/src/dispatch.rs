@@ -387,9 +387,14 @@ impl UnifiedDispatcher {
     }
 
     pub fn dispatch(&self, ctx: &ComposeContext) -> Result<String, String> {
-        match self.handlers.get(ctx.kind_name()) {
+        use crate::backends::data_query::is_safe_identifier;
+        let kind = ctx.kind_name();
+        if !is_safe_identifier(kind) {
+            return Err(format!("invalid backend kind: {kind:?}"));
+        }
+        match self.handlers.get(kind) {
             Some(h) => h(ctx),
-            None => Err(format!("no handler registered for kind: {}", ctx.kind_name())),
+            None => Err(format!("no handler registered for kind: {}", kind)),
         }
     }
 
@@ -399,6 +404,16 @@ impl UnifiedDispatcher {
 
     pub fn registered_kinds(&self) -> Vec<&str> {
         self.handlers.keys().map(|s| s.as_str()).collect()
+    }
+
+    /// Returns all registered backend kind names as owned Strings.
+    pub fn registered_backends(&self) -> Vec<String> {
+        self.handlers.keys().cloned().collect()
+    }
+
+    /// Returns the count of registered backends.
+    pub fn backend_count(&self) -> usize {
+        self.handlers.len()
     }
 }
 
@@ -1518,5 +1533,228 @@ mod tests {
         // Dispatch impl uses "hex" format; output contains byte count.
         assert!(out.starts_with("export:"), "export output must start with 'export:'");
         assert!(out.contains("bytes"), "export output must mention bytes");
+    }
+
+    // ── Wave AO: UnifiedDispatcher string-dispatch for 16 backend kinds ─────
+
+    #[test]
+    fn unified_dispatcher_all_16_backend_kinds_by_string() {
+        let mut d = UnifiedDispatcher::new();
+        let kinds = [
+            "video", "audio", "image", "document", "data", "app",
+            "workflow", "scenario", "rag_query", "transform", "embed_gen",
+            "render", "export", "pipeline", "code_exec", "web_screen",
+        ];
+        for kind in &kinds {
+            let k = kind.to_string();
+            d.register(kind, move |ctx| Ok(format!("{k}:{}", ctx.entity_id)));
+        }
+        assert_eq!(d.backend_count(), 16);
+        for kind in &kinds {
+            let ctx = ComposeContext::new(kind, "probe");
+            let result = d.dispatch(&ctx);
+            assert!(result.is_ok(), "dispatch must succeed for: {kind}");
+            assert!(result.unwrap().starts_with(kind));
+        }
+    }
+
+    #[test]
+    fn unified_dispatcher_mobile_screen_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("mobile_screen", |_| Ok("mobile-ok".to_string()));
+        let ctx = ComposeContext::new("mobile_screen", "s1");
+        assert!(d.dispatch(&ctx).is_ok());
+    }
+
+    #[test]
+    fn unified_dispatcher_native_screen_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("native_screen", |_| Ok("native-ok".to_string()));
+        let ctx = ComposeContext::new("native_screen", "s2");
+        assert!(d.dispatch(&ctx).is_ok());
+    }
+
+    #[test]
+    fn unified_dispatcher_data_extract_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("data_extract", |_| Ok("extracted".to_string()));
+        let ctx = ComposeContext::new("data_extract", "raw");
+        assert!(d.dispatch(&ctx).is_ok());
+    }
+
+    #[test]
+    fn unified_dispatcher_pipeline_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("pipeline", |_| Ok("pipe-run".to_string()));
+        let ctx = ComposeContext::new("pipeline", "p1");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "pipe-run");
+    }
+
+    #[test]
+    fn unified_dispatcher_code_exec_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("code_exec", |_| Ok("exec-result".to_string()));
+        let ctx = ComposeContext::new("code_exec", "s1");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "exec-result");
+    }
+
+    #[test]
+    fn unified_dispatcher_web_screen_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("web_screen", |_| Ok("web-ok".to_string()));
+        let ctx = ComposeContext::new("web_screen", "pg1");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "web-ok");
+    }
+
+    #[test]
+    fn unified_dispatcher_embed_gen_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("embed_gen", |ctx| Ok(format!("emb:{}", ctx.entity_id)));
+        let ctx = ComposeContext::new("embed_gen", "t42");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "emb:t42");
+    }
+
+    #[test]
+    fn unified_dispatcher_scenario_string_dispatch() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("scenario", |_| Ok("sc-run".to_string()));
+        let ctx = ComposeContext::new("scenario", "sc1");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "sc-run");
+    }
+
+    // ── Wave AO: is_safe_identifier validation gate ──────────────────────────
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_semicolon_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("video; DROP TABLE", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_empty_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_space_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("my kind", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_dash_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("my-kind", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_quote_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("video'", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_newline_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("video\n", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_valid_kind_underscore_passes_validation() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("rag_query", |_| Ok("ok".to_string()));
+        let ctx = ComposeContext::new("rag_query", "e");
+        assert!(d.dispatch(&ctx).is_ok());
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_slash_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("video/audio", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_at_sign_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("@video", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_invalid_kind_backslash_rejected() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("video\\audio", "e");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(err.contains("invalid backend kind"), "got: {err}");
+    }
+
+    // ── Wave AO: registered_backends() and backend_count() ──────────────────
+
+    #[test]
+    fn unified_dispatcher_registered_backends_returns_all() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("video", |_| Ok("v".to_string()));
+        d.register("audio", |_| Ok("a".to_string()));
+        d.register("document", |_| Ok("d".to_string()));
+        let mut backends = d.registered_backends();
+        backends.sort();
+        assert_eq!(backends, vec!["audio", "document", "video"]);
+    }
+
+    #[test]
+    fn unified_dispatcher_backend_count_increments() {
+        let mut d = UnifiedDispatcher::new();
+        assert_eq!(d.backend_count(), 0);
+        d.register("video", |_| Ok("v".to_string()));
+        assert_eq!(d.backend_count(), 1);
+        d.register("audio", |_| Ok("a".to_string()));
+        assert_eq!(d.backend_count(), 2);
+        d.register("export", |_| Ok("e".to_string()));
+        assert_eq!(d.backend_count(), 3);
+    }
+
+    #[test]
+    fn unified_dispatcher_backend_count_16_all_kinds() {
+        let mut d = UnifiedDispatcher::new();
+        for kind in &[
+            "video", "audio", "image", "document", "data", "app",
+            "workflow", "scenario", "rag_query", "transform", "embed_gen",
+            "render", "export", "pipeline", "code_exec", "web_screen",
+        ] {
+            d.register(kind, |_| Ok("ok".to_string()));
+        }
+        assert_eq!(d.backend_count(), 16);
+    }
+
+    #[test]
+    fn unified_dispatcher_registered_backends_empty_when_new() {
+        let d = UnifiedDispatcher::new();
+        assert!(d.registered_backends().is_empty());
+        assert_eq!(d.backend_count(), 0);
+    }
+
+    #[test]
+    fn unified_dispatcher_replacing_handler_keeps_count_stable() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("video", |_| Ok("v1".to_string()));
+        d.register("video", |_| Ok("v2".to_string()));
+        assert_eq!(d.backend_count(), 1);
+        assert_eq!(d.registered_backends(), vec!["video"]);
     }
 }

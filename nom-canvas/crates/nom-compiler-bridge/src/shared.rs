@@ -3,6 +3,43 @@ use lru::LruCache;
 use std::num::NonZeroUsize;
 use std::sync::{Arc, Mutex, RwLock};
 
+/// Lifecycle state of a grammar kind entry in the dictionary.
+/// Mirrors the ingestion-pipeline lifecycle used by nom-dict.
+#[derive(Debug, Clone, PartialEq)]
+pub enum KindStatus {
+    /// Newly created; may be incomplete or unverified.
+    Transient,
+    /// Partially filled; some required fields still missing.
+    Partial,
+    /// Fully populated and verified; ready for production use.
+    Complete,
+}
+
+impl KindStatus {
+    /// Parse from a lowercase string slice; unknown strings fall back to `Transient`.
+    pub fn from_str(s: &str) -> Self {
+        match s {
+            "partial" => Self::Partial,
+            "complete" => Self::Complete,
+            _ => Self::Transient,
+        }
+    }
+
+    /// Canonical lowercase string representation.
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Transient => "transient",
+            Self::Partial => "partial",
+            Self::Complete => "complete",
+        }
+    }
+
+    /// Returns `true` only when the status is `Complete`.
+    pub fn is_complete(&self) -> bool {
+        matches!(self, Self::Complete)
+    }
+}
+
 /// Compile result cached by source hash
 #[derive(Clone, Debug)]
 pub struct PipelineOutput {
@@ -1262,5 +1299,113 @@ mod tests {
         let kinds = state.cached_grammar_kinds();
         assert_eq!(kinds.len(), 3, "second update must replace first; 3 items expected");
         assert!(kinds.iter().all(|k| k.name.starts_with("second")), "all items must be from second update");
+    }
+
+    // ── AO7: KindStatus tests ──────────────────────────────────────────────
+
+    #[test]
+    fn kind_status_from_str_transient_default() {
+        assert_eq!(KindStatus::from_str("transient"), KindStatus::Transient);
+    }
+
+    #[test]
+    fn kind_status_from_str_partial() {
+        assert_eq!(KindStatus::from_str("partial"), KindStatus::Partial);
+    }
+
+    #[test]
+    fn kind_status_from_str_complete() {
+        assert_eq!(KindStatus::from_str("complete"), KindStatus::Complete);
+    }
+
+    #[test]
+    fn kind_status_from_str_unknown_falls_back_to_transient() {
+        assert_eq!(KindStatus::from_str("unknown_xyz"), KindStatus::Transient);
+        assert_eq!(KindStatus::from_str(""), KindStatus::Transient);
+        assert_eq!(KindStatus::from_str("COMPLETE"), KindStatus::Transient);
+    }
+
+    #[test]
+    fn kind_status_as_str_transient() {
+        assert_eq!(KindStatus::Transient.as_str(), "transient");
+    }
+
+    #[test]
+    fn kind_status_as_str_partial() {
+        assert_eq!(KindStatus::Partial.as_str(), "partial");
+    }
+
+    #[test]
+    fn kind_status_as_str_complete() {
+        assert_eq!(KindStatus::Complete.as_str(), "complete");
+    }
+
+    #[test]
+    fn kind_status_round_trip_transient() {
+        let s = KindStatus::Transient;
+        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Transient);
+    }
+
+    #[test]
+    fn kind_status_round_trip_partial() {
+        let s = KindStatus::Partial;
+        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Partial);
+    }
+
+    #[test]
+    fn kind_status_round_trip_complete() {
+        let s = KindStatus::Complete;
+        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Complete);
+    }
+
+    #[test]
+    fn kind_status_is_complete_only_for_complete() {
+        assert!(KindStatus::Complete.is_complete());
+        assert!(!KindStatus::Partial.is_complete());
+        assert!(!KindStatus::Transient.is_complete());
+    }
+
+    #[test]
+    fn kind_status_clone_eq() {
+        let a = KindStatus::Partial;
+        let b = a.clone();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn kind_status_partialeq_different_variants() {
+        assert_ne!(KindStatus::Transient, KindStatus::Partial);
+        assert_ne!(KindStatus::Partial, KindStatus::Complete);
+        assert_ne!(KindStatus::Transient, KindStatus::Complete);
+    }
+
+    #[test]
+    fn kind_status_from_str_case_sensitive() {
+        // Uppercase "Partial" must NOT match "partial"
+        assert_eq!(KindStatus::from_str("Partial"), KindStatus::Transient);
+        assert_eq!(KindStatus::from_str("Complete"), KindStatus::Transient);
+    }
+
+    #[test]
+    fn kind_status_as_str_never_empty() {
+        for status in &[KindStatus::Transient, KindStatus::Partial, KindStatus::Complete] {
+            assert!(!status.as_str().is_empty(), "as_str must be non-empty for {:?}", status);
+        }
+    }
+
+    #[test]
+    fn kind_status_all_as_str_are_distinct() {
+        let t = KindStatus::Transient.as_str();
+        let p = KindStatus::Partial.as_str();
+        let c = KindStatus::Complete.as_str();
+        assert_ne!(t, p);
+        assert_ne!(p, c);
+        assert_ne!(t, c);
+    }
+
+    #[test]
+    fn kind_status_debug_contains_variant_name() {
+        let s = format!("{:?}", KindStatus::Complete);
+        assert!(s.contains("Complete"), "Debug output must contain 'Complete', got: {s}");
     }
 }

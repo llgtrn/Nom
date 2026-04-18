@@ -50,6 +50,21 @@ impl DiffEntry {
     }
 }
 
+/// Invert a single [`BlockDiff`]: `Added` ↔ `Removed`, `Modified` swaps `old`/`new`.
+/// Returns `None` for variants that cannot be inverted.
+pub fn invert(diff: &BlockDiff) -> Option<BlockDiff> {
+    match diff {
+        BlockDiff::Added(r) => Some(BlockDiff::Removed(r.clone())),
+        BlockDiff::Removed(r) => Some(BlockDiff::Added(r.clone())),
+        BlockDiff::Modified { id, field, old, new } => Some(BlockDiff::Modified {
+            id: id.clone(),
+            field: field.clone(),
+            old: new.clone(),
+            new: old.clone(),
+        }),
+    }
+}
+
 /// Compare two ordered lists of [`DiffEntry`] values and return the minimal set of
 /// [`BlockDiff`] operations that transforms `old` into `new`.
 ///
@@ -58,6 +73,7 @@ impl DiffEntry {
 /// - A ref present only in `new` → [`BlockDiff::Added`].
 /// - A ref present in both but whose `meta.author` differs → [`BlockDiff::Modified`] on `"author"`.
 /// - A ref present in both but whose `meta.version` differs → [`BlockDiff::Modified`] on `"version"`.
+/// - A ref present in both but whose `id.kind` differs → [`BlockDiff::Modified`] on `"kind"`.
 /// - Identical entries produce no diff entry.
 pub fn diff_blocks(old: &[DiffEntry], new: &[DiffEntry]) -> Vec<BlockDiff> {
     use std::collections::HashMap;
@@ -98,6 +114,14 @@ pub fn diff_blocks(old: &[DiffEntry], new: &[DiffEntry]) -> Vec<BlockDiff> {
                     field: "version".to_string(),
                     old: old_entry.meta.version.to_string(),
                     new: entry.meta.version.to_string(),
+                });
+            }
+            if old_entry.id.kind != entry.id.kind {
+                diffs.push(BlockDiff::Modified {
+                    id: entry.id.clone(),
+                    field: "kind".to_string(),
+                    old: old_entry.id.kind.clone(),
+                    new: entry.id.kind.clone(),
                 });
             }
         }
@@ -388,5 +412,206 @@ mod tests {
             .collect();
         apply_diff(&mut blocks, &ops);
         assert_eq!(blocks.len(), 20);
+    }
+
+    // ── BlockDiff::invert() and kind-change tests ────────────────────────────
+
+    #[test]
+    fn invert_added_becomes_removed() {
+        let r = NomtuRef::new("x", "w", "concept");
+        let diff = BlockDiff::Added(r.clone());
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(inv, BlockDiff::Removed(ref inner) if inner.id == "x"));
+    }
+
+    #[test]
+    fn invert_removed_becomes_added() {
+        let r = NomtuRef::new("y", "w", "concept");
+        let diff = BlockDiff::Removed(r.clone());
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(inv, BlockDiff::Added(ref inner) if inner.id == "y"));
+    }
+
+    #[test]
+    fn invert_modified_swaps_old_new() {
+        let diff = BlockDiff::Modified {
+            id: NomtuRef::new("m", "w", "concept"),
+            field: "author".to_string(),
+            old: "alice".to_string(),
+            new: "bob".to_string(),
+        };
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(
+            &inv,
+            BlockDiff::Modified { old, new, .. } if old == "bob" && new == "alice"
+        ));
+    }
+
+    #[test]
+    fn invert_modified_preserves_field_name() {
+        let diff = BlockDiff::Modified {
+            id: NomtuRef::new("f", "w", "concept"),
+            field: "version".to_string(),
+            old: "1".to_string(),
+            new: "2".to_string(),
+        };
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(&inv, BlockDiff::Modified { field, .. } if field == "version"));
+    }
+
+    #[test]
+    fn invert_roundtrip_added() {
+        let r = NomtuRef::new("rt", "w", "concept");
+        let orig = BlockDiff::Added(r);
+        let inv = invert(&orig).unwrap();
+        let inv2 = invert(&inv).unwrap();
+        assert_eq!(orig, inv2, "double-invert of Added must equal original");
+    }
+
+    #[test]
+    fn invert_roundtrip_modified() {
+        let orig = BlockDiff::Modified {
+            id: NomtuRef::new("rt2", "w", "concept"),
+            field: "author".to_string(),
+            old: "a".to_string(),
+            new: "b".to_string(),
+        };
+        let inv = invert(&orig).unwrap();
+        let inv2 = invert(&inv).unwrap();
+        assert_eq!(orig, inv2, "double-invert of Modified must equal original");
+    }
+
+    #[test]
+    fn diff_kind_change_detected() {
+        fn entry_kind(id: &str, kind: &str) -> DiffEntry {
+            DiffEntry::new(NomtuRef::new(id, "w", kind))
+        }
+        let old = vec![entry_kind("kblock", "verb")];
+        let new = vec![entry_kind("kblock", "concept")];
+        let diffs = diff_blocks(&old, &new);
+        let kind_diff = diffs.iter().find(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
+        assert!(kind_diff.is_some(), "kind change must be detected, diffs: {diffs:?}");
+        assert!(matches!(
+            kind_diff.unwrap(),
+            BlockDiff::Modified { old, new, .. } if old == "verb" && new == "concept"
+        ));
+    }
+
+    #[test]
+    fn diff_no_kind_change_produces_no_kind_diff() {
+        let old = vec![entry("stable-kind")];
+        let new = vec![entry("stable-kind")];
+        let diffs = diff_blocks(&old, &new);
+        assert!(
+            !diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
+            "unchanged kind must not produce a kind diff"
+        );
+    }
+
+    #[test]
+    fn invert_modified_kind_diff() {
+        let diff = BlockDiff::Modified {
+            id: NomtuRef::new("kd", "w", "concept"),
+            field: "kind".to_string(),
+            old: "verb".to_string(),
+            new: "concept".to_string(),
+        };
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(
+            &inv,
+            BlockDiff::Modified { field, old, new, .. }
+                if field == "kind" && old == "concept" && new == "verb"
+        ));
+    }
+
+    #[test]
+    fn diff_kind_and_author_both_changed_produces_two_diffs() {
+        let mut old_meta = BlockMeta::default();
+        old_meta.author = "alice".to_string();
+        let old_entry = DiffEntry::with_meta(NomtuRef::new("dual", "w", "verb"), old_meta);
+
+        let mut new_meta = BlockMeta::default();
+        new_meta.author = "bob".to_string();
+        let new_entry = DiffEntry::with_meta(NomtuRef::new("dual", "w", "concept"), new_meta);
+
+        let diffs = diff_blocks(&[old_entry], &[new_entry]);
+        let has_author = diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "author"));
+        let has_kind = diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"));
+        assert!(has_author, "author change must be detected");
+        assert!(has_kind, "kind change must be detected");
+    }
+
+    #[test]
+    fn diff_same_kind_different_word_no_kind_diff() {
+        let old_entry = DiffEntry::new(NomtuRef::new("wdiff", "hello", "verb"));
+        let new_entry = DiffEntry::new(NomtuRef::new("wdiff", "world", "verb"));
+        let diffs = diff_blocks(&[old_entry], &[new_entry]);
+        assert!(
+            !diffs.iter().any(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind")),
+            "same kind with different word must not produce kind diff"
+        );
+    }
+
+    #[test]
+    fn invert_preserves_id_in_modified() {
+        let id = NomtuRef::new("preserve-me", "w", "concept");
+        let diff = BlockDiff::Modified {
+            id: id.clone(),
+            field: "version".to_string(),
+            old: "3".to_string(),
+            new: "4".to_string(),
+        };
+        let inv = invert(&diff).unwrap();
+        assert!(matches!(&inv, BlockDiff::Modified { id: inv_id, .. } if inv_id.id == "preserve-me"));
+    }
+
+    #[test]
+    fn diff_multiple_kind_changes_all_detected() {
+        fn ek(id: &str, kind: &str) -> DiffEntry {
+            DiffEntry::new(NomtuRef::new(id, "w", kind))
+        }
+        let old = vec![ek("a", "verb"), ek("b", "concept"), ek("c", "noun")];
+        let new = vec![ek("a", "concept"), ek("b", "verb"), ek("c", "noun")];
+        let diffs = diff_blocks(&old, &new);
+        let kind_diffs: Vec<_> = diffs
+            .iter()
+            .filter(|d| matches!(d, BlockDiff::Modified { field, .. } if field == "kind"))
+            .collect();
+        assert_eq!(kind_diffs.len(), 2, "two kind changes must be detected, got: {diffs:?}");
+    }
+
+    #[test]
+    fn invert_added_then_removed_roundtrip() {
+        let r = NomtuRef::new("rtrip", "w", "concept");
+        let added = BlockDiff::Added(r.clone());
+        let removed = invert(&added).unwrap();
+        let back = invert(&removed).unwrap();
+        assert_eq!(added, back, "Added -> invert -> invert must equal original");
+    }
+
+    #[test]
+    fn diff_entry_with_meta_stores_meta() {
+        let mut meta = BlockMeta::default();
+        meta.author = "tester".to_string();
+        meta.version = 7;
+        let e = DiffEntry::with_meta(NomtuRef::new("wm", "w", "concept"), meta.clone());
+        assert_eq!(e.meta.author, "tester");
+        assert_eq!(e.meta.version, 7);
+    }
+
+    #[test]
+    fn apply_diff_modified_kind_is_ignored_gracefully() {
+        // apply_diff currently only handles author/version fields — unknown fields are silently ignored
+        let mut blocks = vec![entry("ktest")];
+        let diff = vec![BlockDiff::Modified {
+            id: NomtuRef::new("ktest", "w", "concept"),
+            field: "kind".to_string(),
+            old: "verb".to_string(),
+            new: "concept".to_string(),
+        }];
+        apply_diff(&mut blocks, &diff);
+        // Should not panic; entry is unchanged
+        assert_eq!(blocks.len(), 1);
+        assert_eq!(blocks[0].id.id, "ktest");
     }
 }

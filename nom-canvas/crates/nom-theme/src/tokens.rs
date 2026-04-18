@@ -273,6 +273,57 @@ pub const WARNING: [f32; 4] = [0.957, 0.702, 0.078, 1.0];
 pub const N_TOKENS: usize = 73;
 
 // ---------------------------------------------------------------------------
+// UI chrome height tokens
+// ---------------------------------------------------------------------------
+
+pub const TOOLBAR_HEIGHT: f32 = 36.0;
+pub const PANEL_HEADER_HEIGHT: f32 = 32.0;
+pub const STATUS_BAR_HEIGHT: f32 = 24.0;
+
+// ---------------------------------------------------------------------------
+// Theme struct
+// ---------------------------------------------------------------------------
+
+/// A named color theme carrying the five canonical surface colors.
+#[derive(Debug, Clone)]
+pub struct Theme {
+    pub name: String,
+    pub background: String,
+    pub foreground: String,
+    pub accent: String,
+    pub surface: String,
+}
+
+impl Theme {
+    /// Dark theme (AFFiNE-style dark palette).
+    pub fn dark() -> Self {
+        Self {
+            name: "dark".to_string(),
+            background: "#0f1729".to_string(),
+            foreground: "#f8fafb".to_string(),
+            accent: "#22c55e".to_string(),
+            surface: "#1e2940".to_string(),
+        }
+    }
+
+    /// Light theme.
+    pub fn light() -> Self {
+        Self {
+            name: "light".to_string(),
+            background: "#ffffff".to_string(),
+            foreground: "#111827".to_string(),
+            accent: "#2563eb".to_string(),
+            surface: "#f3f4f6".to_string(),
+        }
+    }
+
+    /// Returns `true` when the theme name contains `"dark"`.
+    pub fn is_dark(&self) -> bool {
+        self.name.contains("dark")
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -4774,5 +4825,95 @@ mod tests {
             RADIUS_FULL >= 100.0,
             "RADIUS_FULL ({RADIUS_FULL}) must be >= 100.0 for pill-shape corners"
         );
+    }
+
+    // =========================================================================
+    // WAVE AO AGENT 8 — Theme + UI chrome height token tests
+    // =========================================================================
+
+    #[test]
+    fn toolbar_height_is_36() {
+        assert_eq!(TOOLBAR_HEIGHT, 36.0);
+    }
+
+    #[test]
+    fn panel_header_height_is_32() {
+        assert_eq!(PANEL_HEADER_HEIGHT, 32.0);
+    }
+
+    #[test]
+    fn status_bar_height_is_24() {
+        assert_eq!(STATUS_BAR_HEIGHT, 24.0);
+    }
+
+    #[test]
+    fn ui_chrome_heights_ascending() {
+        assert!(STATUS_BAR_HEIGHT < PANEL_HEADER_HEIGHT);
+        assert!(PANEL_HEADER_HEIGHT < TOOLBAR_HEIGHT);
+    }
+
+    #[test]
+    fn toolbar_height_differs_from_legacy_toolbar_h() {
+        assert_ne!(TOOLBAR_HEIGHT, TOOLBAR_H);
+    }
+
+    #[test]
+    fn theme_dark_is_dark() {
+        assert!(Theme::dark().is_dark());
+    }
+
+    #[test]
+    fn theme_light_is_not_dark() {
+        assert!(!Theme::light().is_dark());
+    }
+
+    #[test]
+    fn theme_dark_name_contains_dark() {
+        assert!(Theme::dark().name.contains("dark"));
+    }
+
+    #[test]
+    fn theme_light_name_contains_light() {
+        assert!(Theme::light().name.contains("light"));
+    }
+
+    #[test]
+    fn theme_backgrounds_differ() {
+        assert_ne!(Theme::dark().background, Theme::light().background);
+    }
+
+    #[test]
+    fn theme_clone_preserves_fields() {
+        let t = Theme::dark();
+        let c = t.clone();
+        assert_eq!(t.name, c.name);
+        assert_eq!(t.background, c.background);
+        assert_eq!(t.accent, c.accent);
+    }
+
+    #[test]
+    fn theme_dark_foreground_nonempty() {
+        assert!(!Theme::dark().foreground.is_empty());
+    }
+
+    #[test]
+    fn theme_light_foreground_nonempty() {
+        assert!(!Theme::light().foreground.is_empty());
+    }
+
+    #[test]
+    fn theme_dark_accent_hex() {
+        assert!(Theme::dark().accent.starts_with('#'));
+    }
+
+    #[test]
+    fn theme_light_accent_hex() {
+        assert!(Theme::light().accent.starts_with('#'));
+    }
+
+    #[test]
+    fn theme_surfaces_nonempty() {
+        assert!(!Theme::dark().surface.is_empty());
+        assert!(!Theme::light().surface.is_empty());
     }
 }

@@ -233,6 +233,37 @@ pub struct UiTierOps<'a> {
     shared: &'a SharedState,
 }
 
+impl UiTier {
+    /// Returns the number of grammar kinds currently loaded in the cache.
+    pub fn kind_count(&self) -> usize {
+        self.state.cached_grammar_kinds().len()
+    }
+
+    /// Returns `true` when the grammar kind cache is empty.
+    pub fn is_grammar_empty(&self) -> bool {
+        self.state.cached_grammar_kinds().is_empty()
+    }
+
+    /// Returns a reference to the underlying `SharedState` Arc.
+    pub fn shared_state(&self) -> &Arc<SharedState> {
+        &self.state
+    }
+
+    /// Returns all grammar kind names that contain `substr` (case-insensitive).
+    pub fn kinds_containing(&self, substr: &str) -> Vec<String> {
+        if substr.is_empty() {
+            return self.grammar_keywords();
+        }
+        let lower = substr.to_lowercase();
+        self.state
+            .cached_grammar_kinds()
+            .into_iter()
+            .filter(|k| k.name.to_lowercase().contains(&lower))
+            .map(|k| k.name)
+            .collect()
+    }
+}
+
 impl<'a> UiTierOps<'a> {
     pub fn new(shared: &'a SharedState) -> Self {
         Self { shared }
@@ -1550,5 +1581,112 @@ mod tests {
         // Non-ASCII query must not panic; result may be empty
         let hits = tier.search_bm25("émission");
         let _ = hits.len();
+    }
+
+    // ── AO7: kind_count / is_grammar_empty / kinds_containing tests ──────────
+
+    #[test]
+    fn kind_count_zero_on_empty_cache() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        assert_eq!(tier.kind_count(), 0, "empty cache must yield kind_count=0");
+    }
+
+    #[test]
+    fn kind_count_matches_loaded_kinds() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "gamma".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        assert_eq!(tier.kind_count(), 3, "kind_count must equal the number of loaded kinds");
+    }
+
+    #[test]
+    fn is_grammar_empty_true_when_no_kinds() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        assert!(tier.is_grammar_empty(), "fresh tier must report grammar as empty");
+    }
+
+    #[test]
+    fn is_grammar_empty_false_when_kinds_loaded() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "one".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        assert!(!tier.is_grammar_empty(), "tier with kinds must not be empty");
+    }
+
+    #[test]
+    fn shared_state_getter_returns_same_arc() {
+        let state = Arc::new(SharedState::new("ref.db", "g.db"));
+        let tier = UiTier::new(state.clone());
+        assert!(Arc::ptr_eq(&state, tier.shared_state()), "shared_state() must return same Arc");
+    }
+
+    #[test]
+    fn kinds_containing_empty_substr_returns_all() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "alpha".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "beta".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let result = tier.kinds_containing("");
+        assert_eq!(result.len(), 2, "empty substr must return all kinds");
+    }
+
+    #[test]
+    fn kinds_containing_matches_substring() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "stream_data".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "stream_log".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "buffer".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let result = tier.kinds_containing("stream");
+        assert_eq!(result.len(), 2, "must find 2 kinds containing 'stream'");
+        assert!(result.contains(&"stream_data".to_string()));
+        assert!(result.contains(&"stream_log".to_string()));
+    }
+
+    #[test]
+    fn kinds_containing_case_insensitive() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "Render".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        // "render" (lowercase) should match "Render"
+        let result = tier.kinds_containing("render");
+        assert!(!result.is_empty(), "kinds_containing must be case-insensitive");
+    }
+
+    #[test]
+    fn kinds_containing_no_match_returns_empty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "emit".into(), description: "".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let result = tier.kinds_containing("zzz_no_match");
+        assert!(result.is_empty(), "no-match substr must return empty");
+    }
+
+    #[test]
+    fn kind_count_updates_after_update_grammar_kinds() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state.clone());
+        assert_eq!(tier.kind_count(), 0);
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "x".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "y".into(), description: "".into() },
+        ]);
+        assert_eq!(tier.kind_count(), 2, "kind_count must reflect updated grammar kinds");
     }
 }

@@ -31,6 +31,48 @@ pub use shell::{Shell, ShellLayout, ShellMode};
 pub use statusbar::{StatusBar, StatusSlot};
 pub use toolbar::{Toolbar, ToolbarButton};
 
+// ---------------------------------------------------------------------------
+// Panel layout helpers
+// ---------------------------------------------------------------------------
+
+/// Minimum allowed panel width in logical pixels.
+pub fn panel_min_width() -> f32 {
+    240.0
+}
+
+/// Maximum allowed panel width in logical pixels.
+pub fn panel_max_width() -> f32 {
+    600.0
+}
+
+/// Default panel width in logical pixels.
+pub fn panel_default_width() -> f32 {
+    320.0
+}
+
+/// Clamp `w` to the range `[panel_min_width(), panel_max_width()]`.
+pub fn clamp_panel_width(w: f32) -> f32 {
+    w.max(panel_min_width()).min(panel_max_width())
+}
+
+// ---------------------------------------------------------------------------
+// Search / filter helpers
+// ---------------------------------------------------------------------------
+
+/// Return all items whose lowercased text starts with the lowercased `prefix`.
+/// An empty prefix returns all items unchanged.
+pub fn filter_by_prefix(items: &[String], prefix: &str) -> Vec<String> {
+    if prefix.is_empty() {
+        return items.to_vec();
+    }
+    let lc = prefix.to_lowercase();
+    items
+        .iter()
+        .filter(|s| s.to_lowercase().starts_with(&lc))
+        .cloned()
+        .collect()
+}
+
 #[cfg(test)]
 mod integration_tests {
     use nom_gpui::scene::Scene;
@@ -3447,5 +3489,214 @@ mod integration_tests {
         // The default FileTreePanel constructed with new() must have at least one section.
         let panel = FileTreePanel::new();
         assert!(!panel.sections.is_empty(), "default FileTreePanel must have at least one section");
+    }
+
+    // =========================================================================
+    // WAVE AO AGENT 8 ADDITIONS
+    // =========================================================================
+
+    // ── edge_color_for_confidence wired tests ─────────────────────────────────
+
+    #[test]
+    fn edge_color_for_confidence_high_matches_high_fn() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.9);
+        let expected = nom_theme::tokens::edge_color_high_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_medium_matches_medium_fn() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.65);
+        let expected = nom_theme::tokens::edge_color_medium_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_low_matches_low_fn() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.1);
+        let expected = nom_theme::tokens::edge_color_low_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_boundary_08_is_high() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.8);
+        let expected = nom_theme::tokens::edge_color_high_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_boundary_05_is_medium() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.5);
+        let expected = nom_theme::tokens::edge_color_medium_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_zero_is_low() {
+        let c = nom_theme::tokens::edge_color_for_confidence(0.0);
+        let expected = nom_theme::tokens::edge_color_low_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_for_confidence_one_is_high() {
+        let c = nom_theme::tokens::edge_color_for_confidence(1.0);
+        let expected = nom_theme::tokens::edge_color_high_confidence();
+        assert!((c.h - expected.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn edge_color_high_has_nonzero_hue() {
+        let c = nom_theme::tokens::edge_color_high_confidence();
+        assert!(c.h > 0.0, "high confidence hue must be > 0");
+    }
+
+    #[test]
+    fn edge_color_medium_hue_differs_from_high() {
+        let high = nom_theme::tokens::edge_color_high_confidence();
+        let med = nom_theme::tokens::edge_color_medium_confidence();
+        assert!((high.h - med.h).abs() > 1.0, "high and medium hues must differ by > 1 degree");
+    }
+
+    #[test]
+    fn edge_color_low_hue_is_near_zero() {
+        let low = nom_theme::tokens::edge_color_low_confidence();
+        assert!(low.h.abs() < 1.0, "low confidence hue must be near 0 (red)");
+    }
+
+    // ── Panel layout helper tests ─────────────────────────────────────────────
+
+    #[test]
+    fn panel_min_width_is_240() {
+        assert_eq!(crate::panel_min_width(), 240.0);
+    }
+
+    #[test]
+    fn panel_max_width_is_600() {
+        assert_eq!(crate::panel_max_width(), 600.0);
+    }
+
+    #[test]
+    fn panel_default_width_is_320() {
+        assert_eq!(crate::panel_default_width(), 320.0);
+    }
+
+    #[test]
+    fn panel_default_width_within_min_max() {
+        let d = crate::panel_default_width();
+        assert!(d >= crate::panel_min_width());
+        assert!(d <= crate::panel_max_width());
+    }
+
+    #[test]
+    fn clamp_panel_width_below_min_clamps_to_min() {
+        let clamped = crate::clamp_panel_width(0.0);
+        assert_eq!(clamped, crate::panel_min_width());
+    }
+
+    #[test]
+    fn clamp_panel_width_above_max_clamps_to_max() {
+        let clamped = crate::clamp_panel_width(9999.0);
+        assert_eq!(clamped, crate::panel_max_width());
+    }
+
+    #[test]
+    fn clamp_panel_width_within_range_unchanged() {
+        let w = 400.0_f32;
+        let clamped = crate::clamp_panel_width(w);
+        assert!((clamped - w).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clamp_panel_width_at_min_boundary() {
+        let clamped = crate::clamp_panel_width(crate::panel_min_width());
+        assert!((clamped - crate::panel_min_width()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clamp_panel_width_at_max_boundary() {
+        let clamped = crate::clamp_panel_width(crate::panel_max_width());
+        assert!((clamped - crate::panel_max_width()).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn clamp_panel_width_negative_clamps_to_min() {
+        let clamped = crate::clamp_panel_width(-100.0);
+        assert_eq!(clamped, crate::panel_min_width());
+    }
+
+    // ── filter_by_prefix tests ────────────────────────────────────────────────
+
+    #[test]
+    fn filter_by_prefix_empty_prefix_returns_all() {
+        let items = vec!["alpha".to_string(), "beta".to_string(), "gamma".to_string()];
+        let result = crate::filter_by_prefix(&items, "");
+        assert_eq!(result.len(), 3);
+    }
+
+    #[test]
+    fn filter_by_prefix_matching_prefix_filters() {
+        let items = vec!["alpha".to_string(), "aleph".to_string(), "beta".to_string()];
+        let result = crate::filter_by_prefix(&items, "al");
+        assert_eq!(result.len(), 2);
+        assert!(result.contains(&"alpha".to_string()));
+        assert!(result.contains(&"aleph".to_string()));
+    }
+
+    #[test]
+    fn filter_by_prefix_no_match_returns_empty() {
+        let items = vec!["alpha".to_string(), "beta".to_string()];
+        let result = crate::filter_by_prefix(&items, "zzz");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_by_prefix_case_insensitive() {
+        let items = vec!["Alpha".to_string(), "ALPHA".to_string(), "beta".to_string()];
+        let result = crate::filter_by_prefix(&items, "alpha");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_prefix_exact_match() {
+        let items = vec!["exact".to_string(), "exactmatch".to_string(), "other".to_string()];
+        let result = crate::filter_by_prefix(&items, "exact");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_prefix_empty_list_returns_empty() {
+        let items: Vec<String> = vec![];
+        let result = crate::filter_by_prefix(&items, "x");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_by_prefix_single_char_prefix() {
+        let items = vec!["apple".to_string(), "apricot".to_string(), "banana".to_string()];
+        let result = crate::filter_by_prefix(&items, "a");
+        assert_eq!(result.len(), 2);
+    }
+
+    #[test]
+    fn filter_by_prefix_prefix_longer_than_item_no_match() {
+        let items = vec!["ab".to_string()];
+        let result = crate::filter_by_prefix(&items, "abc");
+        assert!(result.is_empty());
+    }
+
+    #[test]
+    fn filter_by_prefix_preserves_order() {
+        let items = vec!["a1".to_string(), "a2".to_string(), "a3".to_string()];
+        let result = crate::filter_by_prefix(&items, "a");
+        assert_eq!(result, items);
+    }
+
+    #[test]
+    fn filter_by_prefix_full_match() {
+        let items = vec!["hello".to_string(), "world".to_string()];
+        let result = crate::filter_by_prefix(&items, "hello");
+        assert_eq!(result, vec!["hello".to_string()]);
     }
 }

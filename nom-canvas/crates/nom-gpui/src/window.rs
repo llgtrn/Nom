@@ -74,6 +74,40 @@ pub trait ApplicationHandler {
     fn about_to_wait(&mut self, window: &mut Window);
 }
 
+/// GPU-side window configuration — surface dimensions, MSAA, and vsync.
+///
+/// Stub fields only: wgpu surface/device/queue handles are not held here
+/// because wgpu is not a direct dependency of nom-gpui tests.  The fields
+/// below are the semantic contract that a real GPU backend must satisfy.
+pub struct GpuWindowConfig {
+    /// Surface width in physical pixels.
+    pub width: u32,
+    /// Surface height in physical pixels.
+    pub height: u32,
+    /// MSAA sample count (1 = no MSAA, 4 = 4× MSAA).
+    pub sample_count: u32,
+    /// Whether vertical sync is enabled.
+    pub vsync: bool,
+}
+
+impl GpuWindowConfig {
+    /// Create a new GPU window config with explicit dimensions and MSAA.
+    pub fn new(width: u32, height: u32, sample_count: u32, vsync: bool) -> Self {
+        Self { width, height, sample_count, vsync }
+    }
+}
+
+impl Default for GpuWindowConfig {
+    fn default() -> Self {
+        Self {
+            width: 1280,
+            height: 800,
+            sample_count: 1,
+            vsync: true,
+        }
+    }
+}
+
 /// Window state managed by nom-gpui
 pub struct Window {
     pub options: WindowOptions,
@@ -84,6 +118,17 @@ pub struct Window {
     // In real impl: winit::window::Window + wgpu swap chain
     frame_pending: bool,
     close_requested: bool,
+    /// Whether the GPU surface has been successfully initialised.
+    // TODO: wire to real wgpu::Surface when wgpu dep is added
+    pub gpu_ready: bool,
+    /// GPU surface width in physical pixels (mirrors wgpu surface config).
+    pub surface_width: u32,
+    /// GPU surface height in physical pixels (mirrors wgpu surface config).
+    pub surface_height: u32,
+    /// MSAA sample count for the GPU surface.
+    pub sample_count: u32,
+    /// Whether vertical sync is enabled on the GPU surface.
+    pub vsync: bool,
 }
 
 impl Window {
@@ -97,6 +142,11 @@ impl Window {
             cursor_position: Vec2::zero(),
             frame_pending: false,
             close_requested: false,
+            gpu_ready: false,
+            surface_width: size.x as u32,
+            surface_height: size.y as u32,
+            sample_count: 1,
+            vsync: true,
         }
     }
 
@@ -700,5 +750,116 @@ mod tests {
         w.request_redraw();
         assert!(w.take_frame_pending());
         assert!(!w.take_frame_pending(), "second take must be false");
+    }
+
+    // ── Wave AO: GpuWindowConfig + Window GPU fields ─────────────────────────
+
+    #[test]
+    fn gpu_window_config_default_values() {
+        let cfg = GpuWindowConfig::default();
+        assert_eq!(cfg.width, 1280);
+        assert_eq!(cfg.height, 800);
+        assert_eq!(cfg.sample_count, 1);
+        assert!(cfg.vsync, "vsync must be enabled by default");
+    }
+
+    #[test]
+    fn gpu_window_config_new_sets_all_fields() {
+        let cfg = GpuWindowConfig::new(1920, 1080, 4, false);
+        assert_eq!(cfg.width, 1920);
+        assert_eq!(cfg.height, 1080);
+        assert_eq!(cfg.sample_count, 4);
+        assert!(!cfg.vsync, "vsync must be false when specified as false");
+    }
+
+    #[test]
+    fn gpu_window_config_new_vsync_true() {
+        let cfg = GpuWindowConfig::new(800, 600, 1, true);
+        assert!(cfg.vsync);
+    }
+
+    #[test]
+    fn gpu_window_config_msaa_none_is_sample_count_1() {
+        let cfg = GpuWindowConfig::new(1280, 720, 1, true);
+        assert_eq!(cfg.sample_count, 1, "no-MSAA must use sample_count=1");
+    }
+
+    #[test]
+    fn gpu_window_config_msaa4_is_sample_count_4() {
+        let cfg = GpuWindowConfig::new(2560, 1440, 4, true);
+        assert_eq!(cfg.sample_count, 4, "4xMSAA must use sample_count=4");
+    }
+
+    #[test]
+    fn window_new_gpu_ready_is_false() {
+        let w = Window::new(WindowOptions::default());
+        assert!(!w.gpu_ready, "GPU surface is not ready until explicitly initialised");
+    }
+
+    #[test]
+    fn window_new_surface_dimensions_match_options() {
+        let opts = WindowOptions {
+            size: Vec2::new(1920.0, 1080.0),
+            ..WindowOptions::default()
+        };
+        let w = Window::new(opts);
+        assert_eq!(w.surface_width, 1920);
+        assert_eq!(w.surface_height, 1080);
+    }
+
+    #[test]
+    fn window_new_sample_count_default_is_one() {
+        let w = Window::new(WindowOptions::default());
+        assert_eq!(w.sample_count, 1, "default MSAA sample count must be 1");
+    }
+
+    #[test]
+    fn window_new_vsync_default_is_true() {
+        let w = Window::new(WindowOptions::default());
+        assert!(w.vsync, "vsync must be enabled by default");
+    }
+
+    #[test]
+    fn window_gpu_ready_can_be_set() {
+        let mut w = Window::new(WindowOptions::default());
+        assert!(!w.gpu_ready);
+        w.gpu_ready = true;
+        assert!(w.gpu_ready, "gpu_ready must reflect assigned value");
+    }
+
+    #[test]
+    fn window_surface_width_can_be_updated() {
+        let mut w = Window::new(WindowOptions::default());
+        w.surface_width = 3840;
+        assert_eq!(w.surface_width, 3840);
+    }
+
+    #[test]
+    fn window_surface_height_can_be_updated() {
+        let mut w = Window::new(WindowOptions::default());
+        w.surface_height = 2160;
+        assert_eq!(w.surface_height, 2160);
+    }
+
+    #[test]
+    fn window_sample_count_can_be_set_to_four() {
+        let mut w = Window::new(WindowOptions::default());
+        w.sample_count = 4;
+        assert_eq!(w.sample_count, 4);
+    }
+
+    #[test]
+    fn window_vsync_can_be_disabled() {
+        let mut w = Window::new(WindowOptions::default());
+        w.vsync = false;
+        assert!(!w.vsync, "vsync can be disabled after construction");
+    }
+
+    #[test]
+    fn gpu_window_config_zero_dimensions_allowed() {
+        // Zero dimensions are valid during teardown / before resize.
+        let cfg = GpuWindowConfig::new(0, 0, 1, false);
+        assert_eq!(cfg.width, 0);
+        assert_eq!(cfg.height, 0);
     }
 }
