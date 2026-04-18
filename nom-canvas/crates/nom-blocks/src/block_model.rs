@@ -28,7 +28,7 @@ impl NomtuRef {
 }
 
 /// Audit metadata attached to every block.
-#[derive(Clone, Debug, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct BlockMeta {
     /// Unix timestamp (ms) when the block was created.
     pub created_at: u64,

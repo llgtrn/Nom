@@ -819,6 +819,138 @@ mod tests {
         assert_eq!(stored.entity.word, "updated");
     }
 
+    // ── workspace serialization tests ────────────────────────────────────────
+
+    /// Workspace with 5 blocks serializes and block count is preserved after round-trip.
+    #[test]
+    fn workspace_5_blocks_serialize_block_count_preserved() {
+        let mut ws = Workspace::new();
+        for i in 0..5u8 {
+            ws.insert_block(BlockModel::new(
+                format!("ser-b{i}"),
+                NomtuRef::new(format!("ser-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 5);
+        let json = serde_json::to_string(&ws).expect("serialize workspace");
+        let ws2: Workspace = serde_json::from_str(&json).expect("deserialize workspace");
+        assert_eq!(ws2.block_count(), 5, "block count must be preserved through serialization");
+    }
+
+    /// Workspace clear then re-add same count produces same block_count().
+    #[test]
+    fn workspace_clear_and_readd_produces_same_count() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("ca-b{i}"),
+                NomtuRef::new(format!("ca-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 3);
+        // Clear
+        ws.blocks.clear();
+        ws.doc_tree.clear();
+        assert_eq!(ws.block_count(), 0);
+        // Re-add same count
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("ca-new-b{i}"),
+                NomtuRef::new(format!("ca-new-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 3, "re-added block count must match original");
+    }
+
+    /// Workspace connector count is tracked separately from block count.
+    #[test]
+    fn workspace_connector_count_tracked_separately_from_block_count() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        // Add 3 blocks and 2 connectors
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("sep-b{i}"),
+                NomtuRef::new(format!("sep-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        for i in 0..2u8 {
+            let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+                id: format!("sep-c{i}"),
+                from_node: format!("n{i}"),
+                from_port: "output".into(),
+                to_node: format!("m{i}"),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            });
+            ws.insert_connector(conn);
+        }
+        assert_eq!(ws.block_count(), 3, "block count must be 3");
+        assert_eq!(ws.connector_count(), 2, "connector count must be 2");
+        assert_ne!(
+            ws.block_count(),
+            ws.connector_count(),
+            "block and connector counts must be tracked independently"
+        );
+    }
+
+    /// Workspace doc_tree length matches block_count() after several inserts.
+    #[test]
+    fn workspace_doc_tree_len_matches_block_count() {
+        let mut ws = Workspace::new();
+        for i in 0..6u8 {
+            ws.insert_block(BlockModel::new(
+                format!("dt-b{i}"),
+                NomtuRef::new(format!("dt-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.doc_tree.len(), ws.block_count(), "doc_tree length must match block_count()");
+    }
+
+    /// Workspace stats: block_count() + connector_count() return correct values after mixed ops.
+    #[test]
+    fn workspace_stats_block_count_and_connector_count() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        assert_eq!(ws.block_count(), 0);
+        assert_eq!(ws.connector_count(), 0);
+        // Insert 4 blocks
+        for i in 0..4u8 {
+            ws.insert_block(BlockModel::new(
+                format!("st-b{i}"),
+                NomtuRef::new(format!("st-e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        // Insert 2 connectors
+        for i in 0..2u8 {
+            let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+                id: format!("st-c{i}"),
+                from_node: format!("sn{i}"),
+                from_port: "output".into(),
+                to_node: format!("sm{i}"),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            });
+            ws.insert_connector(conn);
+        }
+        assert_eq!(ws.block_count(), 4);
+        assert_eq!(ws.connector_count(), 2);
+        // Remove one block and one connector-slot (by clearing manually)
+        ws.remove_block("st-b0");
+        assert_eq!(ws.block_count(), 3);
+        assert_eq!(ws.connector_count(), 2, "connector count unchanged after block removal");
+    }
+
     // ── wave AB: additional workspace tests ────────────────────────────────────
 
     /// Workspace with 1000 blocks: block_count() returns 1000.

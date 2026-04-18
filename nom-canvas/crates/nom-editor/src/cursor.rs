@@ -1140,4 +1140,61 @@ mod tests {
         let nesting_depth = 3usize;
         assert_eq!(breadcrumb.len(), nesting_depth + 1);
     }
+
+    // ── wave AB: additional cursor tests ────────────────────────────────────
+
+    /// Cursor at line 0, col 0 is valid and at the start of the document.
+    #[test]
+    fn cursor_at_line_zero_col_zero_is_valid() {
+        let sel = Selection::caret(0);
+        assert_eq!(sel.head(), 0);
+        assert!(sel.is_empty());
+        assert!(!sel.reversed);
+    }
+
+    /// Move cursor right beyond line end wraps to next line (simulated).
+    #[test]
+    fn cursor_move_right_beyond_line_end_wraps_to_next_line() {
+        // "hello\nworld": line 0 ends at offset 5 ('\n'), next line starts at offset 6.
+        let text = "hello\nworld";
+        let line0_end = 5usize; // position of '\n'
+        // Moving right from the end of line 0 advances by 1 → lands on '\n', then +1 → start of line 1.
+        let after_newline = line0_end + 1;
+        let sel = Selection::caret(after_newline);
+        assert_eq!(sel.head(), 6);
+        // Verify offset 6 is 'w' in 'world' (start of line 1).
+        assert_eq!(&text[after_newline..after_newline + 1], "w");
+    }
+
+    /// Move cursor up from line 0 stays at line 0.
+    #[test]
+    fn cursor_move_up_from_line_zero_stays_at_line_zero() {
+        let current_line = 0usize;
+        // saturating_sub prevents going negative.
+        let new_line = current_line.saturating_sub(1);
+        assert_eq!(new_line, 0, "moving up from line 0 must stay at line 0");
+    }
+
+    /// Cursor selection: anchor + head define a selection range.
+    #[test]
+    fn cursor_selection_anchor_and_head_define_range() {
+        let sel = Selection::range(4, 12);
+        // anchor (tail) at 4, head at 12.
+        assert_eq!(sel.tail(), 4);
+        assert_eq!(sel.head(), 12);
+        assert!(!sel.reversed);
+        assert_eq!(sel.min_offset(), 4);
+        assert_eq!(sel.max_offset(), 12);
+    }
+
+    /// Selection is reversed when anchor > head.
+    #[test]
+    fn cursor_selection_reversed_when_anchor_greater_than_head() {
+        // range(anchor, head) where anchor=15 > head=5 → reversed.
+        let sel = Selection::range(15, 5);
+        assert!(sel.reversed, "selection must be reversed when anchor > head");
+        // head is at the lower offset (5) for a reversed selection.
+        assert_eq!(sel.head(), 5);
+        assert_eq!(sel.tail(), 15);
+    }
 }

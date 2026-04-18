@@ -224,4 +224,21 @@ mod tests {
         assert!(b2.display_mode);
         assert_eq!(b2.entity.id, "l-clone");
     }
+
+    // ── AFFiNE edgeless latex: inline vs display mode tests ──────────────────
+
+    /// LatexBlock defaults to inline mode (display_mode == false).
+    #[test]
+    fn latex_default_is_inline_mode() {
+        let b = LatexBlock::new(entity("l-inline"), r"x^2 + y^2 = z^2");
+        assert!(!b.display_mode, "new LatexBlock must be in inline mode by default");
+    }
+
+    /// LatexBlock can be switched to display (block) mode.
+    #[test]
+    fn latex_set_display_mode_enables_block_rendering() {
+        let mut b = LatexBlock::new(entity("l-display"), r"\int_0^\infty e^{-x} dx");
+        b.set_display_mode(true);
+        assert!(b.display_mode, "display_mode must be true after set_display_mode(true)");
+    }
 }

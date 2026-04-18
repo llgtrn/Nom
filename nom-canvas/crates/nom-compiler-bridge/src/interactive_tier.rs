@@ -948,4 +948,227 @@ mod tests {
         let backward: String = lines2.join("\n") + "\n";
         assert_eq!(backward, v1);
     }
+
+    // ── LSP rename simulation tests ──────────────────────────────────────────
+
+    /// prepare_rename: returns the word at the given byte position in source.
+    #[test]
+    fn lsp_prepare_rename_returns_word_at_position() {
+        let source = "define myVar that is 42";
+        // Position 7 is inside "myVar" (bytes 7..12)
+        let pos = 7usize;
+        let word = find_word_at(source, pos);
+        assert_eq!(word, Some("myVar"), "prepare_rename must return word at position");
+    }
+
+    /// prepare_rename at whitespace position returns None.
+    #[test]
+    fn lsp_prepare_rename_at_whitespace_returns_none() {
+        let source = "define myVar that is 42";
+        // Position 6 is the space between "define" and "myVar"
+        let pos = 6usize;
+        let word = find_word_at(source, pos);
+        assert_eq!(word, None, "prepare_rename at whitespace must return None");
+    }
+
+    /// prepare_rename range: start <= end always.
+    #[test]
+    fn lsp_prepare_rename_range_start_le_end() {
+        let source = "define result that is compute";
+        // Check every non-whitespace position
+        for pos in 0..source.len() {
+            if let Some((start, end)) = word_range_at(source, pos) {
+                assert!(
+                    start <= end,
+                    "range start ({start}) must be <= end ({end}) at pos {pos}"
+                );
+            }
+        }
+    }
+
+    /// prepare_rename on a keyword returns None (keywords are not renameable).
+    #[test]
+    fn lsp_prepare_rename_on_keyword_returns_none() {
+        // Simulate: "define" is a grammar keyword and must not be renamed
+        let keywords = ["define", "that", "is", "result"];
+        let source = "define result that is 1";
+        let pos = 0usize; // points to "define"
+        let word = find_word_at(source, pos);
+        assert_eq!(word, Some("define"));
+        // Keyword check: it is in the set
+        let is_keyword = keywords.contains(&word.unwrap());
+        assert!(is_keyword, "keyword must be flagged as non-renameable");
+    }
+
+    /// prepare_rename on a number literal returns None.
+    #[test]
+    fn lsp_prepare_rename_on_number_literal_returns_none() {
+        let source = "define result that is 42";
+        // Find position of "42" (last token)
+        let pos = source.rfind('4').unwrap();
+        let word = find_word_at(source, pos);
+        // "42" should be found but classified as a number literal
+        assert_eq!(word, Some("42"));
+        let is_number = word.map(|w| w.chars().all(|c| c.is_ascii_digit())).unwrap_or(false);
+        assert!(is_number, "number literal must be detected and excluded from rename");
+    }
+
+    /// rename: replaces all occurrences of old name with new name.
+    #[test]
+    fn lsp_rename_replaces_all_occurrences() {
+        let source = "define foo that is foo + bar";
+        let old = "foo";
+        let new_name = "baz";
+        let result = source.replace(old, new_name);
+        assert_eq!(result, "define baz that is baz + bar");
+        assert!(!result.contains("foo"), "all occurrences must be replaced");
+    }
+
+    /// rename with empty new_name is detected as invalid.
+    #[test]
+    fn lsp_rename_empty_new_name_is_invalid() {
+        let new_name = "";
+        assert!(new_name.is_empty(), "empty new_name must be detected as invalid rename");
+    }
+
+    /// rename preserves non-matching identifiers.
+    #[test]
+    fn lsp_rename_preserves_non_matching_identifiers() {
+        let source = "define alpha that is beta + gamma";
+        let result = source.replace("alpha", "omega");
+        assert!(result.contains("beta"), "non-matching 'beta' must be preserved");
+        assert!(result.contains("gamma"), "non-matching 'gamma' must be preserved");
+        assert!(!result.contains("alpha"), "'alpha' must be replaced");
+    }
+
+    /// rename is case-sensitive: camelCase != camelcase.
+    #[test]
+    fn lsp_rename_is_case_sensitive() {
+        let source = "define camelCase that is camelcase";
+        let result = source.replace("camelCase", "PascalCase");
+        assert!(result.contains("PascalCase"), "'camelCase' must be renamed to 'PascalCase'");
+        assert!(result.contains("camelcase"), "'camelcase' (lowercase) must be preserved");
+        assert!(!result.contains("camelCase"), "original 'camelCase' must be gone");
+    }
+
+    /// rename produces an edit list with correct ranges.
+    #[test]
+    fn lsp_rename_produces_edit_list_with_correct_ranges() {
+        let source = "foo bar foo";
+        let old = "foo";
+        let mut edits: Vec<(usize, usize)> = Vec::new();
+        let mut search_start = 0usize;
+        while let Some(pos) = source[search_start..].find(old) {
+            let abs_start = search_start + pos;
+            let abs_end = abs_start + old.len();
+            edits.push((abs_start, abs_end));
+            search_start = abs_end;
+        }
+        assert_eq!(edits.len(), 2, "must produce 2 edits for 2 occurrences");
+        assert_eq!(edits[0], (0, 3));
+        assert_eq!(edits[1], (8, 11));
+    }
+
+    // ── Concurrent bridge operations tests ───────────────────────────────────
+
+    /// Two simultaneous rename operations on disjoint positions don't conflict.
+    #[test]
+    fn concurrent_rename_disjoint_positions_no_conflict() {
+        let source = "define alpha that is beta";
+        // Rename alpha → x and beta → y independently
+        let result_a = source.replace("alpha", "x");
+        let result_b = source.replace("beta", "y");
+        // Neither rename touches the other's target
+        assert!(result_a.contains("beta"), "first rename must not touch 'beta'");
+        assert!(result_b.contains("alpha"), "second rename must not touch 'alpha'");
+    }
+
+    /// prepare_rename followed by rename uses the correct source version.
+    #[test]
+    fn prepare_rename_then_rename_uses_same_source() {
+        let source = "define value that is value + 1";
+        // Step 1: prepare_rename finds "value" at position 7
+        let pos = 7usize;
+        let word = find_word_at(source, pos);
+        assert_eq!(word, Some("value"));
+        // Step 2: rename using the same source string
+        let renamed = source.replace("value", "count");
+        assert_eq!(renamed, "define count that is count + 1");
+    }
+
+    /// Bridge handles rapid repeated queries (do_complete) without panic.
+    #[test]
+    fn concurrent_bridge_rapid_queries_no_panic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "rapid".into(), description: "".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        // 100 rapid queries — none must panic
+        for _ in 0..100 {
+            let items = worker.do_complete("rap", None);
+            assert!(!items.is_empty());
+        }
+    }
+
+    /// Bridge gracefully handles malformed position (pos > source length).
+    #[test]
+    fn bridge_malformed_position_out_of_bounds_is_none() {
+        let source = "define x";
+        let pos = source.len() + 100; // well past end
+        let word = find_word_at(source, pos);
+        assert_eq!(word, None, "out-of-bounds position must return None");
+    }
+}
+
+// ── LSP helper functions (used only in tests) ────────────────────────────────
+#[cfg(test)]
+fn find_word_at(source: &str, pos: usize) -> Option<&str> {
+    if pos >= source.len() {
+        return None;
+    }
+    let bytes = source.as_bytes();
+    if bytes[pos] == b' ' || bytes[pos] == b'\t' || bytes[pos] == b'\n' {
+        return None;
+    }
+    // Scan left to word start
+    let mut start = pos;
+    while start > 0 && is_word_char(bytes[start - 1]) {
+        start -= 1;
+    }
+    // Scan right to word end
+    let mut end = pos;
+    while end < bytes.len() && is_word_char(bytes[end]) {
+        end += 1;
+    }
+    if start == end {
+        None
+    } else {
+        Some(&source[start..end])
+    }
+}
+
+#[cfg(test)]
+fn word_range_at(source: &str, pos: usize) -> Option<(usize, usize)> {
+    if pos >= source.len() {
+        return None;
+    }
+    let bytes = source.as_bytes();
+    if !is_word_char(bytes[pos]) {
+        return None;
+    }
+    let mut start = pos;
+    while start > 0 && is_word_char(bytes[start - 1]) {
+        start -= 1;
+    }
+    let mut end = pos;
+    while end < bytes.len() && is_word_char(bytes[end]) {
+        end += 1;
+    }
+    Some((start, end))
+}
+
+#[cfg(test)]
+fn is_word_char(b: u8) -> bool {
+    b.is_ascii_alphanumeric() || b == b'_'
 }

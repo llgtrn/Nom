@@ -9942,4 +9942,503 @@ mod tests {
         assert_eq!(pa.text(), pb.text());
         assert_eq!(pb.text(), pc.text());
     }
+
+    // ── Wave AH: Multi-document session, presence, awareness GC, concurrent ops, lifecycle ──
+
+    // ── 1. Multi-document session ────────────────────────────────────────────────
+
+    #[test]
+    fn multi_doc_session_holds_multiple_documents_simultaneously() {
+        // A "session" is modelled as a collection of independent DocState instances.
+        let doc_a = DocState::new(PeerId(300_001));
+        let doc_b = DocState::new(PeerId(300_002));
+        let doc_c = DocState::new(PeerId(300_003));
+        let session: Vec<&DocState> = vec![&doc_a, &doc_b, &doc_c];
+        assert_eq!(session.len(), 3, "session must hold 3 documents simultaneously");
+    }
+
+    #[test]
+    fn multi_doc_session_state_vectors_are_independent() {
+        // Operations on doc_a must not affect doc_b's op_log.
+        let mut doc_a = DocState::new(PeerId(300_010));
+        let mut doc_b = DocState::new(PeerId(300_011));
+        doc_a.local_insert(RgaPos::Head, "only in A");
+        assert_eq!(doc_a.op_log().len(), 1, "doc_a must have 1 op");
+        assert_eq!(doc_b.op_log().len(), 0, "doc_b must have 0 ops — independent");
+        doc_b.local_insert(RgaPos::Head, "only in B");
+        assert_eq!(doc_b.op_log().len(), 1);
+        assert_eq!(doc_a.op_log().len(), 1, "doc_a unchanged after doc_b insert");
+    }
+
+    #[test]
+    fn multi_doc_session_ops_do_not_bleed_across_docs() {
+        // Applying an op to doc_a and merging into doc_b only when explicitly called.
+        let mut doc_a = DocState::new(PeerId(300_020));
+        let mut doc_b = DocState::new(PeerId(300_021));
+        let op = doc_a.local_insert(RgaPos::Head, "secret");
+
+        // doc_b has NOT merged from doc_a — must not see "secret".
+        assert!(!doc_b.text().contains("secret"), "op must not bleed from doc_a to doc_b");
+        assert_eq!(doc_b.op_log().len(), 0);
+
+        // Explicit merge propagates it.
+        doc_b.apply(op);
+        assert!(doc_b.text().contains("secret"), "after explicit apply, op must be in doc_b");
+    }
+
+    #[test]
+    fn multi_doc_session_serialization_independent_per_doc() {
+        // Serializing two docs in a session yields separate op_log slices.
+        let mut doc_a = DocState::new(PeerId(300_030));
+        let mut doc_b = DocState::new(PeerId(300_031));
+        doc_a.local_insert(RgaPos::Head, "alpha");
+        doc_b.local_insert(RgaPos::Head, "beta");
+
+        let snap_a: Vec<Op> = doc_a.op_log().to_vec();
+        let snap_b: Vec<Op> = doc_b.op_log().to_vec();
+        assert_eq!(snap_a.len(), 1);
+        assert_eq!(snap_b.len(), 1);
+        // Snapshots must not share op ids.
+        assert_ne!(snap_a[0].id, snap_b[0].id, "independent docs must have distinct op ids");
+    }
+
+    #[test]
+    fn multi_doc_session_closing_one_leaves_others_intact() {
+        // Dropping one doc (simulated by letting it go out of scope) leaves others alive.
+        let mut doc_a = DocState::new(PeerId(300_040));
+        doc_a.local_insert(RgaPos::Head, "persistent");
+
+        {
+            let mut doc_b = DocState::new(PeerId(300_041));
+            doc_b.local_insert(RgaPos::Head, "transient");
+            assert_eq!(doc_b.text(), "transient");
+        } // doc_b dropped here
+
+        // doc_a must still be intact.
+        assert_eq!(doc_a.text(), "persistent", "closing doc_b must not affect doc_a");
+        assert_eq!(doc_a.op_log().len(), 1);
+    }
+
+    // ── 2. Presence list management ──────────────────────────────────────────────
+
+    #[test]
+    fn presence_empty_list_for_new_session() {
+        // A freshly created doc has no presence (SetMeta) entries.
+        let doc = DocState::new(PeerId(301_001));
+        let presence: Vec<&Op> = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:")))
+            .collect();
+        assert!(presence.is_empty(), "new session must have empty presence list");
+    }
+
+    #[test]
+    fn presence_add_peer_appears_in_presence_list() {
+        // After a peer applies a cursor SetMeta, their presence is visible.
+        let mut doc = DocState::new(PeerId(301_010));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_010), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:301010".to_string(),
+                value: "5".to_string(),
+            },
+        });
+        let count = doc
+            .op_log()
+            .iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { key, .. } if key == "cursor:301010"))
+            .count();
+        assert_eq!(count, 1, "peer must appear in presence list after adding cursor");
+    }
+
+    #[test]
+    fn presence_remove_peer_not_in_list_after_removal() {
+        // Simulate removal: filter out the peer's cursor entry from the visible presence list.
+        let mut doc = DocState::new(PeerId(301_020));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_020), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:301020".to_string(),
+                value: "10".to_string(),
+            },
+        });
+
+        // Simulate removal: apply a tombstone value "" to indicate disconnection.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_020), counter: 2 },
+            kind: OpKind::SetMeta {
+                key: "cursor:301020".to_string(),
+                value: "".to_string(),
+            },
+        });
+
+        // After removal, the live presence entry for this peer has an empty value.
+        let latest = doc.op_log().iter()
+            .filter_map(|o| {
+                if let OpKind::SetMeta { key, value } = &o.kind {
+                    if key == "cursor:301020" { return Some((o.id.counter, value.as_str())); }
+                }
+                None
+            })
+            .max_by_key(|(ctr, _)| *ctr)
+            .map(|(_, v)| v);
+        assert_eq!(latest, Some(""), "removed peer must have empty presence value");
+    }
+
+    #[test]
+    fn presence_deduplication_same_peer_update_replaces_old() {
+        // Two cursor updates from the same peer; only the latest counter matters.
+        let mut doc = DocState::new(PeerId(301_030));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_030), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:301030".to_string(), value: "3".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_030), counter: 2 },
+            kind: OpKind::SetMeta { key: "cursor:301030".to_string(), value: "7".to_string() },
+        });
+
+        // Both entries exist in the log, but the "active" value is from the latest counter.
+        let latest_val = doc.op_log().iter()
+            .filter_map(|o| {
+                if let OpKind::SetMeta { key, value } = &o.kind {
+                    if key == "cursor:301030" { return Some((o.id.counter, value.as_str())); }
+                }
+                None
+            })
+            .max_by_key(|(ctr, _)| *ctr)
+            .map(|(_, v)| v);
+        assert_eq!(latest_val, Some("7"), "latest cursor update must win (LWW dedup)");
+    }
+
+    #[test]
+    fn presence_entry_fields_peer_id_last_seen_cursor() {
+        // A presence entry carries peer_id (in the key), last_seen_clock (counter), and cursor.
+        let peer_id: u64 = 301_040;
+        let mut doc = DocState::new(PeerId(peer_id));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(peer_id), counter: 5 },
+            kind: OpKind::SetMeta {
+                key: format!("cursor:{peer_id}"),
+                value: "12".to_string(),
+            },
+        });
+
+        let entry = doc.op_log().iter().find(|o| {
+            matches!(&o.kind, OpKind::SetMeta { key, .. } if *key == format!("cursor:{peer_id}"))
+        });
+        assert!(entry.is_some(), "presence entry must exist");
+        let entry = entry.unwrap();
+        assert_eq!(entry.id.peer.0, peer_id, "peer_id field must match");
+        assert_eq!(entry.id.counter, 5, "last_seen_clock must equal counter");
+        if let OpKind::SetMeta { value, .. } = &entry.kind {
+            assert_eq!(value, "12", "cursor_position field must match");
+        }
+    }
+
+    #[test]
+    fn presence_stale_gc_removes_entries_below_threshold() {
+        // Simulate stale presence GC: entries with counter < gc_threshold are stale.
+        let mut doc = DocState::new(PeerId(301_050));
+        // Two peers: one stale (counter=1), one active (counter=10).
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_051), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:301051".to_string(), value: "0".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(301_052), counter: 10 },
+            kind: OpKind::SetMeta { key: "cursor:301052".to_string(), value: "5".to_string() },
+        });
+
+        let gc_threshold: u64 = 5;
+        let active_presence: Vec<&Op> = doc.op_log().iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::SetMeta { key, .. } if key.starts_with("cursor:"))
+                    && o.id.counter >= gc_threshold
+            })
+            .collect();
+
+        assert_eq!(active_presence.len(), 1, "only 1 active presence entry must survive GC");
+        if let OpKind::SetMeta { key, .. } = &active_presence[0].kind {
+            assert_eq!(key, "cursor:301052");
+        }
+    }
+
+    // ── 3. Awareness garbage collection ──────────────────────────────────────────
+
+    #[test]
+    fn awareness_gc_removes_stale_entries_not_updated_for_n_ticks() {
+        // GC removes entries whose counter < (current_max - stale_window).
+        let mut doc = DocState::new(PeerId(302_001));
+        // Stale entry: counter=1
+        doc.apply(Op {
+            id: OpId { peer: PeerId(302_001), counter: 1 },
+            kind: OpKind::SetMeta { key: "awareness:302001".to_string(), value: "old".to_string() },
+        });
+        // Active entry: counter=100
+        doc.apply(Op {
+            id: OpId { peer: PeerId(302_001), counter: 100 },
+            kind: OpKind::SetMeta { key: "awareness:302001_b".to_string(), value: "new".to_string() },
+        });
+
+        let stale_threshold: u64 = 50; // entries with counter < 50 are stale
+        let stale: Vec<&Op> = doc.op_log().iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < stale_threshold
+            })
+            .collect();
+        let active: Vec<&Op> = doc.op_log().iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= stale_threshold
+            })
+            .collect();
+
+        assert_eq!(stale.len(), 1, "1 stale entry must be GC eligible");
+        assert_eq!(active.len(), 1, "1 active entry must remain");
+    }
+
+    #[test]
+    fn awareness_gc_active_peers_remain_after_gc() {
+        // Active peers (recently updated) must survive GC.
+        let mut doc = DocState::new(PeerId(302_010));
+        // Apply 3 active entries at counters 200, 201, 202.
+        for i in 0u64..3 {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(302_010 + i), counter: 200 + i },
+                kind: OpKind::SetMeta {
+                    key: format!("awareness:{}", 302_010 + i),
+                    value: "active".to_string(),
+                },
+            });
+        }
+
+        let gc_threshold: u64 = 100; // all 3 have counter >= 200, well above threshold
+        let survivors: Vec<&Op> = doc.op_log().iter()
+            .filter(|o| {
+                matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= gc_threshold
+            })
+            .collect();
+        assert_eq!(survivors.len(), 3, "all 3 active peers must survive GC");
+    }
+
+    #[test]
+    fn awareness_gc_stale_peers_removed_active_remain() {
+        // Mix of stale and active peers; GC removes only stale.
+        let mut doc = DocState::new(PeerId(302_020));
+        // 2 stale at counter=2, 2 active at counter=50.
+        for i in 0u64..2 {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(302_021 + i), counter: 2 },
+                kind: OpKind::SetMeta {
+                    key: format!("awareness:stale{i}"),
+                    value: "stale".to_string(),
+                },
+            });
+        }
+        for i in 0u64..2 {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(302_023 + i), counter: 50 },
+                kind: OpKind::SetMeta {
+                    key: format!("awareness:active{i}"),
+                    value: "active".to_string(),
+                },
+            });
+        }
+
+        let gc_threshold: u64 = 10;
+        let stale_count = doc.op_log().iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < gc_threshold)
+            .count();
+        let active_count = doc.op_log().iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter >= gc_threshold)
+            .count();
+        assert_eq!(stale_count, 2, "2 stale entries must be GC eligible");
+        assert_eq!(active_count, 2, "2 active entries must remain");
+    }
+
+    #[test]
+    fn awareness_gc_on_empty_is_noop() {
+        // GC on a doc with no SetMeta ops must yield 0 stale, 0 active.
+        let doc = DocState::new(PeerId(302_030));
+        let stale_count = doc.op_log().iter()
+            .filter(|o| matches!(&o.kind, OpKind::SetMeta { .. }) && o.id.counter < 999)
+            .count();
+        assert_eq!(stale_count, 0, "GC on empty awareness must find 0 stale entries");
+    }
+
+    #[test]
+    fn awareness_gc_idempotent_second_pass_same_result() {
+        // Running GC filter twice produces the same active set.
+        let mut doc = DocState::new(PeerId(302_040));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(302_040), counter: 5 },
+            kind: OpKind::SetMeta { key: "awareness:stale".to_string(), value: "old".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(302_040), counter: 50 },
+            kind: OpKind::SetMeta { key: "awareness:active".to_string(), value: "live".to_string() },
+        });
+
+        let gc_threshold: u64 = 20;
+        let pass1: Vec<Op> = doc.op_log().iter()
+            .filter(|o| !matches!(&o.kind, OpKind::SetMeta { .. }) || o.id.counter >= gc_threshold)
+            .cloned()
+            .collect();
+        let pass2: Vec<Op> = pass1.iter()
+            .filter(|o| !matches!(&o.kind, OpKind::SetMeta { .. }) || o.id.counter >= gc_threshold)
+            .cloned()
+            .collect();
+        assert_eq!(pass1.len(), pass2.len(), "GC must be idempotent");
+    }
+
+    // ── 4. Concurrent document operations ────────────────────────────────────────
+
+    #[test]
+    fn concurrent_two_sites_insert_same_list_both_survive_merge() {
+        // Site A and site B both insert at Head concurrently; after merge both survive.
+        let mut pa = DocState::new(PeerId(303_001));
+        let op_a = pa.local_insert(RgaPos::Head, "from_A");
+
+        let mut pb = DocState::new(PeerId(303_002));
+        let op_b = pb.local_insert(RgaPos::Head, "from_B");
+
+        pa.apply(op_b.clone());
+        pb.apply(op_a.clone());
+
+        assert!(pa.text().contains("from_A"), "A's insert must survive in A after merge");
+        assert!(pa.text().contains("from_B"), "B's insert must survive in A after merge");
+        assert_eq!(pa.text(), pb.text(), "both sites must converge to same text");
+    }
+
+    #[test]
+    fn concurrent_two_sites_delete_same_element_single_deletion_result() {
+        // A and B both delete the same element; after merge the element is gone exactly once.
+        let mut pa = DocState::new(PeerId(303_010));
+        let shared = pa.local_insert(RgaPos::Head, "shared");
+
+        let mut pb = DocState::new(PeerId(303_011));
+        pb.apply(shared.clone());
+
+        let del_a = pa.local_delete(shared.id);
+        let del_b = pb.local_delete(shared.id);
+
+        pa.apply(del_b.clone());
+        pb.apply(del_a.clone());
+
+        assert_eq!(pa.text(), "", "element deleted by both must be gone");
+        assert_eq!(pb.text(), "", "element deleted by both must be gone on B");
+        // Tombstone count must be 2 (one per site) but text is empty (single logical deletion).
+        let tombstone_count = pa.op_log().iter()
+            .filter(|o| matches!(&o.kind, OpKind::Delete { target } if *target == shared.id))
+            .count();
+        assert_eq!(tombstone_count, 2, "two Delete ops but one logical deletion");
+    }
+
+    #[test]
+    fn concurrent_three_site_edits_converge() {
+        // Sites A, B, C each insert concurrently; after full cross-merge all see the same text.
+        let op_a = make_insert(303_020, 1, RgaPos::Head, "aaa");
+        let op_b = make_insert(303_021, 1, RgaPos::Head, "bbb");
+        let op_c = make_insert(303_022, 1, RgaPos::Head, "ccc");
+
+        let apply_all = |doc: &mut DocState| {
+            doc.apply(op_a.clone());
+            doc.apply(op_b.clone());
+            doc.apply(op_c.clone());
+        };
+
+        let mut da = DocState::new(PeerId(303_023));
+        let mut db = DocState::new(PeerId(303_023));
+        let mut dc = DocState::new(PeerId(303_023));
+        apply_all(&mut da);
+        apply_all(&mut db);
+        apply_all(&mut dc);
+
+        assert_eq!(da.text(), db.text(), "A and B must converge");
+        assert_eq!(db.text(), dc.text(), "B and C must converge");
+        for s in ["aaa", "bbb", "ccc"] {
+            assert!(da.text().contains(s), "{s} must appear after 3-site merge");
+        }
+    }
+
+    #[test]
+    fn concurrent_ops_any_order_produce_same_state_crdt() {
+        // 3 concurrent ops applied in 2 different orderings must produce identical text.
+        let op1 = make_insert(303_030, 1, RgaPos::Head, "one");
+        let op2 = make_insert(303_031, 1, RgaPos::Head, "two");
+        let op3 = make_insert(303_032, 1, RgaPos::Head, "three");
+
+        let mut doc_fwd = DocState::new(PeerId(303_033));
+        doc_fwd.apply(op1.clone());
+        doc_fwd.apply(op2.clone());
+        doc_fwd.apply(op3.clone());
+
+        let mut doc_rev = DocState::new(PeerId(303_033));
+        doc_rev.apply(op3.clone());
+        doc_rev.apply(op2.clone());
+        doc_rev.apply(op1.clone());
+
+        assert_eq!(doc_fwd.text(), doc_rev.text(), "CRDT: ops in any order must converge");
+    }
+
+    #[test]
+    fn concurrent_tombstone_list_grows_with_each_deletion() {
+        // Each delete op adds exactly one Delete entry to the op_log (tombstone).
+        let mut doc = DocState::new(PeerId(303_040));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        let op_c = doc.local_insert(RgaPos::After(op_b.id), "C");
+
+        let t0 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        doc.local_delete(op_a.id);
+        let t1 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        doc.local_delete(op_b.id);
+        let t2 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+        doc.local_delete(op_c.id);
+        let t3 = doc.op_log().iter().filter(|o| matches!(o.kind, OpKind::Delete { .. })).count();
+
+        assert_eq!(t0, 0, "no tombstones before any deletion");
+        assert_eq!(t1, 1, "1 tombstone after first deletion");
+        assert_eq!(t2, 2, "2 tombstones after second deletion");
+        assert_eq!(t3, 3, "3 tombstones after third deletion — grows with each deletion");
+    }
+
+    // ── 5. Session lifecycle ─────────────────────────────────────────────────────
+
+    #[test]
+    fn session_lifecycle_new_session_has_no_documents() {
+        // A new session starts with zero documents (zero-length collection).
+        let session: Vec<DocState> = Vec::new();
+        assert_eq!(session.len(), 0, "new session must have no documents");
+    }
+
+    #[test]
+    fn session_lifecycle_open_document_creates_if_not_existing() {
+        // "Opening" a document that doesn't exist creates it (non-empty op_log after first insert).
+        let mut session: Vec<DocState> = Vec::new();
+        // Open doc 0: create a new DocState and add it to the session.
+        session.push(DocState::new(PeerId(304_001)));
+        session[0].local_insert(RgaPos::Head, "content");
+        assert_eq!(session.len(), 1, "one document in session after open");
+        assert_eq!(session[0].op_log().len(), 1, "opened doc must have 1 op after first insert");
+        assert_eq!(session[0].text(), "content");
+    }
+
+    #[test]
+    fn session_lifecycle_close_all_documents_leaves_session_valid_but_empty() {
+        // After closing all documents (clearing the session vec), the session is valid and empty.
+        let mut session: Vec<DocState> = Vec::new();
+        session.push(DocState::new(PeerId(304_010)));
+        session.push(DocState::new(PeerId(304_011)));
+        session[0].local_insert(RgaPos::Head, "doc0");
+        session[1].local_insert(RgaPos::Head, "doc1");
+
+        assert_eq!(session.len(), 2);
+        session.clear(); // close all documents
+        assert_eq!(session.len(), 0, "session must be empty after closing all documents");
+        // Session itself is still valid (can push again).
+        session.push(DocState::new(PeerId(304_012)));
+        assert_eq!(session.len(), 1, "session remains valid after re-opening a document");
+    }
 }

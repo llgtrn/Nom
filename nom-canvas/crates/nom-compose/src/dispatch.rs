@@ -323,6 +323,91 @@ impl Backend for crate::backends::native_screen::NativeScreenBackend {
     }
 }
 
+// ---------------------------------------------------------------------------
+// ComposeContext — runtime string-keyed context (not a closed enum)
+// ---------------------------------------------------------------------------
+
+/// Runtime compose context. kind_name is a plain String so new kinds can be
+/// added without changing the Rust source (DB-driven mandate).
+pub struct ComposeContext {
+    pub kind_name: String,
+    pub entity_id: String,
+    pub params: std::collections::HashMap<String, String>,
+}
+
+impl ComposeContext {
+    pub fn new(kind_name: &str, entity_id: &str) -> Self {
+        Self {
+            kind_name: kind_name.to_string(),
+            entity_id: entity_id.to_string(),
+            params: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn with_param(mut self, key: &str, value: &str) -> Self {
+        self.params.insert(key.to_string(), value.to_string());
+        self
+    }
+
+    pub fn get_param(&self, key: &str) -> Option<&str> {
+        self.params.get(key).map(|s| s.as_str())
+    }
+
+    pub fn kind_name(&self) -> &str {
+        &self.kind_name
+    }
+}
+
+// ---------------------------------------------------------------------------
+// UnifiedDispatcher — string-keyed, open-ended handler map
+// ---------------------------------------------------------------------------
+
+/// String-keyed dispatcher. Handlers are registered by kind_name (a runtime
+/// string), so new kinds from the DB require no Rust enum changes.
+pub struct UnifiedDispatcher {
+    handlers: std::collections::HashMap<
+        String,
+        Box<dyn Fn(&ComposeContext) -> Result<String, String> + Send + Sync>,
+    >,
+}
+
+impl UnifiedDispatcher {
+    pub fn new() -> Self {
+        Self {
+            handlers: std::collections::HashMap::new(),
+        }
+    }
+
+    pub fn register(
+        &mut self,
+        kind_name: &str,
+        handler: impl Fn(&ComposeContext) -> Result<String, String> + Send + Sync + 'static,
+    ) {
+        self.handlers.insert(kind_name.to_string(), Box::new(handler));
+    }
+
+    pub fn dispatch(&self, ctx: &ComposeContext) -> Result<String, String> {
+        match self.handlers.get(ctx.kind_name()) {
+            Some(h) => h(ctx),
+            None => Err(format!("no handler registered for kind: {}", ctx.kind_name())),
+        }
+    }
+
+    pub fn is_registered(&self, kind_name: &str) -> bool {
+        self.handlers.contains_key(kind_name)
+    }
+
+    pub fn registered_kinds(&self) -> Vec<&str> {
+        self.handlers.keys().map(|s| s.as_str()).collect()
+    }
+}
+
+impl Default for UnifiedDispatcher {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

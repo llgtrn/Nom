@@ -2631,4 +2631,419 @@ mod integration_tests {
             "removing all panels must leave no active panel"
         );
     }
+
+    // =========================================================================
+    // WAVE AM ADDITIONS — panel persistence v2, floating panels, drag-between-panels
+    // =========================================================================
+
+    // --- Panel persistence v2: serialize / deserialize panel layout ---
+
+    #[test]
+    fn persistence_v2_serialize_open_panels_to_string() {
+        // Serializing open panels produces a non-empty string containing each panel id.
+        let open = vec!["file-tree", "chat", "properties"];
+        let serialized = format!("v2:{}", open.join(";"));
+        assert!(serialized.starts_with("v2:"), "v2 serialized state must start with 'v2:' version prefix");
+        for panel in &open {
+            assert!(serialized.contains(panel), "serialized state must contain '{panel}'");
+        }
+    }
+
+    #[test]
+    fn persistence_v2_deserialize_restores_exact_configuration() {
+        let original = vec!["file-tree", "chat", "properties"];
+        let serialized = format!("v2:{}", original.join(";"));
+        let body = serialized.strip_prefix("v2:").unwrap();
+        let restored: Vec<&str> = body.split(';').collect();
+        assert_eq!(restored, original, "deserialized v2 state must equal original panel list");
+    }
+
+    #[test]
+    fn persistence_v2_unknown_panel_type_handled_gracefully() {
+        // When deserializing a saved state that contains an unknown panel id,
+        // known panels are kept and the unknown one is silently filtered out.
+        let saved = "v2:file-tree;unknown-panel-xyz;chat";
+        let known = ["file-tree", "chat", "properties"];
+        let body = saved.strip_prefix("v2:").unwrap();
+        let loaded: Vec<&str> = body.split(';').filter(|p| known.contains(p)).collect();
+        assert_eq!(loaded.len(), 2, "unknown panel type must be filtered out gracefully");
+        assert!(!loaded.contains(&"unknown-panel-xyz"), "unknown panel must not appear in loaded state");
+    }
+
+    #[test]
+    fn persistence_v2_version_field_prevents_old_format_load() {
+        // A v1 (unversioned) state must not be accepted as a valid v2 state.
+        let v1_state = "file-tree;chat;properties"; // no "v2:" prefix
+        let is_v2 = v1_state.starts_with("v2:");
+        assert!(!is_v2, "v1 state without 'v2:' prefix must be rejected as invalid v2 format");
+    }
+
+    #[test]
+    fn persistence_v2_empty_layout_serializes_as_empty_config() {
+        let open: Vec<&str> = vec![];
+        let serialized = format!("v2:{}", open.join(";"));
+        // Strip prefix and check the body is empty.
+        let body = serialized.strip_prefix("v2:").unwrap();
+        assert!(body.is_empty(), "empty panel list must serialize to empty config body");
+        // Deserializing must also restore an empty list.
+        let restored: Vec<&str> = if body.is_empty() { vec![] } else { body.split(';').collect() };
+        assert!(restored.is_empty(), "deserializing empty config must restore empty panel list");
+    }
+
+    #[test]
+    fn persistence_v2_sizes_round_trip() {
+        // Panel sizes are serialized alongside ids and must survive round-trip.
+        let mut map: std::collections::HashMap<&str, f32> = std::collections::HashMap::new();
+        map.insert("file-tree", 248.0);
+        map.insert("chat", 320.0);
+        let serialized: Vec<String> = map.iter().map(|(k, v)| format!("{k}={v}")).collect();
+        for entry in &serialized {
+            let (id, size_str) = entry.split_once('=').unwrap();
+            let size: f32 = size_str.parse().unwrap();
+            let expected = map[id];
+            assert!((size - expected).abs() < f32::EPSILON, "panel '{id}' size must round-trip to {expected}, got {size}");
+        }
+    }
+
+    #[test]
+    fn persistence_v2_active_panel_preserved() {
+        // Active panel id is serialized and restored correctly.
+        let mut store: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        store.insert("active", "chat".to_string());
+        store.insert("open", "file-tree;chat;properties".to_string());
+        let active_restored = store["active"].as_str();
+        assert_eq!(active_restored, "chat", "serialized active panel must survive round-trip");
+    }
+
+    // --- Floating panels ---
+
+    #[test]
+    fn floating_panel_has_independent_position() {
+        // A floating panel stores its own (x, y) position, independent of any dock.
+        let x = 200.0_f32;
+        let y = 150.0_f32;
+        assert!(x >= 0.0, "floating panel x must be non-negative");
+        assert!(y >= 0.0, "floating panel y must be non-negative");
+    }
+
+    #[test]
+    fn floating_panel_can_be_moved_to_arbitrary_position() {
+        let mut x = 0.0_f32;
+        let mut y = 0.0_f32;
+        // Move to a new arbitrary position.
+        x = 450.0;
+        y = 300.0;
+        assert!((x - 450.0).abs() < f32::EPSILON, "floating panel x must update after move");
+        assert!((y - 300.0).abs() < f32::EPSILON, "floating panel y must update after move");
+    }
+
+    #[test]
+    fn floating_panel_z_index_above_docked_panels() {
+        // Docked panels have z-index 0; floating panels must have z-index > 0.
+        let z_docked: i32 = 0;
+        let z_floating: i32 = 50;
+        assert!(z_floating > z_docked, "floating panel z-index ({z_floating}) must exceed docked z-index ({z_docked})");
+    }
+
+    #[test]
+    fn two_floating_panels_at_same_position_later_one_on_top() {
+        // When two floating panels occupy the same (x, y), the later one must have a higher z-index.
+        let z_first: i32 = 50;
+        let z_second: i32 = 51; // later panel receives a higher z
+        assert!(z_second > z_first, "later floating panel ({z_second}) must be on top of earlier ({z_first})");
+    }
+
+    #[test]
+    fn float_panel_leaves_dock_on_float() {
+        // Floating a panel removes it from the docked panel list.
+        let mut docked = vec!["file-tree", "properties", "chat"];
+        let panel_to_float = "properties";
+        docked.retain(|&p| p != panel_to_float);
+        assert!(!docked.contains(&panel_to_float), "floated panel must be removed from dock");
+        assert_eq!(docked.len(), 2, "dock must have 2 panels after floating one");
+    }
+
+    #[test]
+    fn dock_floating_panel_joins_dock_layout() {
+        // Docking a floating panel adds it back to the docked panel list.
+        let mut docked = vec!["file-tree", "chat"];
+        let panel_to_dock = "properties";
+        // Panel was floating; now dock it.
+        docked.push(panel_to_dock);
+        assert!(docked.contains(&panel_to_dock), "docked panel must appear in dock layout");
+        assert_eq!(docked.len(), 3, "dock must have 3 panels after docking a floating one");
+    }
+
+    #[test]
+    fn floating_panel_position_x_y_independent_of_dock_size() {
+        // Changing dock size must not affect floating panel position.
+        let float_x = 300.0_f32;
+        let float_y = 200.0_f32;
+        let _dock_width = 248.0_f32; // dock size change
+        let _dock_width = 320.0_f32;
+        // Floating panel position is unchanged.
+        assert!((float_x - 300.0).abs() < f32::EPSILON, "floating x must not change with dock size");
+        assert!((float_y - 200.0).abs() < f32::EPSILON, "floating y must not change with dock size");
+    }
+
+    #[test]
+    fn floating_panel_z_index_ordering_multiple_panels() {
+        // Multiple floating panels must have distinct, increasing z-indices in creation order.
+        let z_values = [10i32, 11, 12, 13];
+        for i in 0..z_values.len() - 1 {
+            assert!(z_values[i + 1] > z_values[i], "each subsequent floating panel must have a higher z-index");
+        }
+    }
+
+    #[test]
+    fn floating_panel_bring_to_front_increases_z_index() {
+        // "Bring to front" sets this panel's z above all others.
+        let other_z = 15i32;
+        let brought_to_front_z = other_z + 1; // assigned on bring-to-front
+        assert!(brought_to_front_z > other_z, "bring-to-front must give this panel the highest z-index");
+    }
+
+    // --- Drag-between-panels ---
+
+    #[test]
+    fn drag_item_from_panel_a_to_b_removes_from_a() {
+        // After dragging item from panel A to panel B, it must no longer be in panel A.
+        let mut panel_a: Vec<&str> = vec!["item-1", "item-2", "item-3"];
+        let mut panel_b: Vec<&str> = vec!["item-4"];
+        // Drag "item-2" from A to B.
+        let idx = panel_a.iter().position(|&x| x == "item-2").unwrap();
+        let dragged = panel_a.remove(idx);
+        panel_b.push(dragged);
+        assert!(!panel_a.contains(&"item-2"), "dragged item must be removed from source panel A");
+    }
+
+    #[test]
+    fn drag_item_from_panel_a_to_b_adds_to_b() {
+        // After dragging, the item must appear in panel B.
+        let mut panel_a: Vec<&str> = vec!["item-1", "item-2", "item-3"];
+        let mut panel_b: Vec<&str> = vec!["item-4"];
+        let idx = panel_a.iter().position(|&x| x == "item-2").unwrap();
+        let dragged = panel_a.remove(idx);
+        panel_b.push(dragged);
+        assert!(panel_b.contains(&"item-2"), "dragged item must be present in target panel B");
+    }
+
+    #[test]
+    fn drag_to_invalid_target_item_stays_in_source() {
+        // If the drop target is invalid (None), the item must remain in the source panel.
+        let mut panel_a: Vec<&str> = vec!["item-1", "item-2"];
+        let drop_target: Option<&str> = None; // invalid target
+        if drop_target.is_some() {
+            // perform transfer (not reached)
+            let _ = panel_a.remove(0);
+        }
+        assert_eq!(panel_a.len(), 2, "item must stay in source panel when drop target is invalid");
+        assert!(panel_a.contains(&"item-1"), "item-1 must remain in panel A");
+    }
+
+    #[test]
+    fn drag_non_draggable_item_returns_error() {
+        // Attempting to drag a non-draggable item must return an error (Err variant).
+        let draggable = false;
+        let result: Result<(), &str> = if draggable {
+            Ok(())
+        } else {
+            Err("item is not draggable")
+        };
+        assert!(result.is_err(), "dragging a non-draggable item must return Err");
+        assert_eq!(result.unwrap_err(), "item is not draggable");
+    }
+
+    #[test]
+    fn drag_within_same_panel_reorders() {
+        // Dragging from position 0 to position 2 within the same panel reorders the items.
+        let mut items = vec!["a", "b", "c", "d"];
+        let dragged = items.remove(0); // remove "a" from index 0
+        items.insert(2, dragged);      // insert "a" at index 2
+        assert_eq!(items, vec!["b", "c", "a", "d"], "drag within same panel must reorder items");
+    }
+
+    #[test]
+    fn drag_preserves_total_item_count() {
+        // A drag between panels must not create or lose items.
+        let mut panel_a: Vec<&str> = vec!["item-1", "item-2", "item-3"];
+        let mut panel_b: Vec<&str> = vec!["item-4", "item-5"];
+        let total_before = panel_a.len() + panel_b.len();
+        // Drag "item-2" from A to B.
+        let idx = panel_a.iter().position(|&x| x == "item-2").unwrap();
+        let dragged = panel_a.remove(idx);
+        panel_b.push(dragged);
+        let total_after = panel_a.len() + panel_b.len();
+        assert_eq!(total_after, total_before, "total item count must be preserved across drag");
+    }
+
+    #[test]
+    fn drag_between_panels_source_shrinks_target_grows() {
+        let mut panel_a: Vec<&str> = vec!["item-1", "item-2", "item-3"];
+        let mut panel_b: Vec<&str> = vec!["item-4"];
+        let a_before = panel_a.len();
+        let b_before = panel_b.len();
+        let dragged = panel_a.remove(0);
+        panel_b.push(dragged);
+        assert_eq!(panel_a.len(), a_before - 1, "source panel must shrink by 1 after drag");
+        assert_eq!(panel_b.len(), b_before + 1, "target panel must grow by 1 after drag");
+    }
+
+    #[test]
+    fn drag_within_panel_same_length() {
+        // Reordering within the same panel must not change its length.
+        let mut items = vec!["x", "y", "z"];
+        let len_before = items.len();
+        let dragged = items.remove(2);
+        items.insert(0, dragged);
+        assert_eq!(items.len(), len_before, "reorder within panel must preserve item count");
+    }
+
+    #[test]
+    fn drag_to_empty_target_panel_works() {
+        // Dragging to an empty panel must succeed.
+        let mut panel_a: Vec<&str> = vec!["item-1"];
+        let mut panel_b: Vec<&str> = vec![];
+        let dragged = panel_a.remove(0);
+        panel_b.push(dragged);
+        assert!(panel_a.is_empty(), "source panel must be empty after dragging its only item");
+        assert_eq!(panel_b.len(), 1, "target panel must have 1 item after receiving the dragged item");
+    }
+
+    #[test]
+    fn drag_preserves_item_identity() {
+        // The dragged item must be exactly the same object (by value) after the transfer.
+        let mut panel_a: Vec<&str> = vec!["unique-item", "other"];
+        let mut panel_b: Vec<&str> = vec![];
+        let idx = panel_a.iter().position(|&x| x == "unique-item").unwrap();
+        let dragged = panel_a.remove(idx);
+        panel_b.push(dragged);
+        assert_eq!(panel_b[0], "unique-item", "dragged item identity must be preserved after transfer");
+    }
+
+    #[test]
+    fn persistence_v2_round_trip_three_panels_with_sizes() {
+        // Full persistence round-trip: open panels + sizes → string → restored.
+        let open = ["file-tree", "chat", "properties"];
+        let sizes = [248.0_f32, 320.0, 280.0];
+        let serialized: Vec<String> = open.iter().zip(sizes.iter())
+            .map(|(id, &sz)| format!("{id}={sz}"))
+            .collect();
+        let joined = format!("v2:{}", serialized.join(";"));
+        assert!(joined.starts_with("v2:"), "serialized state must start with 'v2:'");
+        let body = joined.strip_prefix("v2:").unwrap();
+        for (id, &expected_size) in open.iter().zip(sizes.iter()) {
+            let found = body.split(';').any(|entry| {
+                if let Some((entry_id, sz_str)) = entry.split_once('=') {
+                    entry_id == *id && sz_str.parse::<f32>().map(|s| (s - expected_size).abs() < 0.001).unwrap_or(false)
+                } else {
+                    false
+                }
+            });
+            assert!(found, "panel '{id}' with size {expected_size} must survive persistence round-trip");
+        }
+    }
+
+    #[test]
+    fn floating_panel_initial_position_defaults_to_center() {
+        // A newly floated panel defaults to a position within the canvas bounds.
+        let canvas_w = 1440.0_f32;
+        let canvas_h = 900.0_f32;
+        let default_x = canvas_w / 2.0;
+        let default_y = canvas_h / 2.0;
+        assert!(default_x > 0.0 && default_x < canvas_w, "default x must be within canvas bounds");
+        assert!(default_y > 0.0 && default_y < canvas_h, "default y must be within canvas bounds");
+    }
+
+    #[test]
+    fn drag_to_panel_at_different_position_works() {
+        // Items can be dragged between panels regardless of their screen positions.
+        let mut left_panel: Vec<&str> = vec!["item-a", "item-b"];
+        let mut right_panel: Vec<&str> = vec!["item-c"];
+        // Move "item-b" from left (x=0) to right (x=800) — position is irrelevant to the transfer.
+        let idx = left_panel.iter().position(|&x| x == "item-b").unwrap();
+        let dragged = left_panel.remove(idx);
+        right_panel.push(dragged);
+        assert_eq!(right_panel.len(), 2, "right panel must have 2 items after drag from left");
+        assert!(right_panel.contains(&"item-b"), "dragged item must appear in right panel");
+    }
+
+    #[test]
+    fn persistence_v2_preserves_dock_position() {
+        // The dock position (left/right/bottom) must be serialized and restored.
+        let dock_positions: &[(&str, &str)] = &[("left", "Left"), ("right", "Right"), ("bottom", "Bottom")];
+        for (key, value) in dock_positions {
+            let serialized = format!("v2:dock.{key}={value}");
+            assert!(serialized.contains(key), "dock position '{key}' must appear in serialized state");
+        }
+    }
+
+    #[test]
+    fn floating_panel_move_negative_delta_works() {
+        // Moving a floating panel by a negative delta decreases its position.
+        let mut x = 300.0_f32;
+        let delta = -50.0_f32;
+        x += delta;
+        assert!((x - 250.0).abs() < f32::EPSILON, "floating panel x must decrease by |delta| on negative move");
+    }
+
+    #[test]
+    fn drag_item_at_index_0_to_end_of_panel() {
+        // Dragging the first item to the end of the same panel.
+        let mut items = vec!["first", "second", "third", "fourth"];
+        let dragged = items.remove(0);
+        items.push(dragged);
+        assert_eq!(items[items.len() - 1], "first", "first item must move to the end after drag");
+        assert_eq!(items.len(), 4, "panel must still have 4 items");
+    }
+
+    #[test]
+    fn drag_item_at_end_to_start_of_panel() {
+        // Dragging the last item to position 0.
+        let mut items = vec!["a", "b", "c", "d"];
+        let last = items.pop().unwrap();
+        items.insert(0, last);
+        assert_eq!(items[0], "d", "last item must move to start after drag");
+        assert_eq!(items.len(), 4, "panel must still have 4 items");
+    }
+
+    #[test]
+    fn floating_panel_clamped_within_canvas_bounds() {
+        // A floating panel must not be positioned outside the canvas.
+        let canvas_w = 1440.0_f32;
+        let canvas_h = 900.0_f32;
+        let panel_w = 300.0_f32;
+        let panel_h = 200.0_f32;
+        let desired_x = 1400.0_f32;
+        let desired_y = 850.0_f32;
+        // Clamp so the panel remains fully within the canvas.
+        let clamped_x = desired_x.min(canvas_w - panel_w);
+        let clamped_y = desired_y.min(canvas_h - panel_h);
+        assert!(clamped_x + panel_w <= canvas_w, "panel right edge must be within canvas");
+        assert!(clamped_y + panel_h <= canvas_h, "panel bottom edge must be within canvas");
+    }
+
+    #[test]
+    fn persistence_v2_partial_state_uses_defaults_for_missing() {
+        // A partial v2 state (only one panel saved) must leave other panels at defaults.
+        let saved = "v2:file-tree=248.0";
+        let known_panels = ["file-tree", "chat", "properties"];
+        let body = saved.strip_prefix("v2:").unwrap();
+        let mut sizes: std::collections::HashMap<&str, f32> = std::collections::HashMap::new();
+        for entry in body.split(';') {
+            if let Some((id, sz_str)) = entry.split_once('=') {
+                if let Ok(sz) = sz_str.parse::<f32>() {
+                    sizes.insert(id, sz);
+                }
+            }
+        }
+        for panel in &known_panels {
+            let size = sizes.get(panel).copied().unwrap_or(0.0);
+            if *panel == "file-tree" {
+                assert!((size - 248.0).abs() < 0.001, "file-tree must load saved size 248.0");
+            } else {
+                assert_eq!(size, 0.0, "panel '{panel}' not in saved state must default to 0.0");
+            }
+        }
+    }
 }

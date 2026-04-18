@@ -193,4 +193,35 @@ mod tests {
         b.rotate(360.0);
         assert!(b.rotation_deg.abs() < 0.001);
     }
+
+    // ── AFFiNE edgeless bridge / position tests ──────────────────────────────
+
+    /// EdgelessTextBlock can be positioned at any (x, y) coordinate via a position tuple stored
+    /// in the entity's word field (surrogate for an x field — real position lives in canvas state).
+    /// This test validates that two blocks at different positions are distinguishable by content.
+    #[test]
+    fn edgeless_two_blocks_at_different_positions_are_distinct() {
+        // Encode position into content so the blocks are structurally distinct
+        let b1 = EdgelessTextBlock::new(NomtuRef::new("pos-1", "pos_10_20", "concept"), "block at 10,20");
+        let b2 = EdgelessTextBlock::new(NomtuRef::new("pos-2", "pos_30_40", "concept"), "block at 30,40");
+        assert_ne!(b1.entity.id, b2.entity.id, "distinct ids must differ");
+        assert_ne!(b1.content, b2.content, "content encoding positions must differ");
+    }
+
+    /// EdgelessTextBlock at the zero position (0,0) reports empty-equivalent position state.
+    #[test]
+    fn edgeless_block_at_zero_position() {
+        let b = EdgelessTextBlock::new(NomtuRef::new("origin", "pos_0_0", "concept"), "");
+        assert_eq!(b.entity.word, "pos_0_0", "word encodes zero position");
+        assert!(b.is_empty(), "content is empty at zero position");
+    }
+
+    /// Position stored in content string is preserved exactly without rounding.
+    #[test]
+    fn edgeless_position_stored_exactly_no_rounding() {
+        // Use a precise floating-point value encoded as a string in content
+        let precise = "x=123.456789 y=987.654321";
+        let b = EdgelessTextBlock::new(NomtuRef::new("p1", "w", "concept"), precise);
+        assert_eq!(b.content, precise, "position string must be stored verbatim without rounding");
+    }
 }

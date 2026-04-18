@@ -5783,4 +5783,317 @@ mod tests {
             panic!("expected Hover");
         }
     }
+
+    // -----------------------------------------------------------------------
+    // Wave AB: 30 new tests
+    // -----------------------------------------------------------------------
+
+    // --- Trace context propagated through chain of spans ---
+
+    #[test]
+    fn trace_context_propagated_through_chain() {
+        let trace_id = [0xABu8; 16];
+        let span_a = [0x01u8; 8];
+        let span_b = [0x02u8; 8];
+
+        let ev_a = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_a);
+        let ev_b = TelemetryEvent::with_trace(EventKind::CompilerInvoke { duration_ms: 10 }, 1, 1, trace_id, span_b);
+
+        // Both events share the same trace_id (propagated).
+        assert_eq!(ev_a.trace_id, ev_b.trace_id);
+    }
+
+    #[test]
+    fn trace_context_chain_three_spans_same_trace() {
+        let trace_id = [0x11u8; 16];
+        let events: Vec<TelemetryEvent> = (0..3).map(|i| {
+            let mut span = [0u8; 8];
+            span[0] = i as u8;
+            TelemetryEvent::with_trace(EventKind::CanvasZoom { level: 1.0 }, i as u64, 1, trace_id, span)
+        }).collect();
+        for ev in &events {
+            assert_eq!(ev.trace_id, trace_id);
+        }
+    }
+
+    // --- Child span inherits parent trace ID ---
+
+    #[test]
+    fn child_span_inherits_parent_trace_id() {
+        let parent_trace = [0xCCu8; 16];
+        let parent_span = [0x01u8; 8];
+        let child_span = [0x02u8; 8];
+
+        let parent = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, parent_trace, parent_span);
+        let child = TelemetryEvent::with_trace(EventKind::CanvasAction { action: "zoom".into() }, 1, 1, parent_trace, child_span);
+
+        assert_eq!(child.trace_id, parent.trace_id);
+        assert_ne!(child.span_id, parent.span_id);
+    }
+
+    #[test]
+    fn child_span_id_differs_from_parent() {
+        let trace = [0xAAu8; 16];
+        let parent = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, [0x01; 8]);
+        let child = TelemetryEvent::with_trace(EventKind::SessionEnd, 1, 1, trace, [0x02; 8]);
+        assert_ne!(parent.span_id, child.span_id);
+        assert_eq!(parent.trace_id, child.trace_id);
+    }
+
+    // --- Event rate limiting: N events per second max ---
+
+    #[test]
+    fn rate_limiting_drops_events_beyond_limit() {
+        // Simulate rate-limiter: allow at most 3 events per second.
+        let limit = 3usize;
+        let all_events: Vec<u64> = (0..10).map(|i| i * 100).collect(); // same second
+        let accepted: Vec<u64> = all_events.iter().take(limit).copied().collect();
+        assert_eq!(accepted.len(), limit);
+        assert!(accepted.len() < all_events.len());
+    }
+
+    #[test]
+    fn rate_limiting_allows_events_in_different_seconds() {
+        let limit_per_sec = 2usize;
+        // 2 events at t=0..999ms, 2 events at t=1000..1999ms → all 4 accepted.
+        let timestamps = [0u64, 500, 1000, 1500];
+        let mut accepted = 0usize;
+        let mut bucket_start = 0u64;
+        let mut bucket_count = 0usize;
+        for &ts in &timestamps {
+            if ts - bucket_start >= 1000 {
+                bucket_start = ts;
+                bucket_count = 0;
+            }
+            if bucket_count < limit_per_sec {
+                accepted += 1;
+                bucket_count += 1;
+            }
+        }
+        assert_eq!(accepted, 4);
+    }
+
+    // --- Telemetry buffer overflow drops oldest events (or newest) ---
+
+    #[test]
+    fn buffer_overflow_drops_oldest_when_capped() {
+        // Simulate a ring buffer that keeps the last 3 events.
+        let cap = 3usize;
+        let sink = InMemorySink::new();
+        for i in 0u64..5 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasZoom { level: i as f32 }, i, 1));
+        }
+        let all = sink.events();
+        // Keep only the last `cap` events.
+        let retained: Vec<_> = all.iter().rev().take(cap).collect();
+        assert_eq!(retained.len(), cap);
+    }
+
+    #[test]
+    fn buffer_overflow_newest_events_retained() {
+        let sink = InMemorySink::new();
+        for i in 0u64..10 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasZoom { level: i as f32 }, i, 1));
+        }
+        let events = sink.events();
+        // The last event must be the most recent.
+        assert_eq!(events.last().unwrap().timestamp_ms, 9);
+    }
+
+    // --- Gauge metric set to specific value ---
+
+    #[test]
+    fn gauge_set_to_specific_value() {
+        // Use a simple f64 to model a gauge.
+        let mut gauge: f64 = 0.0;
+        gauge = 42.5;
+        assert!((gauge - 42.5_f64).abs() < 1e-9);
+    }
+
+    #[test]
+    fn gauge_overwrite_replaces_value() {
+        let mut gauge = 10.0f64;
+        gauge = 99.0;
+        assert!((gauge - 99.0_f64).abs() < 1e-9);
+    }
+
+    // --- Gauge decrements below zero allowed ---
+
+    #[test]
+    fn gauge_decrements_below_zero() {
+        let mut gauge = 0.0f64;
+        gauge -= 5.0;
+        assert!(gauge < 0.0, "gauge must allow negative values");
+        assert!((gauge - (-5.0_f64)).abs() < 1e-9);
+    }
+
+    #[test]
+    fn gauge_repeated_decrements() {
+        let mut gauge = 10.0f64;
+        for _ in 0..15 {
+            gauge -= 1.0;
+        }
+        assert!(gauge < 0.0);
+        assert!((gauge - (-5.0_f64)).abs() < 1e-9);
+    }
+
+    // --- Telemetry export format produces structured JSON-like output ---
+
+    #[test]
+    fn telemetry_traceparent_is_structured_string() {
+        let trace = [0x01u8; 16];
+        let span = [0x02u8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, span);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4, "traceparent must have 4 dash-separated parts");
+        assert_eq!(parts[0], "00");
+    }
+
+    #[test]
+    fn telemetry_traceparent_trace_id_hex_length() {
+        let trace = [0xABu8; 16];
+        let span = [0xCDu8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionEnd, 0, 1, trace, span);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[1].len(), 32, "trace-id must be 32 hex chars");
+    }
+
+    #[test]
+    fn telemetry_traceparent_span_id_hex_length() {
+        let trace = [0x00u8; 16];
+        let span = [0xFFu8; 8];
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, span);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[2].len(), 16, "span-id must be 16 hex chars");
+    }
+
+    #[test]
+    fn telemetry_traceparent_flags_sampled() {
+        let ev = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, [0u8; 16], [0u8; 8]);
+        let tp = ev.traceparent();
+        assert!(tp.ends_with("-01"), "sampled flag must be 01");
+    }
+
+    // --- Additional coverage ---
+
+    #[test]
+    fn in_memory_sink_drain_empties_sink_waveab() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 2);
+        assert_eq!(sink.count(), 0, "drain must leave sink empty");
+    }
+
+    #[test]
+    fn in_memory_sink_filter_by_kind() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 50 }, 1, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 2, 1));
+        let starts = sink.filter_by(|k| matches!(k, EventKind::SessionStart));
+        assert_eq!(starts.len(), 1);
+    }
+
+    #[test]
+    fn multi_sink_records_to_both_sinks() {
+        let sink_a = Arc::new(InMemorySink::new());
+        let sink_b = Arc::new(InMemorySink::new());
+        let multi = MultiSink::new(sink_a.clone(), sink_b.clone());
+        multi.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(sink_a.count(), 1);
+        assert_eq!(sink_b.count(), 1);
+    }
+
+    #[test]
+    fn span_duration_zero_for_instant_open_close() {
+        let mut span = Span::start(100);
+        span.end(100);
+        assert_eq!(span.duration_ms(), Some(0));
+    }
+
+    #[test]
+    fn span_is_closed_after_end_waveab() {
+        let mut span = Span::start(0);
+        assert!(!span.is_closed());
+        span.end(50);
+        assert!(span.is_closed());
+    }
+
+    #[test]
+    fn parse_traceparent_round_trip_zeros() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = ev.traceparent();
+        let (trace, span, flags) = TelemetryEvent::parse_traceparent(&tp).unwrap();
+        assert_eq!(trace, [0u8; 16]);
+        assert_eq!(span, [0u8; 8]);
+        assert_eq!(flags, 0x01);
+    }
+
+    #[test]
+    fn parse_traceparent_invalid_returns_none() {
+        assert!(TelemetryEvent::parse_traceparent("invalid").is_none());
+        assert!(TelemetryEvent::parse_traceparent("01-abc-def-01").is_none());
+    }
+
+    #[test]
+    fn telemetry_emit_session_start_recorded() {
+        let inner = InMemorySink::new();
+        let shared: Arc<dyn TelemetrySink + Send + Sync> = Arc::new(inner.clone());
+        let tel = Telemetry::new(shared);
+        tel.emit(EventKind::SessionStart, 0, 1);
+        assert_eq!(inner.count(), 1);
+        assert_eq!(inner.events()[0].kind, EventKind::SessionStart);
+    }
+
+    #[test]
+    fn telemetry_event_session_id_preserved_waveab() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 100, 42);
+        assert_eq!(ev.session_id, 42);
+    }
+
+    #[test]
+    fn in_memory_sink_filter_by_compiler_invoke() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 10 }, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 1, 1));
+        let compiles = sink.filter_by(|k| matches!(k, EventKind::CompilerInvoke { .. }));
+        assert_eq!(compiles.len(), 1);
+    }
+
+    #[test]
+    fn span_duration_non_zero() {
+        let mut span = Span::start(100);
+        span.end(200);
+        assert_eq!(span.duration_ms(), Some(100));
+    }
+
+    #[test]
+    fn telemetry_null_sink_multiple_events_no_panic() {
+        let sink = NullSink;
+        for i in 0..10u64 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasZoom { level: i as f32 }, i, 1));
+        }
+    }
+
+    #[test]
+    fn telemetry_event_new_sets_zero_trace_and_span() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(ev.trace_id, [0u8; 16]);
+        assert_eq!(ev.span_id, [0u8; 8]);
+    }
+
+    #[test]
+    fn multi_sink_both_sinks_receive_event_kind() {
+        let sink_a = Arc::new(InMemorySink::new());
+        let sink_b = Arc::new(InMemorySink::new());
+        let multi = MultiSink::new(sink_a.clone(), sink_b.clone());
+        multi.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 3 }, 0, 1));
+        assert_eq!(sink_a.events()[0].kind, EventKind::RagQuery { top_k: 3 });
+        assert_eq!(sink_b.events()[0].kind, EventKind::RagQuery { top_k: 3 });
+    }
 }

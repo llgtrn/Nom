@@ -3,6 +3,9 @@
 //! Block primitives for the NomCanvas workspace — models, connectors, tables, dataviews.
 
 pub mod block_model;
+/// Block diff/patch: compute and apply structural differences between block lists.
+#[allow(missing_docs)]
+pub mod diff;
 /// Composition block types (app, audio, data, document, etc.).
 #[allow(missing_docs)]
 pub mod compose;

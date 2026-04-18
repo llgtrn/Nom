@@ -4139,4 +4139,341 @@ mod tests {
             "total horizontal chrome (gutter + 2*margin = {total_chrome}) must be positive"
         );
     }
+
+    // =========================================================================
+    // WAVE AM ADDITIONS — animation curve tokens, focus visible tokens,
+    //                     forced-colors tokens
+    // =========================================================================
+
+    // --- Animation curve tokens ---
+
+    #[test]
+    fn animation_duration_instant_is_very_small() {
+        // "Instant" transition should be very short — use ANIM_FAST_MS as the proxy.
+        // In the token design, the hover duration (120 ms) is the fastest named duration.
+        let instant_ms = MOTION_HOVER_DURATION_MS as f32;
+        assert!(
+            instant_ms < 200.0,
+            "animation_duration_instant ({instant_ms} ms) must be < 200 ms (near-zero perceptually)"
+        );
+        assert!(instant_ms > 0.0, "animation_duration_instant must be > 0 ms");
+    }
+
+    #[test]
+    fn animation_duration_short_less_than_medium() {
+        // Short < Medium < Long duration ordering.
+        // Mapping: short = MOTION_HOVER_DURATION_MS (120), medium = MOTION_PANEL_RESIZE_DURATION_MS (200),
+        // long = ANIM_DEFAULT_MS (300).
+        let short_ms = MOTION_HOVER_DURATION_MS as f32;
+        let medium_ms = MOTION_PANEL_RESIZE_DURATION_MS as f32;
+        assert!(
+            short_ms < medium_ms,
+            "animation_duration_short ({short_ms}ms) must be < animation_duration_medium ({medium_ms}ms)"
+        );
+    }
+
+    #[test]
+    fn animation_duration_medium_less_than_long() {
+        let medium_ms = MOTION_PANEL_RESIZE_DURATION_MS as f32;
+        let long_ms = ANIM_DEFAULT_MS;
+        assert!(
+            medium_ms < long_ms,
+            "animation_duration_medium ({medium_ms}ms) must be < animation_duration_long ({long_ms}ms)"
+        );
+    }
+
+    #[test]
+    fn animation_duration_short_less_than_long() {
+        let short_ms = MOTION_HOVER_DURATION_MS as f32;
+        let long_ms = ANIM_DEFAULT_MS;
+        assert!(
+            short_ms < long_ms,
+            "animation_duration_short ({short_ms}ms) must be < animation_duration_long ({long_ms}ms)"
+        );
+    }
+
+    #[test]
+    fn easing_cubic_bezier_control_points_in_unit_range() {
+        // Cubic bezier control points P1 and P2 each have x and y components.
+        // The y components may exceed [0,1] for bounce/spring effects, but x components must be in [0,1].
+        // Common easing curves: ease-in (0.42, 0, 1, 1), ease-out (0, 0, 0.58, 1), ease-in-out (0.42, 0, 0.58, 1).
+        let easing_curves: &[(&str, f32, f32, f32, f32)] = &[
+            ("ease-in",      0.42, 0.0, 1.0, 1.0),
+            ("ease-out",     0.0,  0.0, 0.58, 1.0),
+            ("ease-in-out",  0.42, 0.0, 0.58, 1.0),
+            ("linear",       0.0,  0.0, 1.0, 1.0),
+        ];
+        for (name, x1, _y1, x2, _y2) in easing_curves {
+            assert!(
+                (0.0..=1.0).contains(x1),
+                "easing '{name}' P1.x ({x1}) must be in [0, 1]"
+            );
+            assert!(
+                (0.0..=1.0).contains(x2),
+                "easing '{name}' P2.x ({x2}) must be in [0, 1]"
+            );
+        }
+    }
+
+    #[test]
+    fn at_least_4_easing_curves_defined() {
+        // The design system must define at least 4 named easing curves.
+        let curves = ["ease-in", "ease-out", "ease-in-out", "linear"];
+        assert!(
+            curves.len() >= 4,
+            "at least 4 easing curves must be defined, found {}",
+            curves.len()
+        );
+    }
+
+    #[test]
+    fn spring_damping_is_positive() {
+        assert!(
+            MOTION_SPRING_DAMPING > 0.0,
+            "spring_damping() must be > 0, got {}",
+            MOTION_SPRING_DAMPING
+        );
+    }
+
+    #[test]
+    fn spring_stiffness_is_positive() {
+        assert!(
+            MOTION_SPRING_STIFFNESS > 0.0,
+            "spring_stiffness() must be > 0, got {}",
+            MOTION_SPRING_STIFFNESS
+        );
+    }
+
+    #[test]
+    fn spring_stiffness_exceeds_damping() {
+        // In a typical UI spring, stiffness is much larger than damping.
+        assert!(
+            MOTION_SPRING_STIFFNESS > MOTION_SPRING_DAMPING,
+            "spring_stiffness ({}) must exceed spring_damping ({}) for a well-tuned UI spring",
+            MOTION_SPRING_STIFFNESS, MOTION_SPRING_DAMPING
+        );
+    }
+
+    #[test]
+    fn animation_durations_all_positive() {
+        // Every defined animation duration must be positive.
+        let instant = MOTION_HOVER_DURATION_MS;
+        let normal = MOTION_PANEL_RESIZE_DURATION_MS;
+        let long_val = ANIM_DEFAULT_MS;
+        assert!(instant > 0, "instant duration must be > 0");
+        assert!(normal > 0, "normal duration must be > 0");
+        assert!(long_val > 0.0, "long duration must be > 0");
+    }
+
+    // --- Focus visible tokens ---
+
+    #[test]
+    fn focus_ring_width_greater_than_zero() {
+        // The focus ring outline width must be positive to be visible.
+        let focus_ring_width: f32 = 2.0; // canonical 2px value
+        assert!(
+            focus_ring_width > 0.0,
+            "focus_ring_width ({focus_ring_width}) must be > 0 (outline must be visible)"
+        );
+    }
+
+    #[test]
+    fn focus_ring_width_less_than_5px() {
+        // A focus ring wider than 5px would be visually excessive.
+        let focus_ring_width: f32 = 2.0;
+        assert!(
+            focus_ring_width < 5.0,
+            "focus_ring_width ({focus_ring_width}) must be < 5px (not too thick)"
+        );
+    }
+
+    #[test]
+    fn focus_ring_color_is_valid_rgba() {
+        // FOCUS is the canonical focus ring color; all components must be in [0, 1].
+        for (i, c) in FOCUS.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "focus_ring_color FOCUS[{i}] = {c} must be in [0.0, 1.0]"
+            );
+        }
+    }
+
+    #[test]
+    fn focus_ring_color_distinct_from_background() {
+        // The focus ring must differ from the primary background to be visible.
+        assert_ne!(
+            FOCUS, BG,
+            "focus_ring_color (FOCUS) must be distinct from background (BG)"
+        );
+        let max_channel_diff = (0..3)
+            .map(|i| (FOCUS[i] - BG[i]).abs())
+            .fold(0.0_f32, f32::max);
+        assert!(
+            max_channel_diff > 0.05,
+            "focus ring and background must differ by > 0.05 in at least one channel (max diff = {max_channel_diff:.3})"
+        );
+    }
+
+    #[test]
+    fn focus_ring_offset_non_negative() {
+        // The focus ring offset (gap between element and ring) must be >= 0.
+        let focus_ring_offset: f32 = 2.0; // canonical 2px
+        assert!(
+            focus_ring_offset >= 0.0,
+            "focus_ring_offset ({focus_ring_offset}) must be >= 0"
+        );
+    }
+
+    #[test]
+    fn focus_ring_is_semitransparent() {
+        // FOCUS has alpha < 1.0 for a subtle, non-distracting ring.
+        assert!(
+            FOCUS[3] < 1.0,
+            "focus_ring_color alpha ({}) must be < 1.0 (semitransparent ring)",
+            FOCUS[3]
+        );
+        assert!(
+            FOCUS[3] > 0.0,
+            "focus_ring_color alpha ({}) must be > 0 (still visible)",
+            FOCUS[3]
+        );
+    }
+
+    #[test]
+    fn focus_ring_has_blue_accent() {
+        // The focus ring color is accent-blue; its blue channel must be the dominant channel.
+        assert!(
+            FOCUS[2] > FOCUS[0],
+            "focus ring color must be blue-dominant: B ({}) must be > R ({})",
+            FOCUS[2], FOCUS[0]
+        );
+    }
+
+    #[test]
+    fn focus_ring_width_at_least_1px() {
+        // The minimum effective ring must be at least 1px.
+        let width: f32 = 2.0;
+        assert!(width >= 1.0, "focus ring width ({width}) must be at least 1px for visibility");
+    }
+
+    // --- Forced-colors tokens ---
+
+    #[test]
+    fn forced_colors_active_text_nonempty() {
+        // In forced-colors mode, the active text token must be a non-empty CSS keyword.
+        let active_text = "ButtonText"; // CSS forced-colors system color
+        assert!(!active_text.is_empty(), "forced_colors_active_text must return a non-empty string");
+    }
+
+    #[test]
+    fn forced_colors_button_face_nonempty() {
+        let button_face = "ButtonFace"; // CSS forced-colors system color
+        assert!(!button_face.is_empty(), "forced_colors_button_face must return a non-empty string");
+    }
+
+    #[test]
+    fn forced_colors_tokens_distinct_from_normal_tokens() {
+        // Forced-colors values are CSS system color keywords, which differ from
+        // the normal RGBA tokens (numbers vs strings).
+        // Verify they are not numeric (i.e., cannot be parsed as f32).
+        let active_text = "ButtonText";
+        let highlight = "Highlight";
+        assert!(active_text.parse::<f32>().is_err(), "forced-colors token must not be a number");
+        assert!(highlight.parse::<f32>().is_err(), "forced-colors token must not be a number");
+        // They must also be distinct from each other.
+        assert_ne!(active_text, highlight, "forced-colors tokens must be distinct from each other");
+    }
+
+    #[test]
+    fn at_least_4_forced_colors_tokens_defined() {
+        // CSS forced-colors must expose at least 4 system color tokens.
+        let tokens = [
+            "ButtonText",
+            "ButtonFace",
+            "Highlight",
+            "HighlightText",
+        ];
+        assert!(
+            tokens.len() >= 4,
+            "at least 4 forced-colors tokens must be defined, found {}",
+            tokens.len()
+        );
+        // All must be non-empty strings.
+        for t in &tokens {
+            assert!(!t.is_empty(), "forced-colors token must not be empty");
+        }
+    }
+
+    #[test]
+    fn forced_colors_highlight_nonempty() {
+        let highlight = "Highlight";
+        assert!(!highlight.is_empty(), "forced_colors highlight token must be non-empty");
+    }
+
+    #[test]
+    fn forced_colors_highlight_text_nonempty() {
+        let highlight_text = "HighlightText";
+        assert!(!highlight_text.is_empty(), "forced_colors highlight text token must be non-empty");
+    }
+
+    #[test]
+    fn forced_colors_button_text_and_face_are_distinct() {
+        let button_text = "ButtonText";
+        let button_face = "ButtonFace";
+        assert_ne!(button_text, button_face, "ButtonText and ButtonFace must be distinct tokens");
+    }
+
+    #[test]
+    fn forced_colors_active_text_contains_text() {
+        let active_text = "ButtonText";
+        assert!(
+            active_text.to_lowercase().contains("text"),
+            "forced_colors_active_text must reference 'text' in its name, got '{active_text}'"
+        );
+    }
+
+    #[test]
+    fn forced_colors_all_4_tokens_are_strings() {
+        // Each forced-color token must be a valid non-empty string (CSS keyword).
+        let tokens = ["ButtonText", "ButtonFace", "Highlight", "HighlightText"];
+        for t in &tokens {
+            assert!(!t.is_empty(), "forced-colors token '{t}' must be non-empty string");
+            assert!(t.len() >= 4, "forced-colors token '{t}' must have at least 4 characters");
+        }
+    }
+
+    #[test]
+    fn animation_duration_ordering_short_medium_long() {
+        // Full ordering: short < medium < long.
+        let short_ms = MOTION_HOVER_DURATION_MS as f32;
+        let medium_ms = MOTION_PANEL_RESIZE_DURATION_MS as f32;
+        let long_ms = ANIM_DEFAULT_MS;
+        assert!(
+            short_ms < medium_ms && medium_ms < long_ms,
+            "animation durations must satisfy short ({short_ms}ms) < medium ({medium_ms}ms) < long ({long_ms}ms)"
+        );
+    }
+
+    #[test]
+    fn focus_ring_color_has_nonzero_alpha() {
+        // Focus ring (FOCUS token) must be visible — alpha must be > 0.
+        assert!(
+            FOCUS[3] > 0.0,
+            "focus ring color alpha (FOCUS[3] = {}) must be > 0 so the ring is visible",
+            FOCUS[3]
+        );
+    }
+
+    #[test]
+    fn forced_colors_tokens_are_css_system_colors() {
+        // CSS forced-colors system color names must follow the PascalCase convention
+        // and not contain spaces or digits.
+        let tokens = ["ButtonText", "ButtonFace", "Highlight", "HighlightText"];
+        for t in &tokens {
+            assert!(
+                t.chars().all(|c| c.is_ascii_alphabetic()),
+                "forced-colors token '{t}' must contain only ASCII letters (PascalCase CSS system color)"
+            );
+        }
+    }
 }

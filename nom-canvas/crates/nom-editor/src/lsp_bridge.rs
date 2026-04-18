@@ -29,6 +29,113 @@ pub struct CompletionItem {
     pub sort_text: Option<String>,
 }
 
+// ── Semantic highlight ───────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SemanticToken {
+    pub line: u32,
+    pub start: u32,
+    pub length: u32,
+    pub token_type: String,
+}
+
+/// Classify a text token into a semantic category.
+pub fn classify_token(text: &str) -> String {
+    const KEYWORDS: &[&str] = &[
+        "define", "that", "is", "with", "from", "as", "use", "return", "if", "else", "match",
+        "let", "fn", "struct", "enum", "impl", "pub", "mod", "where", "for", "while", "loop",
+        "break", "continue", "true", "false",
+    ];
+    if text.starts_with("//") || text.starts_with('#') {
+        return "comment".to_string();
+    }
+    if (text.starts_with('"') && text.ends_with('"') && text.len() >= 2)
+        || (text.starts_with('\'') && text.ends_with('\'') && text.len() >= 2)
+    {
+        return "string".to_string();
+    }
+    if text.chars().all(|c| c.is_ascii_digit() || c == '.' || c == '_')
+        && text.chars().next().map(|c| c.is_ascii_digit()).unwrap_or(false)
+    {
+        return "number".to_string();
+    }
+    if KEYWORDS.contains(&text) {
+        return "keyword".to_string();
+    }
+    "identifier".to_string()
+}
+
+// ── Document symbols ─────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DocumentSymbol {
+    pub name: String,
+    pub kind: String,
+    pub range_start: u32,
+    pub range_end: u32,
+}
+
+/// Extract top-level document symbols from source text.
+/// Recognises `define <name>` patterns and produces a symbol per match.
+pub fn extract_symbols(source: &str) -> Vec<DocumentSymbol> {
+    let mut symbols = Vec::new();
+    for (line_idx, line) in source.lines().enumerate() {
+        let trimmed = line.trim_start();
+        if let Some(rest) = trimmed.strip_prefix("define ") {
+            let name: String = rest
+                .split_whitespace()
+                .next()
+                .unwrap_or("")
+                .to_string();
+            if !name.is_empty() {
+                let range_start = line_idx as u32;
+                let range_end = range_start + 1;
+                symbols.push(DocumentSymbol {
+                    name,
+                    kind: "function".to_string(),
+                    range_start,
+                    range_end,
+                });
+            }
+        }
+    }
+    symbols
+}
+
+// ── Folding ranges ───────────────────────────────────────────────────────────
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct FoldingRange {
+    pub start_line: u32,
+    pub end_line: u32,
+    pub kind: String,
+}
+
+/// Compute folding ranges for `{...}` blocks in source text.
+pub fn compute_folding_ranges(source: &str) -> Vec<FoldingRange> {
+    let mut ranges = Vec::new();
+    let mut stack: Vec<u32> = Vec::new();
+    for (idx, line) in source.lines().enumerate() {
+        let ln = idx as u32;
+        for ch in line.chars() {
+            match ch {
+                '{' => stack.push(ln),
+                '}' => {
+                    if let Some(start) = stack.pop() {
+                        ranges.push(FoldingRange {
+                            start_line: start,
+                            end_line: ln,
+                            kind: "region".to_string(),
+                        });
+                    }
+                }
+                _ => {}
+            }
+        }
+    }
+    ranges
+}
+
 pub trait LspProvider: Send + Sync {
     fn hover(&self, path: &std::path::Path, offset: usize) -> Option<HoverResult>;
     fn completions(&self, path: &std::path::Path, offset: usize) -> Vec<CompletionItem>;
@@ -472,5 +579,215 @@ mod tests {
         let cloned = h.clone();
         assert_eq!(cloned.contents, h.contents);
         assert_eq!(cloned.range, h.range);
+    }
+
+    // ── wave AB: semantic highlight tests ────────────────────────────────────
+
+    /// classify_token("define") returns "keyword".
+    #[test]
+    fn semantic_classify_define_is_keyword() {
+        assert_eq!(classify_token("define"), "keyword");
+    }
+
+    /// classify_token("my_var") returns "identifier".
+    #[test]
+    fn semantic_classify_identifier() {
+        assert_eq!(classify_token("my_var"), "identifier");
+    }
+
+    /// classify_token("42") returns "number".
+    #[test]
+    fn semantic_classify_integer_number() {
+        assert_eq!(classify_token("42"), "number");
+    }
+
+    /// classify_token with a quoted string literal returns "string".
+    #[test]
+    fn semantic_classify_string_literal() {
+        assert_eq!(classify_token("\"hello\""), "string");
+    }
+
+    /// classify_token("// comment") returns "comment".
+    #[test]
+    fn semantic_classify_line_comment() {
+        assert_eq!(classify_token("// comment"), "comment");
+    }
+
+    /// SemanticToken with length=0 is valid (zero-width marker).
+    #[test]
+    fn semantic_token_zero_length_is_valid() {
+        let tok = SemanticToken {
+            line: 0,
+            start: 5,
+            length: 0,
+            token_type: "keyword".to_string(),
+        };
+        assert_eq!(tok.length, 0);
+        assert_eq!(tok.token_type, "keyword");
+    }
+
+    /// SemanticToken line/start/length fields are all preserved.
+    #[test]
+    fn semantic_token_fields_preserved() {
+        let tok = SemanticToken {
+            line: 3,
+            start: 7,
+            length: 5,
+            token_type: "identifier".to_string(),
+        };
+        assert_eq!(tok.line, 3);
+        assert_eq!(tok.start, 7);
+        assert_eq!(tok.length, 5);
+    }
+
+    /// Tokenising "define foo 42" produces keyword, identifier, number in order.
+    #[test]
+    fn semantic_tokenize_short_source_token_types_in_order() {
+        let words = ["define", "foo", "42"];
+        let types: Vec<String> = words.iter().map(|w| classify_token(w)).collect();
+        assert_eq!(types[0], "keyword");
+        assert_eq!(types[1], "identifier");
+        assert_eq!(types[2], "number");
+    }
+
+    /// classify_token("fn") returns "keyword".
+    #[test]
+    fn semantic_classify_fn_keyword() {
+        assert_eq!(classify_token("fn"), "keyword");
+    }
+
+    /// classify_token("3.14") returns "number".
+    #[test]
+    fn semantic_classify_float_number() {
+        assert_eq!(classify_token("3.14"), "number");
+    }
+
+    /// SemanticToken can be cloned; clone equals original.
+    #[test]
+    fn semantic_token_clone_equals_original() {
+        let tok = SemanticToken {
+            line: 1,
+            start: 2,
+            length: 3,
+            token_type: "string".to_string(),
+        };
+        let cloned = tok.clone();
+        assert_eq!(cloned, tok);
+    }
+
+    // ── wave AB: document symbol tests ───────────────────────────────────────
+
+    /// Empty source returns empty symbol list.
+    #[test]
+    fn doc_symbols_empty_source_returns_empty() {
+        let symbols = extract_symbols("");
+        assert!(symbols.is_empty());
+    }
+
+    /// Source with "define foo" produces a symbol named "foo".
+    #[test]
+    fn doc_symbols_define_foo_produces_foo_symbol() {
+        let source = "define foo that is 1";
+        let symbols = extract_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].name, "foo");
+    }
+
+    /// Source with two nested definitions: both symbols appear.
+    #[test]
+    fn doc_symbols_two_definitions_both_appear() {
+        let source = "define outer that is\n  define inner that is 1";
+        let symbols = extract_symbols(source);
+        assert_eq!(symbols.len(), 2);
+        let names: Vec<&str> = symbols.iter().map(|s| s.name.as_str()).collect();
+        assert!(names.contains(&"outer"));
+        assert!(names.contains(&"inner"));
+    }
+
+    /// Symbol kind is "function" for a define.
+    #[test]
+    fn doc_symbols_kind_is_function_for_define() {
+        let source = "define my_func that is 0";
+        let symbols = extract_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        assert_eq!(symbols[0].kind, "function");
+    }
+
+    /// Symbol range_start < range_end.
+    #[test]
+    fn doc_symbols_range_start_less_than_end() {
+        let source = "define compute that is 42";
+        let symbols = extract_symbols(source);
+        assert_eq!(symbols.len(), 1);
+        assert!(symbols[0].range_start < symbols[0].range_end);
+    }
+
+    /// Source with no "define" keyword produces no symbols.
+    #[test]
+    fn doc_symbols_no_define_produces_no_symbols() {
+        let source = "let x = 5\nuse std";
+        let symbols = extract_symbols(source);
+        assert!(symbols.is_empty());
+    }
+
+    // ── wave AB: folding range tests ─────────────────────────────────────────
+
+    /// Empty source has no folding ranges.
+    #[test]
+    fn folding_empty_source_no_ranges() {
+        let ranges = compute_folding_ranges("");
+        assert!(ranges.is_empty());
+    }
+
+    /// Source with a single `{...}` block produces one folding range.
+    #[test]
+    fn folding_single_block_produces_one_range() {
+        let source = "fn foo {\n  let x = 1\n}";
+        let ranges = compute_folding_ranges(source);
+        assert_eq!(ranges.len(), 1);
+    }
+
+    /// Folding range start_line <= end_line.
+    #[test]
+    fn folding_start_line_le_end_line() {
+        let source = "outer {\n  inner\n}";
+        let ranges = compute_folding_ranges(source);
+        assert!(!ranges.is_empty());
+        for r in &ranges {
+            assert!(r.start_line <= r.end_line);
+        }
+    }
+
+    /// Multiple independent blocks produce multiple ranges.
+    #[test]
+    fn folding_multiple_blocks_produce_multiple_ranges() {
+        let source = "fn a {\n}\nfn b {\n}";
+        let ranges = compute_folding_ranges(source);
+        assert_eq!(ranges.len(), 2);
+    }
+
+    /// Nested blocks: inner range entirely within outer range.
+    #[test]
+    fn folding_nested_blocks_inner_within_outer() {
+        let source = "outer {\n  inner {\n  }\n}";
+        let ranges = compute_folding_ranges(source);
+        // Should have two ranges (inner and outer).
+        assert_eq!(ranges.len(), 2);
+        // Find the smaller range (inner) and the larger range (outer).
+        let inner = ranges.iter().min_by_key(|r| r.end_line - r.start_line).unwrap();
+        let outer = ranges.iter().max_by_key(|r| r.end_line - r.start_line).unwrap();
+        assert!(inner.start_line >= outer.start_line);
+        assert!(inner.end_line <= outer.end_line);
+    }
+
+    /// FoldingRange kind field is preserved.
+    #[test]
+    fn folding_range_kind_preserved() {
+        let r = FoldingRange {
+            start_line: 0,
+            end_line: 5,
+            kind: "region".to_string(),
+        };
+        assert_eq!(r.kind, "region");
     }
 }

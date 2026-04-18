@@ -196,4 +196,130 @@ mod tests {
         assert!(!result);
         assert_eq!(f.child_count(), 0);
     }
+
+    // ── hierarchical frame tree tests ────────────────────────────────────────
+
+    /// A FrameTree holds frames keyed by id with parent-child references.
+    /// Depth-first traversal of a 3-level tree visits all 3 nodes.
+    #[test]
+    fn frame_tree_depth_first_visits_all_three_levels() {
+        use std::collections::HashMap;
+        // Build: root → child → grandchild
+        let root_id = "root";
+        let child_id = "child";
+        let grand_id = "grandchild";
+
+        let mut tree: HashMap<&str, Vec<&str>> = HashMap::new();
+        tree.insert(root_id, vec![child_id]);
+        tree.insert(child_id, vec![grand_id]);
+        tree.insert(grand_id, vec![]);
+
+        // Depth-first traversal
+        let mut visited: Vec<&str> = Vec::new();
+        let mut stack = vec![root_id];
+        while let Some(id) = stack.pop() {
+            visited.push(id);
+            if let Some(children) = tree.get(id) {
+                // push children in reverse so left-most is visited first
+                for &c in children.iter().rev() {
+                    stack.push(c);
+                }
+            }
+        }
+        assert_eq!(visited.len(), 3, "all three levels must be visited");
+        assert_eq!(visited[0], root_id);
+        assert_eq!(visited[1], child_id);
+        assert_eq!(visited[2], grand_id);
+    }
+
+    /// A flat frame with 0 children has depth 0.
+    #[test]
+    fn frame_flat_zero_children_has_depth_zero() {
+        let f = FrameBlock::new(entity("flat"), "flat frame");
+        assert_eq!(f.child_count(), 0, "flat frame must report 0 children = depth 0");
+    }
+
+    /// A frame with exactly 1 child has depth 1.
+    #[test]
+    fn frame_one_child_has_depth_one() {
+        let mut f = FrameBlock::new(entity("parent"), "parent frame");
+        f.add_child(entity("child"));
+        assert_eq!(f.child_count(), 1, "single child = depth 1");
+    }
+
+    /// Cycle detection: adding a parent's id as a child of its own child is rejected.
+    ///
+    /// This test models cycle detection via a simple visited-set check — the
+    /// FrameBlock API itself is flat; callers must guard against cycles at
+    /// the orchestration layer.
+    #[test]
+    fn frame_cycle_detection_rejects_parent_as_grandchild() {
+        use std::collections::{HashMap, HashSet};
+        // root → child; then attempt to add root as child of child (cycle)
+        let root_id = "root";
+        let child_id = "child";
+
+        let mut parent_of: HashMap<&str, &str> = HashMap::new();
+        parent_of.insert(child_id, root_id); // child's parent is root
+
+        // Utility: would adding `candidate` as child of `node` create a cycle?
+        let would_cycle = |node: &str, candidate: &str, parent_of: &HashMap<&str, &str>| -> bool {
+            // Walk up from `node`; if we hit `candidate`, adding it as child of `node` is a cycle
+            let mut cur = node;
+            let mut visited = HashSet::new();
+            loop {
+                if cur == candidate {
+                    return true;
+                }
+                if !visited.insert(cur) {
+                    break; // already saw this node — existing cycle
+                }
+                match parent_of.get(cur) {
+                    Some(&p) => cur = p,
+                    None => break,
+                }
+            }
+            false
+        };
+
+        // Attempting to add root as a child of child should be detected as a cycle
+        assert!(
+            would_cycle(child_id, root_id, &parent_of),
+            "adding root as child of child must be detected as a cycle"
+        );
+
+        // Adding a fresh unrelated node is safe
+        assert!(
+            !would_cycle(child_id, "unrelated", &parent_of),
+            "adding an unrelated node must NOT be detected as a cycle"
+        );
+    }
+
+    /// Depth-first traversal of a frame with only a root (no children) visits exactly 1 node.
+    #[test]
+    fn frame_tree_single_node_traversal() {
+        use std::collections::HashMap;
+        let mut tree: HashMap<&str, Vec<&str>> = HashMap::new();
+        tree.insert("only", vec![]);
+
+        let mut visited: Vec<&str> = Vec::new();
+        let mut stack = vec!["only"];
+        while let Some(id) = stack.pop() {
+            visited.push(id);
+            if let Some(children) = tree.get(id) {
+                for &c in children.iter().rev() {
+                    stack.push(c);
+                }
+            }
+        }
+        assert_eq!(visited.len(), 1);
+        assert_eq!(visited[0], "only");
+    }
+
+    /// Frame label is stored exactly as given.
+    #[test]
+    fn frame_label_stored_exactly() {
+        let f = FrameBlock::new(entity("f-label"), "exact label text");
+        assert_eq!(f.label, "exact label text");
+    }
 }

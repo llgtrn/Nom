@@ -6,6 +6,8 @@
 
 /// Undo/redo command stack for canvas operations.
 pub mod commands;
+/// Gesture recognizer: tap, double-tap, long-press, pan, and pinch detection.
+pub mod gesture;
 /// Canvas element primitives (rects, ellipses, lines, arrows, graph nodes, wires, connectors).
 pub mod elements;
 /// Hit-testing for canvas elements (AABB, rotated rect, ellipse, bezier connector).

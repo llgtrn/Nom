@@ -812,6 +812,105 @@ pub fn ortho_projection(width: f32, height: f32) -> [[f32; 4]; 4] {
 }
 
 // ---------------------------------------------------------------------------
+// AdapterInfo — device-free stub describing a GPU adapter
+// ---------------------------------------------------------------------------
+
+/// Device-free description of a GPU adapter for test and diagnostic use.
+///
+/// Mirrors the fields surfaced by wgpu's adapter info API without requiring
+/// a live wgpu instance.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct AdapterInfo {
+    /// Human-readable adapter name (e.g. `"NVIDIA GeForce RTX 3080"`).
+    pub name: String,
+    /// PCI vendor ID (0 when unavailable).
+    pub vendor: u32,
+    /// PCI device ID (0 when unavailable).
+    pub device: u32,
+    /// Backend string: `"vulkan"`, `"metal"`, `"dx12"`, `"gl"`, or `"unknown"`.
+    pub backend: String,
+}
+
+/// Device-free description of the parameters used to request a wgpu device.
+///
+/// Allows tests and diagnostics to inspect request parameters without needing
+/// a live `wgpu::Device`.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceDescriptor {
+    /// Optional debug label for the device.
+    pub label: Option<String>,
+    /// Bitfield of required wgpu feature flags (0 = no features required).
+    pub required_features: u64,
+    /// Limits preset string: `"default"` or `"downlevel_webgl2"`.
+    pub required_limits: String,
+}
+
+// ---------------------------------------------------------------------------
+// RenderTarget — device-free render target descriptor
+// ---------------------------------------------------------------------------
+
+/// Device-free descriptor for a GPU render target.
+///
+/// Describes the pixel dimensions, texture format, and MSAA sample count for
+/// a render target without referencing live GPU resources.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct RenderTarget {
+    /// Width in physical pixels.
+    pub width: u32,
+    /// Height in physical pixels.
+    pub height: u32,
+    /// Texture format string (e.g. `"bgra8unorm-srgb"`, `"depth32float"`).
+    pub format: String,
+    /// MSAA sample count. `1` means no MSAA.
+    pub sample_count: u32,
+}
+
+impl Default for RenderTarget {
+    fn default() -> Self {
+        Self {
+            width: 0,
+            height: 0,
+            format: String::from("bgra8unorm-srgb"),
+            sample_count: 1,
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Pixel format utilities
+// ---------------------------------------------------------------------------
+
+/// Returns true if `format` is an sRGB-encoded format.
+///
+/// Matches any format name that contains the `"srgb"` substring, e.g.
+/// `"bgra8unorm-srgb"` or `"rgba8unorm-srgb"`.
+pub fn format_is_srgb(format: &str) -> bool {
+    format.contains("srgb")
+}
+
+/// Returns true if `format` is a depth buffer format.
+///
+/// Matches any format name that contains the `"depth"` substring, e.g.
+/// `"depth32float"` or `"depth24plus-stencil8"`.
+pub fn format_is_depth(format: &str) -> bool {
+    format.contains("depth")
+}
+
+/// Returns the byte size per pixel for common texture formats.
+///
+/// Returns `None` for unknown formats.
+pub fn format_bytes_per_pixel(format: &str) -> Option<u32> {
+    match format {
+        "rgba8unorm" | "rgba8unorm-srgb" | "bgra8unorm" | "bgra8unorm-srgb" => Some(4),
+        "rgba16float" | "rgba16unorm" => Some(8),
+        "rgba32float" => Some(16),
+        "r8unorm" | "r8snorm" => Some(1),
+        "rg8unorm" | "rg8snorm" => Some(2),
+        _ => None,
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -3617,5 +3716,347 @@ mod tests {
             ..RenderPassConfig::default()
         };
         assert_eq!(cfg.clear_color.0[3], 0.0, "alpha 0 must be preserved");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: AdapterInfo stub tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn adapter_info_empty_name_is_valid() {
+        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("unknown") };
+        assert!(info.name.is_empty(), "empty name must be accepted");
+    }
+
+    #[test]
+    fn adapter_info_backend_round_trips_as_string() {
+        let info = AdapterInfo { name: String::from("Test"), vendor: 0, device: 0, backend: String::from("vulkan") };
+        assert_eq!(info.backend, "vulkan", "backend must round-trip as string");
+    }
+
+    #[test]
+    fn adapter_info_backend_metal_round_trips() {
+        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("metal") };
+        assert_eq!(info.backend, "metal");
+    }
+
+    #[test]
+    fn adapter_info_backend_dx12_round_trips() {
+        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0, backend: String::from("dx12") };
+        assert_eq!(info.backend, "dx12");
+    }
+
+    #[test]
+    fn adapter_info_clone_equals_original() {
+        let info = AdapterInfo { name: String::from("GPU"), vendor: 0x10de, device: 0x2204, backend: String::from("vulkan") };
+        let cloned = info.clone();
+        assert_eq!(info, cloned, "cloned AdapterInfo must equal original");
+    }
+
+    #[test]
+    fn adapter_info_vendor_preserved() {
+        let info = AdapterInfo { name: String::new(), vendor: 0x8086, device: 0, backend: String::from("gl") };
+        assert_eq!(info.vendor, 0x8086);
+    }
+
+    #[test]
+    fn adapter_info_device_preserved() {
+        let info = AdapterInfo { name: String::new(), vendor: 0, device: 0xabcd, backend: String::from("gl") };
+        assert_eq!(info.device, 0xabcd);
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: DeviceDescriptor stub tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn device_descriptor_no_label_is_valid() {
+        let desc = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        assert!(desc.label.is_none(), "None label must be accepted");
+    }
+
+    #[test]
+    fn device_descriptor_with_label_is_valid() {
+        let desc = DeviceDescriptor { label: Some(String::from("test-device")), required_features: 0, required_limits: String::from("default") };
+        assert_eq!(desc.label.as_deref(), Some("test-device"));
+    }
+
+    #[test]
+    fn device_descriptor_required_features_zero_is_valid() {
+        let desc = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        assert_eq!(desc.required_features, 0, "required_features=0 means no features required");
+    }
+
+    #[test]
+    fn device_descriptor_required_features_nonzero_preserved() {
+        let desc = DeviceDescriptor { label: None, required_features: 0b1010, required_limits: String::from("default") };
+        assert_eq!(desc.required_features, 0b1010);
+    }
+
+    #[test]
+    fn device_descriptor_two_with_same_fields_are_equal() {
+        let a = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        let b = DeviceDescriptor { label: None, required_features: 0, required_limits: String::from("default") };
+        assert_eq!(a, b, "two DeviceDescriptors with same fields must be equal");
+    }
+
+    #[test]
+    fn device_descriptor_different_labels_are_not_equal() {
+        let a = DeviceDescriptor { label: Some(String::from("a")), required_features: 0, required_limits: String::from("default") };
+        let b = DeviceDescriptor { label: Some(String::from("b")), required_features: 0, required_limits: String::from("default") };
+        assert_ne!(a, b);
+    }
+
+    #[test]
+    fn device_descriptor_clone_equals_original() {
+        let desc = DeviceDescriptor { label: Some(String::from("x")), required_features: 42, required_limits: String::from("downlevel_webgl2") };
+        let cloned = desc.clone();
+        assert_eq!(desc, cloned);
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: negotiate_surface_format depth tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn negotiate_surface_format_single_element_bgra_returns_it() {
+        let result = Renderer::negotiate_surface_format(&["bgra8unorm-srgb"]);
+        assert_eq!(result, Some("bgra8unorm-srgb"), "single-element bgra8 must be returned");
+    }
+
+    #[test]
+    fn negotiate_surface_format_single_element_rgba_returns_it() {
+        let result = Renderer::negotiate_surface_format(&["rgba8unorm-srgb"]);
+        assert_eq!(result, Some("rgba8unorm-srgb"), "single-element rgba8 must be returned");
+    }
+
+    #[test]
+    fn negotiate_surface_format_all_unsupported_returns_none() {
+        let candidates = &["r32float", "rg16float", "rgba32float", "r8unorm"];
+        assert_eq!(Renderer::negotiate_surface_format(candidates), None, "all unsupported → None");
+    }
+
+    #[test]
+    fn negotiate_surface_format_10_element_list_returns_first_preferred() {
+        let candidates = &[
+            "r8unorm", "rg8unorm", "rgba32float", "r16float", "rg16float",
+            "rgba16float", "r32float", "bgra8unorm-srgb", "rgba8unorm-srgb", "rg32float",
+        ];
+        assert_eq!(
+            Renderer::negotiate_surface_format(candidates),
+            Some("bgra8unorm-srgb"),
+            "10-element list: first preferred bgra8 at index 7 must win"
+        );
+    }
+
+    #[test]
+    fn negotiate_surface_format_srgb_preferred_over_linear_in_order() {
+        // sRGB format appears before a hypothetical linear-only format.
+        // The function returns the first match regardless of sRGB vs linear;
+        // this test documents that sRGB wins when it appears first.
+        let candidates = &["bgra8unorm-srgb", "bgra8unorm"];
+        assert_eq!(
+            Renderer::negotiate_surface_format(candidates),
+            Some("bgra8unorm-srgb"),
+            "sRGB listed first must be returned before linear variant"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: RenderTarget stub tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn render_target_default_sample_count_is_1() {
+        let rt = RenderTarget::default();
+        assert_eq!(rt.sample_count, 1, "default sample_count must be 1 (no MSAA)");
+    }
+
+    #[test]
+    fn render_target_zero_width_is_valid() {
+        let rt = RenderTarget { width: 0, height: 0, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
+        assert_eq!(rt.width, 0, "width=0 must be accepted for offscreen targets");
+        assert_eq!(rt.height, 0, "height=0 must be accepted for offscreen targets");
+    }
+
+    #[test]
+    fn render_target_clone_preserves_all_fields() {
+        let rt = RenderTarget { width: 1920, height: 1080, format: String::from("rgba8unorm-srgb"), sample_count: 4 };
+        let cloned = rt.clone();
+        assert_eq!(rt, cloned, "cloned RenderTarget must equal original");
+        assert_eq!(cloned.width, 1920);
+        assert_eq!(cloned.height, 1080);
+        assert_eq!(cloned.format, "rgba8unorm-srgb");
+        assert_eq!(cloned.sample_count, 4);
+    }
+
+    #[test]
+    fn render_target_matches_swapchain_config_dimensions() {
+        let sc = SwapchainConfig::default_for_size(1280, 720);
+        let rt = RenderTarget { width: sc.width, height: sc.height, format: sc.format.to_string(), sample_count: 1 };
+        assert_eq!(rt.width, sc.width, "RenderTarget width must match SwapchainConfig");
+        assert_eq!(rt.height, sc.height, "RenderTarget height must match SwapchainConfig");
+    }
+
+    #[test]
+    fn render_target_partial_eq_two_identical() {
+        let a = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
+        let b = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
+        assert_eq!(a, b, "two identical RenderTargets must be equal");
+    }
+
+    #[test]
+    fn render_target_different_sample_counts_not_equal() {
+        let a = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 1 };
+        let b = RenderTarget { width: 800, height: 600, format: String::from("bgra8unorm-srgb"), sample_count: 4 };
+        assert_ne!(a, b, "different sample_counts must make RenderTargets unequal");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: Pixel format utilities
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn format_is_srgb_bgra8unorm_srgb() {
+        assert!(format_is_srgb("bgra8unorm-srgb"), "bgra8unorm-srgb must be detected as sRGB");
+    }
+
+    #[test]
+    fn format_is_srgb_rgba8unorm_srgb() {
+        assert!(format_is_srgb("rgba8unorm-srgb"), "rgba8unorm-srgb must be detected as sRGB");
+    }
+
+    #[test]
+    fn format_is_srgb_linear_format_is_false() {
+        assert!(!format_is_srgb("bgra8unorm"), "linear bgra8unorm must not be sRGB");
+        assert!(!format_is_srgb("rgba8unorm"), "linear rgba8unorm must not be sRGB");
+    }
+
+    #[test]
+    fn format_is_srgb_depth_format_is_false() {
+        assert!(!format_is_srgb("depth32float"), "depth format must not be sRGB");
+    }
+
+    #[test]
+    fn format_is_depth_depth32float() {
+        assert!(format_is_depth("depth32float"), "depth32float must be detected as depth format");
+    }
+
+    #[test]
+    fn format_is_depth_depth24plus_stencil8() {
+        assert!(format_is_depth("depth24plus-stencil8"), "depth24plus-stencil8 must be detected as depth");
+    }
+
+    #[test]
+    fn format_is_depth_rgba8_is_false() {
+        assert!(!format_is_depth("rgba8unorm"), "rgba8unorm must not be a depth format");
+    }
+
+    #[test]
+    fn format_bytes_per_pixel_rgba8_is_4() {
+        assert_eq!(format_bytes_per_pixel("rgba8unorm"), Some(4), "rgba8 must be 4 bytes per pixel");
+    }
+
+    #[test]
+    fn format_bytes_per_pixel_bgra8srgb_is_4() {
+        assert_eq!(format_bytes_per_pixel("bgra8unorm-srgb"), Some(4), "bgra8unorm-srgb must be 4 bytes per pixel");
+    }
+
+    #[test]
+    fn format_bytes_per_pixel_rgba16_is_8() {
+        assert_eq!(format_bytes_per_pixel("rgba16float"), Some(8), "rgba16float must be 8 bytes per pixel");
+    }
+
+    #[test]
+    fn format_bytes_per_pixel_unknown_returns_none() {
+        assert_eq!(format_bytes_per_pixel("depth32float"), None, "depth32float has no pixel byte size");
+        assert_eq!(format_bytes_per_pixel("my_custom_format"), None, "unknown format returns None");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AM: Extended FrameStats tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn frame_stats_after_100_draw_calls_total_draws_100() {
+        let mut r = Renderer::new();
+        for _ in 0..100 {
+            r.begin_frame().unwrap();
+            r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
+            r.end_frame().unwrap();
+        }
+        assert_eq!(r.stats().quads_drawn, 100, "100 draw calls must yield total_draws=100");
+    }
+
+    #[test]
+    fn frame_stats_frame_count_100_after_100_end_frames() {
+        let mut r = Renderer::new();
+        for _ in 0..100 {
+            r.begin_frame().unwrap();
+            r.end_frame().unwrap();
+        }
+        assert_eq!(r.stats().frames, 100, "100 end_frames must yield frames=100");
+        assert_eq!(r.frame_count, 100);
+    }
+
+    #[test]
+    fn frame_stats_serialized_to_key_value_pairs() {
+        // Verify FrameStats fields can be formatted as key=value pairs.
+        let s = FrameStats { quads_drawn: 5, shadows_drawn: 2, frosted_drawn: 1, paths_drawn: 0, mono_sprites_drawn: 3, sprites_drawn: 4, underlines_drawn: 1, frames: 7 };
+        let kv = format!(
+            "quads={} shadows={} frosted={} paths={} mono_sprites={} sprites={} underlines={} frames={}",
+            s.quads_drawn, s.shadows_drawn, s.frosted_drawn, s.paths_drawn,
+            s.mono_sprites_drawn, s.sprites_drawn, s.underlines_drawn, s.frames
+        );
+        assert!(kv.contains("quads=5"), "serialized must contain quads=5, got: {kv}");
+        assert!(kv.contains("frames=7"), "serialized must contain frames=7, got: {kv}");
+        assert!(kv.contains("shadows=2"), "serialized must contain shadows=2, got: {kv}");
+    }
+
+    #[test]
+    fn frame_stats_two_empty_stats_merged_still_empty() {
+        let a = FrameStats::default();
+        let b = FrameStats::default();
+        // Manual merge: all counters are additive
+        let combined = FrameStats {
+            quads_drawn: a.quads_drawn + b.quads_drawn,
+            shadows_drawn: a.shadows_drawn + b.shadows_drawn,
+            frosted_drawn: a.frosted_drawn + b.frosted_drawn,
+            paths_drawn: a.paths_drawn + b.paths_drawn,
+            mono_sprites_drawn: a.mono_sprites_drawn + b.mono_sprites_drawn,
+            sprites_drawn: a.sprites_drawn + b.sprites_drawn,
+            underlines_drawn: a.underlines_drawn + b.underlines_drawn,
+            frames: a.frames + b.frames,
+        };
+        assert_eq!(combined.quads_drawn, 0, "merged empty stats quads_drawn = 0");
+        assert_eq!(combined.shadows_drawn, 0, "merged empty stats shadows_drawn = 0");
+        assert_eq!(combined.frames, 0, "merged empty stats frames = 0");
+    }
+
+    #[test]
+    fn frame_stats_quads_accumulate_across_frames_to_50() {
+        let mut r = Renderer::new();
+        for _ in 0..50 {
+            r.begin_frame().unwrap();
+            r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
+            r.end_frame().unwrap();
+        }
+        assert_eq!(r.stats().quads_drawn, 50, "50 single-quad frames must give quads_drawn=50");
+    }
+
+    #[test]
+    fn frame_stats_multi_primitive_accumulation_10_frames() {
+        let mut r = Renderer::new();
+        for _ in 0..10 {
+            let mut scene = Scene::new();
+            scene.push_shadow(crate::scene::Shadow::default());
+            scene.push_quad(crate::scene::Quad::default());
+            scene.push_path(crate::scene::Path::default());
+            r.draw(&mut scene);
+        }
+        assert_eq!(r.stats().frames, 10, "10 frames");
+        assert_eq!(r.stats().shadows_drawn, 10, "1 shadow per frame × 10 = 10");
+        assert_eq!(r.stats().quads_drawn, 10, "1 quad per frame × 10 = 10");
+        assert_eq!(r.stats().paths_drawn, 10, "1 path per frame × 10 = 10");
     }
 }
