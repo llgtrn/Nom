@@ -1,8 +1,28 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `8b11241` | **Tests:** 8957 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB complete. 0 clippy warnings. A 60%, B 76%, C 85%, D 99%.
+**Date:** 2026-04-19 | **HEAD:** `ed86222` | **Tests:** 9045 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC complete. 0 clippy warnings. A 62%, B 78%, C 87%, D 99%.
 
 ---
+
+## Iteration 74 — Wave ABC COMPLETE (HEAD ed86222, 9045 tests, 0 warnings)
+
+**10 parallel agents. ChartType + ColorSet/Typography + WidgetRegistry + IngestionPipeline + KindQuery + SceneBuilder + EvictionPolicy + NamingLinter + MergeStrategy + MetricsRegistry + 30 .nomx corpus.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| D2 visual tokens | ColorSet dark/light/oled + ThemeTokens | nom-theme |
+| D2 typography | FontFamily/FontSize/TypographyScale | nom-theme |
+| D1 WidgetRegistry | 35 WidgetKind variants (6 categories) + by_category/search | nom-panels |
+| C7 graphify charts | ChartType/DataSeries/ChartConfig/Chart | nom-canvas-core |
+| B3 ingestion | IngestionPipeline + LifecycleManager (merge/eliminate/evolve) | nom-intent |
+| A6 kind query | KindQueryClient + KindPromotion + KindStatus | nom-compiler-bridge |
+| C1 scene builder | SceneLayer + SceneBuilder begin_frame/sorted_layers | nom-gpui |
+| C9 eviction | EvictionPolicy (Lru/Lfu/Fifo/NoEviction) + PolicyConfig | nom-memoize |
+| D4 naming lint | NamingLinter check_snake_case/no_foreign_brand/length | nom-lint |
+| D4 merge CRDT | MergeStrategy enum + MergeRecord | nom-collab |
+| D5 telemetry OTel | Counter/Histogram/MetricsRegistry | nom-telemetry |
+| D3 golden +4 | ComponentPipeline/Counter/BM25/Ingestion golden path tests | nom-canvas-tests |
+| B2 corpus 70/100 | 30 more .nomx golden examples (archive_entry→websocket_connect) | examples/ |
 
 ## Iteration 73 — Wave ABB COMPLETE (HEAD 8b11241, 8957 tests, 0 warnings)
 

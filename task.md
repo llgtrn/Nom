@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `8b11241` | **Tests:** 8957 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB complete. A-axis ~60%, B-axis ~76%, C-axis ~85%, D-axis ~99%.
+**Date:** 2026-04-19 | **HEAD:** `ed86222` | **Tests:** 9045 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC complete. A-axis ~62%, B-axis ~78%, C-axis ~87%, D-axis ~99%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -200,18 +200,34 @@
 - ✅ nom-blocks — deeper workspace tests (+6)
 - ✅ nom-graph — real dispatch integration tests (+5)
 
-## Open Items — Wave ABC targets
+## Wave ABC (2026-04-19) — COMMITTED ✅ (HEAD ed86222, 9045 tests)
 
-- ❌ **B2 corpus** — 60 more .nomx corpus files (40/100 done)
+- ✅ D2 visual tokens — ColorSet dark/light/oled + ThemeTokens (nom-theme +16)
+- ✅ D2 typography — FontFamily/FontSize/TypographyScale (nom-theme shared)
+- ✅ D1 WidgetRegistry — 35 WidgetKind variants, 6 categories (+8)
+- ✅ C7 graphify charts — ChartType/DataSeries/ChartConfig/Chart (+8)
+- ✅ B3 ingestion — IngestionPipeline + LifecycleManager (+8)
+- ✅ A6 kind query — KindQueryClient + KindPromotion/KindStatus (+8)
+- ✅ C1 scene builder — SceneLayer + SceneBuilder (+8, nom-gpui)
+- ✅ C9 eviction — EvictionPolicy (Lru/Lfu/Fifo) + PolicyConfig (+6)
+- ✅ D4 naming lint — NamingLinter check_snake_case/no_foreign_brand (+8)
+- ✅ D4 merge CRDT — MergeStrategy + MergeRecord (+6, nom-collab)
+- ✅ D5 telemetry OTel — Counter/Histogram/MetricsRegistry (+13)
+- ✅ D3 golden +4 — 18 golden path tests total
+- ✅ B2 corpus 70/100 — 30 more .nomx files (archive_entry→websocket_connect)
+
+## Open Items — Wave ABD targets
+
+- ❌ **B2 corpus** — 30 more .nomx corpus files (70/100 done)
 - ❌ **A11 LLVM bitcode** — IR→LLVM bitcode, native binary
 - ❌ **C5 audio real** — rodio real encode (not just stub)
-- ❌ **D8 AF-FONT** — Libre Baskerville / Berkeley Mono font tokens
-- ❌ **D8 AF-THEME** — dark/light/oled theme token sets
-- ❌ **D1 ToolJet** — full 55-widget registry (16/55)
-- ❌ **D1 graphify** — chart types + Redux slice
-- ❌ **A3 ingestion** — Intent resolution pipeline + lifecycle transitions
+- ❌ **D1 ToolJet** — expand widget registry to 55 widgets (35/55)
 - ❌ **C9 build** — cargo build --all-features passes
 - ❌ **D3 more golden** — video-compose, document-compose demos
+- ❌ **A3 ingestion depth** — real body-only pipeline beyond stubs
+- ❌ **B6 MECE depth** — MeceCategory seeding from DB
+- ❌ **nom-editor deeper** — editor_view integration tests
+- ❌ **nom-canvas-core** — viewport snapping + spatial tests
 
 ---
 
