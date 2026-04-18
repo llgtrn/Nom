@@ -14,6 +14,7 @@ pub struct Selection {
 }
 
 impl Selection {
+    /// Creates an empty selection with no elements and a zeroed transform origin.
     pub fn empty() -> Self {
         Self {
             ids: BTreeSet::new(),
@@ -21,6 +22,7 @@ impl Selection {
         }
     }
 
+    /// Creates a selection containing a single element with the given transform origin.
     pub fn single(id: u64, origin: [f32; 2]) -> Self {
         let mut ids = BTreeSet::new();
         ids.insert(id);
@@ -30,27 +32,33 @@ impl Selection {
         }
     }
 
+    /// Returns `true` if no elements are selected.
     pub fn is_empty(&self) -> bool {
         self.ids.is_empty()
     }
 
+    /// Returns `true` if the given element ID is selected.
     pub fn contains(&self, id: u64) -> bool {
         self.ids.contains(&id)
     }
 
+    /// Adds an element ID to the selection (idempotent).
     pub fn add(&mut self, id: u64) {
         self.ids.insert(id);
     }
 
+    /// Removes an element ID from the selection (no-op if not present).
     pub fn remove(&mut self, id: u64) {
         self.ids.remove(&id);
     }
 
+    /// Clears all selected element IDs and resets the transform origin.
     pub fn clear(&mut self) {
         self.ids.clear();
         self.transform_origin = [0.0, 0.0];
     }
 
+    /// Returns the number of selected elements.
     pub fn len(&self) -> usize {
         self.ids.len()
     }
@@ -68,10 +76,12 @@ pub struct RubberBand {
 }
 
 impl RubberBand {
+    /// Creates a new zero-area rubber-band anchored at `start`.
     pub fn new(start: [f32; 2]) -> Self {
         Self { start, end: start }
     }
 
+    /// Updates the moving end-point as the user drags.
     pub fn update(&mut self, end: [f32; 2]) {
         self.end = end;
     }
@@ -107,13 +117,21 @@ impl RubberBand {
 /// The 9 handles drawn around a selected element (8 resize + 1 rotate).
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HandleKind {
+    /// Top-left resize handle.
     NW,
+    /// Top-centre resize handle.
     N,
+    /// Top-right resize handle.
     NE,
+    /// Middle-right resize handle.
     E,
+    /// Bottom-right resize handle.
     SE,
+    /// Bottom-centre resize handle.
     S,
+    /// Bottom-left resize handle.
     SW,
+    /// Middle-left resize handle.
     W,
     /// Rotate handle — rendered above the centre of the selection.
     Rotate,
@@ -121,7 +139,9 @@ pub enum HandleKind {
 
 /// A single transform handle with its canvas-space position.
 pub struct TransformHandle {
+    /// Which of the 9 handle positions this represents.
     pub kind: HandleKind,
+    /// Top-left corner of the 8×8 handle square in canvas space.
     pub position: [f32; 2],
 }
 

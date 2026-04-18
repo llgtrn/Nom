@@ -32,6 +32,29 @@ Per-crate test counts (agent-verified ~2,614 #[test] fns in source, task.md show
 - [ ] **AE15** — route nom-blocks drawing colors through nom_theme::tokens
 - [ ] **AE16** — standardize Hsla.h on 0-360 degrees throughout
 
+## Wave AH — Hybrid Composition System (2026-04-18, planned)
+**Spec:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
+
+Three tiers per request, resolved in order:
+1. **DB-driven** — `grammar.kinds` Complete entity → `BackendRegistry::dispatch_with_context()`
+2. **Provider-driven** — registered `MediaVendor` → `UnifiedDispatcher` with credential injection
+3. **AI-leading** — neither found → `AiGlueOrchestrator` generates `.nomx` glue; sandbox executes; `GlueCache` tracks; Transient→Partial→Complete promotion lifecycle
+
+Intent classification at front (`IntentResolver`: lexical scan → BM25 → `classify_with_react()`).
+Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestrator`.
+
+### Wave AH Targets
+- [ ] **AH-CTX** — `ComposeContext` / `ComposeResult` / `ComposeTier` in `nom-compose/src/context.rs`
+- [ ] **AH-DICTW** — `DictWriter` write side: `insert_partial_entry()` + `promote_to_complete()` in `nom-compiler-bridge`
+- [ ] **AH-CACHE** — `GlueCache` in `SharedState` + 60s promotion ticker
+- [ ] **AH-DISPATCH** — `UnifiedDispatcher`: `ProviderRouter` ↔ `BackendRegistry` bridge with credential injection
+- [ ] **AH-INTENT** — `IntentResolver`: lexical scan + BM25 + `classify_with_react()`
+- [ ] **AH-GLUE** — `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters)
+- [ ] **AH-HYBRID** — `HybridResolver` orchestrating Tier1→Tier2→Tier3
+- [ ] **AH-ORCH** — `ComposeOrchestrator` multi-kind parallel pipeline
+- [ ] **AH-DB-KINDS** — 14 initial `grammar.kinds` seed rows
+- [ ] **AH-UI** — Intent Preview + AI Review cards in `nom-panels/src/right/`
+
 ## Architecture
 
 - **Foundation:** nom-compiler (29 crates) — UNCHANGED, direct workspace deps

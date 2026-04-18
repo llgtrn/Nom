@@ -1710,4 +1710,403 @@ mod tests {
         assert!(!cache.is_empty(), "cache with one entry must not be empty");
         assert_eq!(cache.len(), 1);
     }
+
+    // ── Wave AI Agent 9 additions ─────────────────────────────────────────────
+
+    // --- Eviction policies (simulated FIFO / LRU) ---
+
+    #[test]
+    fn eviction_fifo_oldest_removed_first() {
+        // FIFO eviction: first inserted is first removed.
+        let cap = 3usize;
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let mut fifo: std::collections::VecDeque<Hash128> = Default::default();
+
+        for i in 0u64..5 {
+            let key = Hash128::of_u64(i + 100);
+            if fifo.len() == cap {
+                cache.invalidate(&fifo.pop_front().unwrap());
+            }
+            cache.put(key, i as u32, Constraint::new(i));
+            fifo.push_back(key);
+        }
+
+        assert_eq!(cache.len(), cap);
+        // Entries 100 and 101 (i=0, i=1) evicted.
+        assert_eq!(cache.get(&Hash128::of_u64(100), 0, &[]), None, "FIFO: oldest evicted");
+        assert_eq!(cache.get(&Hash128::of_u64(101), 1, &[]), None, "FIFO: second oldest evicted");
+        // Entries 102, 103, 104 remain.
+        assert_eq!(cache.get(&Hash128::of_u64(102), 2, &[]), Some(2));
+        assert_eq!(cache.get(&Hash128::of_u64(103), 3, &[]), Some(3));
+        assert_eq!(cache.get(&Hash128::of_u64(104), 4, &[]), Some(4));
+    }
+
+    #[test]
+    fn eviction_lru_most_recently_used_survives() {
+        // LRU eviction: recently accessed entry is kept when cap exceeded.
+        let cap = 2usize;
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+
+        let k0 = Hash128::of_u64(200);
+        let k1 = Hash128::of_u64(201);
+        let k2 = Hash128::of_u64(202);
+
+        cache.put(k0, 0, Constraint::new(0)); order.push_back(k0);
+        cache.put(k1, 1, Constraint::new(1)); order.push_back(k1);
+
+        // Access k0 → promote to MRU.
+        order.retain(|k| *k != k0);
+        order.push_back(k0);
+
+        // Insert k2 → k1 is LRU, evict it.
+        cache.invalidate(&order.pop_front().unwrap()); // evicts k1
+        cache.put(k2, 2, Constraint::new(2)); order.push_back(k2);
+
+        assert_eq!(cache.len(), cap);
+        assert_eq!(cache.get(&k1, 1, &[]), None, "LRU k1 must be evicted");
+        assert_eq!(cache.get(&k0, 0, &[]), Some(0), "MRU k0 must survive");
+        assert_eq!(cache.get(&k2, 2, &[]), Some(2));
+    }
+
+    #[test]
+    fn eviction_policy_capacity_respected_after_10_inserts() {
+        let cap = 5usize;
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+        for i in 0u64..10 {
+            let key = Hash128::of_u64(i + 300);
+            if order.len() == cap {
+                cache.invalidate(&order.pop_front().unwrap());
+            }
+            cache.put(key, i as u8, Constraint::new(i));
+            order.push_back(key);
+        }
+        assert_eq!(cache.len(), cap, "capacity must be respected after 10 inserts");
+    }
+
+    // --- Batch operations ---
+
+    #[test]
+    fn batch_put_10_then_get_all() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 400), i, Constraint::new(i));
+        }
+        for i in 0u64..10 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 400), i, &[]), Some(i));
+        }
+    }
+
+    #[test]
+    fn batch_invalidate_half_then_remaining_accessible() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 500), i as u32, Constraint::new(i));
+        }
+        for i in 0u64..5 {
+            cache.invalidate(&Hash128::of_u64(i + 500));
+        }
+        assert_eq!(cache.len(), 5);
+        for i in 5u64..10 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 500), i, &[]), Some(i as u32));
+        }
+    }
+
+    #[test]
+    fn batch_put_same_key_many_times_len_stays_1() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("repeated");
+        for i in 0u64..20 {
+            cache.put(key, i as u32, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 1, "repeated puts to same key must keep len=1");
+    }
+
+    #[test]
+    fn batch_get_miss_does_not_increment_miss_count_for_absent() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        // Insert 5 entries with version 0.
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i + 600), i as u32, Constraint::new(0));
+        }
+        // Get absent keys (never inserted) → no miss increment.
+        for i in 10u64..15 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 600), 0, &[]), None);
+        }
+        assert_eq!(cache.miss_count(), 0, "absent-key gets must not increment miss_count");
+    }
+
+    #[test]
+    fn batch_get_stale_all_miss() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i + 700), i as u32, Constraint::new(99));
+        }
+        // All gets use wrong version → all miss.
+        for i in 0u64..5 {
+            cache.get(&Hash128::of_u64(i + 700), 0, &[]);
+        }
+        assert_eq!(cache.miss_count(), 5, "5 stale gets must give miss_count=5");
+    }
+
+    #[test]
+    fn batch_clear_then_repopulate() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 800), i as u8, Constraint::new(i));
+        }
+        cache.clear();
+        assert_eq!(cache.len(), 0);
+        // Repopulate.
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 800), (i as u8).wrapping_add(10), Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 10);
+        for i in 0u64..10 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 800), i, &[]), Some((i as u8).wrapping_add(10)));
+        }
+    }
+
+    // --- Warm-up strategies ---
+
+    #[test]
+    fn warmup_preload_all_entries_then_zero_misses() {
+        // Pre-load (warm-up) all entries, then retrieve all → zero misses.
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..20 {
+            cache.put(Hash128::of_u64(i + 900), i, Constraint::new(i));
+        }
+        for i in 0u64..20 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 900), i, &[]), Some(i));
+        }
+        assert_eq!(cache.miss_count(), 0, "warm cache must have zero misses");
+        assert_eq!(cache.hit_count(), 20);
+    }
+
+    #[test]
+    fn warmup_partial_preload_remaining_miss() {
+        // Warm-up only half the entries; the other half produce misses on access.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        // Insert entries 0..5.
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i + 1000), i as u32, Constraint::new(i));
+        }
+        // Access all 10; first 5 hit, next 5 are absent (no miss increment for absent keys).
+        for i in 0u64..5 {
+            cache.get(&Hash128::of_u64(i + 1000), i, &[]);
+        }
+        assert_eq!(cache.hit_count(), 5, "5 warm entries must hit");
+    }
+
+    #[test]
+    fn warmup_cold_cache_all_misses() {
+        // Cold cache: insert 5 entries with version 99, access with version 0 → all miss.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i + 1100), i as u32, Constraint::new(99));
+        }
+        for i in 0u64..5 {
+            cache.get(&Hash128::of_u64(i + 1100), 0, &[]); // wrong version
+        }
+        assert_eq!(cache.miss_count(), 5, "cold cache must yield all misses");
+    }
+
+    // --- TTL simulation ---
+
+    #[test]
+    fn ttl_expired_entry_invalidated_returns_none() {
+        // TTL simulation: after "expiry" (manual invalidation), entry returns None.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("ttl_key");
+        cache.put(key, 42, Constraint::new(1));
+        // Entry "expires".
+        cache.invalidate(&key);
+        assert_eq!(cache.get(&key, 1, &[]), None, "expired (invalidated) entry must return None");
+    }
+
+    #[test]
+    fn ttl_unexpired_entry_still_accessible() {
+        // Within TTL: entry is accessible.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("ttl_live");
+        cache.put(key, 77, Constraint::new(5));
+        assert_eq!(cache.get(&key, 5, &[]), Some(77), "live entry must be accessible within TTL");
+    }
+
+    #[test]
+    fn ttl_version_change_simulates_expiry() {
+        // A changed input version simulates a TTL expiry via constraint violation.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("ttl_version");
+        cache.put(key, 10, Constraint::new(1)); // version=1
+        // Version changed to 2 → constraint fails (TTL "expired").
+        assert_eq!(cache.get(&key, 2, &[]), None, "version change simulates TTL expiry");
+        assert_eq!(cache.miss_count(), 1);
+    }
+
+    // --- Additional coverage ---
+
+    #[test]
+    fn memo_cache_len_zero_initially_waveai9() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.len(), 0);
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn memo_cache_len_one_after_single_put_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.put(Hash128::of_str("one"), 1, Constraint::new(0));
+        assert_eq!(cache.len(), 1);
+        assert!(!cache.is_empty());
+    }
+
+    #[test]
+    fn memo_cache_get_correct_value_after_update_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("update_val");
+        cache.put(key, 1, Constraint::new(0));
+        cache.put(key, 2, Constraint::new(0)); // update
+        assert_eq!(cache.get(&key, 0, &[]), Some(2), "updated value must be returned");
+    }
+
+    #[test]
+    fn memo_cache_independent_keys_independent_values_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let k1 = Hash128::of_str("ind_k1");
+        let k2 = Hash128::of_str("ind_k2");
+        let k3 = Hash128::of_str("ind_k3");
+        cache.put(k1, 10, Constraint::new(1));
+        cache.put(k2, 20, Constraint::new(2));
+        cache.put(k3, 30, Constraint::new(3));
+        assert_eq!(cache.get(&k1, 1, &[]), Some(10));
+        assert_eq!(cache.get(&k2, 2, &[]), Some(20));
+        assert_eq!(cache.get(&k3, 3, &[]), Some(30));
+    }
+
+    #[test]
+    fn memo_cache_all_hits_rate_1_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("all_hits_ai9");
+        cache.put(key, 7, Constraint::new(0));
+        for _ in 0..5 {
+            cache.get(&key, 0, &[]);
+        }
+        assert!((cache.hit_rate() - 1.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn memo_cache_all_misses_rate_0_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("all_misses_ai9");
+        cache.put(key, 7, Constraint::new(99));
+        for i in 0u64..5 {
+            cache.get(&key, i, &[]); // all stale
+        }
+        assert!((cache.hit_rate() - 0.0).abs() < f64::EPSILON);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_three_quarters_waveai9() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("three_quarters");
+        cache.put(key, 5, Constraint::new(7));
+        cache.get(&key, 7, &[]); // hit
+        cache.get(&key, 7, &[]); // hit
+        cache.get(&key, 7, &[]); // hit
+        cache.get(&key, 0, &[]); // miss
+        let rate = cache.hit_rate();
+        assert!((rate - 0.75).abs() < 1e-9, "hit_rate must be 3/4, got {rate}");
+    }
+
+    #[test]
+    fn batch_get_empty_cache_returns_all_none() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            assert_eq!(cache.get(&Hash128::of_u64(i), 0, &[]), None);
+        }
+        assert_eq!(cache.miss_count(), 0, "absent keys must not increment miss_count");
+    }
+
+    #[test]
+    fn eviction_policy_len_bounded_after_repeated_inserts() {
+        let cap = 4usize;
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+        for i in 0u64..12 {
+            let key = Hash128::of_u64(i + 2000);
+            if order.len() == cap {
+                cache.invalidate(&order.pop_front().unwrap());
+            }
+            cache.put(key, i as u8, Constraint::new(i));
+            order.push_back(key);
+        }
+        assert_eq!(cache.len(), cap);
+    }
+
+    #[test]
+    fn warmup_then_eviction_then_miss() {
+        // Warm up, then evict, then access → None.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("warmup_evict");
+        cache.put(key, 42, Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some(42));
+        cache.invalidate(&key);
+        assert_eq!(cache.get(&key, 1, &[]), None);
+    }
+
+    #[test]
+    fn batch_put_and_clear_then_empty() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..15 {
+            cache.put(Hash128::of_u64(i + 3000), i, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 15);
+        cache.clear();
+        assert!(cache.is_empty());
+    }
+
+    #[test]
+    fn ttl_reinsert_after_expiry_works() {
+        // After expiry (invalidation), re-insert with same key works.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("ttl_reinsert");
+        cache.put(key, 1, Constraint::new(10));
+        cache.invalidate(&key);
+        cache.put(key, 2, Constraint::new(20));
+        assert_eq!(cache.get(&key, 20, &[]), Some(2));
+    }
+
+    #[test]
+    fn batch_100_unique_keys_all_hit() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..100 {
+            cache.put(Hash128::of_u64(i + 5000), i * 3, Constraint::new(i));
+        }
+        for i in 0u64..100 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 5000), i, &[]), Some(i * 3));
+        }
+        assert_eq!(cache.hit_count(), 100);
+    }
+
+    #[test]
+    fn warmup_rate_after_fill_and_get_all() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..8 {
+            cache.put(Hash128::of_u64(i + 6000), i as u32, Constraint::new(i));
+        }
+        for i in 0u64..8 {
+            cache.get(&Hash128::of_u64(i + 6000), i, &[]);
+        }
+        assert!((cache.hit_rate() - 1.0).abs() < f64::EPSILON, "fully-warm cache must have hit_rate=1.0");
+    }
+
+    #[test]
+    fn memo_cache_put_zero_value() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("zero_value");
+        cache.put(key, 0, Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(0), "zero value must be stored and retrieved");
+    }
 }

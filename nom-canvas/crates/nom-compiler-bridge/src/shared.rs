@@ -1124,4 +1124,143 @@ mod tests {
         }
         assert!(state.pool_idle_count() <= 4);
     }
+
+    // ── AH8 additions ──────────────────────────────────────────────────────
+
+    /// Two threads update grammar kinds simultaneously; no panic, version >= 2.
+    #[test]
+    fn shared_state_grammar_kinds_update_thread_safe() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        let s1 = Arc::clone(&state);
+        let s2 = Arc::clone(&state);
+
+        let t1 = thread::spawn(move || {
+            for i in 0u32..5 {
+                s1.update_grammar_kinds(vec![GrammarKind {
+                    name: format!("t1_kind_{i}"),
+                    description: "thread1".into(),
+                }]);
+            }
+        });
+        let t2 = thread::spawn(move || {
+            for i in 0u32..5 {
+                s2.update_grammar_kinds(vec![GrammarKind {
+                    name: format!("t2_kind_{i}"),
+                    description: "thread2".into(),
+                }]);
+            }
+        });
+        t1.join().expect("thread 1 panicked");
+        t2.join().expect("thread 2 panicked");
+        // Both threads did 5 updates = 10 total; version must be >= 10.
+        assert!(state.grammar_version() >= 10, "version must be >= 10 after both threads complete");
+    }
+
+    /// borrow_reader returns a connection slot with the correct dict_path.
+    #[test]
+    fn shared_state_reader_pool_returns_connection() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("conn_test.db", "g.db"));
+        let slot = state.borrow_reader();
+        assert_eq!(slot.state.dict_path, "conn_test.db", "pool slot must point to the correct dict path");
+        state.return_reader(slot);
+    }
+
+    /// Pool holds at most MAX_POOL_SIZE (4) slots.
+    #[test]
+    fn shared_state_pool_max_4() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        // Borrow 8 slots, return them all — pool must not exceed 4.
+        let slots: Vec<_> = (0..8).map(|_| state.borrow_reader()).collect();
+        for slot in slots {
+            state.return_reader(slot);
+        }
+        assert!(state.pool_idle_count() <= 4, "pool must not exceed MAX_POOL_SIZE=4, got {}", state.pool_idle_count());
+    }
+
+    /// Borrow and return a slot 10 times — pool remains stable (no growth, no panic).
+    #[test]
+    fn shared_state_borrow_return_10_times_stable() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        for _ in 0..10 {
+            let slot = state.borrow_reader();
+            state.return_reader(slot);
+        }
+        // Pool must be stable: exactly 1 slot idle (first borrow creates, all returns go back).
+        assert!(state.pool_idle_count() <= 4, "pool must remain within bounds after 10 borrow/return cycles");
+    }
+
+    /// Grammar kinds can be filtered by kind name substring.
+    #[test]
+    fn shared_state_grammar_filter_by_kind_name() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "verb_run".into(), description: "run action".into() },
+            GrammarKind { name: "verb_stop".into(), description: "stop action".into() },
+            GrammarKind { name: "noun_item".into(), description: "thing".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        let verbs: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("verb")).collect();
+        assert_eq!(verbs.len(), 2, "filter by 'verb' prefix must yield 2 results");
+    }
+
+    /// Grammar kinds can be found by id (position / name match).
+    #[test]
+    fn shared_state_grammar_find_by_id() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "target_kind".into(), description: "the one we seek".into() },
+            GrammarKind { name: "other_kind".into(), description: "not the target".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        let found = kinds.iter().find(|k| k.name == "target_kind");
+        assert!(found.is_some(), "find by name must return the target kind");
+        assert_eq!(found.unwrap().description, "the one we seek");
+    }
+
+    /// dict_path is stored exactly as provided.
+    #[test]
+    fn shared_state_dict_path_stored() {
+        let state = SharedState::new("/custom/path/dict.db", "g.db");
+        assert_eq!(state.dict_path, "/custom/path/dict.db", "dict_path must be stored verbatim");
+    }
+
+    /// grammar_path is stored exactly as provided.
+    #[test]
+    fn shared_state_grammar_path_stored() {
+        let state = SharedState::new("d.db", "/custom/grammar.db");
+        assert_eq!(state.grammar_path, "/custom/grammar.db", "grammar_path must be stored verbatim");
+    }
+
+    /// Fresh SharedState has empty grammar kinds and version 0.
+    #[test]
+    fn shared_state_new_empty() {
+        let state = SharedState::new("x.db", "y.db");
+        assert!(state.cached_grammar_kinds().is_empty(), "new state must have no kinds");
+        assert_eq!(state.grammar_version(), 0, "new state must have version 0");
+    }
+
+    /// update_grammar_kinds replaces entire list; called twice replaces twice.
+    #[test]
+    fn shared_state_update_replaces_all() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "first_a".into(), description: "".into() },
+            GrammarKind { name: "first_b".into(), description: "".into() },
+        ]);
+        assert_eq!(state.cached_grammar_kinds().len(), 2);
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "second_a".into(), description: "".into() },
+            GrammarKind { name: "second_b".into(), description: "".into() },
+            GrammarKind { name: "second_c".into(), description: "".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        assert_eq!(kinds.len(), 3, "second update must replace first; 3 items expected");
+        assert!(kinds.iter().all(|k| k.name.starts_with("second")), "all items must be from second update");
+    }
 }

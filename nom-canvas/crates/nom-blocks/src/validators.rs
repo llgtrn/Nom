@@ -1,32 +1,47 @@
+//! Block validators — grammar derivation and slot-shape checks.
 #![deny(unsafe_code)]
 use crate::block_model::BlockModel;
 
 /// Span = Range<u32> byte offsets (exact yara-x type alias)
 pub type Span = std::ops::Range<u32>;
 
+/// Severity level of a validation diagnostic.
 #[derive(Clone, Debug, PartialEq)]
 pub enum Severity {
+    /// Hard error that must be fixed.
     Error,
+    /// Non-fatal warning.
     Warning,
+    /// Informational note.
     Info,
 }
 
+/// A source-span annotation attached to a [`ValidationError`].
 #[derive(Clone, Debug)]
 pub struct Label {
+    /// Byte span this label points to.
     pub span: Span,
+    /// Annotation text.
     pub message: String,
 }
 
+/// A structured validation diagnostic with span, severity, labels, and footers.
 #[derive(Clone, Debug)]
 pub struct ValidationError {
+    /// Byte span of the offending range.
     pub span: Span,
+    /// Primary error message.
     pub message: String,
+    /// Severity level.
     pub severity: Severity,
+    /// Inline span labels.
     pub labels: Vec<Label>,
+    /// Footer hints shown below the diagnostic.
     pub footers: Vec<String>,
 }
 
 impl ValidationError {
+    /// Construct an `Error`-severity diagnostic.
     pub fn error(span: Span, message: impl Into<String>) -> Self {
         Self {
             span,
@@ -36,6 +51,7 @@ impl ValidationError {
             footers: vec![],
         }
     }
+    /// Construct a `Warning`-severity diagnostic.
     pub fn warning(span: Span, message: impl Into<String>) -> Self {
         Self {
             span,
@@ -45,10 +61,12 @@ impl ValidationError {
             footers: vec![],
         }
     }
+    /// Attach a span label (builder pattern).
     pub fn with_label(mut self, label: Label) -> Self {
         self.labels.push(label);
         self
     }
+    /// Attach a footer hint (builder pattern).
     pub fn with_footer(mut self, footer: impl Into<String>) -> Self {
         self.footers.push(footer.into());
         self
@@ -60,8 +78,10 @@ mod sealed {
     pub trait Sealed {}
 }
 trait BlockValidatorInternal: sealed::Sealed {}
+/// Public trait for all block validators (sealed against external implementations).
 #[allow(private_bounds)]
 pub trait BlockValidator: BlockValidatorInternal {
+    /// Validate the given block against the dict and return any diagnostics.
     fn validate(
         &self,
         block: &BlockModel,
@@ -69,6 +89,7 @@ pub trait BlockValidator: BlockValidatorInternal {
     ) -> Vec<ValidationError>;
 }
 
+/// Validator that checks a block's entity kind is registered in the grammar dict.
 pub struct GrammarDerivationValidator;
 impl sealed::Sealed for GrammarDerivationValidator {}
 impl BlockValidatorInternal for GrammarDerivationValidator {}
@@ -92,6 +113,7 @@ impl BlockValidator for GrammarDerivationValidator {
     }
 }
 
+/// Validator that warns when a block sets a slot not declared in its kind's clause shapes.
 pub struct SlotShapeValidator;
 impl sealed::Sealed for SlotShapeValidator {}
 impl BlockValidatorInternal for SlotShapeValidator {}
@@ -118,6 +140,7 @@ impl BlockValidator for SlotShapeValidator {
     }
 }
 
+/// Run all validators on a block and return the combined list of diagnostics.
 pub fn validate_block(
     block: &BlockModel,
     dict: &dyn crate::dict_reader::DictReader,

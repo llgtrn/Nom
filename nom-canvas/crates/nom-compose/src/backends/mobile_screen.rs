@@ -179,4 +179,131 @@ mod tests {
         };
         assert!(MobileScreenBackend::compose(&invalid_size, &mut store, &LogProgressSink).is_err());
     }
+
+    #[test]
+    fn mobile_screen_compose_valid_dimensions() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 2400,
+            platform: "android".into(),
+            scale_factor: 2.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_compose_invalid_width_errors() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 0,
+            height: 1920,
+            platform: "ios".into(),
+            scale_factor: 3.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_err());
+    }
+
+    #[test]
+    fn mobile_screen_compose_invalid_height_errors() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 0,
+            platform: "android".into(),
+            scale_factor: 2.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_err());
+    }
+
+    #[test]
+    fn mobile_screen_compose_portrait_orientation() {
+        // Portrait: height > width.
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 1920,
+            platform: "android".into(),
+            scale_factor: 2.0,
+        };
+        assert!(spec.height > spec.width);
+        let mut store = InMemoryStore::new();
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_compose_landscape_orientation() {
+        // Landscape: width > height.
+        let spec = MobileScreenSpec {
+            width: 1920,
+            height: 1080,
+            platform: "ios".into(),
+            scale_factor: 2.0,
+        };
+        assert!(spec.width > spec.height);
+        let mut store = InMemoryStore::new();
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_platform_ios_valid() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1170,
+            height: 2532,
+            platform: "ios".into(),
+            scale_factor: 3.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_platform_android_valid() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 2340,
+            platform: "android".into(),
+            scale_factor: 2.75,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_platform_unknown_errors() {
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1280,
+            height: 800,
+            platform: "windows_phone".into(),
+            scale_factor: 1.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_err());
+    }
+
+    #[test]
+    fn mobile_screen_dpi_positive() {
+        // scale_factor must produce positive logical dimensions.
+        let spec = MobileScreenSpec {
+            width: 1080,
+            height: 1920,
+            platform: "android".into(),
+            scale_factor: 3.0,
+        };
+        let (lw, lh) = spec.logical_size();
+        assert!(lw > 0);
+        assert!(lh > 0);
+    }
+
+    #[test]
+    fn mobile_screen_format_png_valid() {
+        // Compose succeeds for a standard high-density iOS spec (format is implicit PNG artifact).
+        let mut store = InMemoryStore::new();
+        let spec = MobileScreenSpec {
+            width: 1242,
+            height: 2208,
+            platform: "ios".into(),
+            scale_factor: 3.0,
+        };
+        assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
 }

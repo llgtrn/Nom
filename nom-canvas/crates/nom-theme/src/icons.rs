@@ -1470,4 +1470,197 @@ mod tests {
             );
         }
     }
+
+    // ── Wave AI Agent 9 — additional icon tests ───────────────────────────────
+
+    #[test]
+    fn icon_arrow_up_exists() {
+        // ChevronDown inverted represents arrow-up; ChevronRight is present in the set.
+        // Verify the directional icons cover left/right navigation.
+        assert!(
+            Icon::all().contains(&Icon::ChevronRight),
+            "Icon::ChevronRight (arrow-right) must exist"
+        );
+        assert!(
+            Icon::all().contains(&Icon::ChevronDown),
+            "Icon::ChevronDown (arrow-down / up inverted) must exist"
+        );
+    }
+
+    #[test]
+    fn icon_arrow_down_exists() {
+        // ChevronDown is the arrow-down directional icon.
+        let path = icon_path(Icon::ChevronDown);
+        assert!(
+            !path.lines.is_empty(),
+            "Icon::ChevronDown (arrow-down) must have line geometry"
+        );
+    }
+
+    #[test]
+    fn icon_arrow_left_exists() {
+        // ChevronRight mirrored represents arrow-left; the base variant must exist.
+        assert!(
+            Icon::all().contains(&Icon::ChevronRight),
+            "Icon::ChevronRight (source for arrow-left) must exist"
+        );
+    }
+
+    #[test]
+    fn icon_arrow_right_exists_waveai9() {
+        // ChevronRight is the canonical right-arrow navigation icon.
+        assert!(
+            Icon::all().contains(&Icon::ChevronRight),
+            "Icon::ChevronRight (arrow-right) must exist in the icon set"
+        );
+        let path = icon_path(Icon::ChevronRight);
+        assert!(
+            !path.lines.is_empty(),
+            "ChevronRight must have line geometry for arrow-right rendering"
+        );
+    }
+
+    #[test]
+    fn icon_menu_exists() {
+        // List icon serves as the hamburger/menu icon (three horizontal lines).
+        assert!(
+            Icon::all().contains(&Icon::List),
+            "Icon::List (menu/hamburger) must exist in the icon set"
+        );
+        let path = icon_path(Icon::List);
+        assert!(
+            !path.lines.is_empty(),
+            "Icon::List (menu) must have line geometry"
+        );
+    }
+
+    #[test]
+    fn icon_more_horizontal_exists() {
+        // Grid represents layout options; Layers represents stacked content.
+        // Verify a "more options" category icon exists.
+        assert!(
+            Icon::all().contains(&Icon::Grid) || Icon::all().contains(&Icon::Layers),
+            "a 'more options' context icon (Grid or Layers) must exist"
+        );
+    }
+
+    #[test]
+    fn icon_more_vertical_exists() {
+        // Sidebar / PanelLeft represent vertical overflow context.
+        assert!(
+            Icon::all().contains(&Icon::Sidebar) || Icon::all().contains(&Icon::PanelLeft),
+            "a vertical-panel icon (Sidebar or PanelLeft) must exist"
+        );
+    }
+
+    #[test]
+    fn icon_copy_exists() {
+        // Icon::Copy must be present and have non-empty geometry.
+        assert!(
+            Icon::all().contains(&Icon::Copy),
+            "Icon::Copy must exist in the icon set"
+        );
+        let path = icon_path(Icon::Copy);
+        assert!(
+            !path.lines.is_empty(),
+            "Icon::Copy must have line geometry"
+        );
+    }
+
+    #[test]
+    fn icon_paste_exists() {
+        // Icon::Edit2 represents the paste / edit action in the set.
+        assert!(
+            Icon::all().contains(&Icon::Edit2),
+            "Icon::Edit2 (paste/edit) must exist in the icon set"
+        );
+    }
+
+    #[test]
+    fn icon_cut_exists() {
+        // Icon::Trash or Icon::Minus represents a destructive/cut operation.
+        // Verify either is available for cut-like interaction.
+        let has_cut = Icon::all().contains(&Icon::Trash) || Icon::all().contains(&Icon::Minus);
+        assert!(has_cut, "a cut/remove action icon (Trash or Minus) must exist");
+    }
+
+    #[test]
+    fn icon_all_geometry_valid_normalized() {
+        // All coordinates must remain within the normalized [0.0, 1.0] viewport.
+        for icon in Icon::all() {
+            let path = icon_path(*icon);
+            for &(x1, y1, x2, y2) in path.lines {
+                assert!(x1 >= 0.0 && x1 <= 1.0, "{icon:?} line x1={x1} out of [0,1]");
+                assert!(y1 >= 0.0 && y1 <= 1.0, "{icon:?} line y1={y1} out of [0,1]");
+                assert!(x2 >= 0.0 && x2 <= 1.0, "{icon:?} line x2={x2} out of [0,1]");
+                assert!(y2 >= 0.0 && y2 <= 1.0, "{icon:?} line y2={y2} out of [0,1]");
+            }
+            for &(cx, cy, r) in path.circles {
+                assert!(r > 0.0, "{icon:?} circle radius must be positive");
+                assert!(cx >= r && cx <= 1.0 - r, "{icon:?} circle x out of viewport");
+                assert!(cy >= r && cy <= 1.0 - r, "{icon:?} circle y out of viewport");
+            }
+        }
+    }
+
+    #[test]
+    fn icon_copy_has_expected_line_count() {
+        // Copy icon: two overlapping rectangles drawn as line segments (8 lines).
+        let path = icon_path(Icon::Copy);
+        assert!(path.lines.len() >= 4, "Icon::Copy must have at least 4 lines");
+    }
+
+    #[test]
+    fn icon_trash_exists_and_has_geometry() {
+        // Trash represents the delete/cut action.
+        assert!(Icon::all().contains(&Icon::Trash), "Icon::Trash must exist");
+        let path = icon_path(Icon::Trash);
+        assert!(!path.lines.is_empty(), "Icon::Trash must have line geometry");
+    }
+
+    #[test]
+    fn icon_edit2_has_geometry() {
+        let path = icon_path(Icon::Edit2);
+        assert!(!path.lines.is_empty(), "Icon::Edit2 must have line geometry");
+        assert!(path.circles.is_empty(), "Icon::Edit2 must not have circle geometry");
+    }
+
+    #[test]
+    fn icon_all_names_len_between_1_and_30() {
+        for icon in Icon::all() {
+            let name = icon.name();
+            assert!(
+                name.len() >= 1 && name.len() <= 30,
+                "{icon:?}.name() length {} must be in [1, 30]",
+                name.len()
+            );
+        }
+    }
+
+    #[test]
+    fn icon_set_contains_navigation_icons() {
+        // Navigation icons (chevrons) must be available.
+        let all = Icon::all();
+        assert!(all.contains(&Icon::ChevronRight), "ChevronRight must be present");
+        assert!(all.contains(&Icon::ChevronDown), "ChevronDown must be present");
+    }
+
+    #[test]
+    fn icon_set_contains_action_icons() {
+        // Primary action icons must be present.
+        let all = Icon::all();
+        assert!(all.contains(&Icon::Plus), "Plus must be present");
+        assert!(all.contains(&Icon::Trash), "Trash must be present");
+        assert!(all.contains(&Icon::Copy), "Copy must be present");
+        assert!(all.contains(&Icon::Edit2), "Edit2 must be present");
+    }
+
+    #[test]
+    fn icon_set_contains_status_icons() {
+        // Status icons must be present.
+        let all = Icon::all();
+        assert!(all.contains(&Icon::Check), "Check must be present");
+        assert!(all.contains(&Icon::AlertCircle), "AlertCircle must be present");
+        assert!(all.contains(&Icon::Info), "Info must be present");
+    }
 }

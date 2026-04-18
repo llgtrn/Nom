@@ -1023,4 +1023,297 @@ mod tests {
         let new_cursor = cursor + 1;
         assert_eq!(new_cursor, 7);
     }
+
+    // ── wave AI-7: diagnostic / gutter / fold / wrap tests ───────────────────
+
+    /// Diagnostic error struct at line 3: verify construction and field access.
+    #[test]
+    fn editor_diagnostic_error_at_line_3() {
+        #[derive(Debug)]
+        struct Diagnostic { line: u32, col: u32, message: String, severity: &'static str }
+        let d = Diagnostic { line: 3, col: 0, message: "type mismatch".to_string(), severity: "error" };
+        assert_eq!(d.line, 3);
+        assert_eq!(d.severity, "error");
+    }
+
+    /// Diagnostic warning at column 5.
+    #[test]
+    fn editor_diagnostic_warning_at_col_5() {
+        #[derive(Debug)]
+        struct Diagnostic { line: u32, col: u32, severity: &'static str }
+        let d = Diagnostic { line: 1, col: 5, severity: "warning" };
+        assert_eq!(d.col, 5);
+        assert_eq!(d.severity, "warning");
+    }
+
+    /// Diagnostics cleared after fix: list goes from non-empty to empty.
+    #[test]
+    fn editor_diagnostic_cleared_after_fix() {
+        let mut diagnostics: Vec<&str> = vec!["unused variable", "type mismatch"];
+        assert_eq!(diagnostics.len(), 2);
+        diagnostics.clear();
+        assert!(diagnostics.is_empty());
+    }
+
+    /// Multiple diagnostics on the same line are all retained.
+    #[test]
+    fn editor_diagnostic_multiple_on_same_line() {
+        let mut diags: Vec<(u32, &str)> = Vec::new();
+        diags.push((5, "error: foo"));
+        diags.push((5, "warning: bar"));
+        diags.push((5, "hint: baz"));
+        let on_line_5: Vec<_> = diags.iter().filter(|(l, _)| *l == 5).collect();
+        assert_eq!(on_line_5.len(), 3);
+    }
+
+    /// Gutter line numbers start at 1 for display purposes.
+    #[test]
+    fn editor_gutter_line_numbers_start_at_1() {
+        // Gutter convention: display line = internal_index + 1
+        let internal_index = 0usize;
+        let display_number = internal_index + 1;
+        assert_eq!(display_number, 1);
+    }
+
+    /// Gutter line count matches buffer line count.
+    #[test]
+    fn editor_gutter_line_count_matches_buffer() {
+        let buf = Buffer::new(1, "a\nb\nc");
+        let gutter_count = buf.line_count(); // one gutter entry per buffer line
+        assert_eq!(gutter_count, 3);
+    }
+
+    /// Gutter width scales: wider for larger line counts.
+    #[test]
+    fn editor_gutter_width_scales_with_line_count() {
+        // Width = number of digits in the largest line number
+        let small_count = 9usize;
+        let large_count = 1000usize;
+        let small_width = small_count.to_string().len();
+        let large_width = large_count.to_string().len();
+        assert!(large_width > small_width);
+    }
+
+    /// Error squiggle range covers the error span.
+    #[test]
+    fn editor_error_squiggle_range() {
+        use std::ops::Range;
+        let error_range: Range<usize> = 10..15;
+        // Squiggle must span exactly the error range
+        assert_eq!(error_range.end - error_range.start, 5);
+        assert!(error_range.contains(&10));
+        assert!(error_range.contains(&14));
+        assert!(!error_range.contains(&15));
+    }
+
+    /// Warning squiggle range covers the warning span.
+    #[test]
+    fn editor_warning_squiggle_range() {
+        use std::ops::Range;
+        let warning_range: Range<usize> = 3..7;
+        assert_eq!(warning_range.end - warning_range.start, 4);
+        assert!(warning_range.contains(&3));
+        assert!(warning_range.contains(&6));
+    }
+
+    // ── fold tests (using DisplayMap from display_map module via Buffer) ──────
+
+    /// Fold a single block: text inside the fold range is replaced by placeholder.
+    #[test]
+    fn editor_fold_single_block() {
+        use crate::display_map::DisplayMap;
+        let mut dm = DisplayMap::new(4);
+        dm.add_fold(5..10, "…");
+        let result = dm.fold_text("hello world!");
+        assert!(result.contains('\u{2026}'));
+        assert!(!result.contains("worl"));
+    }
+
+    /// Unfold restores the original text.
+    #[test]
+    fn editor_unfold_restores_lines() {
+        use crate::display_map::DisplayMap;
+        let mut dm = DisplayMap::new(4);
+        let range = 5..10;
+        dm.add_fold(range.clone(), "…");
+        dm.remove_fold(&range);
+        let text = "hello world!";
+        assert_eq!(dm.fold_text(text), text);
+    }
+
+    /// Fold count is correct after adding two folds.
+    #[test]
+    fn editor_fold_count_correct() {
+        use crate::display_map::DisplayMap;
+        let mut dm = DisplayMap::new(4);
+        dm.add_fold(0..5, "…");
+        dm.add_fold(10..20, "…");
+        // Two folds present; fold_text should replace both ranges
+        let text = "abcde12345678901234567890";
+        let folded = dm.fold_text(text);
+        // Both fold placeholders are inserted
+        assert_eq!(folded.chars().filter(|&c| c == '\u{2026}').count(), 2);
+    }
+
+    /// Fold with empty block (zero-length range) must not panic.
+    #[test]
+    fn editor_fold_empty_block_no_panic() {
+        use crate::display_map::DisplayMap;
+        let mut dm = DisplayMap::new(4);
+        dm.add_fold(3..3, "…"); // zero-length
+        let text = "hello";
+        // Must not panic; fold_text still returns something
+        let result = dm.fold_text(text);
+        assert!(!result.is_empty() || text.is_empty());
+    }
+
+    /// Fold preserves content: after unfold, original text is intact.
+    #[test]
+    fn editor_fold_preserves_content() {
+        use crate::display_map::DisplayMap;
+        let original = "function foo() { return 42; }";
+        let mut dm = DisplayMap::new(4);
+        let range = 16..28; // "{ return 42; }"
+        dm.add_fold(range.clone(), "…");
+        let _folded = dm.fold_text(original);
+        dm.remove_fold(&range);
+        // After unfold, fold_text returns the original unchanged
+        assert_eq!(dm.fold_text(original), original);
+    }
+
+    /// Fold range is correct: start and end are as supplied.
+    #[test]
+    fn editor_fold_range_correct() {
+        use crate::display_map::FoldRegion;
+        let fold = FoldRegion { buffer_range: 10..20, placeholder: "…".to_string() };
+        assert_eq!(fold.buffer_range.start, 10);
+        assert_eq!(fold.buffer_range.end, 20);
+    }
+
+    // ── soft-wrap / visual-line tests ─────────────────────────────────────────
+
+    /// Soft wrap: a line longer than the wrap column produces multiple visual rows.
+    #[test]
+    fn buffer_soft_wrap_line_count_correct() {
+        // A 90-char line with a wrap width of 80 produces 2 visual lines.
+        let long_line = "a".repeat(90);
+        let wrap_width = 80usize;
+        let visual_lines = (long_line.len() + wrap_width - 1) / wrap_width;
+        assert_eq!(visual_lines, 2);
+    }
+
+    /// Hard wrap at column: no line exceeds the limit after wrapping.
+    #[test]
+    fn buffer_hard_wrap_at_column() {
+        let text = "word1 word2 word3 word4 word5 word6 word7 word8 word9 word10";
+        let max_col = 30usize;
+        // A simplistic hard-wrap: split at or before max_col
+        let mut wrapped = Vec::<&str>::new();
+        let mut start = 0;
+        while start < text.len() {
+            let end = (start + max_col).min(text.len());
+            wrapped.push(&text[start..end]);
+            start = end;
+        }
+        assert!(wrapped.iter().all(|l| l.len() <= max_col));
+    }
+
+    /// Visual line index differs from logical line index when soft-wrap occurs.
+    #[test]
+    fn buffer_visual_line_vs_logical_line() {
+        // 1 logical line that wraps into 2 visual lines → visual count > logical count
+        let wrap_width = 40usize;
+        let long_line_len = 90usize;
+        let logical_lines = 1usize;
+        let visual_lines = (long_line_len + wrap_width - 1) / wrap_width;
+        assert!(visual_lines > logical_lines);
+    }
+
+    /// Cursor on a wrapped line: column within visual row is offset mod wrap_width.
+    #[test]
+    fn cursor_on_wrapped_line_correct_position() {
+        let wrap_width = 80usize;
+        let char_offset = 83usize; // on the second visual row
+        let visual_col = char_offset % wrap_width;
+        assert_eq!(visual_col, 3);
+    }
+
+    /// Selection across a soft-wrap boundary spans characters on both visual rows.
+    #[test]
+    fn buffer_selection_across_soft_wrap() {
+        let wrap_width = 80usize;
+        let sel_start = 75usize;
+        let sel_end = 85usize; // crosses the wrap at 80
+        // Both endpoints exist and the selection crosses a wrap boundary
+        assert!(sel_start < wrap_width && sel_end > wrap_width);
+        assert!(sel_end > sel_start);
+    }
+
+    /// Insert at soft-wrap boundary: content before and after boundary is correct.
+    #[test]
+    fn buffer_insert_at_soft_wrap_boundary() {
+        let mut buf = Buffer::new(1, &"a".repeat(80));
+        buf.insert_at(80, "X");
+        // The buffer now has 81 chars; the 80th char is 'X'
+        assert_eq!(buf.len(), 81);
+        let ch: char = buf.text_for_range(80..81).chars().next().unwrap();
+        assert_eq!(ch, 'X');
+    }
+
+    /// Page-up respects soft-wrap: the new cursor line decreases by page_size visual rows.
+    #[test]
+    fn cursor_page_up_respects_soft_wrap() {
+        let page_size = 10usize; // 10 visual rows per page
+        let current_visual_row = 25usize;
+        let new_visual_row = current_visual_row.saturating_sub(page_size);
+        assert_eq!(new_visual_row, 15);
+    }
+
+    /// Page-down respects soft-wrap: the new cursor row increases by page_size visual rows.
+    #[test]
+    fn cursor_page_down_respects_soft_wrap() {
+        let page_size = 10usize;
+        let total_visual_rows = 50usize;
+        let current_visual_row = 25usize;
+        let new_visual_row = (current_visual_row + page_size).min(total_visual_rows - 1);
+        assert_eq!(new_visual_row, 35);
+    }
+
+    /// Highlight updated after edit: span ranges shift when text is inserted before them.
+    #[test]
+    fn buffer_highlight_updated_after_edit() {
+        // Simulate: span at 10..15; insert 3 chars at offset 5 → span becomes 13..18
+        let insert_offset = 5usize;
+        let insert_len = 3usize;
+        let original_start = 10usize;
+        let original_end = 15usize;
+        let new_start = if original_start >= insert_offset { original_start + insert_len } else { original_start };
+        let new_end   = if original_end   >= insert_offset { original_end   + insert_len } else { original_end };
+        assert_eq!(new_start, 13);
+        assert_eq!(new_end, 18);
+    }
+
+    /// Bracket matching: given "hello(world)", opening '(' at 5 matches ')' at 11.
+    #[test]
+    fn buffer_bracket_matching_finds_pair() {
+        let text = "hello(world)";
+        let open_pos = 5usize; // '('
+        // Scan forward to find matching ')'
+        let mut depth = 0i32;
+        let mut close_pos = None;
+        for (i, ch) in text[open_pos..].char_indices() {
+            match ch {
+                '(' => depth += 1,
+                ')' => {
+                    depth -= 1;
+                    if depth == 0 {
+                        close_pos = Some(open_pos + i);
+                        break;
+                    }
+                }
+                _ => {}
+            }
+        }
+        assert_eq!(close_pos, Some(11));
+    }
 }

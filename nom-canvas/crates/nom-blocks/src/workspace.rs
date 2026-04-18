@@ -1,3 +1,4 @@
+//! Workspace — the root container for all blocks, nodes, and connectors.
 #![deny(unsafe_code)]
 use crate::block_model::{BlockId, BlockModel, NomtuRef};
 use crate::connector::{Connector, ConnectorId};
@@ -5,14 +6,19 @@ use crate::graph_node::{GraphNode, NodeId};
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 
+/// A heterogeneous canvas object: block, node, or connector.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum CanvasObject {
+    /// A document block.
     Block(BlockModel),
+    /// A graph node.
     Node(GraphNode),
+    /// A connector wire.
     Connector(Connector),
 }
 
 impl CanvasObject {
+    /// Return the [`NomtuRef`] for Block or Node variants. Panics for Connector.
     pub fn entity(&self) -> &NomtuRef {
         match self {
             CanvasObject::Block(b) => &b.entity,
@@ -24,43 +30,56 @@ impl CanvasObject {
     }
 }
 
+/// Root container for a NomCanvas document — blocks, nodes, connectors, and doc-tree order.
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct Workspace {
+    /// All blocks keyed by [`BlockId`].
     pub blocks: HashMap<BlockId, BlockModel>,
+    /// All graph nodes keyed by [`NodeId`].
     pub nodes: HashMap<NodeId, GraphNode>,
+    /// All connectors keyed by [`ConnectorId`].
     pub connectors: HashMap<ConnectorId, Connector>,
+    /// Ordered list of top-level block IDs (document tree).
     pub doc_tree: Vec<BlockId>,
 }
 
 impl Workspace {
+    /// Construct an empty workspace.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Add a block and append its ID to `doc_tree`.
     pub fn insert_block(&mut self, block: BlockModel) {
         self.doc_tree.push(block.id.clone());
         self.blocks.insert(block.id.clone(), block);
     }
 
+    /// Add a graph node to the workspace.
     pub fn insert_node(&mut self, node: GraphNode) {
         self.nodes.insert(node.id.clone(), node);
     }
 
+    /// Add a connector to the workspace.
     pub fn insert_connector(&mut self, connector: Connector) {
         self.connectors.insert(connector.id.clone(), connector);
     }
 
+    /// Remove a block by ID, also removing it from `doc_tree`. Returns the block if found.
     pub fn remove_block(&mut self, id: &str) -> Option<BlockModel> {
         self.doc_tree.retain(|bid| bid != id);
         self.blocks.remove(id)
     }
 
+    /// Number of blocks currently in the workspace.
     pub fn block_count(&self) -> usize {
         self.blocks.len()
     }
+    /// Number of graph nodes currently in the workspace.
     pub fn node_count(&self) -> usize {
         self.nodes.len()
     }
+    /// Number of connectors currently in the workspace.
     pub fn connector_count(&self) -> usize {
         self.connectors.len()
     }
@@ -382,6 +401,152 @@ mod tests {
                 ws.blocks.get(&format!("b{i}")).unwrap().flavour,
                 *flavour
             );
+        }
+    }
+
+    // ── wave AI: new workspace tests ────────────────────────────────────────────
+
+    #[test]
+    fn workspace_new_is_empty() {
+        let ws = Workspace::new();
+        assert_eq!(ws.block_count(), 0);
+        assert_eq!(ws.node_count(), 0);
+        assert_eq!(ws.connector_count(), 0);
+        assert!(ws.doc_tree.is_empty());
+    }
+
+    #[test]
+    fn workspace_add_block_increments_count() {
+        let mut ws = Workspace::new();
+        assert_eq!(ws.block_count(), 0);
+        ws.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert_eq!(ws.block_count(), 1);
+        ws.insert_block(BlockModel::new(
+            "b2",
+            NomtuRef::new("e2", "x", "verb"),
+            "affine:paragraph",
+        ));
+        assert_eq!(ws.block_count(), 2);
+    }
+
+    #[test]
+    fn workspace_remove_block_decrements_count() {
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert_eq!(ws.block_count(), 1);
+        ws.remove_block("b1");
+        assert_eq!(ws.block_count(), 0);
+    }
+
+    #[test]
+    fn workspace_get_block_by_id_returns_correct() {
+        let mut ws = Workspace::new();
+        let entity = NomtuRef::new("eid", "find", "verb");
+        ws.insert_block(BlockModel::new("find-me", entity, "affine:note"));
+        let block = ws.blocks.get("find-me");
+        assert!(block.is_some());
+        assert_eq!(block.unwrap().entity.word, "find");
+    }
+
+    #[test]
+    fn workspace_get_nonexistent_block_returns_none() {
+        let ws = Workspace::new();
+        assert!(ws.blocks.get("does-not-exist").is_none());
+    }
+
+    #[test]
+    fn workspace_add_connector_increments_count() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        assert_eq!(ws.connector_count(), 0);
+        let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c-new".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        ws.insert_connector(conn);
+        assert_eq!(ws.connector_count(), 1);
+    }
+
+    #[test]
+    fn workspace_blocks_list_nonempty_after_add() {
+        let mut ws = Workspace::new();
+        ws.insert_block(BlockModel::new(
+            "b1",
+            NomtuRef::new("e1", "w", "verb"),
+            "affine:paragraph",
+        ));
+        assert!(!ws.blocks.is_empty());
+        assert!(ws.blocks.contains_key("b1"));
+    }
+
+    #[test]
+    fn workspace_connectors_list_nonempty_after_add() {
+        let mut ws = Workspace::new();
+        let dict = crate::stub_dict::StubDictReader::new();
+        let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c1".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        ws.insert_connector(conn);
+        assert!(!ws.connectors.is_empty());
+        assert!(ws.connectors.contains_key("c1"));
+    }
+
+    #[test]
+    fn workspace_clear_removes_all() {
+        let mut ws = Workspace::new();
+        for i in 0..3u8 {
+            ws.insert_block(BlockModel::new(
+                format!("b{i}"),
+                NomtuRef::new(format!("e{i}"), "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        assert_eq!(ws.block_count(), 3);
+        // Manual clear: remove each block
+        for i in 0..3u8 {
+            ws.remove_block(&format!("b{i}"));
+        }
+        assert_eq!(ws.block_count(), 0);
+        assert!(ws.doc_tree.is_empty());
+    }
+
+    #[test]
+    fn workspace_block_ids_unique() {
+        let mut ws = Workspace::new();
+        let ids = ["uid-1", "uid-2", "uid-3", "uid-4"];
+        for id in &ids {
+            ws.insert_block(BlockModel::new(
+                *id,
+                NomtuRef::new(*id, "w", "verb"),
+                "affine:paragraph",
+            ));
+        }
+        // All IDs must map to distinct entries
+        assert_eq!(ws.block_count(), ids.len());
+        let mut seen = std::collections::HashSet::new();
+        for id in &ids {
+            assert!(seen.insert(*id), "duplicate id: {id}");
         }
     }
 }

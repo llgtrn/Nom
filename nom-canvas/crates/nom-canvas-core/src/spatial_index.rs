@@ -11,7 +11,9 @@ use crate::elements::ElementBounds;
 /// Thin wrapper around `ElementBounds` that satisfies rstar's `RTreeObject`
 /// and `PointDistance` traits.
 pub struct CanvasElementEnvelope {
+    /// Element identifier.
     pub id: u64,
+    /// Axis-aligned bounding box stored in the R-tree.
     pub aabb: AABB<[f32; 2]>,
 }
 
@@ -44,6 +46,7 @@ pub struct SpatialIndex {
 }
 
 impl SpatialIndex {
+    /// Creates a new empty spatial index.
     pub fn new() -> Self {
         Self { tree: RTree::new() }
     }

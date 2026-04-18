@@ -16,6 +16,7 @@ pub struct Viewport {
 }
 
 impl Viewport {
+    /// Creates a new viewport at zoom=1.0, pan=[0,0] with the given screen dimensions.
     pub fn new(width: f32, height: f32) -> Self {
         Self {
             zoom: 1.0,
@@ -1254,5 +1255,63 @@ mod tests {
         let m = vp.to_scene_transform();
         assert!((m[0][0] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[0][0]);
         assert!((m[1][1] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[1][1]);
+    }
+
+    // ── new tests (Wave AI) ──────────────────────────────────────────────────
+
+    /// Zoom 2× then 0.5× returns to original zoom level (within epsilon).
+    #[test]
+    fn viewport_zoom_in_then_out_returns_original() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [400.0_f32, 300.0];
+        let original = vp.zoom;
+        vp.zoom_toward(2.0, cursor);
+        assert!((vp.zoom - 2.0).abs() < 1e-5, "zoom must be 2.0 after zoom-in");
+        vp.zoom_toward(original, cursor);
+        assert!((vp.zoom - original).abs() < 1e-5, "zoom must return to original after zoom-out");
+    }
+
+    /// Pan then reset: pan is zeroed and canvas origin is at screen centre.
+    #[test]
+    fn viewport_pan_then_reset() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([150.0, -80.0]);
+        vp.reset();
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x must be 0 after reset");
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y must be 0 after reset");
+        // Canvas origin maps to screen centre after reset.
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        assert!((screen[0] - 400.0).abs() < 1e-4, "screen.x of canvas origin after reset: {}", screen[0]);
+        assert!((screen[1] - 300.0).abs() < 1e-4, "screen.y of canvas origin after reset: {}", screen[1]);
+    }
+
+    /// pan_by is equivalent to scroll in screen space.
+    #[test]
+    fn viewport_scroll_by_pan_equivalent() {
+        let mut vp1 = Viewport::new(800.0, 600.0);
+        let mut vp2 = Viewport::new(800.0, 600.0);
+        // "Scroll" by (30, -20) = pan_by the same delta.
+        let delta = [30.0_f32, -20.0];
+        vp1.pan_by(delta);
+        vp2.pan_by(delta);
+        assert!((vp1.pan[0] - vp2.pan[0]).abs() < 1e-6, "pan.x must match");
+        assert!((vp1.pan[1] - vp2.pan[1]).abs() < 1e-6, "pan.y must match");
+    }
+
+    /// After fitting to a selection bounding box, both corners of the box are visible.
+    #[test]
+    fn viewport_fit_selection_to_bounds() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        // Selection bounding box: [50, 50] → [150, 100].
+        let (rx, ry, rw, rh) = (50.0_f32, 50.0_f32, 100.0_f32, 50.0_f32);
+        let zoom_x = vp.size[0] / rw;
+        let zoom_y = vp.size[1] / rh;
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0);
+        let cx = rx + rw / 2.0;
+        let cy = ry + rh / 2.0;
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        assert!(vp.is_point_visible([rx, ry]), "top-left of selection must be visible");
+        assert!(vp.is_point_visible([rx + rw, ry + rh]), "bottom-right of selection must be visible");
     }
 }

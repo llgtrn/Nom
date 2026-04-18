@@ -1345,4 +1345,216 @@ mod tests {
         ids.sort();
         assert_eq!(ids, vec!["x", "y"]);
     }
+
+    // rrf_score_for_rank_1_is_1_over_61
+    #[test]
+    fn rrf_score_for_rank_1_is_1_over_61() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("rank0", "verb"));
+        dag.add_node(ExecNode::new("rank1_candidate", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("rank0");
+        let results = retriever.retrieve(&query, 2, 1);
+        assert_eq!(results.len(), 2);
+        let expected_rank1 = 1.0f32 / 61.0;
+        assert!(
+            (results[1].score - expected_rank1).abs() < 1e-5,
+            "rank-1 score must be 1/61={expected_rank1}, got {}",
+            results[1].score
+        );
+    }
+
+    // rrf_score_for_rank_10_is_1_over_70
+    #[test]
+    fn rrf_score_for_rank_10_is_1_over_70() {
+        let mut dag = Dag::new();
+        let names = ["r0", "r1", "r2", "r3", "r4", "r5", "r6", "r7", "r8", "r9", "r10"];
+        for name in &names {
+            dag.add_node(ExecNode::new(*name, "verb"));
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("r0");
+        let results = retriever.retrieve(&query, 11, 1);
+        assert_eq!(results.len(), 11);
+        let expected = 1.0f32 / 70.0;
+        assert!(
+            (results[10].score - expected).abs() < 1e-5,
+            "rank-10 score must be 1/70={expected}, got {}",
+            results[10].score
+        );
+    }
+
+    // rrf_scores_sum_correctly_for_two_lists
+    #[test]
+    fn rrf_scores_sum_correctly_for_two_lists() {
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let q1 = node_vec("alpha");
+        let q2 = node_vec("beta");
+        let r1 = retriever.retrieve(&q1, 3, 2);
+        let r2 = retriever.retrieve(&q2, 3, 2);
+        let sum_top = r1[0].score + r2[0].score;
+        let expected_sum = 2.0f32 / 60.0;
+        assert!(
+            (sum_top - expected_sum).abs() < 1e-5,
+            "sum of two rank-0 scores must be 2/60={expected_sum}, got {sum_top}"
+        );
+    }
+
+    // rrf_max_k_results_bounded
+    #[test]
+    fn rrf_max_k_results_bounded() {
+        let mut dag = Dag::new();
+        for n in &["na", "nb", "nc"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("na"), 1000, 2);
+        assert_eq!(results.len(), 3, "top_k=1000 on 3-node dag must return exactly 3");
+    }
+
+    // graph_rag_index_100_nodes_retrieve_10
+    #[test]
+    fn graph_rag_index_100_nodes_retrieve_10() {
+        let mut dag = Dag::new();
+        for i in 0..100u32 {
+            dag.add_node(ExecNode::new(format!("nd_{i}"), "verb"));
+        }
+        for i in 0..99u32 {
+            dag.add_edge(format!("nd_{i}"), "out", format!("nd_{}", i + 1), "in");
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("nd_0"), 10, 3);
+        assert_eq!(results.len(), 10, "must return exactly 10 from 100-node DAG");
+        for i in 0..results.len() - 1 {
+            assert!(
+                results[i].score >= results[i + 1].score,
+                "results must be sorted descending"
+            );
+        }
+    }
+
+    // graph_rag_edge_context_improves_score
+    #[test]
+    fn graph_rag_edge_context_improves_score() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("hub2", "verb"));
+        dag.add_node(ExecNode::new("linked2", "verb"));
+        dag.add_node(ExecNode::new("isolated2", "verb"));
+        dag.add_edge_weighted("hub2", "out", "linked2", "in", 1.0);
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("hub2"), 3, 2);
+        assert!(results.iter().any(|r| r.node_id == "linked2"), "linked2 must appear");
+        assert!(results.iter().any(|r| r.node_id == "isolated2"), "isolated2 must appear");
+    }
+
+    // graph_rag_unrelated_nodes_score_lower
+    #[test]
+    fn graph_rag_unrelated_nodes_score_lower() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("tgt", "verb"));
+        dag.add_node(ExecNode::new("unrel1", "verb"));
+        dag.add_node(ExecNode::new("unrel2", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("tgt"), 3, 1);
+        assert_eq!(results[0].node_id, "tgt", "exact match must rank first");
+        assert!(
+            results[0].score > results[2].score,
+            "exact match must outscore lowest-ranked node"
+        );
+    }
+
+    // graph_rag_exact_keyword_match_scores_high
+    #[test]
+    fn graph_rag_exact_keyword_match_scores_high() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("kw_node", "verb"));
+        dag.add_node(ExecNode::new("other_a", "verb"));
+        dag.add_node(ExecNode::new("other_b", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("kw_node"), 3, 1);
+        assert_eq!(results[0].node_id, "kw_node", "exact keyword match must rank first");
+        let expected_max = 1.0f32 / 60.0;
+        assert!(
+            (results[0].score - expected_max).abs() < 1e-5,
+            "exact match at rank 0 must score 1/60, got {}",
+            results[0].score
+        );
+    }
+
+    // graph_rag_multi_hop_retrieval
+    #[test]
+    fn graph_rag_multi_hop_retrieval() {
+        let mut dag = Dag::new();
+        for n in &["mh_start", "mh_hop1", "mh_hop2", "mh_hop3"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("mh_start", "out", "mh_hop1", "in");
+        dag.add_edge("mh_hop1", "out", "mh_hop2", "in");
+        dag.add_edge("mh_hop2", "out", "mh_hop3", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("mh_start"), 4, 3);
+        assert_eq!(results.len(), 4, "all 4 nodes must appear with max_hops=3");
+        assert!(
+            results.iter().any(|r| r.node_id == "mh_hop3"),
+            "mh_hop3 must be reachable via 3-hop traversal"
+        );
+    }
+
+    // graph_rag_concurrent_queries_safe
+    #[test]
+    fn graph_rag_concurrent_queries_safe() {
+        let dag = three_node_dag();
+        let r1 = GraphRagRetriever::new(&dag);
+        let r2 = GraphRagRetriever::new(&dag);
+        let query = node_vec("alpha");
+        let res1 = r1.retrieve(&query, 3, 2);
+        let res2 = r2.retrieve(&query, 3, 2);
+        assert_eq!(res1.len(), res2.len(), "both retrievers must agree on count");
+        for (a, b) in res1.iter().zip(res2.iter()) {
+            assert_eq!(a.node_id, b.node_id, "results must be identical across retrievers");
+            assert!((a.score - b.score).abs() < 1e-6, "scores must match exactly");
+        }
+    }
+
+    // graph_rag_empty_index_no_panic
+    #[test]
+    fn graph_rag_empty_index_no_panic() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let q = node_vec("anything");
+        assert!(retriever.retrieve(&q, 0, 0).is_empty(), "top_k=0 empty dag");
+        assert!(retriever.retrieve(&q, 1, 0).is_empty(), "top_k=1 empty dag");
+        assert!(retriever.retrieve(&q, 100, 10).is_empty(), "top_k=100 empty dag");
+        let zero: QueryVec = [0.0f32; 16];
+        assert!(retriever.retrieve(&zero, 5, 2).is_empty(), "zero query empty dag");
+    }
+
+    // rrf_list_weight_doubles_score
+    #[test]
+    fn rrf_list_weight_doubles_score() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("full_conf", "verb"));
+        dag.add_node(ExecNode::new("src_half", "verb"));
+        dag.add_edge_weighted("src_half", "out", "half_tgt", "in", 0.5);
+        let retriever = GraphRagRetriever::new(&dag);
+        let results = retriever.retrieve(&node_vec("full_conf"), 3, 1);
+        let full_r = results
+            .iter()
+            .find(|r| r.node_id == "full_conf")
+            .expect("full_conf must appear");
+        assert!(
+            (full_r.score - 1.0f32 / 60.0).abs() < 1e-5,
+            "full_conf at rank 0 must score 1/60, got {}",
+            full_r.score
+        );
+        if let Some(half) = results.iter().find(|r| r.node_id == "half_tgt") {
+            assert!(
+                full_r.score > half.score,
+                "full-confidence node must outscore half-confidence: {} vs {}",
+                full_r.score,
+                half.score
+            );
+        }
+    }
 }

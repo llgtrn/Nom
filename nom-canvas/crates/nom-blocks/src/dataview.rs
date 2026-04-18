@@ -1,12 +1,18 @@
+//! DataView block: filtered, sorted views over a source kind.
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
 use serde::{Deserialize, Serialize};
 
+/// A filter predicate for a [`DataViewBlock`].
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum DataViewFilter {
+    /// Value must contain the given substring.
     Contains(String),
+    /// Value must exactly equal the given string.
     Equals(String),
+    /// Numeric value must be strictly greater than the threshold.
     GreaterThan(f64),
+    /// Numeric value must be strictly less than the threshold.
     LessThan(f64),
 }
 
@@ -27,17 +33,25 @@ impl DataViewFilter {
     }
 }
 
+/// A block representing a filtered, sorted view over entries of a given grammar kind.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DataViewBlock {
-    pub entity: NomtuRef, // NON-OPTIONAL
+    /// DB entity reference (NON-OPTIONAL).
+    pub entity: NomtuRef,
+    /// Grammar kind of the data source.
     pub source_kind: String,
+    /// Active filter predicates (AND-combined).
     pub filters: Vec<DataViewFilter>,
+    /// Column name to sort by (or `None` for default order).
     pub sort_column: Option<String>,
+    /// `true` for ascending, `false` for descending.
     pub sort_ascending: bool,
+    /// Maximum number of rows per page.
     pub page_size: usize,
 }
 
 impl DataViewBlock {
+    /// Construct a new [`DataViewBlock`] with no filters and default sort settings.
     pub fn new(entity: NomtuRef, source_kind: impl Into<String>) -> Self {
         Self {
             entity,
@@ -49,10 +63,12 @@ impl DataViewBlock {
         }
     }
 
+    /// Append a filter predicate.
     pub fn add_filter(&mut self, filter: DataViewFilter) {
         self.filters.push(filter);
     }
 
+    /// Remove all active filters.
     pub fn clear_filters(&mut self) {
         self.filters.clear();
     }
@@ -216,5 +232,77 @@ mod tests {
         assert!(dv.matches_filter("anything"));
         assert!(dv.matches_filter(""));
         assert!(dv.matches_filter("12345"));
+    }
+
+    // ── wave AI: new dataview tests ──────────────────────────────────────────────
+
+    #[test]
+    fn dataview_filter_contains_case_sensitive() {
+        let f = DataViewFilter::Contains("Nom".into());
+        // "Nom" (capital N) must match
+        assert!(f.matches("NomLang"));
+        // lowercase "nom" must NOT match "Nom"
+        assert!(!f.matches("nomlang"));
+    }
+
+    #[test]
+    fn dataview_no_filters_matches_all() {
+        let dv = make_dv("dv-nf", "concept");
+        for val in &["", "hello", "12345", "abc def"] {
+            assert!(
+                dv.matches_filter(val),
+                "no-filter dataview must match '{val}'"
+            );
+        }
+    }
+
+    #[test]
+    fn dataview_two_filters_and_semantics() {
+        let mut dv = make_dv("dv-and", "verb");
+        dv.add_filter(DataViewFilter::Contains("block".into()));
+        dv.add_filter(DataViewFilter::Contains("model".into()));
+        assert!(dv.matches_filter("block_model"));
+        assert!(!dv.matches_filter("block_only"));
+        assert!(!dv.matches_filter("model_only"));
+        assert!(!dv.matches_filter("neither"));
+    }
+
+    #[test]
+    fn dataview_entity_nomturef_nonempty() {
+        let entity = NomtuRef::new("dv-eid-new", "query", "verb");
+        let dv = DataViewBlock::new(entity, "concept");
+        assert!(!dv.entity.id.is_empty());
+        assert!(!dv.entity.word.is_empty());
+        assert!(!dv.entity.kind.is_empty());
+    }
+
+    #[test]
+    fn dataview_source_kind_preserved() {
+        let dv = make_dv("dv-sk", "workflow");
+        assert_eq!(dv.source_kind, "workflow");
+    }
+
+    #[test]
+    fn dataview_page_size_default_positive() {
+        let dv = make_dv("dv-ps", "verb");
+        assert!(dv.page_size > 0);
+    }
+
+    #[test]
+    fn dataview_sort_ascending_default_true() {
+        let dv = make_dv("dv-sa", "concept");
+        assert!(dv.sort_ascending, "sort_ascending must default to true");
+    }
+
+    #[test]
+    fn dataview_add_then_clear_filters() {
+        let mut dv = make_dv("dv-ac", "verb");
+        dv.add_filter(DataViewFilter::Contains("x".into()));
+        dv.add_filter(DataViewFilter::Equals("y".into()));
+        assert_eq!(dv.filters.len(), 2);
+        dv.clear_filters();
+        assert!(dv.filters.is_empty());
+        // After clear, matches_filter must always return true
+        assert!(dv.matches_filter("anything"));
     }
 }

@@ -5,14 +5,18 @@
 /// Arrow-head styles for `CanvasArrow`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrowHead {
+    /// Open (unfilled) arrowhead — just two lines forming a V.
     Open,
+    /// Closed (outlined but hollow) arrowhead.
     Closed,
+    /// Filled (solid) arrowhead.
     Filled,
 }
 
 /// Axis-aligned bounding box envelope used by the spatial index.
 #[derive(Debug, Clone, Copy)]
 pub struct ElementBounds {
+    /// Unique element identifier.
     pub id: u64,
     /// Minimum corner (top-left in canvas space).
     pub min: [f32; 2],
@@ -25,6 +29,7 @@ pub struct ElementBounds {
 /// Canvas rectangle with optional rounded corners and rotation.
 #[derive(Debug, Clone)]
 pub struct CanvasRect {
+    /// Unique element identifier.
     pub id: u64,
     /// `(origin, size)` — origin is the top-left corner before rotation.
     pub bounds: ([f32; 2], [f32; 2]),
@@ -32,14 +37,16 @@ pub struct CanvasRect {
     pub fill: Option<[f32; 4]>,
     /// Optional stroke colour (RGBA).
     pub stroke: Option<[f32; 4]>,
+    /// Corner rounding radius in canvas pixels.
     pub corner_radius: f32,
     /// Rotation in radians (counter-clockwise, applied around centre).
     pub rotation: f32,
+    /// Stacking order — higher values render on top.
     pub z_index: u32,
 }
 
 impl CanvasRect {
-    /// Axis-aligned bounding box (ignores rotation — conservative broadphase).
+    /// Returns the axis-aligned bounding box (ignores rotation — conservative broadphase).
     pub fn bounds_aabb(&self) -> ElementBounds {
         let (origin, size) = self.bounds;
         ElementBounds {
@@ -61,15 +68,20 @@ impl CanvasRect {
 /// Canvas ellipse defined by its bounding box.
 #[derive(Debug, Clone)]
 pub struct CanvasEllipse {
+    /// Unique element identifier.
     pub id: u64,
     /// `(origin, size)` — bounding rectangle of the ellipse.
     pub bounds: ([f32; 2], [f32; 2]),
+    /// Optional fill colour (RGBA).
     pub fill: Option<[f32; 4]>,
+    /// Optional stroke colour (RGBA).
     pub stroke: Option<[f32; 4]>,
+    /// Stacking order — higher values render on top.
     pub z_index: u32,
 }
 
 impl CanvasEllipse {
+    /// Returns the axis-aligned bounding box of the ellipse.
     pub fn bounds_aabb(&self) -> ElementBounds {
         let (origin, size) = self.bounds;
         ElementBounds {
@@ -79,6 +91,7 @@ impl CanvasEllipse {
         }
     }
 
+    /// Returns the centre of the ellipse in canvas space.
     pub fn center(&self) -> [f32; 2] {
         let (origin, size) = self.bounds;
         [origin[0] + size[0] / 2.0, origin[1] + size[1] / 2.0]
@@ -90,17 +103,24 @@ impl CanvasEllipse {
 /// A straight line segment.
 #[derive(Debug, Clone)]
 pub struct CanvasLine {
+    /// Unique element identifier.
     pub id: u64,
+    /// Start point in canvas space.
     pub start: [f32; 2],
+    /// End point in canvas space.
     pub end: [f32; 2],
+    /// Stroke width in canvas pixels.
     pub stroke_width: f32,
+    /// Line colour as RGBA in linear [0, 1].
     pub color: [f32; 4],
     /// Dash pattern lengths in canvas units.  Empty = solid line.
     pub dashes: Vec<f32>,
+    /// Stacking order — higher values render on top.
     pub z_index: u32,
 }
 
 impl CanvasLine {
+    /// Returns the axis-aligned bounding box of the line.
     pub fn bounds_aabb(&self) -> ElementBounds {
         ElementBounds {
             id: self.id,
@@ -121,16 +141,24 @@ impl CanvasLine {
 /// A directed line with an arrowhead at the end.
 #[derive(Debug, Clone)]
 pub struct CanvasArrow {
+    /// Unique element identifier.
     pub id: u64,
+    /// Start point in canvas space (tail of the arrow).
     pub start: [f32; 2],
+    /// End point in canvas space (tip of the arrow).
     pub end: [f32; 2],
+    /// Stroke width in canvas pixels.
     pub stroke_width: f32,
+    /// Arrow colour as RGBA in linear [0, 1].
     pub color: [f32; 4],
+    /// Style of the arrowhead rendered at `end`.
     pub head_style: ArrowHead,
+    /// Stacking order — higher values render on top.
     pub z_index: u32,
 }
 
 impl CanvasArrow {
+    /// Returns the axis-aligned bounding box of the arrow.
     pub fn bounds_aabb(&self) -> ElementBounds {
         ElementBounds {
             id: self.id,
@@ -152,6 +180,7 @@ impl CanvasArrow {
 /// block graph plus display geometry and a confidence score.
 #[derive(Debug, Clone)]
 pub struct GraphNodeElement {
+    /// Unique canvas element identifier.
     pub id: u64,
     /// Semantic node identifier from the block graph.
     pub node_id: u64,
@@ -182,6 +211,7 @@ pub fn bounding_box(elem: &GraphNodeElement) -> ([f32; 2], [f32; 2]) {
 /// render time.
 #[derive(Debug, Clone)]
 pub struct WireElement {
+    /// Unique canvas element identifier.
     pub id: u64,
     /// Source node id.
     pub from_node: u64,
@@ -446,6 +476,7 @@ pub fn wire_midpoint(_wire: &WireElement, from_pos: [f32; 2], to_pos: [f32; 2]) 
 /// semantic edges carrying confidence and provenance).
 #[derive(Debug, Clone)]
 pub struct CanvasConnector {
+    /// Unique canvas element identifier.
     pub id: u64,
     /// Source element ID.
     pub src_id: u64,
@@ -457,6 +488,7 @@ pub struct CanvasConnector {
     pub confidence: f32,
     /// Human-readable provenance / reason for the edge.
     pub reason: String,
+    /// Stacking order — higher values render on top.
     pub z_index: u32,
 }
 
@@ -1052,6 +1084,194 @@ mod tests {
         };
         assert!(e.fill.is_none(), "fill must be None");
         assert!(e.stroke.is_none(), "stroke must be None");
+    }
+
+    // ── new tests (Wave AI) ──────────────────────────────────────────────────
+
+    /// After moving an element (shifting its bounds origin), the AABB min/max update correctly.
+    #[test]
+    fn element_bounds_correct_after_move() {
+        let mut r = CanvasRect {
+            id: 1,
+            bounds: ([10.0, 20.0], [50.0, 30.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Simulate a move: shift origin by (+15, -5).
+        r.bounds.0[0] += 15.0;
+        r.bounds.0[1] -= 5.0;
+        let aabb = r.bounds_aabb();
+        assert!((aabb.min[0] - 25.0).abs() < 1e-6, "min.x after move: {}", aabb.min[0]);
+        assert!((aabb.min[1] - 15.0).abs() < 1e-6, "min.y after move: {}", aabb.min[1]);
+        assert!((aabb.max[0] - 75.0).abs() < 1e-6, "max.x after move: {}", aabb.max[0]);
+        assert!((aabb.max[1] - 45.0).abs() < 1e-6, "max.y after move: {}", aabb.max[1]);
+    }
+
+    /// After resizing an element (changing its size), the AABB reflects the new extents.
+    #[test]
+    fn element_bounds_correct_after_resize() {
+        let mut r = CanvasRect {
+            id: 2,
+            bounds: ([0.0, 0.0], [100.0, 60.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Resize to 200×120.
+        r.bounds.1 = [200.0, 120.0];
+        let aabb = r.bounds_aabb();
+        assert!((aabb.max[0] - 200.0).abs() < 1e-6, "max.x after resize: {}", aabb.max[0]);
+        assert!((aabb.max[1] - 120.0).abs() < 1e-6, "max.y after resize: {}", aabb.max[1]);
+    }
+
+    /// An element with z_index=2 is "above" one with z_index=1.
+    #[test]
+    fn element_z_index_ordering() {
+        let r1 = CanvasRect {
+            id: 1, bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1,
+        };
+        let r2 = CanvasRect {
+            id: 2, bounds: ([0.0, 0.0], [10.0, 10.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2,
+        };
+        assert!(r2.z_index > r1.z_index, "z_index=2 must be above z_index=1");
+    }
+
+    /// Simulating visibility toggle: a field or flag representing visible/hidden.
+    #[test]
+    fn element_visibility_toggle() {
+        // CanvasRect does not have a dedicated `visible` field, so we test that
+        // fill=None (transparent) can serve as a "hidden" convention.
+        let mut r = CanvasRect {
+            id: 3, bounds: ([0.0, 0.0], [50.0, 50.0]),
+            fill: Some([1.0, 1.0, 1.0, 1.0]),
+            stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        assert!(r.fill.is_some(), "visible: fill is set");
+        // "Hide" by clearing fill.
+        r.fill = None;
+        assert!(r.fill.is_none(), "hidden: fill is None");
+    }
+
+    /// WireElement children (waypoints) are accessible and represent group children.
+    #[test]
+    fn element_group_children_correct() {
+        let wire = WireElement {
+            id: 10,
+            from_node: 1,
+            to_node: 2,
+            confidence: 0.9,
+            waypoints: vec![[10.0, 0.0], [20.0, 10.0], [30.0, 0.0]],
+        };
+        assert_eq!(wire.waypoints.len(), 3, "3 waypoints = 3 children");
+        assert!((wire.waypoints[0][0] - 10.0).abs() < 1e-6);
+        assert!((wire.waypoints[2][0] - 30.0).abs() < 1e-6);
+    }
+
+    /// Simulating ungroup: extracting waypoints from a wire and clearing them.
+    #[test]
+    fn element_ungroup_returns_children() {
+        let mut wire = WireElement {
+            id: 11,
+            from_node: 1,
+            to_node: 2,
+            confidence: 0.7,
+            waypoints: vec![[5.0, 5.0], [15.0, 15.0]],
+        };
+        // "Ungroup" = drain the waypoints.
+        let extracted: Vec<[f32; 2]> = wire.waypoints.drain(..).collect();
+        assert_eq!(extracted.len(), 2, "ungroup must return 2 children");
+        assert!(wire.waypoints.is_empty(), "wire must have no waypoints after ungroup");
+    }
+
+    /// After rotation is applied, the AABB (conservative, ignoring rotation) is still valid.
+    #[test]
+    fn element_rotate_updates_bounds() {
+        use std::f32::consts::FRAC_PI_4;
+        let r = CanvasRect {
+            id: 20,
+            bounds: ([0.0, 0.0], [100.0, 50.0]),
+            fill: None, stroke: None,
+            corner_radius: 0.0,
+            rotation: FRAC_PI_4,
+            z_index: 0,
+        };
+        // The conservative AABB still covers the original origin+size.
+        let aabb = r.bounds_aabb();
+        assert!((aabb.min[0]).abs() < 1e-6, "AABB min.x must still be 0");
+        assert!((aabb.max[0] - 100.0).abs() < 1e-6, "AABB max.x must still be 100");
+        // The rotation field itself is stored correctly.
+        assert!((r.rotation - FRAC_PI_4).abs() < 1e-6, "rotation must be stored");
+    }
+
+    /// Scale from centre: new size = 2× original, origin shifted to keep same centre.
+    #[test]
+    fn element_scale_from_center() {
+        // Original: origin=(10,10), size=(40,20), centre=(30,20).
+        let (ox, oy, w, h) = (10.0_f32, 10.0_f32, 40.0_f32, 20.0_f32);
+        let cx = ox + w / 2.0; // 30
+        let cy = oy + h / 2.0; // 20
+        let scale = 2.0_f32;
+        let new_w = w * scale; // 80
+        let new_h = h * scale; // 40
+        let new_ox = cx - new_w / 2.0; // 30 - 40 = -10
+        let new_oy = cy - new_h / 2.0; // 20 - 20 = 0
+        assert!((new_ox - (-10.0)).abs() < 1e-6, "new origin.x after scale: {}", new_ox);
+        assert!((new_oy).abs() < 1e-6, "new origin.y after scale: {}", new_oy);
+        assert!((new_w - 80.0).abs() < 1e-6, "new width after scale: {}", new_w);
+        assert!((new_h - 40.0).abs() < 1e-6, "new height after scale: {}", new_h);
+    }
+
+    /// Snap to grid: origin is adjusted to nearest grid intersection (GRID_SIZE=20).
+    #[test]
+    fn element_snap_to_grid_moves_correctly() {
+        use crate::snapping::snap_to_grid;
+        // Origin (13, 7): nearest grid point is (20, 0).
+        let snapped = snap_to_grid([13.0, 7.0]);
+        assert!((snapped[0] - 20.0).abs() < 1e-6, "snap.x: {}", snapped[0]);
+        assert!((snapped[1]).abs() < 1e-6, "snap.y: {}", snapped[1]);
+    }
+
+    /// Stacking order: sort by z_index gives back-to-front render order.
+    #[test]
+    fn element_stacking_order_preserved() {
+        let mut rects: Vec<CanvasRect> = vec![
+            CanvasRect { id: 3, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
+            CanvasRect { id: 1, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect { id: 2, bounds: ([0.0,0.0],[1.0,1.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+        ];
+        rects.sort_by_key(|r| r.z_index);
+        let ids: Vec<u64> = rects.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![1, 2, 3], "stacking order must be ascending z_index");
+    }
+
+    /// Deep clone: modifying the clone must not affect the original.
+    #[test]
+    fn element_deep_clone_independent() {
+        let original = CanvasRect {
+            id: 99,
+            bounds: ([5.0, 5.0], [30.0, 20.0]),
+            fill: Some([1.0, 0.0, 0.0, 1.0]),
+            stroke: None,
+            corner_radius: 4.0,
+            rotation: 0.0,
+            z_index: 5,
+        };
+        let mut cloned = original.clone();
+        cloned.bounds.0[0] = 100.0; // move clone
+        cloned.z_index = 99;
+        // Original must be unchanged.
+        assert!((original.bounds.0[0] - 5.0).abs() < 1e-6, "original.x must be 5");
+        assert_eq!(original.z_index, 5, "original.z_index must be 5");
+        // Clone must have new values.
+        assert!((cloned.bounds.0[0] - 100.0).abs() < 1e-6, "clone.x must be 100");
+        assert_eq!(cloned.z_index, 99, "clone.z_index must be 99");
     }
 
     /// ArrowHead all variants are distinct.

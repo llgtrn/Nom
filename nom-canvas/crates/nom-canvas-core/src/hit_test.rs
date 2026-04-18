@@ -25,7 +25,9 @@ pub enum HitType {
 
 /// Result of a successful hit test.
 pub struct HitResult {
+    /// ID of the element that was hit.
     pub element_id: u64,
+    /// How the pointer intersected the element.
     pub hit_type: HitType,
 }
 
@@ -1172,5 +1174,146 @@ mod tests {
             .max_by_key(|r| r.z_index)
             .unwrap();
         assert_eq!(topmost.id, 20, "element with z_index=8 must be topmost");
+    }
+
+    // ── new tests (Wave AI) ──────────────────────────────────────────────────
+
+    /// A rotated rectangle: the centre always hits regardless of rotation angle.
+    #[test]
+    fn hit_test_rotated_element() {
+        use std::f32::consts::FRAC_PI_4;
+        let r = CanvasRect {
+            id: 600,
+            bounds: ([0.0, 0.0], [80.0, 40.0]),
+            fill: None, stroke: None, corner_radius: 0.0,
+            rotation: FRAC_PI_4,
+            z_index: 0,
+        };
+        let cx = 0.0 + 80.0 / 2.0; // 40
+        let cy = 0.0 + 40.0 / 2.0; // 20
+        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of rotated rect must always hit");
+    }
+
+    /// An empty scene (no elements) returns no hit.
+    #[test]
+    fn hit_test_empty_scene_returns_none() {
+        let elements: Vec<CanvasRect> = vec![];
+        let pt = [50.0, 50.0];
+        let hit = elements.iter().find(|r| hit_test_rect(pt, r, 0.0));
+        assert!(hit.is_none(), "empty scene must return no hit");
+    }
+
+    /// Overlapping elements: hit returns the one with the highest z_index.
+    #[test]
+    fn hit_test_overlapping_z_returns_top() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+        ];
+        let pt = [50.0, 50.0];
+        let top = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(top.id, 2, "element with z_index=20 must be topmost hit");
+    }
+
+    /// Elements with z_index=0 (invisible/locked by convention) are skipped in hit-test.
+    #[test]
+    fn hit_test_locked_element_skipped() {
+        // Simulate "locked" elements as z_index=0 and skip them.
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+        ];
+        let pt = [50.0, 50.0];
+        // Skip elements with z_index=0 (locked).
+        let hit = elements.iter()
+            .filter(|r| r.z_index > 0 && hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(hit.is_some(), "non-locked element must be hit");
+        assert_eq!(hit.unwrap().id, 2, "only non-locked element must be returned");
+    }
+
+    /// Transparent elements (fill=None) can be modelled as invisible and skipped.
+    #[test]
+    fn hit_test_transparent_element_skipped() {
+        // "Transparent" = fill is None; skip these in hit-test.
+        let elements = vec![
+            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 5 },
+            CanvasRect { id: 11, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: Some([1.0, 0.0, 0.0, 1.0]), stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
+        ];
+        let pt = [50.0, 50.0];
+        let hit = elements.iter()
+            .filter(|r| r.fill.is_some() && hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index);
+        assert!(hit.is_some(), "opaque element must be hit");
+        assert_eq!(hit.unwrap().id, 11, "only non-transparent element must be returned");
+    }
+
+    /// hit_test_all_elements_at_pos: all elements overlapping a point are returned.
+    #[test]
+    fn hit_test_all_elements_at_pos() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 2, bounds: ([50.0, 50.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 2 },
+            CanvasRect { id: 3, bounds: ([200.0, 200.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 3 },
+        ];
+        let pt = [70.0, 70.0]; // inside elements 1 and 2
+        let hits: Vec<u64> = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .map(|r| r.id)
+            .collect();
+        assert!(hits.contains(&1), "element 1 must be hit at (70,70)");
+        assert!(hits.contains(&2), "element 2 must be hit at (70,70)");
+        assert!(!hits.contains(&3), "element 3 must not be hit at (70,70)");
+    }
+
+    /// A point at a corner of a rotated rect still hits (centre is always inside).
+    #[test]
+    fn hit_test_rotated_corner_hit() {
+        use std::f32::consts::FRAC_PI_2;
+        let r = CanvasRect {
+            id: 700,
+            bounds: ([0.0, 0.0], [60.0, 30.0]),
+            fill: None, stroke: None, corner_radius: 0.0,
+            rotation: FRAC_PI_2,
+            z_index: 0,
+        };
+        let cx = 30.0_f32;
+        let cy = 15.0_f32;
+        assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of 90°-rotated rect must hit");
+    }
+
+    /// Hit test with a large threshold accepts a distant point.
+    #[test]
+    fn hit_test_large_threshold_accepts_distant() {
+        let r = CanvasRect {
+            id: 800,
+            bounds: ([0.0, 0.0], [50.0, 50.0]),
+            fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 0,
+        };
+        // Point 18px outside right edge; threshold 20 accepts it.
+        assert!(hit_test_rect([68.0, 25.0], &r, 20.0), "large threshold must accept nearby point");
+        // Point 25px outside; threshold 20 does not accept it.
+        assert!(!hit_test_rect([75.0, 25.0], &r, 20.0), "large threshold must still reject very distant point");
+    }
+
+    /// Hit results sorted by z_index descending give front-to-back order.
+    #[test]
+    fn hit_test_sorted_by_z_desc() {
+        let elements = vec![
+            CanvasRect { id: 1, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 10 },
+            CanvasRect { id: 2, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 30 },
+            CanvasRect { id: 3, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 20 },
+        ];
+        let pt = [50.0, 50.0];
+        let mut hits: Vec<&CanvasRect> = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .collect();
+        hits.sort_by(|a, b| b.z_index.cmp(&a.z_index)); // descending
+        let ids: Vec<u64> = hits.iter().map(|r| r.id).collect();
+        assert_eq!(ids, vec![2, 3, 1], "sorted by z_index descending must give [2,3,1]");
     }
 }

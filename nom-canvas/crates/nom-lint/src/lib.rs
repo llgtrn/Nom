@@ -3406,4 +3406,312 @@ mod tests {
         let diags = runner.check_line("code  ", 1);
         assert_eq!(diags.len(), 2, "two registered instances produce two diags");
     }
+
+    // ── Wave AI Agent 9 additions ─────────────────────────────────────────────
+
+    // --- Batch testing: many lines ---
+
+    #[test]
+    fn batch_trailing_whitespace_10_lines() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let lines: Vec<String> = (1..=10).map(|i| format!("line {}   ", i)).collect();
+        let source = lines.join("\n");
+        let diags = runner.check_file(&source);
+        assert_eq!(diags.len(), 10, "each of 10 trailing-whitespace lines must fire");
+    }
+
+    #[test]
+    fn batch_line_too_long_10_lines() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(LineTooLongRule::new());
+        let long = "x".repeat(130);
+        let source = std::iter::repeat(long.as_str()).take(10).collect::<Vec<_>>().join("\n");
+        let diags = runner.check_file(&source);
+        assert_eq!(diags.len(), 10, "10 long lines must each produce one diagnostic");
+    }
+
+    #[test]
+    fn batch_empty_block_5_occurrences_on_separate_lines() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let source = "fn a() {}\nfn b() {}\nfn c() {}\nfn d() {}\nfn e() {}";
+        let diags = runner.check_file(source);
+        assert_eq!(diags.len(), 5, "5 empty-block lines must each fire once");
+    }
+
+    #[test]
+    fn batch_mixed_rules_independent_lines() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        // Line 1: trailing whitespace
+        // Line 2: too long
+        // Line 3: empty block
+        let source = format!("trailing   \n{}\nfn x() {{}}", "y".repeat(130));
+        let diags = runner.check_file(&source);
+        assert_eq!(diags.len(), 3, "3 lines each firing one rule must give 3 diagnostics");
+    }
+
+    // --- Severity escalation ---
+
+    #[test]
+    fn severity_escalation_all_three_levels() {
+        // LintLevel has three levels; verify they are distinct.
+        let error = LintLevel::Error;
+        let warning = LintLevel::Warning;
+        let info = LintLevel::Info;
+        assert_ne!(error, warning);
+        assert_ne!(warning, info);
+        assert_ne!(error, info);
+    }
+
+    #[test]
+    fn severity_trailing_whitespace_is_warning() {
+        let diag = TrailingWhitespaceRule.check("  trailing  ", 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning, "trailing-whitespace must be Warning severity");
+    }
+
+    #[test]
+    fn severity_line_too_long_is_warning() {
+        let rule = LineTooLongRule::new();
+        let diag = rule.check(&"a".repeat(200), 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning, "line-too-long must be Warning severity");
+    }
+
+    #[test]
+    fn severity_empty_block_is_warning() {
+        let diag = EmptyBlockRule.check("fn f() {}", 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning, "empty-block must be Warning severity");
+    }
+
+    #[test]
+    fn severity_multiplier_range_one() {
+        // Default severity multiplier is 1.0 — in valid range.
+        let m = TrailingWhitespaceRule.severity_multiplier();
+        assert!(m > 0.0, "severity multiplier must be positive");
+        assert!(m.is_finite(), "severity multiplier must be finite");
+    }
+
+    // --- Rule composition ---
+
+    #[test]
+    fn rule_composition_all_three_on_single_line() {
+        // A line that is too long AND has trailing whitespace AND has empty block.
+        let line = format!("{}{}  ", "fn f() {}".repeat(14), "  "); // long enough + trailing spaces
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_line(&line, 1);
+        // Should fire trailing-whitespace + line-too-long + empty-block.
+        assert!(diags.len() >= 2, "composed rules must all fire on matching line");
+    }
+
+    #[test]
+    fn rule_composition_order_preserved_in_diagnostics() {
+        // Diagnostics should appear in rule registration order for the same line.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        // "fn f() {}  " fires both rules
+        let diags = runner.check_line("fn f() {}  ", 1);
+        assert_eq!(diags.len(), 2);
+        assert!(diags[0].message.contains("trailing"), "first diag must be trailing-whitespace");
+        assert!(diags[1].message.contains("empty block"), "second diag must be empty-block");
+    }
+
+    #[test]
+    fn rule_no_diag_on_clean_line() {
+        // A clean line triggers no rule.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule::new());
+        runner.add_rule(EmptyBlockRule);
+        assert!(
+            runner.check_line("let x = 42; // clean", 1).is_empty(),
+            "clean line must produce no diagnostics"
+        );
+    }
+
+    // --- Fix suggestions (message content) ---
+
+    #[test]
+    fn fix_suggestion_trailing_whitespace_message() {
+        let diag = TrailingWhitespaceRule.check("code  ", 1).unwrap();
+        assert!(
+            diag.message.to_lowercase().contains("whitespace") || diag.message.to_lowercase().contains("trailing"),
+            "trailing-whitespace message must mention whitespace or trailing, got: {}",
+            diag.message
+        );
+    }
+
+    #[test]
+    fn fix_suggestion_line_too_long_message_mentions_length() {
+        let rule = LineTooLongRule { max_len: 10 };
+        let diag = rule.check(&"a".repeat(15), 1).unwrap();
+        assert!(
+            diag.message.contains("15") && diag.message.contains("10"),
+            "line-too-long message must mention both actual (15) and max (10) lengths"
+        );
+    }
+
+    #[test]
+    fn fix_suggestion_empty_block_message_mentions_block() {
+        let diag = EmptyBlockRule.check("fn f() {}", 1).unwrap();
+        assert!(
+            diag.message.to_lowercase().contains("block") || diag.message.contains("{}"),
+            "empty-block message must mention block or empty braces"
+        );
+    }
+
+    // --- JSON report (structural validation via Vec<LintDiagnostic>) ---
+
+    #[test]
+    fn json_report_structure_diagnostics_serializable_fields() {
+        // All LintDiagnostic fields must be basic types suitable for JSON serialization.
+        let diag = TrailingWhitespaceRule.check("trailing  ", 7).unwrap();
+        // level: Debug representation is non-empty
+        assert!(!format!("{:?}", diag.level).is_empty());
+        // message: String
+        assert!(!diag.message.is_empty());
+        // line: u32
+        assert_eq!(diag.line, 7);
+        // span: Range<u32> with start < end
+        assert!(diag.span.start < diag.span.end);
+    }
+
+    #[test]
+    fn json_report_multiple_diags_fields_consistent() {
+        let source = "trailing   \nfn empty() {}";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.check_file(source);
+        assert_eq!(diags.len(), 2);
+        // Every diagnostic must have a non-empty message and positive line number.
+        for diag in &diags {
+            assert!(!diag.message.is_empty(), "diagnostic message must not be empty");
+            assert!(diag.line >= 1, "diagnostic line number must be ≥ 1");
+            assert!(diag.span.start <= diag.span.end, "span must be valid range");
+        }
+    }
+
+    #[test]
+    fn json_report_diag_clone_for_serialization() {
+        // LintDiagnostic must implement Clone so it can be serialized without moving.
+        let diag = EmptyBlockRule.check("fn f() {}", 3).unwrap();
+        let clone = diag.clone();
+        assert_eq!(diag, clone, "cloned diagnostic must equal original");
+    }
+
+    // --- Span accuracy ---
+
+    #[test]
+    fn span_trailing_whitespace_points_to_whitespace_region() {
+        // "abc   " — span should start at 3 (after content) and end at 6.
+        let diag = TrailingWhitespaceRule.check("abc   ", 1).unwrap();
+        assert_eq!(diag.span.start, 3, "span.start must point to first trailing space");
+        assert_eq!(diag.span.end, 6, "span.end must point past last trailing space");
+    }
+
+    #[test]
+    fn span_empty_block_points_to_braces() {
+        // "fn f() {}" — span should cover the "{}" at positions 7-9.
+        let diag = EmptyBlockRule.check("fn f() {}", 1).unwrap();
+        assert_eq!(diag.span.start, 7, "empty-block span.start must point to open brace");
+        assert_eq!(diag.span.end, 9, "empty-block span.end must point past close brace");
+    }
+
+    #[test]
+    fn span_line_too_long_covers_whole_line() {
+        let rule = LineTooLongRule { max_len: 5 };
+        let line = "toolong"; // 7 chars
+        let diag = rule.check(line, 1).unwrap();
+        assert_eq!(diag.span.start, 0, "line-too-long span must start at 0");
+        assert_eq!(diag.span.end, 7, "line-too-long span must cover entire line");
+    }
+
+    // --- Rule name API ---
+
+    #[test]
+    fn rule_names_are_kebab_case() {
+        for name in [
+            TrailingWhitespaceRule.name(),
+            LineTooLongRule::new().name(),
+            EmptyBlockRule.name(),
+        ] {
+            for ch in name.chars() {
+                assert!(
+                    ch.is_ascii_lowercase() || ch.is_ascii_digit() || ch == '-',
+                    "rule name '{name}' must be kebab-case, got char '{ch}'"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn rule_names_are_non_empty() {
+        assert!(!TrailingWhitespaceRule.name().is_empty());
+        assert!(!LineTooLongRule::new().name().is_empty());
+        assert!(!EmptyBlockRule.name().is_empty());
+    }
+
+    // --- Edge: single character lines ---
+
+    #[test]
+    fn single_char_line_no_trailing_whitespace() {
+        assert!(TrailingWhitespaceRule.check("x", 1).is_none());
+    }
+
+    #[test]
+    fn single_space_line_is_trailing_whitespace() {
+        let diag = TrailingWhitespaceRule.check(" ", 1).unwrap();
+        assert_eq!(diag.span.start, 0);
+        assert_eq!(diag.span.end, 1);
+    }
+
+    #[test]
+    fn single_char_line_not_too_long_at_limit_1() {
+        let rule = LineTooLongRule { max_len: 1 };
+        assert!(rule.check("x", 1).is_none(), "1-char line with max_len=1 must not fire");
+        let diag = rule.check("xy", 2).unwrap();
+        assert_eq!(diag.span.end, 2, "2-char line with max_len=1 must fire with end=2");
+    }
+
+    // --- LintRunner: diagnostic ordering across lines ---
+
+    #[test]
+    fn diag_ordering_by_line_number() {
+        // Diagnostics must be ordered by ascending line number.
+        let source = "clean\ntrailing   \nalso clean\nmore trailing  ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_file(source);
+        assert_eq!(diags.len(), 2);
+        assert!(diags[0].line < diags[1].line, "diagnostics must be ordered by ascending line");
+    }
+
+    #[test]
+    fn trailing_whitespace_five_spaces_span_correct() {
+        let diag = TrailingWhitespaceRule.check("abc     ", 1).unwrap();
+        assert_eq!(diag.span.start, 3);
+        assert_eq!(diag.span.end, 8);
+    }
+
+    #[test]
+    fn lint_level_eq_self() {
+        assert_eq!(LintLevel::Warning, LintLevel::Warning);
+        assert_eq!(LintLevel::Error, LintLevel::Error);
+        assert_eq!(LintLevel::Info, LintLevel::Info);
+    }
+
+    #[test]
+    fn check_file_single_line_source() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_file("no trailing");
+        assert!(diags.is_empty(), "single clean line must yield no diagnostics");
+    }
 }

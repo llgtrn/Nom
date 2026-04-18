@@ -1,36 +1,52 @@
+//! Shared event and plan types used across the nom-canvas crate family.
 #![deny(unsafe_code)]
 use serde::{Deserialize, Serialize};
 
 /// One step in the deep_think() ReAct loop
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct DeepThinkStep {
+    /// Current hypothesis being evaluated.
     pub hypothesis: String,
+    /// Supporting evidence strings.
     pub evidence: Vec<String>,
+    /// Confidence score for this step (0.0–1.0).
     pub confidence: f32,
+    /// Counter-evidence strings.
     pub counterevidence: Vec<String>,
+    /// ID of the step this was refined from, if any.
     pub refined_from: Option<String>,
 }
 
 /// Streaming event from nom-intent::deep_think()
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum DeepThinkEvent {
+    /// An intermediate reasoning step.
     Step(DeepThinkStep),
+    /// The final composition plan.
     Final(CompositionPlan),
 }
 
 /// Stub re-export — real definition lives in nom-compiler/nom-planner (Wave C)
 #[derive(Clone, Debug, Default, Serialize, Deserialize)]
 pub struct CompositionPlan {
+    /// Natural-language intent that generated this plan.
     pub intent: String,
+    /// Ordered plan steps.
     pub steps: Vec<PlanStep>,
+    /// Overall plan confidence (0.0–1.0).
     pub confidence: f32,
 }
 
+/// One step within a [`CompositionPlan`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct PlanStep {
+    /// Unique step identifier.
     pub id: String,
+    /// Human-readable description of what this step does.
     pub description: String,
+    /// Grammar kind this step targets.
     pub kind: String,
+    /// IDs of steps that must complete before this one.
     pub depends_on: Vec<String>,
 }
 
@@ -38,62 +54,103 @@ pub struct PlanStep {
 /// Used by both nom-compiler-bridge and nom-panels right dock
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RunEvent {
+    /// Streaming delta from an LLM.
     LLMStream {
+        /// Text chunk.
         delta: String,
+        /// Model identifier.
         model: String,
     },
+    /// A tool is being called.
     ToolInvocation {
+        /// Tool name.
         tool_name: String,
+        /// Tool input JSON.
         input: serde_json::Value,
     },
+    /// Result of a tool call.
     ToolResult {
+        /// Tool name.
         tool_name: String,
+        /// Tool output JSON.
         output: serde_json::Value,
+        /// Wall-clock duration in milliseconds.
         duration_ms: u64,
     },
+    /// The agent needs permission to proceed.
     PermissionRequest {
+        /// Tool requesting permission.
         tool_name: String,
+        /// Human-readable reason.
         reason: String,
     },
+    /// The agent is asking the human a question.
     AskHuman {
+        /// Question text.
         question: String,
+        /// Optional input placeholder.
         placeholder: Option<String>,
     },
+    /// A sub-agent is being spawned.
     SpawnSubFlow {
+        /// Sub-agent name.
         agent_name: String,
+        /// Intent passed to the sub-agent.
         intent: String,
     },
+    /// A free-form text message.
     TextMessage {
+        /// Message body.
         content: String,
+        /// Sender role (e.g. `"user"`, `"assistant"`).
         role: String,
     },
+    /// Progress status update.
     Status {
+        /// Status message.
         message: String,
+        /// Optional progress fraction (0.0–1.0).
         progress: Option<f32>,
     },
+    /// Streaming thinking delta.
     ThinkingStream {
+        /// Text chunk.
         delta: String,
     },
+    /// An embedded deep-think reasoning step.
     DeepThinkStep(DeepThinkStep),
+    /// Composition pipeline progress.
     ComposeProgress {
+        /// Target artifact name.
         target: String,
+        /// Current pipeline stage.
         stage: String,
+        /// Completion percentage (0.0–100.0).
         percent: f32,
     },
+    /// A fatal run error.
     Error {
+        /// Error message.
         message: String,
+        /// Optional error code.
         code: Option<String>,
     },
+    /// The run completed successfully.
     RunCompleted {
+        /// Summary string.
         summary: String,
+        /// Content-addressed hashes of produced artifacts.
         artifact_hashes: Vec<[u8; 32]>,
     },
+    /// The run was interrupted.
     Interrupt {
+        /// Reason for the interruption.
         reason: String,
     },
 }
 
 impl RunEvent {
+    /// Returns `true` for terminal events (`RunCompleted`, `Error`, `Interrupt`).
     pub fn is_terminal(&self) -> bool {
         matches!(
             self,

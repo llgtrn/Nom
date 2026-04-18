@@ -153,4 +153,104 @@ mod tests {
         };
         assert!(NativeScreenBackend::compose(&invalid_size, &mut store, &LogProgressSink).is_err());
     }
+
+    #[test]
+    fn native_screen_compose_valid_dimensions() {
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 3840,
+            height: 2160,
+            display_index: 0,
+            format: "png".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+        assert_eq!(spec.pixel_count(), 3840 * 2160);
+    }
+
+    #[test]
+    fn native_screen_compose_invalid_dimensions_errors() {
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 0,
+            height: 0,
+            display_index: 0,
+            format: "png".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_err());
+    }
+
+    #[test]
+    fn native_screen_platform_windows_valid() {
+        // Windows: common 1920x1080 full-HD spec.
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 1920,
+            height: 1080,
+            display_index: 0,
+            format: "bmp".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_platform_macos_valid() {
+        // macOS retina: 2560x1600.
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 2560,
+            height: 1600,
+            display_index: 0,
+            format: "png".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_platform_linux_valid() {
+        // Linux: 1280x1024 spec.
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 1280,
+            height: 1024,
+            display_index: 0,
+            format: "jpeg".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_format_png_valid() {
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 1024,
+            height: 768,
+            display_index: 0,
+            format: "png".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_format_bmp_valid() {
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 800,
+            height: 600,
+            display_index: 1,
+            format: "bmp".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_format_invalid_errors() {
+        let mut store = InMemoryStore::new();
+        let spec = NativeScreenSpec {
+            width: 1920,
+            height: 1080,
+            display_index: 0,
+            format: "tiff".into(),
+        };
+        assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_err());
+    }
 }

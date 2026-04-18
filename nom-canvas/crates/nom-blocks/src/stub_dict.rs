@@ -10,6 +10,7 @@ pub struct StubDictReader {
 }
 
 impl StubDictReader {
+    /// Construct a [`StubDictReader`] seeded with the standard set of grammar kinds.
     pub fn new() -> Self {
         let mut reader = Self {
             known_kinds: HashSet::new(),
@@ -35,6 +36,7 @@ impl StubDictReader {
         reader
     }
 
+    /// Construct a [`StubDictReader`] with the standard seed plus additional kinds.
     pub fn with_kinds(kinds: &[&str]) -> Self {
         let mut reader = Self::new();
         for k in kinds {
@@ -43,6 +45,7 @@ impl StubDictReader {
         reader
     }
 
+    /// Add custom clause shapes for the given kind (builder pattern).
     pub fn with_shapes(mut self, kind: &str, shapes: Vec<ClauseShape>) -> Self {
         self.seed_shapes.insert(kind.to_string(), shapes);
         self

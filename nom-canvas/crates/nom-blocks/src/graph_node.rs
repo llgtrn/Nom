@@ -1,23 +1,33 @@
+//! Graph node model for the canvas.
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
 use crate::slot::SlotBinding;
 use serde::{Deserialize, Serialize};
 
+/// Unique identifier for a graph node.
 pub type NodeId = String;
 
 /// Canvas graph node — production_kind validated against grammar.kinds at insert
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct GraphNode {
+    /// Unique node identifier.
     pub id: NodeId,
+    /// DB entity reference.
     pub entity: NomtuRef,
-    pub production_kind: String, // validated via DictReader::is_known_kind, never a Rust enum
-    pub slots: Vec<SlotBinding>, // derived from clause_shapes query
+    /// Grammar kind (validated via DictReader::is_known_kind, never a Rust enum).
+    pub production_kind: String,
+    /// Slot bindings derived from clause_shapes query.
+    pub slots: Vec<SlotBinding>,
+    /// Canvas position `[x, y]`.
     pub position: [f32; 2],
+    /// Canvas size `[width, height]`.
     pub size: [f32; 2],
+    /// Whether the node is collapsed in the UI.
     pub collapsed: bool,
 }
 
 impl GraphNode {
+    /// Construct a new graph node with default size and no slots.
     pub fn new(
         id: impl Into<String>,
         entity: NomtuRef,

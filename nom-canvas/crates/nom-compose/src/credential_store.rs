@@ -377,6 +377,45 @@ mod tests {
     }
 
     #[test]
+    fn credential_clone_preserves_value() {
+        let original = Credential {
+            kind: "api_key".into(),
+            value: "clone-secret".into(),
+        };
+        let cloned = original.clone();
+        assert_eq!(cloned.value, original.value);
+        assert_eq!(cloned.kind, original.kind);
+    }
+
+    #[test]
+    fn credential_store_multiple_keys() {
+        let mut s = CredentialStore::new();
+        s.set("svc_a", Credential { kind: "api_key".into(), value: "val_a".into() });
+        s.set("svc_b", Credential { kind: "bearer".into(), value: "val_b".into() });
+        s.set("svc_c", Credential { kind: "oauth2".into(), value: "val_c".into() });
+        assert_eq!(s.len(), 3);
+        assert_eq!(s.get("svc_a").unwrap().value, "val_a");
+        assert_eq!(s.get("svc_b").unwrap().value, "val_b");
+        assert_eq!(s.get("svc_c").unwrap().value, "val_c");
+    }
+
+    #[test]
+    fn credential_store_overwrite_key() {
+        let mut s = CredentialStore::new();
+        s.set("key", Credential { kind: "api_key".into(), value: "first".into() });
+        s.set("key", Credential { kind: "api_key".into(), value: "second".into() });
+        assert_eq!(s.get("key").unwrap().value, "second");
+        assert_eq!(s.len(), 1);
+    }
+
+    #[test]
+    fn credential_store_get_nonexistent_returns_none() {
+        let s = CredentialStore::new();
+        assert!(s.get("does_not_exist").is_none());
+        assert!(s.get("").is_none());
+    }
+
+    #[test]
     fn credential_store_len_after_remove_decreases() {
         let mut s = CredentialStore::new();
         s.set("a", Credential { kind: "k".into(), value: "v".into() });

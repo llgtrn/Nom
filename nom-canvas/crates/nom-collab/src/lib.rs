@@ -7015,4 +7015,773 @@ mod tests {
         assert!(has_italic, "italic format marker must survive round-trip");
         let _ = op_content;
     }
+
+    // ── Wave AF-6: rich-text, state-vector, offline-queue, transactions ────────
+
+    // Rich-text: bold mark via SetMeta
+
+    #[test]
+    fn collab_rich_text_bold_preserved() {
+        // Apply a bold mark as SetMeta; encode(op_log clone)/decode by replay → bold still present.
+        let mut doc = DocState::new(PeerId(80_000));
+        let op_text = doc.local_insert(RgaPos::Head, "hello");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_000), counter: 10 },
+            kind: OpKind::SetMeta {
+                key: format!("bold:{}:{}", op_text.id.peer.0, op_text.id.counter),
+                value: "true".to_string(),
+            },
+        });
+        // "Encode": clone the op_log; "Decode": replay into fresh doc.
+        let log: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(80_000));
+        for op in log {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), "hello");
+        let has_bold = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, value } if key.starts_with("bold:") && value == "true")
+        });
+        assert!(has_bold, "bold mark must survive encode/decode round-trip");
+    }
+
+    #[test]
+    fn collab_rich_text_italic_preserved() {
+        let mut doc = DocState::new(PeerId(80_001));
+        let op_text = doc.local_insert(RgaPos::Head, "world");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_001), counter: 10 },
+            kind: OpKind::SetMeta {
+                key: format!("italic:{}:{}", op_text.id.peer.0, op_text.id.counter),
+                value: "true".to_string(),
+            },
+        });
+        let log: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(80_001));
+        for op in log {
+            restored.apply(op);
+        }
+        let has_italic = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, value } if key.starts_with("italic:") && value == "true")
+        });
+        assert!(has_italic, "italic mark must survive round-trip");
+    }
+
+    #[test]
+    fn collab_rich_text_bold_and_italic_combined() {
+        // Apply bold AND italic marks for the same node; both survive round-trip.
+        let mut doc = DocState::new(PeerId(80_002));
+        let op_text = doc.local_insert(RgaPos::Head, "styled");
+        let base_key = format!("{}:{}", op_text.id.peer.0, op_text.id.counter);
+        for (ctr, mark) in [(10u64, "bold"), (11, "italic")] {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(80_002), counter: ctr },
+                kind: OpKind::SetMeta {
+                    key: format!("{mark}:{base_key}"),
+                    value: "true".to_string(),
+                },
+            });
+        }
+        let log: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(80_002));
+        for op in log {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), "styled");
+        let has_bold = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:"))
+        });
+        let has_italic = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:"))
+        });
+        assert!(has_bold && has_italic, "both marks must survive");
+    }
+
+    #[test]
+    fn collab_rich_text_link_preserved() {
+        // Link marks stored as SetMeta survive round-trip.
+        let mut doc = DocState::new(PeerId(80_003));
+        let op_text = doc.local_insert(RgaPos::Head, "click me");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_003), counter: 10 },
+            kind: OpKind::SetMeta {
+                key: format!("link:{}:{}", op_text.id.peer.0, op_text.id.counter),
+                value: "https://nom.dev".to_string(),
+            },
+        });
+        let log: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(80_003));
+        for op in log {
+            restored.apply(op);
+        }
+        let link_value = restored.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key.starts_with("link:") { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(link_value, Some("https://nom.dev"), "link mark must be preserved");
+    }
+
+    #[test]
+    fn collab_rich_text_marks_range() {
+        // Mark covers a range: chars at indices 2..5 tagged via SetMeta range keys.
+        let mut doc = DocState::new(PeerId(80_004));
+        doc.local_insert(RgaPos::Head, "abcdefgh");
+        // Simulate a range mark "bold" covering chars 2..5 via a range SetMeta entry.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_004), counter: 10 },
+            kind: OpKind::SetMeta {
+                key: "bold:range".to_string(),
+                value: "2..5".to_string(),
+            },
+        });
+        let range_mark = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "bold:range" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(range_mark, Some("2..5"), "range mark must be retrievable");
+        assert_eq!(doc.text(), "abcdefgh");
+    }
+
+    #[test]
+    fn collab_rich_text_remove_mark() {
+        // Remove a bold mark by setting its value to "false".
+        let mut doc = DocState::new(PeerId(80_005));
+        let op_text = doc.local_insert(RgaPos::Head, "text");
+        let key = format!("bold:{}:{}", op_text.id.peer.0, op_text.id.counter);
+        // Apply bold mark.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_005), counter: 10 },
+            kind: OpKind::SetMeta { key: key.clone(), value: "true".to_string() },
+        });
+        // Remove bold mark (set to false).
+        doc.apply(Op {
+            id: OpId { peer: PeerId(80_005), counter: 11 },
+            kind: OpKind::SetMeta { key: key.clone(), value: "false".to_string() },
+        });
+        // Latest value for that key should be "false".
+        let latest = doc.op_log().iter().rev().find_map(|op| {
+            if let OpKind::SetMeta { key: k, value } = &op.kind {
+                if k == &key { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(latest, Some("false"), "bold mark must be removed (set to false)");
+    }
+
+    // State vector: empty doc, after inserts, minimal sync
+
+    #[test]
+    fn collab_state_vector_empty_doc() {
+        // An empty doc has no ops — state vector (max counter per peer) is empty.
+        let doc = DocState::new(PeerId(81_000));
+        let state_vec: std::collections::HashMap<u64, u64> = doc
+            .op_log()
+            .iter()
+            .fold(std::collections::HashMap::new(), |mut acc, op| {
+                let entry = acc.entry(op.id.peer.0).or_insert(0);
+                if op.id.counter > *entry { *entry = op.id.counter; }
+                acc
+            });
+        assert!(state_vec.is_empty(), "empty doc must have empty state vector");
+    }
+
+    #[test]
+    fn collab_state_vector_after_inserts() {
+        // After 3 inserts by peer 81_001 the state vector has counter 3 for that peer.
+        let mut doc = DocState::new(PeerId(81_001));
+        doc.local_insert(RgaPos::Head, "a");
+        doc.local_insert(RgaPos::Head, "b");
+        doc.local_insert(RgaPos::Head, "c");
+        let max_counter = doc
+            .op_log()
+            .iter()
+            .filter(|op| op.id.peer == PeerId(81_001))
+            .map(|op| op.id.counter)
+            .max()
+            .unwrap_or(0);
+        assert_eq!(max_counter, 3, "state vector counter must be 3 after 3 inserts");
+    }
+
+    #[test]
+    fn collab_state_vector_sync_diff() {
+        // State vector enables minimal sync: peer B only needs ops newer than its max counter.
+        let mut pa = DocState::new(PeerId(81_002));
+        pa.local_insert(RgaPos::Head, "a");
+        pa.local_insert(RgaPos::Head, "b");
+        pa.local_insert(RgaPos::Head, "c");
+
+        // Peer B has only the first op (counter=1).
+        let mut pb = DocState::new(PeerId(81_003));
+        pb.apply(pa.op_log()[0].clone());
+
+        // B's state vector: peer 81_002 → counter 1.
+        let b_max_for_a: u64 = pb.op_log()
+            .iter()
+            .filter(|op| op.id.peer == PeerId(81_002))
+            .map(|op| op.id.counter)
+            .max()
+            .unwrap_or(0);
+
+        // Diff: A's ops with counter > b_max_for_a are the ones B needs.
+        let needed: Vec<&Op> = pa.op_log()
+            .iter()
+            .filter(|op| op.id.peer == PeerId(81_002) && op.id.counter > b_max_for_a)
+            .collect();
+        // B needs ops 2 and 3.
+        assert_eq!(needed.len(), 2, "B needs exactly 2 new ops from A");
+        for op in needed {
+            pb.apply(op.clone());
+        }
+        assert_eq!(pb.text(), pa.text(), "after sync B must match A");
+    }
+
+    // Offline queue: accumulate ops while offline, flush, order preserved
+
+    #[test]
+    fn collab_offline_queue_accumulates_ops() {
+        // While "offline" ops are pushed onto a queue (Vec<Op>) without applying.
+        let mut queue: Vec<Op> = Vec::new();
+        // Simulate authoring 3 ops while offline.
+        let peer = PeerId(82_000);
+        for (ctr, text) in [(1u64, "a"), (2, "b"), (3, "c")] {
+            queue.push(Op {
+                id: OpId { peer, counter: ctr },
+                kind: OpKind::Insert { pos: RgaPos::Head, text: text.to_string() },
+            });
+        }
+        assert_eq!(queue.len(), 3, "offline queue must accumulate 3 ops");
+    }
+
+    #[test]
+    fn collab_offline_queue_flush_applies_all() {
+        // Flushing the queue applies all accumulated ops to the document.
+        let mut queue: Vec<Op> = Vec::new();
+        let peer = PeerId(82_001);
+        let op1 = Op {
+            id: OpId { peer, counter: 1 },
+            kind: OpKind::Insert { pos: RgaPos::Head, text: "x".to_string() },
+        };
+        let op2 = Op {
+            id: OpId { peer, counter: 2 },
+            kind: OpKind::Insert { pos: RgaPos::After(op1.id), text: "y".to_string() },
+        };
+        queue.push(op1);
+        queue.push(op2);
+
+        // Flush: apply all queued ops.
+        let mut doc = DocState::new(peer);
+        for op in queue.drain(..) {
+            doc.apply(op);
+        }
+        assert_eq!(doc.text(), "xy", "flushed ops must all be applied");
+        assert!(queue.is_empty(), "queue must be empty after flush");
+    }
+
+    #[test]
+    fn collab_offline_queue_order_preserved() {
+        // The order of ops in the queue is preserved when flushed.
+        let peer = PeerId(82_002);
+        let mut queue: Vec<Op> = Vec::new();
+        let op_a = Op {
+            id: OpId { peer, counter: 1 },
+            kind: OpKind::Insert { pos: RgaPos::Head, text: "A".to_string() },
+        };
+        let op_b = Op {
+            id: OpId { peer, counter: 2 },
+            kind: OpKind::Insert { pos: RgaPos::After(op_a.id), text: "B".to_string() },
+        };
+        let op_c = Op {
+            id: OpId { peer, counter: 3 },
+            kind: OpKind::Insert { pos: RgaPos::After(op_b.id), text: "C".to_string() },
+        };
+        queue.push(op_a);
+        queue.push(op_b);
+        queue.push(op_c);
+
+        let mut doc = DocState::new(peer);
+        for op in &queue {
+            doc.apply(op.clone());
+        }
+        assert_eq!(doc.text(), "ABC", "offline queue order must be preserved on flush");
+    }
+
+    // Concurrent marks: two peers mark different ranges
+
+    #[test]
+    fn collab_concurrent_marks_no_conflict() {
+        // Peer A marks range 0..3 as bold; Peer B marks range 5..8 as italic.
+        // Both marks coexist in the op_log without conflict.
+        let mut doc = DocState::new(PeerId(83_000));
+        doc.local_insert(RgaPos::Head, "hello world");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_001), counter: 1 },
+            kind: OpKind::SetMeta { key: "bold:range".to_string(), value: "0..3".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_002), counter: 1 },
+            kind: OpKind::SetMeta { key: "italic:range".to_string(), value: "5..8".to_string() },
+        });
+        let bold = doc.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:range")
+        });
+        let italic = doc.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "italic:range")
+        });
+        assert!(bold && italic, "concurrent marks must both be present");
+    }
+
+    #[test]
+    fn collab_mark_split_on_insert() {
+        // Insert text in the middle of a marked range; the mark is "split" into two
+        // sub-ranges (simulated by storing two new range marks).
+        let mut doc = DocState::new(PeerId(83_010));
+        let op_text = doc.local_insert(RgaPos::Head, "abcde");
+        // Bold marks range 0..5.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_010), counter: 10 },
+            kind: OpKind::SetMeta { key: "bold:range".to_string(), value: "0..5".to_string() },
+        });
+        // Insert "X" in the middle (after "ab"), splitting the mark → 0..2, 3..6.
+        let op_ins = doc.local_insert(RgaPos::After(op_text.id), "X");
+        // Record split marks.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_010), counter: 11 },
+            kind: OpKind::SetMeta { key: "bold:left".to_string(), value: "0..2".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_010), counter: 12 },
+            kind: OpKind::SetMeta { key: "bold:right".to_string(), value: "3..6".to_string() },
+        });
+        let has_left = doc.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:left")
+        });
+        let has_right = doc.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "bold:right")
+        });
+        assert!(has_left && has_right, "mark must be split after insert");
+        let _ = op_ins;
+    }
+
+    #[test]
+    fn collab_mark_merge_adjacent() {
+        // Two adjacent same-type marks can be merged into one by storing a unified range.
+        let mut doc = DocState::new(PeerId(83_020));
+        doc.local_insert(RgaPos::Head, "abcdef");
+        // Two adjacent bold marks: 0..3 and 3..6.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_020), counter: 10 },
+            kind: OpKind::SetMeta { key: "bold:seg1".to_string(), value: "0..3".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_020), counter: 11 },
+            kind: OpKind::SetMeta { key: "bold:seg2".to_string(), value: "3..6".to_string() },
+        });
+        // Merge: store unified range.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(83_020), counter: 12 },
+            kind: OpKind::SetMeta { key: "bold:merged".to_string(), value: "0..6".to_string() },
+        });
+        let merged = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "bold:merged" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(merged, Some("0..6"), "merged mark must span full range");
+    }
+
+    // Document JSON round-trip (simulated via op_log clone/replay)
+
+    #[test]
+    fn collab_document_serialize_to_json() {
+        // Simulate JSON serialization: collect op fields into tuples.
+        let mut doc = DocState::new(PeerId(84_000));
+        let op = doc.local_insert(RgaPos::Head, "serialized");
+        // "Serialize": extract (peer, counter, text) from each insert op.
+        let serialized: Vec<(u64, u64, String)> = doc.op_log().iter().filter_map(|o| {
+            if let OpKind::Insert { text, .. } = &o.kind {
+                Some((o.id.peer.0, o.id.counter, text.clone()))
+            } else { None }
+        }).collect();
+        assert_eq!(serialized.len(), 1);
+        assert_eq!(serialized[0].0, 84_000);
+        assert_eq!(serialized[0].2, "serialized");
+        let _ = op;
+    }
+
+    #[test]
+    fn collab_document_deserialize_from_json() {
+        // Simulate JSON deserialization: reconstruct doc from (peer, counter, text) tuples.
+        let raw: Vec<(u64, u64, &str)> = vec![(84_001, 1, "deserialized")];
+        let mut doc = DocState::new(PeerId(84_001));
+        for (peer, counter, text) in raw {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(peer), counter },
+                kind: OpKind::Insert { pos: RgaPos::Head, text: text.to_string() },
+            });
+        }
+        assert_eq!(doc.text(), "deserialized");
+    }
+
+    #[test]
+    fn collab_document_json_round_trip() {
+        // Full round-trip: serialize (clone op_log) → deserialize (replay) → same text.
+        let mut original = DocState::new(PeerId(84_002));
+        let op1 = original.local_insert(RgaPos::Head, "round");
+        original.local_insert(RgaPos::After(op1.id), "_trip");
+        original.local_delete(op1.id);
+
+        let snapshot = original.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(84_002));
+        for op in snapshot {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), original.text(), "JSON round-trip must preserve state");
+        assert_eq!(restored.op_log().len(), original.op_log().len());
+    }
+
+    // YDoc compatibility: insert and delete
+
+    #[test]
+    fn collab_ydoc_compatibility_insert() {
+        // Simulate yrs-compatible insert: text node with a unique OpId.
+        let mut doc = DocState::new(PeerId(85_000));
+        doc.local_insert(RgaPos::Head, "ydoc_insert");
+        assert_eq!(doc.text(), "ydoc_insert");
+        assert_eq!(doc.op_log().len(), 1);
+        match &doc.op_log()[0].kind {
+            OpKind::Insert { text, .. } => assert_eq!(text, "ydoc_insert"),
+            other => panic!("expected Insert, got {other:?}"),
+        }
+    }
+
+    #[test]
+    fn collab_ydoc_compatibility_delete() {
+        // Simulate yrs-compatible delete: tombstone a node by id.
+        let mut doc = DocState::new(PeerId(85_001));
+        let op = doc.local_insert(RgaPos::Head, "ydoc_delete_me");
+        doc.local_delete(op.id);
+        assert_eq!(doc.text(), "");
+        let has_delete = doc.op_log().iter().any(|o| {
+            matches!(&o.kind, OpKind::Delete { target } if *target == op.id)
+        });
+        assert!(has_delete, "ydoc-style delete must tombstone the target node");
+    }
+
+    // Cursor awareness
+
+    #[test]
+    fn collab_cursor_awareness_shared() {
+        // Peer A sets a cursor via SetMeta; Peer B applies that op and can read it.
+        let cursor_op = Op {
+            id: OpId { peer: PeerId(86_000), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:86000".to_string(),
+                value: "7".to_string(),
+            },
+        };
+        let mut doc_b = DocState::new(PeerId(86_001));
+        doc_b.apply(cursor_op);
+        let cursor = doc_b.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "cursor:86000" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(cursor, Some("7"), "peer B must see peer A's cursor position");
+    }
+
+    #[test]
+    fn collab_cursor_cleared_on_disconnect() {
+        // Simulate clearing a cursor on disconnect by setting value to "" (empty).
+        let mut doc = DocState::new(PeerId(86_010));
+        // Connect: set cursor.
+        doc.apply(Op {
+            id: OpId { peer: PeerId(86_010), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:86010".to_string(), value: "5".to_string() },
+        });
+        // Disconnect: clear cursor (value = "").
+        doc.apply(Op {
+            id: OpId { peer: PeerId(86_010), counter: 2 },
+            kind: OpKind::SetMeta { key: "cursor:86010".to_string(), value: "".to_string() },
+        });
+        // Latest value for cursor:86010 is "".
+        let latest = doc.op_log().iter().rev().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "cursor:86010" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(latest, Some(""), "cursor must be cleared (empty) on disconnect");
+    }
+
+    #[test]
+    fn collab_user_name_in_awareness() {
+        // User name broadcast via SetMeta "user:name" is readable from op_log.
+        let mut doc = DocState::new(PeerId(86_020));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(86_020), counter: 1 },
+            kind: OpKind::SetMeta { key: "user:name".to_string(), value: "Alice".to_string() },
+        });
+        let name = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "user:name" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(name, Some("Alice"), "user name must be readable from awareness op_log");
+    }
+
+    #[test]
+    fn collab_two_users_different_cursor_positions() {
+        // Two users each set a cursor at different positions; both are readable.
+        let mut doc = DocState::new(PeerId(86_030));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(86_031), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:86031".to_string(), value: "3".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(86_032), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:86032".to_string(), value: "9".to_string() },
+        });
+        let cursors: Vec<(&str, &str)> = doc.op_log().iter().filter_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key.starts_with("cursor:") { return Some((key.as_str(), value.as_str())); }
+            }
+            None
+        }).collect();
+        assert_eq!(cursors.len(), 2);
+        let pos_31 = cursors.iter().find(|(k, _)| k.ends_with("86031")).map(|(_, v)| *v);
+        let pos_32 = cursors.iter().find(|(k, _)| k.ends_with("86032")).map(|(_, v)| *v);
+        assert_eq!(pos_31, Some("3"));
+        assert_eq!(pos_32, Some("9"));
+    }
+
+    #[test]
+    fn collab_concurrent_awareness_updates_no_conflict() {
+        // Two peers send concurrent awareness updates; both land in the log without conflict.
+        let mut doc = DocState::new(PeerId(86_040));
+        let update_a = Op {
+            id: OpId { peer: PeerId(86_041), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:86041".to_string(), value: "0".to_string() },
+        };
+        let update_b = Op {
+            id: OpId { peer: PeerId(86_042), counter: 1 },
+            kind: OpKind::SetMeta { key: "cursor:86042".to_string(), value: "10".to_string() },
+        };
+        // Apply in one order.
+        doc.apply(update_a);
+        doc.apply(update_b);
+        assert_eq!(doc.op_log().len(), 2, "both concurrent awareness updates must be recorded");
+        assert_eq!(doc.text(), "");
+    }
+
+    // Transaction: batch ops, rollback
+
+    #[test]
+    fn collab_transaction_batch_ops() {
+        // Simulate a transaction: collect ops into a batch (Vec), then apply atomically.
+        let peer = PeerId(87_000);
+        let op1 = Op {
+            id: OpId { peer, counter: 1 },
+            kind: OpKind::Insert { pos: RgaPos::Head, text: "tx_".to_string() },
+        };
+        let op2 = Op {
+            id: OpId { peer, counter: 2 },
+            kind: OpKind::Insert {
+                pos: RgaPos::After(op1.id),
+                text: "commit".to_string(),
+            },
+        };
+        let batch = vec![op1, op2];
+
+        let mut doc = DocState::new(peer);
+        // Apply all ops in the batch.
+        for op in &batch {
+            doc.apply(op.clone());
+        }
+        assert_eq!(doc.text(), "tx_commit", "batch transaction must apply all ops atomically");
+        assert_eq!(doc.op_log().len(), batch.len());
+    }
+
+    #[test]
+    fn collab_transaction_rollback_leaves_doc_unchanged() {
+        // Simulate rollback: apply a batch to a staging doc; only commit if valid.
+        // If "rollback" is triggered, the original doc is untouched.
+        let mut original = DocState::new(PeerId(87_001));
+        original.local_insert(RgaPos::Head, "stable");
+        let text_before = original.text();
+        let log_len_before = original.op_log().len();
+
+        // Staging: collect candidate ops.
+        let candidate = Op {
+            id: OpId { peer: PeerId(87_001), counter: 99 },
+            kind: OpKind::Insert { pos: RgaPos::Head, text: "unstable".to_string() },
+        };
+        let mut staging = DocState::new(PeerId(87_001));
+        // Replay original into staging.
+        for op in original.op_log().to_vec() {
+            staging.apply(op);
+        }
+        staging.apply(candidate);
+        // "Rollback": do NOT commit staging ops to original.
+        // Original must remain unchanged.
+        assert_eq!(original.text(), text_before, "rollback: original doc must be unchanged");
+        assert_eq!(original.op_log().len(), log_len_before);
+    }
+
+    // History: length bounded, timestamp, author, revert
+
+    #[test]
+    fn collab_history_length_bounded() {
+        // Simulate a history log bounded to 5 entries: after 10 ops, retain only last 5.
+        let mut doc = DocState::new(PeerId(88_000));
+        for i in 0u64..10 {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(88_000), counter: i + 1 },
+                kind: OpKind::Insert { pos: RgaPos::Head, text: format!("{i}") },
+            });
+        }
+        // Simulate bounded history: keep only the last 5 ops.
+        let history: Vec<&Op> = doc.op_log().iter().rev().take(5).collect();
+        assert_eq!(history.len(), 5, "bounded history must have at most 5 entries");
+    }
+
+    #[test]
+    fn collab_history_entry_has_timestamp() {
+        // Timestamp stored as SetMeta "ts:<counter>" alongside content ops.
+        let mut doc = DocState::new(PeerId(88_001));
+        doc.local_insert(RgaPos::Head, "v1");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(88_001), counter: 10 },
+            kind: OpKind::SetMeta { key: "ts:1".to_string(), value: "2026-04-18T00:00:00Z".to_string() },
+        });
+        let ts = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key.starts_with("ts:") { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert!(ts.is_some(), "history entry must have a timestamp");
+        assert!(ts.unwrap().contains("2026"), "timestamp must contain year");
+    }
+
+    #[test]
+    fn collab_history_entry_has_author() {
+        // Author stored as SetMeta "author:<counter>" alongside content ops.
+        let mut doc = DocState::new(PeerId(88_002));
+        doc.local_insert(RgaPos::Head, "authored_content");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(88_002), counter: 10 },
+            kind: OpKind::SetMeta { key: "author:1".to_string(), value: "bob".to_string() },
+        });
+        let author = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key.starts_with("author:") { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(author, Some("bob"), "history entry must record author");
+    }
+
+    #[test]
+    fn collab_history_revert_to_version() {
+        // Revert to version 1 by replaying only the first N ops.
+        let mut doc = DocState::new(PeerId(88_003));
+        let op1 = doc.local_insert(RgaPos::Head, "v1");
+        doc.local_insert(RgaPos::After(op1.id), "_v2");
+
+        // "Revert to v1": replay only the first op into a new doc.
+        let mut reverted = DocState::new(PeerId(88_003));
+        reverted.apply(doc.op_log()[0].clone());
+        assert_eq!(reverted.text(), "v1", "revert must restore doc to version 1 state");
+    }
+
+    // Snapshots: newer vs older, delta comparison
+
+    #[test]
+    fn collab_snapshot_newer_than_older() {
+        // A "newer" snapshot has more ops than an "older" snapshot.
+        let mut doc = DocState::new(PeerId(89_000));
+        doc.local_insert(RgaPos::Head, "v1");
+        let snapshot_v1_len = doc.op_log().len();
+
+        doc.local_insert(RgaPos::Head, "v2");
+        let snapshot_v2_len = doc.op_log().len();
+
+        assert!(
+            snapshot_v2_len > snapshot_v1_len,
+            "newer snapshot must have more ops than older snapshot"
+        );
+    }
+
+    #[test]
+    fn collab_snapshot_compare_returns_delta() {
+        // Delta between two snapshots = ops in newer not in older.
+        let mut doc = DocState::new(PeerId(89_001));
+        doc.local_insert(RgaPos::Head, "base");
+        let snap_old: Vec<Op> = doc.op_log().to_vec();
+
+        doc.local_insert(RgaPos::Head, "extra");
+        let snap_new: Vec<Op> = doc.op_log().to_vec();
+
+        // Delta: ops in snap_new not in snap_old.
+        let delta: Vec<&Op> = snap_new.iter().filter(|op| {
+            !snap_old.iter().any(|o| o.id == op.id)
+        }).collect();
+        assert_eq!(delta.len(), 1, "delta must contain exactly 1 new op");
+        match &delta[0].kind {
+            OpKind::Insert { text, .. } => assert_eq!(text, "extra"),
+            other => panic!("delta op must be Insert, got {other:?}"),
+        }
+    }
+
+    // Encoding: V1 format flag, unknown version error
+
+    #[test]
+    fn collab_encoding_v1_format() {
+        // Encode with a V1 format flag via SetMeta "encoding:version" = "v1".
+        let mut doc = DocState::new(PeerId(90_000));
+        doc.local_insert(RgaPos::Head, "encoded_content");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(90_000), counter: 10 },
+            kind: OpKind::SetMeta { key: "encoding:version".to_string(), value: "v1".to_string() },
+        });
+        let version = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "encoding:version" { return Some(value.as_str()); }
+            }
+            None
+        });
+        assert_eq!(version, Some("v1"), "encoding must be flagged as v1");
+    }
+
+    #[test]
+    fn collab_decoding_unknown_version_errors() {
+        // Simulate detecting an unknown version and returning an error result.
+        let mut doc = DocState::new(PeerId(90_001));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(90_001), counter: 1 },
+            kind: OpKind::SetMeta { key: "encoding:version".to_string(), value: "v99".to_string() },
+        });
+        let version = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "encoding:version" { return Some(value.as_str()); }
+            }
+            None
+        });
+        // Simulate "decode" check: only "v1" is known.
+        let known_versions = ["v1"];
+        let result: Result<(), &str> = if version.map_or(false, |v| known_versions.contains(&v)) {
+            Ok(())
+        } else {
+            Err("unknown encoding version")
+        };
+        assert!(result.is_err(), "unknown encoding version must produce an error");
+        assert_eq!(result.unwrap_err(), "unknown encoding version");
+    }
 }

@@ -427,8 +427,11 @@
 - [ ] 14 initial `grammar.kinds` seed rows: video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard
 
 **Grammar promotion lifecycle:**
-- [ ] Transient → Partial (usage >= 3 AND confidence >= 0.7): `DictWriter::insert_partial_entry()`; `NomtuRef` assigned immediately
+- [ ] `intended to <purpose>` clause required in every AI `.nomx` sentence — orchestrator rejects + retries if absent; purpose text → `grammar.kinds.description`
+- [ ] Explicit path: user Accept or Edit+Save in Review card → `DictWriter::insert_partial_entry()` immediately; no usage count; `NomtuRef` assigned at promotion
+- [ ] Auto path (user never reviews): usage_count >= 3 AND confidence >= 0.7 → Partial (background ticker, 60s poll)
 - [ ] Partial → Complete (used 10+ times AND compiler validation passes): `DictWriter::promote_to_complete()`
+- [ ] `glue_promotion_config` DB table: thresholds as data rows (auto_promote_count, auto_promote_confidence, complete_use_count)
 - [ ] On Complete: entity indistinguishable from human-authored in palette and canvas
 
 **UI surfaces:**

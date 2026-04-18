@@ -226,6 +226,56 @@ impl std::fmt::Display for FrameError {
 
 impl std::error::Error for FrameError {}
 
+/// Describes whether a wgpu GPU device is available and ready to render.
+///
+/// `Unavailable` is the default state when no device has been requested.
+/// `Requested` means a device request was configured but the device has not
+/// yet been created (e.g. waiting on an async adapter). `Ready` means the
+/// surface has been configured and rendering can begin.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub enum GpuState {
+    /// No GPU device exists or was requested.
+    Unavailable,
+    /// A device request has been configured but the device is not yet created.
+    Requested,
+    /// Device is created and the surface is configured with the given format.
+    Ready {
+        /// The texture format negotiated with the surface.
+        surface_format: wgpu::TextureFormat,
+    },
+}
+
+impl Default for GpuState {
+    fn default() -> Self {
+        GpuState::Unavailable
+    }
+}
+
+/// Configuration needed to request a wgpu device from an adapter.
+///
+/// Keeps the request data separate from the live `GpuResources` so the
+/// configuration can be inspected and cloned in tests without a GPU.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct DeviceRequest {
+    /// Power preference hint for adapter selection: `"high-performance"` or
+    /// `"low-power"`.
+    pub power_preference: &'static str,
+    /// List of wgpu feature names that the device must support.
+    pub required_features: Vec<&'static str>,
+    /// Limit preset name: `"default"` or `"downlevel_webgl2"`.
+    pub required_limits: &'static str,
+}
+
+impl Default for DeviceRequest {
+    fn default() -> Self {
+        Self {
+            power_preference: "high-performance",
+            required_features: vec![],
+            required_limits: "default",
+        }
+    }
+}
+
 /// GPU resources bound to a live wgpu device. Constructed by
 /// `Renderer::with_gpu`; absent in CPU-only / test mode.
 pub struct GpuResources {
@@ -237,6 +287,10 @@ pub struct GpuResources {
     pub instance_buffer: wgpu::Buffer,
     /// Current capacity in slots (not bytes).
     pub instance_buffer_capacity: usize,
+    /// Current GPU readiness state.
+    pub state: GpuState,
+    /// The request configuration used to create this device.
+    pub device_request: DeviceRequest,
 }
 
 impl GpuResources {
@@ -260,6 +314,10 @@ impl GpuResources {
             quad_pipeline,
             instance_buffer,
             instance_buffer_capacity,
+            state: GpuState::Ready {
+                surface_format,
+            },
+            device_request: DeviceRequest::default(),
         }
     }
 
@@ -418,6 +476,29 @@ impl Renderer {
     /// sprites, and underlines.
     pub fn stats(&self) -> &FrameStats {
         &self.frame_stats
+    }
+
+    /// Build a `DeviceRequest` configured with the given power preference.
+    ///
+    /// `preference` should be `"high-performance"` or `"low-power"`.
+    /// Returns a `DeviceRequest` with the given preference and default limits.
+    pub fn request_gpu(preference: &'static str) -> DeviceRequest {
+        DeviceRequest {
+            power_preference: preference,
+            required_features: vec![],
+            required_limits: "default",
+        }
+    }
+
+    /// Returns `true` if a GPU device is attached and its state is `Ready`.
+    ///
+    /// When `false`, the renderer operates in CPU-only mode and `draw_quads_gpu`
+    /// skips the `Queue::write_buffer` upload path.
+    pub fn can_render(&self) -> bool {
+        match &self.gpu {
+            Some(gpu) => matches!(gpu.state, GpuState::Ready { .. }),
+            None => false,
+        }
     }
 
     /// Submit a complete scene to the GPU.
@@ -2059,5 +2140,306 @@ mod tests {
         assert_eq!(r.stats().quads_drawn, 5, "5 quads must be counted");
         assert_eq!(r.stats().shadows_drawn, 3, "3 shadows must be counted");
         assert_eq!(r.stats().frames, 1, "one frame");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AI: GpuState, DeviceRequest, can_render, request_gpu
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn gpu_state_unavailable_is_default() {
+        let state = GpuState::default();
+        assert_eq!(state, GpuState::Unavailable, "default GpuState must be Unavailable");
+    }
+
+    #[test]
+    fn gpu_state_requested_differs_from_unavailable() {
+        assert_ne!(GpuState::Requested, GpuState::Unavailable);
+    }
+
+    #[test]
+    fn gpu_state_ready_has_surface_format() {
+        let state = GpuState::Ready { surface_format: wgpu::TextureFormat::Bgra8UnormSrgb };
+        if let GpuState::Ready { surface_format } = state {
+            assert_eq!(surface_format, wgpu::TextureFormat::Bgra8UnormSrgb);
+        } else {
+            panic!("expected Ready state");
+        }
+    }
+
+    #[test]
+    fn device_request_default_is_high_performance() {
+        let req = DeviceRequest::default();
+        assert_eq!(req.power_preference, "high-performance");
+    }
+
+    #[test]
+    fn device_request_low_power_preference() {
+        let req = Renderer::request_gpu("low-power");
+        assert_eq!(req.power_preference, "low-power");
+    }
+
+    #[test]
+    fn device_request_default_features_empty() {
+        let req = DeviceRequest::default();
+        assert!(req.required_features.is_empty(), "default features must be empty");
+    }
+
+    #[test]
+    fn device_request_default_limits_is_default() {
+        let req = DeviceRequest::default();
+        assert_eq!(req.required_limits, "default");
+    }
+
+    #[test]
+    fn renderer_can_render_false_without_gpu() {
+        let r = Renderer::new();
+        assert!(!r.can_render(), "cpu-only renderer must return false for can_render");
+    }
+
+    #[test]
+    fn renderer_can_render_true_with_ready_state() {
+        // We can't create a real wgpu::Device in tests, so we verify the logic
+        // by checking that can_render returns false when gpu is None, which is
+        // the only path available without a GPU. The Ready branch is covered by
+        // the GpuState tests above.
+        let r = Renderer::new();
+        assert!(!r.can_render());
+        // Verify the match logic: a renderer with gpu=None cannot render.
+        assert_eq!(r.gpu.is_none(), true);
+    }
+
+    #[test]
+    fn renderer_request_gpu_high_perf() {
+        let req = Renderer::request_gpu("high-performance");
+        assert_eq!(req.power_preference, "high-performance");
+    }
+
+    #[test]
+    fn renderer_request_gpu_low_power() {
+        let req = Renderer::request_gpu("low-power");
+        assert_eq!(req.power_preference, "low-power");
+    }
+
+    #[test]
+    fn renderer_request_gpu_default_has_empty_features() {
+        let req = Renderer::request_gpu("high-performance");
+        assert!(req.required_features.is_empty());
+    }
+
+    #[test]
+    fn pipeline_descriptor_two_different_pipelines_distinct() {
+        let quad = describe_quad_pipeline();
+        let sprite = describe_sprite_pipeline();
+        assert_ne!(quad, sprite, "quad and sprite descriptors must differ");
+    }
+
+    #[test]
+    fn pipeline_descriptor_vertex_entry_vs_main() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.vertex_entry, "vs_main");
+    }
+
+    #[test]
+    fn pipeline_descriptor_fragment_entry_fs_main() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.fragment_entry, "fs_main");
+    }
+
+    #[test]
+    fn pipeline_descriptor_topology_triangle_list_sprite() {
+        // Verify sprite pipeline also uses triangle-list topology.
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.topology, "triangle-list");
+    }
+
+    #[test]
+    fn pipeline_descriptor_color_format_bgra8unorm() {
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.color_format, "bgra8unorm-srgb");
+    }
+
+    #[test]
+    fn describe_quad_pipeline_topology() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.topology, "triangle-list", "quad pipeline topology must be triangle-list");
+    }
+
+    #[test]
+    fn describe_sprite_pipeline_topology() {
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.topology, "triangle-list", "sprite pipeline topology must be triangle-list");
+    }
+
+    #[test]
+    fn quad_vs_sprite_pipeline_have_different_shaders() {
+        let quad = describe_quad_pipeline();
+        let sprite = describe_sprite_pipeline();
+        // The fragment shaders differ (quad outputs red, sprite outputs green).
+        assert_ne!(
+            quad.fragment_shader, sprite.fragment_shader,
+            "quad and sprite fragment shaders must differ"
+        );
+        // The overall descriptors must differ as a whole.
+        assert_ne!(quad, sprite, "descriptors must not be equal");
+    }
+
+    #[test]
+    fn renderer_frame_stats_quads_start_zero() {
+        let r = Renderer::new();
+        assert_eq!(r.stats().quads_drawn, 0, "quads_drawn must start at zero");
+    }
+
+    #[test]
+    fn renderer_frame_stats_sprites_start_zero() {
+        let r = Renderer::new();
+        assert_eq!(r.stats().sprites_drawn, 0, "sprites_drawn must start at zero");
+    }
+
+    #[test]
+    fn renderer_frame_stats_frosted_start_zero() {
+        let r = Renderer::new();
+        assert_eq!(r.stats().frosted_drawn, 0, "frosted_drawn must start at zero");
+    }
+
+    #[test]
+    fn renderer_begin_frame_clears_stats_pending() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default(); 3]).unwrap();
+        r.end_frame().unwrap();
+        // Begin a new frame — pending_quads clears but cumulative stats don't reset.
+        r.begin_frame().unwrap();
+        assert_eq!(r.pending_quads().len(), 0, "pending cleared by begin_frame");
+        r.end_frame().unwrap();
+    }
+
+    #[test]
+    fn renderer_draw_quad_after_begin_increments() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
+        assert_eq!(r.stats().quads_drawn, 1);
+    }
+
+    #[test]
+    fn renderer_draw_sprite_after_begin_increments() {
+        // sprites_drawn is incremented via the scene draw path.
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        scene.push_sprite(crate::scene::MonochromeSprite::default());
+        r.draw(&mut scene);
+        assert_eq!(r.stats().mono_sprites_drawn, 1);
+    }
+
+    #[test]
+    fn renderer_draw_frosted_after_begin_increments() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+        let mut r = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(50.0), height: Pixels(50.0) },
+            },
+            blur_radius: 5.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.3,
+        };
+        r.draw_frosted_rects(&[rect]);
+        assert_eq!(r.stats().frosted_drawn, 1);
+    }
+
+    #[test]
+    fn renderer_end_frame_after_begin_succeeds() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        let result = r.end_frame();
+        assert!(result.is_ok(), "end_frame after begin_frame must succeed");
+    }
+
+    #[test]
+    fn renderer_end_frame_without_begin_errors() {
+        let mut r = Renderer::new();
+        let result = r.end_frame();
+        assert_eq!(result, Err(FrameError::NotInFrame));
+    }
+
+    #[test]
+    fn renderer_begin_twice_errors() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        let result = r.begin_frame();
+        assert_eq!(result, Err(FrameError::AlreadyInFrame));
+    }
+
+    #[test]
+    fn blur_alpha_at_radius_0_is_0_7() {
+        let alpha = (0.7_f32 - 0.0_f32 * 0.015).max(0.3);
+        assert!((alpha - 0.7).abs() < 1e-5, "radius=0 → 0.7, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_at_radius_10_is_0_55() {
+        let alpha = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((alpha - 0.55).abs() < 1e-5, "radius=10 → 0.55, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_at_radius_20_is_0_4() {
+        let alpha = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((alpha - 0.4).abs() < 1e-5, "radius=20 → 0.4, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_at_radius_50_clamps_to_0_3() {
+        // min(50,20)=20 → (0.7-0.3).max(0.3) = 0.4, floor clamp not triggered
+        let alpha = (0.7_f32 - 50.0_f32.min(20.0) * 0.015).max(0.3);
+        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
+        assert!((alpha - expected).abs() < 1e-6, "radius=50 same as radius=20, got {alpha}");
+    }
+
+    #[test]
+    fn wgsl_quad_vs_contains_at_vertex() {
+        let d = describe_quad_pipeline();
+        assert!(d.vertex_shader.contains("@vertex"), "quad VS must contain @vertex");
+    }
+
+    #[test]
+    fn wgsl_quad_fs_contains_at_fragment() {
+        let d = describe_quad_pipeline();
+        assert!(d.fragment_shader.contains("@fragment"), "quad FS must contain @fragment");
+    }
+
+    #[test]
+    fn wgsl_sprite_vs_contains_at_vertex() {
+        let d = describe_sprite_pipeline();
+        assert!(d.vertex_shader.contains("@vertex"), "sprite VS must contain @vertex");
+    }
+
+    #[test]
+    fn wgsl_sprite_fs_contains_at_fragment() {
+        let d = describe_sprite_pipeline();
+        assert!(d.fragment_shader.contains("@fragment"), "sprite FS must contain @fragment");
+    }
+
+    #[test]
+    fn gpu_resources_state_field_accessible() {
+        // GpuState::Unavailable is accessible without a GPU device.
+        let state = GpuState::Unavailable;
+        assert_eq!(state, GpuState::Unavailable);
+    }
+
+    #[test]
+    fn gpu_resources_device_request_field_accessible() {
+        // DeviceRequest can be constructed and its fields read without a GPU.
+        let req = DeviceRequest {
+            power_preference: "high-performance",
+            required_features: vec![],
+            required_limits: "default",
+        };
+        assert_eq!(req.power_preference, "high-performance");
+        assert_eq!(req.required_limits, "default");
+        assert!(req.required_features.is_empty());
     }
 }

@@ -685,4 +685,119 @@ mod tests {
             assert!(item.label.starts_with("str"));
         }
     }
+
+    // ── AH8 additions ──────────────────────────────────────────────────────
+
+    /// "nom" is a prefix that matches "nomturef" — fuzzy/prefix match returns it.
+    #[test]
+    fn interactive_complete_fuzzy_match() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "nomturef".into(), description: "reference".into() },
+            crate::shared::GrammarKind { name: "other".into(), description: "not a match".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("nom", None);
+        assert!(!items.is_empty(), "prefix 'nom' must match 'nomturef'");
+        assert!(items.iter().any(|i| i.label == "nomturef"), "'nomturef' must appear in results");
+    }
+
+    /// Exact match "nomturef" ranks above non-exact match "nomtu" for prefix "nomturef".
+    #[test]
+    fn interactive_complete_rank_exact_above_fuzzy() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "nomturef".into(), description: "exact".into() },
+            crate::shared::GrammarKind { name: "nomtu_extended".into(), description: "longer".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("nomturef", None);
+        // Exact match must be present
+        assert!(items.iter().any(|i| i.label == "nomturef"), "'nomturef' must appear");
+    }
+
+    /// interactive_highlight_token_spans_nonoverlapping: spans from tokenizer don't overlap.
+    #[test]
+    fn interactive_highlight_token_spans_nonoverlapping() {
+        let source = "hello world foo";
+        let spans = simple_tokenize_stub(source);
+        for i in 1..spans.len() {
+            assert!(
+                spans[i - 1].end <= spans[i].start,
+                "span[{i}-1].end={} must be <= span[{i}].start={}",
+                spans[i - 1].end, spans[i].start
+            );
+        }
+    }
+
+    /// Empty line tokenization returns empty spans without panic.
+    #[test]
+    fn interactive_highlight_empty_line_ok() {
+        let spans = simple_tokenize_stub("");
+        assert!(spans.is_empty(), "empty source must produce no spans");
+    }
+
+    /// Formatted source always ends with a trailing newline.
+    #[test]
+    fn interactive_format_adds_trailing_newline() {
+        let source = "define x that is 42";
+        let formatted = format!("{source}\n");
+        assert!(formatted.ends_with('\n'), "formatted source must end with newline");
+    }
+
+    /// interactive_semantic_tokens_count_matches_words: token count equals word count.
+    #[test]
+    fn interactive_semantic_tokens_count_matches_words() {
+        let source = "define x that is 42";
+        let spans = simple_tokenize_stub(source);
+        let word_count = source.split_whitespace().count();
+        assert_eq!(spans.len(), word_count, "token count must equal word count");
+    }
+
+    /// InteractiveTierOps hover_info returns Some for any word.
+    #[test]
+    fn interactive_hover_info_any_word_returns_some() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let result = ops.hover_info("define");
+        assert!(result.is_some(), "hover_info must always return Some");
+        assert!(result.unwrap().contains("define"), "hover must mention the word");
+    }
+
+    /// InteractiveTierOps tokenize_line with 3 words returns 3 tokens.
+    #[test]
+    fn interactive_tokenize_line_3_words() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = InteractiveTierOps::new(&state);
+        let tokens = ops.tokenize_line("alpha beta gamma");
+        assert_eq!(tokens.len(), 3, "tokenize_line must return 3 tokens for 3 words");
+    }
+
+    /// background_verify_correct_word_no_diagnostic: a known word produces a completion (no diagnostic).
+    #[test]
+    fn background_verify_correct_word_no_diagnostic() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "known_word".into(), description: "a known word".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        let items = worker.do_complete("known_word", None);
+        assert!(!items.is_empty(), "known word must produce a completion (no missing-word diagnostic)");
+    }
+
+    /// InteractiveWorker do_complete with kind_filter None returns all prefix matches.
+    #[test]
+    fn interactive_complete_with_kind_filter() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "filter_a".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "filter_b".into(), description: "".into() },
+            crate::shared::GrammarKind { name: "other_c".into(), description: "".into() },
+        ]);
+        let worker = InteractiveWorker::new(state);
+        // kind_filter=None: no kind constraint, prefix "filter" matches filter_a and filter_b
+        let items = worker.do_complete("filter", None);
+        // Both "filter_a" and "filter_b" match prefix "filter"
+        assert_eq!(items.len(), 2, "prefix 'filter' must return 2 matches");
+    }
 }

@@ -1134,4 +1134,263 @@ mod tests {
         assert_eq!(dag.node_count(), 0, "after clear, node_count must be 0");
         assert_eq!(dag.edge_count(), 0, "after clear, edge_count must be 0");
     }
+
+    // ------------------------------------------------------------------
+    // graph_mode_update_node_data — node data can be replaced after insert
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_update_node_data() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("upd_node", "verb"));
+        assert_eq!(dag.nodes["upd_node"].kind, "verb");
+        // Replace the node with a new kind value.
+        dag.add_node(ExecNode::new("upd_node", "noun"));
+        assert_eq!(dag.nodes["upd_node"].kind, "noun", "re-adding node must update its data");
+        assert_eq!(dag.node_count(), 1, "node count must not change on update");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_batch_add_100_nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_batch_add_100_nodes() {
+        let mut dag = Dag::new();
+        for i in 0..100u32 {
+            dag.add_node(ExecNode::new(format!("batch_n_{i}"), "verb"));
+        }
+        assert_eq!(dag.node_count(), 100, "batch add must result in 100 nodes");
+        for i in 0..100u32 {
+            assert!(
+                dag.nodes.contains_key(&format!("batch_n_{i}")),
+                "node batch_n_{i} must be present"
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_batch_add_100_edges
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_batch_add_100_edges() {
+        let mut dag = Dag::new();
+        for i in 0..101u32 {
+            dag.add_node(ExecNode::new(format!("be_{i}"), "verb"));
+        }
+        for i in 0..100u32 {
+            dag.add_edge(format!("be_{i}"), "out", format!("be_{}", i + 1), "in");
+        }
+        assert_eq!(dag.edge_count(), 100, "batch add must result in 100 edges");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_topological_sort_correct — linear chain returns correct order
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_topological_sort_correct() {
+        let dag = three_node_dag(); // a → b → c
+        let order = dag.topological_sort().expect("linear chain must sort without error");
+        assert_eq!(order.len(), 3, "topo sort must include all 3 nodes");
+        // In a → b → c, a must appear before b, b before c.
+        let pos_a = order.iter().position(|id| id == "a").unwrap();
+        let pos_b = order.iter().position(|id| id == "b").unwrap();
+        let pos_c = order.iter().position(|id| id == "c").unwrap();
+        assert!(pos_a < pos_b, "a must come before b in topo order");
+        assert!(pos_b < pos_c, "b must come before c in topo order");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_in_degree_correct — count incoming edges per node
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_in_degree_correct() {
+        let dag = three_node_dag(); // a → b → c
+        // In-degree: a=0, b=1, c=1
+        let in_deg = |id: &str| dag.edges.iter().filter(|e| e.dst_node == id).count();
+        assert_eq!(in_deg("a"), 0, "a has no incoming edges");
+        assert_eq!(in_deg("b"), 1, "b has one incoming edge from a");
+        assert_eq!(in_deg("c"), 1, "c has one incoming edge from b");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_out_degree_correct — count outgoing edges per node
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_out_degree_correct() {
+        let dag = three_node_dag(); // a → b → c
+        let out_deg = |id: &str| dag.edges.iter().filter(|e| e.src_node == id).count();
+        assert_eq!(out_deg("a"), 1, "a has one outgoing edge to b");
+        assert_eq!(out_deg("b"), 1, "b has one outgoing edge to c");
+        assert_eq!(out_deg("c"), 0, "c has no outgoing edges");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_has_path_between_connected — BFS path existence
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_has_path_between_connected() {
+        let dag = three_node_dag(); // a → b → c
+        // Check reachability via simple BFS from a.
+        fn has_path(dag: &Dag, from: &str, to: &str) -> bool {
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(from.to_string());
+            while let Some(cur) = queue.pop_front() {
+                if cur == to { return true; }
+                if visited.contains(&cur) { continue; }
+                visited.insert(cur.clone());
+                for e in &dag.edges {
+                    if e.src_node == cur { queue.push_back(e.dst_node.clone()); }
+                }
+            }
+            false
+        }
+        assert!(has_path(&dag, "a", "b"), "path a→b must exist");
+        assert!(has_path(&dag, "a", "c"), "path a→c (via b) must exist");
+        assert!(has_path(&dag, "b", "c"), "path b→c must exist");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_no_path_between_disconnected — BFS finds no path
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_no_path_between_disconnected() {
+        let dag = three_node_dag(); // a → b → c (directed)
+        fn has_path(dag: &Dag, from: &str, to: &str) -> bool {
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back(from.to_string());
+            while let Some(cur) = queue.pop_front() {
+                if cur == to { return true; }
+                if visited.contains(&cur) { continue; }
+                visited.insert(cur.clone());
+                for e in &dag.edges {
+                    if e.src_node == cur { queue.push_back(e.dst_node.clone()); }
+                }
+            }
+            false
+        }
+        // Directed: c has no outgoing edges, so no path c→a or c→b.
+        assert!(!has_path(&dag, "c", "a"), "no path from c to a in directed DAG");
+        assert!(!has_path(&dag, "c", "b"), "no path from c to b in directed DAG");
+        // Also: b cannot reach a.
+        assert!(!has_path(&dag, "b", "a"), "no path from b to a in directed DAG");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_shortest_path_length — BFS hop count between nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_shortest_path_length() {
+        let dag = three_node_dag(); // a → b → c
+        fn bfs_dist(dag: &Dag, from: &str, to: &str) -> Option<usize> {
+            let mut visited = std::collections::HashSet::new();
+            let mut queue = std::collections::VecDeque::new();
+            queue.push_back((from.to_string(), 0usize));
+            while let Some((cur, dist)) = queue.pop_front() {
+                if cur == to { return Some(dist); }
+                if visited.contains(&cur) { continue; }
+                visited.insert(cur.clone());
+                for e in &dag.edges {
+                    if e.src_node == cur { queue.push_back((e.dst_node.clone(), dist + 1)); }
+                }
+            }
+            None
+        }
+        assert_eq!(bfs_dist(&dag, "a", "b"), Some(1), "a→b is 1 hop");
+        assert_eq!(bfs_dist(&dag, "a", "c"), Some(2), "a→c is 2 hops via b");
+        assert_eq!(bfs_dist(&dag, "b", "c"), Some(1), "b→c is 1 hop");
+        assert_eq!(bfs_dist(&dag, "c", "a"), None, "c→a is unreachable in directed DAG");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_bipartite_check — 2-colorable (no odd cycles)
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_bipartite_check() {
+        // A simple path graph a-b-c-d (undirected edges) is bipartite.
+        // We verify that a 2-coloring BFS succeeds.
+        fn is_bipartite(dag: &Dag) -> bool {
+            let mut color: std::collections::HashMap<String, u8> = std::collections::HashMap::new();
+            for start_id in dag.nodes.keys() {
+                if color.contains_key(start_id.as_str()) { continue; }
+                let mut queue = std::collections::VecDeque::new();
+                color.insert(start_id.clone(), 0);
+                queue.push_back(start_id.clone());
+                while let Some(node) = queue.pop_front() {
+                    let c = color[&node];
+                    for e in &dag.edges {
+                        let nbr = if e.src_node == node { Some(e.dst_node.clone()) }
+                                  else if e.dst_node == node { Some(e.src_node.clone()) }
+                                  else { None };
+                        if let Some(n) = nbr {
+                            if let Some(&nc) = color.get(&n) {
+                                if nc == c { return false; }
+                            } else {
+                                color.insert(n.clone(), 1 - c);
+                                queue.push_back(n);
+                            }
+                        }
+                    }
+                }
+            }
+            true
+        }
+        // Path a–b–c–d is bipartite.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("bp_a", "verb"));
+        dag.add_node(ExecNode::new("bp_b", "verb"));
+        dag.add_node(ExecNode::new("bp_c", "verb"));
+        dag.add_node(ExecNode::new("bp_d", "verb"));
+        dag.add_edge("bp_a", "out", "bp_b", "in");
+        dag.add_edge("bp_b", "out", "bp_c", "in");
+        dag.add_edge("bp_c", "out", "bp_d", "in");
+        assert!(is_bipartite(&dag), "path graph must be bipartite");
+
+        // Triangle a–b–c–a has an odd cycle — NOT bipartite.
+        let mut dag2 = Dag::new();
+        dag2.add_node(ExecNode::new("ta", "verb"));
+        dag2.add_node(ExecNode::new("tb", "verb"));
+        dag2.add_node(ExecNode::new("tc", "verb"));
+        dag2.add_edge("ta", "out", "tb", "in");
+        dag2.add_edge("tb", "out", "tc", "in");
+        dag2.add_edge("tc", "out", "ta", "in");
+        assert!(!is_bipartite(&dag2), "triangle (odd cycle) must not be bipartite");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_strongly_connected_components — trivial: each node in linear DAG is its own SCC
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_strongly_connected_components() {
+        // In a DAG (no back-edges), every SCC is a single node.
+        // We implement Kosaraju-like check: each node must be its own SCC.
+        let dag = three_node_dag(); // a → b → c
+        // For a directed DAG: node X is in the same SCC as Y iff X can reach Y AND Y can reach X.
+        fn can_reach(dag: &Dag, from: &str, to: &str) -> bool {
+            let mut visited = std::collections::HashSet::new();
+            let mut stack = vec![from.to_string()];
+            while let Some(cur) = stack.pop() {
+                if cur == to { return true; }
+                if !visited.insert(cur.clone()) { continue; }
+                for e in &dag.edges {
+                    if e.src_node == cur { stack.push(e.dst_node.clone()); }
+                }
+            }
+            false
+        }
+        // In a linear DAG, no two distinct nodes are mutually reachable.
+        let nodes: Vec<_> = dag.nodes.keys().cloned().collect();
+        for i in 0..nodes.len() {
+            for j in 0..nodes.len() {
+                if i == j { continue; }
+                let fwd = can_reach(&dag, &nodes[i], &nodes[j]);
+                let bwd = can_reach(&dag, &nodes[j], &nodes[i]);
+                assert!(
+                    !(fwd && bwd),
+                    "in a DAG, {} and {} must not be mutually reachable (would form a cycle)",
+                    nodes[i], nodes[j]
+                );
+            }
+        }
+    }
 }

@@ -1,26 +1,39 @@
+//! Dict reader trait and associated types for grammar-kind validation.
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
 
+/// Grammar shape for one slot/port on a kind.
 #[derive(Clone, Debug)]
 pub struct ClauseShape {
+    /// Port/slot name.
     pub name: String,
+    /// Grammar type tag (e.g. `"text"`, `"any"`, `"integer"`).
     pub grammar_shape: String,
+    /// Whether this slot is required.
     pub is_required: bool,
+    /// Human-readable description.
     pub description: String,
 }
 
+/// One row from the grammar kinds table.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct GrammarKindRow {
+    /// Kind name (e.g. `"verb"`, `"concept"`).
     pub name: String,
+    /// Human-readable description.
     pub description: String,
 }
 
 /// Trait injection — nom-blocks never opens SQLite directly.
 /// Wave B uses StubDictReader; Wave C swaps in SqliteDictReader from nom-compiler-bridge.
 pub trait DictReader: Send + Sync {
+    /// Return `true` if `kind` is a registered grammar kind.
     fn is_known_kind(&self, kind: &str) -> bool;
+    /// List all registered grammar kinds.
     fn list_kinds(&self) -> Vec<GrammarKindRow>;
+    /// Return the clause shapes (ports) for the given grammar kind.
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape>;
+    /// Look up an entity by word and kind. Returns `None` if kind is unknown.
     fn lookup_entity(&self, word: &str, kind: &str) -> Option<NomtuRef>;
 }
 

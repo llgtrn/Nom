@@ -25,6 +25,30 @@
 - [x] Wave S landed (5 panels+10 backends+FrostedRect+hints+renderer — 686 tests, commit c4d6252)
 - [x] Wave T landed (scenario_workflow+renderer+integration+31 new tests — 717 tests, commit 0b0d48e)
 
+## Iteration 52 — Hybrid Composition Design (2026-04-18, HEAD 617c064, 4194 tests)
+
+**Design session:** Brainstormed and approved full Hybrid Composition System spec.
+**Spec written:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
+
+### Architecture decisions locked
+
+**Three-tier resolver (DB → Provider → AI):**
+- Tier 1: `grammar.kinds` Complete entry → `BackendRegistry` (existing, extended with `ComposeContext`)
+- Tier 2: registered `MediaVendor` → `UnifiedDispatcher` with `CredentialStore` injection
+- Tier 3: neither → `AiGlueOrchestrator` (new) generates `.nomx` glue code via `ReActLlmFn` trait
+
+**AI glue language:** `.nomx` sentences (filled from `clause_shapes` grammar constraint) + JS AST for imperative transforms. Never Rust source, never Python, never subprocesses. One binary.
+
+**Promotion lifecycle:** Two paths to Partial — (1) Explicit: user confirms purpose in Review card (Accept or Edit+Save) → `insert_partial_entry()` immediately, no usage count; (2) Auto: usage_count >= 3 AND confidence >= 0.7 → background ticker. `intended to <purpose>` clause required in every AI `.nomx` sentence — purpose text becomes `grammar.kinds.description`. `NomtuRef` assigned at Partial. Thresholds in `glue_promotion_config` DB table.
+
+**IntentResolver:** Front door. Lexical scan (exact `grammar.kinds` match) → BM25 + cosine (semantic) → `classify_with_react()` (ambiguous). Multi-kind requests → parallel `ComposeOrchestrator` pipeline.
+
+**Provider integration:** Any external service (video, image, audio, presentation, web, mobile, data, etc.) registers as `MediaVendor`. Credentials injected at dispatch from `CredentialStore`. `grammar.kinds` is the kind registry — not Rust enums.
+
+**UI surfaces:** Intent Preview card (confidence bars, Compose/Change/All-3), AI Review card (Accept/Edit/Skip with inline .nomx editor), `⚡` gutter badge (Doc mode), amber node tint (Graph mode), status bar counter.
+
+**Open work (Wave AH):** 10 implementation targets across `nom-compose` + `nom-compiler-bridge` + `nom-panels`.
+
 ## Iteration 51 — Wave AE Hard Audit (2026-04-18, HEAD c3d2323, 2841 tests)
 
 8-agent parallel audit of all 14 crates. Key findings:

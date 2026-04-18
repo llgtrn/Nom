@@ -1,18 +1,32 @@
+//! Slot value and binding types.
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
 use serde::{Deserialize, Serialize};
 
+/// A typed value that can be stored in a block slot.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub enum SlotValue {
+    /// UTF-8 text.
     Text(String),
+    /// 64-bit floating-point number.
     Number(f64),
+    /// Boolean flag.
     Bool(bool),
+    /// Reference to another DB entry.
     Ref(NomtuRef),
+    /// Ordered list of slot values.
     List(Vec<SlotValue>),
-    Blob { hash: [u8; 32], mime: String },
+    /// Raw binary blob identified by a 32-byte hash.
+    Blob {
+        /// Content-addressed hash.
+        hash: [u8; 32],
+        /// MIME type string.
+        mime: String,
+    },
 }
 
 impl SlotValue {
+    /// Extract the text value if this is a [`SlotValue::Text`].
     pub fn as_text(&self) -> Option<&str> {
         if let SlotValue::Text(t) = self {
             Some(t)
@@ -20,6 +34,7 @@ impl SlotValue {
             None
         }
     }
+    /// Extract the numeric value if this is a [`SlotValue::Number`].
     pub fn as_number(&self) -> Option<f64> {
         if let SlotValue::Number(n) = self {
             Some(*n)
@@ -27,6 +42,7 @@ impl SlotValue {
             None
         }
     }
+    /// Extract the boolean value if this is a [`SlotValue::Bool`].
     pub fn as_bool(&self) -> Option<bool> {
         if let SlotValue::Bool(b) = self {
             Some(*b)
@@ -34,6 +50,7 @@ impl SlotValue {
             None
         }
     }
+    /// Extract the entity reference if this is a [`SlotValue::Ref`].
     pub fn as_ref(&self) -> Option<&NomtuRef> {
         if let SlotValue::Ref(r) = self {
             Some(r)
@@ -46,15 +63,22 @@ impl SlotValue {
 /// Confidence scale: 1.0=explicit, 0.8=inferred from grammar, 0.6=heuristic
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct SlotBinding {
+    /// Name of the clause/slot this binding targets.
     pub clause_name: String,
+    /// Grammar type tag for the slot.
     pub grammar_shape: String,
+    /// Current value stored in the slot.
     pub value: SlotValue,
+    /// Whether the slot is required by the grammar.
     pub is_required: bool,
+    /// Confidence score for this binding (0.0–1.0).
     pub confidence: f32,
+    /// Reason string explaining the binding source.
     pub reason: String,
 }
 
 impl SlotBinding {
+    /// Construct an explicit (user-set) binding with confidence 1.0.
     pub fn explicit(
         clause_name: impl Into<String>,
         grammar_shape: impl Into<String>,
@@ -70,6 +94,7 @@ impl SlotBinding {
         }
     }
 
+    /// Construct an inferred binding (from grammar) with confidence 0.8.
     pub fn inferred(
         clause_name: impl Into<String>,
         grammar_shape: impl Into<String>,

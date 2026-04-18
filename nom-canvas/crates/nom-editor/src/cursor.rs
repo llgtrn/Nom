@@ -833,4 +833,93 @@ mod tests {
         let restored = Selection::caret(mark.head());
         assert_eq!(restored.head(), 42);
     }
+
+    // ── wave AI-7: additional cursor tests ──────────────────────────────────
+
+    /// Selection head equals max_offset when not reversed.
+    #[test]
+    fn cursor_selection_head_is_max_when_forward() {
+        let sel = Selection::range(2, 8);
+        assert!(!sel.reversed);
+        assert_eq!(sel.head(), sel.max_offset());
+    }
+
+    /// Selection tail equals min_offset when not reversed.
+    #[test]
+    fn cursor_selection_tail_is_min_when_forward() {
+        let sel = Selection::range(3, 9);
+        assert_eq!(sel.tail(), sel.min_offset());
+    }
+
+    /// Two non-overlapping selections remain two entries after merge.
+    #[test]
+    fn cursor_set_two_disjoint_ranges_stay_two() {
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(0, 5);
+        cs.add(Selection::range(10, 15));
+        assert_eq!(cs.len(), 2);
+    }
+
+    /// A single caret's head and tail are the same.
+    #[test]
+    fn cursor_caret_head_tail_equal() {
+        let sel = Selection::caret(7);
+        assert_eq!(sel.head(), sel.tail());
+        assert_eq!(sel.head(), 7);
+    }
+
+    /// CursorSet::primary returns None when empty (via selections.clear).
+    #[test]
+    fn cursor_set_primary_none_when_empty() {
+        let mut cs = CursorSet::single(0);
+        cs.selections.clear();
+        assert!(cs.primary().is_none());
+    }
+
+    /// Reversed selection: head < tail.
+    #[test]
+    fn cursor_reversed_head_less_than_tail() {
+        let sel = Selection::range(10, 3);
+        assert!(sel.reversed);
+        assert!(sel.head() < sel.tail());
+    }
+
+    /// After adding a cursor that fully contains an existing one, the count shrinks.
+    #[test]
+    fn cursor_set_larger_range_absorbs_smaller() {
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(2, 6);
+        cs.add(Selection::range(0, 10)); // contains 2..6
+        // The smaller range is absorbed; only one entry remains.
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].min_offset(), 0);
+        assert_eq!(cs.selections[0].max_offset(), 10);
+    }
+
+    /// Anchor offset is stored correctly for left-bias anchors.
+    #[test]
+    fn anchor_offset_stored_correctly() {
+        let a = Anchor::at(99);
+        assert_eq!(a.offset, 99);
+        assert_eq!(a.bias, Bias::Left);
+    }
+
+    /// Zero-offset caret is valid and at position 0.
+    #[test]
+    fn cursor_caret_at_zero_offset_valid() {
+        let sel = Selection::caret(0);
+        assert_eq!(sel.head(), 0);
+        assert!(sel.is_empty());
+        assert!(!sel.reversed);
+    }
+
+    /// Adding 5 disjoint carets results in exactly 5 entries.
+    #[test]
+    fn cursor_set_five_disjoint_carets() {
+        let mut cs = CursorSet::single(0);
+        for i in 1usize..=4 {
+            cs.add(Selection::caret(i * 10));
+        }
+        assert_eq!(cs.len(), 5);
+    }
 }

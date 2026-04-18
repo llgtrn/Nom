@@ -1,32 +1,48 @@
+//! Table block: columnar data with typed rows.
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
 use crate::slot::SlotValue;
 use serde::{Deserialize, Serialize};
 
+/// A column definition for a [`TableBlock`].
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableColumn {
+    /// Unique column identifier.
     pub id: String,
+    /// Display name for the column.
     pub name: String,
+    /// Column data type (e.g. `"text"`, `"number"`, `"boolean"`).
     pub col_type: String,
+    /// Optional fractional width (0.0–1.0 or absolute value).
     pub width: Option<f32>,
+    /// Pixel width of the column.
     pub width_px: u32,
 }
 
+/// A single typed row in a [`TableBlock`].
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 pub struct TableRow {
+    /// Unique row identifier.
     pub id: String,
-    pub cells: Vec<String>, // one per column
+    /// Cell values, one per column.
+    pub cells: Vec<String>,
 }
 
+/// A block holding tabular data with named columns and typed rows.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct TableBlock {
+    /// DB entity reference (NON-OPTIONAL).
     pub entity: NomtuRef,
+    /// Column definitions.
     pub columns: Vec<TableColumn>,
+    /// Raw slot-value rows (legacy path).
     pub rows: Vec<Vec<SlotValue>>,
+    /// Typed string-cell rows.
     pub typed_rows: Vec<TableRow>,
 }
 
 impl TableBlock {
+    /// Construct a new, empty [`TableBlock`] with the given entity and columns.
     pub fn new(entity: NomtuRef, columns: Vec<TableColumn>) -> Self {
         Self {
             entity,
@@ -35,6 +51,7 @@ impl TableBlock {
             typed_rows: Vec::new(),
         }
     }
+    /// Append a raw row of [`SlotValue`]s. Returns `Err` if the cell count doesn't match columns.
     pub fn add_row(&mut self, row: Vec<SlotValue>) -> Result<(), String> {
         if row.len() != self.columns.len() {
             return Err(format!(
@@ -46,24 +63,30 @@ impl TableBlock {
         self.rows.push(row);
         Ok(())
     }
+    /// Append a column definition.
     pub fn add_column(&mut self, col: TableColumn) {
         self.columns.push(col);
     }
+    /// Append a typed row.
     pub fn add_typed_row(&mut self, row: TableRow) {
         self.typed_rows.push(row);
     }
+    /// Number of typed rows.
     pub fn row_count(&self) -> usize {
         self.typed_rows.len()
     }
+    /// Number of columns.
     pub fn col_count(&self) -> usize {
         self.columns.len()
     }
+    /// Return the cell string at `(row_idx, col_idx)`, or `None` if out of range.
     pub fn cell(&self, row_idx: usize, col_idx: usize) -> Option<&str> {
         self.typed_rows
             .get(row_idx)
             .and_then(|r| r.cells.get(col_idx))
             .map(|s| s.as_str())
     }
+    /// Remove all typed rows.
     pub fn clear_typed_rows(&mut self) {
         self.typed_rows.clear();
     }
@@ -399,5 +422,68 @@ mod tests {
         // Update via direct access to typed_rows
         t.typed_rows[0].cells[0] = "updated".to_string();
         assert_eq!(t.cell(0, 0), Some("updated"));
+    }
+
+    // ── wave AI: new table tests ─────────────────────────────────────────────────
+
+    #[test]
+    fn table_row_id_is_stable() {
+        let r = make_row("stable-id-42", &["val"]);
+        // Same row retains its ID across field reads
+        assert_eq!(r.id, "stable-id-42");
+        let id_copy = r.id.clone();
+        assert_eq!(r.id, id_copy);
+    }
+
+    #[test]
+    fn table_empty_row_has_empty_cells() {
+        let r = make_row("empty-row", &[]);
+        assert!(r.cells.is_empty());
+    }
+
+    #[test]
+    fn table_add_two_columns_two_rows() {
+        let mut t = make_table("tbl-2c2r");
+        t.add_column(make_col("Name", "text", 120));
+        t.add_column(make_col("Score", "number", 80));
+        t.add_typed_row(make_row("r1", &["Alice", "95"]));
+        t.add_typed_row(make_row("r2", &["Bob", "87"]));
+        assert_eq!(t.col_count(), 2);
+        assert_eq!(t.row_count(), 2);
+    }
+
+    #[test]
+    fn table_cell_first_row_first_col() {
+        let mut t = make_table("tbl-frf");
+        t.add_column(make_col("X", "text", 100));
+        t.add_column(make_col("Y", "text", 100));
+        t.add_typed_row(make_row("r1", &["first", "second"]));
+        assert_eq!(t.cell(0, 0), Some("first"));
+    }
+
+    #[test]
+    fn table_cell_last_row_last_col() {
+        let mut t = make_table("tbl-lrl");
+        t.add_column(make_col("A", "text", 100));
+        t.add_column(make_col("B", "text", 100));
+        t.add_typed_row(make_row("r1", &["a0", "b0"]));
+        t.add_typed_row(make_row("r2", &["a1", "b1"]));
+        assert_eq!(t.cell(1, 1), Some("b1"));
+    }
+
+    #[test]
+    fn table_entity_nomturef_word_nonempty() {
+        let entity = NomtuRef::new("tbl-eid", "tabulate", "verb");
+        let t = TableBlock::new(entity, vec![]);
+        assert!(!t.entity.word.is_empty());
+        assert_eq!(t.entity.word, "tabulate");
+    }
+
+    #[test]
+    fn table_entity_nomturef_kind_nonempty() {
+        let entity = NomtuRef::new("tbl-eid-2", "organize", "verb");
+        let t = TableBlock::new(entity, vec![]);
+        assert!(!t.entity.kind.is_empty());
+        assert_eq!(t.entity.kind, "verb");
     }
 }

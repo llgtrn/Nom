@@ -2047,4 +2047,282 @@ mod tests {
             panic!("expected Rag variant");
         }
     }
+
+    // ── Wave AI Agent 9 additions ─────────────────────────────────────────────
+
+    // --- Subcommand flags ---
+
+    #[test]
+    fn flag_build_release_present_true() {
+        let cmd = parse_args(&["build", "--release", "app.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(release, "--release flag must set release=true");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn flag_build_release_absent_false() {
+        let cmd = parse_args(&["build", "app.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(!release, "missing --release must set release=false");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn flag_rag_top_k_flag_overrides_default() {
+        let cmd = parse_args(&["rag", "--top-k", "42", "my query"]).unwrap();
+        if let CliCommand::RagWithK { top_k, query } = cmd {
+            assert_eq!(top_k, 42, "--top-k flag must override default");
+            assert_eq!(query, "my query");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn flag_rag_top_k_large_value() {
+        let cmd = parse_args(&["rag", "--top-k", "9999", "big k"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 9999);
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn flag_build_path_is_preserved_with_release() {
+        let cmd = parse_args(&["build", "--release", "/abs/path/app.nom"]).unwrap();
+        if let CliCommand::Build { path, release } = cmd {
+            assert_eq!(path, "/abs/path/app.nom");
+            assert!(release);
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    // --- Output formats ---
+
+    #[test]
+    fn output_format_version_command_is_recognized() {
+        // version command must parse without error.
+        let cmd = parse_args(&["version"]).unwrap();
+        assert_eq!(cmd, CliCommand::Version);
+    }
+
+    #[test]
+    fn output_format_help_command_is_recognized() {
+        let cmd = parse_args(&["help"]).unwrap();
+        assert_eq!(cmd, CliCommand::Help);
+    }
+
+    #[test]
+    fn output_format_check_produces_check_variant() {
+        let cmd = parse_args(&["check", "foo.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Check { .. }), "check must produce Check variant");
+    }
+
+    #[test]
+    fn output_format_lint_produces_lint_variant() {
+        let cmd = parse_args(&["lint", "foo.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Lint { .. }), "lint must produce Lint variant");
+    }
+
+    #[test]
+    fn output_format_graph_produces_graph_variant() {
+        let cmd = parse_args(&["graph", "some query"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Graph { .. }));
+    }
+
+    #[test]
+    fn output_format_run_produces_run_variant() {
+        let cmd = parse_args(&["run", "main.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Run { .. }));
+    }
+
+    #[test]
+    fn output_format_format_produces_format_variant() {
+        let cmd = parse_args(&["format", "main.nom"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Format { .. }));
+    }
+
+    // --- Error messages ---
+
+    #[test]
+    fn error_message_unknown_command_is_descriptive() {
+        let err = parse_args(&["frobulate"]).unwrap_err();
+        assert!(
+            err.contains("unknown") || err.contains("frobulate"),
+            "error must mention unknown or the bad command, got: {err}"
+        );
+    }
+
+    #[test]
+    fn error_message_no_args_is_descriptive() {
+        let err = parse_args(&[]).unwrap_err();
+        assert!(
+            err.contains("no") || err.contains("argument"),
+            "no-args error must be descriptive, got: {err}"
+        );
+    }
+
+    #[test]
+    fn error_message_invalid_top_k_mentions_value() {
+        let err = parse_args(&["rag", "--top-k", "notanumber", "query"]).unwrap_err();
+        assert!(
+            err.contains("invalid") || err.contains("notanumber"),
+            "invalid top-k error must mention the bad value, got: {err}"
+        );
+    }
+
+    #[test]
+    fn error_message_unknown_flag_is_err() {
+        // ["build", "--unknown", "path"] → matches unknown command "build" with 3 args
+        let result = parse_args(&["build", "--unknown", "path"]);
+        assert!(result.is_err(), "unknown flag combination must return Err");
+    }
+
+    #[test]
+    fn error_message_extra_args_is_err() {
+        // ["check", "a", "b"] → extra args
+        let result = parse_args(&["check", "a", "b"]);
+        assert!(result.is_err(), "extra arguments must return Err");
+    }
+
+    // --- Integration patterns ---
+
+    #[test]
+    fn integration_check_then_lint_different_variants() {
+        let check = parse_args(&["check", "f.nom"]).unwrap();
+        let lint = parse_args(&["lint", "f.nom"]).unwrap();
+        assert_ne!(check, lint, "check and lint must be distinct variants");
+    }
+
+    #[test]
+    fn integration_build_release_and_no_release_differ() {
+        let release = parse_args(&["build", "--release", "f.nom"]).unwrap();
+        let debug = parse_args(&["build", "f.nom"]).unwrap();
+        assert_ne!(release, debug, "release and debug builds must differ");
+    }
+
+    #[test]
+    fn integration_rag_and_rag_with_k_differ() {
+        let basic = parse_args(&["rag", "query"]).unwrap();
+        let with_k = parse_args(&["rag", "--top-k", "10", "query"]).unwrap();
+        assert_ne!(basic, with_k, "rag and rag-with-k must be different variants");
+    }
+
+    #[test]
+    fn integration_all_commands_parse_without_err() {
+        // Smoke test: every valid command must parse successfully.
+        let valid = [
+            vec!["version"],
+            vec!["help"],
+            vec!["check", "f.nom"],
+            vec!["build", "f.nom"],
+            vec!["build", "--release", "f.nom"],
+            vec!["lint", "f.nom"],
+            vec!["graph", "query"],
+            vec!["rag", "query"],
+            vec!["rag", "--top-k", "5", "query"],
+            vec!["run", "f.nom"],
+            vec!["format", "f.nom"],
+        ];
+        for args in &valid {
+            let result = parse_args(args);
+            assert!(
+                result.is_ok(),
+                "valid args {:?} must parse successfully, got: {:?}",
+                args,
+                result
+            );
+        }
+    }
+
+    #[test]
+    fn integration_path_with_extension_preserved() {
+        for cmd in ["check", "lint", "build", "run", "format"] {
+            let path = "project/src/main.nom";
+            let result = parse_args(&[cmd, path]).unwrap();
+            let extracted_path = match result {
+                CliCommand::Check { path: p } => p,
+                CliCommand::Lint { path: p } => p,
+                CliCommand::Build { path: p, .. } => p,
+                CliCommand::Run { path: p } => p,
+                CliCommand::Format { path: p } => p,
+                other => panic!("unexpected variant: {other:?}"),
+            };
+            assert_eq!(extracted_path, path, "{cmd}: path must be preserved exactly");
+        }
+    }
+
+    #[test]
+    fn integration_rag_query_roundtrip() {
+        let query = "how does the block layout engine work";
+        let cmd = parse_args(&["rag", query]).unwrap();
+        if let CliCommand::Rag { query: q, top_k } = cmd {
+            assert_eq!(q, query);
+            assert_eq!(top_k, 5);
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn integration_graph_query_roundtrip() {
+        let query = "canvas render pipeline";
+        let cmd = parse_args(&["graph", query]).unwrap();
+        if let CliCommand::Graph { query: q } = cmd {
+            assert_eq!(q, query);
+        } else {
+            panic!("expected Graph");
+        }
+    }
+
+    #[test]
+    fn integration_version_and_help_are_not_error() {
+        assert!(parse_args(&["version"]).is_ok());
+        assert!(parse_args(&["help"]).is_ok());
+    }
+
+    #[test]
+    fn integration_empty_string_path_check() {
+        // An empty path is technically valid input — parse must succeed.
+        let cmd = parse_args(&["check", ""]).unwrap();
+        if let CliCommand::Check { path } = cmd {
+            assert_eq!(path, "", "empty path must be preserved");
+        } else {
+            panic!("expected Check");
+        }
+    }
+
+    #[test]
+    fn integration_rag_with_k_zero_parses() {
+        let cmd = parse_args(&["rag", "--top-k", "0", "q"]).unwrap();
+        if let CliCommand::RagWithK { top_k, .. } = cmd {
+            assert_eq!(top_k, 0, "top_k=0 must parse successfully");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_check_dot_path() {
+        let cmd = parse_args(&["check", "."]).unwrap();
+        assert_eq!(cmd, CliCommand::Check { path: ".".to_string() });
+    }
+
+    #[test]
+    fn cli_build_empty_path() {
+        let cmd = parse_args(&["build", ""]).unwrap();
+        if let CliCommand::Build { path, release } = cmd {
+            assert_eq!(path, "");
+            assert!(!release);
+        } else {
+            panic!("expected Build");
+        }
+    }
 }

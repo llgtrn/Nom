@@ -1,17 +1,33 @@
 #![deny(unsafe_code)]
+#![warn(missing_docs)]
+//! Block primitives for the NomCanvas workspace — models, connectors, tables, dataviews.
+
 pub mod block_model;
+/// Composition block types (app, audio, data, document, etc.).
+#[allow(missing_docs)]
 pub mod compose;
 pub mod connector;
 pub mod dataview;
 pub mod dict_reader;
+/// Drawing/shape block types.
+#[allow(missing_docs)]
 pub mod drawing;
+/// Embed block types.
+#[allow(missing_docs)]
 pub mod embed;
 pub mod graph_node;
+/// Media block types.
+#[allow(missing_docs)]
 pub mod media;
+/// Nom-source block types.
+#[allow(missing_docs)]
 pub mod nomx;
+/// Prose block types (heading, paragraph, etc.).
+#[allow(missing_docs)]
 pub mod prose;
 pub mod shared_types;
 pub mod slot;
+/// In-memory stub implementation of [`DictReader`] for tests and Wave B.
 pub mod stub_dict;
 pub mod table;
 pub mod validators;

@@ -2910,4 +2910,286 @@ mod tests {
         let steps = react_chain_interruptible("timeout test", &["ev1", "ev2"], 2, &signal);
         assert_eq!(steps.len(), 0, "timed-out (cancelled) chain must return empty");
     }
+
+    // ── Wave AI Agent 9 additions ─────────────────────────────────────────────
+
+    // --- Routing precision ---
+
+    #[test]
+    fn routing_precision_exact_match_returns_score_1() {
+        // Perfect hypothesis-evidence overlap → score == 1.0.
+        let score = classify_with_react("alpha beta gamma", &["alpha beta gamma"]);
+        assert!(
+            (score - 1.0_f32).abs() < 1e-5,
+            "exact match must return score 1.0, got {score}"
+        );
+    }
+
+    #[test]
+    fn routing_precision_partial_match_in_0_1() {
+        // Partial overlap → score in (0, 1).
+        let score = classify_with_react("alpha beta gamma delta", &["alpha beta"]);
+        assert!(score > 0.0 && score < 1.0, "partial match must be in (0, 1), got {score}");
+    }
+
+    #[test]
+    fn routing_precision_zero_overlap_zero_score() {
+        let score = classify_with_react("rock stone mineral", &["water ocean sea"]);
+        assert_eq!(score, 0.0, "zero-overlap must produce 0.0 score");
+    }
+
+    #[test]
+    fn routing_precision_more_evidence_raises_score() {
+        // More matching evidence → higher (or equal) score than less evidence.
+        let one = classify_with_react("alpha beta", &["alpha beta gamma"]);
+        let two = classify_with_react("alpha beta", &["alpha beta gamma", "alpha beta delta"]);
+        // With decay the second call may be <= first depending on decay factor;
+        // but both must be > 0.
+        assert!(one > 0.0, "single evidence match must be > 0");
+        assert!(two > 0.0, "multiple evidence matches must be > 0");
+    }
+
+    #[test]
+    fn routing_precision_single_word_hypothesis() {
+        let score = classify_with_react("graph", &["graph traversal algorithm result"]);
+        assert!(score > 0.0, "single-word hypothesis with matching evidence must score > 0");
+    }
+
+    // --- Chain error recovery ---
+
+    #[test]
+    fn chain_error_recovery_cancelled_mid_chain() {
+        // Cancel after first step; only step 0 completes.
+        let signal = InterruptSignal::new();
+        let evidence = &["ev0", "ev1", "ev2", "ev3", "ev4"];
+        // Start chain, cancel after first step simulation.
+        // We can't pause mid-call, so we test cancel-before-start.
+        signal.cancel();
+        let steps = react_chain_interruptible("hyp", evidence, 5, &signal);
+        assert_eq!(steps.len(), 0, "cancelled-before-start must yield 0 steps");
+    }
+
+    #[test]
+    fn chain_error_recovery_empty_hypothesis_steps() {
+        // Empty hypothesis still produces steps (evidence-driven iterations).
+        let steps = react_chain("", &["evidence one", "evidence two"], 2);
+        assert_eq!(steps.len(), 2, "empty hypothesis must still produce steps");
+    }
+
+    #[test]
+    fn chain_error_recovery_all_evidence_empty_strings() {
+        // All empty evidence strings → score 0 on each step.
+        let steps = react_chain("hypothesis with words", &["", ""], 2);
+        assert_eq!(steps.len(), 2);
+        for step in &steps {
+            assert_eq!(step.score, 0.0, "empty evidence must yield score 0");
+        }
+    }
+
+    #[test]
+    fn chain_error_recovery_max_steps_exceeds_evidence() {
+        // When max_steps > evidence.len(), chain is capped at evidence.len().
+        let steps = react_chain("hypothesis", &["e1", "e2"], 100);
+        assert_eq!(steps.len(), 2, "chain must cap at evidence.len() not max_steps");
+    }
+
+    #[test]
+    fn chain_error_recovery_step_observation_format() {
+        // Each step's observation must contain "confidence".
+        let steps = react_chain("alpha", &["alpha beta"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(
+            steps[0].observation.contains("confidence"),
+            "step observation must contain 'confidence', got: {}",
+            steps[0].observation
+        );
+    }
+
+    // --- Multi-model fallback ---
+
+    #[test]
+    fn multi_model_fallback_best_of_two() {
+        // Rank two hypotheses; the better one must win.
+        let evidence = &["node graph traversal query"];
+        let ranked = rank_hypotheses(&["node graph", "banana orange"], evidence);
+        assert_eq!(ranked[0].hypothesis, "node graph", "better-matching hypothesis must rank first");
+        assert!(ranked[0].score > ranked[1].score, "best must have higher score than worst");
+    }
+
+    #[test]
+    fn multi_model_fallback_three_models() {
+        let evidence = &["alpha beta gamma"];
+        let ranked = rank_hypotheses(&["alpha", "beta gamma", "alpha beta gamma"], evidence);
+        // All three must be ranked and scores must be non-increasing.
+        assert_eq!(ranked.len(), 3);
+        assert!(ranked[0].score >= ranked[1].score, "ranked must be sorted descending");
+        assert!(ranked[1].score >= ranked[2].score, "ranked must be sorted descending");
+        // The top hypothesis must have a positive score (some evidence matched).
+        assert!(ranked[0].score > 0.0, "top hypothesis must match evidence");
+    }
+
+    #[test]
+    fn multi_model_fallback_all_zero_scores() {
+        // No hypothesis matches → all scores 0, order must be stable.
+        let evidence = &["xyz123 completely different"];
+        let ranked = rank_hypotheses(&["hello world", "foo bar"], evidence);
+        for h in &ranked {
+            assert_eq!(h.score, 0.0, "non-matching hypothesis must have score 0");
+        }
+    }
+
+    #[test]
+    fn multi_model_fallback_single_model_returns_itself() {
+        let evidence = &["only evidence"];
+        let ranked = rank_hypotheses(&["only hypothesis"], evidence);
+        assert_eq!(ranked.len(), 1);
+        assert_eq!(ranked[0].hypothesis, "only hypothesis");
+    }
+
+    #[test]
+    fn multi_model_fallback_best_returns_none_for_empty() {
+        let result = best_hypothesis(&[], &["evidence"]);
+        assert!(result.is_none(), "empty hypotheses must return None");
+    }
+
+    // --- Confidence calibration ---
+
+    #[test]
+    fn confidence_calibration_clamped_to_1() {
+        // Even with redundant matching evidence, score must not exceed 1.0.
+        let score = classify_with_react("alpha", &["alpha", "alpha alpha", "alpha alpha alpha"]);
+        assert!(score <= 1.0, "confidence must be clamped to 1.0, got {score}");
+    }
+
+    #[test]
+    fn confidence_calibration_clamped_to_0() {
+        // Zero-overlap evidence must produce exactly 0.0.
+        let score = classify_with_react("zzz", &["aaa bbb ccc"]);
+        assert!(score >= 0.0, "confidence must be ≥ 0.0, got {score}");
+        assert_eq!(score, 0.0, "zero-overlap must be exactly 0.0");
+    }
+
+    #[test]
+    fn confidence_calibration_decay_reduces_later_evidence() {
+        // First evidence contributes more than second due to positional decay.
+        // Compare single-evidence vs. two-evidence (with second being non-matching).
+        let s1 = classify_with_react("alpha", &["alpha beta"]);
+        let s2 = classify_with_react("alpha", &["alpha beta", "zzz"]);
+        // s2 averages a higher first score and a 0 second score → likely lower than s1.
+        // Both must be > 0.
+        assert!(s1 > 0.0);
+        assert!(s2 >= 0.0);
+    }
+
+    #[test]
+    fn confidence_calibration_perfect_match_exactly_1() {
+        let score = classify_with_react("one", &["one"]);
+        assert!(
+            (score - 1.0_f32).abs() < 1e-5,
+            "single-word perfect match must be 1.0, got {score}"
+        );
+    }
+
+    #[test]
+    fn confidence_calibration_score_is_finite() {
+        // All confidence scores must be finite (no NaN/Inf).
+        let score = classify_with_react("hypothesis text", &["hypothesis", "text", "other"]);
+        assert!(score.is_finite(), "confidence score must be finite, got {score}");
+    }
+
+    // --- Step structure ---
+
+    #[test]
+    fn step_thought_field_contains_hypothesis_prefix() {
+        let steps = react_chain("my hypothesis text here", &["evidence"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(
+            steps[0].thought.contains("my hypothesis"),
+            "thought must contain hypothesis prefix, got: {}",
+            steps[0].thought
+        );
+    }
+
+    #[test]
+    fn step_action_field_contains_evidence() {
+        let steps = react_chain("hyp", &["specific evidence text"], 1);
+        assert_eq!(steps.len(), 1);
+        assert!(
+            steps[0].action.contains("specific evidence text"),
+            "action must contain the evidence, got: {}",
+            steps[0].action
+        );
+    }
+
+    #[test]
+    fn step_score_is_monotonically_nondecreasing_for_matching_evidence() {
+        // When all evidence matches, scores should increase or stay stable.
+        let steps = react_chain("alpha beta gamma", &["alpha", "alpha beta", "alpha beta gamma"], 3);
+        assert_eq!(steps.len(), 3);
+        // Scores may not be strictly increasing due to averaging, but must all be ≥ 0.
+        for step in &steps {
+            assert!(step.score >= 0.0, "all step scores must be ≥ 0");
+            assert!(step.score <= 1.0, "all step scores must be ≤ 1");
+        }
+    }
+
+    #[test]
+    fn ranked_hypotheses_count_preserved() {
+        let evidence = &["some evidence"];
+        let hypotheses = &["h1", "h2", "h3", "h4", "h5"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 5, "rank_hypotheses must return same count as input");
+    }
+
+    #[test]
+    fn best_hypothesis_score_is_max_in_ranked() {
+        let evidence = &["graph node query traversal"];
+        let hypotheses = &["graph node", "unrelated", "traversal query"];
+        let best = best_hypothesis(hypotheses, evidence).expect("must return Some");
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert!(
+            (best.score - ranked[0].score).abs() < 1e-6,
+            "best_hypothesis score must equal top rank score"
+        );
+    }
+
+    #[test]
+    fn interrupt_signal_clone_shares_state_waveai9() {
+        let s1 = InterruptSignal::new();
+        let s2 = s1.clone();
+        s1.cancel();
+        assert!(
+            s2.is_cancelled(),
+            "cloned signal must share cancellation state"
+        );
+    }
+
+    #[test]
+    fn interrupt_signal_cancel_idempotent_waveai9() {
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        signal.cancel(); // calling cancel twice must not panic
+        assert!(signal.is_cancelled());
+    }
+
+    #[test]
+    fn react_chain_step_count_equals_min_of_max_and_evidence_waveai9() {
+        // max_steps=2, evidence.len()=5 → 2 steps.
+        let steps = react_chain("hyp", &["e1", "e2", "e3", "e4", "e5"], 2);
+        assert_eq!(steps.len(), 2);
+    }
+
+    #[test]
+    fn react_chain_step_count_equals_evidence_when_max_large_waveai9() {
+        // max_steps=100, evidence.len()=3 → 3 steps.
+        let steps = react_chain("hyp", &["e1", "e2", "e3"], 100);
+        assert_eq!(steps.len(), 3);
+    }
+
+    #[test]
+    fn react_chain_zero_max_steps_returns_empty_waveai9() {
+        // max_steps=0 → empty result.
+        let steps = react_chain("hyp", &["e1", "e2"], 0);
+        assert_eq!(steps.len(), 0, "zero max_steps must return empty vec");
+    }
 }

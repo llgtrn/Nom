@@ -1,19 +1,31 @@
+//! Connector model: a validated, grammar-backed wire between two graph nodes.
 #![deny(unsafe_code)]
 use crate::dict_reader::DictReader;
 use crate::graph_node::NodeId;
 use serde::{Deserialize, Serialize};
 
+/// Unique identifier for a connector.
 pub type ConnectorId = String;
+/// Name of a slot/port on a node.
 pub type SlotName = String;
 
+/// Parameters required to construct a validated [`Connector`].
 pub struct ConnectorValidation<'a> {
+    /// Unique ID to assign to the new connector.
     pub id: ConnectorId,
+    /// Source node ID.
     pub from_node: NodeId,
+    /// Source port name.
     pub from_port: SlotName,
+    /// Destination node ID.
     pub to_node: NodeId,
+    /// Destination port name.
     pub to_port: SlotName,
+    /// Dictionary used for grammar-shape validation.
     pub dict: &'a dyn DictReader,
+    /// Grammar kind of the source node.
     pub from_kind: &'a str,
+    /// Grammar kind of the destination node.
     pub to_kind: &'a str,
 }
 
@@ -21,14 +33,19 @@ pub struct ConnectorValidation<'a> {
 /// Grammar-backed validation is required at construction time.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Connector {
+    /// Unique connector ID.
     pub id: ConnectorId,
+    /// Source (node ID, port name).
     pub src: (NodeId, SlotName),
+    /// Destination (node ID, port name).
     pub dst: (NodeId, SlotName),
     /// Clamped to [0.0, 1.0]. Represents confidence that this wire is valid.
     pub confidence: f32,
+    /// Human-readable validation reason.
     pub reason: String,
     /// Ordered reasoning steps that led to this connection (spec: "reason chain").
     pub reason_chain: Vec<String>,
+    /// Bezier route control points.
     pub route: Vec<[f32; 2]>,
     /// (is_valid, confidence, reason) — NON-OPTIONAL, stub in Wave B
     can_wire_result: (bool, f32, String),
@@ -41,10 +58,12 @@ impl Connector {
         self
     }
 
+    /// Returns `true` if the connector passed grammar validation.
     pub fn is_valid(&self) -> bool {
         self.can_wire_result.0
     }
 
+    /// Returns the full `(is_valid, confidence, reason)` tuple.
     pub fn can_wire_result(&self) -> &(bool, f32, String) {
         &self.can_wire_result
     }
@@ -450,5 +469,178 @@ mod tests {
         let (valid, _conf, reason) = Connector::validate_with_dict(&dict, "a", "out", "b", "in");
         assert!(valid);
         assert_eq!(reason, "validated");
+    }
+
+    // ── wave AI: new connector tests ────────────────────────────────────────────
+
+    #[test]
+    fn connector_new_with_validation_ok() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "ok-wire".into(),
+            from_node: "src".into(),
+            from_port: "output".into(),
+            to_node: "dst".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(c.is_valid(), "valid source/target/type must succeed");
+    }
+
+    #[test]
+    fn connector_new_with_validation_empty_source_errors() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-empty-src".into(),
+            from_node: "n1".into(),
+            from_port: "".into(), // empty port → unknown port
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(!c.is_valid(), "empty source port must fail validation");
+        assert_eq!(c.confidence, 0.0);
+    }
+
+    #[test]
+    fn connector_new_with_validation_empty_target_errors() {
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-empty-dst".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "".into(), // empty port → unknown port
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert!(!c.is_valid(), "empty target port must fail validation");
+        assert_eq!(c.confidence, 0.0);
+    }
+
+    #[test]
+    fn connector_new_with_validation_empty_kind_errors() {
+        // StubDictReader returns default [input, output] shapes for any kind including "".
+        // A mismatch requires custom shapes with a non-"any" type that doesn't match.
+        let dict = StubDictReader::new()
+            .with_shapes("", vec![make_shape("output", "integer")])
+            .with_shapes("concept", vec![make_shape("input", "text")]);
+        // integer → text: type mismatch → invalid
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-empty-kind".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "",
+            to_kind: "concept",
+        });
+        assert!(!c.is_valid(), "type mismatch with empty from_kind must fail");
+    }
+
+    #[test]
+    fn connector_source_equals_input() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-src".into(),
+            from_node: "the-source-node".into(),
+            from_port: "output".into(),
+            to_node: "dst".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_eq!(c.src.0, "the-source-node");
+        assert_eq!(c.src.1, "output");
+    }
+
+    #[test]
+    fn connector_target_equals_input() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-dst".into(),
+            from_node: "src".into(),
+            from_port: "output".into(),
+            to_node: "the-target-node".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_eq!(c.dst.0, "the-target-node");
+        assert_eq!(c.dst.1, "input");
+    }
+
+    #[test]
+    fn connector_kind_equals_input() {
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c-kind".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        // is_valid() reflects the grammar check for those kinds
+        assert!(c.is_valid());
+    }
+
+    #[test]
+    fn connector_clone_equals_original() {
+        let c = valid_connector();
+        let c2 = c.clone();
+        assert_eq!(c.id, c2.id);
+        assert_eq!(c.src, c2.src);
+        assert_eq!(c.dst, c2.dst);
+        assert!((c.confidence - c2.confidence).abs() < f32::EPSILON);
+        assert_eq!(c.reason, c2.reason);
+    }
+
+    #[test]
+    fn connector_eq_by_fields() {
+        let dict = StubDictReader::new();
+        let make = || {
+            Connector::new_with_validation(ConnectorValidation {
+                id: "same-id".into(),
+                from_node: "n1".into(),
+                from_port: "output".into(),
+                to_node: "n2".into(),
+                to_port: "input".into(),
+                dict: &dict,
+                from_kind: "verb",
+                to_kind: "concept",
+            })
+        };
+        let c1 = make();
+        let c2 = make();
+        assert_eq!(c1.id, c2.id);
+        assert_eq!(c1.src, c2.src);
+        assert_eq!(c1.dst, c2.dst);
+        assert_eq!(c1.is_valid(), c2.is_valid());
+    }
+
+    #[test]
+    fn connector_debug_contains_source() {
+        let c = valid_connector();
+        let debug_str = format!("{c:?}");
+        // src field contains the from_node value
+        assert!(
+            debug_str.contains("n1"),
+            "debug output must contain source node id"
+        );
     }
 }

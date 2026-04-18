@@ -1199,4 +1199,197 @@ mod tests {
         // At minimum the last inserted entry must be present.
         assert!(cache.get(&"n19".to_string()).is_some());
     }
+
+    // ------------------------------------------------------------------
+    // hierarchical_cache_l1_capacity_smaller_than_l2
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l1_capacity_smaller_than_l2() {
+        // L1 cap=3, L2 threshold=20; insert 5 items.
+        let mut cache = HierarchicalCache::new(3, 20);
+        for i in 0u64..5 {
+            cache.put(i, CachedValue::String(format!("v{i}")));
+        }
+        // L1 holds at most 3; L2 holds all 5.
+        assert!(cache.l1.len() <= 3, "L1 must hold at most 3 items");
+        assert_eq!(cache.l2.len(), 5, "L2 must hold all 5 items");
+    }
+
+    // ------------------------------------------------------------------
+    // hierarchical_cache_l2_holds_after_l1_eviction
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l2_holds_after_l1_eviction() {
+        // L1 cap=1; insert two items — first is evicted from L1 but stays in L2.
+        let mut cache = HierarchicalCache::new(1, 50);
+        cache.put(10, CachedValue::String("ten".into()));
+        cache.put(20, CachedValue::String("twenty".into())); // evicts 10 from L1
+        assert!(cache.l1.get(10).is_none(), "key 10 must be evicted from L1");
+        assert!(cache.l2.get(10).is_some(), "key 10 must still be in L2");
+    }
+
+    // ------------------------------------------------------------------
+    // lru_access_pattern_a_b_a_b_keeps_both — alternating access keeps both in cache-2
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_access_pattern_a_b_a_b_keeps_both() {
+        // Capacity=2; alternately get A and B — neither should be evicted.
+        let mut cache = LruCache::new(2);
+        cache.put(1, CachedValue::String("A".into()));
+        cache.put(2, CachedValue::String("B".into()));
+        // Alternate accesses: A, B, A, B
+        for _ in 0..4 {
+            assert!(cache.get(1).is_some(), "A must remain after alternating access");
+            assert!(cache.get(2).is_some(), "B must remain after alternating access");
+        }
+        assert_eq!(cache.len(), 2, "both entries must still be present");
+    }
+
+    // ------------------------------------------------------------------
+    // lru_cold_miss_then_warm_hit
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cold_miss_then_warm_hit() {
+        let mut cache = LruCache::new(5);
+        // First access is a cold miss.
+        assert!(cache.get(99).is_none(), "cold miss: key not yet inserted");
+        // Insert the key — now warm.
+        cache.put(99, CachedValue::String("warm".into()));
+        assert!(cache.get(99).is_some(), "warm hit: key must be found after put");
+        match cache.get(99).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "warm"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // cache_get_or_insert — insert-on-miss semantics via get + put
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_get_or_insert() {
+        let mut cache = BasicCache::new();
+        // Simulate get-or-insert: if missing, insert then return.
+        let key = 77u64;
+        if cache.get(key).is_none() {
+            cache.put(key, CachedValue::String("default".into()));
+        }
+        assert!(cache.get(key).is_some(), "get_or_insert must leave key present");
+        match cache.get(key).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "default"),
+            _ => panic!("wrong variant"),
+        }
+        // Second call must return the existing value, not overwrite.
+        if cache.get(key).is_none() {
+            cache.put(key, CachedValue::String("should_not_appear".into()));
+        }
+        match cache.get(key).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "default", "existing value must not be overwritten"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // cache_len_increases_on_insert
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_len_increases_on_insert() {
+        let mut cache = BasicCache::new();
+        assert_eq!(cache.len(), 0);
+        cache.put(1, CachedValue::String("a".into()));
+        assert_eq!(cache.len(), 1);
+        cache.put(2, CachedValue::String("b".into()));
+        assert_eq!(cache.len(), 2);
+        cache.put(3, CachedValue::String("c".into()));
+        assert_eq!(cache.len(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // cache_len_decreases_on_eviction
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_len_decreases_on_eviction() {
+        let mut cache = LruCache::new(3);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        cache.put(3, CachedValue::String("c".into()));
+        assert_eq!(cache.len(), 3);
+        // Adding a 4th evicts one entry — len stays at capacity.
+        cache.put(4, CachedValue::String("d".into()));
+        assert_eq!(cache.len(), 3, "len must remain at capacity after eviction");
+    }
+
+    // ------------------------------------------------------------------
+    // hierarchical_cache_promote_from_l2_to_l1 — get_promoting re-populates L1
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_promote_from_l2_to_l1() {
+        let mut cache = HierarchicalCache::new(1, 50);
+        cache.put(5, CachedValue::String("five".into()));
+        // Evict key 5 from L1 by inserting another entry.
+        cache.l1.put(6, CachedValue::String("six".into()));
+        assert!(cache.l1.get(5).is_none(), "5 must be evicted from L1");
+        assert!(cache.l2.get(5).is_some(), "5 must still reside in L2");
+        // get_promoting must re-insert into L1.
+        let result = cache.get_promoting(5);
+        assert!(result.is_some(), "get_promoting must find key 5");
+        assert!(cache.l1.get(5).is_some(), "key 5 must be promoted back to L1");
+    }
+
+    // ------------------------------------------------------------------
+    // hierarchical_cache_demote_from_l1_on_eviction — L1 eviction does not remove from L2
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_demote_from_l1_on_eviction() {
+        let mut cache = HierarchicalCache::new(2, 50);
+        cache.put(10, CachedValue::String("ten".into()));
+        cache.put(20, CachedValue::String("twenty".into()));
+        // Add 2 more to L1 — key 10 is evicted from L1 but L2 is unaffected.
+        cache.l1.put(30, CachedValue::String("thirty".into()));
+        cache.l1.put(40, CachedValue::String("forty".into()));
+        // Key 10 may now be evicted from L1; it must still be in L2.
+        assert!(cache.l2.get(10).is_some(), "L2 must retain key 10 even after L1 eviction");
+    }
+
+    // ------------------------------------------------------------------
+    // cache_concurrent_read_write_safe — LruCache interior mutability is Mutex-guarded
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_concurrent_read_write_safe() {
+        // Verify that calling get() (which uses interior mutability via Mutex) and
+        // put() in sequence does not deadlock or panic.
+        let mut cache = LruCache::new(10);
+        cache.put(1, CachedValue::String("a".into()));
+        cache.put(2, CachedValue::String("b".into()));
+        // Interleave reads and writes.
+        for i in 3u64..13 {
+            let _ = cache.get(i - 2);
+            cache.put(i, CachedValue::String(format!("{i}")));
+        }
+        // Cache should have at most 10 entries and contain key 12.
+        assert!(cache.len() <= 10, "len must not exceed capacity");
+        assert!(cache.get(12).is_some(), "most recently inserted key must be present");
+    }
+
+    // ------------------------------------------------------------------
+    // cache_stats_eviction_count_exact — LruCache evicts exactly 1 per excess insert
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_stats_eviction_count_exact() {
+        let cap = 5usize;
+        let mut cache = LruCache::new(cap);
+        // Fill to capacity.
+        for i in 0..cap as u64 {
+            cache.put(i, CachedValue::String(format!("{i}")));
+        }
+        assert_eq!(cache.len(), cap);
+        // Insert 5 more items — each insert evicts exactly 1 entry.
+        for i in cap as u64..cap as u64 + 5 {
+            cache.put(i, CachedValue::String(format!("{i}")));
+            assert_eq!(
+                cache.len(),
+                cap,
+                "len must remain exactly at capacity after each insert+evict"
+            );
+        }
+    }
 }

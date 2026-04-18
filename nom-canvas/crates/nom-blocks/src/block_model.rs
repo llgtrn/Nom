@@ -1,17 +1,23 @@
+//! Block model primitives: [`BlockId`], [`NomtuRef`], [`BlockMeta`], [`BlockModel`].
 #![deny(unsafe_code)]
 use serde::{Deserialize, Serialize};
 
+/// Unique identifier for a block within a workspace.
 pub type BlockId = String;
 
 /// Every block MUST have a DB entity reference. No Option<> wrapper.
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq, Hash)]
 pub struct NomtuRef {
+    /// Database entry identifier.
     pub id: String,
+    /// Human-readable word for the entry.
     pub word: String,
+    /// Grammar kind of the entry (verb, concept, noun, …).
     pub kind: String,
 }
 
 impl NomtuRef {
+    /// Construct a [`NomtuRef`] from the three identifying strings.
     pub fn new(id: impl Into<String>, word: impl Into<String>, kind: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -21,11 +27,16 @@ impl NomtuRef {
     }
 }
 
+/// Audit metadata attached to every block.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockMeta {
+    /// Unix timestamp (ms) when the block was created.
     pub created_at: u64,
+    /// Unix timestamp (ms) of the most recent update.
     pub updated_at: u64,
+    /// Author identifier.
     pub author: String,
+    /// Monotonically increasing version counter.
     pub version: u32,
 }
 
@@ -40,18 +51,27 @@ impl Default for BlockMeta {
     }
 }
 
+/// The core document block — a typed, entity-backed unit of content.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct BlockModel {
+    /// Unique identifier within the workspace.
     pub id: BlockId,
-    pub entity: NomtuRef, // NON-OPTIONAL: blocks without DB entity do not exist
+    /// NON-OPTIONAL DB entity reference. Blocks without an entity do not exist.
+    pub entity: NomtuRef,
+    /// Block flavour string (e.g. `"affine:paragraph"`).
     pub flavour: String,
+    /// Named slot values carrying typed content.
     pub slots: Vec<(String, crate::slot::SlotValue)>,
+    /// IDs of child blocks (ordered).
     pub children: Vec<BlockId>,
+    /// Audit metadata.
     pub meta: BlockMeta,
+    /// Optional parent block ID.
     pub parent: Option<BlockId>,
 }
 
 impl BlockModel {
+    /// Construct a [`BlockModel`] directly from its three required fields.
     pub fn new(id: impl Into<String>, entity: NomtuRef, flavour: impl Into<String>) -> Self {
         Self {
             id: id.into(),
@@ -64,10 +84,12 @@ impl BlockModel {
         }
     }
 
+    /// Return the value of the named slot if present.
     pub fn get_slot(&self, name: &str) -> Option<&crate::slot::SlotValue> {
         self.slots.iter().find(|(k, _)| k == name).map(|(_, v)| v)
     }
 
+    /// Set (or overwrite) a named slot value.
     pub fn set_slot(&mut self, name: impl Into<String>, value: crate::slot::SlotValue) {
         let name = name.into();
         if let Some(entry) = self.slots.iter_mut().find(|(k, _)| *k == name) {
@@ -77,6 +99,7 @@ impl BlockModel {
         }
     }
 
+    /// Create a block with a generated ID, validating `entity.kind` against the dict.
     pub fn insert(
         entity: NomtuRef,
         flavour: impl Into<String>,

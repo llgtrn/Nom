@@ -1,10 +1,20 @@
 #![deny(unsafe_code)]
+#![warn(missing_docs)]
 
+//! Core canvas primitives: elements, hit-testing, selection, snapping, spatial
+//! indexing, and viewport management for the NomCanvas IDE.
+
+/// Canvas element primitives (rects, ellipses, lines, arrows, graph nodes, wires, connectors).
 pub mod elements;
+/// Hit-testing for canvas elements (AABB, rotated rect, ellipse, bezier connector).
 pub mod hit_test;
+/// Selection state and rubber-band drag selection.
 pub mod selection;
+/// Grid snapping and edge/center snap-with-guides.
 pub mod snapping;
+/// Spatial index for efficient element lookup by position.
 pub mod spatial_index;
+/// Infinite-canvas viewport: zoom, pan, and coordinate transforms.
 pub mod viewport;
 
 #[cfg(test)]
