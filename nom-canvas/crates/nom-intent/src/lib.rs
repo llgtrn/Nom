@@ -28,6 +28,9 @@ pub mod reranker;
 pub mod dream_history;
 pub use dream_history::{DreamHistoryEntry, DreamHistoryStore, DreamJournal};
 
+pub mod feature_stack;
+pub use feature_stack::{FeatureStack, FeatureWeight, WordIdMap};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

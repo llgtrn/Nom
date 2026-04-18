@@ -366,13 +366,21 @@
 - ✅ TypeChecker — CheckedType + TypeContext + constraint unification (9 tests)
 - ✅ RenderFrame — DirtyRegion + DirtyTracker + dirty state tracking (9 tests)
 
-## Open Items — Wave ABU targets
+## Wave ABU — COMPLETE (2026-04-19, 9555 tests)
 
-- ❌ **nom-compose streaming** — PartialResult + StreamingOutput + ResultBuffer (partial-result streaming)
-- ❌ **nom-backend workspace-rename** — RenameOp + WorkspaceRenamer + RenamePreview
-- ❌ **nom-concept canonicalize** — PartialLifter + CanonicalizationChecker + CanonicalForm
-- ❌ **nom-blocks nomx-manifest** — NomxManifest + NomxDep + NomxModuleGraph
-- ❌ **nom-intent dream-history** — DreamHistoryEntry + DreamHistoryStore + DreamJournal
+- ✅ StreamingResult — PartialResult+StreamingOutput+ResultBuffer pipeline (9 tests)
+- ✅ WorkspaceRename — RenameOp+WorkspaceRenamer+RenamePreview (nom-editor) (9 tests)
+- ✅ Canonicalize — CanonicalForm+CanonicalizationChecker+PartialLifter §5.10 (9 tests)
+- ✅ NomxManifest — NomxManifest+NomxDep+NomxModuleGraph .nomx workspace (9 tests)
+- ✅ DreamHistory — DreamHistoryEntry+DreamHistoryStore+DreamJournal (9 tests)
+
+## Open Items — Wave ABV targets
+
+- ❌ **nom-bench regression** — BenchmarkBaseline + RegressAlert + RegressionChecker
+- ❌ **nom-canvas-core viewport-map** — ElementBounds + ViewportMap + VisibilityQuery
+- ❌ **nom-concept benchmark-table** — EntryBenchmark + BenchmarkSideTable + BenchmarkAggregation
+- ❌ **nom-intent feature-stack** — WordIdMap + FeatureWeight + FeatureStack
+- ❌ **nom-compose storyboard** — StoryboardPhase×5 + StoryboardPlan + StoryboardExecutor
 
 ---
 

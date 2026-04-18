@@ -128,6 +128,9 @@ pub fn _clear_registry_for_tests() {
     registry().lock().expect("bench registry poisoned").clear();
 }
 
+pub mod regress;
+pub use regress::{BenchmarkBaseline, RegressAlert, RegressionChecker};
+
 /// Errors produced by `nom-bench`.
 #[derive(Debug, Error)]
 pub enum BenchError {

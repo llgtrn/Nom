@@ -97,6 +97,9 @@ pub use type_check::{CheckedType, TypeChecker, TypeConstraint as TypeCheckConstr
 pub mod canonicalize;
 pub use canonicalize::{CanonicalForm, CanonicalizationChecker, CanonicalRequirements, PartialLifter};
 
+pub mod benchmark_table;
+pub use benchmark_table::{BenchmarkAggregation, BenchmarkSideTable, EntryBenchmark};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

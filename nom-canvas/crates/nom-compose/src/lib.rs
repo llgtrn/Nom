@@ -116,6 +116,8 @@ pub mod vision_bridge;
 pub mod pipeline_context;
 pub mod streaming_result;
 pub use streaming_result::{PartialResult, ResultBuffer, StreamingOutput};
+pub mod storyboard;
+pub use storyboard::{StoryboardExecutor, StoryboardPhase, StoryboardPlan, StoryboardStep};
 
 #[cfg(test)]
 mod integration_tests {

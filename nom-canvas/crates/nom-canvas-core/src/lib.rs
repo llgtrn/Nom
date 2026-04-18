@@ -52,6 +52,10 @@ pub use vision_pipeline::{
     VisionOutput,
 };
 
+/// Viewport element spatial index: element bounding boxes, spatial map, and visibility queries.
+pub mod viewport_map;
+pub use viewport_map::{ElementBounds as ViewportElementBounds, ViewportMap, VisibilityQuery};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

@@ -69,18 +69,18 @@
 
 ### A3. Phase 5 — Body-only ingestion + extended kinds
 - [x] 22-edge multi-graph EdgeKind (Styles/Constrains/Recommends/InteractsWith/TransitionsTo/Specializes/BindsTo/Triggers/Reads/Writes/NavigatesTo/RunsOn/HasFlowArtifact/FlowsTo/Encodes/ContainedIn/UsesColor/UsesPalette/Derives/EmbeddedGlyph/Frame/RendersOn + display_name/is_structural)
-- [ ] Intent resolution pipeline (§5 body-only)
-- [ ] Lifecycle transitions (merge/eliminate/evolve)
-- [ ] UX extractor for Motion / Dioxus / ToolJet / DeerFlow corpus
-- [ ] Skill routing via `EntryKind::Skill`
+- [x] Intent resolution pipeline (§5 body-only) — HybridRetriever+BM25+RRF (Wave ABK)
+- [x] Lifecycle transitions (merge/eliminate/evolve) — LifecycleManager (Wave ABM)
+- [x] UX extractor for Motion / Dioxus / ToolJet / DeerFlow corpus — UxExtractor 12 patterns (Wave ABO)
+- [x] Skill routing via `EntryKind::Skill` — SkillRouter+SkillDispatch (Wave ABM)
 - [x] `nom-ux` crate — UxPattern/Screen/UserFlow (Wave AY)
 - [x] `nom-media` crate — MediaUnit/Codec/Container (Wave AY)
-- [ ] Stream-and-discard disk discipline for mass ingest
-- [ ] Checkpoint + resumption for interrupted ingests
-- [ ] Bandwidth-throttle non-optional
-- [ ] `Partial` → `Complete` canonicalization lift (§5.10)
-- [ ] Aesthetic skills seeded (§5.18)
-- [ ] AI-invokes-compiler verify→build→bench→flow loop (§5.19)
+- [x] Stream-and-discard disk discipline for mass ingest — StreamConfig (Wave ABN)
+- [x] Checkpoint + resumption for interrupted ingests — IngestCheckpoint (Wave ABN)
+- [x] Bandwidth-throttle non-optional — StreamConfig.throttle (Wave ABN)
+- [x] `Partial` → `Complete` canonicalization lift (§5.10) — PartialLifter+CanonicalForm (Wave ABU)
+- [x] Aesthetic skills seeded (§5.18) — AestheticRegistry 9 skills (Wave ABN)
+- [x] AI-invokes-compiler verify→build→bench→flow loop (§5.19) — AiCompilerLoop (Wave ABP)
 
 ### A4. Phase 6-7 — Parser-in-Nom
 - [ ] `stdlib/self_host/lexer.nom` frozen
@@ -89,9 +89,9 @@
 - [ ] Round-trip byte-identity on 100-sample corpus
 
 ### A5. Phase 8 — Architectural ADOPT
-- [ ] Workspace manifest expressed as `.nomx` AppManifest
-- [ ] Cargo-style deps in .nomx
-- [ ] Module graph via `HasFlowArtifact` edges
+- [x] Workspace manifest expressed as `.nomx` AppManifest — NomxManifest (Wave ABU)
+- [x] Cargo-style deps in .nomx — NomxDep with content_hash (Wave ABU)
+- [x] Module graph via `HasFlowArtifact` edges — NomxModuleGraph (Wave ABU)
 
 ### A6. Phase 9 — LSP + AuthoringProtocol CORE
 - [x] LspRequest/LspResponse + dispatch_lsp_request stub (Wave AW)
@@ -102,8 +102,8 @@
 - [x] workspace/symbol stub dispatch
 - [x] stdin/stdout real handshake — LspServerLoop state machine (Wave ABA stub)
 - [x] AuthoringProtocol edit-is-compile event stream (Wave AZ)
-- [ ] Partial-result streaming for long ops
-- [ ] `workspace/rename` refactor
+- [x] Partial-result streaming for long ops — PartialResult+StreamingOutput+ResultBuffer (Wave ABU)
+- [x] `workspace/rename` refactor — RenameOp+WorkspaceRenamer+RenamePreview (Wave ABU)
 
 ### A7. Phase 10 — Bootstrap fixpoint proof
 - [x] Stage0 (Rust rust-nomc) → Stage1 binary stub (Wave ABA)
@@ -120,10 +120,10 @@
 - [ ] Archive lock + announcement
 
 ### A8. Phase 11 — Dream mode
-- [ ] Criteria → Proposals emitter
-- [ ] `app_score` ≥95 gate
-- [ ] `nom app dream` CLI iterates until score reached
-- [ ] Dream history persisted in `entry_meta`
+- [x] Criteria → Proposals emitter — MeceObjective+MeceValidator (Wave ABM)
+- [x] `app_score` ≥95 gate — AppScore EPIC_SCORE_THRESHOLD=95 (Wave ABM)
+- [x] `nom app dream` CLI iterates until score reached — DreamEngine::run_until_epic() (Wave ABN)
+- [x] Dream history persisted in `entry_meta` — DreamJournal+DreamHistoryStore (Wave ABU)
 
 ### A9. Phase 12 — Closure-level specialization
 - [ ] `entry_benchmarks` side-table populated from real runs
