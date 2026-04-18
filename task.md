@@ -454,13 +454,21 @@
 - ✅ PixelDiff — PixelRegion+PixelDiff+DiffThreshold+DiffReport+RegionDiffer (11 tests)
 - ✅ PerfCounter — CounterKind+PerfCounter+CounterSnapshot+Registry+RateCalc (9 tests)
 
-## Open Items — Wave ABAF targets
+## Wave ABAF — COMPLETE (2026-04-19, 10035 tests)
 
-- ❌ **nom-graph delta_compress** — DeltaFrame + DeltaEncoder + DeltaDecoder + DeltaStream (A-axis delta/compression)
-- ❌ **nom-compose native_screen** — ScreenTarget + ScreenCapture + NativeScreenBackend + CaptureBuffer (C5 native screen)
-- ❌ **nom-canvas-core snap_align** — AlignGuide + SnapTarget + AlignmentEngine + AlignResult (canvas smart alignment)
-- ❌ **nom-editor multi_file_edit** — MultiFileChange + MultiFileSession + MultiFileDiff + SessionApplier (multi-file edits)
-- ❌ **nom-blocks embed_registry** — EmbedKind + EmbedEntry + EmbedRegistry + EmbedResolver (embedded media registry)
+- ✅ DeltaCompress — DeltaKind+Frame+Encoder+Decoder+DeltaStream (9 tests)
+- ✅ NativeScreen — ScreenTarget+CaptureResolution+CaptureBuffer+ScreenCapture+Backend (9 tests)
+- ✅ SnapAlign — AlignAxis+AlignGuide+SnapTarget+AlignResult+AlignmentEngine (9 tests)
+- ✅ MultiFileEdit — EditScope+MultiFileChange+Session+MultiFileDiff+SessionApplier (9 tests)
+- ✅ EmbedRegistry — EmbedKind+Entry+EmbedRegistry+EmbedResolver (9 tests)
+
+## Open Items — Wave ABAG targets
+
+- ❌ **nom-graph intent_graph** — IntentNode + IntentEdge + IntentGraph + IntentGraphQuery (A-axis intent graph)
+- ❌ **nom-compose video_timeline** — TimelineClip + VideoTimeline + TimelineRenderer + ClipOverlap (video timeline model)
+- ❌ **nom-canvas-core layout_grid** — GridCell + GridTrack + LayoutGrid + GridPlacement (CSS-grid-like layout)
+- ❌ **nom-editor code_lens** — CodeLensKind + CodeLens + CodeLensProvider + CodeLensOverlay (C4 code lens)
+- ❌ **nom-telemetry audit_log** — AuditEvent + AuditLog + AuditFilter + AuditReporter (compliance audit logging)
 
 ---
 
