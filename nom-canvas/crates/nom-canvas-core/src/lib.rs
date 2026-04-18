@@ -100,6 +100,11 @@ pub use viewport_clip::{ClipRect, ClipStack, ViewportClipper, ClipResult, ClipBa
 pub mod hit_zone;
 pub use hit_zone::{HitZoneKind, HitZone, HitZoneMap, HitTestResult, ZoneHitTester};
 
+/// 2-D transform stack: composable scale/translate transforms, inverse computation,
+/// clamped transform results, and a composer facade.
+pub mod transform_stack;
+pub use transform_stack::{Transform2D, TransformStack, InverseTransform, TransformResult, TransformComposer};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

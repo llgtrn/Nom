@@ -52,3 +52,5 @@ pub mod schema_version;
 pub use schema_version::{SchemaVersionId, VersionEdge, SchemaVersionGraph, VersionDiff, SchemaMigrationPlan};
 pub mod route_table;
 pub use route_table::{RouteKind, RouteKey, RouteEntry, RouteTable, RouteResolver};
+pub mod memory_graph;
+pub use memory_graph::{MemoryTier, MemoryNode, MemoryEdge, MemoryGraph, MemoryQuery};

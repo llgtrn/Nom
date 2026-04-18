@@ -38,7 +38,7 @@ pub use backends::{
     data::DataBackend,
     data_extract::{DataExtractSpec, ExtractMode},
     data_frame::{DataFrame, DataFrameSpec},
-    data_loader::{DataBatch, DataLoader, DataLoaderConfig, DataSourceKind, LoadStrategy},
+    data_loader::{DataBatch, DataLoader, DataLoaderConfig, DataSourceKind as DataLoaderSourceKind, LoadStrategy},
     data_query::DataQuerySpec,
     document::DocumentBackend,
     embed_gen::EmbedGenBackend,
@@ -158,6 +158,8 @@ pub mod video_timeline;
 pub use video_timeline::{ClipKind, TimelineClip, VideoTimeline, ClipOverlap, TimelineRenderer};
 pub mod export_bundle;
 pub use export_bundle::{ExportFormat, ExportTarget, ExportJob, ExportQueue, ExportResult};
+pub mod data_compose;
+pub use data_compose::{DataSourceKind, DataSource, DataQuery, DataResult, DataComposer};
 
 #[cfg(test)]
 mod integration_tests {
