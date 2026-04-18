@@ -2441,4 +2441,426 @@ mod tests {
         );
         assert_eq!(sink.count(), 8);
     }
+
+    // =========================================================================
+    // WAVE-AC AGENT-9 ADDITIONS
+    // =========================================================================
+
+    // --- Span: start/end timing, elapsed, duration_ms ---
+
+    #[test]
+    fn span_elapsed_is_end_minus_start() {
+        let mut span = Span::start(300);
+        span.end(750);
+        assert_eq!(span.duration_ms(), Some(450));
+    }
+
+    #[test]
+    fn span_duration_ms_none_when_open() {
+        let span = Span::start(1000);
+        assert!(span.duration_ms().is_none(), "open span has no duration");
+    }
+
+    #[test]
+    fn span_duration_ms_some_when_closed() {
+        let mut span = Span::start(0);
+        span.end(42);
+        assert_eq!(span.duration_ms(), Some(42));
+    }
+
+    #[test]
+    fn span_start_ms_is_stored_correctly() {
+        let span = Span::start(123456789);
+        assert_eq!(span.start_ms, 123456789);
+    }
+
+    #[test]
+    fn span_end_ms_is_stored_correctly() {
+        let mut span = Span::start(100);
+        span.end(999);
+        assert_eq!(span.end_ms, Some(999));
+    }
+
+    #[test]
+    fn span_is_closed_only_after_end() {
+        let mut span = Span::start(0);
+        assert!(!span.is_closed(), "new span must be open");
+        span.end(1);
+        assert!(span.is_closed(), "span must be closed after end()");
+    }
+
+    #[test]
+    fn span_same_start_end_yields_zero_duration() {
+        let mut span = Span::start(500);
+        span.end(500);
+        assert_eq!(span.duration_ms(), Some(0));
+    }
+
+    #[test]
+    fn span_large_elapsed_value() {
+        let mut span = Span::start(1_000_000);
+        span.end(1_001_500);
+        assert_eq!(span.duration_ms(), Some(1500));
+    }
+
+    // --- InMemorySink::drain ---
+
+    #[test]
+    fn drain_returns_all_then_clears() {
+        let sink = InMemorySink::new();
+        for i in 0u64..10 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 10);
+        assert_eq!(sink.count(), 0, "sink must be empty after drain");
+    }
+
+    #[test]
+    fn drain_returns_events_in_insertion_order() {
+        let sink = InMemorySink::new();
+        let kinds = vec![
+            EventKind::SessionStart,
+            EventKind::CommandPaletteOpened,
+            EventKind::SessionEnd,
+        ];
+        for (i, k) in kinds.iter().enumerate() {
+            sink.record(TelemetryEvent::new(k.clone(), i as u64, 1));
+        }
+        let drained = sink.drain();
+        assert_eq!(drained[0].kind, EventKind::SessionStart);
+        assert_eq!(drained[1].kind, EventKind::CommandPaletteOpened);
+        assert_eq!(drained[2].kind, EventKind::SessionEnd);
+    }
+
+    #[test]
+    fn drain_leaves_sink_empty_for_subsequent_events() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let _ = sink.drain();
+        assert_eq!(sink.count(), 0);
+        sink.record(TelemetryEvent::new(EventKind::DeepThinkStarted, 1, 1));
+        assert_eq!(sink.count(), 1);
+    }
+
+    // --- W3C traceparent: version byte != "00" still parses (or rejects gracefully) ---
+
+    #[test]
+    fn traceparent_version_01_is_rejected() {
+        // Our parser only accepts version "00"; "01" must return None.
+        let header = "01-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        assert!(
+            TelemetryEvent::parse_traceparent(header).is_none(),
+            "non-00 version must be rejected"
+        );
+    }
+
+    #[test]
+    fn traceparent_version_fe_is_rejected() {
+        let header = "fe-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        assert!(TelemetryEvent::parse_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn traceparent_version_10_is_rejected() {
+        let header = "10-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        assert!(TelemetryEvent::parse_traceparent(header).is_none());
+    }
+
+    #[test]
+    fn traceparent_version_ab_is_rejected() {
+        let header = "ab-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01";
+        assert!(TelemetryEvent::parse_traceparent(header).is_none());
+    }
+
+    // --- Nested span parent-child relationship (modelled via trace_id / span_id) ---
+
+    #[test]
+    fn parent_child_spans_share_trace_id() {
+        let trace_id = [0xAAu8; 16];
+        let parent_span_id = [0x01u8; 8];
+        let child_span_id = [0x02u8; 8];
+
+        let parent = TelemetryEvent::with_trace(
+            EventKind::SessionStart,
+            0,
+            1,
+            trace_id,
+            parent_span_id,
+        );
+        let child = TelemetryEvent::with_trace(
+            EventKind::CompilerInvoke { duration_ms: 100 },
+            50,
+            1,
+            trace_id,
+            child_span_id,
+        );
+
+        // Parent and child must belong to the same trace.
+        assert_eq!(parent.trace_id, child.trace_id);
+        // But have distinct span IDs.
+        assert_ne!(parent.span_id, child.span_id);
+    }
+
+    #[test]
+    fn nested_spans_timestamp_ordering() {
+        // Child span starts after parent.
+        let trace_id = [0xBBu8; 16];
+        let parent = TelemetryEvent::with_trace(
+            EventKind::SessionStart,
+            100,
+            1,
+            trace_id,
+            [0x01u8; 8],
+        );
+        let child = TelemetryEvent::with_trace(
+            EventKind::RagQuery { top_k: 5 },
+            150,
+            1,
+            trace_id,
+            [0x02u8; 8],
+        );
+        assert!(child.timestamp_ms > parent.timestamp_ms);
+    }
+
+    #[test]
+    fn nested_spans_parent_ends_after_child() {
+        let mut parent_span = Span::start(0);
+        let mut child_span = Span::start(10);
+        child_span.end(50);
+        parent_span.end(100);
+        // Parent duration includes child duration.
+        let parent_dur = parent_span.duration_ms().unwrap();
+        let child_dur = child_span.duration_ms().unwrap();
+        assert!(parent_dur >= child_dur);
+    }
+
+    // --- Span with custom attributes/tags (via EventKind::Error as tag carrier) ---
+
+    #[test]
+    fn span_with_attributes_via_error_event() {
+        // Attributes/tags are carried in the EventKind payload.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::Error {
+                code: 0,
+                message: "span=fetch-data;user=42;region=us-west".into(),
+            },
+            0,
+            1,
+        ));
+        let events = sink.events();
+        match &events[0].kind {
+            EventKind::Error { message, .. } => {
+                assert!(message.contains("span=fetch-data"));
+                assert!(message.contains("user=42"));
+                assert!(message.contains("region=us-west"));
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    #[test]
+    fn span_with_path_attribute_via_compiler_invoke() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::CompilerInvokeWithPath {
+                duration_ms: 77,
+                path: "/workspace/feature.nom".into(),
+            },
+            10,
+            1,
+        ));
+        let events = sink.events();
+        match &events[0].kind {
+            EventKind::CompilerInvokeWithPath { path, duration_ms } => {
+                assert_eq!(path, "/workspace/feature.nom");
+                assert_eq!(*duration_ms, 77);
+            }
+            other => panic!("unexpected: {other:?}"),
+        }
+    }
+
+    // --- Buffer capacity limit: 100+ spans → sink accumulates without panic ---
+
+    #[test]
+    fn buffer_100_spans_all_stored() {
+        let sink = InMemorySink::new();
+        for i in 0u64..100 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 100, "all 100 events must be stored");
+    }
+
+    #[test]
+    fn buffer_200_spans_all_stored() {
+        let sink = InMemorySink::new();
+        for i in 0u64..200 {
+            sink.record(TelemetryEvent::new(
+                EventKind::CanvasAction {
+                    action: format!("act-{i}"),
+                },
+                i,
+                1,
+            ));
+        }
+        assert_eq!(sink.count(), 200);
+        let events = sink.events();
+        // Verify first and last timestamps are correct (no eviction in InMemorySink).
+        assert_eq!(events[0].timestamp_ms, 0);
+        assert_eq!(events[199].timestamp_ms, 199);
+    }
+
+    #[test]
+    fn buffer_drain_after_100_events() {
+        let sink = InMemorySink::new();
+        for i in 0u64..100 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 100);
+        assert_eq!(sink.count(), 0);
+        // Add more events after draining; should work normally.
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 100, 1));
+        assert_eq!(sink.count(), 1);
+    }
+
+    #[test]
+    fn buffer_interleaved_drain_and_record() {
+        let sink = InMemorySink::new();
+        // Record 50 events, drain, record 50 more.
+        for i in 0u64..50 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let first_batch = sink.drain();
+        assert_eq!(first_batch.len(), 50);
+        assert_eq!(sink.count(), 0);
+        for i in 50u64..100 {
+            sink.record(TelemetryEvent::new(EventKind::SessionEnd, i, 1));
+        }
+        let second_batch = sink.drain();
+        assert_eq!(second_batch.len(), 50);
+        assert_eq!(second_batch[0].kind, EventKind::SessionEnd);
+    }
+
+    // --- Telemetry off/on toggle (modelled via NullSink vs InMemorySink swap) ---
+
+    #[test]
+    fn telemetry_off_null_sink_records_nothing_observable() {
+        // When telemetry is "off", back it with NullSink — nothing accumulates.
+        let tel_off = Telemetry::new(Arc::new(NullSink));
+        tel_off.emit(EventKind::SessionStart, 0, 1);
+        tel_off.emit(EventKind::CompilerInvoke { duration_ms: 100 }, 1, 1);
+        // No observable side-effect; assert passes if no panic.
+    }
+
+    #[test]
+    fn telemetry_on_memory_sink_records_everything() {
+        // When telemetry is "on", back it with InMemorySink.
+        let sink = InMemorySink::new();
+        let tel_on = Telemetry::new(Arc::new(sink.clone()));
+        tel_on.emit(EventKind::SessionStart, 0, 1);
+        tel_on.emit(EventKind::CompilerInvoke { duration_ms: 100 }, 1, 1);
+        assert_eq!(sink.count(), 2);
+    }
+
+    #[test]
+    fn telemetry_toggle_off_then_on_via_multi_sink() {
+        // Simulate a "gate": record into memory only when the inner memory sink
+        // is present; route to NullSink when off.
+        let active = InMemorySink::new();
+
+        // "On" state: use InMemorySink.
+        let tel_on = Telemetry::new(Arc::new(active.clone()));
+        tel_on.emit(EventKind::SessionStart, 0, 1);
+        assert_eq!(active.count(), 1);
+
+        // "Off" state: use NullSink (active sink is NOT cleared, just no new writes).
+        let tel_off = Telemetry::new(Arc::new(NullSink));
+        tel_off.emit(EventKind::SessionEnd, 1, 1);
+        // Previous events still present in `active` (off doesn't clear).
+        assert_eq!(active.count(), 1);
+
+        // "On" again.
+        let tel_on2 = Telemetry::new(Arc::new(active.clone()));
+        tel_on2.emit(EventKind::CommandPaletteOpened, 2, 1);
+        assert_eq!(active.count(), 2);
+    }
+
+    #[test]
+    fn telemetry_null_sink_never_accumulates_even_at_scale() {
+        let tel = Telemetry::new(Arc::new(NullSink));
+        for i in 0u64..500 {
+            tel.emit(
+                EventKind::CanvasAction {
+                    action: format!("a-{i}"),
+                },
+                i,
+                1,
+            );
+        }
+        // Reaching here without panic means NullSink stays inert.
+    }
+
+    // --- Additional edge cases ---
+
+    #[test]
+    fn span_end_equal_to_start_is_valid() {
+        // Closing a span at the exact start time must not panic.
+        let mut span = Span::start(9999);
+        span.end(9999); // same ms — duration == 0
+        assert_eq!(span.duration_ms(), Some(0));
+        assert!(span.is_closed());
+    }
+
+    #[test]
+    fn span_sequence_open_close_open() {
+        // Two independent spans with overlapping time ranges.
+        let mut span_a = Span::start(0);
+        let span_b = Span::start(10); // starts while a is open
+        span_a.end(20);
+        assert!(span_a.is_closed());
+        assert!(!span_b.is_closed()); // b still open
+        assert_eq!(span_a.duration_ms(), Some(20));
+        assert!(span_b.duration_ms().is_none());
+    }
+
+    #[test]
+    fn traceparent_version_byte_00_required() {
+        // Only "00" is a valid version in our parser.
+        for bad_version in &["01", "02", "10", "ff", "ab", "99"] {
+            let header = format!(
+                "{bad_version}-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7-01"
+            );
+            assert!(
+                TelemetryEvent::parse_traceparent(&header).is_none(),
+                "version {bad_version} must be rejected"
+            );
+        }
+    }
+
+    #[test]
+    fn drain_100_then_drain_again_returns_empty() {
+        let sink = InMemorySink::new();
+        for i in 0u64..100 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        let first = sink.drain();
+        assert_eq!(first.len(), 100);
+        let second = sink.drain();
+        assert!(second.is_empty(), "second drain must return empty vec");
+    }
+
+    #[test]
+    fn in_memory_sink_count_after_mixed_ops() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        let _ = sink.drain(); // drains 2
+        sink.record(TelemetryEvent::new(EventKind::CommandPaletteOpened, 2, 1));
+        sink.record(TelemetryEvent::new(EventKind::DeepThinkStarted, 3, 1));
+        sink.clear(); // clears 2
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 4, 1));
+        assert_eq!(sink.count(), 1);
+    }
 }

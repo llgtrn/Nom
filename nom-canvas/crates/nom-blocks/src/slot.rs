@@ -108,8 +108,8 @@ mod tests {
     /// SlotValue::Number accessor returns correct value
     #[test]
     fn slot_value_number_accessor() {
-        let sv = SlotValue::Number(3.14);
-        assert!((sv.as_number().unwrap() - 3.14).abs() < f64::EPSILON);
+        let sv = SlotValue::Number(std::f64::consts::PI);
+        assert!((sv.as_number().unwrap() - std::f64::consts::PI).abs() < f64::EPSILON);
         assert!(sv.as_text().is_none());
         assert!(sv.as_bool().is_none());
     }

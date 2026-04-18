@@ -170,6 +170,8 @@ impl AllowedFunctionsSanitizer {
 }
 
 /// --- Sanitizer 3: NoSideEffectsSanitizer ---
+// STUB: this sanitizer does not yet inspect the expression tree.
+// TODO(security): implement before adding Expr::Assign/Import/Exec AST variants
 pub struct NoSideEffectsSanitizer;
 impl NoSideEffectsSanitizer {
     pub fn check(&self, _expr: &Expr) -> Result<(), SandboxError> {
@@ -370,21 +372,33 @@ fn eval_binop(
     r: SandboxValue,
 ) -> Result<SandboxValue, SandboxError> {
     match (op, &l, &r) {
-        (BinOpKind::Add, SandboxValue::Int(a), SandboxValue::Int(b)) => {
-            Ok(SandboxValue::Int(a + b))
-        }
+        (BinOpKind::Add, SandboxValue::Int(a), SandboxValue::Int(b)) => a
+            .checked_add(*b)
+            .map(SandboxValue::Int)
+            .ok_or(SandboxError::TypeMismatch {
+                expected: "non-overflowing integer",
+                got: "overflow",
+            }),
         (BinOpKind::Add, SandboxValue::Float(a), SandboxValue::Float(b)) => {
             Ok(SandboxValue::Float(a + b))
         }
         (BinOpKind::Add, SandboxValue::Str(a), SandboxValue::Str(b)) => {
             Ok(SandboxValue::Str(format!("{}{}", a, b)))
         }
-        (BinOpKind::Sub, SandboxValue::Int(a), SandboxValue::Int(b)) => {
-            Ok(SandboxValue::Int(a - b))
-        }
-        (BinOpKind::Mul, SandboxValue::Int(a), SandboxValue::Int(b)) => {
-            Ok(SandboxValue::Int(a * b))
-        }
+        (BinOpKind::Sub, SandboxValue::Int(a), SandboxValue::Int(b)) => a
+            .checked_sub(*b)
+            .map(SandboxValue::Int)
+            .ok_or(SandboxError::TypeMismatch {
+                expected: "non-overflowing integer",
+                got: "overflow",
+            }),
+        (BinOpKind::Mul, SandboxValue::Int(a), SandboxValue::Int(b)) => a
+            .checked_mul(*b)
+            .map(SandboxValue::Int)
+            .ok_or(SandboxError::TypeMismatch {
+                expected: "non-overflowing integer",
+                got: "overflow",
+            }),
         (BinOpKind::Div, SandboxValue::Int(a), SandboxValue::Int(b)) => {
             if *b == 0 {
                 Err(SandboxError::DivisionByZero)

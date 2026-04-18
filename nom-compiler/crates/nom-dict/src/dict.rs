@@ -627,10 +627,10 @@ pub fn get_entry_bytes(d: &Dict, id: &str) -> Result<Option<Vec<u8>>> {
 
 /// Ids of entries with `status = 'partial'`, ordered by id for
 /// deterministic batch-resumption. `max = None` returns all rows;
-/// `max = Some(n)` caps at `n`. Same shape as `NomDict::list_partial_ids`.
+/// `max = Some(n)` caps at `n`.
 ///
-/// Deprecated: queries the legacy `entries` table. Migrate callers to
-/// [`find_partial_entity_ids`] which reads the canonical `entities` table.
+/// Reads the `entries` table. For new code prefer [`find_partial_entity_ids`]
+/// which reads the canonical `entities` table.
 #[deprecated(
     since = "0.0.0",
     note = "use find_partial_entity_ids(d, max) for the entities tier"
@@ -1259,19 +1259,19 @@ pub fn add_ref(d: &Dict, from_id: &str, to_id: &str) -> Result<()> {
 // the SELECT lists are byte-identical with the legacy version so
 // callers swap by pure rename.
 
-// LEGACY: blocked on body storage design — `entries` is the only table
-// that holds `describe` and `body_bytes`; these readers stay here until
-// those columns are promoted to the `entities` tier.
+// These readers query the `entries` table, which is the only table that
+// currently holds `describe` and `body_bytes`. They stay until those
+// columns are promoted to the `entities` tier.
 const ENTRY_SELECT: &str = "SELECT id, word, variant, kind, language, describe, concept, body, body_nom, \
      input_type, output_type, pre, post, status, translation_score, \
      is_canonical, deprecated_by, created_at, updated_at, body_kind, body_bytes \
      FROM entries";
 
 /// Look up every entry whose `word` column equals `word`, ordered by
-/// id. Empty vec when nothing matches. Mirrors `NomDict::find_by_word`.
+/// id. Empty vec when nothing matches.
 ///
-/// Deprecated: queries the legacy `entries` table. Migrate callers to
-/// [`find_entities_by_word`] which reads the canonical `entities` table.
+/// Reads the `entries` table. For new code prefer [`find_entities_by_word`]
+/// which reads the canonical `entities` table.
 #[deprecated(
     since = "0.0.0",
     note = "use find_entities_by_word(d, word) for the entities tier"
@@ -1286,10 +1286,10 @@ pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
 }
 
 /// Entries whose `body_kind` equals `kind`, ordered by id, capped by
-/// `limit`. Mirrors `NomDict::find_by_body_kind`.
+/// `limit`.
 ///
-/// Deprecated: queries the legacy `entries` table. Migrate callers to
-/// [`find_entities_by_body_kind`] which reads the canonical `entities` table.
+/// Reads the `entries` table. For new code prefer [`find_entities_by_body_kind`]
+/// which reads the canonical `entities` table.
 #[deprecated(
     since = "0.0.0",
     note = "use find_entities_by_body_kind(d, kind, limit) for the entities tier"
@@ -1319,13 +1319,11 @@ pub fn find_entities_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<
 
 /// Case-insensitive substring search on `entries.describe`. Used by
 /// the LLM `search_nomtu` tool path — caller wraps the query in
-/// `%query%`-style wildcards via the LIKE pattern. Mirrors
-/// `NomDict::search_describe`.
+/// `%query%`-style wildcards via the LIKE pattern.
 ///
-/// Migration BLOCKED: the canonical `entities` table has no `describe`
-/// column (human-readable description lives in `entries` only). This
-/// function must remain reading from `entries` until a description column
-/// is added to `entities`.
+/// Reads the `entries` table; the canonical `entities` table has no
+/// `describe` column. Will migrate once a description column is added
+/// to `entities`.
 pub fn search_describe(d: &Dict, query: &str, limit: usize) -> Result<Vec<Entry>> {
     let pattern = format!("%{}%", query);
     let sql = format!(
@@ -1458,11 +1456,10 @@ pub fn bulk_set_scores(d: &Dict, scores: &[EntryScores]) -> Result<()> {
     Ok(())
 }
 
-/// Fetch a single entry by id. Mirrors `NomDict::get_entry`.
+/// Fetch a single entry by id.
 ///
-/// Deprecated: queries the legacy `entries` table. For entities-tier
-/// lookups use [`find_entity`] which reads the canonical `entities` table
-/// by hash primary key.
+/// Reads the `entries` table. For new code prefer [`find_entity`] which
+/// reads the canonical `entities` table by hash primary key.
 #[deprecated(
     since = "0.0.0",
     note = "use find_entity(d, hash) for the entities tier"
@@ -1485,10 +1482,9 @@ pub fn get_entry(d: &Dict, id: &str) -> Result<Option<Entry>> {
 
 /// Bulk INSERT OR IGNORE entries in a transaction.
 /// Returns the count of rows actually inserted (duplicates ignored).
-/// Mirrors `NomDict::bulk_upsert`.
 ///
-/// LEGACY: blocked on body storage design — writes to `entries` until
-/// `body_bytes` has a home on the `entities` tier.
+/// Writes to the `entries` table. Body storage (`body_bytes`) lives on
+/// `entries` until that column is promoted to the `entities` tier.
 pub fn bulk_upsert(d: &Dict, entries: &[Entry]) -> Result<usize> {
     let tx = d.entities.unchecked_transaction()?;
     let mut inserted = 0;
@@ -1638,12 +1634,11 @@ pub fn upsert_entry_if_new(d: &Dict, entry: &Entry) -> Result<bool> {
 /// Unified filter query for entries: each present field in the filter
 /// adds an AND clause. Results ordered by id for determinism.
 /// An empty filter returns the first `limit` entries (default 50).
-/// Mirrors `NomDict::find_entries`.
 ///
-/// Deprecated: queries the legacy `entries` table. Migrate callers to
-/// [`find_entities`] which reads the canonical `entities` table.
-/// Note: `EntryFilter.language` is ignored by `find_entities` since
-/// the `entities` table has no `language` column.
+/// Reads the `entries` table. For new code prefer [`find_entities`] which
+/// reads the canonical `entities` table. Note: `EntryFilter.language` is
+/// silently ignored by `find_entities` since the `entities` table has no
+/// `language` column.
 #[deprecated(
     since = "0.0.0",
     note = "use find_entities(d, f) for the entities tier"
@@ -2220,6 +2215,7 @@ mod tests {
         assert!(get_entry_bytes(&d, "missing").unwrap().is_none());
     }
 
+    #[allow(deprecated)]
     #[test]
     fn list_partial_ids_filters_and_caps() {
         let d = Dict::open_in_memory().unwrap();
@@ -2531,6 +2527,7 @@ mod tests {
             .unwrap();
     }
 
+    #[allow(deprecated)]
     #[test]
     fn find_by_word_returns_all_matches_ordered_by_id() {
         let d = Dict::open_in_memory().unwrap();
@@ -2542,6 +2539,7 @@ mod tests {
         assert_eq!(ids, vec!["h_a", "h_b"]);
     }
 
+    #[allow(deprecated)]
     #[test]
     fn find_by_body_kind_filters_and_caps() {
         let d = Dict::open_in_memory().unwrap();

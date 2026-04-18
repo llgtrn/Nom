@@ -61,9 +61,10 @@ pub use dict::{
     upsert_entry_if_new,
 };
 
-// Legacy entries-table compatibility exports. These stay public for older
-// callers, but warnings are contained here so modern workspace checks can move
-// toward the entities-tier APIs without noisy re-export diagnostics.
+// Entries-table readers re-exported for callers that still use the `entries`
+// table. Prefer the canonical entities-tier functions (`find_entities`,
+// `find_entities_by_word`, `find_entity`) for new code; these are kept public
+// because external crates depend on them.
 #[allow(deprecated)]
 pub use dict::{find_by_word, find_entries, get_entry};
 
@@ -268,7 +269,7 @@ pub struct NomDict {
 impl NomDict {
     /// Open or create the v2 dictionary at `<root>/data/nomdict.db`.
     /// Empty / missing DBs are handled gracefully: `count()` returns 0,
-    /// `get_entry` returns `None`.
+    /// `find_entity` returns `None`.
     pub fn open(root: &Path) -> Result<Self> {
         let db_dir = root.join("data");
         std::fs::create_dir_all(&db_dir)?;
@@ -373,7 +374,7 @@ impl NomDict {
     /// `unchecked_transaction` (same as [`Self::bulk_upsert`]) so `&self`
     /// suffices — no `&mut self` needed.
     ///
-    /// All `upsert_entry` / `get_entry` calls made while the guard is live
+    /// All `upsert_entry` / `upsert_entity` calls made while the guard is live
     /// operate inside the same transaction, giving per-repo atomic commits.
     pub fn begin_transaction(&self) -> rusqlite::Result<rusqlite::Transaction<'_>> {
         self.conn.unchecked_transaction()
@@ -2710,5 +2711,134 @@ mod tests {
         assert_eq!(d.list_required_axes("alpha", "app").unwrap().len(), 5);
         assert_eq!(d.list_required_axes("beta", "app").unwrap().len(), 5);
         assert_eq!(d.count_required_axes().unwrap(), 10);
+    }
+
+    // ── Canonical entities-tier API tests ─────────────────────────────
+
+    /// find_entity returns the inserted row by hash and None for an unknown hash.
+    #[test]
+    fn canonical_find_entity_round_trip() {
+        use dict::{find_entity, upsert_entity, Dict};
+        let d = Dict::open_in_memory().unwrap();
+        let row = make_word_v2_row("deadbeef0001", "compress_lz4");
+        upsert_entity(&d, &row).unwrap();
+
+        let fetched = find_entity(&d, "deadbeef0001").unwrap().unwrap();
+        assert_eq!(fetched.hash, "deadbeef0001");
+        assert_eq!(fetched.word, "compress_lz4");
+        assert_eq!(fetched.kind, "Function");
+
+        assert!(find_entity(&d, "nonexistent").unwrap().is_none());
+    }
+
+    /// find_entities_by_word and find_entities_by_kind return consistent counts.
+    #[test]
+    fn canonical_entities_query_consistency() {
+        use dict::{find_entities_by_kind, find_entities_by_word, upsert_entity, Dict};
+        let d = Dict::open_in_memory().unwrap();
+
+        upsert_entity(&d, &make_word_v2_row("h-enc-1", "encode_opus")).unwrap();
+        upsert_entity(&d, &make_word_v2_row("h-enc-2", "encode_opus")).unwrap();
+        let mut screen = make_word_v2_row("h-scr-1", "player_ui");
+        screen.kind = "Screen".to_string();
+        upsert_entity(&d, &screen).unwrap();
+
+        let by_word = find_entities_by_word(&d, "encode_opus").unwrap();
+        assert_eq!(by_word.len(), 2, "two entities with word=encode_opus");
+        assert!(by_word.iter().all(|r| r.word == "encode_opus"));
+
+        let by_kind_fn = find_entities_by_kind(&d, "Function").unwrap();
+        assert_eq!(by_kind_fn.len(), 2);
+
+        let by_kind_sc = find_entities_by_kind(&d, "Screen").unwrap();
+        assert_eq!(by_kind_sc.len(), 1);
+        assert_eq!(by_kind_sc[0].word, "player_ui");
+
+        // Total count matches sum of both kinds.
+        assert_eq!(
+            count_entities(&d).unwrap(),
+            (by_kind_fn.len() + by_kind_sc.len()) as i64
+        );
+    }
+
+    /// count_entities_by_status groups rows into (status, count) pairs.
+    #[test]
+    fn canonical_count_entities_by_status() {
+        use dict::{count_entities_by_status, upsert_entity, Dict};
+        let d = Dict::open_in_memory().unwrap();
+
+        upsert_entity(&d, &make_word_v2_row("s-c1", "fn_a")).unwrap();
+        upsert_entity(&d, &make_word_v2_row("s-c2", "fn_b")).unwrap();
+        let mut partial = make_word_v2_row("s-p1", "fn_c");
+        partial.status = "partial".to_string();
+        upsert_entity(&d, &partial).unwrap();
+
+        let hist = count_entities_by_status(&d).unwrap();
+        let map: std::collections::HashMap<String, usize> = hist.into_iter().collect();
+
+        assert_eq!(map.get("complete"), Some(&2));
+        assert_eq!(map.get("partial"), Some(&1));
+    }
+
+    /// find_entities_by_body_kind filters by the body_kind column.
+    #[test]
+    fn canonical_find_entities_by_body_kind() {
+        use dict::{find_entities_by_body_kind, upsert_entity, Dict};
+        use nom_types::body_kind;
+        let d = Dict::open_in_memory().unwrap();
+
+        let mut bc1 = make_word_v2_row("bk-bc-1", "render_wasm");
+        bc1.body_kind = Some(body_kind::BC.to_string());
+        upsert_entity(&d, &bc1).unwrap();
+
+        let mut bc2 = make_word_v2_row("bk-bc-2", "compile_wasm");
+        bc2.body_kind = Some(body_kind::BC.to_string());
+        upsert_entity(&d, &bc2).unwrap();
+
+        let mut avif = make_word_v2_row("bk-av-1", "encode_avif");
+        avif.body_kind = Some(body_kind::AVIF.to_string());
+        upsert_entity(&d, &avif).unwrap();
+
+        let bc_rows = find_entities_by_body_kind(&d, body_kind::BC, 10).unwrap();
+        assert_eq!(bc_rows.len(), 2);
+        assert!(bc_rows.iter().all(|r| r.body_kind.as_deref() == Some(body_kind::BC)));
+
+        let avif_rows = find_entities_by_body_kind(&d, body_kind::AVIF, 10).unwrap();
+        assert_eq!(avif_rows.len(), 1);
+
+        // Limit is respected.
+        let capped = find_entities_by_body_kind(&d, body_kind::BC, 1).unwrap();
+        assert_eq!(capped.len(), 1);
+
+        // Unknown tag returns empty.
+        let none = find_entities_by_body_kind(&d, body_kind::FLAC, 10).unwrap();
+        assert!(none.is_empty());
+    }
+
+    /// find_entities with an empty EntryFilter returns rows up to the limit.
+    #[test]
+    fn canonical_find_entities_empty_filter_respects_limit() {
+        use dict::{find_entities, upsert_entity, Dict};
+        let d = Dict::open_in_memory().unwrap();
+
+        for i in 0..10u8 {
+            upsert_entity(
+                &d,
+                &make_word_v2_row(&format!("fe-hash-{i:02}"), &format!("fn_{i}")),
+            )
+            .unwrap();
+        }
+
+        let all = find_entities(&d, &EntryFilter { limit: 20, ..EntryFilter::default() }).unwrap();
+        assert_eq!(all.len(), 10);
+
+        let capped = find_entities(&d, &EntryFilter { limit: 3, ..EntryFilter::default() }).unwrap();
+        assert_eq!(capped.len(), 3);
+
+        // Results are ordered by hash (deterministic).
+        let hashes: Vec<&str> = capped.iter().map(|r| r.hash.as_str()).collect();
+        let mut sorted = hashes.clone();
+        sorted.sort();
+        assert_eq!(hashes, sorted, "find_entities must return rows ordered by hash");
     }
 }

@@ -763,7 +763,7 @@ mod tests {
     #[test]
     fn pixels_ord() {
         assert!(Pixels(1.0) < Pixels(2.0));
-        assert!(!(Pixels(2.0) < Pixels(1.0)));
+        assert!(Pixels(2.0) >= Pixels(1.0));
     }
 
     // ---- Point<Pixels> ----
@@ -1089,8 +1089,8 @@ mod tests {
 
     #[test]
     fn pixels_from_f32_conversion() {
-        let p = Pixels::from(3.14f32);
-        assert!((p.0 - 3.14).abs() < 1e-5);
+        let p = Pixels::from(2.5f32);
+        assert!((p.0 - 2.5).abs() < 1e-5);
     }
 
     // ---- Bounds::contains edge cases ----

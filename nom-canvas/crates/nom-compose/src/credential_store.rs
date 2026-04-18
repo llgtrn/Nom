@@ -3,10 +3,19 @@
 use std::collections::HashMap;
 
 /// A credential entry for a vendor/service.
-#[derive(Debug, Clone)]
+#[derive(Clone)]
 pub struct Credential {
     pub kind: String,  // e.g., "api_key", "bearer_token", "oauth2"
     pub value: String, // the secret value
+}
+
+impl std::fmt::Debug for Credential {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("Credential")
+            .field("kind", &self.kind)
+            .field("value", &"[REDACTED]")
+            .finish()
+    }
 }
 
 /// Kind-keyed credential store (per spec: "Kind-keyed secrets").
@@ -344,6 +353,27 @@ mod tests {
             },
         );
         assert_eq!(s.get("svc").unwrap().value, "");
+    }
+
+    #[test]
+    fn credential_debug_redacts_value() {
+        let cred = Credential {
+            kind: "api_key".into(),
+            value: "super-secret-token".into(),
+        };
+        let debug_output = format!("{:?}", cred);
+        assert!(
+            !debug_output.contains("super-secret-token"),
+            "Debug output must not contain the raw secret value"
+        );
+        assert!(
+            debug_output.contains("[REDACTED]"),
+            "Debug output must contain [REDACTED]"
+        );
+        assert!(
+            debug_output.contains("api_key"),
+            "Debug output must still show the kind field"
+        );
     }
 
     #[test]

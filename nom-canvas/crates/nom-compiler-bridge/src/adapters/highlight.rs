@@ -5,6 +5,60 @@ use nom_editor::highlight::HighlightSpan;
 #[cfg(feature = "compiler")]
 use nom_editor::highlight::TokenRole;
 
+/// Returns the byte length of the canonical surface text for a token.
+#[cfg(feature = "compiler")]
+fn tok_text_len(tok: &nom_concept::Tok) -> usize {
+    use nom_concept::Tok;
+    match tok {
+        Tok::The => 3,
+        Tok::Is => 2,
+        Tok::Composes => 8,
+        Tok::Then => 4,
+        Tok::With => 4,
+        Tok::Requires => 8,
+        Tok::Ensures => 7,
+        Tok::Matching => 8,
+        Tok::Benefit => 7,
+        Tok::Hazard => 6,
+        Tok::At => 2,
+        Tok::Dot => 1,
+        Tok::Comma => 1,
+        Tok::Intended => 8,
+        Tok::To => 2,
+        Tok::Uses => 4,
+        Tok::Extends => 7,
+        Tok::Adding => 6,
+        Tok::Removing => 8,
+        Tok::Exposes => 7,
+        Tok::This => 4,
+        Tok::Works => 5,
+        Tok::When => 4,
+        Tok::Favor => 5,
+        Tok::AtLeast => 8,  // "at-least"
+        Tok::AtMost => 7,   // "at-most"
+        Tok::Retry => 5,
+        Tok::Format => 6,
+        Tok::Accesses => 8,
+        Tok::Shaped => 6,
+        Tok::Like => 4,
+        Tok::Field => 5,
+        Tok::Tagged => 6,
+        Tok::Watermark => 9,
+        Tok::Lag => 3,
+        Tok::Seconds => 7,
+        Tok::Window => 6,
+        Tok::Clock => 5,
+        Tok::Domain => 6,
+        Tok::Mhz => 3,
+        Tok::Quality => 7,
+        Tok::NumberLit(n) => format!("{n}").len(),
+        Tok::Kind(s) => s.len(),
+        Tok::Word(s) => s.len(),
+        Tok::Quoted(s) => s.len() + 2, // include the surrounding quotes
+        Tok::AtKind(s) => s.len() + 1, // include the leading '@'
+    }
+}
+
 // With compiler feature: real tokenizer from nom-concept
 #[cfg(feature = "compiler")]
 pub fn tokenize_to_spans(source: &str, state: &SharedState) -> Vec<TokenSpan> {
@@ -17,9 +71,10 @@ pub fn tokenize_to_spans(source: &str, state: &SharedState) -> Vec<TokenSpan> {
         .iter()
         .map(|spanned| {
             let role = tok_to_role(&spanned.tok, state);
+            let token_len = tok_text_len(&spanned.tok);
             TokenSpan {
                 start: spanned.pos,
-                end: spanned.pos,
+                end: spanned.pos + token_len,
                 role,
                 text: String::new(),
             }
@@ -40,7 +95,8 @@ pub fn highlight_source(source: &str, state: &SharedState) -> Vec<HighlightSpan>
         .iter()
         .map(|spanned| {
             let role = tok_to_role(&spanned.tok, state);
-            HighlightSpan::new(spanned.pos..spanned.pos, role)
+            let token_len = tok_text_len(&spanned.tok);
+            HighlightSpan::new(spanned.pos..spanned.pos + token_len, role)
         })
         .collect()
 }

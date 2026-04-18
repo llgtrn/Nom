@@ -93,36 +93,36 @@ mod tests {
 
     #[test]
     fn quad_vert_nonempty() {
-        assert!(QUAD_VERT_WGSL.len() > 0);
+        assert!(!QUAD_VERT_WGSL.is_empty());
     }
 
     #[test]
     fn quad_frag_nonempty() {
-        assert!(QUAD_FRAG_WGSL.len() > 0);
+        assert!(!QUAD_FRAG_WGSL.is_empty());
     }
 
     #[test]
     fn sprite_shaders_nonempty() {
-        assert!(SPRITE_VERT_WGSL.len() > 0);
-        assert!(SPRITE_FRAG_WGSL.len() > 0);
+        assert!(!SPRITE_VERT_WGSL.is_empty());
+        assert!(!SPRITE_FRAG_WGSL.is_empty());
     }
 
     #[test]
     fn shadow_shaders_nonempty() {
-        assert!(SHADOW_VERT_WGSL.len() > 0);
-        assert!(SHADOW_FRAG_WGSL.len() > 0);
+        assert!(!SHADOW_VERT_WGSL.is_empty());
+        assert!(!SHADOW_FRAG_WGSL.is_empty());
     }
 
     #[test]
     fn path_shaders_nonempty() {
-        assert!(PATH_VERT_WGSL.len() > 0);
-        assert!(PATH_FRAG_WGSL.len() > 0);
+        assert!(!PATH_VERT_WGSL.is_empty());
+        assert!(!PATH_FRAG_WGSL.is_empty());
     }
 
     #[test]
     fn underline_shaders_nonempty() {
-        assert!(UNDERLINE_VERT_WGSL.len() > 0);
-        assert!(UNDERLINE_FRAG_WGSL.len() > 0);
+        assert!(!UNDERLINE_VERT_WGSL.is_empty());
+        assert!(!UNDERLINE_FRAG_WGSL.is_empty());
     }
 
     #[test]

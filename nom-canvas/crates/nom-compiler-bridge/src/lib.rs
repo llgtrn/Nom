@@ -2,16 +2,13 @@
 pub mod adapters;
 pub mod background_tier;
 pub mod interactive_tier;
-pub mod lsp_provider;
 pub mod shared;
 pub mod sqlite_dict;
 pub mod ui_tier;
 
+pub use adapters::lsp::CompilerLspProvider;
 pub use background_tier::BackgroundTierOps;
 pub use interactive_tier::InteractiveTierOps;
-pub use lsp_provider::{
-    CompilerLspProvider, CompletionItem, HoverResponse, LspDiagnostic, LspSeverity,
-};
 pub use shared::{GrammarKind, PipelineOutput, SharedState};
 pub use sqlite_dict::SqliteDictReader;
 pub use ui_tier::UiTierOps;
@@ -127,10 +124,11 @@ mod tests {
 
     #[test]
     fn bridge_state_lsp_provider_available() {
+        use nom_editor::lsp_bridge::LspProvider;
         let bridge = BridgeState::new("test.db", "test.grammar");
         let provider = bridge.lsp_provider();
-        // lsp_provider() returns a CompilerLspProvider — hover on empty word returns None
-        let result = provider.hover("");
+        // lsp_provider() returns a CompilerLspProvider — hover on an empty path returns None
+        let result = provider.hover(std::path::Path::new(""), 0);
         assert!(result.is_none());
     }
 

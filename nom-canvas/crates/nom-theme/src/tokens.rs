@@ -280,6 +280,8 @@ pub const N_TOKENS: usize = 73;
 mod tests {
     use super::*;
 
+    type HslaFn = fn() -> nom_gpui::Hsla;
+
     #[test]
     fn token_spacing_values_consistent() {
         // Each step is a multiple of the 4px base grid.
@@ -302,11 +304,11 @@ mod tests {
     #[test]
     fn token_font_sizes_ordered() {
         // Caption < code < body < h3 < h2 < h1
-        assert!(FONT_SIZE_CAPTION < FONT_SIZE_CODE);
-        assert!(FONT_SIZE_CODE < FONT_SIZE_BODY);
-        assert!(FONT_SIZE_BODY < FONT_SIZE_H3);
-        assert!(FONT_SIZE_H3 < FONT_SIZE_H2);
-        assert!(FONT_SIZE_H2 < FONT_SIZE_H1);
+        const { assert!(FONT_SIZE_CAPTION < FONT_SIZE_CODE) };
+        const { assert!(FONT_SIZE_CODE < FONT_SIZE_BODY) };
+        const { assert!(FONT_SIZE_BODY < FONT_SIZE_H3) };
+        const { assert!(FONT_SIZE_H3 < FONT_SIZE_H2) };
+        const { assert!(FONT_SIZE_H2 < FONT_SIZE_H1) };
     }
 
     #[test]
@@ -360,13 +362,13 @@ mod tests {
 
     #[test]
     fn token_icon_size_sm_smaller_than_icon_size() {
-        assert!(ICON_SIZE_SM < ICON_SIZE);
+        const { assert!(ICON_SIZE_SM < ICON_SIZE) };
         assert_eq!(ICON_SIZE_SM, 16.0);
     }
 
     #[test]
     fn token_h1_spacing_positive() {
-        assert!(H1_SPACING > 0.0);
+        const { assert!(H1_SPACING > 0.0) };
         assert_eq!(H1_SPACING, 8.0);
     }
 
@@ -380,10 +382,10 @@ mod tests {
 
     #[test]
     fn token_panel_sizes_within_bounds() {
-        assert!(PANEL_LEFT_WIDTH > PANEL_MIN_WIDTH);
-        assert!(PANEL_RIGHT_WIDTH > PANEL_MIN_WIDTH);
-        assert!(PANEL_LEFT_WIDTH < PANEL_MAX_WIDTH);
-        assert!(PANEL_RIGHT_WIDTH <= PANEL_MAX_WIDTH);
+        const { assert!(PANEL_LEFT_WIDTH > PANEL_MIN_WIDTH) };
+        const { assert!(PANEL_RIGHT_WIDTH > PANEL_MIN_WIDTH) };
+        const { assert!(PANEL_LEFT_WIDTH < PANEL_MAX_WIDTH) };
+        const { assert!(PANEL_RIGHT_WIDTH <= PANEL_MAX_WIDTH) };
     }
 
     #[test]
@@ -412,39 +414,43 @@ mod tests {
     #[test]
     fn shadow_tokens_blur_ordering() {
         // Larger shadow variants must have greater blur.
-        assert!(SHADOW_MD.blur > SHADOW_SM.blur);
-        assert!(SHADOW_LG.blur > SHADOW_MD.blur);
-        assert!(SHADOW_XL.blur > SHADOW_LG.blur);
+        const { assert!(SHADOW_MD.blur > SHADOW_SM.blur) };
+        const { assert!(SHADOW_LG.blur > SHADOW_MD.blur) };
+        const { assert!(SHADOW_XL.blur > SHADOW_LG.blur) };
     }
 
     #[test]
     fn frosted_glass_alpha_in_range() {
-        assert!((0.0..=1.0).contains(&FROSTED_BG_ALPHA));
-        assert!((0.0..=1.0).contains(&FROSTED_BORDER_ALPHA));
-        assert!(
-            FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
-            "background alpha should dominate border alpha"
-        );
+        const { assert!(FROSTED_BG_ALPHA >= 0.0 && FROSTED_BG_ALPHA <= 1.0) };
+        const { assert!(FROSTED_BORDER_ALPHA >= 0.0 && FROSTED_BORDER_ALPHA <= 1.0) };
+        const {
+            assert!(
+                FROSTED_BG_ALPHA > FROSTED_BORDER_ALPHA,
+                "background alpha should dominate border alpha"
+            )
+        };
     }
 
     #[test]
     fn tokens_base_bg_is_dark() {
         // Blue channel (index 2) must be near 0 — confirms a dark background.
-        assert!(
-            BASE_BG[2] < 0.1,
-            "BASE_BG blue channel should be near 0 for a dark bg, got {}",
-            BASE_BG[2]
-        );
+        const {
+            assert!(
+                BASE_BG[2] < 0.1,
+                "BASE_BG blue channel should be near 0 for a dark bg"
+            )
+        };
     }
 
     #[test]
     fn tokens_base_fg_is_light() {
         // Red channel (index 0) must be > 0.8 — confirms a light foreground.
-        assert!(
-            BASE_FG[0] > 0.8,
-            "BASE_FG red channel should be > 0.8 for a light fg, got {}",
-            BASE_FG[0]
-        );
+        const {
+            assert!(
+                BASE_FG[0] > 0.8,
+                "BASE_FG red channel should be > 0.8 for a light fg"
+            )
+        };
     }
 
     #[test]
@@ -480,28 +486,27 @@ mod tests {
 
     #[test]
     fn tokens_frosted_blur_radius_positive() {
-        assert!(
-            FROSTED_BLUR_RADIUS > 0.0,
-            "FROSTED_BLUR_RADIUS must be positive"
-        );
+        const { assert!(FROSTED_BLUR_RADIUS > 0.0, "FROSTED_BLUR_RADIUS must be positive") };
     }
 
     #[test]
     fn tokens_frosted_bg_alpha_below_one() {
-        assert!(
-            FROSTED_BG_ALPHA < 1.0,
-            "FROSTED_BG_ALPHA should be < 1.0 for frosted transparency"
-        );
+        const {
+            assert!(
+                FROSTED_BG_ALPHA < 1.0,
+                "FROSTED_BG_ALPHA should be < 1.0 for frosted transparency"
+            )
+        };
     }
 
     #[test]
     fn tokens_frosted_border_alpha_below_bg_alpha() {
-        assert!(
-            FROSTED_BORDER_ALPHA < FROSTED_BG_ALPHA,
-            "FROSTED_BORDER_ALPHA ({}) must be less than FROSTED_BG_ALPHA ({})",
-            FROSTED_BORDER_ALPHA,
-            FROSTED_BG_ALPHA
-        );
+        const {
+            assert!(
+                FROSTED_BORDER_ALPHA < FROSTED_BG_ALPHA,
+                "FROSTED_BORDER_ALPHA must be less than FROSTED_BG_ALPHA"
+            )
+        };
     }
 
     #[test]
@@ -513,113 +518,72 @@ mod tests {
     #[test]
     fn tokens_error_is_reddish() {
         // Red channel dominates over both green and blue.
-        assert!(
-            ERROR[0] > ERROR[1],
-            "ERROR red ({}) must exceed green ({})",
-            ERROR[0],
-            ERROR[1]
-        );
-        assert!(
-            ERROR[0] > ERROR[2],
-            "ERROR red ({}) must exceed blue ({})",
-            ERROR[0],
-            ERROR[2]
-        );
+        const { assert!(ERROR[0] > ERROR[1], "ERROR red must exceed green") };
+        const { assert!(ERROR[0] > ERROR[2], "ERROR red must exceed blue") };
     }
 
     #[test]
     fn tokens_warning_is_yellowish() {
         // Both red and green channels > 0.5 gives a yellow hue.
-        assert!(
-            WARNING[0] > 0.5,
-            "WARNING red ({}) must be > 0.5 for yellow hue",
-            WARNING[0]
-        );
-        assert!(
-            WARNING[1] > 0.5,
-            "WARNING green ({}) must be > 0.5 for yellow hue",
-            WARNING[1]
-        );
+        const { assert!(WARNING[0] > 0.5, "WARNING red must be > 0.5 for yellow hue") };
+        const { assert!(WARNING[1] > 0.5, "WARNING green must be > 0.5 for yellow hue") };
     }
 
     #[test]
     fn tokens_edge_high_brighter_than_edge_low() {
         // EDGE_HIGH is green-dominant (high confidence); EDGE_LOW is red-dominant (low confidence).
         // High-confidence edges have a higher green channel than low-confidence edges.
-        assert!(
-            EDGE_HIGH[1] > EDGE_LOW[1],
-            "EDGE_HIGH green ({}) must exceed EDGE_LOW green ({}) — high confidence = green",
-            EDGE_HIGH[1],
-            EDGE_LOW[1]
-        );
+        const {
+            assert!(
+                EDGE_HIGH[1] > EDGE_LOW[1],
+                "EDGE_HIGH green must exceed EDGE_LOW green — high confidence = green"
+            )
+        };
         // And high-confidence edges have a higher alpha than low-confidence edges.
-        assert!(
-            EDGE_HIGH[3] > EDGE_LOW[3],
-            "EDGE_HIGH alpha ({}) must exceed EDGE_LOW alpha ({})",
-            EDGE_HIGH[3],
-            EDGE_LOW[3]
-        );
+        const {
+            assert!(
+                EDGE_HIGH[3] > EDGE_LOW[3],
+                "EDGE_HIGH alpha must exceed EDGE_LOW alpha"
+            )
+        };
     }
 
     #[test]
     fn tokens_count_all_defined() {
         // Compile-time sanity: N_TOKENS must be defined and > 20.
-        assert!(N_TOKENS >= 20, "N_TOKENS ({N_TOKENS}) must be at least 20");
+        const { assert!(N_TOKENS >= 20, "N_TOKENS must be at least 20") };
     }
 
     #[test]
     fn tokens_border_has_alpha() {
         // BORDER is an opaque or semi-transparent border — alpha must be in (0.0, 1.0].
-        assert!(
-            BORDER[3] > 0.0,
-            "BORDER alpha ({}) must be > 0.0",
-            BORDER[3]
-        );
-        assert!(
-            BORDER[3] <= 1.0,
-            "BORDER alpha ({}) must be <= 1.0",
-            BORDER[3]
-        );
+        const { assert!(BORDER[3] > 0.0, "BORDER alpha must be > 0.0") };
+        const { assert!(BORDER[3] <= 1.0, "BORDER alpha must be <= 1.0") };
     }
 
     #[test]
     fn tokens_focus_alpha_partial() {
         // FOCUS is a semi-transparent ring — alpha must be less than 1.0.
-        assert!(
-            FOCUS[3] < 1.0,
-            "FOCUS alpha ({}) must be < 1.0 for a semi-transparent ring",
-            FOCUS[3]
-        );
+        const {
+            assert!(
+                FOCUS[3] < 1.0,
+                "FOCUS alpha must be < 1.0 for a semi-transparent ring"
+            )
+        };
     }
 
     #[test]
     fn tokens_focus_ring_visible() {
         // FOCUS ring must be at least somewhat visible — alpha > 0.1.
-        assert!(
-            FOCUS[3] > 0.1,
-            "FOCUS alpha ({}) too low to be visible",
-            FOCUS[3]
-        );
+        const { assert!(FOCUS[3] > 0.1, "FOCUS alpha too low to be visible") };
     }
 
     #[test]
     fn tokens_base_fg_all_channels_bright() {
         // BASE_FG near-white: all three RGB channels must be > 0.8.
-        assert!(
-            BASE_FG[0] > 0.8,
-            "BASE_FG[0] R={} must be > 0.8",
-            BASE_FG[0]
-        );
-        assert!(
-            BASE_FG[1] > 0.8,
-            "BASE_FG[1] G={} must be > 0.8",
-            BASE_FG[1]
-        );
-        assert!(
-            BASE_FG[2] > 0.8,
-            "BASE_FG[2] B={} must be > 0.8",
-            BASE_FG[2]
-        );
+        const { assert!(BASE_FG[0] > 0.8, "BASE_FG[0] R must be > 0.8") };
+        const { assert!(BASE_FG[1] > 0.8, "BASE_FG[1] G must be > 0.8") };
+        const { assert!(BASE_FG[2] > 0.8, "BASE_FG[2] B must be > 0.8") };
     }
 
     #[test]
@@ -705,97 +669,82 @@ mod tests {
     #[test]
     fn tokens_anim_fast_less_than_default() {
         // Fast animations must complete sooner than default animations.
-        assert!(
-            ANIM_FAST_MS < ANIM_DEFAULT_MS,
-            "ANIM_FAST_MS ({ANIM_FAST_MS}) must be less than ANIM_DEFAULT_MS ({ANIM_DEFAULT_MS})"
-        );
+        const {
+            assert!(
+                ANIM_FAST_MS < ANIM_DEFAULT_MS,
+                "ANIM_FAST_MS must be less than ANIM_DEFAULT_MS"
+            )
+        };
     }
 
     #[test]
     fn tokens_motion_hover_less_than_panel_resize() {
         // Hover response must be snappier than a panel resize animation.
-        assert!(
-            MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
-            "MOTION_HOVER_DURATION_MS ({}) must be less than MOTION_PANEL_RESIZE_DURATION_MS ({})",
-            MOTION_HOVER_DURATION_MS,
-            MOTION_PANEL_RESIZE_DURATION_MS
-        );
+        const {
+            assert!(
+                MOTION_HOVER_DURATION_MS < MOTION_PANEL_RESIZE_DURATION_MS,
+                "MOTION_HOVER_DURATION_MS must be less than MOTION_PANEL_RESIZE_DURATION_MS"
+            )
+        };
     }
 
     #[test]
     fn tokens_radius_scale_strictly_ascending() {
         // Radius tokens (excluding NONE and FULL) must be strictly ascending.
-        assert!(RADIUS_SM < RADIUS_MD);
-        assert!(RADIUS_MD < RADIUS_LG);
-        assert!(RADIUS_LG < RADIUS_XL);
-        assert!(RADIUS_XL < RADIUS_FULL);
+        const { assert!(RADIUS_SM < RADIUS_MD) };
+        const { assert!(RADIUS_MD < RADIUS_LG) };
+        const { assert!(RADIUS_LG < RADIUS_XL) };
+        const { assert!(RADIUS_XL < RADIUS_FULL) };
     }
 
     #[test]
     fn tokens_toolbar_and_statusbar_heights_ordered() {
         // Toolbar is taller than the status bar.
-        assert!(
-            TOOLBAR_H > STATUSBAR_H,
-            "TOOLBAR_H ({TOOLBAR_H}) must be greater than STATUSBAR_H ({STATUSBAR_H})"
-        );
+        const {
+            assert!(
+                TOOLBAR_H > STATUSBAR_H,
+                "TOOLBAR_H must be greater than STATUSBAR_H"
+            )
+        };
     }
 
     #[test]
     fn tokens_spacing_small_less_than_large() {
         // SPACING_1 is the smallest step; SPACING_12 is the largest.
-        assert!(
-            SPACING_1 < SPACING_12,
-            "SPACING_1 ({SPACING_1}) must be less than SPACING_12 ({SPACING_12})"
-        );
+        const {
+            assert!(
+                SPACING_1 < SPACING_12,
+                "SPACING_1 must be less than SPACING_12"
+            )
+        };
     }
 
     #[test]
     fn tokens_border_radius_positive() {
         // All non-zero radius constants must be > 0.
-        assert!(RADIUS_SM > 0.0, "RADIUS_SM must be positive");
-        assert!(RADIUS_MD > 0.0, "RADIUS_MD must be positive");
-        assert!(RADIUS_LG > 0.0, "RADIUS_LG must be positive");
+        const { assert!(RADIUS_SM > 0.0, "RADIUS_SM must be positive") };
+        const { assert!(RADIUS_MD > 0.0, "RADIUS_MD must be positive") };
+        const { assert!(RADIUS_LG > 0.0, "RADIUS_LG must be positive") };
     }
 
     #[test]
     fn tokens_icon_size_positive() {
-        assert!(
-            ICON_SIZE > 0.0,
-            "ICON_SIZE must be positive, got {ICON_SIZE}"
-        );
-        assert!(
-            ICON_SIZE_SM > 0.0,
-            "ICON_SIZE_SM must be positive, got {ICON_SIZE_SM}"
-        );
+        const { assert!(ICON_SIZE > 0.0, "ICON_SIZE must be positive") };
+        const { assert!(ICON_SIZE_SM > 0.0, "ICON_SIZE_SM must be positive") };
     }
 
     #[test]
     fn tokens_line_height_above_one() {
         // Readable line heights must be >= 1.0 to avoid overlap.
-        assert!(
-            LINE_HEIGHT_BODY >= 1.0,
-            "LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY}) must be >= 1.0"
-        );
-        assert!(
-            LINE_HEIGHT_CAPTION >= 1.0,
-            "LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION}) must be >= 1.0"
-        );
-        assert!(
-            LINE_HEIGHT_CODE >= 1.0,
-            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) must be >= 1.0"
-        );
-        assert!(
-            LINE_HEIGHT_HEADING >= 1.0,
-            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) must be >= 1.0"
-        );
+        const { assert!(LINE_HEIGHT_BODY >= 1.0, "LINE_HEIGHT_BODY must be >= 1.0") };
+        const { assert!(LINE_HEIGHT_CAPTION >= 1.0, "LINE_HEIGHT_CAPTION must be >= 1.0") };
+        const { assert!(LINE_HEIGHT_CODE >= 1.0, "LINE_HEIGHT_CODE must be >= 1.0") };
+        const { assert!(LINE_HEIGHT_HEADING >= 1.0, "LINE_HEIGHT_HEADING must be >= 1.0") };
     }
 
     #[test]
     fn tokens_sidebar_width_positive() {
-        assert!(
-            SIDEBAR_W > 0.0,
-            "SIDEBAR_W must be positive, got {SIDEBAR_W}"
-        );
+        const { assert!(SIDEBAR_W > 0.0, "SIDEBAR_W must be positive") };
     }
 
     #[test]
@@ -843,11 +792,7 @@ mod tests {
     #[test]
     fn tokens_destructive_is_red() {
         // ERROR is the destructive color; red channel must dominate (> 0.5).
-        assert!(
-            ERROR[0] > 0.5,
-            "ERROR red channel ({}) must be > 0.5 for destructive red",
-            ERROR[0]
-        );
+        const { assert!(ERROR[0] > 0.5, "ERROR red channel must be > 0.5 for destructive red") };
     }
 
     #[test]
@@ -892,10 +837,7 @@ mod tests {
 
     #[test]
     fn tokens_radius_full_is_very_large() {
-        assert!(
-            RADIUS_FULL >= 999.0,
-            "RADIUS_FULL ({RADIUS_FULL}) must be >= 999 (pill shape)"
-        );
+        const { assert!(RADIUS_FULL >= 999.0, "RADIUS_FULL must be >= 999 (pill shape)") };
     }
 
     #[test]
@@ -909,35 +851,26 @@ mod tests {
 
     #[test]
     fn tokens_modal_radius_larger_than_block_radius() {
-        assert!(
-            MODAL_RADIUS > BLOCK_RADIUS,
-            "MODAL_RADIUS ({MODAL_RADIUS}) must be > BLOCK_RADIUS ({BLOCK_RADIUS})"
-        );
+        const { assert!(MODAL_RADIUS > BLOCK_RADIUS, "MODAL_RADIUS must be > BLOCK_RADIUS") };
     }
 
     #[test]
     fn tokens_popover_radius_positive() {
-        assert!(POPOVER_RADIUS > 0.0, "POPOVER_RADIUS must be positive");
+        const { assert!(POPOVER_RADIUS > 0.0, "POPOVER_RADIUS must be positive") };
     }
 
     #[test]
     fn tokens_btn_heights_ordered() {
         // Button height variants must be strictly ascending.
-        assert!(
-            BTN_H < BTN_H_LG,
-            "BTN_H ({BTN_H}) must be < BTN_H_LG ({BTN_H_LG})"
-        );
-        assert!(
-            BTN_H_LG < BTN_H_XL,
-            "BTN_H_LG ({BTN_H_LG}) must be < BTN_H_XL ({BTN_H_XL})"
-        );
+        const { assert!(BTN_H < BTN_H_LG, "BTN_H must be < BTN_H_LG") };
+        const { assert!(BTN_H_LG < BTN_H_XL, "BTN_H_LG must be < BTN_H_XL") };
     }
 
     #[test]
     fn tokens_btn_h_positive() {
-        assert!(BTN_H > 0.0, "BTN_H must be positive");
-        assert!(BTN_H_LG > 0.0, "BTN_H_LG must be positive");
-        assert!(BTN_H_XL > 0.0, "BTN_H_XL must be positive");
+        const { assert!(BTN_H > 0.0, "BTN_H must be positive") };
+        const { assert!(BTN_H_LG > 0.0, "BTN_H_LG must be positive") };
+        const { assert!(BTN_H_XL > 0.0, "BTN_H_XL must be positive") };
     }
 
     #[test]
@@ -973,31 +906,16 @@ mod tests {
     #[test]
     fn tokens_line_height_code_widest() {
         // Code needs the most vertical space; must be >= all other line heights.
-        assert!(
-            LINE_HEIGHT_CODE >= LINE_HEIGHT_BODY,
-            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) must be >= LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY})"
-        );
-        assert!(
-            LINE_HEIGHT_CODE >= LINE_HEIGHT_CAPTION,
-            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) >= LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION})"
-        );
-        assert!(
-            LINE_HEIGHT_CODE >= LINE_HEIGHT_HEADING,
-            "LINE_HEIGHT_CODE ({LINE_HEIGHT_CODE}) >= LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING})"
-        );
+        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_BODY, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_BODY") };
+        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_CAPTION, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_CAPTION") };
+        const { assert!(LINE_HEIGHT_CODE >= LINE_HEIGHT_HEADING, "LINE_HEIGHT_CODE must be >= LINE_HEIGHT_HEADING") };
     }
 
     #[test]
     fn tokens_line_height_heading_tightest() {
         // Headings use tighter leading than body or code text.
-        assert!(
-            LINE_HEIGHT_HEADING <= LINE_HEIGHT_BODY,
-            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) must be <= LINE_HEIGHT_BODY ({LINE_HEIGHT_BODY})"
-        );
-        assert!(
-            LINE_HEIGHT_HEADING <= LINE_HEIGHT_CAPTION,
-            "LINE_HEIGHT_HEADING ({LINE_HEIGHT_HEADING}) <= LINE_HEIGHT_CAPTION ({LINE_HEIGHT_CAPTION})"
-        );
+        const { assert!(LINE_HEIGHT_HEADING <= LINE_HEIGHT_BODY, "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_BODY") };
+        const { assert!(LINE_HEIGHT_HEADING <= LINE_HEIGHT_CAPTION, "LINE_HEIGHT_HEADING must be <= LINE_HEIGHT_CAPTION") };
     }
 
     #[test]
@@ -1073,70 +991,43 @@ mod tests {
 
     #[test]
     fn tokens_motion_spring_stiffness_positive() {
-        assert!(
-            MOTION_SPRING_STIFFNESS > 0.0,
-            "MOTION_SPRING_STIFFNESS must be positive"
-        );
+        const { assert!(MOTION_SPRING_STIFFNESS > 0.0, "MOTION_SPRING_STIFFNESS must be positive") };
     }
 
     #[test]
     fn tokens_motion_spring_damping_positive() {
-        assert!(
-            MOTION_SPRING_DAMPING > 0.0,
-            "MOTION_SPRING_DAMPING must be positive"
-        );
+        const { assert!(MOTION_SPRING_DAMPING > 0.0, "MOTION_SPRING_DAMPING must be positive") };
     }
 
     #[test]
     fn tokens_panel_right_wider_than_left() {
-        assert!(
-            PANEL_RIGHT_WIDTH > PANEL_LEFT_WIDTH,
-            "PANEL_RIGHT_WIDTH ({PANEL_RIGHT_WIDTH}) must be > PANEL_LEFT_WIDTH ({PANEL_LEFT_WIDTH})"
-        );
+        const { assert!(PANEL_RIGHT_WIDTH > PANEL_LEFT_WIDTH, "PANEL_RIGHT_WIDTH must be > PANEL_LEFT_WIDTH") };
     }
 
     #[test]
     fn tokens_panel_bottom_height_positive() {
-        assert!(
-            PANEL_BOTTOM_HEIGHT > 0.0,
-            "PANEL_BOTTOM_HEIGHT must be positive"
-        );
+        const { assert!(PANEL_BOTTOM_HEIGHT > 0.0, "PANEL_BOTTOM_HEIGHT must be positive") };
     }
 
     #[test]
     fn tokens_panel_min_less_than_max() {
-        assert!(
-            PANEL_MIN_WIDTH < PANEL_MAX_WIDTH,
-            "PANEL_MIN_WIDTH ({PANEL_MIN_WIDTH}) must be < PANEL_MAX_WIDTH ({PANEL_MAX_WIDTH})"
-        );
+        const { assert!(PANEL_MIN_WIDTH < PANEL_MAX_WIDTH, "PANEL_MIN_WIDTH must be < PANEL_MAX_WIDTH") };
     }
 
     #[test]
     fn tokens_h1_letter_spacing_negative() {
-        assert!(
-            H1_LETTER_SPACING < 0.0,
-            "H1_LETTER_SPACING ({H1_LETTER_SPACING}) must be negative (tight tracking)"
-        );
+        const { assert!(H1_LETTER_SPACING < 0.0, "H1_LETTER_SPACING must be negative (tight tracking)") };
     }
 
     #[test]
     fn tokens_h1_weight_exceeds_h2_weight() {
-        assert!(
-            H1_WEIGHT > H2_WEIGHT,
-            "H1_WEIGHT ({H1_WEIGHT}) must exceed H2_WEIGHT ({H2_WEIGHT})"
-        );
+        const { assert!(H1_WEIGHT > H2_WEIGHT, "H1_WEIGHT must exceed H2_WEIGHT") };
     }
 
     #[test]
     fn tokens_body_weight_lower_than_heading_weights() {
-        assert!(
-            BODY_WEIGHT < H2_WEIGHT,
-            "BODY_WEIGHT ({BODY_WEIGHT}) must be < H2_WEIGHT ({H2_WEIGHT})"
-        );
-        assert!(
-            BODY_WEIGHT < H1_WEIGHT,
-            "BODY_WEIGHT ({BODY_WEIGHT}) must be < H1_WEIGHT ({H1_WEIGHT})"
-        );
+        const { assert!(BODY_WEIGHT < H2_WEIGHT, "BODY_WEIGHT must be < H2_WEIGHT") };
+        const { assert!(BODY_WEIGHT < H1_WEIGHT, "BODY_WEIGHT must be < H1_WEIGHT") };
     }
 
     #[test]
@@ -1459,8 +1350,8 @@ mod tests {
 
     #[test]
     fn motion_timing_both_positive() {
-        assert!(ANIM_FAST_MS > 0.0, "ANIM_FAST_MS must be positive");
-        assert!(ANIM_DEFAULT_MS > 0.0, "ANIM_DEFAULT_MS must be positive");
+        const { assert!(ANIM_FAST_MS > 0.0, "ANIM_FAST_MS must be positive") };
+        const { assert!(ANIM_DEFAULT_MS > 0.0, "ANIM_DEFAULT_MS must be positive") };
     }
 
     // -----------------------------------------------------------------------
@@ -1474,7 +1365,7 @@ mod tests {
 
     #[test]
     fn palette_n_tokens_at_least_73() {
-        assert!(N_TOKENS >= 73, "Token count must be >= 73, got {N_TOKENS}");
+        const { assert!(N_TOKENS >= 73, "Token count must be >= 73") };
     }
 
     // -----------------------------------------------------------------------
@@ -1625,7 +1516,7 @@ mod tests {
     #[test]
     fn tokens_hsla_components_in_range() {
         // Every Hsla color function must return values in valid ranges.
-        let fns: &[(&str, fn() -> nom_gpui::Hsla)] = &[
+        let fns: &[(&str, HslaFn)] = &[
             ("bg_primary", color_bg_primary),
             ("bg_secondary", color_bg_secondary),
             ("bg_tertiary", color_bg_tertiary),

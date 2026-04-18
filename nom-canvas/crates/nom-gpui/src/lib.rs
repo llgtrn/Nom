@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod animation;
+pub mod pixel_diff;
 pub mod atlas;
 pub mod element;
 pub mod event;

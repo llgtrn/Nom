@@ -2,6 +2,7 @@
 
 use super::ComposeResult;
 use crate::semantic::SemanticRegistry;
+use crate::store::ArtifactStore;
 
 /// Specification for a semantic-model-backed data query.
 #[derive(Debug, Clone)]
@@ -36,11 +37,18 @@ impl DataQuerySpec {
 
 /// Compose a data-query artifact using the semantic registry.
 ///
-/// Succeeds when the model exists and a valid SQL string can be generated.
-/// Returns `Err` when the model is unknown.
-pub fn compose(spec: &DataQuerySpec, registry: &SemanticRegistry) -> ComposeResult {
+/// Generates a SQL SELECT statement, writes it as UTF-8 bytes to `store`,
+/// and returns `Ok(())` on success. Returns `Err` when the model is unknown.
+pub fn compose(
+    spec: &DataQuerySpec,
+    registry: &SemanticRegistry,
+    store: &mut dyn ArtifactStore,
+) -> ComposeResult {
     match spec.to_sql(registry) {
-        Some(_sql) => Ok(()),
+        Some(sql) => {
+            store.write(sql.as_bytes());
+            Ok(())
+        }
         None => Err(format!("unknown semantic model: {}", spec.model_name)),
     }
 }
@@ -49,6 +57,7 @@ pub fn compose(spec: &DataQuerySpec, registry: &SemanticRegistry) -> ComposeResu
 mod tests {
     use super::*;
     use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegistry};
+    use crate::store::InMemoryStore;
 
     fn make_registry() -> SemanticRegistry {
         let mut reg = SemanticRegistry::new();
@@ -97,7 +106,30 @@ mod tests {
             where_clause: None,
             limit: None,
         };
-        assert!(compose(&spec, &reg).is_ok());
+        let mut store = InMemoryStore::new();
+        assert!(compose(&spec, &reg, &mut store).is_ok());
+        // SQL bytes must have been written to the artifact store.
+        assert_eq!(store.len(), 1, "compose must write exactly one artifact");
+    }
+
+    #[test]
+    fn data_query_compose_writes_correct_sql() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into(), "amount".into()],
+            where_clause: Some("amount > 0".into()),
+            limit: Some(10),
+        };
+        let mut store = InMemoryStore::new();
+        compose(&spec, &reg, &mut store).unwrap();
+        assert_eq!(store.len(), 1);
+        // Retrieve the stored artifact and check the SQL content.
+        let expected_sql =
+            "SELECT order_id, amount FROM raw.orders WHERE amount > 0 LIMIT 10";
+        let hash = store.write(expected_sql.as_bytes()); // idempotent — same bytes = same hash
+        let stored = store.read(&hash).unwrap();
+        assert_eq!(stored, expected_sql.as_bytes());
     }
 
     #[test]
@@ -109,9 +141,12 @@ mod tests {
             where_clause: None,
             limit: None,
         };
-        let result = compose(&spec, &reg);
+        let mut store = InMemoryStore::new();
+        let result = compose(&spec, &reg, &mut store);
         assert!(result.is_err());
         assert!(result.unwrap_err().contains("nonexistent"));
+        // No artifact should be written when the model is unknown.
+        assert_eq!(store.len(), 0, "no artifact must be written on error");
     }
 
     #[test]
@@ -148,6 +183,7 @@ mod tests {
             where_clause: None,
             limit: Some(5),
         };
-        assert!(compose(&spec, &reg).is_ok());
+        let mut store = InMemoryStore::new();
+        assert!(compose(&spec, &reg, &mut store).is_ok());
     }
 }

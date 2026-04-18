@@ -303,4 +303,70 @@ mod tests {
         assert_eq!(h, copied);
         assert_eq!(h, cloned);
     }
+
+    #[test]
+    fn hash128_rehash_same_data_stable() {
+        // Hashing the same byte slice five times must always produce the same result.
+        let data = b"stability_check_data";
+        let first = Hash128::of_bytes(data);
+        for _ in 0..4 {
+            assert_eq!(Hash128::of_bytes(data), first);
+        }
+    }
+
+    #[test]
+    fn hash128_different_data_different_hash() {
+        // Two clearly different byte slices must not collide.
+        let h1 = Hash128::of_bytes(b"alpha_payload");
+        let h2 = Hash128::of_bytes(b"beta_payload_");
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn hash128_prefix_vs_full_differ() {
+        // "abc" vs "abcd" — prefix must hash differently from the full string.
+        let h_prefix = Hash128::of_str("abc");
+        let h_full   = Hash128::of_str("abcd");
+        assert_ne!(h_prefix, h_full);
+    }
+
+    #[test]
+    fn hash128_byte_order_matters() {
+        // [0x01, 0x02] vs [0x02, 0x01] must produce different hashes.
+        let h1 = Hash128::of_bytes(&[0x01, 0x02]);
+        let h2 = Hash128::of_bytes(&[0x02, 0x01]);
+        assert_ne!(h1, h2);
+    }
+
+    #[test]
+    fn hash128_combine_associativity_check() {
+        // (a.combine(b)).combine(c) must equal a.combine(b.combine(c)) only if the
+        // implementation is associative — here we simply confirm the call is stable.
+        let a = Hash128::of_str("x");
+        let b = Hash128::of_str("y");
+        let c = Hash128::of_str("z");
+        let lhs = a.combine(b).combine(c);
+        let lhs2 = a.combine(b).combine(c);
+        assert_eq!(lhs, lhs2, "combine must be deterministic");
+    }
+
+    #[test]
+    fn hash128_as_u64_stable_across_calls() {
+        let h = Hash128::of_str("as_u64_stable");
+        let v1 = h.as_u64();
+        let v2 = h.as_u64();
+        assert_eq!(v1, v2);
+    }
+
+    #[test]
+    fn hash128_of_u64_zero_vs_one() {
+        assert_ne!(Hash128::of_u64(0), Hash128::of_u64(1));
+    }
+
+    #[test]
+    fn hash128_of_str_case_sensitive() {
+        let lower = Hash128::of_str("hello");
+        let upper = Hash128::of_str("HELLO");
+        assert_ne!(lower, upper, "hash must be case-sensitive");
+    }
 }

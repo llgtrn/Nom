@@ -1,11 +1,16 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests:** 2396 default pass; `--all-features` fails 14 | **Workspace:** dirty
+**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean — Wave AE audit findings recorded
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
-- [ ] Wave AC audit reopened DB-driven/UI reliability gates: AC1 connector validation, AC2 live palette SELECT, AC3 library SELECT, AC4 runtime UI verification, AC5 panel entity boundary, AC7 all-features bridge failures.
+- [x] Wave AC/AD closed: AC1-AC5/AC7-AC11/AD1-AD2 all PASS; AC6/AD3 still open
+- [ ] Wave AE: 2 CRITICAL + 6 HIGH + 9 MEDIUM open (see task.md Wave AE section)
+- **CRITICAL gate:** Renderer::draw() is a stub — window opens but renders zero pixels (AE1)
+- **CRITICAL gate:** highlight adapter zero-width spans — syntax highlighting broken (AE2)
+- **DB-driven verdict:** CONFIRMED CORRECT — AC1-AC3 are solid; grammar.kinds/DictReader/Connector all properly wired
+- **Automation via DB answer:** YES — grammar.kinds = n8n node library, .nomx = workflow definition, dispatch.rs = executor; architecture is correct and wired
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
 - [x] 686 tests passing across workspace
@@ -20,14 +25,43 @@
 - [x] Wave S landed (5 panels+10 backends+FrostedRect+hints+renderer — 686 tests, commit c4d6252)
 - [x] Wave T landed (scenario_workflow+renderer+integration+31 new tests — 717 tests, commit 0b0d48e)
 
-## Open Missions (Wave AC)
+## Iteration 51 — Wave AE Hard Audit (2026-04-18, HEAD c3d2323, 2841 tests)
 
-- AC1 CRITICAL: make every connector creation path grammar-backed; remove or quarantine `Connector::new()` / `Connector::new_stub()` production use.
-- AC2 CRITICAL: add live `NodePalette::load_from_dict` / equivalent DB reader over `grammar.kinds`.
-- AC3 HIGH: make `LibraryPanel` use the same live grammar source.
-- AC4 HIGH: add runtime visual verification for nom-theme, nom-panels, nom-gpui, and nom-blocks UI surfaces.
-- AC5 MEDIUM: decide and encode whether panel `Option<String>` entity ids are navigation metadata or canvas object refs.
-- AC7 HIGH: fix 14 `nom-compiler-bridge` failures under `cargo test --workspace --all-features -q`.
+8-agent parallel audit of all 14 crates. Key findings:
+
+**CRITICAL:**
+- AE1: `renderer.rs:130` — `draw_*` methods count stats only; zero wgpu calls; WGSL shaders return constant colors
+- AE2: `adapters/highlight.rs:23` — `end: spanned.pos` (should be + len); all spans zero-width
+
+**HIGH:**
+- AE3: `lsp_provider.rs:42-104` — duplicate stub CompilerLspProvider with hardcoded `"{prefix}_nomtu"` completions; should be deleted
+- AE4: `scenario_workflow.rs:26-31` — `compose()` body is name-check + Ok(())
+- AE5: `data_query.rs:43` — SQL generated then discarded (`Some(_sql) => Ok(())`)
+- AE6: `dispatch.rs:71-74` — Backend trait not implemented by VideoBackend/DocumentBackend/etc.
+- AE7: `credential_store.rs:6` — `#[derive(Debug)]` on `Credential { value: String }` leaks secrets
+- AE8: `sandbox.rs:341` — eval_expr no runtime depth guard; code_exec.rs calls eval_expr without sanitize()
+
+**VERIFIED PASS (DB-driven architecture):**
+- Connector::new_with_validation() only constructor ✅ | NodePalette load_from_dict ✅ | LibraryPanel load_from_dict ✅
+- Connection::open only in sqlite_dict.rs:23,27 ✅ | entity: NomtuRef non-optional everywhere ✅
+- production_kind: String (not enum) ✅ | Cross-workspace feature-gated path deps ✅
+
+**Reference repo gaps:**
+- Zed GPUI: renderer is MISSING (stub vs real wgpu); scene graph PARTIAL (missing SubpixelSprite/PaintSurface)
+- AFFiNE blocks: PARTIAL (14/20+ types); nom-theme imported but colors hard-coded in nom-blocks
+- n8n: scenario_workflow.rs is STUB
+
+## Open Missions (Wave AE)
+
+- **AE1 CRITICAL:** Implement wgpu device init + pipelines + draw calls in renderer.rs
+- **AE2 CRITICAL:** Fix `end: spanned.pos` → `end: spanned.pos + len` in adapters/highlight.rs:23
+- **AE3 HIGH:** Delete lsp_provider.rs, update lib.rs to export adapters::lsp::CompilerLspProvider
+- **AE4 HIGH:** Implement scenario_workflow::compose() step execution loop
+- **AE5 HIGH:** Fix data_query::compose() to write SQL to artifact store instead of discarding
+- **AE6 HIGH:** Add Backend trait impls for VideoBackend, DocumentBackend, etc.
+- **AE7 HIGH:** Custom Debug for Credential redacting value field
+- **AE8 HIGH:** Add depth counter to eval_expr; call sanitize() before eval in code_exec.rs
+- **AE9-AE17 MEDIUM:** FrostedRect blur, score adapter, SharedState RwLock, BM25 wiring, NoSideEffects stub, int overflow, nom-theme in blocks, Hsla convention, background_tier stubs
 
 ## Historical Open Missions (Wave U)
 

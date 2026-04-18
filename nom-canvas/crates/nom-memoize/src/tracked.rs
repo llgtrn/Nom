@@ -326,4 +326,77 @@ mod tests {
         }
         assert_eq!(t.call_count(), 8);
     }
+
+    #[test]
+    fn tracked_dirty_cycle_mark_check_reset() {
+        // Simulate a mark-dirty → check-dirty → reset cycle using version bumps and take_calls.
+        let t = Tracked::new("state", 1);
+
+        // mark dirty: record a call
+        t.record_call(1, Hash128::of_str("dirty_value"));
+        // check dirty: call_count > 0 means dirty
+        assert!(t.call_count() > 0, "should be dirty after recording");
+
+        // reset: drain calls
+        let _drained = t.take_calls();
+        assert_eq!(t.call_count(), 0, "should be clean after reset");
+    }
+
+    #[test]
+    fn tracked_repeated_dirty_reset_cycles() {
+        let t = Tracked::new(0u32, 1);
+        for cycle in 0u32..5 {
+            // mark dirty
+            t.record_call(cycle, Hash128::of_u64(cycle as u64));
+            assert_eq!(t.call_count(), 1);
+            // reset
+            let drained = t.take_calls();
+            assert_eq!(drained.len(), 1);
+            assert_eq!(t.call_count(), 0);
+        }
+    }
+
+    #[test]
+    fn tracked_check_dirty_via_snapshot() {
+        // A fresh Tracked has an empty snapshot — "not dirty".
+        let t = Tracked::new("clean", 1);
+        let snap = t.snapshot();
+        assert!(snap.method_call_pairs.is_empty(), "fresh tracked is not dirty");
+
+        // After recording, snapshot is non-empty — "dirty".
+        t.record_call(99, Hash128::of_str("result"));
+        let snap2 = t.snapshot();
+        assert!(!snap2.method_call_pairs.is_empty(), "tracked is dirty after record");
+    }
+
+    #[test]
+    fn tracked_reset_via_new_instance() {
+        // Conventional reset: create a new Tracked with version+1 (signals change to consumers).
+        let t_old = Tracked::new("old_state", 3);
+        t_old.record_call(1, Hash128::of_str("r"));
+
+        let t_new = Tracked::new(*t_old.get(), t_old.version + 1);
+        assert_eq!(t_new.call_count(), 0, "new instance starts clean");
+        assert_eq!(t_new.version, 4, "version bumped");
+    }
+
+    #[test]
+    fn tracked_take_then_snapshot_empty() {
+        let t = Tracked::new("data", 10);
+        t.record_call(1, Hash128::of_str("r1"));
+        t.record_call(2, Hash128::of_str("r2"));
+        let _ = t.take_calls(); // reset
+        let snap = t.snapshot();
+        assert!(snap.method_call_pairs.is_empty());
+    }
+
+    #[test]
+    fn tracked_call_count_increments_one_by_one() {
+        let t = Tracked::new(0u8, 0);
+        for i in 0u32..5 {
+            assert_eq!(t.call_count(), i as usize);
+            t.record_call(i, Hash128::of_u64(i as u64));
+        }
+        assert_eq!(t.call_count(), 5);
+    }
 }

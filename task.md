@@ -1,6 +1,67 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean — Wave AE audit in progress
+
+## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
+
+### DB-Driven Architecture (all PASS — confirmed by parallel agent scan)
+
+| Check | Verdict | Evidence |
+|---|---|---|
+| `Connector::new_with_validation()` only constructor | PASS | `nom-blocks/src/connector.rs:88`; grep zero matches for `new(` or `new_stub` |
+| NodePalette live DB SELECT | PASS | `nom-panels/src/left/node_palette.rs:26` calls `dict.list_kinds()` |
+| LibraryPanel live DB SELECT | PASS | `nom-panels/src/left/library.rs:28` calls `dict.list_kinds()` |
+| `DictReader` isolation | PASS | `Connection::open` only in `sqlite_dict.rs:23,27` — zero violations elsewhere |
+| `entity: NomtuRef` non-optional | PASS | `block_model.rs:46`, `graph_node.rs:12` — plain `NomtuRef` field, no `Option` |
+| `Option<NomtuRef>` in struct fields | PASS | 5 occurrences all in `lookup_entity()` return types (correct), zero struct fields |
+| `production_kind: String` (not enum) | PASS | `graph_node.rs:13` — comment: "validated via DictReader::is_known_kind, never a Rust enum" |
+| Cross-workspace path deps | PASS | `Cargo.toml:7-23` feature-gated optional deps point to `../../../nom-compiler/crates/*` |
+| BackendKind enum | ACCEPTABLE | 16-variant closed enum for compose routing (not grammar kinds); `from_kind_name(str)` bridges to runtime strings |
+
+### Open Findings — Wave AE
+
+- [ ] **AE1 CRITICAL — Renderer::draw() is a pure stub, renders zero pixels.** `nom-gpui/src/renderer.rs:130-261` — every `draw_*` method only increments `FrameStats` counters. No `wgpu::Device`, `wgpu::Queue`, `wgpu::RenderPass`, `wgpu::RenderPipeline` anywhere. WGSL shaders return constant colors. Window opens (real winit) but displays a blank frame. Fix: implement wgpu device init → pipeline creation → instance buffer upload → draw calls → present.
+- [x] **AE2 CRITICAL — highlight adapter emits zero-width spans.** Fixed: `tok_text_len()` helper maps each `Tok` variant to byte length; `end = pos + len` in both `tokenize_to_spans` and `highlight_source`. 171 nom-compiler-bridge tests pass.
+- [x] **AE3 HIGH — lsp_provider.rs is a duplicate hardcoded stub.** Fixed: deleted `lsp_provider.rs`; `lib.rs` now re-exports `adapters::lsp::CompilerLspProvider` (real `LspProvider` trait impl). 171 tests pass. `nom-compiler-bridge/src/lsp_provider.rs:42-104` defines a second `CompilerLspProvider` that returns `"{prefix}_nomtu"` completion stubs and a hardcoded hover string. The real `CompilerLspProvider` implementing `LspProvider` trait lives in `adapters/lsp.rs:27`. `lib.rs` re-exports the stub. Fix: delete `lsp_provider.rs`, update `lib.rs` re-exports to use `adapters::lsp::CompilerLspProvider`.
+- [x] **AE4 HIGH — scenario_workflow::compose() is a no-op stub.** Fixed: iterates steps, validates each, builds JSON result with steps_total/completed/triggers/timeout/success. 315 nom-compose tests pass. `nom-compose/src/backends/scenario_workflow.rs:26-31` — body is: check name non-empty, return `Ok(())`. `steps`, `triggers`, `timeout_ms` fields never used. Fix: implement step execution loop or mark `unimplemented!()` so it's not mistaken for working code.
+- [x] **AE5 HIGH — data_query::compose() generates SQL then discards it.** Fixed: SQL written to artifact store via `store.write(sql.as_bytes())`. Test verifies stored bytes match expected SQL. 316 nom-compose tests pass. `nom-compose/src/backends/data_query.rs:43` — `Some(_sql) => Ok(())` discards the SQL string. Fix: write SQL to artifact store (same pattern as other backends).
+- [ ] **AE6 HIGH — Backend trait not implemented by concrete backends.** `nom-compose/src/dispatch.rs:71-74` defines `Backend` trait with `kind()` + `compose(&str, ...)`. None of `VideoBackend`, `DocumentBackend`, etc. implement it. Registry exists but can't route to actual backends. Fix: add `impl Backend for VideoBackend` adapters bridging the typed signatures to the trait.
+- [x] **AE7 HIGH — Credential Debug derive leaks secret values.** Fixed: removed `Debug` from derive; custom `impl Debug` prints `[REDACTED]` for value field. Test verifies raw secret absent from `{:?}` output. 316 nom-compose tests pass. `nom-compose/src/credential_store.rs:6-10` — `#[derive(Debug, Clone)]` on `Credential { value: String }`. Any `{:?}` format or `unwrap()` panic prints raw secret. No zeroing on Drop. Fix: custom `Debug` impl redacting `value`, or use `secrecy::SecretString`.
+- [ ] **AE8 HIGH — eval_expr has no runtime recursion depth guard.** `nom-graph/src/sandbox.rs:341-365` recurses into `BinOp`/`If`/`Call` without a depth counter. Static sanitizer limit of 16 not enforced at eval time. `code_exec.rs:94-113` calls `eval_expr` without calling `sanitize()` first. Fix: add `depth: usize` parameter + return `SandboxError::DepthLimitExceeded` at >64.
+- [ ] **AE9 MEDIUM — FrostedRect blur_radius is stored but never used.** `nom-gpui/src/renderer.rs:230-260` — `draw_frosted_rects` ignores `rect.blur_radius`, produces two flat grey Quads. Not AFFiNE frosted glass. Fix: at minimum vary the tint based on `blur_radius`; in GPU path run blur pre-pass.
+- [ ] **AE10 MEDIUM — adapters/score.rs bypasses nom_score::score_atom.** `nom-compiler-bridge/src/adapters/score.rs:6-22` — does a name-match against grammar cache only, never calls `nom_score::score_atom()`. Fix: under `compiler` feature, construct `Atom` and call `nom_score::score_atom().overall()`.
+- [ ] **AE11 MEDIUM — SharedState uses Mutex not RwLock; no connection pooling.** `nom-compiler-bridge/src/shared.rs:23-34` — `grammar_kinds` in `Mutex` (blocks concurrent reads). `dict_path`/`grammar_path` are strings, not pre-opened connections; each `SqliteDictReader` call opens a fresh `Connection`. Fix: `RwLock<Vec<GrammarKindRow>>` for grammar kinds; pre-open WAL read connections into pool.
+- [ ] **AE12 MEDIUM — BM25 search not wired in UI tier.** `nom-search` declared as optional dep in `Cargo.toml` but never used anywhere in the bridge. `search_bm25` is absent from `ui_tier.rs`. Fix: add `search_bm25(query: &str) -> Vec<SearchHit>` calling `nom_search::BM25Index::search()`.
+- [x] **AE13 MEDIUM — NoSideEffectsSanitizer is a no-op.** Documented: `// STUB` + `// TODO(security): implement before adding Expr::Assign/Import/Exec AST variants` added at sandbox.rs:172. Logic unchanged. `nom-graph/src/sandbox.rs:173-178` — `check()` unconditionally returns `Ok(())`. Any future side-effecting AST node bypasses it. Fix: at minimum document with `// STUB` and `TODO(security)` marker.
+- [x] **AE14 MEDIUM — Integer overflow in sandbox arithmetic.** Fixed: `checked_add`/`checked_sub`/`checked_mul` for i64 BinOp in `eval_binop`; returns `SandboxError::TypeMismatch` on overflow. 256 nom-graph tests pass. `nom-graph/src/sandbox.rs:373-394` — `i64` Add/Sub/Mul use default operators (panic in debug, wrap in release). Fix: use `checked_add`/`checked_sub`/`checked_mul` returning `SandboxError`.
+- [ ] **AE15 MEDIUM — nom-theme imported by nom-blocks but colors are hard-coded.** `nom-blocks` declares `nom-theme` dep in Cargo.toml but zero `nom_theme::tokens::*` usages in source. `drawing.rs` hard-codes HSLA directly. Fix: route drawing colors through theme tokens.
+- [ ] **AE16 MEDIUM — Hsla.h convention mismatch.** `nom-gpui/src/renderer.rs` expects 0-360 degrees from `rgba_to_hsla`; `nom-theme/src/tokens.rs` `color_*()` functions store normalized 0-1 (e.g., `Hsla::new(220.0 / 360.0, ...)`). Double-divide would produce garbled hue. Fix: standardize on 0-360 degrees throughout.
+- [ ] **AE17 MEDIUM — background_tier plan_flow/verify/deep_think are stubs.** `nom-compiler-bridge/src/background_tier.rs:239-287` — `plan_flow` returns empty plan (confidence 0.0), `verify` returns empty diagnostics, `deep_think` emits 3 synthetic steps. Fix per Wave F/G roadmap.
+
+### Reference-Repo Gap Summary (from agent comparison)
+
+| NomCanvas | Reference | Gap |
+|---|---|---|
+| nom-gpui renderer | Zed gpui_wgpu | CRITICAL — Zed has full wgpu pipelines; nom-gpui has stub only |
+| nom-gpui scene | Zed scene.rs | PARTIAL — missing SubpixelSprite + PaintSurface |
+| nom-compose video | Remotion pattern | PARTIAL — Y4M serialization only; no GPU frames, no FFmpeg |
+| nom-compose document | typst-memoize | PARTIAL — metadata only; no layout engine |
+| nom-compose scenario_workflow | n8n DAG+sandbox | STUB — compose() is Ok(()) |
+| nom-blocks block types | AFFiNE blocks | PARTIAL — 14/20+ types; missing table, data-view, frame, edgeless-text, latex |
+| nom-blocks design tokens | AFFiNE cssVarV2 | MISSING — nom-theme imported but not used for block colors |
+
+### Completion Percentages (2026-04-18 Wave AE state)
+
+| Axis | % | Gate |
+|---|---|---|
+| A · nom-compiler | 44% | LLVM self-hosting, bootstrap fixpoint (upstream) |
+| B · Nom language | 34% | Parser/resolver/typechecker in .nom (upstream) |
+| C · nom-canvas ↔ compiler integration | 77% | AE1-AE17 open; AC6+AD3 still open |
+| D · Overall platform | 61% | Renderer stub blocks real platform deliverable |
+
+**DB-driven automation answer (for user):** YES — the DB IS the workflow engine. `grammar.kinds` = n8n/dify node-type library (every row is a draggable node). `clause_shapes` = wire type system. `.nomx` prose → grammar productions via S1-S6. `nom-compose/dispatch.rs` routes `NomKind → backend`. No external orchestrator needed. The architecture is correct and AC1-AC3 confirm it is wired. The gap is execution depth (backends are PARTIAL/STUB) and the renderer (AE1 — pixels not reaching screen yet).
+
+**UI state answer (for user):** The window OPENS (real winit, AD1 confirmed). Panels push real Quad primitives to the Scene graph. Tokens/colors/spring math/focus rings are correct. BUT `Renderer::draw()` is a pure stub — it counts quads but submits zero wgpu draw calls. The screen stays blank. The entire GPU pipeline (wgpu device → pipelines → instance buffers → render pass → present) is missing from renderer.rs.
 
 ## Wave AC Audit (2026-04-18) — DB-driven + UI/UX reliability gate
 

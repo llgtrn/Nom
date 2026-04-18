@@ -546,7 +546,7 @@ mod tests {
         // Choose damping so zeta >= 1: damping = 2*omega = 2*sqrt(100) = 20.
         let v = easing::spring_value(100.0, 20.0, 1.0);
         // Overdamped does not oscillate — value must be in [0, 1].
-        assert!(v >= 0.0 && v <= 1.0, "overdamped spring value out of range: {v}");
+        assert!((0.0..=1.0).contains(&v), "overdamped spring value out of range: {v}");
     }
 
     #[test]

@@ -492,7 +492,7 @@ mod tests {
         );
         // Animation entry should be removed once complete.
         assert!(
-            state.animations.get("a").is_none(),
+            !state.animations.contains_key("a"),
             "completed animation should be removed"
         );
     }
@@ -597,7 +597,7 @@ mod tests {
         // A very large dt should complete the animation.
         state.tick_animations(10.0);
         assert!(
-            state.animations.get("a").is_none(),
+            !state.animations.contains_key("a"),
             "animation for 'a' should be removed after completion"
         );
     }

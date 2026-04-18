@@ -73,15 +73,23 @@ the media intro_video is
 
 **Read the spec first every session.** Plan and spec diverge → update plan, not spec.
 
-## Current Reliability Warning
+## Current Reliability Warning (Wave AE, 2026-04-18, HEAD c3d2323)
 
-Do not treat the historical wave checkboxes as proof by themselves. Current audit evidence says:
+DB-driven architecture is CONFIRMED CORRECT (Wave AC/AD closed):
+- PASS: `NomtuRef` non-optional on BlockModel + GraphNode. `Connector::new_with_validation()` only constructor.
+- PASS: NodePalette + LibraryPanel use `load_from_dict(&dyn DictReader)` over `list_kinds()`.
+- PASS: `Connection::open` isolated to `sqlite_dict.rs` only. `--all-features` tests pass.
 
-- PASS: core `NomtuRef` is non-optional on `BlockModel` and `GraphNode`.
-- FAIL: `Connector::new()` / `new_stub()` can create connectors without grammar-backed `can_wire()` validation.
-- FAIL: `NodePalette` is not yet a live `grammar.kinds` SELECT; it loads slices/static test rows.
-- DRIFT: UI/UX token math exists, but runtime visual verification is still required for frosted glass, focus, contrast, reduced motion, and complete panel surfaces.
-- DRIFT: `cargo test --workspace --all-features` currently fails 14 `nom-compiler-bridge` tests.
+UI/rendering gaps (Wave AE open):
+- CRITICAL: `Renderer::draw()` in `nom-gpui/src/renderer.rs` is a pure stub — zero wgpu draw calls; screen blank.
+- CRITICAL: `adapters/highlight.rs:23` zero-width spans — syntax highlighting broken.
+- HIGH: `lsp_provider.rs` is a duplicate stub — should be deleted, `adapters/lsp.rs` has the real impl.
+- HIGH: `scenario_workflow::compose()` is a no-op; `data_query::compose()` discards SQL.
+- HIGH: `Credential` derives `Debug` — secret value leaks in logs.
+- MEDIUM: FrostedRect blur_radius ignored. BM25 search not wired. SharedState uses Mutex not RwLock.
+
+DB-driven automation (confirmed working):
+`grammar.kinds` = n8n/dify node library → `clause_shapes` = wire types → `.nomx` prose = workflow → `dispatch.rs` = executor. No external orchestrator needed. Architecture correct. Execution depth (backends PARTIAL) and renderer (AE1) are the open gates.
 
 ---
 

@@ -797,3 +797,12 @@ CRITICALs closed: spring math, fold regions, tokens constants, font weight, vali
 Wave E: 100% — 16 compose backends, ArtifactStore, ProgressSink, 243 total tests
 nom-graph input_hash propagation fixed, nom-memoize comemo MethodCall pairs
 Remaining: Wave F (graph RAG overlay + deep_think streaming)
+
+### Iteration 51 state (2026-04-18, HEAD c3d2323, 2841 tests)
+Wave AE hard audit: DB-driven architecture CONFIRMED (AC1-AC5/AC7-AC11/AD1-AD2 all PASS).
+2 CRITICAL open: renderer is a stub (AE1), highlight zero-width spans (AE2).
+6 HIGH open: lsp_provider.rs duplicate (AE3), scenario_workflow no-op (AE4), data_query discards SQL (AE5), Backend trait disconnected (AE6), Credential Debug leaks (AE7), eval_expr no depth guard (AE8).
+9 MEDIUM open: FrostedRect blur ignored, score bypasses nom_score, SharedState Mutex/no-pool, BM25 unwired, NoSideEffects stub, int overflow, nom-theme unused in blocks, Hsla convention mismatch, background_tier plan_flow/verify/deep_think stubs.
+Automation via DB: CONFIRMED CORRECT — grammar.kinds = node library, .nomx = workflow, dispatch.rs = executor.
+UI state: window opens (winit real), panels push Quads, tokens correct, spring math correct. Screen blank because renderer.rs submits zero GPU commands.
+Remaining: Wave AE fixes (AE1-AE17), Wave AB test targets (nom-cli/lint/memoize/telemetry 102 tests short).

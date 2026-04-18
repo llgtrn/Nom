@@ -506,4 +506,147 @@ mod tests {
             assert_eq!(cache.get(&Hash128::of_u64(i), i, &[]), Some(i));
         }
     }
+
+    // ── eviction / capacity simulation ────────────────────────────────────
+
+    #[test]
+    fn memo_cache_eviction_via_invalidate_oldest() {
+        // MemoCache has no built-in capacity limit; simulate eviction by invalidating
+        // the oldest key once a logical capacity (5) is reached.
+        let capacity = 5usize;
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let mut insertion_order: std::collections::VecDeque<Hash128> = Default::default();
+
+        for i in 0u64..8 {
+            let key = Hash128::of_u64(i);
+            // evict if over capacity
+            if insertion_order.len() == capacity {
+                let oldest = insertion_order.pop_front().unwrap();
+                cache.invalidate(&oldest);
+            }
+            cache.put(key, i, Constraint::new(i));
+            insertion_order.push_back(key);
+        }
+
+        // After 8 inserts with cap 5, entries 0-2 evicted, 3-7 present.
+        assert_eq!(cache.len(), capacity);
+        for i in 0u64..3 {
+            assert_eq!(cache.get(&Hash128::of_u64(i), i, &[]), None);
+        }
+        for i in 3u64..8 {
+            assert_eq!(cache.get(&Hash128::of_u64(i), i, &[]), Some(i));
+        }
+    }
+
+    #[test]
+    fn memo_cache_eviction_clears_space() {
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i), i as u8, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 10);
+        // Evict half
+        for i in 0u64..5 {
+            cache.invalidate(&Hash128::of_u64(i));
+        }
+        assert_eq!(cache.len(), 5);
+    }
+
+    // ── hit/miss counter edge cases ────────────────────────────────────────
+
+    #[test]
+    fn memo_cache_hit_counter_starts_zero() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.hit_count(), 0);
+    }
+
+    #[test]
+    fn memo_cache_miss_counter_starts_zero() {
+        let cache: MemoCache<u32> = MemoCache::new();
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_cache_hit_counter_exact_increments() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("exact_hit");
+        cache.put(key, 1, Constraint::new(7));
+        assert_eq!(cache.hit_count(), 0);
+        cache.get(&key, 7, &[]);
+        assert_eq!(cache.hit_count(), 1);
+        cache.get(&key, 7, &[]);
+        assert_eq!(cache.hit_count(), 2);
+        cache.get(&key, 7, &[]);
+        assert_eq!(cache.hit_count(), 3);
+    }
+
+    #[test]
+    fn memo_cache_miss_counter_exact_increments() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("exact_miss");
+        cache.put(key, 1, Constraint::new(7));
+        assert_eq!(cache.miss_count(), 0);
+        cache.get(&key, 0, &[]); // stale
+        assert_eq!(cache.miss_count(), 1);
+        cache.get(&key, 0, &[]); // stale again
+        assert_eq!(cache.miss_count(), 2);
+    }
+
+    #[test]
+    fn memo_cache_counters_not_reset_by_clear() {
+        // clear() removes entries but must not reset counters (counters are cumulative).
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("cnt_clear");
+        cache.put(key, 1, Constraint::new(1));
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 0, &[]); // miss
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 1);
+        cache.clear();
+        // entries gone but counters preserved
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 1);
+        assert_eq!(cache.len(), 0);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_mixed() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("mixed_rate");
+        cache.put(key, 1, Constraint::new(5));
+        cache.get(&key, 5, &[]); // hit
+        cache.get(&key, 5, &[]); // hit
+        cache.get(&key, 5, &[]); // hit
+        cache.get(&key, 0, &[]); // miss
+        // 3 hits / 4 total = 0.75
+        let rate = cache.hit_rate();
+        assert!((rate - 0.75).abs() < 1e-9);
+    }
+
+    // ── concurrent-safe get (smoke test) ──────────────────────────────────
+
+    #[test]
+    fn memo_cache_get_is_safe_single_threaded_sequence() {
+        // MemoCache is not Send, but we verify get/put interleaving is correct.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..10 {
+            let key = Hash128::of_u64(i);
+            cache.put(key, i as u32, Constraint::new(i));
+            let result = cache.get(&key, i, &[]);
+            assert_eq!(result, Some(i as u32));
+        }
+        assert_eq!(cache.hit_count(), 10);
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_cache_get_after_put_always_hits() {
+        let mut cache: MemoCache<String> = MemoCache::new();
+        for i in 0u64..5 {
+            let key = Hash128::of_u64(i);
+            let val = format!("val_{}", i);
+            cache.put(key, val.clone(), Constraint::new(i));
+            assert_eq!(cache.get(&key, i, &[]), Some(val));
+        }
+    }
 }

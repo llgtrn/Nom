@@ -1000,4 +1000,262 @@ mod tests {
         let b = parse_args(&["check", "b.nom"]).unwrap();
         assert_ne!(a, b);
     }
+
+    // --- Command parse error messages (bad args) ---
+
+    #[test]
+    fn cli_error_message_no_args_is_string() {
+        let err = parse_args(&[]).unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn cli_error_message_unknown_command_starts_with_unknown() {
+        let err = parse_args(&["bogus"]).unwrap_err();
+        assert!(err.starts_with("unknown command"));
+    }
+
+    #[test]
+    fn cli_error_message_check_missing_arg() {
+        // "check" with no path matches unknown catch-all — reports unknown or similar
+        let result = parse_args(&["check"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn cli_error_message_run_missing_arg() {
+        let result = parse_args(&["run"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn cli_error_message_format_missing_arg() {
+        let result = parse_args(&["format"]);
+        assert!(result.is_err());
+        let err = result.unwrap_err();
+        assert!(!err.is_empty());
+    }
+
+    #[test]
+    fn cli_error_message_rag_invalid_k_contains_value() {
+        let err = parse_args(&["rag", "--top-k", "bad", "q"]).unwrap_err();
+        assert!(err.contains("bad"));
+    }
+
+    #[test]
+    fn cli_error_message_rag_invalid_k_contains_invalid() {
+        let err = parse_args(&["rag", "--top-k", "notanumber", "q"]).unwrap_err();
+        assert!(err.contains("invalid"));
+    }
+
+    // --- version flag output format ---
+
+    #[test]
+    fn cli_version_command_is_version_variant() {
+        let cmd = parse_args(&["version"]).unwrap();
+        assert!(matches!(cmd, CliCommand::Version));
+    }
+
+    #[test]
+    fn cli_version_debug_format_contains_version() {
+        let cmd = parse_args(&["version"]).unwrap();
+        let s = format!("{:?}", cmd);
+        assert!(s.contains("Version"));
+    }
+
+    #[test]
+    fn cli_version_eq_to_itself() {
+        let a = parse_args(&["version"]).unwrap();
+        let b = parse_args(&["version"]).unwrap();
+        assert_eq!(a, b);
+    }
+
+    #[test]
+    fn cli_version_ne_help() {
+        let v = parse_args(&["version"]).unwrap();
+        let h = parse_args(&["help"]).unwrap();
+        assert_ne!(v, h);
+    }
+
+    // --- rag --top-k with k=0 and k=100 edge cases ---
+
+    #[test]
+    fn cli_rag_top_k_zero_is_ragwithk() {
+        let cmd = parse_args(&["rag", "--top-k", "0", "edge"]).unwrap();
+        assert!(matches!(cmd, CliCommand::RagWithK { top_k: 0, .. }));
+    }
+
+    #[test]
+    fn cli_rag_top_k_one_hundred_is_ragwithk() {
+        let cmd = parse_args(&["rag", "--top-k", "100", "edge"]).unwrap();
+        assert!(matches!(cmd, CliCommand::RagWithK { top_k: 100, .. }));
+    }
+
+    #[test]
+    fn cli_rag_top_k_zero_query_preserved() {
+        let cmd = parse_args(&["rag", "--top-k", "0", "zero-query"]).unwrap();
+        if let CliCommand::RagWithK { query, top_k } = cmd {
+            assert_eq!(top_k, 0);
+            assert_eq!(query, "zero-query");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    #[test]
+    fn cli_rag_top_k_hundred_query_preserved() {
+        let cmd = parse_args(&["rag", "--top-k", "100", "hundred-query"]).unwrap();
+        if let CliCommand::RagWithK { query, top_k } = cmd {
+            assert_eq!(top_k, 100);
+            assert_eq!(query, "hundred-query");
+        } else {
+            panic!("expected RagWithK");
+        }
+    }
+
+    // --- format command with multi-line input ---
+
+    #[test]
+    fn cli_format_path_with_newline_chars() {
+        // Path string can contain escaped newline sequences; parser stores as-is
+        let path = "line1\nline2";
+        let cmd = parse_args(&["format", path]).unwrap();
+        if let CliCommand::Format { path: p } = cmd {
+            assert_eq!(p, path);
+        } else {
+            panic!("expected Format");
+        }
+    }
+
+    #[test]
+    fn cli_format_path_multiline_literal() {
+        let path = "first-line\nsecond-line\nthird-line";
+        let cmd = parse_args(&["format", path]).unwrap();
+        assert!(matches!(cmd, CliCommand::Format { .. }));
+    }
+
+    #[test]
+    fn cli_format_path_crlf() {
+        let path = "file\r\nwith\r\ncrlf";
+        let cmd = parse_args(&["format", path]).unwrap();
+        if let CliCommand::Format { path: p } = cmd {
+            assert_eq!(p, path);
+        } else {
+            panic!("expected Format");
+        }
+    }
+
+    // --- run command with empty input ---
+
+    #[test]
+    fn cli_run_empty_path_is_ok() {
+        let cmd = parse_args(&["run", ""]).unwrap();
+        assert!(matches!(cmd, CliCommand::Run { .. }));
+    }
+
+    #[test]
+    fn cli_run_empty_path_stored() {
+        let cmd = parse_args(&["run", ""]).unwrap();
+        if let CliCommand::Run { path } = cmd {
+            assert_eq!(path, "");
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    #[test]
+    fn cli_run_no_args_is_err() {
+        assert!(parse_args(&["run"]).is_err());
+    }
+
+    // --- help text contains expected subcommand names ---
+
+    #[test]
+    fn cli_help_command_parses_ok() {
+        assert!(parse_args(&["help"]).is_ok());
+    }
+
+    #[test]
+    fn cli_help_variant_is_help() {
+        let cmd = parse_args(&["help"]).unwrap();
+        assert_eq!(cmd, CliCommand::Help);
+    }
+
+    #[test]
+    fn cli_help_debug_contains_help() {
+        let cmd = parse_args(&["help"]).unwrap();
+        let s = format!("{:?}", cmd);
+        assert!(s.contains("Help"));
+    }
+
+    #[test]
+    fn cli_known_subcommands_all_parse() {
+        // Verify all documented subcommands are recognized
+        let valid: &[&[&str]] = &[
+            &["check", "x"],
+            &["build", "x"],
+            &["build", "--release", "x"],
+            &["lint", "x"],
+            &["graph", "x"],
+            &["rag", "x"],
+            &["rag", "--top-k", "5", "x"],
+            &["version"],
+            &["help"],
+            &["run", "x"],
+            &["format", "x"],
+        ];
+        for args in valid {
+            assert!(parse_args(args).is_ok(), "expected ok for {:?}", args);
+        }
+    }
+
+    // --- Unknown subcommand returns error ---
+
+    #[test]
+    fn cli_unknown_subcommand_publish_err() {
+        assert!(parse_args(&["publish", "."]).is_err());
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_clean_err() {
+        assert!(parse_args(&["clean"]).is_err());
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_add_err() {
+        assert!(parse_args(&["add", "dep"]).is_err());
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_remove_err() {
+        assert!(parse_args(&["remove", "dep"]).is_err());
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_error_has_unknown_prefix() {
+        let err = parse_args(&["foobar"]).unwrap_err();
+        assert!(err.starts_with("unknown command"));
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_error_contains_command_name() {
+        let err = parse_args(&["foobar"]).unwrap_err();
+        assert!(err.contains("foobar"));
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_update_err() {
+        let result = parse_args(&["update"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn cli_unknown_subcommand_install_err() {
+        let result = parse_args(&["install", "pkg"]);
+        assert!(result.is_err());
+    }
 }

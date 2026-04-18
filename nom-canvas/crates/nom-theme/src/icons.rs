@@ -1151,7 +1151,7 @@ mod tests {
         for icon in Icon::all() {
             let name = icon.name();
             assert!(
-                name.len() >= 1,
+                !name.is_empty(),
                 "{icon:?}.name() must have at least 1 character"
             );
         }

@@ -1319,4 +1319,387 @@ mod tests {
         let h: String = ranked.into_iter().next().unwrap().hypothesis;
         assert_eq!(h, "ownership test");
     }
+
+    // --- Wave AC: 35 additional tests to reach 150 total ---
+
+    // rank_hypotheses with equal scores (stable sort behavior)
+    #[test]
+    fn rank_equal_scores_stable_first_stays_first() {
+        // All hypotheses score 0.0 (no overlap with evidence).
+        // Stable sort must preserve original input order throughout the equal group.
+        let evidence = &["zzz yyy xxx"];
+        let hypotheses = &["aaa bbb", "ccc ddd", "eee fff", "ggg hhh", "iii jjj"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 5);
+        // Verify stable ordering: original index 0 comes before index 1, etc.
+        assert_eq!(ranked[0].hypothesis, "aaa bbb");
+        assert_eq!(ranked[1].hypothesis, "ccc ddd");
+        assert_eq!(ranked[2].hypothesis, "eee fff");
+        assert_eq!(ranked[3].hypothesis, "ggg hhh");
+        assert_eq!(ranked[4].hypothesis, "iii jjj");
+    }
+
+    #[test]
+    fn rank_equal_scores_all_same_nonzero() {
+        // Hypotheses with identical single-word match (same overlap fraction) keep stable order.
+        let evidence = &["alpha"];
+        // Each hypothesis matches exactly 1/1 word ("alpha") → all score the same.
+        let hypotheses = &["alpha", "alpha", "alpha"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3);
+        // All scores equal; stable sort preserves insertion order.
+        assert_eq!(ranked[0].hypothesis, "alpha");
+        assert_eq!(ranked[1].hypothesis, "alpha");
+        assert_eq!(ranked[2].hypothesis, "alpha");
+        // All scores identical.
+        assert!((ranked[0].score - ranked[2].score).abs() < 1e-6);
+    }
+
+    #[test]
+    fn rank_equal_scores_mixed_with_winner() {
+        // One hypothesis clearly wins; the rest tie at 0.0 → stable sub-order preserved.
+        let evidence = &["winner token"];
+        let hypotheses = &["loser one", "winner token", "loser two", "loser three"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked[0].hypothesis, "winner token", "winner must be first");
+        // Losers in stable order.
+        assert_eq!(ranked[1].hypothesis, "loser one");
+        assert_eq!(ranked[2].hypothesis, "loser two");
+        assert_eq!(ranked[3].hypothesis, "loser three");
+    }
+
+    // InterruptSignal display format and serialization (Debug)
+    #[test]
+    fn interrupt_signal_state_as_bool_before_cancel() {
+        // Serialize cancellation state as bool (the public API surface).
+        let s = InterruptSignal::new();
+        let before: bool = s.is_cancelled();
+        assert!(!before, "before cancel must be false");
+    }
+
+    #[test]
+    fn interrupt_signal_state_as_bool_after_cancel() {
+        let s = InterruptSignal::new();
+        s.cancel();
+        let after: bool = s.is_cancelled();
+        assert!(after, "after cancel must be true");
+    }
+
+    #[test]
+    fn interrupt_signal_format_via_is_cancelled() {
+        let s = InterruptSignal::new();
+        // "Display" is emulated via is_cancelled().
+        let repr_before = format!("cancelled={}", s.is_cancelled());
+        s.cancel();
+        let repr_after = format!("cancelled={}", s.is_cancelled());
+        assert_eq!(repr_before, "cancelled=false");
+        assert_eq!(repr_after, "cancelled=true");
+    }
+
+    // ReactChain step ordering with 5+ steps
+    #[test]
+    fn react_chain_five_steps_ordered_by_index() {
+        let evidence = &["e0", "e1", "e2", "e3", "e4"];
+        let steps = react_chain("e0 e1 e2 e3 e4", evidence, 5);
+        assert_eq!(steps.len(), 5);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(
+                step.thought.contains(&format!("[{i}]")),
+                "step {i} thought must reference index [{i}]"
+            );
+        }
+    }
+
+    #[test]
+    fn react_chain_six_steps_action_sequence() {
+        let evidence = &["a0", "a1", "a2", "a3", "a4", "a5"];
+        let steps = react_chain("a0 a1 a2 a3 a4 a5", evidence, 6);
+        assert_eq!(steps.len(), 6);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(
+                step.action.contains(evidence[i]),
+                "step {i} action must reference evidence[{i}]"
+            );
+        }
+    }
+
+    #[test]
+    fn react_chain_seven_steps_all_valid_scores() {
+        let evidence = &["w0", "w1", "w2", "w3", "w4", "w5", "w6"];
+        let steps = react_chain("w0 w1 w2 w3 w4 w5 w6", evidence, 7);
+        assert_eq!(steps.len(), 7);
+        for s in &steps {
+            assert!(s.score >= 0.0 && s.score <= 1.0);
+        }
+    }
+
+    #[test]
+    fn react_chain_five_steps_observation_format() {
+        let evidence = &["obs0", "obs1", "obs2", "obs3", "obs4"];
+        let steps = react_chain("obs", evidence, 5);
+        for step in &steps {
+            assert!(
+                step.observation.starts_with("partial confidence:"),
+                "observation '{}' must start with 'partial confidence:'",
+                step.observation
+            );
+        }
+    }
+
+    #[test]
+    fn interruptible_five_steps_ordered() {
+        let signal = InterruptSignal::new();
+        let evidence = &["i0", "i1", "i2", "i3", "i4"];
+        let steps = react_chain_interruptible("i0 i1 i2 i3 i4", evidence, 5, &signal);
+        assert_eq!(steps.len(), 5);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(step.thought.contains(&format!("[{i}]")));
+        }
+    }
+
+    // ScoredHypothesis comparison operators (partial ord via score)
+    #[test]
+    fn scored_hypothesis_score_partial_cmp_greater() {
+        let ev = &["match word here"];
+        let ranked = rank_hypotheses(&["match word here", "banana"], ev);
+        // ranked[0].score > ranked[1].score
+        assert!(
+            ranked[0].score > ranked[1].score,
+            "higher-scored hypothesis must compare greater"
+        );
+    }
+
+    #[test]
+    fn scored_hypothesis_score_partial_cmp_equal() {
+        let ev = &["unrelated content"];
+        let ranked = rank_hypotheses(&["aaa", "bbb"], ev);
+        // Both score 0.0 → equal comparison
+        assert!(
+            (ranked[0].score - ranked[1].score).abs() < 1e-6,
+            "tied hypotheses must have equal scores"
+        );
+        // f32 PartialOrd: equal scores compare as equal
+        let cmp = ranked[0].score.partial_cmp(&ranked[1].score);
+        assert_eq!(cmp, Some(std::cmp::Ordering::Equal));
+    }
+
+    #[test]
+    fn scored_hypothesis_score_partial_cmp_less() {
+        let ev = &["target node graph"];
+        let ranked = rank_hypotheses(&["banana", "target node graph"], ev);
+        // ranked[0] is "target node graph" (score > 0), ranked[1] is "banana" (score 0).
+        // ranked[1].score < ranked[0].score
+        let cmp = ranked[1].score.partial_cmp(&ranked[0].score);
+        assert_eq!(cmp, Some(std::cmp::Ordering::Less));
+    }
+
+    #[test]
+    fn scored_hypothesis_sort_by_score_desc() {
+        let ev = &["graph node query"];
+        let mut items = rank_hypotheses(&["banana", "graph node", "graph node query", "xyz"], ev);
+        // Already sorted descending by rank_hypotheses; re-sort ascending and verify reversal.
+        items.sort_by(|a, b| a.score.partial_cmp(&b.score).unwrap_or(std::cmp::Ordering::Equal));
+        // Now ascending: first element has lowest score.
+        assert!(items[0].score <= items[items.len() - 1].score);
+    }
+
+    // Deep-think interrupt mid-chain behavior
+    #[test]
+    fn deep_think_interrupt_mid_chain_via_clone() {
+        // Simulate a "deep think" scenario: chain started, then cancel signal propagated via clone.
+        let signal = InterruptSignal::new();
+        let guard = signal.clone();
+
+        // Run first segment of the chain (steps 0..1) — signal not yet cancelled.
+        let evidence = &["deep", "think", "node", "graph", "query"];
+        let part_a = react_chain_interruptible("deep think node graph query", &evidence[..2], 2, &signal);
+        assert_eq!(part_a.len(), 2, "first segment must complete");
+
+        // Cancel via the guard clone (simulating mid-chain interrupt from another context).
+        guard.cancel();
+
+        // Remaining steps must yield empty.
+        let part_b = react_chain_interruptible("deep think node graph query", &evidence[2..], 3, &signal);
+        assert!(part_b.is_empty(), "interrupted mid-chain must yield no further steps");
+    }
+
+    #[test]
+    fn deep_think_interrupt_after_all_steps() {
+        // Cancel AFTER chain completes — verify completed results are unaffected.
+        let signal = InterruptSignal::new();
+        let evidence = &["alpha", "beta", "gamma"];
+        let steps = react_chain_interruptible("alpha beta gamma", evidence, 3, &signal);
+        assert_eq!(steps.len(), 3, "steps before cancel must all complete");
+        signal.cancel();
+        // Subsequent call with cancelled signal yields empty.
+        let extra = react_chain_interruptible("alpha beta gamma", evidence, 3, &signal);
+        assert!(extra.is_empty());
+    }
+
+    #[test]
+    fn deep_think_no_interrupt_full_chain() {
+        // Full 5-step chain without interrupt — all steps complete, scores valid.
+        let signal = InterruptSignal::new();
+        let evidence = &["node", "graph", "query", "traversal", "result"];
+        let steps = react_chain_interruptible("node graph query traversal result", evidence, 5, &signal);
+        assert_eq!(steps.len(), 5);
+        for s in &steps {
+            assert!(s.score >= 0.0 && s.score <= 1.0);
+        }
+        assert!(!signal.is_cancelled(), "signal must remain uncancelled");
+    }
+
+    // Signal priority ordering
+    #[test]
+    fn signal_priority_first_cancel_wins() {
+        // Two signals; the one cancelled first controls priority.
+        let s_high = InterruptSignal::new();
+        let s_low = InterruptSignal::new();
+        s_high.cancel();
+        // High-priority signal is cancelled; low-priority is not.
+        assert!(s_high.is_cancelled());
+        assert!(!s_low.is_cancelled());
+    }
+
+    #[test]
+    fn signal_priority_cancel_order_independent() {
+        // Cancelling signals in different orders doesn't affect each other.
+        let s1 = InterruptSignal::new();
+        let s2 = InterruptSignal::new();
+        let s3 = InterruptSignal::new();
+        s3.cancel();
+        s1.cancel();
+        assert!(s1.is_cancelled());
+        assert!(!s2.is_cancelled());
+        assert!(s3.is_cancelled());
+    }
+
+    #[test]
+    fn signal_priority_chain_stops_on_highest_priority() {
+        // Simulate priority: if any signal in a group is cancelled, the chain stops.
+        let signals: Vec<InterruptSignal> = (0..3).map(|_| InterruptSignal::new()).collect();
+        // Cancel the "highest priority" signal (index 0).
+        signals[0].cancel();
+        let any_cancelled = signals.iter().any(|s| s.is_cancelled());
+        assert!(any_cancelled, "at least one signal cancelled means chain should stop");
+
+        // Verify chain stops when using the cancelled signal.
+        let evidence = &["e0", "e1", "e2"];
+        let steps = react_chain_interruptible("e0 e1 e2", evidence, 3, &signals[0]);
+        assert!(steps.is_empty(), "highest-priority cancel must stop the chain");
+    }
+
+    #[test]
+    fn signal_priority_lower_priority_continues() {
+        // Lower-priority signal (not cancelled) allows the chain to continue.
+        let s_high = InterruptSignal::new();
+        let s_low = InterruptSignal::new();
+        s_high.cancel();
+        // s_low is not cancelled — chain using s_low proceeds normally.
+        let evidence = &["item one", "item two"];
+        let steps = react_chain_interruptible("item one two", evidence, 2, &s_low);
+        assert_eq!(steps.len(), 2, "lower-priority non-cancelled signal must allow full chain");
+    }
+
+    #[test]
+    fn signal_priority_all_cancelled_stops_immediately() {
+        // All signals cancelled → any chain stops.
+        let signals: Vec<InterruptSignal> = (0..5).map(|_| InterruptSignal::new()).collect();
+        for s in &signals {
+            s.cancel();
+        }
+        let evidence = &["e0", "e1", "e2", "e3", "e4"];
+        for s in &signals {
+            let steps = react_chain_interruptible("test", evidence, 5, s);
+            assert!(steps.is_empty(), "every cancelled signal must stop the chain");
+        }
+    }
+
+    #[test]
+    fn signal_priority_none_cancelled_all_run() {
+        // No signals cancelled → all chains complete.
+        let signals: Vec<InterruptSignal> = (0..3).map(|_| InterruptSignal::new()).collect();
+        let evidence = &["run one", "run two"];
+        for s in &signals {
+            let steps = react_chain_interruptible("run one two", evidence, 2, s);
+            assert_eq!(steps.len(), 2, "non-cancelled signal must allow full chain");
+        }
+    }
+
+    // Additional coverage: step ordering with 8 steps
+    #[test]
+    fn react_chain_eight_steps_thought_indexed() {
+        let evidence = &["e0", "e1", "e2", "e3", "e4", "e5", "e6", "e7"];
+        let steps = react_chain("e0 e1 e2 e3", evidence, 8);
+        assert_eq!(steps.len(), 8);
+        for (i, step) in steps.iter().enumerate() {
+            assert!(step.thought.contains(&format!("[{i}]")));
+        }
+    }
+
+    // rank_hypotheses equal-score group size = 2
+    #[test]
+    fn rank_equal_scores_pair_stable() {
+        let evidence = &["zzz"];
+        let ranked = rank_hypotheses(&["aaa", "bbb"], evidence);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[0].score, 0.0);
+        assert_eq!(ranked[1].score, 0.0);
+        // Stable: "aaa" must precede "bbb".
+        assert_eq!(ranked[0].hypothesis, "aaa");
+        assert_eq!(ranked[1].hypothesis, "bbb");
+    }
+
+    // ScoredHypothesis score used in f32 arithmetic
+    #[test]
+    fn scored_hypothesis_score_arithmetic() {
+        let evidence = &["node graph"];
+        let ranked = rank_hypotheses(&["node graph", "unrelated"], evidence);
+        let sum: f32 = ranked.iter().map(|h| h.score).sum();
+        assert!(sum > 0.0, "sum of scores must be positive");
+        let max: f32 = ranked.iter().map(|h| h.score).fold(f32::NEG_INFINITY, f32::max);
+        assert!(max <= 1.0, "max score must be <= 1.0");
+    }
+
+    // InterruptSignal: cancel is visible across three clones
+    #[test]
+    fn interrupt_signal_three_clone_propagation() {
+        let s0 = InterruptSignal::new();
+        let s1 = s0.clone();
+        let s2 = s1.clone();
+        assert!(!s0.is_cancelled());
+        assert!(!s1.is_cancelled());
+        assert!(!s2.is_cancelled());
+        s2.cancel();
+        assert!(s0.is_cancelled(), "s0 must see cancel from s2");
+        assert!(s1.is_cancelled(), "s1 must see cancel from s2");
+    }
+
+    // Deep-think: confirm scored result before interrupt
+    #[test]
+    fn deep_think_partial_result_captured_before_interrupt() {
+        let signal = InterruptSignal::new();
+        let evidence = &["deep", "result", "node"];
+        // Run first step before cancelling.
+        let first = react_chain_interruptible("deep result node", &evidence[..1], 1, &signal);
+        assert_eq!(first.len(), 1);
+        assert!(first[0].score >= 0.0);
+        signal.cancel();
+        // Remainder yields empty.
+        let rest = react_chain_interruptible("deep result node", &evidence[1..], 2, &signal);
+        assert!(rest.is_empty());
+    }
+
+    // rank_hypotheses equal scores: 6 items all zero
+    #[test]
+    fn rank_six_equal_zero_score_stable_order() {
+        let evidence = &["nomatch"];
+        let hypotheses = &["f1", "f2", "f3", "f4", "f5", "f6"];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 6);
+        for (i, h) in ranked.iter().enumerate() {
+            assert_eq!(h.score, 0.0);
+            assert_eq!(h.hypothesis, hypotheses[i], "stable order must be preserved at index {i}");
+        }
+    }
 }

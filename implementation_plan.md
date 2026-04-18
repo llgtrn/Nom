@@ -1,17 +1,36 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests:** 2396 default pass; `--all-features` fails 14 | **Workspace:** dirty
+**Date:** 2026-04-18 | **HEAD:** `c3d2323` | **Tests:** 2841 | **Workspace:** clean — Wave AE audit findings recorded
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
-## Current Audit Correction
+## Current State (Wave AE, 2026-04-18)
 
-The earlier wave plan is historical, not a reliable current completion claim. Wave AC reopened DB-driven and UI/UX gates:
+DB-driven architecture CONFIRMED PASS (Wave AC/AD closed). Wave AE audit revealed:
+- CRITICAL AE1: `renderer.rs:130` — draw methods are stubs, window opens but renders zero pixels
+- CRITICAL AE2: `adapters/highlight.rs:23` — zero-width spans, syntax highlighting broken
+- HIGH AE3-AE8: lsp_provider.rs duplicate stub, scenario_workflow no-op, data_query discards SQL, Backend trait disconnected, Credential Debug leaks, eval_expr no depth guard
+- MEDIUM AE9-AE17: FrostedRect blur ignored, score adapter bypasses nom_score, SharedState Mutex/no-pool, BM25 unwired, NoSideEffects stub, int overflow, nom-theme unused in blocks, Hsla convention, background_tier stubs
 
-- `NomtuRef` core block/node modeling is still PASS (`nom-blocks/src/block_model.rs:46`, `nom-blocks/src/graph_node.rs:12`).
-- Connector creation is FAIL until every constructor goes through grammar-backed validation; `Connector::new()` and `Connector::new_stub()` still bypass it.
-- Node palette and library are FAIL/DRIFT until production loaders perform live `grammar.kinds` SELECTs instead of taking static slices.
-- UI/UX is DRIFT until runtime/screenshot verification proves frosted glass, focus, contrast, motion, and text/icon surfaces are complete.
-- Cross-workspace compiler integration is DRIFT until `cargo test --workspace --all-features` is green; current failure is 14 `nom-compiler-bridge` tests.
+Per-crate test counts (agent-verified ~2,614 #[test] fns in source, task.md shows 2841 run).
+
+### Wave AE Targets
+
+- [ ] **AE1** — `renderer.rs`: implement wgpu device → pipeline → instance buffer → draw → present
+- [ ] **AE2** — `adapters/highlight.rs:23`: fix `end` offset (+ token length)
+- [ ] **AE3** — delete `lsp_provider.rs`; update `lib.rs` re-exports
+- [ ] **AE4** — `scenario_workflow.rs`: implement compose step loop
+- [ ] **AE5** — `data_query.rs`: write SQL to artifact store
+- [ ] **AE6** — add `impl Backend for` each concrete backend type
+- [ ] **AE7** — custom `Debug` for `Credential` redacting `value`
+- [ ] **AE8** — `eval_expr` depth guard + `sanitize()` before eval in code_exec.rs
+- [ ] **AE9** — `FrostedRect` use blur_radius in tint calculation
+- [ ] **AE10** — `adapters/score.rs`: call `nom_score::score_atom()` under compiler feature
+- [ ] **AE11** — `SharedState`: `RwLock` for grammar_kinds; pre-open WAL read connections
+- [ ] **AE12** — wire `nom_search::BM25Index::search()` as `search_bm25` in ui_tier.rs
+- [ ] **AE13** — document `NoSideEffectsSanitizer` as STUB with TODO(security)
+- [ ] **AE14** — checked arithmetic in sandbox BinOp eval (checked_add/sub/mul)
+- [ ] **AE15** — route nom-blocks drawing colors through nom_theme::tokens
+- [ ] **AE16** — standardize Hsla.h on 0-360 degrees throughout
 
 ## Architecture
 

@@ -335,4 +335,115 @@ mod tests {
         assert!(c.validate(3, &[snap(1, vec![(1, h)])]));
         assert!(c2.validate(3, &[snap(1, vec![(1, h)])]));
     }
+
+    // ── AND-composition and empty-set coverage ─────────────────────────────
+
+    #[test]
+    fn constraint_and_composition_both_pass() {
+        // Simulate AND of two constraints: both must validate for the combined result to be valid.
+        let h = Hash128::of_str("shared_val");
+        let mut c1 = Constraint::new(10);
+        c1.record(snap(1, vec![(1, h)]));
+        let mut c2 = Constraint::new(20);
+        c2.record(snap(2, vec![(2, h)]));
+
+        let snaps1 = &[snap(1, vec![(1, h)])];
+        let snaps2 = &[snap(2, vec![(2, h)])];
+
+        // Both pass independently — AND is satisfied.
+        assert!(c1.validate(10, snaps1) && c2.validate(20, snaps2));
+    }
+
+    #[test]
+    fn constraint_and_composition_one_fails() {
+        let h = Hash128::of_str("val");
+        let h_bad = Hash128::of_str("bad_val");
+
+        let mut c1 = Constraint::new(10);
+        c1.record(snap(1, vec![(1, h)]));
+        let mut c2 = Constraint::new(20);
+        c2.record(snap(2, vec![(2, h)]));
+
+        let snaps1 = &[snap(1, vec![(1, h)])];
+        let snaps2_bad = &[snap(2, vec![(2, h_bad)])]; // c2 stale
+
+        // c1 passes but c2 fails — AND is false.
+        assert!(c1.validate(10, snaps1));
+        assert!(!c2.validate(20, snaps2_bad));
+        assert!(!(c1.validate(10, snaps1) && c2.validate(20, snaps2_bad)));
+    }
+
+    #[test]
+    fn constraint_and_composition_both_fail() {
+        let h = Hash128::of_str("v");
+        let h2 = Hash128::of_str("v2");
+
+        let mut c1 = Constraint::new(1);
+        c1.record(snap(1, vec![(1, h)]));
+        let mut c2 = Constraint::new(2);
+        c2.record(snap(2, vec![(2, h)]));
+
+        // Both stale: wrong return hashes.
+        assert!(!c1.validate(1, &[snap(1, vec![(1, h2)])]));
+        assert!(!c2.validate(2, &[snap(2, vec![(2, h2)])]));
+    }
+
+    #[test]
+    fn constraint_empty_set_with_zero_input_hash() {
+        // Degenerate case: constraint with no snapshots and input_hash=0.
+        let c = Constraint::new(0);
+        assert!(c.validate(0, &[]));
+        assert_eq!(c.snapshot_count(), 0);
+        assert_eq!(c.input_hash(), 0);
+    }
+
+    #[test]
+    fn constraint_empty_set_rejects_wrong_input() {
+        let c = Constraint::new(0);
+        assert!(!c.validate(1, &[]));
+    }
+
+    #[test]
+    fn constraint_empty_set_accepts_extra_current_snapshots() {
+        // No recorded snapshots but extra current snapshots provided → still valid.
+        let c = Constraint::new(42);
+        let h = Hash128::of_str("extra");
+        assert!(c.validate(42, &[snap(1, vec![(1, h)])]));
+    }
+
+    #[test]
+    fn constraint_and_three_all_pass() {
+        // Three independent constraints — all must pass.
+        let h = Hash128::of_str("data");
+        let mut c1 = Constraint::new(1);
+        c1.record(snap(1, vec![(10, h)]));
+        let mut c2 = Constraint::new(2);
+        c2.record(snap(2, vec![(20, h)]));
+        let mut c3 = Constraint::new(3);
+        c3.record(snap(3, vec![(30, h)]));
+
+        assert!(c1.validate(1, &[snap(1, vec![(10, h)])]));
+        assert!(c2.validate(2, &[snap(2, vec![(20, h)])]));
+        assert!(c3.validate(3, &[snap(3, vec![(30, h)])]));
+    }
+
+    #[test]
+    fn constraint_and_three_last_fails() {
+        let h = Hash128::of_str("data");
+        let h_bad = Hash128::of_str("bad");
+        let mut c1 = Constraint::new(1);
+        c1.record(snap(1, vec![(10, h)]));
+        let mut c2 = Constraint::new(2);
+        c2.record(snap(2, vec![(20, h)]));
+        let mut c3 = Constraint::new(3);
+        c3.record(snap(3, vec![(30, h)]));
+
+        let ok1 = c1.validate(1, &[snap(1, vec![(10, h)])]);
+        let ok2 = c2.validate(2, &[snap(2, vec![(20, h)])]);
+        let ok3 = c3.validate(3, &[snap(3, vec![(30, h_bad)])]); // stale
+
+        assert!(ok1 && ok2);
+        assert!(!ok3);
+        assert!(!(ok1 && ok2 && ok3));
+    }
 }
