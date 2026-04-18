@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AJ complete — HEAD `003f895`, 6233 tests. Wave AK planned: GPU wgpu path + composite events + ~6700 target.
+**Last updated:** Wave AK complete — HEAD `8088889`, 6743 tests. Wave AL planned: render path + LSP wiring + ~7200 target.
 
 ## Current finalization snapshot
 
@@ -9,28 +9,28 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 97% | 100% | 3pp | 6233 tests; Wave AJ complete |
-| D · Overall platform | 85% | 100% | 15pp | 15/15 crates; Wave AK next |
+| C · nom-canvas ↔ compiler integration | 98% | 100% | 2pp | 6743 tests; Wave AK complete |
+| D · Overall platform | 86% | 100% | 14pp | 15/15 crates; Wave AL next |
 
-**Per-crate test counts (Wave AJ actuals → Wave AK targets):**
-| Crate | Wave AJ actual | Wave AK target |
+**Per-crate test counts (Wave AK actuals → Wave AL targets):**
+| Crate | Wave AK actual | Wave AL target |
 |---|---|---|
-| nom-blocks | 400 | 435 |
-| nom-canvas-core | 445 | 480 |
-| nom-cli | 285 | 310 |
-| nom-collab | 410 | 445 |
-| nom-compiler-bridge | 402 | 435 |
-| nom-compose | 555 | 590 |
-| nom-editor | 479 | 515 |
-| nom-gpui | 610 | 650 |
-| nom-graph | 475 | 510 |
-| nom-intent | 319 | 350 |
-| nom-lint | 338 | 370 |
-| nom-memoize | 321 | 355 |
-| nom-panels | 430 | 465 |
-| nom-telemetry | 354 | 385 |
-| nom-theme | 410 | 445 |
-| **TOTAL** | **6233** | **~6700** |
+| nom-blocks | 446 | 480 |
+| nom-canvas-core | 474 | 510 |
+| nom-cli | 310 | 340 |
+| nom-collab | 445 | 480 |
+| nom-compiler-bridge | 436 | 470 |
+| nom-compose | 590 | 625 |
+| nom-editor | 515 | 550 |
+| nom-gpui | 660 | 700 |
+| nom-graph | 494 | 530 |
+| nom-intent | 350 | 380 |
+| nom-lint | 370 | 400 |
+| nom-memoize | 355 | 385 |
+| nom-panels | 468 | 500 |
+| nom-telemetry | 385 | 415 |
+| nom-theme | 445 | 475 |
+| **TOTAL** | **6743** | **~7240** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
@@ -492,6 +492,68 @@
 - Motion: ≤200ms standard, 300ms ease-out for deep-think card entry, 0 for reduced-motion preference
 - [ ] `npx gitnexus analyze --embeddings` post every push
 - [ ] Memory pruning of stale facts
+
+### D9. Hybrid Composition System (Wave AH — design confirmed 2026-04-18)
+
+**Three-tier resolver:** DB-driven (grammar.kinds Complete) → Provider-driven (registered MediaVendor + credentials) → AI-leading (AiGlueOrchestrator generates .nomx glue; sandbox executes; GlueCache tracks Transient→Partial→Complete lifecycle).
+
+**Intent classification:** `IntentResolver` — lexical scan → BM25 → `classify_with_react()` for ambiguous (delta < 0.15). Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestrator`.
+
+- [ ] AH-CTX: `ComposeContext` / `ComposeResult` / `ComposeTier` in `nom-compose/src/context.rs`
+- [ ] AH-DICTW: `DictWriter` write side: `insert_partial_entry()` + `promote_to_complete()` in `nom-compiler-bridge`
+- [ ] AH-CACHE: `GlueCache` in `SharedState` + 60s promotion ticker
+- [ ] AH-DISPATCH: `UnifiedDispatcher`: `ProviderRouter` <-> `BackendRegistry` bridge with credential injection
+- [ ] AH-INTENT: `IntentResolver`: lexical scan + BM25 + `classify_with_react()`
+- [ ] AH-GLUE: `AiGlueOrchestrator` + `GlueBlueprint` + `ReActLlmFn` trait (4 adapters: Stub/NomCli/Mcp/RealLlm)
+- [ ] AH-HYBRID: `HybridResolver` orchestrating Tier1->Tier2->Tier3
+- [ ] AH-ORCH: `ComposeOrchestrator` multi-kind parallel pipeline
+- [ ] AH-DB-KINDS: 14 initial `grammar.kinds` seed rows (video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard)
+- [ ] AH-PURPOSE: `intended to <purpose>` clause required in every AI .nomx sentence; absent = orchestrator retries
+- [ ] AH-EXPLICIT: user Accept in Review card -> `DictWriter::insert_partial_entry()` immediately (no usage count threshold)
+- [ ] AH-UI: Intent Preview + AI Review cards in `nom-panels/src/right/`
+
+### D10. Universal Composer — Platform Leap (Wave AI-Composer — design confirmed 2026-04-18)
+
+**Spec:** `docs/superpowers/specs/2026-04-18-nom-universal-composer-design.md`
+
+**10 upstream patterns wired into 14-crate workspace. All additive — no existing interfaces broken.**
+
+**Primary revenue model:** AI-native automation. `POST /compose` endpoint — usage-based pricing. Grammar DB compounds as moat: every Tier3 AI glue execution that promotes trains the next call.
+
+**Candle (in-process ML):**
+- [ ] UC-CANDLE: `nom-compiler-bridge/src/candle_adapter.rs` — `BackendDevice::Cpu` + `ReActLlmFn` impl (Phi-3/Gemma-2B, no subprocess)
+
+**Qdrant (semantic intent):**
+- [ ] UC-QDRANT: `nom-compose/src/intent_v2.rs` — Qdrant HNSW client replacing BM25 in `IntentResolver`; embeddings stored per grammar.kinds entry
+
+**Wasmtime (WASM sandbox):**
+- [ ] UC-WASM: `nom-compiler-bridge/src/wasm_sandbox.rs` — `Store<T>` + `Linker::func_wrap()` replacing JS AST `eval_expr`; glue .nomx compiles to WASM module
+
+**DeerFlow (step middleware):**
+- [ ] UC-MIDDLEWARE: `nom-compose/src/middleware.rs` — `StepMiddleware` trait with `before_step()`/`after_step()` hooks; `MiddlewareRegistry` wraps every `BackendRegistry::dispatch` call
+- [ ] UC-TELEMETRY-MW: latency/cost/token rows written to nomdict.db via after_step(); Polars lazy frame daily aggregation
+
+**Refly (typed flow graph):**
+- [ ] UC-FLOWGRAPH: `nom-compose/src/flow_graph.rs` — `FlowNode` + `FlowEdge` typed graph replacing linear `ComposeOrchestrator`; version control on composition graphs
+
+**AgentScope (critique loop):**
+- [ ] UC-CRITIQUE: `nom-compose/src/critique.rs` — propose → critique → refine (3-round cap) via `MsgHub` broadcast before Wasmtime execution
+
+**ToolJet (widget/kind registry):**
+- [ ] UC-TOOLJET: grammar.kinds DB rows drive node palette (72+ declarative kinds); `NodePalette` loads via `SELECT kind, label, icon FROM grammar.kinds ORDER BY use_count DESC`
+
+**Polars (data transforms):**
+- [ ] UC-POLARS: `data_query` backend replaces row-returning impl with Polars lazy `LazyFrame`; Arrow columnar format for all DataFrame operations
+
+**Open-Higgsfield (media vendor):**
+- [ ] UC-HIGGSFIELD: `nom-compose/src/vendors/higgsfield.rs` — `MediaVendor` impl for Open-Higgsfield 200+ model registry; generation history as few-shot cache entries in nomdict.db
+
+**Bolt.new (streaming glue):**
+- [ ] UC-STREAM: `nom-compose/src/streaming.rs` — `SwitchableStream` wrapping `AiGlueOrchestrator`; token-by-token .nomx streaming to AI Review card in right dock
+
+**HTTP API:**
+- [ ] UC-SERVE: `nom-cli/src/serve.rs` — tokio-axum `POST /compose` endpoint; request -> `HybridResolver` -> `ComposeResult`; streaming and non-streaming response modes
+- [ ] UC-PROMOTE: `POST /promote/:glue_hash` endpoint -> `DictWriter::insert_partial_entry()` for headless AI callers
 
 ---
 

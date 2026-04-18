@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `003f895` | **Tests:** 6233 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `8088889` | **Tests:** 6743 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -297,19 +297,33 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-lint: 310→338; nom-intent: 290→319; nom-memoize: 295→321
 - [x] nom-telemetry: 325→354; nom-cli: 255→285
 
-## Wave AK (planned) — deep GPU wgpu path + composite event system + ~6700 target
-- [ ] nom-gpui: 610→650 (wgpu adapter enumeration, surface caps query, pipeline cache)
-- [ ] nom-blocks: 400→435 (frame block, edgeless-text block, latex block stubs)
-- [ ] nom-canvas-core: 445→480 (pointer event routing, rubber-band multi-select, undo/redo stack)
-- [ ] nom-compose: 555→590 (FFmpeg-stub transcoding, multi-format export, media pipeline)
-- [ ] nom-graph: 475→510 (cycle detection with path, subgraph extraction, graph diffing)
-- [ ] nom-collab: 410→445 (3-way merge, conflict resolution policy, snapshot/restore)
-- [ ] nom-editor: 479→515 (breadcrumb nav, multi-cursor edits, refactor rename wire-up)
-- [ ] nom-compiler-bridge: 402→435 (workspace diagnostics, code action resolution, diff apply)
-- [ ] nom-panels: 430→465 (panel tab overflow, keyboard nav, search-within-panel)
-- [ ] nom-theme: 410→445 (motion tokens, elevation scale, cursor/caret theme tokens)
-- [ ] nom-lint: 338→370; nom-intent: 319→350; nom-memoize: 321→355
-- [ ] nom-telemetry: 354→385; nom-cli: 285→310
+## Wave AK (2026-04-18) — COMPLETE ✅ (8088889, 6743 tests)
+- [x] nom-gpui: 610→660 (WgpuInstanceConfig copy/eq, SwapchainConfig, GpuState clone, negotiate_surface_format, atlas constants)
+- [x] nom-blocks: 400→446 (FrameBlock, EdgelessTextBlock, LatexBlock — AFFiNE parity gap closed)
+- [x] nom-canvas-core: 445→474 (hit-test z-order, rubber-band selection modes, viewport pan/zoom/clamp/reset)
+- [x] nom-compose: 555→590 (export format validation, plan step ordering, progress observer)
+- [x] nom-graph: 475→494 (cycle detection with path, subgraph extraction, graph diffing, BFS coverage)
+- [x] nom-collab: 410→445 (3-way merge, conflict resolution policy, snapshot/restore, session resilience)
+- [x] nom-editor: 479→515 (completion filtering/kinds, inlay hint positions, indent auto-level)
+- [x] nom-compiler-bridge: 402→436 (completion max-results, background_tier concurrent, ui_tier BM25)
+- [x] nom-panels: 430→468 (keyboard nav Tab/Shift-Tab/Escape/Arrow, tab overflow, search-within-panel)
+- [x] nom-theme: 410→445 (motion duration ordering, elevation scale, cursor/caret tokens)
+- [x] nom-lint: 338→370; nom-intent: 319→350; nom-memoize: 321→355
+- [x] nom-telemetry: 354→385; nom-cli: 285→310
+
+## Wave AL (planned) — deeper render path + LSP wiring + ~7200 target
+- [ ] nom-gpui: 660→700 (wgpu surface creation stubs, render pass descriptor, pipeline layout)
+- [ ] nom-blocks: 446→480 (block serialization round-trip, inter-block edge validation)
+- [ ] nom-canvas-core: 474→510 (undo/redo command stack, pointer capture state machine)
+- [ ] nom-compose: 590→625 (media pipeline chain, transcoding format matrix, artifact diffing)
+- [ ] nom-graph: 494→530 (strongly connected components, transitive reduction, weighted paths)
+- [ ] nom-collab: 445→480 (CRDT text editing, tombstone GC, awareness state serialization)
+- [ ] nom-editor: 515→550 (multi-cursor ops, breadcrumb nav, refactor rename coverage)
+- [ ] nom-compiler-bridge: 436→470 (workspace diagnostics API, code action kinds, diff apply)
+- [ ] nom-panels: 468→500 (panel state serialization, restore on reload, deep-think streaming)
+- [ ] nom-theme: 445→475 (responsive breakpoints, spacing scale, grid system tokens)
+- [ ] nom-lint: 370→400; nom-intent: 350→380; nom-memoize: 355→385
+- [ ] nom-telemetry: 385→415; nom-cli: 310→340
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
@@ -557,6 +571,47 @@ Detail checklists collapsed — retrieval via git log of canonical commits.
 - [x] FROSTED-RENDERER: FrostedRect wired into Renderer::draw()
 - [x] HINTS: nom-editor hints.rs inlay hints module
 - [x] RENDERER-INFRA: Renderer FrameStats + WindowBuilder + LayoutRegistry improvements
+
+## Wave AI-Composer — Universal Composer Platform Leap (2026-04-18, planned)
+**Spec:** `docs/superpowers/specs/2026-04-18-nom-universal-composer-design.md`
+
+**Goal:** Wire 10 upstream patterns (Candle/Qdrant/Wasmtime/DeerFlow/Refly/AgentScope/ToolJet/Polars/Open-Higgsfield/Bolt.new) into the 14-crate workspace. All additive — no existing interfaces broken. Expose `POST /compose` as the AI-native monetization surface. Grammar DB compounds as moat: every Tier3 AI glue execution that promotes trains the next call.
+
+### Candle in-process ML
+- [ ] **UC-CANDLE** — `nom-compiler-bridge/src/candle_adapter.rs`: `BackendDevice::Cpu` + `ReActLlmFn` impl; Phi-3/Gemma-2B inference in-process, zero subprocess
+
+### Qdrant semantic intent
+- [ ] **UC-QDRANT** — `nom-compose/src/intent_v2.rs`: Qdrant HNSW client replacing BM25 in `IntentResolver`; embeddings stored per grammar.kinds entry; sub-10ms kind match
+
+### Wasmtime WASM sandbox
+- [ ] **UC-WASM** — `nom-compiler-bridge/src/wasm_sandbox.rs`: `Store<T>` + `Linker::func_wrap()` replacing JS AST `eval_expr`; AI glue .nomx compiles to WASM module; safe + fast
+
+### DeerFlow step middleware
+- [ ] **UC-MIDDLEWARE** — `nom-compose/src/middleware.rs`: `StepMiddleware` trait with `before_step()`/`after_step()` hooks; `MiddlewareRegistry` wraps every `BackendRegistry::dispatch` call
+- [ ] **UC-TELEMETRY-MW** — latency/cost/token rows written to nomdict.db via `after_step()`; Polars lazy frame daily aggregation; cost-per-kind in settings panel
+
+### Refly typed flow graph
+- [ ] **UC-FLOWGRAPH** — `nom-compose/src/flow_graph.rs`: `FlowNode` + `FlowEdge` typed graph replacing linear `ComposeOrchestrator`; version control on composition graphs
+
+### AgentScope critique loop
+- [ ] **UC-CRITIQUE** — `nom-compose/src/critique.rs`: propose → critique → refine (3-round cap) via `MsgHub` broadcast before Wasmtime execution; quality gate before sandbox
+
+### ToolJet widget/kind registry
+- [ ] **UC-TOOLJET** — grammar.kinds DB rows drive node palette (72+ declarative kinds); `NodePalette` loads via `SELECT kind, label, icon FROM grammar.kinds ORDER BY use_count DESC`; zero hardcoded enums
+
+### Polars data transforms
+- [ ] **UC-POLARS** — `data_query` backend replaces row-returning impl with Polars lazy `LazyFrame`; Arrow columnar format for all DataFrame operations; 10-100x speed
+
+### Open-Higgsfield media vendor
+- [ ] **UC-HIGGSFIELD** — `nom-compose/src/vendors/higgsfield.rs`: `MediaVendor` impl for Open-Higgsfield 200+ model registry; generation history as few-shot cache entries in nomdict.db
+
+### Bolt.new streaming glue
+- [ ] **UC-STREAM** — `nom-compose/src/streaming.rs`: `SwitchableStream` wrapping `AiGlueOrchestrator`; token-by-token .nomx streaming to AI Review card in right dock; live preview as AI writes
+
+### HTTP API
+- [ ] **UC-SERVE** — `nom-cli/src/serve.rs`: tokio-axum `POST /compose` endpoint; request → `HybridResolver` → `ComposeResult`; streaming (text/event-stream) + non-streaming modes
+- [ ] **UC-PROMOTE** — `POST /promote/:glue_hash` endpoint → `DictWriter::insert_partial_entry()` for headless AI callers
+- [ ] **UC-API-TESTS** — ≥2 integration tests per pattern (20+ new tests total)
 
 ## Compiler Parallel Track (nom-compiler — UNCHANGED as infra)
 
