@@ -102,6 +102,9 @@ impl AudioBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "encoding".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
 
         let payload = match input.container {

@@ -50,5 +50,4 @@ useless_vec = "allow"
 # nom-lint test infrastructure builds expected strings with iterator-based
 # repeat patterns; these are clear and intentional.
 manual_str_repeat = "allow"
-iter_repeat_n_take = "allow"
 manual_repeat_n = "allow"

@@ -3077,6 +3077,50 @@ pub fn detect_format(src: &str) -> Option<NomxFormat> {
     None
 }
 
+// ── B1: define-that parse integration ────────────────────────────────────────
+
+/// A define-that statement: `define <name> that <body>`
+#[derive(Debug, Clone)]
+pub struct DefineThatExpr {
+    pub name: String,
+    pub body: String,
+}
+
+/// Try to parse a define-that expression from a token stream.
+///
+/// Returns `Ok(expr)` if the token slice matches the pattern
+/// `Define <Word(name)> That <rest..>`. The body is the debug
+/// representation of every token that follows `That`, joined by spaces.
+/// Returns `Err` for any other shape.
+pub fn parse_define_that(tokens: &[Tok]) -> Result<DefineThatExpr, String> {
+    match tokens {
+        [Tok::Define, Tok::Word(name), Tok::That, rest @ ..] => {
+            let body = rest
+                .iter()
+                .map(|t| format!("{t:?}"))
+                .collect::<Vec<_>>()
+                .join(" ");
+            Ok(DefineThatExpr { name: name.clone(), body })
+        }
+        _ => Err("expected: define <name> that <body>".into()),
+    }
+}
+
+// ── B2: .nomx migration helper ────────────────────────────────────────────────
+
+/// Convert Typed-format .nomx to Natural-format by replacing `->` with
+/// `that` and `fn` with `define`.
+///
+/// This is a source-level text transform intended for migrating legacy
+/// typed .nomx snippets to the natural-language surface. It does not invoke
+/// any stage; callers are responsible for re-tokenizing the result.
+pub fn migrate_typed_to_natural(source: &str) -> String {
+    source
+        .replace("fn ", "define ")
+        .replace(" -> ", " that ")
+        .replace("->", " that ")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4228,5 +4272,71 @@ the concept c_two is
             super::detect_format("\n\n@nomx natural\ndefine greet that \"hello\"."),
             Some(super::NomxFormat::Natural)
         );
+    }
+
+    // ── B1: define-that parse tests ───────────────────────────────────────────
+
+    /// b1_parse_define_that_basic: a well-formed token slice parses successfully.
+    #[test]
+    fn test_parse_define_that_basic() {
+        use crate::Tok;
+        let tokens = vec![
+            Tok::Define,
+            Tok::Word("compute_sum".into()),
+            Tok::That,
+            Tok::Word("adds".into()),
+            Tok::Word("two".into()),
+            Tok::Word("values".into()),
+        ];
+        let result = super::parse_define_that(&tokens);
+        assert!(result.is_ok(), "expected Ok, got: {:?}", result);
+    }
+
+    /// b1_parse_define_that_missing_that_fails: a slice without `That` is rejected.
+    #[test]
+    fn test_parse_define_that_missing_that_fails() {
+        use crate::Tok;
+        let tokens = vec![
+            Tok::Define,
+            Tok::Word("compute_sum".into()),
+            Tok::Word("adds".into()),
+        ];
+        let result = super::parse_define_that(&tokens);
+        assert!(result.is_err(), "expected Err when That is missing");
+    }
+
+    /// b1_parse_define_that_name_extracted: the parsed name matches the Word token.
+    #[test]
+    fn test_parse_define_that_name_extracted() {
+        use crate::Tok;
+        let tokens = vec![
+            Tok::Define,
+            Tok::Word("validate_input".into()),
+            Tok::That,
+            Tok::Word("checks".into()),
+            Tok::Word("constraints".into()),
+        ];
+        let expr = super::parse_define_that(&tokens).expect("parse succeeds");
+        assert_eq!(expr.name, "validate_input");
+    }
+
+    // ── B2: migrate typed-to-natural tests ────────────────────────────────────
+
+    /// b2_migrate_fn_to_define: `fn ` prefix is replaced with `define `.
+    #[test]
+    fn test_migrate_fn_to_define() {
+        let src = "fn greet -> String";
+        let out = super::migrate_typed_to_natural(src);
+        assert!(out.contains("define "), "expected 'define ' in: {out}");
+        assert!(!out.contains("fn "), "expected no 'fn ' in: {out}");
+    }
+
+    /// b2_migrate_arrow_to_that: `->` is replaced with `that`.
+    #[test]
+    fn test_migrate_arrow_to_that() {
+        let src = "fn compute -> result";
+        let out = super::migrate_typed_to_natural(src);
+        assert!(out.contains("that"), "expected 'that' in: {out}");
+        assert!(!out.contains("->"), "expected no '->' in: {out}");
     }
 }

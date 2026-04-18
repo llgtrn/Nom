@@ -9,6 +9,9 @@ pub enum ComposeEvent {
     Progress {
         percent: f32,
         stage: String,
+        rendered_frames: Option<u32>,
+        encoded_frames: Option<u32>,
+        elapsed_ms: Option<u64>,
     },
     Completed {
         artifact_hash: [u8; 32],
@@ -78,6 +81,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "encoding".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Completed {
             artifact_hash: [0u8; 32],
@@ -110,6 +116,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 1.0,
             stage: "done".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Completed {
             artifact_hash: [1u8; 32],
@@ -137,10 +146,16 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.25,
             stage: "step1".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 0.75,
             stage: "step2".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Completed {
             artifact_hash: [0u8; 32],
@@ -163,14 +178,23 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.1,
             stage: "init".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "mid".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 0.9,
             stage: "final".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         // The last progress event should have percent 0.9.
@@ -247,6 +271,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: i as f32 * 5.0,
                 stage: format!("step_{i}"),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let events = sink.take();
@@ -260,14 +287,23 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.0,
             stage: "start".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "mid".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 1.0,
             stage: "end".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         let percents: Vec<f32> = events
@@ -295,14 +331,23 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.8,
             stage: "a".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         sink.emit(ComposeEvent::Progress {
             percent: 0.3,
             stage: "b".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         }); // out-of-order
         sink.emit(ComposeEvent::Progress {
             percent: 1.2,
             stage: "c".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         }); // over 1.0
         let events = sink.take();
         let percents: Vec<f32> = events
@@ -328,6 +373,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: i as f32 / count as f32,
                 stage: format!("s{i}"),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         assert_eq!(
@@ -345,6 +393,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: i as f32 / stages.len() as f32,
                 stage: (*stage).into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let events = sink.take();
@@ -367,6 +418,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.333_333_3,
             stage: "third".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
@@ -401,6 +455,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.0,
             stage: "start".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         assert_eq!(events.len(), 1);
@@ -421,6 +478,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 1.0,
             stage: "done".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
@@ -440,6 +500,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: v,
                 stage: "step".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let events = sink.take();
@@ -462,6 +525,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: i as f32 / n as f32,
                 stage: format!("s{i}"),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         assert_eq!(
@@ -478,6 +544,9 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "halfway".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
         if let ComposeEvent::Progress { percent, .. } = events[0] {
@@ -495,9 +564,12 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.0,
             stage: "initialising".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
-        if let ComposeEvent::Progress { stage, percent } = &events[0] {
+        if let ComposeEvent::Progress { stage, percent, .. } = &events[0] {
             assert_eq!(stage, "initialising");
             assert!((*percent - 0.0).abs() < f32::EPSILON);
         }
@@ -510,9 +582,12 @@ mod tests {
         sink.emit(ComposeEvent::Progress {
             percent: 1.0,
             stage: "complete".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let events = sink.take();
-        if let ComposeEvent::Progress { stage, percent } = &events[0] {
+        if let ComposeEvent::Progress { stage, percent, .. } = &events[0] {
             assert_eq!(stage, "complete");
             assert!((*percent - 1.0).abs() < f32::EPSILON);
         }
@@ -527,6 +602,9 @@ mod tests {
             sink.emit(ComposeEvent::Progress {
                 percent: v,
                 stage: "m".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let events = sink.take();
@@ -558,6 +636,9 @@ mod tests {
         sink_a.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "a".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         // sink_b receives nothing.
         let events_a = sink_a.take();
@@ -567,5 +648,49 @@ mod tests {
             events_b.is_empty(),
             "sink_b must not see events emitted to sink_a"
         );
+    }
+
+    // ── C5-V6 new tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_progress_event_with_frame_counts() {
+        let sink = VecProgressSink::new();
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.5,
+            stage: "encoding".into(),
+            rendered_frames: Some(30),
+            encoded_frames: Some(25),
+            elapsed_ms: Some(1500),
+        });
+        let events = sink.take();
+        assert_eq!(events.len(), 1);
+        if let ComposeEvent::Progress { rendered_frames, encoded_frames, elapsed_ms, percent, .. } = &events[0] {
+            assert_eq!(*rendered_frames, Some(30));
+            assert_eq!(*encoded_frames, Some(25));
+            assert_eq!(*elapsed_ms, Some(1500));
+            assert!((percent - 0.5).abs() < 1e-5);
+        } else {
+            panic!("expected Progress event");
+        }
+    }
+
+    #[test]
+    fn test_progress_event_minimal_no_frames() {
+        let sink = VecProgressSink::new();
+        sink.emit(ComposeEvent::Progress {
+            percent: 0.25,
+            stage: "step".into(),
+            rendered_frames: None,
+            encoded_frames: None,
+            elapsed_ms: None,
+        });
+        let events = sink.take();
+        if let ComposeEvent::Progress { rendered_frames, encoded_frames, elapsed_ms, .. } = &events[0] {
+            assert!(rendered_frames.is_none());
+            assert!(encoded_frames.is_none());
+            assert!(elapsed_ms.is_none());
+        } else {
+            panic!("expected Progress event");
+        }
     }
 }

@@ -90,9 +90,9 @@ mod tests {
     fn test_registry_duplicate_id_errors() {
         let registry = CompositionRegistry::new();
         registry
-            .register("dup", Box::new(|| CompositionConfig::default()))
+            .register("dup", Box::new(CompositionConfig::default))
             .unwrap();
-        let result = registry.register("dup", Box::new(|| CompositionConfig::default()));
+        let result = registry.register("dup", Box::new(CompositionConfig::default));
         assert!(result.is_err(), "duplicate id must return Err");
         assert!(result.unwrap_err().contains("dup"));
     }
@@ -101,10 +101,10 @@ mod tests {
     fn test_registry_list_ids() {
         let registry = CompositionRegistry::new();
         registry
-            .register("alpha", Box::new(|| CompositionConfig::default()))
+            .register("alpha", Box::new(CompositionConfig::default))
             .unwrap();
         registry
-            .register("beta", Box::new(|| CompositionConfig::default()))
+            .register("beta", Box::new(CompositionConfig::default))
             .unwrap();
         let ids = registry.list_ids();
         assert_eq!(ids.len(), 2);

@@ -1,6 +1,8 @@
 #![deny(unsafe_code)]
 pub mod animate;
 pub mod backends;
+pub mod cancellation;
+pub mod streaming;
 pub mod composition;
 pub mod timeline;
 pub mod cancel;
@@ -12,6 +14,7 @@ pub mod flow_graph;
 pub mod glue;
 pub mod glue_cache;
 pub mod hybrid;
+pub mod middleware;
 pub mod orchestrator;
 pub mod plan;
 pub mod progress;
@@ -50,9 +53,17 @@ pub use backends::{
     web_screen::WebScreenBackend,
     workflow::WorkflowBackend,
 };
+pub use cancellation::{CancelSignal, make_cancel_signal};
 pub use credential_store::{Credential, CredentialStore};
 pub use deep_think::{DeepThinkConfig, DeepThinkStep, DeepThinkStream};
-pub use context::{ComposeContext, ComposeResult, ComposeTier};
+pub use context::{
+    ComposeContext, ComposeResult, ComposeTier,
+    VideoConfigContext, push_video_config, pop_video_config, get_video_config,
+};
+pub mod codec_validation;
+pub use codec_validation::{
+    VideoCodec as ValidationCodec, PixelFormat, validate_codec_pixel_format,
+};
 pub use dispatch::{Backend, BackendRegistry, NoopBackend, UnifiedDispatcher};
 pub use dispatch::ComposeContext as DispatchComposeContext;
 pub use plan::{CompositionPlan, PlanStep};
@@ -64,12 +75,14 @@ pub use task_queue::{ComposeTask, TaskQueue, TaskState};
 pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
 pub use flow_graph::{FlowEdge, FlowGraph, FlowNode, FlowNodeKind};
 pub use glue::{AiGlueOrchestrator, GlueBlueprint, ReActLlmFn, StubLlmFn};
+pub use streaming::{SwitchableStream, StreamToken};
 pub use glue_cache::{CachedGlue, GlueCache, GlueStatus};
 pub use hybrid::HybridResolver;
 pub use orchestrator::ComposeOrchestrator;
 pub use composition::{CompositionConfig, CompositionRegistry, VideoCodec};
 pub use timeline::{SequenceContext, current_frame_in_sequence, is_frame_active};
 pub use animate::{ExtrapolateMode, SpringConfig, interpolate, spring};
+pub use middleware::{StepMiddleware, MiddlewareRegistry, LoggingMiddleware, LatencyMiddleware};
 
 #[cfg(test)]
 mod integration_tests {
@@ -301,6 +314,9 @@ mod integration_tests {
         sink.emit(ComposeEvent::Progress {
             percent: 0.3,
             stage: "pre-cancel".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
 
         flag.set();

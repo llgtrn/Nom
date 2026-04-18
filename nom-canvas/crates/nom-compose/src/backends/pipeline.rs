@@ -42,6 +42,9 @@ impl PipelineBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 1.0 / total as f32,
             stage: "stage_0".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         for (i, stage_hash) in input.stage_inputs.iter().enumerate().skip(1) {
             let stage_data = store.read(stage_hash).unwrap_or_default();
@@ -49,6 +52,9 @@ impl PipelineBackend {
             sink.emit(ComposeEvent::Progress {
                 percent: (i + 1) as f32 / total as f32,
                 stage: format!("stage_{}", i),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let artifact_hash = store.write(&accumulated);

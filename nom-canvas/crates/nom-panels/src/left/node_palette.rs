@@ -136,6 +136,15 @@ impl NodePalette {
         self.entries.len()
     }
 
+    /// Number of registered kinds in the palette.
+    ///
+    /// Mirrors the widget/kind count tracking pattern found in app-builder
+    /// widget registries: the registry reports how many component types it
+    /// holds so callers can assert coverage without enumerating names.
+    pub fn palette_kind_count(&self) -> usize {
+        self.entries.len()
+    }
+
     /// Paint the palette into the GPU scene.
     ///
     /// Layout (top → bottom):
@@ -672,5 +681,25 @@ mod tests {
             assert!(target < palette.entries.len());
             let _ = &palette.entries[target]; // no panic = valid selection
         }
+    }
+
+    #[test]
+    fn test_palette_supports_at_least_46_kinds() {
+        // The grammar DB seeds at least 46 kinds (the spec-seeded count).
+        // We construct a palette with exactly 46 entries to verify the
+        // palette_kind_count function reports the correct total.
+        let kinds_owned: Vec<(String, String, String)> = (0..46)
+            .map(|i| (format!("Kind{i}"), format!("Kind {i}"), format!("desc {i}")))
+            .collect();
+        let kinds: Vec<(&str, &str, &str)> = kinds_owned
+            .iter()
+            .map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str()))
+            .collect();
+        let palette = NodePalette::load_from_kinds(&kinds);
+        assert!(
+            palette.palette_kind_count() >= 46,
+            "palette must report at least 46 registered kinds, got {}",
+            palette.palette_kind_count()
+        );
     }
 }

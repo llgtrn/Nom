@@ -33,7 +33,8 @@ pub use strict::{
 pub mod stages;
 pub use lex::{Spanned, Tok};
 pub use stages::{
-    NomxFormat, StageFailure, StageId, TokenStream, detect_format, stage1_tokenize,
+    DefineThatExpr, NomxFormat, StageFailure, StageId, TokenStream, detect_format,
+    migrate_typed_to_natural, parse_define_that, stage1_tokenize,
 };
 
 pub mod flow_edge;

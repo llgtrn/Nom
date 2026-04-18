@@ -1,4 +1,5 @@
 use axum::{extract::Json, response::Json as RespJson, routing::post, Router};
+use axum::extract::Path;
 use serde::{Deserialize, Serialize};
 
 #[derive(Deserialize)]
@@ -25,8 +26,20 @@ async fn handle_compose(Json(req): Json<ComposeRequest>) -> RespJson<ComposeResp
     })
 }
 
+async fn handle_promote(Path(glue_hash): Path<String>) -> impl axum::response::IntoResponse {
+    // In production: calls DictWriter::insert_partial_entry() with the cached glue
+    // Stub: returns 200 OK with hash confirmation
+    axum::Json(serde_json::json!({
+        "promoted": true,
+        "glue_hash": glue_hash,
+        "status": "partial"
+    }))
+}
+
 pub fn compose_router() -> Router {
-    Router::new().route("/compose", post(handle_compose))
+    Router::new()
+        .route("/compose", post(handle_compose))
+        .route("/promote/:glue_hash", post(handle_promote))
 }
 
 pub async fn serve(addr: &str) {
@@ -56,6 +69,25 @@ mod tests {
             .unwrap();
         let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
+    }
+
+    #[tokio::test]
+    async fn test_promote_route_returns_hash() {
+        let app = compose_router();
+        let req = Request::builder()
+            .method(Method::POST)
+            .uri("/promote/abc123def456")
+            .body(Body::empty())
+            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
+        assert_eq!(resp.status(), StatusCode::OK);
+        let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
+            .await
+            .unwrap();
+        let json: serde_json::Value = serde_json::from_slice(&bytes).unwrap();
+        assert_eq!(json["promoted"], true);
+        assert_eq!(json["glue_hash"], "abc123def456");
+        assert_eq!(json["status"], "partial");
     }
 
     #[tokio::test]

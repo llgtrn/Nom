@@ -1,5 +1,8 @@
 #![deny(unsafe_code)]
 
+pub mod skill_router;
+pub use skill_router::{SkillDefinition, SkillRouter};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
@@ -236,6 +239,17 @@ impl IntentResolver {
         bm25_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         if !bm25_scored.is_empty() {
+            // If top-2 BM25 scores are within 0.15 of each other, use ReAct
+            // disambiguation to break the tie.
+            if bm25_scored.len() >= 2 && (bm25_scored[0].1 - bm25_scored[1].1).abs() <= 0.15 {
+                let candidates: Vec<String> =
+                    bm25_scored.iter().take(2).map(|(k, _)| k.clone()).collect();
+                let winner = self.classify_with_react_candidates(&query_lower, &candidates);
+                // Re-order so winner is first.
+                if bm25_scored[1].0 == winner {
+                    bm25_scored.swap(0, 1);
+                }
+            }
             let best = bm25_scored.remove(0);
             return ResolvedIntent {
                 confidence: best.1,
@@ -326,6 +340,50 @@ impl IntentResolver {
             out.push(kind);
         }
         out
+    }
+
+    /// ReAct-style disambiguation: pick the candidate whose name has the highest
+    /// character overlap with the query.  Used when top-2 BM25 scores are
+    /// ambiguous (within 0.15 of each other).
+    fn classify_with_react_candidates(&self, query: &str, candidates: &[String]) -> String {
+        candidates
+            .iter()
+            .max_by_key(|c| {
+                c.chars()
+                    .filter(|ch| query.chars().any(|qch| qch == *ch))
+                    .count()
+            })
+            .cloned()
+            .unwrap_or_default()
+    }
+
+    /// Validate that `input` contains an "intended to <purpose>" clause, then
+    /// resolve the intent kind.
+    ///
+    /// Returns `Ok((kind, purpose))` on success, or `Err(message)` if the
+    /// purpose clause is absent.
+    pub fn validate_and_resolve(&self, input: &str) -> Result<(String, String), String> {
+        let purpose = extract_purpose_clause(input)?;
+        let kind = self
+            .resolve(input)
+            .best_kind
+            .unwrap_or_default();
+        Ok((kind, purpose))
+    }
+}
+
+/// A compose request sentence must contain an "intended to <purpose>" clause.
+/// Returns `Ok(purpose_string)` if found, `Err` if missing.
+pub fn extract_purpose_clause(input: &str) -> Result<String, String> {
+    let lower = input.to_lowercase();
+    if let Some(idx) = lower.find("intended to ") {
+        let purpose = &input[idx + "intended to ".len()..];
+        let end = purpose
+            .find(['.', ';', '\n'])
+            .unwrap_or(purpose.len().min(100));
+        Ok(purpose[..end].trim().to_string())
+    } else {
+        Err("Compose request missing 'intended to <purpose>' clause".into())
     }
 }
 
@@ -5439,5 +5497,52 @@ mod tests {
         // classify_with_react("video", &["video"]) > 0 since "video" in "video".
         // But substring also fires here. Verify the overall resolve() finds it.
         assert_eq!(result.best_kind.as_deref(), Some("query"));
+    }
+
+    // =========================================================================
+    // AH-INTENT / AH-PURPOSE additions
+    // =========================================================================
+
+    #[test]
+    fn test_extract_purpose_clause_found() {
+        let result = extract_purpose_clause("compose a screen intended to display user settings");
+        assert_eq!(result, Ok("display user settings".to_string()));
+    }
+
+    #[test]
+    fn test_extract_purpose_clause_missing_fails() {
+        let result = extract_purpose_clause("compose a screen without a purpose");
+        assert!(result.is_err());
+        assert!(result
+            .unwrap_err()
+            .contains("missing 'intended to <purpose>' clause"));
+    }
+
+    #[test]
+    fn test_extract_purpose_handles_period_boundary() {
+        let result =
+            extract_purpose_clause("compose a widget intended to show a chart. Then do more.");
+        assert_eq!(result, Ok("show a chart".to_string()));
+    }
+
+    #[test]
+    fn test_validate_and_resolve_returns_kind_and_purpose() {
+        let resolver = IntentResolver::new(vec!["screen".to_string(), "query".to_string()]);
+        let result = resolver
+            .validate_and_resolve("build a screen intended to display the dashboard");
+        assert!(result.is_ok());
+        let (kind, purpose) = result.unwrap();
+        assert_eq!(kind, "screen");
+        assert_eq!(purpose, "display the dashboard");
+    }
+
+    #[test]
+    fn test_classify_with_react_picks_highest_overlap() {
+        let resolver = IntentResolver::new(vec!["screen".to_string(), "query".to_string()]);
+        let candidates = vec!["screen".to_string(), "query".to_string()];
+        // "screen" shares 's', 'c', 'r', 'e', 'n' with "screen builder" — more overlap
+        // than "query" which shares 'r', 'e'.
+        let winner = resolver.classify_with_react_candidates("screen builder", &candidates);
+        assert_eq!(winner, "screen");
     }
 }

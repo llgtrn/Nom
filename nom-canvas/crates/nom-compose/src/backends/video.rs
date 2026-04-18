@@ -5,6 +5,55 @@ use nom_blocks::compose::video_block::VideoBlock;
 use nom_blocks::NomtuRef;
 use std::fmt;
 
+/// Stage within a video render pipeline.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum RenderStage {
+    Rendering,
+    Encoding,
+    Muxing,
+    Complete,
+}
+
+/// Progress snapshot emitted by the video render pipeline.
+#[derive(Debug, Clone)]
+pub struct RenderProgress {
+    pub rendered_frames: u32,
+    pub encoded_frames: u32,
+    pub total_frames: u32,
+    pub stage: RenderStage,
+    pub elapsed_ms: u64,
+}
+
+impl RenderProgress {
+    /// Fraction of frames rendered, in [0.0, 1.0]. Returns 0.0 when total_frames is zero.
+    pub fn percent(&self) -> f32 {
+        if self.total_frames == 0 {
+            return 0.0;
+        }
+        self.rendered_frames as f32 / self.total_frames as f32
+    }
+}
+
+/// Configuration for the video render pipeline.
+pub struct VideoRenderConfig {
+    /// Number of parallel frame capture workers.
+    pub concurrency: usize,
+    /// Path to the ffmpeg binary.
+    pub ffmpeg_path: String,
+    /// Optional progress callback invoked after each batch.
+    pub on_progress: Option<Box<dyn Fn(RenderProgress) + Send>>,
+}
+
+impl Default for VideoRenderConfig {
+    fn default() -> Self {
+        Self {
+            concurrency: 4,
+            ffmpeg_path: "ffmpeg".to_string(),
+            on_progress: None,
+        }
+    }
+}
+
 /// Output container format for video composition.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
 pub enum ContainerFormat {
@@ -145,6 +194,9 @@ impl VideoBackend {
                     batch_start,
                     (batch_start + batch_size).min(frame_count)
                 ),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
 
@@ -1093,5 +1145,39 @@ mod tests {
             text.contains("NOM-STUB-CONTAINER"),
             "WebM/vp9 payload must contain stub marker"
         );
+    }
+
+    // ── C5-V5 new tests ─────────────────────────────────────────────────────
+
+    #[test]
+    fn test_render_progress_percent_full() {
+        let p = RenderProgress {
+            rendered_frames: 60,
+            encoded_frames: 60,
+            total_frames: 60,
+            stage: RenderStage::Complete,
+            elapsed_ms: 2000,
+        };
+        assert!((p.percent() - 1.0).abs() < 1e-5, "60/60 must be 1.0");
+    }
+
+    #[test]
+    fn test_render_progress_percent_zero_total() {
+        let p = RenderProgress {
+            rendered_frames: 0,
+            encoded_frames: 0,
+            total_frames: 0,
+            stage: RenderStage::Rendering,
+            elapsed_ms: 0,
+        };
+        assert!((p.percent() - 0.0).abs() < 1e-5, "0/0 must return 0.0");
+    }
+
+    #[test]
+    fn test_video_render_config_default_concurrency() {
+        let cfg = VideoRenderConfig::default();
+        assert_eq!(cfg.concurrency, 4, "default concurrency must be 4");
+        assert_eq!(cfg.ffmpeg_path, "ffmpeg", "default ffmpeg path must be 'ffmpeg'");
+        assert!(cfg.on_progress.is_none(), "default on_progress must be None");
     }
 }

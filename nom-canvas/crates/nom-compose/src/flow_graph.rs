@@ -74,13 +74,13 @@ impl FlowGraph {
 
         for id in self.nodes.keys() {
             in_degree.entry(id.as_str()).or_insert(0);
-            adj.entry(id.as_str()).or_insert_with(Vec::new);
+            adj.entry(id.as_str()).or_default();
         }
 
         for edge in &self.edges {
             *in_degree.entry(edge.to_id.as_str()).or_insert(0) += 1;
             adj.entry(edge.from_id.as_str())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(edge.to_id.as_str());
         }
 

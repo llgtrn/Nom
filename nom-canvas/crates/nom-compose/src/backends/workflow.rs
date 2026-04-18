@@ -41,6 +41,9 @@ impl WorkflowBackend {
             sink.emit(ComposeEvent::Progress {
                 percent: (i + 1) as f32 / total.max(1) as f32,
                 stage: step.node_id.clone(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let bytes = serde_json::to_vec(&context).unwrap_or_default();

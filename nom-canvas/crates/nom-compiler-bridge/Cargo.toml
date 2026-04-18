@@ -21,6 +21,7 @@ nom-score    = { path = "../../../nom-compiler/crates/nom-score",    optional = 
 nom-types    = { path = "../../../nom-compiler/crates/nom-types",    optional = true }
 nom-search   = { path = "../../../nom-compiler/crates/nom-search",   optional = true }
 nom-planner  = { path = "../../../nom-compiler/crates/nom-planner",  optional = true }
+serde = { workspace = true }
 serde_json = { workspace = true }
 
 [lints]

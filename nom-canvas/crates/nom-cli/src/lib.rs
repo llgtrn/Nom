@@ -1,11 +1,13 @@
 #[cfg(feature = "serve")]
 pub mod serve;
 
+pub mod app;
 pub mod author;
 pub mod bench;
 pub mod corpus;
 pub mod flow;
 pub mod media;
+pub mod ux;
 
 /// Commands understood by the nom-canvas CLI.
 #[derive(Debug, PartialEq)]

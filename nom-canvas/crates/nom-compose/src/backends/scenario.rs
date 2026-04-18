@@ -47,6 +47,9 @@ impl ScenarioBackend {
             sink.emit(ComposeEvent::Progress {
                 percent: (i + 1) as f32 / total.max(1) as f32,
                 stage: scene.id.clone(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
         let hash = store.write(content.as_bytes());

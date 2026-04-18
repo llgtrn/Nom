@@ -100,6 +100,9 @@ impl DocumentBackend {
             sink.emit(ComposeEvent::Progress {
                 percent: pct,
                 stage: format!("rendering section: {}", stage_name),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
 

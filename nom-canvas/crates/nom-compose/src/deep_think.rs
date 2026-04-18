@@ -78,6 +78,9 @@ impl DeepThinkStream {
             progress.emit(ComposeEvent::Progress {
                 percent: pct,
                 stage: format!("think_step_{}", step_id),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
 
@@ -147,6 +150,9 @@ impl DeepThinkStream {
             progress.emit(ComposeEvent::Progress {
                 percent: pct,
                 stage: format!("beam_{}", beam_i),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
             });
         }
 

@@ -1,6 +1,12 @@
 #![deny(unsafe_code)]
+#[cfg(feature = "compiler")]
+pub mod candle_adapter;
+#[cfg(feature = "compiler")]
+pub use candle_adapter::{BackendDevice, CandleAdapter, ModelConfig};
 pub mod adapters;
 pub mod background_tier;
+pub mod lsp_server;
+pub use lsp_server::{LspRequest, LspResponse, dispatch_lsp_request};
 pub mod benchmarks;
 #[cfg(feature = "compiler")]
 pub mod dictwriter;

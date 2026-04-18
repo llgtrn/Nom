@@ -74,6 +74,46 @@ impl ComposeResult {
     }
 }
 
+/// Video composition config accessible within nested backends (pattern: use-video-config)
+#[derive(Debug, Clone)]
+pub struct VideoConfigContext {
+    pub width: u32,
+    pub height: u32,
+    pub fps: u32,
+    pub duration_frames: u32,
+}
+
+impl VideoConfigContext {
+    pub fn new(width: u32, height: u32, fps: u32, duration_frames: u32) -> Self {
+        Self { width, height, fps, duration_frames }
+    }
+
+    pub fn default_hd() -> Self { Self::new(1920, 1080, 30, 90) }
+
+    pub fn duration_secs(&self) -> f32 { self.duration_frames as f32 / self.fps as f32 }
+}
+
+// Thread-local video config stack for nested backends
+thread_local! {
+    static VIDEO_CONFIG_STACK: std::cell::RefCell<Vec<VideoConfigContext>> =
+        const { std::cell::RefCell::new(vec![]) };
+}
+
+pub fn push_video_config(config: VideoConfigContext) {
+    VIDEO_CONFIG_STACK.with(|s| s.borrow_mut().push(config));
+}
+
+pub fn pop_video_config() -> Option<VideoConfigContext> {
+    VIDEO_CONFIG_STACK.with(|s| s.borrow_mut().pop())
+}
+
+pub fn get_video_config() -> Result<VideoConfigContext, String> {
+    VIDEO_CONFIG_STACK.with(|s| {
+        s.borrow().last().cloned()
+            .ok_or_else(|| "get_video_config() called outside a composition context".into())
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -135,5 +175,62 @@ mod tests {
         );
         assert_eq!(ctx.kind, "video");
         assert_eq!(ctx.input, "scene-data");
+    }
+
+    /// duration_secs returns duration_frames / fps as f32.
+    #[test]
+    fn test_video_config_context_duration_secs() {
+        let cfg = VideoConfigContext::new(1920, 1080, 30, 90);
+        let secs = cfg.duration_secs();
+        assert!(
+            (secs - 3.0_f32).abs() < f32::EPSILON,
+            "90 frames / 30 fps must be 3.0 secs, got {secs}"
+        );
+
+        let cfg2 = VideoConfigContext::new(1280, 720, 24, 48);
+        let secs2 = cfg2.duration_secs();
+        assert!(
+            (secs2 - 2.0_f32).abs() < f32::EPSILON,
+            "48 frames / 24 fps must be 2.0 secs, got {secs2}"
+        );
+    }
+
+    /// push then pop returns the same config; second pop returns None.
+    #[test]
+    fn test_video_config_stack_push_pop() {
+        // Ensure the thread-local is clean before this test.
+        while pop_video_config().is_some() {}
+
+        let cfg = VideoConfigContext::new(1280, 720, 60, 120);
+        push_video_config(cfg.clone());
+
+        let popped = pop_video_config().expect("must pop the pushed config");
+        assert_eq!(popped.width, 1280);
+        assert_eq!(popped.height, 720);
+        assert_eq!(popped.fps, 60);
+        assert_eq!(popped.duration_frames, 120);
+
+        assert!(
+            pop_video_config().is_none(),
+            "second pop on empty stack must return None"
+        );
+    }
+
+    /// get_video_config() on an empty stack must return Err.
+    #[test]
+    fn test_get_video_config_outside_context_errors() {
+        // Drain any leftover state.
+        while pop_video_config().is_some() {}
+
+        let result = get_video_config();
+        assert!(
+            result.is_err(),
+            "get_video_config() on empty stack must return Err"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("outside a composition context"),
+            "error message must mention 'outside a composition context', got: {msg}"
+        );
     }
 }

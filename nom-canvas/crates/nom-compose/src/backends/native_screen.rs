@@ -57,6 +57,9 @@ impl NativeScreenBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 0.5,
             stage: "capturing native screen".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
         let artifact_hash = store.write(&bytes);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);

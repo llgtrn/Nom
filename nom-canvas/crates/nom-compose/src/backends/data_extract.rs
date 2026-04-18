@@ -77,6 +77,9 @@ pub fn compose_to_store(
     sink.emit(ComposeEvent::Progress {
         percent: 0.5,
         stage: "structured extraction".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
     });
     let artifact_hash = store.write(&bytes);
     sink.emit(ComposeEvent::Completed {

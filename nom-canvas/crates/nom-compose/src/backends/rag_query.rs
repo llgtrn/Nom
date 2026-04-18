@@ -122,6 +122,9 @@ impl RagQueryBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 50.0,
             stage: "graph_rag_retrieve".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
 
         let results = retriever.retrieve(&qvec, self.top_k.unwrap_or(5), 3);
@@ -129,6 +132,9 @@ impl RagQueryBackend {
         sink.emit(ComposeEvent::Progress {
             percent: 100.0,
             stage: "graph_rag_done".into(),
+                rendered_frames: None,
+                encoded_frames: None,
+                elapsed_ms: None,
         });
 
         results
