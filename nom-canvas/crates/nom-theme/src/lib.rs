@@ -1,11 +1,13 @@
 #![deny(unsafe_code)]
 pub mod animation;
+pub mod animation_token;
 pub mod fonts;
 pub mod icons;
 pub mod token_system;
 pub mod tokens;
 pub mod typography;
 pub use animation::{AnimationRegistry, AnimationToken, EasingKind};
+pub use animation_token::{AnimCurve, AnimDuration, AnimToken, AnimationScale, AnimTokenRegistry};
 pub use fonts::{FontRegistry, TypeStyle};
 pub use icons::{icon_path, Icon, IconPath};
 pub use tokens::*;

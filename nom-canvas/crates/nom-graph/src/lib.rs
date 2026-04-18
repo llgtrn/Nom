@@ -56,3 +56,5 @@ pub mod memory_graph;
 pub use memory_graph::{MemoryTier, MemoryNode, MemoryEdge, MemoryGraph, MemoryQuery};
 pub mod constraint_graph;
 pub use constraint_graph::{ConstraintKind, ConstraintVar, Constraint, ConstraintGraph, ConstraintSolver};
+pub mod event_bus;
+pub use event_bus::{EventTopic, BusEvent, EventSubscription, EventBus, EventRouter};

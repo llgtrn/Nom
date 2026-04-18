@@ -113,6 +113,10 @@ pub use motion_path::{EasingKind, MotionKeyframe, MotionPath, PathInterpolator, 
 pub mod glyph_cache;
 pub use glyph_cache::{GlyphKey, GlyphMetrics, CachedGlyph, GlyphCache, GlyphRasterizer};
 
+/// Color space primitives: models, RGB/HSL colors, conversion utilities, and palette.
+pub mod color_space;
+pub use color_space::{ColorModel, RgbColor, HslColor, ColorConvert, ColorPalette};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

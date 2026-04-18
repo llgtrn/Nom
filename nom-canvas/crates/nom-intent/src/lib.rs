@@ -43,6 +43,9 @@ pub use haystack_pipeline::{ComponentPipeline, ComponentType, HaystackComponent,
 pub mod graphify_chart;
 pub use graphify_chart::{ChartAxis, ChartSeries, ChartSpec, ChartType, GraphifyComposer};
 
+pub mod query_planner;
+pub use query_planner::{PlanStep, QueryNode, QueryPlan, PlanOptimizer, QueryPlanner};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

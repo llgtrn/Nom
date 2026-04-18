@@ -168,6 +168,8 @@ pub use storyboard_compose::StoryboardPanel as StoryboardComposePanel;
 pub use storyboard_compose::StoryboardAct;
 pub use storyboard_compose::Storyboard as StoryboardCompose;
 pub use storyboard_compose::StoryboardComposer;
+pub mod extract_pipeline;
+pub use extract_pipeline::{ExtractTarget, ExtractField, ExtractSchema, ExtractResult, ExtractPipeline};
 
 #[cfg(test)]
 mod integration_tests {
