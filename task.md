@@ -310,13 +310,29 @@
 - ✅ DreamTree — DreamNode + DreamTree + ParetoFront (9 tests)
 - ✅ LspPositionBridge — LspPositionBridge + BoundedLspBridge roundtrip (9 tests)
 
-## Open Items — Wave ABN targets (A+B+C deeper)
+## Wave ABN (2026-04-19) — COMMITTED ✅ (HEAD 6584bde, +45 tests)
 
-- ❌ **A5 UX extractor** — Motion/Dioxus/ToolJet/DeerFlow corpus extractors in nom-ux
-- ❌ **A5 intent §5 deeper** — body-only ingestion + Partial→Complete promotion in nom-intent
-- ❌ **B6 dream CLI** — `nom app dream` iterates until score≥95 in nom-cli
-- ❌ **C6 RAG retrieval** — deeper BM25+FAISS hybrid retrieval tests in nom-intent
-- ❌ **A3 self-host stubs** — parser.nom/resolver.nom stub .nomx entries in stdlib/
+- ✅ UxExtractor — CorpusSource×4 Motion/Dioxus/ToolJet/DeerFlow + 12 seeded patterns (9 tests)
+- ✅ IngestPartial — IngestQuality + IngestPromoter Partial→Complete (9 tests)
+- ✅ DreamCLI — DreamEngine run_until_epic() score≥95 + DreamReport (9 tests)
+- ✅ HybridRetrieval — BM25+vector merge + RRF + top_k (9 tests)
+- ✅ SelfHostRegistry — SelfHostStage×5 + seed + SelfHostBootstrapProof fixpoint (9 tests)
+
+## Wave ABO (2026-04-19) — COMMITTED ✅ (HEAD 092b161, +46 tests)
+
+- ✅ AuthorSession — AuthorPhase×5 brainstorm→nomx motion pipeline (9 tests)
+- ✅ SkillCLI — SkillCliRunner 8 seeds + case-insensitive route dispatch (10 tests)
+- ✅ BootstrapCLI — 5-stage bootstrap report + fixpoint check (9 tests)
+- ✅ StreamIngest — StreamConfig + IngestCheckpoint + StreamIngestor + SkipList (9 tests)
+- ✅ AestheticRegistry — AestheticDomain×5 + 9 seeded aesthetic skills (9 tests)
+
+## Open Items — Wave ABP targets
+
+- ❌ **A5 AI-invokes-compiler loop** — verify→build→bench→flow stub in nom-compose
+- ❌ **B9 media primitives composed** — MediaUnit compose pipeline in nom-media
+- ❌ **A5 workspace .nomx manifest** — AppManifest + Cargo-style deps in nom-blocks
+- ❌ **C6 RAG ranker** — Haystack-pattern reranker + postprocessor in nom-intent
+- ❌ **A11 LLVM stub deeper** — LlvmEmitter with real op dispatch table in nom-concept
 
 ---
 

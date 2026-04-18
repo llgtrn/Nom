@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+pub mod ai_compiler_loop;
 pub mod author_session;
 pub mod animate;
 pub mod backends;

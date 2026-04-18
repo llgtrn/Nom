@@ -2,6 +2,9 @@
 #![warn(missing_docs)]
 //! Block primitives for the NomCanvas workspace — models, connectors, tables, dataviews.
 
+/// AppManifest — Cargo-style dependency manifest for workspace .nomx manifests.
+#[allow(missing_docs)]
+pub mod app_manifest;
 /// Ancestry depth tracking and transitive ancestor caching.
 #[allow(missing_docs)]
 pub mod ancestry;
