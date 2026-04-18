@@ -78,8 +78,12 @@ pub use pipeline::{CompileError, CompileInput, CompileOutput, CompilePipeline, C
 pub mod lifecycle;
 pub use lifecycle::{EntryState, LifecycleManager, LifecycleTransition};
 
+pub mod stream_ingest;
+
 pub mod selfhost;
 pub use selfhost::{SelfHostBootstrapProof, SelfHostEntry, SelfHostRegistry, SelfHostStage};
+
+pub mod aesthetic;
 
 /// Closed kind set per doc 08 §8.1.
 ///

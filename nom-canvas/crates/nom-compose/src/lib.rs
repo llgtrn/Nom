@@ -1,4 +1,5 @@
 #![deny(unsafe_code)]
+pub mod author_session;
 pub mod animate;
 pub mod backends;
 pub mod cancel;

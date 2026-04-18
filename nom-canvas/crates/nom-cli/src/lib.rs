@@ -12,6 +12,8 @@ pub mod demo;
 pub mod flow;
 pub mod media;
 pub mod ux;
+pub mod skill_cli;
+pub mod bootstrap_cli;
 
 pub use convert::{convert_source, ConvertDirection, ConvertOptions, ConvertResult};
 pub use demo::{DemoKind, DemoResult, DemoRunner};
