@@ -126,6 +126,10 @@ pub mod n8n_workflow;
 pub use n8n_workflow::{NodeStatus, WorkflowGraph, WorkflowNode, WorkflowRunner};
 pub mod pdf_compose;
 pub use pdf_compose::{PdfComposer, PdfDocument, PdfElement, PdfPage};
+pub mod video_encode;
+pub use video_encode::{GpuVideoEncoder, VideoCodec as VideoEncodeCodec, VideoEncoder, VideoFrame};
+pub mod web_compose;
+pub use web_compose::{ComponentKind, WebAppSpec, WebComponent, WebComposer};
 
 #[cfg(test)]
 mod integration_tests {

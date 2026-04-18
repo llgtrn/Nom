@@ -64,6 +64,10 @@ pub use bezier::{AnimatedBezier, BezierCurve, BezierPoint};
 pub mod frosted_glass;
 pub use frosted_glass::{BlurLayer, FrostedGlassEffect, LayerBlend, LayerCompositor};
 
+/// AFFiNE design tokens: categories, token set, resolver, and applier.
+pub mod affine_tokens;
+pub use affine_tokens::{AffineToken, AffineTokenSet, DesignTokenApplier, TokenCategory, TokenResolver};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

@@ -11,8 +11,10 @@ pub mod right;
 pub mod shell;
 pub mod statusbar;
 pub mod toolbar;
+pub mod tab_bar;
 pub mod top;
 
+pub use tab_bar::{TabBar, TabBarState, TabEntry};
 pub use bottom::{
     run_composition_command, Diagnostic, DiagnosticSeverity, DiagnosticsPanel, StatusItem,
     StatusKind, TerminalLine, TerminalLineKind, TerminalPanel,

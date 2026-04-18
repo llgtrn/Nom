@@ -398,13 +398,21 @@
 - ✅ ContentAddress — ContentHash FNV-1a+CrossAppStore specialization sharing (9 tests)
 - ✅ BlockSchemaV2 — BlockSchemaV2+MigrationTool+RoundTripValidator (9 tests)
 
-## Open Items — Wave ABY targets
+## Wave ABY — COMPLETE (2026-04-19, 9708 tests)
 
-- ❌ **nom-compose n8n-workflow** — WorkflowNode + WorkflowGraph + WorkflowRunner (n8n pattern)
-- ❌ **nom-intent llamaindex-postproc** — PostProcessor + DeduplicateFilter + ScoreThresholdFilter
-- ❌ **nom-canvas-core frosted-glass** — BlurLayer + FrostedGlassEffect + LayerCompositor
-- ❌ **nom-gpui texture-atlas** — AtlasRegion + TextureAtlas + AtlasAllocator
-- ❌ **nom-compose pdf-compose** — PdfPage + PdfDocument + PdfComposer (document-compose demo)
+- ✅ N8nWorkflow — NodeStatus+WorkflowGraph+WorkflowRunner topo-sort (9 tests)
+- ✅ Postproc — PostDoc FNV-1a+DeduplicateFilter+ScoreThresholdFilter+PostPipeline (9 tests)
+- ✅ FrostedGlass — BlurLayer+FrostedGlassEffect+LayerCompositor (9 tests)
+- ✅ TextureAtlas — AtlasRegion+TextureAtlas+AtlasShelf+AtlasAllocator (9 tests)
+- ✅ PdfCompose — PdfElement+PdfPage+PdfDocument+PdfComposer prose→PDF (9 tests)
+
+## Open Items — Wave ABZ targets
+
+- ❌ **nom-compose web-compose** — WebComponent + WebAppSpec + WebComposer (web-compose demo)
+- ❌ **nom-intent haystack-pipeline** — HaystackComponent + ComponentPipeline + PipelineRanker
+- ❌ **nom-canvas-core affine-tokens** — AffineTokenSet + TokenResolver + DesignTokenApplier
+- ❌ **nom-panels tab-bar** — TabEntry + TabBar + TabBarState (UI tab navigation)
+- ❌ **nom-compose video-encode** — VideoFrame + VideoEncoder + GpuVideoEncoder stub
 
 ---
 

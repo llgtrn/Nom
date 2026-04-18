@@ -37,6 +37,9 @@ pub use rag_pipeline::{RagDocument, RagPipeline, RagQuery, RagRetriever, RagSynt
 pub mod postproc;
 pub use postproc::{DeduplicateFilter, PostDoc, PostPipeline, ScoreThresholdFilter};
 
+pub mod haystack_pipeline;
+pub use haystack_pipeline::{ComponentPipeline, ComponentType, HaystackComponent, PipelineRanker, RankedResult};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,
