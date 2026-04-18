@@ -39,6 +39,10 @@ pub use chart::{Chart, ChartConfig, ChartType, DataSeries};
 pub mod render_pipeline;
 pub use render_pipeline::{DrawCommand, FrameGraph, RenderPhase, RenderPipelineCoordinator, RenderQueue};
 
+/// RenderFrame and dirty region tracking for the NomCanvas render loop.
+pub mod render_frame;
+pub use render_frame::{DirtyRegion, DirtyTracker, RenderFrame};
+
 /// ABI vision pipeline stubs: bounding-box detection, SAM segmentation,
 /// layout analysis, animation generation, and orchestration.
 pub mod vision_pipeline;

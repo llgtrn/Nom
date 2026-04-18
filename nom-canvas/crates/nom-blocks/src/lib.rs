@@ -56,6 +56,9 @@ pub mod stub_dict;
 pub mod table;
 pub mod validators;
 pub mod workspace;
+/// WorkspaceSchema, SchemaVersion, SchemaMigration, and MigrationPlan for workspace versioning.
+#[allow(missing_docs)]
+pub mod workspace_schema;
 
 pub use ancestry::{AncestorEntry, AncestryCache};
 pub use content_hash::{ContentHash, ContentStore};

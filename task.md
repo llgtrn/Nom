@@ -350,13 +350,21 @@
 - ✅ TokenSystem — ColorToken luminance/contrast + SpacingToken scale (9 tests)
 - ✅ BlockHistory — BlockEvent inverse + HistoryStack undo/redo (9 tests)
 
-## Open Items — Wave ABS targets
+## Wave ABS (2026-04-19) — COMMITTED ✅ (HEAD 5840d44, +45 tests)
 
-- ❌ **nom-canvas-core deeper** — Viewport snap-to-grid + element bounds union
-- ❌ **nom-compose deeper** — PipelineContext + compose result streaming
-- ❌ **nom-compiler-bridge deeper** — LSP diagnostics request/response cycle
-- ❌ **nom-concept deeper** — IR basic block → SSA form conversion stubs
-- ❌ **nom-ux deeper** — accessibility audit + keyboard navigation stubs
+- ✅ SnapGrid — GridConfig snap + BoundsRect union/intersect + BoundsUnion (9 tests)
+- ✅ PipelineContext — PipelineStatus + StreamChunk streaming pipeline (9 tests)
+- ✅ LspDiagnostics — DiagnosticSeverity + publishDiagnostics notification (9 tests)
+- ✅ SSA — SsaVar + PhiNode + SsaBlock + SsaForm basic block stubs (9 tests)
+- ✅ Accessibility — A11yRole + A11yAuditor violations + KeyboardNav (9 tests)
+
+## Open Items — Wave ABT targets
+
+- ❌ **nom-editor syntax** — SyntaxToken + highlight ranges + display map pipeline
+- ❌ **nom-graph node traversal** — BFS/DFS with visitor pattern + edge filtering
+- ❌ **nom-blocks workspace** — WorkspaceSchema + version migration + compact
+- ❌ **nom-concept type check** — TypeChecker + constraint solver + unification
+- ❌ **nom-canvas-core render state** — RenderFrame + dirty region tracking
 
 ---
 

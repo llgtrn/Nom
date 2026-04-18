@@ -14,6 +14,7 @@ pub mod input;
 pub mod line_layout;
 pub mod lsp_bridge;
 pub mod scroll;
+pub mod syntax_highlight;
 pub mod selection;
 pub mod tab_map;
 pub mod wrap_map;
