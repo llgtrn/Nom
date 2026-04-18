@@ -113,6 +113,7 @@ pub mod vision_orchestrator;
 pub mod donut_pipeline;
 pub mod codegen_pipeline;
 pub mod vision_bridge;
+pub mod pipeline_context;
 
 #[cfg(test)]
 mod integration_tests {

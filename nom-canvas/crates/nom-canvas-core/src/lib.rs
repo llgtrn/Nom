@@ -18,6 +18,8 @@ pub mod pointer;
 pub mod selection;
 /// Grid snapping and edge/center snap-with-guides.
 pub mod snapping;
+/// Viewport snap-to-grid configuration and element bounds union utilities.
+pub mod snap_grid;
 /// Spatial index for efficient element lookup by position.
 pub mod spatial_index;
 /// Infinite-canvas viewport: zoom, pan, and coordinate transforms.

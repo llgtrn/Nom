@@ -88,6 +88,9 @@ pub mod aesthetic;
 pub mod llvm_emit;
 pub use llvm_emit::{LlvmBlock, LlvmFunction, LlvmInstr, LlvmOp};
 
+pub mod ssa;
+pub use ssa::{PhiNode, SsaBlock, SsaForm, SsaVar};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

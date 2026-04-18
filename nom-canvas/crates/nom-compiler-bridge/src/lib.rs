@@ -26,6 +26,7 @@ pub mod repo_inspector;
 pub use repo_inspector::{RepoFile, RepoInspector, RepoLanguage, RepoProfile};
 pub mod ui_tier;
 pub mod lsp_position_bridge;
+pub mod lsp_diagnostics;
 
 pub use adapters::lsp::CompilerLspProvider;
 pub use background_tier::BackgroundTierOps;

@@ -342,13 +342,21 @@
 - ✅ LintRules — LintSeverity×4 + LintRule pattern check + auto-fix (9 tests)
 - ✅ LruCache — CacheStats hit-rate + CacheEntry TTL + capacity eviction (9 tests)
 
-## Open Items — Wave ABR targets
+## Wave ABR (2026-04-19) — COMMITTED ✅ (HEAD 01b1c7e, +45 tests)
 
-- ❌ **nom-editor deeper** — MultiCursor + point/range navigation + display map
-- ❌ **nom-gpui deeper** — SceneGraph traversal + atlas slot + text layout tests
-- ❌ **nom-panels deeper** — PanelState + ResizeHandle + layout persistence
-- ❌ **nom-theme deeper** — ColorToken + SpacingToken + design system validation
-- ❌ **nom-blocks deeper** — BlockEvent + HistoryStack + undo/redo tests
+- ✅ MultiCursor — CursorAnchor + CursorRange + MultiCursor dedup/move (9 tests)
+- ✅ SceneGraph — SceneNodeKind + DFS traversal + AtlasSlot fit (9 tests)
+- ✅ LayoutState — PanelSide + ResizeHandle drag + LayoutSnapshot restore (9 tests)
+- ✅ TokenSystem — ColorToken luminance/contrast + SpacingToken scale (9 tests)
+- ✅ BlockHistory — BlockEvent inverse + HistoryStack undo/redo (9 tests)
+
+## Open Items — Wave ABS targets
+
+- ❌ **nom-canvas-core deeper** — Viewport snap-to-grid + element bounds union
+- ❌ **nom-compose deeper** — PipelineContext + compose result streaming
+- ❌ **nom-compiler-bridge deeper** — LSP diagnostics request/response cycle
+- ❌ **nom-concept deeper** — IR basic block → SSA form conversion stubs
+- ❌ **nom-ux deeper** — accessibility audit + keyboard navigation stubs
 
 ---
 
