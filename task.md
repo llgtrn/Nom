@@ -430,13 +430,29 @@
 - ✅ AnimationCard — CardState+AnimationCard+CardKeyframe+CardTimeline+CardAnimator (9 tests)
 - ✅ Presence — PresenceUserStatus+PresenceUser+PresenceUserMap+PresenceBroadcast (9 tests)
 
-## Open Items — Wave ABAC targets
+## Wave ABAC — COMPLETE (2026-04-19, 9891 tests)
 
-- ❌ **nom-editor diagnostic_squiggle** — DiagnosticSeverity + DiagnosticSpan + SquiggleRenderer + DiagnosticOverlay (C4 LSP squiggle)
-- ❌ **nom-editor hover_tooltip** — TooltipContent + HoverTooltip + TooltipAnchor + TooltipRenderer (C4 LSP hover)
-- ❌ **nom-compose llama_compose** — PipelineStage + LlamaPipeline + PipelineCombinator + PipelineOutput (C6 LlamaIndex composition)
-- ❌ **nom-panels property_panel** — PropertyKind + PropertyField + PropertyGroup + PropertyPanel (UI panel for node properties)
-- ❌ **nom-telemetry event_log** — EventKind + LoggedEvent + EventLog + EventLogStore (structured event logging)
+- ✅ DiagnosticSquiggle — DiagnosticSeverity+DiagnosticSpan+SquiggleStyle+DiagnosticOverlay (9 tests, C4)
+- ✅ HoverTooltip — TooltipKind+TooltipContent+TooltipAnchor+HoverTooltip+TooltipRenderer (9 tests, C4)
+- ✅ LlamaCompose — PipelineStage+LlamaPipelineNode+LlamaPipeline+PipelineCombinator+PipelineOutput (9 tests, C6)
+- ✅ PropertyPanel — PropertyKind+PropertyValue+PropertyField+PropertyGroup+PropertyPanel (10 tests, UI)
+- ✅ EventLog — EventKind+LoggedEvent+EventLog+EventLogStore (9 tests, telemetry)
+
+## Wave ABAD — COMPLETE (2026-04-19, 9939 tests)
+
+- ✅ FlowReplay — ReplaySpeed+FlowReplayEntry+FlowReplay+ReplayController+ReplaySnapshot (9 tests)
+- ✅ AppBundle — BundleTarget×6+BundleManifest+BundleArtifact+BundleBuilder+BundleOutput (9 tests)
+- ✅ FrostedPipeline — FrostedLayerConfig+PassInput+PassOutput+Runner+PipelineStats (9 tests)
+- ✅ GoToDef — DefinitionKind+Location+Target+GoToDefRequest+GoToDefResolver (9 tests, C4)
+- ✅ FlowStepTable — StepStatus+FlowStepRow+FlowStepTable+FlowStepQuery+StepTimeline (9 tests, A9)
+
+## Open Items — Wave ABAE targets
+
+- ❌ **nom-editor rename_preview** — RenamePreviewKind + RenameChange + RenamePreview + RenameApplier (C4 rename-refactor preview)
+- ❌ **nom-compose completion_engine** — CompletionKind + CompletionItem + CompletionList + CompletionEngine (C4 completion popup)
+- ❌ **nom-graph semantic_cache** — SemanticKey + SemanticEntry + SemanticCache + CacheEviction (A-axis cache patterns)
+- ❌ **nom-canvas-core pixel_diff** — already exists? Check. If not: PixelRegion + PixelDiff + DiffReport + DiffThreshold
+- ❌ **nom-telemetry perf_counter** — CounterKind + PerfCounter + CounterSnapshot + CounterRegistry (performance counters)
 
 ---
 

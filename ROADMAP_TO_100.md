@@ -285,7 +285,7 @@
 - [x] Hover tooltip renders on canvas — HoverTooltip+TooltipRenderer (Wave ABAC)
 - [ ] Completion popup visible with arrow-key navigation
 - [x] Diagnostic red-squiggle underline renders — DiagnosticSquiggle+DiagnosticOverlay (Wave ABAC)
-- [ ] Go-to-definition navigates
+- [x] Go-to-definition navigates — GoToDefResolver+GoToDefRequest (Wave ABAD)
 - [ ] Rename-refactor preview works
 
 ### C5. Backend wiring beyond spec-and-stub
@@ -311,7 +311,7 @@
 - [ ] Storyboard: 5-phase orchestration
 - [ ] Native_screen: platform-specific codegen capture
 - [ ] Mobile_screen: iOS/Android target integration
-- [ ] App_bundle: Cargo + wgpu signed bundle
+- [x] App_bundle: Cargo + wgpu signed bundle — BundleBuilder+BundleTarget×6 (Wave ABAD)
 
 ### C6. RAG real retrievers
 - [x] Graph RAG BFS + confidence weights (Wave Q)
@@ -367,7 +367,7 @@
 - [x] excalidraw (hit-test + selection + snapping)
 
 ### D2. UI/UX full visual verification (ui-ux-pro-max skill required each check)
-- [ ] Frosted-glass pipeline renders visible blur on canvas
+- [x] Frosted-glass pipeline renders visible blur on canvas — FrostedPipelineRunner+PipelineStats (Wave ABAD)
 - [x] Focus ring = 2px outline stroke (FR1 follow-through)
 - [x] All panels render real quads with token colors
 - [ ] Bezier control points animate smoothly
