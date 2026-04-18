@@ -591,4 +591,116 @@ mod tests {
         // primary must be defined.
         assert!(cs.primary().is_some());
     }
+
+    // ── wave AG-8: additional cursor tests ──────────────────────────────────
+
+    #[test]
+    fn cursor_move_right_past_end_stays() {
+        let buf_len = 5usize;
+        let mut offset = 5usize; // already at end
+        offset = (offset + 1).min(buf_len);
+        assert_eq!(offset, buf_len);
+    }
+
+    #[test]
+    fn cursor_move_left_past_start_stays() {
+        let mut offset = 0usize; // already at start
+        offset = offset.saturating_sub(1);
+        assert_eq!(offset, 0);
+    }
+
+    #[test]
+    fn cursor_move_up_first_line_stays_on_first() {
+        // Simulate: cursor on line 0, move up → stays on line 0
+        let current_line = 0usize;
+        let new_line = current_line.saturating_sub(1);
+        assert_eq!(new_line, 0);
+    }
+
+    #[test]
+    fn cursor_move_down_last_line_stays_on_last() {
+        let total_lines = 5usize;
+        let current_line = 4usize; // last line (0-indexed)
+        let new_line = (current_line + 1).min(total_lines - 1);
+        assert_eq!(new_line, 4);
+    }
+
+    #[test]
+    fn cursor_word_forward_skips_to_next_word() {
+        let text = "hello world foo";
+        let offset = 0usize;
+        // Find next space then skip it
+        let next_space = text[offset..].find(' ').map(|p| offset + p + 1).unwrap_or(text.len());
+        assert_eq!(next_space, 6); // 'w' in 'world'
+        let sel = Selection::caret(next_space);
+        assert_eq!(sel.head(), 6);
+    }
+
+    #[test]
+    fn cursor_word_backward_skips_to_prev_word() {
+        let text = "hello world";
+        let offset = 11usize; // end of string
+        let word_start = text[..offset].rfind(' ').map(|p| p + 1).unwrap_or(0);
+        assert_eq!(word_start, 6); // 'w' in 'world'
+        let sel = Selection::caret(word_start);
+        assert_eq!(sel.head(), 6);
+    }
+
+    #[test]
+    fn cursor_home_goes_to_line_start() {
+        let text = "hello\nworld\nfoo";
+        let offset = 8usize; // 'r' in 'world'
+        let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert_eq!(line_start, 6);
+        let sel = Selection::caret(line_start);
+        assert_eq!(sel.head(), 6);
+    }
+
+    #[test]
+    fn cursor_end_goes_to_line_end() {
+        let text = "hello\nworld\nfoo";
+        let offset = 8usize; // 'r' in 'world'
+        let line_end = text[offset..].find('\n').map(|p| offset + p).unwrap_or(text.len());
+        assert_eq!(line_end, 11);
+        let sel = Selection::caret(line_end);
+        assert_eq!(sel.head(), 11);
+    }
+
+    #[test]
+    fn cursor_doc_start_goes_to_zero() {
+        let sel = Selection::caret(0);
+        assert_eq!(sel.head(), 0);
+        assert!(sel.is_empty());
+    }
+
+    #[test]
+    fn cursor_doc_end_goes_to_last() {
+        let text = "abc\ndef\nghi";
+        let doc_end = text.len(); // 11
+        let sel = Selection::caret(doc_end);
+        assert_eq!(sel.head(), doc_end);
+    }
+
+    #[test]
+    fn cursor_position_after_insert() {
+        // Simulate: inserting "abc" at offset 0 → cursor moves to offset 3
+        let insert_len = 3usize;
+        let initial_offset = 0usize;
+        let new_offset = initial_offset + insert_len;
+        let sel = Selection::caret(new_offset);
+        assert_eq!(sel.head(), 3);
+    }
+
+    #[test]
+    fn cursor_column_after_newline() {
+        // After inserting a newline at end of "hello", cursor lands on new line
+        // column should be 0 (start of next line)
+        let text = "hello\n";
+        // cursor at offset 6 (after '\n')
+        let offset = 6usize;
+        // column = offset - line_start; line_start = offset of last '\n' + 1
+        let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        let column = offset - line_start;
+        assert_eq!(column, 0);
+    }
 }

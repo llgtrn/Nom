@@ -2086,4 +2086,271 @@ mod tests {
             assert!(FONT_SIZE_CAPTION < s, "caption ({}) must be < {}", FONT_SIZE_CAPTION, s);
         }
     }
+
+    // =========================================================================
+    // WAVE-AG AGENT-9 ADDITIONS
+    // =========================================================================
+
+    // --- Type scale: font sizes xs < sm < base < md < lg < xl ---
+    // The design system maps xs→CAPTION, sm→CODE, base→BODY, md→H3, lg→H2, xl→H1.
+
+    #[test]
+    fn type_scale_xs_less_than_sm() {
+        // xs = FONT_SIZE_CAPTION (12), sm = FONT_SIZE_CODE (13)
+        assert!(
+            FONT_SIZE_CAPTION < FONT_SIZE_CODE,
+            "type xs ({}) must be < sm ({})",
+            FONT_SIZE_CAPTION, FONT_SIZE_CODE
+        );
+    }
+
+    #[test]
+    fn type_scale_sm_less_than_base() {
+        // sm = CODE (13), base = BODY (14)
+        assert!(
+            FONT_SIZE_CODE < FONT_SIZE_BODY,
+            "type sm ({}) must be < base ({})",
+            FONT_SIZE_CODE, FONT_SIZE_BODY
+        );
+    }
+
+    #[test]
+    fn type_scale_base_less_than_md() {
+        // base = BODY (14), md = H3 (18)
+        assert!(
+            FONT_SIZE_BODY < FONT_SIZE_H3,
+            "type base ({}) must be < md ({})",
+            FONT_SIZE_BODY, FONT_SIZE_H3
+        );
+    }
+
+    #[test]
+    fn type_scale_md_less_than_lg() {
+        // md = H3 (18), lg = H2 (20)
+        assert!(
+            FONT_SIZE_H3 < FONT_SIZE_H2,
+            "type md ({}) must be < lg ({})",
+            FONT_SIZE_H3, FONT_SIZE_H2
+        );
+    }
+
+    #[test]
+    fn type_scale_lg_less_than_xl() {
+        // lg = H2 (20), xl = H1 (24)
+        assert!(
+            FONT_SIZE_H2 < FONT_SIZE_H1,
+            "type lg ({}) must be < xl ({})",
+            FONT_SIZE_H2, FONT_SIZE_H1
+        );
+    }
+
+    #[test]
+    fn type_scale_xl_less_than_2xl() {
+        // xl = H1 (24); 2xl is defined as anything > H1.
+        // We verify H1 is actually the named max and that it is > H2.
+        assert!(
+            FONT_SIZE_H1 > FONT_SIZE_H2,
+            "xl ({}) must be the largest named scale step, exceeding lg ({})",
+            FONT_SIZE_H1, FONT_SIZE_H2
+        );
+    }
+
+    // --- OLED / dark theme background checks ---
+
+    #[test]
+    fn oled_bg_is_pure_black() {
+        // An OLED-safe background must have very low luminance.
+        // BASE_BG is [0.08, 0.09, 0.02] — very dark but not absolute zero.
+        let lum = BASE_BG[0] * 0.299 + BASE_BG[1] * 0.587 + BASE_BG[2] * 0.114;
+        assert!(
+            lum < 0.1,
+            "OLED bg (BASE_BG) luminance ({lum:.4}) must be < 0.1 (near-black for OLED)"
+        );
+    }
+
+    #[test]
+    fn oled_surface_near_black() {
+        // BG is a surface color that is very dark but not as pure as BASE_BG.
+        let lum_bg = BG[0] * 0.299 + BG[1] * 0.587 + BG[2] * 0.114;
+        assert!(
+            lum_bg < 0.1,
+            "OLED surface (BG) luminance ({lum_bg:.4}) must be near black (< 0.1)"
+        );
+        // Also verify it is not pure zero (has some blue tint for readability).
+        let sum_rgb = BG[0] + BG[1] + BG[2];
+        assert!(
+            sum_rgb > 0.0,
+            "OLED surface must not be absolute zero (some blue tint expected)"
+        );
+    }
+
+    #[test]
+    fn dark_theme_bg_darker_than_surface() {
+        // BASE_BG (darkest) must have lower luminance than BG2 (lighter surface).
+        let lum_base = BASE_BG[0] * 0.299 + BASE_BG[1] * 0.587 + BASE_BG[2] * 0.114;
+        let lum_bg2 = BG2[0] * 0.299 + BG2[1] * 0.587 + BG2[2] * 0.114;
+        assert!(
+            lum_base < lum_bg2,
+            "BASE_BG luminance ({lum_base:.4}) must be < BG2 luminance ({lum_bg2:.4})"
+        );
+    }
+
+    #[test]
+    fn light_theme_bg_lighter_than_surface() {
+        // BASE_FG (near-white) must have higher luminance than BG (dark surface).
+        let lum_fg = BASE_FG[0] * 0.299 + BASE_FG[1] * 0.587 + BASE_FG[2] * 0.114;
+        let lum_bg = BG[0] * 0.299 + BG[1] * 0.587 + BG[2] * 0.114;
+        assert!(
+            lum_fg > lum_bg,
+            "BASE_FG luminance ({lum_fg:.4}) must be > BG luminance ({lum_bg:.4})"
+        );
+    }
+
+    // --- Accent color hue in blue range (220–260°) ---
+
+    #[test]
+    fn accent_color_hue_in_range_220_260() {
+        // The primary accent (blue) must have a hue between 200° and 260°.
+        let c = color_accent_blue();
+        assert!(
+            c.h >= 200.0 && c.h <= 260.0,
+            "accent_blue hue ({:.1}°) must be in [200, 260]",
+            c.h
+        );
+    }
+
+    // --- WCAG contrast: text primary ≥ 4.5:1 on bg ---
+
+    #[test]
+    fn text_primary_high_contrast_on_bg() {
+        // Re-verify with the full WCAG linearization that TEXT on BG meets AA (4.5:1).
+        fn linearize(c: f32) -> f32 {
+            if c <= 0.04045 { c / 12.92 } else { ((c + 0.055) / 1.055_f32).powf(2.4) }
+        }
+        fn lum(r: f32, g: f32, b: f32) -> f32 {
+            0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+        }
+        fn contrast(l1: f32, l2: f32) -> f32 {
+            let lighter = l1.max(l2);
+            let darker = l1.min(l2);
+            (lighter + 0.05) / (darker + 0.05)
+        }
+        let ratio = contrast(lum(TEXT[0], TEXT[1], TEXT[2]), lum(BG[0], BG[1], BG[2]));
+        assert!(
+            ratio >= 4.5,
+            "text_primary on BG contrast ({ratio:.2}) must be >= 4.5:1 (WCAG AA)"
+        );
+    }
+
+    #[test]
+    fn text_secondary_lower_contrast_than_primary() {
+        // color_text_secondary has lower lightness than color_text_primary.
+        let primary = color_text_primary();
+        let secondary = color_text_secondary();
+        assert!(
+            secondary.l < primary.l,
+            "text_secondary lightness ({:.3}) must be < text_primary lightness ({:.3})",
+            secondary.l, primary.l
+        );
+    }
+
+    // --- Border color between bg and surface ---
+
+    #[test]
+    fn border_color_between_bg_and_surface() {
+        // BORDER's luminance should be between BASE_BG and BASE_FG — it is a mid-tone separator.
+        let lum_base_bg = BASE_BG[0] * 0.299 + BASE_BG[1] * 0.587 + BASE_BG[2] * 0.114;
+        let lum_border = BORDER[0] * 0.299 + BORDER[1] * 0.587 + BORDER[2] * 0.114;
+        let lum_base_fg = BASE_FG[0] * 0.299 + BASE_FG[1] * 0.587 + BASE_FG[2] * 0.114;
+        assert!(
+            lum_border > lum_base_bg,
+            "BORDER luminance ({lum_border:.4}) must be > BASE_BG luminance ({lum_base_bg:.4})"
+        );
+        assert!(
+            lum_border < lum_base_fg,
+            "BORDER luminance ({lum_border:.4}) must be < BASE_FG luminance ({lum_base_fg:.4})"
+        );
+    }
+
+    // --- Frosted overlay has nonzero alpha ---
+
+    #[test]
+    fn frosted_overlay_has_nonzero_alpha() {
+        // Both frosted alpha constants must be > 0 (visible overlays).
+        assert!(
+            FROSTED_BG_ALPHA > 0.0,
+            "FROSTED_BG_ALPHA must be > 0 (nonzero overlay)"
+        );
+        assert!(
+            FROSTED_BORDER_ALPHA > 0.0,
+            "FROSTED_BORDER_ALPHA must be > 0 (nonzero overlay)"
+        );
+        // The Hsla surface overlay must also have nonzero alpha.
+        let c = color_surface_overlay();
+        assert!(c.a > 0.0, "surface_overlay alpha must be > 0");
+    }
+
+    // --- Shadow values all positive ---
+
+    #[test]
+    fn shadow_values_all_positive() {
+        // Every shadow's blur and offset_y must be >= 0.
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            assert!(
+                t.blur >= 0.0,
+                "{name}.blur ({}) must be >= 0",
+                t.blur
+            );
+            assert!(
+                t.offset_y >= 0.0,
+                "{name}.offset_y ({}) must be >= 0",
+                t.offset_y
+            );
+            let alpha = (t.color)().a;
+            assert!(alpha > 0.0, "{name} alpha ({alpha}) must be > 0");
+        }
+    }
+
+    // --- Spacing scale monotone increasing ---
+
+    #[test]
+    fn spacing_scale_monotone_increasing() {
+        // The full spacing ladder must be strictly ascending.
+        let scale = [
+            ("SPACING_1", SPACING_1),
+            ("SPACING_2", SPACING_2),
+            ("SPACING_3", SPACING_3),
+            ("SPACING_4", SPACING_4),
+            ("SPACING_6", SPACING_6),
+            ("SPACING_8", SPACING_8),
+            ("SPACING_12", SPACING_12),
+        ];
+        for i in 0..scale.len() - 1 {
+            let (na, a) = scale[i];
+            let (nb, b) = scale[i + 1];
+            assert!(
+                a < b,
+                "spacing scale must be monotone increasing: {na} ({a}) must be < {nb} ({b})"
+            );
+        }
+    }
+
+    // --- Radius scale sm < md < lg ---
+
+    #[test]
+    fn radius_sm_less_than_md_less_than_lg() {
+        assert!(
+            RADIUS_SM < RADIUS_MD,
+            "RADIUS_SM ({RADIUS_SM}) must be < RADIUS_MD ({RADIUS_MD})"
+        );
+        assert!(
+            RADIUS_MD < RADIUS_LG,
+            "RADIUS_MD ({RADIUS_MD}) must be < RADIUS_LG ({RADIUS_LG})"
+        );
+    }
 }

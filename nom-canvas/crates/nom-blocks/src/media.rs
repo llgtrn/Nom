@@ -177,4 +177,49 @@ mod tests {
         let m = MediaBlock::new(entity, [0u8; 32], "video/mp4");
         assert_eq!(m.entity.kind, "MediaUnit");
     }
+
+    // ── wave AG-8: additional media tests ────────────────────────────────────
+
+    #[test]
+    fn media_mime_type_for_png() {
+        let entity = NomtuRef::new("m-png", "display", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "image/png");
+        assert_eq!(m.mime, "image/png");
+        assert!(m.is_image());
+    }
+
+    #[test]
+    fn media_mime_type_for_mp4() {
+        let entity = NomtuRef::new("m-mp4", "play", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "video/mp4");
+        assert_eq!(m.mime, "video/mp4");
+        assert!(m.is_video());
+    }
+
+    #[test]
+    fn media_dimensions_positive_when_set() {
+        let entity = NomtuRef::new("m-dim", "capture", "verb");
+        let mut m = MediaBlock::new(entity, [0u8; 32], "image/png");
+        m.width = Some(1920);
+        m.height = Some(1080);
+        assert!(m.width.unwrap() > 0);
+        assert!(m.height.unwrap() > 0);
+    }
+
+    #[test]
+    fn media_file_size_zero_for_empty_hash() {
+        // An all-zero blob hash signals an empty or placeholder blob
+        let entity = NomtuRef::new("m-empty", "placeholder", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "application/octet-stream");
+        assert_eq!(m.blob_hash, [0u8; 32]);
+    }
+
+    #[test]
+    fn media_block_is_image_gif() {
+        let entity = NomtuRef::new("m-gif", "animate", "verb");
+        let m = MediaBlock::new(entity, [0u8; 32], "image/gif");
+        assert!(m.is_image());
+        assert!(!m.is_video());
+        assert!(!m.is_audio());
+    }
 }

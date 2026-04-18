@@ -448,4 +448,74 @@ mod tests {
         assert_ne!(SemanticDataType::Integer, SemanticDataType::String);
         assert_ne!(SemanticDataType::Boolean, SemanticDataType::Float);
     }
+
+    // ── Wave AG new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn semantic_model_zero_columns_select_star() {
+        let m = SemanticModel::new("empty", "raw.empty");
+        assert_eq!(m.to_select_sql(), "SELECT * FROM raw.empty");
+    }
+
+    #[test]
+    fn semantic_registry_default_is_empty() {
+        let reg: SemanticRegistry = Default::default();
+        assert_eq!(reg.model_count(), 0);
+    }
+
+    #[test]
+    fn semantic_model_column_none_for_unknown() {
+        let m = SemanticModel::new("t", "raw.t");
+        assert!(m.column("does_not_exist").is_none());
+    }
+
+    #[test]
+    fn semantic_data_type_string_aliases() {
+        assert_eq!(SemanticDataType::parse("string"), Some(SemanticDataType::String));
+        assert_eq!(SemanticDataType::parse("text"), Some(SemanticDataType::String));
+        assert_eq!(SemanticDataType::parse("varchar"), Some(SemanticDataType::String));
+    }
+
+    #[test]
+    fn semantic_data_type_integer_aliases() {
+        assert_eq!(SemanticDataType::parse("int"), Some(SemanticDataType::Integer));
+        assert_eq!(SemanticDataType::parse("integer"), Some(SemanticDataType::Integer));
+        assert_eq!(SemanticDataType::parse("bigint"), Some(SemanticDataType::Integer));
+    }
+
+    #[test]
+    fn semantic_data_type_float_aliases() {
+        assert_eq!(SemanticDataType::parse("float"), Some(SemanticDataType::Float));
+        assert_eq!(SemanticDataType::parse("double"), Some(SemanticDataType::Float));
+        assert_eq!(SemanticDataType::parse("decimal"), Some(SemanticDataType::Float));
+    }
+
+    #[test]
+    fn semantic_data_type_bool_aliases() {
+        assert_eq!(SemanticDataType::parse("bool"), Some(SemanticDataType::Boolean));
+        assert_eq!(SemanticDataType::parse("boolean"), Some(SemanticDataType::Boolean));
+    }
+
+    #[test]
+    fn semantic_data_type_timestamp_aliases() {
+        assert_eq!(SemanticDataType::parse("timestamp"), Some(SemanticDataType::Timestamp));
+        assert_eq!(SemanticDataType::parse("datetime"), Some(SemanticDataType::Timestamp));
+    }
+
+    #[test]
+    fn semantic_model_sql_contains_source_table() {
+        let m = SemanticModel::new("snap", "dw.snap");
+        let sql = m.to_select_sql();
+        assert!(sql.contains("dw.snap"));
+    }
+
+    #[test]
+    fn semantic_model_multiple_columns_sql_comma_separated() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        m.add_column(SemanticColumn { name: "a".into(), data_type: SemanticDataType::Integer, description: None });
+        m.add_column(SemanticColumn { name: "b".into(), data_type: SemanticDataType::String, description: None });
+        m.add_column(SemanticColumn { name: "c".into(), data_type: SemanticDataType::Boolean, description: None });
+        let sql = m.to_select_sql();
+        assert!(sql.contains("a, b, c"), "columns must be comma-separated: {sql}");
+    }
 }

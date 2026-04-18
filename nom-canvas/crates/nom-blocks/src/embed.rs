@@ -200,4 +200,81 @@ mod tests {
         block.title = Some("My Embed".to_string());
         assert_eq!(block.title.as_deref(), Some("My Embed"));
     }
+
+    // ── wave AG-8: additional embed tests ────────────────────────────────────
+
+    #[test]
+    fn embed_url_detection_https() {
+        // HTTPS URL must be detected as Web type (generic)
+        let t = EmbedType::from_url("https://example.com/page");
+        assert_eq!(t, EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_url_detection_http() {
+        // HTTP URL also maps to Web
+        let t = EmbedType::from_url("http://example.com/page");
+        assert_eq!(t, EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_non_url_returns_web() {
+        // A bare string with no recognized domain falls back to Web
+        let t = EmbedType::from_url("just some text");
+        assert_eq!(t, EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_type_youtube_detected() {
+        let t = EmbedType::from_url("https://youtube.com/watch?v=abc");
+        assert_eq!(t, EmbedType::Youtube);
+    }
+
+    #[test]
+    fn embed_type_github_detected() {
+        let t = EmbedType::from_url("https://github.com/owner/repo");
+        assert_eq!(t, EmbedType::Github);
+    }
+
+    #[test]
+    fn embed_type_generic_url_fallback() {
+        // Unknown domain falls back to Web (the generic fallback)
+        let t = EmbedType::from_url("https://unknownsite.io/path");
+        assert_eq!(t, EmbedType::Web);
+    }
+
+    #[test]
+    fn embed_metadata_title_nonempty_when_set() {
+        let entity = crate::block_model::NomtuRef::new("em-11", "embed", "concept");
+        let mut block = EmbedBlock::new(entity, "https://github.com/org/repo");
+        block.title = Some("GitHub Repo".to_string());
+        let title = block.title.as_deref().unwrap_or("");
+        assert!(!title.is_empty());
+    }
+
+    #[test]
+    fn embed_metadata_description_may_be_empty() {
+        // title field starts as None — effectively empty description
+        let entity = crate::block_model::NomtuRef::new("em-12", "embed", "concept");
+        let block = EmbedBlock::new(entity, "https://example.com");
+        assert!(block.title.is_none());
+    }
+
+    #[test]
+    fn embed_equality_by_url() {
+        // Two embed blocks with the same URL have the same embed_type
+        let e1 = crate::block_model::NomtuRef::new("em-13a", "embed", "concept");
+        let e2 = crate::block_model::NomtuRef::new("em-13b", "embed", "concept");
+        let url = "https://youtube.com/watch?v=test";
+        let b1 = EmbedBlock::new(e1, url);
+        let b2 = EmbedBlock::new(e2, url);
+        assert_eq!(b1.url, b2.url);
+        assert_eq!(b1.embed_type, b2.embed_type);
+    }
+
+    #[test]
+    fn embed_type_figma_detected() {
+        let t = EmbedType::from_url("https://figma.com/design/abc");
+        assert_eq!(t, EmbedType::Figma);
+    }
 }

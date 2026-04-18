@@ -1615,4 +1615,70 @@ mod tests {
         assert_eq!(e.bottom.0, 7.5);
         assert_eq!(e.left.0, 7.5);
     }
+
+    // ------------------------------------------------------------------
+    // Wave AG: Additional types tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn hsla_pure_black_rgba() {
+        // Pure black: h=0, s=0, l=0, a=1 → (0, 0, 0, 1)
+        let (r, g, b, a) = Hsla::new(0.0, 0.0, 0.0, 1.0).to_rgba();
+        assert!((r - 0.0).abs() < 1e-6, "black R must be 0, got {r}");
+        assert!((g - 0.0).abs() < 1e-6, "black G must be 0, got {g}");
+        assert!((b - 0.0).abs() < 1e-6, "black B must be 0, got {b}");
+        assert!((a - 1.0).abs() < 1e-6, "black A must be 1, got {a}");
+    }
+
+    #[test]
+    fn hsla_pure_white_rgba() {
+        // Pure white: h=0, s=0, l=1, a=1 → (1, 1, 1, 1)
+        let (r, g, b, a) = Hsla::new(0.0, 0.0, 1.0, 1.0).to_rgba();
+        assert!((r - 1.0).abs() < 1e-6, "white R must be 1, got {r}");
+        assert!((g - 1.0).abs() < 1e-6, "white G must be 1, got {g}");
+        assert!((b - 1.0).abs() < 1e-6, "white B must be 1, got {b}");
+        assert!((a - 1.0).abs() < 1e-6, "white A must be 1, got {a}");
+    }
+
+    #[test]
+    fn hsla_transparent_rgba() {
+        // Transparent: any r/g/b, a=0
+        let (_, _, _, a) = Hsla::new(180.0, 0.5, 0.5, 0.0).to_rgba();
+        assert!((a - 0.0).abs() < 1e-6, "transparent A must be 0, got {a}");
+    }
+
+    #[test]
+    fn size_zero_is_empty() {
+        let s: Size<Pixels> = Size::zero();
+        assert_eq!(s.width.0, 0.0, "zero size width must be 0");
+        assert_eq!(s.height.0, 0.0, "zero size height must be 0");
+        assert!((s.area() - 0.0).abs() < 1e-6, "zero size area must be 0");
+    }
+
+    #[test]
+    fn point_add_and_subtract_inverse() {
+        let a = Point::new(Pixels(10.0), Pixels(20.0));
+        let b = Point::new(Pixels(3.0), Pixels(7.0));
+        let sum = a + b;
+        let back = sum - b;
+        assert_eq!(back.x, a.x, "add then subtract must return original x");
+        assert_eq!(back.y, a.y, "add then subtract must return original y");
+    }
+
+    #[test]
+    fn point_distance_to_same_point_is_zero() {
+        let p = Point::new(Pixels(5.0), Pixels(5.0));
+        assert!((p.distance(p) - 0.0).abs() < 1e-6, "distance from point to itself must be 0");
+    }
+
+    #[test]
+    fn size_add_two_sizes_via_bounds() {
+        // Size does not implement Add, but we can verify width/height separately.
+        let s1 = Size::new(Pixels(10.0), Pixels(20.0));
+        let s2 = Size::new(Pixels(5.0), Pixels(8.0));
+        let combined_w = s1.width + s2.width;
+        let combined_h = s1.height + s2.height;
+        assert_eq!(combined_w, Pixels(15.0), "combined width");
+        assert_eq!(combined_h, Pixels(28.0), "combined height");
+    }
 }

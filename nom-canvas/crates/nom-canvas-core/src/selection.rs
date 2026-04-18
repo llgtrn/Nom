@@ -1119,4 +1119,151 @@ mod tests {
             assert!(sel.contains(id), "bulk-added id {id} must be present");
         }
     }
+
+    // ── additional selection tests (wave AG) ─────────────────────────────────
+
+    #[test]
+    fn selection_add_and_contains() {
+        let mut sel = Selection::empty();
+        sel.add(77);
+        assert!(sel.contains(77), "must contain newly added id");
+        assert!(!sel.contains(78), "must not contain unadded id");
+    }
+
+    #[test]
+    fn selection_remove_item() {
+        let mut sel = Selection::empty();
+        sel.add(10);
+        sel.add(20);
+        sel.remove(10);
+        assert!(!sel.contains(10), "removed id must not be present");
+        assert!(sel.contains(20), "non-removed id must still be present");
+        assert_eq!(sel.len(), 1);
+    }
+
+    #[test]
+    fn selection_clear_empties() {
+        let mut sel = Selection::empty();
+        for id in [1u64, 2, 3, 4, 5] {
+            sel.add(id);
+        }
+        sel.clear();
+        assert!(sel.is_empty(), "selection must be empty after clear");
+        assert_eq!(sel.len(), 0);
+    }
+
+    #[test]
+    fn selection_count_correct() {
+        let mut sel = Selection::empty();
+        assert_eq!(sel.len(), 0);
+        sel.add(1);
+        assert_eq!(sel.len(), 1);
+        sel.add(2);
+        sel.add(3);
+        assert_eq!(sel.len(), 3);
+        sel.remove(2);
+        assert_eq!(sel.len(), 2);
+    }
+
+    #[test]
+    fn selection_toggle_adds_then_removes() {
+        let mut sel = Selection::empty();
+        // Toggle on.
+        sel.add(50);
+        assert!(sel.contains(50), "toggle-on must add the id");
+        // Toggle off.
+        if sel.contains(50) {
+            sel.remove(50);
+        }
+        assert!(!sel.contains(50), "toggle-off must remove the id");
+    }
+
+    #[test]
+    fn selection_bounding_box_single_element() {
+        let bounds = vec![ElementBounds { id: 1, min: [10.0, 20.0], max: [50.0, 60.0] }];
+        let mut sel = Selection::empty();
+        sel.add(1);
+        let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
+        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x - 10.0).abs() < 1e-5);
+        assert!((max_y - 60.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn selection_bounding_box_multiple_elements() {
+        let bounds = vec![
+            ElementBounds { id: 1, min: [0.0, 0.0], max: [10.0, 10.0] },
+            ElementBounds { id: 2, min: [20.0, 30.0], max: [50.0, 70.0] },
+        ];
+        let mut sel = Selection::empty();
+        sel.add(1);
+        sel.add(2);
+        let selected: Vec<&ElementBounds> = bounds.iter().filter(|b| sel.contains(b.id)).collect();
+        let min_x = selected.iter().map(|b| b.min[0]).fold(f32::INFINITY, f32::min);
+        let max_x = selected.iter().map(|b| b.max[0]).fold(f32::NEG_INFINITY, f32::max);
+        let min_y = selected.iter().map(|b| b.min[1]).fold(f32::INFINITY, f32::min);
+        let max_y = selected.iter().map(|b| b.max[1]).fold(f32::NEG_INFINITY, f32::max);
+        assert!((min_x).abs() < 1e-5);
+        assert!((max_x - 50.0).abs() < 1e-5);
+        assert!((min_y).abs() < 1e-5);
+        assert!((max_y - 70.0).abs() < 1e-5);
+    }
+
+    #[test]
+    fn selection_deselect_all() {
+        let mut sel = Selection::empty();
+        for id in [10u64, 20, 30, 40] {
+            sel.add(id);
+        }
+        sel.clear();
+        assert!(sel.is_empty());
+        for id in [10u64, 20, 30, 40] {
+            assert!(!sel.contains(id), "id {id} must not remain after deselect_all");
+        }
+    }
+
+    #[test]
+    fn selection_select_all_from_list() {
+        let all_ids = [1u64, 5, 10, 15, 20];
+        let mut sel = Selection::empty();
+        for &id in &all_ids {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), all_ids.len());
+        for &id in &all_ids {
+            assert!(sel.contains(id), "id {id} must be in selection after select_all");
+        }
+    }
+
+    #[test]
+    fn selection_is_empty_initially() {
+        let sel = Selection::empty();
+        assert!(sel.is_empty(), "fresh selection must be empty");
+        assert_eq!(sel.len(), 0);
+    }
+
+    #[test]
+    fn selection_contains_after_remove_false() {
+        let mut sel = Selection::empty();
+        sel.add(99);
+        sel.remove(99);
+        assert!(!sel.contains(99), "removed id must not be contained");
+    }
+
+    #[test]
+    fn selection_multi_select_append() {
+        // Starting with one selection, add more without clearing.
+        let mut sel = Selection::empty();
+        sel.add(1);
+        // Append additional ids.
+        for id in [2u64, 3, 4] {
+            sel.add(id);
+        }
+        assert_eq!(sel.len(), 4, "all 4 ids must be selected");
+        assert!(sel.contains(1), "original id must still be selected");
+        for id in [2u64, 3, 4] {
+            assert!(sel.contains(id), "appended id {id} must be selected");
+        }
+    }
 }

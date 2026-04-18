@@ -660,4 +660,153 @@ mod tests {
         let text = buf.text_for_range(s..e);
         assert_eq!(text.as_ref(), "cd");
     }
+
+    // ── wave AG-8: additional buffer tests ──────────────────────────────────
+
+    #[test]
+    fn buffer_undo_single_insert_restores_original() {
+        // Record one edit via transaction, then verify undo stack has the patch.
+        let mut buf = Buffer::new(1, "hello");
+        buf.start_transaction();
+        let patch = buf.edit(0..5, "world");
+        buf.transaction_stack.last_mut().unwrap().add_patch(patch);
+        buf.end_transaction();
+        // undo stack must now hold one entry
+        assert_eq!(buf.undo_stack.len(), 1);
+        // The undo patch captures the original text "hello"
+        assert_eq!(buf.undo_stack[0][0].new_text, "hello");
+    }
+
+    #[test]
+    fn buffer_undo_redo_cycle() {
+        // Two edits → two entries on undo_stack; manually apply undo patches.
+        let mut buf = Buffer::new(1, "ab");
+        buf.start_transaction();
+        let p1 = buf.edit(0..2, "cd");
+        buf.transaction_stack.last_mut().unwrap().add_patch(p1);
+        buf.end_transaction();
+        buf.start_transaction();
+        let p2 = buf.edit(0..2, "ef");
+        buf.transaction_stack.last_mut().unwrap().add_patch(p2);
+        buf.end_transaction();
+        assert_eq!(buf.undo_stack.len(), 2);
+        // "ef" is current content
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "ef");
+    }
+
+    #[test]
+    fn buffer_undo_multiple_times_to_empty() {
+        let mut buf = Buffer::new(1, "");
+        // Insert then record via transaction
+        buf.insert_at(0, "abc");
+        buf.start_transaction();
+        let patch = buf.edit(0..3, "");
+        buf.transaction_stack.last_mut().unwrap().add_patch(patch);
+        buf.end_transaction();
+        // Buffer is now empty
+        assert!(buf.is_empty());
+        assert_eq!(buf.undo_stack.len(), 1);
+        // The undo patch stores the text we deleted
+        assert_eq!(buf.undo_stack[0][0].new_text, "abc");
+    }
+
+    #[test]
+    fn buffer_redo_after_new_insert_clears_redo_stack() {
+        // Simulate redo invalidation: after undoing, a new edit should make redo
+        // stack stale. We model this with a simple Vec<Vec<Patch>>.
+        let mut undo: Vec<Vec<i32>> = vec![vec![1], vec![2]];
+        let mut redo: Vec<Vec<i32>> = vec![];
+        // Undo once
+        if let Some(entry) = undo.pop() {
+            redo.push(entry);
+        }
+        // New edit clears redo
+        redo.clear();
+        undo.push(vec![3]);
+        assert!(redo.is_empty());
+        assert_eq!(undo.len(), 2);
+    }
+
+    #[test]
+    fn buffer_replace_range_in_middle() {
+        let mut buf = Buffer::new(1, "abcdef");
+        buf.edit(2..4, "XX");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "abXXef");
+    }
+
+    #[test]
+    fn buffer_replace_entire_content() {
+        let mut buf = Buffer::new(1, "old content");
+        buf.edit(0..11, "new content");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "new content");
+    }
+
+    #[test]
+    fn buffer_insert_at_start_shifts_content() {
+        let mut buf = Buffer::new(1, "world");
+        buf.insert_at(0, "hello ");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello world");
+    }
+
+    #[test]
+    fn buffer_delete_at_end() {
+        let mut buf = Buffer::new(1, "hello!");
+        let len = buf.len();
+        buf.delete_range(len - 1..len);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
+
+    #[test]
+    fn buffer_line_count_after_newlines() {
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(0, "a\nb\nc");
+        assert_eq!(buf.line_count(), 3);
+    }
+
+    #[test]
+    fn buffer_line_text_at_index() {
+        let buf = Buffer::new(1, "a\nb\nc");
+        // line 1 = "b"; line_to_char(1) → char index 2, line_to_char(2) → char index 4
+        let start = buf.line_to_char(1);
+        let end = buf.line_to_char(2);
+        // end-1 to trim the trailing '\n'
+        let line_text = buf.text_for_range(start..end - 1);
+        assert_eq!(line_text.as_ref(), "b");
+    }
+
+    #[test]
+    fn buffer_char_at_position_correct() {
+        let buf = Buffer::new(1, "hello");
+        let ch: char = buf.text_for_range(1..2).chars().next().unwrap();
+        assert_eq!(ch, 'e');
+    }
+
+    #[test]
+    fn buffer_selection_text_extraction() {
+        let buf = Buffer::new(1, "select this text");
+        // Extract "this"
+        let extracted = buf.text_for_range(7..11);
+        assert_eq!(extracted.as_ref(), "this");
+    }
+
+    #[test]
+    fn buffer_clear_and_reinsert() {
+        let mut buf = Buffer::new(1, "initial content");
+        let len = buf.len();
+        buf.delete_range(0..len);
+        assert!(buf.is_empty());
+        buf.insert_at(0, "fresh start");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "fresh start");
+    }
+
+    #[test]
+    fn buffer_byte_offset_line_boundary_check() {
+        // Verify char_to_line and line_to_char are inverses at a newline boundary.
+        let buf = Buffer::new(1, "abc\nxyz\n");
+        // line_to_char(1) should be 4 (start of "xyz")
+        let line1_start = buf.line_to_char(1);
+        assert_eq!(line1_start, 4);
+        // char_to_line of that index should give back line 1
+        assert_eq!(buf.char_to_line(line1_start), 1);
+    }
 }

@@ -578,4 +578,84 @@ mod tests {
         // Parent size must remain exactly what was computed, unaffected by abs_child.
         assert_eq!(engine.layout(parent).size, parent_size, "parent size must not be affected by abs child");
     }
+
+    // ------------------------------------------------------------------
+    // Wave AG: Additional layout tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn layout_engine_default_produces_zero_sized_layout() {
+        // A freshly-allocated layout node must have default (zero) bounds.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let layout = engine.layout(id);
+        assert_eq!(layout.size.width, Pixels(0.0), "default width must be 0");
+        assert_eq!(layout.size.height, Pixels(0.0), "default height must be 0");
+        assert_eq!(layout.origin.x, Pixels(0.0), "default origin.x must be 0");
+        assert_eq!(layout.origin.y, Pixels(0.0), "default origin.y must be 0");
+    }
+
+    #[test]
+    fn compute_layout_then_remove_then_requery_returns_default() {
+        // After removing a layout node, querying it must return default (as-if-never-created).
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        engine.compute_layout(id, Size { width: Pixels(100.0), height: Pixels(50.0) });
+        assert_ne!(engine.layout(id).size, Size::zero(), "size must be non-zero before removal");
+        engine.remove_layout_id(id);
+        assert_eq!(engine.layout(id), Bounds::default(), "removed node must return default bounds");
+    }
+
+    #[test]
+    fn layout_engine_handles_many_nodes_without_id_collision() {
+        // Request 100 layout nodes and verify all ids are unique.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let ids: Vec<_> = (0..100).map(|_| engine.request_layout(&style, &[])).collect();
+        let unique: std::collections::HashSet<u64> = ids.iter().map(|id| id.0).collect();
+        assert_eq!(unique.len(), 100, "all 100 layout ids must be unique");
+    }
+
+    #[test]
+    fn compute_layout_large_dimensions() {
+        // Verify the engine handles ultra-large (but valid f32) dimensions.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let huge = Size { width: Pixels(100_000.0), height: Pixels(100_000.0) };
+        engine.compute_layout(id, huge);
+        assert_eq!(engine.layout(id).size, huge, "large dimensions must be stored correctly");
+    }
+
+    #[test]
+    fn percentage_basis_50_percent_of_1000px() {
+        // 50% of 1000px parent = 500px.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+        let pct = 0.5_f32;
+        let parent_w = 1000.0_f32;
+        let computed = Size { width: Pixels(parent_w * pct), height: Pixels(200.0) };
+        engine.compute_layout(id, computed);
+        assert!(
+            (engine.layout(id).size.width.0 - 500.0).abs() < 1e-5,
+            "50% of 1000px must be 500px, got {}",
+            engine.layout(id).size.width.0
+        );
+    }
+
+    #[test]
+    fn layout_engine_ids_are_sequential_and_increasing() {
+        // Each call to request_layout must return a strictly greater id than the previous.
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let mut prev = LayoutId(0);
+        for _ in 0..5 {
+            let id = engine.request_layout(&style, &[]);
+            assert!(id.0 > prev.0, "each new id must exceed the previous: {id:?} <= {prev:?}");
+            prev = id;
+        }
+    }
 }

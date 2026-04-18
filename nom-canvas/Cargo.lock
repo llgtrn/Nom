@@ -1163,10 +1163,6 @@ dependencies = [
 [[package]]
 name = "nom-cli"
 version = "0.1.0"
-dependencies = [
- "nom-panels",
- "tokio",
-]
 
 [[package]]
 name = "nom-collab"
@@ -1196,13 +1192,11 @@ dependencies = [
 name = "nom-compose"
 version = "0.1.0"
 dependencies = [
- "crossbeam-channel",
  "nom-blocks",
  "nom-graph",
  "nom-intent",
  "serde_json",
  "sha2",
- "tokio",
 ]
 
 [[package]]
@@ -1265,7 +1259,6 @@ dependencies = [
 name = "nom-graph"
 version = "0.1.0"
 dependencies = [
- "crossbeam-channel",
  "lru",
  "nom-blocks",
  "nom-memoize",

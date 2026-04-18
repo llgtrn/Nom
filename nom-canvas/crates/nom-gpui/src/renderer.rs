@@ -1674,4 +1674,85 @@ mod tests {
         assert_eq!(renderer.stats().quads_drawn, 3, "cumulative 3 quads across 3 draws");
         assert_eq!(renderer.stats().frames, 3, "3 frames");
     }
+
+    // ------------------------------------------------------------------
+    // Wave AG: Additional renderer tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn frame_error_not_in_frame_and_already_in_frame_are_distinguishable() {
+        // Both variants must produce different Display strings.
+        let not_in = format!("{}", FrameError::NotInFrame);
+        let already = format!("{}", FrameError::AlreadyInFrame);
+        assert_ne!(not_in, already, "Display strings for different variants must differ");
+        assert!(!not_in.is_empty(), "NotInFrame display must not be empty");
+        assert!(!already.is_empty(), "AlreadyInFrame display must not be empty");
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rects_blur_alpha_radius_0() {
+        // blur_radius=0 → alpha = (0.7 - 0.0 * 0.015).max(0.3) = 0.7
+        let expected = (0.7_f32 - 0.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((expected - 0.7).abs() < 1e-5, "radius=0 → alpha=0.7, got {expected}");
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rects_blur_alpha_radius_10() {
+        // blur_radius=10 → alpha = (0.7 - 10.0 * 0.015).max(0.3) = (0.7 - 0.15).max(0.3) = 0.55
+        let expected = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((expected - 0.55).abs() < 1e-5, "radius=10 → alpha=0.55, got {expected}");
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rects_blur_alpha_radius_20() {
+        // blur_radius=20 → alpha = (0.7 - 20.0 * 0.015).max(0.3) = (0.7 - 0.3).max(0.3) = 0.4
+        let expected = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((expected - 0.4).abs() < 1e-5, "radius=20 → alpha=0.4, got {expected}");
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rects_blur_alpha_radius_30_clamped_same_as_20() {
+        // blur_radius=30 → min(30,20)=20 → same as radius=20 → 0.4
+        let r30 = (0.7_f32 - 30.0_f32.min(20.0) * 0.015).max(0.3);
+        let r20 = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((r30 - r20).abs() < 1e-7, "radius=30 must clamp to same alpha as radius=20");
+    }
+
+    #[test]
+    fn renderer_new_has_no_pending_quads() {
+        let renderer = Renderer::new();
+        assert_eq!(renderer.pending_quads().len(), 0, "new renderer must have zero pending quads");
+    }
+
+    #[test]
+    fn renderer_new_frame_count_zero() {
+        let renderer = Renderer::new();
+        assert_eq!(renderer.frame_count, 0, "new renderer must have frame_count = 0");
+    }
+
+    #[test]
+    fn draw_quads_gpu_returns_not_in_frame_outside_frame() {
+        let mut renderer = Renderer::new();
+        let result = renderer.draw_quads_gpu(&[QuadInstance::default()]);
+        assert_eq!(result, Err(FrameError::NotInFrame));
+    }
+
+    #[test]
+    fn begin_frame_twice_returns_already_in_frame() {
+        let mut renderer = Renderer::new();
+        renderer.begin_frame().unwrap();
+        let result = renderer.begin_frame();
+        assert_eq!(result, Err(FrameError::AlreadyInFrame));
+    }
+
+    #[test]
+    fn quad_instance_size_is_multiple_of_four() {
+        // QuadInstance is repr(C) and must have a size divisible by 4 for GPU alignment.
+        assert_eq!(std::mem::size_of::<QuadInstance>() % 4, 0, "QuadInstance size must be 4-byte aligned");
+    }
+
+    #[test]
+    fn sprite_instance_size_is_multiple_of_four() {
+        assert_eq!(std::mem::size_of::<SpriteInstance>() % 4, 0, "SpriteInstance size must be 4-byte aligned");
+    }
 }

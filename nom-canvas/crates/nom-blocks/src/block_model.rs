@@ -263,4 +263,125 @@ mod tests {
             Some("second")
         );
     }
+
+    // ── wave AG-8: additional block_model tests ──────────────────────────────
+
+    #[test]
+    fn block_model_eq_and_hash_consistent() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let r1 = NomtuRef::new("id1", "fetch", "verb");
+        let r2 = NomtuRef::new("id1", "fetch", "verb");
+        assert_eq!(r1, r2);
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r1.hash(&mut h1);
+        r2.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn block_model_nomturef_eq_by_value() {
+        let a = NomtuRef::new("same-id", "plan", "concept");
+        let b = NomtuRef::new("same-id", "plan", "concept");
+        assert_eq!(a, b);
+        let c = NomtuRef::new("other-id", "plan", "concept");
+        assert_ne!(a, c);
+    }
+
+    #[test]
+    fn block_model_nomturef_hash_stable() {
+        use std::collections::hash_map::DefaultHasher;
+        use std::hash::{Hash, Hasher};
+        let r = NomtuRef::new("stable", "word", "kind");
+        let mut h1 = DefaultHasher::new();
+        let mut h2 = DefaultHasher::new();
+        r.hash(&mut h1);
+        r.hash(&mut h2);
+        assert_eq!(h1.finish(), h2.finish());
+    }
+
+    #[test]
+    fn block_model_new_assigns_unique_ids() {
+        let dict = StubDictReader::new();
+        let b1 = BlockModel::insert(NomtuRef::new("e1", "fetch", "verb"), "affine:paragraph", &dict);
+        let b2 = BlockModel::insert(NomtuRef::new("e2", "store", "verb"), "affine:paragraph", &dict);
+        assert_ne!(b1.id, b2.id, "each insert() must produce a unique id");
+    }
+
+    #[test]
+    fn block_model_kind_str_nonempty() {
+        let entity = NomtuRef::new("e1", "compose", "verb");
+        assert!(!entity.kind.is_empty());
+        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        assert!(!block.entity.kind.is_empty());
+    }
+
+    #[test]
+    fn block_model_entity_ref_present() {
+        let entity = NomtuRef::new("eid", "plan", "concept");
+        let block = BlockModel::new("b1", entity, "affine:note");
+        // entity must have non-empty id and word
+        assert!(!block.entity.id.is_empty());
+        assert!(!block.entity.word.is_empty());
+    }
+
+    #[test]
+    fn block_model_default_kind_is_known() {
+        use crate::dict_reader::DictReader;
+        let reader = StubDictReader::with_kinds(&["verb", "concept", "noun"]);
+        let entity = NomtuRef::new("e1", "render", "verb");
+        let block = BlockModel::insert(entity, "affine:paragraph", &reader);
+        // kind should be a known kind in the reader
+        assert!(reader.is_known_kind(&block.entity.kind));
+    }
+
+    #[test]
+    fn block_model_serialization_round_trip() {
+        let entity = NomtuRef::new("ser-01", "serialize", "verb");
+        let block = BlockModel::new("blk-ser", entity, "affine:paragraph");
+        let json = serde_json::to_string(&block).expect("serialize must not fail");
+        let restored: BlockModel = serde_json::from_str(&json).expect("deserialize must not fail");
+        assert_eq!(restored.id, "blk-ser");
+        assert_eq!(restored.entity.id, "ser-01");
+        assert_eq!(restored.entity.word, "serialize");
+        assert_eq!(restored.entity.kind, "verb");
+        assert_eq!(restored.flavour, "affine:paragraph");
+    }
+
+    #[test]
+    fn block_model_clone_equal_to_original() {
+        let entity = NomtuRef::new("e-clone", "clone", "verb");
+        let block = BlockModel::new("b-clone", entity, "affine:note");
+        let cloned = block.clone();
+        assert_eq!(cloned.id, block.id);
+        assert_eq!(cloned.entity.id, block.entity.id);
+        assert_eq!(cloned.entity.word, block.entity.word);
+        assert_eq!(cloned.flavour, block.flavour);
+    }
+
+    #[test]
+    fn block_model_nomturef_word_different_not_equal() {
+        let r1 = NomtuRef::new("id", "fetch", "verb");
+        let r2 = NomtuRef::new("id", "store", "verb");
+        assert_ne!(r1, r2);
+    }
+
+    #[test]
+    fn block_model_multiple_slots_stored() {
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        block.set_slot("name", crate::slot::SlotValue::Text("Alice".into()));
+        block.set_slot("score", crate::slot::SlotValue::Number(42.0));
+        assert_eq!(block.slots.len(), 2);
+        assert!(block.get_slot("name").is_some());
+        assert!(block.get_slot("score").is_some());
+        assert!(block.get_slot("missing").is_none());
+    }
+
+    #[test]
+    fn block_model_flavour_stored_exactly() {
+        let entity = NomtuRef::new("e1", "w", "verb");
+        let block = BlockModel::new("b1", entity, "affine:code");
+        assert_eq!(block.flavour, "affine:code");
+    }
 }

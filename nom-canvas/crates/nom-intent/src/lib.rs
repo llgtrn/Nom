@@ -2386,4 +2386,245 @@ mod tests {
         let steps2 = react_chain("alpha", evidence, 0);
         assert!(steps2.is_empty());
     }
+
+    // ── WAVE-AG AGENT-10 additions ─────────────────────────────────────────────
+
+    #[test]
+    fn intent_chain_0_steps_ok() {
+        let result = react_chain("hypothesis", &["evidence"], 0);
+        assert!(result.is_empty(), "0 steps must return empty Vec");
+    }
+
+    #[test]
+    fn intent_chain_1_step_ok() {
+        let result = react_chain("target", &["target"], 1);
+        assert_eq!(result.len(), 1, "1 step must return Vec of length 1");
+        assert!((0.0..=1.0).contains(&result[0].score));
+    }
+
+    #[test]
+    fn intent_chain_10_steps_ok() {
+        // react_chain caps steps at min(max_steps, evidence.len()), so provide 10 evidence items.
+        let evidence: Vec<&str> = ["e0","e1","e2","e3","e4","e5","e6","e7","e8","e9"].into();
+        let result = react_chain("word", &evidence, 10);
+        assert_eq!(result.len(), 10, "10 steps must return Vec of length 10");
+        for step in &result {
+            assert!((0.0..=1.0).contains(&step.score));
+        }
+    }
+
+    #[test]
+    fn intent_chain_500_items_batch_ok() {
+        // 500 hypotheses ranked — no crash, correct count.
+        let hypotheses: Vec<String> = (0..500).map(|i| format!("hyp_{i}")).collect();
+        let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
+        let ranked = rank_hypotheses(&refs, &["hyp_0"]);
+        assert_eq!(ranked.len(), 500);
+    }
+
+    #[test]
+    fn intent_react_loop_terminates() {
+        // react_chain caps at evidence.len(); provide 50 evidence items.
+        let ev: Vec<String> = (0..50).map(|i| format!("ev{i}")).collect();
+        let ev_refs: Vec<&str> = ev.iter().map(|s| s.as_str()).collect();
+        let steps = react_chain("terminate", &ev_refs, 50);
+        assert_eq!(steps.len(), 50);
+    }
+
+    #[test]
+    fn intent_react_loop_max_iterations_enforced() {
+        // Requesting max_steps=5 with 5 evidence items must produce exactly 5 steps.
+        let evidence = &["a", "b", "c", "d", "e"];
+        let steps = react_chain("max", evidence, 5);
+        assert_eq!(steps.len(), 5, "max_steps must be the hard upper bound");
+    }
+
+    #[test]
+    fn intent_resolve_empty_query_returns_empty() {
+        let ranked = rank_hypotheses(&[], &["evidence"]);
+        assert!(ranked.is_empty(), "empty hypotheses slice must return empty");
+    }
+
+    #[test]
+    fn intent_resolve_single_word_query() {
+        let ranked = rank_hypotheses(&["hello"], &["hello"]);
+        assert_eq!(ranked.len(), 1);
+        assert!(ranked[0].score > 0.0, "single matching word must yield positive score");
+    }
+
+    #[test]
+    fn intent_resolve_multi_word_query() {
+        let ranked = rank_hypotheses(&["alpha beta gamma"], &["alpha", "beta"]);
+        assert_eq!(ranked.len(), 1);
+        assert!(ranked[0].score > 0.0);
+    }
+
+    #[test]
+    fn intent_score_above_threshold_included() {
+        // rank_hypotheses returns all items including high-scoring ones.
+        let ranked = rank_hypotheses(&["exact match"], &["exact match"]);
+        assert_eq!(ranked.len(), 1);
+        assert!(ranked[0].score > 0.0);
+    }
+
+    #[test]
+    fn intent_score_below_threshold_excluded_by_sort() {
+        // Zero-scoring item is last after ranking.
+        let ranked = rank_hypotheses(&["zero overlap zzz", "match"], &["match"]);
+        assert_eq!(ranked.len(), 2);
+        assert_eq!(ranked[ranked.len() - 1].score, 0.0);
+    }
+
+    #[test]
+    fn intent_top_k_limits_results_via_best_hypothesis() {
+        // best_hypothesis returns only the top result.
+        let result = best_hypothesis(&["a b c", "x y z", "a"], &["a b c"]);
+        assert!(result.is_some());
+        assert_eq!(result.unwrap().hypothesis, "a b c");
+    }
+
+    #[test]
+    fn intent_dedup_same_word_not_inflated() {
+        // Duplicate evidence words must not inflate score beyond 1.0.
+        let score = classify_with_react("word", &["word", "word", "word"]);
+        assert!((0.0..=1.0).contains(&score));
+    }
+
+    #[test]
+    fn intent_fallback_when_no_match() {
+        // best_hypothesis on non-overlapping returns Some (lowest scorer) — length 1 input.
+        let best = best_hypothesis(&["zzz_unique"], &["aaa_different"]);
+        assert!(best.is_some(), "best_hypothesis must always return Some when input is non-empty");
+        assert_eq!(best.unwrap().score, 0.0);
+    }
+
+    #[test]
+    fn intent_score_deterministic_for_same_input() {
+        // Same hypothesis + evidence must always yield the same score.
+        let s1 = classify_with_react("hello world", &["hello", "world"]);
+        let s2 = classify_with_react("hello world", &["hello", "world"]);
+        assert_eq!(s1, s2, "classify_with_react must be deterministic");
+    }
+
+    #[test]
+    fn intent_chain_step_thought_nonempty() {
+        let steps = react_chain("my_hypothesis", &["my", "hypothesis"], 3);
+        for step in &steps {
+            assert!(!step.thought.is_empty(), "ReactStep.thought must not be empty");
+        }
+    }
+
+    #[test]
+    fn intent_chain_step_action_nonempty() {
+        let steps = react_chain("ev1", &["ev1", "ev2"], 2);
+        assert_eq!(steps.len(), 2);
+        for step in &steps {
+            assert!(!step.action.is_empty(), "ReactStep.action must not be empty");
+        }
+    }
+
+    #[test]
+    fn intent_ranked_first_score_gte_last_score() {
+        let hypotheses = &["perfect match", "partial", "nothing_at_all_xyz"];
+        let ranked = rank_hypotheses(hypotheses, &["perfect match"]);
+        assert!(ranked[0].score >= ranked[ranked.len() - 1].score, "ranked output must be descending by score");
+    }
+
+    #[test]
+    fn intent_interrupt_signal_cancel_stops_chain() {
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let steps = react_chain_interruptible("hyp", &["hyp"], 100, &signal);
+        assert!(steps.is_empty(), "cancelled signal must stop chain immediately");
+    }
+
+    #[test]
+    fn intent_score_exact_full_overlap_positive() {
+        let score = classify_with_react("alpha beta", &["alpha", "beta"]);
+        assert!(score > 0.0, "full overlap must yield positive score");
+    }
+
+    #[test]
+    fn intent_score_no_overlap_is_zero() {
+        let score = classify_with_react("aaa_unique", &["bbb_unique_xyz"]);
+        assert_eq!(score, 0.0, "no overlap must yield score 0.0");
+    }
+
+    #[test]
+    fn intent_best_hypothesis_returns_highest_score() {
+        let hypotheses = &["direct match", "indirect", "unrelated_xyz"];
+        let best = best_hypothesis(hypotheses, &["direct match"]).unwrap();
+        let ranked = rank_hypotheses(hypotheses, &["direct match"]);
+        assert_eq!(best.score, ranked[0].score, "best_hypothesis must equal ranked[0]");
+    }
+
+    #[test]
+    fn intent_rank_20_items_all_present() {
+        let hypotheses: Vec<String> = (0..20).map(|i| format!("item_{i}")).collect();
+        let refs: Vec<&str> = hypotheses.iter().map(|s| s.as_str()).collect();
+        let ranked = rank_hypotheses(&refs, &["item_0"]);
+        assert_eq!(ranked.len(), 20);
+        for h in &hypotheses {
+            assert!(ranked.iter().any(|r| r.hypothesis == *h), "'{h}' must be in ranked output");
+        }
+    }
+
+    #[test]
+    fn intent_chain_interruptible_without_cancel_runs_all_steps() {
+        // Must provide enough evidence items for 5 steps.
+        let signal = InterruptSignal::new();
+        let evidence = &["a", "b", "c", "d", "e"];
+        let steps = react_chain_interruptible("word", evidence, 5, &signal);
+        assert_eq!(steps.len(), 5, "non-cancelled signal must run all steps");
+    }
+
+    #[test]
+    fn intent_scored_hypothesis_fields_accessible() {
+        let ranked = rank_hypotheses(&["test_word"], &["test_word"]);
+        let sh = &ranked[0];
+        // Fields must be accessible and have correct types.
+        let _: &str = sh.hypothesis.as_str();
+        let _: f32 = sh.score;
+        let _: usize = sh.step_count;
+    }
+
+    #[test]
+    fn intent_react_step_fields_accessible() {
+        let steps = react_chain("word", &["word"], 1);
+        let step = &steps[0];
+        let _: &str = step.thought.as_str();
+        let _: &str = step.action.as_str();
+        let _: &str = step.observation.as_str();
+        let _: f32 = step.score;
+    }
+
+    #[test]
+    fn intent_rank_5_items_descending_order() {
+        let hypotheses = &["perfect match", "good match", "ok match", "poor match", "no match xyz"];
+        let ranked = rank_hypotheses(hypotheses, &["perfect match"]);
+        assert_eq!(ranked.len(), 5);
+        // Scores must be non-increasing.
+        for w in ranked.windows(2) {
+            assert!(w[0].score >= w[1].score, "ranked output must be descending");
+        }
+    }
+
+    #[test]
+    fn intent_classify_returns_f32() {
+        let s: f32 = classify_with_react("test", &["test"]);
+        assert!(s.is_finite(), "classify_with_react must return finite f32");
+    }
+
+    #[test]
+    fn intent_best_hypothesis_none_on_empty() {
+        let result = best_hypothesis(&[], &["evidence"]);
+        assert!(result.is_none(), "best_hypothesis on empty input must return None");
+    }
+
+    #[test]
+    fn intent_scored_hypothesis_step_count_matches_evidence() {
+        let evidence = &["a", "b", "c"];
+        let ranked = rank_hypotheses(&["a"], evidence);
+        assert_eq!(ranked[0].step_count, 3, "step_count must equal evidence.len()");
+    }
 }

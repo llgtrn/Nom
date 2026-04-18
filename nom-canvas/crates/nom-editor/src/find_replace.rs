@@ -814,4 +814,68 @@ mod tests {
         state.find_in_text("hello HELLO Hello hElLo");
         assert_eq!(state.matches.len(), 4);
     }
+
+    // ── wave AG-8: additional find/replace tests ─────────────────────────────
+
+    #[test]
+    fn find_case_sensitive_exact_match() {
+        let mut state = FindState::new();
+        state.query = "Nom".to_string();
+        state.case_sensitive = true;
+        state.find_in_text("nom Nom NOM");
+        assert_eq!(state.matches.len(), 1);
+        assert_eq!(state.matches[0].start, 4);
+    }
+
+    #[test]
+    fn find_case_insensitive_match() {
+        let mut state = FindState::new();
+        state.query = "nom".to_string();
+        state.case_sensitive = false;
+        state.find_in_text("nom Nom NOM");
+        assert_eq!(state.matches.len(), 3);
+    }
+
+    #[test]
+    fn find_no_match_returns_empty() {
+        let mut state = FindState::new();
+        state.query = "nonexistent".to_string();
+        state.find_in_text("hello world goodbye");
+        assert!(state.matches.is_empty());
+    }
+
+    #[test]
+    fn replace_first_occurrence_only() {
+        let mut state = FindState::new();
+        state.query = "cat".to_string();
+        state.find_in_text("cat and cat");
+        let mut text = "cat and cat".to_string();
+        state.current_match = 0;
+        let replaced = state.replace_current(&mut text, "dog");
+        assert!(replaced);
+        // Only the first "cat" is replaced
+        assert!(text.starts_with("dog"));
+        assert!(text.contains("cat"), "second cat still present");
+    }
+
+    #[test]
+    fn replace_all_occurrences() {
+        // replace_all via String::replace
+        let original = "cat and cat and cat";
+        let result = original.replace("cat", "dog");
+        assert_eq!(result, "dog and dog and dog");
+        assert_eq!(result.matches("dog").count(), 3);
+        assert!(!result.contains("cat"));
+    }
+
+    #[test]
+    fn find_regex_pattern() {
+        let mut state = FindState::new();
+        state.query = r"\d+".to_string();
+        state.use_regex = true;
+        state.find_in_text("item 42 and item 7 and item 100");
+        // Three number sequences
+        assert_eq!(state.matches.len(), 3);
+        assert_eq!(state.matches[0].start, 5); // "42"
+    }
 }

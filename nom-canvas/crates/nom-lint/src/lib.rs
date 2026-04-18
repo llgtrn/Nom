@@ -2793,4 +2793,263 @@ mod tests {
         let rule = ForbiddenKeywordRule { keyword: "DEPRECATED" };
         assert!(rule.check("clean code line", 1).is_none());
     }
+
+    // ── WAVE-AG AGENT-10 additions ─────────────────────────────────────────────
+
+    #[test]
+    fn lint_rule_no_foreign_name_in_word_column() {
+        // ForbiddenKeywordRule rejects a line containing a foreign keyword.
+        let rule = ForbiddenKeywordRule { keyword: "nomtu_foreign" };
+        assert!(rule.check("// nomtu_foreign entry", 1).is_some());
+        assert!(rule.check("// native_entry", 1).is_none());
+    }
+
+    #[test]
+    fn lint_rule_nomturef_non_optional_keyword() {
+        // A keyword rule for a non-optional nomturef marker.
+        let rule = ForbiddenKeywordRule { keyword: "OPTIONAL" };
+        let diag = rule.check("field: OPTIONAL nomturef", 1);
+        assert!(diag.is_some());
+        assert_eq!(diag.unwrap().line, 1);
+    }
+
+    #[test]
+    fn lint_empty_source_no_violations() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run("");
+        assert!(diags.is_empty(), "empty source must produce zero violations");
+    }
+
+    #[test]
+    fn lint_passes_clean_source() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        let clean = "fn main() {\n    let x = 1;\n}\n";
+        let diags = runner.run(clean);
+        assert!(diags.is_empty(), "clean source must produce zero violations");
+    }
+
+    #[test]
+    fn lint_violation_has_location() {
+        let rule = TrailingWhitespaceRule;
+        let diag = rule.check("trailing   ", 7).unwrap();
+        assert_eq!(diag.line, 7, "violation must carry the line number");
+    }
+
+    #[test]
+    fn lint_violation_severity_levels_distinct() {
+        // Info, Warning, Error are distinct enum variants.
+        assert_ne!(LintLevel::Info, LintLevel::Warning);
+        assert_ne!(LintLevel::Warning, LintLevel::Error);
+        assert_ne!(LintLevel::Info, LintLevel::Error);
+    }
+
+    #[test]
+    fn lint_batch_10_sources_all_pass() {
+        // 10 clean lines — all must pass with no diagnostics.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source: String = (0..10).map(|i| format!("line_{i}\n")).collect();
+        let diags = runner.run(&source);
+        assert!(diags.is_empty(), "10 clean lines must produce zero diagnostics");
+    }
+
+    #[test]
+    fn lint_batch_10_sources_some_fail() {
+        // Lines 2, 5, 8 have trailing whitespace — exactly 3 violations expected.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source: String = (1..=10)
+            .map(|i| if [2usize, 5, 8].contains(&i) { "bad   \n".to_string() } else { "clean\n".to_string() })
+            .collect();
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 3, "exactly 3 lines have trailing whitespace");
+    }
+
+    #[test]
+    fn lint_rule_count_at_least_5() {
+        // We have at least 5 distinct rule types in this crate.
+        // Verify that each rule individually fires on a designed trigger line.
+        let tw = TrailingWhitespaceRule.check("   ", 1);
+        let eb = EmptyBlockRule.check("fn f() {}", 1);
+        let ll = LineTooLongRule { max_len: 5 }.check("more than 5 chars long", 1);
+        let kw1 = ForbiddenKeywordRule { keyword: "TODO" }.check("// TODO fix", 1);
+        let kw2 = ForbiddenKeywordRule { keyword: "FIXME" }.check("// FIXME fix", 1);
+        assert!(tw.is_some(), "TrailingWhitespaceRule must fire");
+        assert!(eb.is_some(), "EmptyBlockRule must fire");
+        assert!(ll.is_some(), "LineTooLongRule must fire");
+        assert!(kw1.is_some(), "ForbiddenKeywordRule(TODO) must fire");
+        assert!(kw2.is_some(), "ForbiddenKeywordRule(FIXME) must fire");
+    }
+
+    #[test]
+    fn lint_new_rule_registration_and_invoked() {
+        // Register a keyword rule with a unique keyword; verify it fires only for that keyword.
+        let keyword = "WAVEAG_UNIQUE_MARKER";
+        let mut runner = LintRunner::new();
+        runner.add_rule(ForbiddenKeywordRule { keyword });
+        let hit = runner.check_line(&format!("// {keyword}"), 1);
+        let miss = runner.check_line("// unrelated", 1);
+        assert_eq!(hit.len(), 1, "registered rule must fire on matching line");
+        assert_eq!(miss.len(), 0, "registered rule must not fire on non-matching line");
+    }
+
+    #[test]
+    fn lint_report_format_nonempty_on_violation() {
+        let rule = TrailingWhitespaceRule;
+        let diag = rule.check("abc   ", 1).unwrap();
+        let dbg = format!("{diag:?}");
+        assert!(!dbg.is_empty(), "diagnostic debug format must be non-empty");
+    }
+
+    #[test]
+    fn lint_same_source_twice_same_result() {
+        // Lint is deterministic: same source twice produces identical diagnostics.
+        let source = "fn f() {} FIXME  \nclean\nTODO here\n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(ForbiddenKeywordRule { keyword: "FIXME" });
+        runner.add_rule(ForbiddenKeywordRule { keyword: "TODO" });
+        let d1 = runner.run(source);
+        let d2 = runner.run(source);
+        assert_eq!(d1.len(), d2.len(), "lint must be deterministic — same result on repeat call");
+        for (a, b) in d1.iter().zip(d2.iter()) {
+            assert_eq!(a.line, b.line);
+            assert_eq!(a.message, b.message);
+        }
+    }
+
+    #[test]
+    fn lint_level_three_variants_exhaustive() {
+        // Exhaust all LintLevel variants to confirm exactly 3 exist.
+        let levels = [LintLevel::Info, LintLevel::Warning, LintLevel::Error];
+        assert_eq!(levels.len(), 3, "LintLevel must have exactly 3 variants");
+    }
+
+    #[test]
+    fn lint_trailing_whitespace_multiple_lines_correct_line_numbers() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        // Lines 1 and 3 are dirty; line 2 is clean.
+        let source = "bad   \nclean\nbad   \n";
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 2);
+        assert_eq!(diags[0].line, 1);
+        assert_eq!(diags[1].line, 3);
+    }
+
+    #[test]
+    fn lint_line_too_long_boundary_exactly_at_limit() {
+        // A line of exactly max_len chars must NOT trigger.
+        let limit: usize = 20;
+        let rule = LineTooLongRule { max_len: limit };
+        let exact: String = "x".repeat(limit);
+        assert!(rule.check(&exact, 1).is_none(), "line of exactly max_len must pass");
+    }
+
+    #[test]
+    fn lint_line_too_long_one_over_limit() {
+        let limit: usize = 20;
+        let rule = LineTooLongRule { max_len: limit };
+        let over: String = "x".repeat(limit + 1);
+        assert!(rule.check(&over, 1).is_some(), "line of max_len+1 must fail");
+    }
+
+    #[test]
+    fn lint_empty_block_rule_fire_on_empty_braces() {
+        let rule = EmptyBlockRule;
+        assert!(rule.check("fn f() {}", 1).is_some(), "empty braces must trigger EmptyBlockRule");
+    }
+
+    #[test]
+    fn lint_empty_block_rule_no_fire_on_content() {
+        let rule = EmptyBlockRule;
+        assert!(rule.check("fn f() { x }", 1).is_none(), "non-empty block must not trigger EmptyBlockRule");
+    }
+
+    #[test]
+    fn lint_forbidden_keyword_message_contains_keyword() {
+        let rule = ForbiddenKeywordRule { keyword: "BANNED" };
+        let diag = rule.check("// BANNED here", 1).unwrap();
+        assert!(diag.message.contains("BANNED"), "message must mention the forbidden keyword");
+    }
+
+    #[test]
+    fn lint_diagnostic_level_warning_trailing_whitespace_waveag() {
+        let diag = TrailingWhitespaceRule.check("abc   ", 1).unwrap();
+        assert_eq!(diag.level, LintLevel::Warning, "trailing whitespace must be Warning level");
+    }
+
+    #[test]
+    fn lint_run_single_line_no_newline() {
+        // Source without trailing newline must still be checked.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run("trailing   ");
+        assert_eq!(diags.len(), 1);
+    }
+
+    #[test]
+    fn lint_keyword_rule_severity_multiplier_positive() {
+        let rule = ForbiddenKeywordRule { keyword: "X" };
+        assert!(rule.severity_multiplier() > 0.0, "severity_multiplier must be positive");
+    }
+
+    #[test]
+    fn lint_trailing_whitespace_rule_name_not_empty() {
+        assert!(!TrailingWhitespaceRule.name().is_empty(), "rule name must not be empty");
+    }
+
+    #[test]
+    fn lint_line_too_long_rule_name_not_empty() {
+        assert!(!LineTooLongRule { max_len: 80 }.name().is_empty());
+    }
+
+    #[test]
+    fn lint_empty_block_rule_name_not_empty() {
+        assert!(!EmptyBlockRule.name().is_empty());
+    }
+
+    #[test]
+    fn lint_forbidden_keyword_rule_name_not_empty() {
+        assert!(!ForbiddenKeywordRule { keyword: "X" }.name().is_empty());
+    }
+
+    #[test]
+    fn lint_runner_new_is_empty() {
+        let runner = LintRunner::new();
+        let diags = runner.check_line("anything", 1);
+        assert!(diags.is_empty(), "new runner with no rules must produce no diagnostics");
+    }
+
+    #[test]
+    fn lint_check_line_vs_run_single_line_consistency() {
+        // check_line and run on a single-line source must produce the same count.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let line = "bad   ";
+        let from_check = runner.check_line(line, 1);
+        let from_run = runner.run(line);
+        assert_eq!(from_check.len(), from_run.len(), "check_line and run must agree on single line");
+    }
+
+    #[test]
+    fn lint_50_clean_lines_zero_diags() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        let source: String = (0..50).map(|i| format!("let x{i} = {i};\n")).collect();
+        assert!(runner.run(&source).is_empty());
+    }
+
+    #[test]
+    fn lint_50_dirty_lines_all_flagged() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let source: String = (0..50).map(|_| "dirty   \n").collect();
+        assert_eq!(runner.run(&source).len(), 50);
+    }
 }

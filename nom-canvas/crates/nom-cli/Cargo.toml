@@ -12,5 +12,3 @@ name = "nom-canvas"
 path = "src/main.rs"
 
 [dependencies]
-nom-panels = { path = "../nom-panels" }
-tokio = { workspace = true }

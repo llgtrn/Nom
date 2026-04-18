@@ -470,4 +470,129 @@ mod tests {
         let text = String::from_utf8_lossy(&bytes);
         assert!(text.contains("duration_ms=3000"));
     }
+
+    // ── Wave AG new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn audio_container_wav_is_default() {
+        assert_eq!(AudioContainer::default(), AudioContainer::Wav);
+    }
+
+    #[test]
+    fn audio_codec_pcm_is_default() {
+        assert_eq!(AudioCodec::default(), AudioCodec::Pcm);
+    }
+
+    #[test]
+    fn audio_container_flac_stub_display_is_audio_flac() {
+        assert_eq!(AudioContainer::FlacStub.to_string(), "audio/flac");
+    }
+
+    #[test]
+    fn audio_container_ogg_stub_display_is_audio_ogg() {
+        assert_eq!(AudioContainer::OggStub.to_string(), "audio/ogg");
+    }
+
+    #[test]
+    fn audio_codec_flac_stub_display_is_flac() {
+        assert_eq!(AudioCodec::FlacStub.to_string(), "flac");
+    }
+
+    #[test]
+    fn audio_codec_opus_stub_display_is_opus() {
+        assert_eq!(AudioCodec::OpusStub.to_string(), "opus");
+    }
+
+    #[test]
+    fn audio_backend_compose_flac_stub_ok() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "flac-ok".into(), word: "lossless".into(), kind: "media".into() },
+            pcm_samples: vec![0.5f32; 1000],
+            sample_rate: 44100,
+            codec: "flac".into(),
+            container: AudioContainer::FlacStub,
+            audio_codec: AudioCodec::FlacStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("FLAC"), "FLAC stub payload must mention FLAC");
+    }
+
+    #[test]
+    fn audio_backend_compose_ogg_stub_ok() {
+        let mut store = InMemoryStore::new();
+        let input = AudioInput {
+            entity: NomtuRef { id: "ogg-ok".into(), word: "stream".into(), kind: "media".into() },
+            pcm_samples: vec![0.1f32; 500],
+            sample_rate: 48000,
+            codec: "opus".into(),
+            container: AudioContainer::OggStub,
+            audio_codec: AudioCodec::OpusStub,
+        };
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("Ogg"), "Ogg stub payload must mention Ogg");
+    }
+
+    #[test]
+    fn audio_backend_empty_samples_wav_stores_artifact() {
+        // Zero samples — must not panic, produces a valid (minimal) WAV artifact.
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("aud-empty", "silence", vec![], 44100, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert_eq!(&payload[0..4], b"RIFF");
+    }
+
+    #[test]
+    fn audio_backend_duration_zero_for_empty_samples() {
+        let mut store = InMemoryStore::new();
+        let input = default_audio_input("aud-dur0", "zero", vec![], 44100, "pcm");
+        let block = AudioBackend::compose(input, &mut store, &LogProgressSink);
+        assert_eq!(block.duration_ms, 0, "zero samples => duration_ms 0");
+    }
+
+    #[test]
+    fn audio_container_display_all_start_with_audio_prefix() {
+        assert!(AudioContainer::Wav.to_string().starts_with("audio/"));
+        assert!(AudioContainer::FlacStub.to_string().starts_with("audio/"));
+        assert!(AudioContainer::OggStub.to_string().starts_with("audio/"));
+    }
+
+    #[test]
+    fn audio_codec_pcm_display_contains_pcm() {
+        assert!(AudioCodec::Pcm.to_string().contains("pcm"));
+    }
+
+    #[test]
+    fn audio_stub_channels_in_header() {
+        let spec = AudioSpec { sample_rate: 44100, channels: 2, duration_ms: 1000, codec: "flac".into() };
+        let bytes = encode_audio_stub_container("FLAC", "flac", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("channels=2"), "stub header must contain channels");
+    }
+
+    #[test]
+    fn audio_wav_single_sample_riff_header_valid() {
+        let wav = encode_wav_mono_f32le(&[0.5f32], 44100);
+        // Bytes 0-3: "RIFF"
+        assert_eq!(&wav[0..4], b"RIFF");
+        // Bytes 8-11: "WAVE"
+        assert_eq!(&wav[8..12], b"WAVE");
+        // data chunk at byte 36
+        assert_eq!(&wav[36..40], b"data");
+    }
+
+    #[test]
+    fn audio_codec_all_display_nonempty() {
+        for codec in &[AudioCodec::Pcm, AudioCodec::FlacStub, AudioCodec::OpusStub] {
+            assert!(!codec.to_string().is_empty(), "codec display must be nonempty for {:?}", codec);
+        }
+    }
 }

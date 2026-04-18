@@ -1025,4 +1025,117 @@ mod tests {
             "half-zoom must double visible width: got w1={w1} w2={w2}"
         );
     }
+
+    // ── additional viewport tests (wave AG) ──────────────────────────────────
+
+    #[test]
+    fn viewport_zoom_clamps_to_min() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(-100.0, [400.0, 300.0]);
+        assert!(
+            (vp.zoom - 0.1).abs() < 1e-6,
+            "zoom below 0 must clamp to 0.1, got {}",
+            vp.zoom
+        );
+    }
+
+    #[test]
+    fn viewport_zoom_clamps_to_max() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(1_000_000.0, [400.0, 300.0]);
+        assert!(
+            (vp.zoom - 32.0).abs() < 1e-6,
+            "zoom above 32 must clamp to 32, got {}",
+            vp.zoom
+        );
+    }
+
+    #[test]
+    fn viewport_pan_translates_origin() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([50.0, -30.0]);
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        // canvas origin → screen: (0*1 + 50 + 400, 0*1 + (-30) + 300) = (450, 270)
+        assert!((screen[0] - 450.0).abs() < 1e-4, "screen.x={}", screen[0]);
+        assert!((screen[1] - 270.0).abs() < 1e-4, "screen.y={}", screen[1]);
+    }
+
+    #[test]
+    fn viewport_zoom_to_fit_empty_returns_default() {
+        // No elements to fit; viewport keeps default zoom=1, pan=[0,0].
+        let vp = Viewport::new(800.0, 600.0);
+        assert!((vp.zoom - 1.0).abs() < 1e-6);
+        assert!((vp.pan[0]).abs() < 1e-6);
+        assert!((vp.pan[1]).abs() < 1e-6);
+    }
+
+    #[test]
+    fn viewport_zoom_to_fit_single_element() {
+        // Fit a 100×80 rect to an 800×600 viewport.
+        let mut vp = Viewport::new(800.0, 600.0);
+        let (rw, rh) = (100.0_f32, 80.0_f32);
+        let zoom = (vp.size[0] / rw).min(vp.size[1] / rh).clamp(0.1, 32.0);
+        vp.zoom = zoom;
+        vp.pan = [-(rw / 2.0) * zoom, -(rh / 2.0) * zoom];
+        assert!((vp.zoom - 7.5).abs() < 1e-4, "zoom must be min(8,7.5)=7.5, got {}", vp.zoom);
+        assert!(vp.is_point_visible([0.0, 0.0]), "origin must be visible after fit");
+    }
+
+    #[test]
+    fn viewport_screen_to_world_and_back() {
+        // Round-trip: screen → canvas → screen should preserve the point.
+        let vp = Viewport::new(1024.0, 768.0);
+        let screen_pt = [300.0_f32, 200.0_f32];
+        let canvas = vp.screen_to_canvas(screen_pt);
+        let back = vp.canvas_to_screen(canvas);
+        assert!((back[0] - screen_pt[0]).abs() < 1e-4, "x round-trip: {}", back[0]);
+        assert!((back[1] - screen_pt[1]).abs() < 1e-4, "y round-trip: {}", back[1]);
+    }
+
+    #[test]
+    fn viewport_new_default_zoom_and_pan() {
+        // Viewport::new sets zoom=1 and pan=[0,0].
+        let vp = Viewport::new(640.0, 480.0);
+        assert!((vp.zoom - 1.0).abs() < 1e-6);
+        assert!((vp.pan[0]).abs() < 1e-6);
+        assert!((vp.pan[1]).abs() < 1e-6);
+        assert!((vp.size[0] - 640.0).abs() < 1e-6);
+        assert!((vp.size[1] - 480.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn viewport_canvas_origin_visible_at_default() {
+        let vp = Viewport::new(800.0, 600.0);
+        assert!(vp.is_point_visible([0.0, 0.0]), "canvas origin must be visible at default");
+    }
+
+    #[test]
+    fn viewport_multiple_pan_accumulates() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([25.0, 10.0]);
+        vp.pan_by([25.0, 10.0]);
+        assert!((vp.pan[0] - 50.0).abs() < 1e-5, "pan.x should be 50, got {}", vp.pan[0]);
+        assert!((vp.pan[1] - 20.0).abs() < 1e-5, "pan.y should be 20, got {}", vp.pan[1]);
+    }
+
+    #[test]
+    fn viewport_visible_bounds_increases_at_lower_zoom() {
+        let vp1 = Viewport::new(800.0, 600.0);
+        let mut vp2 = Viewport::new(800.0, 600.0);
+        vp2.zoom_toward(0.25, [400.0, 300.0]);
+        let (tl1, br1) = vp1.visible_bounds();
+        let (tl2, br2) = vp2.visible_bounds();
+        let w1 = br1[0] - tl1[0];
+        let w2 = br2[0] - tl2[0];
+        assert!(w2 > w1, "lower zoom must show more canvas area: w1={w1} w2={w2}");
+    }
+
+    #[test]
+    fn viewport_scene_transform_encodes_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(3.0, [400.0, 300.0]);
+        let m = vp.to_scene_transform();
+        assert!((m[0][0] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[0][0]);
+        assert!((m[1][1] - 3.0).abs() < 1e-5, "scene transform must encode zoom=3, got {}", m[1][1]);
+    }
 }

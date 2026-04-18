@@ -1683,6 +1683,213 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // Multi-root: 3 roots all appear in topo result
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_multi_root_topological_order_covers_all_nodes() {
+        let mut dag = Dag::new();
+        // 3 roots each feed their own leaf.
+        for r in &["r1", "r2", "r3"] {
+            dag.add_node(ExecNode::new(*r, "verb"));
+        }
+        for l in &["l1", "l2", "l3"] {
+            dag.add_node(ExecNode::new(*l, "verb"));
+        }
+        dag.add_edge("r1", "out", "l1", "in");
+        dag.add_edge("r2", "out", "l2", "in");
+        dag.add_edge("r3", "out", "l3", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 6, "all 6 nodes must appear in topo result");
+        for name in &["r1", "r2", "r3", "l1", "l2", "l3"] {
+            assert!(sorted.contains(&name.to_string()), "{name} must be in sorted output");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Isolated node: is both a root and a leaf
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_node_with_no_edges_is_own_root() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("isolated", "verb"));
+        // No edges — it's a root (block_count=0) and a leaf (no outgoing).
+        assert_eq!(dag.node_count(), 1);
+        assert_eq!(dag.edge_count(), 0);
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted, vec!["isolated"]);
+        // Verify it's a root: no incoming edges.
+        let in_count = dag.edges.iter().filter(|e| e.dst_node == "isolated").count();
+        assert_eq!(in_count, 0, "isolated node has no incoming edges");
+        // Verify it's a leaf: no outgoing edges.
+        let out_count = dag.edges.iter().filter(|e| e.src_node == "isolated").count();
+        assert_eq!(out_count, 0, "isolated node has no outgoing edges");
+    }
+
+    // ------------------------------------------------------------------
+    // Large chain (20 nodes): topo order preserves sequence
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_large_chain_topo_order_preserves_order() {
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..20).map(|i| format!("n{i:02}")).collect();
+        for n in &names {
+            dag.add_node(ExecNode::new(n.clone(), "verb"));
+        }
+        for i in 0..19 {
+            dag.add_edge(names[i].clone(), "out", names[i + 1].clone(), "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.len(), 20);
+        for i in 0..19 {
+            let pi = sorted.iter().position(|x| x == &names[i]).unwrap();
+            let pj = sorted.iter().position(|x| x == &names[i + 1]).unwrap();
+            assert!(pi < pj, "n{i:02} must precede n{:02}", i + 1);
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Diamond: D executes last
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_diamond_dependency_executes_join_last() {
+        // A→B, A→C, B→D, C→D — D must be last in sort.
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let sorted = dag.topological_sort().unwrap();
+        assert_eq!(sorted.last().map(|s| s.as_str()), Some("D"), "D must execute last in diamond");
+    }
+
+    // ------------------------------------------------------------------
+    // node_count after adding 5 nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_node_count_after_five_additions() {
+        let mut dag = Dag::new();
+        for i in 0..5 {
+            dag.add_node(ExecNode::new(format!("n{i}"), "verb"));
+        }
+        assert_eq!(dag.node_count(), 5, "node_count must be 5 after adding 5 nodes");
+    }
+
+    // ------------------------------------------------------------------
+    // edge_count after adding edges one-by-one
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_edge_count_after_sequential_additions() {
+        let mut dag = Dag::new();
+        for i in 0..4 {
+            dag.add_node(ExecNode::new(format!("n{i}"), "verb"));
+        }
+        assert_eq!(dag.edge_count(), 0);
+        dag.add_edge("n0", "out", "n1", "in");
+        assert_eq!(dag.edge_count(), 1);
+        dag.add_edge("n1", "out", "n2", "in");
+        assert_eq!(dag.edge_count(), 2);
+        dag.add_edge("n2", "out", "n3", "in");
+        assert_eq!(dag.edge_count(), 3);
+    }
+
+    // ------------------------------------------------------------------
+    // Cycle detection: adding back-edge returns error
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_cycle_detection_returns_error() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("X", "verb"));
+        dag.add_node(ExecNode::new("Y", "verb"));
+        dag.add_node(ExecNode::new("Z", "verb"));
+        // Forward edges X→Y→Z form a chain.
+        dag.add_edge("X", "out", "Y", "in");
+        dag.add_edge("Y", "out", "Z", "in");
+        // Back-edge Z→X creates a cycle.
+        dag.add_edge("Z", "out", "X", "in");
+        assert!(
+            dag.topological_sort().is_err(),
+            "back-edge Z→X must cause cycle detection to return Err"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // All ancestors of a leaf node precede it in topo order
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_all_ancestors_of_leaf_precede_it() {
+        // Chain: n0 → n1 → n2 → n3 → n4 (leaf)
+        // All of n0..n3 are ancestors of n4 and must precede it.
+        let mut dag = Dag::new();
+        let names: Vec<String> = (0..5).map(|i| format!("n{i}")).collect();
+        for n in &names {
+            dag.add_node(ExecNode::new(n.clone(), "verb"));
+        }
+        for i in 0..4 {
+            dag.add_edge(names[i].clone(), "out", names[i + 1].clone(), "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        let leaf_pos = sorted.iter().position(|x| x == "n4").unwrap();
+        for i in 0..4 {
+            let ancestor_pos = sorted.iter().position(|x| x == &names[i]).unwrap();
+            assert!(ancestor_pos < leaf_pos, "n{i} (ancestor) must precede n4 (leaf)");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // All descendants of a root follow it in topo order
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_all_descendants_of_root_follow_it() {
+        // Star: root → c0, root → c1, root → c2, root → c3, root → c4
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        for i in 0..5 {
+            dag.add_node(ExecNode::new(format!("c{i}"), "verb"));
+            dag.add_edge("root", "out", format!("c{i}"), "in");
+        }
+        let sorted = dag.topological_sort().unwrap();
+        let root_pos = sorted.iter().position(|x| x == "root").unwrap();
+        for i in 0..5 {
+            let child_pos = sorted.iter().position(|x| x == &format!("c{i}")).unwrap();
+            assert!(root_pos < child_pos, "root must precede c{i} (descendant)");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // Empty DAG: topological sort is empty
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_empty_dag_topo_order_is_empty_new() {
+        let dag = Dag::new();
+        let sorted = dag.topological_sort().unwrap();
+        assert!(sorted.is_empty(), "empty DAG topo sort must be []");
+        assert_eq!(dag.node_count(), 0);
+        assert_eq!(dag.edge_count(), 0);
+    }
+
+    // ------------------------------------------------------------------
+    // Remove edge from edge list fixes dangling references
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_remove_edge_reduces_edge_count() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        assert_eq!(dag.edge_count(), 2);
+        // Remove the a→b edge by retaining only b→c.
+        dag.edges.retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
+        assert_eq!(dag.edge_count(), 1, "removing a→b must reduce edge_count to 1");
+        // After removal, topological sort still succeeds (no cycle in remaining edges).
+        assert!(dag.topological_sort().is_ok());
+    }
+
+    // ------------------------------------------------------------------
     // Wide fan-in: 5 parents feed 1 child
     // ------------------------------------------------------------------
     #[test]

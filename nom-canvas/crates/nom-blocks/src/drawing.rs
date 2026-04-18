@@ -422,4 +422,74 @@ mod tests {
         let d = DrawingBlock::new(entity);
         assert!(d.strokes.is_empty());
     }
+
+    // ── wave AG-8: additional drawing tests ──────────────────────────────────
+
+    #[test]
+    fn drawing_color_fill_uses_theme_tokens() {
+        // block_fill_color must delegate to color_bg_tertiary token
+        let token = nom_theme::tokens::color_bg_tertiary();
+        let fill = super::block_fill_color();
+        assert!((fill[0] - token.h).abs() < f32::EPSILON);
+        assert!((fill[1] - token.s).abs() < f32::EPSILON);
+        assert!((fill[2] - token.l).abs() < f32::EPSILON);
+        assert!((fill[3] - token.a).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn drawing_color_border_uses_theme_tokens() {
+        let token = nom_theme::tokens::color_border_normal();
+        let border = super::block_border_color();
+        assert!((border[0] - token.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn drawing_color_selected_uses_accent_blue() {
+        let token = nom_theme::tokens::color_accent_blue();
+        let selected = super::block_selected_color();
+        assert!((selected[0] - token.h).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn drawing_stroke_width_positive_after_new() {
+        let s = Stroke::new(StrokeColor::black(), 1.5);
+        assert!(s.width > 0.0);
+    }
+
+    #[test]
+    fn drawing_block_entity_word_accessible() {
+        let entity = crate::block_model::NomtuRef::new("draw-30", "sketch", "verb");
+        let d = DrawingBlock::new(entity);
+        assert_eq!(d.entity.word, "sketch");
+    }
+
+    #[test]
+    fn drawing_stroke_bounding_box_three_points() {
+        let mut s = Stroke::new(StrokeColor::black(), 1.0);
+        s.add_point([1.0, 2.0], 1.0);
+        s.add_point([5.0, 3.0], 1.0);
+        s.add_point([3.0, 8.0], 1.0);
+        let bb = s.bounding_box().unwrap();
+        assert_eq!(bb.0, [1.0, 2.0]); // min
+        assert_eq!(bb.1, [5.0, 8.0]); // max
+    }
+
+    #[test]
+    fn drawing_block_clone_preserves_stroke_count() {
+        let entity = crate::block_model::NomtuRef::new("draw-31", "copy", "verb");
+        let mut d = DrawingBlock::new(entity);
+        let mut s = Stroke::new(StrokeColor::black(), 2.0);
+        s.add_point([0.0, 0.0], 1.0);
+        d.add_stroke(s);
+        let cloned = d.clone();
+        assert_eq!(cloned.strokes.len(), 1);
+        assert_eq!(cloned.entity.id, "draw-31");
+    }
+
+    #[test]
+    fn drawing_color_error_uses_low_confidence_token() {
+        let token = nom_theme::tokens::edge_color_low_confidence();
+        let error = super::block_error_color();
+        assert!((error[0] - token.h).abs() < f32::EPSILON);
+    }
 }

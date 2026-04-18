@@ -576,4 +576,157 @@ mod tests {
         let b = a.clone();
         assert_eq!(a, b);
     }
+
+    // -----------------------------------------------------------------------
+    // Wave AG: New pixel_diff tests
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn save_then_load_baseline_round_trips_exact() {
+        // Save a 4x4 image, reload it, and verify byte-for-byte equality.
+        let pixels: Vec<u8> = (0..4 * 4 * 4).map(|i| (i % 256) as u8).collect();
+        let img = RawImage::new(4, 4, pixels.clone());
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_round_trip_exact.nomraw");
+        let _ = std::fs::remove_file(&path);
+
+        save_baseline(&path, &img).expect("save");
+        let loaded = load_baseline(&path).expect("load");
+
+        assert_eq!(loaded.width, 4, "width");
+        assert_eq!(loaded.height, 4, "height");
+        assert_eq!(loaded.pixels, pixels, "pixels must match byte-for-byte");
+        assert_eq!(loaded, img, "full equality");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn diff_identical_images_returns_zero_changed() {
+        let a = RawImage::solid(2, 2, [100, 150, 200, 255]);
+        let b = a.clone();
+        let stats = pixel_diff(&a, &b, 0).unwrap();
+        assert_eq!(stats.differing_pixels, 0, "identical images must have 0 changed pixels");
+        assert_eq!(stats.total_pixels, 4);
+    }
+
+    #[test]
+    fn diff_fully_different_images_returns_all_changed() {
+        let a = RawImage::solid(3, 3, [0, 0, 0, 255]);
+        let b = RawImage::solid(3, 3, [255, 255, 255, 255]);
+        let stats = pixel_diff(&a, &b, 0).unwrap();
+        assert_eq!(stats.differing_pixels, stats.total_pixels, "all pixels must differ");
+        assert_eq!(stats.total_pixels, 9);
+    }
+
+    #[test]
+    fn diff_single_pixel_change_detected() {
+        let base = RawImage::solid(4, 4, [128, 128, 128, 255]);
+        let mut modified = base.clone();
+        // Change exactly one pixel (pixel index 5, R channel).
+        modified.pixels[5 * 4] = 0; // diff = 128 > threshold 10
+        let stats = pixel_diff(&base, &modified, 10).unwrap();
+        assert_eq!(stats.differing_pixels, 1, "exactly one pixel must be detected as changed");
+    }
+
+    #[test]
+    fn diff_or_save_creates_file_when_no_baseline() {
+        let img = RawImage::solid(2, 2, [1, 2, 3, 255]);
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_no_baseline.nomraw");
+        let _ = std::fs::remove_file(&path);
+
+        let result = diff_or_save(&path, &img, 10).unwrap();
+        assert_eq!(result, DiffResult::BaselineSaved, "must return BaselineSaved when no baseline");
+        assert!(path.exists(), "file must be created");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn diff_or_save_diffs_when_baseline_exists() {
+        let img = RawImage::solid(2, 2, [10, 20, 30, 255]);
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_baseline_exists.nomraw");
+        let _ = std::fs::remove_file(&path);
+
+        // Pre-create baseline by saving directly.
+        save_baseline(&path, &img).expect("save");
+
+        // Now diff_or_save must compare rather than save.
+        let result = diff_or_save(&path, &img, 10).unwrap();
+        match result {
+            DiffResult::Compared(stats) => {
+                assert_eq!(stats.differing_pixels, 0, "identical image vs baseline must have 0 diffs");
+            }
+            DiffResult::BaselineSaved => panic!("expected Compared, got BaselineSaved"),
+        }
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn raw_image_dimensions_correct() {
+        let pixels = vec![0u8; 3 * 2 * 4];
+        let img = RawImage::new(3, 2, pixels);
+        assert_eq!(img.width, 3, "width must be 3");
+        assert_eq!(img.height, 2, "height must be 2");
+    }
+
+    #[test]
+    fn save_baseline_writes_nomraw_header() {
+        let img = RawImage::solid(1, 1, [0, 0, 0, 255]);
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_header_check.nomraw");
+        let _ = std::fs::remove_file(&path);
+
+        save_baseline(&path, &img).expect("save");
+
+        let bytes = std::fs::read(&path).expect("read");
+        assert!(bytes.len() >= 8, "file must have at least 8 bytes");
+        assert_eq!(&bytes[..8], b"NOMRAW\0\0", "first 8 bytes must be NOMRAW magic");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_baseline_rejects_wrong_header() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_wrong_header.nomraw");
+        // Write a file with wrong magic.
+        std::fs::write(&path, b"WRONGHDR12345678901234567890").unwrap();
+
+        let result = load_baseline(&path);
+        assert!(result.is_err(), "wrong header must return Err");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn load_baseline_rejects_truncated_file() {
+        let dir = std::env::temp_dir();
+        let path = dir.join("nom_gpui_ag_truncated.nomraw");
+        // Write only the magic with no dimension bytes — truncated.
+        std::fs::write(&path, b"NOMRAW\0\0").unwrap();
+
+        let result = load_baseline(&path);
+        assert!(result.is_err(), "truncated file missing dimensions must return Err");
+
+        let _ = std::fs::remove_file(&path);
+    }
+
+    #[test]
+    fn raw_image_pixel_count_equals_width_times_height() {
+        // pixel_count() must equal width * height for any size.
+        for (w, h) in [(1, 1), (4, 4), (10, 7), (0, 0)] {
+            let img = RawImage { width: w, height: h, pixels: vec![0u8; (w as usize) * (h as usize) * 4] };
+            assert_eq!(img.pixel_count(), (w as usize) * (h as usize), "w={w} h={h}");
+        }
+    }
+
+    #[test]
+    fn diff_stats_diff_fraction_100_percent() {
+        let stats = DiffStats { total_pixels: 50, differing_pixels: 50, threshold: 0 };
+        assert!((stats.diff_fraction() - 1.0).abs() < 1e-10, "all different = fraction 1.0");
+    }
 }

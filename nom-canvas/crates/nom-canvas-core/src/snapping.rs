@@ -613,4 +613,173 @@ mod tests {
         assert!(g.from <= 200.0 + 1e-5, "guide from must be at or above moving element y");
         assert!(g.to >= 70.0 - 1e-5, "guide to must be at or below target bottom");
     }
+
+    // ── additional snap tests ────────────────────────────────────────────────
+
+    #[test]
+    fn snap_to_grid_size_1_returns_exact() {
+        // With GRID_SIZE=20 and input already on a grid multiple, value is unchanged.
+        // At grid multiples, snap_to_grid is identity.
+        let snapped = snap_to_grid([60.0, 80.0]);
+        assert!((snapped[0] - 60.0).abs() < 1e-5, "60 is on 20px grid, got {}", snapped[0]);
+        assert!((snapped[1] - 80.0).abs() < 1e-5, "80 is on 20px grid, got {}", snapped[1]);
+    }
+
+    #[test]
+    fn snap_to_grid_rounds_up_at_midpoint() {
+        // 10.0 is exactly halfway between 0 and 20; f32 round() rounds 0.5 upward → 20.
+        let snapped = snap_to_grid([10.0, 30.0]);
+        assert!(
+            (snapped[0] - 20.0).abs() < 1e-5,
+            "midpoint 10 should round up to 20, got {}",
+            snapped[0]
+        );
+        // 30 is at 1.5 * GRID_SIZE → rounds to 2 * GRID_SIZE = 40.
+        assert!(
+            (snapped[1] - 40.0).abs() < 1e-5,
+            "midpoint 30 should round up to 40, got {}",
+            snapped[1]
+        );
+    }
+
+    #[test]
+    fn snap_to_grid_negative_coords() {
+        // -11 → nearest grid multiple is -20 (round(-11/20) = round(-0.55) = -1, *20 = -20).
+        let snapped = snap_to_grid([-11.0, -9.0]);
+        assert!(
+            (snapped[0] - (-20.0)).abs() < 1e-5,
+            "-11 should snap to -20, got {}",
+            snapped[0]
+        );
+        // -9 → round(-9/20) = round(-0.45) = 0, * 20 = 0.
+        assert!(
+            (snapped[1]).abs() < 1e-5,
+            "-9 should snap to 0, got {}",
+            snapped[1]
+        );
+    }
+
+    #[test]
+    fn snap_to_objects_finds_nearest() {
+        // Moving element at x=103; one target at x=100 (3px away) → snaps to 100.
+        let result = snap_with_guides(
+            [103.0, 50.0],
+            [20.0, 20.0],
+            &[([100.0, 50.0], [20.0, 20.0])],
+            false,
+        );
+        assert!(
+            (result.x - 100.0).abs() < 1e-5,
+            "should snap to nearest object at x=100, got {}",
+            result.x
+        );
+    }
+
+    #[test]
+    fn snap_to_objects_empty_returns_original() {
+        // No nearby objects → position unchanged.
+        let origin = [123.0_f32, 456.0_f32];
+        let result = snap_with_guides(origin, [30.0, 30.0], &[], false);
+        assert!((result.x - origin[0]).abs() < 1e-5, "x unchanged, got {}", result.x);
+        assert!((result.y - origin[1]).abs() < 1e-5, "y unchanged, got {}", result.y);
+        assert!(result.guides.is_empty(), "no guides when no objects");
+    }
+
+    #[test]
+    fn snap_guides_horizontal_and_vertical() {
+        // Element at x=103, y=103; target at x=100, y=100 → both axes snap.
+        let result = snap_with_guides(
+            [103.0, 103.0],
+            [20.0, 20.0],
+            &[([100.0, 100.0], [20.0, 20.0])],
+            false,
+        );
+        let has_vertical = result.guides.iter().any(|g| g.axis == SnapAxis::Vertical);
+        let has_horizontal = result.guides.iter().any(|g| g.axis == SnapAxis::Horizontal);
+        assert!(has_vertical, "vertical guide must fire for x snap");
+        assert!(has_horizontal, "horizontal guide must fire for y snap");
+    }
+
+    #[test]
+    fn snap_threshold_not_exceeded_no_snap() {
+        // x=120, target x=100 → delta=20 > SNAP_THRESHOLD(8) → no snap.
+        let result = snap_with_guides(
+            [120.0, 500.0],
+            [10.0, 10.0],
+            &[([100.0, 200.0], [10.0, 10.0])],
+            false,
+        );
+        assert!(
+            (result.x - 120.0).abs() < 1e-5,
+            "outside threshold: x must stay at 120, got {}",
+            result.x
+        );
+        assert!(result.guides.is_empty(), "no snap guide beyond threshold");
+    }
+
+    #[test]
+    fn snap_threshold_within_snaps() {
+        // x=105, target x=100 → delta=5 < SNAP_THRESHOLD(8) → snaps to 100.
+        let result = snap_with_guides(
+            [105.0, 200.0],
+            [10.0, 10.0],
+            &[([100.0, 200.0], [10.0, 10.0])],
+            false,
+        );
+        assert!(
+            (result.x - 100.0).abs() < 1e-5,
+            "within threshold: must snap to x=100, got {}",
+            result.x
+        );
+        assert!(!result.guides.is_empty(), "snap guide must fire within threshold");
+    }
+
+    #[test]
+    fn snap_multiple_candidates_returns_closest() {
+        // Two targets: one at x=100 (delta=3) and one at x=107 (delta=4).
+        // Moving at x=103 — both within threshold. First match wins (left→left pair).
+        let result = snap_with_guides(
+            [103.0, 200.0],
+            [10.0, 10.0],
+            &[
+                ([100.0, 200.0], [10.0, 10.0]),
+                ([107.0, 200.0], [10.0, 10.0]),
+            ],
+            false,
+        );
+        // Should snap to the first matching target.
+        assert!(
+            !result.guides.is_empty(),
+            "at least one snap guide must fire"
+        );
+    }
+
+    #[test]
+    fn snap_to_grid_size_16_rounds_correctly() {
+        // GRID_SIZE=20 (not 16), but verify rounding at 16px on 20px grid:
+        // 16/20 = 0.8 → rounds to 1 → 20.
+        let snapped = snap_to_grid([16.0, 0.0]);
+        assert!(
+            (snapped[0] - 20.0).abs() < 1e-5,
+            "16 on 20px grid → 20, got {}",
+            snapped[0]
+        );
+    }
+
+    #[test]
+    fn snap_to_grid_zero_size_no_panic() {
+        // Snap at [0.0, 0.0] must not panic and must return [0.0, 0.0].
+        let snapped = snap_to_grid([0.0, 0.0]);
+        assert!(snapped[0].abs() < 1e-5, "origin snaps to origin, got {}", snapped[0]);
+        assert!(snapped[1].abs() < 1e-5, "origin snaps to origin, got {}", snapped[1]);
+    }
+
+    #[test]
+    fn snap_disabled_no_grid_no_guides() {
+        // grid_snap=false, no other elements: result is unchanged with no guides.
+        let result = snap_with_guides([37.5, 82.3], [15.0, 15.0], &[], false);
+        assert!((result.x - 37.5).abs() < 1e-5, "x unchanged, got {}", result.x);
+        assert!((result.y - 82.3).abs() < 1e-4, "y unchanged, got {}", result.y);
+        assert!(result.guides.is_empty(), "no guides when disabled");
+    }
 }

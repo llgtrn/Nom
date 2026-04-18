@@ -999,6 +999,192 @@ mod tests {
     }
 
     // ------------------------------------------------------------------
+    // LruCache: capacity=2, insert A/B/C → A evicted (classic LRU)
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_evicts_least_recently_used() {
+        let mut cache = LruCache::new(2);
+        cache.put(1, CachedValue::String("A".into())); // order: [1]
+        cache.put(2, CachedValue::String("B".into())); // order: [1, 2]
+        cache.put(3, CachedValue::String("C".into())); // evicts 1; order: [2, 3]
+        assert!(cache.get(1).is_none(), "A (key 1) must have been evicted");
+        assert!(cache.get(2).is_some(), "B (key 2) must still be present");
+        assert!(cache.get(3).is_some(), "C (key 3) must be present");
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: access refreshes order so the accessed item survives eviction
+    // ------------------------------------------------------------------
+    #[test]
+    fn lru_cache_access_refreshes_order() {
+        let mut cache = LruCache::new(2);
+        cache.put(1, CachedValue::String("A".into()));
+        cache.put(2, CachedValue::String("B".into()));
+        // Touch key 1 — it becomes MRU; key 2 becomes LRU.
+        assert!(cache.get(1).is_some());
+        // Insert key 3 — must evict key 2 (LRU), not key 1.
+        cache.put(3, CachedValue::String("C".into()));
+        assert!(cache.get(1).is_some(), "A (key 1) must survive after being touched");
+        assert!(cache.get(2).is_none(), "B (key 2) must be evicted (LRU after get(1))");
+        assert!(cache.get(3).is_some(), "C (key 3) must be present");
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: L1 hit means L2 is not the source of the result
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l1_hit_no_l2_read() {
+        let mut cache = HierarchicalCache::new(10, 100);
+        // Put distinct values into L1 and L2 for the same key.
+        cache.l1.put(42, CachedValue::String("l1-value".into()));
+        cache.l2.put(42, CachedValue::String("l2-value".into()));
+        // get() must return the L1 value (first checked).
+        let result = cache.get(42).expect("key must be found");
+        match result {
+            CachedValue::String(s) => assert_eq!(s, "l1-value", "L1 value must be returned, not L2"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: L1 miss, L2 hit, promoted via get_promoting
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_l1_miss_l2_hit_promotes() {
+        let mut cache = HierarchicalCache::new(1, 100);
+        // Put value — lands in both L1 and L2.
+        cache.put(77, CachedValue::String("val77".into()));
+        // Evict from L1 by inserting another entry (capacity=1).
+        cache.l1.put(99, CachedValue::String("other".into()));
+        assert!(cache.l1.get(77).is_none(), "77 must be evicted from L1");
+        assert!(cache.l2.get(77).is_some(), "77 must still be in L2");
+        // get_promoting should fetch from L2 and re-insert into L1.
+        let result = cache.get_promoting(77);
+        assert!(result.is_some(), "get_promoting must find key 77 via L2");
+        assert!(cache.l1.get(77).is_some(), "77 must be promoted back to L1");
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: miss in both tiers returns None
+    // ------------------------------------------------------------------
+    #[test]
+    fn hierarchical_cache_miss_both_returns_none() {
+        let cache = HierarchicalCache::new(10, 100);
+        assert!(
+            cache.get(12345).is_none(),
+            "key absent from both L1 and L2 must return None"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: insert and get round-trip
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_insert_and_get_round_trip() {
+        let mut cache = BasicCache::new();
+        cache.put(55, CachedValue::Bytes(vec![10, 20, 30]));
+        match cache.get(55).expect("must retrieve inserted value") {
+            CachedValue::Bytes(b) => assert_eq!(b, vec![10, 20, 30]),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: get on nonexistent key returns None
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_get_nonexistent_returns_none() {
+        let cache = BasicCache::new();
+        assert!(cache.get(9999).is_none(), "nonexistent key must return None");
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: capacity=0 never stores more than 1 entry (no panic)
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_capacity_zero_never_stores() {
+        let mut cache = LruCache::new(0);
+        cache.put(1, CachedValue::String("x".into()));
+        // Capacity 0 means the put may immediately evict; len must be ≤ 1.
+        assert!(
+            cache.len() <= 1,
+            "zero-capacity cache must never hold more than 1 entry, got {}",
+            cache.len()
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // BasicCache: duplicate key overwrites the previous value
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_insert_duplicate_key_overwrites() {
+        let mut cache = BasicCache::new();
+        cache.put(1, CachedValue::String("first".into()));
+        cache.put(1, CachedValue::String("second".into()));
+        assert_eq!(cache.len(), 1, "duplicate key must not grow len");
+        match cache.get(1).unwrap() {
+            CachedValue::String(s) => assert_eq!(s, "second", "second insert must win"),
+            _ => panic!("wrong variant"),
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // LruCache: len after evictions stays at capacity
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_len_after_evictions() {
+        let cap = 3usize;
+        let mut cache = LruCache::new(cap);
+        for i in 0..10u64 {
+            cache.put(i, CachedValue::String(format!("v{i}")));
+        }
+        assert_eq!(
+            cache.len(),
+            cap,
+            "after many inserts, len must equal capacity (evictions happened)"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: L2 can hold more items than L1
+    // ------------------------------------------------------------------
+    #[test]
+    fn l2_cache_larger_than_l1() {
+        // L1 capacity=2, L2 threshold=10.
+        let mut cache = HierarchicalCache::new(2, 10);
+        for i in 0..5u64 {
+            cache.put(i, CachedValue::String(format!("v{i}")));
+        }
+        // L1 should hold only up to 2 items; L2 should hold all 5.
+        assert!(
+            cache.l1.len() <= 2,
+            "L1 must hold at most 2 items, holds {}",
+            cache.l1.len()
+        );
+        assert_eq!(cache.l2.len(), 5, "L2 must hold all 5 inserted items");
+    }
+
+    // ------------------------------------------------------------------
+    // HierarchicalCache: clear empties all tiers
+    // ------------------------------------------------------------------
+    #[test]
+    fn cache_clear_empties_all() {
+        let mut cache = HierarchicalCache::new(10, 100);
+        for i in 0..5u64 {
+            cache.put(i, CachedValue::String(format!("v{i}")));
+        }
+        assert!(cache.len() > 0, "cache must have items before clear");
+        cache.clear();
+        assert_eq!(cache.l1.len(), 0, "L1 must be empty after clear");
+        assert_eq!(cache.l2.len(), 0, "L2 must be empty after clear");
+        assert_eq!(cache.len(), 0, "total len must be 0 after clear");
+        // All previously stored keys must return None.
+        for i in 0..5u64 {
+            assert!(cache.get(i).is_none(), "key {i} must be gone after clear");
+        }
+    }
+
+    // ------------------------------------------------------------------
     // NodeCache: RamPressure strategy — unlimited puts don't panic
     // ------------------------------------------------------------------
     #[test]

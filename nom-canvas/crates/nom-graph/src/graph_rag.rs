@@ -1130,6 +1130,205 @@ mod tests {
     }
 
     // -----------------------------------------------------------------------
+    // RRF: two lists with same item — appears exactly once in output
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_dedup_removes_exact_duplicates() {
+        // Diamond DAG: node D is reachable via two paths from A.
+        // It must appear exactly once in the RRF output.
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_node(ExecNode::new("D", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("D");
+        let results = retriever.retrieve(&query, 4, 3);
+        let count_d = results.iter().filter(|r| r.node_id == "D").count();
+        assert_eq!(count_d, 1, "D reached via two paths must appear exactly once");
+    }
+
+    // -----------------------------------------------------------------------
+    // RRF: empty list returns empty
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_empty_lists_returns_empty() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("any");
+        let results = retriever.retrieve(&query, 10, 5);
+        assert!(results.is_empty(), "RRF over empty node set must return empty");
+    }
+
+    // -----------------------------------------------------------------------
+    // RRF: single-node list preserves the single node in output
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_single_list_preserves_order() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("only_node", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("only_node");
+        let results = retriever.retrieve(&query, 1, 0);
+        assert_eq!(results.len(), 1, "single-node graph with top_k=1 must return 1 result");
+        assert_eq!(results[0].node_id, "only_node");
+    }
+
+    // -----------------------------------------------------------------------
+    // RRF: higher-ranked item scores higher
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_higher_ranked_item_scores_higher() {
+        // alpha queried with its own vec → rank 0 (cosine=1.0), highest score.
+        // beta and gamma rank lower → lower scores.
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("alpha");
+        let results = retriever.retrieve(&query, 3, 2);
+        // The first result must score higher than or equal to the last.
+        assert!(
+            results[0].score >= results[2].score,
+            "rank-0 item must score >= rank-2 item: {} vs {}",
+            results[0].score,
+            results[2].score
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_query_empty_graph_returns_empty (alias for clarity)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_query_empty_graph_returns_empty_v2() {
+        let dag = Dag::new();
+        let retriever = GraphRagRetriever::new(&dag);
+        let q = node_vec("test");
+        assert!(
+            retriever.retrieve(&q, 5, 2).is_empty(),
+            "empty graph must return empty for any query"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag: index and retrieve exact match — node queried by its own id
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_index_and_retrieve_exact_match() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("exact_target", "verb"));
+        dag.add_node(ExecNode::new("noise1", "verb"));
+        dag.add_node(ExecNode::new("noise2", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("exact_target");
+        let results = retriever.retrieve(&query, 3, 1);
+        // The node whose id was used as the query must rank first.
+        assert_eq!(
+            results[0].node_id, "exact_target",
+            "exact match (query == node_vec of node_id) must rank first"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag: partial match — querying any vec still returns all nodes
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_retrieves_partial_match() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("foo", "verb"));
+        dag.add_node(ExecNode::new("bar", "verb"));
+        dag.add_node(ExecNode::new("baz", "verb"));
+        dag.add_edge("foo", "out", "bar", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        // Query with "foo"'s vec; "bar" and "baz" are partial matches.
+        let query = node_vec("foo");
+        let results = retriever.retrieve(&query, 3, 2);
+        assert_eq!(results.len(), 3, "all 3 nodes must appear even as partial matches");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_top_k_limits_results: ask for top-3, get at most 3
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_top_k_limits_results() {
+        let mut dag = Dag::new();
+        for n in &["n1", "n2", "n3", "n4", "n5", "n6"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("n1");
+        let results = retriever.retrieve(&query, 3, 1);
+        assert!(results.len() <= 3, "top_k=3 must return at most 3 results, got {}", results.len());
+        assert_eq!(results.len(), 3, "with 6 nodes, top_k=3 must return exactly 3");
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_scores_sum_bounded: all scores ≤ 1/(RRF_K+0) = 1/60
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_scores_sum_bounded() {
+        // With full-confidence paths, max score is 1/(60+0) = 1/60.
+        let mut dag = Dag::new();
+        for n in &["a", "b", "c", "d"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        dag.add_edge("c", "out", "d", "in");
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("a");
+        let results = retriever.retrieve(&query, 4, 3);
+        let max_score = 1.0f32 / RRF_K;
+        for r in &results {
+            assert!(
+                r.score <= max_score + 1e-5,
+                "score {} must be ≤ max_possible={}", r.score, max_score
+            );
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // graph_rag_multiple_queries_independent: two different queries give different results
+    // -----------------------------------------------------------------------
+    #[test]
+    fn graph_rag_multiple_queries_independent() {
+        let dag = three_node_dag();
+        let retriever = GraphRagRetriever::new(&dag);
+        let q_alpha = node_vec("alpha");
+        let q_gamma = node_vec("gamma");
+        let r_alpha = retriever.retrieve(&q_alpha, 3, 2);
+        let r_gamma = retriever.retrieve(&q_gamma, 3, 2);
+        // Both must return 3 results.
+        assert_eq!(r_alpha.len(), 3);
+        assert_eq!(r_gamma.len(), 3);
+        // The top result differs: alpha-query → alpha first; gamma-query → gamma first.
+        assert_eq!(r_alpha[0].node_id, "alpha", "alpha query must rank alpha first");
+        assert_eq!(r_gamma[0].node_id, "gamma", "gamma query must rank gamma first");
+    }
+
+    // -----------------------------------------------------------------------
+    // rrf_rank_60_constant_used: score = 1/(60+rank)
+    // -----------------------------------------------------------------------
+    #[test]
+    fn rrf_rank_60_constant_used() {
+        // Single node with full-confidence (own-seed, conf=1.0): score = 1/(60+0).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("one", "verb"));
+        let retriever = GraphRagRetriever::new(&dag);
+        let query = node_vec("one");
+        let results = retriever.retrieve(&query, 1, 0);
+        assert_eq!(results.len(), 1);
+        let expected = 1.0f32 / (60.0 + 0.0);
+        assert!(
+            (results[0].score - expected).abs() < 1e-6,
+            "RRF score must equal 1/(60+rank) = {expected}, got {}",
+            results[0].score
+        );
+    }
+
+    // -----------------------------------------------------------------------
     // top-k larger than node count: returns all nodes (no panic, no duplicate)
     // -----------------------------------------------------------------------
     #[test]

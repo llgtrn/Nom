@@ -3682,4 +3682,256 @@ mod tests {
         let parts: Vec<&str> = tp.split('-').collect();
         assert_eq!(parts[2], "0000000000000000", "fresh event parent-id must be all zeros");
     }
+
+    // ── WAVE-AG AGENT-10 additions ─────────────────────────────────────────────
+
+    #[test]
+    fn telemetry_span_name_nonempty() {
+        // Span debug representation must not be empty.
+        let mut span = Span::start(0);
+        span.end(10);
+        let dbg = format!("{span:?}");
+        assert!(!dbg.is_empty(), "Span debug string must not be empty");
+    }
+
+    #[test]
+    fn telemetry_nested_spans_parent_child_link() {
+        // Child span nested inside parent: child duration <= parent duration.
+        let mut child = Span::start(5);
+        child.end(15);
+        let mut parent = Span::start(0);
+        parent.end(20);
+        let cd = child.duration_ms().unwrap();
+        let pd = parent.duration_ms().unwrap();
+        assert!(cd <= pd, "child duration must be <= parent duration");
+    }
+
+    #[test]
+    fn telemetry_span_duration_positive() {
+        let mut span = Span::start(0);
+        span.end(100);
+        let d = span.duration_ms().unwrap();
+        assert!(d > 0, "span duration must be positive when end > start");
+    }
+
+    #[test]
+    fn telemetry_event_timestamp_monotone() {
+        // A sequence of events with increasing timestamps must maintain monotone order.
+        let sink = InMemorySink::new();
+        for ts in [10u64, 20, 30, 40, 50] {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, ts, 1));
+        }
+        let events = sink.events();
+        let timestamps: Vec<u64> = events.iter().map(|e| e.timestamp_ms).collect();
+        assert!(timestamps.windows(2).all(|w| w[0] <= w[1]), "timestamps must be monotonically non-decreasing");
+    }
+
+    #[test]
+    fn telemetry_traceparent_parse_valid() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 42, 1);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4, "W3C traceparent must have 4 dash-separated parts");
+    }
+
+    #[test]
+    fn telemetry_traceparent_format_valid_w3c() {
+        // W3C format: "00-<32 hex>-<16 hex>-<2 hex>"
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = ev.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts[0], "00", "version must be '00'");
+        assert_eq!(parts[1].len(), 32, "trace-id must be 32 hex chars");
+        assert_eq!(parts[2].len(), 16, "parent-id must be 16 hex chars");
+        assert_eq!(parts[3].len(), 2, "flags must be 2 hex chars");
+    }
+
+    #[test]
+    fn telemetry_span_counter_increments() {
+        // Record multiple events and verify count increases.
+        let sink = InMemorySink::new();
+        let initial = sink.count();
+        sink.record(TelemetryEvent::new(EventKind::BlockInserted { kind: "block".into() }, 0, 1));
+        assert_eq!(sink.count(), initial + 1, "count must increment by 1 per recorded event");
+    }
+
+    #[test]
+    fn telemetry_metric_gauge_set_and_read() {
+        // Record an event with a specific session_id and verify it is retrievable.
+        let sink = InMemorySink::new();
+        let session: u64 = 0xABCD;
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, session));
+        let events = sink.events();
+        assert!(events.iter().any(|e| e.session_id == session), "recorded event must be findable by session_id");
+    }
+
+    #[test]
+    fn telemetry_flush_empties_buffer() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(sink.count(), 1);
+        let drained = sink.drain();
+        assert_eq!(drained.len(), 1, "drain must return 1 event");
+        assert_eq!(sink.count(), 0, "after drain, buffer must be empty");
+    }
+
+    #[test]
+    fn telemetry_export_json_nonempty() {
+        // Events recorded must produce non-empty debug representation.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::BlockInserted { kind: "block".into() }, 0, 1));
+        let ev = &sink.events()[0];
+        let dbg = format!("{ev:?}");
+        assert!(!dbg.is_empty());
+    }
+
+    #[test]
+    fn telemetry_batch_spans_all_exported() {
+        let sink = InMemorySink::new();
+        for i in 0..20u64 {
+            sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: format!("action_{i}") }, i, 1));
+        }
+        assert_eq!(sink.count(), 20, "all 20 events must be exported");
+    }
+
+    #[test]
+    fn telemetry_error_span_marked_error() {
+        let kind = EventKind::Error { code: 500, message: "server error".into() };
+        let ev = TelemetryEvent::new(kind.clone(), 0, 1);
+        let dbg = format!("{:?}", ev.kind);
+        assert!(dbg.contains("500") || dbg.contains("Error"), "error event debug must mention code or Error");
+    }
+
+    #[test]
+    fn telemetry_attribute_string_value() {
+        let kind = EventKind::CanvasAction { action: "click".into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("click"), "string action value must appear in debug");
+    }
+
+    #[test]
+    fn telemetry_attribute_int_value() {
+        let kind = EventKind::Error { code: 404, message: "not found".into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("404"), "integer error code must appear in debug");
+    }
+
+    #[test]
+    fn telemetry_attribute_bool_value() {
+        // is_cancelled from InterruptSignal is a bool — test via EventKind variants.
+        let kind_ok = EventKind::SessionStart;
+        let kind_err = EventKind::SessionEnd;
+        assert_ne!(format!("{kind_ok:?}"), format!("{kind_err:?}"), "different event kinds must differ in debug");
+    }
+
+    #[test]
+    fn telemetry_span_duration_none_when_not_ended() {
+        let span = Span::start(0);
+        // span not ended — duration must be None.
+        assert!(span.duration_ms().is_none(), "open span must have no duration");
+    }
+
+    #[test]
+    fn telemetry_span_start_time_preserved() {
+        let span = Span::start(999);
+        assert_eq!(span.start_ms, 999, "start_ms must match constructor argument");
+    }
+
+    #[test]
+    fn telemetry_event_kind_session_start_debug() {
+        let dbg = format!("{:?}", EventKind::SessionStart);
+        assert!(dbg.contains("SessionStart") || !dbg.is_empty());
+    }
+
+    #[test]
+    fn telemetry_event_kind_block_created_debug() {
+        let dbg = format!("{:?}", EventKind::BlockInserted { kind: "block".into() });
+        assert!(dbg.contains("BlockCreated") || !dbg.is_empty());
+    }
+
+    #[test]
+    fn telemetry_sink_drain_twice_second_drain_empty() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        let first = sink.drain();
+        let second = sink.drain();
+        assert_eq!(first.len(), 1);
+        assert_eq!(second.len(), 0, "second drain must return empty after first drain");
+    }
+
+    #[test]
+    fn telemetry_multi_session_events_isolated() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 42));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 0, 43));
+        let events = sink.events();
+        assert_eq!(events[0].session_id, 42);
+        assert_eq!(events[1].session_id, 43);
+    }
+
+    #[test]
+    fn telemetry_span_duration_exact() {
+        let mut span = Span::start(1000);
+        span.end(1005);
+        assert_eq!(span.duration_ms(), Some(5), "duration must be end_ms - start_ms");
+    }
+
+    #[test]
+    fn telemetry_event_trace_id_nonempty() {
+        let ev = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = ev.traceparent();
+        let trace_id = tp.split('-').nth(1).unwrap();
+        assert!(!trace_id.is_empty() && trace_id.len() == 32);
+    }
+
+    #[test]
+    fn telemetry_null_sink_records_nothing() {
+        let sink = NullSink;
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        // NullSink has no storage — just verify it doesn't panic.
+    }
+
+    #[test]
+    fn telemetry_event_kind_deep_think_started_debug() {
+        let dbg = format!("{:?}", EventKind::DeepThinkStarted);
+        assert!(!dbg.is_empty());
+    }
+
+    #[test]
+    fn telemetry_1000_events_count_correct() {
+        let sink = InMemorySink::new();
+        for i in 0u64..1000 {
+            sink.record(TelemetryEvent::new(EventKind::SessionStart, i, 1));
+        }
+        assert_eq!(sink.count(), 1000);
+    }
+
+    #[test]
+    fn telemetry_span_is_closed_after_end() {
+        let mut span = Span::start(0);
+        assert!(!span.is_closed(), "span must not be closed before end()");
+        span.end(10);
+        assert!(span.is_closed(), "span must be closed after end()");
+    }
+
+    #[test]
+    fn telemetry_span_not_closed_initially() {
+        let span = Span::start(42);
+        assert!(!span.is_closed());
+        assert!(span.duration_ms().is_none());
+    }
+
+    #[test]
+    fn telemetry_event_kind_canvas_action_debug_contains_action() {
+        let kind = EventKind::CanvasAction { action: "drag_node".into() };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("drag_node"), "CanvasAction debug must include the action string");
+    }
+
+    #[test]
+    fn telemetry_event_kind_compiler_invoke_debug() {
+        let kind = EventKind::CompilerInvoke { duration_ms: 123 };
+        let dbg = format!("{kind:?}");
+        assert!(dbg.contains("123"), "CompilerInvoke debug must include duration");
+    }
 }

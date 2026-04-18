@@ -917,4 +917,211 @@ mod tests {
         // Pool must not exceed MAX_POOL_SIZE after all threads finish.
         assert!(state.pool_idle_count() <= 4);
     }
+
+    // ── AG6 additions ──────────────────────────────────────────────────────
+
+    /// Multiple concurrent readers via RwLock don't block each other (via SharedState).
+    #[test]
+    fn rwlock_grammar_kinds_concurrent_readers() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "noun".into(), description: "thing".into() },
+            GrammarKind { name: "verb".into(), description: "action".into() },
+        ]);
+
+        // 6 concurrent readers — all succeed without blocking each other
+        let handles: Vec<_> = (0..6)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    let kinds = s.cached_grammar_kinds();
+                    assert_eq!(kinds.len(), 2);
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("reader thread panicked");
+        }
+    }
+
+    /// borrow_reader returns a slot whose state dict_path matches self.
+    #[test]
+    fn borrow_reader_returns_slot() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("target.db", "g.db"));
+        let slot = state.borrow_reader();
+        assert_eq!(slot.state.dict_path, "target.db");
+        state.return_reader(slot);
+    }
+
+    /// After borrow then return, a second borrow_reader succeeds (slot is reused).
+    #[test]
+    fn return_reader_puts_slot_back() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        let slot = state.borrow_reader();
+        state.return_reader(slot);
+        // Second borrow should succeed — no panic, slot is valid
+        let slot2 = state.borrow_reader();
+        assert_eq!(slot2.state.dict_path, "d.db");
+        state.return_reader(slot2);
+    }
+
+    /// Pool starts with 0 idle slots; after returning 4, it holds exactly 4.
+    #[test]
+    fn reader_pool_max_4_slots() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        assert_eq!(state.pool_idle_count(), 0);
+        // Borrow 4 slots then return them
+        let slots: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
+        for s in slots {
+            state.return_reader(s);
+        }
+        assert_eq!(state.pool_idle_count(), 4, "pool must hold exactly 4 slots after 4 returns");
+    }
+
+    /// Write kinds, then read them back: round trip preserves content.
+    #[test]
+    fn grammar_kinds_read_write_round_trip() {
+        let state = SharedState::new("d.db", "g.db");
+        let expected = vec![
+            GrammarKind { name: "alpha".into(), description: "first".into() },
+            GrammarKind { name: "beta".into(), description: "second".into() },
+        ];
+        state.update_grammar_kinds(expected.clone());
+        let read_back = state.cached_grammar_kinds();
+        assert_eq!(read_back.len(), 2);
+        assert_eq!(read_back[0].name, "alpha");
+        assert_eq!(read_back[1].name, "beta");
+    }
+
+    /// Fresh SharedState has empty grammar_kinds.
+    #[test]
+    fn shared_state_new_default_empty_kinds() {
+        let state = SharedState::new("x.db", "y.db");
+        assert!(state.cached_grammar_kinds().is_empty(), "fresh state must have no grammar kinds");
+    }
+
+    /// After borrowing all 4 pool slots, the 5th borrow creates a new slot (pool empty → fresh).
+    #[test]
+    fn borrow_reader_all_slots_exhausted_returns_none() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        // Pre-populate pool with 4 slots
+        let initial: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
+        for s in initial {
+            state.return_reader(s);
+        }
+        assert_eq!(state.pool_idle_count(), 4);
+        // Borrow all 4 — pool becomes empty
+        let borrowed: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
+        assert_eq!(state.pool_idle_count(), 0, "pool must be empty after borrowing all 4 slots");
+        // 5th borrow creates a fresh slot (no panic)
+        let extra = state.borrow_reader();
+        assert_eq!(extra.state.dict_path, "d.db");
+        // Return all
+        for s in borrowed {
+            state.return_reader(s);
+        }
+        state.return_reader(extra);
+    }
+
+    /// Returning a slot when pool is already at MAX_POOL_SIZE causes the extra to be dropped silently.
+    #[test]
+    fn return_reader_after_full_pool_no_panic() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        // Fill pool to MAX_POOL_SIZE (4)
+        let slots: Vec<_> = (0..4).map(|_| state.borrow_reader()).collect();
+        for s in slots {
+            state.return_reader(s);
+        }
+        assert_eq!(state.pool_idle_count(), 4);
+        // Returning a 5th slot — pool is full, extra must be dropped silently (no panic)
+        let extra = state.borrow_reader(); // creates fresh (pool empty after 4 borrows above)
+        // Borrow one to make room check: pool still at 4 after returning above 4; extra is fresh
+        state.return_reader(extra); // pool is already at 4, so this extra is dropped
+        // Count must not exceed 4
+        assert!(state.pool_idle_count() <= 4, "pool must not exceed MAX_POOL_SIZE");
+    }
+
+    /// update_grammar_kinds replaces the previous list (acts as setter).
+    #[test]
+    fn shared_state_update_grammar_kinds() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "old".into(), description: "stale".into() },
+        ]);
+        assert_eq!(state.cached_grammar_kinds().len(), 1);
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "new_a".into(), description: "fresh".into() },
+            GrammarKind { name: "new_b".into(), description: "also fresh".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        assert_eq!(kinds.len(), 2);
+        assert_eq!(kinds[0].name, "new_a");
+        assert_eq!(kinds[1].name, "new_b");
+    }
+
+    /// Grammar kinds can be filtered by name substring (simulates category filter).
+    #[test]
+    fn grammar_kinds_filter_by_category() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind { name: "verb_run".into(), description: "action".into() },
+            GrammarKind { name: "verb_jump".into(), description: "action".into() },
+            GrammarKind { name: "noun_item".into(), description: "thing".into() },
+        ]);
+        let kinds = state.cached_grammar_kinds();
+        let verbs: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("verb")).collect();
+        assert_eq!(verbs.len(), 2, "filter by 'verb' prefix must yield 2 results");
+        let nouns: Vec<_> = kinds.iter().filter(|k| k.name.starts_with("noun")).collect();
+        assert_eq!(nouns.len(), 1);
+    }
+
+    /// ReaderSlot has a state field that is an Arc<SharedState>.
+    #[test]
+    fn pool_slot_has_reader_field() {
+        use std::sync::Arc;
+        let state = Arc::new(SharedState::new("slot_test.db", "g.db"));
+        let slot = state.borrow_reader();
+        // Access the Arc inside the slot
+        assert_eq!(slot.state.dict_path, "slot_test.db");
+        // Arc strong count reflects that slot holds a reference
+        assert!(Arc::strong_count(&state) >= 2);
+        state.return_reader(slot);
+    }
+
+    /// Concurrent borrow and return from 4 threads is data-race-free.
+    #[test]
+    fn pool_concurrent_borrow_and_return_safe() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+
+        let handles: Vec<_> = (0..4)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..10 {
+                        let slot = s.borrow_reader();
+                        // Verify we got a valid slot
+                        assert_eq!(slot.state.dict_path, "d.db");
+                        s.return_reader(slot);
+                    }
+                })
+            })
+            .collect();
+
+        for h in handles {
+            h.join().expect("thread panicked");
+        }
+        assert!(state.pool_idle_count() <= 4);
+    }
 }

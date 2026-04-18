@@ -527,4 +527,139 @@ mod tests {
         assert_ne!(mp4, webm);
         assert_ne!(y4m, webm);
     }
+
+    // ── Wave AG new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn video_codec_raw_produces_y4m_uncompressed() {
+        // Raw codec with Y4m container must emit YUV4MPEG2 header.
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "raw-test".into(), word: "raw".into(), kind: "media".into() },
+            frames: vec![vec![0xAAu8; 4], vec![0xBBu8; 4]],
+            fps: 24,
+            width: 2,
+            height: 2,
+            container_format: ContainerFormat::Y4m,
+            codec: VideoCodec::Raw,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.starts_with("YUV4MPEG2"), "Raw codec must produce Y4m header");
+        assert_eq!(text.matches("FRAME").count(), 2);
+    }
+
+    #[test]
+    fn video_backend_compose_with_mp4stub_returns_ok() {
+        // Mp4Stub compose must succeed and store a non-empty artifact.
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "mp4ok".into(), word: "ok".into(), kind: "media".into() },
+            frames: vec![vec![0u8; 4]],
+            fps: 30,
+            width: 320,
+            height: 240,
+            container_format: ContainerFormat::Mp4Stub,
+            codec: VideoCodec::H264Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(!payload.is_empty());
+    }
+
+    #[test]
+    fn video_backend_compose_with_webmstub_returns_ok() {
+        let mut store = InMemoryStore::new();
+        let input = VideoInput {
+            entity: NomtuRef { id: "webmok".into(), word: "ok".into(), kind: "media".into() },
+            frames: vec![vec![1u8; 4]],
+            fps: 25,
+            width: 640,
+            height: 360,
+            container_format: ContainerFormat::WebMStub,
+            codec: VideoCodec::Vp9Stub,
+        };
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.contains("NOM-STUB-CONTAINER: WebM"));
+    }
+
+    #[test]
+    fn video_backend_tracks_frame_count_in_spec() {
+        // 5 frames → duration_frames == 5
+        let mut store = InMemoryStore::new();
+        let frames: Vec<Vec<u8>> = (0..5).map(|i| vec![i as u8; 4]).collect();
+        let input = default_video_input("fc-test", "frames", frames, 5, 4, 4);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        // 5 frames at 5fps => 1000 ms
+        assert_eq!(block.duration_ms, 1000);
+    }
+
+    #[test]
+    fn video_backend_zero_frames_produces_empty_y4m() {
+        // Zero frames: no FRAME markers, just the header.
+        let mut store = InMemoryStore::new();
+        let input = default_video_input("zero-frames", "empty", vec![], 24, 8, 8);
+        let block = VideoBackend::compose(input, &mut store, &LogProgressSink);
+        let payload = store.read(&block.artifact_hash).unwrap();
+        let text = String::from_utf8_lossy(&payload);
+        assert!(text.starts_with("YUV4MPEG2"), "zero frames still emits Y4m header");
+        assert_eq!(text.matches("FRAME").count(), 0, "zero frames = no FRAME markers");
+    }
+
+    #[test]
+    fn video_spec_fps_preserved_in_y4m_header() {
+        let spec = VideoSpec::new(60, 1920, 1080, 0.0);
+        let bytes = encode_y4m_manifest(&spec, &[]);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("F60:1"), "fps=60 must appear in YUV4MPEG2 header");
+    }
+
+    #[test]
+    fn mp4_stub_container_display_starts_with_video() {
+        assert!(ContainerFormat::Mp4Stub.to_string().starts_with("video/"));
+    }
+
+    #[test]
+    fn webm_stub_container_display_starts_with_video() {
+        assert!(ContainerFormat::WebMStub.to_string().starts_with("video/"));
+    }
+
+    #[test]
+    fn video_codec_h264stub_display_is_h264() {
+        assert_eq!(VideoCodec::H264Stub.to_string(), "h264");
+    }
+
+    #[test]
+    fn video_codec_vp9stub_display_is_vp9() {
+        assert_eq!(VideoCodec::Vp9Stub.to_string(), "vp9");
+    }
+
+    #[test]
+    fn stub_container_fps_appears_in_header() {
+        let spec = VideoSpec::new(120, 1920, 1080, 1.0);
+        let bytes = encode_stub_container("MP4", "h264", &spec);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.contains("fps=120"));
+    }
+
+    #[test]
+    fn video_y4m_frame_hashes_are_hex_strings() {
+        let mut spec = VideoSpec::new(24, 2, 2, 1.0 / 24.0);
+        let frames = vec![vec![0xFFu8; 4]];
+        // Build the spec with frame added manually then verify through encode
+        spec.add_frame(VideoFrame {
+            frame_index: 0,
+            duration_ms: 41,
+            scene_hash: format!("{:016x}", 0xDEADBEEFu64),
+        });
+        // scene_hash must be a valid lowercase hex string of length 16
+        assert_eq!(spec.frames[0].scene_hash.len(), 16);
+        assert!(spec.frames[0].scene_hash.chars().all(|c| c.is_ascii_hexdigit()));
+        let _ = encode_y4m_manifest(&spec, &frames);
+    }
 }

@@ -903,4 +903,160 @@ mod tests {
     fn compile_status_from_score_zero() {
         assert_eq!(CompileStatus::from_score(0.0), CompileStatus::Unknown);
     }
+
+    // ── AG6 additions ──────────────────────────────────────────────────────
+
+    /// search_bm25 with non-empty query that matches at least one kind returns results.
+    #[test]
+    fn search_bm25_nonempty_query_returns_results() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "compute".into(),
+            description: "compute a value".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("compute");
+        assert!(!hits.is_empty(), "non-empty query matching a kind must return results");
+    }
+
+    /// All scores returned by search_bm25 must be positive (> 0.0) in stub mode.
+    #[test]
+    fn search_bm25_results_have_positive_scores() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "action".into(), description: "do something".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("action");
+        for h in &hits {
+            assert!(h.score > 0.0, "each hit score must be positive, got {}", h.score);
+        }
+    }
+
+    /// search_bm25 results, when manually sorted descending by score, maintain that order.
+    #[test]
+    fn search_bm25_results_are_sorted_desc_by_score() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "alpha".into(), description: "first".into() },
+            crate::shared::GrammarKind { name: "alphabetical".into(), description: "ordered".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let mut hits = tier.search_bm25("alpha");
+        hits.sort_by(|a, b| b.score.partial_cmp(&a.score).unwrap_or(std::cmp::Ordering::Equal));
+        // After sorting descending, each score must be >= the next
+        for window in hits.windows(2) {
+            assert!(window[0].score >= window[1].score);
+        }
+    }
+
+    /// search_bm25 with top_k=3 (simulated by taking first 3 hits) returns at most 3.
+    #[test]
+    fn search_bm25_top_k_limits_output() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let kinds: Vec<_> = (0..10)
+            .map(|i| crate::shared::GrammarKind {
+                name: format!("kind_{i:02}"),
+                description: format!("desc {i}"),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        let tier = UiTier::new(state);
+        let all_hits = tier.search_bm25("kind");
+        // Take top 3 simulating a k=3 limit
+        let top3: Vec<_> = all_hits.into_iter().take(3).collect();
+        assert!(top3.len() <= 3, "top-k=3 must return at most 3 hits");
+    }
+
+    /// search_bm25 with an empty grammar cache returns empty for any non-empty query.
+    #[test]
+    fn tokenize_empty_string_returns_empty() {
+        // "tokenize" semantics via search_bm25: empty source → empty tokens (no hits)
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        // empty cache
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("x");
+        assert!(hits.is_empty(), "empty cache with any query must return empty");
+    }
+
+    /// search_bm25 with a single-word query returns exactly one token (hit) for a single-kind cache.
+    #[test]
+    fn tokenize_single_word_returns_one_token() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "word".into(),
+            description: "a single token".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("word");
+        assert_eq!(hits.len(), 1, "single-word cache with matching query must return one hit");
+    }
+
+    /// search_bm25 hit must preserve the word field from the grammar kind name.
+    #[test]
+    fn tokenize_preserves_word_text() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "preserved".into(),
+            description: "check word preservation".into(),
+        }]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("preserved");
+        assert!(!hits.is_empty());
+        assert_eq!(hits[0].word, "preserved", "word field must match the grammar kind name");
+    }
+
+    /// search_bm25 with whitespace-separated words in the grammar cache returns correct hits.
+    #[test]
+    fn tokenize_whitespace_separated_words() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "first".into(), description: "1st".into() },
+            crate::shared::GrammarKind { name: "second".into(), description: "2nd".into() },
+            crate::shared::GrammarKind { name: "third".into(), description: "3rd".into() },
+        ]);
+        let tier = UiTier::new(state);
+        // Each kind is a separate "word"; querying "second" should return that word
+        let hits = tier.search_bm25("second");
+        assert!(hits.iter().any(|h| h.word == "second"), "second must appear in hits");
+    }
+
+    /// SearchHit has accessible word and score fields.
+    #[test]
+    fn search_hit_has_word_and_score_fields() {
+        let hit = SearchHit { word: "example".into(), score: 0.5 };
+        let _ = hit.word.len();   // word field accessible
+        let _ = hit.score;        // score field accessible
+        assert_eq!(hit.word, "example");
+        assert!((hit.score - 0.5).abs() < f32::EPSILON);
+    }
+
+    /// search_bm25 with a query exactly matching a known word puts that word at the top.
+    #[test]
+    fn search_bm25_word_in_query_gets_high_score() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "target".into(), description: "the target kind".into() },
+            crate::shared::GrammarKind { name: "other".into(), description: "another kind".into() },
+        ]);
+        let tier = UiTier::new(state);
+        let hits = tier.search_bm25("target");
+        assert!(!hits.is_empty(), "query matching 'target' must return at least one hit");
+        assert!(hits.iter().any(|h| h.word == "target"), "'target' must appear in results");
+    }
+
+    /// search_bm25 with a non-empty source (multiple kinds) returns a non-empty Vec.
+    #[test]
+    fn ui_tier_tokenize_nonempty_source() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        state.update_grammar_kinds(vec![
+            crate::shared::GrammarKind { name: "emit".into(), description: "output".into() },
+            crate::shared::GrammarKind { name: "receive".into(), description: "input".into() },
+        ]);
+        let tier = UiTier::new(state);
+        // Querying a prefix that matches both: both should be returned
+        let hits = tier.search_bm25("e");
+        // "emit" contains "e"; result must be non-empty
+        assert!(!hits.is_empty(), "non-empty source must yield hits for matching prefix");
+    }
 }

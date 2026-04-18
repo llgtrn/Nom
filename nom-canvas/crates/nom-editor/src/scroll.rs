@@ -426,4 +426,65 @@ mod tests {
             "cursor must be visible at deep scroll position"
         );
     }
+
+    // ── wave AG-8: additional scroll tests ───────────────────────────────────
+
+    #[test]
+    fn scroll_reveal_cursor_below_viewport_scrolls_down() {
+        // Viewport shows 5 rows [0, 5). Cursor at row 7 (outside).
+        let mut pos = ScrollPosition::default();
+        pos.scroll_to_line(7, 5);
+        // top_row = 7 + 1 - 5 = 3
+        assert_eq!(pos.top_row, 3);
+        // Cursor is now visible
+        assert!(pos.top_row <= 7 && 7 < pos.top_row + 5);
+    }
+
+    #[test]
+    fn scroll_reveal_cursor_above_viewport_scrolls_up() {
+        // Viewport starts at row 10. Cursor at row 3 (above).
+        let mut pos = ScrollPosition::with_anchor(10, 0);
+        pos.scroll_to_line(3, 5);
+        assert_eq!(pos.top_row, 3);
+        assert!(pos.top_row <= 3 && 3 < pos.top_row + 5);
+    }
+
+    #[test]
+    fn scroll_reveal_cursor_in_view_no_change() {
+        // Viewport [5, 15). Cursor at row 8 — already visible.
+        let mut pos = ScrollPosition::with_anchor(5, 0);
+        pos.scroll_to_line(8, 10);
+        // top_row must not change
+        assert_eq!(pos.top_row, 5);
+    }
+
+    #[test]
+    fn scroll_to_top_sets_offset_zero() {
+        let mut pos = ScrollPosition::with_anchor(20, 0);
+        pos.scroll_to_line(0, 10);
+        assert_eq!(pos.top_row, 0);
+        assert_eq!(pos.anchor_row, 0);
+    }
+
+    #[test]
+    fn scroll_to_bottom_sets_max_offset() {
+        let total_lines = 100usize;
+        let viewport = 10usize;
+        let mut pos = ScrollPosition::default();
+        let last_line = total_lines - 1;
+        pos.scroll_to_line(last_line, viewport);
+        // top_row = 99 + 1 - 10 = 90
+        assert_eq!(pos.top_row, 90);
+        assert!(pos.top_row <= last_line && last_line < pos.top_row + viewport);
+    }
+
+    #[test]
+    fn scroll_by_line_increments_offset() {
+        // scroll_by with exactly one line_height increments top_row by 1
+        let mut pos = ScrollPosition::default();
+        let line_height = 20.0_f32;
+        pos.scroll_by(line_height, line_height);
+        assert_eq!(pos.top_row, 1);
+        assert!((pos.vertical_offset).abs() < 0.001);
+    }
 }

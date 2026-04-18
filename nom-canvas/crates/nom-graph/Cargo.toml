@@ -6,5 +6,4 @@ edition = "2021"
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
 nom-memoize = { path = "../nom-memoize" }
-crossbeam-channel = { workspace = true }
 lru = { workspace = true }
