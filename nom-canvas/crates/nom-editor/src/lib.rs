@@ -49,3 +49,5 @@ pub mod multi_file_edit;
 pub use multi_file_edit::{EditScope, MultiFileChange, MultiFileSession, MultiFileDiff, SessionApplier};
 pub mod code_lens;
 pub use code_lens::{CodeLensKind, CodeLens, CodeLensProvider, CodeLensOverlay, LensResolver};
+pub mod breadcrumb;
+pub use breadcrumb::{BreadcrumbKind, BreadcrumbSegment, BreadcrumbPath, BreadcrumbNav, BreadcrumbRenderer};

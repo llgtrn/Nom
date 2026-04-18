@@ -5,6 +5,8 @@ pub mod merge;
 pub mod ops;
 pub mod presence;
 pub mod session;
+pub mod sync_protocol;
+pub use sync_protocol::{SyncMessageKind, SyncMessage, SyncState, SyncSession, SyncProtocol};
 pub use merge::{MergeRecord, MergeStrategy};
 pub use presence::{CursorPosition, PresenceMap, PresenceStatus};
 pub use presence::{PresenceBroadcast, PresenceEvent, PresenceUser, PresenceUserMap, PresenceUserStatus};

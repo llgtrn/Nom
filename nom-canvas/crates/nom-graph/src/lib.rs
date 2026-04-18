@@ -48,3 +48,5 @@ pub mod delta_compress;
 pub use delta_compress::{DeltaKind, DeltaFrame, DeltaEncoder, DeltaDecoder, DeltaStream};
 pub mod intent_graph;
 pub use intent_graph::{IntentKind, IntentNode, IntentEdge, IntentGraph, IntentGraphQuery};
+pub mod schema_version;
+pub use schema_version::{SchemaVersionId, VersionEdge, SchemaVersionGraph, VersionDiff, SchemaMigrationPlan};

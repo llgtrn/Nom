@@ -92,6 +92,10 @@ pub use snap_align::{AlignAxis, AlignGuide, AlignResult, AlignmentEngine, SnapTa
 pub mod layout_grid;
 pub use layout_grid::{GridCell, GridPlacement, GridTrack, LayoutGrid, TrackSize};
 
+/// Viewport clip regions: AABB clip rect, clip stack, viewport clipper, clip results, and batch queries.
+pub mod viewport_clip;
+pub use viewport_clip::{ClipRect, ClipStack, ViewportClipper, ClipResult, ClipBatch};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

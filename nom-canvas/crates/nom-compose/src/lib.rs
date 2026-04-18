@@ -154,6 +154,8 @@ pub use native_screen::{
 };
 pub mod video_timeline;
 pub use video_timeline::{ClipKind, TimelineClip, VideoTimeline, ClipOverlap, TimelineRenderer};
+pub mod export_bundle;
+pub use export_bundle::{ExportFormat, ExportTarget, ExportJob, ExportQueue, ExportResult};
 
 #[cfg(test)]
 mod integration_tests {
