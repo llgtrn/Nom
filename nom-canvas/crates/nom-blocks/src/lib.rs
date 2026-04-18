@@ -2,6 +2,9 @@
 #![warn(missing_docs)]
 //! Block primitives for the NomCanvas workspace — models, connectors, tables, dataviews.
 
+/// Ancestry depth tracking and transitive ancestor caching.
+#[allow(missing_docs)]
+pub mod ancestry;
 pub mod block_model;
 /// Composition block types (app, audio, data, document, etc.).
 #[allow(missing_docs)]
@@ -45,6 +48,7 @@ pub mod table;
 pub mod validators;
 pub mod workspace;
 
+pub use ancestry::{AncestorEntry, AncestryCache};
 pub use block_model::{BlockId, BlockMeta, BlockModel, NomtuRef};
 pub use connector::{Connector, ConnectorId};
 pub use dict_reader::{ClauseShape, DictReader};

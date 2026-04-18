@@ -13,9 +13,11 @@ pub mod scene;
 pub mod scene_builder;
 pub mod shaders;
 pub mod styled;
+pub mod text_layout;
 pub mod types;
 pub mod window;
 
+pub use text_layout::{GlyphRun, TextAlign, TextLayoutEngine, TextStyle};
 pub use types::*;
 
 #[cfg(test)]

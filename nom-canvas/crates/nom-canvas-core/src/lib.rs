@@ -22,6 +22,7 @@ pub mod snapping;
 pub mod spatial_index;
 /// Infinite-canvas viewport: zoom, pan, and coordinate transforms.
 pub mod viewport;
+pub use viewport::{AabbIndex, SnapGrid, ViewportSnap};
 /// WebGPU renderer variant for WASM targets.
 pub mod webgpu;
 pub use webgpu::{WebGpuConfig, WebGpuPowerPreference, WebGpuRenderer};

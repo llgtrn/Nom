@@ -1,0 +1,7 @@
+define lint_check that
+  define source_file that "canvas.nomx"
+  define rule_count that 24
+  define violation_count that 2
+  define first_violation that "unused-binding at line 7"
+  source_file + " linted rules=" + rule_count + " violations=" + violation_count + " first=" + first_violation
+lint_check

@@ -1,0 +1,7 @@
+define panel_resize that
+  define panel_id that "left_sidebar"
+  define old_width that 240
+  define new_width that 320
+  define constrained that "false"
+  panel_id + " resized " + old_width + " -> " + new_width + " constrained=" + constrained
+panel_resize

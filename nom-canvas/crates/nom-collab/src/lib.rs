@@ -1,7 +1,9 @@
 #![deny(unsafe_code)]
 
 pub mod merge;
+pub mod session;
 pub use merge::{MergeRecord, MergeStrategy};
+pub use session::{CollabParticipant, CollabSession, SessionRole};
 
 /// Unique identifier for a peer in the collaborative session.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, PartialOrd, Ord, Hash)]

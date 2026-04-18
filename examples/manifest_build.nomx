@@ -1,0 +1,8 @@
+define manifest_build that
+  define app_name that "canvas_editor"
+  define entry_hash that "f3a8b2"
+  define target_platform that "desktop"
+  define dep_count that 14
+  define manifest_hash that "99cc77"
+  app_name + " manifest=" + manifest_hash + " entry=" + entry_hash + " platform=" + target_platform + " deps=" + dep_count
+manifest_build

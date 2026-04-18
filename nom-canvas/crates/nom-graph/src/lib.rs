@@ -8,6 +8,7 @@ pub mod node;
 pub mod node_output;
 pub mod nom_graph;
 pub mod sandbox;
+pub mod traversal;
 
 pub use cache::{
     BasicCache, CacheStrategy, CachedValue, ChangedFlags, ExecutionCache, HierarchicalCache,
@@ -23,3 +24,4 @@ pub use node::{ExecNode, IsChanged, NodeId, NodeState, Port, PortDirection};
 pub use node_output::{NodeEvent, NodeOutputPort, NodeOutputType, TypedNode};
 pub use nom_graph::{NomGraph, NomtuRef};
 pub use sandbox::{eval_expr, sanitize, BinOpKind, EvalContext, Expr, SandboxError, SandboxValue};
+pub use traversal::{GraphTraversal, TraversalOrder, TraversalResult};

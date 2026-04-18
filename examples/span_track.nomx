@@ -1,0 +1,8 @@
+define span_track that
+  define source_file that "main.nomx"
+  define start_byte that 0
+  define end_byte that 42
+  define line_start that 1
+  define line_end that 3
+  source_file + " span=[" + start_byte + ".." + end_byte + "] lines=" + line_start + ".." + line_end
+span_track

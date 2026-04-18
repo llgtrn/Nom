@@ -1,0 +1,7 @@
+define memo_hit that
+  define cache_key that "hash:3f9a type_check"
+  define hit that "true"
+  define saved_ms that 14
+  define cache_size that 512
+  cache_key + " hit=" + hit + " saved=" + saved_ms + "ms cache_entries=" + cache_size
+memo_hit

@@ -19,7 +19,7 @@ pub mod wrap_map;
 pub use buffer::{Buffer, BufferId, Patch};
 pub use clipboard::Clipboard;
 pub use completion::CompletionMenu;
-pub use cursor::{Anchor, Bias, CursorSet, Selection};
+pub use cursor::{Anchor, Bias, BufferHistory, CursorSet, CursorShape, EditorCursor, Selection};
 pub use display_map::{FoldState, LineDisplayMap, LineFoldRegion};
 pub use find_replace::FindState;
 pub use highlight::{

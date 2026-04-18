@@ -1,0 +1,7 @@
+define node_weight that
+  define node_id that "n:0042"
+  define entry_hash that "c9d1e2"
+  define usage_count that 17
+  define computed_weight that 0.84
+  node_id + " entry=" + entry_hash + " uses=" + usage_count + " weight=" + computed_weight
+node_weight

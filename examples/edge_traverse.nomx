@@ -1,0 +1,7 @@
+define edge_traverse that
+  define start_hash that "e1f2a3"
+  define edge_kind that "flows_to"
+  define hop_count that 3
+  define end_hash that "b7c8d9"
+  start_hash + " -[" + edge_kind + " x" + hop_count + "]-> " + end_hash
+edge_traverse

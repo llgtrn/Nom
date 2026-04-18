@@ -1,0 +1,8 @@
+define type_infer that
+  define expression that "a + b"
+  define left_kind that "integer"
+  define right_kind that "integer"
+  define inferred_kind that "integer"
+  define confidence that 1.0
+  expression + " inferred=" + inferred_kind + " from (" + left_kind + ", " + right_kind + ") conf=" + confidence
+type_infer

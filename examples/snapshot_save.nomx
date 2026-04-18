@@ -1,0 +1,7 @@
+define snapshot_save that
+  define snapshot_id that "snap:0055"
+  define entry_count that 8312
+  define edge_count that 22400
+  define output_path that ".nom/snapshots/snap_0055.db"
+  snapshot_id + " saved entries=" + entry_count + " edges=" + edge_count + " -> " + output_path
+snapshot_save

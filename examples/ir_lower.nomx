@@ -1,0 +1,7 @@
+define ir_lower that
+  define ast_node that "define_expr"
+  define ir_op that "bind_local"
+  define register that "r0"
+  define value_kind that "string"
+  ast_node + " lowered to " + ir_op + " reg=" + register + " kind=" + value_kind
+ir_lower

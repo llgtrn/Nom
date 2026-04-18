@@ -1,0 +1,7 @@
+define symbol_index that
+  define workspace_path that "examples/"
+  define file_count that 100
+  define symbol_count that 432
+  define duration_ms that 18
+  workspace_path + " indexed files=" + file_count + " symbols=" + symbol_count + " in " + duration_ms + "ms"
+symbol_index

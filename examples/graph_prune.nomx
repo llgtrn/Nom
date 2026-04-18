@@ -1,0 +1,8 @@
+define graph_prune that
+  define threshold that 0.1
+  define nodes_before that 1200
+  define edges_before that 4800
+  define nodes_removed that 38
+  define edges_removed that 152
+  "pruned threshold=" + threshold + " removed nodes=" + nodes_removed + " edges=" + edges_removed + " remaining=" + (nodes_before - nodes_removed)
+graph_prune

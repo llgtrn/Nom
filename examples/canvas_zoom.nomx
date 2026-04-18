@@ -1,0 +1,8 @@
+define canvas_zoom that
+  define canvas_id that "main_canvas"
+  define old_scale that 1.0
+  define new_scale that 1.5
+  define origin_x that 400
+  define origin_y that 300
+  canvas_id + " zoom " + old_scale + " -> " + new_scale + " origin=(" + origin_x + "," + origin_y + ")"
+canvas_zoom

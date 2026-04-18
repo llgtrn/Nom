@@ -9,6 +9,9 @@ pub use retrievers::{BM25Document, BM25Retriever, CosineSimilarityRetriever, Vec
 pub mod pipeline;
 pub use pipeline::{IngestionEvent, IngestionPipeline, LifecycleManager, LifecycleTransition};
 
+pub mod classify;
+pub use classify::{ClassifyResult, IntentClassifier, IntentLabel, MecePartition};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

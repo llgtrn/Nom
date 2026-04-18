@@ -1,5 +1,4 @@
 use crate::elements::ElementBounds;
-use crate::spatial_index::SpatialIndex;
 use nom_gpui::types::{Bounds, Pixels, Point, Size};
 
 /// Infinite-canvas viewport: maps between screen and canvas coordinate systems.
@@ -19,19 +18,16 @@ pub struct Viewport {
     /// Screen dimensions in pixels
     pub size: [f32; 2],
     /// Spatial index for O(log n) element lookup by canvas-space bounds.
-    pub spatial_index: SpatialIndex,
+    pub spatial_index: AabbIndex,
 }
 
-// `rstar::RTree` is not `Clone`, so we implement `Clone` manually.
-// The cloned viewport preserves zoom/pan/size but starts with an empty
-// spatial index — re-insert elements into the clone if needed.
 impl Clone for Viewport {
     fn clone(&self) -> Self {
         Self {
             zoom: self.zoom,
             pan: self.pan,
             size: self.size,
-            spatial_index: SpatialIndex::new(),
+            spatial_index: AabbIndex::new(),
         }
     }
 }
@@ -43,20 +39,32 @@ impl Viewport {
             zoom: 1.0,
             pan: [0.0, 0.0],
             size: [width, height],
-            spatial_index: SpatialIndex::new(),
+            spatial_index: AabbIndex::new(),
         }
     }
 
     /// Insert an element into the spatial index.
     pub fn insert_element(&mut self, bounds: ElementBounds) {
-        self.spatial_index.insert(bounds);
+        let x = bounds.min[0];
+        let y = bounds.min[1];
+        let w = bounds.max[0] - bounds.min[0];
+        let h = bounds.max[1] - bounds.min[1];
+        self.spatial_index.insert(bounds.id as u32, x, y, w, h);
     }
 
     /// Return all element IDs whose canvas-space bounds intersect the current
     /// visible viewport region.
     pub fn elements_in_view(&self) -> Vec<u64> {
         let (tl, br) = self.visible_bounds();
-        self.spatial_index.query_in_bounds(tl, br)
+        let x = tl[0];
+        let y = tl[1];
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        self.spatial_index
+            .query_rect(x, y, w, h)
+            .into_iter()
+            .map(|id| id as u64)
+            .collect()
     }
 
     /// Convert a screen-space point to canvas-space.
@@ -188,6 +196,139 @@ impl Viewport {
         let cx = x.clamp(tl[0], br[0]);
         let cy = y.clamp(tl[1], br[1]);
         (cx, cy)
+    }
+}
+
+// ── SnapGrid ──────────────────────────────────────────────────────────────────
+
+/// Grid-snapping helper: rounds world-space coordinates to the nearest grid cell.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct SnapGrid {
+    /// Width of each grid cell in world units.
+    pub cell_width: f32,
+    /// Height of each grid cell in world units.
+    pub cell_height: f32,
+}
+
+impl SnapGrid {
+    /// Snap `(x, y)` to the nearest grid intersection.
+    pub fn snap_point(&self, x: f32, y: f32) -> (f32, f32) {
+        let sx = (x / self.cell_width).round() * self.cell_width;
+        let sy = (y / self.cell_height).round() * self.cell_height;
+        (sx, sy)
+    }
+}
+
+// ── ViewportSnap ──────────────────────────────────────────────────────────────
+
+/// Lightweight viewport for snap-grid and spatial operations.
+///
+/// `(x, y)` is the world-space top-left corner of the visible area.
+/// `(width, height)` is the visible area size in world units at zoom = 1.
+/// `zoom` is screen pixels per world unit.
+///
+/// Coordinate convention:
+///   screen = (world - origin) * zoom
+///   world  = screen / zoom + origin
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub struct ViewportSnap {
+    /// World-space x of the viewport top-left.
+    pub x: f32,
+    /// World-space y of the viewport top-left.
+    pub y: f32,
+    /// Viewport width in world units.
+    pub width: f32,
+    /// Viewport height in world units.
+    pub height: f32,
+    /// Zoom factor: screen pixels per world unit.
+    pub zoom: f32,
+}
+
+impl ViewportSnap {
+    /// Creates a new viewport.
+    pub fn new(x: f32, y: f32, width: f32, height: f32, zoom: f32) -> Self {
+        Self { x, y, width, height, zoom }
+    }
+
+    /// Returns a new viewport panned by `(dx, dy)` world units.
+    #[must_use]
+    pub fn pan(&self, dx: f32, dy: f32) -> Self {
+        Self { x: self.x + dx, y: self.y + dy, ..*self }
+    }
+
+    /// Returns a new viewport zoomed by `factor`, keeping world point `(cx, cy)`
+    /// fixed on screen.
+    #[must_use]
+    pub fn zoom_at(&self, cx: f32, cy: f32, factor: f32) -> Self {
+        let new_zoom = self.zoom * factor;
+        let sx = (cx - self.x) * self.zoom;
+        let sy = (cy - self.y) * self.zoom;
+        Self {
+            x: cx - sx / new_zoom,
+            y: cy - sy / new_zoom,
+            zoom: new_zoom,
+            ..*self
+        }
+    }
+
+    /// Converts a world-space point to screen-space pixels.
+    pub fn world_to_screen(&self, wx: f32, wy: f32) -> (f32, f32) {
+        ((wx - self.x) * self.zoom, (wy - self.y) * self.zoom)
+    }
+
+    /// Converts a screen-space pixel position to a world-space point.
+    pub fn screen_to_world(&self, sx: f32, sy: f32) -> (f32, f32) {
+        (sx / self.zoom + self.x, sy / self.zoom + self.y)
+    }
+
+    /// Returns `true` if world point `(wx, wy)` lies within the visible viewport.
+    pub fn contains_point(&self, wx: f32, wy: f32) -> bool {
+        wx >= self.x
+            && wx <= self.x + self.width
+            && wy >= self.y
+            && wy <= self.y + self.height
+    }
+}
+
+// ── AabbIndex ─────────────────────────────────────────────────────────────────
+
+/// Simple AABB spatial index backed by a `Vec` of `(id, x, y, w, h)` entries.
+///
+/// Re-exported at crate root as `SpatialIndex`.
+/// Use `spatial_index::SpatialIndex` (rstar-backed) for larger scenes.
+#[derive(Debug, Default, Clone)]
+pub struct AabbIndex {
+    entries: Vec<(u32, f32, f32, f32, f32)>,
+}
+
+impl AabbIndex {
+    /// Creates an empty index.
+    pub fn new() -> Self {
+        Self { entries: Vec::new() }
+    }
+
+    /// Inserts an element with the given AABB `(x, y, w, h)`.
+    pub fn insert(&mut self, id: u32, x: f32, y: f32, w: f32, h: f32) {
+        self.entries.push((id, x, y, w, h));
+    }
+
+    /// Returns all entry IDs whose AABB overlaps the query rectangle.
+    pub fn query_rect(&self, x: f32, y: f32, w: f32, h: f32) -> Vec<u32> {
+        self.entries
+            .iter()
+            .filter_map(|&(id, ex, ey, ew, eh)| {
+                if x < ex + ew && x + w > ex && y < ey + eh && y + h > ey {
+                    Some(id)
+                } else {
+                    None
+                }
+            })
+            .collect()
+    }
+
+    /// Returns the number of entries in the index.
+    pub fn count(&self) -> usize {
+        self.entries.len()
     }
 }
 
@@ -1854,5 +1995,106 @@ mod tests {
             vp.is_point_visible([cx, cy]),
             "clamped boundary point must be visible"
         );
+    }
+
+    // ── SnapGrid tests ────────────────────────────────────────────────────────
+
+    /// snap_to_grid: a point snaps to the nearest grid intersection.
+    #[test]
+    fn snap_to_grid() {
+        let grid = SnapGrid { cell_width: 10.0, cell_height: 10.0 };
+        // 13.0 → nearest 10; 17.0 → nearest 20
+        let (sx, sy) = grid.snap_point(13.0, 17.0);
+        assert!((sx - 10.0).abs() < 1e-5, "snap x: expected 10, got {sx}");
+        assert!((sy - 20.0).abs() < 1e-5, "snap y: expected 20, got {sy}");
+    }
+
+    // ── ViewportSnap tests ────────────────────────────────────────────────────
+
+    /// viewport_pan: pan() returns a new viewport with the origin shifted.
+    #[test]
+    fn viewport_pan_snap() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        let panned = vp.pan(10.0, 20.0);
+        assert!((panned.x - 10.0).abs() < 1e-5, "panned.x={}", panned.x);
+        assert!((panned.y - 20.0).abs() < 1e-5, "panned.y={}", panned.y);
+    }
+
+    /// viewport_zoom_at: zooming at viewport centre keeps the world point fixed.
+    #[test]
+    fn viewport_zoom_at_snap() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        let cx = vp.x + vp.width / 2.0;
+        let cy = vp.y + vp.height / 2.0;
+        let zoomed = vp.zoom_at(cx, cy, 2.0);
+        // Screen position of (cx, cy) should still be the viewport-centre pixels.
+        let (sx, sy) = zoomed.world_to_screen(cx, cy);
+        let expected_sx = (cx - vp.x) * vp.zoom; // 400.0
+        let expected_sy = (cy - vp.y) * vp.zoom; // 300.0
+        assert!((sx - expected_sx).abs() < 1e-3, "sx={sx}");
+        assert!((sy - expected_sy).abs() < 1e-3, "sy={sy}");
+    }
+
+    /// world_to_screen: at zoom=1, world (100, 50) → screen (100, 50).
+    #[test]
+    fn world_to_screen_snap() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        let (sx, sy) = vp.world_to_screen(100.0, 50.0);
+        assert!((sx - 100.0).abs() < 1e-5, "screen x={sx}");
+        assert!((sy - 50.0).abs() < 1e-5, "screen y={sy}");
+    }
+
+    /// screen_to_world: inverse of world_to_screen at zoom=1.
+    #[test]
+    fn screen_to_world_snap() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        let (wx, wy) = vp.screen_to_world(100.0, 50.0);
+        assert!((wx - 100.0).abs() < 1e-5, "world x={wx}");
+        assert!((wy - 50.0).abs() < 1e-5, "world y={wy}");
+    }
+
+    /// contains_point_inside: centre of the viewport is visible.
+    #[test]
+    fn contains_point_inside() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        assert!(vp.contains_point(400.0, 300.0), "centre must be inside");
+    }
+
+    /// contains_point_outside: a far-right world point is not inside viewport.
+    #[test]
+    fn contains_point_outside() {
+        let vp = ViewportSnap::new(0.0, 0.0, 800.0, 600.0, 1.0);
+        assert!(!vp.contains_point(2000.0, 300.0), "far point must be outside");
+    }
+
+    // ── AabbIndex / SpatialIndex tests ────────────────────────────────────────
+
+    /// spatial_insert: count reflects the number of inserted entries.
+    #[test]
+    fn spatial_insert() {
+        let mut idx = AabbIndex::new();
+        idx.insert(1, 0.0, 0.0, 100.0, 100.0);
+        idx.insert(2, 200.0, 200.0, 50.0, 50.0);
+        assert_eq!(idx.count(), 2);
+    }
+
+    /// spatial_query_overlap: overlapping entries are returned.
+    #[test]
+    fn spatial_query_overlap() {
+        let mut idx = AabbIndex::new();
+        idx.insert(1, 0.0, 0.0, 100.0, 100.0);
+        idx.insert(2, 200.0, 200.0, 50.0, 50.0);
+        let hits = idx.query_rect(50.0, 50.0, 60.0, 60.0);
+        assert!(hits.contains(&1), "entry 1 must overlap the query rect");
+        assert!(!hits.contains(&2), "entry 2 must not overlap at (50,50)");
+    }
+
+    /// spatial_query_no_overlap: a far-away query returns an empty result.
+    #[test]
+    fn spatial_query_no_overlap() {
+        let mut idx = AabbIndex::new();
+        idx.insert(1, 0.0, 0.0, 10.0, 10.0);
+        let hits = idx.query_rect(500.0, 500.0, 10.0, 10.0);
+        assert!(hits.is_empty(), "no overlap expected for remote region");
     }
 }

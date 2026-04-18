@@ -1,0 +1,7 @@
+define theme_apply that
+  define theme_name that "dark_slate"
+  define token_count that 64
+  define surface_color that "#1e1e2e"
+  define accent_color that "#89b4fa"
+  "applied " + theme_name + " tokens=" + token_count + " surface=" + surface_color + " accent=" + accent_color
+theme_apply

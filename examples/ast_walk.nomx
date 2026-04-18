@@ -1,0 +1,7 @@
+define ast_walk that
+  define root_kind that "define_expr"
+  define visited_count that 11
+  define max_depth that 4
+  define leaf_count that 5
+  root_kind + " walked nodes=" + visited_count + " depth=" + max_depth + " leaves=" + leaf_count
+ast_walk

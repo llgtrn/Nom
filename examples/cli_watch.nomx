@@ -1,0 +1,7 @@
+define cli_watch that
+  define watch_path that "examples/"
+  define debounce_ms that 200
+  define event_kind that "modify"
+  define triggered_file that "examples/hello.nomx"
+  "watching " + watch_path + " debounce=" + debounce_ms + "ms event=" + event_kind + " file=" + triggered_file
+cli_watch

@@ -1,0 +1,8 @@
+define diagnostic_push that
+  define file_path that "examples/scope_resolve.nomx"
+  define severity that "warning"
+  define code that "W0031"
+  define message that "shadowed binding in inner scope"
+  define line that 4
+  file_path + ":" + line + " [" + severity + " " + code + "] " + message
+diagnostic_push

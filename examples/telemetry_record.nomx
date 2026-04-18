@@ -1,0 +1,7 @@
+define telemetry_record that
+  define event_name that "compile_complete"
+  define session_id that "sess:b3c9"
+  define elapsed_ms that 230
+  define peak_mb that 48
+  event_name + " session=" + session_id + " elapsed=" + elapsed_ms + "ms peak_mem=" + peak_mb + "mb"
+telemetry_record

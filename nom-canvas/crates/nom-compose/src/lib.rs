@@ -92,6 +92,8 @@ pub mod pipeline;
 pub use pipeline::{ComponentOutput, ComponentPipeline, DocumentRetriever, TextSplitter};
 pub mod video;
 pub use video::{FrameCapture, PipelineStage, TwoStagePipeline};
+pub mod reverse;
+pub use reverse::{DetectedComponent, ReverseInput, ReverseOrchestrator, ReverseResult};
 
 #[cfg(test)]
 mod integration_tests {

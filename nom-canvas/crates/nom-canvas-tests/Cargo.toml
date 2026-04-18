@@ -9,6 +9,7 @@ path = "tests/golden_paths.rs"
 
 [dev-dependencies]
 nom-compiler-bridge = { path = "../nom-compiler-bridge", default-features = false }
+nom-canvas-core = { path = "../nom-canvas-core" }
 nom-compose = { path = "../nom-compose" }
 nom-intent = { path = "../nom-intent" }
 nom-editor = { path = "../nom-editor" }

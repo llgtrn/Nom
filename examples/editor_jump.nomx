@@ -1,0 +1,7 @@
+define editor_jump that
+  define target_file that "examples/graph_connect.nomx"
+  define target_line that 6
+  define target_col that 3
+  define jump_kind that "definition"
+  "jumped to " + target_file + ":" + target_line + ":" + target_col + " via " + jump_kind
+editor_jump

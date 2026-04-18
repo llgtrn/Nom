@@ -1,0 +1,7 @@
+define hot_reload that
+  define changed_file that "examples/theme_apply.nomx"
+  define affected_panels that 2
+  define reparse_ms that 3
+  define rerender_ms that 6
+  changed_file + " reloaded panels=" + affected_panels + " parse=" + reparse_ms + "ms render=" + rerender_ms + "ms"
+hot_reload

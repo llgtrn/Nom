@@ -1,0 +1,7 @@
+define registry_lookup that
+  define registry_name that "compiler_passes"
+  define query_key that "lower_ir"
+  define found that "true"
+  define pass_index that 2
+  registry_name + "[" + query_key + "] found=" + found + " index=" + pass_index
+registry_lookup

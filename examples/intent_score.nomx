@@ -1,0 +1,8 @@
+define intent_score that
+  define utterance that "show me all partial entries"
+  define top_kind that "query"
+  define top_score that 0.91
+  define second_kind that "list"
+  define second_score that 0.62
+  utterance + " -> " + top_kind + " score=" + top_score + " (runner-up " + second_kind + " " + second_score + ")"
+intent_score

@@ -1,0 +1,7 @@
+define completion_suggest that
+  define prefix that "graph_"
+  define candidate_count that 5
+  define top_candidate that "graph_connect"
+  define top_score that 0.97
+  prefix + " -> " + candidate_count + " candidates top=" + top_candidate + " score=" + top_score
+completion_suggest

@@ -1,0 +1,7 @@
+define scope_resolve that
+  define name that "item_count"
+  define scope_depth that 2
+  define resolved_kind that "integer"
+  define binding_site that "line:5"
+  name + " resolved at depth=" + scope_depth + " kind=" + resolved_kind + " bound_at=" + binding_site
+scope_resolve

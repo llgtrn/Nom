@@ -341,3 +341,81 @@ fn golden_ingestion_pipeline() {
         "IngestionPipeline::ingest must emit a Completed event"
     );
 }
+
+// Golden path 19: snap_to_grid rounds a point to the nearest grid intersection;
+// Viewport::new constructs and is_point_visible confirms a nearby point is in view.
+#[test]
+fn golden_viewport_snap() {
+    use nom_canvas_core::snapping::{snap_to_grid, GRID_SIZE};
+    use nom_canvas_core::viewport::Viewport;
+
+    // 14.3 / 20 = 0.715, rounds to 1 → snaps to 1 × 20 = 20
+    let snapped = snap_to_grid([14.3, 27.8]);
+    assert!(
+        (snapped[0] - GRID_SIZE).abs() < 1e-4,
+        "14.3 must snap to one grid cell ({GRID_SIZE}), got {}",
+        snapped[0]
+    );
+    // 27.8 / 20 = 1.39, rounds to 1 → snaps to 1 × 20 = 20
+    assert!(
+        (snapped[1] - GRID_SIZE).abs() < 1e-4,
+        "27.8 must snap to one grid cell ({GRID_SIZE}), got {}",
+        snapped[1]
+    );
+    let vp = Viewport::new(800.0, 600.0);
+    assert!(
+        vp.is_point_visible([100.0, 100.0]),
+        "point (100, 100) must be visible in an 800×600 viewport at zoom=1"
+    );
+}
+
+// Golden path 20: IntentClassifier classifies a 'define' sentence with high confidence.
+#[test]
+fn golden_intent_classify() {
+    use nom_intent::IntentClassifier;
+
+    let c = IntentClassifier::new();
+    let r = c.classify("define a button that shows label");
+    assert!(
+        r.confidence > 0.8,
+        "classifier must return confidence > 0.8 for a 'define' sentence, got {}",
+        r.confidence
+    );
+}
+
+// Golden path 21: EditorCursor moves to a target position; BufferHistory records ops.
+#[test]
+fn golden_editor_cursor() {
+    use nom_editor::{BufferHistory, EditorCursor};
+
+    let cur = EditorCursor::new(0, 0).move_to(5, 12);
+    assert_eq!(cur.line, 5, "cursor line must be 5 after move_to(5, 12)");
+    assert_eq!(cur.col, 12, "cursor col must be 12 after move_to(5, 12)");
+    let mut hist = BufferHistory::new(10);
+    hist.push("insert_char");
+    assert_eq!(
+        hist.len(),
+        1,
+        "BufferHistory must record one entry after a single push"
+    );
+}
+
+// Golden path 22: AncestryCache stores and retrieves ancestry entries by id and depth.
+#[test]
+fn golden_ancestry_cache() {
+    use nom_blocks::AncestryCache;
+
+    let mut cache = AncestryCache::new(5);
+    cache.insert(1, 2);
+    cache.insert(2, 3);
+    assert_eq!(
+        cache.get(1),
+        Some(2),
+        "AncestryCache must return depth 2 for id 1"
+    );
+    assert_eq!(
+        cache.at_depth(3),
+        vec![2],
+        "AncestryCache must return [2] for depth 3"
+    );
+}

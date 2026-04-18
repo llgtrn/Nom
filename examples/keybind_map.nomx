@@ -1,0 +1,7 @@
+define keybind_map that
+  define chord that "ctrl+shift+p"
+  define action that "open_command_palette"
+  define context that "editor_focused"
+  define priority that 10
+  chord + " -> " + action + " ctx=" + context + " priority=" + priority
+keybind_map

@@ -1200,3 +1200,150 @@ mod tests {
         assert_eq!(sel.tail(), 15);
     }
 }
+
+// ── EditorCursor + BufferHistory ─────────────────────────────────────────────
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CursorShape {
+    Bar,
+    Block,
+    Underscore,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct EditorCursor {
+    pub line: u32,
+    pub col: u32,
+    pub shape: CursorShape,
+}
+
+impl EditorCursor {
+    pub fn new(line: u32, col: u32) -> Self {
+        Self { line, col, shape: CursorShape::Bar }
+    }
+
+    pub fn move_to(self, line: u32, col: u32) -> Self {
+        Self { line, col, shape: self.shape }
+    }
+
+    pub fn move_right(self, cols: u32) -> Self {
+        Self {
+            col: self.col.saturating_add(cols),
+            ..self
+        }
+    }
+
+    pub fn move_down(self, lines: u32) -> Self {
+        Self {
+            line: self.line.saturating_add(lines),
+            ..self
+        }
+    }
+
+    pub fn at_origin(&self) -> bool {
+        self.line == 0 && self.col == 0
+    }
+}
+
+pub struct BufferHistory {
+    ops: Vec<String>,
+    max_len: usize,
+}
+
+impl BufferHistory {
+    pub fn new(max_len: usize) -> Self {
+        Self { ops: Vec::new(), max_len }
+    }
+
+    pub fn push(&mut self, op: &str) {
+        if self.ops.len() >= self.max_len {
+            self.ops.remove(0);
+        }
+        self.ops.push(op.to_owned());
+    }
+
+    pub fn undo(&mut self) -> Option<String> {
+        self.ops.pop()
+    }
+
+    pub fn len(&self) -> usize {
+        self.ops.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.ops.is_empty()
+    }
+}
+
+#[cfg(test)]
+mod editor_cursor_tests {
+    use super::*;
+
+    #[test]
+    fn cursor_new_defaults_to_bar_shape() {
+        let c = EditorCursor::new(3, 7);
+        assert_eq!(c.line, 3);
+        assert_eq!(c.col, 7);
+        assert_eq!(c.shape, CursorShape::Bar);
+    }
+
+    #[test]
+    fn cursor_move_to_updates_position() {
+        let c = EditorCursor::new(0, 0).move_to(5, 10);
+        assert_eq!(c.line, 5);
+        assert_eq!(c.col, 10);
+    }
+
+    #[test]
+    fn cursor_move_right_clamps_at_u32_max() {
+        let c = EditorCursor::new(0, u32::MAX);
+        let moved = c.move_right(1);
+        assert_eq!(moved.col, u32::MAX);
+    }
+
+    #[test]
+    fn cursor_at_origin_true_when_zero_zero() {
+        let c = EditorCursor::new(0, 0);
+        assert!(c.at_origin());
+        let c2 = EditorCursor::new(0, 1);
+        assert!(!c2.at_origin());
+    }
+
+    #[test]
+    fn history_push_stores_ops() {
+        let mut h = BufferHistory::new(10);
+        h.push("insert 'a'");
+        h.push("delete 'b'");
+        assert_eq!(h.len(), 2);
+    }
+
+    #[test]
+    fn history_undo_pops_last_op() {
+        let mut h = BufferHistory::new(10);
+        h.push("op1");
+        h.push("op2");
+        assert_eq!(h.undo(), Some("op2".to_owned()));
+        assert_eq!(h.len(), 1);
+    }
+
+    #[test]
+    fn history_max_len_evicts_oldest() {
+        let mut h = BufferHistory::new(3);
+        h.push("a");
+        h.push("b");
+        h.push("c");
+        h.push("d"); // "a" should be evicted
+        assert_eq!(h.len(), 3);
+        assert_eq!(h.undo(), Some("d".to_owned()));
+        assert_eq!(h.undo(), Some("c".to_owned()));
+        assert_eq!(h.undo(), Some("b".to_owned()));
+        assert!(h.is_empty());
+    }
+
+    #[test]
+    fn history_empty_returns_none_on_undo() {
+        let mut h = BufferHistory::new(5);
+        assert!(h.is_empty());
+        assert_eq!(h.undo(), None);
+    }
+}

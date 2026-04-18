@@ -1,0 +1,7 @@
+define bytecode_emit that
+  define function_name that "add_two"
+  define opcode_count that 8
+  define stack_depth that 2
+  define output_file that "out/add_two.bc"
+  "emitted " + function_name + " opcodes=" + opcode_count + " stack=" + stack_depth + " -> " + output_file
+bytecode_emit

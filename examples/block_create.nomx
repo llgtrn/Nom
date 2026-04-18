@@ -1,0 +1,7 @@
+define block_create that
+  define block_id that "blk:0019"
+  define block_kind that "define_body"
+  define parent_id that "blk:0018"
+  define child_count that 0
+  block_id + " kind=" + block_kind + " parent=" + parent_id + " children=" + child_count
+block_create

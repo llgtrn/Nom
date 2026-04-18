@@ -1,0 +1,7 @@
+define collab_sync that
+  define session_id that "sess:7a3b"
+  define peer_count that 3
+  define op_count that 12
+  define vector_clock that "v[3,7,2]"
+  "synced " + session_id + " peers=" + peer_count + " ops=" + op_count + " clock=" + vector_clock
+collab_sync

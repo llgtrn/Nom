@@ -1,0 +1,7 @@
+define gpui_repaint that
+  define window_id that "win:001"
+  define dirty_region that "left_panel"
+  define draw_calls that 42
+  define frame_ms that 8
+  window_id + " repainted region=" + dirty_region + " draw_calls=" + draw_calls + " frame=" + frame_ms + "ms"
+gpui_repaint

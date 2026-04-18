@@ -1,0 +1,8 @@
+define compose_step that
+  define step_index that 3
+  define step_name that "lower_ir"
+  define input_hash that "aa11bb"
+  define output_hash that "cc22dd"
+  define duration_ms that 5
+  "step[" + step_index + "] " + step_name + " " + input_hash + " -> " + output_hash + " (" + duration_ms + "ms)"
+compose_step
