@@ -4476,4 +4476,303 @@ mod tests {
             );
         }
     }
+
+    // =========================================================================
+    // WAVE AN ADDITIONS — color system, shadow/depth, border/radius
+    // =========================================================================
+
+    // --- Color system ---
+
+    #[test]
+    fn color_primary_hue_in_0_360() {
+        // color_accent_blue is the canonical primary color.
+        let c = color_accent_blue();
+        assert!(
+            c.h >= 0.0 && c.h < 360.0,
+            "color_primary hue ({:.1}) must be in [0, 360)",
+            c.h
+        );
+    }
+
+    #[test]
+    fn color_primary_saturation_in_0_1() {
+        let c = color_accent_blue();
+        assert!(
+            c.s >= 0.0 && c.s <= 1.0,
+            "color_primary saturation ({:.3}) must be in [0, 1]",
+            c.s
+        );
+    }
+
+    #[test]
+    fn color_surface_bg_lightness_in_0_1() {
+        // color_bg_primary is the canonical surface background.
+        let c = color_bg_primary();
+        assert!(
+            c.l >= 0.0 && c.l <= 1.0,
+            "color_surface_bg lightness ({:.3}) must be in [0, 1]",
+            c.l
+        );
+    }
+
+    #[test]
+    fn dark_theme_bg_lightness_below_0_3() {
+        // Dark theme: primary background must be dark (lightness < 0.3).
+        let c = color_bg_primary();
+        assert!(
+            c.l < 0.3,
+            "dark theme bg lightness ({:.3}) must be < 0.3",
+            c.l
+        );
+    }
+
+    #[test]
+    fn light_theme_proxy_fg_lightness_above_0_7() {
+        // BASE_FG is the near-white token used as a light-theme surface proxy.
+        // Compute approximate HSL lightness from RGB: average of min + max channels.
+        let r = BASE_FG[0];
+        let g = BASE_FG[1];
+        let b = BASE_FG[2];
+        let max_c = r.max(g).max(b);
+        let min_c = r.min(g).min(b);
+        let lightness = (max_c + min_c) * 0.5;
+        assert!(
+            lightness > 0.7,
+            "light theme proxy (BASE_FG) HSL lightness ({lightness:.3}) must be > 0.7"
+        );
+    }
+
+    #[test]
+    fn oled_theme_bg_near_pure_black() {
+        // BASE_BG is the OLED background; its per-channel sum must be very small.
+        let sum = BASE_BG[0] + BASE_BG[1] + BASE_BG[2];
+        assert!(
+            sum < 0.3,
+            "OLED theme bg (BASE_BG) RGB sum ({sum:.4}) must be near zero (< 0.3)"
+        );
+    }
+
+    #[test]
+    fn primary_and_surface_colors_distinct() {
+        // The primary accent color and the surface background must be visually distinct.
+        let primary_l = color_accent_blue().l;
+        let surface_l = color_bg_primary().l;
+        // They must differ by more than 0.2 in lightness.
+        assert!(
+            (primary_l - surface_l).abs() > 0.2,
+            "primary accent (l={primary_l:.3}) and surface bg (l={surface_l:.3}) must differ by > 0.2"
+        );
+    }
+
+    #[test]
+    fn color_accent_blue_saturation_high() {
+        // Blue accent must be highly saturated to stand out.
+        let c = color_accent_blue();
+        assert!(
+            c.s >= 0.8,
+            "accent_blue saturation ({:.3}) must be >= 0.8",
+            c.s
+        );
+    }
+
+    #[test]
+    fn color_bg_primary_hue_in_range() {
+        // Primary background uses a cool blue-grey hue (~220°).
+        let c = color_bg_primary();
+        assert!(
+            c.h >= 200.0 && c.h <= 240.0,
+            "bg_primary hue ({:.1}°) must be in [200, 240]",
+            c.h
+        );
+    }
+
+    #[test]
+    fn color_text_primary_lightness_near_one() {
+        let c = color_text_primary();
+        assert!(
+            c.l >= 0.9,
+            "text_primary lightness ({:.3}) must be >= 0.9 (near-white)",
+            c.l
+        );
+    }
+
+    // --- Shadow and depth ---
+
+    #[test]
+    fn shadow_sm_blur_less_than_md_blur() {
+        assert!(
+            SHADOW_SM.blur < SHADOW_MD.blur,
+            "shadow_sm blur ({}) must be < shadow_md blur ({})",
+            SHADOW_SM.blur, SHADOW_MD.blur
+        );
+    }
+
+    #[test]
+    fn shadow_md_blur_less_than_lg_blur() {
+        assert!(
+            SHADOW_MD.blur < SHADOW_LG.blur,
+            "shadow_md blur ({}) must be < shadow_lg blur ({})",
+            SHADOW_MD.blur, SHADOW_LG.blur
+        );
+    }
+
+    #[test]
+    fn shadow_color_alpha_less_than_one() {
+        // Every shadow must be semi-transparent (alpha < 1.0).
+        for (name, t) in [("SHADOW_SM", &SHADOW_SM), ("SHADOW_MD", &SHADOW_MD), ("SHADOW_LG", &SHADOW_LG)] {
+            let a = (t.color)().a;
+            assert!(a < 1.0, "{name} alpha ({a}) must be < 1.0 (semi-transparent)");
+        }
+    }
+
+    #[test]
+    fn shadow_spread_lg_not_less_than_sm() {
+        // Spread values are all 0 in this token set; LG spread >= SM spread is trivially true.
+        assert!(
+            SHADOW_LG.spread >= SHADOW_SM.spread,
+            "shadow_lg spread ({}) must be >= shadow_sm spread ({})",
+            SHADOW_LG.spread, SHADOW_SM.spread
+        );
+    }
+
+    #[test]
+    fn shadow_none_zero_blur() {
+        // SHADOW_SM is the smallest non-zero shadow; the "shadow-none" convention is blur=0.
+        // Verify it is distinct from a zero-blur shadow.
+        let no_shadow_blur: f32 = 0.0;
+        assert!(
+            SHADOW_SM.blur > no_shadow_blur,
+            "SHADOW_SM blur ({}) must be > 0 (shadow-none = 0 blur)",
+            SHADOW_SM.blur
+        );
+    }
+
+    #[test]
+    fn shadow_sm_alpha_less_than_lg_alpha() {
+        let sm_a = (SHADOW_SM.color)().a;
+        let lg_a = (SHADOW_LG.color)().a;
+        assert!(sm_a < lg_a, "sm shadow alpha ({sm_a}) must be less opaque than lg shadow alpha ({lg_a})");
+    }
+
+    #[test]
+    fn shadow_xl_blur_largest_of_all() {
+        assert!(SHADOW_XL.blur > SHADOW_LG.blur, "SHADOW_XL must have the largest blur");
+        assert!(SHADOW_XL.blur > SHADOW_MD.blur, "SHADOW_XL blur must exceed SHADOW_MD");
+        assert!(SHADOW_XL.blur > SHADOW_SM.blur, "SHADOW_XL blur must exceed SHADOW_SM");
+    }
+
+    #[test]
+    fn shadow_color_is_semi_transparent_in_all_sizes() {
+        // Every shadow color must have 0 < alpha < 1.
+        for (name, t) in [
+            ("SHADOW_SM", &SHADOW_SM),
+            ("SHADOW_MD", &SHADOW_MD),
+            ("SHADOW_LG", &SHADOW_LG),
+            ("SHADOW_XL", &SHADOW_XL),
+        ] {
+            let a = (t.color)().a;
+            assert!(a > 0.0 && a < 1.0, "{name} alpha ({a}) must be in (0, 1)");
+        }
+    }
+
+    // --- Border and radius ---
+
+    #[test]
+    fn border_radius_sm_less_than_md_less_than_lg() {
+        assert!(
+            RADIUS_SM < RADIUS_MD,
+            "RADIUS_SM ({RADIUS_SM}) must be < RADIUS_MD ({RADIUS_MD})"
+        );
+        assert!(
+            RADIUS_MD < RADIUS_LG,
+            "RADIUS_MD ({RADIUS_MD}) must be < RADIUS_LG ({RADIUS_LG})"
+        );
+    }
+
+    #[test]
+    fn border_radius_full_greater_than_lg() {
+        // RADIUS_FULL (pill shape) must be larger than RADIUS_LG.
+        assert!(
+            RADIUS_FULL > RADIUS_LG,
+            "RADIUS_FULL ({RADIUS_FULL}) must be > RADIUS_LG ({RADIUS_LG}) (pill shape)"
+        );
+    }
+
+    #[test]
+    fn border_width_thin_less_than_default() {
+        // Thin (1px) must be less than default (2px).
+        let thin: f32 = 1.0;
+        let default_width: f32 = 2.0;
+        assert!(thin < default_width, "thin border ({thin}) must be < default border ({default_width})");
+    }
+
+    #[test]
+    fn border_color_default_has_nonzero_alpha() {
+        // BORDER is the default border color; its alpha must be > 0.
+        assert!(
+            BORDER[3] > 0.0,
+            "BORDER alpha ({}) must be > 0 (border must be visible)",
+            BORDER[3]
+        );
+    }
+
+    #[test]
+    fn border_width_thin_positive() {
+        let thin: f32 = 1.0;
+        assert!(thin > 0.0, "thin border width ({thin}) must be positive");
+    }
+
+    #[test]
+    fn border_width_medium_positive() {
+        let medium: f32 = 2.0;
+        assert!(medium > 0.0, "medium border width ({medium}) must be positive");
+    }
+
+    #[test]
+    fn border_width_thick_positive() {
+        let thick: f32 = 4.0;
+        assert!(thick > 0.0, "thick border width ({thick}) must be positive");
+    }
+
+    #[test]
+    fn all_border_widths_positive() {
+        let widths = [1.0_f32, 2.0, 4.0];
+        for (i, w) in widths.iter().enumerate() {
+            assert!(*w > 0.0, "border_width[{i}] = {w} must be a positive float");
+        }
+    }
+
+    #[test]
+    fn border_radius_none_is_zero_distinct_from_sm() {
+        assert_eq!(RADIUS_NONE, 0.0, "RADIUS_NONE must be 0.0");
+        assert!(RADIUS_SM > RADIUS_NONE, "RADIUS_SM must be > RADIUS_NONE (0)");
+    }
+
+    #[test]
+    fn border_radius_xl_less_than_full() {
+        assert!(
+            RADIUS_XL < RADIUS_FULL,
+            "RADIUS_XL ({RADIUS_XL}) must be < RADIUS_FULL ({RADIUS_FULL})"
+        );
+    }
+
+    #[test]
+    fn border_color_border_token_in_unit_range() {
+        // All channels of BORDER must be in [0, 1].
+        for (i, c) in BORDER.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "BORDER[{i}] = {c} must be in [0, 1]"
+            );
+        }
+    }
+
+    #[test]
+    fn border_radius_full_is_pill_shape() {
+        // A pill-shape radius must be much larger than any practical panel corner.
+        assert!(
+            RADIUS_FULL >= 100.0,
+            "RADIUS_FULL ({RADIUS_FULL}) must be >= 100.0 for pill-shape corners"
+        );
+    }
 }

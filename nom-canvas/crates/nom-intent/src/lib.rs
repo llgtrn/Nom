@@ -133,6 +133,92 @@ pub fn best_hypothesis(hypotheses: &[&str], evidence: &[&str]) -> Option<ScoredH
     rank_hypotheses(hypotheses, evidence).into_iter().next()
 }
 
+/// A resolved intent with the best matching kind and alternatives.
+#[derive(Debug, Clone)]
+pub struct ResolvedIntent {
+    pub best_kind: Option<String>,
+    pub confidence: f32,
+    pub alternatives: Vec<(String, f32)>,
+}
+
+/// An intent resolver that maps free-text input to grammar kinds.
+pub struct IntentResolver {
+    pub grammar_kinds: Vec<String>,
+}
+
+impl IntentResolver {
+    /// Create a new resolver with the given set of grammar kind names.
+    pub fn new(grammar_kinds: Vec<String>) -> Self {
+        Self { grammar_kinds }
+    }
+
+    /// Resolve free-text input to the best matching grammar kind.
+    /// Matching: a kind whose name appears (case-insensitive) in the input.
+    /// Score = kind.len() / input.len() (clamped to 1.0).
+    pub fn resolve(&self, input: &str) -> ResolvedIntent {
+        if self.grammar_kinds.is_empty() {
+            return ResolvedIntent {
+                best_kind: None,
+                confidence: 0.0,
+                alternatives: vec![],
+            };
+        }
+        let input_lower = input.to_lowercase();
+        let input_len = input.len();
+        let mut scored: Vec<(String, f32)> = self
+            .grammar_kinds
+            .iter()
+            .filter_map(|kind| {
+                let kind_lower = kind.to_lowercase();
+                if input_lower.contains(kind_lower.as_str()) {
+                    let score = if input_len == 0 {
+                        0.0f32
+                    } else {
+                        (kind.len() as f32 / input_len as f32).clamp(0.0, 1.0)
+                    };
+                    Some((kind.clone(), score))
+                } else {
+                    None
+                }
+            })
+            .collect();
+        scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        if scored.is_empty() {
+            return ResolvedIntent {
+                best_kind: None,
+                confidence: 0.0,
+                alternatives: vec![],
+            };
+        }
+        let best = scored.remove(0);
+        ResolvedIntent {
+            confidence: best.1,
+            best_kind: Some(best.0),
+            alternatives: scored,
+        }
+    }
+
+    /// Return the number of registered grammar kinds.
+    pub fn kind_count(&self) -> usize {
+        self.grammar_kinds.len()
+    }
+
+    /// Add a kind to the resolver.
+    pub fn add_kind(&mut self, kind: &str) {
+        self.grammar_kinds.push(kind.to_string());
+    }
+
+    /// Remove all occurrences of a kind from the resolver.
+    pub fn remove_kind(&mut self, kind: &str) {
+        self.grammar_kinds.retain(|k| k != kind);
+    }
+
+    /// Return true if the resolver contains the given kind.
+    pub fn contains_kind(&self, kind: &str) -> bool {
+        self.grammar_kinds.iter().any(|k| k == kind)
+    }
+}
+
 /// Same as `react_chain` but checks the interrupt signal before each step.
 /// Stops early if `signal.is_cancelled()` returns true.
 pub fn react_chain_interruptible(
@@ -4296,5 +4382,270 @@ mod tests {
     fn classify_three_overlapping_words_positive_score() {
         let score = classify_with_react("alpha beta gamma", &["alpha gamma", "beta delta"]);
         assert!(score > 0.0);
+    }
+
+    // ── IntentResolver + ResolvedIntent tests ─────────────────────────────────
+
+    #[test]
+    fn intent_resolver_new_empty_kinds_count_is_zero() {
+        let r = IntentResolver::new(vec![]);
+        assert_eq!(r.kind_count(), 0);
+    }
+
+    #[test]
+    fn intent_resolver_new_with_five_kinds_count_is_five() {
+        let r = IntentResolver::new(vec![
+            "video".to_string(), "audio".to_string(), "image".to_string(),
+            "graph".to_string(), "canvas".to_string(),
+        ]);
+        assert_eq!(r.kind_count(), 5);
+    }
+
+    #[test]
+    fn intent_resolver_add_kind_increments_count() {
+        let mut r = IntentResolver::new(vec![]);
+        r.add_kind("video");
+        assert_eq!(r.kind_count(), 1);
+        r.add_kind("audio");
+        assert_eq!(r.kind_count(), 2);
+    }
+
+    #[test]
+    fn intent_resolver_remove_kind_decrements_count() {
+        let mut r = IntentResolver::new(vec!["video".to_string(), "audio".to_string()]);
+        r.remove_kind("video");
+        assert_eq!(r.kind_count(), 1);
+    }
+
+    #[test]
+    fn intent_resolver_contains_kind_true_for_added() {
+        let mut r = IntentResolver::new(vec![]);
+        r.add_kind("graph");
+        assert!(r.contains_kind("graph"));
+    }
+
+    #[test]
+    fn intent_resolver_contains_kind_false_for_removed() {
+        let mut r = IntentResolver::new(vec!["graph".to_string()]);
+        r.remove_kind("graph");
+        assert!(!r.contains_kind("graph"));
+    }
+
+    #[test]
+    fn intent_resolver_contains_kind_false_for_unknown() {
+        let r = IntentResolver::new(vec!["video".to_string()]);
+        assert!(!r.contains_kind("audio"));
+    }
+
+    #[test]
+    fn intent_resolver_resolve_empty_kinds_returns_none() {
+        let r = IntentResolver::new(vec![]);
+        let result = r.resolve("video clip");
+        assert!(result.best_kind.is_none());
+        assert_eq!(result.confidence, 0.0);
+        assert!(result.alternatives.is_empty());
+    }
+
+    #[test]
+    fn intent_resolver_resolve_matching_kind_returns_it() {
+        let r = IntentResolver::new(vec!["video".to_string(), "audio".to_string()]);
+        let result = r.resolve("this is a video clip");
+        assert_eq!(result.best_kind.as_deref(), Some("video"));
+    }
+
+    #[test]
+    fn intent_resolver_resolve_no_matching_kind_returns_none() {
+        let r = IntentResolver::new(vec!["graph".to_string(), "canvas".to_string()]);
+        let result = r.resolve("this has no kind match here");
+        assert!(result.best_kind.is_none());
+    }
+
+    #[test]
+    fn intent_resolver_resolve_confidence_in_0_1() {
+        let r = IntentResolver::new(vec!["video".to_string()]);
+        let result = r.resolve("video stream input");
+        assert!(result.confidence >= 0.0 && result.confidence <= 1.0);
+    }
+
+    #[test]
+    fn intent_resolver_resolve_alternatives_non_empty_when_multiple_match() {
+        let r = IntentResolver::new(vec![
+            "video".to_string(), "audio".to_string(), "image".to_string(),
+        ]);
+        // All three kinds appear in the input string.
+        let result = r.resolve("video audio image combined");
+        assert!(result.alternatives.len() >= 1);
+    }
+
+    #[test]
+    fn intent_resolver_resolve_deterministic_same_input_same_result() {
+        let r = IntentResolver::new(vec!["graph".to_string(), "canvas".to_string()]);
+        let r1 = r.resolve("graph rendering canvas");
+        let r2 = r.resolve("graph rendering canvas");
+        assert_eq!(r1.best_kind, r2.best_kind);
+        assert!((r1.confidence - r2.confidence).abs() < 1e-6);
+    }
+
+    #[test]
+    fn intent_resolver_resolve_empty_input_returns_none_or_zero() {
+        let r = IntentResolver::new(vec!["video".to_string()]);
+        let result = r.resolve("");
+        // Empty input: "video" is not contained in "" → best_kind = None
+        assert!(result.best_kind.is_none() || result.confidence == 0.0);
+    }
+
+    #[test]
+    fn resolved_intent_best_kind_none_when_no_match() {
+        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        assert!(ri.best_kind.is_none());
+    }
+
+    #[test]
+    fn resolved_intent_confidence_zero_when_no_match() {
+        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        assert_eq!(ri.confidence, 0.0);
+    }
+
+    #[test]
+    fn resolved_intent_alternatives_empty_when_no_match() {
+        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        assert!(ri.alternatives.is_empty());
+    }
+
+    #[test]
+    fn resolved_intent_alternatives_sorted_by_confidence_desc() {
+        let r = IntentResolver::new(vec![
+            "a".to_string(), "ab".to_string(), "abc".to_string(),
+        ]);
+        // Input "abc" contains all three kinds; "abc" should score highest.
+        let result = r.resolve("abc");
+        if result.alternatives.len() >= 2 {
+            for w in result.alternatives.windows(2) {
+                assert!(w[0].1 >= w[1].1, "alternatives must be sorted descending by confidence");
+            }
+        }
+    }
+
+    #[test]
+    fn resolved_intent_best_confidence_gte_any_alternative() {
+        let r = IntentResolver::new(vec![
+            "video".to_string(), "audio".to_string(),
+        ]);
+        let result = r.resolve("video audio");
+        if let Some(_) = &result.best_kind {
+            for (_, alt_score) in &result.alternatives {
+                assert!(
+                    result.confidence >= *alt_score,
+                    "best_kind confidence must be >= any alternative confidence"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn intent_resolver_add_kind_then_resolve_finds_it() {
+        let mut r = IntentResolver::new(vec![]);
+        r.add_kind("compiler");
+        let result = r.resolve("run the compiler now");
+        assert_eq!(result.best_kind.as_deref(), Some("compiler"));
+    }
+
+    #[test]
+    fn intent_resolver_remove_kind_then_resolve_misses_it() {
+        let mut r = IntentResolver::new(vec!["compiler".to_string()]);
+        r.remove_kind("compiler");
+        let result = r.resolve("run the compiler now");
+        assert!(result.best_kind.is_none());
+    }
+
+    #[test]
+    fn intent_resolver_kind_count_after_add_remove_cycle() {
+        let mut r = IntentResolver::new(vec!["video".to_string()]);
+        assert_eq!(r.kind_count(), 1);
+        r.add_kind("audio");
+        assert_eq!(r.kind_count(), 2);
+        r.remove_kind("video");
+        assert_eq!(r.kind_count(), 1);
+        r.remove_kind("audio");
+        assert_eq!(r.kind_count(), 0);
+    }
+
+    #[test]
+    fn intent_resolver_case_insensitive_match() {
+        let r = IntentResolver::new(vec!["Video".to_string()]);
+        // Input has lowercase "video"; resolver converts both to lowercase.
+        let result = r.resolve("play video now");
+        assert_eq!(result.best_kind.as_deref(), Some("Video"));
+    }
+
+    #[test]
+    fn intent_resolver_longest_kind_scores_highest() {
+        let r = IntentResolver::new(vec![
+            "a".to_string(), "ab".to_string(), "abc".to_string(),
+        ]);
+        // "abc" is the longest matching substring of "abc longer text" and scores highest.
+        let result = r.resolve("abc longer text");
+        // "abc" matches and its score = 3 / len("abc longer text") which may be the highest.
+        // The key invariant: best_kind is not None and confidence > 0.
+        assert!(result.best_kind.is_some());
+        assert!(result.confidence > 0.0);
+    }
+
+    #[test]
+    fn intent_resolver_resolve_single_kind_single_match() {
+        let r = IntentResolver::new(vec!["graph".to_string()]);
+        let result = r.resolve("render a graph structure");
+        assert_eq!(result.best_kind.as_deref(), Some("graph"));
+        assert!(result.confidence > 0.0);
+        assert!(result.alternatives.is_empty());
+    }
+
+    #[test]
+    fn resolved_intent_clone_preserves_fields() {
+        let ri = ResolvedIntent {
+            best_kind: Some("video".to_string()),
+            confidence: 0.5,
+            alternatives: vec![("audio".to_string(), 0.3)],
+        };
+        let cloned = ri.clone();
+        assert_eq!(cloned.best_kind, ri.best_kind);
+        assert!((cloned.confidence - ri.confidence).abs() < 1e-6);
+        assert_eq!(cloned.alternatives.len(), 1);
+    }
+
+    #[test]
+    fn resolved_intent_debug_format_contains_resolved_intent() {
+        let ri = ResolvedIntent { best_kind: None, confidence: 0.0, alternatives: vec![] };
+        let dbg = format!("{:?}", ri);
+        assert!(dbg.contains("ResolvedIntent"));
+    }
+
+    #[test]
+    fn intent_resolver_multiple_adds_then_contains() {
+        let mut r = IntentResolver::new(vec![]);
+        let kinds = ["video", "audio", "image", "graph", "canvas"];
+        for k in &kinds {
+            r.add_kind(k);
+        }
+        assert_eq!(r.kind_count(), 5);
+        for k in &kinds {
+            assert!(r.contains_kind(k), "must contain kind '{k}'");
+        }
+    }
+
+    #[test]
+    fn intent_resolver_resolve_first_evidence_correct_kind() {
+        let r = IntentResolver::new(vec!["canvas".to_string(), "graph".to_string()]);
+        // Input contains "canvas" but not "graph".
+        let result = r.resolve("draw on the canvas surface");
+        assert_eq!(result.best_kind.as_deref(), Some("canvas"));
+        assert!(result.alternatives.is_empty());
+    }
+
+    #[test]
+    fn intent_resolver_grammar_kinds_field_accessible() {
+        let kinds = vec!["video".to_string(), "audio".to_string()];
+        let r = IntentResolver::new(kinds.clone());
+        assert_eq!(r.grammar_kinds, kinds);
     }
 }

@@ -1330,4 +1330,193 @@ mod tests {
             assert_eq!(parsed.as_ref(), Some(kind), "roundtrip failed for {n}");
         }
     }
+
+    // ── Wave AL new tests: BackendKindStr + UnifiedDispatcher + backend coverage ──
+
+    #[test]
+    fn backend_kind_str_video_dispatches_via_unified_dispatcher() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("video", |ctx| Ok(format!("video-handler:{}", ctx.entity_id)));
+        let ctx = ComposeContext::new("video", "entity-v1");
+        let result = d.dispatch(&ctx);
+        assert!(result.is_ok(), "video dispatch must succeed");
+        assert_eq!(result.unwrap(), "video-handler:entity-v1");
+    }
+
+    #[test]
+    fn backend_kind_str_audio_dispatches_via_unified_dispatcher() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("audio", |ctx| Ok(format!("audio-handler:{}", ctx.entity_id)));
+        let ctx = ComposeContext::new("audio", "entity-a1");
+        let result = d.dispatch(&ctx);
+        assert!(result.is_ok(), "audio dispatch must succeed");
+        assert_eq!(result.unwrap(), "audio-handler:entity-a1");
+    }
+
+    #[test]
+    fn backend_kind_str_document_dispatches_via_unified_dispatcher() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("document", |ctx| Ok(format!("document-handler:{}", ctx.entity_id)));
+        let ctx = ComposeContext::new("document", "entity-d1");
+        let result = d.dispatch(&ctx);
+        assert!(result.is_ok(), "document dispatch must succeed");
+        assert_eq!(result.unwrap(), "document-handler:entity-d1");
+    }
+
+    #[test]
+    fn backend_kind_str_unknown_returns_err() {
+        let d = UnifiedDispatcher::new();
+        let ctx = ComposeContext::new("unknown", "entity-x");
+        let result = d.dispatch(&ctx);
+        assert!(result.is_err(), "unknown kind must return Err");
+        assert!(result.unwrap_err().contains("unknown"), "error must name the missing kind");
+    }
+
+    #[test]
+    fn backend_kind_str_kind_name_returns_inner_string() {
+        let ctx = ComposeContext::new("video", "e1");
+        assert_eq!(ctx.kind_name(), "video");
+        let ctx2 = ComposeContext::new("my_custom_kind", "e2");
+        assert_eq!(ctx2.kind_name(), "my_custom_kind");
+    }
+
+    #[test]
+    fn backend_kind_str_two_same_strings_are_equal_via_context() {
+        let ctx1 = ComposeContext::new("audio", "e1");
+        let ctx2 = ComposeContext::new("audio", "e2");
+        assert_eq!(ctx1.kind_name(), ctx2.kind_name(), "same kind_name string must be equal");
+    }
+
+    #[test]
+    fn backend_kind_str_from_str_and_string_both_work() {
+        let s: &str = "export";
+        let owned: String = "export".to_string();
+        let ctx1 = ComposeContext::new(s, "e1");
+        let ctx2 = ComposeContext::new(&owned, "e2");
+        assert_eq!(ctx1.kind_name(), ctx2.kind_name());
+    }
+
+    #[test]
+    fn backend_kind_str_rag_query_dispatches() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("rag_query", |_ctx| Ok("rag-result".to_string()));
+        let ctx = ComposeContext::new("rag_query", "e1");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "rag-result");
+    }
+
+    #[test]
+    fn backend_kind_str_export_dispatches() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("export", |ctx| Ok(format!("exported:{}", ctx.entity_id)));
+        let ctx = ComposeContext::new("export", "e-export");
+        assert_eq!(d.dispatch(&ctx).unwrap(), "exported:e-export");
+    }
+
+    #[test]
+    fn backend_kind_str_dynamic_kind_not_in_enum_dispatches() {
+        // A kind string that doesn't exist in BackendKind enum — proves open-ended dispatch.
+        let mut d = UnifiedDispatcher::new();
+        d.register("new_db_kind_2025", |_| Ok("dynamic".to_string()));
+        let ctx = ComposeContext::new("new_db_kind_2025", "e1");
+        assert!(d.dispatch(&ctx).is_ok());
+        assert_eq!(d.dispatch(&ctx).unwrap(), "dynamic");
+    }
+
+    #[test]
+    fn compose_context_kind_name_preserved() {
+        let ctx = ComposeContext::new("transform", "my-entity");
+        assert_eq!(ctx.kind_name, "transform");
+        assert_eq!(ctx.kind_name(), "transform");
+    }
+
+    #[test]
+    fn compose_context_params_round_trip() {
+        let ctx = ComposeContext::new("video", "e1")
+            .with_param("codec", "h264")
+            .with_param("fps", "30");
+        assert_eq!(ctx.get_param("codec"), Some("h264"));
+        assert_eq!(ctx.get_param("fps"), Some("30"));
+        assert_eq!(ctx.get_param("missing"), None);
+    }
+
+    #[test]
+    fn unified_dispatcher_5_kinds_each_dispatch_correctly() {
+        let mut d = UnifiedDispatcher::new();
+        for kind in &["video", "audio", "document", "export", "rag_query"] {
+            let k = kind.to_string();
+            d.register(kind, move |ctx| Ok(format!("{}-result:{}", k, ctx.entity_id)));
+        }
+        for kind in &["video", "audio", "document", "export", "rag_query"] {
+            let ctx = ComposeContext::new(kind, "probe");
+            let result = d.dispatch(&ctx).unwrap();
+            assert!(result.starts_with(kind), "dispatch result must start with kind: {kind}");
+        }
+    }
+
+    #[test]
+    fn unified_dispatcher_missing_kind_descriptive_error() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("video", |_| Ok("ok".to_string()));
+        let ctx = ComposeContext::new("audio", "e1");
+        let err = d.dispatch(&ctx).unwrap_err();
+        assert!(!err.is_empty(), "error must not be empty");
+        assert!(err.contains("audio"), "error must name the missing kind: {err}");
+    }
+
+    #[test]
+    fn unified_dispatcher_registered_kinds_sorted() {
+        let mut d = UnifiedDispatcher::new();
+        d.register("video", |_| Ok("v".to_string()));
+        d.register("audio", |_| Ok("a".to_string()));
+        d.register("document", |_| Ok("d".to_string()));
+        let mut kinds: Vec<&str> = d.registered_kinds();
+        kinds.sort();
+        assert_eq!(kinds, vec!["audio", "document", "video"]);
+    }
+
+    #[test]
+    fn video_backend_entity_id_preserved_in_artifact() {
+        use crate::backends::video::VideoBackend;
+        let b: Box<dyn Backend> = Box::new(VideoBackend);
+        let out = b.compose("video-entity-123", &|_| {}).unwrap();
+        assert!(out.contains("video-entity-123"), "entity_id must be in artifact output");
+    }
+
+    #[test]
+    fn audio_backend_codec_name_in_output() {
+        use crate::backends::audio::AudioBackend;
+        let b: Box<dyn Backend> = Box::new(AudioBackend);
+        let out = b.compose("audio-entity-pcm", &|_| {}).unwrap();
+        // dispatch impl passes input as entity id — output must contain entity id
+        assert!(out.contains("audio-entity-pcm"), "audio output must reference entity id");
+        assert!(out.starts_with("audio:"), "audio output must start with 'audio:'");
+    }
+
+    #[test]
+    fn document_backend_produces_non_empty_artifact() {
+        use crate::backends::document::DocumentBackend;
+        let b: Box<dyn Backend> = Box::new(DocumentBackend);
+        let out = b.compose("doc-content", &|_| {}).unwrap();
+        assert!(!out.is_empty(), "document backend must produce non-empty artifact");
+        assert!(out.contains("document:"), "document artifact must have kind prefix");
+    }
+
+    #[test]
+    fn rag_query_backend_empty_query_produces_output() {
+        use crate::backends::rag_query::RagQueryBackend;
+        let b: Box<dyn Backend> = Box::new(RagQueryBackend::default());
+        // The dispatch impl always adds one chunk; even with an "empty" entity id it succeeds.
+        let out = b.compose("empty-query", &|_| {}).unwrap();
+        assert!(out.starts_with("rag_query:"), "rag_query artifact must have kind prefix");
+    }
+
+    #[test]
+    fn export_backend_format_in_artifact_mime_type() {
+        use crate::backends::export::ExportBackend;
+        let b: Box<dyn Backend> = Box::new(ExportBackend);
+        let out = b.compose("export-entity-hex", &|_| {}).unwrap();
+        // Dispatch impl uses "hex" format; output contains byte count.
+        assert!(out.starts_with("export:"), "export output must start with 'export:'");
+        assert!(out.contains("bytes"), "export output must mention bytes");
+    }
 }

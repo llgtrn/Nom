@@ -35,6 +35,16 @@ impl DataQuerySpec {
     }
 }
 
+/// Returns `true` if `s` is a safe SQL identifier: non-empty, all chars are
+/// alphanumeric, underscore (`_`), or dot (`.`). Use before interpolating
+/// user-supplied names into SQL strings.
+pub fn is_safe_identifier(s: &str) -> bool {
+    if s.is_empty() {
+        return false;
+    }
+    s.chars().all(|c| c.is_alphanumeric() || c == '_' || c == '.')
+}
+
 /// Compose a data-query artifact using the semantic registry.
 ///
 /// Generates a SQL SELECT statement, writes it as UTF-8 bytes to `store`,
@@ -361,5 +371,93 @@ mod tests {
         let sql = spec.to_sql(&reg).unwrap();
         assert!(!sql.contains("JOIN"), "no JOIN support in DataQuerySpec");
         assert!(sql.contains("FROM raw.orders"), "FROM clause must name the source table");
+    }
+
+    // ── AL-SQL-INJECT: is_safe_identifier tests ──────────────────────────────
+
+    #[test]
+    fn is_safe_identifier_valid_table_name() {
+        assert!(super::is_safe_identifier("valid_table"), "valid_table must be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_sql_injection_returns_false() {
+        assert!(
+            !super::is_safe_identifier("table; DROP TABLE users"),
+            "SQL injection string must not be safe"
+        );
+    }
+
+    #[test]
+    fn is_safe_identifier_column_with_dot() {
+        assert!(super::is_safe_identifier("column.name"), "column.name with dot must be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_single_quote_returns_false() {
+        assert!(
+            !super::is_safe_identifier("bad'name"),
+            "name with single quote must not be safe"
+        );
+    }
+
+    #[test]
+    fn is_safe_identifier_empty_string_returns_false() {
+        assert!(!super::is_safe_identifier(""), "empty string must not be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_numbers_only_returns_true() {
+        assert!(super::is_safe_identifier("123"), "all-numeric identifier must be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_mixed_alpha_underscore_dot() {
+        assert!(
+            super::is_safe_identifier("a_b.c_d"),
+            "a_b.c_d must be safe"
+        );
+    }
+
+    #[test]
+    fn is_safe_identifier_semicolon_returns_false() {
+        assert!(!super::is_safe_identifier(";"), "semicolon alone must not be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_space_returns_false() {
+        assert!(!super::is_safe_identifier("my table"), "space in name must not be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_dash_returns_false() {
+        assert!(!super::is_safe_identifier("my-table"), "dash in name must not be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_double_underscore_ok() {
+        assert!(super::is_safe_identifier("my__table"), "double underscore is safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_schema_dot_table() {
+        assert!(super::is_safe_identifier("schema.table_name"), "schema.table_name must be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_backslash_returns_false() {
+        assert!(!super::is_safe_identifier("table\\name"), "backslash must not be safe");
+    }
+
+    #[test]
+    fn is_safe_identifier_unicode_alpha_ok() {
+        // Unicode alphabetic chars are alphanumeric per Rust char::is_alphanumeric().
+        assert!(super::is_safe_identifier("tên"), "unicode alpha chars pass is_alphanumeric");
+    }
+
+    #[test]
+    fn is_safe_identifier_only_dots_ok() {
+        // Dots are allowed characters even alone.
+        assert!(super::is_safe_identifier("..."), "only dots must be allowed");
     }
 }

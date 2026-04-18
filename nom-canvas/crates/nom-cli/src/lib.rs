@@ -3317,4 +3317,252 @@ mod tests {
             panic!("expected Graph");
         }
     }
+
+    // ── Wave AC additions ─────────────────────────────────────────────────────
+
+    // --- Output format flags (8 tests) ---
+
+    #[test]
+    fn output_json_hint_in_rag_query_contains_json() {
+        // Passing "--output json" as the query string preserves the "json" token.
+        let cmd = parse_args(&["rag", "--output json"]).unwrap();
+        if let CliCommand::Rag { query, .. } = cmd {
+            assert!(query.contains("json"), "query must contain 'json'");
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn output_plain_hint_in_rag_query_does_not_contain_json() {
+        let cmd = parse_args(&["rag", "--output plain"]).unwrap();
+        if let CliCommand::Rag { query, .. } = cmd {
+            assert!(!query.contains("json"), "plain output hint must not contain 'json'");
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn output_yaml_unknown_flag_returns_err() {
+        // "--output" is not a recognized first-class CLI token; as a subcommand it
+        // falls through to the unknown-command arm.
+        let result = parse_args(&["--output", "yaml", "graph", "query"]);
+        assert!(result.is_err(), "--output yaml must return an error");
+    }
+
+    #[test]
+    fn output_empty_string_flag_returns_err() {
+        let result = parse_args(&["--output", ""]);
+        assert!(result.is_err(), "--output with empty value must return an error");
+    }
+
+    #[test]
+    fn default_output_no_flag_graph_parses_ok() {
+        // No --output flag: graph command must parse successfully.
+        let result = parse_args(&["graph", "render pipeline"]);
+        assert!(result.is_ok(), "default output (no --output flag) must parse");
+    }
+
+    #[test]
+    fn short_o_json_unknown_flag_returns_err() {
+        // "-o json" is not a recognized token sequence.
+        let result = parse_args(&["-o", "json", "run", "f.nom"]);
+        assert!(result.is_err(), "-o json must return an error");
+    }
+
+    #[test]
+    fn output_format_persists_in_rag_query_string() {
+        // Output-format hint embedded in query string survives the round-trip.
+        let query = "search results format=json";
+        let cmd = parse_args(&["rag", query]).unwrap();
+        if let CliCommand::Rag { query: q, .. } = cmd {
+            assert_eq!(q, query, "query string with format hint must be preserved exactly");
+        } else {
+            panic!("expected Rag");
+        }
+    }
+
+    #[test]
+    fn output_flag_as_subcommand_is_unknown() {
+        // If "--output" appears as the first token it is not a known subcommand.
+        let result = parse_args(&["--output"]);
+        assert!(result.is_err(), "--output alone must be an error");
+    }
+
+    // --- Subcommand coverage (10 tests) ---
+
+    #[test]
+    fn subcommand_build_release_flag_recognized() {
+        let cmd = parse_args(&["build", "--release", "main.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(release, "--release flag must be recognized and set release=true");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn subcommand_build_debug_mode_release_false() {
+        // Without --release the build is in debug mode (release=false).
+        let cmd = parse_args(&["build", "main.nom"]).unwrap();
+        if let CliCommand::Build { release, .. } = cmd {
+            assert!(!release, "build without --release must default to debug mode");
+        } else {
+            panic!("expected Build");
+        }
+    }
+
+    #[test]
+    fn subcommand_run_parses_file_path() {
+        let path = "path/to/file.nom";
+        let cmd = parse_args(&["run", path]).unwrap();
+        if let CliCommand::Run { path: p } = cmd {
+            assert_eq!(p, path, "run subcommand must capture the file path");
+        } else {
+            panic!("expected Run");
+        }
+    }
+
+    #[test]
+    fn subcommand_test_filter_flag_returns_err() {
+        // "test --filter test_name" is not a recognized subcommand.
+        let result = parse_args(&["test", "--filter", "test_name"]);
+        assert!(result.is_err(), "test subcommand must not be recognized");
+    }
+
+    #[test]
+    fn subcommand_test_all_flag_returns_err() {
+        // "test --all" is also not recognized.
+        let result = parse_args(&["test", "--all"]);
+        assert!(result.is_err(), "test --all must not be recognized");
+    }
+
+    #[test]
+    fn subcommand_check_exists_and_parses() {
+        let result = parse_args(&["check", "src/main.nom"]);
+        assert!(result.is_ok(), "check subcommand must exist");
+        assert!(matches!(result.unwrap(), CliCommand::Check { .. }));
+    }
+
+    #[test]
+    fn subcommand_fmt_returns_err() {
+        // "fmt" is not a recognized alias for "format".
+        let result = parse_args(&["fmt", "src/main.nom"]);
+        assert!(result.is_err(), "fmt must not be recognized (use format)");
+    }
+
+    #[test]
+    fn subcommand_doc_returns_err() {
+        let result = parse_args(&["doc"]);
+        assert!(result.is_err(), "doc subcommand must not be recognized");
+    }
+
+    #[test]
+    fn subcommand_clean_returns_err() {
+        let result = parse_args(&["clean"]);
+        assert!(result.is_err(), "clean subcommand must not be recognized");
+    }
+
+    #[test]
+    fn subcommand_lint_exists_and_parses() {
+        let result = parse_args(&["lint", "src/lib.nom"]);
+        assert!(result.is_ok(), "lint subcommand must exist");
+        assert!(matches!(result.unwrap(), CliCommand::Lint { .. }));
+    }
+
+    // --- Flag combinations (8 tests) ---
+
+    #[test]
+    fn flag_combo_verbose_output_json_both_unknown_top_level() {
+        // Neither --verbose nor --output are recognized at the top level.
+        let result = parse_args(&["--verbose", "--output", "json", "graph", "query"]);
+        assert!(result.is_err(), "--verbose --output json must return error");
+    }
+
+    #[test]
+    fn flag_quiet_returns_err() {
+        // "--quiet" is not a recognized top-level command.
+        let result = parse_args(&["--quiet"]);
+        assert!(result.is_err(), "--quiet must return an error");
+    }
+
+    #[test]
+    fn flag_verbose_twice_returns_err() {
+        // Multiple --verbose flags are not recognized.
+        let result = parse_args(&["--verbose", "--verbose", "graph", "query"]);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn flag_color_always_returns_err() {
+        // "--color always" is not recognized by the current parser.
+        let result = parse_args(&["--color", "always", "run", "f.nom"]);
+        assert!(result.is_err(), "--color always must not be recognized");
+    }
+
+    #[test]
+    fn flag_color_never_returns_err() {
+        let result = parse_args(&["--color", "never", "run", "f.nom"]);
+        assert!(result.is_err(), "--color never must not be recognized");
+    }
+
+    #[test]
+    fn flag_color_auto_returns_err() {
+        let result = parse_args(&["--color", "auto", "run", "f.nom"]);
+        assert!(result.is_err(), "--color auto must not be recognized");
+    }
+
+    #[test]
+    fn flag_global_release_not_applicable_outside_build() {
+        // --release as a standalone token is not a subcommand.
+        let result = parse_args(&["--release"]);
+        assert!(result.is_err(), "--release alone must not be recognized");
+    }
+
+    #[test]
+    fn flag_combo_build_release_and_path_ok() {
+        // The one valid two-flag combination: build --release path.
+        let result = parse_args(&["build", "--release", "src/app.nom"]);
+        assert!(result.is_ok(), "build --release path must succeed");
+        if let CliCommand::Build { release, path } = result.unwrap() {
+            assert!(release);
+            assert_eq!(path, "src/app.nom");
+        }
+    }
+
+    // --- Error handling (4 tests) ---
+
+    #[test]
+    fn error_conflicting_flags_build_path_release_returns_err() {
+        // Wrong order: build path --release is not valid.
+        let result = parse_args(&["build", "app.nom", "--release"]);
+        assert!(result.is_err(), "wrong flag order must return an error");
+        let msg = result.unwrap_err();
+        assert!(!msg.is_empty(), "error message must not be empty");
+    }
+
+    #[test]
+    fn error_missing_required_arg_check_is_err() {
+        // "check" with no path is missing a required argument.
+        let result = parse_args(&["check"]);
+        assert!(result.is_err(), "check with no path must be an error");
+        // Error message must be non-empty (describing the missing argument).
+        let msg = result.unwrap_err();
+        assert!(!msg.is_empty(), "error must describe missing argument");
+    }
+
+    #[test]
+    fn error_positional_before_subcommand_is_err() {
+        // A stray positional argument before the subcommand is not recognized.
+        let result = parse_args(&["somefile.nom", "build"]);
+        assert!(result.is_err(), "positional before subcommand must be an error");
+    }
+
+    #[test]
+    fn error_double_dash_separator_treated_as_unknown() {
+        // "--" is not a recognized subcommand; the parser should return an error.
+        let result = parse_args(&["--", "run", "f.nom"]);
+        assert!(result.is_err(), "-- separator must not be a recognized subcommand");
+    }
 }
