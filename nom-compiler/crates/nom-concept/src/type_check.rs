@@ -1,10 +1,12 @@
-/// TypeChecker — constraint-based type checking with unification.
-/// Pattern from nom-concept TypeInferencer: IrValue::type_of() as canonical oracle.
+// Type checker with constraint solver and unification for Nom concepts.
 
-#[derive(Debug, Clone, PartialEq, Eq, Hash)]
+use std::collections::HashMap;
+
+/// Concrete checked types produced by the type checker.
+#[derive(Debug, Clone, PartialEq)]
 pub enum CheckedType {
-    Int,
-    Float,
+    Int(u32),
+    Float(u32),
     Bool,
     Str,
     Unit,
@@ -13,125 +15,137 @@ pub enum CheckedType {
 }
 
 impl CheckedType {
-    pub fn is_numeric(&self) -> bool {
-        matches!(self, CheckedType::Int | CheckedType::Float)
+    /// Human-readable name of the type.
+    pub fn type_name(&self) -> String {
+        match self {
+            CheckedType::Int(bits) => format!("Int{}", bits),
+            CheckedType::Float(bits) => format!("Float{}", bits),
+            CheckedType::Bool => "Bool".to_string(),
+            CheckedType::Str => "Str".to_string(),
+            CheckedType::Unit => "Unit".to_string(),
+            CheckedType::Unknown => "Unknown".to_string(),
+            CheckedType::Error(msg) => format!("Error({})", msg),
+        }
     }
 
+    /// True for `Int` and `Float` variants.
+    pub fn is_numeric(&self) -> bool {
+        matches!(self, CheckedType::Int(_) | CheckedType::Float(_))
+    }
+
+    /// True for the `Error` variant.
     pub fn is_error(&self) -> bool {
         matches!(self, CheckedType::Error(_))
     }
 
-    pub fn unify(&self, other: &CheckedType) -> CheckedType {
-        if self == other {
-            return self.clone();
-        }
-        match (self, other) {
-            (CheckedType::Unknown, t) | (t, CheckedType::Unknown) => t.clone(),
-            (CheckedType::Int, CheckedType::Float) | (CheckedType::Float, CheckedType::Int) => {
-                CheckedType::Float
-            }
-            _ => CheckedType::Error(format!("cannot unify {:?} with {:?}", self, other)),
+    /// Unify two types according to the Nom widening rules.
+    pub fn unify(a: &CheckedType, b: &CheckedType) -> CheckedType {
+        match (a, b) {
+            (CheckedType::Error(e), _) => CheckedType::Error(e.clone()),
+            (_, CheckedType::Error(e)) => CheckedType::Error(e.clone()),
+            (CheckedType::Int(x), CheckedType::Int(y)) => CheckedType::Int((*x).max(*y)),
+            (CheckedType::Float(x), CheckedType::Float(y)) => CheckedType::Float((*x).max(*y)),
+            (CheckedType::Int(x), CheckedType::Float(y)) => CheckedType::Float((*x).max(*y)),
+            (CheckedType::Float(x), CheckedType::Int(y)) => CheckedType::Float((*x).max(*y)),
+            (CheckedType::Bool, CheckedType::Bool) => CheckedType::Bool,
+            (CheckedType::Str, CheckedType::Str) => CheckedType::Str,
+            (CheckedType::Unit, CheckedType::Unit) => CheckedType::Unit,
+            (CheckedType::Unknown, other) | (other, CheckedType::Unknown) => other.clone(),
+            _ => CheckedType::Error("type mismatch".to_string()),
         }
     }
 }
 
+/// A single type constraint: variable `left` must have type `right`.
 #[derive(Debug, Clone)]
 pub struct TypeConstraint {
-    pub lhs: String,
-    pub rhs: CheckedType,
+    pub left: String,
+    pub right: CheckedType,
 }
 
 impl TypeConstraint {
-    pub fn new(lhs: impl Into<String>, rhs: CheckedType) -> Self {
-        TypeConstraint { lhs: lhs.into(), rhs }
+    pub fn new(left: impl Into<String>, right: CheckedType) -> Self {
+        TypeConstraint { left: left.into(), right }
     }
 }
 
-#[derive(Debug, Default)]
+/// Typing environment: maps variable names to their resolved types.
+#[derive(Debug, Clone, Default)]
 pub struct TypeContext {
-    bindings: std::collections::HashMap<String, CheckedType>,
-    constraints: Vec<TypeConstraint>,
+    pub bindings: HashMap<String, CheckedType>,
 }
 
 impl TypeContext {
     pub fn new() -> Self {
-        TypeContext::default()
+        TypeContext { bindings: HashMap::new() }
     }
 
-    pub fn bind(&mut self, name: impl Into<String>, ty: CheckedType) {
-        self.bindings.insert(name.into(), ty);
+    /// Bind a name to a type, overwriting any previous binding.
+    pub fn bind(&mut self, name: impl Into<String>, typ: CheckedType) {
+        self.bindings.insert(name.into(), typ);
     }
 
-    pub fn lookup(&self, name: &str) -> CheckedType {
-        self.bindings.get(name).cloned().unwrap_or(CheckedType::Unknown)
+    /// Look up the type bound to `name`, if any.
+    pub fn lookup(&self, name: &str) -> Option<&CheckedType> {
+        self.bindings.get(name)
     }
 
-    pub fn add_constraint(&mut self, constraint: TypeConstraint) {
-        self.constraints.push(constraint);
-    }
-
-    pub fn apply_constraints(&mut self) -> Vec<String> {
-        let mut errors = Vec::new();
-        let constraints = std::mem::take(&mut self.constraints);
-        for c in &constraints {
-            let current = self.lookup(&c.lhs);
-            let unified = current.unify(&c.rhs);
-            if unified.is_error() {
-                errors.push(format!("type error for `{}`: {:?}", c.lhs, unified));
-            } else {
-                self.bind(c.lhs.clone(), unified);
-            }
+    /// Apply one constraint. If the name is already bound, unify the existing
+    /// type with the constraint type. Returns false (without updating) when
+    /// unification yields an Error.
+    pub fn apply_constraint(&mut self, constraint: TypeConstraint) -> bool {
+        let unified = match self.bindings.get(&constraint.left) {
+            Some(existing) => CheckedType::unify(existing, &constraint.right),
+            None => constraint.right.clone(),
+        };
+        if unified.is_error() {
+            false
+        } else {
+            self.bindings.insert(constraint.left, unified);
+            true
         }
-        errors
     }
 }
 
-#[derive(Debug, Default)]
-pub struct TypeChecker {
-    ctx: TypeContext,
-}
+/// Stateless helper for common type-checking operations.
+pub struct TypeChecker;
 
 impl TypeChecker {
     pub fn new() -> Self {
-        TypeChecker::default()
+        TypeChecker
     }
 
-    pub fn check_numeric_op(&mut self, lhs: &str, rhs: &str) -> CheckedType {
-        let lt = self.ctx.lookup(lhs);
-        let rt = self.ctx.lookup(rhs);
-        if lt.is_numeric() && rt.is_numeric() {
-            lt.unify(&rt)
-        } else if lt == CheckedType::Unknown || rt == CheckedType::Unknown {
-            CheckedType::Unknown
+    /// Returns Error if either operand is non-numeric; otherwise returns the
+    /// unified numeric type.
+    pub fn check_numeric_op(a: &CheckedType, b: &CheckedType) -> CheckedType {
+        if !a.is_numeric() || !b.is_numeric() {
+            CheckedType::Error("expected numeric types".to_string())
         } else {
-            CheckedType::Error(format!("non-numeric operands: {:?}, {:?}", lt, rt))
+            CheckedType::unify(a, b)
         }
     }
 
-    pub fn check_assignment(&mut self, var: &str, value_ty: CheckedType) -> bool {
-        let existing = self.ctx.lookup(var);
-        let unified = existing.unify(&value_ty);
-        if unified.is_error() {
-            return false;
+    /// Returns true when unifying `declared` with `actual` succeeds (not Error).
+    pub fn check_assignment(declared: &CheckedType, actual: &CheckedType) -> bool {
+        !CheckedType::unify(declared, actual).is_error()
+    }
+
+    /// Apply a slice of constraints to `ctx`. Returns error messages for failed ones.
+    pub fn check_constraints(
+        ctx: &mut TypeContext,
+        constraints: &[TypeConstraint],
+    ) -> Vec<String> {
+        let mut errors = Vec::new();
+        for c in constraints {
+            if !ctx.apply_constraint(c.clone()) {
+                errors.push(format!(
+                    "constraint failed: {} cannot unify with {}",
+                    c.left,
+                    c.right.type_name()
+                ));
+            }
         }
-        self.ctx.bind(var, unified);
-        true
-    }
-
-    pub fn bind(&mut self, name: impl Into<String>, ty: CheckedType) {
-        self.ctx.bind(name, ty);
-    }
-
-    pub fn lookup(&self, name: &str) -> CheckedType {
-        self.ctx.lookup(name)
-    }
-
-    pub fn add_constraint(&mut self, constraint: TypeConstraint) {
-        self.ctx.add_constraint(constraint);
-    }
-
-    pub fn check_constraints(&mut self) -> Vec<String> {
-        self.ctx.apply_constraints()
+        errors
     }
 }
 
@@ -140,65 +154,76 @@ mod type_check_tests {
     use super::*;
 
     #[test]
-    fn test_checked_type_unify_same() {
-        assert_eq!(CheckedType::Int.unify(&CheckedType::Int), CheckedType::Int);
+    fn test_is_numeric() {
+        assert!(CheckedType::Int(32).is_numeric());
+        assert!(CheckedType::Float(64).is_numeric());
+        assert!(!CheckedType::Bool.is_numeric());
+        assert!(!CheckedType::Str.is_numeric());
+        assert!(!CheckedType::Unit.is_numeric());
+        assert!(!CheckedType::Unknown.is_numeric());
+        assert!(!CheckedType::Error("x".into()).is_numeric());
     }
 
     #[test]
-    fn test_checked_type_unify_unknown() {
-        assert_eq!(CheckedType::Unknown.unify(&CheckedType::Bool), CheckedType::Bool);
+    fn test_unify_same_int() {
+        let result = CheckedType::unify(&CheckedType::Int(32), &CheckedType::Int(32));
+        assert_eq!(result, CheckedType::Int(32));
     }
 
     #[test]
-    fn test_checked_type_unify_int_float() {
-        assert_eq!(CheckedType::Int.unify(&CheckedType::Float), CheckedType::Float);
+    fn test_unify_int_float_yields_float() {
+        let result = CheckedType::unify(&CheckedType::Int(32), &CheckedType::Float(64));
+        assert_eq!(result, CheckedType::Float(64));
     }
 
     #[test]
-    fn test_checked_type_unify_mismatch_is_error() {
-        assert!(CheckedType::Int.unify(&CheckedType::Str).is_error());
+    fn test_unify_different_yields_error() {
+        let result = CheckedType::unify(&CheckedType::Bool, &CheckedType::Str);
+        assert!(result.is_error());
     }
 
     #[test]
-    fn test_type_context_bind_lookup() {
+    fn test_context_bind_and_lookup() {
         let mut ctx = TypeContext::new();
-        ctx.bind("x", CheckedType::Int);
-        assert_eq!(ctx.lookup("x"), CheckedType::Int);
-        assert_eq!(ctx.lookup("y"), CheckedType::Unknown);
+        ctx.bind("x", CheckedType::Int(32));
+        assert_eq!(ctx.lookup("x"), Some(&CheckedType::Int(32)));
+        assert_eq!(ctx.lookup("y"), None);
     }
 
     #[test]
-    fn test_type_context_constraint_ok() {
+    fn test_apply_constraint_success() {
         let mut ctx = TypeContext::new();
-        ctx.bind("a", CheckedType::Int);
-        ctx.add_constraint(TypeConstraint::new("a", CheckedType::Int));
-        let errors = ctx.apply_constraints();
-        assert!(errors.is_empty());
+        let c = TypeConstraint::new("a", CheckedType::Bool);
+        assert!(ctx.apply_constraint(c));
+        assert_eq!(ctx.lookup("a"), Some(&CheckedType::Bool));
     }
 
     #[test]
-    fn test_type_context_constraint_error() {
+    fn test_apply_constraint_conflict_returns_false() {
         let mut ctx = TypeContext::new();
-        ctx.bind("a", CheckedType::Bool);
-        ctx.add_constraint(TypeConstraint::new("a", CheckedType::Int));
-        let errors = ctx.apply_constraints();
-        assert!(!errors.is_empty());
+        ctx.bind("b", CheckedType::Bool);
+        let c = TypeConstraint::new("b", CheckedType::Int(32));
+        assert!(!ctx.apply_constraint(c));
+        assert_eq!(ctx.lookup("b"), Some(&CheckedType::Bool));
     }
 
     #[test]
-    fn test_checker_numeric_op() {
-        let mut checker = TypeChecker::new();
-        checker.bind("x", CheckedType::Int);
-        checker.bind("y", CheckedType::Float);
-        let result = checker.check_numeric_op("x", "y");
-        assert_eq!(result, CheckedType::Float);
+    fn test_check_numeric_op_error_on_non_numeric() {
+        let result = TypeChecker::check_numeric_op(&CheckedType::Bool, &CheckedType::Int(32));
+        assert!(result.is_error());
     }
 
     #[test]
-    fn test_checker_assignment_valid() {
-        let mut checker = TypeChecker::new();
-        checker.bind("v", CheckedType::Int);
-        assert!(checker.check_assignment("v", CheckedType::Int));
-        assert_eq!(checker.lookup("v"), CheckedType::Int);
+    fn test_check_constraints_collects_errors() {
+        let mut ctx = TypeContext::new();
+        ctx.bind("x", CheckedType::Bool);
+        let constraints = vec![
+            TypeConstraint::new("x", CheckedType::Int(32)),
+            TypeConstraint::new("y", CheckedType::Str),
+        ];
+        let errors = TypeChecker::check_constraints(&mut ctx, &constraints);
+        assert_eq!(errors.len(), 1);
+        assert!(errors[0].contains('x'));
+        assert_eq!(ctx.lookup("y"), Some(&CheckedType::Str));
     }
 }

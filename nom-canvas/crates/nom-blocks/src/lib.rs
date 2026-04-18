@@ -59,6 +59,9 @@ pub mod workspace;
 /// WorkspaceSchema, SchemaVersion, SchemaMigration, and MigrationPlan for workspace versioning.
 #[allow(missing_docs)]
 pub mod workspace_schema;
+/// Workspace manifest as .nomx AppManifest — NomxDep, NomxManifest, NomxModuleGraph.
+#[allow(missing_docs)]
+pub mod nomx_manifest;
 
 pub use ancestry::{AncestorEntry, AncestryCache};
 pub use content_hash::{ContentHash, ContentStore};
@@ -70,6 +73,7 @@ pub use shared_types::{CompositionPlan, DeepThinkEvent, DeepThinkStep, PlanStep,
 pub use slot::{SlotBinding, SlotValue};
 pub use stub_dict::StubDictReader;
 pub use workspace::{CanvasObject, Workspace};
+pub use nomx_manifest::{NomxDep, NomxManifest, NomxModuleEdge, NomxModuleGraph};
 
 #[cfg(test)]
 mod integration_tests {

@@ -358,13 +358,21 @@
 - ✅ SSA — SsaVar + PhiNode + SsaBlock + SsaForm basic block stubs (9 tests)
 - ✅ Accessibility — A11yRole + A11yAuditor violations + KeyboardNav (9 tests)
 
-## Open Items — Wave ABT targets
+## Wave ABT — COMPLETE (2026-04-19, 9519 tests)
 
-- ❌ **nom-editor syntax** — SyntaxToken + highlight ranges + display map pipeline
-- ❌ **nom-graph node traversal** — BFS/DFS with visitor pattern + edge filtering
-- ❌ **nom-blocks workspace** — WorkspaceSchema + version migration + compact
-- ❌ **nom-concept type check** — TypeChecker + constraint solver + unification
-- ❌ **nom-canvas-core render state** — RenderFrame + dirty region tracking
+- ✅ SyntaxHighlighter — TokenKind×8 + SyntaxToken + HighlightRange (9 tests)
+- ✅ GraphTraversal — GraphEdge + SimpleGraph BFS/DFS + edge filter (9 tests)
+- ✅ WorkspaceSchema — SchemaVersion + SchemaMigration + MigrationPlan (9 tests)
+- ✅ TypeChecker — CheckedType + TypeContext + constraint unification (9 tests)
+- ✅ RenderFrame — DirtyRegion + DirtyTracker + dirty state tracking (9 tests)
+
+## Open Items — Wave ABU targets
+
+- ❌ **nom-compose streaming** — PartialResult + StreamingOutput + ResultBuffer (partial-result streaming)
+- ❌ **nom-backend workspace-rename** — RenameOp + WorkspaceRenamer + RenamePreview
+- ❌ **nom-concept canonicalize** — PartialLifter + CanonicalizationChecker + CanonicalForm
+- ❌ **nom-blocks nomx-manifest** — NomxManifest + NomxDep + NomxModuleGraph
+- ❌ **nom-intent dream-history** — DreamHistoryEntry + DreamHistoryStore + DreamJournal
 
 ---
 

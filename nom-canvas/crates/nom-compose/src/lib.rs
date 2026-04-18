@@ -114,6 +114,8 @@ pub mod donut_pipeline;
 pub mod codegen_pipeline;
 pub mod vision_bridge;
 pub mod pipeline_context;
+pub mod streaming_result;
+pub use streaming_result::{PartialResult, ResultBuffer, StreamingOutput};
 
 #[cfg(test)]
 mod integration_tests {

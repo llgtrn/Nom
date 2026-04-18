@@ -25,6 +25,9 @@ pub use strategy::{BusinessModel, StrategyExtractor, StrategyReport, StrategySig
 
 pub mod reranker;
 
+pub mod dream_history;
+pub use dream_history::{DreamHistoryEntry, DreamHistoryStore, DreamJournal};
+
 use std::sync::{
     atomic::{AtomicBool, Ordering},
     Arc,

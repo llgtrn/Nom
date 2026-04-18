@@ -94,6 +94,9 @@ pub use ssa::{PhiNode, SsaBlock, SsaForm, SsaVar};
 pub mod type_check;
 pub use type_check::{CheckedType, TypeChecker, TypeConstraint as TypeCheckConstraint, TypeContext};
 
+pub mod canonicalize;
+pub use canonicalize::{CanonicalForm, CanonicalizationChecker, CanonicalRequirements, PartialLifter};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

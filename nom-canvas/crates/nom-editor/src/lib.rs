@@ -18,6 +18,7 @@ pub mod syntax_highlight;
 pub mod selection;
 pub mod tab_map;
 pub mod wrap_map;
+pub mod workspace_rename;
 
 pub use buffer::{Buffer, BufferId, Patch};
 pub use clipboard::Clipboard;
@@ -35,3 +36,4 @@ pub use lsp_bridge::{
 };
 pub use scroll::ScrollPosition;
 pub use selection::{SelectionAnchor, SelectionManager, SelectionRange};
+pub use workspace_rename::{RenameOp, RenamePreview, RenameScope, WorkspaceRenamer};
