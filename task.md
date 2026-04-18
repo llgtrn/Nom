@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `7716377` | **Tests:** 8947 | **Workspace:** clean — Waves AT+AU+AV+AW complete. B-axis ~62%, C-axis ~72%, D-axis ~95%.
+**Date:** 2026-04-19 | **HEAD:** `761c3eb` | **Tests:** 8785 | **Workspace:** clean — Waves AX+AY complete. B-axis ~65%, C-axis ~76%, D-axis ~97%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -136,17 +136,40 @@
 
 ---
 
-## Open Items — Wave AX targets
+## Wave AX (2026-04-19) — COMMITTED ✅ (HEAD partial, merged into 761c3eb)
+- ✅ C5-V10 — VideoEncoder + FrameBuffer two-stage pipeline in nom-compose
+- ✅ AH-UI — IntentPreviewCard + AiReviewCard in nom-panels/right
+- ✅ D3 golden paths — 5 end-to-end integration tests in nom-canvas-tests crate
+- ✅ D2 audit — ThemeTokenAudit + 3 audit tests
+- ✅ AN-TEST-DEDUP — -20 duplicate tests nom-intent, -4 nom-compose
 
-- ❌ **AN-TEST-DEDUP** — ~85% duplication ratio; target ≤20%
-- ❌ **C5-V10** — Two-stage video pipeline (parallel frame capture → FFmpeg stdin streaming)
-- ❌ **C4-LSP** — hover tooltip/completion popup/diagnostic squiggle visually rendered on canvas
-- ❌ **AH-INTENT** — classify_with_react 3-pass fully wired (✅ done), AH-PROMOTE UI cards
-- ❌ **AH-UI** — Intent Preview + AI Review cards in nom-panels/src/right/
-- ❌ **D3 golden paths** — Type .nomx → highlight; drag node → canvas render; wire → confidence edge
+## Wave AY (2026-04-19) — COMMITTED ✅ (HEAD 761c3eb, 8785 tests, 0 warnings)
+- ✅ D8 AF-TITLEBAR — TitleBarPanel + with_traffic_lights + title truncation
+- ✅ D8 AF-HEADER — HeaderPanel + HeaderAction enum
+- ✅ D8 AF-STATUS — StatusBar + StatusItem + StatusKind
+- ✅ D8 AF-LEFT — IconRail + LeftPanelLayout
+- ✅ D8 AF-CENTER — TabManager + CenterLayout + SplitDirection
+- ✅ D8 AF-RIGHT — ChatPanel + HypothesisTree + PropertiesPanel
+- ✅ D2 visual — FrostedGlassToken + BezierCurve Newton + ThemeMode/Registry
+- ✅ D10 UC-POLARS — DataFrame query abstraction (QueryDataFrame)
+- ✅ D10 UC-API-TESTS — API integration tests for serve.rs endpoints
+- ✅ C7 — AnimatedReasoningCard FSM + HypothesisTreeNav DFS
+- ✅ C8 — WebGpuRenderer stub + wasm feature gate + .cargo/config.toml + build_wasm.sh
+- ✅ A3 nom-ux — UxPattern/Screen/UserFlow crate (7 tests)
+- ✅ A3 nom-media — MediaUnit/Codec/Container crate (6 tests)
+- ✅ D5 docs — docs/user-manual.md + docs/api-reference.md + CONTRIBUTING.md
+
+## Open Items — Wave AZ targets
+
+- ❌ **C4-LSP visual** — hover tooltip/completion popup/diagnostic squiggle rendered on canvas
+- ❌ **D2 visual render** — frosted-glass RENDER wired into wgpu pipeline (tokens exist, not rendered)
+- ❌ **D3 golden scripts** — executable demo scripts (type .nomx → highlight, drag → compose)
 - ❌ **A11 LLVM** — Parser/Resolver/TypeChecker/Codegen .nom compiles via rust-nomc
-- ❌ **D2 visual** — frosted-glass blur, bezier animate, all 73 tokens used
 - ❌ **C5 real backends** — GPU→FFmpeg, rodio, opendataloader real wiring (not stubs)
+- ❌ **B6 MECE/Dream gate** — MECE validator + Dream score ≥95
+- ❌ **A6 LSP real** — stdin/stdout tokio async handshake + AuthoringProtocol stream
+- ❌ **B1 full parse** — define-that integrated into full nom-concept pipeline
+- ❌ **AN-TEST-DEDUP** — remaining 12 crates; target ≤20% ratio
 
 ---
 

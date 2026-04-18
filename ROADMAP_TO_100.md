@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AW COMPLETE — HEAD `7716377`, **8947 tests**, 0 clippy warnings. Waves AT+AU+AV+AW closed 30+ items. A-axis 44%, B-axis ~62%, C-axis ~72%, D-axis ~95%.
+**Last updated:** Wave AY COMPLETE — HEAD `761c3eb`, **8785 tests**, 0 clippy warnings. Waves AX+AY closed 19 items. A-axis 46%, B-axis ~65%, C-axis ~76%, D-axis ~97%.
 
 ## Current finalization snapshot
 
@@ -73,8 +73,8 @@
 - [ ] Lifecycle transitions (merge/eliminate/evolve)
 - [ ] UX extractor for Motion / Dioxus / ToolJet / DeerFlow corpus
 - [ ] Skill routing via `EntryKind::Skill`
-- [ ] `nom-ux` crate (peer to nom-extract)
-- [ ] `nom-media` crate (peer to nom-extract)
+- [x] `nom-ux` crate — UxPattern/Screen/UserFlow (Wave AY)
+- [x] `nom-media` crate — MediaUnit/Codec/Container (Wave AY)
 - [ ] Stream-and-discard disk discipline for mass ingest
 - [ ] Checkpoint + resumption for interrupted ingests
 - [ ] Bandwidth-throttle non-optional
