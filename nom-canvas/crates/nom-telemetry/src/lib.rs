@@ -2,6 +2,7 @@
 
 pub mod export;
 pub mod metrics;
+pub mod metrics_deep;
 pub mod spans;
 pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};

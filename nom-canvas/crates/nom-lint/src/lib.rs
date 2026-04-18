@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 
 pub mod rules;
+pub mod lint_rules;
 pub use rules::naming::{NamingLinter, NamingViolation};
 pub use rules::structure::{StructureLinter, StructureViolation, StructureViolationKind};
 

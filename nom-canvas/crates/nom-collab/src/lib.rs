@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 
+pub mod crdt_history;
 pub mod merge;
 pub mod ops;
 pub mod presence;

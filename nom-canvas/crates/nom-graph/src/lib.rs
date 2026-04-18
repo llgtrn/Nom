@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 pub mod cache;
+pub mod plan_cache;
 pub mod content_dag;
 pub mod dag;
 pub mod execution;

@@ -326,13 +326,21 @@
 - ✅ StreamIngest — StreamConfig + IngestCheckpoint + StreamIngestor + SkipList (9 tests)
 - ✅ AestheticRegistry — AestheticDomain×5 + 9 seeded aesthetic skills (9 tests)
 
-## Open Items — Wave ABP targets
+## Wave ABP (2026-04-19) — COMMITTED ✅ (HEAD fd58825, +45 tests)
 
-- ❌ **A5 AI-invokes-compiler loop** — verify→build→bench→flow stub in nom-compose
-- ❌ **B9 media primitives composed** — MediaUnit compose pipeline in nom-media
-- ❌ **A5 workspace .nomx manifest** — AppManifest + Cargo-style deps in nom-blocks
-- ❌ **C6 RAG ranker** — Haystack-pattern reranker + postprocessor in nom-intent
-- ❌ **A11 LLVM stub deeper** — LlvmEmitter with real op dispatch table in nom-concept
+- ✅ AiCompilerLoop — verify→build→bench→flow 4-stage loop (9 tests)
+- ✅ MediaComposePipeline — MediaKind×6 + ComposeOp×3 Nom operators (9 tests)
+- ✅ AppManifest — FNV-1a dep hash + ManifestGraph (9 tests)
+- ✅ Reranker — RerankStrategy×3 + PostProcessor dedup (9 tests)
+- ✅ LlvmEmit — LlvmOp×10 dispatch + LlvmBlock + LlvmFunction IR (9 tests)
+
+## Open Items — Wave ABQ targets
+
+- ❌ **nom-graph deeper** — ExecutionPlan caching + node dependency ordering tests
+- ❌ **nom-collab deeper** — CRDT operation history + conflict resolution tests
+- ❌ **nom-telemetry deeper** — MetricCollector + SpanTracer + histogram tests
+- ❌ **nom-lint deeper** — LintRule pass/fail + severity + auto-fix stub tests
+- ❌ **nom-memoize deeper** — LRU eviction + cache hit/miss ratio + TTL tests
 
 ---
 

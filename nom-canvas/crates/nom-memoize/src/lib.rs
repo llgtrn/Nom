@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 pub mod constraint;
 pub mod hash;
+pub mod lru_cache;
 pub mod memo_cache;
 pub mod policy;
 pub mod stats;
