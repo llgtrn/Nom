@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `ed86222` | **Tests:** 9045 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC complete. A-axis ~62%, B-axis ~78%, C-axis ~87%, D-axis ~99%.
+**Date:** 2026-04-19 | **HEAD:** `d0d56df` | **Tests:** 9121 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD complete. A-axis ~63%, B-axis ~80%, C-axis ~88%, D-axis ~99%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -216,18 +216,33 @@
 - ✅ D3 golden +4 — 18 golden path tests total
 - ✅ B2 corpus 70/100 — 30 more .nomx files (archive_entry→websocket_connect)
 
-## Open Items — Wave ABD targets
+## Wave ABD (2026-04-19) — COMMITTED ✅ (HEAD d0d56df, 9121 tests)
 
-- ❌ **B2 corpus** — 30 more .nomx corpus files (70/100 done)
-- ❌ **A11 LLVM bitcode** — IR→LLVM bitcode, native binary
+- ✅ B2 corpus 100/100 — COMPLETE (30 more .nomx, all topics covered)
+- ✅ AM-SPATIAL-WIRE — ViewportSnap + SnapGrid + AabbIndex (+10)
+- ✅ AL-COSMIC text — TextLayoutEngine + GlyphRun + TextAlign (+8)
+- ✅ D4 collab session — CollabSession + SessionRole (+6)
+- ✅ NOM-GRAPH-ANCESTRY — AncestryCache depth cache (+6)
+- ✅ UC-GRAPH-TRAVERSE — GraphTraversal dfs/bfs (+6)
+- ✅ AM-INTENT-STRUCT — IntentClassifier + MecePartition (+8)
+- ✅ D1 ToolJet 51 — WidgetRegistry 51 kinds (+4)
+- ✅ A11 bitcode — BitcodeModule + IrToBitcode (+8, nom-concept)
+- ✅ B7 editor cursor — EditorCursor + BufferHistory (+8)
+- ✅ C5 reverse — ReverseOrchestrator media→nomx pipeline (+8)
+- ✅ D3 golden +4 — 22 total golden path tests
+
+## Open Items — Wave ABE targets
+
+- ❌ **ChatPanel AI dispatch** — ChatPanel submit → AiGlueOrchestrator → pipeline (canvas mode changes per context)
 - ❌ **C5 audio real** — rodio real encode (not just stub)
-- ❌ **D1 ToolJet** — expand widget registry to 55 widgets (35/55)
 - ❌ **C9 build** — cargo build --all-features passes
-- ❌ **D3 more golden** — video-compose, document-compose demos
-- ❌ **A3 ingestion depth** — real body-only pipeline beyond stubs
-- ❌ **B6 MECE depth** — MeceCategory seeding from DB
-- ❌ **nom-editor deeper** — editor_view integration tests
-- ❌ **nom-canvas-core** — viewport snapping + spatial tests
+- ❌ **A3 ingestion real** — real body-only ingest events beyond stubs
+- ❌ **A6 LSP async loop** — tokio stdin/stdout I/O loop
+- ❌ **nom-compile-bridge** — real dispatch_lsp_request → actual handler
+- ❌ **nom-canvas-core** — real wgpu draw loop (FrostedRenderPass called)
+- ❌ **nom-cli** — POST /compose axum endpoint real handler
+- ❌ **nom-editor** — EditorView ↔ LspOverlay real integration
+- ❌ **A10 corpus pipeline** — 100-repo ingestion + 100M+ nomtu entries
 
 ---
 

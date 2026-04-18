@@ -1,8 +1,27 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `ed86222` | **Tests:** 9045 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC complete. 0 clippy warnings. A 62%, B 78%, C 87%, D 99%.
+**Date:** 2026-04-19 | **HEAD:** `d0d56df` | **Tests:** 9121 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD complete. 0 clippy warnings. A 63%, B 80%, C 88%, D 99%.
 
 ---
+
+## Iteration 75 — Wave ABD COMPLETE (HEAD d0d56df, 9121 tests, 0 warnings)
+
+**10 parallel agents. Viewport snapping + TextLayout + CollabSession + AncestryCache + GraphTraversal + IntentClassifier + WidgetRegistry 51 + BitcodeModule + EditorCursor + ReverseOrchestrator. B2 corpus 100/100.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| AM-SPATIAL-WIRE | ViewportSnap + SnapGrid + AabbIndex spatial index | nom-canvas-core |
+| AL-COSMIC text | TextAlign + TextStyle + GlyphRun + TextLayoutEngine | nom-gpui |
+| D4 collab session | SessionRole + CollabParticipant + CollabSession | nom-collab |
+| NOM-GRAPH-ANCESTRY | AncestorEntry + AncestryCache depth cache | nom-blocks |
+| UC-GRAPH-TRAVERSE | TraversalOrder + GraphTraversal dfs/bfs | nom-graph |
+| AM-INTENT-STRUCT | IntentClassifier + MecePartition coverage score | nom-intent |
+| D1 ToolJet 51 | WidgetRegistry expanded to 51 kinds (6 categories) | nom-panels |
+| A11 bitcode | BitcodeModule + IrToBitcode lower() stub | nom-concept |
+| B7 editor cursor | EditorCursor + BufferHistory undo stack | nom-editor |
+| C5 reverse | ReverseOrchestrator media/URL→nomx pipeline | nom-compose |
+| D3 golden +4 | 22 total golden path tests | nom-canvas-tests |
+| B2 corpus 100/100 | 30 more .nomx examples — CORPUS COMPLETE ✅ | examples/ |
 
 ## Iteration 74 — Wave ABC COMPLETE (HEAD ed86222, 9045 tests, 0 warnings)
 
