@@ -1,6 +1,6 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `679ce6b` (dirty Wave AP) | **Tests:** 8391 | **Workspace:** dirty — Wave AP complete, uncommitted
+**Date:** 2026-04-18 | **HEAD:** `fc67aa9` | **Tests:** 8391 | **Workspace:** clean — Waves AP+AQ+AR complete
 
 ## Iteration 60 — Hard Audit Wave AN verification (2026-04-18, HEAD 8e36ec0, 7902 tests)
 

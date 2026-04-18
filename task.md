@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `679ce6b` | **Tests:** 8391 | **Workspace:** dirty — Wave AP COMPLETE (uncommitted)
+**Date:** 2026-04-18 | **HEAD:** `fc67aa9` | **Tests:** 8391 | **Workspace:** clean — Wave AR complete. C-axis ~65%, D-axis ~90%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 

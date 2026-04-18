@@ -1,6 +1,6 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `679ce6b` (dirty Wave AP) | **Tests:** 8391 | **Workspace:** dirty — Wave AP complete (Iteration 61 audited), Wave AQ planned
+**Date:** 2026-04-18 | **HEAD:** `fc67aa9` | **Tests:** 8391 | **Workspace:** clean — Waves AP+AQ+AR complete (Iteration 62), Wave AS planned
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
 
 ## Current State (Wave AP complete, Iteration 61 audited, 2026-04-18)
@@ -131,7 +131,9 @@ Multi-kind requests route to parallel `TaskQueue` pipeline via `ComposeOrchestra
 | Waves AF–AK | `8088889` | 6743 | Minimalist UI + 5 coverage waves (+3902 tests) |
 | Wave AL | `778b085` | 7241 | CommandStack + CRDT GC + panel serialization (+498 tests) |
 | Waves AM–AO | `679ce6b` | 8384 | DB-driven palette/library/SQL inject/CRDT fix/spatial/frame/theme (+1143 tests) |
-| Wave AP | `6ee53c6` | 8391 | **ALL 4 CRITICALS FIXED**: renderer renders pixels, BackendKind deleted, GrammarKind.status, TaffyTree, atlas LRU, 21 items closed (+7 tests) |
+| Wave AP | `6ee53c6` | 8391 | **ALL 4 CRITICALS FIXED**: renderer renders pixels, BackendKind deleted, GrammarKind.status, TaffyTree, atlas LRU, 21 items closed |
+| Wave AQ | `c30f2a0` | 8413 | NOM-GRAPH-ANCESTRY, SELF-DESCRIBE, BM25/classify_with_react, cosmic_text, viewport spatial, POST /compose, surface-loss fix |
+| Wave AR | `fc67aa9` | 8391 | B4 46 kinds, B7 skills, B5 side-tables, B9 CLI, C3 compiler default, C7 interrupt, A3 EdgeKind, D4 clippy+fmt, ZERO foreign names |
 
 ## Non-Negotiable Rules
 

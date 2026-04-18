@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AP COMPLETE — HEAD `679ce6b` (dirty), **8391 tests** (+7). 21 items FIXED. Renderer NOW RENDERS PIXELS. BackendKind DELETED. All CRITICAL/HIGH blockers cleared. Wave AQ planned.
+**Last updated:** Wave AR COMPLETE — HEAD `fc67aa9`, **8391 tests**. Waves AP+AQ+AR closed 35+ items. C-axis 65%, D-axis 90%. Wave AS targets: C1 Click Run→LLVM, C3 default build, C4 LSP visual, C8 WASM, B1 syntax evolution, B9 remaining CLI, A6 LSP protocol.
 
 ## Current finalization snapshot
 
@@ -11,8 +11,8 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | Lexer done; self-hosting not started; 22/29 crates never called from canvas |
 | B · Nom language | 34% | 100% | 66pp | 9-kind foundation locked; C-like syntax; 30+ extended kinds unseeded |
-| C · nom-canvas ↔ compiler integration | **52%** | 100% | **48pp** | +18pp Wave AP: renderer NOW RENDERS PIXELS (AL-RENDER-1/2/3 DONE); BackendKind deleted (DB-driven); GrammarKind.status + list_kinds SQL added; ExecutionEngine::execute() added. Open: NOM-GRAPH-ANCESTRY, NOM-BACKEND-SELF-DESCRIBE, AM-INTENT-STRUCT, AL-COSMIC |
-| D · Overall platform | **82%** | 100% | **18pp** | +10pp Wave AP: TaffyTree live; oled() added; 3 font handles; TOOLBAR_H deleted; atlas LRU fixed; confidence coloring wired; Point type; spatial broadphase production. Open: cosmic_text init, viewport SpatialIndex |
+| C · nom-canvas ↔ compiler integration | **65%** | 100% | **35pp** | +13pp Waves AQ+AR: NOM-GRAPH-ANCESTRY, SELF-DESCRIBE, BM25+classify_with_react, cosmic_text init, viewport SpatialIndex, POST /compose, InterruptSignal, compiler feature=default, multi-graph EdgeKind 22 variants. Open: C1 Click Run→LLVM, C4 LSP visual, C5 real backends, C6 RAG retrievers, C8 WASM |
+| D · Overall platform | **90%** | 100% | **10pp** | +8pp Waves AQ+AR: 46 kinds seeded, entry_benchmarks+flow_steps schemas, nom author/corpus CLI, D4 clippy+fmt clean, ZERO foreign names. Open: D2 full visual verification, D3 golden paths, D4 CI/release pipeline, D5 docs |
 
 **C-axis at ~34%** (Wave AN fixed CRDT overflow and selection.rs wiring, nothing else):
 1. Renderer still renders zero pixels — 10 waves overdue
