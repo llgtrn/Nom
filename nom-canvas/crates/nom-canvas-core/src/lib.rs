@@ -88,6 +88,10 @@ pub use pixel_diff::{DiffReport, DiffThreshold, PixelDiff, PixelRegion, RegionDi
 pub mod snap_align;
 pub use snap_align::{AlignAxis, AlignGuide, AlignResult, AlignmentEngine, SnapTarget};
 
+/// CSS-grid-inspired layout primitives: tracks, cells, and placement.
+pub mod layout_grid;
+pub use layout_grid::{GridCell, GridPlacement, GridTrack, LayoutGrid, TrackSize};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

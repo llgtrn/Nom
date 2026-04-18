@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 
+pub mod audit_log;
 pub mod event_log;
 pub mod export;
 pub mod metrics;
@@ -8,6 +9,7 @@ pub mod perf_counter;
 pub mod spans;
 pub mod span_aggregator;
 pub mod trace_export;
+pub use audit_log::{AuditCategory, AuditEvent, AuditFilter, AuditLog, AuditReporter};
 pub use event_log::{EventKind as LogEventKind, LoggedEvent, EventLog, EventLogStore};
 pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};

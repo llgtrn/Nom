@@ -152,6 +152,8 @@ pub use native_screen::{
     ScreenTarget, CaptureResolution, CaptureBuffer, ScreenCapture,
     NativeScreenBackend as NativeScreenCaptureBackend,
 };
+pub mod video_timeline;
+pub use video_timeline::{ClipKind, TimelineClip, VideoTimeline, ClipOverlap, TimelineRenderer};
 
 #[cfg(test)]
 mod integration_tests {

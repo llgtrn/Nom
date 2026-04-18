@@ -47,3 +47,5 @@ pub mod rename_preview;
 pub use rename_preview::{RenamePreviewKind, RenameChange, RenamePreviewModel, RenameConflict, RenameApplier};
 pub mod multi_file_edit;
 pub use multi_file_edit::{EditScope, MultiFileChange, MultiFileSession, MultiFileDiff, SessionApplier};
+pub mod code_lens;
+pub use code_lens::{CodeLensKind, CodeLens, CodeLensProvider, CodeLensOverlay, LensResolver};

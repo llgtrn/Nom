@@ -46,3 +46,5 @@ pub mod semantic_cache;
 pub use semantic_cache::{SemanticKey, SemanticEntry, CacheEviction, SemanticCache, CacheStats};
 pub mod delta_compress;
 pub use delta_compress::{DeltaKind, DeltaFrame, DeltaEncoder, DeltaDecoder, DeltaStream};
+pub mod intent_graph;
+pub use intent_graph::{IntentKind, IntentNode, IntentEdge, IntentGraph, IntentGraphQuery};
