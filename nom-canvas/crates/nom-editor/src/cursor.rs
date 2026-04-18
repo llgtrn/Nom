@@ -205,7 +205,7 @@ mod tests {
         cs.add(Selection::caret(5));
         // Two zero-length carets at the same offset do NOT overlap per the overlaps() impl,
         // so they are kept as two entries. The important invariant is no crash / no negative growth.
-        assert!(cs.len() >= 1);
+        assert!(!cs.is_empty());
     }
 
     #[test]
@@ -279,7 +279,7 @@ mod tests {
             cs.selections.push(Selection::range(abs, abs + word.len()));
             start = abs + 1;
         }
-        assert!(cs.len() > 0);
+        assert!(!cs.is_empty());
         assert_eq!(cs.len(), 3);
     }
 
@@ -306,7 +306,7 @@ mod tests {
         let offset = 0usize;
         // find next space
         let next_word_start = text[offset..]
-            .find(|c: char| c == ' ')
+            .find(' ')
             .map(|p| offset + p + 1)
             .unwrap_or(text.len());
         assert_eq!(next_word_start, 6); // 'w' in 'world'
@@ -317,10 +317,7 @@ mod tests {
         let text = "hello world";
         let offset = 11usize; // end of string
                               // Find the start of the last word by scanning backwards past the last word chars
-        let word_start = text[..offset]
-            .rfind(|c: char| c == ' ')
-            .map(|p| p + 1)
-            .unwrap_or(0);
+        let word_start = text[..offset].rfind(' ').map(|p| p + 1).unwrap_or(0);
         assert_eq!(word_start, 6); // 'w' in 'world'
     }
 
@@ -516,7 +513,7 @@ mod tests {
         // overlaps() for zero-length selections: min < other.max && other.min < max
         // → 5 < 5 is false → they do NOT merge.
         // All three entries remain (at least 1, at most 3).
-        assert!(cs.len() >= 1, "set must be non-empty");
+        assert!(!cs.is_empty(), "set must be non-empty");
     }
 
     #[test]
@@ -771,7 +768,7 @@ mod tests {
         let caret = 6usize;
         // word end: from caret, find next space
         let end = text[caret..]
-            .find(|c: char| c == ' ')
+            .find(' ')
             .map(|p| caret + p)
             .unwrap_or(text.len());
         let sel = Selection::range(caret, end);
@@ -785,10 +782,7 @@ mod tests {
         let sel = Selection::range(0, 11);
         // contract right edge: find last space before max
         let max = sel.max_offset();
-        let new_end = text[..max]
-            .rfind(|c: char| c == ' ')
-            .map(|p| p)
-            .unwrap_or(0);
+        let new_end = text[..max].rfind(' ').unwrap_or(0);
         let contracted = Selection::range(sel.min_offset(), new_end);
         assert_eq!(
             &text[contracted.min_offset()..contracted.max_offset()],

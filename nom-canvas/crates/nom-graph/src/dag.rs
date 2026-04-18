@@ -62,7 +62,7 @@ impl Dag {
         });
     }
 
-    /// Kahn topological sort (ComfyUI pattern: blockCount + blocking dicts)
+    /// Kahn topological sort (topological execution pattern: blockCount + blocking dicts)
     /// Returns Ok(sorted_ids) or Err(cycle_nodes)
     pub fn topological_sort(&self) -> Result<Vec<NodeId>, Vec<NodeId>> {
         // block_count[node] = number of unresolved input dependencies
@@ -1914,8 +1914,8 @@ mod tests {
         }
         let sorted = dag.topological_sort().unwrap();
         let leaf_pos = sorted.iter().position(|x| x == "n4").unwrap();
-        for i in 0..4 {
-            let ancestor_pos = sorted.iter().position(|x| x == &names[i]).unwrap();
+        for (i, name) in names[..4].iter().enumerate() {
+            let ancestor_pos = sorted.iter().position(|x| x == name).unwrap();
             assert!(
                 ancestor_pos < leaf_pos,
                 "n{i} (ancestor) must precede n4 (leaf)"

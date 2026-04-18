@@ -6494,15 +6494,13 @@ mod tests {
     #[test]
     fn gauge_set_to_specific_value() {
         // Use a simple f64 to model a gauge.
-        let mut gauge: f64 = 0.0;
-        gauge = 42.5;
+        let gauge = 42.5_f64;
         assert!((gauge - 42.5_f64).abs() < 1e-9);
     }
 
     #[test]
     fn gauge_overwrite_replaces_value() {
-        let mut gauge = 10.0f64;
-        gauge = 99.0;
+        let gauge = 99.0_f64;
         assert!((gauge - 99.0_f64).abs() < 1e-9);
     }
 

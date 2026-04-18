@@ -287,7 +287,7 @@ mod tests {
         // Search for "block" matches last two (via display or kind)
         let block_results = palette.search("block");
         // "TextBlock" matches by kind_name, "MediaVideo"/"MediaAudio" match by description
-        assert!(block_results.len() >= 1);
+        assert!(!block_results.is_empty());
     }
 
     #[test]
@@ -473,7 +473,7 @@ mod tests {
             .collect();
         let palette = NodePalette::load_from_kinds(&kinds);
         let scroll_offset = 0usize;
-        let first = palette.entries.iter().skip(scroll_offset).next();
+        let first = palette.entries.get(scroll_offset);
         assert!(first.is_some());
         assert_eq!(first.unwrap().kind_name, "Kind0");
     }

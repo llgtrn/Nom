@@ -1444,56 +1444,53 @@ mod tests {
         assert!(!tier.is_idle(), "tier with pending=3 must not be idle");
         assert_eq!(tier.pending_count(), 3);
     }
-}
 
-// ── LSP helper functions (used only in tests) ────────────────────────────────
-#[cfg(test)]
-fn find_word_at(source: &str, pos: usize) -> Option<&str> {
-    if pos >= source.len() {
-        return None;
+    // ── LSP helper functions ─────────────────────────────────────────────
+    fn find_word_at(source: &str, pos: usize) -> Option<&str> {
+        if pos >= source.len() {
+            return None;
+        }
+        let bytes = source.as_bytes();
+        if bytes[pos] == b' ' || bytes[pos] == b'\t' || bytes[pos] == b'\n' {
+            return None;
+        }
+        // Scan left to word start
+        let mut start = pos;
+        while start > 0 && is_word_char(bytes[start - 1]) {
+            start -= 1;
+        }
+        // Scan right to word end
+        let mut end = pos;
+        while end < bytes.len() && is_word_char(bytes[end]) {
+            end += 1;
+        }
+        if start == end {
+            None
+        } else {
+            Some(&source[start..end])
+        }
     }
-    let bytes = source.as_bytes();
-    if bytes[pos] == b' ' || bytes[pos] == b'\t' || bytes[pos] == b'\n' {
-        return None;
-    }
-    // Scan left to word start
-    let mut start = pos;
-    while start > 0 && is_word_char(bytes[start - 1]) {
-        start -= 1;
-    }
-    // Scan right to word end
-    let mut end = pos;
-    while end < bytes.len() && is_word_char(bytes[end]) {
-        end += 1;
-    }
-    if start == end {
-        None
-    } else {
-        Some(&source[start..end])
-    }
-}
 
-#[cfg(test)]
-fn word_range_at(source: &str, pos: usize) -> Option<(usize, usize)> {
-    if pos >= source.len() {
-        return None;
+    fn word_range_at(source: &str, pos: usize) -> Option<(usize, usize)> {
+        if pos >= source.len() {
+            return None;
+        }
+        let bytes = source.as_bytes();
+        if !is_word_char(bytes[pos]) {
+            return None;
+        }
+        let mut start = pos;
+        while start > 0 && is_word_char(bytes[start - 1]) {
+            start -= 1;
+        }
+        let mut end = pos;
+        while end < bytes.len() && is_word_char(bytes[end]) {
+            end += 1;
+        }
+        Some((start, end))
     }
-    let bytes = source.as_bytes();
-    if !is_word_char(bytes[pos]) {
-        return None;
-    }
-    let mut start = pos;
-    while start > 0 && is_word_char(bytes[start - 1]) {
-        start -= 1;
-    }
-    let mut end = pos;
-    while end < bytes.len() && is_word_char(bytes[end]) {
-        end += 1;
-    }
-    Some((start, end))
-}
 
-#[cfg(test)]
-fn is_word_char(b: u8) -> bool {
-    b.is_ascii_alphanumeric() || b == b'_'
+    fn is_word_char(b: u8) -> bool {
+        b.is_ascii_alphanumeric() || b == b'_'
+    }
 }

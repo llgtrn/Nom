@@ -1,6 +1,7 @@
 #![deny(unsafe_code)]
 pub mod adapters;
 pub mod background_tier;
+pub mod benchmarks;
 pub mod interactive_tier;
 pub mod shared;
 pub mod sqlite_dict;

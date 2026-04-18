@@ -190,14 +190,18 @@ mod tests {
     }
 
     fn entry_with_author(id: &str, author: &str) -> DiffEntry {
-        let mut meta = BlockMeta::default();
-        meta.author = author.to_string();
+        let meta = BlockMeta {
+            author: author.to_string(),
+            ..BlockMeta::default()
+        };
         DiffEntry::with_meta(NomtuRef::new(id, "word", "concept"), meta)
     }
 
     fn entry_with_version(id: &str, version: u32) -> DiffEntry {
-        let mut meta = BlockMeta::default();
-        meta.version = version;
+        let meta = BlockMeta {
+            version,
+            ..BlockMeta::default()
+        };
         DiffEntry::with_meta(NomtuRef::new(id, "word", "concept"), meta)
     }
 
@@ -554,12 +558,16 @@ mod tests {
 
     #[test]
     fn diff_kind_and_author_both_changed_produces_two_diffs() {
-        let mut old_meta = BlockMeta::default();
-        old_meta.author = "alice".to_string();
+        let old_meta = BlockMeta {
+            author: "alice".to_string(),
+            ..BlockMeta::default()
+        };
         let old_entry = DiffEntry::with_meta(NomtuRef::new("dual", "w", "verb"), old_meta);
 
-        let mut new_meta = BlockMeta::default();
-        new_meta.author = "bob".to_string();
+        let new_meta = BlockMeta {
+            author: "bob".to_string(),
+            ..BlockMeta::default()
+        };
         let new_entry = DiffEntry::with_meta(NomtuRef::new("dual", "w", "concept"), new_meta);
 
         let diffs = diff_blocks(&[old_entry], &[new_entry]);
@@ -631,9 +639,11 @@ mod tests {
 
     #[test]
     fn diff_entry_with_meta_stores_meta() {
-        let mut meta = BlockMeta::default();
-        meta.author = "tester".to_string();
-        meta.version = 7;
+        let meta = BlockMeta {
+            author: "tester".to_string(),
+            version: 7,
+            ..BlockMeta::default()
+        };
         let e = DiffEntry::with_meta(NomtuRef::new("wm", "w", "concept"), meta.clone());
         assert_eq!(e.meta.author, "tester");
         assert_eq!(e.meta.version, 7);

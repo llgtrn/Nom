@@ -42,7 +42,7 @@ fn integration_theme_colors_in_quad() {
     // BG is a valid [f32; 4] — just verify the type and range.
     assert_eq!(bg.len(), 4);
     for ch in bg {
-        assert!(ch >= 0.0 && ch <= 1.0, "channel out of range: {ch}");
+        assert!((0.0..=1.0).contains(&ch), "channel out of range: {ch}");
     }
     // Build a Quad that uses an Hsla derived from the token.
     let color = Hsla::new(0.0, 0.0, bg[2], bg[3]);

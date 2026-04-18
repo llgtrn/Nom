@@ -147,8 +147,7 @@ mod integration_tests {
             FallbackLevel::Primary,
         );
 
-        let result =
-            router.compose_with_fallback("audio", "some-audio-input", &|_| {}, false);
+        let result = router.compose_with_fallback("audio", "some-audio-input", &|_| {}, false);
 
         assert!(result.is_ok(), "StubMediaVendor must return Ok");
         assert_eq!(
@@ -164,8 +163,21 @@ mod integration_tests {
     #[test]
     fn backend_registry_all_16_kinds_discoverable() {
         let all_kinds = [
-            "video", "audio", "image", "document", "data", "app", "workflow", "scenario",
-            "rag_query", "transform", "embed_gen", "render", "export", "pipeline", "code_exec",
+            "video",
+            "audio",
+            "image",
+            "document",
+            "data",
+            "app",
+            "workflow",
+            "scenario",
+            "rag_query",
+            "transform",
+            "embed_gen",
+            "render",
+            "export",
+            "pipeline",
+            "code_exec",
             "web_screen",
         ];
         let mut registry = BackendRegistry::new();

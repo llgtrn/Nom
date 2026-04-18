@@ -1500,7 +1500,7 @@ mod tests {
     // The proxy test: icon_path returns only line/circle primitives (no embedded color data).
 
     #[test]
-    fn icon_stroke_color_is_currentColor() {
+    fn icon_stroke_color_is_current_color() {
         // The IconPath struct contains only geometric data (no color fields).
         // This confirms the icons follow the "inherit stroke from context" pattern.
         // We verify that every icon's path contains only lines and circles — no embedded color.
@@ -1635,10 +1635,22 @@ mod tests {
         for icon in Icon::all() {
             let path = icon_path(*icon);
             for &(x1, y1, x2, y2) in path.lines {
-                assert!(x1 >= 0.0 && x1 <= 1.0, "{icon:?} line x1={x1} out of [0,1]");
-                assert!(y1 >= 0.0 && y1 <= 1.0, "{icon:?} line y1={y1} out of [0,1]");
-                assert!(x2 >= 0.0 && x2 <= 1.0, "{icon:?} line x2={x2} out of [0,1]");
-                assert!(y2 >= 0.0 && y2 <= 1.0, "{icon:?} line y2={y2} out of [0,1]");
+                assert!(
+                    (0.0..=1.0).contains(&x1),
+                    "{icon:?} line x1={x1} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&y1),
+                    "{icon:?} line y1={y1} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&x2),
+                    "{icon:?} line x2={x2} out of [0,1]"
+                );
+                assert!(
+                    (0.0..=1.0).contains(&y2),
+                    "{icon:?} line y2={y2} out of [0,1]"
+                );
             }
             for &(cx, cy, r) in path.circles {
                 assert!(r > 0.0, "{icon:?} circle radius must be positive");
@@ -1693,7 +1705,7 @@ mod tests {
         for icon in Icon::all() {
             let name = icon.name();
             assert!(
-                name.len() >= 1 && name.len() <= 30,
+                !name.is_empty() && name.len() <= 30,
                 "{icon:?}.name() length {} must be in [1, 30]",
                 name.len()
             );

@@ -3,21 +3,21 @@ use crate::block_model::{BlockId, NomtuRef};
 use crate::slot::SlotValue;
 use serde::{Deserialize, Serialize};
 
-pub const FLAVOUR_PARAGRAPH: &str = "affine:paragraph";
-pub const FLAVOUR_HEADING: &str = "affine:heading";
-pub const FLAVOUR_LIST: &str = "affine:list";
-pub const FLAVOUR_QUOTE: &str = "affine:quote";
-pub const FLAVOUR_DIVIDER: &str = "affine:divider";
-pub const FLAVOUR_CALLOUT: &str = "affine:callout";
-pub const FLAVOUR_DATABASE: &str = "affine:database";
-pub const FLAVOUR_LINKED_DOC: &str = "affine:linked-doc";
-pub const FLAVOUR_BOOKMARK: &str = "affine:bookmark";
-pub const FLAVOUR_ATTACHMENT: &str = "affine:attachment";
-pub const FLAVOUR_IMAGE: &str = "affine:image";
-pub const FLAVOUR_CODE: &str = "affine:code";
-pub const FLAVOUR_EMBED: &str = "affine:embed-*";
-pub const FLAVOUR_SURFACE: &str = "affine:surface";
-pub const FLAVOUR_NOTE: &str = "affine:note";
+pub const FLAVOUR_PARAGRAPH: &str = "nom:paragraph";
+pub const FLAVOUR_HEADING: &str = "nom:heading";
+pub const FLAVOUR_LIST: &str = "nom:list";
+pub const FLAVOUR_QUOTE: &str = "nom:quote";
+pub const FLAVOUR_DIVIDER: &str = "nom:divider";
+pub const FLAVOUR_CALLOUT: &str = "nom:callout";
+pub const FLAVOUR_DATABASE: &str = "nom:database";
+pub const FLAVOUR_LINKED_DOC: &str = "nom:linked-doc";
+pub const FLAVOUR_BOOKMARK: &str = "nom:bookmark";
+pub const FLAVOUR_ATTACHMENT: &str = "nom:attachment";
+pub const FLAVOUR_IMAGE: &str = "nom:image";
+pub const FLAVOUR_CODE: &str = "nom:code";
+pub const FLAVOUR_EMBED: &str = "nom:embed-*";
+pub const FLAVOUR_SURFACE: &str = "nom:surface";
+pub const FLAVOUR_NOTE: &str = "nom:note";
 
 // Quill Delta op (simplified subset — insert/delete/retain with attrs)
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
@@ -181,9 +181,9 @@ mod tests {
 
     #[test]
     fn flavour_constants() {
-        assert_eq!(FLAVOUR_PARAGRAPH, "affine:paragraph");
-        assert_eq!(FLAVOUR_CODE, "affine:code");
-        assert_eq!(FLAVOUR_DATABASE, "affine:database");
+        assert_eq!(FLAVOUR_PARAGRAPH, "nom:paragraph");
+        assert_eq!(FLAVOUR_CODE, "nom:code");
+        assert_eq!(FLAVOUR_DATABASE, "nom:database");
     }
 
     #[test]

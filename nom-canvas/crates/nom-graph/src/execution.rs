@@ -117,21 +117,20 @@ impl ExecutionEngine {
                 // combine their cached output hashes into one deterministic input hash.
                 let mut visited = HashSet::new();
                 let all_ancestors = collect_ancestors(dag, node_id, &mut visited);
-                let input_hash = all_ancestors
-                    .iter()
-                    .filter(|id| *id != node_id)
-                    .fold(0u64, |acc, ancestor_id| {
-                        let upstream_hash = results
-                            .get(ancestor_id)
-                            .map(|o| o.cache_key)
-                            .unwrap_or(0);
+                let input_hash = all_ancestors.iter().filter(|id| *id != node_id).fold(
+                    0u64,
+                    |acc, ancestor_id| {
+                        let upstream_hash =
+                            results.get(ancestor_id).map(|o| o.cache_key).unwrap_or(0);
                         acc.wrapping_add(upstream_hash.rotate_left(17))
-                    });
+                    },
+                );
                 let cache_key = Self::compute_cache_key(&node.kind, input_hash);
                 let was_cached = self.cache.get(cache_key).is_some();
                 if !was_cached {
                     // Store a placeholder so downstream nodes see the new key.
-                    self.cache.put(cache_key, crate::cache::CachedValue::Bytes(vec![]));
+                    self.cache
+                        .put(cache_key, crate::cache::CachedValue::Bytes(vec![]));
                 }
                 results.insert(
                     node_id.clone(),
@@ -202,8 +201,14 @@ mod tests {
 
         let mut visited = HashSet::new();
         let ancestors = collect_ancestors(&dag, &"c".to_string(), &mut visited);
-        assert!(ancestors.contains(&"a".to_string()), "a must be a transitive ancestor of c");
-        assert!(ancestors.contains(&"b".to_string()), "b must be a direct ancestor of c");
+        assert!(
+            ancestors.contains(&"a".to_string()),
+            "a must be a transitive ancestor of c"
+        );
+        assert!(
+            ancestors.contains(&"b".to_string()),
+            "b must be a direct ancestor of c"
+        );
         assert!(ancestors.contains(&"c".to_string()), "c is included (self)");
         assert_eq!(ancestors.len(), 3);
     }
@@ -227,7 +232,10 @@ mod tests {
         // All four nodes, each exactly once.
         assert_eq!(ancestors.len(), 4);
         let a_count = ancestors.iter().filter(|id| id.as_str() == "a").count();
-        assert_eq!(a_count, 1, "a must appear exactly once despite diamond topology");
+        assert_eq!(
+            a_count, 1,
+            "a must appear exactly once despite diamond topology"
+        );
     }
 
     #[test]

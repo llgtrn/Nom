@@ -41,12 +41,7 @@ pub trait MediaVendor: Send + Sync {
     fn capability(&self) -> VendorCapability;
     fn cost_estimate(&self) -> CostEstimate;
     /// Execute a compose call. Returns Ok(output) or Err(reason).
-    fn compose(
-        &self,
-        kind: &str,
-        input: &str,
-        progress: &dyn Fn(f32),
-    ) -> Result<String, String>;
+    fn compose(&self, kind: &str, input: &str, progress: &dyn Fn(f32)) -> Result<String, String>;
 }
 
 /// A stub vendor for testing.
@@ -73,12 +68,7 @@ impl MediaVendor for StubVendor {
     fn cost_estimate(&self) -> CostEstimate {
         CostEstimate::free()
     }
-    fn compose(
-        &self,
-        _kind: &str,
-        input: &str,
-        progress: &dyn Fn(f32),
-    ) -> Result<String, String> {
+    fn compose(&self, _kind: &str, input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
         Ok(format!("stub:{}", input))
     }
@@ -108,12 +98,7 @@ impl MediaVendor for StubMediaVendor {
     fn cost_estimate(&self) -> CostEstimate {
         CostEstimate::free()
     }
-    fn compose(
-        &self,
-        _kind: &str,
-        _input: &str,
-        progress: &dyn Fn(f32),
-    ) -> Result<String, String> {
+    fn compose(&self, _kind: &str, _input: &str, progress: &dyn Fn(f32)) -> Result<String, String> {
         progress(1.0);
         Ok("stub_output".to_string())
     }

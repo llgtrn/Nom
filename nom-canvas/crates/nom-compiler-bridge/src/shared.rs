@@ -17,7 +17,7 @@ pub enum KindStatus {
 
 impl KindStatus {
     /// Parse from a lowercase string slice; unknown strings fall back to `Transient`.
-    pub fn from_str(s: &str) -> Self {
+    pub fn parse_status(s: &str) -> Self {
         match s {
             "partial" => Self::Partial,
             "complete" => Self::Complete,
@@ -60,9 +60,8 @@ pub struct GrammarKind {
 /// Requires `rusqlite` feature (i.e. `compiler` feature gate).
 #[cfg(feature = "compiler")]
 pub fn list_kinds(conn: &rusqlite::Connection) -> rusqlite::Result<Vec<GrammarKind>> {
-    let mut stmt = conn.prepare(
-        "SELECT name, description, status FROM grammar_kinds ORDER BY name",
-    )?;
+    let mut stmt =
+        conn.prepare("SELECT name, description, status FROM grammar_kinds ORDER BY name")?;
     let kinds = stmt
         .query_map([], |row| {
             let status_str: String = row.get(2)?;
@@ -1556,24 +1555,27 @@ mod tests {
 
     #[test]
     fn kind_status_from_str_transient_default() {
-        assert_eq!(KindStatus::from_str("transient"), KindStatus::Transient);
+        assert_eq!(KindStatus::parse_status("transient"), KindStatus::Transient);
     }
 
     #[test]
     fn kind_status_from_str_partial() {
-        assert_eq!(KindStatus::from_str("partial"), KindStatus::Partial);
+        assert_eq!(KindStatus::parse_status("partial"), KindStatus::Partial);
     }
 
     #[test]
     fn kind_status_from_str_complete() {
-        assert_eq!(KindStatus::from_str("complete"), KindStatus::Complete);
+        assert_eq!(KindStatus::parse_status("complete"), KindStatus::Complete);
     }
 
     #[test]
     fn kind_status_from_str_unknown_falls_back_to_transient() {
-        assert_eq!(KindStatus::from_str("unknown_xyz"), KindStatus::Transient);
-        assert_eq!(KindStatus::from_str(""), KindStatus::Transient);
-        assert_eq!(KindStatus::from_str("COMPLETE"), KindStatus::Transient);
+        assert_eq!(
+            KindStatus::parse_status("unknown_xyz"),
+            KindStatus::Transient
+        );
+        assert_eq!(KindStatus::parse_status(""), KindStatus::Transient);
+        assert_eq!(KindStatus::parse_status("COMPLETE"), KindStatus::Transient);
     }
 
     #[test]
@@ -1594,19 +1596,19 @@ mod tests {
     #[test]
     fn kind_status_round_trip_transient() {
         let s = KindStatus::Transient;
-        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Transient);
+        assert_eq!(KindStatus::parse_status(s.as_str()), KindStatus::Transient);
     }
 
     #[test]
     fn kind_status_round_trip_partial() {
         let s = KindStatus::Partial;
-        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Partial);
+        assert_eq!(KindStatus::parse_status(s.as_str()), KindStatus::Partial);
     }
 
     #[test]
     fn kind_status_round_trip_complete() {
         let s = KindStatus::Complete;
-        assert_eq!(KindStatus::from_str(s.as_str()), KindStatus::Complete);
+        assert_eq!(KindStatus::parse_status(s.as_str()), KindStatus::Complete);
     }
 
     #[test]
@@ -1633,8 +1635,8 @@ mod tests {
     #[test]
     fn kind_status_from_str_case_sensitive() {
         // Uppercase "Partial" must NOT match "partial"
-        assert_eq!(KindStatus::from_str("Partial"), KindStatus::Transient);
-        assert_eq!(KindStatus::from_str("Complete"), KindStatus::Transient);
+        assert_eq!(KindStatus::parse_status("Partial"), KindStatus::Transient);
+        assert_eq!(KindStatus::parse_status("Complete"), KindStatus::Transient);
     }
 
     #[test]
@@ -1719,6 +1721,9 @@ mod tests {
             description: "abstract idea".to_string(),
             status: KindStatus::Complete,
         };
-        assert_eq!(KindStatus::from_str(k.status.as_str()), KindStatus::Complete);
+        assert_eq!(
+            KindStatus::parse_status(k.status.as_str()),
+            KindStatus::Complete
+        );
     }
 }

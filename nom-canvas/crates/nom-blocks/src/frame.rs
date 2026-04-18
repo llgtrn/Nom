@@ -214,7 +214,8 @@ mod tests {
     fn frame_100_children_correct_count() {
         let mut f = FrameBlock::new(entity("f-big"), "large frame");
         for i in 0..100u32 {
-            f.add_child(NomtuRef::new(format!("child-{i}"), "item", "concept")).unwrap();
+            f.add_child(NomtuRef::new(format!("child-{i}"), "item", "concept"))
+                .unwrap();
         }
         assert_eq!(f.child_count(), 100);
     }

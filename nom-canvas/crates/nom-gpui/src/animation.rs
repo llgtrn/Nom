@@ -102,7 +102,7 @@ pub mod easing {
     }
 
     /// Spring animation — correct underdamped spring oscillator.
-    /// Defaults: stiffness = 400, damping = 28 (AFFiNE motion token).
+    /// Defaults: stiffness = 400, damping = 28 (spring motion token).
     /// y(t) = 1 - e^(-zeta*omega*t) * (cos(omega_d*t) + (zeta*omega/omega_d)*sin(omega_d*t))
     /// where omega_d = omega * sqrt(1 - zeta^2)
     pub fn spring(stiffness: f32, damping: f32) -> impl Fn(f32) -> f32 + Send + Sync {

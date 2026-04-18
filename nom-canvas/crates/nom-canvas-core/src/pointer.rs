@@ -1,5 +1,4 @@
 /// Pointer (mouse / touch) capture state machine for canvas interactions.
-
 /// The current state of the pointer on the canvas.
 #[derive(Debug, Clone, PartialEq)]
 pub enum PointerState {

@@ -482,7 +482,7 @@ fn build_quad_pipeline(
         label: Some("nom-gpui quad-pipeline"),
         layout: Some(&layout),
         vertex: wgpu::VertexState {
-            module: &vs_module,
+            module: vs_module,
             entry_point: "vs_main",
             buffers: &[wgpu::VertexBufferLayout {
                 array_stride: 80, // 5 * 16 bytes (5 x Float32x4)
@@ -517,7 +517,7 @@ fn build_quad_pipeline(
             }],
         },
         fragment: Some(wgpu::FragmentState {
-            module: &fs_module,
+            module: fs_module,
             entry_point: "fs_main",
             targets: &[Some(wgpu::ColorTargetState {
                 format: surface_format,
@@ -640,10 +640,9 @@ impl Renderer {
         let view = output
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder =
-            device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-                label: Some("nom-render"),
-            });
+        let mut encoder = device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
+            label: Some("nom-render"),
+        });
         {
             let mut rpass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
                 label: Some("nom-rpass"),
@@ -2860,7 +2859,7 @@ mod tests {
         let r = Renderer::new();
         assert!(!r.can_render());
         // Verify the match logic: a renderer with gpu=None cannot render.
-        assert_eq!(r.gpu.is_none(), true);
+        assert!(r.gpu.is_none());
     }
 
     #[test]

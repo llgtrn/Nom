@@ -152,10 +152,7 @@ impl IntentResolver {
     /// Create a new resolver with the given set of grammar kind names.
     pub fn new(grammar_kinds: Vec<String>) -> Self {
         // Build a uniform IDF weight of 1.0 for each kind by default.
-        let bm25_index = grammar_kinds
-            .iter()
-            .map(|k| (k.clone(), 1.0f32))
-            .collect();
+        let bm25_index = grammar_kinds.iter().map(|k| (k.clone(), 1.0f32)).collect();
         Self {
             grammar_kinds,
             bm25_index,
@@ -236,8 +233,7 @@ impl IntentResolver {
             })
             .filter(|(_, s)| *s > 0.0)
             .collect();
-        bm25_scored
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        bm25_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         if !bm25_scored.is_empty() {
             let best = bm25_scored.remove(0);
@@ -259,8 +255,7 @@ impl IntentResolver {
             })
             .filter(|(_, s)| *s > 0.0)
             .collect();
-        react_scored
-            .sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
+        react_scored.sort_by(|a, b| b.1.partial_cmp(&a.1).unwrap_or(std::cmp::Ordering::Equal));
 
         if !react_scored.is_empty() {
             let best = react_scored.remove(0);
@@ -1264,7 +1259,7 @@ mod tests {
         // 20 items; result must be in [0,1].
         let evidence: Vec<&str> = (0..20).map(|_| "unrelated word").collect();
         let score = classify_with_react("target", &evidence);
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
@@ -2250,7 +2245,7 @@ mod tests {
             "five one",
         ];
         let score = classify_with_react("one two three four five", evidence);
-        assert!(score >= 0.0 && score <= 1.0, "score {score} out of [0,1]");
+        assert!((0.0..=1.0).contains(&score), "score {score} out of [0,1]");
     }
 
     #[test]
@@ -3208,7 +3203,7 @@ mod tests {
     fn intent_normalize_score_0_to_1() {
         let score = classify_with_react("any hypothesis", &["any evidence here"]);
         assert!(
-            score >= 0.0 && score <= 1.0,
+            (0.0..=1.0).contains(&score),
             "score {score} must be in [0,1]"
         );
     }
@@ -3302,7 +3297,7 @@ mod tests {
         let evidence = &["integration node graph query traversal"];
         let hypotheses = &["graph-service", "storage-service", "cache-service"];
         let score = classify_with_react("graph query", evidence);
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
         let ranked = rank_hypotheses(hypotheses, evidence);
         assert_eq!(ranked.len(), 3);
         let best = best_hypothesis(hypotheses, evidence).unwrap();
@@ -4222,7 +4217,7 @@ mod tests {
     fn top1_hypothesis_selected_from_ten_candidates() {
         // Build 10 hypotheses where only the 5th has matching evidence.
         let evidence = &["special keyword match"];
-        let mut hypotheses: Vec<&str> = vec![
+        let hypotheses: Vec<&str> = vec![
             "no overlap one",
             "no overlap two",
             "no overlap three",
@@ -4919,7 +4914,7 @@ mod tests {
         ]);
         // All three kinds appear in the input string.
         let result = r.resolve("video audio image combined");
-        assert!(result.alternatives.len() >= 1);
+        assert!(!result.alternatives.is_empty());
     }
 
     #[test]
@@ -4988,7 +4983,7 @@ mod tests {
     fn resolved_intent_best_confidence_gte_any_alternative() {
         let r = IntentResolver::new(vec!["video".to_string(), "audio".to_string()]);
         let result = r.resolve("video audio");
-        if let Some(_) = &result.best_kind {
+        if result.best_kind.is_some() {
             for (_, alt_score) in &result.alternatives {
                 assert!(
                     result.confidence >= *alt_score,
@@ -5266,7 +5261,7 @@ mod tests {
     fn confidence_for_clamped_between_zero_and_one() {
         let r = IntentResolver::new(vec!["canvas".to_string()]);
         let conf = r.confidence_for("canvas", "canvas");
-        assert!(conf >= 0.0 && conf <= 1.0);
+        assert!((0.0..=1.0).contains(&conf));
     }
 
     #[test]
@@ -5387,19 +5382,8 @@ mod tests {
     fn test_bm25_fallback_finds_video_for_generate_video_query() {
         // "generate_something_video" won't substring-match against the query
         // "generate video", but BM25 should find "video" kind via term overlap.
-        let r = IntentResolver::new(vec![
-            "video".to_string(),
-            "audio".to_string(),
-            "document".to_string(),
-        ]);
-        // "generate video" — "video" is not a substring of query token set but
-        // it IS a single-word kind that matches via BM25.
-        // Actually "video" IS a substring of "generate video", so use a query
-        // that exercises BM25 specifically: kind "video_render" vs query "render video output".
-        let r2 = IntentResolver::new(vec![
-            "video_render".to_string(),
-            "audio_encode".to_string(),
-        ]);
+        // Use a query that exercises BM25 specifically: kind "video_render" vs query "render video output".
+        let r2 = IntentResolver::new(vec!["video_render".to_string(), "audio_encode".to_string()]);
         let result = r2.resolve("render video output");
         // BM25 should score "video_render" higher (matches "render" and "video").
         assert_eq!(
@@ -5420,7 +5404,7 @@ mod tests {
         let result = r.resolve("query");
         // substring match would find "query" here, so use a query where only ReAct fires.
         // Use a kind with underscores that only ReAct can bridge:
-        let r2 = IntentResolver::new(vec!["graph_query".to_string(), "audio_encode".to_string()]);
+        let _r2 = IntentResolver::new(vec!["graph_query".to_string(), "audio_encode".to_string()]);
         // Query "graph" matches "graph" token in "graph_query" via BM25 already,
         // but let's verify classify_with_react path fires when BM25 also returns nothing.
         // Craft a query where no term matches any kind token exactly but

@@ -39,7 +39,7 @@ pub struct ExecNode {
     pub is_changed: IsChanged,
 }
 
-/// ComfyUI IS_CHANGED hierarchy
+/// tiered cache hierarchy
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum IsChanged {
     Always, // always re-execute (e.g., random seed nodes)

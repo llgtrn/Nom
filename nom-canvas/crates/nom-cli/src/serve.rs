@@ -50,12 +50,11 @@ mod tests {
             .method(Method::POST)
             .uri("/compose")
             .header("content-type", "application/json")
-            .body(Body::from(r#"{"kind":"video","input":"a sunset timelapse"}"#))
+            .body(Body::from(
+                r#"{"kind":"video","input":"a sunset timelapse"}"#,
+            ))
             .unwrap();
-        let resp = app
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
         assert_eq!(resp.status(), StatusCode::OK);
     }
 
@@ -68,10 +67,7 @@ mod tests {
             .header("content-type", "application/json")
             .body(Body::from(r#"{"kind":"image","input":"a mountain"}"#))
             .unwrap();
-        let resp = app
-            .oneshot(req)
-            .await
-            .unwrap();
+        let resp = app.oneshot(req).await.unwrap();
         let bytes = axum::body::to_bytes(resp.into_body(), usize::MAX)
             .await
             .unwrap();

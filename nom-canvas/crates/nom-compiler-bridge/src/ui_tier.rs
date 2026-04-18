@@ -411,7 +411,7 @@ mod tests {
         let score: f32 = tier.score_atom("run", "verb");
         // Must be a finite f32 in [0.0, 1.0]
         assert!(score.is_finite());
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
@@ -479,7 +479,7 @@ mod tests {
         // Empty word and kind — must not panic and return finite f32
         let score = ops.score_atom("", "");
         assert!(score.is_finite());
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
@@ -488,7 +488,7 @@ mod tests {
         let ops = UiTierOps::new(&state);
         let score = ops.score_atom("définir", "concept");
         assert!(score.is_finite());
-        assert!(score >= 0.0 && score <= 1.0);
+        assert!((0.0..=1.0).contains(&score));
     }
 
     #[test]
@@ -916,7 +916,7 @@ mod tests {
                 "score must be finite for ({word}, {kind})"
             );
             assert!(
-                score >= 0.0 && score <= 1.0,
+                (0.0..=1.0).contains(&score),
                 "score must be in [0,1] for ({word}, {kind})"
             );
         }

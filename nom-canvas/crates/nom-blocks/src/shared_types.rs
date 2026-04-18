@@ -50,7 +50,7 @@ pub struct PlanStep {
     pub depends_on: Vec<String>,
 }
 
-/// 14-variant run event enum (Rowboat pattern, all 14 exact variants)
+/// 14-variant run event enum (streaming tool-event pattern, all 14 exact variants)
 /// Used by both nom-compiler-bridge and nom-panels right dock
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub enum RunEvent {

@@ -1,5 +1,4 @@
 /// Undo/redo command stack for canvas operations.
-
 /// Describes what a command did.
 pub enum CommandKind {
     /// Move an element by a delta.

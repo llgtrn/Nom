@@ -827,7 +827,7 @@ mod tests {
         }
         let u = atlas.utilization();
         assert!(
-            u >= 0.0 && u <= 1.0,
+            (0.0..=1.0).contains(&u),
             "utilization must be in [0.0, 1.0], got {u}"
         );
     }

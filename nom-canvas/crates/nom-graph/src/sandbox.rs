@@ -80,11 +80,11 @@ pub enum SandboxError {
     },
     UnknownFunction(String),
     DepthLimitExceeded,
-    /// n8n JSTaskRunner: `this` access is forbidden.
+    /// expression sandbox pattern: `this` access is forbidden.
     ForbiddenIdentifier(String),
-    /// n8n JSTaskRunner: prototype chain access (`__proto__`, `prototype`, `constructor`) is forbidden.
+    /// expression sandbox pattern: prototype chain access (`__proto__`, `prototype`, `constructor`) is forbidden.
     PrototypeAccess,
-    /// n8n JSTaskRunner: dollar-prefixed variable not in the allowed set.
+    /// expression sandbox pattern: dollar-prefixed variable not in the allowed set.
     InvalidDollarVar(String),
 }
 
@@ -220,7 +220,7 @@ impl TypeCoherenceSanitizer {
 }
 
 /// --- Sanitizer 5: ThisReplaceSanitizer ---
-/// Detects use of `this` as a variable name (n8n JSTaskRunner pattern).
+/// Detects use of `this` as a variable name (expression sandbox pattern).
 pub struct ThisReplaceSanitizer;
 impl ThisReplaceSanitizer {
     pub fn check(&self, expr: &Expr) -> Result<(), SandboxError> {
@@ -269,7 +269,7 @@ impl PrototypeBlockSanitizer {
 }
 
 /// --- Sanitizer 7: DollarValidateSanitizer ---
-/// Allows only known n8n dollar-prefixed variables; rejects unknown `$`-prefixed names.
+/// Allows only known dollar-prefixed variables; rejects unknown `$`-prefixed names.
 pub struct DollarValidateSanitizer;
 const ALLOWED_DOLLAR_VARS: &[&str] = &[
     "$input",

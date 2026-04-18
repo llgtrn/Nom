@@ -3,3 +3,6 @@ name = "nom-collab"
 version = "0.1.0"
 edition = "2021"
 # Empty stub — reserved for future CRDT/yrs work. DO NOT add yrs yet.
+
+[lints]
+workspace = true

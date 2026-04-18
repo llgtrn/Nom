@@ -9,3 +9,6 @@ nom-intent = { path = "../nom-intent" }
 nom-graph = { path = "../nom-graph" }
 serde_json = { workspace = true }
 sha2 = "0.10"
+
+[lints]
+workspace = true

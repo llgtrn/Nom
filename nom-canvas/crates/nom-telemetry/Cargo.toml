@@ -6,3 +6,6 @@ edition = "2021"
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
 crossbeam-channel = { workspace = true }
+
+[lints]
+workspace = true

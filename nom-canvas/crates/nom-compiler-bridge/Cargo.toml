@@ -4,7 +4,7 @@ version = "0.1.0"
 edition = "2021"
 
 [features]
-default = []
+default = ["compiler"]
 compiler = ["nom-concept", "nom-dict", "nom-grammar", "nom-score", "nom-types", "nom-search", "rusqlite", "nom-planner"]
 
 [dependencies]
@@ -22,3 +22,6 @@ nom-types    = { path = "../../../nom-compiler/crates/nom-types",    optional = 
 nom-search   = { path = "../../../nom-compiler/crates/nom-search",   optional = true }
 nom-planner  = { path = "../../../nom-compiler/crates/nom-planner",  optional = true }
 serde_json = { workspace = true }
+
+[lints]
+workspace = true

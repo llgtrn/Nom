@@ -6,7 +6,7 @@ use serde::{Deserialize, Serialize};
 pub const NOMX_LANGUAGE: &str = "nomx";
 
 /// A .nomx code block — backed by nom-editor buffer (Wave B)
-/// Uses affine:code flavour with language="nomx"
+/// Uses nom:code flavour with language="nomx"
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct NomxBlock {
     pub entity: NomtuRef,
@@ -52,7 +52,7 @@ mod tests {
 
     #[test]
     fn nomx_block_flavour() {
-        assert_eq!(NomxBlock::flavour(), "affine:code");
+        assert_eq!(NomxBlock::flavour(), "nom:code");
         assert_eq!(NomxBlock::language(), "nomx");
     }
 

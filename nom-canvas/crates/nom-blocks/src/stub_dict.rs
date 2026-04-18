@@ -16,7 +16,7 @@ impl StubDictReader {
             known_kinds: HashSet::new(),
             seed_shapes: HashMap::new(),
         };
-        // Seed with common AFFiNE block kinds + nom grammar kinds
+        // Seed with common canvas block kinds + nom grammar kinds
         for kind in &[
             "verb",
             "concept",

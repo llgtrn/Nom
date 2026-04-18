@@ -5,3 +5,6 @@ edition = "2021"
 
 [dependencies]
 nom-blocks = { path = "../nom-blocks" }
+
+[lints]
+workspace = true

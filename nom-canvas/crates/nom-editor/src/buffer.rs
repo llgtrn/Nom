@@ -1032,7 +1032,7 @@ mod tests {
         let text = "    def foo():\n        pass";
         let dedented: String = text
             .lines()
-            .map(|l| if l.starts_with("    ") { &l[4..] } else { l })
+            .map(|l| l.strip_prefix("    ").unwrap_or(l))
             .collect::<Vec<_>>()
             .join("\n");
         assert!(dedented.starts_with("def"));
@@ -1049,11 +1049,7 @@ mod tests {
     #[test]
     fn buffer_comment_toggle_removes_prefix() {
         let line = "// code here";
-        let uncommented = if line.starts_with("// ") {
-            &line[3..]
-        } else {
-            line
-        };
+        let uncommented = line.strip_prefix("// ").unwrap_or(line);
         assert!(!uncommented.starts_with("//"));
         assert!(uncommented.contains("code here"));
     }
@@ -1101,7 +1097,7 @@ mod tests {
         let pair = "()";
         let cursor_pos = 1usize;
         assert_eq!(pair.len(), 2);
-        assert_eq!(pair.chars().nth(0), Some('('));
+        assert_eq!(pair.chars().next(), Some('('));
         assert_eq!(pair.chars().nth(1), Some(')'));
         assert_eq!(cursor_pos, 1); // cursor between the pair
     }
@@ -1126,14 +1122,14 @@ mod tests {
         #[derive(Debug)]
         struct Diagnostic {
             line: u32,
-            col: u32,
-            message: String,
+            _col: u32,
+            _message: String,
             severity: &'static str,
         }
         let d = Diagnostic {
             line: 3,
-            col: 0,
-            message: "type mismatch".to_string(),
+            _col: 0,
+            _message: "type mismatch".to_string(),
             severity: "error",
         };
         assert_eq!(d.line, 3);
@@ -1145,12 +1141,12 @@ mod tests {
     fn editor_diagnostic_warning_at_col_5() {
         #[derive(Debug)]
         struct Diagnostic {
-            line: u32,
+            _line: u32,
             col: u32,
             severity: &'static str,
         }
         let d = Diagnostic {
-            line: 1,
+            _line: 1,
             col: 5,
             severity: "warning",
         };
@@ -1170,10 +1166,8 @@ mod tests {
     /// Multiple diagnostics on the same line are all retained.
     #[test]
     fn editor_diagnostic_multiple_on_same_line() {
-        let mut diags: Vec<(u32, &str)> = Vec::new();
-        diags.push((5, "error: foo"));
-        diags.push((5, "warning: bar"));
-        diags.push((5, "hint: baz"));
+        let diags: Vec<(u32, &str)> =
+            vec![(5, "error: foo"), (5, "warning: bar"), (5, "hint: baz")];
         let on_line_5: Vec<_> = diags.iter().filter(|(l, _)| *l == 5).collect();
         assert_eq!(on_line_5.len(), 3);
     }
@@ -1313,7 +1307,7 @@ mod tests {
         // A 90-char line with a wrap width of 80 produces 2 visual lines.
         let long_line = "a".repeat(90);
         let wrap_width = 80usize;
-        let visual_lines = (long_line.len() + wrap_width - 1) / wrap_width;
+        let visual_lines = long_line.len().div_ceil(wrap_width);
         assert_eq!(visual_lines, 2);
     }
 
@@ -1340,7 +1334,7 @@ mod tests {
         let wrap_width = 40usize;
         let long_line_len = 90usize;
         let logical_lines = 1usize;
-        let visual_lines = (long_line_len + wrap_width - 1) / wrap_width;
+        let visual_lines = long_line_len.div_ceil(wrap_width);
         assert!(visual_lines > logical_lines);
     }
 

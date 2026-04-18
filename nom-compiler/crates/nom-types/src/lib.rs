@@ -849,6 +849,47 @@ impl EdgeType {
             _ => return None,
         })
     }
+
+    /// Human-readable display name for the edge type.
+    pub const fn display_name(&self) -> &'static str {
+        match self {
+            Self::Calls => "Calls",
+            Self::Imports => "Imports",
+            Self::Implements => "Implements",
+            Self::DependsOn => "Depends On",
+            Self::SimilarTo => "Similar To",
+            Self::Styles => "Styles",
+            Self::Constrains => "Constrains",
+            Self::Recommends => "Recommends",
+            Self::InteractsWith => "Interacts With",
+            Self::TransitionsTo => "Transitions To",
+            Self::Specializes => "Specializes",
+            Self::BindsTo => "Binds To",
+            Self::Triggers => "Triggers",
+            Self::Reads => "Reads",
+            Self::Writes => "Writes",
+            Self::NavigatesTo => "Navigates To",
+            Self::RunsOn => "Runs On",
+            Self::HasFlowArtifact => "Has Flow Artifact",
+            Self::FlowsTo => "Flows To",
+            Self::Encodes => "Encodes",
+            Self::ContainedIn => "Contained In",
+            Self::UsesColor => "Uses Color",
+            Self::UsesPalette => "Uses Palette",
+            Self::Derives => "Derives",
+            Self::EmbeddedGlyph => "Embedded Glyph",
+            Self::Frame => "Frame",
+            Self::RendersOn => "Renders On",
+            Self::SupersededBy => "Superseded By",
+            Self::ContractMatches => "Contract Matches",
+        }
+    }
+
+    /// Returns `true` for structural edges — those that define containment
+    /// or specialization hierarchy in the multi-graph.
+    pub const fn is_structural(&self) -> bool {
+        matches!(self, Self::Specializes | Self::ContainedIn | Self::Implements | Self::Frame)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -1213,6 +1254,80 @@ mod v2_tests {
         assert_eq!(EdgeType::from_str("nope"), None);
         // Drift check: update this when growing the enum.
         assert_eq!(EdgeType::ALL.len(), 29);
+    }
+
+    /// All 29 EdgeType variants are reachable via EdgeType::ALL (A3 coverage check).
+    #[test]
+    fn edge_type_all_22_variants_present() {
+        // The task spec names 22 multi-graph edge types; EdgeType::ALL carries all 29
+        // (22 multi-graph + structural + code-graph variants). Verify the 22 multi-graph
+        // types required by A3 are present.
+        let required: &[EdgeType] = &[
+            EdgeType::Styles,
+            EdgeType::Constrains,
+            EdgeType::Recommends,
+            EdgeType::InteractsWith,
+            EdgeType::TransitionsTo,
+            EdgeType::Specializes,
+            EdgeType::BindsTo,
+            EdgeType::Triggers,
+            EdgeType::Reads,
+            EdgeType::Writes,
+            EdgeType::NavigatesTo,
+            EdgeType::RunsOn,
+            EdgeType::HasFlowArtifact,
+            EdgeType::FlowsTo,
+            EdgeType::Encodes,
+            EdgeType::ContainedIn,
+            EdgeType::UsesColor,
+            EdgeType::UsesPalette,
+            EdgeType::Derives,
+            EdgeType::EmbeddedGlyph,
+            EdgeType::Frame,
+            EdgeType::RendersOn,
+        ];
+        for e in required {
+            assert!(
+                EdgeType::ALL.contains(e),
+                "EdgeType::ALL missing required variant {:?}",
+                e
+            );
+        }
+    }
+
+    /// display_name() returns a non-empty string for every variant.
+    #[test]
+    fn edge_type_display_name_non_empty_for_all() {
+        for e in EdgeType::ALL {
+            let name = e.display_name();
+            assert!(
+                !name.is_empty(),
+                "display_name() must be non-empty for {:?}",
+                e
+            );
+        }
+    }
+
+    /// is_structural() returns true for Specializes and ContainedIn.
+    #[test]
+    fn edge_type_is_structural_specializes_and_contained_in() {
+        assert!(
+            EdgeType::Specializes.is_structural(),
+            "Specializes must be structural"
+        );
+        assert!(
+            EdgeType::ContainedIn.is_structural(),
+            "ContainedIn must be structural"
+        );
+        // Spot-check: a non-structural edge
+        assert!(
+            !EdgeType::Reads.is_structural(),
+            "Reads must not be structural"
+        );
+        assert!(
+            !EdgeType::FlowsTo.is_structural(),
+            "FlowsTo must not be structural"
+        );
     }
 
     #[test]

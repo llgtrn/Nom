@@ -6665,14 +6665,14 @@ mod tests {
         let op1 = pa.local_insert(RgaPos::Head, "1");
         ids.push(op1.id);
         for i in 1..5u64 {
-            let op = pa.local_insert(RgaPos::After(ids[i as usize - 1]), &(i + 1).to_string());
+            let op = pa.local_insert(RgaPos::After(ids[i as usize - 1]), (i + 1).to_string());
             ids.push(op.id);
         }
         assert_eq!(pa.text(), "12345");
 
         // Peer B gets only the first 3 ops.
         let mut pb = DocState::new(PeerId(50_171));
-        for op in pa.op_log()[..3].to_vec() {
+        for op in pa.op_log()[..3].iter().cloned() {
             pb.apply(op);
         }
         assert_eq!(pb.text(), "123");
@@ -6730,10 +6730,10 @@ mod tests {
         // Each peer authors 10 inserts.
         let mut all_ops: Vec<Vec<Op>> = (0..3).map(|_| Vec::new()).collect();
         for (idx, doc) in docs.iter_mut().enumerate() {
-            let mut prev = doc.local_insert(RgaPos::Head, &format!("p{idx}_0"));
+            let mut prev = doc.local_insert(RgaPos::Head, format!("p{idx}_0"));
             all_ops[idx].push(prev.clone());
             for j in 1..10 {
-                let op = doc.local_insert(RgaPos::After(prev.id), &format!("_p{idx}_{j}"));
+                let op = doc.local_insert(RgaPos::After(prev.id), format!("_p{idx}_{j}"));
                 all_ops[idx].push(op.clone());
                 prev = op;
             }
@@ -6838,7 +6838,7 @@ mod tests {
 
         // Undo 3 ops: rebuild with 0 ops.
         let mut reverted = DocState::new(PeerId(70_002));
-        for op in doc.op_log()[..0].to_vec() {
+        for op in doc.op_log()[..0].iter().cloned() {
             reverted.apply(op);
         }
         assert_eq!(reverted.text(), "", "undo 3 times must leave empty doc");
@@ -6853,7 +6853,7 @@ mod tests {
 
         // Undo: replay without the insert.
         let mut undone = DocState::new(PeerId(70_003));
-        for op in doc.op_log()[..0].to_vec() {
+        for op in doc.op_log()[..0].iter().cloned() {
             undone.apply(op);
         }
         assert_eq!(undone.text(), "");
@@ -8784,7 +8784,7 @@ mod tests {
         });
         // Simulate "decode" check: only "v1" is known.
         let known_versions = ["v1"];
-        let result: Result<(), &str> = if version.map_or(false, |v| known_versions.contains(&v)) {
+        let result: Result<(), &str> = if version.is_some_and(|v| known_versions.contains(&v)) {
             Ok(())
         } else {
             Err("unknown encoding version")
@@ -10786,8 +10786,8 @@ mod tests {
             .op_log()
             .iter()
             .filter(|o| {
-                !(matches!(&o.kind, OpKind::Insert { .. }) && deleted_ids.contains(&o.id))
-                    && !matches!(&o.kind, OpKind::Delete { .. })
+                !(matches!(&o.kind, OpKind::Delete { .. })
+                    || matches!(&o.kind, OpKind::Insert { .. }) && deleted_ids.contains(&o.id))
             })
             .collect();
 
@@ -11079,8 +11079,8 @@ mod tests {
             2,
             "merged awareness must contain entries from both sites"
         );
-        assert!(awareness_keys.iter().any(|k| *k == "awareness:202041"));
-        assert!(awareness_keys.iter().any(|k| *k == "awareness:202042"));
+        assert!(awareness_keys.contains(&"awareness:202041"));
+        assert!(awareness_keys.contains(&"awareness:202042"));
     }
 
     #[test]
@@ -11430,7 +11430,7 @@ mod tests {
         let mut offline = DocState::new(PeerId(207_002));
         let mut prev = offline.local_insert(RgaPos::Head, "off0").id;
         for i in 1..5u64 {
-            let op = offline.local_insert(RgaPos::After(prev), &format!("_off{i}"));
+            let op = offline.local_insert(RgaPos::After(prev), format!("_off{i}"));
             prev = op.id;
         }
         assert_eq!(offline.op_log().len(), 5);
@@ -12158,9 +12158,8 @@ mod tests {
     #[test]
     fn session_lifecycle_open_document_creates_if_not_existing() {
         // "Opening" a document that doesn't exist creates it (non-empty op_log after first insert).
-        let mut session: Vec<DocState> = Vec::new();
         // Open doc 0: create a new DocState and add it to the session.
-        session.push(DocState::new(PeerId(304_001)));
+        let mut session: Vec<DocState> = vec![DocState::new(PeerId(304_001))];
         session[0].local_insert(RgaPos::Head, "content");
         assert_eq!(session.len(), 1, "one document in session after open");
         assert_eq!(
@@ -12608,10 +12607,7 @@ mod tests {
         doc.apply(make_insert(408_002, u64::MAX - 10, RgaPos::Head, "x"));
         let op = doc.local_insert(RgaPos::Head, "y");
         // Counter must be at most u64::MAX - 1.
-        assert!(
-            op.id.counter <= u64::MAX - 1,
-            "counter must stay within bounds"
-        );
+        assert!(op.id.counter < u64::MAX, "counter must stay within bounds");
         assert_eq!(doc.op_log().len(), 2, "doc must have 2 ops");
     }
 

@@ -194,7 +194,7 @@ mod tests {
         assert!(b.rotation_deg.abs() < 0.001);
     }
 
-    // ── AFFiNE edgeless bridge / position tests ──────────────────────────────
+    // ── canvas edgeless bridge / position tests ──────────────────────────────
 
     /// EdgelessTextBlock can be positioned at any (x, y) coordinate via a position tuple stored
     /// in the entity's word field (surrogate for an x field — real position lives in canvas state).

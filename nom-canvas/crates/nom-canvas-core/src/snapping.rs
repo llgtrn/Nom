@@ -1,10 +1,10 @@
 /// Grid and edge-snapping for the canvas.
 ///
-/// Constants sourced from Excalidraw:
-///   - SNAP_THRESHOLD = 8 px  (within how many canvas px a snap fires)
-///   - GRID_SIZE      = 24 px (distance between grid lines)
-
-/// Distance in canvas pixels within which a snap fires (Excalidraw: 8 px).
+/// Constants:
+/// - `SNAP_THRESHOLD` = 8 px  (within how many canvas px a snap fires)
+/// - `GRID_SIZE`      = 24 px (distance between grid lines)
+///
+/// Distance in canvas pixels within which a snap fires (8 px).
 pub const SNAP_THRESHOLD: f32 = 8.0;
 /// Distance between adjacent grid lines in canvas pixels.
 pub const GRID_SIZE: f32 = 20.0;

@@ -132,7 +132,7 @@ mod tests {
     fn workspace_insert_remove() {
         let mut ws = Workspace::new();
         let entity = NomtuRef::new("e1", "summarize", "verb");
-        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        let block = BlockModel::new("b1", entity, "nom:paragraph");
         ws.insert_block(block);
         assert_eq!(ws.block_count(), 1);
         assert!(ws.doc_tree.contains(&"b1".to_string()));
@@ -174,7 +174,7 @@ mod tests {
             let block = BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             );
             ws.insert_block(block);
         }
@@ -188,7 +188,7 @@ mod tests {
     #[test]
     fn canvas_object_entity_returns_block_entity() {
         let entity = NomtuRef::new("e1", "render", "verb");
-        let block = BlockModel::new("b1", entity.clone(), "affine:paragraph");
+        let block = BlockModel::new("b1", entity.clone(), "nom:paragraph");
         let obj = CanvasObject::Block(block);
         assert_eq!(obj.entity().unwrap().id, "e1");
         assert_eq!(obj.entity().unwrap().word, "render");
@@ -209,8 +209,8 @@ mod tests {
     #[test]
     fn workspace_insert_duplicate_block_id() {
         let mut ws = Workspace::new();
-        let b1 = BlockModel::new("dup", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
-        let b2 = BlockModel::new("dup", NomtuRef::new("e2", "w", "verb"), "affine:paragraph");
+        let b1 = BlockModel::new("dup", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
+        let b2 = BlockModel::new("dup", NomtuRef::new("e2", "w", "verb"), "nom:paragraph");
         ws.insert_block(b1);
         ws.insert_block(b2);
         // Different entities → both pass entity dedup guard; HashMap overwrites: 1 block.
@@ -244,7 +244,7 @@ mod tests {
         let mut ws = Workspace::new();
         let ids = ["id-a", "id-b", "id-c"];
         for id in &ids {
-            let block = BlockModel::new(*id, NomtuRef::new(*id, "w", "verb"), "affine:paragraph");
+            let block = BlockModel::new(*id, NomtuRef::new(*id, "w", "verb"), "nom:paragraph");
             ws.insert_block(block);
         }
         assert_eq!(ws.block_count(), 3);
@@ -260,12 +260,12 @@ mod tests {
         let parent = BlockModel::new(
             "parent",
             NomtuRef::new("ep", "parent_word", "concept"),
-            "affine:note",
+            "nom:note",
         );
         let mut child = BlockModel::new(
             "child",
             NomtuRef::new("ec", "child_word", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         child.parent = Some("parent".to_string());
         ws.insert_block(parent);
@@ -287,7 +287,7 @@ mod tests {
     #[test]
     fn workspace_json_roundtrip() {
         let mut ws = Workspace::new();
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "affine:note");
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "nom:note");
         ws.insert_block(block);
         let json = serde_json::to_string(&ws).expect("serialize workspace");
         let ws2: Workspace = serde_json::from_str(&json).expect("deserialize workspace");
@@ -319,7 +319,7 @@ mod tests {
             let block = BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             );
             ws.insert_block(block);
         }
@@ -340,7 +340,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 *id,
                 NomtuRef::new(*id, "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.doc_tree[0], "first");
@@ -372,7 +372,7 @@ mod tests {
     /// CanvasObject::Block and Node variants can coexist in a Vec
     #[test]
     fn canvas_object_vec_can_hold_block_and_node() {
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         let node = GraphNode::new("n1", NomtuRef::new("e2", "x", "verb"), "verb", [0.0, 0.0]);
         let objects: Vec<CanvasObject> = vec![CanvasObject::Block(block), CanvasObject::Node(node)];
         assert_eq!(objects.len(), 2);
@@ -388,7 +388,7 @@ mod tests {
             let block = BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             );
             ws.insert_block(block);
         }
@@ -401,7 +401,7 @@ mod tests {
     fn workspace_get_block_by_id() {
         let mut ws = Workspace::new();
         let entity = NomtuRef::new("e99", "target", "concept");
-        ws.insert_block(BlockModel::new("target-id", entity, "affine:note"));
+        ws.insert_block(BlockModel::new("target-id", entity, "nom:note"));
         let block = ws.blocks.get("target-id").unwrap();
         assert_eq!(block.entity.word, "target");
         assert_eq!(block.entity.kind, "concept");
@@ -422,7 +422,7 @@ mod tests {
     #[test]
     fn workspace_mixed_flavours() {
         let mut ws = Workspace::new();
-        let flavours = ["affine:paragraph", "affine:note", "affine:heading"];
+        let flavours = ["nom:paragraph", "nom:note", "nom:heading"];
         for (i, flavour) in flavours.iter().enumerate() {
             let block = BlockModel::new(
                 format!("b{i}"),
@@ -455,13 +455,13 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert_eq!(ws.block_count(), 1);
         ws.insert_block(BlockModel::new(
             "b2",
             NomtuRef::new("e2", "x", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert_eq!(ws.block_count(), 2);
     }
@@ -472,7 +472,7 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert_eq!(ws.block_count(), 1);
         ws.remove_block("b1");
@@ -483,7 +483,7 @@ mod tests {
     fn workspace_get_block_by_id_returns_correct() {
         let mut ws = Workspace::new();
         let entity = NomtuRef::new("eid", "find", "verb");
-        ws.insert_block(BlockModel::new("find-me", entity, "affine:note"));
+        ws.insert_block(BlockModel::new("find-me", entity, "nom:note"));
         let block = ws.blocks.get("find-me");
         assert!(block.is_some());
         assert_eq!(block.unwrap().entity.word, "find");
@@ -492,7 +492,7 @@ mod tests {
     #[test]
     fn workspace_get_nonexistent_block_returns_none() {
         let ws = Workspace::new();
-        assert!(ws.blocks.get("does-not-exist").is_none());
+        assert!(!ws.blocks.contains_key("does-not-exist"));
     }
 
     #[test]
@@ -520,7 +520,7 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert!(!ws.blocks.is_empty());
         assert!(ws.blocks.contains_key("b1"));
@@ -552,7 +552,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 3);
@@ -572,7 +572,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 *id,
                 NomtuRef::new(*id, "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         // All IDs must map to distinct entries
@@ -592,13 +592,13 @@ mod tests {
         ws1.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         let mut ws2 = Workspace::new();
         ws2.insert_block(BlockModel::new(
             "b2",
             NomtuRef::new("e2", "store", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         // Manual merge: insert all blocks from ws2 into ws1
         for (id, block) in ws2.blocks {
@@ -617,13 +617,13 @@ mod tests {
         ws1.insert_block(BlockModel::new(
             "shared",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         let mut ws2 = ws1.clone();
         ws2.insert_block(BlockModel::new(
             "added",
             NomtuRef::new("e2", "x", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         // Compute added: ids in ws2 not in ws1
         let added: Vec<_> = ws2
@@ -642,12 +642,12 @@ mod tests {
         ws1.insert_block(BlockModel::new(
             "keep",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         ws1.insert_block(BlockModel::new(
             "remove-me",
             NomtuRef::new("e2", "x", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         let mut ws2 = ws1.clone();
         ws2.remove_block("remove-me");
@@ -687,12 +687,12 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b-verb",
             NomtuRef::new("e1", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         ws.insert_block(BlockModel::new(
             "b-concept",
             NomtuRef::new("e2", "plan", "concept"),
-            "affine:note",
+            "nom:note",
         ));
         let found: Vec<_> = ws
             .blocks
@@ -711,13 +711,13 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("verb-{i}"),
                 NomtuRef::new(format!("ev{i}"), "do", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         ws.insert_block(BlockModel::new(
             "concept-1",
             NomtuRef::new("ec1", "think", "concept"),
-            "affine:note",
+            "nom:note",
         ));
         let verbs: Vec<_> = ws
             .blocks
@@ -782,7 +782,7 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "plan", "concept"),
-            "affine:note",
+            "nom:note",
         ));
         ws.insert_node(GraphNode::new(
             "n1",
@@ -807,7 +807,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 7);
@@ -842,7 +842,7 @@ mod tests {
         let mut block = BlockModel::new(
             "upd",
             NomtuRef::new("e1", "original", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         ws.insert_block(block.clone());
         // Mutate the block and re-insert to overwrite
@@ -862,7 +862,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("ser-b{i}"),
                 NomtuRef::new(format!("ser-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 5);
@@ -883,7 +883,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("ca-b{i}"),
                 NomtuRef::new(format!("ca-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 3);
@@ -896,7 +896,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("ca-new-b{i}"),
                 NomtuRef::new(format!("ca-new-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(
@@ -916,7 +916,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("sep-b{i}"),
                 NomtuRef::new(format!("sep-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         for i in 0..2u8 {
@@ -949,7 +949,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("dt-b{i}"),
                 NomtuRef::new(format!("dt-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(
@@ -971,7 +971,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("st-b{i}"),
                 NomtuRef::new(format!("st-e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         // Insert 2 connectors
@@ -1010,7 +1010,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("blk-{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 1000);
@@ -1024,7 +1024,7 @@ mod tests {
             ws1.insert_block(BlockModel::new(
                 format!("a{i}"),
                 NomtuRef::new(format!("ea{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         let mut ws2 = Workspace::new();
@@ -1032,7 +1032,7 @@ mod tests {
             ws2.insert_block(BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("eb{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         // Merge ws2 into ws1
@@ -1055,7 +1055,7 @@ mod tests {
             ws.insert_block(BlockModel::new(
                 format!("b{i}"),
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         let dict = crate::stub_dict::StubDictReader::new();
@@ -1090,7 +1090,7 @@ mod tests {
     fn workspace_contains_true_when_present() {
         let mut ws = Workspace::new();
         let entity = NomtuRef::new("e-dup", "w", "verb");
-        ws.insert_block(BlockModel::new("b-dup", entity.clone(), "affine:paragraph"));
+        ws.insert_block(BlockModel::new("b-dup", entity.clone(), "nom:paragraph"));
         assert!(ws.contains(&entity));
     }
 
@@ -1105,7 +1105,7 @@ mod tests {
     fn workspace_contains_false_after_remove() {
         let mut ws = Workspace::new();
         let entity = NomtuRef::new("e-rem", "w", "verb");
-        ws.insert_block(BlockModel::new("b-rem", entity.clone(), "affine:paragraph"));
+        ws.insert_block(BlockModel::new("b-rem", entity.clone(), "nom:paragraph"));
         ws.remove_block("b-rem");
         assert!(!ws.contains(&entity));
     }
@@ -1116,7 +1116,7 @@ mod tests {
         let result = ws.insert_block_dedup(BlockModel::new(
             "dd-1",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert!(result);
         assert_eq!(ws.block_count(), 1);
@@ -1129,12 +1129,12 @@ mod tests {
         let first = ws.insert_block_dedup(BlockModel::new(
             "dup-id",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         let second = ws.insert_block_dedup(BlockModel::new(
             "dup-id",
             NomtuRef::new("e2", "x", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert!(first);
         assert!(!second);
@@ -1148,12 +1148,12 @@ mod tests {
         let r1 = ws.insert_block_dedup(BlockModel::new(
             "id-a",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         let r2 = ws.insert_block_dedup(BlockModel::new(
             "id-b",
             NomtuRef::new("e2", "x", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert!(r1);
         assert!(r2);
@@ -1165,8 +1165,8 @@ mod tests {
         let mut ws = Workspace::new();
         let e1 = NomtuRef::new("ea", "a", "verb");
         let e2 = NomtuRef::new("eb", "b", "concept");
-        ws.insert_block(BlockModel::new("ba", e1.clone(), "affine:paragraph"));
-        ws.insert_block(BlockModel::new("bb", e2.clone(), "affine:note"));
+        ws.insert_block(BlockModel::new("ba", e1.clone(), "nom:paragraph"));
+        ws.insert_block(BlockModel::new("bb", e2.clone(), "nom:note"));
         assert!(ws.contains(&e1));
         assert!(ws.contains(&e2));
     }
@@ -1177,7 +1177,7 @@ mod tests {
         ws.insert_block(BlockModel::new(
             "b1",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert!(!ws.contains(&NomtuRef::new("other", "other", "concept")));
     }
@@ -1188,12 +1188,12 @@ mod tests {
         ws.insert_block_dedup(BlockModel::new(
             "same-id",
             NomtuRef::new("e-orig", "original", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         ws.insert_block_dedup(BlockModel::new(
             "same-id",
             NomtuRef::new("e-coll", "collision", "concept"),
-            "affine:note",
+            "nom:note",
         ));
         assert_eq!(ws.blocks.get("same-id").unwrap().entity.word, "original");
     }
@@ -1205,14 +1205,14 @@ mod tests {
             ws.insert_block_dedup(BlockModel::new(
                 format!("dd-{i}"),
                 NomtuRef::new(format!("ee-{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         for i in 0..3u8 {
             ws.insert_block_dedup(BlockModel::new(
                 format!("dd-{i}"),
                 NomtuRef::new(format!("dup-{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         assert_eq!(ws.block_count(), 5);
@@ -1227,7 +1227,7 @@ mod tests {
                 ws.insert_block_dedup(BlockModel::new(
                     format!("op-{i}"),
                     NomtuRef::new(format!("oe-{i}"), "w", "verb"),
-                    "affine:paragraph",
+                    "nom:paragraph",
                 ))
             })
             .collect();
@@ -1240,13 +1240,13 @@ mod tests {
         ws.insert_block_dedup(BlockModel::new(
             "one",
             NomtuRef::new("e0", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         for i in 1..5u8 {
             let r = ws.insert_block_dedup(BlockModel::new(
                 "one",
                 NomtuRef::new(format!("e{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
             assert!(!r, "duplicate at step {i} must return false");
         }
@@ -1258,7 +1258,7 @@ mod tests {
         let mut ws = Workspace::new();
         let inserted = NomtuRef::new("sid", "word-a", "verb");
         let diff_word = NomtuRef::new("sid", "word-b", "verb");
-        ws.insert_block(BlockModel::new("b1", inserted.clone(), "affine:paragraph"));
+        ws.insert_block(BlockModel::new("b1", inserted.clone(), "nom:paragraph"));
         assert!(ws.contains(&inserted));
         assert!(!ws.contains(&diff_word));
     }
@@ -1270,18 +1270,18 @@ mod tests {
             ws.insert_block_dedup(BlockModel::new(
                 format!("u-{i}"),
                 NomtuRef::new(format!("eu-{i}"), "w", "verb"),
-                "affine:paragraph",
+                "nom:paragraph",
             ));
         }
         ws.insert_block_dedup(BlockModel::new(
             "u-0",
             NomtuRef::new("dup0", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         ws.insert_block_dedup(BlockModel::new(
             "u-1",
             NomtuRef::new("dup1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         ));
         assert_eq!(ws.block_count(), ws.doc_tree.len());
     }

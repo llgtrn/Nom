@@ -507,7 +507,7 @@ mod tests {
     #[test]
     fn constraint_and_five_all_pass() {
         // Five independent constraints — all must pass for the chain to be valid.
-        let h = Hash128::of_str("shared");
+        let _h = Hash128::of_str("shared");
         let constraints: Vec<Constraint> = (1u64..=5)
             .map(|i| {
                 let mut c = Constraint::new(i);
@@ -629,7 +629,7 @@ mod tests {
     #[test]
     fn constraint_five_snapshots_all_matching() {
         // One constraint with 5 recorded snapshots — all matching.
-        let h = Hash128::of_str("v");
+        let _h = Hash128::of_str("v");
         let mut c = Constraint::new(99);
         for i in 0u64..5 {
             c.record(snap(i, vec![(i as u32, Hash128::of_u64(i))]));

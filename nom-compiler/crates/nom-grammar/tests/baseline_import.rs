@@ -24,7 +24,8 @@ fn baseline_sql_imports_into_fresh_db() {
     println!("after baseline import: {counts:?}");
 
     // Concrete canonical numbers — drift catches regressions.
-    assert_eq!(counts.kinds, 9, "9 closed kinds in baseline");
+    // 9 original + 28 B4 extended (screen already existed) + 9 B7 skills = 46.
+    assert_eq!(counts.kinds, 46, "46 kinds after B4 extended + B7 skill entries");
     assert_eq!(
         counts.quality_names, 20,
         "10 founding + 10 corpus-driven qualities"

@@ -1,7 +1,6 @@
 /// Canvas element primitives.
 ///
 /// All coordinates are in canvas-space (f32).  Colours are RGBA in linear [0,1].
-
 /// Arrow-head styles for `CanvasArrow`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum ArrowHead {
@@ -742,7 +741,7 @@ mod tests {
         paint_graph_node(&node, &mut scene);
         // 1 body quad + 4 port quads = 5 total.
         assert!(
-            scene.quads.len() > 0,
+            !scene.quads.is_empty(),
             "paint_graph_node must push at least one quad"
         );
         assert_eq!(scene.quads.len(), 5, "expected 1 body + 4 port quads");
@@ -760,7 +759,7 @@ mod tests {
         let mut scene = nom_gpui::scene::Scene::new();
         paint_wire(&wire, [0.0, 0.0], [100.0, 100.0], &mut scene);
         assert!(
-            scene.quads.len() > 0,
+            !scene.quads.is_empty(),
             "paint_wire must push at least one quad"
         );
         assert_eq!(scene.quads.len(), 6, "expected 6 segment quads");

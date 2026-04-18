@@ -3,7 +3,7 @@ use crate::dock::{fill_quad, rgba_to_hsla, DockPosition, Panel};
 use nom_compose::deep_think::DeepThinkStep;
 use nom_gpui::scene::{Quad, Scene};
 use nom_gpui::types::{Bounds, ContentMask, Corners, Edges, Pixels, Point, Size};
-use nom_intent::classify_with_react;
+use nom_intent::{classify_with_react, InterruptSignal};
 use nom_theme::tokens;
 use nom_theme::tokens::edge_color_for_confidence;
 
@@ -90,6 +90,9 @@ pub struct DeepThinkPanel {
     pub cards: Vec<ThinkCard>,
     pub state: ThinkState,
     pub intent: String,
+    /// Optional interrupt signal wired to the session. When triggered the
+    /// panel transitions to `ThinkState::Interrupted`.
+    pub interrupt_signal: Option<InterruptSignal>,
 }
 
 impl DeepThinkPanel {
@@ -99,6 +102,34 @@ impl DeepThinkPanel {
             cards: vec![],
             state: ThinkState::Idle,
             intent: String::new(),
+            interrupt_signal: None,
+        }
+    }
+
+    /// Construct a panel pre-wired to an `InterruptSignal`.
+    pub fn with_interrupt_signal(signal: InterruptSignal) -> Self {
+        Self {
+            steps: vec![],
+            cards: vec![],
+            state: ThinkState::Idle,
+            intent: String::new(),
+            interrupt_signal: Some(signal),
+        }
+    }
+
+    /// Returns `true` while the session is streaming (not yet complete or interrupted).
+    pub fn is_running(&self) -> bool {
+        matches!(self.state, ThinkState::Streaming)
+    }
+
+    /// Trigger the wired interrupt signal and transition to `Interrupted` state.
+    /// No-op if no signal is attached or the session is not running.
+    pub fn trigger_interrupt(&mut self) {
+        if self.is_running() {
+            if let Some(ref signal) = self.interrupt_signal {
+                signal.cancel();
+            }
+            self.state = ThinkState::Interrupted("user interrupted".to_string());
         }
     }
 
@@ -827,5 +858,46 @@ mod tests {
         panel.ingest_events(vec![make_step("ref-hypothesis", 0.75, vec![])]);
         assert_eq!(panel.cards[0].hypothesis, "ref-hypothesis");
         assert!((panel.cards[0].confidence - 0.75).abs() < f32::EPSILON);
+    }
+
+    // ── InterruptSignal wiring ────────────────────────────────────────────────
+
+    /// trigger_interrupt transitions a running panel to Interrupted and fires the signal.
+    #[test]
+    fn deep_think_trigger_interrupt_transitions_state() {
+        let signal = nom_intent::InterruptSignal::new();
+        let mut panel = DeepThinkPanel::with_interrupt_signal(signal.clone());
+        panel.begin("test interrupt");
+        assert!(panel.is_running(), "panel must be running after begin()");
+        panel.trigger_interrupt();
+        assert!(
+            !panel.is_running(),
+            "panel must not be running after trigger_interrupt()"
+        );
+        assert!(
+            signal.is_cancelled(),
+            "attached InterruptSignal must be cancelled after trigger_interrupt()"
+        );
+        assert!(
+            matches!(panel.state, ThinkState::Interrupted(_)),
+            "state must be Interrupted after trigger_interrupt()"
+        );
+    }
+
+    /// trigger_interrupt on an idle panel is a no-op — signal stays unset.
+    #[test]
+    fn deep_think_trigger_interrupt_noop_when_idle() {
+        let signal = nom_intent::InterruptSignal::new();
+        let mut panel = DeepThinkPanel::with_interrupt_signal(signal.clone());
+        // Do NOT call begin() — panel is Idle
+        panel.trigger_interrupt();
+        assert!(
+            !signal.is_cancelled(),
+            "signal must not be triggered when panel is idle"
+        );
+        assert!(
+            matches!(panel.state, ThinkState::Idle),
+            "state must remain Idle"
+        );
     }
 }

@@ -48,7 +48,11 @@ impl TaskQueue {
 
     /// Enqueue a task. Returns `None` if `max_size > 0` and the pending count
     /// has reached the cap; returns `Some(id)` on success.
-    pub fn try_enqueue(&mut self, backend: impl Into<String>, input: impl Into<String>) -> Option<u64> {
+    pub fn try_enqueue(
+        &mut self,
+        backend: impl Into<String>,
+        input: impl Into<String>,
+    ) -> Option<u64> {
         if self.max_size > 0 && self.pending_count() >= self.max_size {
             return None;
         }
@@ -277,9 +281,7 @@ mod tests {
     #[test]
     fn task_queue_many_tasks_running_count() {
         let mut q = TaskQueue::new();
-        let ids: Vec<u64> = (0..5)
-            .map(|_| q.enqueue("transform", "t"))
-            .collect();
+        let ids: Vec<u64> = (0..5).map(|_| q.enqueue("transform", "t")).collect();
         assert_eq!(q.pending_count(), 5);
         for &id in &ids[..3] {
             q.start(id);
@@ -490,8 +492,7 @@ mod tests {
         let mut q = TaskQueue::with_max_size(0);
         for i in 0..20u64 {
             assert!(
-                q.try_enqueue("transform", format!("t{i}"))
-                    .is_some(),
+                q.try_enqueue("transform", format!("t{i}")).is_some(),
                 "unlimited queue must accept task {i}"
             );
         }

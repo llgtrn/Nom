@@ -58,7 +58,7 @@ pub struct BlockModel {
     pub id: BlockId,
     /// NON-OPTIONAL DB entity reference. Blocks without an entity do not exist.
     pub entity: NomtuRef,
-    /// Block flavour string (e.g. `"affine:paragraph"`).
+    /// Block flavour string (e.g. `"nom:paragraph"`).
     pub flavour: String,
     /// Named slot values carrying typed content.
     pub slots: Vec<(String, crate::slot::SlotValue)>,
@@ -131,14 +131,14 @@ mod tests {
     fn block_model_has_entity() {
         let entity = NomtuRef::new("id1", "summarize", "verb");
         let reader = StubDictReader::with_kinds(&["verb"]);
-        let block = BlockModel::insert(entity.clone(), "affine:paragraph", &reader);
+        let block = BlockModel::insert(entity.clone(), "nom:paragraph", &reader);
         assert_eq!(block.entity.kind, "verb");
         assert_eq!(block.entity.word, "summarize");
     }
 
     #[test]
     fn block_model_slots() {
-        let mut block = BlockModel::new("id1", NomtuRef::new("id1", "w", "k"), "affine:paragraph");
+        let mut block = BlockModel::new("id1", NomtuRef::new("id1", "w", "k"), "nom:paragraph");
         block.set_slot("text", crate::slot::SlotValue::Text("Hello".into()));
         assert!(block.get_slot("text").is_some());
         assert!(block.get_slot("missing").is_none());
@@ -148,7 +148,7 @@ mod tests {
     #[test]
     fn block_model_nomtu_ref_required() {
         let entity = NomtuRef::new("eid", "plan", "concept");
-        let block = BlockModel::new("blk1", entity, "affine:note");
+        let block = BlockModel::new("blk1", entity, "nom:note");
         // Structural guarantee: entity is always present, not Option<NomtuRef>
         assert_eq!(block.entity.id, "eid");
         assert_eq!(block.entity.word, "plan");
@@ -159,9 +159,9 @@ mod tests {
     #[test]
     fn block_model_valid_creates() {
         let entity = NomtuRef::new("e42", "render", "verb");
-        let block = BlockModel::new("b42", entity, "affine:paragraph");
+        let block = BlockModel::new("b42", entity, "nom:paragraph");
         assert_eq!(block.id, "b42");
-        assert_eq!(block.flavour, "affine:paragraph");
+        assert_eq!(block.flavour, "nom:paragraph");
         assert!(block.slots.is_empty());
         assert!(block.children.is_empty());
         assert!(block.parent.is_none());
@@ -174,8 +174,8 @@ mod tests {
         let dict = StubDictReader::new();
         let e1 = NomtuRef::new("e1", "fetch", "verb");
         let e2 = NomtuRef::new("e2", "store", "verb");
-        let b1 = BlockModel::insert(e1, "affine:paragraph", &dict);
-        let b2 = BlockModel::insert(e2, "affine:paragraph", &dict);
+        let b1 = BlockModel::insert(e1, "nom:paragraph", &dict);
+        let b2 = BlockModel::insert(e2, "nom:paragraph", &dict);
         assert_ne!(
             b1.id, b2.id,
             "Two successive insert() calls must produce distinct IDs"
@@ -197,7 +197,7 @@ mod tests {
     #[test]
     fn block_model_kind_field() {
         let entity = NomtuRef::new("e1", "plan", "concept");
-        let block = BlockModel::new("b1", entity, "affine:note");
+        let block = BlockModel::new("b1", entity, "nom:note");
         assert_eq!(block.entity.kind, "concept");
     }
 
@@ -205,7 +205,7 @@ mod tests {
     #[test]
     fn block_model_entity_is_nomturef() {
         let entity = NomtuRef::new("eid", "compose", "verb");
-        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        let block = BlockModel::new("b1", entity, "nom:paragraph");
         // Access all three fields of NomtuRef to confirm the type
         let _id: &str = &block.entity.id;
         let _word: &str = &block.entity.word;
@@ -218,7 +218,7 @@ mod tests {
     /// children is Vec<BlockId> and starts empty
     #[test]
     fn block_model_children_vec() {
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:note");
         assert!(block.children.is_empty());
         let mut block = block;
         block.children.push("child-1".to_string());
@@ -230,7 +230,7 @@ mod tests {
     /// parent is Option<BlockId> and defaults to None
     #[test]
     fn block_model_parent_optional() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:note");
         assert!(block.parent.is_none());
         block.parent = Some("parent-block".to_string());
         assert_eq!(block.parent.as_deref(), Some("parent-block"));
@@ -242,12 +242,12 @@ mod tests {
         let dict = StubDictReader::new();
         let b1 = BlockModel::insert(
             NomtuRef::new("e1", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
             &dict,
         );
         let b2 = BlockModel::insert(
             NomtuRef::new("e2", "store", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
             &dict,
         );
         assert_ne!(b1.id, b2.id, "insert() must generate unique IDs");
@@ -275,7 +275,7 @@ mod tests {
     /// set_slot overwrites an existing slot instead of appending a duplicate
     #[test]
     fn block_model_set_slot_overwrites() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.set_slot("key", crate::slot::SlotValue::Text("first".into()));
         block.set_slot("key", crate::slot::SlotValue::Text("second".into()));
         // Only one entry for "key"
@@ -329,12 +329,12 @@ mod tests {
         let dict = StubDictReader::new();
         let b1 = BlockModel::insert(
             NomtuRef::new("e1", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
             &dict,
         );
         let b2 = BlockModel::insert(
             NomtuRef::new("e2", "store", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
             &dict,
         );
         assert_ne!(b1.id, b2.id, "each insert() must produce a unique id");
@@ -344,14 +344,14 @@ mod tests {
     fn block_model_kind_str_nonempty() {
         let entity = NomtuRef::new("e1", "compose", "verb");
         assert!(!entity.kind.is_empty());
-        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        let block = BlockModel::new("b1", entity, "nom:paragraph");
         assert!(!block.entity.kind.is_empty());
     }
 
     #[test]
     fn block_model_entity_ref_present() {
         let entity = NomtuRef::new("eid", "plan", "concept");
-        let block = BlockModel::new("b1", entity, "affine:note");
+        let block = BlockModel::new("b1", entity, "nom:note");
         // entity must have non-empty id and word
         assert!(!block.entity.id.is_empty());
         assert!(!block.entity.word.is_empty());
@@ -362,7 +362,7 @@ mod tests {
         use crate::dict_reader::DictReader;
         let reader = StubDictReader::with_kinds(&["verb", "concept", "noun"]);
         let entity = NomtuRef::new("e1", "render", "verb");
-        let block = BlockModel::insert(entity, "affine:paragraph", &reader);
+        let block = BlockModel::insert(entity, "nom:paragraph", &reader);
         // kind should be a known kind in the reader
         assert!(reader.is_known_kind(&block.entity.kind));
     }
@@ -370,20 +370,20 @@ mod tests {
     #[test]
     fn block_model_serialization_round_trip() {
         let entity = NomtuRef::new("ser-01", "serialize", "verb");
-        let block = BlockModel::new("blk-ser", entity, "affine:paragraph");
+        let block = BlockModel::new("blk-ser", entity, "nom:paragraph");
         let json = serde_json::to_string(&block).expect("serialize must not fail");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize must not fail");
         assert_eq!(restored.id, "blk-ser");
         assert_eq!(restored.entity.id, "ser-01");
         assert_eq!(restored.entity.word, "serialize");
         assert_eq!(restored.entity.kind, "verb");
-        assert_eq!(restored.flavour, "affine:paragraph");
+        assert_eq!(restored.flavour, "nom:paragraph");
     }
 
     #[test]
     fn block_model_clone_equal_to_original() {
         let entity = NomtuRef::new("e-clone", "clone", "verb");
-        let block = BlockModel::new("b-clone", entity, "affine:note");
+        let block = BlockModel::new("b-clone", entity, "nom:note");
         let cloned = block.clone();
         assert_eq!(cloned.id, block.id);
         assert_eq!(cloned.entity.id, block.entity.id);
@@ -400,7 +400,7 @@ mod tests {
 
     #[test]
     fn block_model_multiple_slots_stored() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.set_slot("name", crate::slot::SlotValue::Text("Alice".into()));
         block.set_slot("score", crate::slot::SlotValue::Number(42.0));
         assert_eq!(block.slots.len(), 2);
@@ -412,8 +412,8 @@ mod tests {
     #[test]
     fn block_model_flavour_stored_exactly() {
         let entity = NomtuRef::new("e1", "w", "verb");
-        let block = BlockModel::new("b1", entity, "affine:code");
-        assert_eq!(block.flavour, "affine:code");
+        let block = BlockModel::new("b1", entity, "nom:code");
+        assert_eq!(block.flavour, "nom:code");
     }
 
     // ── wave AB: serialization + clone round-trip tests ─────────────────────
@@ -432,7 +432,7 @@ mod tests {
     #[test]
     fn block_kind_preserved_after_clone() {
         let entity = NomtuRef::new("e1", "render", "verb");
-        let block = BlockModel::new("b1", entity, "affine:paragraph");
+        let block = BlockModel::new("b1", entity, "nom:paragraph");
         let cloned = block.clone();
         assert_eq!(cloned.entity.kind, "verb");
     }
@@ -440,7 +440,7 @@ mod tests {
     /// position-like fields (meta timestamps used as position surrogates) preserved after clone.
     #[test]
     fn block_meta_timestamps_preserved_after_clone() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.meta.created_at = 1_000_000;
         block.meta.updated_at = 2_000_000;
         let cloned = block.clone();
@@ -451,7 +451,7 @@ mod tests {
     /// BlockMeta version is preserved after clone.
     #[test]
     fn block_meta_version_preserved_after_clone() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.meta.version = 7;
         let cloned = block.clone();
         assert_eq!(cloned.meta.version, 7);
@@ -460,7 +460,7 @@ mod tests {
     /// BlockMeta author is preserved after clone.
     #[test]
     fn block_meta_author_preserved_after_clone() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.meta.author = "alice".to_string();
         let cloned = block.clone();
         assert_eq!(cloned.meta.author, "alice");
@@ -469,7 +469,7 @@ mod tests {
     /// Slots list is preserved after BlockModel clone.
     #[test]
     fn block_slots_preserved_after_clone() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         block.set_slot("title", crate::slot::SlotValue::Text("My Title".into()));
         let cloned = block.clone();
         assert_eq!(cloned.slots.len(), 1);
@@ -482,7 +482,7 @@ mod tests {
     /// Children list is preserved after BlockModel clone.
     #[test]
     fn block_children_preserved_after_clone() {
-        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:note");
+        let mut block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:note");
         block.children.push("child-a".to_string());
         block.children.push("child-b".to_string());
         let cloned = block.clone();
@@ -495,7 +495,7 @@ mod tests {
         let mut block = BlockModel::new(
             "rtrip-1",
             NomtuRef::new("rtrip-e", "roundtrip", "concept"),
-            "affine:note",
+            "nom:note",
         );
         block.meta.author = "bob".to_string();
         block.meta.version = 3;
@@ -507,7 +507,7 @@ mod tests {
         assert_eq!(restored.entity.id, "rtrip-e");
         assert_eq!(restored.entity.word, "roundtrip");
         assert_eq!(restored.entity.kind, "concept");
-        assert_eq!(restored.flavour, "affine:note");
+        assert_eq!(restored.flavour, "nom:note");
         assert_eq!(restored.meta.author, "bob");
         assert_eq!(restored.meta.version, 3);
         assert_eq!(restored.children, vec!["child-x"]);
@@ -517,11 +517,11 @@ mod tests {
     /// Modifying a clone does not affect the original.
     #[test]
     fn block_model_clone_independent() {
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "affine:paragraph");
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "w", "verb"), "nom:paragraph");
         let mut cloned = block.clone();
-        cloned.flavour = "affine:note".to_string();
-        assert_eq!(block.flavour, "affine:paragraph");
-        assert_eq!(cloned.flavour, "affine:note");
+        cloned.flavour = "nom:note".to_string();
+        assert_eq!(block.flavour, "nom:paragraph");
+        assert_eq!(cloned.flavour, "nom:note");
     }
 
     /// NomtuRef word field round-trips through serde_json.
@@ -539,7 +539,7 @@ mod tests {
         let block = BlockModel::new(
             "no-slots",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
@@ -552,7 +552,7 @@ mod tests {
         let block = BlockModel::new(
             "b-no-parent",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:note",
+            "nom:note",
         );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");
@@ -583,7 +583,7 @@ mod tests {
         let block = BlockModel::new(
             "exact-id-42",
             NomtuRef::new("e1", "w", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let json = serde_json::to_string(&block).expect("serialize");
         let restored: BlockModel = serde_json::from_str(&json).expect("deserialize");

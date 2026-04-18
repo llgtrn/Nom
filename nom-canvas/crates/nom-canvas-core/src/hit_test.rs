@@ -3,7 +3,9 @@
 /// Phase 1: AABB broadphase (check `bounds.contains(pt)`).
 /// Phase 2: Precise — rect uses inverse-rotation test; ellipse uses normalised
 ///          ellipse equation; connectors use `dist_to_bezier < HIT_RADIUS`.
-use crate::elements::{CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect, ElementBounds};
+use crate::elements::{
+    CanvasArrow, CanvasConnector, CanvasEllipse, CanvasLine, CanvasRect, ElementBounds,
+};
 use crate::spatial_index::SpatialIndex;
 use nom_gpui::types::{Bounds, Pixels};
 
@@ -216,8 +218,8 @@ impl CanvasHitTester {
     /// a precise secondary test on the returned candidates.
     pub fn hit_test_at(&self, pt: [f32; 2]) -> Vec<u64> {
         // Use a 1-pixel query region around the point as the broadphase.
-        let candidates = self.spatial_index.query_in_bounds(pt, pt);
-        candidates
+
+        self.spatial_index.query_in_bounds(pt, pt)
     }
 
     /// Region selection: return all element IDs whose AABB intersects `[min, max]`.
@@ -1101,8 +1103,8 @@ mod tests {
     fn bezier_subdivision_covers_same_range() {
         // A straight-line cubic: both halves together span from p0 to p3.
         let p0 = [0.0_f32, 0.0];
-        let c1 = [33.0, 0.0];
-        let c2 = [66.0, 0.0];
+        let _c1 = [33.0, 0.0];
+        let _c2 = [66.0, 0.0];
         let p3 = [100.0, 0.0];
         // Midpoint at t=0.5 on a straight-line cubic is exactly (50, 0).
         let split = [50.0_f32, 0.0];

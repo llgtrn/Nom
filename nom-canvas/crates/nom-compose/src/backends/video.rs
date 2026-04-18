@@ -57,7 +57,7 @@ pub struct VideoFrame {
     pub scene_hash: String,
 }
 
-/// Video composition spec — Remotion-pattern.
+/// Video composition spec — frame-sequence composition pattern.
 #[derive(Debug, Clone)]
 pub struct VideoSpec {
     pub fps: u32,

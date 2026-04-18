@@ -271,14 +271,12 @@ mod tests {
     /// Go to definition for a known symbol returns a non-empty path.
     #[test]
     fn editor_go_to_definition_known_symbol() {
-        use crate::lsp_bridge::{CompletionItem, CompletionKind, Location};
+        use crate::lsp_bridge::Location;
         // Simulate: definition lookup returns Some(Location)
-        let loc = Some(Location {
+        let l = Location {
             path: std::path::PathBuf::from("src/lib.nom"),
             range: 10..20,
-        });
-        assert!(loc.is_some());
-        let l = loc.unwrap();
+        };
         assert_eq!(l.path, std::path::PathBuf::from("src/lib.nom"));
         assert_eq!(l.range.start, 10);
     }

@@ -37,3 +37,18 @@ serde_json = "1"
 
 [workspace.lints.rust]
 unsafe_code = "deny"
+
+[workspace.lints.clippy]
+# These patterns appear exclusively in test modules verifying design invariants
+# (token scale ordering, colour palette ranges, etc.). The assertions are
+# intentional constant-value guards, not logic errors.
+assertions_on_constants = "allow"
+# Test helpers build slice arguments with vec![…] because the API signature
+# takes &[T]. Converting every test to array syntax would reduce readability
+# without improving correctness.
+useless_vec = "allow"
+# nom-lint test infrastructure builds expected strings with iterator-based
+# repeat patterns; these are clear and intentional.
+manual_str_repeat = "allow"
+iter_repeat_n_take = "allow"
+manual_repeat_n = "allow"

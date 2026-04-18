@@ -87,7 +87,7 @@ impl NomGraph {
     pub fn has_edge(&self, from: &NomtuRef, to: &NomtuRef) -> bool {
         self.adj
             .get(from)
-            .map_or(false, |neighbors| neighbors.contains(to))
+            .is_some_and(|neighbors| neighbors.contains(to))
     }
 
     // ------------------------------------------------------------------

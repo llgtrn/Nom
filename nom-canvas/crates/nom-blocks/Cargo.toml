@@ -7,3 +7,6 @@ edition = "2021"
 serde = { workspace = true }
 serde_json = { workspace = true }
 nom-theme = { path = "../nom-theme" }
+
+[lints]
+workspace = true

@@ -22,3 +22,6 @@ serde_json = "1"
 
 [dev-dependencies]
 tower = "0.5"
+
+[lints]
+workspace = true

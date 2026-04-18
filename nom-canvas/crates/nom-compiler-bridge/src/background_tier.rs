@@ -243,7 +243,7 @@ impl BackgroundWorker {
         // Split into sentences by punctuation, then words; count words for complexity
         let word_count = intent.split_whitespace().count().max(1);
         // 1 step per ~5 words, clamped to [1, 10]
-        let step_count = ((word_count + 4) / 5).clamp(1, 10);
+        let step_count = word_count.div_ceil(5).clamp(1, 10);
 
         // Grammar cache hit rate: known Nom keywords boost confidence
         let known_keywords = [
@@ -264,7 +264,7 @@ impl BackgroundWorker {
         let steps: Vec<PlanStep> = (0..step_count)
             .map(|i| {
                 // Distribute words across steps for non-trivial descriptions
-                let chunk_size = (word_count + step_count - 1) / step_count;
+                let chunk_size = word_count.div_ceil(step_count);
                 let start = i * chunk_size;
                 let fragment: String = words
                     .iter()
@@ -401,7 +401,7 @@ impl BackgroundWorker {
 
         // Sub-problems: split intent into clause fragments at punctuation or conjunctions
         let sub_problems: Vec<&str> = intent
-            .split(|c: char| c == ',' || c == ';' || c == '.')
+            .split([',', ';', '.'])
             .map(str::trim)
             .filter(|s| !s.is_empty())
             .take(3)
@@ -2333,29 +2333,28 @@ mod tests {
             "pool_idle_count must return 4 after returning 4 slots"
         );
     }
-}
 
-// ── Diff helper (used only in tests) ────────────────────────────────────────
-#[cfg(test)]
-fn apply_line_diff(text: &str, changes: &[(usize, usize, &str)]) -> String {
-    if changes.is_empty() {
-        return text.to_string();
+    // ── Diff helper ────────────────────────────────────────────────────────
+    fn apply_line_diff(text: &str, changes: &[(usize, usize, &str)]) -> String {
+        if changes.is_empty() {
+            return text.to_string();
+        }
+        let mut lines: Vec<&str> = text.lines().collect();
+        // Apply changes in reverse order to preserve indices
+        let mut sorted = changes.to_vec();
+        sorted.sort_by(|a, b| b.0.cmp(&a.0));
+        for (start, end, replacement) in &sorted {
+            let new_lines: Vec<&str> = if replacement.is_empty() {
+                vec![]
+            } else {
+                replacement.lines().collect()
+            };
+            lines.splice(start..end, new_lines);
+        }
+        let mut result = lines.join("\n");
+        if text.ends_with('\n') {
+            result.push('\n');
+        }
+        result
     }
-    let mut lines: Vec<&str> = text.lines().collect();
-    // Apply changes in reverse order to preserve indices
-    let mut sorted = changes.to_vec();
-    sorted.sort_by(|a, b| b.0.cmp(&a.0));
-    for (start, end, replacement) in &sorted {
-        let new_lines: Vec<&str> = if replacement.is_empty() {
-            vec![]
-        } else {
-            replacement.lines().collect()
-        };
-        lines.splice(start..end, new_lines);
-    }
-    let mut result = lines.join("\n");
-    if text.ends_with('\n') {
-        result.push('\n');
-    }
-    result
 }

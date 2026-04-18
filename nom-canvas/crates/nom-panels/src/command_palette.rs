@@ -85,7 +85,7 @@ impl CommandPalette {
     /// Layout: centered modal with a background quad, a border quad (EDGE_MED),
     /// one row quad per filtered item (BG), and a focus ring on the selected item.
     pub fn paint_scene(&self, width: f32, height: f32, scene: &mut Scene) {
-        let modal_w = (width * 0.5).min(640.0).max(320.0);
+        let modal_w = (width * 0.5).clamp(320.0, 640.0);
         let row_h = 32.0;
         let filtered = self.filtered_items();
         let modal_h = 48.0 + row_h * filtered.len() as f32;

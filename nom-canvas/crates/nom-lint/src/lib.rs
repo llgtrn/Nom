@@ -61,7 +61,7 @@ impl LintRule for TrailingWhitespaceRule {
     }
 
     fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
-        let trimmed_len = line.trim_end_matches(|c| c == ' ' || c == '\t').len();
+        let trimmed_len = line.trim_end_matches([' ', '\t']).len();
         if trimmed_len < line.len() {
             Some(LintDiagnostic {
                 level: LintLevel::Warning,
@@ -131,16 +131,12 @@ impl LintRule for EmptyBlockRule {
     }
 
     fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
-        if let Some(col) = line.find("{}") {
-            Some(LintDiagnostic {
-                level: LintLevel::Warning,
-                message: "empty block `{}`".to_string(),
-                line: line_num,
-                span: col as u32..(col + 2) as u32,
-            })
-        } else {
-            None
-        }
+        line.find("{}").map(|col| LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "empty block `{}`".to_string(),
+            line: line_num,
+            span: col as u32..(col + 2) as u32,
+        })
     }
 }
 
@@ -2431,7 +2427,7 @@ mod tests {
             elapsed.as_millis()
         );
         // Sanity: 500 lines → ~333 violations (trailing on 1/3, empty-block on 1/3).
-        assert!(diags.len() > 0, "must produce some diagnostics");
+        assert!(!diags.is_empty(), "must produce some diagnostics");
     }
 
     #[test]
@@ -2490,16 +2486,12 @@ mod tests {
         }
 
         fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
-            if let Some(col) = line.find(self.keyword) {
-                Some(LintDiagnostic {
-                    level: LintLevel::Warning,
-                    message: format!("forbidden keyword '{}'", self.keyword),
-                    line: line_num,
-                    span: col as u32..(col + self.keyword.len()) as u32,
-                })
-            } else {
-                None
-            }
+            line.find(self.keyword).map(|col| LintDiagnostic {
+                level: LintLevel::Warning,
+                message: format!("forbidden keyword '{}'", self.keyword),
+                line: line_num,
+                span: col as u32..(col + self.keyword.len()) as u32,
+            })
         }
     }
 
@@ -4696,7 +4688,7 @@ mod tests {
     fn lint_auto_fix_trailing_whitespace_produces_fix_text() {
         // An auto-fix for trailing whitespace trims the trailing characters.
         let line = "fn foo()   ";
-        let fix = line.trim_end_matches(|c| c == ' ' || c == '\t');
+        let fix = line.trim_end_matches([' ', '\t']);
         assert_eq!(fix, "fn foo()");
         assert!(!fix.ends_with(' '));
     }
@@ -4704,7 +4696,7 @@ mod tests {
     #[test]
     fn lint_auto_fix_preserves_inner_content() {
         let line = "  let x = 1;   ";
-        let fix = line.trim_end_matches(|c| c == ' ' || c == '\t');
+        let fix = line.trim_end_matches([' ', '\t']);
         assert_eq!(fix, "  let x = 1;");
     }
 
@@ -5313,7 +5305,7 @@ mod tests {
     #[test]
     fn disabled_rule_not_added_produces_no_diag() {
         // Simulating "is_enabled = false" by simply not adding the rule.
-        let mut runner = LintRunner::new();
+        let runner = LintRunner::new();
         // EmptyBlockRule disabled → not added.
         let diags = runner.run("fn f() {}");
         assert!(
@@ -5497,13 +5489,7 @@ mod tests {
             .into_iter()
             .enumerate()
             .map(|(i, mut d)| {
-                if i == 0
-                    && {
-                        // threshold exceeded condition
-                        true
-                    }
-                    && i == 0
-                {
+                if i == 0 {
                     d.level = LintLevel::Error;
                 }
                 d

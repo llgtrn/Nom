@@ -1,5 +1,4 @@
 /// Gesture recognizer for canvas touch and pointer interactions.
-
 /// Events emitted by the gesture recognizer.
 #[derive(Debug, Clone, PartialEq)]
 pub enum GestureEvent {
@@ -205,7 +204,7 @@ impl GestureRecognizer {
                 let dy = y - last_y;
                 // Approximate instantaneous velocity (units/ms). Use a tiny
                 // minimum dt to avoid division by zero in unit tests.
-                let dt = 1u64.max(0u64); // placeholder — velocity computed below
+                let dt = 1u64; // placeholder — velocity computed below
                 let _ = dt;
                 let (lx, ly, lt) = (*last_x, *last_y, *last_time_ms);
                 // Keep vel for fast-swipe tests: simple EMA with α=0.5.

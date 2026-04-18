@@ -196,6 +196,20 @@ CREATE INDEX IF NOT EXISTS idx_edges_from ON entry_graph_edges(from_id);
 CREATE INDEX IF NOT EXISTS idx_edges_to ON entry_graph_edges(to_id);
 CREATE INDEX IF NOT EXISTS idx_edges_type ON entry_graph_edges(edge_type);
 
+-- 21-edge multi-graph schema (A3). Uses content-addressed src/dst hashes so edges
+-- survive entry renames. edge_kind matches EdgeType::as_str() values from nom-types.
+CREATE TABLE IF NOT EXISTS entry_edges (
+    src_hash  TEXT NOT NULL,
+    dst_hash  TEXT NOT NULL,
+    edge_kind TEXT NOT NULL,
+    weight    REAL NOT NULL DEFAULT 1.0,
+    metadata  TEXT,
+    PRIMARY KEY (src_hash, dst_hash, edge_kind)
+);
+CREATE INDEX IF NOT EXISTS idx_entry_edges_src ON entry_edges(src_hash);
+CREATE INDEX IF NOT EXISTS idx_entry_edges_dst ON entry_edges(dst_hash);
+CREATE INDEX IF NOT EXISTS idx_entry_edges_kind ON entry_edges(edge_kind);
+
 CREATE TABLE IF NOT EXISTS entry_translations (
     translation_id       INTEGER PRIMARY KEY AUTOINCREMENT,
     id                   TEXT NOT NULL REFERENCES entries(id) ON DELETE CASCADE,
@@ -234,6 +248,36 @@ CREATE TABLE IF NOT EXISTS dict_meta (
     value      TEXT NOT NULL,
     updated_at TEXT NOT NULL
 );
+
+-- entry_benchmarks: performance measurements per nomtu entry
+CREATE TABLE IF NOT EXISTS entry_benchmarks (
+    run_id          TEXT NOT NULL,
+    entry_hash      TEXT NOT NULL REFERENCES entries(id),
+    platform        TEXT NOT NULL,
+    compiler_hash   TEXT NOT NULL,
+    workload_key    TEXT NOT NULL,
+    wall_ns         INTEGER NOT NULL,
+    cpu_ns          INTEGER NOT NULL,
+    mem_bytes       INTEGER NOT NULL,
+    custom_counters TEXT,
+    recorded_at     TEXT NOT NULL DEFAULT (datetime('now')),
+    PRIMARY KEY (run_id, entry_hash, platform)
+);
+CREATE INDEX IF NOT EXISTS idx_entry_benchmarks_entry ON entry_benchmarks(entry_hash);
+CREATE INDEX IF NOT EXISTS idx_entry_benchmarks_platform ON entry_benchmarks(platform);
+
+-- flow_steps: individual steps in a recorded execution flow
+CREATE TABLE IF NOT EXISTS flow_steps (
+    artifact_id TEXT NOT NULL,
+    step_index  INTEGER NOT NULL,
+    entry_hash  TEXT NOT NULL,
+    started_ns  INTEGER NOT NULL,
+    ended_ns    INTEGER NOT NULL,
+    input_hash  TEXT,
+    output_hash TEXT,
+    PRIMARY KEY (artifact_id, step_index)
+);
+CREATE INDEX IF NOT EXISTS idx_flow_steps_entry ON flow_steps(entry_hash);
 "#;
 
 /// The three-file dict as a single Rust-level value. Callers pass `&Dict` (or
@@ -1791,6 +1835,7 @@ mod tests {
         assert!(table_exists(&d.entities, "entry_signatures"));
         assert!(table_exists(&d.entities, "entry_refs"));
         assert!(table_exists(&d.entities, "entry_graph_edges"));
+        assert!(table_exists(&d.entities, "entry_edges"));
         assert!(table_exists(&d.entities, "entry_translations"));
         assert!(table_exists(&d.entities, "entry_security_findings"));
         assert!(table_exists(&d.entities, "dict_meta"));

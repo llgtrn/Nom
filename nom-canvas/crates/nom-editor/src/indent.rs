@@ -319,8 +319,8 @@ mod tests {
     fn editor_convert_spaces_to_tabs() {
         let line = "    code";
         // Replace leading groups of 4 spaces with tabs
-        let converted = if line.starts_with("    ") {
-            format!("\t{}", &line[4..])
+        let converted = if let Some(rest) = line.strip_prefix("    ") {
+            format!("\t{rest}")
         } else {
             line.to_string()
         };

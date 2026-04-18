@@ -1,6 +1,9 @@
 #[cfg(feature = "serve")]
 pub mod serve;
 
+pub mod author;
+pub mod corpus;
+
 /// Commands understood by the nom-canvas CLI.
 #[derive(Debug, PartialEq)]
 pub enum CliCommand {

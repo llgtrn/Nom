@@ -500,7 +500,7 @@ mod integration_tests {
         // Paint every major panel variant into a fresh scene; none must panic.
         let mut scene = Scene::new();
 
-        let mut file_tree = FileTreePanel::new();
+        let file_tree = FileTreePanel::new();
         file_tree.paint_scene(248.0, 600.0, &mut scene);
 
         let dict = nom_blocks::stub_dict::StubDictReader::with_kinds(&["Function"]);
@@ -537,7 +537,7 @@ mod integration_tests {
         let mut scene = Scene::new();
         panel.paint_scene(248.0, 600.0, &mut scene);
         assert!(
-            scene.quads.len() >= 1,
+            !scene.quads.is_empty(),
             "painting must return at least 1 quad"
         );
     }
@@ -734,7 +734,7 @@ mod integration_tests {
     #[test]
     fn file_tree_5_level_depth_correct() {
         // Build a 5-level tree and verify all depth values.
-        let mut d4 = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let d4 = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
         let mut d3 = FileNode::dir("d3", 3);
         d3.is_expanded = true;
         d3.children.push(d4);
@@ -762,7 +762,7 @@ mod integration_tests {
     #[test]
     fn file_tree_expand_path_makes_visible() {
         // Expand a root→child path; all nodes on the path become visible.
-        let mut child = FileNode::file("main.nom", 1, FileNodeKind::NomFile);
+        let child = FileNode::file("main.nom", 1, FileNodeKind::NomFile);
         let mut root = FileNode::dir("src", 0);
         root.children.push(child);
         // Before expand: only root visible.
@@ -855,7 +855,6 @@ mod integration_tests {
 
     #[test]
     fn entity_ref_hash_consistency() {
-        use crate::entity_ref::PanelEntityRef;
         use nom_blocks::NomtuRef;
         use std::collections::hash_map::DefaultHasher;
         use std::hash::{Hash, Hasher};
@@ -960,7 +959,7 @@ mod integration_tests {
         // Editor font size must be between 10 and 24 px (reasonable coding range).
         let font_size = nom_theme::tokens::FONT_SIZE_BODY;
         assert!(
-            font_size >= 10.0 && font_size <= 24.0,
+            (10.0..=24.0).contains(&font_size),
             "editor font size ({font_size}) must be in [10, 24]"
         );
     }
@@ -1008,9 +1007,8 @@ mod integration_tests {
 
     #[test]
     fn settings_keybinding_reset_to_default() {
-        let mut binding = "ctrl+shift+p";
         let default = "ctrl+p";
-        binding = default;
+        let binding = default;
         assert_eq!(binding, default, "reset must restore the default binding");
     }
 
@@ -1030,15 +1028,13 @@ mod integration_tests {
 
     #[test]
     fn settings_theme_dark_persists() {
-        let mut theme = "light";
-        theme = "dark";
+        let theme = "dark";
         assert_eq!(theme, "dark", "theme must persist as 'dark' after setting");
     }
 
     #[test]
     fn settings_theme_light_persists() {
-        let mut theme = "dark";
-        theme = "light";
+        let theme = "light";
         assert_eq!(
             theme, "light",
             "theme must persist as 'light' after setting"
@@ -1047,8 +1043,7 @@ mod integration_tests {
 
     #[test]
     fn settings_theme_oled_persists() {
-        let mut theme = "dark";
-        theme = "oled";
+        let theme = "oled";
         assert_eq!(theme, "oled", "theme must persist as 'oled' after setting");
     }
 
@@ -1484,7 +1479,7 @@ mod integration_tests {
             3,
             "palette must have 3 entries after 3 pushes"
         );
-        assert!(palette.items.len() > 0, "entry count must be positive");
+        assert!(!palette.items.is_empty(), "entry count must be positive");
     }
 
     /// quick_open_filters_by_filename: file list filtered by name substring.
@@ -1499,9 +1494,7 @@ mod integration_tests {
     /// quick_open_recent_files_shown: recent list is non-empty after tracking.
     #[test]
     fn quick_open_recent_files_shown() {
-        let mut recent: Vec<&str> = Vec::new();
-        recent.push("main.nom");
-        recent.push("lib.nom");
+        let recent: Vec<&str> = vec!["main.nom", "lib.nom"];
         assert_eq!(recent.len(), 2, "recent files must contain 2 entries");
     }
 
@@ -1639,8 +1632,7 @@ mod integration_tests {
     /// panel_resize_changes_width: resizing changes effective size.
     #[test]
     fn panel_resize_changes_width() {
-        let mut width = 248.0_f32;
-        width = 320.0;
+        let width = 320.0_f32;
         assert!(
             (width - 320.0).abs() < f32::EPSILON,
             "width must change to 320 after resize"
@@ -1774,8 +1766,7 @@ mod integration_tests {
     /// panel_notification_appears: a notification is added to the list.
     #[test]
     fn panel_notification_appears() {
-        let mut notifications: Vec<(&str, &str)> = Vec::new();
-        notifications.push(("info", "Build succeeded"));
+        let notifications: Vec<(&str, &str)> = vec![("info", "Build succeeded")];
         assert_eq!(notifications.len(), 1, "notification must appear in list");
         assert_eq!(notifications[0].1, "Build succeeded");
     }
@@ -2187,7 +2178,7 @@ mod integration_tests {
     fn chat_history_scrollable() {
         let mut chat = ChatSidebarPanel::new();
         for i in 0..20 {
-            chat.push_message(ChatMessage::user(&format!("u{i}"), &format!("message {i}")));
+            chat.push_message(ChatMessage::user(format!("u{i}"), format!("message {i}")));
         }
         assert_eq!(
             chat.message_count(),
@@ -2463,7 +2454,7 @@ mod integration_tests {
 
     #[test]
     fn keyboard_arrow_up_clamps_at_start() {
-        let items = vec!["item-0", "item-1", "item-2"];
+        let _items = ["item-0", "item-1", "item-2"];
         let selected = 0usize;
         let after_up = selected.saturating_sub(1);
         assert_eq!(
@@ -2529,10 +2520,7 @@ mod integration_tests {
 
     #[test]
     fn tab_overflow_scroll_left_shifts_first_visible_tab_back() {
-        let mut first_visible = 3usize;
-        if first_visible > 0 {
-            first_visible -= 1;
-        }
+        let first_visible = 3usize.saturating_sub(1);
         assert_eq!(
             first_visible, 2,
             "scroll left must shift first visible tab back by 1"
@@ -2568,7 +2556,7 @@ mod integration_tests {
         // If the active tab is outside the visible window, scroll to reveal it.
         let active = 6usize;
         let visible = 4usize;
-        let total = 10usize;
+        let _total = 10usize;
         // Compute first_visible such that active is in [first, first+visible).
         let first = if active >= visible {
             active - (visible - 1)
@@ -2890,7 +2878,7 @@ mod integration_tests {
         panel.begin("streaming task");
         for i in 0..5 {
             panel.push_step(crate::right::ThinkingStep::new(
-                &format!("token-{i}"),
+                format!("token-{i}"),
                 0.5 + i as f32 * 0.1,
             ));
         }
@@ -3345,11 +3333,9 @@ mod integration_tests {
 
     #[test]
     fn floating_panel_can_be_moved_to_arbitrary_position() {
-        let mut x = 0.0_f32;
-        let mut y = 0.0_f32;
         // Move to a new arbitrary position.
-        x = 450.0;
-        y = 300.0;
+        let x = 450.0_f32;
+        let y = 300.0_f32;
         assert!(
             (x - 450.0).abs() < f32::EPSILON,
             "floating panel x must update after move"
@@ -3884,10 +3870,7 @@ mod integration_tests {
     fn persistence_v2_serialize_10_panels_all_restored() {
         // Serializing 10 panels must restore all 10 in the correct order.
         let panels: Vec<String> = (0..10).map(|i| format!("panel-{i}")).collect();
-        let serialized = format!(
-            "v2:{}",
-            panels.iter().cloned().collect::<Vec<_>>().join(";")
-        );
+        let serialized = format!("v2:{}", panels.to_vec().join(";"));
         let body = serialized.strip_prefix("v2:").unwrap();
         let restored: Vec<&str> = body.split(';').collect();
         assert_eq!(restored.len(), 10, "all 10 panels must be restored");
@@ -3918,12 +3901,10 @@ mod integration_tests {
     #[test]
     fn float_panel_retains_content_after_position_change() {
         // Moving a floating panel must not discard its content.
-        let mut content = "important content";
-        let mut x = 100.0_f32;
-        let mut y = 80.0_f32;
+        let content = "important content";
         // Move the panel.
-        x = 250.0;
-        y = 180.0;
+        let x = 250.0_f32;
+        let y = 180.0_f32;
         // Content is unchanged.
         assert_eq!(
             content, "important content",
@@ -3964,11 +3945,10 @@ mod integration_tests {
     #[test]
     fn two_floats_correct_z_order_after_bring_to_front() {
         // After bring-to-front, the targeted panel must have the highest z-index.
-        let mut z_a = 10i32;
         let z_b = 11i32;
         // Panel B was brought to front later; now bring A to front.
         let max_z = z_b;
-        z_a = max_z + 1;
+        let z_a = max_z + 1;
         assert!(
             z_a > z_b,
             "after bring-to-front, panel A z ({z_a}) must exceed panel B z ({z_b})"
@@ -3980,11 +3960,7 @@ mod integration_tests {
         // Moving a floating panel must not change its dimensions.
         let width = 320.0_f32;
         let height = 480.0_f32;
-        let mut x = 100.0_f32;
-        let mut y = 100.0_f32;
-        x = 400.0;
-        y = 300.0;
-        // width and height are unchanged.
+        // width and height are unchanged after a position move.
         assert!(
             (width - 320.0).abs() < f32::EPSILON,
             "float panel width must be unchanged after move"
@@ -4023,10 +3999,8 @@ mod integration_tests {
     #[test]
     fn float_panel_move_updates_both_coordinates() {
         // A move operation sets both x and y simultaneously.
-        let (mut x, mut y) = (100.0_f32, 200.0_f32);
         let (new_x, new_y) = (350.0_f32, 150.0_f32);
-        x = new_x;
-        y = new_y;
+        let (x, y) = (new_x, new_y);
         assert!((x - new_x).abs() < f32::EPSILON, "x must update on move");
         assert!((y - new_y).abs() < f32::EPSILON, "y must update on move");
     }
@@ -4067,7 +4041,7 @@ mod integration_tests {
         let mut panel = crate::right::DeepThinkPanel::new();
         panel.begin("long stream");
         for i in 0..20 {
-            panel.push_step(crate::right::ThinkingStep::new(&format!("token-{i}"), 0.6));
+            panel.push_step(crate::right::ThinkingStep::new(format!("token-{i}"), 0.6));
         }
         assert_eq!(
             panel.steps.len(),
@@ -4225,7 +4199,7 @@ mod integration_tests {
         .copied()
         .collect();
         assert!(
-            settings.len() >= 1,
+            !settings.is_empty(),
             "settings panel must have at least 1 setting"
         );
     }

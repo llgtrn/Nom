@@ -12,3 +12,6 @@ etagere = { workspace = true }
 bytemuck = { workspace = true }
 lru = { workspace = true }
 pollster = "0.3"
+
+[lints]
+workspace = true

@@ -1004,7 +1004,7 @@ mod tests {
     fn z_order_tie_uses_last_in_list() {
         let ids_and_z: Vec<(u64, i32)> = vec![(1, 5), (2, 5), (3, 5)];
         // last() simulates "last inserted on top" tiebreak.
-        let top = ids_and_z.iter().filter(|(_, z)| *z == 5).last().unwrap();
+        let top = ids_and_z.iter().rfind(|(_, z)| *z == 5).unwrap();
         assert_eq!(top.0, 3);
     }
 

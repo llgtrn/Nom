@@ -163,7 +163,7 @@ mod tests {
         let block = BlockModel::new(
             "id1",
             NomtuRef::new("e1", "summarize", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&block, &dict);
         assert!(
@@ -197,7 +197,7 @@ mod tests {
         let block = BlockModel::new(
             "b1",
             NomtuRef::new("?", "unknown_word", "nonexistent_kind"),
-            "affine:note",
+            "nom:note",
         );
         let errors = validate_block(&block, &dict);
         assert!(
@@ -228,7 +228,7 @@ mod tests {
         let mut block = BlockModel::new(
             "b2",
             NomtuRef::new("e2", "summarize", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         block.set_slot("nonexistent_slot", crate::slot::SlotValue::Bool(true));
         let errors = SlotShapeValidator.validate(&block, &dict);
@@ -253,7 +253,7 @@ mod tests {
         let mut block = BlockModel::new(
             "b3",
             NomtuRef::new("e3", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         block.set_slot("output", crate::slot::SlotValue::Text("result".into()));
         let errors = SlotShapeValidator.validate(&block, &dict);
@@ -275,7 +275,7 @@ mod tests {
     #[test]
     fn validate_block_no_slots_no_errors() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "affine:note");
+        let block = BlockModel::new("b1", NomtuRef::new("e1", "plan", "concept"), "nom:note");
         let errors = validate_block(&block, &dict);
         assert!(
             errors.is_empty(),
@@ -315,7 +315,7 @@ mod tests {
         let block = BlockModel::new(
             "b1",
             NomtuRef::new("e1", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = GrammarDerivationValidator.validate(&block, &dict);
         assert!(errors.is_empty());
@@ -328,7 +328,7 @@ mod tests {
         let block = BlockModel::new(
             "b1",
             NomtuRef::new("e1", "foo", "spooky_kind"),
-            "affine:note",
+            "nom:note",
         );
         let errors = GrammarDerivationValidator.validate(&block, &dict);
         assert_eq!(errors.len(), 1);
@@ -351,7 +351,7 @@ mod tests {
         let mut block = BlockModel::new(
             "b10",
             NomtuRef::new("e10", "run", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         block.set_slot("result", crate::slot::SlotValue::Text("ok".into()));
         let errors = validate_block(&block, &dict);
@@ -365,7 +365,7 @@ mod tests {
         let block = BlockModel::new(
             "b11",
             NomtuRef::new("e11", "ghost", "missing_kind"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&block, &dict);
         assert!(!errors.is_empty());
@@ -390,7 +390,7 @@ mod tests {
         let block = BlockModel::new(
             "b12",
             NomtuRef::new("e12", "run", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&block, &dict);
         // No surplus slots, no kind error → clean
@@ -416,7 +416,7 @@ mod tests {
         let mut block = BlockModel::new(
             "b13",
             NomtuRef::new("e13", "run", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         // Set a slot name not in clause shapes — should produce a warning
         block.set_slot("wrong_port", crate::slot::SlotValue::Number(42.0));
@@ -462,7 +462,7 @@ mod tests {
         let mut block = BlockModel::new(
             "bX",
             NomtuRef::new("eX", "x", "phantom"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         // "phantom" is not in StubDictReader's known set → GrammarDerivationValidator fires
         block.set_slot("bad_slot", crate::slot::SlotValue::Bool(false));
@@ -480,7 +480,7 @@ mod tests {
         let block = BlockModel::new(
             "bF",
             NomtuRef::new("eF", "my_word", "unknown_kind_xyz"),
-            "affine:note",
+            "nom:note",
         );
         let errors = validate_block(&block, &dict);
         assert!(!errors.is_empty());
@@ -498,7 +498,7 @@ mod tests {
         let block = BlockModel::new(
             "bS",
             NomtuRef::new("eS", "noop", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = SlotShapeValidator.validate(&block, &dict);
         assert!(errors.is_empty(), "no slots = no warnings");
@@ -518,7 +518,7 @@ mod tests {
             }],
         );
         let mut block =
-            BlockModel::new("bM", NomtuRef::new("eM", "run", "verb"), "affine:paragraph");
+            BlockModel::new("bM", NomtuRef::new("eM", "run", "verb"), "nom:paragraph");
         block.set_slot("unknown_a", crate::slot::SlotValue::Bool(true));
         block.set_slot("unknown_b", crate::slot::SlotValue::Bool(false));
         let errors = SlotShapeValidator.validate(&block, &dict);
@@ -554,7 +554,7 @@ mod tests {
     fn grammar_derivation_error_span_matches_kind_length() {
         let dict = StubDictReader::new();
         let kind = "very_long_unknown_kind_name";
-        let block = BlockModel::new("bL", NomtuRef::new("eL", "w", kind), "affine:note");
+        let block = BlockModel::new("bL", NomtuRef::new("eL", "w", kind), "nom:note");
         let errors = GrammarDerivationValidator.validate(&block, &dict);
         assert_eq!(errors.len(), 1);
         assert_eq!(errors[0].span.end as usize, kind.len());
@@ -569,7 +569,7 @@ mod tests {
         let block = BlockModel::new(
             "b1",
             NomtuRef::new("e1", "compose", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&block, &dict);
         assert!(errors.is_empty(), "known kind must return no errors");
@@ -582,7 +582,7 @@ mod tests {
         let block = BlockModel::new(
             "b2",
             NomtuRef::new("e2", "x", "not_a_real_kind"),
-            "affine:note",
+            "nom:note",
         );
         let errors = validate_block(&block, &dict);
         assert!(!errors.is_empty());
@@ -593,7 +593,7 @@ mod tests {
     #[test]
     fn validator_kind_empty_returns_error() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("b3", NomtuRef::new("e3", "w", ""), "affine:paragraph");
+        let block = BlockModel::new("b3", NomtuRef::new("e3", "w", ""), "nom:paragraph");
         let errors = validate_block(&block, &dict);
         // Empty string is not a known kind
         assert!(!errors.is_empty());
@@ -607,7 +607,7 @@ mod tests {
         let block = BlockModel::new(
             "b4",
             NomtuRef::new("e4", "nonempty", "concept"),
-            "affine:note",
+            "nom:note",
         );
         let errors = validate_block(&block, &dict);
         assert!(
@@ -621,7 +621,7 @@ mod tests {
     fn validator_word_empty_returns_error() {
         let dict = StubDictReader::new();
         // word is empty but kind is known — GrammarDerivationValidator only checks kind
-        let block = BlockModel::new("b5", NomtuRef::new("e5", "", "verb"), "affine:paragraph");
+        let block = BlockModel::new("b5", NomtuRef::new("e5", "", "verb"), "nom:paragraph");
         let errors = validate_block(&block, &dict);
         // GrammarDerivationValidator passes (kind is known); SlotShapeValidator passes (no slots)
         // So this should be clean — the word field is not validated by these validators
@@ -639,7 +639,7 @@ mod tests {
         let block = BlockModel::new(
             "b6",
             NomtuRef::new("e6", long_word, "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&block, &dict);
         // No length limit in GrammarDerivationValidator or SlotShapeValidator
@@ -651,7 +651,7 @@ mod tests {
     fn validator_nomturef_valid_ok() {
         let dict = StubDictReader::new();
         let ref_ = NomtuRef::new("valid-id", "transform", "verb");
-        let block = BlockModel::new("b7", ref_, "affine:paragraph");
+        let block = BlockModel::new("b7", ref_, "nom:paragraph");
         let errors = validate_block(&block, &dict);
         assert!(errors.is_empty());
     }
@@ -661,7 +661,7 @@ mod tests {
     fn validator_nomturef_empty_word_returns_error() {
         let dict = StubDictReader::new();
         let ref_ = NomtuRef::new("eid", "", "noun");
-        let block = BlockModel::new("b8", ref_, "affine:paragraph");
+        let block = BlockModel::new("b8", ref_, "nom:paragraph");
         let errors = validate_block(&block, &dict);
         // noun is a known kind, empty word is not checked → should pass
         assert!(
@@ -677,10 +677,10 @@ mod tests {
         let src_block = BlockModel::new(
             "src",
             NomtuRef::new("es", "fetch", "verb"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let dst_block =
-            BlockModel::new("dst", NomtuRef::new("ed", "plan", "concept"), "affine:note");
+            BlockModel::new("dst", NomtuRef::new("ed", "plan", "concept"), "nom:note");
         let src_errors = validate_block(&src_block, &dict);
         let dst_errors = validate_block(&dst_block, &dict);
         assert!(src_errors.is_empty(), "source block must validate clean");
@@ -697,7 +697,7 @@ mod tests {
         let src_block = BlockModel::new(
             "bad-src",
             NomtuRef::new("es", "fetch", "mystery_kind"),
-            "affine:paragraph",
+            "nom:paragraph",
         );
         let errors = validate_block(&src_block, &dict);
         assert!(
@@ -715,7 +715,7 @@ mod tests {
         let dst_block = BlockModel::new(
             "bad-dst",
             NomtuRef::new("ed", "plan", "ghost_kind"),
-            "affine:note",
+            "nom:note",
         );
         let errors = validate_block(&dst_block, &dict);
         assert!(
@@ -730,7 +730,7 @@ mod tests {
     #[test]
     fn validator_error_message_prefix() {
         let dict = StubDictReader::new();
-        let block = BlockModel::new("bP", NomtuRef::new("eP", "w", "alien_kind"), "affine:note");
+        let block = BlockModel::new("bP", NomtuRef::new("eP", "w", "alien_kind"), "nom:note");
         let errors = GrammarDerivationValidator.validate(&block, &dict);
         assert!(!errors.is_empty());
         assert!(

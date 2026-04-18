@@ -54,6 +54,12 @@ const INTER_REGULAR_BYTES: &[u8] = &[];
 const LIBRE_BASKERVILLE_BYTES: &[u8] = &[];
 const BERKELEY_MONO_BYTES: &[u8] = &[];
 
+impl Default for FontRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl FontRegistry {
     /// Creates a `FontRegistry` with a fully-initialized `cosmic_text::FontSystem`.
     ///
@@ -63,13 +69,19 @@ impl FontRegistry {
     pub fn new() -> Self {
         let mut font_system = cosmic_text::FontSystem::new();
         if !INTER_REGULAR_BYTES.is_empty() {
-            font_system.db_mut().load_font_data(INTER_REGULAR_BYTES.to_vec());
+            font_system
+                .db_mut()
+                .load_font_data(INTER_REGULAR_BYTES.to_vec());
         }
         if !LIBRE_BASKERVILLE_BYTES.is_empty() {
-            font_system.db_mut().load_font_data(LIBRE_BASKERVILLE_BYTES.to_vec());
+            font_system
+                .db_mut()
+                .load_font_data(LIBRE_BASKERVILLE_BYTES.to_vec());
         }
         if !BERKELEY_MONO_BYTES.is_empty() {
-            font_system.db_mut().load_font_data(BERKELEY_MONO_BYTES.to_vec());
+            font_system
+                .db_mut()
+                .load_font_data(BERKELEY_MONO_BYTES.to_vec());
         }
         Self {
             inter_regular: 0,

@@ -25,6 +25,53 @@ INSERT OR IGNORE INTO kinds (name, description, allowed_clauses, allowed_refs, s
 ('property', 'Universally-quantified claim over a generator. Wedge W41.', '[]', '[]', 'baseline-1.0', NULL),
 ('scenario', 'Asserted-behavior claim with given/when/then triple. Wedge W46.', '[]', '[]', 'baseline-1.0', NULL);
 
+-- ── Extended kinds — B4 (29 UX/app/media/flow/bench kinds) ─────────
+-- `screen` already registered above; remaining 28 are new.
+
+INSERT OR IGNORE INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) VALUES
+('ux_pattern',        'A reusable UI/UX interaction pattern describing a recurring problem and its solution shape.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('design_rule',       'A visual design constraint or guideline that governs appearance and layout decisions.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('user_flow',         'A sequence of steps a user takes to accomplish a goal within an application.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('skill',             'A reusable authoring procedure encoding how to accomplish a class of tasks in Nom.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('app_manifest',      'Top-level declaration binding an application to its pages, actions, data sources, and target platforms.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('data_source',       'Named external or internal data provider with schema and connection parameters.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('query',             'A named, parameterized read operation over a data source that returns a typed result set.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('app_action',        'A named side-effecting operation an application can invoke in response to user intent.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('app_variable',      'A named mutable state cell scoped to an application or page.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('page',              'A top-level navigable surface within an application, composed of screens and actions.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('benchmark',         'A named performance measurement definition with workload, platform, and metric declarations.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('benchmark_run',     'A recorded execution of a benchmark capturing timing moments and custom counters.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('flow_artifact',     'A named artifact produced or consumed by a recorded execution flow.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('flow_step',         'A single step in a recorded execution flow with start/end timestamps and input/output hashes.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('flow_middleware',   'An interceptor installed in an execution flow that observes or transforms steps.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('media_unit',        'A single addressable media item: image, audio clip, video clip, or glyph set.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('pixel_grid',        'A raster surface defined by width, height, and a color-depth declaration.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('audio_buffer',      'A named buffer of audio samples with sample rate and channel layout.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('video_stream',      'A named sequence of frames with frame rate, resolution, and codec binding.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('vector_path',       'A resolution-independent path described by control points and fill/stroke rules.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('glyph_outline',     'A single typographic glyph defined by its outline curves and advance metrics.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('mesh_geometry',     'A three-dimensional mesh defined by vertex positions, normals, and face topology.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('color',             'A named color value with color-space declaration and component values.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('palette',           'An ordered collection of named color entries forming a design color system.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('codec',             'A named encode/decode specification binding a media format to its parameter set.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('container',         'A named media container format grouping one or more encoded tracks.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('media_metadata',    'Structured descriptive data attached to a media unit covering provenance and tags.', '[]', '[]', 'baseline-1.0-b4', NULL),
+('render_pipeline',   'A named sequence of rendering stages producing a final output surface from input primitives.', '[]', '[]', 'baseline-1.0-b4', NULL);
+
+-- ── Self-documenting skill entries — B7 (9 skill-kind rows) ─────────
+-- Each row documents a reusable authoring procedure as a `skill` kind.
+
+INSERT OR IGNORE INTO kinds (name, description, allowed_clauses, allowed_refs, shipped_commit, notes) VALUES
+('author_nom_app',           'Skill: guide for authoring a Nom app from brainstorm to production-ready artifact.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('compose_from_dict',        'Skill: compose any artifact using only entries from the dictionary without external references.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('debug_nom_closure',        'Skill: systematically debug Nom closure compilation failures using the error-trace pipeline.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('extend_nom_compiler',      'Skill: add a new nomtu kind to the compiler, grammar registry, and test suite end-to-end.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('ingest_new_ecosystem',     'Skill: ingest a new language ecosystem into nomdict.db via the corpus ingestion pipeline.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('use_ai_loop',              'Skill: run the verify-build-bench-flow authoring loop with AI as the intent-resolution oracle.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('compose_brutalist_webpage','Skill: compose a brutalist-aesthetic web page using pixel_grid and vector_path primitives.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('compose_generative_art',   'Skill: compose a generative art piece via pixel_grid with procedural color and vector_path layers.', '[]', '[]', 'baseline-1.0-b7', NULL),
+('compose_lofi_audio_loop',  'Skill: compose a lofi audio loop via audio_buffer with layered instrument and effect bindings.', '[]', '[]', 'baseline-1.0-b7', NULL);
+
 -- ── Quality names (the 10 founding axes per MEMORY.md) ──────────────
 
 INSERT OR IGNORE INTO quality_names (name, axis, metric_function, cardinality, required_at, source_ref, notes) VALUES

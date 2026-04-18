@@ -415,7 +415,7 @@ mod tests {
     #[test]
     fn file_tree_five_levels_deep_expanded() {
         // a/b/c/d/leaf.nom — all expanded
-        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
         let mut d = FileNode::dir("d", 3);
         d.children.push(leaf);
         d.is_expanded = true;
@@ -440,7 +440,7 @@ mod tests {
     #[test]
     fn file_tree_five_levels_deep_middle_collapsed() {
         // a/b/c/d/leaf.nom — c is collapsed, d and leaf are hidden
-        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
         let mut d = FileNode::dir("d", 3);
         d.children.push(leaf);
         d.is_expanded = true;
@@ -608,7 +608,7 @@ mod tests {
 
     #[test]
     fn file_tree_paint_with_five_level_depth() {
-        let mut leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
+        let leaf = FileNode::file("leaf.nom", 4, FileNodeKind::NomFile);
         let mut d = FileNode::dir("d", 3);
         d.children.push(leaf);
         d.is_expanded = true;

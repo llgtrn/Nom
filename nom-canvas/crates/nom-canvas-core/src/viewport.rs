@@ -1824,7 +1824,7 @@ mod tests {
         let mut vp = Viewport::new(800.0, 600.0);
         vp.zoom_toward(2.0, [400.0, 300.0]);
         // At zoom=2 visible canvas width = 400, so right edge ≈ 200.
-        let (tl, br) = vp.visible_bounds();
+        let (_tl, br) = vp.visible_bounds();
         // Point outside the zoomed visible range must clamp to the right edge.
         let (cx, _cy) = vp.clamp_to_bounds(br[0] + 100.0, 0.0);
         assert!(

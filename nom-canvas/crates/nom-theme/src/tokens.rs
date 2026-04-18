@@ -48,7 +48,7 @@ pub const FROSTED_BG_ALPHA: f32 = 0.85;
 pub const FROSTED_BORDER_ALPHA: f32 = 0.12;
 
 // ---------------------------------------------------------------------------
-// Motion tokens (AFFiNE spring motion)
+// Motion tokens (spring motion)
 // ---------------------------------------------------------------------------
 
 pub const MOTION_SPRING_STIFFNESS: f32 = 400.0;
@@ -131,7 +131,7 @@ pub const SHADOW_XL: ShadowToken = ShadowToken {
 };
 
 // ---------------------------------------------------------------------------
-// Dark theme colors (AFFiNE dark palette) — runtime color functions
+// Dark theme colors (dark palette) — runtime color functions
 // ---------------------------------------------------------------------------
 
 /// Primary background: hsl(220°, 13%, 11%)
@@ -294,7 +294,7 @@ pub struct Theme {
 }
 
 impl Theme {
-    /// Dark theme (AFFiNE-style dark palette).
+    /// Dark theme (dark palette).
     pub fn dark() -> Self {
         Self {
             name: "dark".to_string(),
@@ -1511,8 +1511,8 @@ mod tests {
     // -----------------------------------------------------------------------
 
     #[test]
-    fn palette_affine_token_count_is_73() {
-        assert_eq!(N_TOKENS, 73, "AFFiNE palette must define exactly 73 tokens");
+    fn palette_nom_token_count_is_73() {
+        assert_eq!(N_TOKENS, 73, "nom palette must define exactly 73 tokens");
     }
 
     #[test]
@@ -3646,7 +3646,7 @@ mod tests {
             for (i, c) in color[..3].iter().enumerate() {
                 let scaled = c * 255.0;
                 assert!(
-                    scaled >= 0.0 && scaled <= 255.0,
+                    (0.0..=255.0).contains(&scaled),
                     "{name}[{i}] scaled to {scaled:.1} must be in [0, 255]"
                 );
             }

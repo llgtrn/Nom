@@ -3,7 +3,7 @@ use crate::node::NodeId;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-/// ComfyUI 4-tier cache hierarchy
+/// tiered cache hierarchy
 /// Tier 0: NullCache — no caching
 /// Tier 1: BasicCache — exact key match only
 /// Tier 2: LruCache — LRU eviction at capacity
@@ -231,7 +231,7 @@ impl ExecutionCache for HierarchicalCache {
     }
 }
 
-/// 4-tier cache strategy — ComfyUI execution model pattern.
+/// 4-tier cache strategy — tiered cache hierarchy.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum CacheStrategy {
     NoCache,

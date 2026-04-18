@@ -228,7 +228,7 @@ mod tests {
         assert_eq!(b2.entity.id, "l-clone");
     }
 
-    // ── AFFiNE edgeless latex: inline vs display mode tests ──────────────────
+    // ── canvas edgeless latex: inline vs display mode tests ──────────────────
 
     /// LatexBlock defaults to inline mode (display_mode == false).
     #[test]

@@ -33,7 +33,7 @@ pub fn complete_from_dict(
     };
     let items: Vec<_> = entries
         .into_iter()
-        .filter(|e| kind_filter.map_or(true, |f| e.kind == f))
+        .filter(|e| kind_filter.is_none_or(|f| e.kind == f))
         .take(20)
         .map(|entry| {
             let ck = kind_to_completion_kind(&entry.kind);
@@ -71,7 +71,7 @@ fn complete_from_cached_kinds(
     state
         .cached_grammar_kinds()
         .into_iter()
-        .filter(|k| k.name.starts_with(prefix) && kind_filter.map_or(true, |f| k.name.contains(f)))
+        .filter(|k| k.name.starts_with(prefix) && kind_filter.is_none_or(|f| k.name.contains(f)))
         .take(20)
         .map(|k| CompletionItem {
             label: k.name.clone(),
