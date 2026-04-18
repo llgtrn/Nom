@@ -6,6 +6,93 @@ use std::collections::{HashMap, HashSet};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 
+// ---------------------------------------------------------------------------
+// NodeHandler trait and built-in implementations
+// ---------------------------------------------------------------------------
+
+/// Handler for executing a specific node kind during graph execution.
+pub trait NodeHandler: Send + Sync {
+    fn kind(&self) -> &str;
+    fn execute(&self, inputs: &[String]) -> Result<String, String>;
+}
+
+/// Default pass-through handler for unknown kinds — joins inputs with commas.
+pub struct PassThroughHandler {
+    pub kind_name: String,
+}
+
+impl NodeHandler for PassThroughHandler {
+    fn kind(&self) -> &str {
+        &self.kind_name
+    }
+    fn execute(&self, inputs: &[String]) -> Result<String, String> {
+        Ok(inputs.join(","))
+    }
+}
+
+/// Concatenation handler for demo/test — joins inputs without separator.
+pub struct ConcatHandler;
+
+impl NodeHandler for ConcatHandler {
+    fn kind(&self) -> &str {
+        "concat"
+    }
+    fn execute(&self, inputs: &[String]) -> Result<String, String> {
+        Ok(inputs.concat())
+    }
+}
+
+// ---------------------------------------------------------------------------
+// NodeHandlerRegistry
+// ---------------------------------------------------------------------------
+
+/// Registry mapping node kinds to their handlers.
+pub struct NodeHandlerRegistry {
+    pub handlers: Vec<Box<dyn NodeHandler>>,
+}
+
+impl NodeHandlerRegistry {
+    pub fn new() -> Self {
+        Self {
+            handlers: Vec::new(),
+        }
+    }
+
+    /// Register a handler, consuming and returning `self` for builder chaining.
+    pub fn register(mut self, handler: Box<dyn NodeHandler>) -> Self {
+        self.handlers.push(handler);
+        self
+    }
+
+    /// Find a handler by exact kind name.
+    pub fn find(&self, kind: &str) -> Option<&dyn NodeHandler> {
+        self.handlers
+            .iter()
+            .find(|h| h.kind() == kind)
+            .map(|h| h.as_ref())
+    }
+
+    /// Number of registered handlers.
+    pub fn handler_count(&self) -> usize {
+        self.handlers.len()
+    }
+
+    /// Build a registry pre-loaded with `PassThroughHandler("default")` and `ConcatHandler`.
+    pub fn with_defaults() -> Self {
+        Self::new()
+            .register(Box::new(PassThroughHandler {
+                kind_name: "default".to_string(),
+            }))
+            .register(Box::new(ConcatHandler))
+    }
+}
+
+impl Default for NodeHandlerRegistry {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Result of executing a single node
 #[derive(Clone, Debug)]
 pub struct NodeOutput {
@@ -43,6 +130,8 @@ pub struct ExecutionEngine {
     pub changed_flags: ChangedFlags,
     /// Shared cancel flag. Set via `cancel()`; checked inside the execution loop.
     pub cancel_flag: Arc<AtomicBool>,
+    /// Optional handler registry; when present, `execute()` dispatches to real logic.
+    pub registry: Option<NodeHandlerRegistry>,
 }
 
 impl ExecutionEngine {
@@ -51,7 +140,14 @@ impl ExecutionEngine {
             cache: Box::new(cache),
             changed_flags: ChangedFlags::default(),
             cancel_flag: Arc::new(AtomicBool::new(false)),
+            registry: None,
         }
+    }
+
+    /// Attach a handler registry, enabling real node dispatch in `execute()`.
+    pub fn with_registry(mut self, reg: NodeHandlerRegistry) -> Self {
+        self.registry = Some(reg);
+        self
     }
 
     /// Signal the engine to abort the current execution as soon as possible.
@@ -127,6 +223,32 @@ impl ExecutionEngine {
                 );
                 let cache_key = Self::compute_cache_key(&node.kind, input_hash);
                 let was_cached = self.cache.get(cache_key).is_some();
+                // Collect string outputs from immediate upstream nodes as handler inputs.
+                let handler_inputs: Vec<String> = dag
+                    .edges
+                    .iter()
+                    .filter(|e| &e.dst_node == node_id)
+                    .filter_map(|e| {
+                        results.get(&e.src_node).and_then(|o| {
+                            o.outputs.get("out").map(|b| {
+                                String::from_utf8_lossy(b).into_owned()
+                            })
+                        })
+                    })
+                    .collect();
+                // Dispatch to registered handler when available.
+                let mut node_outputs: HashMap<String, Vec<u8>> = HashMap::new();
+                if let Some(reg) = &self.registry {
+                    let handler_kind = reg
+                        .find(&node.kind)
+                        .map(|_| node.kind.as_str())
+                        .unwrap_or("default");
+                    if let Some(handler) = reg.find(handler_kind) {
+                        if let Ok(result) = handler.execute(&handler_inputs) {
+                            node_outputs.insert("out".to_string(), result.into_bytes());
+                        }
+                    }
+                }
                 if !was_cached {
                     // Store a placeholder so downstream nodes see the new key.
                     self.cache
@@ -136,7 +258,7 @@ impl ExecutionEngine {
                     node_id.clone(),
                     NodeOutput {
                         node_id: node_id.clone(),
-                        outputs: HashMap::new(),
+                        outputs: node_outputs,
                         cache_key,
                         was_cached,
                     },
@@ -404,5 +526,71 @@ mod tests {
             plan.is_empty(),
             "node marked clean with a warm cache must be skipped"
         );
+    }
+
+    // ------------------------------------------------------------------
+    // NodeHandler trait implementations
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn pass_through_handler_execute() {
+        let handler = PassThroughHandler {
+            kind_name: "verb".to_string(),
+        };
+        assert_eq!(handler.kind(), "verb");
+        let result = handler
+            .execute(&["a".to_string(), "b".to_string(), "c".to_string()])
+            .unwrap();
+        assert_eq!(result, "a,b,c");
+    }
+
+    #[test]
+    fn concat_handler_execute() {
+        let handler = ConcatHandler;
+        assert_eq!(handler.kind(), "concat");
+        let result = handler
+            .execute(&["hello".to_string(), " world".to_string()])
+            .unwrap();
+        assert_eq!(result, "hello world");
+    }
+
+    // ------------------------------------------------------------------
+    // NodeHandlerRegistry
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn registry_new_register_handler_count() {
+        let reg = NodeHandlerRegistry::new()
+            .register(Box::new(ConcatHandler))
+            .register(Box::new(PassThroughHandler {
+                kind_name: "custom".to_string(),
+            }));
+        assert_eq!(reg.handler_count(), 2);
+    }
+
+    #[test]
+    fn registry_find_by_kind() {
+        let reg = NodeHandlerRegistry::new().register(Box::new(ConcatHandler));
+        assert!(reg.find("concat").is_some());
+        assert!(reg.find("unknown").is_none());
+    }
+
+    #[test]
+    fn registry_with_defaults_has_two_handlers() {
+        let reg = NodeHandlerRegistry::with_defaults();
+        assert_eq!(reg.handler_count(), 2);
+        assert!(reg.find("default").is_some());
+        assert!(reg.find("concat").is_some());
+    }
+
+    #[test]
+    fn execution_engine_with_registry_does_not_panic() {
+        let reg = NodeHandlerRegistry::with_defaults();
+        let mut engine = ExecutionEngine::new(BasicCache::new()).with_registry(reg);
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("n1", "concat"));
+        let plan = engine.plan_execution(&dag).unwrap();
+        let _results = engine.execute(&dag, &plan);
+        // No panic means the registry dispatch path is exercised successfully.
     }
 }

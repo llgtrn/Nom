@@ -1,0 +1,6 @@
+define run_benchmark that
+  define workload that "corpus_ingest"
+  define platform that "windows_x86_64"
+  define timing_ms that 142
+  workload + " on " + platform + " in " + timing_ms + "ms"
+run_benchmark

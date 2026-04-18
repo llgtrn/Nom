@@ -1,0 +1,5 @@
+define record_flow that
+  define step_count that 5
+  define artifact that "output.wav"
+  "recorded " + step_count + " steps producing " + artifact
+record_flow

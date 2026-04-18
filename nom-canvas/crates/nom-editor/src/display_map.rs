@@ -81,6 +81,107 @@ impl DisplayMap {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Line-based fold/wrap map
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum FoldState {
+    Expanded,
+    Collapsed,
+}
+
+/// A line-range fold region for the line-based display map.
+#[derive(Debug, Clone)]
+pub struct LineFoldRegion {
+    pub start_line: u32,
+    pub end_line: u32,
+    pub state: FoldState,
+    pub summary: String,
+}
+
+impl LineFoldRegion {
+    pub fn new(start_line: u32, end_line: u32, summary: &str) -> Self {
+        Self {
+            start_line,
+            end_line,
+            state: FoldState::Expanded,
+            summary: summary.to_string(),
+        }
+    }
+
+    pub fn toggle(mut self) -> Self {
+        self.state = match self.state {
+            FoldState::Expanded => FoldState::Collapsed,
+            FoldState::Collapsed => FoldState::Expanded,
+        };
+        self
+    }
+
+    pub fn line_count(&self) -> u32 {
+        self.end_line - self.start_line + 1
+    }
+
+    pub fn is_collapsed(&self) -> bool {
+        self.state == FoldState::Collapsed
+    }
+}
+
+/// Line-based display map: tracks fold regions and optional wrap width.
+pub struct LineDisplayMap {
+    pub folds: Vec<LineFoldRegion>,
+    pub wrap_width: Option<u32>,
+}
+
+impl LineDisplayMap {
+    pub fn new() -> Self {
+        Self {
+            folds: Vec::new(),
+            wrap_width: None,
+        }
+    }
+
+    pub fn add_fold(mut self, fold: LineFoldRegion) -> Self {
+        self.folds.push(fold);
+        self
+    }
+
+    pub fn toggle_fold(mut self, start_line: u32) -> Self {
+        for fold in &mut self.folds {
+            if fold.start_line == start_line {
+                fold.state = match fold.state {
+                    FoldState::Expanded => FoldState::Collapsed,
+                    FoldState::Collapsed => FoldState::Expanded,
+                };
+                break;
+            }
+        }
+        self
+    }
+
+    pub fn collapsed_regions(&self) -> Vec<&LineFoldRegion> {
+        self.folds.iter().filter(|f| f.is_collapsed()).collect()
+    }
+
+    /// Total visible lines = total_lines minus hidden lines from collapsed folds.
+    /// Each collapsed fold hides (line_count - 1) lines (the first line remains visible as header).
+    pub fn visible_line_count(&self, total_lines: u32) -> u32 {
+        let hidden: u32 = self
+            .folds
+            .iter()
+            .filter(|f| f.is_collapsed())
+            .map(|f| f.line_count() - 1)
+            .sum();
+        total_lines.saturating_sub(hidden)
+    }
+}
+
+impl Default for LineDisplayMap {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -194,5 +295,47 @@ mod tests {
         let (row, _col) = dm.buffer_to_display(&buf, buf.len());
         let newline_count = text.chars().filter(|&c| c == '\n').count();
         assert_eq!(row, newline_count);
+    }
+
+    // --- LineFoldRegion + LineDisplayMap tests ---
+
+    #[test]
+    fn fold_region_toggle() {
+        let region = LineFoldRegion::new(0, 5, "...");
+        assert_eq!(region.state, FoldState::Expanded);
+        let collapsed = region.toggle();
+        assert_eq!(collapsed.state, FoldState::Collapsed);
+        assert!(collapsed.is_collapsed());
+        let expanded = collapsed.toggle();
+        assert_eq!(expanded.state, FoldState::Expanded);
+        assert!(!expanded.is_collapsed());
+    }
+
+    #[test]
+    fn fold_region_line_count() {
+        let region = LineFoldRegion::new(2, 7, "...");
+        assert_eq!(region.line_count(), 6); // 7 - 2 + 1
+    }
+
+    #[test]
+    fn display_map_add_fold() {
+        let map = LineDisplayMap::new()
+            .add_fold(LineFoldRegion::new(0, 3, "fold A"))
+            .add_fold(LineFoldRegion::new(5, 8, "fold B"));
+        assert_eq!(map.folds.len(), 2);
+    }
+
+    #[test]
+    fn display_map_visible_line_count() {
+        // 20 total lines, one collapsed fold covering lines 2..6 (5 lines → hides 4)
+        let map = LineDisplayMap::new().add_fold({
+            let mut r = LineFoldRegion::new(2, 6, "...");
+            r.state = FoldState::Collapsed;
+            r
+        });
+        assert_eq!(map.visible_line_count(20), 16); // 20 - 4
+        // No collapsed folds — all lines visible
+        let map2 = LineDisplayMap::new().add_fold(LineFoldRegion::new(0, 5, "..."));
+        assert_eq!(map2.visible_line_count(20), 20);
     }
 }

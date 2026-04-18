@@ -6,6 +6,7 @@ pub mod code_exec;
 pub mod data;
 pub mod data_extract;
 pub mod data_frame;
+pub mod data_loader;
 pub mod data_query;
 pub mod document;
 pub mod embed_gen;

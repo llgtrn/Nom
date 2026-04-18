@@ -1,6 +1,8 @@
 //! WebGPU renderer variant — compiled only when wasm feature is enabled.
 //! Provides the same surface as the wgpu 0.19 renderer but targets WebGPU API.
 
+use crate::frosted_pass::{FrostedPassConfig, FrostedPassState, FrostedRenderPass};
+
 /// Configuration for a WebGPU rendering context.
 #[derive(Debug)]
 pub struct WebGpuConfig {
@@ -57,6 +59,8 @@ pub struct WebGpuRenderer {
     pub initialized: bool,
     /// Monotonically increasing frame counter, incremented by `begin_frame`.
     pub frame_count: u64,
+    /// Optional frosted-glass render pass; ticked once per frame when `Active`.
+    pub frosted_pass: Option<FrostedRenderPass>,
 }
 
 impl WebGpuRenderer {
@@ -66,7 +70,16 @@ impl WebGpuRenderer {
             config,
             initialized: false,
             frame_count: 0,
+            frosted_pass: None,
         }
+    }
+
+    /// Attach a frosted-glass render pass. The pass starts in `Disabled` state;
+    /// call [`FrostedRenderPass::enable`] and [`FrostedRenderPass::activate`] to
+    /// progress it before the first frame.
+    pub fn enable_frosted_pass(mut self, config: FrostedPassConfig) -> Self {
+        self.frosted_pass = Some(FrostedRenderPass::new(config));
+        self
     }
 
     /// Perform one-time initialisation. Sets `initialized = true`.
@@ -75,9 +88,17 @@ impl WebGpuRenderer {
         Ok(())
     }
 
-    /// Mark the beginning of a new frame; increments `frame_count`.
+    /// Mark the beginning of a new frame; increments `frame_count` and ticks the
+    /// frosted-glass pass when it is in the `Active` state.
     pub fn begin_frame(&mut self) {
         self.frame_count += 1;
+        if let Some(pass) = self.frosted_pass.take() {
+            if pass.state == FrostedPassState::Active {
+                self.frosted_pass = Some(pass.tick());
+            } else {
+                self.frosted_pass = Some(pass);
+            }
+        }
     }
 
     /// Mark the end of the current frame. No-op stub.
@@ -148,5 +169,57 @@ mod tests {
         assert_eq!(r.frame_count, 1);
         r.begin_frame();
         assert_eq!(r.frame_count, 2);
+    }
+
+    #[test]
+    fn renderer_frosted_pass_disabled_by_default() {
+        let cfg = WebGpuConfig::new("canvas", 800, 600);
+        let r = WebGpuRenderer::new(cfg);
+        assert!(r.frosted_pass.is_none(), "frosted_pass must be None by default");
+    }
+
+    #[test]
+    fn renderer_enable_frosted_pass() {
+        let cfg = WebGpuConfig::new("canvas", 800, 600);
+        let r = WebGpuRenderer::new(cfg)
+            .enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
+        assert!(r.frosted_pass.is_some(), "frosted_pass must be Some after enable_frosted_pass");
+        let pass = r.frosted_pass.as_ref().unwrap();
+        assert_eq!(pass.state, FrostedPassState::Disabled, "pass starts Disabled until activated");
+        assert_eq!(pass.frame_count, 0);
+    }
+
+    #[test]
+    fn renderer_frosted_pass_ticks_on_frame() {
+        use crate::frosted_pass::FrostedPassState;
+        let cfg = WebGpuConfig::new("canvas", 800, 600);
+        let pass = FrostedRenderPass::new(FrostedPassConfig::new(8.0, 0.75))
+            .enable()
+            .activate();
+        let mut r = WebGpuRenderer::new(cfg);
+        r.frosted_pass = Some(pass);
+
+        r.begin_frame();
+        r.begin_frame();
+        r.begin_frame();
+
+        let pass = r.frosted_pass.as_ref().unwrap();
+        assert_eq!(pass.frame_count, 3, "frosted pass must tick once per begin_frame while Active");
+        assert_eq!(r.frame_count, 3, "renderer frame_count must also be 3");
+    }
+
+    #[test]
+    fn renderer_frosted_pass_inactive_no_tick() {
+        let cfg = WebGpuConfig::new("canvas", 800, 600);
+        let r = WebGpuRenderer::new(cfg)
+            .enable_frosted_pass(FrostedPassConfig::new(8.0, 0.75));
+        // Pass is Disabled (not yet activated); ticking the renderer must not increment pass frame_count.
+        let mut r = r;
+        r.begin_frame();
+        r.begin_frame();
+
+        let pass = r.frosted_pass.as_ref().unwrap();
+        assert_eq!(pass.frame_count, 0, "Disabled pass must not accumulate frame_count");
+        assert_eq!(r.frame_count, 2, "renderer frame_count must advance regardless");
     }
 }

@@ -20,8 +20,12 @@ pub use buffer::{Buffer, BufferId, Patch};
 pub use clipboard::Clipboard;
 pub use completion::CompletionMenu;
 pub use cursor::{Anchor, Bias, CursorSet, Selection};
+pub use display_map::{FoldState, LineDisplayMap, LineFoldRegion};
 pub use find_replace::FindState;
-pub use highlight::{HighlightSpan, Highlighter, SpanColor, TokenRole};
+pub use highlight::{
+    highlight_nom_source, HighlightSpan, Highlighter, SpanColor, SyntaxSpan, TokenClass,
+    TokenRole,
+};
 pub use hints::{HintKind, InlayHint, InlayHintProvider};
 pub use input::{ActionRegistry, ImeState, KeyAction, KeyBinding, KeyCode};
 pub use lsp_bridge::{

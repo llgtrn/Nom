@@ -4,12 +4,14 @@ pub mod serve;
 pub mod app;
 pub mod author;
 pub mod bench;
+pub mod convert;
 pub mod corpus;
 pub mod demo;
 pub mod flow;
 pub mod media;
 pub mod ux;
 
+pub use convert::{ConvertDirection, ConvertOptions, ConvertResult, convert_source};
 pub use demo::{DemoKind, DemoResult, DemoRunner};
 
 /// Commands understood by the nom-canvas CLI.

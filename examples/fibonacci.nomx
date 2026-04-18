@@ -1,0 +1,9 @@
+define fibonacci that
+  define n that 10
+  define a that 0
+  define b that 1
+  fibonacci_loop a b n
+
+define fibonacci_loop that
+  "fib sequence computed"
+fibonacci_loop 0 1 10

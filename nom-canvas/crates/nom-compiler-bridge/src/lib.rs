@@ -7,8 +7,8 @@ pub mod adapters;
 pub mod background_tier;
 pub mod lsp_server;
 pub use lsp_server::{
-    AuthoringEvent, AuthoringProtocol, LspRequest, LspResponse, LspTransport,
-    dispatch_lsp_request,
+    AuthoringEvent, AuthoringProtocol, LspLoopState, LspRequest, LspResponse, LspServerLoop,
+    LspTransport, dispatch_lsp_request,
 };
 pub mod benchmarks;
 #[cfg(feature = "compiler")]

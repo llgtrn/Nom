@@ -38,6 +38,9 @@ pub use stages::{
     parse_define_that, stage1_tokenize,
 };
 
+pub mod ir;
+pub use ir::{IrFunction, IrInstr, IrModule, IrType, IrValue};
+
 pub mod flow_edge;
 pub use flow_edge::{
     FlowEdgeFinding, check_nom_file as check_flow_edges, check_nomtu_file as check_nomtu_flow_edges,
@@ -50,6 +53,9 @@ pub mod dream;
 pub use dream::{
     DreamScore, MeceCategory, MeceValidator, MeceViolation, ViolationKind,
 };
+
+pub mod bootstrap;
+pub use bootstrap::{BootstrapProof, BootstrapStage, StageBuild};
 
 /// Closed kind set per doc 08 §8.1.
 ///

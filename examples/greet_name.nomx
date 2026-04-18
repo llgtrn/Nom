@@ -1,0 +1,4 @@
+define greet that
+  define name that "world"
+  "Hello, " + name
+greet

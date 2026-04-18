@@ -14,7 +14,9 @@ pub use cache::{
     LruCache, NodeCache, NullCache, RamPressureCache,
 };
 pub use dag::{Dag, Edge};
-pub use execution::ExecutionEngine;
+pub use execution::{
+    ConcatHandler, ExecutionEngine, NodeHandler, NodeHandlerRegistry, PassThroughHandler,
+};
 pub use graph_mode::{GraphLayout, GraphModeState, GraphViewMode};
 pub use graph_rag::{cosine_sim, node_vec, GraphRagRetriever, QueryVec, RetrievedNode};
 pub use node::{ExecNode, IsChanged, NodeId, NodeState, Port, PortDirection};

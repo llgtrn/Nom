@@ -1,0 +1,6 @@
+define compose_image that
+  define width that 1920
+  define height that 1080
+  define layers that "background, foreground"
+  "image " + width + "x" + height + " with " + layers
+compose_image

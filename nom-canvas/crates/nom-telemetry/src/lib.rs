@@ -7453,3 +7453,138 @@ mod tests {
         }
     }
 }
+
+// ---------------------------------------------------------------------------
+// TraceSpan
+// ---------------------------------------------------------------------------
+
+/// A single span within a distributed trace.
+#[derive(Debug, Clone)]
+pub struct TraceSpan {
+    pub id: String,
+    pub parent_id: Option<String>,
+    pub name: String,
+    pub start_ms: u64,
+    pub end_ms: Option<u64>,
+    pub attributes: Vec<(String, String)>,
+}
+
+impl TraceSpan {
+    pub fn new(id: &str, name: &str, start_ms: u64) -> Self {
+        Self {
+            id: id.to_string(),
+            parent_id: None,
+            name: name.to_string(),
+            start_ms,
+            end_ms: None,
+            attributes: Vec::new(),
+        }
+    }
+
+    pub fn finish(mut self, end_ms: u64) -> Self {
+        self.end_ms = Some(end_ms);
+        self
+    }
+
+    pub fn with_attribute(mut self, key: &str, value: &str) -> Self {
+        self.attributes.push((key.to_string(), value.to_string()));
+        self
+    }
+
+    pub fn with_parent(mut self, parent_id: &str) -> Self {
+        self.parent_id = Some(parent_id.to_string());
+        self
+    }
+
+    pub fn duration_ms(&self) -> Option<u64> {
+        self.end_ms.map(|e| e - self.start_ms)
+    }
+
+    pub fn is_finished(&self) -> bool {
+        self.end_ms.is_some()
+    }
+}
+
+// ---------------------------------------------------------------------------
+// TraceCollector
+// ---------------------------------------------------------------------------
+
+/// Accumulates trace spans for later inspection.
+pub struct TraceCollector {
+    pub spans: Vec<TraceSpan>,
+}
+
+impl TraceCollector {
+    pub fn new() -> Self {
+        Self { spans: Vec::new() }
+    }
+
+    pub fn record(mut self, span: TraceSpan) -> Self {
+        self.spans.push(span);
+        self
+    }
+
+    pub fn finished_spans(&self) -> Vec<&TraceSpan> {
+        self.spans.iter().filter(|s| s.is_finished()).collect()
+    }
+
+    pub fn root_spans(&self) -> Vec<&TraceSpan> {
+        self.spans.iter().filter(|s| s.parent_id.is_none()).collect()
+    }
+
+    pub fn span_count(&self) -> usize {
+        self.spans.len()
+    }
+}
+
+impl Default for TraceCollector {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod trace_tests {
+    use super::*;
+
+    #[test]
+    fn new_span_fields() {
+        let span = TraceSpan::new("s1", "compile", 100);
+        assert_eq!(span.id, "s1");
+        assert_eq!(span.name, "compile");
+        assert_eq!(span.start_ms, 100);
+        assert!(span.parent_id.is_none());
+        assert!(span.end_ms.is_none());
+        assert!(!span.is_finished());
+    }
+
+    #[test]
+    fn finish_and_duration_ms() {
+        let span = TraceSpan::new("s2", "render", 200).finish(350);
+        assert!(span.is_finished());
+        assert_eq!(span.duration_ms(), Some(150));
+    }
+
+    #[test]
+    fn with_attribute_stores_key_value() {
+        let span = TraceSpan::new("s3", "query", 0)
+            .with_attribute("top_k", "10")
+            .with_attribute("model", "fast");
+        assert_eq!(span.attributes.len(), 2);
+        assert_eq!(span.attributes[0], ("top_k".to_string(), "10".to_string()));
+        assert_eq!(span.attributes[1], ("model".to_string(), "fast".to_string()));
+    }
+
+    #[test]
+    fn collector_record_and_finished_spans() {
+        let c = TraceCollector::new()
+            .record(TraceSpan::new("a", "open", 0).finish(10))
+            .record(TraceSpan::new("b", "parse", 10))
+            .record(TraceSpan::new("c", "emit", 20).with_parent("a").finish(30));
+        assert_eq!(c.span_count(), 3);
+        let finished = c.finished_spans();
+        assert_eq!(finished.len(), 2);
+        let roots = c.root_spans();
+        assert_eq!(roots.len(), 2); // "a" and "b" have no parent
+    }
+}

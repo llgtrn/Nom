@@ -33,6 +33,7 @@ pub use backends::{
     data::DataBackend,
     data_extract::{DataExtractSpec, ExtractMode},
     data_frame::{DataFrame, DataFrameSpec},
+    data_loader::{DataBatch, DataLoader, DataLoaderConfig, DataSourceKind, LoadStrategy},
     data_query::DataQuerySpec,
     document::DocumentBackend,
     embed_gen::EmbedGenBackend,

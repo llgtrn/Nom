@@ -1,0 +1,6 @@
+define resolve_intent that
+  define query that "find audio clips"
+  define kind that "audio_buffer"
+  define confidence that 0.92
+  "resolved " + query + " as " + kind
+resolve_intent

@@ -1,0 +1,5 @@
+define route_skill that
+  define intent that "compose lofi audio"
+  define skill that "compose_lofi_audio_loop"
+  "routing " + intent + " to " + skill
+route_skill

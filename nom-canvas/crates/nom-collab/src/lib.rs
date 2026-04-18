@@ -12792,3 +12792,123 @@ mod tests {
         );
     }
 }
+
+// ---------------------------------------------------------------------------
+// VectorClock
+// ---------------------------------------------------------------------------
+
+/// A vector clock for tracking causal ordering among collaborative peers.
+#[derive(Debug, Clone, PartialEq)]
+pub struct VectorClock {
+    pub entries: std::collections::HashMap<String, u64>,
+}
+
+impl VectorClock {
+    pub fn new() -> Self {
+        Self {
+            entries: std::collections::HashMap::new(),
+        }
+    }
+
+    /// Increment the counter for `node_id` by one.
+    pub fn increment(mut self, node_id: &str) -> Self {
+        let counter = self.entries.entry(node_id.to_string()).or_insert(0);
+        *counter += 1;
+        self
+    }
+
+    /// Merge with `other` by taking the element-wise maximum.
+    pub fn merge(mut self, other: &VectorClock) -> Self {
+        for (node, &val) in &other.entries {
+            let entry = self.entries.entry(node.clone()).or_insert(0);
+            if val > *entry {
+                *entry = val;
+            }
+        }
+        self
+    }
+
+    /// Return the counter for `node_id`, or 0 if absent.
+    pub fn get(&self, node_id: &str) -> u64 {
+        self.entries.get(node_id).copied().unwrap_or(0)
+    }
+
+    /// Returns `true` when all entries in `self` are ≤ `other`'s, and at
+    /// least one entry in `self` is strictly less than in `other`.
+    pub fn happened_before(&self, other: &VectorClock) -> bool {
+        let mut strictly_less = false;
+        for (node, &self_val) in &self.entries {
+            let other_val = other.get(node);
+            if self_val > other_val {
+                return false;
+            }
+            if self_val < other_val {
+                strictly_less = true;
+            }
+        }
+        // Also check if `other` has entries absent from `self` (those are implicitly 0 in self).
+        if !strictly_less {
+            for (node, &other_val) in &other.entries {
+                if other_val > 0 && !self.entries.contains_key(node) {
+                    strictly_less = true;
+                    break;
+                }
+            }
+        }
+        strictly_less
+    }
+}
+
+impl Default for VectorClock {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+#[cfg(test)]
+mod vector_clock_tests {
+    use super::*;
+
+    #[test]
+    fn new_clock_is_empty() {
+        let vc = VectorClock::new();
+        assert_eq!(vc.entries.len(), 0);
+        assert_eq!(vc.get("node-a"), 0);
+    }
+
+    #[test]
+    fn increment_increases_counter() {
+        let vc = VectorClock::new()
+            .increment("node-a")
+            .increment("node-a")
+            .increment("node-b");
+        assert_eq!(vc.get("node-a"), 2);
+        assert_eq!(vc.get("node-b"), 1);
+        assert_eq!(vc.get("node-c"), 0);
+    }
+
+    #[test]
+    fn merge_takes_element_wise_max() {
+        let a = VectorClock::new().increment("x").increment("x").increment("y");
+        // a: x=2, y=1
+        let b = VectorClock::new().increment("x").increment("z");
+        // b: x=1, z=1
+        let merged = a.merge(&b);
+        assert_eq!(merged.get("x"), 2);
+        assert_eq!(merged.get("y"), 1);
+        assert_eq!(merged.get("z"), 1);
+    }
+
+    #[test]
+    fn happened_before_ordering() {
+        let early = VectorClock::new().increment("n1");
+        // early: n1=1
+        let later = VectorClock::new().increment("n1").increment("n1");
+        // later: n1=2
+        assert!(early.happened_before(&later));
+        assert!(!later.happened_before(&early));
+        // Equal clocks: neither happened-before the other
+        let same = VectorClock::new().increment("n1");
+        assert!(!early.happened_before(&same));
+    }
+}

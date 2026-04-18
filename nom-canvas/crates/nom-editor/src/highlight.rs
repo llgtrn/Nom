@@ -97,6 +97,116 @@ impl Highlighter {
     }
 }
 
+// ---------------------------------------------------------------------------
+// Simple character-level scanner producing TokenClass spans
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum TokenClass {
+    Keyword,
+    Identifier,
+    Literal,  // quoted strings
+    Operator, // + - * / =
+    Comment,
+    Whitespace,
+    Unknown,
+}
+
+/// Highlight a Nom source string into byte-offset spans.
+///
+/// Rules (in scan order):
+/// - `"define"` or `"that"` → Keyword
+/// - word chars (alphanumeric + `_`) → Identifier (downgraded to Keyword if word is "define"/"that")
+/// - double-quoted strings → Literal
+/// - `+ - * / =` → Operator
+/// - ASCII whitespace → Whitespace
+/// - anything else → Unknown
+pub fn highlight_nom_source(source: &str) -> Vec<SyntaxSpan> {
+    let bytes = source.as_bytes();
+    let len = bytes.len();
+    let mut spans: Vec<SyntaxSpan> = Vec::new();
+    let mut i = 0;
+
+    while i < len {
+        let b = bytes[i];
+
+        // Quoted string literal
+        if b == b'"' {
+            let start = i;
+            i += 1;
+            while i < len && bytes[i] != b'"' {
+                i += 1;
+            }
+            if i < len {
+                i += 1; // consume closing quote
+            }
+            spans.push(SyntaxSpan { start, end: i, class: TokenClass::Literal });
+            continue;
+        }
+
+        // Word (identifier or keyword)
+        if b.is_ascii_alphanumeric() || b == b'_' {
+            let start = i;
+            while i < len && (bytes[i].is_ascii_alphanumeric() || bytes[i] == b'_') {
+                i += 1;
+            }
+            let word = &source[start..i];
+            let class = if word == "define" || word == "that" {
+                TokenClass::Keyword
+            } else {
+                TokenClass::Identifier
+            };
+            spans.push(SyntaxSpan { start, end: i, class });
+            continue;
+        }
+
+        // Whitespace
+        if b.is_ascii_whitespace() {
+            let start = i;
+            while i < len && bytes[i].is_ascii_whitespace() {
+                i += 1;
+            }
+            spans.push(SyntaxSpan { start, end: i, class: TokenClass::Whitespace });
+            continue;
+        }
+
+        // Operator
+        if matches!(b, b'+' | b'-' | b'*' | b'/' | b'=') {
+            spans.push(SyntaxSpan { start: i, end: i + 1, class: TokenClass::Operator });
+            i += 1;
+            continue;
+        }
+
+        // Unknown single byte
+        spans.push(SyntaxSpan { start: i, end: i + 1, class: TokenClass::Unknown });
+        i += 1;
+    }
+
+    spans
+}
+
+/// A highlight span produced by the character-level scanner.
+#[derive(Debug, Clone)]
+pub struct SyntaxSpan {
+    pub start: usize,
+    pub end: usize,
+    pub class: TokenClass,
+}
+
+impl SyntaxSpan {
+    pub fn new(start: usize, end: usize, class: TokenClass) -> Self {
+        Self { start, end, class }
+    }
+
+    pub fn len(&self) -> usize {
+        self.end - self.start
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.start == self.end
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -197,5 +307,49 @@ mod tests {
             literal_h, keyword_h,
             "string/literal color must differ from keyword color"
         );
+    }
+
+    // --- SyntaxSpan + highlight_nom_source tests ---
+
+    #[test]
+    fn highlight_span_len() {
+        let span = SyntaxSpan::new(3, 9, TokenClass::Identifier);
+        assert_eq!(span.len(), 6);
+        assert!(!span.is_empty());
+        let empty = SyntaxSpan::new(4, 4, TokenClass::Whitespace);
+        assert!(empty.is_empty());
+    }
+
+    #[test]
+    fn highlight_nom_source_keywords() {
+        let spans = highlight_nom_source("define greet that");
+        let kw_spans: Vec<&SyntaxSpan> = spans
+            .iter()
+            .filter(|s| s.class == TokenClass::Keyword)
+            .collect();
+        assert_eq!(kw_spans.len(), 2, "expected keyword spans for 'define' and 'that'");
+        assert_eq!(&"define greet that"[kw_spans[0].start..kw_spans[0].end], "define");
+        assert_eq!(&"define greet that"[kw_spans[1].start..kw_spans[1].end], "that");
+    }
+
+    #[test]
+    fn highlight_nom_source_identifier() {
+        let spans = highlight_nom_source("my_var");
+        assert_eq!(spans.len(), 1);
+        assert_eq!(spans[0].class, TokenClass::Identifier);
+        assert_eq!(spans[0].start, 0);
+        assert_eq!(spans[0].end, 6);
+    }
+
+    #[test]
+    fn highlight_nom_source_literal() {
+        let source = r#""hello""#;
+        let spans = highlight_nom_source(source);
+        let lit: Vec<&SyntaxSpan> = spans
+            .iter()
+            .filter(|s| s.class == TokenClass::Literal)
+            .collect();
+        assert_eq!(lit.len(), 1, "expected one literal span");
+        assert_eq!(&source[lit[0].start..lit[0].end], r#""hello""#);
     }
 }

@@ -1,0 +1,6 @@
+define dream_app that
+  define score that 97
+  define name that "NomCanvas"
+  define status that "production_ready"
+  name + " score=" + score + " status=" + status
+dream_app

@@ -139,6 +139,61 @@ mod tests {
         assert_eq!(result, Some(payload.to_string()));
     }
 
+    // --- LspServerLoop tests ---
+
+    #[test]
+    fn lsp_loop_new() {
+        let lp = LspServerLoop::new();
+        assert_eq!(lp.state, LspLoopState::Stopped);
+        assert_eq!(lp.messages_processed, 0);
+        assert!(lp.errors.is_empty());
+    }
+
+    #[test]
+    fn lsp_loop_start_transitions_to_running() {
+        let lp = LspServerLoop::new().start();
+        assert_eq!(lp.state, LspLoopState::Running);
+        assert!(lp.is_running());
+    }
+
+    #[test]
+    fn lsp_loop_stop() {
+        let lp = LspServerLoop::new().start().stop();
+        assert_eq!(lp.state, LspLoopState::Stopping);
+        assert!(!lp.is_running());
+    }
+
+    #[test]
+    fn lsp_loop_process_bytes_returns_message() {
+        let payload = r#"{"jsonrpc":"2.0","id":7}"#;
+        let framed = LspTransport::frame(payload);
+        let lp = LspServerLoop::new().start();
+        let (lp, msg) = lp.process_bytes(&framed);
+        assert_eq!(msg.as_deref(), Some(payload));
+        assert_eq!(lp.messages_processed, 1);
+    }
+
+    #[test]
+    fn lsp_loop_record_error() {
+        let lp = LspServerLoop::new().record_error("something failed");
+        assert_eq!(lp.state, LspLoopState::Error);
+        assert_eq!(lp.errors.len(), 1);
+        assert_eq!(lp.errors[0], "something failed");
+    }
+
+    #[test]
+    fn lsp_loop_reset_clears_state() {
+        let lp = LspServerLoop::new()
+            .start()
+            .record_error("oops");
+        // before reset: Error state, 1 error
+        assert_eq!(lp.state, LspLoopState::Error);
+        let lp = lp.reset();
+        assert_eq!(lp.state, LspLoopState::Stopped);
+        assert!(lp.errors.is_empty());
+        assert_eq!(lp.messages_processed, 0);
+    }
+
     // --- AuthoringProtocol tests ---
 
     #[test]
@@ -316,6 +371,88 @@ impl AuthoringProtocol {
 }
 
 impl Default for AuthoringProtocol {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+// ---- LSP server loop ----
+
+/// Lifecycle state of the LSP server async read/dispatch loop.
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum LspLoopState {
+    Stopped,
+    Starting,
+    Running,
+    Stopping,
+    Error,
+}
+
+/// Manages the read/dispatch lifecycle for the LSP server loop.
+/// Real async I/O is behind an `async_lsp` feature gate; this provides the sync scaffold.
+#[derive(Debug)]
+pub struct LspServerLoop {
+    pub state: LspLoopState,
+    pub messages_processed: u64,
+    pub errors: Vec<String>,
+    pub transport: LspTransport,
+}
+
+impl LspServerLoop {
+    /// Create a new loop in the `Stopped` state with zero messages processed.
+    pub fn new() -> Self {
+        Self {
+            state: LspLoopState::Stopped,
+            messages_processed: 0,
+            errors: Vec::new(),
+            transport: LspTransport::new(),
+        }
+    }
+
+    /// Transition from `Stopped` or `Starting` to `Running`.
+    pub fn start(mut self) -> Self {
+        self.state = LspLoopState::Running;
+        self
+    }
+
+    /// Transition to `Stopping` from any state.
+    pub fn stop(mut self) -> Self {
+        self.state = LspLoopState::Stopping;
+        self
+    }
+
+    /// Feed bytes into the transport; if a complete message is available, increment
+    /// `messages_processed` and return it.
+    pub fn process_bytes(mut self, data: &[u8]) -> (Self, Option<String>) {
+        let msg = self.transport.try_read_message(data);
+        if msg.is_some() {
+            self.messages_processed += 1;
+        }
+        (self, msg)
+    }
+
+    /// Record an error string and set state to `Error`.
+    pub fn record_error(mut self, err: &str) -> Self {
+        self.errors.push(err.to_string());
+        self.state = LspLoopState::Error;
+        self
+    }
+
+    /// Return `true` when the loop is in the `Running` state.
+    pub fn is_running(&self) -> bool {
+        self.state == LspLoopState::Running
+    }
+
+    /// Reset to `Stopped`, clear all errors, and zero the message counter.
+    pub fn reset(mut self) -> Self {
+        self.state = LspLoopState::Stopped;
+        self.errors.clear();
+        self.messages_processed = 0;
+        self
+    }
+}
+
+impl Default for LspServerLoop {
     fn default() -> Self {
         Self::new()
     }
