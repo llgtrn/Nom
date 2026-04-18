@@ -2,6 +2,7 @@
 pub mod block_model;
 pub mod compose;
 pub mod connector;
+pub mod dataview;
 pub mod dict_reader;
 pub mod drawing;
 pub mod embed;

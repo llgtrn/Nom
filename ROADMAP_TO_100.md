@@ -398,6 +398,46 @@
 - [ ] Weekly `task.md` compaction ritual
 - [ ] Weekly state-report trim
 
+### D9. Hybrid Composition System (Wave AH — spec 2026-04-18)
+**Spec:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
+**Architecture:** Three-tier resolver — DB-driven (grammar.kinds Complete) → Provider-driven (registered MediaVendor) → AI-leading (AiGlueOrchestrator generates .nomx glue). Intent classification at front. Grammar promotion lifecycle at back (Transient → Partial → Complete).
+
+**ComposeContext + UnifiedDispatcher:**
+- [ ] `ComposeContext` / `ComposeResult` / `ComposeTier` envelope in `nom-compose/src/context.rs`
+- [ ] `DictWriter::insert_partial_entry()` + `promote_to_complete()` in `nom-compiler-bridge/src/dict_writer.rs`
+- [ ] `GlueCache` in `SharedState` + 60s promotion background ticker
+- [ ] `UnifiedDispatcher` bridging `ProviderRouter` ↔ `BackendRegistry` with credential injection
+- [ ] `ProviderRouter::route_with_context()` + `BackendRegistry::dispatch_with_context()`
+- [ ] `MediaVendor::compose(input, credential, ctx)` signature update
+
+**IntentResolver — kind detection before routing:**
+- [ ] Lexical scan: `SELECT word FROM grammar.kinds` → exact token match → confidence 1.0
+- [ ] BM25 + cosine over `grammar.kinds.description` → semantic ranking when no exact match
+- [ ] `classify_with_react()` fires when top-2 candidates within 0.15 delta
+- [ ] Multi-kind detection: return all candidates above 0.65 threshold
+- [ ] Low-confidence (below 0.6): show disambiguation card, user picks from DB-driven kind list
+- [ ] Training signal: user correction feeds back into BM25 index weights
+
+**AiGlueOrchestrator + HybridResolver:**
+- [ ] `AiGlueOrchestrator::synthesize()`: GraphRagRetriever + clause_shapes query + ReActLlmFn → .nomx GlueBlueprint
+- [ ] `ReActLlmFn` trait + 4 adapters: Stub / NomCli (offline) / Mcp / RealLlm (optional credential)
+- [ ] `HybridResolver`: Tier1 (DB Complete) → Tier2 (vendor) → Tier3 (AI glue)
+- [ ] `ComposeOrchestrator`: multi-kind parallel pipeline via existing `TaskQueue`
+- [ ] `glue_promotion_config` DB table: PROMOTE_AFTER count + confidence threshold as data rows
+- [ ] 14 initial `grammar.kinds` seed rows: video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard
+
+**Grammar promotion lifecycle:**
+- [ ] Transient → Partial (usage >= 3 AND confidence >= 0.7): `DictWriter::insert_partial_entry()`; `NomtuRef` assigned immediately
+- [ ] Partial → Complete (used 10+ times AND compiler validation passes): `DictWriter::promote_to_complete()`
+- [ ] On Complete: entity indistinguishable from human-authored in palette and canvas
+
+**UI surfaces:**
+- [ ] Intent Preview card (right dock): kind confidence bars + Compose/Change/All-3 actions
+- [ ] AI Review card (right dock): Accept/Edit/Skip with inline .nomx editor
+- [ ] Doc mode: `⚡` gutter badge for Partial AI-generated entities; removed on Complete
+- [ ] Graph mode: amber frosted-glass tint + `⚡` badge; removed on Complete
+- [ ] Status bar: `⚡ N AI entities pending review` counter
+
 ### D8. Minimalist UI Design (Wave AF — design confirmed 2026-04-18)
 
 **Aesthetic mandate:** Simple but strong. Every surface earns its space. Theme = Zed-dark by default, swappable.

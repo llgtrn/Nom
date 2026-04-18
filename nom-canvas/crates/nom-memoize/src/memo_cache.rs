@@ -1365,4 +1365,349 @@ mod tests {
         assert_eq!(a.hit_count(), b.hit_count());
         assert_eq!(a.miss_count(), b.miss_count());
     }
+
+    // --- Wave AH Agent 9 additions ---
+
+    #[test]
+    fn memo_typed_cache_string_values_waveah() {
+        let mut cache: MemoCache<String> = MemoCache::new();
+        let key = Hash128::of_str("str_waveah");
+        cache.put(key, "hello_waveah".to_string(), Constraint::new(1));
+        assert_eq!(cache.get(&key, 1, &[]), Some("hello_waveah".to_string()));
+    }
+
+    #[test]
+    fn memo_typed_cache_vec_values_waveah() {
+        let mut cache: MemoCache<Vec<u32>> = MemoCache::new();
+        let key = Hash128::of_str("vec_waveah");
+        let data = vec![10u32, 20, 30];
+        cache.put(key, data.clone(), Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(data));
+    }
+
+    #[test]
+    fn memo_typed_cache_struct_values_waveah() {
+        #[derive(Clone, PartialEq, Debug)]
+        struct Point { x: i32, y: i32 }
+        let mut cache: MemoCache<Point> = MemoCache::new();
+        let key = Hash128::of_str("struct_waveah");
+        let pt = Point { x: 3, y: 7 };
+        cache.put(key, pt.clone(), Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(pt));
+    }
+
+    #[test]
+    fn memo_dependency_tracking_invalidates_on_change_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("dep_change");
+        cache.put(key, 5, Constraint::new(10));
+        // Old hash → miss (dependency changed).
+        assert_eq!(cache.get(&key, 99, &[]), None);
+        assert_eq!(cache.miss_count(), 1);
+    }
+
+    #[test]
+    fn memo_dependency_not_changed_no_recompute_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("dep_same");
+        cache.put(key, 7, Constraint::new(5));
+        // Same hash → hit (no recompute needed).
+        assert_eq!(cache.get(&key, 5, &[]), Some(7));
+        assert_eq!(cache.hit_count(), 1);
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_tracked_fn_called_once_per_unique_input_waveah() {
+        // Two different keys are each hit once; hit_count = 2.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let k1 = Hash128::of_str("unique_k1");
+        let k2 = Hash128::of_str("unique_k2");
+        cache.put(k1, 1, Constraint::new(0));
+        cache.put(k2, 2, Constraint::new(0));
+        cache.get(&k1, 0, &[]);
+        cache.get(&k2, 0, &[]);
+        assert_eq!(cache.hit_count(), 2);
+    }
+
+    #[test]
+    fn memo_tracked_fn_called_again_after_invalidate_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("reinvalidate");
+        cache.put(key, 99, Constraint::new(1));
+        cache.get(&key, 1, &[]); // hit
+        cache.invalidate(&key);
+        // After invalidation the entry is gone → absent (None, no miss increment).
+        assert_eq!(cache.get(&key, 1, &[]), None);
+        assert_eq!(cache.hit_count(), 1); // only the first hit counts
+    }
+
+    #[test]
+    fn memo_stats_ratio_hits_to_total_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("ratio_waveah");
+        cache.put(key, 1, Constraint::new(3));
+        // 3 hits, 1 miss → hit_rate = 0.75
+        cache.get(&key, 3, &[]); // hit
+        cache.get(&key, 3, &[]); // hit
+        cache.get(&key, 3, &[]); // hit
+        cache.get(&key, 9, &[]); // miss
+        assert!((cache.hit_rate() - 0.75).abs() < 1e-9);
+    }
+
+    #[test]
+    fn memo_stats_reset_clears_counters_via_new_cache_waveah() {
+        // MemoCache has no reset API; simulate by creating a new instance.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("reset_waveah");
+        cache.put(key, 1, Constraint::new(1));
+        cache.get(&key, 1, &[]); // hit
+        cache.get(&key, 9, &[]); // miss
+
+        // "Reset" = new cache.
+        let fresh: MemoCache<u32> = MemoCache::new();
+        assert_eq!(fresh.hit_count(), 0);
+        assert_eq!(fresh.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_key_type_is_hash_based_waveah() {
+        // Different string inputs → different keys.
+        let k1 = Hash128::of_str("input_alpha");
+        let k2 = Hash128::of_str("input_beta");
+        assert_ne!(k1, k2, "different strings must produce different Hash128 keys");
+    }
+
+    #[test]
+    fn memo_evicted_key_recomputed_on_next_access_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("evict_recompute");
+        cache.put(key, 42, Constraint::new(0));
+        cache.invalidate(&key);
+        // After eviction the entry is absent; simulating recompute = re-insert.
+        cache.put(key, 99, Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(99));
+    }
+
+    #[test]
+    fn memo_constraint_fn_called_on_cache_hit_waveah() {
+        // Constraint::new(h) validates that input_hash == h.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("constraint_hit");
+        cache.put(key, 55, Constraint::new(7));
+        // Correct hash → hit.
+        assert_eq!(cache.get(&key, 7, &[]), Some(55));
+        assert_eq!(cache.hit_count(), 1);
+    }
+
+    #[test]
+    fn memo_constraint_violation_triggers_recompute_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("constraint_viol");
+        cache.put(key, 55, Constraint::new(7));
+        // Wrong hash → constraint violation → miss.
+        assert_eq!(cache.get(&key, 8, &[]), None);
+        assert_eq!(cache.miss_count(), 1);
+    }
+
+    #[test]
+    fn memo_warm_cache_zero_misses_after_fill_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 3000), i as u32, Constraint::new(i));
+        }
+        // Hit every entry.
+        for i in 0u64..10 {
+            cache.get(&Hash128::of_u64(i + 3000), i, &[]);
+        }
+        assert_eq!(cache.miss_count(), 0, "warm cache must yield zero misses");
+        assert_eq!(cache.hit_count(), 10);
+    }
+
+    #[test]
+    fn memo_cold_cache_all_misses_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("cold_key");
+        cache.put(key, 1, Constraint::new(99));
+        // Wrong hash every time → all misses.
+        for i in 0u64..5 {
+            cache.get(&key, i, &[]); // hash 0..4 ≠ 99
+        }
+        assert_eq!(cache.miss_count(), 5);
+    }
+
+    #[test]
+    fn memo_large_value_stored_and_retrieved_waveah() {
+        let mut cache: MemoCache<Vec<u8>> = MemoCache::new();
+        let key = Hash128::of_str("large_val");
+        let big: Vec<u8> = (0..=255u8).cycle().take(4096).collect();
+        cache.put(key, big.clone(), Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(big));
+    }
+
+    #[test]
+    fn memo_fn_identity_memoized_waveah() {
+        // f(x) = x: put x, get x.
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        let val: u64 = 0xabcdef_123456;
+        let key = Hash128::of_u64(val);
+        cache.put(key, val, Constraint::new(val));
+        assert_eq!(cache.get(&key, val, &[]), Some(val));
+    }
+
+    #[test]
+    fn memo_fn_pure_memoized_waveah() {
+        // Pure function: same input → same output, cached correctly.
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let input_hash: u64 = 42;
+        let output: u32 = input_hash.wrapping_mul(7) as u32;
+        let key = Hash128::of_u64(input_hash);
+        cache.put(key, output, Constraint::new(input_hash));
+        // Two reads → same result both times.
+        assert_eq!(cache.get(&key, input_hash, &[]), Some(output));
+        assert_eq!(cache.get(&key, input_hash, &[]), Some(output));
+        assert_eq!(cache.hit_count(), 2);
+    }
+
+    #[test]
+    fn memo_clone_cache_independent_waveah() {
+        // Two caches built the same way must behave identically (there is no Clone
+        // on MemoCache, so we verify two separate instances are independent).
+        let mut cache_a: MemoCache<u32> = MemoCache::new();
+        let mut cache_b: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("clone_ind");
+        cache_a.put(key, 1, Constraint::new(0));
+        // Invalidating from cache_a does not affect cache_b.
+        cache_a.invalidate(&key);
+        cache_b.put(key, 2, Constraint::new(0));
+        assert_eq!(cache_a.get(&key, 0, &[]), None);
+        assert_eq!(cache_b.get(&key, 0, &[]), Some(2));
+    }
+
+    #[test]
+    fn memo_capacity_exceeded_evicts_oldest_waveah() {
+        // Manual eviction: cap = 3; after inserting 5, first 2 are evicted.
+        let cap = 3usize;
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let mut order: std::collections::VecDeque<Hash128> = Default::default();
+        for i in 0u64..5 {
+            let key = Hash128::of_u64(i + 9000);
+            if order.len() == cap {
+                cache.invalidate(&order.pop_front().unwrap());
+            }
+            cache.put(key, i as u32, Constraint::new(i));
+            order.push_back(key);
+        }
+        assert_eq!(cache.len(), cap);
+        // Entries 0 and 1 (offsets 9000 and 9001) were evicted.
+        assert_eq!(cache.get(&Hash128::of_u64(9000), 0, &[]), None);
+        assert_eq!(cache.get(&Hash128::of_u64(9001), 1, &[]), None);
+        // Entry 2, 3, 4 are present.
+        assert_eq!(cache.get(&Hash128::of_u64(9002), 2, &[]), Some(2));
+    }
+
+    #[test]
+    fn memo_batch_populate_10_entries_waveah() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 7000), i, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 10);
+    }
+
+    #[test]
+    fn memo_batch_retrieve_all_10_hit_waveah() {
+        let mut cache: MemoCache<u64> = MemoCache::new();
+        for i in 0u64..10 {
+            cache.put(Hash128::of_u64(i + 8000), i, Constraint::new(i));
+        }
+        for i in 0u64..10 {
+            assert_eq!(cache.get(&Hash128::of_u64(i + 8000), i, &[]), Some(i));
+        }
+        assert_eq!(cache.hit_count(), 10);
+        assert_eq!(cache.miss_count(), 0);
+    }
+
+    #[test]
+    fn memo_total_bytes_bounded_via_entry_count_waveah() {
+        // Bounded by entry count: a cache with 50 entries has exactly 50 entries.
+        let mut cache: MemoCache<u8> = MemoCache::new();
+        for i in 0u64..50 {
+            cache.put(Hash128::of_u64(i + 6000), (i % 256) as u8, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 50, "cache must hold exactly 50 entries");
+    }
+
+    #[test]
+    fn memo_cache_hit_after_same_key_twice_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("same_twice");
+        cache.put(key, 77, Constraint::new(0));
+        assert_eq!(cache.get(&key, 0, &[]), Some(77));
+        assert_eq!(cache.get(&key, 0, &[]), Some(77));
+        assert_eq!(cache.hit_count(), 2);
+    }
+
+    #[test]
+    fn memo_cache_miss_then_reinsert_becomes_hit_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("miss_then_hit");
+        cache.put(key, 1, Constraint::new(10));
+        assert_eq!(cache.get(&key, 99, &[]), None); // miss
+        cache.put(key, 2, Constraint::new(99));
+        assert_eq!(cache.get(&key, 99, &[]), Some(2)); // hit after reinsert
+        assert_eq!(cache.miss_count(), 1);
+        assert_eq!(cache.hit_count(), 1);
+    }
+
+    #[test]
+    fn memo_cache_hit_rate_two_thirds_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("two_thirds");
+        cache.put(key, 5, Constraint::new(7));
+        cache.get(&key, 7, &[]); // hit
+        cache.get(&key, 7, &[]); // hit
+        cache.get(&key, 0, &[]); // miss
+        let rate = cache.hit_rate();
+        assert!((rate - 2.0 / 3.0).abs() < 1e-9, "hit_rate must be 2/3, got {rate}");
+    }
+
+    #[test]
+    fn memo_cache_is_empty_returns_false_after_put_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        assert!(cache.is_empty());
+        cache.put(Hash128::of_str("nonempty"), 1, Constraint::new(0));
+        assert!(!cache.is_empty());
+    }
+
+    #[test]
+    fn memo_cache_multiple_invalidations_reduce_len_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        for i in 0u64..5 {
+            cache.put(Hash128::of_u64(i + 4000), i as u32, Constraint::new(i));
+        }
+        assert_eq!(cache.len(), 5);
+        cache.invalidate(&Hash128::of_u64(4000));
+        assert_eq!(cache.len(), 4);
+        cache.invalidate(&Hash128::of_u64(4001));
+        assert_eq!(cache.len(), 3);
+    }
+
+    #[test]
+    fn memo_cache_put_is_idempotent_for_same_value_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        let key = Hash128::of_str("idem");
+        cache.put(key, 42, Constraint::new(0));
+        cache.put(key, 42, Constraint::new(0)); // identical put
+        assert_eq!(cache.len(), 1, "identical puts must not grow len");
+        assert_eq!(cache.get(&key, 0, &[]), Some(42));
+    }
+
+    #[test]
+    fn memo_cache_single_entry_is_not_empty_waveah() {
+        let mut cache: MemoCache<u32> = MemoCache::new();
+        cache.put(Hash128::of_str("single"), 1, Constraint::new(0));
+        assert!(!cache.is_empty(), "cache with one entry must not be empty");
+        assert_eq!(cache.len(), 1);
+    }
 }

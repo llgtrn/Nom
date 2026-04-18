@@ -3052,4 +3052,358 @@ mod tests {
         let source: String = (0..50).map(|_| "dirty   \n").collect();
         assert_eq!(runner.run(&source).len(), 50);
     }
+
+    // --- Wave AH Agent 9 additions ---
+
+    #[test]
+    fn lint_multiple_violations_all_reported() {
+        // Three different lines each with a violation — all three appear.
+        let long_line = "x".repeat(130);
+        let source = format!("trailing   \n{}\nfn e() {{}}\n", long_line);
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(LineTooLongRule { max_len: 120 });
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(&source);
+        assert_eq!(diags.len(), 3, "all three violations must be reported");
+    }
+
+    #[test]
+    fn lint_violations_sorted_by_severity_via_level_field() {
+        // Collect diags with Warning level and verify the level field is accessible.
+        let source = "fn f() {}   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(source, 1);
+        assert!(diags.iter().all(|d| d.level == LintLevel::Warning));
+    }
+
+    #[test]
+    fn lint_filter_only_errors_excludes_warnings() {
+        // All existing rules produce Warning; filtering for Error yields empty.
+        let source = "fn f() {}   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        let errors: Vec<_> = diags.iter().filter(|d| d.level == LintLevel::Error).collect();
+        assert!(errors.is_empty(), "no Error-level diags expected from current rules");
+    }
+
+    #[test]
+    fn lint_filter_only_warnings_excludes_errors() {
+        // Custom diagnostics with Warning level must all pass the filter.
+        let diag = LintDiagnostic {
+            level: LintLevel::Warning,
+            message: "test warning".to_string(),
+            line: 1,
+            span: 0..5,
+        };
+        let diags = vec![diag];
+        let warnings: Vec<_> = diags.iter().filter(|d| d.level == LintLevel::Warning).collect();
+        assert_eq!(warnings.len(), 1);
+    }
+
+    #[test]
+    fn lint_context_includes_source_snippet() {
+        // span indices can be used to slice the original source line.
+        let line = "hello   ";
+        let diag = TrailingWhitespaceRule.check(line, 1).unwrap();
+        let snippet = &line[diag.span.start as usize..diag.span.end as usize];
+        assert!(snippet.chars().all(|c| c == ' ' || c == '\t'));
+        assert!(!snippet.is_empty());
+    }
+
+    #[test]
+    fn lint_no_foreign_word_passes_on_clean_english() {
+        // A line with no violations and only English content passes all rules.
+        let line = "let result = compute_value();";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        assert!(runner.check_line(line, 1).is_empty());
+    }
+
+    #[test]
+    fn lint_batch_100_sources_all_pass() {
+        let sources: Vec<String> = (0..100).map(|i| format!("let x_{} = {};", i, i)).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let total: usize = sources.iter().map(|s| runner.run(s).len()).sum();
+        assert_eq!(total, 0, "all 100 clean sources must produce zero violations");
+    }
+
+    #[test]
+    fn lint_batch_100_sources_10_fail() {
+        // Sources 0..10 have trailing whitespace; 10..100 are clean.
+        let sources: Vec<String> = (0..100)
+            .map(|i| {
+                if i < 10 {
+                    format!("line {}   ", i)
+                } else {
+                    format!("line {}", i)
+                }
+            })
+            .collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let total: usize = sources.iter().map(|s| runner.run(s).len()).sum();
+        assert_eq!(total, 10, "exactly 10 of 100 sources must fail");
+    }
+
+    #[test]
+    fn lint_result_has_line_number() {
+        let source = "ok\ntrailing   \nok";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 1);
+        assert_eq!(diags[0].line, 2, "diagnostic must report line 2");
+    }
+
+    #[test]
+    fn lint_result_has_column_number() {
+        // Trailing space starts at column 3 (byte offset 3).
+        let diag = TrailingWhitespaceRule.check("abc   ", 1).unwrap();
+        assert_eq!(diag.span.start, 3, "column (span.start) must be 3");
+    }
+
+    #[test]
+    fn lint_total_violation_count_matches() {
+        // 3 lines each with a violation → exactly 3 diagnostics.
+        let source = "a   \nb   \nc   \n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 3);
+    }
+
+    #[test]
+    fn lint_warning_count_matches() {
+        let source = "fn a() {}\nfn b() {}\n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        let diags = runner.run(source);
+        let warning_count = diags.iter().filter(|d| d.level == LintLevel::Warning).count();
+        assert_eq!(warning_count, 2);
+    }
+
+    #[test]
+    fn lint_error_count_matches() {
+        // Manually construct two Error-level diagnostics and count them.
+        let diags = vec![
+            LintDiagnostic { level: LintLevel::Error, message: "e1".to_string(), line: 1, span: 0..1 },
+            LintDiagnostic { level: LintLevel::Warning, message: "w1".to_string(), line: 2, span: 0..1 },
+            LintDiagnostic { level: LintLevel::Error, message: "e2".to_string(), line: 3, span: 0..1 },
+        ];
+        let error_count = diags.iter().filter(|d| d.level == LintLevel::Error).count();
+        assert_eq!(error_count, 2);
+    }
+
+    #[test]
+    fn lint_passes_large_file_10000_lines() {
+        // 10000 clean lines — no violations.
+        let source: String = std::iter::repeat("let x = 42;\n").take(10_000).collect();
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(LineTooLongRule::new());
+        let diags = runner.run(&source);
+        assert!(diags.is_empty(), "10000-line clean source must produce zero violations");
+    }
+
+    #[test]
+    fn lint_multiple_rules_same_line_two_diags() {
+        // Line with both empty block and trailing whitespace → 2 diags.
+        let line = "fn f() {}   ";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line(line, 1);
+        assert_eq!(diags.len(), 2);
+    }
+
+    #[test]
+    fn lint_rule_interaction_no_double_report() {
+        // Each rule reports at most once per matching occurrence on a line.
+        let line = "fn f() {}   ";
+        let eb_count = (0..3).filter(|_| EmptyBlockRule.check(line, 1).is_some()).count();
+        let tw_count = (0..3).filter(|_| TrailingWhitespaceRule.check(line, 1).is_some()).count();
+        // Each rule called 3 times returns Some each time (not accumulated).
+        assert_eq!(eb_count, 3); // deterministic: same line, same result every time
+        assert_eq!(tw_count, 3);
+    }
+
+    #[test]
+    fn lint_report_to_string_nonempty() {
+        // LintDiagnostic message is a non-empty string.
+        let diag = TrailingWhitespaceRule.check("abc  ", 1).unwrap();
+        assert!(!diag.message.is_empty(), "diagnostic message must not be empty");
+    }
+
+    #[test]
+    fn lint_stats_per_rule_breakdown() {
+        // Use multiple rules and count how many diags each rule contributed.
+        let source = "fn f() {}   \nno_issue\n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.run(source);
+        let empty_block_count = diags.iter().filter(|d| d.message.contains("empty block")).count();
+        let trailing_count = diags.iter().filter(|d| d.message.contains("trailing")).count();
+        assert_eq!(empty_block_count, 1);
+        assert_eq!(trailing_count, 1);
+    }
+
+    #[test]
+    fn lint_is_deterministic() {
+        // Same input always produces same violations (same count and same messages).
+        let source = "fn f() {}   \nline   \n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(EmptyBlockRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let first = runner.run(source);
+        let second = runner.run(source);
+        assert_eq!(first, second, "lint must be deterministic for same input");
+    }
+
+    #[test]
+    fn lint_empty_rules_no_violations() {
+        // Runner with no rules always produces zero diagnostics.
+        let runner = LintRunner::new();
+        let source = "fn f() {}   \n".repeat(10);
+        assert!(runner.run(&source).is_empty());
+    }
+
+    #[test]
+    fn lint_custom_rule_fires_once() {
+        // A rule that fires on a specific keyword appears exactly once per occurrence.
+        struct KeywordRule;
+        impl private::Sealed for KeywordRule {}
+        impl LintRule for KeywordRule {
+            fn name(&self) -> &'static str { "keyword-rule" }
+            fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+                if line.contains("KEYWORD") {
+                    Some(LintDiagnostic {
+                        level: LintLevel::Warning,
+                        message: "keyword found".to_string(),
+                        line: line_num,
+                        span: 0..1,
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+        let mut runner = LintRunner::new();
+        runner.add_rule(KeywordRule);
+        let source = "no keyword here\nKEYWORD present\nno keyword again\n";
+        let diags = runner.run(source);
+        assert_eq!(diags.len(), 1, "custom rule must fire exactly once for one occurrence");
+    }
+
+    #[test]
+    fn lint_custom_rule_message_appears_in_report() {
+        struct MsgRule;
+        impl private::Sealed for MsgRule {}
+        impl LintRule for MsgRule {
+            fn name(&self) -> &'static str { "msg-rule" }
+            fn check(&self, line: &str, line_num: u32) -> Option<LintDiagnostic> {
+                if line.contains("TRIGGER") {
+                    Some(LintDiagnostic {
+                        level: LintLevel::Warning,
+                        message: "custom rule fired".to_string(),
+                        line: line_num,
+                        span: 0..1,
+                    })
+                } else {
+                    None
+                }
+            }
+        }
+        let mut runner = LintRunner::new();
+        runner.add_rule(MsgRule);
+        let diags = runner.run("TRIGGER line\n");
+        assert_eq!(diags.len(), 1);
+        assert!(diags[0].message.contains("custom rule fired"));
+    }
+
+    #[test]
+    fn lint_diagnostic_can_hold_info_level() {
+        let diag = LintDiagnostic {
+            level: LintLevel::Info,
+            message: "informational".to_string(),
+            line: 5,
+            span: 0..10,
+        };
+        assert_eq!(diag.level, LintLevel::Info);
+        assert_eq!(diag.line, 5);
+    }
+
+    #[test]
+    fn lint_rule_severity_levels_all_constructible() {
+        for level in [LintLevel::Error, LintLevel::Warning, LintLevel::Info] {
+            let diag = LintDiagnostic {
+                level: level.clone(),
+                message: "test".to_string(),
+                line: 1,
+                span: 0..1,
+            };
+            assert_eq!(diag.level, level);
+        }
+    }
+
+    #[test]
+    fn lint_span_range_is_valid_for_all_rules() {
+        let violations = [
+            TrailingWhitespaceRule.check("code  ", 1),
+            LineTooLongRule { max_len: 5 }.check("hello world", 1),
+            EmptyBlockRule.check("fn f() {}", 1),
+        ];
+        for v in violations.into_iter().flatten() {
+            assert!(v.span.start <= v.span.end, "span.start must be <= span.end");
+        }
+    }
+
+    #[test]
+    fn lint_check_line_returns_vec_of_diagnostics() {
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        let result: Vec<LintDiagnostic> = runner.check_line("test  ", 1);
+        assert_eq!(result.len(), 1);
+    }
+
+    #[test]
+    fn lint_run_and_check_file_identical_on_multi_line() {
+        let source = "a  \nb  \nc  \n";
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        assert_eq!(runner.run(source), runner.check_file(source));
+    }
+
+    #[test]
+    fn lint_diagnostic_span_end_gt_start_nonzero() {
+        let diag = TrailingWhitespaceRule.check("code  ", 1).unwrap();
+        assert!(diag.span.end > diag.span.start, "span must be non-empty");
+    }
+
+    #[test]
+    fn lint_info_level_distinct_from_warning_and_error() {
+        assert_ne!(LintLevel::Info, LintLevel::Warning);
+        assert_ne!(LintLevel::Info, LintLevel::Error);
+    }
+
+    #[test]
+    fn lint_runner_same_rule_twice_reports_twice() {
+        // Adding the same rule type twice produces two diagnostics per matching line.
+        let mut runner = LintRunner::new();
+        runner.add_rule(TrailingWhitespaceRule);
+        runner.add_rule(TrailingWhitespaceRule);
+        let diags = runner.check_line("code  ", 1);
+        assert_eq!(diags.len(), 2, "two registered instances produce two diags");
+    }
 }

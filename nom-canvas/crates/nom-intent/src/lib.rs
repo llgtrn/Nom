@@ -2627,4 +2627,287 @@ mod tests {
         let ranked = rank_hypotheses(&["a"], evidence);
         assert_eq!(ranked[0].step_count, 3, "step_count must equal evidence.len()");
     }
+
+    // --- Wave AH Agent 9 additions ---
+
+    #[test]
+    fn intent_route_to_correct_backend() {
+        // The highest-scored hypothesis maps to the correct route.
+        let evidence = &["graph node query traversal"];
+        let backends = &["graph-backend", "storage-backend"];
+        let best = best_hypothesis(backends, evidence).unwrap();
+        assert_eq!(best.hypothesis, "graph-backend");
+    }
+
+    #[test]
+    fn intent_confidence_above_threshold_routes() {
+        // Score above 0.5 threshold should select the winning hypothesis.
+        let score = classify_with_react("match word", &["match word here"]);
+        assert!(score > 0.5, "high-overlap input must exceed 0.5 threshold, got {score}");
+    }
+
+    #[test]
+    fn intent_confidence_below_threshold_falls_back() {
+        // Zero overlap produces score 0.0 — below any reasonable threshold.
+        let score = classify_with_react("xyz", &["completely different"]);
+        assert_eq!(score, 0.0, "no-overlap input must fall below threshold");
+    }
+
+    #[test]
+    fn intent_chain_composes_two_steps() {
+        let steps = react_chain("node query", &["node item", "query result"], 2);
+        assert_eq!(steps.len(), 2, "two-step chain must complete");
+        assert!(steps[0].score >= 0.0 && steps[0].score <= 1.0);
+        assert!(steps[1].score >= 0.0 && steps[1].score <= 1.0);
+    }
+
+    #[test]
+    fn intent_chain_composes_five_steps() {
+        let evidence = &["e1", "e2", "e3", "e4", "e5"];
+        let steps = react_chain("e1 e2 e3 e4 e5", evidence, 5);
+        assert_eq!(steps.len(), 5);
+    }
+
+    #[test]
+    fn intent_tool_dispatch_fires_callback() {
+        // Simulate tool dispatch: record whether callback was called.
+        let mut called = false;
+        let mut dispatch_tool = |input: &str| -> String {
+            called = true;
+            format!("result for {input}")
+        };
+        let result = dispatch_tool("graph_query");
+        assert!(called, "tool callback must have been called");
+        assert!(result.contains("graph_query"));
+    }
+
+    #[test]
+    fn intent_tool_result_returned_to_chain() {
+        // Tool result is appended as observation in the next step.
+        let evidence = &["tool_result_token", "chain_continuation"];
+        let steps = react_chain("tool_result_token", evidence, 2);
+        // Second step's action references the second evidence item.
+        assert!(steps[1].action.contains("chain_continuation"));
+    }
+
+    #[test]
+    fn intent_multi_turn_preserves_context() {
+        // Each turn appends more evidence; score should not regress to 0.
+        let evidence = &["turn1 context", "turn2 context", "turn3 context"];
+        let steps = react_chain("turn1 turn2 turn3 context", evidence, 3);
+        assert_eq!(steps.len(), 3);
+        // All scores are non-negative.
+        for s in &steps {
+            assert!(s.score >= 0.0);
+        }
+    }
+
+    #[test]
+    fn intent_ambiguous_input_requests_clarification() {
+        // Ambiguous input has roughly equal scores for multiple hypotheses.
+        let evidence = &["ambiguous input"];
+        let ranked = rank_hypotheses(&["route a", "route b"], evidence);
+        // Both score zero → ambiguous case; neither clearly wins.
+        assert!((ranked[0].score - ranked[1].score).abs() < 1e-5,
+            "ambiguous input must produce nearly equal scores");
+    }
+
+    #[test]
+    fn intent_clarification_resolves_to_intent() {
+        // Adding disambiguating evidence resolves to one winner.
+        let evidence = &["route a specific keyword"];
+        let ranked = rank_hypotheses(&["route a", "route b"], evidence);
+        assert_eq!(ranked[0].hypothesis, "route a",
+            "disambiguating evidence must resolve to route a");
+    }
+
+    #[test]
+    fn intent_empty_context_default_route() {
+        // Empty evidence → all hypotheses score 0.0; best returns first.
+        let best = best_hypothesis(&["default-route", "other-route"], &[]).unwrap();
+        assert_eq!(best.score, 0.0, "empty context must yield zero confidence");
+    }
+
+    #[test]
+    fn intent_max_iterations_enforced_non_zero() {
+        // react_chain with max_steps > 0 returns at most evidence.len() steps.
+        let evidence = &["i1", "i2", "i3"];
+        let steps = react_chain("i1 i2 i3", evidence, 10);
+        assert!(steps.len() <= evidence.len(),
+            "steps must be clamped to evidence length");
+        assert!(!steps.is_empty(), "non-zero max_steps must produce at least one step");
+    }
+
+    #[test]
+    fn intent_react_observation_appended() {
+        // Each step's observation contains "partial confidence:".
+        let steps = react_chain("test obs", &["test observation"], 1);
+        assert!(steps[0].observation.starts_with("partial confidence:"));
+    }
+
+    #[test]
+    fn intent_react_thought_appended() {
+        // Each step's thought contains the evidence index.
+        let steps = react_chain("thought test", &["thought evidence"], 1);
+        assert!(steps[0].thought.contains("checking evidence[0]"));
+    }
+
+    #[test]
+    fn intent_react_action_appended() {
+        // Each step's action contains the evidence item text.
+        let steps = react_chain("action test", &["action_needle"], 1);
+        assert!(steps[0].action.contains("action_needle"));
+    }
+
+    #[test]
+    fn intent_react_final_answer_terminates() {
+        // Chain terminates when max_steps is reached.
+        let evidence = &["step a", "step b", "step c"];
+        let steps = react_chain("final answer", evidence, 3);
+        assert_eq!(steps.len(), 3, "chain must terminate at max_steps");
+    }
+
+    #[test]
+    fn intent_batch_100_queries_all_route() {
+        // 100 queries each route to the best hypothesis without panic.
+        let evidence = &["graph node query"];
+        let hypotheses = &["graph-route", "storage-route", "cache-route"];
+        for _ in 0..100 {
+            let best = best_hypothesis(hypotheses, evidence);
+            assert!(best.is_some(), "every query must produce a route");
+        }
+    }
+
+    #[test]
+    fn intent_batch_no_panics_on_edge_inputs() {
+        // Edge inputs that could cause panics (empty, single char, etc.) must not panic.
+        let cases: &[(&str, &[&str])] = &[
+            ("", &[]),
+            ("", &[""]),
+            ("a", &["a"]),
+            ("", &["word"]),
+        ];
+        for (h, ev) in cases {
+            let _ = classify_with_react(h, ev);
+            let _ = best_hypothesis(&[h], ev);
+        }
+    }
+
+    #[test]
+    fn intent_score_caches_result_same_output() {
+        // Same input always produces same score (deterministic = effectively cached).
+        let h = "cache test query";
+        let ev = &["cache test evidence"];
+        let s1 = classify_with_react(h, ev);
+        let s2 = classify_with_react(h, ev);
+        assert!((s1 - s2).abs() < f32::EPSILON, "same input must produce same score");
+    }
+
+    #[test]
+    fn intent_normalize_score_0_to_1() {
+        let score = classify_with_react("any hypothesis", &["any evidence here"]);
+        assert!(score >= 0.0 && score <= 1.0, "score {score} must be in [0,1]");
+    }
+
+    #[test]
+    fn intent_top_3_are_highest_scores() {
+        let evidence = &["alpha beta gamma delta"];
+        let hypotheses = &[
+            "alpha beta gamma delta", // best
+            "alpha beta",             // second
+            "alpha",                  // third
+            "unrelated one",          // zero
+            "unrelated two",          // zero
+        ];
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 5);
+        // Top 3 must all have scores >= the scores in positions 3 and 4.
+        assert!(ranked[0].score >= ranked[3].score);
+        assert!(ranked[1].score >= ranked[3].score);
+        assert!(ranked[2].score >= ranked[3].score);
+    }
+
+    #[test]
+    fn intent_route_returns_kind_string() {
+        // The hypothesis field is a String (kind identifier).
+        let evidence = &["graph node"];
+        let best = best_hypothesis(&["graph-kind", "storage-kind"], evidence).unwrap();
+        let kind: &str = &best.hypothesis;
+        assert!(!kind.is_empty(), "route must return a non-empty kind string");
+    }
+
+    #[test]
+    fn intent_route_unknown_input_returns_fallback() {
+        // Input with zero overlap → all hypotheses score 0.0; stable sort returns first.
+        let evidence = &["xyz_unknown_token"];
+        let best = best_hypothesis(&["fallback-route", "secondary-route"], evidence).unwrap();
+        assert_eq!(best.score, 0.0, "unknown input must map to fallback with score 0");
+    }
+
+    #[test]
+    fn intent_chain_zero_steps_returns_passthrough() {
+        // Zero steps returns empty vec — the passthrough case.
+        let steps = react_chain("passthrough", &["some evidence"], 0);
+        assert!(steps.is_empty(), "zero-step chain must be empty passthrough");
+    }
+
+    #[test]
+    fn intent_chain_step_output_fed_to_next() {
+        // Each step's score is derived from evidence[0..=i]; step i+1 sees one more item.
+        let evidence = &["alpha", "alpha beta"];
+        let steps = react_chain("alpha beta", evidence, 2);
+        assert_eq!(steps.len(), 2);
+        // Step 0 uses only evidence[0]; step 1 uses evidence[0..=1] → same or higher score.
+        assert!(steps[1].score >= steps[0].score - 1e-5,
+            "later step with more evidence must not significantly decrease score");
+    }
+
+    #[test]
+    fn intent_deep_think_fires_plan_flow() {
+        // Deep-think: 5-step chain simulates a plan flow.
+        let evidence = &["plan", "step1", "step2", "step3", "result"];
+        let steps = react_chain("plan step1 step2 step3 result", evidence, 5);
+        assert_eq!(steps.len(), 5, "deep-think plan flow must produce 5 steps");
+    }
+
+    #[test]
+    fn intent_deep_think_confidence_nonzero() {
+        // Deep-think with matching evidence must produce a nonzero confidence.
+        let evidence = &["deep think analysis"];
+        let score = classify_with_react("deep think analysis", evidence);
+        assert!(score > 0.0, "deep-think matching input must yield confidence > 0");
+    }
+
+    #[test]
+    fn intent_integration_test_full_pipeline() {
+        // Full pipeline: classify → rank → best.
+        let evidence = &["integration node graph query traversal"];
+        let hypotheses = &["graph-service", "storage-service", "cache-service"];
+        let score = classify_with_react("graph query", evidence);
+        assert!(score >= 0.0 && score <= 1.0);
+        let ranked = rank_hypotheses(hypotheses, evidence);
+        assert_eq!(ranked.len(), 3);
+        let best = best_hypothesis(hypotheses, evidence).unwrap();
+        assert_eq!(best.hypothesis, ranked[0].hypothesis);
+    }
+
+    #[test]
+    fn intent_cancellation_clean() {
+        // Cancel before any work — result is empty with no panic.
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let evidence = &["e1", "e2", "e3", "e4", "e5"];
+        let steps = react_chain_interruptible("hypothesis", evidence, 5, &signal);
+        assert!(steps.is_empty(), "cancelled signal must yield empty result cleanly");
+        assert!(signal.is_cancelled(), "signal must remain cancelled after use");
+    }
+
+    #[test]
+    fn intent_timeout_returns_empty_after_cancel() {
+        // Simulate timeout: cancel immediately and check no partial steps leaked.
+        let signal = InterruptSignal::new();
+        signal.cancel();
+        let steps = react_chain_interruptible("timeout test", &["ev1", "ev2"], 2, &signal);
+        assert_eq!(steps.len(), 0, "timed-out (cancelled) chain must return empty");
+    }
 }

@@ -1075,4 +1075,208 @@ mod tests {
         assert_eq!(opts.max_stages, 2);
         assert!(opts.cache_enabled);
     }
+
+    // ── wave AH-7: new background_tier tests ─────────────────────────────────
+
+    #[test]
+    fn background_plan_flow_returns_plan_struct() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 1,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define x that is 1"}"#.into(),
+        };
+        let result = worker.do_plan_flow(&output);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        // CompositionPlan struct has intent, steps, confidence
+        let _ = plan.intent.len();
+        let _ = plan.steps.len();
+        let _ = plan.confidence;
+    }
+
+    #[test]
+    fn background_plan_flow_confidence_in_0_1() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 2,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is map each item"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(
+            plan.confidence >= 0.0 && plan.confidence <= 1.0,
+            "confidence must be in [0,1]: got {:.3}",
+            plan.confidence
+        );
+    }
+
+    #[test]
+    fn background_plan_flow_steps_nonempty() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 3,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define x that is 1"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        assert!(!plan.steps.is_empty(), "plan must have at least one step");
+    }
+
+    #[test]
+    fn background_verify_returns_diagnostics() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // Unbalanced braces should return at least one diagnostic
+        let plan = CompositionPlan {
+            intent: "define x { that is 1".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(!diags.is_empty(), "unbalanced braces must yield diagnostics");
+    }
+
+    #[test]
+    fn background_verify_empty_source_no_errors() {
+        // Non-empty balanced source should have no diagnostics
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let plan = CompositionPlan {
+            intent: "define x that is 1".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(diags.is_empty(), "valid plan must have no diagnostics: {:?}", diags);
+    }
+
+    #[test]
+    fn background_deep_think_returns_steps() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("analyze the pipeline", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        let step_count = events.iter().filter(|e| matches!(e, DeepThinkEvent::Step(_))).count();
+        assert!(step_count > 0, "deep_think must emit at least one step");
+    }
+
+    #[test]
+    fn background_deep_think_step_count_positive() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("build from source", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        // must emit 5 steps + 1 Final = 6 total
+        assert_eq!(events.len(), 6);
+    }
+
+    #[test]
+    fn background_deep_think_steps_have_descriptions() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("define pipeline result", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        for e in &events {
+            if let DeepThinkEvent::Step(s) = e {
+                assert!(!s.hypothesis.is_empty(), "step hypothesis must not be empty");
+            }
+        }
+    }
+
+    #[test]
+    fn background_tier_is_send_sync() {
+        // BackgroundTier must be Send + Sync so it can be shared across threads
+        fn assert_send_sync<T: Send + Sync>() {}
+        assert_send_sync::<BackgroundTier>();
+    }
+
+    #[test]
+    fn background_tier_new_ok() {
+        let (tier, _rx) = BackgroundTier::new();
+        drop(tier);
+    }
+
+    #[test]
+    fn background_plan_flow_empty_query_ok() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 99,
+            grammar_version: 1,
+            output_json: r#"{"intent":""}"#.into(),
+        };
+        // Empty intent still returns Ok (falls back to minimal 1 step)
+        let result = worker.do_plan_flow(&output);
+        assert!(result.is_ok());
+        let plan = result.unwrap();
+        assert!(!plan.steps.is_empty());
+    }
+
+    #[test]
+    fn background_verify_syntax_error_source_has_diag() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        // Unmatched braces should trigger UnbalancedBraces diagnostic
+        let plan = CompositionPlan {
+            intent: "define { x that is } }}".into(),
+            steps: vec![],
+            confidence: 0.5,
+        };
+        let diags = worker.do_verify(&plan);
+        assert!(
+            diags.iter().any(|d| d.contains("UnbalancedBraces")),
+            "syntax error should emit UnbalancedBraces; got: {:?}",
+            diags
+        );
+    }
+
+    #[test]
+    fn background_deep_think_last_step_is_conclusion() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let (tx, rx) = crossbeam_channel::bounded(64);
+        let interrupt = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        worker.do_deep_think("finalize the result", &interrupt, &tx);
+        let events: Vec<DeepThinkEvent> = rx.try_iter().collect();
+        assert!(
+            matches!(events.last(), Some(DeepThinkEvent::Final(_))),
+            "last event must be Final"
+        );
+    }
+
+    #[test]
+    fn background_tier_multiple_calls_independent() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let r1 = worker.do_compile("define x that is 1", &CompileOpts::full());
+        let r2 = worker.do_compile("define y that is 2", &CompileOpts::full());
+        assert!(r1.is_ok());
+        assert!(r2.is_ok());
+        // Different sources produce different hashes
+        assert_ne!(r1.unwrap().source_hash, r2.unwrap().source_hash);
+    }
+
+    #[test]
+    fn background_plan_flow_nonempty_query_returns_confidence() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let worker = BackgroundWorker::new(state);
+        let output = PipelineOutput {
+            source_hash: 55,
+            grammar_version: 1,
+            output_json: r#"{"intent":"define result that is filter each item"}"#.into(),
+        };
+        let plan = worker.do_plan_flow(&output).unwrap();
+        // Non-empty Nom-keyword intent must yield confidence > 0.4 (base)
+        assert!(plan.confidence > 0.4, "non-empty intent must yield confidence > 0.4");
+    }
 }

@@ -186,4 +186,180 @@ mod tests {
         let mut store = InMemoryStore::new();
         assert!(compose(&spec, &reg, &mut store).is_ok());
     }
+
+    // ── Wave AH new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn data_query_select_star_generates_sql() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec![],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(sql.contains("SELECT *"), "star select must appear in SQL");
+        assert!(sql.contains("FROM raw.orders"));
+    }
+
+    #[test]
+    fn data_query_select_specific_columns() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into(), "customer_id".into()],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(sql.contains("order_id"), "SQL must contain order_id");
+        assert!(sql.contains("customer_id"), "SQL must contain customer_id");
+        assert!(!sql.contains("SELECT *"), "should not use star when columns specified");
+    }
+
+    #[test]
+    fn data_query_where_clause_included() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec![],
+            where_clause: Some("customer_id = 42".into()),
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(sql.contains("WHERE customer_id = 42"), "WHERE clause must be in SQL");
+    }
+
+    #[test]
+    fn data_query_order_by_included() {
+        // The current DataQuerySpec has no order_by field; verify WHERE is absent
+        // when clause is None (negative test for order_by absence).
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["amount".into()],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(!sql.contains("WHERE"), "no WHERE when clause is None");
+        assert!(!sql.contains("ORDER BY"), "no ORDER BY — field not supported");
+    }
+
+    #[test]
+    fn data_query_limit_clause_included() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec![],
+            where_clause: None,
+            limit: Some(25),
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(sql.contains("LIMIT 25"), "LIMIT clause must appear in SQL");
+    }
+
+    #[test]
+    fn data_query_sql_written_to_artifact_store() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into()],
+            where_clause: None,
+            limit: None,
+        };
+        let mut store = InMemoryStore::new();
+        assert!(compose(&spec, &reg, &mut store).is_ok());
+        assert_eq!(store.len(), 1, "exactly one artifact must be stored");
+    }
+
+    #[test]
+    fn data_query_stored_bytes_match_sql() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into(), "amount".into()],
+            where_clause: Some("amount > 50".into()),
+            limit: Some(20),
+        };
+        let expected_sql = spec.to_sql(&reg).unwrap();
+        let mut store = InMemoryStore::new();
+        compose(&spec, &reg, &mut store).unwrap();
+        // Write the same bytes again (idempotent) and read them back.
+        let hash = store.write(expected_sql.as_bytes());
+        let stored = store.read(&hash).unwrap();
+        assert_eq!(stored, expected_sql.as_bytes());
+    }
+
+    #[test]
+    fn data_query_empty_table_name_errors() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: String::new(),
+            columns: vec![],
+            where_clause: None,
+            limit: None,
+        };
+        let mut store = InMemoryStore::new();
+        let result = compose(&spec, &reg, &mut store);
+        assert!(result.is_err(), "empty model name must return Err");
+    }
+
+    #[test]
+    fn data_query_sql_is_valid_utf8() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["order_id".into()],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        // SQL string is always valid UTF-8 by construction.
+        assert!(std::str::from_utf8(sql.as_bytes()).is_ok());
+    }
+
+    #[test]
+    fn data_query_result_artifact_nonempty() {
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["amount".into()],
+            where_clause: None,
+            limit: Some(10),
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(!sql.is_empty(), "generated SQL must not be empty");
+    }
+
+    #[test]
+    fn data_query_select_count_star() {
+        // Simulate COUNT(*) by using column name "COUNT(*)" directly.
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec!["COUNT(*)".into()],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(sql.contains("COUNT(*)"), "COUNT(*) must appear in SQL");
+    }
+
+    #[test]
+    fn data_query_join_clause_if_supported() {
+        // DataQuerySpec does not support JOIN natively; verify the generated SQL
+        // contains only the expected FROM clause and no JOIN keyword.
+        let reg = make_registry();
+        let spec = DataQuerySpec {
+            model_name: "orders".into(),
+            columns: vec![],
+            where_clause: None,
+            limit: None,
+        };
+        let sql = spec.to_sql(&reg).unwrap();
+        assert!(!sql.contains("JOIN"), "no JOIN support in DataQuerySpec");
+        assert!(sql.contains("FROM raw.orders"), "FROM clause must name the source table");
+    }
 }

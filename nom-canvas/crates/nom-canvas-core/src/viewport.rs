@@ -1010,6 +1010,123 @@ mod tests {
         assert!((m[2][2] - 1.0).abs() < 1e-6);
     }
 
+    // ── Wave AH: additional viewport tests ───────────────────────────────────
+
+    /// canvas_to_screen at zoom=1 correctly scales world coords to screen.
+    #[test]
+    fn viewport_world_to_screen_scales_correctly() {
+        let vp = Viewport::new(800.0, 600.0);
+        // At zoom=1, pan=[0,0]: canvas (10,0) → screen (410, 300).
+        let screen = vp.canvas_to_screen([10.0, 0.0]);
+        assert!((screen[0] - 410.0).abs() < 1e-4, "screen.x={}", screen[0]);
+        assert!((screen[1] - 300.0).abs() < 1e-4, "screen.y={}", screen[1]);
+    }
+
+    /// screen_to_canvas inverts canvas_to_screen.
+    #[test]
+    fn viewport_screen_to_world_inverts_world_to_screen() {
+        let vp = Viewport::new(800.0, 600.0);
+        let canvas_pt = [77.0_f32, -33.0];
+        let screen = vp.canvas_to_screen(canvas_pt);
+        let back = vp.screen_to_canvas(screen);
+        assert!((back[0] - canvas_pt[0]).abs() < 1e-4, "x={}", back[0]);
+        assert!((back[1] - canvas_pt[1]).abs() < 1e-4, "y={}", back[1]);
+    }
+
+    /// At zoom=1 the transform is identity scale (no scaling distortion).
+    #[test]
+    fn viewport_zoom_1_identity_transform() {
+        let vp = Viewport::new(800.0, 600.0);
+        let m = vp.to_scene_transform();
+        assert!((m[0][0] - 1.0).abs() < 1e-6, "m[0][0] must be 1 at zoom=1");
+        assert!((m[1][1] - 1.0).abs() < 1e-6, "m[1][1] must be 1 at zoom=1");
+    }
+
+    /// At zoom=2 canvas coordinates are doubled in screen space.
+    #[test]
+    fn viewport_zoom_2_doubles_screen_coords() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // Canvas (1, 0) should be 2px to the right of the position it would occupy at zoom=1.
+        // At zoom=2, pan=0: screen_x = 1*2 + 0 + 400 = 402; at zoom=1 it would be 401.
+        let screen2 = vp.canvas_to_screen([1.0, 0.0]);
+        assert!((screen2[0] - 402.0).abs() < 1e-3, "screen.x at zoom=2: {}", screen2[0]);
+    }
+
+    /// pan_by offsets the world origin on screen.
+    #[test]
+    fn viewport_pan_offsets_world_origin() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([30.0, -20.0]);
+        let screen = vp.canvas_to_screen([0.0, 0.0]);
+        // origin → (0 + 30 + 400, 0 - 20 + 300) = (430, 280)
+        assert!((screen[0] - 430.0).abs() < 1e-4, "screen.x={}", screen[0]);
+        assert!((screen[1] - 280.0).abs() < 1e-4, "screen.y={}", screen[1]);
+    }
+
+    /// Lower zoom level expands the visible canvas rect.
+    #[test]
+    fn viewport_visible_rect_expands_at_lower_zoom() {
+        let vp1 = Viewport::new(800.0, 600.0);
+        let mut vp2 = Viewport::new(800.0, 600.0);
+        vp2.zoom_toward(0.5, [400.0, 300.0]);
+        let (tl1, br1) = vp1.visible_bounds();
+        let (tl2, br2) = vp2.visible_bounds();
+        assert!(br2[0] - tl2[0] > br1[0] - tl1[0], "lower zoom must expand visible rect");
+    }
+
+    /// Higher zoom level shrinks the visible canvas rect.
+    #[test]
+    fn viewport_visible_rect_shrinks_at_higher_zoom() {
+        let vp1 = Viewport::new(800.0, 600.0);
+        let mut vp2 = Viewport::new(800.0, 600.0);
+        vp2.zoom_toward(4.0, [400.0, 300.0]);
+        let (tl1, br1) = vp1.visible_bounds();
+        let (tl2, br2) = vp2.visible_bounds();
+        assert!(br2[0] - tl2[0] < br1[0] - tl1[0], "higher zoom must shrink visible rect");
+    }
+
+    /// Zoom cannot go below 0.1.
+    #[test]
+    fn viewport_min_zoom_clamped() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(0.0001, [400.0, 300.0]);
+        assert!((vp.zoom - 0.1).abs() < 1e-6, "zoom must clamp to min 0.1, got {}", vp.zoom);
+    }
+
+    /// Zoom cannot exceed 64 (clamp is at 32.0 per implementation, verify 32 is the max).
+    #[test]
+    fn viewport_max_zoom_clamped() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(1_000_000.0, [400.0, 300.0]);
+        // Implementation clamps at 32.0.
+        assert!(vp.zoom <= 32.0, "zoom must not exceed 32, got {}", vp.zoom);
+    }
+
+    /// reset() restores zoom=1.0 and pan=[0,0].
+    #[test]
+    fn viewport_reset_restores_defaults() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(8.0, [200.0, 150.0]);
+        vp.pan_by([100.0, -50.0]);
+        vp.reset();
+        assert!((vp.zoom - 1.0).abs() < 1e-6, "zoom after reset must be 1.0");
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x after reset must be 0");
+        assert!((vp.pan[1]).abs() < 1e-6, "pan.y after reset must be 0");
+    }
+
+    /// A canvas point that maps within [0, size] is visible.
+    #[test]
+    fn viewport_contains_world_point_when_visible() {
+        let vp = Viewport::new(800.0, 600.0);
+        // Canvas origin maps to screen centre — clearly visible.
+        assert!(vp.is_point_visible([0.0, 0.0]), "canvas origin must be visible");
+        // Point within the visible area at zoom=1: canvas (-300, -200) → screen (100, 100) — visible.
+        assert!(vp.is_point_visible([-300.0, -200.0]), "canvas (-300,-200) must be visible at zoom=1");
+        // Canvas (500, 0) → screen (900, 300) > 800 → not visible.
+        assert!(!vp.is_point_visible([500.0, 0.0]), "canvas (500,0) must not be visible");
+    }
+
     /// Zoom = 0.5 doubles the visible canvas area vs zoom = 1.
     #[test]
     fn zoom_half_doubles_visible_area() {

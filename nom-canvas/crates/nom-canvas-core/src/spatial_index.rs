@@ -624,4 +624,160 @@ mod tests {
         let near = idx.nearest([5.0, 5.0], 1000.0);
         assert_eq!(near, Some(1), "single element must be the nearest");
     }
+
+    // ── Wave AH: additional spatial_index tests ──────────────────────────────
+
+    /// Insert 100 elements, all are queryable via a large region.
+    #[test]
+    fn spatial_index_insert_100_elements_all_queryable() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=100 {
+            let base = i as f32 * 6.0;
+            idx.insert(make_bounds(i, [base, base], [base + 5.0, base + 5.0]));
+        }
+        assert_eq!(idx.len(), 100);
+        let found = idx.query_in_bounds([0.0, 0.0], [700.0, 700.0]);
+        assert_eq!(found.len(), 100, "all 100 inserted elements must be queryable");
+    }
+
+    /// query_in_bounds returns only elements whose AABB intersects the region.
+    #[test]
+    fn spatial_index_query_region_returns_intersecting() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [30.0, 30.0]));
+        idx.insert(make_bounds(2, [100.0, 100.0], [130.0, 130.0]));
+        idx.insert(make_bounds(3, [15.0, 15.0], [45.0, 45.0]));
+        // Region [10,10]→[40,40] intersects elements 1 and 3 but not 2.
+        let found = idx.query_in_bounds([10.0, 10.0], [40.0, 40.0]);
+        assert!(found.contains(&1), "element 1 must intersect query region");
+        assert!(found.contains(&3), "element 3 must intersect query region");
+        assert!(!found.contains(&2), "element 2 must not intersect query region");
+    }
+
+    /// query_in_bounds on a region with no elements returns empty vec.
+    #[test]
+    fn spatial_index_query_empty_region_returns_empty() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [500.0, 500.0], [600.0, 600.0]));
+        // Query a region far from all elements.
+        let found = idx.query_in_bounds([0.0, 0.0], [50.0, 50.0]);
+        assert!(found.is_empty(), "no elements in this region");
+    }
+
+    /// After removing an element, it is not found in subsequent queries.
+    #[test]
+    fn spatial_index_remove_element_not_found_after() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(7, [0.0, 0.0], [20.0, 20.0]));
+        idx.remove(7, make_bounds(7, [0.0, 0.0], [20.0, 20.0]));
+        let found = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(!found.contains(&7), "removed element must not be found");
+        assert!(idx.is_empty(), "index must be empty after removing sole element");
+    }
+
+    /// Updating an element's position (remove + re-insert) moves it in the index.
+    #[test]
+    fn spatial_index_update_position_moves_element() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [20.0, 20.0]));
+        // Move element 1 to a new position.
+        idx.remove(1, make_bounds(1, [0.0, 0.0], [20.0, 20.0]));
+        idx.insert(make_bounds(1, [200.0, 200.0], [220.0, 220.0]));
+        // Old position must not return the element.
+        let old = idx.query_in_bounds([0.0, 0.0], [20.0, 20.0]);
+        assert!(!old.contains(&1), "element must not appear at old position");
+        // New position must return the element.
+        let new = idx.query_in_bounds([200.0, 200.0], [220.0, 220.0]);
+        assert!(new.contains(&1), "element must appear at new position");
+    }
+
+    /// nearest_neighbor returns the correct closest element.
+    #[test]
+    fn spatial_index_nearest_neighbor_correct() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(1, [0.0, 0.0], [10.0, 10.0]));     // closest to (2,2)
+        idx.insert(make_bounds(2, [80.0, 80.0], [90.0, 90.0]));    // far
+        idx.insert(make_bounds(3, [40.0, 40.0], [50.0, 50.0]));    // medium
+        let near = idx.nearest([2.0, 2.0], 200.0);
+        assert_eq!(near, Some(1), "nearest to (2,2) must be element 1");
+    }
+
+    /// Bulk insert 10 elements and verify count.
+    #[test]
+    fn spatial_index_bulk_insert_10_elements() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=10 {
+            idx.insert(make_bounds(i, [i as f32 * 5.0, 0.0], [i as f32 * 5.0 + 4.0, 4.0]));
+        }
+        assert_eq!(idx.len(), 10, "must have 10 elements after bulk insert");
+    }
+
+    /// Query with a very large region returns all elements.
+    #[test]
+    fn spatial_index_query_large_region_covers_all() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=7 {
+            let base = i as f32 * 50.0;
+            idx.insert(make_bounds(i, [base, base], [base + 30.0, base + 30.0]));
+        }
+        let found = idx.query_in_bounds([-1e6, -1e6], [1e6, 1e6]);
+        assert_eq!(found.len(), 7, "large region must cover all 7 elements");
+    }
+
+    /// Query a zero-area point region that coincides with a single element.
+    #[test]
+    fn spatial_index_query_point_region_single_element() {
+        let mut idx = SpatialIndex::new();
+        idx.insert(make_bounds(42, [10.0, 10.0], [30.0, 30.0]));
+        idx.insert(make_bounds(43, [100.0, 100.0], [120.0, 120.0]));
+        // Point query inside element 42.
+        let found = idx.query_in_bounds([20.0, 20.0], [20.0, 20.0]);
+        assert!(found.contains(&42), "point inside element 42 must return it");
+        assert!(!found.contains(&43), "element 43 must not be returned");
+    }
+
+    /// After removing all elements, is_empty returns true and query returns empty.
+    #[test]
+    fn spatial_index_clear_empties() {
+        let mut idx = SpatialIndex::new();
+        let bounds: Vec<_> = (1_u64..=5)
+            .map(|i| make_bounds(i, [i as f32 * 10.0, 0.0], [i as f32 * 10.0 + 8.0, 8.0]))
+            .collect();
+        for b in &bounds {
+            idx.insert(*b);
+        }
+        assert_eq!(idx.len(), 5);
+        for b in &bounds {
+            idx.remove(b.id, *b);
+        }
+        assert!(idx.is_empty(), "index must report empty after all elements removed");
+        assert_eq!(idx.len(), 0, "len must be 0 after clearing");
+        assert!(idx.query_in_bounds([0.0, 0.0], [1000.0, 1000.0]).is_empty(), "query on cleared index must return empty");
+    }
+
+    /// len() returns the correct count after a series of inserts.
+    #[test]
+    fn spatial_index_count_correct() {
+        let mut idx = SpatialIndex::new();
+        for i in 1_u64..=15 {
+            idx.insert(make_bounds(i, [i as f32, i as f32], [i as f32 + 1.0, i as f32 + 1.0]));
+        }
+        assert_eq!(idx.len(), 15, "count must match the number of inserts");
+    }
+
+    /// Re-inserting the same ID after removal does not create a duplicate.
+    #[test]
+    fn spatial_index_no_duplicates_after_reinsert() {
+        let mut idx = SpatialIndex::new();
+        let b = make_bounds(99, [0.0, 0.0], [10.0, 10.0]);
+        idx.insert(b);
+        idx.remove(99, b);
+        idx.insert(b);
+        // After remove + reinsert there must be exactly one entry.
+        assert_eq!(idx.len(), 1, "must have exactly 1 entry after remove+reinsert");
+        let found = idx.query_in_bounds([0.0, 0.0], [10.0, 10.0]);
+        // Count occurrences of id 99 — must be 1.
+        let count_99 = found.iter().filter(|&&id| id == 99).count();
+        assert_eq!(count_99, 1, "re-inserted element must appear exactly once in query");
+    }
 }

@@ -189,6 +189,38 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-compose: →295 tests (+43, semantic MDL, credential store, fallback backoff)
 - [x] nom-blocks: →211 tests (+61, DictReader integration, connector grammar, workspace)
 
+## Wave AH (planned) — Hybrid Composition System
+**Spec:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
+**Design:** DB-driven → Provider-driven → AI-leading, three-tier resolver with intent classification and grammar promotion lifecycle.
+
+### Sub-project 1: ComposeContext + UnifiedDispatcher
+- [ ] **AH-CTX** — `nom-compose/src/context.rs`: `ComposeContext`, `ComposeResult`, `ComposeTier`, `ComposeConstraints`
+- [ ] **AH-DICTW** — `nom-compiler-bridge/src/dict_writer.rs`: `DictWriter::insert_partial_entry()` + `promote_to_complete()`
+- [ ] **AH-CACHE** — `SharedState` in `shared.rs`: add `glue_cache: RwLock<HashMap<String, GlueCacheEntry>>` + 60s promotion ticker
+- [ ] **AH-DISPATCH** — `nom-compose/src/unified_dispatcher.rs`: `UnifiedDispatcher` bridges `ProviderRouter` ↔ `BackendRegistry` with credential injection
+- [ ] **AH-ROUTER** — `ProviderRouter::route_with_context(&ComposeContext)` + `BackendRegistry::dispatch_with_context(&ComposeContext)`
+- [ ] **AH-VENDOR** — `MediaVendor` trait: add `credential: Option<&str>` + `ctx: &ComposeContext` to `compose()` signature
+
+### Sub-project 2: IntentResolver
+- [ ] **AH-INTENT** — `nom-compose/src/intent_resolver.rs`: 3-step pipeline (lexical scan → BM25 → `classify_with_react()`)
+- [ ] **AH-BM25** — BM25 index built over `grammar.kinds.description` + `grammar.kinds.word` at startup
+- [ ] **AH-MULTI** — multi-kind detection: `Vec<(BackendKind, f32)>` candidates above 0.65 threshold
+- [ ] **AH-TRAIN** — training signal: user correction feeds back into BM25 index
+
+### Sub-project 3: AiGlueOrchestrator + HybridResolver
+- [ ] **AH-GLUE** — `nom-compose/src/ai_glue.rs`: `AiGlueOrchestrator`, `GlueBlueprint`, `ReActLlmFn` trait + 4 adapters (Stub/NomCli/Mcp/RealLlm)
+- [ ] **AH-HYBRID** — `nom-compose/src/hybrid_resolver.rs`: `HybridResolver` orchestrates Tier1→Tier2→Tier3
+- [ ] **AH-ORCH** — `nom-compose/src/orchestrator.rs`: `ComposeOrchestrator` multi-kind parallel pipeline via `TaskQueue`
+- [ ] **AH-PROMOTE** — `glue_promotion_config` DB table: thresholds as data, not constants
+- [ ] **AH-DB-KINDS** — seed 14 initial `grammar.kinds` rows (video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard)
+
+### Sub-project 4: UI Surfaces
+- [ ] **AH-PREVIEW** — `nom-panels/src/right/intent_preview.rs`: Intent Preview card (kind confidence bars + compose/change/all-3 buttons)
+- [ ] **AH-REVIEW** — `nom-panels/src/right/glue_review.rs`: AI Review card (accept/edit/skip with .nomx inline edit)
+- [ ] **AH-GUTTER** — Doc mode gutter `⚡` badge for AI-generated entities (Partial status)
+- [ ] **AH-NODE** — Graph mode: amber tint + `⚡` badge on AI-generated node cards, removed on Complete promotion
+- [ ] **AH-STATUS** — Status bar: `⚡ N AI entities pending review` counter
+
 ## Wave AF (2026-04-18) — COMPLETE ✅ (617c064, 4194 tests)
 - [x] nom-gpui: 420→456 (scene layers, renderer lifecycle, pixel_diff tolerance, layout)
 - [x] nom-compose: 380→415 (task_queue state machine, cancel token, progress, export)

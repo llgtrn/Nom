@@ -994,4 +994,136 @@ mod tests {
         let result = reg.dispatch(BackendKind::Pipeline, "data", &|_| {}).unwrap();
         assert!(result.starts_with("pipeline:"));
     }
+
+    // ── Wave AH new tests ────────────────────────────────────────────────────
+
+    #[test]
+    fn dispatch_backend_kind_roundtrip() {
+        // BackendKind::from_kind_name("video") must return BackendKind::Video.
+        let kind = BackendKind::from_kind_name("video");
+        assert_eq!(kind, Some(BackendKind::Video));
+    }
+
+    #[test]
+    fn dispatch_unknown_kind_returns_error() {
+        let reg = BackendRegistry::new();
+        let result = reg.dispatch(BackendKind::Data, "probe", &|_| {});
+        assert!(result.is_err(), "dispatch on empty registry must return Err");
+        assert!(result.unwrap_err().contains("data"));
+    }
+
+    #[test]
+    fn dispatch_all_registered_kinds_resolve() {
+        let mut reg = BackendRegistry::new();
+        let all_kinds = [
+            BackendKind::Video,
+            BackendKind::Audio,
+            BackendKind::Image,
+            BackendKind::Document,
+            BackendKind::Data,
+            BackendKind::App,
+            BackendKind::Workflow,
+            BackendKind::Scenario,
+            BackendKind::RagQuery,
+            BackendKind::Transform,
+            BackendKind::EmbedGen,
+            BackendKind::Render,
+            BackendKind::Export,
+            BackendKind::Pipeline,
+            BackendKind::CodeExec,
+            BackendKind::WebScreen,
+        ];
+        for kind in &all_kinds {
+            reg.register(Box::new(NoopBackend::new(kind.clone())));
+        }
+        for kind in &all_kinds {
+            let result = reg.dispatch(kind.clone(), "test", &|_| {});
+            assert!(result.is_ok(), "kind {} must resolve", kind.name());
+        }
+    }
+
+    #[test]
+    fn document_backend_metadata_nonempty() {
+        use crate::backends::document::DocumentBackend;
+        let b: Box<dyn Backend> = Box::new(DocumentBackend);
+        // kind() must return Document and compose must yield non-empty output.
+        assert_eq!(b.kind(), BackendKind::Document);
+        let out = b.compose("metadata-check", &|_| {}).unwrap();
+        assert!(!out.is_empty(), "document backend output must not be empty");
+    }
+
+    #[test]
+    fn document_backend_title_in_output() {
+        use crate::backends::document::DocumentBackend;
+        let b: Box<dyn Backend> = Box::new(DocumentBackend);
+        let out = b.compose("my-title", &|_| {}).unwrap();
+        // The dispatch impl passes input as entity id; output starts with "document:<id>".
+        assert!(out.starts_with("document:my-title"), "output must reference entity id");
+    }
+
+    #[test]
+    fn document_backend_empty_content_ok() {
+        use crate::backends::document::{DocumentBackend, DocumentInput};
+        use crate::progress::LogProgressSink;
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let mut store = InMemoryStore::new();
+        let input = DocumentInput {
+            entity: NomtuRef {
+                id: "empty-doc".into(),
+                word: "empty".into(),
+                kind: "document".into(),
+            },
+            content_blocks: vec![],
+            target_mime: "text/plain".into(),
+        };
+        let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "artifact must be stored even for empty content");
+    }
+
+    #[test]
+    fn document_backend_result_is_artifact() {
+        use crate::backends::document::{DocumentBackend, DocumentInput};
+        use crate::progress::LogProgressSink;
+        use crate::store::InMemoryStore;
+        use nom_blocks::NomtuRef;
+        let mut store = InMemoryStore::new();
+        let input = DocumentInput {
+            entity: NomtuRef {
+                id: "art-doc".into(),
+                word: "artifact".into(),
+                kind: "document".into(),
+            },
+            content_blocks: vec!["# Heading\nbody text".into()],
+            target_mime: "text/html".into(),
+        };
+        let block = DocumentBackend::compose(input, &mut store, &LogProgressSink);
+        assert!(store.exists(&block.artifact_hash), "returned hash must exist in store");
+        assert_eq!(block.mime, "text/html");
+    }
+
+    #[test]
+    fn backend_trait_kind_matches_compose_kind() {
+        // For every concrete backend impl in dispatch.rs the Backend::kind()
+        // must match the BackendKind returned by from_kind_name().
+        use crate::backends::audio::AudioBackend;
+        use crate::backends::document::DocumentBackend;
+        use crate::backends::export::ExportBackend;
+        use crate::backends::video::VideoBackend;
+
+        let pairs: Vec<(Box<dyn Backend>, BackendKind)> = vec![
+            (Box::new(VideoBackend), BackendKind::Video),
+            (Box::new(AudioBackend), BackendKind::Audio),
+            (Box::new(DocumentBackend), BackendKind::Document),
+            (Box::new(ExportBackend), BackendKind::Export),
+        ];
+        for (backend, expected_kind) in &pairs {
+            assert_eq!(
+                backend.kind(),
+                *expected_kind,
+                "Backend::kind() must match expected BackendKind for {:?}",
+                expected_kind.name()
+            );
+        }
+    }
 }

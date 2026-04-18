@@ -1553,7 +1553,7 @@ mod tests {
     #[test]
     fn corners_uniform_f32_precision_preserved() {
         // Verify that unusual f32 values round-trip exactly through Corners::all.
-        let r = Pixels(3.14159);
+        let r = Pixels(std::f32::consts::PI);
         let c = Corners::all(r);
         assert_eq!(c.top_left.0, r.0);
         assert_eq!(c.top_right.0, r.0);

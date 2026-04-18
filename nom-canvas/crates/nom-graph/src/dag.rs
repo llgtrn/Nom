@@ -1858,6 +1858,200 @@ mod tests {
         }
     }
 
+    // Helper: compute depth layers for a DAG via longest-path BFS from roots.
+    // Returns Vec<Vec<NodeId>> where layers[0] = roots, layers[1] = depth-1 nodes, etc.
+    // Returns empty vec for empty DAG.
+    fn compute_layers(dag: &Dag) -> Vec<Vec<NodeId>> {
+        let topo = match dag.topological_sort() {
+            Ok(t) => t,
+            Err(_) => return vec![],
+        };
+        if topo.is_empty() {
+            return vec![];
+        }
+        let mut children: std::collections::HashMap<&str, Vec<&str>> = std::collections::HashMap::new();
+        for edge in &dag.edges {
+            children.entry(edge.src_node.as_str()).or_default().push(edge.dst_node.as_str());
+        }
+        let mut depth: std::collections::HashMap<&str, usize> = std::collections::HashMap::new();
+        for id in &topo {
+            let d = depth.get(id.as_str()).copied().unwrap_or(0);
+            if let Some(dsts) = children.get(id.as_str()) {
+                for dst in dsts {
+                    let e = depth.entry(dst).or_insert(0);
+                    if *e < d + 1 { *e = d + 1; }
+                }
+            }
+        }
+        let max_depth = depth.values().copied().max().unwrap_or(0);
+        let mut layers: Vec<Vec<NodeId>> = vec![vec![]; max_depth + 1];
+        for id in &topo {
+            let d = depth.get(id.as_str()).copied().unwrap_or(0);
+            layers[d].push(id.clone());
+        }
+        layers
+    }
+
+    // ------------------------------------------------------------------
+    // dag_parallel_execution_layers_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_parallel_execution_layers_correct() {
+        // Diamond: A→B, A→C, B→D, C→D
+        // Layer 0: [A], Layer 1: [B, C], Layer 2: [D]
+        let mut dag = Dag::new();
+        for n in &["A", "B", "C", "D"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "D", "in");
+        dag.add_edge("C", "out", "D", "in");
+
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 3, "diamond must have 3 layers");
+        assert_eq!(layers[0], vec!["A"], "layer 0 must contain A");
+        assert!(
+            layers[2].contains(&"D".to_string()),
+            "layer 2 must contain D"
+        );
+        // Layer 1 must contain both B and C
+        assert_eq!(layers[1].len(), 2, "layer 1 must have 2 parallel nodes");
+        assert!(layers[1].contains(&"B".to_string()), "layer 1 must contain B");
+        assert!(layers[1].contains(&"C".to_string()), "layer 1 must contain C");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_single_root_single_leaf_two_layers
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_single_root_single_leaf_two_layers() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("leaf", "verb"));
+        dag.add_edge("root", "out", "leaf", "in");
+
+        let layers = compute_layers(&dag);
+        assert_eq!(layers.len(), 2, "single-edge DAG must have exactly 2 layers");
+        assert!(layers[0].contains(&"root".to_string()), "layer 0 must be root");
+        assert!(layers[1].contains(&"leaf".to_string()), "layer 1 must be leaf");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_all_layers_cover_all_nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_all_layers_cover_all_nodes() {
+        let mut dag = Dag::new();
+        for n in &["n1", "n2", "n3", "n4", "n5"] {
+            dag.add_node(ExecNode::new(*n, "verb"));
+        }
+        dag.add_edge("n1", "out", "n2", "in");
+        dag.add_edge("n1", "out", "n3", "in");
+        dag.add_edge("n2", "out", "n4", "in");
+        dag.add_edge("n3", "out", "n4", "in");
+        dag.add_edge("n4", "out", "n5", "in");
+
+        let layers = compute_layers(&dag);
+        let all_in_layers: Vec<NodeId> = layers.into_iter().flatten().collect();
+        assert_eq!(
+            all_in_layers.len(),
+            dag.node_count(),
+            "layers must collectively cover all nodes"
+        );
+        for name in &["n1", "n2", "n3", "n4", "n5"] {
+            assert!(all_in_layers.contains(&name.to_string()), "{name} must appear in some layer");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // dag_layer_order_respects_deps
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_layer_order_respects_deps() {
+        // Chain: A → B → C — layer of A < layer of B < layer of C
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "B", "in");
+        dag.add_edge("B", "out", "C", "in");
+
+        let layers = compute_layers(&dag);
+        let layer_of = |id: &str| -> usize {
+            layers.iter().enumerate().find(|(_, l)| l.contains(&id.to_string())).unwrap().0
+        };
+        assert!(layer_of("A") < layer_of("B"), "A must be in earlier layer than B");
+        assert!(layer_of("B") < layer_of("C"), "B must be in earlier layer than C");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_leaf_nodes_have_no_outgoing_edges
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_leaf_nodes_have_no_outgoing_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root", "verb"));
+        dag.add_node(ExecNode::new("leaf1", "verb"));
+        dag.add_node(ExecNode::new("leaf2", "verb"));
+        dag.add_edge("root", "out", "leaf1", "in");
+        dag.add_edge("root", "out", "leaf2", "in");
+
+        for leaf in &["leaf1", "leaf2"] {
+            let out_count = dag.edges.iter().filter(|e| e.src_node.as_str() == *leaf).count();
+            assert_eq!(out_count, 0, "{leaf} is a leaf and must have no outgoing edges");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // dag_root_nodes_have_no_incoming_edges
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_root_nodes_have_no_incoming_edges() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("root1", "verb"));
+        dag.add_node(ExecNode::new("root2", "verb"));
+        dag.add_node(ExecNode::new("leaf", "verb"));
+        dag.add_edge("root1", "out", "leaf", "in");
+        dag.add_edge("root2", "out", "leaf", "in");
+
+        for root in &["root1", "root2"] {
+            let in_count = dag.edges.iter().filter(|e| e.dst_node.as_str() == *root).count();
+            assert_eq!(in_count, 0, "{root} is a root and must have no incoming edges");
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // dag_node_in_correct_layer_after_multiple_deps
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_node_in_correct_layer_after_multiple_deps() {
+        // A→C, B→C: C must be in layer 1 (both A and B are layer 0).
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("A", "verb"));
+        dag.add_node(ExecNode::new("B", "verb"));
+        dag.add_node(ExecNode::new("C", "verb"));
+        dag.add_edge("A", "out", "C", "in");
+        dag.add_edge("B", "out", "C", "in");
+
+        let layers = compute_layers(&dag);
+        let layer_of_c = layers.iter().enumerate()
+            .find(|(_, l)| l.contains(&"C".to_string()))
+            .map(|(i, _)| i)
+            .unwrap();
+        assert_eq!(layer_of_c, 1, "C with two layer-0 parents must be in layer 1");
+    }
+
+    // ------------------------------------------------------------------
+    // dag_empty_graph_zero_layers
+    // ------------------------------------------------------------------
+    #[test]
+    fn dag_empty_graph_zero_layers() {
+        let dag = Dag::new();
+        let layers = compute_layers(&dag);
+        assert!(layers.is_empty(), "empty DAG must produce zero layers");
+    }
+
     // ------------------------------------------------------------------
     // Empty DAG: topological sort is empty
     // ------------------------------------------------------------------

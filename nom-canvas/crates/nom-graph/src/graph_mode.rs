@@ -958,4 +958,180 @@ mod tests {
             (x1 - x0).abs()
         );
     }
+
+    // ------------------------------------------------------------------
+    // graph_mode_insert_node_returns_id
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_insert_node_returns_id() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("new_node", "verb"));
+        assert!(dag.nodes.contains_key("new_node"), "inserted node must be retrievable by id");
+        assert_eq!(dag.node_count(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_node_lookup_by_id
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_node_lookup_by_id() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("lookup_target", "some_kind"));
+        let node = dag.nodes.get("lookup_target");
+        assert!(node.is_some(), "lookup by id must return the node");
+        assert_eq!(node.unwrap().kind, "some_kind");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_remove_node
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_remove_node() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("to_remove", "verb"));
+        dag.add_node(ExecNode::new("keeper", "verb"));
+        assert_eq!(dag.node_count(), 2);
+        dag.nodes.remove("to_remove");
+        assert_eq!(dag.node_count(), 1);
+        assert!(!dag.nodes.contains_key("to_remove"), "removed node must not be present");
+        assert!(dag.nodes.contains_key("keeper"), "unremoved node must still be present");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_add_edge_between_nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_add_edge_between_nodes() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("src", "verb"));
+        dag.add_node(ExecNode::new("dst", "verb"));
+        assert_eq!(dag.edge_count(), 0);
+        dag.add_edge("src", "out", "dst", "in");
+        assert_eq!(dag.edge_count(), 1);
+        assert_eq!(dag.edges[0].src_node, "src");
+        assert_eq!(dag.edges[0].dst_node, "dst");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_remove_edge
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_remove_edge() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("a", "verb"));
+        dag.add_node(ExecNode::new("b", "verb"));
+        dag.add_node(ExecNode::new("c", "verb"));
+        dag.add_edge("a", "out", "b", "in");
+        dag.add_edge("b", "out", "c", "in");
+        assert_eq!(dag.edge_count(), 2);
+        dag.edges.retain(|e| !(e.src_node == "a" && e.dst_node == "b"));
+        assert_eq!(dag.edge_count(), 1);
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_node_count_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_node_count_correct() {
+        let dag = three_node_dag();
+        assert_eq!(dag.node_count(), 3, "three_node_dag must report node_count == 3");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_edge_count_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_edge_count_correct() {
+        let dag = three_node_dag();
+        assert_eq!(dag.edge_count(), 2, "three_node_dag must report edge_count == 2");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_neighbors_of_node
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_neighbors_of_node() {
+        let dag = three_node_dag();
+        // "a" has one outgoing neighbor: "b"
+        let neighbors_of_a: Vec<&str> = dag.edges.iter()
+            .filter(|e| e.src_node == "a")
+            .map(|e| e.dst_node.as_str())
+            .collect();
+        assert_eq!(neighbors_of_a, vec!["b"], "a's neighbor must be b");
+
+        // "b" has one outgoing neighbor: "c"
+        let neighbors_of_b: Vec<&str> = dag.edges.iter()
+            .filter(|e| e.src_node == "b")
+            .map(|e| e.dst_node.as_str())
+            .collect();
+        assert_eq!(neighbors_of_b, vec!["c"], "b's neighbor must be c");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_no_self_loops — self-loop causes topological_sort to fail
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_no_self_loops() {
+        let mut dag = Dag::new();
+        dag.add_node(ExecNode::new("self_node", "verb"));
+        dag.add_edge("self_node", "out", "self_node", "in"); // self-loop
+        assert!(
+            dag.topological_sort().is_err(),
+            "self-loop must cause topological_sort to return Err"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_serialize_roundtrip — node ids survive a rebuild
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_serialize_roundtrip() {
+        let original = three_node_dag();
+        // Capture node ids and edge counts
+        let mut original_ids: Vec<String> = original.nodes.keys().cloned().collect();
+        original_ids.sort();
+        let original_edge_count = original.edge_count();
+
+        // Reconstruct a new DAG from the captured data
+        let mut reconstructed = Dag::new();
+        for id in &original_ids {
+            reconstructed.add_node(ExecNode::new(id.clone(), "verb"));
+        }
+        for e in &original.edges {
+            reconstructed.add_edge(
+                e.src_node.clone(),
+                e.src_port.clone(),
+                e.dst_node.clone(),
+                e.dst_port.clone(),
+            );
+        }
+
+        let mut reconstructed_ids: Vec<String> = reconstructed.nodes.keys().cloned().collect();
+        reconstructed_ids.sort();
+        assert_eq!(reconstructed_ids, original_ids, "roundtrip must preserve node ids");
+        assert_eq!(reconstructed.edge_count(), original_edge_count, "roundtrip must preserve edge count");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_empty_graph_has_zero_nodes
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_empty_graph_has_zero_nodes() {
+        let dag = Dag::new();
+        assert_eq!(dag.node_count(), 0, "new empty DAG must have zero nodes");
+        assert_eq!(dag.edge_count(), 0, "new empty DAG must have zero edges");
+    }
+
+    // ------------------------------------------------------------------
+    // graph_mode_clear_removes_all
+    // ------------------------------------------------------------------
+    #[test]
+    fn graph_mode_clear_removes_all() {
+        let mut dag = three_node_dag();
+        assert!(dag.node_count() > 0, "dag must be non-empty before clear");
+        dag.nodes.clear();
+        dag.edges.clear();
+        assert_eq!(dag.node_count(), 0, "after clear, node_count must be 0");
+        assert_eq!(dag.edge_count(), 0, "after clear, edge_count must be 0");
+    }
 }

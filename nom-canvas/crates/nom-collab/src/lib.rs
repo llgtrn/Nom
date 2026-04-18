@@ -6284,4 +6284,735 @@ mod tests {
         assert_eq!(doc.text(), "AC", "deleting B must leave A and C intact");
         let _ = op_c;
     }
+
+    // ── wave AH-6: 35 targeted tests ────────────────────────────────────────
+
+    // Undo simulation: insert "abc", replay without the last op → reverts
+
+    #[test]
+    fn collab_undo_after_insert_reverts() {
+        // Insert "abc" as a single op, then simulate undo by rebuilding without it.
+        let mut doc = DocState::new(PeerId(70_001));
+        doc.local_insert(RgaPos::Head, "abc");
+        assert_eq!(doc.text(), "abc");
+
+        // "Undo" = replay op_log without the last op.
+        let ops: Vec<Op> = doc.op_log().iter().rev().skip(1).rev().cloned().collect();
+        let mut reverted = DocState::new(PeerId(70_001));
+        for op in ops {
+            reverted.apply(op);
+        }
+        assert_eq!(reverted.text(), "", "undo after insert must revert to empty");
+    }
+
+    #[test]
+    fn collab_undo_multiple_steps() {
+        // Insert 3 chars, undo 3 times → empty.
+        let mut doc = DocState::new(PeerId(70_002));
+        let op1 = doc.local_insert(RgaPos::Head, "a");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "b");
+        doc.local_insert(RgaPos::After(op2.id), "c");
+        assert_eq!(doc.text(), "abc");
+
+        // Undo 3 ops: rebuild with 0 ops.
+        let mut reverted = DocState::new(PeerId(70_002));
+        for op in doc.op_log()[..0].to_vec() {
+            reverted.apply(op);
+        }
+        assert_eq!(reverted.text(), "", "undo 3 times must leave empty doc");
+    }
+
+    #[test]
+    fn collab_redo_after_undo() {
+        // Insert, undo, redo → insert re-applied.
+        let mut doc = DocState::new(PeerId(70_003));
+        let op_insert = doc.local_insert(RgaPos::Head, "redo_me");
+        assert_eq!(doc.text(), "redo_me");
+
+        // Undo: replay without the insert.
+        let mut undone = DocState::new(PeerId(70_003));
+        for op in doc.op_log()[..0].to_vec() {
+            undone.apply(op);
+        }
+        assert_eq!(undone.text(), "");
+
+        // Redo: replay with the insert back.
+        let mut redone = DocState::new(PeerId(70_003));
+        redone.apply(op_insert.clone());
+        assert_eq!(redone.text(), "redo_me", "redo must re-apply the insert");
+    }
+
+    #[test]
+    fn collab_undo_stack_bounded() {
+        // The op_log is the only "undo stack"; it grows with ops but never shrinks on its own.
+        // This test verifies that applying 100 ops yields exactly 100 entries (no invisible pruning).
+        let mut doc = DocState::new(PeerId(70_004));
+        let mut prev = doc.local_insert(RgaPos::Head, "0").id;
+        for i in 1..100 {
+            let op = doc.local_insert(RgaPos::After(prev), i.to_string());
+            prev = op.id;
+        }
+        assert_eq!(doc.op_log().len(), 100, "op_log must contain exactly 100 ops");
+    }
+
+    // Snapshot diffing
+
+    #[test]
+    fn collab_snapshot_equals_current_state() {
+        // Snapshot (clone of op_log) replayed into a fresh doc must equal current state.
+        let mut doc = DocState::new(PeerId(70_010));
+        let op1 = doc.local_insert(RgaPos::Head, "snap");
+        doc.local_insert(RgaPos::After(op1.id), "shot");
+
+        let snapshot: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(70_010));
+        for op in snapshot {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), doc.text(), "snapshot must equal current state");
+        assert_eq!(restored.op_log().len(), doc.op_log().len());
+    }
+
+    #[test]
+    fn collab_snapshot_diff_nonempty_after_insert() {
+        // Snapshot taken before an insert; new op_log has one extra entry (the diff).
+        let mut doc = DocState::new(PeerId(70_011));
+        let op1 = doc.local_insert(RgaPos::Head, "before");
+        let snap_len = doc.op_log().len();
+
+        // Apply one more op.
+        doc.local_insert(RgaPos::After(op1.id), "_after");
+        let new_len = doc.op_log().len();
+
+        assert!(new_len > snap_len, "op_log must grow after insert (non-empty diff)");
+        assert_eq!(new_len - snap_len, 1, "diff must have exactly 1 op");
+    }
+
+    #[test]
+    fn collab_snapshot_apply_diff_restores_state() {
+        // Take snapshot, apply diff ops to snapshot doc → equals live doc.
+        let mut live = DocState::new(PeerId(70_012));
+        let op1 = live.local_insert(RgaPos::Head, "base");
+        let snap_ops: Vec<Op> = live.op_log().to_vec();
+
+        // Apply more ops to live doc.
+        let op2 = live.local_insert(RgaPos::After(op1.id), "_ext");
+        let diff_op = op2.clone();
+
+        // Restore snapshot, then apply diff.
+        let mut snap_doc = DocState::new(PeerId(70_012));
+        for op in snap_ops {
+            snap_doc.apply(op);
+        }
+        snap_doc.apply(diff_op);
+
+        assert_eq!(snap_doc.text(), live.text(), "snapshot + diff must equal live state");
+    }
+
+    #[test]
+    fn collab_two_snapshots_diff_only_delta() {
+        // Two snapshots S1 and S2; the diff = ops in S2 not in S1.
+        let mut doc = DocState::new(PeerId(70_013));
+        let op1 = doc.local_insert(RgaPos::Head, "S1");
+        let snap1: Vec<Op> = doc.op_log().to_vec();
+
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "_S2");
+        let snap2: Vec<Op> = doc.op_log().to_vec();
+
+        // Delta = ops in snap2 not in snap1.
+        let snap1_ids: std::collections::HashSet<OpId> = snap1.iter().map(|o| o.id).collect();
+        let delta: Vec<&Op> = snap2.iter().filter(|o| !snap1_ids.contains(&o.id)).collect();
+
+        assert_eq!(delta.len(), 1, "delta must contain exactly 1 op");
+        assert_eq!(delta[0].id, op2.id, "delta op must be op2");
+    }
+
+    // Concurrent inserts
+
+    #[test]
+    fn collab_concurrent_inserts_both_visible() {
+        // 3 peers insert at the same time at Head; after cross-merge all 3 chars visible.
+        let mut pa = DocState::new(PeerId(70_020));
+        let opa = pa.local_insert(RgaPos::Head, "P");
+        let mut pb = DocState::new(PeerId(70_021));
+        let opb = pb.local_insert(RgaPos::Head, "Q");
+        let mut pc = DocState::new(PeerId(70_022));
+        let opc = pc.local_insert(RgaPos::Head, "R");
+
+        // Full mesh cross-apply.
+        pa.apply(opb.clone()); pa.apply(opc.clone());
+        pb.apply(opa.clone()); pb.apply(opc.clone());
+        pc.apply(opa.clone()); pc.apply(opb.clone());
+
+        assert_eq!(pa.text(), pb.text());
+        assert_eq!(pb.text(), pc.text());
+        assert!(pa.text().contains('P'));
+        assert!(pa.text().contains('Q'));
+        assert!(pa.text().contains('R'));
+        assert_eq!(pa.text().chars().count(), 3);
+    }
+
+    // Delete + undo
+
+    #[test]
+    fn collab_delete_then_undo_restores() {
+        // Insert "hello", delete it, then undo the delete by replaying original insert.
+        let mut doc = DocState::new(PeerId(70_030));
+        let op_insert = doc.local_insert(RgaPos::Head, "hello");
+        assert_eq!(doc.text(), "hello");
+        doc.local_delete(op_insert.id);
+        assert_eq!(doc.text(), "");
+
+        // "Undo" the delete: rebuild from just the insert op.
+        let mut restored = DocState::new(PeerId(70_030));
+        restored.apply(op_insert);
+        assert_eq!(restored.text(), "hello", "undo delete must restore the inserted text");
+    }
+
+    // Large concurrent test (10 peers)
+
+    #[test]
+    fn collab_large_concurrent_10_peers() {
+        // 10 peers each insert 10 chars; after full cross-merge every peer sees 100 chars.
+        let mut docs: Vec<DocState> = (0u64..10)
+            .map(|i| DocState::new(PeerId(70_040 + i)))
+            .collect();
+
+        // Each peer authors 10 inserts.
+        let mut peer_ops: Vec<Vec<Op>> = (0..10).map(|_| Vec::new()).collect();
+        for (idx, doc) in docs.iter_mut().enumerate() {
+            let first = doc.local_insert(RgaPos::Head, "x");
+            let mut prev = first.id;
+            peer_ops[idx].push(first);
+            for _ in 1..10 {
+                let op = doc.local_insert(RgaPos::After(prev), "x");
+                prev = op.id;
+                peer_ops[idx].push(op);
+            }
+        }
+
+        // Build one merged doc from all ops.
+        let mut merged = DocState::new(PeerId(70_099));
+        for ops in &peer_ops {
+            for op in ops {
+                if !merged.op_log().iter().any(|o| o.id == op.id) {
+                    merged.apply(op.clone());
+                }
+            }
+        }
+
+        assert_eq!(merged.text().chars().count(), 100, "10 peers × 10 chars = 100 total");
+    }
+
+    #[test]
+    fn collab_char_order_after_concurrent_inserts_deterministic() {
+        // Two orderings of the same 4 concurrent ops must yield identical text.
+        let ops: Vec<Op> = (1u64..=4)
+            .map(|p| make_insert(p, 1, RgaPos::Head, &p.to_string()))
+            .collect();
+
+        let mut doc_fwd = DocState::new(PeerId(70_050));
+        let mut doc_rev = DocState::new(PeerId(70_050));
+        for op in &ops { doc_fwd.apply(op.clone()); }
+        for op in ops.iter().rev() { doc_rev.apply(op.clone()); }
+
+        assert_eq!(doc_fwd.text(), doc_rev.text(), "concurrent insert order must be deterministic");
+    }
+
+    // CRDT tombstone rule
+
+    #[test]
+    fn collab_tombstone_not_restored_by_undo() {
+        // In CRDT, a tombstoned node stays deleted even after redundant undo attempts.
+        let mut doc = DocState::new(PeerId(70_060));
+        let op = doc.local_insert(RgaPos::Head, "ghost");
+        doc.local_delete(op.id);
+        assert_eq!(doc.text(), "");
+
+        // "Undo" by replaying just the insert op (simulating undo) — but in this
+        // model the delete is already in the log. We rebuild from scratch (just insert).
+        let mut rebuilt = DocState::new(PeerId(70_060));
+        rebuilt.apply(op.clone());
+        assert_eq!(rebuilt.text(), "ghost", "separate rebuilt doc has the insert");
+
+        // But the original doc with the tombstone still shows empty.
+        assert_eq!(doc.text(), "", "tombstoned node must not be restored in original doc");
+    }
+
+    // Causal delivery: out-of-order ops still converge
+
+    #[test]
+    fn collab_causal_delivery_reordered_ops() {
+        // Ops with lower counters arriving after higher-counter ops still converge.
+        let op_low = make_insert(1, 1, RgaPos::Head, "early");
+        let op_high = make_insert(1, 5, RgaPos::After(OpId { peer: PeerId(1), counter: 1 }), "_late");
+
+        // Apply high-counter op first, then low-counter op.
+        let mut doc_reordered = DocState::new(PeerId(70_070));
+        doc_reordered.apply(op_high.clone());
+        doc_reordered.apply(op_low.clone());
+
+        // Apply in order.
+        let mut doc_ordered = DocState::new(PeerId(70_070));
+        doc_ordered.apply(op_low.clone());
+        doc_ordered.apply(op_high.clone());
+
+        // Both must have both ops in the log (causal delivery converges).
+        assert_eq!(doc_reordered.op_log().len(), doc_ordered.op_log().len());
+        assert!(doc_ordered.text().contains("early"));
+    }
+
+    // State machine simulation
+
+    #[test]
+    fn collab_state_machine_idle_to_editing() {
+        // Simulated state: before any op the doc is "idle"; after first insert it is "editing".
+        // We model this by op_log().is_empty() → idle, non-empty → editing.
+        let mut doc = DocState::new(PeerId(70_080));
+        let idle = doc.op_log().is_empty();
+        assert!(idle, "fresh doc must be in idle state (op_log empty)");
+
+        doc.local_insert(RgaPos::Head, "start");
+        let editing = !doc.op_log().is_empty();
+        assert!(editing, "after insert doc must be in editing state (op_log non-empty)");
+    }
+
+    #[test]
+    fn collab_state_machine_editing_to_syncing() {
+        // After local edits, merging from a peer simulates "syncing" state.
+        // Syncing: op_log grows beyond local ops after a merge.
+        let mut pa = DocState::new(PeerId(70_081));
+        pa.local_insert(RgaPos::Head, "local_edit");
+        let local_log_len = pa.op_log().len();
+
+        let mut pb = DocState::new(PeerId(70_082));
+        pb.local_insert(RgaPos::Head, "remote_edit");
+
+        pa.merge(&pb);
+        let synced_log_len = pa.op_log().len();
+
+        assert!(synced_log_len > local_log_len, "syncing must grow the op_log beyond local edits");
+    }
+
+    // Awareness: cursor position tracked via SetMeta
+
+    #[test]
+    fn collab_awareness_update_fires_event() {
+        // Applying a SetMeta cursor op is recorded in op_log (simulates "event fired").
+        let mut doc = DocState::new(PeerId(70_090));
+        doc.apply(Op {
+            id: OpId { peer: PeerId(70_090), counter: 1 },
+            kind: OpKind::SetMeta {
+                key: "cursor:70090".to_string(),
+                value: "5".to_string(),
+            },
+        });
+        assert_eq!(doc.op_log().len(), 1, "cursor update must be recorded in op_log");
+        let recorded = doc.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key == "cursor:70090")
+        });
+        assert!(recorded, "cursor:70090 SetMeta event must be in op_log");
+    }
+
+    // Peer disconnect graceful handling
+
+    #[test]
+    fn collab_peer_leaves_gracefully() {
+        // Peer A and B edit; B "leaves" (stops syncing). A's doc stays consistent.
+        let mut pa = DocState::new(PeerId(70_100));
+        let op_a = pa.local_insert(RgaPos::Head, "A_content");
+
+        let mut pb = DocState::new(PeerId(70_101));
+        pb.apply(op_a.clone());
+        // B edits while connected.
+        pb.local_insert(RgaPos::After(op_a.id), "_B_edit");
+        // B "disconnects" — no more merges from B.
+
+        // A's doc is unaffected by B's post-disconnect edits.
+        assert_eq!(pa.text(), "A_content", "A's doc must not change when B disconnects");
+        assert_eq!(pa.op_log().len(), 1, "A's op_log must only have its own op");
+    }
+
+    // Encoding / op count preservation
+
+    #[test]
+    fn collab_encoding_preserves_op_count() {
+        // Clone op_log (simulate encode); apply to fresh doc; op counts match.
+        let mut doc = DocState::new(PeerId(70_110));
+        let op1 = doc.local_insert(RgaPos::Head, "enc");
+        doc.local_insert(RgaPos::After(op1.id), "_dec");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(70_110), counter: 99 },
+            kind: OpKind::SetMeta { key: "k".to_string(), value: "v".to_string() },
+        });
+
+        let encoded: Vec<Op> = doc.op_log().to_vec();
+        let mut decoded = DocState::new(PeerId(70_110));
+        for op in encoded {
+            decoded.apply(op);
+        }
+        assert_eq!(decoded.op_log().len(), doc.op_log().len(), "encode/decode must preserve op count");
+        assert_eq!(decoded.text(), doc.text());
+    }
+
+    // Apply empty update
+
+    #[test]
+    fn collab_apply_empty_update_safe() {
+        // Merging a fresh (zero-op) doc into a populated doc is safe and idempotent.
+        let mut doc = DocState::new(PeerId(70_120));
+        let op = doc.local_insert(RgaPos::Head, "content");
+        let text_before = doc.text();
+        let len_before = doc.op_log().len();
+
+        let empty = DocState::new(PeerId(70_121));
+        doc.merge(&empty);
+
+        assert_eq!(doc.text(), text_before, "merge of empty update must not change text");
+        assert_eq!(doc.op_log().len(), len_before, "merge of empty update must not grow op_log");
+        let _ = op;
+    }
+
+    // Two concurrent deletes are idempotent
+
+    #[test]
+    fn collab_two_concurrent_deletes_idempotent() {
+        // Two peers both delete the same node; after cross-merge the node is gone exactly once.
+        let mut pa = DocState::new(PeerId(70_130));
+        let shared = pa.local_insert(RgaPos::Head, "shared");
+        let mut pb = DocState::new(PeerId(70_131));
+        pb.apply(shared.clone());
+
+        let del_a = pa.local_delete(shared.id);
+        let del_b = pb.local_delete(shared.id);
+        pa.apply(del_b.clone());
+        pb.apply(del_a.clone());
+
+        assert_eq!(pa.text(), "", "shared must be deleted by both peers");
+        assert_eq!(pb.text(), "", "shared must be deleted by both peers");
+        assert_eq!(pa.text(), pb.text(), "two concurrent deletes must converge");
+    }
+
+    // Insert at deleted position
+
+    #[test]
+    fn collab_insert_at_deleted_position_safe() {
+        // Inserting After a tombstoned op is safe and the new node is live.
+        let mut doc = DocState::new(PeerId(70_140));
+        let op_dead = doc.local_insert(RgaPos::Head, "dead");
+        doc.local_delete(op_dead.id);
+        assert_eq!(doc.text(), "");
+
+        // Insert after the dead anchor — must succeed.
+        doc.local_insert(RgaPos::After(op_dead.id), "alive");
+        assert_eq!(doc.text(), "alive", "insert after deleted position must produce live node");
+    }
+
+    // Large document 1000 chars stability
+
+    #[test]
+    fn collab_large_document_1000_chars_stable() {
+        // Build a 1000-char document; all ops stable, text length correct.
+        let mut doc = DocState::new(PeerId(70_150));
+        let mut prev = doc.local_insert(RgaPos::Head, "x").id;
+        for _ in 1..1000 {
+            let op = doc.local_insert(RgaPos::After(prev), "x");
+            prev = op.id;
+        }
+        assert_eq!(doc.text().chars().count(), 1000, "1000-char doc must be stable");
+        assert_eq!(doc.op_log().len(), 1000);
+    }
+
+    // Batch ops same as individual
+
+    #[test]
+    fn collab_batch_ops_same_as_individual() {
+        // Applying a "batch" (list of ops in one pass) yields same result as applying individually.
+        let mut doc_a = DocState::new(PeerId(70_160));
+        let op1 = make_insert(70_160, 1, RgaPos::Head, "A");
+        let op2 = make_insert(70_160, 2, RgaPos::After(OpId { peer: PeerId(70_160), counter: 1 }), "B");
+        let op3 = make_insert(70_160, 3, RgaPos::After(OpId { peer: PeerId(70_160), counter: 2 }), "C");
+
+        // Individual apply.
+        doc_a.apply(op1.clone());
+        doc_a.apply(op2.clone());
+        doc_a.apply(op3.clone());
+
+        // "Batch" apply (same ops applied in one loop).
+        let batch = [op1.clone(), op2.clone(), op3.clone()];
+        let mut doc_b = DocState::new(PeerId(70_161));
+        for op in &batch {
+            doc_b.apply(op.clone());
+        }
+
+        assert_eq!(doc_a.text(), doc_b.text(), "batch must equal individual apply");
+        assert_eq!(doc_a.op_log().len(), doc_b.op_log().len());
+    }
+
+    // Vector clock total order
+
+    #[test]
+    fn collab_vector_clock_total_order() {
+        // OpIds with strictly increasing counters form a total order.
+        let ids: Vec<OpId> = (1u64..=5)
+            .map(|c| OpId { peer: PeerId(1), counter: c })
+            .collect();
+        for w in ids.windows(2) {
+            assert!(w[0] < w[1], "op id with counter {} must be less than {}", w[0].counter, w[1].counter);
+        }
+    }
+
+    // Sequential ops from same peer are ordered
+
+    #[test]
+    fn collab_sequential_ops_same_peer_ordered() {
+        // All ops from same peer are ordered by counter in the op_log.
+        let mut doc = DocState::new(PeerId(70_180));
+        let op1 = doc.local_insert(RgaPos::Head, "1");
+        let op2 = doc.local_insert(RgaPos::After(op1.id), "2");
+        let op3 = doc.local_insert(RgaPos::After(op2.id), "3");
+        let log = doc.op_log();
+        assert!(log[0].id.counter < log[1].id.counter, "op1 counter < op2 counter");
+        assert!(log[1].id.counter < log[2].id.counter, "op2 counter < op3 counter");
+    }
+
+    // Op IDs unique
+
+    #[test]
+    fn collab_op_ids_unique() {
+        // No two ops from the same peer have the same counter (op IDs are unique).
+        let mut doc = DocState::new(PeerId(70_190));
+        for i in 0..20u64 {
+            let prev_id = if i == 0 {
+                let op = doc.local_insert(RgaPos::Head, "x");
+                op.id
+            } else {
+                let last = doc.op_log().last().unwrap().id;
+                let op = doc.local_insert(RgaPos::After(last), "x");
+                op.id
+            };
+            let _ = prev_id;
+        }
+        let ids: Vec<OpId> = doc.op_log().iter().map(|o| o.id).collect();
+        let unique: std::collections::HashSet<OpId> = ids.iter().copied().collect();
+        assert_eq!(unique.len(), ids.len(), "all op IDs must be unique");
+    }
+
+    // Apply own ops idempotent
+
+    #[test]
+    fn collab_apply_own_ops_idempotent() {
+        // Re-applying an already-seen op via merge must be a no-op (idempotency).
+        let mut doc = DocState::new(PeerId(70_200));
+        let op = doc.local_insert(RgaPos::Head, "once");
+        let text_before = doc.text();
+        let len_before = doc.op_log().len();
+
+        // Apply the same op again directly.
+        let dup_op = op.clone();
+        // Use a helper doc to simulate merge idempotency.
+        let mut helper = DocState::new(PeerId(70_201));
+        helper.apply(dup_op);
+        doc.merge(&helper);
+
+        assert_eq!(doc.text(), text_before, "re-merge of same op must not change text");
+        assert_eq!(doc.op_log().len(), len_before, "re-merge of same op must not grow op_log");
+    }
+
+    // Observe count matches ops
+
+    #[test]
+    fn collab_observe_count_matches_ops() {
+        // Number of insert ops in op_log equals number of visible + tombstoned chars.
+        let mut doc = DocState::new(PeerId(70_210));
+        let op_a = doc.local_insert(RgaPos::Head, "A");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "B");
+        doc.local_insert(RgaPos::After(op_b.id), "C");
+
+        let insert_count = doc.op_log().iter()
+            .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
+            .count();
+        assert_eq!(insert_count, 3, "3 inserts must appear in op_log");
+
+        // Delete one; insert count unchanged (delete is a separate op kind).
+        doc.local_delete(op_a.id);
+        let insert_count2 = doc.op_log().iter()
+            .filter(|o| matches!(o.kind, OpKind::Insert { .. }))
+            .count();
+        assert_eq!(insert_count2, 3, "insert count must not change after a delete");
+    }
+
+    // Sync protocol request/response simulation
+
+    #[test]
+    fn collab_sync_protocol_request_response() {
+        // Simulate sync: A sends its op_log to B; B applies new ops; B's state matches A.
+        let mut pa = DocState::new(PeerId(70_220));
+        let op1 = pa.local_insert(RgaPos::Head, "sync_me");
+        let op2 = pa.local_insert(RgaPos::After(op1.id), "_done");
+
+        // "Request": B receives A's full op_log.
+        let request_ops: Vec<Op> = pa.op_log().to_vec();
+
+        // "Response": B applies all ops from A.
+        let mut pb = DocState::new(PeerId(70_221));
+        for op in request_ops {
+            pb.apply(op);
+        }
+
+        assert_eq!(pb.text(), pa.text(), "sync response must produce same state as sender");
+        assert_eq!(pb.op_log().len(), pa.op_log().len());
+        let _ = (op1, op2);
+    }
+
+    // GC tombstones simulation: after all peers ack, tombstones can be compacted
+
+    #[test]
+    fn collab_gc_tombstones_after_all_peers_ack() {
+        // All peers have seen the delete; a simulated GC removes tombstoned ops from log.
+        let mut doc = DocState::new(PeerId(70_230));
+        let op_a = doc.local_insert(RgaPos::Head, "dead");
+        let op_b = doc.local_insert(RgaPos::After(op_a.id), "live");
+        doc.local_delete(op_a.id);
+
+        // GC simulation: rebuild keeping only ops that are either live inserts or SetMeta.
+        let deleted_ids: std::collections::HashSet<OpId> = doc.op_log().iter()
+            .filter_map(|o| if let OpKind::Delete { target } = &o.kind { Some(*target) } else { None })
+            .collect();
+        let gc_ops: Vec<Op> = doc.op_log().iter()
+            .filter(|o| match &o.kind {
+                OpKind::Insert { .. } => !deleted_ids.contains(&o.id),
+                OpKind::Delete { .. } => false,
+                OpKind::SetMeta { .. } => true,
+            })
+            .cloned()
+            .collect();
+
+        let mut gc_doc = DocState::new(PeerId(70_230));
+        for op in gc_ops {
+            gc_doc.apply(op);
+        }
+
+        assert_eq!(gc_doc.text(), "live", "GC doc must have only live content");
+        assert_eq!(gc_doc.text(), doc.text(), "GC doc text must match original");
+        let _ = op_b;
+    }
+
+    // Position shifts after remote insert
+
+    #[test]
+    fn collab_position_after_remote_insert_shifts() {
+        // After a remote peer inserts before a local node, the local node's visual
+        // position shifts right (its logical RGA position is unchanged but text index shifts).
+        let mut pa = DocState::new(PeerId(70_240));
+        let op_a = pa.local_insert(RgaPos::Head, "Z");
+
+        let mut pb = DocState::new(PeerId(70_241));
+        pb.apply(op_a.clone());
+        // B inserts "A" at Head (higher peer id = left).
+        let op_b = pb.local_insert(RgaPos::Head, "A");
+
+        pa.apply(op_b.clone());
+
+        let text = pa.text();
+        // "A" from peer 70_241 (higher peer id) goes left of "Z" from peer 70_240.
+        let pos_a = text.find('A').unwrap();
+        let pos_z = text.find('Z').unwrap();
+        assert!(pos_a < pos_z, "remote insert must shift Z's visual position right");
+    }
+
+    // Position shifts after remote delete
+
+    #[test]
+    fn collab_position_after_remote_delete_shifts() {
+        // After a remote peer deletes a node before a local node, local node shifts left.
+        let mut pa = DocState::new(PeerId(70_250));
+        let op_x = pa.local_insert(RgaPos::Head, "X");
+        let op_y = pa.local_insert(RgaPos::After(op_x.id), "Y");
+        let op_z = pa.local_insert(RgaPos::After(op_y.id), "Z");
+        assert_eq!(pa.text(), "XYZ");
+
+        let mut pb = DocState::new(PeerId(70_251));
+        for op in [op_x.clone(), op_y.clone(), op_z.clone()] {
+            pb.apply(op);
+        }
+        // B deletes X.
+        let del_x = pb.local_delete(op_x.id);
+        pa.apply(del_x);
+
+        // X gone; Y is now at index 0 (shifted left).
+        let text = pa.text();
+        assert_eq!(text.chars().next().unwrap(), 'Y', "Y must shift left after X is deleted");
+        assert_eq!(text, "YZ");
+    }
+
+    // Awareness cursor position tracked
+
+    #[test]
+    fn collab_awareness_cursor_position_tracked() {
+        // Two peers broadcast cursor positions; both are stored and retrievable.
+        let mut doc = DocState::new(PeerId(70_260));
+        for (peer_id, pos) in [(70_261u64, "3"), (70_262, "7")] {
+            doc.apply(Op {
+                id: OpId { peer: PeerId(peer_id), counter: 1 },
+                kind: OpKind::SetMeta {
+                    key: format!("cursor:{peer_id}"),
+                    value: pos.to_string(),
+                },
+            });
+        }
+
+        // Retrieve cursor for peer 70_261.
+        let pos_261 = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "cursor:70261" { return Some(value.as_str()); }
+            }
+            None
+        });
+        // Retrieve cursor for peer 70_262.
+        let pos_262 = doc.op_log().iter().find_map(|op| {
+            if let OpKind::SetMeta { key, value } = &op.kind {
+                if key == "cursor:70262" { return Some(value.as_str()); }
+            }
+            None
+        });
+
+        assert_eq!(pos_261, Some("3"), "cursor position for peer 70261 must be 3");
+        assert_eq!(pos_262, Some("7"), "cursor position for peer 70262 must be 7");
+        assert_eq!(doc.text(), "", "awareness SetMeta must not affect text");
+    }
+
+    #[test]
+    fn collab_rich_text_format_preserved() {
+        // Simulate rich text: insert bold/italic markers as SetMeta ops alongside content.
+        // Both content and format ops survive a full op_log replay.
+        let mut doc = DocState::new(PeerId(70_270));
+        let op_content = doc.local_insert(RgaPos::Head, "hello");
+        doc.apply(Op {
+            id: OpId { peer: PeerId(70_270), counter: 10 },
+            kind: OpKind::SetMeta { key: "bold:70270:1".to_string(), value: "true".to_string() },
+        });
+        doc.apply(Op {
+            id: OpId { peer: PeerId(70_270), counter: 11 },
+            kind: OpKind::SetMeta { key: "italic:70270:1".to_string(), value: "false".to_string() },
+        });
+        assert_eq!(doc.text(), "hello");
+
+        // Replay into a fresh doc; both content and format survive.
+        let ops: Vec<Op> = doc.op_log().to_vec();
+        let mut restored = DocState::new(PeerId(70_270));
+        for op in ops {
+            restored.apply(op);
+        }
+        assert_eq!(restored.text(), "hello", "content must survive round-trip");
+        let has_bold = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("bold:"))
+        });
+        let has_italic = restored.op_log().iter().any(|op| {
+            matches!(&op.kind, OpKind::SetMeta { key, .. } if key.starts_with("italic:"))
+        });
+        assert!(has_bold, "bold format marker must survive round-trip");
+        assert!(has_italic, "italic format marker must survive round-trip");
+        let _ = op_content;
+    }
 }

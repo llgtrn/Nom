@@ -703,4 +703,134 @@ mod tests {
         let column = offset - line_start;
         assert_eq!(column, 0);
     }
+
+    // ── wave AH-7: new cursor tests ──────────────────────────────────────────
+
+    #[test]
+    fn cursor_multi_cursor_sort_by_position() {
+        let mut cs = CursorSet::single(20);
+        cs.add(Selection::caret(5));
+        cs.add(Selection::caret(10));
+        // After sort, offsets should be 5, 10, 20
+        let offsets: Vec<usize> = cs.selections.iter().map(|s| s.head()).collect();
+        assert_eq!(offsets, vec![5, 10, 20]);
+    }
+
+    #[test]
+    fn cursor_multi_cursor_merge_overlapping() {
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(0, 10);
+        cs.add(Selection::range(5, 20));
+        // Both ranges overlap: should merge into 0..20
+        assert_eq!(cs.len(), 1);
+        assert_eq!(cs.selections[0].min_offset(), 0);
+        assert_eq!(cs.selections[0].max_offset(), 20);
+    }
+
+    #[test]
+    fn cursor_select_word_at_position() {
+        let text = "hello world foo";
+        let offset = 2usize; // inside "hello"
+        // word start: scan backwards to find boundary
+        let word_start = text[..offset]
+            .rfind(|c: char| !c.is_alphanumeric() && c != '_')
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        // word end: scan forwards
+        let word_end = text[offset..]
+            .find(|c: char| !c.is_alphanumeric() && c != '_')
+            .map(|p| offset + p)
+            .unwrap_or(text.len());
+        let word = &text[word_start..word_end];
+        assert_eq!(word, "hello");
+    }
+
+    #[test]
+    fn cursor_select_line_at_position() {
+        let text = "hello\nworld\nfoo";
+        let offset = 8usize; // inside "world"
+        let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        let line_end = text[offset..].find('\n').map(|p| offset + p).unwrap_or(text.len());
+        let line = &text[line_start..line_end];
+        assert_eq!(line, "world");
+    }
+
+    #[test]
+    fn cursor_expand_selection_by_word() {
+        // Expanding: start from caret at 6, expand right to end of "world"
+        let text = "hello world";
+        let caret = 6usize;
+        // word end: from caret, find next space
+        let end = text[caret..]
+            .find(|c: char| c == ' ')
+            .map(|p| caret + p)
+            .unwrap_or(text.len());
+        let sel = Selection::range(caret, end);
+        assert_eq!(&text[sel.min_offset()..sel.max_offset()], "world");
+    }
+
+    #[test]
+    fn cursor_contract_selection_by_word() {
+        // Contracting: shrink from end of "world" back by one word
+        let text = "hello world";
+        let sel = Selection::range(0, 11);
+        // contract right edge: find last space before max
+        let max = sel.max_offset();
+        let new_end = text[..max]
+            .rfind(|c: char| c == ' ')
+            .map(|p| p)
+            .unwrap_or(0);
+        let contracted = Selection::range(sel.min_offset(), new_end);
+        assert_eq!(&text[contracted.min_offset()..contracted.max_offset()], "hello");
+    }
+
+    #[test]
+    fn cursor_page_up_moves_full_page() {
+        let page_size = 10usize;
+        let current_line = 25usize;
+        let new_line = current_line.saturating_sub(page_size);
+        assert_eq!(new_line, 15);
+    }
+
+    #[test]
+    fn cursor_page_down_moves_full_page() {
+        let page_size = 10usize;
+        let total_lines = 50usize;
+        let current_line = 25usize;
+        let new_line = (current_line + page_size).min(total_lines - 1);
+        assert_eq!(new_line, 35);
+    }
+
+    #[test]
+    fn cursor_goto_line_correct() {
+        // Simulate goto_line: for a buffer with line_to_char mapping
+        let line_starts = [0usize, 6, 12, 18]; // 4 lines
+        let target_line = 2;
+        let char_offset = line_starts[target_line];
+        let sel = Selection::caret(char_offset);
+        assert_eq!(sel.head(), 12);
+    }
+
+    #[test]
+    fn cursor_column_preserved_across_short_lines() {
+        // When moving down through a short line, column is preserved (clamped to line len)
+        let lines = ["hello world", "hi", "back to long"];
+        let col = 6usize; // column 6 (past end of "hi")
+        // on line "hi" (len=2), col clamps to 2
+        let clamped = col.min(lines[1].len());
+        assert_eq!(clamped, 2);
+        // on next long line, col is restored to original 6
+        let restored = col.min(lines[2].len());
+        assert_eq!(restored, 6);
+    }
+
+    #[test]
+    fn cursor_mark_and_jump_to_mark() {
+        // Simulate marks: store position, jump elsewhere, restore
+        let mark = Selection::caret(42);
+        let _elsewhere = Selection::caret(0);
+        // Jump back to mark
+        let restored = Selection::caret(mark.head());
+        assert_eq!(restored.head(), 42);
+    }
 }

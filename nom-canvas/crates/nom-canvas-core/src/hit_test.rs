@@ -993,4 +993,184 @@ mod tests {
         let cy = 20.0;
         assert!(hit_test_rect([cx, cy], &r, 0.0), "centre of 90°-rotated rect must hit");
     }
+
+    // ── Wave AH: additional hit_test tests ───────────────────────────────────
+
+    /// Point inside rect returns true.
+    #[test]
+    fn hit_test_point_inside_rect_true() {
+        let r = CanvasRect {
+            id: 200,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        assert!(hit_test_rect([50.0, 50.0], &r, 0.0), "interior point must hit");
+    }
+
+    /// Point outside rect returns false.
+    #[test]
+    fn hit_test_point_outside_rect_false() {
+        let r = CanvasRect {
+            id: 201,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        assert!(!hit_test_rect([150.0, 50.0], &r, 0.0), "exterior point must miss");
+    }
+
+    /// Point exactly on the rect boundary returns true (inclusive).
+    #[test]
+    fn hit_test_point_on_rect_boundary_true() {
+        let r = CanvasRect {
+            id: 202,
+            bounds: ([10.0, 10.0], [80.0, 60.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Left boundary x=10, middle of height
+        assert!(hit_test_rect([10.0, 40.0], &r, 0.0), "left boundary must hit");
+        // Right boundary x=10+80=90
+        assert!(hit_test_rect([90.0, 40.0], &r, 0.0), "right boundary must hit");
+    }
+
+    /// Point near a bezier control point: distance is within threshold.
+    #[test]
+    fn hit_test_bezier_near_control_point() {
+        // Bezier: p0=[0,0], c1=[0,50], c2=[100,50], p3=[100,0]
+        // The curve passes through or near the control region.
+        let conn = CanvasConnector {
+            id: 300,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [0.0, 50.0], [100.0, 50.0], [100.0, 0.0]],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        // The curve passes through the start (0,0) — should always hit with any positive threshold.
+        assert!(hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS), "start of bezier must hit");
+    }
+
+    /// Point far from a bezier curve returns false.
+    #[test]
+    fn hit_test_bezier_far_from_curve_false() {
+        let conn = CanvasConnector {
+            id: 301,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [33.0, 0.0], [66.0, 0.0], [100.0, 0.0]],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        // Curve lies along y=0; point at y=200 is far away.
+        assert!(!hit_test_connector([50.0, 200.0], &conn, HIT_RADIUS), "point far from bezier must miss");
+    }
+
+    /// Circle hit at centre returns true.
+    #[test]
+    fn hit_test_circle_center_true() {
+        assert!(hit_test_circle([0.0, 0.0], 0.0, 0.0, 50.0), "centre must hit");
+    }
+
+    /// Circle: point outside radius returns false.
+    #[test]
+    fn hit_test_circle_outside_radius_false() {
+        assert!(!hit_test_circle([100.0, 0.0], 0.0, 0.0, 50.0), "outside radius must miss");
+    }
+
+    /// Line segment: point near the segment returns true.
+    #[test]
+    fn hit_test_line_segment_nearby_true() {
+        let l = CanvasLine {
+            id: 400,
+            start: [0.0, 0.0],
+            end: [100.0, 0.0],
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            dashes: vec![],
+            z_index: 0,
+        };
+        // 4px above the line — within HIT_RADIUS=5.
+        assert!(hit_test_line([50.0, 4.0], &l, HIT_RADIUS), "nearby point must hit");
+    }
+
+    /// Line segment: point far from segment returns false.
+    #[test]
+    fn hit_test_line_segment_far_false() {
+        let l = CanvasLine {
+            id: 401,
+            start: [0.0, 0.0],
+            end: [100.0, 0.0],
+            stroke_width: 1.0,
+            color: [1.0, 1.0, 1.0, 1.0],
+            dashes: vec![],
+            z_index: 0,
+        };
+        // 100px above the line — way outside HIT_RADIUS.
+        assert!(!hit_test_line([50.0, 100.0], &l, HIT_RADIUS), "far point must miss");
+    }
+
+    /// With zero tolerance, only exact hit on the shape returns true.
+    #[test]
+    fn hit_test_tolerance_zero_only_exact() {
+        let r = CanvasRect {
+            id: 500,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Point just outside right edge — no tolerance.
+        assert!(!hit_test_rect([101.0, 50.0], &r, 0.0), "point 1px outside must miss at zero tolerance");
+        // Point on the edge — must hit.
+        assert!(hit_test_rect([100.0, 50.0], &r, 0.0), "point on edge must hit at zero tolerance");
+    }
+
+    /// With large tolerance, a nearby point that misses exactly is accepted.
+    #[test]
+    fn hit_test_tolerance_large_accepts_nearby() {
+        let r = CanvasRect {
+            id: 501,
+            bounds: ([0.0, 0.0], [100.0, 100.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Point 20px outside — accepted with tolerance=25.
+        assert!(hit_test_rect([120.0, 50.0], &r, 25.0), "point within large tolerance must hit");
+        // Point 30px outside — still outside tolerance=25.
+        assert!(!hit_test_rect([130.0, 50.0], &r, 25.0), "point beyond tolerance must miss");
+    }
+
+    /// Multiple overlapping elements: highest z_index is topmost hit.
+    #[test]
+    fn hit_test_multiple_elements_returns_topmost() {
+        let elements = vec![
+            CanvasRect { id: 10, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 1 },
+            CanvasRect { id: 20, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 8 },
+            CanvasRect { id: 30, bounds: ([0.0, 0.0], [100.0, 100.0]), fill: None, stroke: None, corner_radius: 0.0, rotation: 0.0, z_index: 4 },
+        ];
+        let pt = [50.0, 50.0];
+        let topmost = elements.iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(topmost.id, 20, "element with z_index=8 must be topmost");
+    }
 }

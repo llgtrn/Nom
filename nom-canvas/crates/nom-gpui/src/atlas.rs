@@ -456,4 +456,95 @@ mod tests {
             "texture_id must be > 0 when constructed with 42"
         );
     }
+
+    // ------------------------------------------------------------------
+    // Wave AH: atlas region tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn atlas_allocate_small_region_succeeds() {
+        let mut atlas = TextureAtlas::new(0);
+        let key = make_key(1000);
+        let tile = atlas.pack_glyph(key, 4, 4);
+        assert!(tile.is_some(), "small glyph allocation must succeed");
+    }
+
+    #[test]
+    fn atlas_allocate_fills_capacity() {
+        let mut atlas = TextureAtlas::new(0);
+        // Pack enough glyphs to increase fill_ratio above 0.
+        for i in 0..10u32 {
+            atlas.pack_glyph(make_key(i + 2000), 64, 64).unwrap();
+        }
+        assert!(atlas.fill_ratio() > 0.0, "fill_ratio must be > 0 after allocations");
+    }
+
+    #[test]
+    fn atlas_free_releases_space() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(3000), 32, 32).unwrap();
+        let before = atlas.fill_ratio();
+        assert!(before > 0.0, "fill_ratio must be > 0 before clear");
+        atlas.clear();
+        assert_eq!(atlas.fill_ratio(), 0.0, "fill_ratio must be 0 after clear");
+    }
+
+    #[test]
+    fn atlas_allocate_after_free_succeeds() {
+        let mut atlas = TextureAtlas::new(0);
+        atlas.pack_glyph(make_key(4000), 10, 10).unwrap();
+        atlas.clear();
+        // Allocation after clear must succeed.
+        let tile = atlas.pack_glyph(make_key(4001), 10, 10);
+        assert!(tile.is_some(), "allocation after clear must succeed");
+    }
+
+    #[test]
+    fn atlas_region_has_valid_coords() {
+        let mut atlas = TextureAtlas::new(0);
+        let tile = atlas.pack_glyph(make_key(5000), 16, 16).unwrap();
+        let b = tile.bounds;
+        assert!(b.left < b.right, "left must be less than right: {} < {}", b.left, b.right);
+        assert!(b.top < b.bottom, "top must be less than bottom: {} < {}", b.top, b.bottom);
+        assert!(b.right <= atlas.width, "right must not exceed atlas width");
+        assert!(b.bottom <= atlas.height, "bottom must not exceed atlas height");
+    }
+
+    #[test]
+    fn atlas_empty_atlas_zero_used() {
+        let atlas = TextureAtlas::new(0);
+        assert_eq!(atlas.fill_ratio(), 0.0, "empty atlas must have 0 fill ratio");
+    }
+
+    #[test]
+    fn atlas_multiple_allocations_nonoverlapping() {
+        let mut atlas = TextureAtlas::new(0);
+        let t1 = atlas.pack_glyph(make_key(6001), 20, 20).unwrap();
+        let t2 = atlas.pack_glyph(make_key(6002), 20, 20).unwrap();
+        let t3 = atlas.pack_glyph(make_key(6003), 20, 20).unwrap();
+        // All three tiles must land at different positions.
+        let positions = [
+            (t1.bounds.left, t1.bounds.top),
+            (t2.bounds.left, t2.bounds.top),
+            (t3.bounds.left, t3.bounds.top),
+        ];
+        // Check that not all positions are equal (at least two must differ).
+        let all_same = positions[0] == positions[1] && positions[1] == positions[2];
+        assert!(!all_same, "tiles must not all overlap at the same position");
+    }
+
+    #[test]
+    fn atlas_clear_resets_to_empty() {
+        let mut atlas = TextureAtlas::new(0);
+        for i in 0..5u32 {
+            atlas.pack_glyph(make_key(i + 7000), 8, 8).unwrap();
+        }
+        atlas.clear();
+        assert_eq!(atlas.fill_ratio(), 0.0, "fill_ratio must be 0 after clear");
+        // get() must return None for all previously packed keys.
+        for i in 0..5u32 {
+            let key = make_key(i + 7000);
+            assert!(atlas.get(&key).is_none(), "cleared atlas must not contain key {i}");
+        }
+    }
 }

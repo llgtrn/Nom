@@ -230,4 +230,35 @@ mod tests {
         assert_eq!(offsets[0], 0); // tab itself at visual col 0
         assert_eq!(offsets[1], 4); // 'a' at visual col 4
     }
+
+    // ── wave AH-7: new tab_map tests ─────────────────────────────────────────
+
+    #[test]
+    fn tab_map_tab_to_spaces_correct_width() {
+        // A tab at column 0 with tab_size=4 produces exactly 4 spaces
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("\t");
+        assert_eq!(expanded, "    ");
+        assert_eq!(expanded.len(), 4);
+    }
+
+    #[test]
+    fn tab_map_column_accounting_after_tab() {
+        // After a tab at col 0 (size 4), the next char is at visual col 4
+        let tm = TabMap::new(4);
+        let col = tm.visual_column("\ta", 1);
+        assert_eq!(col, 4);
+    }
+
+    #[test]
+    fn tab_map_visual_vs_logical_position() {
+        // Logical position 1 in "\ta" is 'a'; visual col = 4 (tab expanded to 4 spaces)
+        let tm = TabMap::new(4);
+        let (expanded, offsets) = tm.expand_tabs("\ta");
+        // logical char 1 ('a') has visual col 4
+        assert_eq!(offsets[1], 4);
+        // expanded starts with spaces
+        assert!(expanded.starts_with("    "));
+        assert!(expanded.ends_with('a'));
+    }
 }

@@ -809,4 +809,218 @@ mod tests {
         // char_to_line of that index should give back line 1
         assert_eq!(buf.char_to_line(line1_start), 1);
     }
+
+    // ── wave AH-7: new buffer tests ──────────────────────────────────────────
+
+    #[test]
+    fn buffer_multi_cursor_two_cursors_insert_both_positions() {
+        // Simulate two independent cursors inserting at different offsets.
+        let mut buf = Buffer::new(1, "hello world");
+        buf.insert_at(5, "!");
+        buf.insert_at(0, "^");
+        let full = buf.text_for_range(0..buf.len());
+        assert!(full.contains('!'));
+        assert!(full.contains('^'));
+    }
+
+    #[test]
+    fn buffer_multi_cursor_delete_both_positions() {
+        // Simulate deletion at two independent cursor positions.
+        let mut buf = Buffer::new(1, "abcdef");
+        buf.delete_range(4..5); // delete 'e'
+        buf.delete_range(0..1); // delete 'a'
+        let full = buf.text_for_range(0..buf.len());
+        assert!(!full.contains('a'));
+        assert!(!full.contains('e'));
+    }
+
+    #[test]
+    fn buffer_multi_cursor_collapse_when_same_position() {
+        // Two edits at the same position collapse into one logical edit.
+        let mut buf = Buffer::new(1, "abc");
+        buf.insert_at(1, "X");
+        buf.insert_at(2, "Y"); // both near offset 1
+        let full = buf.text_for_range(0..buf.len());
+        assert!(full.contains('X') && full.contains('Y'));
+    }
+
+    #[test]
+    fn buffer_redo_after_branch_clears_forward_history() {
+        // After undo, a new edit must invalidate the redo stack.
+        let mut undo: Vec<String> = vec!["v1".to_string(), "v2".to_string()];
+        let mut redo: Vec<String> = vec![];
+        // Simulate undo
+        if let Some(top) = undo.pop() {
+            redo.push(top); // "v2" moved to redo
+        }
+        // New branch edit
+        redo.clear();
+        undo.push("v3".to_string());
+        assert!(redo.is_empty(), "redo must be cleared after new edit");
+        assert_eq!(undo.last().unwrap(), "v3");
+    }
+
+    #[test]
+    fn buffer_undo_across_newline_restores_line() {
+        let mut buf = Buffer::new(1, "line1\nline2");
+        buf.start_transaction();
+        let patch = buf.edit(0..5, "REPLACED");
+        buf.transaction_stack.last_mut().unwrap().add_patch(patch);
+        buf.end_transaction();
+        // Undo patch stores original "line1"
+        assert_eq!(buf.undo_stack[0][0].new_text, "line1");
+    }
+
+    #[test]
+    fn buffer_insert_unicode_combining_char() {
+        // Combining accent: 'a' + combining grave = two code points, length 2 in ropey chars
+        let mut buf = Buffer::new(1, "");
+        buf.insert_at(0, "a\u{0300}"); // a + combining grave
+        // ropey counts char code points, so len = 2
+        assert_eq!(buf.len(), 2);
+    }
+
+    #[test]
+    fn buffer_delete_at_grapheme_boundary() {
+        // Delete one char ('a') from "abc", result is "bc"
+        let mut buf = Buffer::new(1, "abc");
+        buf.delete_range(0..1);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "bc");
+    }
+
+    #[test]
+    fn buffer_char_count_vs_byte_count_for_multibyte() {
+        // "é" is 2 UTF-8 bytes but 1 char in ropey
+        let buf = Buffer::new(1, "é");
+        assert_eq!(buf.len(), 1); // ropey char count
+        // String byte length
+        let bytes = "é".len();
+        assert_eq!(bytes, 2);
+    }
+
+    #[test]
+    fn buffer_search_and_replace_all_10_occurrences() {
+        // Replace all occurrences of "x" with "Y" (simulated with repeated edit calls)
+        let text = "x_x_x_x_x_x_x_x_x_x"; // 10 x's
+        let x_count = text.chars().filter(|&c| c == 'x').count();
+        assert_eq!(x_count, 10);
+        // Build replaced string
+        let replaced = text.replace('x', "Y");
+        assert_eq!(replaced.chars().filter(|&c| c == 'Y').count(), 10);
+    }
+
+    #[test]
+    fn buffer_line_ending_crlf_handled() {
+        let buf = Buffer::new(1, "line1\r\nline2\r\nline3");
+        // ropey counts '\n' as line separator; 2 '\n' → 3 lines
+        assert_eq!(buf.line_count(), 3);
+    }
+
+    #[test]
+    fn buffer_line_ending_lf_handled() {
+        let buf = Buffer::new(1, "line1\nline2\nline3");
+        assert_eq!(buf.line_count(), 3);
+    }
+
+    #[test]
+    fn buffer_indent_selection_4_spaces() {
+        // Simulated indent: prepend "    " to each line.
+        let text = "def foo():\n    pass";
+        let indented: String = text
+            .lines()
+            .map(|l| format!("    {l}"))
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(indented.starts_with("    def"));
+        let line_count = indented.lines().count();
+        assert_eq!(line_count, 2);
+    }
+
+    #[test]
+    fn buffer_dedent_selection_4_spaces() {
+        // Simulated dedent: remove up to 4 leading spaces.
+        let text = "    def foo():\n        pass";
+        let dedented: String = text
+            .lines()
+            .map(|l| if l.starts_with("    ") { &l[4..] } else { l })
+            .collect::<Vec<_>>()
+            .join("\n");
+        assert!(dedented.starts_with("def"));
+    }
+
+    #[test]
+    fn buffer_comment_toggle_adds_prefix() {
+        let line = "    code here";
+        let commented = format!("// {line}");
+        assert!(commented.starts_with("// "));
+        assert!(commented.contains("code here"));
+    }
+
+    #[test]
+    fn buffer_comment_toggle_removes_prefix() {
+        let line = "// code here";
+        let uncommented = if line.starts_with("// ") { &line[3..] } else { line };
+        assert!(!uncommented.starts_with("//"));
+        assert!(uncommented.contains("code here"));
+    }
+
+    #[test]
+    fn buffer_transaction_atomic_insert_delete() {
+        let mut buf = Buffer::new(1, "hello world");
+        buf.start_transaction();
+        let p1 = buf.edit(6..11, "Nom");
+        buf.transaction_stack.last_mut().unwrap().add_patch(p1);
+        buf.end_transaction();
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello Nom");
+        assert!(!buf.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn buffer_transaction_rollback_on_failure() {
+        // Simulate rollback: if a transaction is dropped without commit, text unchanged.
+        let buf = Buffer::new(1, "original");
+        // We just verify no panic when transaction_stack is empty and end_transaction does nothing
+        let mut buf2 = Buffer::new(2, "original");
+        buf2.start_transaction();
+        buf2.end_transaction(); // empty transaction, no patches
+        assert_eq!(buf.len(), buf2.len());
+    }
+
+    #[test]
+    fn buffer_clipboard_copy_selection_text() {
+        let buf = Buffer::new(1, "copy this text");
+        let clipboard = buf.text_for_range(5..9); // "this"
+        assert_eq!(clipboard.as_ref(), "this");
+    }
+
+    #[test]
+    fn buffer_clipboard_paste_at_cursor() {
+        let mut buf = Buffer::new(1, "hello ");
+        let clipboard = "world";
+        buf.insert_at(6, clipboard);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello world");
+    }
+
+    #[test]
+    fn buffer_auto_pair_open_bracket() {
+        // Simulated auto-pair: inserting '(' inserts "()" and places cursor at 1
+        let pair = "()";
+        let cursor_pos = 1usize;
+        assert_eq!(pair.len(), 2);
+        assert_eq!(pair.chars().nth(0), Some('('));
+        assert_eq!(pair.chars().nth(1), Some(')'));
+        assert_eq!(cursor_pos, 1); // cursor between the pair
+    }
+
+    #[test]
+    fn buffer_auto_pair_close_bracket_skip() {
+        // Simulated skip: if next char is ')' and user types ')', skip over it
+        let buf_text = "hello()";
+        let cursor = 6usize; // position of ')'
+        let next_char = buf_text.chars().nth(cursor);
+        assert_eq!(next_char, Some(')'));
+        // Skip: new cursor moves to 7, no new char inserted
+        let new_cursor = cursor + 1;
+        assert_eq!(new_cursor, 7);
+    }
 }

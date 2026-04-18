@@ -1560,4 +1560,265 @@ mod tests {
         };
         assert!(TypeCoherenceSanitizer.check(&expr).is_ok());
     }
+
+    // ------------------------------------------------------------------
+    // eval_checked_add_overflow_returns_error
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_checked_add_overflow_returns_error() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Int(i64::MAX))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        };
+        let result = eval_expr(&expr, &ctx);
+        assert!(result.is_err(), "i64::MAX + 1 must produce overflow error");
+    }
+
+    // ------------------------------------------------------------------
+    // eval_checked_sub_overflow_returns_error
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_checked_sub_overflow_returns_error() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Sub,
+            left: Box::new(Expr::Literal(SandboxValue::Int(i64::MIN))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        };
+        let result = eval_expr(&expr, &ctx);
+        assert!(result.is_err(), "i64::MIN - 1 must produce overflow error");
+    }
+
+    // ------------------------------------------------------------------
+    // eval_checked_mul_overflow_returns_error
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_checked_mul_overflow_returns_error() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Mul,
+            left: Box::new(Expr::Literal(SandboxValue::Int(i64::MAX))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        let result = eval_expr(&expr, &ctx);
+        assert!(result.is_err(), "i64::MAX * 2 must produce overflow error");
+    }
+
+    // ------------------------------------------------------------------
+    // eval_div_by_zero_returns_error
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_div_by_zero_returns_error() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Div,
+            left: Box::new(Expr::Literal(SandboxValue::Int(100))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Err(SandboxError::DivisionByZero));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_nested_binop_correct
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_nested_binop_correct() {
+        // (10 - 3) * 2 == 14
+        let ctx = EvalContext::new();
+        let inner = Expr::BinOp {
+            op: BinOpKind::Sub,
+            left: Box::new(Expr::Literal(SandboxValue::Int(10))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        let expr = Expr::BinOp {
+            op: BinOpKind::Mul,
+            left: Box::new(inner),
+            right: Box::new(Expr::Literal(SandboxValue::Int(2))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(14)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_if_true_branch_taken
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_if_true_branch_taken() {
+        let ctx = EvalContext::new();
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            then: Box::new(Expr::Literal(SandboxValue::Int(42))),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(0))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(42)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_if_false_branch_taken
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_if_false_branch_taken() {
+        let ctx = EvalContext::new();
+        let expr = Expr::If {
+            cond: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+            then: Box::new(Expr::Literal(SandboxValue::Int(0))),
+            else_: Box::new(Expr::Literal(SandboxValue::Int(77))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Int(77)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_depth_limit_reached_returns_error — chain of 65 levels
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_depth_limit_reached_returns_error() {
+        // 65 BinOp levels deep exceeds EVAL_DEPTH_LIMIT=64
+        let deep = (0..65).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        assert_eq!(
+            eval_expr(&deep, &ctx),
+            Err(SandboxError::DepthLimitExceeded),
+            "depth 65 must exceed EVAL_DEPTH_LIMIT and return DepthLimitExceeded"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // eval_depth_within_limit_ok — chain of 63 levels succeeds
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_depth_within_limit_ok() {
+        // 63 BinOp levels — within limit, must produce Int(63)
+        let within = (0..63).fold(Expr::Literal(SandboxValue::Int(0)), |acc, _| Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(acc),
+            right: Box::new(Expr::Literal(SandboxValue::Int(1))),
+        });
+        let ctx = EvalContext::new();
+        assert_eq!(
+            eval_expr(&within, &ctx),
+            Ok(SandboxValue::Int(63)),
+            "depth 63 is within EVAL_DEPTH_LIMIT=64 and must succeed"
+        );
+    }
+
+    // ------------------------------------------------------------------
+    // sanitize_called_before_eval_in_code_exec — sanitize then eval sequence
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitize_called_before_eval_in_code_exec() {
+        // The correct "code exec" pattern: sanitize() first, then eval_expr().
+        // A clean literal must pass sanitize and then eval successfully.
+        let expr = Expr::Literal(SandboxValue::Int(55));
+        let ctx = EvalContext::new();
+        let sanitize_result = sanitize(&expr);
+        assert!(sanitize_result.is_ok(), "sanitize must pass for literal before eval");
+        let eval_result = eval_expr(&expr, &ctx);
+        assert_eq!(eval_result, Ok(SandboxValue::Int(55)), "eval must succeed after sanitize");
+    }
+
+    // ------------------------------------------------------------------
+    // sanitizer_noop_stub_documented — NoSideEffects always Ok (documented stub)
+    // ------------------------------------------------------------------
+    #[test]
+    fn sanitizer_noop_stub_documented() {
+        // NoSideEffectsSanitizer is a documented stub that always returns Ok.
+        // Verify it passes for every expression variant.
+        let s = NoSideEffectsSanitizer;
+        let exprs: Vec<Expr> = vec![
+            Expr::Literal(SandboxValue::Null),
+            Expr::Literal(SandboxValue::Bool(false)),
+            Expr::Literal(SandboxValue::Int(0)),
+            Expr::Var("x".into()),
+            Expr::Call { name: "len".into(), args: vec![] },
+        ];
+        for expr in &exprs {
+            assert!(
+                s.check(expr).is_ok(),
+                "NoSideEffectsSanitizer stub must always return Ok, failed for {:?}",
+                expr
+            );
+        }
+    }
+
+    // ------------------------------------------------------------------
+    // eval_string_concat_if_supported
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_string_concat_if_supported() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Add,
+            left: Box::new(Expr::Literal(SandboxValue::Str("foo".into()))),
+            right: Box::new(Expr::Literal(SandboxValue::Str("bar".into()))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Str("foobar".into())));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_boolean_and_true
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_boolean_and_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::And,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_boolean_and_false
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_boolean_and_false() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::And,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(false)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_boolean_or_true
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_boolean_or_true() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Or,
+            left: Box::new(Expr::Literal(SandboxValue::Bool(false))),
+            right: Box::new(Expr::Literal(SandboxValue::Bool(true))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+    }
+
+    // ------------------------------------------------------------------
+    // eval_comparison_less_than
+    // ------------------------------------------------------------------
+    #[test]
+    fn eval_comparison_less_than() {
+        let ctx = EvalContext::new();
+        let expr = Expr::BinOp {
+            op: BinOpKind::Lt,
+            left: Box::new(Expr::Literal(SandboxValue::Int(3))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(7))),
+        };
+        assert_eq!(eval_expr(&expr, &ctx), Ok(SandboxValue::Bool(true)));
+        // Also test false case
+        let expr2 = Expr::BinOp {
+            op: BinOpKind::Lt,
+            left: Box::new(Expr::Literal(SandboxValue::Int(7))),
+            right: Box::new(Expr::Literal(SandboxValue::Int(3))),
+        };
+        assert_eq!(eval_expr(&expr2, &ctx), Ok(SandboxValue::Bool(false)));
+    }
 }

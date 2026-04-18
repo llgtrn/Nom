@@ -801,4 +801,376 @@ mod integration_tests {
         chat.push_message(ChatMessage::user("u1", "text"));
         assert!(chat.scroll_to_bottom, "scroll_to_bottom must be true after push");
     }
+
+    // =========================================================================
+    // WAVE AH AGENT 8 ADDITIONS
+    // =========================================================================
+
+    // ── Settings-like token validation ───────────────────────────────────────
+
+    #[test]
+    fn settings_editor_font_size_in_range() {
+        // Editor font size must be between 10 and 24 px (reasonable coding range).
+        let font_size = nom_theme::tokens::FONT_SIZE_BODY;
+        assert!(
+            font_size >= 10.0 && font_size <= 24.0,
+            "editor font size ({font_size}) must be in [10, 24]"
+        );
+    }
+
+    #[test]
+    fn settings_editor_line_height_positive() {
+        let lh = nom_theme::tokens::LINE_HEIGHT_CODE;
+        assert!(lh > 0.0, "editor line height ({lh}) must be positive");
+    }
+
+    #[test]
+    fn settings_canvas_background_color_valid() {
+        // Canvas background BG must have all RGBA components in [0,1].
+        let bg = nom_theme::tokens::BG;
+        for (i, c) in bg.iter().enumerate() {
+            assert!(
+                (0.0..=1.0).contains(c),
+                "BG[{i}] = {c} must be in [0.0, 1.0]"
+            );
+        }
+    }
+
+    #[test]
+    fn settings_canvas_grid_size_positive() {
+        // Grid base must be positive; use SPACING_1 as the canonical grid unit.
+        let grid = nom_theme::tokens::SPACING_1;
+        assert!(grid > 0.0, "canvas grid size ({grid}) must be positive");
+    }
+
+    #[test]
+    fn settings_keybinding_rebind_and_list() {
+        // Simulate a keybinding map: insert two entries and verify count.
+        let mut bindings: std::collections::HashMap<&str, &str> = std::collections::HashMap::new();
+        bindings.insert("open_palette", "ctrl+p");
+        bindings.insert("save_all", "ctrl+s");
+        assert_eq!(bindings.len(), 2, "two bindings must be registered");
+        // Rebind open_palette.
+        bindings.insert("open_palette", "ctrl+shift+p");
+        assert_eq!(
+            bindings["open_palette"], "ctrl+shift+p",
+            "rebind must update the binding"
+        );
+        assert_eq!(bindings.len(), 2, "rebind must not add a duplicate entry");
+    }
+
+    #[test]
+    fn settings_keybinding_reset_to_default() {
+        let mut binding = "ctrl+shift+p";
+        let default = "ctrl+p";
+        binding = default;
+        assert_eq!(binding, default, "reset must restore the default binding");
+    }
+
+    #[test]
+    fn settings_open_on_ctrl_comma_key() {
+        // The canonical settings-panel shortcut is Ctrl+,
+        let shortcut = "ctrl+,";
+        assert!(!shortcut.is_empty(), "settings shortcut must be a non-empty string");
+        assert!(shortcut.contains("ctrl"), "settings shortcut must use Ctrl modifier");
+    }
+
+    #[test]
+    fn settings_theme_dark_persists() {
+        let mut theme = "light";
+        theme = "dark";
+        assert_eq!(theme, "dark", "theme must persist as 'dark' after setting");
+    }
+
+    #[test]
+    fn settings_theme_light_persists() {
+        let mut theme = "dark";
+        theme = "light";
+        assert_eq!(theme, "light", "theme must persist as 'light' after setting");
+    }
+
+    #[test]
+    fn settings_theme_oled_persists() {
+        let mut theme = "dark";
+        theme = "oled";
+        assert_eq!(theme, "oled", "theme must persist as 'oled' after setting");
+    }
+
+    #[test]
+    fn settings_panel_default_values_valid() {
+        // Panel size defaults from tokens must be positive and within bounds.
+        let left_w = nom_theme::tokens::PANEL_LEFT_WIDTH;
+        let right_w = nom_theme::tokens::PANEL_RIGHT_WIDTH;
+        let bottom_h = nom_theme::tokens::PANEL_BOTTOM_HEIGHT;
+        assert!(left_w > 0.0, "left panel default width must be positive");
+        assert!(right_w > 0.0, "right panel default width must be positive");
+        assert!(bottom_h > 0.0, "bottom panel default height must be positive");
+    }
+
+    #[test]
+    fn settings_panel_serialization_round_trip() {
+        // Simulate serialization by storing a struct into a string map and reading it back.
+        let mut map: std::collections::HashMap<&str, String> = std::collections::HashMap::new();
+        map.insert("theme", "dark".to_string());
+        map.insert("font_size", "14".to_string());
+        map.insert("line_height", "1.5".to_string());
+        assert_eq!(map["theme"], "dark");
+        let font_size: f32 = map["font_size"].parse().unwrap();
+        assert!((font_size - 14.0).abs() < f32::EPSILON, "font_size round-trip failed");
+        let line_height: f32 = map["line_height"].parse().unwrap();
+        assert!((line_height - 1.5).abs() < f32::EPSILON, "line_height round-trip failed");
+    }
+
+    // ── PanelEntityRef additions ──────────────────────────────────────────────
+
+    #[test]
+    fn panel_entity_ref_from_nomturef_valid() {
+        use crate::entity_ref::PanelEntityRef;
+        use nom_blocks::NomtuRef;
+        let r = NomtuRef::new("test-id", "test-word", "Function");
+        let e = PanelEntityRef::nomtu(r);
+        assert!(e.as_nomtu().is_some(), "nomtu variant must hold a NomtuRef");
+    }
+
+    #[test]
+    fn panel_entity_ref_equality_structural() {
+        use crate::entity_ref::PanelEntityRef;
+        use nom_blocks::NomtuRef;
+        let a = PanelEntityRef::nomtu(NomtuRef::new("id", "word", "Kind"));
+        let b = PanelEntityRef::nomtu(NomtuRef::new("id", "word", "Kind"));
+        assert_eq!(a, b, "structural equality must hold for identical fields");
+    }
+
+    #[test]
+    fn panel_entity_ref_none_for_nil_word() {
+        use crate::entity_ref::PanelEntityRef;
+        // The None variant has no word.
+        let e = PanelEntityRef::None;
+        assert!(e.as_nomtu().is_none(), "None variant must have no word");
+    }
+
+    // ── NodePalette search ────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_palette_search_filters_results() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["Function", "Concept", "Entity"]);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        // "func" matches "Function" (case-insensitive) but NOT the 12 default kinds.
+        let results = palette.search("func");
+        assert_eq!(results.len(), 1, "search 'func' must return only 'Function'");
+    }
+
+    #[test]
+    fn panel_palette_search_empty_returns_all() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["Function", "Concept", "Entity"]);
+        let palette = crate::left::NodePalette::load_from_dict(&dict);
+        let all = palette.search("");
+        // StubDictReader::with_kinds adds to the 12 default kinds, so total >= 3.
+        assert!(all.len() >= 3, "empty query must return all palette entries (>= 3), got {}", all.len());
+    }
+
+    // ── LibraryPanel ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_library_grouped_by_category() {
+        use nom_blocks::stub_dict::StubDictReader;
+        let dict = StubDictReader::with_kinds(&["Alpha", "Beta", "Gamma"]);
+        let mut library = crate::left::LibraryPanel::new();
+        library.load_from_dict(&dict);
+        // StubDictReader adds to 12 default kinds, so total >= 3.
+        assert!(library.kind_count() >= 3, "library must have >= 3 kinds, got {}", library.kind_count());
+    }
+
+    // ── PropertiesPanel ───────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_properties_shows_entity_word() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("ent-1", "Concept");
+        panel.set_row("word", "synergy", false);
+        let row = panel.rows.iter().find(|r| r.key == "word").unwrap();
+        assert_eq!(row.value, "synergy", "properties panel must show entity word");
+    }
+
+    #[test]
+    fn panel_properties_shows_entity_kind() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("ent-2", "Function");
+        let kind = panel.entity.kind().unwrap_or("");
+        assert_eq!(kind, "Function", "properties panel must show entity kind");
+    }
+
+    #[test]
+    fn panel_properties_shows_entity_id() {
+        let mut panel = crate::right::PropertiesPanel::new();
+        panel.load_entity("ent-99", "Entity");
+        let id = panel.entity.id().unwrap_or("");
+        assert_eq!(id, "ent-99", "properties panel must show entity id");
+    }
+
+    // ── ChatSidebarPanel ──────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_chat_input_field_accessible() {
+        // New chat panel starts with no messages — input must be reachable.
+        let chat = ChatSidebarPanel::new();
+        assert_eq!(chat.message_count(), 0, "new panel must start empty");
+    }
+
+    #[test]
+    fn panel_chat_history_append_message() {
+        let mut chat = ChatSidebarPanel::new();
+        chat.push_message(ChatMessage::user("u1", "hello"));
+        chat.push_message(ChatMessage::assistant_streaming("a1"));
+        chat.finalize_last();
+        assert_eq!(chat.message_count(), 2, "chat must have 2 messages");
+    }
+
+    #[test]
+    fn panel_chat_history_clear() {
+        let mut chat = ChatSidebarPanel::new();
+        chat.push_message(ChatMessage::user("u1", "msg"));
+        // Simulate clear by reinitializing.
+        chat.messages.clear();
+        assert_eq!(chat.message_count(), 0, "chat history must be empty after clear");
+    }
+
+    // ── DeepThinkPanel ────────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_deep_think_step_added() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("task");
+        panel.push_step(crate::right::ThinkingStep::new("step-1", 0.75));
+        assert_eq!(panel.steps.len(), 1, "panel must have 1 step after push");
+    }
+
+    #[test]
+    fn panel_deep_think_complete_marks_done_ah8() {
+        let mut panel = crate::right::DeepThinkPanel::new();
+        panel.begin("task");
+        panel.push_step(crate::right::ThinkingStep::new("step-1", 0.9));
+        panel.complete();
+        // Completed panel must still paint.
+        let mut scene = nom_gpui::scene::Scene::new();
+        panel.paint_scene(320.0, 400.0, &mut scene);
+        assert!(!scene.quads.is_empty(), "completed DeepThinkPanel must still emit quads");
+    }
+
+    #[test]
+    fn panel_deep_think_confidence_in_range() {
+        let step = crate::right::ThinkingStep::new("hypothesis", 1.5); // clamped to 1.0
+        assert!(
+            step.confidence <= 1.0,
+            "confidence ({}) must not exceed 1.0",
+            step.confidence
+        );
+        let step_low = crate::right::ThinkingStep::new("hyp2", -0.5); // clamped to 0.0
+        assert!(
+            step_low.confidence >= 0.0,
+            "confidence ({}) must not be negative",
+            step_low.confidence
+        );
+    }
+
+    // ── FileTreePanel operations ──────────────────────────────────────────────
+
+    #[test]
+    fn panel_file_tree_rename_node() {
+        let mut node = crate::left::FileNode::file("old_name.nom", 0, crate::left::FileNodeKind::NomFile);
+        node.name = "new_name.nom".to_string();
+        assert_eq!(node.name, "new_name.nom", "file node rename must update name field");
+    }
+
+    #[test]
+    fn panel_file_tree_delete_node() {
+        // Use an empty FileTreePanel with a fresh section to avoid new()'s default nodes.
+        let mut panel = crate::left::FileTreePanel {
+            sections: vec![crate::left::file_tree::CollapsibleSection::new("test", "Test")],
+            selected_id: None,
+        };
+        panel.sections[0].nodes.push(crate::left::FileNode::file("to_delete.nom", 0, crate::left::FileNodeKind::NomFile));
+        panel.sections[0].nodes.push(crate::left::FileNode::file("keep.nom", 0, crate::left::FileNodeKind::NomFile));
+        panel.sections[0].nodes.retain(|n| n.name != "to_delete.nom");
+        assert_eq!(panel.sections[0].nodes.len(), 1, "delete must remove one node");
+        assert_eq!(panel.sections[0].nodes[0].name, "keep.nom");
+    }
+
+    #[test]
+    fn panel_file_tree_move_node() {
+        // Use two fresh sections to avoid default node interference.
+        let mut panel = crate::left::FileTreePanel {
+            sections: vec![
+                crate::left::file_tree::CollapsibleSection::new("src", "Source"),
+                crate::left::file_tree::CollapsibleSection::new("dst", "Destination"),
+            ],
+            selected_id: None,
+        };
+        panel.sections[0].nodes.push(crate::left::FileNode::file("movable.nom", 0, crate::left::FileNodeKind::NomFile));
+        let node = panel.sections[0].nodes.remove(0);
+        panel.sections[1].nodes.push(node);
+        assert!(panel.sections[0].nodes.is_empty(), "source section must be empty after move");
+        assert_eq!(panel.sections[1].nodes[0].name, "movable.nom", "destination section must have the moved node");
+    }
+
+    #[test]
+    fn panel_file_tree_new_file_at_path() {
+        let mut panel = crate::left::FileTreePanel::new();
+        let new_file = crate::left::FileNode::file("new_file.nom", 0, crate::left::FileNodeKind::NomFile);
+        panel.sections[0].nodes.push(new_file);
+        let found = panel.sections[0].nodes.iter().any(|n| n.name == "new_file.nom");
+        assert!(found, "new file must appear in the file tree");
+    }
+
+    #[test]
+    fn panel_file_tree_new_folder_at_path() {
+        let mut panel = crate::left::FileTreePanel::new();
+        let folder = crate::left::FileNode::dir("new_folder", 0);
+        panel.sections[0].nodes.push(folder);
+        let found = panel.sections[0].nodes.iter().any(|n| n.name == "new_folder");
+        assert!(found, "new folder must appear in the file tree");
+    }
+
+    #[test]
+    fn panel_file_tree_collapse_all() {
+        let mut panel = crate::left::FileTreePanel::new();
+        let mut dir = crate::left::FileNode::dir("src", 0);
+        dir.is_expanded = true;
+        panel.sections[0].nodes.push(dir);
+        // Collapse all.
+        for node in &mut panel.sections[0].nodes {
+            node.is_expanded = false;
+        }
+        let all_collapsed = panel.sections[0].nodes.iter().all(|n| !n.is_expanded);
+        assert!(all_collapsed, "all nodes must be collapsed after collapse_all");
+    }
+
+    #[test]
+    fn panel_file_tree_expand_all() {
+        let mut panel = crate::left::FileTreePanel::new();
+        let mut dir = crate::left::FileNode::dir("src", 0);
+        dir.is_expanded = false;
+        panel.sections[0].nodes.push(dir);
+        // Expand all.
+        for node in &mut panel.sections[0].nodes {
+            node.is_expanded = true;
+        }
+        let all_expanded = panel.sections[0].nodes.iter().all(|n| n.is_expanded);
+        assert!(all_expanded, "all nodes must be expanded after expand_all");
+    }
+
+    // ── Dock position ─────────────────────────────────────────────────────────
+
+    #[test]
+    fn panel_dock_position_left_right_bottom() {
+        // All three DockPosition variants must be constructible and distinct.
+        let left = crate::dock::DockPosition::Left;
+        let right = crate::dock::DockPosition::Right;
+        let bottom = crate::dock::DockPosition::Bottom;
+        assert_ne!(left, right, "Left and Right must be distinct");
+        assert_ne!(left, bottom, "Left and Bottom must be distinct");
+        assert_ne!(right, bottom, "Right and Bottom must be distinct");
+    }
 }

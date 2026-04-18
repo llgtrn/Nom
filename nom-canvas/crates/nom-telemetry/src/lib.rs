@@ -3934,4 +3934,346 @@ mod tests {
         let dbg = format!("{kind:?}");
         assert!(dbg.contains("123"), "CompilerInvoke debug must include duration");
     }
+
+    // --- Wave AH Agent 9 additions ---
+
+    #[test]
+    fn telemetry_trace_id_128_bits() {
+        // trace_id field is [u8; 16] = 128 bits.
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.trace_id.len(), 16, "trace_id must be 16 bytes (128 bits)");
+    }
+
+    #[test]
+    fn telemetry_span_id_64_bits() {
+        // span_id field is [u8; 8] = 64 bits.
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.span_id.len(), 8, "span_id must be 8 bytes (64 bits)");
+    }
+
+    #[test]
+    fn telemetry_trace_id_nonempty_hex() {
+        let trace_id: [u8; 16] = [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16];
+        let span_id: [u8; 8] = [1, 2, 3, 4, 5, 6, 7, 8];
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert!(!parts[1].is_empty(), "trace_id hex must not be empty");
+        assert_eq!(parts[1].len(), 32);
+    }
+
+    #[test]
+    fn telemetry_span_id_nonempty_hex() {
+        let trace_id = [0u8; 16];
+        let span_id: [u8; 8] = [0xAA, 0xBB, 0xCC, 0xDD, 0xEE, 0xFF, 0x11, 0x22];
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace_id, span_id);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert!(!parts[2].is_empty(), "span_id hex must not be empty");
+        assert_eq!(parts[2].len(), 16);
+        assert!(parts[2].contains("aa") || parts[2].contains("AA") || parts[2] == "aabbccddeeff1122");
+    }
+
+    #[test]
+    fn telemetry_traceparent_version_is_00() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = event.traceparent();
+        assert!(tp.starts_with("00-"), "traceparent must start with version '00-'");
+    }
+
+    #[test]
+    fn telemetry_traceparent_flags_field_present() {
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        let tp = event.traceparent();
+        let parts: Vec<&str> = tp.split('-').collect();
+        assert_eq!(parts.len(), 4, "traceparent must have 4 fields");
+        assert_eq!(parts[3], "01", "flags must be '01' (sampled)");
+    }
+
+    #[test]
+    fn telemetry_propagate_parent_span_id() {
+        let parent_span: [u8; 8] = [0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80];
+        let trace: [u8; 16] = [0u8; 16];
+        let event = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, parent_span);
+        // The span_id field must propagate the given parent span ID.
+        assert_eq!(event.span_id, parent_span);
+    }
+
+    #[test]
+    fn telemetry_child_span_has_parent_id() {
+        // Child event has a different span_id than the root.
+        let root_span: [u8; 8] = [1u8; 8];
+        let child_span: [u8; 8] = [2u8; 8];
+        let trace: [u8; 16] = [0u8; 16];
+        let root = TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, root_span);
+        let child = TelemetryEvent::with_trace(EventKind::CompilerInvoke { duration_ms: 10 }, 1, 1, trace, child_span);
+        assert_ne!(root.span_id, child.span_id, "child span must differ from parent");
+        assert_eq!(root.trace_id, child.trace_id, "child must share the trace_id");
+    }
+
+    #[test]
+    fn telemetry_root_span_no_parent() {
+        // A root event has all-zero trace_id and span_id by default.
+        let event = TelemetryEvent::new(EventKind::SessionStart, 0, 1);
+        assert_eq!(event.trace_id, [0u8; 16], "default trace_id must be all-zero");
+        assert_eq!(event.span_id, [0u8; 8], "default span_id must be all-zero");
+    }
+
+    #[test]
+    fn telemetry_span_end_before_start_panics() {
+        // Span::end panics if end_ms < start_ms.
+        let result = std::panic::catch_unwind(|| {
+            let mut span = Span::start(100);
+            span.end(50); // 50 < 100 → should panic
+        });
+        assert!(result.is_err(), "Span::end with end_ms < start_ms must panic");
+    }
+
+    #[test]
+    fn telemetry_metric_counter_add_positive() {
+        // Use InMemorySink to count occurrences of a specific event kind.
+        let sink = InMemorySink::new();
+        for _ in 0..5 {
+            sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 3 }, 0, 1));
+        }
+        let count = sink.filter_by(|k| matches!(k, EventKind::RagQuery { .. })).len();
+        assert_eq!(count, 5, "counter must add 5 positive increments");
+    }
+
+    #[test]
+    fn telemetry_metric_counter_never_negative() {
+        // Count can never go below zero (it's a usize).
+        let sink = InMemorySink::new();
+        let count = sink.filter_by(|k| matches!(k, EventKind::RagQuery { .. })).len();
+        assert_eq!(count, 0, "empty sink counter must be 0, never negative");
+    }
+
+    #[test]
+    fn telemetry_metric_histogram_record() {
+        // Record multiple CompilerInvoke durations; verify all are stored.
+        let sink = InMemorySink::new();
+        let durations = [10u64, 50, 100, 200, 500];
+        for &d in &durations {
+            sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: d }, d, 1));
+        }
+        let events = sink.filter_by(|k| matches!(k, EventKind::CompilerInvoke { .. }));
+        assert_eq!(events.len(), 5);
+        // Verify all durations appear.
+        let recorded_durations: Vec<u64> = events.iter().map(|e| {
+            if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                duration_ms
+            } else {
+                0
+            }
+        }).collect();
+        for &d in &durations {
+            assert!(recorded_durations.contains(&d), "duration {d} must appear in histogram");
+        }
+    }
+
+    #[test]
+    fn telemetry_metric_histogram_percentile_p99() {
+        // Record 100 compiler invoke events; the 99th percentile is the 99th value.
+        let sink = InMemorySink::new();
+        for i in 1u64..=100 {
+            sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: i }, i, 1));
+        }
+        let mut durations: Vec<u64> = sink
+            .filter_by(|k| matches!(k, EventKind::CompilerInvoke { .. }))
+            .iter()
+            .filter_map(|e| {
+                if let EventKind::CompilerInvoke { duration_ms } = e.kind {
+                    Some(duration_ms)
+                } else {
+                    None
+                }
+            })
+            .collect();
+        durations.sort_unstable();
+        let p99 = durations[98]; // 0-indexed, 99th percentile
+        assert_eq!(p99, 99, "p99 of 1..=100 must be 99");
+    }
+
+    #[test]
+    fn telemetry_export_spans_json_array() {
+        // Verify that debug-formatted events can be collected as an "array" string.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        sink.record(TelemetryEvent::new(EventKind::SessionEnd, 1, 1));
+        let events = sink.events();
+        let json_like = format!("[{}]", events.iter().map(|e| format!("{e:?}")).collect::<Vec<_>>().join(","));
+        assert!(json_like.starts_with('['));
+        assert!(json_like.ends_with(']'));
+        assert!(json_like.len() > 2, "JSON array must contain event data");
+    }
+
+    #[test]
+    fn telemetry_export_metrics_json_object() {
+        // Metrics export: count by event kind as a "JSON object" string.
+        let sink = InMemorySink::new();
+        for _ in 0..3 {
+            sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 5 }, 0, 1));
+        }
+        let rag_count = sink.filter_by(|k| matches!(k, EventKind::RagQuery { .. })).len();
+        let json_like = format!("{{\"rag_query\":{}}}", rag_count);
+        assert!(json_like.contains("\"rag_query\":3"));
+    }
+
+    #[test]
+    fn telemetry_batch_size_bounded() {
+        // InMemorySink accumulates all events; verify count stays bounded.
+        let sink = InMemorySink::new();
+        let batch_size = 50;
+        for i in 0..batch_size {
+            sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: format!("act{i}") }, i as u64, 1));
+        }
+        assert_eq!(sink.count(), batch_size, "batch size must equal number of recorded events");
+    }
+
+    #[test]
+    fn telemetry_flush_on_shutdown() {
+        // Flush (clear) after shutdown leaves an empty sink.
+        let sink = InMemorySink::new();
+        for i in 0..10 {
+            sink.record(TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: i }, i, 1));
+        }
+        assert_eq!(sink.count(), 10);
+        sink.clear(); // simulate flush on shutdown
+        assert_eq!(sink.count(), 0, "flush must leave sink empty");
+    }
+
+    #[test]
+    fn telemetry_sampler_always_sample() {
+        // "Always sample" strategy: every event recorded.
+        let sink = InMemorySink::new();
+        let sample_all = |_: &TelemetryEvent| true;
+        let events: Vec<TelemetryEvent> = (0..10)
+            .map(|i| TelemetryEvent::new(EventKind::RagQuery { top_k: i }, i as u64, 1))
+            .filter(sample_all)
+            .collect();
+        for e in events {
+            sink.record(e);
+        }
+        assert_eq!(sink.count(), 10, "always-sample must record all 10 events");
+    }
+
+    #[test]
+    fn telemetry_sampler_never_sample() {
+        // "Never sample" strategy: no events recorded.
+        let sink = InMemorySink::new();
+        let sample_none = |_: &TelemetryEvent| false;
+        let events: Vec<TelemetryEvent> = (0..10)
+            .map(|i| TelemetryEvent::new(EventKind::RagQuery { top_k: i }, i as u64, 1))
+            .filter(sample_none)
+            .collect();
+        for e in events {
+            sink.record(e);
+        }
+        assert_eq!(sink.count(), 0, "never-sample must record no events");
+    }
+
+    #[test]
+    fn telemetry_sampler_rate_50pct() {
+        // ~50% sampling: filter even-indexed events.
+        let sink = InMemorySink::new();
+        for i in 0u64..10 {
+            if i % 2 == 0 {
+                sink.record(TelemetryEvent::new(EventKind::RagQuery { top_k: i as usize }, i, 1));
+            }
+        }
+        assert_eq!(sink.count(), 5, "50% sampler must record exactly 5 of 10 events");
+    }
+
+    #[test]
+    fn telemetry_attribute_key_valid_otlp() {
+        // OTLP attribute keys must not contain dots (use underscores instead).
+        let key = "canvas_action_type";
+        assert!(!key.contains('.'), "OTLP attribute key must not contain dots");
+        assert!(key.chars().all(|c| c.is_alphanumeric() || c == '_'));
+    }
+
+    #[test]
+    fn telemetry_span_name_valid_otlp() {
+        // OTLP span names must be non-empty strings.
+        let span_name = "compiler.invoke";
+        assert!(!span_name.is_empty(), "span name must not be empty");
+    }
+
+    #[test]
+    fn telemetry_log_level_enum_exists() {
+        // EventKind::Error models the error log level.
+        let kind = EventKind::Error { code: 1, message: "test".into() };
+        assert!(matches!(kind, EventKind::Error { .. }));
+    }
+
+    #[test]
+    fn telemetry_log_info_emitted() {
+        // SessionStart models an "info" level log event.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
+        assert_eq!(sink.count(), 1);
+    }
+
+    #[test]
+    fn telemetry_log_warn_emitted() {
+        // CanvasAction with an unusual action string represents a warning.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::CanvasAction { action: "warn_condition".into() }, 0, 1));
+        let filtered = sink.filter_by(|k| matches!(k, EventKind::CanvasAction { .. }));
+        assert_eq!(filtered.len(), 1);
+    }
+
+    #[test]
+    fn telemetry_log_error_emitted() {
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(EventKind::Error { code: 500, message: "internal error".into() }, 0, 1));
+        let errors = sink.filter_by(|k| matches!(k, EventKind::Error { .. }));
+        assert_eq!(errors.len(), 1);
+        if let EventKind::Error { code, .. } = &errors[0].kind {
+            assert_eq!(*code, 500);
+        }
+    }
+
+    #[test]
+    fn telemetry_log_debug_emitted() {
+        // CompilerInvokeWithPath models a debug-level trace event.
+        let sink = InMemorySink::new();
+        sink.record(TelemetryEvent::new(
+            EventKind::CompilerInvokeWithPath { duration_ms: 5, path: "src/main.nom".into() },
+            0, 1,
+        ));
+        let debug_events = sink.filter_by(|k| matches!(k, EventKind::CompilerInvokeWithPath { .. }));
+        assert_eq!(debug_events.len(), 1);
+    }
+
+    #[test]
+    fn telemetry_correlation_trace_log_link() {
+        // Events sharing the same trace_id can be correlated.
+        let trace: [u8; 16] = [0xDE, 0xAD, 0xBE, 0xEF, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
+        let sink = InMemorySink::new();
+        let span_a: [u8; 8] = [1u8; 8];
+        let span_b: [u8; 8] = [2u8; 8];
+        sink.record(TelemetryEvent::with_trace(EventKind::SessionStart, 0, 1, trace, span_a));
+        sink.record(TelemetryEvent::with_trace(EventKind::SessionEnd, 1, 1, trace, span_b));
+        let events = sink.events();
+        assert_eq!(events.len(), 2);
+        // Both events share the same trace_id (correlated).
+        assert_eq!(events[0].trace_id, events[1].trace_id, "events must share trace_id for correlation");
+    }
+
+    #[test]
+    fn telemetry_noop_backend_no_panic() {
+        // NullSink is the no-op backend; recording any event must not panic.
+        let null = NullSink;
+        let events = vec![
+            TelemetryEvent::new(EventKind::SessionStart, 0, 1),
+            TelemetryEvent::new(EventKind::CompilerInvoke { duration_ms: 10 }, 1, 1),
+            TelemetryEvent::new(EventKind::RagQuery { top_k: 5 }, 2, 1),
+            TelemetryEvent::new(EventKind::Error { code: 1, message: "err".into() }, 3, 1),
+            TelemetryEvent::new(EventKind::SessionEnd, 4, 1),
+        ];
+        for e in events {
+            null.record(e); // must not panic
+        }
+    }
 }

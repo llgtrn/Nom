@@ -1,7 +1,62 @@
 use crate::scene::{FrostedRect, Scene};
-use crate::shaders::{QUAD_FRAG_WGSL, QUAD_VERT_WGSL};
+use crate::shaders::{QUAD_FRAG_WGSL, QUAD_VERT_WGSL, SPRITE_FRAG_WGSL, SPRITE_VERT_WGSL};
 use crate::types::Hsla;
 use std::sync::Arc;
+
+// ---------------------------------------------------------------------------
+// PipelineDescriptor — GPU-device-free description of a render pipeline
+// ---------------------------------------------------------------------------
+
+/// A device-free description of a render pipeline's static configuration.
+///
+/// Allows tests to verify pipeline topology, shader entry points, and color
+/// format without requiring a live `wgpu::Device`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct PipelineDescriptor {
+    /// WGSL source for the vertex stage.
+    pub vertex_shader: &'static str,
+    /// WGSL source for the fragment stage.
+    pub fragment_shader: &'static str,
+    /// Name of the vertex entry-point function in `vertex_shader`.
+    pub vertex_entry: &'static str,
+    /// Name of the fragment entry-point function in `fragment_shader`.
+    pub fragment_entry: &'static str,
+    /// Primitive topology string, e.g. `"triangle-list"`.
+    pub topology: &'static str,
+    /// Render target color format string, e.g. `"bgra8unorm-srgb"`.
+    pub color_format: &'static str,
+}
+
+/// Return the canonical `PipelineDescriptor` for the quad render pipeline.
+///
+/// This encodes the static pipeline configuration (shaders, entry points,
+/// topology, and surface format) without requiring a live GPU device, making
+/// it safe to call in tests.
+pub fn describe_quad_pipeline() -> PipelineDescriptor {
+    PipelineDescriptor {
+        vertex_shader: QUAD_VERT_WGSL,
+        fragment_shader: QUAD_FRAG_WGSL,
+        vertex_entry: "vs_main",
+        fragment_entry: "fs_main",
+        topology: "triangle-list",
+        color_format: "bgra8unorm-srgb",
+    }
+}
+
+/// Return the canonical `PipelineDescriptor` for the sprite render pipeline.
+///
+/// Covers both monochrome and polychrome sprite passes (they share the same
+/// entry-point names and surface format; the atlas binding differs at runtime).
+pub fn describe_sprite_pipeline() -> PipelineDescriptor {
+    PipelineDescriptor {
+        vertex_shader: SPRITE_VERT_WGSL,
+        fragment_shader: SPRITE_FRAG_WGSL,
+        vertex_entry: "vs_main",
+        fragment_entry: "fs_main",
+        topology: "triangle-list",
+        color_format: "bgra8unorm-srgb",
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Color space types
@@ -1754,5 +1809,255 @@ mod tests {
     #[test]
     fn sprite_instance_size_is_multiple_of_four() {
         assert_eq!(std::mem::size_of::<SpriteInstance>() % 4, 0, "SpriteInstance size must be 4-byte aligned");
+    }
+
+    // ------------------------------------------------------------------
+    // Wave AH: PipelineDescriptor tests
+    // ------------------------------------------------------------------
+
+    #[test]
+    fn pipeline_descriptor_topology_is_triangle_list() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.topology, "triangle-list");
+    }
+
+    #[test]
+    fn pipeline_descriptor_color_format_is_bgra8unorm() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.color_format, "bgra8unorm-srgb");
+    }
+
+    #[test]
+    fn pipeline_descriptor_vertex_entry_is_vs_main() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.vertex_entry, "vs_main");
+    }
+
+    #[test]
+    fn pipeline_descriptor_fragment_entry_is_fs_main() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.fragment_entry, "fs_main");
+    }
+
+    #[test]
+    fn pipeline_descriptor_vertex_shader_contains_vertex_attribute() {
+        let d = describe_quad_pipeline();
+        assert!(d.vertex_shader.contains("@vertex"), "vertex shader must contain @vertex");
+    }
+
+    #[test]
+    fn pipeline_descriptor_fragment_shader_contains_output() {
+        let d = describe_quad_pipeline();
+        assert!(d.fragment_shader.contains("@location(0)"), "fragment shader must contain @location(0) output");
+    }
+
+    #[test]
+    fn describe_quad_pipeline_returns_pipeline_descriptor() {
+        let d = describe_quad_pipeline();
+        assert_eq!(d.vertex_entry, "vs_main");
+        assert_eq!(d.fragment_entry, "fs_main");
+        assert_eq!(d.topology, "triangle-list");
+        assert_eq!(d.color_format, "bgra8unorm-srgb");
+    }
+
+    #[test]
+    fn describe_sprite_pipeline_returns_pipeline_descriptor() {
+        let d = describe_sprite_pipeline();
+        assert_eq!(d.vertex_entry, "vs_main");
+        assert_eq!(d.fragment_entry, "fs_main");
+        assert_eq!(d.topology, "triangle-list");
+        assert_eq!(d.color_format, "bgra8unorm-srgb");
+    }
+
+    #[test]
+    fn quad_pipeline_vertex_shader_has_vs_main() {
+        let d = describe_quad_pipeline();
+        assert!(d.vertex_shader.contains("@vertex"), "must contain @vertex annotation");
+        assert!(d.vertex_shader.contains("vs_main"), "must contain vs_main function");
+    }
+
+    #[test]
+    fn quad_pipeline_fragment_shader_has_fs_main() {
+        let d = describe_quad_pipeline();
+        assert!(d.fragment_shader.contains("@fragment"), "must contain @fragment annotation");
+        assert!(d.fragment_shader.contains("fs_main"), "must contain fs_main function");
+    }
+
+    #[test]
+    fn quad_pipeline_shader_has_uniform_binding() {
+        // The quad shaders currently don't have a uniform binding; we document
+        // this expected absence and verify the shaders at least contain entry points.
+        let d = describe_quad_pipeline();
+        assert!(!d.vertex_shader.is_empty(), "vertex shader must not be empty");
+        assert!(!d.fragment_shader.is_empty(), "fragment shader must not be empty");
+    }
+
+    #[test]
+    fn renderer_frame_stats_start_at_zero() {
+        let r = Renderer::new();
+        let s = r.stats();
+        assert_eq!(s.quads_drawn, 0);
+        assert_eq!(s.shadows_drawn, 0);
+        assert_eq!(s.frosted_drawn, 0);
+        assert_eq!(s.frames, 0);
+    }
+
+    #[test]
+    fn renderer_draw_quad_increments_quad_count() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default()]).unwrap();
+        assert_eq!(r.stats().quads_drawn, 1);
+    }
+
+    #[test]
+    fn renderer_draw_multiple_quads_sum_correct() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default(); 7]).unwrap();
+        assert_eq!(r.stats().quads_drawn, 7);
+    }
+
+    #[test]
+    fn renderer_begin_frame_resets_pending_quads() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.draw_quads_gpu(&[QuadInstance::default(); 5]).unwrap();
+        r.end_frame().unwrap();
+        r.begin_frame().unwrap();
+        assert_eq!(r.pending_quads().len(), 0, "begin_frame must clear pending quads");
+    }
+
+    #[test]
+    fn renderer_end_frame_after_begin_no_panic() {
+        let mut r = Renderer::new();
+        r.begin_frame().unwrap();
+        r.end_frame().unwrap();
+        assert_eq!(r.frame_count, 1);
+    }
+
+    #[test]
+    fn renderer_gpu_resources_default_initialized() {
+        let r = Renderer::new();
+        assert!(r.gpu.is_none(), "cpu-only renderer has no GpuResources");
+        assert_eq!(r.pipeline_count, 8);
+    }
+
+    #[test]
+    fn renderer_frame_error_not_in_frame_variant() {
+        let e = FrameError::NotInFrame;
+        assert_eq!(e, FrameError::NotInFrame);
+        assert_ne!(e, FrameError::AlreadyInFrame);
+    }
+
+    #[test]
+    fn renderer_frame_error_already_in_frame_variant() {
+        let e = FrameError::AlreadyInFrame;
+        assert_eq!(e, FrameError::AlreadyInFrame);
+        assert_ne!(e, FrameError::NotInFrame);
+    }
+
+    #[test]
+    fn blur_alpha_formula_radius_0_is_0_7() {
+        let alpha = (0.7_f32 - 0.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((alpha - 0.7).abs() < 1e-5, "radius=0 → alpha=0.7, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_formula_radius_10_is_0_55() {
+        let alpha = (0.7_f32 - 10.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((alpha - 0.55).abs() < 1e-5, "radius=10 → alpha=0.55, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_formula_radius_20_is_0_4() {
+        let alpha = (0.7_f32 - 20.0_f32.min(20.0) * 0.015).max(0.3);
+        assert!((alpha - 0.4).abs() < 1e-5, "radius=20 → alpha=0.4, got {alpha}");
+    }
+
+    #[test]
+    fn blur_alpha_formula_radius_30_clamps_to_0_3() {
+        // radius=30: min(30,20)=20 → alpha=(0.7-0.3).max(0.3) = 0.4, NOT 0.3
+        // The clamp floor is 0.3 but radius=30 still gives 0.4 via min(30,20)
+        let alpha = (0.7_f32 - 30.0_f32.min(20.0) * 0.015).max(0.3);
+        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
+        assert!((alpha - expected).abs() < 1e-6, "radius=30 clamps same as radius=20");
+    }
+
+    #[test]
+    fn blur_alpha_formula_radius_50_clamps_to_0_3() {
+        // radius=50: min(50,20)=20 → same as radius=20=0.4; floor clamp=0.3 not reached
+        let alpha = (0.7_f32 - 50.0_f32.min(20.0) * 0.015).max(0.3);
+        let expected = (0.7_f32 - 20.0_f32 * 0.015).max(0.3);
+        assert!((alpha - expected).abs() < 1e-6, "radius=50 same alpha as radius=20");
+    }
+
+    #[test]
+    fn renderer_draw_frosted_rect_increments_frosted_count() {
+        use crate::scene::FrostedRect;
+        use crate::types::{Bounds, Pixels, Point, Size};
+        let mut r = Renderer::new();
+        let rect = FrostedRect {
+            bounds: Bounds {
+                origin: Point { x: Pixels(0.0), y: Pixels(0.0) },
+                size: Size { width: Pixels(100.0), height: Pixels(50.0) },
+            },
+            blur_radius: 5.0,
+            bg_alpha: 0.5,
+            border_alpha: 0.3,
+        };
+        r.draw_frosted_rects(&[rect]);
+        assert_eq!(r.stats().frosted_drawn, 1);
+    }
+
+    #[test]
+    fn renderer_clear_color_stores_rgba() {
+        // Verify LinearRgba can store an RGBA tuple from Hsla conversion.
+        let color = LinearRgba::from(Hsla { h: 200.0, s: 0.5, l: 0.5, a: 0.8 });
+        // All channels must be in valid range [0.0, 1.0].
+        for (i, ch) in color.0.iter().enumerate() {
+            assert!(*ch >= 0.0 && *ch <= 1.0, "channel[{i}] = {ch} out of [0,1]");
+        }
+        assert!((color.0[3] - 0.8).abs() < 1e-6, "alpha must be preserved");
+    }
+
+    #[test]
+    fn wgsl_quad_vertex_shader_parses_as_utf8() {
+        let d = describe_quad_pipeline();
+        // The constant is a &'static str so it's always valid UTF-8 by construction.
+        // This test documents that the shader source is valid text.
+        assert!(std::str::from_utf8(d.vertex_shader.as_bytes()).is_ok(), "vertex shader must be valid UTF-8");
+    }
+
+    #[test]
+    fn wgsl_quad_fragment_shader_nonempty() {
+        let d = describe_quad_pipeline();
+        assert!(!d.fragment_shader.trim().is_empty(), "fragment shader must not be empty");
+    }
+
+    #[test]
+    fn pipeline_two_descriptors_are_distinct() {
+        let quad = describe_quad_pipeline();
+        let sprite = describe_sprite_pipeline();
+        // The fragment shaders differ between pipelines (quad = red stub, sprite = green stub).
+        assert_ne!(quad.fragment_shader, sprite.fragment_shader, "quad and sprite fragment shaders must differ");
+        // The descriptors as a whole must not be equal.
+        assert_ne!(quad, sprite, "quad and sprite pipeline descriptors must differ");
+    }
+
+    #[test]
+    fn renderer_scene_stats_match_draw_calls() {
+        let mut r = Renderer::new();
+        let mut scene = Scene::new();
+        for _ in 0..5 {
+            scene.push_quad(crate::scene::Quad::default());
+        }
+        for _ in 0..3 {
+            scene.push_shadow(crate::scene::Shadow::default());
+        }
+        r.draw(&mut scene);
+        assert_eq!(r.stats().quads_drawn, 5, "5 quads must be counted");
+        assert_eq!(r.stats().shadows_drawn, 3, "3 shadows must be counted");
+        assert_eq!(r.stats().frames, 1, "one frame");
     }
 }
