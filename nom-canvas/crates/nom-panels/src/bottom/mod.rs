@@ -2,4 +2,4 @@ pub mod diagnostics;
 pub mod terminal;
 
 pub use diagnostics::{Diagnostic, DiagnosticSeverity, DiagnosticsPanel};
-pub use terminal::{TerminalLine, TerminalLineKind, TerminalPanel};
+pub use terminal::{run_composition_command, TerminalLine, TerminalLineKind, TerminalPanel};

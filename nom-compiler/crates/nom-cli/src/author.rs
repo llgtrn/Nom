@@ -564,6 +564,9 @@ fn looks_nom_ish(line: &str) -> bool {
     const KEYWORDS: &[&str] = &[
         "use ", "fn ", "let ", "return ", "if ", "else", "match ", "for ", "while ", "struct ",
         "enum ", "trait ", "impl ", "type ",
+        // B1 natural-language surface forms (ROADMAP B1)
+        "define ", "the function ", "the concept ", "the module ", "the data ",
+        "the screen ", "the event ", "the media ", "the property ", "the scenario ",
     ];
     for kw in KEYWORDS {
         if line.starts_with(kw) || line.contains(&format!(" {kw}")) {

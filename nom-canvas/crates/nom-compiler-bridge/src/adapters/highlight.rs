@@ -51,6 +51,8 @@ fn tok_text_len(tok: &nom_concept::Tok) -> usize {
         Tok::Domain => 6,
         Tok::Mhz => 3,
         Tok::Quality => 7,
+        Tok::Define => 6,
+        Tok::That => 4,
         Tok::NumberLit(n) => format!("{n}").len(),
         Tok::Kind(s) => s.len(),
         Tok::Word(s) => s.len(),
@@ -145,7 +147,9 @@ fn tok_to_role(tok: &nom_concept::Tok, state: &SharedState) -> TokenRole {
         | Tok::Clock
         | Tok::Domain
         | Tok::Mhz
-        | Tok::Quality => TokenRole::Keyword,
+        | Tok::Quality
+        | Tok::Define
+        | Tok::That => TokenRole::Keyword,
         Tok::Word(word) => {
             let kinds = state.cached_grammar_kinds();
             if kinds.iter().any(|k| &k.name == word) {

@@ -3008,6 +3008,75 @@ pub fn stage2_kind_classify_with_grammar(
     Ok(classified)
 }
 
+/// Surface format of a `.nomx` source file detected from its header line.
+///
+/// The detector reads only the first non-whitespace line, which must begin
+/// with `@nomx` for a file to be a recognized Nom surface file. The variant
+/// controls which clause shapes and keyword families the downstream stages
+/// accept:
+///
+/// - `Typed` — strict typed-slot grammar (e.g. `@Function matching "…"`).
+///   The header line starts with `@nomx typed`.
+/// - `Natural` — `define X that Y` natural-language grammar (ROADMAP B1).
+///   The header line starts with `@nomx natural`.
+/// - `Standard` — the current unified grammar: typed-slot form from the former
+///   v2 spec merged with the prose-body form of the former v1 spec. Any `@nomx`
+///   header line that is neither `typed` nor `natural` resolves here.
+///
+/// Files without an `@nomx` header are rejected by callers that require a
+/// versioned header; callers that accept legacy unheadered files may treat
+/// `detect_format` returning `None` as a "Standard" fallback at their
+/// discretion.
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub enum NomxFormat {
+    /// Strict typed-slot grammar (`@nomx typed`).
+    Typed,
+    /// Natural-language `define` grammar (`@nomx natural`).
+    Natural,
+    /// Unified standard grammar — typed-slot + prose body merged (`@nomx …`
+    /// with no recognized sub-keyword, or bare `@nomx`).
+    Standard,
+}
+
+/// Detect the `NomxFormat` of a source string from its leading header line.
+///
+/// Returns `Some(format)` when the first non-blank line starts with `@nomx`,
+/// `None` when no `@nomx` header is present.
+///
+/// Detection is pure and deterministic: same bytes → same result. It reads
+/// only the minimal prefix needed and does NOT invoke any stage.
+///
+/// # Examples
+///
+/// ```
+/// use nom_concept::stages::{NomxFormat, detect_format};
+///
+/// assert_eq!(detect_format("@nomx typed\n…"), Some(NomxFormat::Typed));
+/// assert_eq!(detect_format("@nomx natural\n…"), Some(NomxFormat::Natural));
+/// assert_eq!(detect_format("@nomx\n…"), Some(NomxFormat::Standard));
+/// assert_eq!(detect_format("@nomx unknown_tag\n…"), Some(NomxFormat::Standard));
+/// assert_eq!(detect_format("the function greet is\n  …"), None);
+/// ```
+pub fn detect_format(src: &str) -> Option<NomxFormat> {
+    for line in src.lines() {
+        let trimmed = line.trim();
+        if trimmed.is_empty() {
+            continue;
+        }
+        if let Some(rest) = trimmed.strip_prefix("@nomx") {
+            let sub = rest.trim();
+            return Some(match sub {
+                "typed" => NomxFormat::Typed,
+                "natural" => NomxFormat::Natural,
+                _ => NomxFormat::Standard,
+            });
+        }
+        // First non-blank line is not `@nomx` — no header.
+        return None;
+    }
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -4104,5 +4173,60 @@ the concept c_two is
         assert!(shaped.blocks[1].intent.contains("second thing"));
         assert!(!shaped.blocks[0].intent.contains("second thing"));
         assert!(!shaped.blocks[1].intent.contains("first thing"));
+    }
+
+    // ── NomxFormat detection tests ────────────────────────────────────────
+
+    /// b2_detect_typed: `@nomx typed` header resolves to `Typed`.
+    #[test]
+    fn b2_detect_typed_header() {
+        assert_eq!(
+            super::detect_format("@nomx typed\nthe function greet is\n  intended to say hi."),
+            Some(super::NomxFormat::Typed)
+        );
+    }
+
+    /// b2_detect_natural: `@nomx natural` header resolves to `Natural`.
+    #[test]
+    fn b2_detect_natural_header() {
+        assert_eq!(
+            super::detect_format("@nomx natural\ndefine greet that \"hello\"."),
+            Some(super::NomxFormat::Natural)
+        );
+    }
+
+    /// b2_detect_standard: bare `@nomx` and unknown sub-keyword both
+    /// resolve to `Standard`.
+    #[test]
+    fn b2_detect_standard_header() {
+        assert_eq!(
+            super::detect_format("@nomx\nthe function greet is\n  intended to say hi."),
+            Some(super::NomxFormat::Standard)
+        );
+        assert_eq!(
+            super::detect_format("@nomx unknown_tag\nthe function greet is\n  intended to say hi."),
+            Some(super::NomxFormat::Standard)
+        );
+    }
+
+    /// b2_detect_none: source with no `@nomx` header returns `None`.
+    #[test]
+    fn b2_detect_none_when_no_header() {
+        assert_eq!(
+            super::detect_format("the function greet is\n  intended to say hi."),
+            None
+        );
+        assert_eq!(super::detect_format(""), None);
+        assert_eq!(super::detect_format("   \n\n"), None);
+    }
+
+    /// b2_detect_skips_leading_blank_lines: blank lines before the
+    /// `@nomx` header are tolerated.
+    #[test]
+    fn b2_detect_skips_leading_blank_lines() {
+        assert_eq!(
+            super::detect_format("\n\n@nomx natural\ndefine greet that \"hello\"."),
+            Some(super::NomxFormat::Natural)
+        );
     }
 }

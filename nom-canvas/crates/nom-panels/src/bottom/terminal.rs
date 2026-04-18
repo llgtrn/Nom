@@ -106,6 +106,24 @@ impl TerminalPanel {
     }
 }
 
+/// Route the result of a "Run" action into `panel`.
+///
+/// `composition_result` is `Ok(output)` on success or `Err(msg)` on compile
+/// failure.  This function is intentionally decoupled from the compiler bridge
+/// so that `nom-panels` stays free of that dependency; callers obtain the
+/// result via `BackgroundTierOps::run_composition` and pass it here.
+pub fn run_composition_command(
+    input: &str,
+    composition_result: Result<String, String>,
+    panel: &mut TerminalPanel,
+) {
+    panel.push_line(TerminalLine::command(format!("run {}", input.trim())));
+    match composition_result {
+        Ok(output) => panel.push_line(TerminalLine::stdout(output)),
+        Err(msg) => panel.push_line(TerminalLine::stderr(msg)),
+    }
+}
+
 impl Default for TerminalPanel {
     fn default() -> Self {
         Self::new()
@@ -209,5 +227,42 @@ mod tests {
         t.paint_scene(800.0, 300.0, &mut scene);
         // bg + 3 line accents + cursor = 5 quads.
         assert_eq!(scene.quads.len(), 5);
+    }
+
+    // ── run_composition_command ───────────────────────────────────────────────
+
+    #[test]
+    fn run_composition_command_ok_appends_stdout_line() {
+        let mut panel = TerminalPanel::new();
+        run_composition_command(
+            "define greeting that yields hello",
+            Ok("Output: {\"tok_count\":5}".into()),
+            &mut panel,
+        );
+        // Expect 2 lines: the command echo and the stdout output.
+        assert_eq!(panel.lines.len(), 2);
+        assert_eq!(panel.lines[0].kind, TerminalLineKind::Command);
+        assert_eq!(panel.lines[1].kind, TerminalLineKind::Stdout);
+        assert!(
+            panel.lines[1].text.contains("Output:"),
+            "stdout line must contain Output: prefix"
+        );
+    }
+
+    #[test]
+    fn run_composition_command_err_appends_stderr_line() {
+        let mut panel = TerminalPanel::new();
+        run_composition_command(
+            "bad source !!!",
+            Err("Compile error: unexpected token".into()),
+            &mut panel,
+        );
+        assert_eq!(panel.lines.len(), 2);
+        assert_eq!(panel.lines[0].kind, TerminalLineKind::Command);
+        assert_eq!(panel.lines[1].kind, TerminalLineKind::Stderr);
+        assert!(
+            panel.lines[1].text.contains("Compile error"),
+            "stderr line must carry the error message"
+        );
     }
 }

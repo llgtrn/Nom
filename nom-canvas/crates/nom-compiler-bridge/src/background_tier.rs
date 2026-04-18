@@ -144,6 +144,23 @@ impl BackgroundTierOps {
         let worker = BackgroundWorker::new(self.shared.clone());
         worker.do_compile(source, &CompileOpts::full())
     }
+
+    /// Compile `input` through the full pipeline and return a human-readable
+    /// output string, or an error description.
+    ///
+    /// This is the entry point wired to the canvas "Run" toolbar action.
+    pub fn run_composition(&self, input: &str) -> Result<String, String> {
+        if input.trim().is_empty() {
+            return Err("composition input is empty".into());
+        }
+        match self.compile_sync(input) {
+            Ok(output) => Ok(format!(
+                "Output: {}",
+                output.output_json
+            )),
+            Err(e) => Err(format!("Compile error: {}", e)),
+        }
+    }
 }
 
 /// Worker that processes background jobs (runs on a thread pool)
@@ -2356,5 +2373,38 @@ mod tests {
             result.push('\n');
         }
         result
+    }
+
+    // ── run_composition ───────────────────────────────────────────────────────
+
+    #[test]
+    fn run_composition_returns_output_prefix() {
+        use crate::shared::SharedState;
+        let shared = std::sync::Arc::new(SharedState::new("test.db", "test.grammar"));
+        let ops = BackgroundTierOps::new(shared);
+        let result = ops.run_composition("define greeting that yields hello");
+        assert!(result.is_ok(), "run_composition must succeed on valid input");
+        let text = result.unwrap();
+        assert!(
+            text.starts_with("Output:"),
+            "successful run_composition must start with 'Output:'"
+        );
+    }
+
+    #[test]
+    fn run_composition_empty_input_returns_error() {
+        use crate::shared::SharedState;
+        let shared = std::sync::Arc::new(SharedState::new("test.db", "test.grammar"));
+        let ops = BackgroundTierOps::new(shared);
+        let result = ops.run_composition("   ");
+        assert!(
+            result.is_err(),
+            "run_composition must return Err for blank input"
+        );
+        let msg = result.unwrap_err();
+        assert!(
+            msg.contains("empty"),
+            "error message must mention 'empty', got: {msg}"
+        );
     }
 }

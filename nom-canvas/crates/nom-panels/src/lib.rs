@@ -11,7 +11,8 @@ pub mod statusbar;
 pub mod toolbar;
 
 pub use bottom::{
-    Diagnostic, DiagnosticSeverity, DiagnosticsPanel, TerminalLine, TerminalLineKind, TerminalPanel,
+    run_composition_command, Diagnostic, DiagnosticSeverity, DiagnosticsPanel, TerminalLine,
+    TerminalLineKind, TerminalPanel,
 };
 pub use command_palette::{CommandPalette, CommandPaletteItem};
 pub use dock::{

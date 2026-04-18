@@ -2,7 +2,10 @@
 pub mod serve;
 
 pub mod author;
+pub mod bench;
 pub mod corpus;
+pub mod flow;
+pub mod media;
 
 /// Commands understood by the nom-canvas CLI.
 #[derive(Debug, PartialEq)]

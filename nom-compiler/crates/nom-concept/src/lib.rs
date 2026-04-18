@@ -32,7 +32,9 @@ pub use strict::{
 
 pub mod stages;
 pub use lex::{Spanned, Tok};
-pub use stages::{StageFailure, StageId, TokenStream, stage1_tokenize};
+pub use stages::{
+    NomxFormat, StageFailure, StageId, TokenStream, detect_format, stage1_tokenize,
+};
 
 pub mod flow_edge;
 pub use flow_edge::{
@@ -469,6 +471,16 @@ mod lex {
         /// `quality` keyword for inline quality-score declarations (GAP-12).
         /// Surface form: `quality <name> <score>.`
         Quality,
+        /// `define` — natural-language function-definition keyword (ROADMAP B1).
+        /// Surface form: `define <name> that <body>.`
+        /// Accepted as a synonym for `the function <name> is` in the
+        /// `@nomx natural` grammar surface. The lexer emits this token;
+        /// the `@nomx natural` pipeline rewrites the block into a standard
+        /// function entity that S2-S6 can process.
+        Define,
+        /// `that` — body-introducer keyword paired with `define` (ROADMAP B1).
+        /// Follows the name in `define <name> that <body>.`
+        That,
         /// A decimal number literal: `[0-9]+(.[0-9]+)?`.
         /// Used for confidence threshold values in typed-slot refs.
         NumberLit(f64),
@@ -725,6 +737,14 @@ mod lex {
                     "domain" => Tok::Domain,
                     "mhz" => Tok::Mhz,
                     "quality" => Tok::Quality,
+                    // ── Natural-language B1 keywords ─────────────────────────
+                    // `define` + `that` are the ROADMAP B1 keyword pair.
+                    // They are only meaningful in `@nomx natural` surface files
+                    // but are recognized at the lexer layer unconditionally so
+                    // that the staged pipeline can surface useful diagnostics
+                    // when they appear outside a natural-grammar context.
+                    "define" => Tok::Define,
+                    "that" => Tok::That,
                     // ── Effect valence keywords (English only) ───────────────
                     "benefit" => Tok::Benefit, // canonical positive
                     "boon" => Tok::Benefit,    // English synonym
@@ -874,6 +894,8 @@ mod parse {
             Tok::Domain => "`domain`".into(),
             Tok::Mhz => "`mhz`".into(),
             Tok::Quality => "`quality`".into(),
+            Tok::Define => "`define`".into(),
+            Tok::That => "`that`".into(),
             Tok::NumberLit(n) => format!("`{n}`"),
             Tok::Kind(k) => format!("`{k}`"),
             Tok::Word(w) => format!("`{w}`"),
@@ -1070,6 +1092,8 @@ mod parse {
             Tok::Domain => "domain".to_string(),
             Tok::Mhz => "mhz".to_string(),
             Tok::Quality => "quality".to_string(),
+            Tok::Define => "define".to_string(),
+            Tok::That => "that".to_string(),
             Tok::NumberLit(n) => n.to_string(),
             Tok::Kind(k) => k.clone(),
             Tok::Word(w) => w.clone(),
@@ -3453,5 +3477,72 @@ the concept ct10d_v2 is
 "#;
         parse_nom(v1_src).expect("v1 kind-bearing ref must parse");
         parse_nom(v2_src).expect("v2 typed-slot ref must parse");
+    }
+
+    // ── ROADMAP B1 — natural-language `define` keyword tests ─────────────
+
+    /// b1_define_tokenizes: `define` lexes to `Tok::Define` and `that`
+    /// lexes to `Tok::That`. Both are distinct from `Tok::Word(…)`.
+    #[test]
+    fn b1_define_keyword_tokenizes() {
+        use lex::{Lexer, Tok};
+        let mut lex = Lexer::new("define greet that");
+        let t0 = lex.next().expect("define token");
+        let t1 = lex.next().expect("word token");
+        let t2 = lex.next().expect("that token");
+        assert_eq!(t0.tok, Tok::Define, "expected Tok::Define for `define`");
+        assert_eq!(
+            t1.tok,
+            Tok::Word("greet".to_string()),
+            "expected Word for name"
+        );
+        assert_eq!(t2.tok, Tok::That, "expected Tok::That for `that`");
+    }
+
+    /// b1_define_not_word: `define` must NOT lex as `Tok::Word("define")`.
+    #[test]
+    fn b1_define_is_not_a_word_token() {
+        use lex::{Lexer, Tok};
+        let mut lex = Lexer::new("define");
+        let tok = lex.next().expect("token");
+        assert_ne!(
+            tok.tok,
+            Tok::Word("define".to_string()),
+            "`define` must be Tok::Define, not Word"
+        );
+        assert_eq!(tok.tok, Tok::Define);
+    }
+
+    /// b1_that_not_word: `that` must NOT lex as `Tok::Word("that")`.
+    #[test]
+    fn b1_that_is_not_a_word_token() {
+        use lex::{Lexer, Tok};
+        let mut lex = Lexer::new("that");
+        let tok = lex.next().expect("token");
+        assert_ne!(
+            tok.tok,
+            Tok::Word("that".to_string()),
+            "`that` must be Tok::That, not Word"
+        );
+        assert_eq!(tok.tok, Tok::That);
+    }
+
+    /// b1_define_collect_all: `collect_all_tokens` includes `Tok::Define`
+    /// and `Tok::That` when the natural-language syntax is present.
+    #[test]
+    fn b1_define_appears_in_token_stream() {
+        use lex::Tok;
+        use stages::stage1_tokenize;
+        let src = "define greet that \"hello\".";
+        let stream = stage1_tokenize(src).expect("S1");
+        let kinds: Vec<&Tok> = stream.toks.iter().map(|s| &s.tok).collect();
+        assert!(
+            kinds.iter().any(|t| matches!(t, Tok::Define)),
+            "token stream must contain Tok::Define"
+        );
+        assert!(
+            kinds.iter().any(|t| matches!(t, Tok::That)),
+            "token stream must contain Tok::That"
+        );
     }
 }

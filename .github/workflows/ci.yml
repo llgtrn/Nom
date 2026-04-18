@@ -133,8 +133,12 @@ jobs:
         continue-on-error: true  # advisory; blockers will be addressed as they arise
 
   canvas:
-    name: NomCanvas checks (Rust nom-gpui workspace)
-    runs-on: ubuntu-latest
+    name: NomCanvas checks (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, windows-latest, macos-latest]
     steps:
       - uses: actions/checkout@v4
       - name: Install Rust toolchain
@@ -146,8 +150,8 @@ jobs:
             ~/.cargo/registry
             ~/.cargo/git
             nom-canvas/target
-          key: ubuntu-latest-nom-canvas-${{ hashFiles('nom-canvas/Cargo.lock') }}
-          restore-keys: ubuntu-latest-nom-canvas-
+          key: ${{ runner.os }}-nom-canvas-${{ hashFiles('nom-canvas/Cargo.lock') }}
+          restore-keys: ${{ runner.os }}-nom-canvas-
       - name: cargo check --workspace
         working-directory: nom-canvas
         run: cargo check --workspace --message-format short
