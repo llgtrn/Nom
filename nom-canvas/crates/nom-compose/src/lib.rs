@@ -143,6 +143,8 @@ pub use llama_compose::{
     LlamaPipeline, LlamaPipelineNode, PipelineCombinator, PipelineOutput,
     PipelineStage as LlamaPipelineStage,
 };
+pub mod app_bundle;
+pub use app_bundle::{BundleArtifact, BundleBuilder, BundleManifest, BundleOutput, BundleTarget};
 
 #[cfg(test)]
 mod integration_tests {

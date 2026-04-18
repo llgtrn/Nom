@@ -40,3 +40,5 @@ pub mod hypothesis_tree;
 pub use hypothesis_tree::{BeliefPropagator, HypothesisTree, HypothesisNodeState, ReasoningNode};
 pub mod wasm_bridge;
 pub use wasm_bridge::{WasmBridge, WasmFeatureGate, WasmModule, WasmTarget};
+pub mod flow_replay;
+pub use flow_replay::{ReplaySpeed, FlowReplayEntry, FlowReplay, ReplayController, ReplaySnapshot};

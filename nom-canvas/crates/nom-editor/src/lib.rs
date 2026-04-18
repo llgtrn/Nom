@@ -41,3 +41,5 @@ pub use selection::{SelectionAnchor, SelectionManager, SelectionRange};
 pub use workspace_rename::{RenameOp, RenamePreview, RenameScope, WorkspaceRenamer};
 pub use hover_tooltip::{TooltipKind, TooltipContent, TooltipAnchor, HoverTooltip, TooltipRenderer};
 pub use diagnostic_squiggle::{DiagnosticSeverity, DiagnosticSpan, DiagnosticOverlay, SquiggleStyle};
+pub mod go_to_def;
+pub use go_to_def::{DefinitionKind, DefinitionLocation, DefinitionTarget, GoToDefRequest, GoToDefResolver};

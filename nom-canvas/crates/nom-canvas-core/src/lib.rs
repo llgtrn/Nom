@@ -64,6 +64,10 @@ pub use bezier::{AnimatedBezier, BezierCurve, BezierPoint};
 pub mod frosted_glass;
 pub use frosted_glass::{BlurLayer, FrostedGlassEffect, LayerBlend, LayerCompositor};
 
+/// Frosted-glass pipeline coordinator: pass inputs, outputs, runner, and aggregate stats.
+pub mod frosted_pipeline;
+pub use frosted_pipeline::{FrostedLayerConfig, FrostedPassInput, FrostedPassOutput, FrostedPipelineRunner, PipelineStats};
+
 /// AFFiNE design tokens: categories, token set, resolver, and applier.
 pub mod affine_tokens;
 pub use affine_tokens::{AffineToken, AffineTokenSet, DesignTokenApplier, TokenCategory, TokenResolver};

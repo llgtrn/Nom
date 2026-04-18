@@ -82,6 +82,10 @@ pub use crdt_merge::{CrdtMergeOp, MergeStrategy, VectorClock};
 #[allow(missing_docs)]
 pub mod block_schema_v2;
 pub use block_schema_v2::{BlockSchemaV2, FieldType, MigrationTool, RoundTripValidator, SchemaField};
+/// Flow step execution table — artifact step tracking with status, timing, and cache detection.
+#[allow(missing_docs)]
+pub mod flow_step_table;
+pub use flow_step_table::{StepStatus, FlowStepRow, FlowStepTable, FlowStepQuery, StepTimeline};
 
 #[cfg(test)]
 mod integration_tests {
