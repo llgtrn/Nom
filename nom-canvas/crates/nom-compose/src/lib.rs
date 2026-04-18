@@ -162,6 +162,12 @@ pub mod data_compose;
 pub use data_compose::{DataSourceKind, DataSource, DataQuery, DataResult, DataComposer};
 pub mod font_compose;
 pub use font_compose::{FontStyle, FontWeight, FontSpec, FontFamily, FontComposer};
+pub mod storyboard_compose;
+pub use storyboard_compose::SceneType as StorySceneType;
+pub use storyboard_compose::StoryboardPanel as StoryboardComposePanel;
+pub use storyboard_compose::StoryboardAct;
+pub use storyboard_compose::Storyboard as StoryboardCompose;
+pub use storyboard_compose::StoryboardComposer;
 
 #[cfg(test)]
 mod integration_tests {

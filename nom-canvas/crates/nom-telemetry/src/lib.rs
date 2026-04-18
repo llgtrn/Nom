@@ -8,6 +8,7 @@ pub mod metrics_deep;
 pub mod perf_counter;
 pub mod spans;
 pub mod span_aggregator;
+pub mod span_tree;
 pub mod trace_export;
 pub use audit_log::{AuditCategory, AuditEvent, AuditFilter, AuditLog, AuditReporter};
 pub use event_log::{EventKind as LogEventKind, LoggedEvent, EventLog, EventLogStore};
@@ -15,6 +16,7 @@ pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};
 pub use perf_counter::{CounterKind, PerfCounter, CounterSnapshot, CounterRegistry, RateCalculator};
 pub use span_aggregator::{P95Calculator, SpanAggregator, SpanSample, TraceReport};
+pub use span_tree::{Span as TelSpan, SpanAnalyzer, SpanId, SpanKind, SpanTree};
 pub use trace_export::{JaegerSpan, OpenTelemetrySpan, SpanStatus, TraceExporter};
 
 use std::sync::{Arc, Mutex};

@@ -109,6 +109,10 @@ pub use transform_stack::{Transform2D, TransformStack, InverseTransform, Transfo
 pub mod motion_path;
 pub use motion_path::{EasingKind, MotionKeyframe, MotionPath, PathInterpolator, MotionAnimator};
 
+/// Glyph cache: key hashing, metrics, cached entries, hit/miss tracking, and stub rasterizer.
+pub mod glyph_cache;
+pub use glyph_cache::{GlyphKey, GlyphMetrics, CachedGlyph, GlyphCache, GlyphRasterizer};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

@@ -54,3 +54,5 @@ pub mod route_table;
 pub use route_table::{RouteKind, RouteKey, RouteEntry, RouteTable, RouteResolver};
 pub mod memory_graph;
 pub use memory_graph::{MemoryTier, MemoryNode, MemoryEdge, MemoryGraph, MemoryQuery};
+pub mod constraint_graph;
+pub use constraint_graph::{ConstraintKind, ConstraintVar, Constraint, ConstraintGraph, ConstraintSolver};
