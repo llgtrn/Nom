@@ -5,6 +5,29 @@ use nom_blocks::NomtuRef;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
+// ---------------------------------------------------------------------------
+// Typed property value / entry (new rich-properties API)
+// ---------------------------------------------------------------------------
+
+#[derive(Debug, Clone, PartialEq)]
+pub enum PropertyValue {
+    Text(String),
+    Number(f64),
+    Bool(bool),
+    Color(String),
+}
+
+#[derive(Debug, Clone)]
+pub struct PropertyEntry {
+    pub key: String,
+    pub value: PropertyValue,
+    pub editable: bool,
+}
+
+// ---------------------------------------------------------------------------
+// Legacy flat-string row (kept for paint_scene / entity-ref tests)
+// ---------------------------------------------------------------------------
+
 #[derive(Debug, Clone)]
 pub struct PropertyRow {
     pub key: String,
@@ -15,6 +38,10 @@ pub struct PropertyRow {
 pub struct PropertiesPanel {
     pub entity: PanelEntityRef,
     pub rows: Vec<PropertyRow>,
+    /// Panel display title.
+    pub panel_title: String,
+    /// Typed property entries (rich-properties API).
+    pub entries: Vec<PropertyEntry>,
 }
 
 impl PropertiesPanel {
@@ -22,7 +49,35 @@ impl PropertiesPanel {
         Self {
             entity: PanelEntityRef::None,
             rows: vec![],
+            panel_title: "Properties".to_string(),
+            entries: vec![],
         }
+    }
+
+    /// Construct with a custom display title.
+    pub fn with_title(title: &str) -> Self {
+        Self {
+            entity: PanelEntityRef::None,
+            rows: vec![],
+            panel_title: title.to_string(),
+            entries: vec![],
+        }
+    }
+
+    /// Push a typed `PropertyEntry` (builder-style, consuming self).
+    pub fn push(mut self, entry: PropertyEntry) -> Self {
+        self.entries.push(entry);
+        self
+    }
+
+    /// Retrieve a reference to the `PropertyValue` for `key`, if present.
+    pub fn get(&self, key: &str) -> Option<&PropertyValue> {
+        self.entries.iter().find(|e| e.key == key).map(|e| &e.value)
+    }
+
+    /// Count of entries that are marked editable.
+    pub fn editable_count(&self) -> usize {
+        self.entries.iter().filter(|e| e.editable).count()
     }
 
     pub fn load_entity(&mut self, id: &str, kind: &str) {
@@ -406,5 +461,73 @@ mod tests {
         panel.paint_scene(280.0, 400.0, &mut scene);
         // header(2) + 2 + 3 + 3 = 10
         assert_eq!(scene.quads.len(), 10);
+    }
+
+    // ── PropertyValue / PropertyEntry / rich-properties API ──────────────────
+
+    #[test]
+    fn properties_panel_with_title_new() {
+        let panel = PropertiesPanel::with_title("Node Inspector");
+        assert_eq!(panel.panel_title, "Node Inspector");
+        assert!(panel.entries.is_empty());
+        assert_eq!(panel.editable_count(), 0);
+    }
+
+    #[test]
+    fn properties_panel_push_entry() {
+        let panel = PropertiesPanel::with_title("Inspector")
+            .push(PropertyEntry {
+                key: "name".to_string(),
+                value: PropertyValue::Text("my_node".to_string()),
+                editable: true,
+            })
+            .push(PropertyEntry {
+                key: "weight".to_string(),
+                value: PropertyValue::Number(3.14),
+                editable: false,
+            });
+        assert_eq!(panel.entries.len(), 2);
+    }
+
+    #[test]
+    fn properties_panel_get() {
+        let panel = PropertiesPanel::with_title("Props")
+            .push(PropertyEntry {
+                key: "active".to_string(),
+                value: PropertyValue::Bool(true),
+                editable: false,
+            })
+            .push(PropertyEntry {
+                key: "color".to_string(),
+                value: PropertyValue::Color("#ff0000".to_string()),
+                editable: true,
+            });
+        assert_eq!(panel.get("active"), Some(&PropertyValue::Bool(true)));
+        assert_eq!(
+            panel.get("color"),
+            Some(&PropertyValue::Color("#ff0000".to_string()))
+        );
+        assert!(panel.get("missing").is_none());
+    }
+
+    #[test]
+    fn properties_panel_editable_count() {
+        let panel = PropertiesPanel::with_title("Props")
+            .push(PropertyEntry {
+                key: "a".to_string(),
+                value: PropertyValue::Text("v1".to_string()),
+                editable: true,
+            })
+            .push(PropertyEntry {
+                key: "b".to_string(),
+                value: PropertyValue::Number(0.0),
+                editable: false,
+            })
+            .push(PropertyEntry {
+                key: "c".to_string(),
+                value: PropertyValue::Bool(false),
+                editable: true,
+            });
+        assert_eq!(panel.editable_count(), 2);
     }
 }

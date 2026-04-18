@@ -1,0 +1,16 @@
+[package]
+name = "nom-canvas-tests"
+version = "0.1.0"
+edition = "2021"
+
+[[test]]
+name = "golden_paths"
+path = "tests/golden_paths.rs"
+
+[dev-dependencies]
+nom-compiler-bridge = { path = "../nom-compiler-bridge", default-features = false }
+nom-compose = { path = "../nom-compose" }
+nom-intent = { path = "../nom-intent" }
+
+[lints]
+workspace = true

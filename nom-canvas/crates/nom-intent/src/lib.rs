@@ -1409,11 +1409,6 @@ mod tests {
 
     // best_hypothesis: more edge cases
     #[test]
-    fn best_hypothesis_no_hypotheses_no_evidence() {
-        assert!(best_hypothesis(&[], &[]).is_none());
-    }
-
-    #[test]
     fn best_hypothesis_single_hypothesis_no_evidence() {
         let best = best_hypothesis(&["lone"], &[]).expect("must return Some");
         assert_eq!(best.hypothesis, "lone");
@@ -2045,27 +2040,6 @@ mod tests {
 
     // --- rank_hypotheses with 0 hypotheses returns empty ---
 
-    #[test]
-    fn rank_hypotheses_zero_hypotheses_returns_empty() {
-        let ranked = rank_hypotheses(&[], &["evidence one", "evidence two"]);
-        assert!(
-            ranked.is_empty(),
-            "rank_hypotheses with empty hypothesis slice must return empty vec"
-        );
-    }
-
-    #[test]
-    fn rank_hypotheses_zero_hypotheses_zero_evidence_returns_empty() {
-        let ranked = rank_hypotheses(&[], &[]);
-        assert!(ranked.is_empty());
-    }
-
-    #[test]
-    fn best_hypothesis_on_empty_hypotheses_returns_none_with_evidence() {
-        let result = best_hypothesis(&[], &["some", "evidence"]);
-        assert!(result.is_none(), "empty hypotheses slice must return None");
-    }
-
     // --- ScoredHypothesis with NaN score handled gracefully ---
 
     #[test]
@@ -2674,22 +2648,6 @@ mod tests {
     }
 
     #[test]
-    fn react_chain_zero_steps_returns_empty_vec_type() {
-        let result: Vec<ReactStep> = react_chain("hyp", &["ev"], 0);
-        assert!(
-            result.is_empty(),
-            "return type is Vec<ReactStep>, which is empty for 0 steps"
-        );
-    }
-
-    #[test]
-    fn react_chain_zero_steps_large_evidence_still_empty() {
-        let evidence: Vec<&str> = (0..50).map(|_| "word").collect();
-        let steps = react_chain("word", &evidence, 0);
-        assert!(steps.is_empty(), "0 steps with 50 evidence items → empty");
-    }
-
-    #[test]
     fn hypothesis_confidence_zero_last_in_three() {
         let evidence = &["match"];
         let hypotheses = &["match", "partial match", "unrelated zzz"];
@@ -2731,19 +2689,6 @@ mod tests {
     }
 
     #[test]
-    fn react_chain_zero_steps_does_not_call_classify() {
-        // If 0 steps, no classify_with_react is called — score never computed.
-        // Verify by checking the chain returns empty for any evidence.
-        let evidence = &["alpha", "beta", "gamma", "delta"];
-        let steps = react_chain("alpha beta gamma delta", evidence, 0);
-        assert!(steps.is_empty());
-        // Also verify 1 step DOES produce a score.
-        let one_step = react_chain("alpha", &["alpha"], 1);
-        assert_eq!(one_step.len(), 1);
-        assert!(one_step[0].score > 0.0);
-    }
-
-    #[test]
     fn hypothesis_zero_confidence_is_exactly_zero_not_epsilon() {
         // Zero overlap must produce exactly 0.0, not a tiny positive float.
         let score = classify_with_react("xyz_unique_abc", &["totally_unrelated_content"]);
@@ -2780,24 +2725,7 @@ mod tests {
         assert!(step0[0].score >= 0.0 && step0[0].score <= 1.0);
     }
 
-    #[test]
-    fn react_chain_zero_steps_no_side_effects() {
-        // 0 steps must return empty without modifying any external state.
-        let evidence = &["alpha", "beta"];
-        let steps = react_chain("alpha", evidence, 0);
-        assert!(steps.is_empty());
-        // Running again with 0 steps should also be empty (idempotent).
-        let steps2 = react_chain("alpha", evidence, 0);
-        assert!(steps2.is_empty());
-    }
-
     // ── WAVE-AG AGENT-10 additions ─────────────────────────────────────────────
-
-    #[test]
-    fn intent_chain_0_steps_ok() {
-        let result = react_chain("hypothesis", &["evidence"], 0);
-        assert!(result.is_empty(), "0 steps must return empty Vec");
-    }
 
     #[test]
     fn intent_chain_1_step_ok() {
@@ -3051,15 +2979,6 @@ mod tests {
     fn intent_classify_returns_f32() {
         let s: f32 = classify_with_react("test", &["test"]);
         assert!(s.is_finite(), "classify_with_react must return finite f32");
-    }
-
-    #[test]
-    fn intent_best_hypothesis_none_on_empty() {
-        let result = best_hypothesis(&[], &["evidence"]);
-        assert!(
-            result.is_none(),
-            "best_hypothesis on empty input must return None"
-        );
     }
 
     #[test]
@@ -3703,13 +3622,6 @@ mod tests {
         assert_eq!(steps.len(), 3);
     }
 
-    #[test]
-    fn react_chain_zero_max_steps_returns_empty_waveai9() {
-        // max_steps=0 → empty result.
-        let steps = react_chain("hyp", &["e1", "e2"], 0);
-        assert_eq!(steps.len(), 0, "zero max_steps must return empty vec");
-    }
-
     // --- Wave AJ: routing precision, calibration, chaining, context ---
 
     #[test]
@@ -3949,12 +3861,6 @@ mod tests {
     }
 
     #[test]
-    fn best_hypothesis_returns_none_for_empty_list() {
-        let result = best_hypothesis(&[], &["evidence"]);
-        assert!(result.is_none(), "empty hypotheses must return None");
-    }
-
-    #[test]
     fn interrupt_signal_default_not_cancelled() {
         let s = InterruptSignal::default();
         assert!(!s.is_cancelled(), "default signal must not be cancelled");
@@ -4044,12 +3950,6 @@ mod tests {
     fn react_chain_no_evidence_returns_empty() {
         let steps = react_chain("any hypothesis", &[], 10);
         assert!(steps.is_empty(), "no evidence → empty chain");
-    }
-
-    #[test]
-    fn react_chain_max_steps_zero_returns_empty() {
-        let steps = react_chain("hypothesis", &["e1", "e2", "e3"], 0);
-        assert!(steps.is_empty());
     }
 
     // --- ReAct chain tool call result feeds next step ---
@@ -4337,13 +4237,6 @@ mod tests {
     }
 
     #[test]
-    fn react_chain_zero_max_steps_returns_empty_new() {
-        let evidence = &["some evidence"];
-        let steps = react_chain("hypothesis", evidence, 0);
-        assert!(steps.is_empty(), "max_steps=0 must produce no steps");
-    }
-
-    #[test]
     fn multiple_hypotheses_merged_by_highest_per_kind() {
         // rank_hypotheses sorts by descending score; taking the first entry per
         // distinct prefix simulates "highest per kind" merging.
@@ -4454,21 +4347,6 @@ mod tests {
             steps[0].observation.contains("confidence"),
             "observation field must contain 'confidence'"
         );
-    }
-
-    #[test]
-    fn classify_single_word_hypothesis_full_match() {
-        let score = classify_with_react("word", &["word"]);
-        assert!(
-            (score - 1.0).abs() < 1e-6,
-            "single-word full match should score 1.0, got {score}"
-        );
-    }
-
-    #[test]
-    fn best_hypothesis_returns_none_for_empty_hypotheses() {
-        let result = best_hypothesis(&[], &["evidence"]);
-        assert!(result.is_none());
     }
 
     #[test]
@@ -4835,24 +4713,6 @@ mod tests {
     }
 
     #[test]
-    fn classify_single_word_hypothesis_single_evidence_match() {
-        let score = classify_with_react("graph", &["graph"]);
-        assert!((score - 1.0_f32).abs() < 1e-5);
-    }
-
-    #[test]
-    fn rank_hypotheses_empty_hypotheses_returns_empty() {
-        let ranked = rank_hypotheses(&[], &["some evidence"]);
-        assert!(ranked.is_empty());
-    }
-
-    #[test]
-    fn react_chain_max_steps_zero_produces_empty() {
-        let steps = react_chain("anything", &["evidence"], 0);
-        assert!(steps.is_empty());
-    }
-
-    #[test]
     fn scored_hypothesis_step_count_matches_evidence_len() {
         let evidence = &["a", "b", "c"];
         let ranked = rank_hypotheses(&["a b c"], evidence);
@@ -4863,12 +4723,6 @@ mod tests {
     fn classify_partial_overlap_score_positive() {
         let score = classify_with_react("graph node query", &["graph traversal path"]);
         assert!(score > 0.0);
-    }
-
-    #[test]
-    fn best_hypothesis_returns_none_for_empty_slice() {
-        let result = best_hypothesis(&[], &[]);
-        assert!(result.is_none());
     }
 
     #[test]

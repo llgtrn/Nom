@@ -335,6 +335,120 @@ impl Theme {
 }
 
 // ---------------------------------------------------------------------------
+// Frosted-glass token
+// ---------------------------------------------------------------------------
+
+/// Per-mode frosted-glass visual token.
+#[derive(Debug, Clone, PartialEq)]
+pub struct FrostedGlassToken {
+    /// Backdrop blur radius in pixels.
+    pub blur_radius: f32,
+    /// Background fill opacity (0.0–1.0).
+    pub background_opacity: f32,
+    /// Border overlay opacity (0.0–1.0).
+    pub border_opacity: f32,
+    /// RGBA tint color applied over the blurred surface.
+    pub tint: [u8; 4],
+}
+
+impl FrostedGlassToken {
+    /// Dark-mode frosted glass defaults: strong blur, cool dark tint.
+    pub fn default_dark() -> Self {
+        Self {
+            blur_radius: 20.0,
+            background_opacity: 0.15,
+            border_opacity: 0.2,
+            tint: [30, 30, 40, 255],
+        }
+    }
+
+    /// Light-mode frosted glass defaults: softer blur, near-white tint.
+    pub fn default_light() -> Self {
+        Self {
+            blur_radius: 16.0,
+            background_opacity: 0.08,
+            border_opacity: 0.15,
+            tint: [240, 240, 255, 255],
+        }
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Bezier-curve animation token
+// ---------------------------------------------------------------------------
+
+/// Cubic bezier curve defined by two control points (CSS cubic-bezier convention).
+#[derive(Debug, Clone, PartialEq)]
+pub struct BezierCurve {
+    pub x1: f32,
+    pub y1: f32,
+    pub x2: f32,
+    pub y2: f32,
+}
+
+impl BezierCurve {
+    /// `ease` — standard browser default.
+    pub fn ease() -> Self {
+        BezierCurve { x1: 0.25, y1: 0.1, x2: 0.25, y2: 1.0 }
+    }
+
+    /// `ease-in` — slow start.
+    pub fn ease_in() -> Self {
+        BezierCurve { x1: 0.42, y1: 0.0, x2: 1.0, y2: 1.0 }
+    }
+
+    /// `ease-out` — slow end.
+    pub fn ease_out() -> Self {
+        BezierCurve { x1: 0.0, y1: 0.0, x2: 0.58, y2: 1.0 }
+    }
+
+    /// `ease-in-out` — slow start and end.
+    pub fn ease_in_out() -> Self {
+        BezierCurve { x1: 0.42, y1: 0.0, x2: 0.58, y2: 1.0 }
+    }
+
+    /// `linear` — constant rate.
+    pub fn linear() -> Self {
+        BezierCurve { x1: 0.0, y1: 0.0, x2: 1.0, y2: 1.0 }
+    }
+
+    /// Approximate the Y output at normalized time `t` using Newton's method
+    /// (3 iterations) on the X parametric equation to find the curve parameter,
+    /// then evaluate the Y parametric equation at that parameter.
+    pub fn sample(&self, t: f32) -> f32 {
+        // Clamp t to [0, 1]
+        let t = t.clamp(0.0, 1.0);
+        // Find parameter `s` such that X(s) == t, where
+        //   X(s) = 3*(1-s)^2*s*x1 + 3*(1-s)*s^2*x2 + s^3
+        // Start with initial guess s = t
+        let mut s = t;
+        for _ in 0..3 {
+            let s2 = s * s;
+            let s3 = s2 * s;
+            let one_s = 1.0 - s;
+            let x = 3.0 * one_s * one_s * s * self.x1
+                + 3.0 * one_s * s2 * self.x2
+                + s3;
+            let dx = 3.0 * (one_s * one_s * self.x1
+                + 2.0 * one_s * s * (self.x2 - self.x1)
+                + s2 * (1.0 - self.x2));
+            if dx.abs() < 1e-6 {
+                break;
+            }
+            s -= (x - t) / dx;
+        }
+        let s = s.clamp(0.0, 1.0);
+        // Evaluate Y(s)
+        let s2 = s * s;
+        let s3 = s2 * s;
+        let one_s = 1.0 - s;
+        3.0 * one_s * one_s * s * self.y1
+            + 3.0 * one_s * s2 * self.y2
+            + s3
+    }
+}
+
+// ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
@@ -5429,6 +5543,75 @@ mod tests {
             Theme::oled().background,
             Theme::dark().background,
             "oled background must differ from dark background"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // D2 visual tokens: frosted-glass, bezier-animate, theme toggle
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn frosted_glass_dark_defaults() {
+        let tok = FrostedGlassToken::default_dark();
+        assert_eq!(tok.blur_radius, 20.0, "dark blur_radius must be 20.0");
+        assert!(
+            (tok.background_opacity - 0.15).abs() < 1e-6,
+            "dark background_opacity must be 0.15"
+        );
+    }
+
+    #[test]
+    fn frosted_glass_light_defaults() {
+        let tok = FrostedGlassToken::default_light();
+        assert_eq!(tok.blur_radius, 16.0, "light blur_radius must be 16.0");
+    }
+
+    #[test]
+    fn bezier_ease_sample_midpoint_in_range() {
+        let b = BezierCurve::ease();
+        let y = b.sample(0.5);
+        assert!(
+            y > 0.4 && y < 0.95,
+            "BezierCurve::ease().sample(0.5) = {y:.4} must be in (0.4, 0.95)"
+        );
+    }
+
+    #[test]
+    fn bezier_linear_sample_midpoint_near_half() {
+        let b = BezierCurve::linear();
+        let y = b.sample(0.5);
+        assert!(
+            (y - 0.5).abs() < 0.05,
+            "BezierCurve::linear().sample(0.5) = {y:.4} must be ≈ 0.5 ± 0.05"
+        );
+    }
+
+    #[test]
+    fn theme_mode_toggle_cycles() {
+        use crate::ThemeMode;
+        assert_eq!(ThemeMode::Dark.toggle(), ThemeMode::Light);
+        assert_eq!(ThemeMode::Light.toggle(), ThemeMode::Oled);
+        assert_eq!(ThemeMode::Oled.toggle(), ThemeMode::Dark);
+    }
+
+    #[test]
+    fn theme_mode_is_dark_family() {
+        use crate::ThemeMode;
+        assert!(ThemeMode::Dark.is_dark_family());
+        assert!(ThemeMode::Oled.is_dark_family());
+        assert!(!ThemeMode::Light.is_dark_family());
+    }
+
+    #[test]
+    fn theme_registry_switch_updates_mode() {
+        use crate::{ThemeMode, ThemeRegistry};
+        let reg = ThemeRegistry::new(ThemeMode::Dark);
+        assert_eq!(reg.current, ThemeMode::Dark);
+        let reg = reg.switch(ThemeMode::Light);
+        assert_eq!(reg.current, ThemeMode::Light);
+        assert_eq!(
+            reg.frosted.blur_radius, 16.0,
+            "light frosted blur must be 16.0 after switch"
         );
     }
 }

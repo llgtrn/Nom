@@ -149,6 +149,12 @@ assert_eq!(active.fps, 60);
 | Wave AU | 8434 | Composition API docs, HybridResolver tier routing, ComposeContext builder |
 | Wave AV | 8446 | Video pipeline, CompositionConfig/VideoCodec registry, README improvements |
 
+## Documentation
+
+- [docs/user-manual.md](docs/user-manual.md) — User manual: getting started, language syntax, canvas interface, composition API, CLI reference, and how to extend Nom
+- [docs/api-reference.md](docs/api-reference.md) — API reference: signatures and descriptions for all public types in `nom-compose`, `nom-intent`, `nom-graph`, and `nom-panels`
+- [CONTRIBUTING.md](CONTRIBUTING.md) — Development setup, crate organization, adding kinds/skills, and non-negotiable code standards
+
 ## Documents
 
 - [SYNTAX.md](SYNTAX.md) — Formal syntax reference

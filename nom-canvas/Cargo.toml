@@ -16,6 +16,9 @@ members = [
   "crates/nom-lint",
   "crates/nom-cli",
   "crates/nom-intent",
+  "crates/nom-canvas-tests",
+  "crates/nom-ux",
+  "crates/nom-media",
 ]
 
 [workspace.dependencies]

@@ -3,6 +3,9 @@ name = "nom-canvas-core"
 version = "0.1.0"
 edition = "2021"
 
+[features]
+wasm = []
+
 [dependencies]
 rstar = { workspace = true }
 bytemuck = { workspace = true }

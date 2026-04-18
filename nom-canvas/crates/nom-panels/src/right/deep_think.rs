@@ -78,6 +78,56 @@ impl ThinkingStep {
     }
 }
 
+#[derive(Debug, Clone)]
+pub struct ReasoningStep {
+    pub index: u32,
+    pub hypothesis: String,
+    pub confidence: f32,
+    pub expanded: bool,
+}
+
+pub struct HypothesisTree {
+    pub steps: Vec<ReasoningStep>,
+    pub current_index: Option<u32>,
+}
+
+impl HypothesisTree {
+    pub fn new() -> Self {
+        Self {
+            steps: vec![],
+            current_index: None,
+        }
+    }
+
+    pub fn push_step(mut self, step: ReasoningStep) -> Self {
+        self.current_index = Some(step.index);
+        self.steps.push(step);
+        self
+    }
+
+    pub fn expand(mut self, index: u32) -> Self {
+        for step in &mut self.steps {
+            if step.index == index {
+                step.expanded = true;
+            }
+        }
+        self
+    }
+
+    pub fn high_confidence_steps(&self, threshold: f32) -> Vec<&ReasoningStep> {
+        self.steps
+            .iter()
+            .filter(|s| s.confidence >= threshold)
+            .collect()
+    }
+}
+
+impl Default for HypothesisTree {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 pub enum ThinkState {
     Idle,
     Streaming,
@@ -899,5 +949,79 @@ mod tests {
             matches!(panel.state, ThinkState::Idle),
             "state must remain Idle"
         );
+    }
+
+    // ── HypothesisTree tests ──────────────────────────────────────────────────
+
+    #[test]
+    fn hypothesis_tree_new_is_empty() {
+        let tree = HypothesisTree::new();
+        assert!(tree.steps.is_empty());
+        assert!(tree.current_index.is_none());
+    }
+
+    #[test]
+    fn hypothesis_tree_push_step() {
+        let step = ReasoningStep {
+            index: 0,
+            hypothesis: "initial hypothesis".to_string(),
+            confidence: 0.7,
+            expanded: false,
+        };
+        let tree = HypothesisTree::new().push_step(step);
+        assert_eq!(tree.steps.len(), 1);
+        assert_eq!(tree.current_index, Some(0));
+        assert_eq!(tree.steps[0].hypothesis, "initial hypothesis");
+    }
+
+    #[test]
+    fn hypothesis_tree_expand() {
+        let step_a = ReasoningStep {
+            index: 0,
+            hypothesis: "step a".to_string(),
+            confidence: 0.5,
+            expanded: false,
+        };
+        let step_b = ReasoningStep {
+            index: 1,
+            hypothesis: "step b".to_string(),
+            confidence: 0.8,
+            expanded: false,
+        };
+        let tree = HypothesisTree::new()
+            .push_step(step_a)
+            .push_step(step_b)
+            .expand(0);
+        assert!(tree.steps[0].expanded);
+        assert!(!tree.steps[1].expanded);
+    }
+
+    #[test]
+    fn hypothesis_tree_high_confidence_steps() {
+        let tree = HypothesisTree::new()
+            .push_step(ReasoningStep {
+                index: 0,
+                hypothesis: "low".to_string(),
+                confidence: 0.3,
+                expanded: false,
+            })
+            .push_step(ReasoningStep {
+                index: 1,
+                hypothesis: "high".to_string(),
+                confidence: 0.9,
+                expanded: false,
+            })
+            .push_step(ReasoningStep {
+                index: 2,
+                hypothesis: "med".to_string(),
+                confidence: 0.6,
+                expanded: false,
+            });
+        let high = tree.high_confidence_steps(0.8);
+        assert_eq!(high.len(), 1);
+        assert_eq!(high[0].hypothesis, "high");
+
+        let all = tree.high_confidence_steps(0.0);
+        assert_eq!(all.len(), 3);
     }
 }
