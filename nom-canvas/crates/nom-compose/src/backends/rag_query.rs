@@ -44,18 +44,10 @@ impl RagPipeline {
     }
 }
 
+#[derive(Default)]
 pub struct RagQueryBackend {
     pub deep_think_config: Option<DeepThinkConfig>,
     pub top_k: Option<usize>,
-}
-
-impl Default for RagQueryBackend {
-    fn default() -> Self {
-        Self {
-            deep_think_config: None,
-            top_k: None,
-        }
-    }
 }
 
 impl RagQueryBackend {
@@ -123,8 +115,8 @@ impl RagQueryBackend {
         let retriever = GraphRagRetriever::new(dag);
 
         let mut qvec: QueryVec = [0.0f32; 16];
-        for i in 0..16 {
-            qvec[i] = ((input_hash >> (i * 4)) & 0xF) as f32 / 15.0;
+        for (i, slot) in qvec.iter_mut().enumerate() {
+            *slot = ((input_hash >> (i * 4)) & 0xF) as f32 / 15.0;
         }
 
         sink.emit(ComposeEvent::Progress {

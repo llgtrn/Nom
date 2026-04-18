@@ -186,4 +186,109 @@ mod tests {
             "re-computing with narrower width must constrain the stored size"
         );
     }
+
+    #[test]
+    fn deeply_nested_children_three_levels() {
+        // Create a 3-level hierarchy: grandparent > parent > child
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+
+        let child = engine.request_layout(&style, &[]);
+        let parent = engine.request_layout(&style, &[child]);
+        let grandparent = engine.request_layout(&style, &[parent]);
+
+        // All three ids must be distinct.
+        assert_ne!(child, parent);
+        assert_ne!(parent, grandparent);
+        assert_ne!(child, grandparent);
+
+        // Compute layout on root — fills in grandparent, others stay default.
+        let size = Size {
+            width: Pixels(1920.0),
+            height: Pixels(1080.0),
+        };
+        engine.compute_layout(grandparent, size);
+        assert_eq!(engine.layout(grandparent).size, size);
+        assert_eq!(engine.layout(parent), Bounds::default());
+        assert_eq!(engine.layout(child), Bounds::default());
+    }
+
+    #[test]
+    fn deeply_nested_four_levels() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+
+        let l4 = engine.request_layout(&style, &[]);
+        let l3 = engine.request_layout(&style, &[l4]);
+        let l2 = engine.request_layout(&style, &[l3]);
+        let l1 = engine.request_layout(&style, &[l2]);
+
+        let available = Size {
+            width: Pixels(600.0),
+            height: Pixels(400.0),
+        };
+        engine.compute_layout(l1, available);
+
+        assert_eq!(engine.layout(l1).size, available);
+        // Deeper nodes not individually computed remain default.
+        assert_eq!(engine.layout(l2), Bounds::default());
+        assert_eq!(engine.layout(l3), Bounds::default());
+        assert_eq!(engine.layout(l4), Bounds::default());
+    }
+
+    #[test]
+    fn multiple_compute_layout_calls_on_same_node() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+        let id = engine.request_layout(&style, &[]);
+
+        let s1 = Size {
+            width: Pixels(100.0),
+            height: Pixels(100.0),
+        };
+        let s2 = Size {
+            width: Pixels(200.0),
+            height: Pixels(150.0),
+        };
+        let s3 = Size {
+            width: Pixels(50.0),
+            height: Pixels(80.0),
+        };
+
+        engine.compute_layout(id, s1);
+        assert_eq!(engine.layout(id).size, s1);
+
+        engine.compute_layout(id, s2);
+        assert_eq!(engine.layout(id).size, s2);
+
+        engine.compute_layout(id, s3);
+        assert_eq!(engine.layout(id).size, s3, "last compute_layout wins");
+    }
+
+    #[test]
+    fn sibling_nodes_independent() {
+        let mut engine = LayoutEngine::new();
+        let style = StyleRefinement::default();
+
+        let sib_a = engine.request_layout(&style, &[]);
+        let sib_b = engine.request_layout(&style, &[]);
+        let sib_c = engine.request_layout(&style, &[]);
+
+        let sa = Size {
+            width: Pixels(10.0),
+            height: Pixels(20.0),
+        };
+        let sb = Size {
+            width: Pixels(30.0),
+            height: Pixels(40.0),
+        };
+
+        engine.compute_layout(sib_a, sa);
+        engine.compute_layout(sib_b, sb);
+
+        // sib_c never computed — remains default.
+        assert_eq!(engine.layout(sib_a).size, sa);
+        assert_eq!(engine.layout(sib_b).size, sb);
+        assert_eq!(engine.layout(sib_c), Bounds::default());
+    }
 }

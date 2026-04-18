@@ -1001,19 +1001,13 @@ mod tests {
 
     #[test]
     fn batch_lint_multiple_sources() {
-        let sources = [
-            "ok line\n",
-            "trailing   \n",
-            "fn empty() {}\n",
-        ];
+        let sources = ["ok line\n", "trailing   \n", "fn empty() {}\n"];
         let mut runner = LintRunner::new();
         runner.add_rule(TrailingWhitespaceRule);
         runner.add_rule(EmptyBlockRule);
 
-        let all_diags: Vec<LintDiagnostic> = sources
-            .iter()
-            .flat_map(|src| runner.run(src))
-            .collect();
+        let all_diags: Vec<LintDiagnostic> =
+            sources.iter().flat_map(|src| runner.run(src)).collect();
         // sources[1] → trailing, sources[2] → empty-block
         assert_eq!(all_diags.len(), 2);
     }
@@ -1025,10 +1019,8 @@ mod tests {
         runner.add_rule(TrailingWhitespaceRule);
         runner.add_rule(EmptyBlockRule);
         runner.add_rule(LineTooLongRule::new());
-        let all_diags: Vec<LintDiagnostic> = sources
-            .iter()
-            .flat_map(|src| runner.run(src))
-            .collect();
+        let all_diags: Vec<LintDiagnostic> =
+            sources.iter().flat_map(|src| runner.run(src)).collect();
         assert!(all_diags.is_empty());
     }
 
@@ -1041,7 +1033,10 @@ mod tests {
         runner.add_rule(LineTooLongRule { max_len: 120 });
         runner.add_rule(EmptyBlockRule);
         let diags = runner.run(&source);
-        let warning_count = diags.iter().filter(|d| d.level == LintLevel::Warning).count();
+        let warning_count = diags
+            .iter()
+            .filter(|d| d.level == LintLevel::Warning)
+            .count();
         assert_eq!(warning_count, diags.len()); // all are warnings
         assert!(diags.len() >= 3);
     }
@@ -1135,8 +1130,15 @@ mod tests {
             EmptyBlockRule.name(),
         ];
         for name in &names {
-            assert_eq!(name.to_lowercase(), *name, "name should be lowercase: {name}");
-            assert!(!name.contains('_'), "name should use hyphens not underscores: {name}");
+            assert_eq!(
+                name.to_lowercase(),
+                *name,
+                "name should be lowercase: {name}"
+            );
+            assert!(
+                !name.contains('_'),
+                "name should use hyphens not underscores: {name}"
+            );
         }
     }
 

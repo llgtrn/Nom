@@ -292,7 +292,11 @@ mod tests {
         let mut reg = BackendRegistry::new();
         reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
         reg.register(Box::new(NoopBackend::new(BackendKind::Audio)));
-        assert_eq!(reg.registered_kinds().len(), 1, "duplicate kind must not grow list");
+        assert_eq!(
+            reg.registered_kinds().len(),
+            1,
+            "duplicate kind must not grow list"
+        );
         let result = reg.dispatch(BackendKind::Audio, "clip", &|_| {});
         assert_eq!(result, Ok("audio:clip".to_string()));
     }

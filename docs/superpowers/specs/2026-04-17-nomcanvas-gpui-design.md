@@ -6,6 +6,7 @@
 > **Architecture:** Custom GPUI (wgpu + winit + taffy + cosmic-text) — Zed's approach. One binary. Fully Rust.
 > **Sibling docs:** `implementation_plan.md` · `nom_state_machine_report.md` · `task.md` · `INIT.md`
 > **NON-NEGOTIABLE:** Agents MUST read source repos end-to-end before writing ANY code. Always use ui-ux-pro-max skill.
+> **Implementation audit note (2026-04-18, HEAD `7a79e88`):** this spec remains the north star, but current code is not yet fully DB-driven. `Connector::new()` / `new_stub()` bypass grammar-backed validation, `NodePalette` / `LibraryPanel` still load slices/static rows rather than a live `grammar.kinds` SELECT, and `cargo test --workspace --all-features` fails 14 `nom-compiler-bridge` tests. Treat these as open implementation gaps, not spec changes.
 
 ---
 
@@ -374,6 +375,8 @@ DAG nodes with typed ports. Wires = grammar slot-fills validated by `can_wire()`
 - Nodes = `NomKind` instances derived from `grammar.kinds` (zero hardcoded)
 - Ports = `clause_shapes` rows for that kind's grammar slots
 - Wires = `can_wire(src_ref, src_slot, dst_ref, dst_slot, grammar_conn, entries_conn)`
+
+Current implementation gate: every connector constructor must call the grammar-backed validation path. Constructors that synthesize `(true, confidence, reason)` without DB/grammar validation are non-compliant.
 - Execution = `nom-compose/dispatch.rs` routes kind → backend
 - Expression nodes: `{{ expr }}` via `nom-graph-v2/sandbox.rs` (4 AST sanitizers)
 

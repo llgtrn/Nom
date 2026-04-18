@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use crate::dock::{fill_quad, focus_ring_quad, DockPosition, Panel};
+use nom_blocks::dict_reader::DictReader;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -23,8 +24,21 @@ impl LibraryPanel {
         }
     }
 
-    /// Populate from a slice of `(name, description, entry_count)` tuples.
-    pub fn load_kinds(&mut self, kinds: &[(&str, &str, usize)]) {
+    /// Populate from the dictionary/grammar source of truth.
+    pub fn load_from_dict(&mut self, dict: &dyn DictReader) {
+        self.kinds = dict
+            .list_kinds()
+            .into_iter()
+            .map(|kind| LibraryKind {
+                name: kind.name,
+                description: kind.description,
+                entry_count: 0,
+            })
+            .collect();
+    }
+
+    #[cfg(test)]
+    fn load_kinds(&mut self, kinds: &[(&str, &str, usize)]) {
         self.kinds = kinds
             .iter()
             .map(|(name, description, entry_count)| LibraryKind {

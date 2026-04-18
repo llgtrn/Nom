@@ -616,4 +616,118 @@ mod tests {
             "partially overlapping element must be selected"
         );
     }
+
+    /// Toggle: add then remove deselects the element.
+    #[test]
+    fn toggle_selected_to_deselected() {
+        let mut sel = Selection::empty();
+        sel.add(55);
+        assert!(sel.contains(55), "must be selected after add");
+        sel.remove(55);
+        assert!(!sel.contains(55), "must be deselected after remove");
+        assert_eq!(sel.len(), 0);
+    }
+
+    /// select_range: adding a range preserves existing selections.
+    #[test]
+    fn select_range_preserves_existing() {
+        let mut sel = Selection::empty();
+        sel.add(1);
+        // Now add a range of IDs
+        for id in [10u64, 11, 12] {
+            sel.add(id);
+        }
+        // Original element 1 must still be present
+        assert!(sel.contains(1), "original element must still be selected");
+        assert_eq!(sel.len(), 4);
+        for id in [10u64, 11, 12] {
+            assert!(sel.contains(id), "id {} must be selected", id);
+        }
+    }
+
+    /// clear_all: after clear, len is 0 and no ids remain.
+    #[test]
+    fn clear_all_removes_every_element() {
+        let mut sel = Selection::empty();
+        for id in [1u64, 2, 3, 4, 5] {
+            sel.add(id);
+        }
+        sel.clear();
+        assert!(sel.is_empty());
+        assert_eq!(sel.len(), 0);
+        for id in [1u64, 2, 3, 4, 5] {
+            assert!(
+                !sel.contains(id),
+                "id {} must not be selected after clear",
+                id
+            );
+        }
+    }
+
+    /// Intersection with empty set is always empty.
+    #[test]
+    fn intersection_with_empty_set_is_empty() {
+        let mut a = Selection::empty();
+        for id in [1u64, 2, 3] {
+            a.add(id);
+        }
+        let b = Selection::empty();
+        let inter: std::collections::BTreeSet<u64> = a.ids.intersection(&b.ids).copied().collect();
+        assert!(inter.is_empty(), "intersection with empty must be empty");
+    }
+
+    /// Intersection with self (full set) equals self.
+    #[test]
+    fn intersection_with_full_set_is_self() {
+        let mut a = Selection::empty();
+        for id in [10u64, 20, 30] {
+            a.add(id);
+        }
+        let mut b = Selection::empty();
+        for id in [10u64, 20, 30] {
+            b.add(id);
+        }
+        let inter: std::collections::BTreeSet<u64> = a.ids.intersection(&b.ids).copied().collect();
+        assert_eq!(inter.len(), 3);
+        for id in [10u64, 20, 30] {
+            assert!(inter.contains(&id));
+        }
+    }
+
+    /// RubberBand: begin (new) then drag, aabb shows correct size.
+    #[test]
+    fn rubber_band_begin_drag_end() {
+        let mut rb = RubberBand::new([0.0, 0.0]);
+        // Simulate drag sequence
+        rb.update([30.0, 20.0]);
+        rb.update([60.0, 40.0]);
+        let (min, max) = rb.aabb();
+        assert!((min[0]).abs() < 1e-6);
+        assert!((min[1]).abs() < 1e-6);
+        assert!((max[0] - 60.0).abs() < 1e-6, "max.x={}", max[0]);
+        assert!((max[1] - 40.0).abs() < 1e-6, "max.y={}", max[1]);
+    }
+
+    /// RubberBand dragged backwards (end < start) normalises correctly.
+    #[test]
+    fn rubber_band_backwards_drag_normalises() {
+        let mut rb = RubberBand::new([200.0, 150.0]);
+        rb.update([50.0, 30.0]);
+        let (min, max) = rb.aabb();
+        assert!(min[0] <= max[0], "min.x must be <= max.x");
+        assert!(min[1] <= max[1], "min.y must be <= max.y");
+        assert!((min[0] - 50.0).abs() < 1e-6);
+        assert!((min[1] - 30.0).abs() < 1e-6);
+    }
+
+    /// Selection with one element: single() constructor sets transform_origin.
+    #[test]
+    fn single_selection_has_correct_origin() {
+        let origin = [42.0_f32, -7.0];
+        let sel = Selection::single(99, origin);
+        assert_eq!(sel.len(), 1);
+        assert!(sel.contains(99));
+        assert!((sel.transform_origin[0] - 42.0).abs() < 1e-6);
+        assert!((sel.transform_origin[1] - (-7.0)).abs() < 1e-6);
+    }
 }

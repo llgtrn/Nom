@@ -33,18 +33,15 @@ pub use dict::{
     count_entities_by_status,
     count_required_axes,
     delete_concept,
-    find_by_word,
     find_entities,
     find_entities_by_body_kind,
     find_entities_by_kind,
     find_entities_by_word,
     find_entity,
-    find_entries,
     find_partial_entity_ids,
     get_concept_by_name,
     get_concept_members,
     get_entity,
-    get_entry,
     get_entry_bytes,
     get_findings,
     get_meta,
@@ -63,6 +60,12 @@ pub use dict::{
     upsert_entry,
     upsert_entry_if_new,
 };
+
+// Legacy entries-table compatibility exports. These stay public for older
+// callers, but warnings are contained here so modern workspace checks can move
+// toward the entities-tier APIs without noisy re-export diagnostics.
+#[allow(deprecated)]
+pub use dict::{find_by_word, find_entries, get_entry};
 
 use std::collections::{HashSet, VecDeque};
 use std::path::{Path, PathBuf};

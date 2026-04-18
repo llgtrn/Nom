@@ -352,4 +352,160 @@ mod tests {
         assert_eq!(output.grammar_version, 99);
         assert!(output.output_json.contains("99"));
     }
+
+    #[test]
+    fn compile_cache_key_empty_string_stable() {
+        // Empty source with version 0 must produce a stable u64 (no panic, same value each call)
+        let k1 = SharedState::compile_cache_key("", 0);
+        let k2 = SharedState::compile_cache_key("", 0);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn compile_cache_key_unicode_stable() {
+        let k1 = SharedState::compile_cache_key("définir résultat ✓", 3);
+        let k2 = SharedState::compile_cache_key("définir résultat ✓", 3);
+        assert_eq!(k1, k2);
+    }
+
+    #[test]
+    fn concurrent_read_write_grammar_kinds() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        let readers: Vec<_> = (0..4)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..50 {
+                        let _ = s.cached_grammar_kinds();
+                    }
+                })
+            })
+            .collect();
+
+        // Writer thread concurrently updates grammar kinds
+        let writer_state = Arc::clone(&state);
+        let writer = thread::spawn(move || {
+            for i in 0u32..10 {
+                writer_state.update_grammar_kinds(vec![GrammarKind {
+                    name: format!("kind_{i}"),
+                    description: format!("desc_{i}"),
+                }]);
+            }
+        });
+
+        for r in readers {
+            r.join().expect("reader thread panicked");
+        }
+        writer.join().expect("writer thread panicked");
+        // After all writes, grammar_version must be at least 10
+        assert!(state.grammar_version() >= 10);
+    }
+
+    #[test]
+    fn concurrent_compile_cache_reads() {
+        use std::sync::Arc;
+        use std::thread;
+
+        let state = Arc::new(SharedState::new("d.db", "g.db"));
+        // Pre-populate a cache entry
+        let key = SharedState::compile_cache_key("concurrent_source", 0);
+        state.cache_compile_result(
+            key,
+            PipelineOutput {
+                source_hash: key,
+                grammar_version: 0,
+                output_json: r#"{"ok":true}"#.into(),
+            },
+        );
+
+        let threads: Vec<_> = (0..8)
+            .map(|_| {
+                let s = Arc::clone(&state);
+                thread::spawn(move || {
+                    for _ in 0..20 {
+                        let result = s.get_cached_compile(key);
+                        if let Some(r) = result {
+                            assert_eq!(r.source_hash, key);
+                        }
+                    }
+                })
+            })
+            .collect();
+
+        for t in threads {
+            t.join().expect("reader thread panicked");
+        }
+    }
+
+    #[test]
+    fn dict_pool_eviction_at_exactly_capacity() {
+        let state = SharedState::new("d.db", "g.db");
+        let version = state.grammar_version();
+        // Fill to exactly capacity (256)
+        for i in 0u64..256 {
+            let k = SharedState::compile_cache_key(&format!("fill_{i}"), version);
+            state.cache_compile_result(
+                k,
+                PipelineOutput {
+                    source_hash: k,
+                    grammar_version: version,
+                    output_json: "{}".into(),
+                },
+            );
+        }
+        // Insert one more — the first inserted entry (fill_0) should be evicted
+        let first_key = SharedState::compile_cache_key("fill_0", version);
+        let overflow_key = SharedState::compile_cache_key("overflow_entry", version);
+        state.cache_compile_result(
+            overflow_key,
+            PipelineOutput {
+                source_hash: overflow_key,
+                grammar_version: version,
+                output_json: "{}".into(),
+            },
+        );
+        // overflow_key is present
+        assert!(
+            state.get_cached_compile(overflow_key).is_some(),
+            "newly inserted entry must be present"
+        );
+        // fill_0 was evicted
+        assert!(
+            state.get_cached_compile(first_key).is_none(),
+            "oldest entry must have been evicted"
+        );
+    }
+
+    #[test]
+    fn grammar_kinds_replaced_on_each_update() {
+        let state = SharedState::new("d.db", "g.db");
+        state.update_grammar_kinds(vec![
+            GrammarKind {
+                name: "a".into(),
+                description: "".into(),
+            },
+            GrammarKind {
+                name: "b".into(),
+                description: "".into(),
+            },
+        ]);
+        assert_eq!(state.cached_grammar_kinds().len(), 2);
+        state.update_grammar_kinds(vec![GrammarKind {
+            name: "c".into(),
+            description: "".into(),
+        }]);
+        let kinds = state.cached_grammar_kinds();
+        assert_eq!(kinds.len(), 1);
+        assert_eq!(kinds[0].name, "c");
+    }
+
+    #[test]
+    fn cache_miss_returns_none() {
+        let state = SharedState::new("d.db", "g.db");
+        let bogus_key = 0xDEAD_C0DE_DEAD_C0DE_u64;
+        assert!(state.get_cached_compile(bogus_key).is_none());
+    }
 }

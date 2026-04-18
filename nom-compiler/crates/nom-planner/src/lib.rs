@@ -2354,7 +2354,9 @@ mod tests {
         let val_id = flow.nodes[0].id;
         let transfer_id = flow.nodes[1].id;
         assert!(
-            flow.edges.iter().any(|e| e.from == val_id && e.to == transfer_id),
+            flow.edges
+                .iter()
+                .any(|e| e.from == val_id && e.to == transfer_id),
             "validation node must have an edge to the transfer node"
         );
     }

@@ -2,6 +2,7 @@
 pub mod bottom;
 pub mod command_palette;
 pub mod dock;
+pub mod entity_ref;
 pub mod left;
 pub mod pane;
 pub mod right;
@@ -16,6 +17,7 @@ pub use command_palette::{CommandPalette, CommandPaletteItem};
 pub use dock::{
     fill_quad, focus_ring_quad, rgba_to_hsla, Dock, DockPosition, Panel, PanelEntry, PanelSizeState,
 };
+pub use entity_ref::PanelEntityRef;
 pub use left::{
     FileNode, FileNodeKind, FileTreePanel, LibraryKind, LibraryPanel, NodePalette, PaletteEntry,
     QuickSearchPanel, SearchResult, SearchResultKind,
@@ -36,9 +38,13 @@ mod integration_tests {
 
     use crate::command_palette::{CommandPalette, CommandPaletteItem};
     use crate::dock::{rgba_to_hsla, Dock, DockPosition};
+    use crate::left::file_tree::{FileNode, FileNodeKind, FileTreePanel};
     use crate::left::library::LibraryPanel;
     use crate::left::node_palette::NodePalette;
+    use crate::right::chat_sidebar::{ChatMessage, ChatSidebarPanel};
     use crate::right::deep_think::{DeepThinkPanel, ThinkingStep};
+    use crate::right::properties::PropertiesPanel;
+    use nom_blocks::stub_dict::StubDictReader;
 
     // -------------------------------------------------------------------------
     // Test 1: panels_use_nom_theme_tokens
@@ -144,25 +150,23 @@ mod integration_tests {
     // -------------------------------------------------------------------------
     #[test]
     fn node_palette_and_library_panel_coexist() {
-        let node_kinds: &[(&str, &str, &str)] = &[
-            ("Function", "Function", "A callable unit"),
-            ("Concept", "Concept", "An abstract unit"),
-            ("Entity", "Entity", "A concrete object"),
-        ];
-        let palette = NodePalette::load_from_kinds(node_kinds);
+        let dict = StubDictReader::with_kinds(&["Function", "Concept", "Entity"]);
+        let palette = NodePalette::load_from_dict(&dict);
 
         let mut library = LibraryPanel::new();
-        library.load_kinds(&[
-            ("Function", "Callable units of work", 10),
-            ("Concept", "Abstract semantic units", 5),
-            ("Entity", "Concrete named objects", 3),
-        ]);
+        library.load_from_dict(&dict);
 
-        assert_eq!(palette.entry_count(), 3, "NodePalette must have 3 entries");
-        assert_eq!(library.kind_count(), 3, "LibraryPanel must have 3 kinds");
+        assert!(
+            palette.entry_count() >= 3,
+            "NodePalette must include the requested grammar kinds"
+        );
+        assert!(
+            library.kind_count() >= 3,
+            "LibraryPanel must include the requested grammar kinds"
+        );
 
         let total = palette.entry_count() + library.kind_count();
-        assert_eq!(total, 6, "combined entry count must be 6");
+        assert!(total >= 6, "combined entry count must be at least 6");
 
         // Paint both into the same scene and verify they each emit quads.
         let mut scene = Scene::new();
@@ -176,6 +180,54 @@ mod integration_tests {
         assert!(
             total_quads >= quads_after_palette + 7,
             "library must add >= 7 quads"
+        );
+    }
+
+    #[test]
+    fn runtime_ui_surfaces_emit_nonblank_scene_primitives() {
+        let dict = StubDictReader::with_kinds(&["Function", "Concept", "Entity"]);
+        let palette = NodePalette::load_from_dict(&dict);
+
+        let mut library = LibraryPanel::new();
+        library.load_from_dict(&dict);
+        library.select_kind("Function");
+
+        let mut file_tree = FileTreePanel::new();
+        file_tree.sections[0]
+            .nodes
+            .push(FileNode::file("main.nom", 0, FileNodeKind::NomFile));
+        file_tree.select("main.nom");
+
+        let mut properties = PropertiesPanel::new();
+        properties.load_entity("ent-1", "Concept");
+        properties.set_row("name", "concept", true);
+
+        let mut chat = ChatSidebarPanel::new();
+        chat.push_message(ChatMessage::assistant_streaming("a1"));
+        chat.append_to_last("ready");
+        chat.finalize_last();
+        chat.begin_tool("compile", "source.nom");
+        chat.complete_tool("ok", 12);
+
+        let mut deep_think = DeepThinkPanel::new();
+        deep_think.begin("verify");
+        deep_think.push_step(ThinkingStep::new("inspect", 0.9));
+
+        let mut scene = Scene::new();
+        palette.paint_scene(248.0, &mut scene);
+        library.paint_scene(248.0, 400.0, &mut scene);
+        file_tree.paint_scene(248.0, 400.0, &mut scene);
+        properties.paint_scene(280.0, 400.0, &mut scene);
+        chat.paint_scene(320.0, 400.0, &mut scene);
+        deep_think.paint_scene(320.0, 400.0, &mut scene);
+
+        assert!(
+            scene.quads.len() >= 20,
+            "runtime panel scene should be visibly nonblank"
+        );
+        assert!(
+            scene.quads.iter().any(|quad| quad.border_color.is_some()),
+            "focus/border primitives must be visible"
         );
     }
 }

@@ -27,7 +27,13 @@ fn tokenize(text: &str) -> Vec<String> {
 }
 
 /// Compute BM25 score for a document against a query
-fn bm25_score(query_tokens: &[String], doc_tokens: &[String], avg_doc_len: f64, num_docs: usize, doc_freqs: &HashMap<String, usize>) -> f64 {
+fn bm25_score(
+    query_tokens: &[String],
+    doc_tokens: &[String],
+    avg_doc_len: f64,
+    num_docs: usize,
+    doc_freqs: &HashMap<String, usize>,
+) -> f64 {
     let doc_len = doc_tokens.len() as f64;
     let mut score = 0.0;
 
@@ -63,17 +69,21 @@ pub fn rerank(query: &str, candidates: &[(String, String, f64)], alpha: f64) -> 
     let query_tokens = tokenize(query);
     if query_tokens.is_empty() {
         // No meaningful query tokens — return original order
-        return candidates.iter().map(|(id, word, score)| RankedResult {
-            id: id.clone(),
-            word: word.clone(),
-            original_score: *score,
-            rerank_score: 0.0,
-            combined_score: *score,
-        }).collect();
+        return candidates
+            .iter()
+            .map(|(id, word, score)| RankedResult {
+                id: id.clone(),
+                word: word.clone(),
+                original_score: *score,
+                rerank_score: 0.0,
+                combined_score: *score,
+            })
+            .collect();
     }
 
     // Tokenize all documents
-    let doc_tokens: Vec<Vec<String>> = candidates.iter()
+    let doc_tokens: Vec<Vec<String>> = candidates
+        .iter()
         .map(|(_, word, _)| tokenize(word))
         .collect();
 
@@ -91,7 +101,9 @@ pub fn rerank(query: &str, candidates: &[(String, String, f64)], alpha: f64) -> 
     let avg_doc_len = doc_tokens.iter().map(|t| t.len()).sum::<usize>() as f64 / num_docs as f64;
 
     // Score each candidate with raw BM25
-    let mut results: Vec<RankedResult> = candidates.iter().zip(doc_tokens.iter())
+    let mut results: Vec<RankedResult> = candidates
+        .iter()
+        .zip(doc_tokens.iter())
         .map(|((id, word, orig_score), tokens)| {
             let bm25 = bm25_score(&query_tokens, tokens, avg_doc_len, num_docs, &doc_freqs);
             RankedResult {
@@ -105,15 +117,26 @@ pub fn rerank(query: &str, candidates: &[(String, String, f64)], alpha: f64) -> 
         .collect();
 
     // Normalize BM25 scores to [0, 1] so they are on the same scale as original_score
-    let max_bm25 = results.iter().map(|r| r.rerank_score).fold(0.0f64, f64::max);
+    let max_bm25 = results
+        .iter()
+        .map(|r| r.rerank_score)
+        .fold(0.0f64, f64::max);
     for r in &mut results {
-        let normalized_bm25 = if max_bm25 > 0.0 { r.rerank_score / max_bm25 } else { 0.0 };
+        let normalized_bm25 = if max_bm25 > 0.0 {
+            r.rerank_score / max_bm25
+        } else {
+            0.0
+        };
         r.rerank_score = normalized_bm25;
         r.combined_score = alpha * r.original_score + (1.0 - alpha) * normalized_bm25;
     }
 
     // Sort by combined score descending
-    results.sort_by(|a, b| b.combined_score.partial_cmp(&a.combined_score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.combined_score
+            .partial_cmp(&a.combined_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results
 }
 
@@ -124,13 +147,17 @@ pub fn reciprocal_rank_fusion(ranked_lists: &[Vec<RankedResult>], k: f64) -> Vec
     for list in ranked_lists {
         for (rank, result) in list.iter().enumerate() {
             let rrf_score = 1.0 / (k + rank as f64 + 1.0);
-            let entry = scores.entry(result.id.clone())
-                .or_insert((0.0, result.word.clone(), result.original_score));
+            let entry = scores.entry(result.id.clone()).or_insert((
+                0.0,
+                result.word.clone(),
+                result.original_score,
+            ));
             entry.0 += rrf_score;
         }
     }
 
-    let mut results: Vec<RankedResult> = scores.into_iter()
+    let mut results: Vec<RankedResult> = scores
+        .into_iter()
         .map(|(id, (rrf, word, orig))| RankedResult {
             id,
             word,
@@ -140,7 +167,11 @@ pub fn reciprocal_rank_fusion(ranked_lists: &[Vec<RankedResult>], k: f64) -> Vec
         })
         .collect();
 
-    results.sort_by(|a, b| b.combined_score.partial_cmp(&a.combined_score).unwrap_or(std::cmp::Ordering::Equal));
+    results.sort_by(|a, b| {
+        b.combined_score
+            .partial_cmp(&a.combined_score)
+            .unwrap_or(std::cmp::Ordering::Equal)
+    });
     results
 }
 
@@ -159,7 +190,11 @@ mod tests {
         let candidates = vec![
             ("h1".to_string(), "fetch url http request".to_string(), 0.5),
             ("h2".to_string(), "hash sha256 digest".to_string(), 0.8),
-            ("h3".to_string(), "fetch data from url endpoint".to_string(), 0.3),
+            (
+                "h3".to_string(),
+                "fetch data from url endpoint".to_string(),
+                0.3,
+            ),
         ];
         let results = rerank("fetch url", &candidates, 0.3);
         // fetch_url candidates should rank higher than hash
@@ -170,12 +205,36 @@ mod tests {
     #[test]
     fn rrf_combines_two_lists() {
         let list1 = vec![
-            RankedResult { id: "a".into(), word: "alpha".into(), original_score: 1.0, rerank_score: 1.0, combined_score: 1.0 },
-            RankedResult { id: "b".into(), word: "beta".into(), original_score: 0.5, rerank_score: 0.5, combined_score: 0.5 },
+            RankedResult {
+                id: "a".into(),
+                word: "alpha".into(),
+                original_score: 1.0,
+                rerank_score: 1.0,
+                combined_score: 1.0,
+            },
+            RankedResult {
+                id: "b".into(),
+                word: "beta".into(),
+                original_score: 0.5,
+                rerank_score: 0.5,
+                combined_score: 0.5,
+            },
         ];
         let list2 = vec![
-            RankedResult { id: "b".into(), word: "beta".into(), original_score: 0.8, rerank_score: 0.8, combined_score: 0.8 },
-            RankedResult { id: "a".into(), word: "alpha".into(), original_score: 0.3, rerank_score: 0.3, combined_score: 0.3 },
+            RankedResult {
+                id: "b".into(),
+                word: "beta".into(),
+                original_score: 0.8,
+                rerank_score: 0.8,
+                combined_score: 0.8,
+            },
+            RankedResult {
+                id: "a".into(),
+                word: "alpha".into(),
+                original_score: 0.3,
+                rerank_score: 0.3,
+                combined_score: 0.3,
+            },
         ];
         let fused = reciprocal_rank_fusion(&[list1, list2], 60.0);
         assert_eq!(fused.len(), 2);

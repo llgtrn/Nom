@@ -48,13 +48,13 @@ fn parse_section(index: usize, block: &str) -> DocSection {
         DocSection {
             heading: Some(h),
             body,
-            page_break: index > 0 && index % 5 == 0,
+            page_break: index > 0 && index.is_multiple_of(5),
         }
     } else {
         DocSection {
             heading: None,
             body: block.to_string(),
-            page_break: index > 0 && index % 5 == 0,
+            page_break: index > 0 && index.is_multiple_of(5),
         }
     }
 }

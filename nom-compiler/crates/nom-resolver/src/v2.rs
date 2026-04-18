@@ -21,10 +21,7 @@
 use std::collections::HashMap;
 
 use nom_ast::{SourceFile, Span, Statement, UseStmt};
-use nom_dict::{
-    Dict,
-    dict::{find_by_word, get_entry, get_meta},
-};
+use nom_dict::{Dict, dict::get_meta};
 use thiserror::Error;
 
 /// Errors surfaced by [`resolve_use_statements`].
@@ -112,8 +109,10 @@ fn resolve_one_use(
 }
 
 /// Resolve a bare (unpinned) `use <name>` by consulting `dict.find_by_word`.
+#[allow(deprecated)]
 fn resolve_bare(name: &str, dict: &Dict, span: Span) -> Result<String, ResolveError> {
-    let entries = find_by_word(dict, name).map_err(|e| internal_lookup_error(name, span, &e))?;
+    let entries =
+        nom_dict::find_by_word(dict, name).map_err(|e| internal_lookup_error(name, span, &e))?;
     match entries.len() {
         0 => Err(ResolveError::NotFound {
             name: name.to_string(),
@@ -148,10 +147,13 @@ fn resolve_bare(name: &str, dict: &Dict, span: Span) -> Result<String, ResolveEr
 
 /// Resolve a `#<hex>` pin. Accepts a full 64-char id or any prefix
 /// ≥ 1 char — the DB lookup decides uniqueness.
+#[allow(deprecated)]
 fn resolve_hash_pin(hex: &str, dict: &Dict, span: Span) -> Result<String, ResolveError> {
     // Fast path: full-length id lookup via get_entry.
     if hex.len() == 64 {
-        return match get_entry(dict, hex).map_err(|e| internal_lookup_error(hex, span, &e))? {
+        return match nom_dict::get_entry(dict, hex)
+            .map_err(|e| internal_lookup_error(hex, span, &e))?
+        {
             Some(entry) => Ok(entry.id),
             None => Err(ResolveError::UnknownHash {
                 hash: hex.to_string(),

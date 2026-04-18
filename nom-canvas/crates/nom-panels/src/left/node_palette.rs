@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use crate::dock::{fill_quad, DockPosition, Panel};
+use nom_blocks::dict_reader::DictReader;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -12,9 +13,6 @@ pub struct PaletteEntry {
 }
 
 /// DB-driven node palette for Graph mode (spec §8).
-///
-/// Entries are loaded from a caller-supplied slice that simulates
-/// `SELECT kind_name, display_name, description FROM grammar.kinds`.
 pub struct NodePalette {
     pub entries: Vec<PaletteEntry>,
 }
@@ -24,18 +22,32 @@ impl NodePalette {
         Self { entries: vec![] }
     }
 
-    /// Populate the palette from a DB-sourced slice of
-    /// `(kind_name, display_name, description)` tuples.
-    pub fn load_from_kinds(kinds: &[(&str, &str, &str)]) -> Self {
-        let entries = kinds
-            .iter()
-            .map(|(kind_name, display_name, description)| PaletteEntry {
-                kind_name: kind_name.to_string(),
-                display_name: display_name.to_string(),
-                description: description.to_string(),
+    /// Populate the palette from the dictionary/grammar source of truth.
+    pub fn load_from_dict(dict: &dyn DictReader) -> Self {
+        let entries = dict
+            .list_kinds()
+            .into_iter()
+            .map(|kind| PaletteEntry {
+                display_name: kind.name.clone(),
+                kind_name: kind.name,
+                description: kind.description,
             })
             .collect();
         Self { entries }
+    }
+
+    #[cfg(test)]
+    fn load_from_kinds(kinds: &[(&str, &str, &str)]) -> Self {
+        Self {
+            entries: kinds
+                .iter()
+                .map(|(kind_name, display_name, description)| PaletteEntry {
+                    kind_name: (*kind_name).to_string(),
+                    display_name: (*display_name).to_string(),
+                    description: (*description).to_string(),
+                })
+                .collect(),
+        }
     }
 
     /// Substring search across `kind_name` and `display_name`.
@@ -205,5 +217,76 @@ mod tests {
         ];
         let palette = NodePalette::load_from_kinds(kinds);
         assert_eq!(palette.entry_count(), 5);
+    }
+
+    #[test]
+    fn node_palette_panel_trait_id_and_title() {
+        let palette = NodePalette::new();
+        assert_eq!(palette.id(), "node-palette");
+        assert_eq!(palette.title(), "Node Palette");
+        assert_eq!(palette.default_size(), 248.0);
+    }
+
+    #[test]
+    fn node_palette_position_is_left() {
+        let palette = NodePalette::new();
+        assert_eq!(palette.position(), crate::dock::DockPosition::Left);
+    }
+
+    #[test]
+    fn node_palette_activation_priority() {
+        let palette = NodePalette::new();
+        assert_eq!(palette.activation_priority(), 30);
+    }
+
+    #[test]
+    fn node_palette_search_case_insensitive() {
+        let palette = NodePalette::load_from_kinds(SAMPLE_KINDS);
+        let results = palette.search("FUNCTION");
+        assert_eq!(results.len(), 1);
+        assert_eq!(results[0].kind_name, "Function");
+    }
+
+    #[test]
+    fn node_palette_search_matches_display_name() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("K1", "Alpha Widget", "desc"),
+            ("K2", "Beta Widget", "desc"),
+            ("K3", "Gamma Other", "desc"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        let results = palette.search("Widget");
+        assert_eq!(results.len(), 2);
+    }
+
+    #[test]
+    fn node_palette_default_is_empty() {
+        let palette = NodePalette::default();
+        assert_eq!(palette.entry_count(), 0);
+    }
+
+    #[test]
+    fn node_palette_empty_kinds_empty_palette() {
+        let palette = NodePalette::load_from_kinds(&[]);
+        assert_eq!(palette.entry_count(), 0);
+        let all = palette.search("");
+        assert!(all.is_empty());
+    }
+
+    #[test]
+    fn node_palette_category_grouping_by_prefix() {
+        let kinds: &[(&str, &str, &str)] = &[
+            ("MediaVideo", "Video", "video block"),
+            ("MediaAudio", "Audio", "audio block"),
+            ("TextBlock", "Text", "text block"),
+        ];
+        let palette = NodePalette::load_from_kinds(kinds);
+        // Search for "media" matches first two
+        let media_results = palette.search("media");
+        assert_eq!(media_results.len(), 2);
+        // Search for "block" matches last two (via display or kind)
+        let block_results = palette.search("block");
+        // "TextBlock" matches by kind_name, "MediaVideo"/"MediaAudio" match by description
+        assert!(block_results.len() >= 1);
     }
 }

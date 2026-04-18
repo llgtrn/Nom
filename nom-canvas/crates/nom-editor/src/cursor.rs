@@ -298,4 +298,99 @@ mod tests {
         assert_eq!(moved[0].head(), line_len + 1);
         assert_eq!(moved[1].head(), 5 + line_len + 1);
     }
+
+    #[test]
+    fn cursor_move_word_forward_simulated() {
+        // Simulate move_word_forward: advance offset past next word boundary
+        let text = "hello world foo";
+        let offset = 0usize;
+        // find next space
+        let next_word_start = text[offset..]
+            .find(|c: char| c == ' ')
+            .map(|p| offset + p + 1)
+            .unwrap_or(text.len());
+        assert_eq!(next_word_start, 6); // 'w' in 'world'
+    }
+
+    #[test]
+    fn cursor_move_word_back_simulated() {
+        let text = "hello world";
+        let offset = 11usize; // end of string
+                              // Find the start of the last word by scanning backwards past the last word chars
+        let word_start = text[..offset]
+            .rfind(|c: char| c == ' ')
+            .map(|p| p + 1)
+            .unwrap_or(0);
+        assert_eq!(word_start, 6); // 'w' in 'world'
+    }
+
+    #[test]
+    fn cursor_move_to_line_start() {
+        let text = "hello\nworld\nfoo";
+        // Cursor on 'w' at offset 6; line start is offset 6 (after '\n')
+        let offset = 8usize; // 'r' in 'world'
+        let line_start = text[..offset].rfind('\n').map(|p| p + 1).unwrap_or(0);
+        assert_eq!(line_start, 6);
+    }
+
+    #[test]
+    fn cursor_move_to_line_end() {
+        let text = "hello\nworld\nfoo";
+        let offset = 8usize; // 'r' in 'world'
+        let line_end = text[offset..]
+            .find('\n')
+            .map(|p| offset + p)
+            .unwrap_or(text.len());
+        assert_eq!(line_end, 11); // position of '\n' after 'world'
+    }
+
+    #[test]
+    fn cursor_set_remove_cursor_by_retaining() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(10));
+        cs.add(Selection::caret(20));
+        assert_eq!(cs.len(), 3);
+        // Remove cursor at offset 10
+        cs.selections.retain(|s| s.head() != 10);
+        assert_eq!(cs.len(), 2);
+        assert!(cs.selections.iter().all(|s| s.head() != 10));
+    }
+
+    #[test]
+    fn cursor_set_move_all_cursors_forward() {
+        let mut cs = CursorSet::single(0);
+        cs.add(Selection::caret(5));
+        cs.add(Selection::caret(10));
+        // Move all cursors +1
+        let moved: Vec<Selection> = cs
+            .selections
+            .iter()
+            .map(|s| Selection::caret(s.head() + 1))
+            .collect();
+        assert_eq!(moved[0].head(), 1);
+        assert_eq!(moved[1].head(), 6);
+        assert_eq!(moved[2].head(), 11);
+    }
+
+    #[test]
+    fn cursor_selection_per_cursor() {
+        // Each cursor can carry an independent selection range
+        let mut cs = CursorSet::single(0);
+        cs.selections[0] = Selection::range(0, 5);
+        cs.add(Selection::range(10, 15));
+        assert_eq!(cs.selections[0].min_offset(), 0);
+        assert_eq!(cs.selections[0].max_offset(), 5);
+        // The second selection (after sort) is at 10..15
+        let second = cs.selections.iter().find(|s| s.min_offset() == 10).unwrap();
+        assert_eq!(second.max_offset(), 15);
+    }
+
+    #[test]
+    fn anchor_bias_left_vs_right() {
+        let left = Anchor::at(5);
+        let right = Anchor::at_right(5);
+        assert_eq!(left.bias, Bias::Left);
+        assert_eq!(right.bias, Bias::Right);
+        assert_eq!(left.offset, right.offset);
+    }
 }

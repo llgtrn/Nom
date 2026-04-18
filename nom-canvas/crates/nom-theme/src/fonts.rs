@@ -385,17 +385,17 @@ mod tests {
         assert_eq!(reg.inter_regular, cloned.inter_regular);
         assert_eq!(reg.inter_bold, cloned.inter_bold);
         assert_eq!(reg.source_code_pro_regular, cloned.source_code_pro_regular);
-        assert_eq!(reg.source_code_pro_semibold, cloned.source_code_pro_semibold);
+        assert_eq!(
+            reg.source_code_pro_semibold,
+            cloned.source_code_pro_semibold
+        );
     }
 
     #[test]
     fn font_type_style_heading1_uses_bold() {
         let reg = FontRegistry::placeholder();
         let h1 = TypeStyle::heading1(&reg);
-        assert_eq!(
-            h1.font_id, reg.inter_bold,
-            "H1 must use inter_bold font"
-        );
+        assert_eq!(h1.font_id, reg.inter_bold, "H1 must use inter_bold font");
     }
 
     #[test]

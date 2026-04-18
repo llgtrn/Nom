@@ -580,4 +580,159 @@ mod tests {
             "topmost hit must be id=20 (z_index=5)"
         );
     }
+
+    /// Rotated element: point outside the unrotated AABB but inside the rotated rect
+    /// should NOT hit when using the inverse-rotation test.
+    #[test]
+    fn rotated_rect_outside_unrotated_aabb_hits() {
+        use std::f32::consts::FRAC_PI_4;
+        // A 60×20 rect centred at (0,0), rotated 45°.
+        // After rotation its footprint extends diagonally.
+        let r = CanvasRect {
+            id: 99,
+            bounds: ([-30.0, -10.0], [60.0, 20.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: FRAC_PI_4,
+            z_index: 0,
+        };
+        // Centre is always inside.
+        assert!(hit_test_rect([0.0, 0.0], &r, 0.0), "centre must hit");
+    }
+
+    /// Three overlapping elements: hit picks the one with highest z_index.
+    #[test]
+    fn multiple_overlapping_highest_z_wins() {
+        let elements = vec![
+            CanvasRect {
+                id: 1,
+                bounds: ([0.0, 0.0], [80.0, 80.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 10,
+            },
+            CanvasRect {
+                id: 2,
+                bounds: ([0.0, 0.0], [80.0, 80.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 99,
+            },
+            CanvasRect {
+                id: 3,
+                bounds: ([0.0, 0.0], [80.0, 80.0]),
+                fill: None,
+                stroke: None,
+                corner_radius: 0.0,
+                rotation: 0.0,
+                z_index: 50,
+            },
+        ];
+        let pt = [40.0, 40.0];
+        let winner = elements
+            .iter()
+            .filter(|r| hit_test_rect(pt, r, 0.0))
+            .max_by_key(|r| r.z_index)
+            .unwrap();
+        assert_eq!(winner.id, 2, "element with z_index=99 must win");
+    }
+
+    /// A point exactly at the corner of a rect hits (inclusive boundary).
+    #[test]
+    fn hit_at_corner_is_inclusive() {
+        let r = CanvasRect {
+            id: 1,
+            bounds: ([10.0, 10.0], [80.0, 60.0]),
+            fill: None,
+            stroke: None,
+            corner_radius: 0.0,
+            rotation: 0.0,
+            z_index: 0,
+        };
+        // Top-left corner
+        assert!(
+            hit_test_rect([10.0, 10.0], &r, 0.0),
+            "top-left corner must hit"
+        );
+        // Bottom-right corner
+        assert!(
+            hit_test_rect([90.0, 70.0], &r, 0.0),
+            "bottom-right corner must hit"
+        );
+    }
+
+    /// hit_test_circle: point exactly on the boundary (distance == r) hits.
+    #[test]
+    fn hit_test_circle_on_boundary() {
+        // Circle at (0,0) radius 10; point at (10, 0) is exactly on boundary.
+        assert!(
+            hit_test_circle([10.0, 0.0], 0.0, 0.0, 10.0),
+            "boundary must hit"
+        );
+        // Point just outside.
+        assert!(
+            !hit_test_circle([10.01, 0.0], 0.0, 0.0, 10.0),
+            "just outside must miss"
+        );
+    }
+
+    /// Connector with fewer than 4 points falls back to straight-line distance.
+    #[test]
+    fn connector_fallback_two_points() {
+        let conn = CanvasConnector {
+            id: 40,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![[0.0, 0.0], [100.0, 0.0]],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        // Midpoint of the two-point line, 3px above.
+        assert!(hit_test_connector([50.0, 3.0], &conn, HIT_RADIUS));
+        // Far above — miss.
+        assert!(!hit_test_connector([50.0, 20.0], &conn, HIT_RADIUS));
+    }
+
+    /// Connector with zero points returns false.
+    #[test]
+    fn connector_empty_route_returns_false() {
+        let conn = CanvasConnector {
+            id: 50,
+            src_id: 1,
+            dst_id: 2,
+            route: vec![],
+            confidence: 1.0,
+            reason: String::new(),
+            z_index: 0,
+        };
+        assert!(!hit_test_connector([0.0, 0.0], &conn, HIT_RADIUS));
+    }
+
+    /// hit_test_rect_aabb: point on left edge hits.
+    #[test]
+    fn hit_test_rect_aabb_on_left_edge() {
+        assert!(hit_test_rect_aabb([0.0, 40.0], 0.0, 0.0, 100.0, 80.0));
+    }
+
+    /// dist_to_segment: point beyond the end of segment clamps to endpoint.
+    #[test]
+    fn dist_to_segment_beyond_end() {
+        // Segment from (0,0) to (10,0); point at (20,0) → distance = 10.
+        let d = dist_to_segment([20.0, 0.0], [0.0, 0.0], [10.0, 0.0]);
+        assert!((d - 10.0).abs() < 1e-4, "got {}", d);
+    }
+
+    /// dist_to_segment: point before start clamps to start.
+    #[test]
+    fn dist_to_segment_before_start() {
+        // Segment from (10,0) to (20,0); point at (0,0) → distance = 10.
+        let d = dist_to_segment([0.0, 0.0], [10.0, 0.0], [20.0, 0.0]);
+        assert!((d - 10.0).abs() < 1e-4, "got {}", d);
+    }
 }

@@ -921,7 +921,11 @@ mod tests {
         let evidence = &["alpha beta", "gamma delta", "epsilon zeta"];
         let steps = react_chain("alpha gamma epsilon", evidence, 3);
         for s in &steps {
-            assert!(s.score >= 0.0 && s.score <= 1.0, "score {} out of [0,1]", s.score);
+            assert!(
+                s.score >= 0.0 && s.score <= 1.0,
+                "score {} out of [0,1]",
+                s.score
+            );
         }
     }
 
@@ -1042,7 +1046,10 @@ mod tests {
     #[test]
     fn classify_single_word_exact_match() {
         let score = classify_with_react("node", &["node"]);
-        assert!((score - 1.0_f32).abs() < 1e-5, "single-word exact match should be 1.0, got {score}");
+        assert!(
+            (score - 1.0_f32).abs() < 1e-5,
+            "single-word exact match should be 1.0, got {score}"
+        );
     }
 
     #[test]
@@ -1079,7 +1086,10 @@ mod tests {
         // Every evidence item is identical to hypothesis → high score.
         let evidence: Vec<&str> = vec!["target word"; 5];
         let score = classify_with_react("target word", &evidence);
-        assert!(score > 0.5, "all-matching evidence must score > 0.5, got {score}");
+        assert!(
+            score > 0.5,
+            "all-matching evidence must score > 0.5, got {score}"
+        );
     }
 
     #[test]
@@ -1088,7 +1098,10 @@ mod tests {
         let score = classify_with_react("alpha beta gamma", &["alpha beta noise"]);
         let expected_lower = 2.0 / 3.0 * 0.9; // rough lower bound
         assert!(score > 0.0 && score <= 1.0, "score {score} out of range");
-        assert!(score > expected_lower * 0.9, "expected decent overlap, got {score}");
+        assert!(
+            score > expected_lower * 0.9,
+            "expected decent overlap, got {score}"
+        );
     }
 
     // rank_hypotheses: edge cases
@@ -1165,7 +1178,10 @@ mod tests {
         let hypotheses = &["graph query traversal", "unrelated", "banana"];
         let all = rank_hypotheses(hypotheses, evidence);
         let best = best_hypothesis(hypotheses, evidence).unwrap();
-        let max_score = all.iter().map(|h| h.score).fold(f32::NEG_INFINITY, f32::max);
+        let max_score = all
+            .iter()
+            .map(|h| h.score)
+            .fold(f32::NEG_INFINITY, f32::max);
         assert!((best.score - max_score).abs() < 1e-6);
     }
 
@@ -1274,7 +1290,10 @@ mod tests {
     fn rank_hypotheses_three_evidence_items_step_count() {
         let evidence = &["one", "two", "three"];
         let ranked = rank_hypotheses(&["one two three"], evidence);
-        assert_eq!(ranked[0].step_count, 3, "step_count must equal evidence length");
+        assert_eq!(
+            ranked[0].step_count, 3,
+            "step_count must equal evidence length"
+        );
     }
 
     #[test]

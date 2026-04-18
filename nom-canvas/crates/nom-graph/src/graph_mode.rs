@@ -97,7 +97,7 @@ pub fn layout_dag(dag: &Dag) -> GraphLayout {
 fn spring_v(t: f32) -> f32 {
     let omega = (400.0f32).sqrt(); // ~20.0
     let zeta = 28.0 / (2.0 * omega); // ~0.7
-    let t = t.max(0.0).min(1.0);
+    let t = t.clamp(0.0, 1.0);
     1.0 - (-zeta * omega * t).exp() * (1.0 - t * omega * zeta).max(0.0)
 }
 
@@ -149,7 +149,7 @@ impl GraphModeState {
 
     /// Store the graph confidence score, clamped to [0, 1].
     pub fn set_confidence(&mut self, score: f32) {
-        self.confidence = score.max(0.0).min(1.0);
+        self.confidence = score.clamp(0.0, 1.0);
     }
 
     /// Begin an animated transition toward `new_layout`.
@@ -563,7 +563,11 @@ mod tests {
         layout.insert("far".to_string(), (30.0, 0.0));
         // Query at origin with radius=50 — both nodes hit, but "close" is nearer.
         let result = GraphModeState::node_at_point(&layout, 0.0, 0.0, 50.0);
-        assert_eq!(result.as_deref(), Some("close"), "should pick the nearer node");
+        assert_eq!(
+            result.as_deref(),
+            Some("close"),
+            "should pick the nearer node"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -627,7 +631,10 @@ mod tests {
         let layout = layout_dag(&dag);
         assert_eq!(layout.len(), 2, "cycle fallback must include all nodes");
         for (id, (_, y)) in &layout {
-            assert_eq!(*y, 0.0, "cycle fallback must place all nodes at y=0 (got y={y} for {id})");
+            assert_eq!(
+                *y, 0.0,
+                "cycle fallback must place all nodes at y=0 (got y={y} for {id})"
+            );
         }
     }
 }

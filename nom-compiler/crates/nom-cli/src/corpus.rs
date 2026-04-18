@@ -6,7 +6,9 @@
 //!            v2 Entry per file into the nomdict (§5.17 source ingestion).
 
 use nom_dict::Dict;
-use nom_dict::dict::{count_entities, list_required_axes, register_required_axis, seed_standard_axes};
+use nom_dict::dict::{
+    count_entities, list_required_axes, register_required_axis, seed_standard_axes,
+};
 use std::path::Path;
 
 // ── cmd_corpus_scan ──────────────────────────────────────────────────────────
@@ -375,9 +377,7 @@ pub fn cmd_corpus_embed(dict: &Path, model: Option<&str>, batch_size: usize) -> 
             );
         }
         None => {
-            println!(
-                "{total} entities need embedding. Embedding model not configured."
-            );
+            println!("{total} entities need embedding. Embedding model not configured.");
         }
     }
     0

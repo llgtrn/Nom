@@ -2,9 +2,9 @@
 //! Replaces legacy entries.body_bytes BLOB column.
 //! Path: <root>/store/<hash>/body.<ext>
 
-use std::path::{Path, PathBuf};
 use std::fs;
 use std::io;
+use std::path::{Path, PathBuf};
 
 pub struct BodyStore {
     root: PathBuf,
@@ -12,7 +12,9 @@ pub struct BodyStore {
 
 impl BodyStore {
     pub fn new(root: &Path) -> Self {
-        Self { root: root.join("store") }
+        Self {
+            root: root.join("store"),
+        }
     }
 
     /// Store body bytes, returns the path
@@ -52,7 +54,9 @@ impl BodyStore {
     /// List all stored hashes
     pub fn list_hashes(&self) -> io::Result<Vec<String>> {
         let mut hashes = Vec::new();
-        if !self.root.exists() { return Ok(hashes); }
+        if !self.root.exists() {
+            return Ok(hashes);
+        }
         for entry in fs::read_dir(&self.root)? {
             let entry = entry?;
             if entry.file_type()?.is_dir() {

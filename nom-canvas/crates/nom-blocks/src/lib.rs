@@ -47,11 +47,18 @@ mod integration_tests {
     #[test]
     fn block_with_stub_dict_can_wire_validated() {
         let dict = StubDictReader::new();
-        let connector = Connector::new_with_validation(
-            "wire-1", "node-a", "output", "node-b", "input", &dict, "verb", "concept",
-        );
+        let connector = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "wire-1".into(),
+            from_node: "node-a".into(),
+            from_port: "output".into(),
+            to_node: "node-b".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(
-            connector.can_wire_result.0,
+            connector.can_wire_result().0,
             "Connector with known ports via StubDictReader must be valid"
         );
     }

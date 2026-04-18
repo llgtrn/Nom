@@ -22,6 +22,9 @@ pub trait ExecutionCache: Send + Sync {
     fn invalidate(&mut self, key: u64);
     fn clear(&mut self);
     fn len(&self) -> usize;
+    fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Tier 0: No caching — always re-execute
@@ -624,7 +627,10 @@ mod tests {
         cache.put(7, CachedValue::String("seven".into()));
         assert!(cache.get(7).is_some());
         cache.invalidate(7);
-        assert!(cache.get(7).is_none(), "invalidated key must not be retrievable");
+        assert!(
+            cache.get(7).is_none(),
+            "invalidated key must not be retrievable"
+        );
         assert_eq!(cache.len(), 0);
     }
 }

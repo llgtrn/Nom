@@ -9,10 +9,17 @@ pub struct ClauseShape {
     pub description: String,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct GrammarKindRow {
+    pub name: String,
+    pub description: String,
+}
+
 /// Trait injection — nom-blocks never opens SQLite directly.
 /// Wave B uses StubDictReader; Wave C swaps in SqliteDictReader from nom-compiler-bridge.
 pub trait DictReader: Send + Sync {
     fn is_known_kind(&self, kind: &str) -> bool;
+    fn list_kinds(&self) -> Vec<GrammarKindRow>;
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape>;
     fn lookup_entity(&self, word: &str, kind: &str) -> Option<NomtuRef>;
 }

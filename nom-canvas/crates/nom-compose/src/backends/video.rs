@@ -99,16 +99,8 @@ impl VideoBackend {
             });
         }
 
-        // Serialize spec to JSON and write to artifact store.
-        let spec_json = serde_json::json!({
-            "fps": spec.fps,
-            "width": spec.width,
-            "height": spec.height,
-            "duration_frames": spec.duration_frames,
-            "frame_count": spec.frames.len(),
-        });
-        let spec_bytes = spec_json.to_string().into_bytes();
-        let artifact_hash = store.write(&spec_bytes);
+        let y4m = encode_y4m_manifest(&spec, &input.frames);
+        let artifact_hash = store.write(&y4m);
         let byte_size = store.byte_size(&artifact_hash).unwrap_or(0);
 
         let duration_ms = spec.duration_ms() as u64;
@@ -126,6 +118,20 @@ impl VideoBackend {
             progress: None,
         }
     }
+}
+
+fn encode_y4m_manifest(spec: &VideoSpec, frames: &[Vec<u8>]) -> Vec<u8> {
+    let mut out = format!(
+        "YUV4MPEG2 W{} H{} F{}:1 Ip A1:1 Cmono\n",
+        spec.width, spec.height, spec.fps
+    )
+    .into_bytes();
+    for frame in frames {
+        out.extend_from_slice(b"FRAME\n");
+        out.extend_from_slice(frame);
+        out.push(b'\n');
+    }
+    out
 }
 
 #[cfg(test)]
@@ -173,6 +179,8 @@ mod tests {
         assert_eq!(block.width, 1920);
         assert_eq!(block.height, 1080);
         assert!(store.exists(&block.artifact_hash));
+        let payload = store.read(&block.artifact_hash).unwrap();
+        assert!(payload.starts_with(b"YUV4MPEG2"));
     }
 
     #[test]
@@ -224,5 +232,24 @@ mod tests {
         });
         assert_eq!(spec.frames.len(), 1);
         assert_eq!(spec.frames[0].frame_index, 0);
+    }
+
+    #[test]
+    fn video_y4m_manifest_has_frame_markers() {
+        let mut spec = VideoSpec::new(24, 2, 2, 2.0 / 24.0);
+        spec.add_frame(VideoFrame {
+            frame_index: 0,
+            duration_ms: 41,
+            scene_hash: "a".into(),
+        });
+        spec.add_frame(VideoFrame {
+            frame_index: 1,
+            duration_ms: 41,
+            scene_hash: "b".into(),
+        });
+        let bytes = encode_y4m_manifest(&spec, &[vec![0], vec![1]]);
+        let text = String::from_utf8_lossy(&bytes);
+        assert!(text.starts_with("YUV4MPEG2 W2 H2 F24:1"));
+        assert_eq!(text.matches("FRAME").count(), 2);
     }
 }

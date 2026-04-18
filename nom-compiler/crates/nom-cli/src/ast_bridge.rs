@@ -474,10 +474,8 @@ fn parse_match_expr(expr: &str) -> Option<Expr> {
     };
 
     // Build parsed arms list
-    let mut parsed: Vec<(Option<Expr>, Expr)> = raw_arms
-        .iter()
-        .filter_map(|arm| parse_arm(arm))
-        .collect();
+    let mut parsed: Vec<(Option<Expr>, Expr)> =
+        raw_arms.iter().filter_map(|arm| parse_arm(arm)).collect();
 
     if parsed.is_empty() {
         return None;
@@ -485,7 +483,11 @@ fn parse_match_expr(expr: &str) -> Option<Expr> {
 
     // The last arm may be the "otherwise" arm (else_body)
     let else_body: Option<Block> = {
-        if parsed.last().map(|(cond, _)| cond.is_none()).unwrap_or(false) {
+        if parsed
+            .last()
+            .map(|(cond, _)| cond.is_none())
+            .unwrap_or(false)
+        {
             let (_, result) = parsed.pop().unwrap();
             Some(Block {
                 stmts: vec![BlockStmt::Return(Some(result))],
@@ -1246,7 +1248,8 @@ mod tests {
     #[test]
     fn parse_match_two_arm_with_otherwise() {
         // "when x equals 1 then a, when x equals 2 then b, otherwise c"
-        let result = parse_match_expr("when x equals 1 then a, when x equals 2 then b, otherwise c");
+        let result =
+            parse_match_expr("when x equals 1 then a, when x equals 2 then b, otherwise c");
         assert!(result.is_some(), "expected a match expr");
         match result.unwrap() {
             Expr::IfExpr(if_expr) => {
@@ -1326,7 +1329,10 @@ mod tests {
         let result = parse_match_expr(
             "match status when status equals 0 then ok, when status equals 1 then error, otherwise unknown",
         );
-        assert!(result.is_some(), "expected a match expr from 'match' prefix");
+        assert!(
+            result.is_some(),
+            "expected a match expr from 'match' prefix"
+        );
         match result.unwrap() {
             Expr::IfExpr(if_expr) => {
                 // First arm: status == 0 → ok
@@ -1476,10 +1482,7 @@ mod tests {
                     }
                     other => panic!("expected inner Call in first arg, got {:?}", other),
                 }
-                assert!(matches!(
-                    &outer.args[1],
-                    Expr::Literal(Literal::Integer(1))
-                ));
+                assert!(matches!(&outer.args[1], Expr::Literal(Literal::Integer(1))));
             }
             other => panic!("expected Return(Call), got {:?}", other),
         }

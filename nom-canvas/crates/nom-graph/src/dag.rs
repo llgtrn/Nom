@@ -72,14 +72,14 @@ impl Dag {
 
         for id in self.nodes.keys() {
             block_count.entry(id.clone()).or_insert(0);
-            blocking.entry(id.clone()).or_insert_with(Vec::new);
+            blocking.entry(id.clone()).or_default();
         }
 
         for edge in &self.edges {
             *block_count.entry(edge.dst_node.clone()).or_insert(0) += 1;
             blocking
                 .entry(edge.src_node.clone())
-                .or_insert_with(Vec::new)
+                .or_default()
                 .push(edge.dst_node.clone());
         }
 
@@ -613,7 +613,10 @@ mod tests {
         assert_eq!(e.src_node, "src");
         assert_eq!(e.dst_node, "dst");
         // No edge from dst→src.
-        let reverse = dag.edges.iter().any(|e| e.src_node == "dst" && e.dst_node == "src");
+        let reverse = dag
+            .edges
+            .iter()
+            .any(|e| e.src_node == "dst" && e.dst_node == "src");
         assert!(!reverse, "directed DAG must not have implicit reverse edge");
     }
 
@@ -627,7 +630,11 @@ mod tests {
         dag.add_node(ExecNode::new("v", "verb"));
         dag.add_edge("u", "out1", "v", "in1");
         dag.add_edge("u", "out2", "v", "in2");
-        assert_eq!(dag.edge_count(), 2, "two parallel edges must both be stored");
+        assert_eq!(
+            dag.edge_count(),
+            2,
+            "two parallel edges must both be stored"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -660,7 +667,10 @@ mod tests {
         assert!(visited.contains("a"), "BFS must reach a");
         assert!(visited.contains("b"), "BFS must reach b");
         assert!(visited.contains("c"), "BFS must reach c");
-        assert!(!visited.contains("isolated"), "BFS must not reach isolated node");
+        assert!(
+            !visited.contains("isolated"),
+            "BFS must not reach isolated node"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -728,7 +738,11 @@ mod tests {
             }
         }
 
-        assert_eq!(sub.node_count(), 2, "subgraph must contain exactly {{b, c}}");
+        assert_eq!(
+            sub.node_count(),
+            2,
+            "subgraph must contain exactly {{b, c}}"
+        );
         assert_eq!(sub.edge_count(), 1, "subgraph must contain only b→c edge");
         assert!(sub.nodes.contains_key("b"), "subgraph must contain b");
         assert!(sub.nodes.contains_key("c"), "subgraph must contain c");
@@ -797,7 +811,11 @@ mod tests {
         dag.edges.retain(|e| e.src_node != "b" && e.dst_node != "b");
 
         assert_eq!(dag.node_count(), 2);
-        assert_eq!(dag.edge_count(), 0, "both edges referencing b must be removed");
+        assert_eq!(
+            dag.edge_count(),
+            0,
+            "both edges referencing b must be removed"
+        );
     }
 
     #[test]
@@ -808,7 +826,8 @@ mod tests {
         dag.add_edge("root", "out", "leaf", "in");
 
         dag.nodes.remove("leaf");
-        dag.edges.retain(|e| e.src_node != "leaf" && e.dst_node != "leaf");
+        dag.edges
+            .retain(|e| e.src_node != "leaf" && e.dst_node != "leaf");
 
         assert_eq!(dag.node_count(), 1);
         assert_eq!(dag.edge_count(), 0);
@@ -907,7 +926,13 @@ mod tests {
             reconstructed.add_node(ExecNode::new(id.clone(), "verb"));
         }
         for (src, sp, dst, dp, conf) in &edge_data {
-            reconstructed.add_edge_weighted(src.clone(), sp.clone(), dst.clone(), dp.clone(), *conf);
+            reconstructed.add_edge_weighted(
+                src.clone(),
+                sp.clone(),
+                dst.clone(),
+                dp.clone(),
+                *conf,
+            );
         }
 
         // Verify.
@@ -940,10 +965,15 @@ mod tests {
         let isolated_count = (0..10u32)
             .filter(|&i| {
                 let name = format!("n{i}");
-                !dag.edges.iter().any(|e| e.src_node == name || e.dst_node == name)
+                !dag.edges
+                    .iter()
+                    .any(|e| e.src_node == name || e.dst_node == name)
             })
             .count();
-        assert_eq!(isolated_count, 6, "6 nodes should have no edges in sparse graph");
+        assert_eq!(
+            isolated_count, 6,
+            "6 nodes should have no edges in sparse graph"
+        );
     }
 
     #[test]
@@ -960,9 +990,16 @@ mod tests {
             }
         }
         assert_eq!(dag.node_count(), 4);
-        assert_eq!(dag.edge_count(), 6, "complete 4-node DAG should have 6 edges");
+        assert_eq!(
+            dag.edge_count(),
+            6,
+            "complete 4-node DAG should have 6 edges"
+        );
         // Topological sort should still succeed (all forward edges, no cycle).
-        assert!(dag.topological_sort().is_ok(), "dense DAG with all forward edges must be acyclic");
+        assert!(
+            dag.topological_sort().is_ok(),
+            "dense DAG with all forward edges must be acyclic"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -974,7 +1011,10 @@ mod tests {
         let original = ExecNode::new("node1", "kind_a");
         let mut cloned = original.clone();
         cloned.kind = "kind_b".to_string();
-        assert_eq!(original.kind, "kind_a", "original kind must be unchanged after clone mutation");
+        assert_eq!(
+            original.kind, "kind_a",
+            "original kind must be unchanged after clone mutation"
+        );
         assert_eq!(cloned.kind, "kind_b");
     }
 
@@ -984,8 +1024,12 @@ mod tests {
         let mut dag = Dag::new();
         dag.add_node(ExecNode::new("dup", "verb"));
         dag.add_node(ExecNode::new("dup", "noun")); // same id, different kind
-        // HashMap insert overwrites; node_count stays at 1.
-        assert_eq!(dag.node_count(), 1, "duplicate node id must overwrite, not add");
+                                                    // HashMap insert overwrites; node_count stays at 1.
+        assert_eq!(
+            dag.node_count(),
+            1,
+            "duplicate node id must overwrite, not add"
+        );
         assert_eq!(dag.nodes["dup"].kind, "noun", "second insert must win");
     }
 
@@ -1001,8 +1045,14 @@ mod tests {
         dag.add_edge("Y", "out", "X", "in");
         match dag.topological_sort() {
             Err(cycle_nodes) => {
-                assert!(cycle_nodes.contains(&"X".to_string()), "X must be in cycle nodes");
-                assert!(cycle_nodes.contains(&"Y".to_string()), "Y must be in cycle nodes");
+                assert!(
+                    cycle_nodes.contains(&"X".to_string()),
+                    "X must be in cycle nodes"
+                );
+                assert!(
+                    cycle_nodes.contains(&"Y".to_string()),
+                    "Y must be in cycle nodes"
+                );
             }
             Ok(_) => panic!("expected Err from cycle X→Y→X"),
         }

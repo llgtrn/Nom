@@ -102,7 +102,6 @@ fn uuid_v4() -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::dict_reader::DictReader;
     use crate::stub_dict::StubDictReader;
 
     #[test]

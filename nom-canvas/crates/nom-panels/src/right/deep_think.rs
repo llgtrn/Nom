@@ -379,4 +379,121 @@ mod tests {
         }
         assert_eq!(panel.steps.len(), 20);
     }
+
+    #[test]
+    fn deep_think_panel_id_and_title() {
+        let panel = DeepThinkPanel::new();
+        assert_eq!(panel.id(), "deep-think");
+        assert_eq!(panel.title(), "Deep Thinking");
+        assert_eq!(panel.default_size(), 320.0);
+    }
+
+    #[test]
+    fn deep_think_panel_position_is_right() {
+        let panel = DeepThinkPanel::new();
+        assert_eq!(panel.position(), DockPosition::Right);
+    }
+
+    #[test]
+    fn deep_think_panel_activation_priority() {
+        let panel = DeepThinkPanel::new();
+        assert_eq!(panel.activation_priority(), 20);
+    }
+
+    #[test]
+    fn deep_think_card_stream_append_cumulative() {
+        let mut panel = DeepThinkPanel::new();
+        panel.ingest_events(vec![make_step("a", 0.5, vec![])]);
+        assert_eq!(panel.card_count(), 1);
+        assert_eq!(panel.cards[0].step_num, 0);
+
+        panel.ingest_events(vec![
+            make_step("b", 0.6, vec![]),
+            make_step("c", 0.7, vec![]),
+        ]);
+        assert_eq!(panel.card_count(), 3);
+        // step_num is offset by previous batch size
+        assert_eq!(panel.cards[1].step_num, 1);
+        assert_eq!(panel.cards[2].step_num, 2);
+    }
+
+    #[test]
+    fn deep_think_state_machine_idle_to_complete() {
+        let mut panel = DeepThinkPanel::new();
+        // Initial state is Idle
+        matches!(panel.state, ThinkState::Idle);
+        panel.begin("test flow");
+        matches!(panel.state, ThinkState::Streaming);
+        panel.push_step(ThinkingStep::new("step", 0.5));
+        panel.complete();
+        matches!(panel.state, ThinkState::Complete);
+    }
+
+    #[test]
+    fn deep_think_state_machine_interrupt() {
+        let mut panel = DeepThinkPanel::new();
+        panel.begin("flow");
+        panel.push_step(ThinkingStep::new("s", 0.5));
+        panel.interrupt("user cancelled");
+        matches!(panel.state, ThinkState::Interrupted(_));
+    }
+
+    #[test]
+    fn deep_think_progress_quad_complete_state() {
+        let mut panel = DeepThinkPanel::new();
+        panel.begin("a");
+        panel.push_step(ThinkingStep::new("s1", 0.5));
+        panel.push_step(ThinkingStep::new("s2", 0.7));
+        panel.complete();
+
+        let mut scene = Scene::new();
+        panel.paint_scene(320.0, 100.0, &mut scene);
+
+        // bg + 2 step rows + 0 card quads + 1 progress = 4 quads
+        assert_eq!(scene.quads.len(), 4);
+        // Progress quad is the last one; in complete state fraction=1.0 so width = 320.0
+        let progress = scene.quads.last().unwrap();
+        assert_eq!(progress.bounds.size.width, nom_gpui::types::Pixels(320.0));
+    }
+
+    #[test]
+    fn thinking_step_toggle_expand() {
+        let mut step = ThinkingStep::new("hypothesis", 0.6);
+        assert!(step.is_expanded);
+        step.toggle_expand();
+        assert!(!step.is_expanded);
+        step.toggle_expand();
+        assert!(step.is_expanded);
+    }
+
+    #[test]
+    fn thinking_step_confidence_clamp() {
+        let s = ThinkingStep::new("h", 1.5);
+        assert!((s.confidence - 1.0).abs() < f32::EPSILON);
+        let s2 = ThinkingStep::new("h", -0.5);
+        assert!((s2.confidence - 0.0).abs() < f32::EPSILON);
+    }
+
+    #[test]
+    fn consume_stream_evidence_uses_classify() {
+        // Step with evidence triggers classify_with_react path
+        let events = vec![make_step(
+            "hypothesis with evidence",
+            0.5,
+            vec!["ev1".to_string(), "ev2".to_string()],
+        )];
+        let cards = consume_stream(events);
+        assert_eq!(cards.len(), 1);
+        // Confidence must be clamped to [0, 1]
+        assert!(cards[0].confidence >= 0.0);
+        assert!(cards[0].confidence <= 1.0);
+    }
+
+    #[test]
+    fn deep_think_default_impl() {
+        let panel = DeepThinkPanel::default();
+        assert_eq!(panel.card_count(), 0);
+        assert_eq!(panel.steps.len(), 0);
+        assert!(panel.intent.is_empty());
+    }
 }

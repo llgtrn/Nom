@@ -229,7 +229,7 @@ mod tests {
         let h = Hash128::of_str("v");
         let mut c = Constraint::new(10);
         c.record(snap(1, vec![(1, h), (2, h)])); // 2 pairs
-        // Current snapshot only has 1 pair → length mismatch → invalid.
+                                                 // Current snapshot only has 1 pair → length mismatch → invalid.
         assert!(!c.validate(10, &[snap(1, vec![(1, h)])]));
     }
 
@@ -251,8 +251,14 @@ mod tests {
         let mut c = Constraint::new(5);
         c.record(snap(1, vec![(100, Hash128::of_str("a"))]));
         c.record(snap(2, vec![(200, h_old)])); // recorded with old_c
-        // Now C returns new_c → chain is broken.
-        assert!(!c.validate(5, &[snap(1, vec![(100, Hash128::of_str("a"))]), snap(2, vec![(200, h_new)])]));
+                                               // Now C returns new_c → chain is broken.
+        assert!(!c.validate(
+            5,
+            &[
+                snap(1, vec![(100, Hash128::of_str("a"))]),
+                snap(2, vec![(200, h_new)])
+            ]
+        ));
     }
 
     #[test]
@@ -261,7 +267,7 @@ mod tests {
         let h = Hash128::of_str("result");
         let mut c = Constraint::new(1);
         c.record(snap(1, vec![(7, h)])); // recorded with version=1
-        // Version bumped to 2 → stale.
+                                         // Version bumped to 2 → stale.
         assert!(!c.validate(1, &[snap(2, vec![(7, h)])]));
     }
 
@@ -294,9 +300,8 @@ mod tests {
 
     #[test]
     fn constraint_many_pairs_all_matching() {
-        let pairs: Vec<(u32, Hash128)> = (0u32..20)
-            .map(|i| (i, Hash128::of_u64(i as u64)))
-            .collect();
+        let pairs: Vec<(u32, Hash128)> =
+            (0u32..20).map(|i| (i, Hash128::of_u64(i as u64))).collect();
         let mut c = Constraint::new(42);
         c.record(snap(1, pairs.clone()));
         assert!(c.validate(42, &[snap(1, pairs)]));
@@ -304,9 +309,8 @@ mod tests {
 
     #[test]
     fn constraint_many_pairs_one_differs() {
-        let pairs_recorded: Vec<(u32, Hash128)> = (0u32..10)
-            .map(|i| (i, Hash128::of_u64(i as u64)))
-            .collect();
+        let pairs_recorded: Vec<(u32, Hash128)> =
+            (0u32..10).map(|i| (i, Hash128::of_u64(i as u64))).collect();
         let mut pairs_current = pairs_recorded.clone();
         // Corrupt the last pair's return hash.
         pairs_current[9].1 = Hash128::of_str("corrupted");

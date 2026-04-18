@@ -6,8 +6,19 @@ use serde::{Deserialize, Serialize};
 pub type ConnectorId = String;
 pub type SlotName = String;
 
+pub struct ConnectorValidation<'a> {
+    pub id: ConnectorId,
+    pub from_node: NodeId,
+    pub from_port: SlotName,
+    pub to_node: NodeId,
+    pub to_port: SlotName,
+    pub dict: &'a dyn DictReader,
+    pub from_kind: &'a str,
+    pub to_kind: &'a str,
+}
+
 /// A wire between two graph nodes. can_wire_result is NON-OPTIONAL.
-/// Grammar-backed validation added in Wave Q — use new_with_validation() for real port/type checking.
+/// Grammar-backed validation is required at construction time.
 #[derive(Clone, Debug, Serialize, Deserialize)]
 pub struct Connector {
     pub id: ConnectorId,
@@ -20,56 +31,22 @@ pub struct Connector {
     pub reason_chain: Vec<String>,
     pub route: Vec<[f32; 2]>,
     /// (is_valid, confidence, reason) — NON-OPTIONAL, stub in Wave B
-    pub can_wire_result: (bool, f32, String),
+    can_wire_result: (bool, f32, String),
 }
 
 impl Connector {
-    /// Construct a connector from two node IDs with a confidence score.
-    /// Confidence is clamped to [0.0, 1.0]. Slots default to empty strings.
-    pub fn new(from: impl Into<NodeId>, to: impl Into<NodeId>, confidence: f32) -> Self {
-        Self {
-            id: String::new(),
-            src: (from.into(), String::new()),
-            dst: (to.into(), String::new()),
-            confidence: confidence.clamp(0.0, 1.0),
-            reason: String::new(),
-            reason_chain: Vec::new(),
-            route: Vec::new(),
-            can_wire_result: (true, confidence.clamp(0.0, 1.0), String::new()),
-        }
-    }
-
     /// Append a reasoning step and return self (builder pattern).
     pub fn with_reason(mut self, reason: String) -> Self {
         self.reason_chain.push(reason);
         self
     }
 
-    pub fn new_stub(
-        id: impl Into<String>,
-        src_node: impl Into<String>,
-        src_slot: impl Into<String>,
-        dst_node: impl Into<String>,
-        dst_slot: impl Into<String>,
-    ) -> Self {
-        Self {
-            id: id.into(),
-            src: (src_node.into(), src_slot.into()),
-            dst: (dst_node.into(), dst_slot.into()),
-            confidence: 0.0,
-            reason: String::new(),
-            reason_chain: Vec::new(),
-            route: Vec::new(),
-            can_wire_result: (
-                true,
-                0.0,
-                "stub — use new_with_validation() for grammar-backed checking".into(),
-            ),
-        }
-    }
-
     pub fn is_valid(&self) -> bool {
         self.can_wire_result.0
+    }
+
+    pub fn can_wire_result(&self) -> &(bool, f32, String) {
+        &self.can_wire_result
     }
 
     /// Validate whether two ports can be wired using grammar shapes from the dict.
@@ -108,24 +85,19 @@ impl Connector {
     }
 
     /// Construct a connector with real grammar validation from the dict.
-    pub fn new_with_validation(
-        id: impl Into<String>,
-        from_node: impl Into<NodeId>,
-        from_port: impl Into<String>,
-        to_node: impl Into<NodeId>,
-        to_port: impl Into<String>,
-        dict: &dyn DictReader,
-        from_kind: &str,
-        to_kind: &str,
-    ) -> Self {
-        let from_port = from_port.into();
-        let to_port = to_port.into();
-        let result = Self::validate_with_dict(dict, from_kind, &from_port, to_kind, &to_port);
+    pub fn new_with_validation(request: ConnectorValidation<'_>) -> Self {
+        let result = Self::validate_with_dict(
+            request.dict,
+            request.from_kind,
+            &request.from_port,
+            request.to_kind,
+            &request.to_port,
+        );
         let confidence = result.1;
         Self {
-            id: id.into(),
-            src: (from_node.into(), from_port),
-            dst: (to_node.into(), to_port),
+            id: request.id,
+            src: (request.from_node, request.from_port),
+            dst: (request.to_node, request.to_port),
             confidence,
             reason: result.2.clone(),
             reason_chain: Vec::new(),
@@ -147,16 +119,30 @@ mod tests {
     use crate::dict_reader::ClauseShape;
     use crate::stub_dict::StubDictReader;
 
+    fn valid_connector() -> Connector {
+        let dict = StubDictReader::new();
+        Connector::new_with_validation(ConnectorValidation {
+            id: "c1".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        })
+    }
+
     #[test]
-    fn connector_stub_is_valid() {
-        let c = Connector::new_stub("c1", "n1", "output", "n2", "input");
+    fn connector_validated_constructor_is_valid() {
+        let c = valid_connector();
         assert!(c.is_valid());
-        assert!(c.can_wire_result.2.contains("stub"));
+        assert_eq!(c.can_wire_result().2, "validated");
     }
 
     #[test]
     fn connector_auto_route() {
-        let mut c = Connector::new_stub("c1", "n1", "out", "n2", "in");
+        let mut c = valid_connector();
         c.auto_route([0.0, 50.0], [200.0, 100.0]);
         assert_eq!(c.route.len(), 4);
         assert_eq!(c.route[0], [0.0, 50.0]);
@@ -165,19 +151,26 @@ mod tests {
 
     #[test]
     fn connector_confidence_clamps_to_one() {
-        let over = Connector::new("n1", "n2", 1.5);
-        assert_eq!(over.confidence, 1.0);
-
-        let under = Connector::new("n1", "n2", -0.3);
-        assert_eq!(under.confidence, 0.0);
-
-        let mid = Connector::new("n1", "n2", 0.75);
-        assert!((mid.confidence - 0.75).abs() < f32::EPSILON);
+        let dict = StubDictReader::new()
+            .with_shapes("verb", vec![make_shape("output", "text")])
+            .with_shapes("concept", vec![make_shape("input", "integer")]);
+        let failed = Connector::new_with_validation(ConnectorValidation {
+            id: "c".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
+        assert_eq!(failed.confidence, 0.3);
+        assert!(!failed.is_valid());
     }
 
     #[test]
     fn connector_reason_chain_accumulates() {
-        let mut c = Connector::new("a", "b", 0.9);
+        let mut c = valid_connector();
         c.reason_chain.push("step one".into());
         c.reason_chain.push("step two".into());
         assert_eq!(c.reason_chain.len(), 2);
@@ -187,7 +180,7 @@ mod tests {
 
     #[test]
     fn connector_with_reason_builder() {
-        let c = Connector::new("x", "y", 0.6)
+        let c = valid_connector()
             .with_reason("grammar matched".into())
             .with_reason("type aligned".into());
         assert_eq!(c.reason_chain.len(), 2);
@@ -209,12 +202,19 @@ mod tests {
         let dict = StubDictReader::new()
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "text")]);
-        let c = Connector::new_with_validation(
-            "c1", "n1", "output", "n2", "input", &dict, "verb", "concept",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c1".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(c.is_valid());
         assert!((c.confidence - 0.9).abs() < f32::EPSILON);
-        assert_eq!(c.can_wire_result.2, "validated");
+        assert_eq!(c.can_wire_result().2, "validated");
     }
 
     #[test]
@@ -222,36 +222,53 @@ mod tests {
         let dict = StubDictReader::new()
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "text")]);
-        let c = Connector::new_with_validation(
-            "c2",
-            "n1",
-            "nonexistent",
-            "n2",
-            "input",
-            &dict,
-            "verb",
-            "concept",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c2".into(),
+            from_node: "n1".into(),
+            from_port: "nonexistent".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(!c.is_valid());
         assert_eq!(c.confidence, 0.0);
-        assert!(c.can_wire_result.2.contains("unknown port: nonexistent"));
+        assert!(c.can_wire_result().2.contains("unknown port: nonexistent"));
     }
 
     #[test]
     fn connector_validates_any_type_port() {
         // StubDictReader default shapes use grammar_shape "any" — should always be compatible
         let dict = StubDictReader::new();
-        let c = Connector::new_with_validation(
-            "c3", "n1", "output", "n2", "input", &dict, "verb", "concept",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c3".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(c.is_valid());
         assert!((c.confidence - 0.9).abs() < f32::EPSILON);
-        assert_eq!(c.can_wire_result.2, "validated");
+        assert_eq!(c.can_wire_result().2, "validated");
     }
 
     #[test]
     fn connector_has_from_to_nodes() {
-        let c = Connector::new_stub("wire-1", "node-src", "output", "node-dst", "input");
+        let dict = StubDictReader::new();
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "wire-1".into(),
+            from_node: "node-src".into(),
+            from_port: "output".into(),
+            to_node: "node-dst".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert_eq!(c.src.0, "node-src");
         assert_eq!(c.src.1, "output");
         assert_eq!(c.dst.0, "node-dst");
@@ -262,9 +279,16 @@ mod tests {
     fn connector_can_wire_same_kind() {
         // Same block type wiring to itself — should be valid with "any" ports
         let dict = StubDictReader::new();
-        let c = Connector::new_with_validation(
-            "c4", "n1", "output", "n1", "input", &dict, "verb", "verb",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c4".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n1".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "verb",
+        });
         assert!(c.is_valid());
     }
 
@@ -273,11 +297,18 @@ mod tests {
         let dict = StubDictReader::new()
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "integer")]);
-        let c = Connector::new_with_validation(
-            "c5", "n1", "output", "n2", "input", &dict, "verb", "concept",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c5".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(!c.is_valid());
-        assert!(c.can_wire_result.2.contains("type mismatch"));
+        assert!(c.can_wire_result().2.contains("type mismatch"));
     }
 
     #[test]
@@ -285,17 +316,17 @@ mod tests {
         let dict = StubDictReader::new()
             .with_shapes("verb", vec![make_shape("output", "text")])
             .with_shapes("concept", vec![make_shape("input", "text")]);
-        let c = Connector::new_with_validation(
-            "c6",
-            "n1",
-            "output",
-            "n2",
-            "no_such_port",
-            &dict,
-            "verb",
-            "concept",
-        );
+        let c = Connector::new_with_validation(ConnectorValidation {
+            id: "c6".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "no_such_port".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         assert!(!c.is_valid());
-        assert!(c.can_wire_result.2.contains("unknown port: no_such_port"));
+        assert!(c.can_wire_result().2.contains("unknown port: no_such_port"));
     }
 }

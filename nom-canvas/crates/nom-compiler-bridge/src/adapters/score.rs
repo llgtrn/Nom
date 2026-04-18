@@ -3,37 +3,21 @@ use crate::shared::SharedState;
 use crate::ui_tier::CompileStatus;
 
 /// Score a word+kind and return the compile status badge
-pub fn score_to_status(word: &str, kind: &str, _state: &SharedState) -> CompileStatus {
-    #[cfg(feature = "compiler")]
-    {
-        use nom_types::{Atom, AtomKind};
-        let atom = Atom {
-            id: word.to_string(),
-            kind: AtomKind::Function,
-            name: word.to_string(),
-            source_path: String::new(),
-            language: "nom".to_string(),
-            labels: vec![],
-            concept: Some(kind.to_string()),
-            signature: None,
-            body: None,
-        };
-        let scores = nom_score::score_atom(&atom);
-        CompileStatus::from_score(scores.overall())
+pub fn score_to_status(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
+    score_from_cached_kinds(word, kind, state)
+}
+
+fn score_from_cached_kinds(word: &str, kind: &str, state: &SharedState) -> CompileStatus {
+    let kinds = state.cached_grammar_kinds();
+    if kinds.is_empty() {
+        return CompileStatus::NotChecked;
     }
-    #[cfg(not(feature = "compiler"))]
-    {
-        let kinds = _state.cached_grammar_kinds();
-        if kinds.is_empty() {
-            return CompileStatus::NotChecked;
-        }
-        let known_word = kinds.iter().any(|k| k.name == word);
-        let known_kind = kinds.iter().any(|k| k.name == kind);
-        if known_word || known_kind {
-            CompileStatus::from_score(0.9)
-        } else {
-            CompileStatus::from_score(0.3)
-        }
+    let known_word = kinds.iter().any(|k| k.name == word);
+    let known_kind = kinds.iter().any(|k| k.name == kind);
+    if known_word || known_kind {
+        CompileStatus::Valid
+    } else {
+        CompileStatus::Unknown
     }
 }
 

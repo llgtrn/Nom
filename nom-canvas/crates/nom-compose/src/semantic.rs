@@ -20,7 +20,7 @@ pub enum SemanticDataType {
 }
 
 impl SemanticDataType {
-    pub fn from_str(s: &str) -> Option<Self> {
+    pub fn parse(s: &str) -> Option<Self> {
         match s {
             "string" | "text" | "varchar" => Some(Self::String),
             "int" | "integer" | "bigint" => Some(Self::Integer),
@@ -123,14 +123,14 @@ mod tests {
     #[test]
     fn semantic_data_type_from_str() {
         assert_eq!(
-            SemanticDataType::from_str("varchar"),
+            SemanticDataType::parse("varchar"),
             Some(SemanticDataType::String)
         );
         assert_eq!(
-            SemanticDataType::from_str("jsonb"),
+            SemanticDataType::parse("jsonb"),
             Some(SemanticDataType::Json)
         );
-        assert_eq!(SemanticDataType::from_str("unknown"), None);
+        assert_eq!(SemanticDataType::parse("unknown"), None);
     }
     #[test]
     fn semantic_registry_register_and_get() {
@@ -176,5 +176,140 @@ mod tests {
     fn semantic_model_table_name() {
         let m = SemanticModel::new("sessions", "raw.sessions");
         assert_eq!(m.source_table, "raw.sessions");
+    }
+
+    #[test]
+    fn semantic_model_field_access_name_and_source() {
+        let m = SemanticModel::new("metrics", "warehouse.metrics");
+        assert_eq!(m.name, "metrics");
+        assert_eq!(m.source_table, "warehouse.metrics");
+        assert!(m.columns.is_empty());
+        assert!(m.description.is_none());
+    }
+
+    #[test]
+    fn semantic_model_column_count_grows() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        assert_eq!(m.column_count(), 0);
+        m.add_column(SemanticColumn {
+            name: "a".into(),
+            data_type: SemanticDataType::Integer,
+            description: None,
+        });
+        assert_eq!(m.column_count(), 1);
+        m.add_column(SemanticColumn {
+            name: "b".into(),
+            data_type: SemanticDataType::String,
+            description: None,
+        });
+        assert_eq!(m.column_count(), 2);
+    }
+
+    #[test]
+    fn semantic_model_column_lookup_hit_and_miss() {
+        let mut m = SemanticModel::new("t", "raw.t");
+        m.add_column(SemanticColumn {
+            name: "user_id".into(),
+            data_type: SemanticDataType::Integer,
+            description: Some("primary key".into()),
+        });
+        let col = m.column("user_id").unwrap();
+        assert_eq!(col.name, "user_id");
+        assert_eq!(col.data_type, SemanticDataType::Integer);
+        assert!(m.column("missing").is_none());
+    }
+
+    #[test]
+    fn semantic_sql_join_style_multi_column() {
+        let mut m = SemanticModel::new("orders", "raw.orders");
+        for name in &["id", "user_id", "total", "created_at"] {
+            m.add_column(SemanticColumn {
+                name: (*name).into(),
+                data_type: SemanticDataType::String,
+                description: None,
+            });
+        }
+        let sql = m.to_select_sql();
+        assert!(sql.contains("id"));
+        assert!(sql.contains("user_id"));
+        assert!(sql.contains("total"));
+        assert!(sql.contains("created_at"));
+        assert!(sql.contains("raw.orders"));
+    }
+
+    #[test]
+    fn semantic_registry_count_after_multiple_registers() {
+        let mut reg = SemanticRegistry::new();
+        assert_eq!(reg.model_count(), 0);
+        reg.register(SemanticModel::new("a", "raw.a"));
+        reg.register(SemanticModel::new("b", "raw.b"));
+        reg.register(SemanticModel::new("c", "raw.c"));
+        assert_eq!(reg.model_count(), 3);
+    }
+
+    #[test]
+    fn semantic_registry_empty_get_returns_none() {
+        let reg = SemanticRegistry::new();
+        assert!(reg.get("anything").is_none());
+        assert_eq!(reg.model_count(), 0);
+    }
+
+    #[test]
+    fn semantic_data_type_all_variants_from_str() {
+        assert_eq!(
+            SemanticDataType::parse("int"),
+            Some(SemanticDataType::Integer)
+        );
+        assert_eq!(
+            SemanticDataType::parse("bigint"),
+            Some(SemanticDataType::Integer)
+        );
+        assert_eq!(
+            SemanticDataType::parse("float"),
+            Some(SemanticDataType::Float)
+        );
+        assert_eq!(
+            SemanticDataType::parse("double"),
+            Some(SemanticDataType::Float)
+        );
+        assert_eq!(
+            SemanticDataType::parse("decimal"),
+            Some(SemanticDataType::Float)
+        );
+        assert_eq!(
+            SemanticDataType::parse("bool"),
+            Some(SemanticDataType::Boolean)
+        );
+        assert_eq!(
+            SemanticDataType::parse("boolean"),
+            Some(SemanticDataType::Boolean)
+        );
+        assert_eq!(
+            SemanticDataType::parse("date"),
+            Some(SemanticDataType::Date)
+        );
+        assert_eq!(
+            SemanticDataType::parse("timestamp"),
+            Some(SemanticDataType::Timestamp)
+        );
+        assert_eq!(
+            SemanticDataType::parse("datetime"),
+            Some(SemanticDataType::Timestamp)
+        );
+        assert_eq!(
+            SemanticDataType::parse("json"),
+            Some(SemanticDataType::Json)
+        );
+        assert_eq!(
+            SemanticDataType::parse("text"),
+            Some(SemanticDataType::String)
+        );
+    }
+
+    #[test]
+    fn semantic_model_description_field() {
+        let mut m = SemanticModel::new("facts", "dw.facts");
+        m.description = Some("fact table".into());
+        assert_eq!(m.description.as_deref(), Some("fact table"));
     }
 }

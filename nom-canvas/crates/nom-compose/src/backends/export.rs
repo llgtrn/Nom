@@ -44,31 +44,7 @@ impl ExportBackend {
 
     fn convert(format: &str, data: &[u8]) -> Vec<u8> {
         match format {
-            "base64" => {
-                // Minimal base64 encoding stub
-                let alphabet = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
-                let mut out = Vec::new();
-                let mut i = 0;
-                while i < data.len() {
-                    let b0 = data[i];
-                    let b1 = if i + 1 < data.len() { data[i + 1] } else { 0 };
-                    let b2 = if i + 2 < data.len() { data[i + 2] } else { 0 };
-                    out.push(alphabet[(b0 >> 2) as usize]);
-                    out.push(alphabet[((b0 & 3) << 4 | b1 >> 4) as usize]);
-                    out.push(if i + 1 < data.len() {
-                        alphabet[((b1 & 0xf) << 2 | b2 >> 6) as usize]
-                    } else {
-                        b'='
-                    });
-                    out.push(if i + 2 < data.len() {
-                        alphabet[(b2 & 0x3f) as usize]
-                    } else {
-                        b'='
-                    });
-                    i += 3;
-                }
-                out
-            }
+            "base64" => encode_base64(data),
             "hex" => data
                 .iter()
                 .flat_map(|b| {
@@ -81,6 +57,29 @@ impl ExportBackend {
             _ => data.to_vec(),
         }
     }
+}
+
+fn encode_base64(data: &[u8]) -> Vec<u8> {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+    let mut out = Vec::with_capacity(data.len().div_ceil(3) * 4);
+    for chunk in data.chunks(3) {
+        let b0 = chunk[0];
+        let b1 = chunk.get(1).copied().unwrap_or(0);
+        let b2 = chunk.get(2).copied().unwrap_or(0);
+        out.push(ALPHABET[(b0 >> 2) as usize]);
+        out.push(ALPHABET[(((b0 & 0b0000_0011) << 4) | (b1 >> 4)) as usize]);
+        out.push(if chunk.len() > 1 {
+            ALPHABET[(((b1 & 0b0000_1111) << 2) | (b2 >> 6)) as usize]
+        } else {
+            b'='
+        });
+        out.push(if chunk.len() > 2 {
+            ALPHABET[(b2 & 0b0011_1111) as usize]
+        } else {
+            b'='
+        });
+    }
+    out
 }
 
 #[cfg(test)]
@@ -129,5 +128,33 @@ mod tests {
         );
         let result = store.read(&out.artifact_hash).unwrap();
         assert_eq!(result, b"raw");
+    }
+
+    #[test]
+    fn export_base64_format_with_padding() {
+        let mut store = InMemoryStore::new();
+        let input_hash = store.write(b"Nom");
+        let out = ExportBackend::compose(
+            ExportInput {
+                entity: NomtuRef::new("ex3", "export", "concept"),
+                input_hash,
+                output_format: "base64".into(),
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert_eq!(store.read(&out.artifact_hash).unwrap(), b"Tm9t");
+
+        let input_hash = store.write(b"No");
+        let out = ExportBackend::compose(
+            ExportInput {
+                entity: NomtuRef::new("ex4", "export", "concept"),
+                input_hash,
+                output_format: "base64".into(),
+            },
+            &mut store,
+            &LogProgressSink,
+        );
+        assert_eq!(store.read(&out.artifact_hash).unwrap(), b"Tm8=");
     }
 }

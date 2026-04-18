@@ -1,6 +1,61 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `de12f4d` | **Tests:** 2219 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests listed:** 2439 default; `--all-features` PASS | **Workspace:** dirty (uncommitted code edits present)
+
+## Wave AC Audit (2026-04-18) — DB-driven + UI/UX reliability gate
+
+This section is the current reliability source until the code findings below are fixed and the docs are re-audited.
+
+| Area | Verdict | Evidence |
+|---|---|---|
+| `NomtuRef` non-optional on block/node models | PASS | `nom-canvas/crates/nom-blocks/src/block_model.rs:46`, `nom-canvas/crates/nom-blocks/src/graph_node.rs:12` |
+| Connector validation at every creation | PASS | Only `Connector::new_with_validation()` remains; no `Connector::new()` / `new_stub()` call sites found |
+| Node palette live DB source | PASS | `nom-canvas/crates/nom-panels/src/left/node_palette.rs:26` uses `load_from_dict(&dyn DictReader)` over `list_kinds()` |
+| Library panel live DB source | PASS | `nom-canvas/crates/nom-panels/src/left/library.rs:28` uses `load_from_dict(&dyn DictReader)` over `list_kinds()` |
+| DictReader isolation | PASS | `nom-canvas/crates/nom-blocks/src/dict_reader.rs:22`; SQLite opens isolated to `nom-canvas/crates/nom-compiler-bridge/src/sqlite_dict.rs:23-27` |
+| Cross-workspace compiler deps | PASS | `nom-canvas/crates/nom-compiler-bridge/Cargo.toml:6-23` feature-gates `../../../nom-compiler/crates/*` path deps |
+| UI/UX runtime verification | PASS | `nom-panels` runtime scene test covers palette/library/file/properties/chat/deep-think surfaces; `nom-gpui` tests reduced-motion delta behavior |
+| Source-repo parity docs | DRIFT | Several reference sources are not locally matched by path (`Remotion`, `Open-Higgsfield`, `opendataloader`), so parity claims require re-verification before `[x]` |
+
+### Open Findings From Wave AC Audit
+
+- [x] **AC1 CRITICAL — Connector constructors bypass grammar validation.** Closed by removing `Connector::new()` / `Connector::new_stub()` and keeping construction on `Connector::new_with_validation()`; verified by `rg` and `cargo test --workspace --all-features -q`.
+- [x] **AC2 CRITICAL — Node palette is not a live `grammar.kinds` SELECT.** Closed by `NodePalette::load_from_dict(&dyn DictReader)` over `DictReader::list_kinds()`; verified by `cargo test --workspace --all-features -q`.
+- [x] **AC3 HIGH — Library panel repeats the same static/slice kind source.** Closed by `LibraryPanel::load_from_dict(&dyn DictReader)` over `DictReader::list_kinds()`; verified by `cargo test --workspace --all-features -q`.
+- [x] **AC4 HIGH — UI/UX needs real runtime verification, not token-only tests.** Closed by runtime scene coverage across palette/library/file/properties/chat/deep-think panels and reduced-motion animation tests; verified by `cargo test --workspace --all-features -q`.
+- [x] **AC5 MEDIUM — Some UI surfaces still carry optional string entity IDs.** Closed by typed `PanelEntityRef` metadata boundary in `nom-panels`; no `entity_id: Option<String>` or `Option<NomtuRef>` remains in panel code.
+- [ ] **AC6 MEDIUM — Document reliability is not 100%.** `implementation_plan.md` and `nom_state_machine_report.md` still carry stale HEAD/test snapshots; this file now records the current audit truth.
+- [x] **AC7 HIGH — `--all-features` compiler bridge is not green.** Closed by cached grammar fallback fixes in completion/score/interactive paths; `cargo test --workspace --all-features -q` passes.
+
+### Source-Repo Parity Pass (2026-04-18)
+
+- [x] **AC8 — Dedicated crate-by-crate parity pass run after AC1/AC2 closure.** Scope covered all 15 `nom-canvas` crates with reference availability and pattern grep evidence.
+- [x] **AC9 — Actual screenshot-style visual QA artifact lane.** `cargo run -p nom-panels --example visual_qa` writes `.omx/visual/nom-panels-runtime.ppm` and `.omx/visual/nom-panels-runtime.json`; latest report: 1200x720, 84 quads, 1 frosted rect, 200528 nonblank pixels, PASS.
+- [x] **AC10 — nom-compose backend-depth tranche started.** Export backend now has a tested no-dependency base64 encoder; native/mobile screen backends reject invalid dimensions/platform/format and emit failure events.
+- [x] **AC11 — warning cleanup before stricter clippy.** Removed `nom-compose`/`nom-memoize` warning sources and made `cargo clippy -p nom-compose -p nom-memoize --all-targets -- -D warnings` pass, including dependency lints it exposed in `nom-graph`/`nom-blocks`.
+- [x] **AD1 — Native `nom-gpui::window::run_application` opens a winit window.** Native path now builds a real `winit` window/event loop; wasm keeps synthetic single-frame behavior. Verified with `cargo check -p nom-gpui` and all-features tests.
+- [x] **AD2 — Real OS screenshot QA.** `nom-gpui` now has `window_first_paint` harness that opens a native window and exits deterministically; Windows screenshot tooling captured `.omx/visual/nom-gpui-window-first-paint.png` (542749 bytes).
+- [ ] **AD3 — Broad workspace clippy.** Deprecated `nom-dict` compatibility warnings are contained, and targeted `nom-compose`/`nom-memoize` clippy passes; broad workspace clippy now reaches broader test lint debt in `nom-theme`, `nom-gpui`, `nom-collab`, and other crates.
+
+| Crate | Parity verdict | Evidence / gap |
+|---|---|---|
+| nom-blocks | PASS | `NomtuRef`, `DictReader::list_kinds`, and grammar-backed connector validation are wired. |
+| nom-canvas-core | PASS | Bezier hit-testing and element painting evidence present. |
+| nom-cli | PASS | CLI command coverage present; no source-repo blocker found in this pass. |
+| nom-collab | PASS | RGA/tombstone pattern present (`RgaPos`, `tombstoned`). |
+| nom-compiler-bridge | PASS | Feature-gated compiler deps and all-features tests pass. |
+| nom-compose | DRIFT | Backend-depth tranche started (export/native/mobile improved); several backend families remain partial. |
+| nom-editor | PASS | Rope/editor maps and placeholder folds are implementation details, not parity blockers. |
+| nom-gpui | DRIFT | Zed-like scene/renderer/atlas patterns present; real winit loop/shader bodies still stub-labelled. |
+| nom-graph | PASS | Kahn DAG, sandbox, cache, and RRF evidence present. |
+| nom-intent | PASS | ReAct/deep-think coverage present. |
+| nom-lint | PASS | yara-x sealed/InternalRule pattern present. |
+| nom-memoize | PASS | typst/comemo-style tracked/cache primitives present. |
+| nom-panels | PASS | DB-backed palette/library fixed; runtime scene test and `.omx/visual/nom-panels-runtime.ppm` cover primary panel surfaces and typed entity metadata boundary. |
+| nom-telemetry | PASS | W3C traceparent parse/format coverage present. |
+| nom-theme | DRIFT | Token/math coverage present; real font asset loading remains open. |
+
+Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Haystack, ToolJet, yara-x, typst, WrenAI, 9router, graphify, Refly, ArcReel, and waoowaoo paths were found under `C:\Users\trngh\Documents\APP`; Remotion, Open-Higgsfield, and opendataloader local paths remain missing.
 
 **Master roadmap to 100%:** [`ROADMAP_TO_100.md`](ROADMAP_TO_100.md) — every remaining `[ ]` across 4 axes (compiler/language/integration/platform).
 

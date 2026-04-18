@@ -50,6 +50,12 @@ impl VecProgressSink {
     }
 }
 
+impl Default for VecProgressSink {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl ProgressSink for VecProgressSink {
     fn emit(&self, event: ComposeEvent) {
         if let Ok(mut v) = self.events.lock() {
@@ -177,7 +183,7 @@ mod tests {
                     None
                 }
             })
-            .last();
+            .next_back();
         assert!(last_progress.is_some());
         assert!((last_progress.unwrap() - 0.9).abs() < 1e-5);
     }

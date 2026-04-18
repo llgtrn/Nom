@@ -9,10 +9,14 @@ fn compile_nomx(source: &str) -> PipelineOutput {
 
 fn entity_names(output: &PipelineOutput) -> Vec<String> {
     match output {
-        PipelineOutput::Nomtu(f) => f.items.iter().map(|item| match item {
-            nom_concept::NomtuItem::Entity(e) => e.word.clone(),
-            nom_concept::NomtuItem::Composition(c) => c.word.clone(),
-        }).collect(),
+        PipelineOutput::Nomtu(f) => f
+            .items
+            .iter()
+            .map(|item| match item {
+                nom_concept::NomtuItem::Entity(e) => e.word.clone(),
+                nom_concept::NomtuItem::Composition(c) => c.word.clone(),
+            })
+            .collect(),
         PipelineOutput::Nom(f) => f.concepts.iter().map(|c| c.name.clone()).collect(),
     }
 }

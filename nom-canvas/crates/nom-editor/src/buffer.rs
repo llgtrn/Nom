@@ -227,4 +227,99 @@ mod tests {
         buf.edit(1..4, "XXX");
         assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hXXXo");
     }
+
+    #[test]
+    fn buffer_insert_at_start() {
+        let mut buf = Buffer::new(1, "world");
+        buf.insert_at(0, "hello ");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello world");
+    }
+
+    #[test]
+    fn buffer_insert_at_end() {
+        let mut buf = Buffer::new(1, "hello");
+        buf.insert_at(5, "!");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello!");
+    }
+
+    #[test]
+    fn buffer_insert_at_mid() {
+        let mut buf = Buffer::new(1, "helo");
+        buf.insert_at(2, "l");
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
+
+    #[test]
+    fn buffer_delete_from_start() {
+        let mut buf = Buffer::new(1, "abcdef");
+        buf.delete_range(0..3);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "def");
+    }
+
+    #[test]
+    fn buffer_delete_to_end() {
+        let mut buf = Buffer::new(1, "hello world");
+        buf.delete_range(5..11);
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hello");
+    }
+
+    #[test]
+    fn buffer_delete_entire_content() {
+        let mut buf = Buffer::new(1, "abc");
+        buf.delete_range(0..3);
+        assert!(buf.is_empty());
+    }
+
+    #[test]
+    fn buffer_delete_noop_when_empty_range() {
+        let mut buf = Buffer::new(1, "hello");
+        let v_before = buf.version;
+        buf.delete_range(2..2);
+        assert_eq!(buf.version, v_before); // no change
+        assert_eq!(buf.len(), 5);
+    }
+
+    #[test]
+    fn buffer_transaction_groups_patches() {
+        let mut buf = Buffer::new(1, "hello world");
+        buf.start_transaction();
+        buf.insert_at(5, "!");
+        buf.end_transaction();
+        // After transaction, undo stack grows only if patches were recorded via edit().
+        // insert_at does not push to transaction; just verify no panic and text changed.
+        assert!(buf.text_for_range(0..buf.len()).contains('!'));
+    }
+
+    #[test]
+    fn buffer_undo_stack_grows_on_edit_commit() {
+        let mut buf = Buffer::new(1, "hello");
+        buf.start_transaction();
+        // edit() returns an undo patch — push it manually via the transaction
+        let patch = buf.edit(0..5, "world");
+        buf.transaction_stack.last_mut().unwrap().add_patch(patch);
+        buf.end_transaction();
+        assert!(!buf.undo_stack.is_empty());
+    }
+
+    #[test]
+    fn buffer_insert_beyond_len_clamps() {
+        let mut buf = Buffer::new(1, "hi");
+        buf.insert_at(1000, "!");
+        // Clamped to end of buffer
+        assert_eq!(buf.text_for_range(0..buf.len()).as_ref(), "hi!");
+    }
+
+    #[test]
+    fn buffer_line_to_char_first_line() {
+        let buf = Buffer::new(1, "abc\ndef");
+        assert_eq!(buf.line_to_char(0), 0);
+        assert_eq!(buf.line_to_char(1), 4);
+    }
+
+    #[test]
+    fn buffer_empty_delete_range_no_panic() {
+        let mut buf = Buffer::new(1, "");
+        buf.delete_range(0..0); // no-op, no panic
+        assert!(buf.is_empty());
+    }
 }

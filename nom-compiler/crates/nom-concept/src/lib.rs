@@ -31,8 +31,8 @@ pub use strict::{
 };
 
 pub mod stages;
+pub use lex::{Spanned, Tok};
 pub use stages::{StageFailure, StageId, TokenStream, stage1_tokenize};
-pub use lex::{Tok, Spanned};
 
 pub mod flow_edge;
 pub use flow_edge::{

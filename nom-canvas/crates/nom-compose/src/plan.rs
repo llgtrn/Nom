@@ -233,8 +233,8 @@ mod tests {
         for i in 1..20usize {
             prev = plan.add_step_after(
                 BackendKind::Transform,
-                &format!("s{}", i - 1),
-                &format!("s{i}"),
+                format!("s{}", i - 1),
+                format!("s{i}"),
                 vec![prev],
             );
         }

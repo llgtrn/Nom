@@ -70,6 +70,9 @@ impl<T: Clone> MemoCache<T> {
     pub fn len(&self) -> usize {
         self.entries.len()
     }
+    pub fn is_empty(&self) -> bool {
+        self.entries.is_empty()
+    }
     pub fn hit_count(&self) -> u64 {
         self.hit_count
     }
@@ -325,6 +328,7 @@ mod tests {
     fn memo_cache_len_empty_is_zero() {
         let cache: MemoCache<u32> = MemoCache::new();
         assert_eq!(cache.len(), 0);
+        assert!(cache.is_empty());
     }
 
     #[test]
@@ -402,7 +406,7 @@ mod tests {
         cache.put(key, 1, Constraint::new(99));
         cache.get(&key, 0, &[]); // stale
         cache.get(&key, 1, &[]); // stale (wrong hash — wait, 99 was stored)
-        // 99 was the stored hash, so hash 0 and 1 are both stale → 2 misses
+                                 // 99 was the stored hash, so hash 0 and 1 are both stale → 2 misses
         assert_eq!(cache.miss_count(), 2);
         assert_eq!(cache.hit_rate(), 0.0);
     }
@@ -429,7 +433,7 @@ mod tests {
 
     #[test]
     fn memo_cache_tracked_snapshot_validates() {
-        use crate::tracked::{Tracked, TrackedSnapshot};
+        use crate::tracked::Tracked;
         let mut cache: MemoCache<String> = MemoCache::new();
         let key = Hash128::of_str("snap_key");
 

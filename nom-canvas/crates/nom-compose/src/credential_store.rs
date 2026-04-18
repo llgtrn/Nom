@@ -214,7 +214,10 @@ mod tests {
     #[test]
     fn credential_store_remove_nonexistent_returns_false() {
         let mut s = CredentialStore::new();
-        assert!(!s.remove("ghost"), "removing non-existent vendor must return false");
+        assert!(
+            !s.remove("ghost"),
+            "removing non-existent vendor must return false"
+        );
     }
 
     #[test]

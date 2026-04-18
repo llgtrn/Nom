@@ -11,7 +11,7 @@
 //!   4. When the same node is reached via multiple paths, the best
 //!      (cosine_sim, cumulative_confidence) pair is kept.
 //!   5. Candidates are ranked by cosine similarity and scored via RRF_K=60.0:
-//!         rrf_score = cumulative_confidence / (RRF_K + rank)
+//!      rrf_score = cumulative_confidence / (RRF_K + rank)
 //!      Nodes reached via high-confidence edges rank higher for equal rank.
 //!   6. Edges with confidence below `MIN_EDGE_CONFIDENCE` are pruned during BFS.
 //!   7. The top-k results by RRF score are returned.

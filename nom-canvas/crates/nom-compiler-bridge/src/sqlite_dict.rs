@@ -3,7 +3,7 @@
 // Only compiled when `compiler` feature is enabled
 
 use nom_blocks::block_model::NomtuRef;
-use nom_blocks::dict_reader::{ClauseShape, DictReader};
+use nom_blocks::dict_reader::{ClauseShape, DictReader, GrammarKindRow};
 
 /// Wave C concrete DictReader using nom-grammar's SQLite connection.
 /// Owned by BridgeState; the bridge holds the ONLY writer connection.
@@ -50,6 +50,36 @@ impl DictReader for SqliteDictReader {
             return result.ok().map(|n| n > 0).unwrap_or(false);
         }
         false
+    }
+
+    fn list_kinds(&self) -> Vec<GrammarKindRow> {
+        let cached = self.state.cached_grammar_kinds();
+        if !cached.is_empty() {
+            return cached
+                .into_iter()
+                .map(|kind| GrammarKindRow {
+                    name: kind.name,
+                    description: kind.description,
+                })
+                .collect();
+        }
+
+        let Some(conn) = self.open_grammar_conn() else {
+            return vec![];
+        };
+        let mut stmt = match conn.prepare("SELECT name, description FROM kinds ORDER BY name") {
+            Ok(stmt) => stmt,
+            Err(_) => return vec![],
+        };
+        stmt.query_map([], |row| {
+            Ok(GrammarKindRow {
+                name: row.get(0)?,
+                description: row.get(1)?,
+            })
+        })
+        .ok()
+        .map(|rows| rows.filter_map(|row| row.ok()).collect())
+        .unwrap_or_default()
     }
 
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape> {
@@ -106,6 +136,9 @@ impl DictReader for SqliteDictReader {
     fn is_known_kind(&self, _kind: &str) -> bool {
         false
     }
+    fn list_kinds(&self) -> Vec<GrammarKindRow> {
+        vec![]
+    }
     fn clause_shapes_for(&self, _kind: &str) -> Vec<ClauseShape> {
         vec![]
     }
@@ -132,6 +165,7 @@ mod tests {
         let reader = SqliteDictReader::new_stub();
         assert!(reader.clause_shapes_for("verb").is_empty());
         assert!(reader.clause_shapes_for("anything").is_empty());
+        assert!(reader.list_kinds().is_empty());
     }
 
     #[test]

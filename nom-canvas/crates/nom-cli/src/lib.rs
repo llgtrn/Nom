@@ -808,27 +808,47 @@ mod tests {
     fn cli_format_absolute_unix_path() {
         let path = "/usr/local/project/main.nom";
         let cmd = parse_args(&["format", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_format_relative_path_with_dots() {
         let path = "../../other/main.nom";
         let cmd = parse_args(&["format", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_format_windows_style_path() {
         let path = "C:\\Users\\dev\\project\\main.nom";
         let cmd = parse_args(&["format", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_format_empty_path() {
         let cmd = parse_args(&["format", ""]).unwrap();
-        assert_eq!(cmd, CliCommand::Format { path: "".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Format {
+                path: "".to_string()
+            }
+        );
     }
 
     // --- Run command path formats ---
@@ -836,21 +856,36 @@ mod tests {
     #[test]
     fn cli_run_dot_path() {
         let cmd = parse_args(&["run", "."]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: ".".to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: ".".to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_run_windows_path() {
         let path = "C:\\project\\src\\main.nom";
         let cmd = parse_args(&["run", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: path.to_string()
+            }
+        );
     }
 
     #[test]
     fn cli_run_path_with_spaces() {
         let path = "my project/main.nom";
         let cmd = parse_args(&["run", path]).unwrap();
-        assert_eq!(cmd, CliCommand::Run { path: path.to_string() });
+        assert_eq!(
+            cmd,
+            CliCommand::Run {
+                path: path.to_string()
+            }
+        );
     }
 
     // --- Help and Version are correct variants ---

@@ -94,7 +94,17 @@ mod tests {
         ws.insert_node(node);
         assert_eq!(ws.node_count(), 1);
 
-        let conn = Connector::new_stub("c1", "n1", "output", "n2", "input");
+        let dict = crate::stub_dict::StubDictReader::new();
+        let conn = Connector::new_with_validation(crate::connector::ConnectorValidation {
+            id: "c1".into(),
+            from_node: "n1".into(),
+            from_port: "output".into(),
+            to_node: "n2".into(),
+            to_port: "input".into(),
+            dict: &dict,
+            from_kind: "verb",
+            to_kind: "concept",
+        });
         ws.insert_connector(conn);
         assert_eq!(ws.connector_count(), 1);
     }

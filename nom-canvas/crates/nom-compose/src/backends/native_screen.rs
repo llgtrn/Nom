@@ -3,7 +3,7 @@ use crate::backends::ComposeResult;
 use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
 
-/// Specification for a native desktop screenshot/capture stub.
+/// Specification for a native desktop screen-capture artifact request.
 #[derive(Debug, Clone)]
 pub struct NativeScreenSpec {
     pub width: u32,
@@ -27,6 +27,19 @@ impl NativeScreenBackend {
         store: &mut dyn ArtifactStore,
         sink: &dyn ProgressSink,
     ) -> ComposeResult {
+        if spec.width == 0 || spec.height == 0 {
+            sink.emit(ComposeEvent::Failed {
+                reason: "native_screen dimensions must be non-zero".into(),
+            });
+            return Err("native_screen dimensions must be non-zero".into());
+        }
+        if !matches!(spec.format.as_str(), "png" | "jpeg" | "bmp") {
+            sink.emit(ComposeEvent::Failed {
+                reason: format!("unsupported native_screen format: {}", spec.format),
+            });
+            return Err(format!("unsupported native_screen format: {}", spec.format));
+        }
+
         sink.emit(ComposeEvent::Started {
             backend: "native_screen".into(),
             entity_id: format!("display_{}", spec.display_index),
@@ -117,5 +130,27 @@ mod tests {
             format: "bmp".into(),
         };
         assert!(NativeScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn native_screen_rejects_invalid_format_and_dimensions() {
+        let mut store = InMemoryStore::new();
+        let invalid_format = NativeScreenSpec {
+            width: 800,
+            height: 600,
+            display_index: 0,
+            format: "gif".into(),
+        };
+        assert!(
+            NativeScreenBackend::compose(&invalid_format, &mut store, &LogProgressSink).is_err()
+        );
+
+        let invalid_size = NativeScreenSpec {
+            width: 0,
+            height: 600,
+            display_index: 0,
+            format: "png".into(),
+        };
+        assert!(NativeScreenBackend::compose(&invalid_size, &mut store, &LogProgressSink).is_err());
     }
 }

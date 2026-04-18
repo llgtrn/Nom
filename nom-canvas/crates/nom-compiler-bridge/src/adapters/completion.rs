@@ -24,13 +24,14 @@ pub fn complete_from_dict(
 ) -> Vec<CompletionItem> {
     use nom_dict::NomDict;
     use std::path::Path;
+    let cached = complete_from_cached_kinds(prefix, kind_filter, state);
     let Ok(dict) = NomDict::open_in_place(Path::new(&state.dict_path)) else {
-        return vec![];
+        return cached;
     };
     let Ok(entries) = dict.find_entities_by_word(prefix) else {
-        return vec![];
+        return cached;
     };
-    entries
+    let items: Vec<_> = entries
         .into_iter()
         .filter(|e| kind_filter.map_or(true, |f| e.kind == f))
         .take(20)
@@ -44,12 +45,25 @@ pub fn complete_from_dict(
                 sort_text: None,
             }
         })
-        .collect()
+        .collect();
+    if items.is_empty() {
+        cached
+    } else {
+        items
+    }
 }
 
 // Without compiler feature: use cached grammar kinds as completions
 #[cfg(not(feature = "compiler"))]
 pub fn complete_from_dict(
+    prefix: &str,
+    kind_filter: Option<&str>,
+    state: &SharedState,
+) -> Vec<CompletionItem> {
+    complete_from_cached_kinds(prefix, kind_filter, state)
+}
+
+fn complete_from_cached_kinds(
     prefix: &str,
     kind_filter: Option<&str>,
     state: &SharedState,

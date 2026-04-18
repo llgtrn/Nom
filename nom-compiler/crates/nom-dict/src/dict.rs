@@ -631,7 +631,10 @@ pub fn get_entry_bytes(d: &Dict, id: &str) -> Result<Option<Vec<u8>>> {
 ///
 /// Deprecated: queries the legacy `entries` table. Migrate callers to
 /// [`find_partial_entity_ids`] which reads the canonical `entities` table.
-#[deprecated(since = "0.0.0", note = "use find_partial_entity_ids(d, max) for the entities tier")]
+#[deprecated(
+    since = "0.0.0",
+    note = "use find_partial_entity_ids(d, max) for the entities tier"
+)]
 pub fn list_partial_ids(d: &Dict, max: Option<usize>) -> Result<Vec<String>> {
     let sql = match max {
         Some(n) => format!(
@@ -1269,7 +1272,10 @@ const ENTRY_SELECT: &str = "SELECT id, word, variant, kind, language, describe, 
 ///
 /// Deprecated: queries the legacy `entries` table. Migrate callers to
 /// [`find_entities_by_word`] which reads the canonical `entities` table.
-#[deprecated(since = "0.0.0", note = "use find_entities_by_word(d, word) for the entities tier")]
+#[deprecated(
+    since = "0.0.0",
+    note = "use find_entities_by_word(d, word) for the entities tier"
+)]
 pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
     let sql = format!("{} WHERE word = ?1 ORDER BY id", ENTRY_SELECT);
     let mut stmt = d.entities.prepare_cached(&sql)?;
@@ -1284,7 +1290,10 @@ pub fn find_by_word(d: &Dict, word: &str) -> Result<Vec<Entry>> {
 ///
 /// Deprecated: queries the legacy `entries` table. Migrate callers to
 /// [`find_entities_by_body_kind`] which reads the canonical `entities` table.
-#[deprecated(since = "0.0.0", note = "use find_entities_by_body_kind(d, kind, limit) for the entities tier")]
+#[deprecated(
+    since = "0.0.0",
+    note = "use find_entities_by_body_kind(d, kind, limit) for the entities tier"
+)]
 pub fn find_by_body_kind(d: &Dict, kind: &str, limit: usize) -> Result<Vec<Entry>> {
     let sql = format!("{} WHERE body_kind = ?1 ORDER BY id LIMIT ?2", ENTRY_SELECT);
     let mut stmt = d.entities.prepare_cached(&sql)?;
@@ -1454,7 +1463,10 @@ pub fn bulk_set_scores(d: &Dict, scores: &[EntryScores]) -> Result<()> {
 /// Deprecated: queries the legacy `entries` table. For entities-tier
 /// lookups use [`find_entity`] which reads the canonical `entities` table
 /// by hash primary key.
-#[deprecated(since = "0.0.0", note = "use find_entity(d, hash) for the entities tier")]
+#[deprecated(
+    since = "0.0.0",
+    note = "use find_entity(d, hash) for the entities tier"
+)]
 pub fn get_entry(d: &Dict, id: &str) -> Result<Option<Entry>> {
     let row = d
         .entities
@@ -1632,7 +1644,10 @@ pub fn upsert_entry_if_new(d: &Dict, entry: &Entry) -> Result<bool> {
 /// [`find_entities`] which reads the canonical `entities` table.
 /// Note: `EntryFilter.language` is ignored by `find_entities` since
 /// the `entities` table has no `language` column.
-#[deprecated(since = "0.0.0", note = "use find_entities(d, f) for the entities tier")]
+#[deprecated(
+    since = "0.0.0",
+    note = "use find_entities(d, f) for the entities tier"
+)]
 pub fn find_entries(d: &Dict, f: &EntryFilter) -> Result<Vec<Entry>> {
     let mut sql = String::from(
         "SELECT id, word, variant, kind, language, describe, concept, body, body_nom,
@@ -2782,7 +2797,10 @@ mod tests {
         upsert_entity(&d, &sample_word("zzz", "c", "data")).unwrap();
         upsert_entity(&d, &sample_word("aaa", "a", "function")).unwrap();
         upsert_entity(&d, &sample_word("mmm", "b", "function")).unwrap();
-        let f = EntryFilter { limit: 10, ..Default::default() };
+        let f = EntryFilter {
+            limit: 10,
+            ..Default::default()
+        };
         let rows = find_entities(&d, &f).unwrap();
         assert_eq!(rows.len(), 3);
         assert_eq!(rows[0].hash, "aaa");
@@ -2831,7 +2849,10 @@ mod tests {
         for i in 0..5 {
             upsert_entity(&d, &sample_word(&format!("h{i}"), "w", "function")).unwrap();
         }
-        let f = EntryFilter { limit: 3, ..Default::default() };
+        let f = EntryFilter {
+            limit: 3,
+            ..Default::default()
+        };
         let rows = find_entities(&d, &f).unwrap();
         assert_eq!(rows.len(), 3);
     }

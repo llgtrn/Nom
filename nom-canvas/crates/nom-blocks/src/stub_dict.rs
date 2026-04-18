@@ -1,6 +1,6 @@
 #![deny(unsafe_code)]
 use crate::block_model::NomtuRef;
-use crate::dict_reader::{ClauseShape, DictReader};
+use crate::dict_reader::{ClauseShape, DictReader, GrammarKindRow};
 use std::collections::{HashMap, HashSet};
 
 /// Wave B implementation: no DB required. Used in tests and until Wave C bridge exists.
@@ -58,6 +58,19 @@ impl Default for StubDictReader {
 impl DictReader for StubDictReader {
     fn is_known_kind(&self, kind: &str) -> bool {
         self.known_kinds.contains(kind)
+    }
+
+    fn list_kinds(&self) -> Vec<GrammarKindRow> {
+        let mut rows: Vec<_> = self
+            .known_kinds
+            .iter()
+            .map(|name| GrammarKindRow {
+                name: name.clone(),
+                description: format!("{name} grammar kind"),
+            })
+            .collect();
+        rows.sort_by(|a, b| a.name.cmp(&b.name));
+        rows
     }
 
     fn clause_shapes_for(&self, kind: &str) -> Vec<ClauseShape> {
@@ -166,5 +179,14 @@ mod tests {
         assert!(entity.id.starts_with("stub-"));
         assert_eq!(entity.word, "summarize");
         assert_eq!(entity.kind, "verb");
+    }
+
+    #[test]
+    fn stub_dict_lists_known_kinds_sorted() {
+        let dict = StubDictReader::with_kinds(&["zeta", "alpha"]);
+        let rows = dict.list_kinds();
+        assert!(rows.windows(2).all(|pair| pair[0].name <= pair[1].name));
+        assert!(rows.iter().any(|row| row.name == "alpha"));
+        assert!(rows.iter().any(|row| row.name == "zeta"));
     }
 }

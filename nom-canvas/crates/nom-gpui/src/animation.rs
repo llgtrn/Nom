@@ -15,6 +15,12 @@ pub struct Animation {
     pub easing: Box<dyn Fn(f32) -> f32 + Send + Sync>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum MotionPreference {
+    Full,
+    Reduced,
+}
+
 impl Animation {
     pub fn new(duration: Duration, easing: impl Fn(f32) -> f32 + Send + Sync + 'static) -> Self {
         Self {
@@ -45,6 +51,13 @@ impl Animation {
             t.clamp(0.0, 1.0)
         } else {
             t.fract()
+        }
+    }
+
+    pub fn delta_with_motion(&self, elapsed: Duration, preference: MotionPreference) -> f32 {
+        match preference {
+            MotionPreference::Full => self.delta(elapsed),
+            MotionPreference::Reduced => 1.0,
         }
     }
 
@@ -492,5 +505,21 @@ mod tests {
             (d - 0.5).abs() < 0.01,
             "looping delta at 1.5× should be ~0.5, got {d}"
         );
+    }
+
+    #[test]
+    fn reduced_motion_delta_jumps_to_complete() {
+        let anim = Animation::new(Duration::from_millis(300), easing::ease_out());
+        assert_eq!(
+            anim.delta_with_motion(Duration::from_millis(1), MotionPreference::Reduced),
+            1.0
+        );
+    }
+
+    #[test]
+    fn full_motion_delta_preserves_elapsed_timing() {
+        let anim = Animation::new(Duration::from_millis(300), easing::ease_out());
+        let delta = anim.delta_with_motion(Duration::from_millis(150), MotionPreference::Full);
+        assert!((delta - 0.5).abs() < 1e-6);
     }
 }

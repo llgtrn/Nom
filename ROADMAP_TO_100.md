@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AA complete — 2219 tests across 15 crates. Wave AB in progress (~2600 target).
+**Last updated:** Wave AC/AD fixes — HEAD `7a79e88`, 2439 default tests listed; `cargo test --workspace --all-features -q` passes. Native winit window path, OS screenshot artifact, targeted clippy, and first backend-depth tranche landed; backend/source parity gaps remain open.
 
 ## Current finalization snapshot
 
@@ -9,7 +9,7 @@
 |---|---|---|---|---|
 | A · nom-compiler | 44% | 100% | 56pp | (upstream, unchanged) |
 | B · Nom language | 34% | 100% | 66pp | (upstream, unchanged) |
-| C · nom-canvas ↔ compiler integration | 73% | 100% | 27pp | 2219 total, Wave AB →~2600 |
+| C · nom-canvas ↔ compiler integration | 77% | 100% | 23pp | 2439 default listed; all-features pass; AC1/AC2/AC3/AC4/AC5/AC7/AC9-AC11 closed |
 | D · Overall platform | 61% | 100% | 39pp | 15/15 crates have tests |
 
 **Per-crate test counts (Wave AA → Wave AB):**
@@ -248,9 +248,11 @@
 - [ ] Open compose → dream_report → score + proposals
 
 ### C2. DB-driven palette actual wiring
-- [ ] `NodePalette::load_from_dict(&SqliteDictReader)` live SELECT
-- [ ] `LibraryPanel::load_from_dict()` same
+- [x] `NodePalette::load_from_dict(&SqliteDictReader)` live SELECT
+- [x] `LibraryPanel::load_from_dict()` same
 - [ ] End-to-end test: real nomdict.db → palette renders
+- [x] AC2 close: remove slice/static palette as production path; require live `grammar.kinds` source
+- [x] AC3 close: library panel reads the same live grammar source as palette
 
 ### C3. Feature gate flip
 - [ ] `compiler` feature = default ON in nom-compiler-bridge
@@ -271,8 +273,8 @@
 - [ ] Data-extract: opendataloader XY-Cut++ 0.015s/page
 - [ ] Image backend: Open-Higgsfield model dispatch
 - [ ] Storyboard: ArcReel 5-phase orchestration
-- [ ] Native_screen: platform-specific codegen
-- [ ] Mobile_screen: iOS/Android target
+- [ ] Native_screen: platform-specific codegen (AC10 added validation/error artifacts; capture still open)
+- [ ] Mobile_screen: iOS/Android target (AC10 added validation/error artifacts; target integration still open)
 - [ ] App_bundle: Cargo + wgpu signed bundle
 
 ### C6. RAG real retrievers
@@ -304,6 +306,7 @@
 ## AXIS D — Overall Platform → 100%
 
 ### D1. Reference-repo parity (22 repos, replicate-and-stage)
+- [x] AC8 crate-by-crate parity pass completed after DB-driven fixes (remaining DRIFT items stay open below)
 - [x] Zed gpui (scene/renderer/atlas/elements/styled/window/layout)
 - [x] AFFiNE (73 tokens + frosted + bezier + collapsible)
 - [x] rowboat (ChatSidebar + tool cards + deep-think)
@@ -329,14 +332,18 @@
 
 ### D2. UI/UX full visual verification (ui-ux-pro-max skill required each check)
 - [ ] Frosted-glass pipeline renders visible blur on canvas
-- [ ] Focus ring = 2px outline stroke (FR1 follow-through)
-- [ ] All panels render real quads with token colors
+- [x] Focus ring = 2px outline stroke (FR1 follow-through)
+- [x] All panels render real quads with token colors
 - [ ] Bezier control points animate smoothly
-- [ ] Spring animation at AFFiNE defaults (stiffness=400, damping=28) verified on-screen
-- [ ] Color contrast ≥4.5:1 WCAG AA for all text-on-surface combos
-- [ ] Motion timing 200ms/300ms verified
+- [x] Spring animation at AFFiNE defaults (stiffness=400, damping=28) verified on-screen
+- [x] Color contrast ≥4.5:1 WCAG AA for all text-on-surface combos
+- [x] Motion timing 200ms/300ms verified
 - [ ] All 73 AFFiNE tokens visually used
 - [ ] Dark + light theme toggle
+- [x] Reduced-motion/accessibility gate for animation paths
+- [x] Screenshot/runtime audit proving palette/library/chat surfaces are not quad-only stubs
+- [x] AC9 visual artifact generated at `.omx/visual/nom-panels-runtime.ppm` with JSON report
+- [x] AD2 OS screenshot artifact generated at `.omx/visual/nom-gpui-window-first-paint.png`
 
 ### D3. End-to-end golden paths
 - [ ] Type .nomx → live syntax highlighting (C1 green)
@@ -354,8 +361,11 @@
 - [ ] `cargo build --workspace --release` Windows
 - [ ] Same Linux
 - [ ] Same macOS
-- [ ] `cargo test --workspace --all-features` all green
+- [x] `cargo test --workspace --all-features` all green
+- [x] AC7 close: fix 14 `nom-compiler-bridge` all-features failures in completion/score/interactive/LSP adapter tests
 - [ ] `cargo clippy --workspace -- -D warnings` clean
+- [x] Targeted strict clippy clean for `nom-compose` + `nom-memoize`: `cargo clippy -p nom-compose -p nom-memoize --all-targets -- -D warnings`
+- [ ] AD3 broad clippy: remove `nom-dict` deprecated compatibility warnings and remaining workspace lints
 - [ ] `cargo fmt --check` clean
 - [ ] GitHub Actions CI green on PR
 - [ ] Release pipeline produces signed binaries
@@ -376,7 +386,7 @@
 - [x] Zero foreign identities in public API
 - [x] nom-compiler is CORE (zero IPC confirmed)
 - [x] DB IS workflow engine
-- [x] NomtuRef non-optional on every canvas object (NR1 closed)
+- [x] NomtuRef non-optional on every canvas object (AC5 closed: panel metadata uses typed `PanelEntityRef`, not canvas-object identity)
 - [ ] Canvas = AFFiNE-for-RAG (visible RAG overlay — currently partial)
 - [ ] Doc = Zed + Rowboat + AFFiNE (all three visible — currently partial)
 - [x] Deep thinking = compiler op streamed right dock
@@ -411,7 +421,7 @@ All four axes reach 100% when:
 
 **Current velocity:** ~270 tests/wave (Waves V–AA average, accelerating). At this rate:
 - nom-canvas test suite hits 3000 tests in ~3 more waves
-- Wave AB targets ~2600 (+380 from current 2219)
+- Wave AB targets ~2600 (+161 from current 2439 listed tests)
 - Axis C functional completeness needs real backend wiring (C5) + golden demos (D3)
 
 **Critical path:** A7 (fixpoint proof) + C5 (real backends) + D3 (golden demos).

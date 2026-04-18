@@ -15,7 +15,14 @@ pub struct IngestionProgress {
 
 impl IngestionProgress {
     pub fn new() -> Self {
-        Self { total: 0, processed: 0, skipped: 0, failed: 0, skip_list: HashSet::new(), checkpoint_path: None }
+        Self {
+            total: 0,
+            processed: 0,
+            skipped: 0,
+            failed: 0,
+            skip_list: HashSet::new(),
+            checkpoint_path: None,
+        }
     }
 
     pub fn with_checkpoint(path: &Path) -> Self {
@@ -37,11 +44,17 @@ impl IngestionProgress {
         }
     }
 
-    pub fn mark_skipped(&mut self) { self.skipped += 1; }
-    pub fn mark_failed(&mut self, _id: &str, _error: &str) { self.failed += 1; }
+    pub fn mark_skipped(&mut self) {
+        self.skipped += 1;
+    }
+    pub fn mark_failed(&mut self, _id: &str, _error: &str) {
+        self.failed += 1;
+    }
 
     pub fn completion_pct(&self) -> f64 {
-        if self.total == 0 { return 0.0; }
+        if self.total == 0 {
+            return 0.0;
+        }
         (self.processed + self.skipped) as f64 / self.total as f64 * 100.0
     }
 
@@ -88,7 +101,11 @@ pub struct BandwidthThrottle {
 
 impl BandwidthThrottle {
     pub fn new(bytes_per_second: u64) -> Self {
-        Self { bytes_per_second, bytes_this_second: 0, last_reset: std::time::Instant::now() }
+        Self {
+            bytes_per_second,
+            bytes_this_second: 0,
+            last_reset: std::time::Instant::now(),
+        }
     }
 
     pub fn should_wait(&mut self, bytes: u64) -> bool {

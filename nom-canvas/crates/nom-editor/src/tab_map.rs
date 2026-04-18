@@ -105,4 +105,60 @@ mod tests {
         let (expanded, _) = tm.expand_tabs("no tabs here");
         assert_eq!(expanded, "no tabs here");
     }
+
+    #[test]
+    fn tab_expansion_at_col_zero() {
+        // Tab at col 0 with size 4 expands to exactly 4 spaces
+        let tm = TabMap::new(4);
+        let (expanded, offsets) = tm.expand_tabs("\t");
+        assert_eq!(expanded, "    ");
+        assert_eq!(offsets.len(), 1);
+        assert_eq!(offsets[0], 0); // visual col of the tab char itself
+    }
+
+    #[test]
+    fn tab_expansion_at_col_one() {
+        // "a\t" — tab at col 1 with size 4 pads to col 4 (3 spaces)
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("a\t");
+        assert_eq!(expanded, "a   ");
+    }
+
+    #[test]
+    fn tab_expansion_at_col_three() {
+        // "abc\t" — tab at col 3 with size 4 pads to col 4 (1 space)
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("abc\t");
+        assert_eq!(expanded, "abc ");
+    }
+
+    #[test]
+    fn tab_expansion_size_8() {
+        let tm = TabMap::new(8);
+        let (expanded, _) = tm.expand_tabs("\t");
+        assert_eq!(expanded.len(), 8);
+    }
+
+    #[test]
+    fn tab_expansion_multiple_tabs_align_to_stops() {
+        // Three tabs of size 4 → 12 leading spaces
+        let tm = TabMap::new(4);
+        let (expanded, _) = tm.expand_tabs("\t\t\t");
+        assert_eq!(expanded, "            "); // 12 spaces
+    }
+
+    #[test]
+    fn visual_column_after_multiple_chars() {
+        // "abc" — char at index 3 is at visual col 3
+        let tm = TabMap::new(4);
+        assert_eq!(tm.visual_column("abcdef", 3), 3);
+    }
+
+    #[test]
+    fn visual_column_tab_at_col_4() {
+        // "abcd\t" — tab at col 4 pads to col 8; char at index 5 is at col 8
+        let tm = TabMap::new(4);
+        let col = tm.visual_column("abcd\tx", 5);
+        assert_eq!(col, 8);
+    }
 }

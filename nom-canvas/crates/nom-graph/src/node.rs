@@ -40,17 +40,12 @@ pub struct ExecNode {
 }
 
 /// ComfyUI IS_CHANGED hierarchy
-#[derive(Clone, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub enum IsChanged {
-    Always,    // always re-execute (e.g., random seed nodes)
+    Always, // always re-execute (e.g., random seed nodes)
+    #[default]
     HashInput, // re-execute when inputs change (default)
-    Never,     // never re-execute (pure functions with same inputs)
-}
-
-impl Default for IsChanged {
-    fn default() -> Self {
-        Self::HashInput
-    }
+    Never,  // never re-execute (pure functions with same inputs)
 }
 
 impl ExecNode {
@@ -131,7 +126,9 @@ mod tests {
         node.ports.push(make_input_port("i2", false, true));
         let inputs = node.input_ports();
         assert_eq!(inputs.len(), 2);
-        assert!(inputs.iter().all(|p| matches!(p.direction, PortDirection::Input)));
+        assert!(inputs
+            .iter()
+            .all(|p| matches!(p.direction, PortDirection::Input)));
     }
 
     #[test]
@@ -142,7 +139,9 @@ mod tests {
         node.ports.push(make_output_port("o2"));
         let outputs = node.output_ports();
         assert_eq!(outputs.len(), 2);
-        assert!(outputs.iter().all(|p| matches!(p.direction, PortDirection::Output)));
+        assert!(outputs
+            .iter()
+            .all(|p| matches!(p.direction, PortDirection::Output)));
     }
 
     #[test]
@@ -162,14 +161,20 @@ mod tests {
     fn exec_node_required_unconnected_port_not_ready() {
         let mut node = ExecNode::new("n", "verb");
         node.ports.push(make_input_port("i", true, false));
-        assert!(!node.is_ready(), "required+unconnected port must not be ready");
+        assert!(
+            !node.is_ready(),
+            "required+unconnected port must not be ready"
+        );
     }
 
     #[test]
     fn exec_node_optional_unconnected_port_is_ready() {
         let mut node = ExecNode::new("n", "verb");
         node.ports.push(make_input_port("i", false, false)); // optional, not connected
-        assert!(node.is_ready(), "optional unconnected port must still be ready");
+        assert!(
+            node.is_ready(),
+            "optional unconnected port must still be ready"
+        );
     }
 
     #[test]
@@ -185,8 +190,11 @@ mod tests {
     fn exec_node_mixed_ports_not_ready_when_required_disconnected() {
         let mut node = ExecNode::new("n", "verb");
         node.ports.push(make_input_port("req", true, false)); // required, NOT connected
-        node.ports.push(make_input_port("opt", false, true));  // optional, connected
-        assert!(!node.is_ready(), "required unconnected port makes node not ready");
+        node.ports.push(make_input_port("opt", false, true)); // optional, connected
+        assert!(
+            !node.is_ready(),
+            "required unconnected port makes node not ready"
+        );
     }
 
     // ------------------------------------------------------------------
@@ -217,7 +225,10 @@ mod tests {
         let original = ExecNode::new("orig", "kind");
         let mut cloned = original.clone();
         cloned.kind = "mutated".to_string();
-        assert_eq!(original.kind, "kind", "original must be unaffected by clone mutation");
+        assert_eq!(
+            original.kind, "kind",
+            "original must be unaffected by clone mutation"
+        );
         assert_eq!(cloned.kind, "mutated");
     }
 

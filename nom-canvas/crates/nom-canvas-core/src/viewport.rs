@@ -463,4 +463,136 @@ mod tests {
             canvas_after[1]
         );
     }
+
+    /// screen_to_canvas at zoom=2.0 halves the displacement from screen centre.
+    #[test]
+    fn screen_to_canvas_at_nonunit_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // Screen point 100px right of centre = (500, 300).
+        // canvas_x = (500 - 400 - pan_x) / 2.0 = 50.0
+        let canvas = vp.screen_to_canvas([500.0, 300.0]);
+        assert!((canvas[0] - 50.0).abs() < 1e-3, "canvas.x={}", canvas[0]);
+        assert!((canvas[1]).abs() < 1e-3, "canvas.y={}", canvas[1]);
+    }
+
+    /// canvas_to_screen at zoom=2.0 doubles displacement from canvas origin.
+    #[test]
+    fn canvas_to_screen_at_nonunit_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.zoom_toward(2.0, [400.0, 300.0]);
+        // Canvas point (100, 0) → screen_x = 100*2 + pan_x + 400.
+        // At zoom=2 centered at screen centre, pan=0 → screen_x = 200 + 400 = 600.
+        let screen = vp.canvas_to_screen([100.0, 0.0]);
+        assert!((screen[0] - 600.0).abs() < 1e-3, "screen.x={}", screen[0]);
+        assert!((screen[1] - 300.0).abs() < 1e-3, "screen.y={}", screen[1]);
+    }
+
+    /// Aspect ratio: at zoom=1, visible_bounds width/height = screen width/height.
+    #[test]
+    fn aspect_ratio_preserved_at_zoom1() {
+        let vp = Viewport::new(1200.0, 400.0);
+        let (tl, br) = vp.visible_bounds();
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        let aspect = w / h;
+        let expected = 1200.0_f32 / 400.0_f32;
+        assert!(
+            (aspect - expected).abs() < 1e-3,
+            "aspect ratio mismatch: got {} expected {}",
+            aspect,
+            expected
+        );
+    }
+
+    /// Aspect ratio is preserved at zoom=3.
+    #[test]
+    fn aspect_ratio_preserved_at_zoom3() {
+        let mut vp = Viewport::new(900.0, 300.0);
+        vp.zoom_toward(3.0, [450.0, 150.0]);
+        let (tl, br) = vp.visible_bounds();
+        let w = br[0] - tl[0];
+        let h = br[1] - tl[1];
+        let aspect = w / h;
+        let expected = 900.0_f32 / 300.0_f32; // 3:1 regardless of zoom
+        assert!(
+            (aspect - expected).abs() < 1e-3,
+            "aspect ratio at zoom=3: {} vs expected {}",
+            aspect,
+            expected
+        );
+    }
+
+    /// fit_rect: after fitting a small rect with margin, both corners are visible.
+    #[test]
+    fn fit_rect_with_margin() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let margin = 20.0_f32;
+        let (rx, ry, rw, rh) = (50.0_f32, 50.0_f32, 100.0_f32, 80.0_f32);
+        // Compute zoom so rect + margin fills the viewport.
+        let zoom_x = (vp.size[0] - 2.0 * margin) / rw;
+        let zoom_y = (vp.size[1] - 2.0 * margin) / rh;
+        let new_zoom = zoom_x.min(zoom_y).clamp(0.1, 32.0);
+        let cx = rx + rw / 2.0;
+        let cy = ry + rh / 2.0;
+        vp.zoom = new_zoom;
+        vp.pan = [-cx * new_zoom, -cy * new_zoom];
+        assert!(
+            vp.is_point_visible([rx, ry]),
+            "top-left of rect with margin must be visible"
+        );
+        assert!(
+            vp.is_point_visible([rx + rw, ry + rh]),
+            "bottom-right of rect with margin must be visible"
+        );
+    }
+
+    /// Pan moves only along one axis when delta has one zero component.
+    #[test]
+    fn pan_by_single_axis() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([0.0, 30.0]);
+        assert!((vp.pan[0]).abs() < 1e-6, "pan.x should remain 0");
+        assert!((vp.pan[1] - 30.0).abs() < 1e-6, "pan.y={}", vp.pan[1]);
+    }
+
+    /// Multiple successive pans accumulate correctly.
+    #[test]
+    fn pan_accumulates() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        vp.pan_by([10.0, 5.0]);
+        vp.pan_by([20.0, -15.0]);
+        assert!((vp.pan[0] - 30.0).abs() < 1e-6, "pan.x={}", vp.pan[0]);
+        assert!((vp.pan[1] - (-10.0)).abs() < 1e-6, "pan.y={}", vp.pan[1]);
+    }
+
+    /// zoom_toward with new_zoom == current zoom changes nothing (idempotent).
+    #[test]
+    fn zoom_toward_idempotent_at_same_zoom() {
+        let mut vp = Viewport::new(800.0, 600.0);
+        let cursor = [300.0, 250.0];
+        let canvas_before = vp.screen_to_canvas(cursor);
+        vp.zoom_toward(1.0, cursor);
+        assert!((vp.zoom - 1.0).abs() < 1e-6);
+        let canvas_after = vp.screen_to_canvas(cursor);
+        assert!((canvas_after[0] - canvas_before[0]).abs() < 1e-4);
+        assert!((canvas_after[1] - canvas_before[1]).abs() < 1e-4);
+    }
+
+    /// Viewport at non-default size: screen centre maps to canvas origin.
+    #[test]
+    fn screen_centre_maps_to_canvas_origin_large_viewport() {
+        let vp = Viewport::new(1920.0, 1080.0);
+        let canvas = vp.screen_to_canvas([960.0, 540.0]);
+        assert!((canvas[0]).abs() < 1e-4, "x={}", canvas[0]);
+        assert!((canvas[1]).abs() < 1e-4, "y={}", canvas[1]);
+    }
+
+    /// A canvas point far off-screen is not visible.
+    #[test]
+    fn far_canvas_point_not_visible() {
+        let vp = Viewport::new(800.0, 600.0);
+        assert!(!vp.is_point_visible([5000.0, 5000.0]));
+        assert!(!vp.is_point_visible([-5000.0, -5000.0]));
+    }
 }

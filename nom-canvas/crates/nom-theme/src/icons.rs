@@ -820,7 +820,11 @@ mod tests {
     #[test]
     fn icon_minus_has_one_line() {
         let path = icon_path(Icon::Minus);
-        assert_eq!(path.lines.len(), 1, "Icon::Minus should have exactly 1 line");
+        assert_eq!(
+            path.lines.len(),
+            1,
+            "Icon::Minus should have exactly 1 line"
+        );
     }
 
     #[test]
@@ -973,7 +977,10 @@ mod tests {
     fn icon_list_has_circles_and_lines() {
         let path = icon_path(Icon::List);
         assert!(!path.lines.is_empty(), "List icon must have lines");
-        assert!(!path.circles.is_empty(), "List icon must have bullet circles");
+        assert!(
+            !path.circles.is_empty(),
+            "List icon must have bullet circles"
+        );
     }
 
     #[test]
@@ -1023,7 +1030,10 @@ mod tests {
     #[test]
     fn icon_eye_has_circle() {
         let path = icon_path(Icon::Eye);
-        assert!(!path.circles.is_empty(), "Eye icon must have a circle (pupil)");
+        assert!(
+            !path.circles.is_empty(),
+            "Eye icon must have a circle (pupil)"
+        );
     }
 
     #[test]
@@ -1039,6 +1049,10 @@ mod tests {
     fn icon_search_has_one_line() {
         // Search: one handle line + one circle.
         let path = icon_path(Icon::Search);
-        assert_eq!(path.lines.len(), 1, "Search icon should have exactly 1 handle line");
+        assert_eq!(
+            path.lines.len(),
+            1,
+            "Search icon should have exactly 1 handle line"
+        );
     }
 }

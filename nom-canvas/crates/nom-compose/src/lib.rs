@@ -56,10 +56,8 @@ pub use vendor_trait::{CostEstimate, MediaVendor, StubVendor, VendorCapability};
 mod integration_tests {
     use crate::backends::data_query::DataQuerySpec;
     use crate::dispatch::{BackendKind, BackendRegistry, NoopBackend};
-    use crate::progress::ProgressSink;
     use crate::provider_router::{FallbackLevel, ProviderRouter};
     use crate::semantic::{SemanticColumn, SemanticDataType, SemanticModel, SemanticRegistry};
-    use crate::store::ArtifactStore;
     use crate::vendor_trait::StubMediaVendor;
 
     // -------------------------------------------------------------------------
@@ -189,8 +187,8 @@ mod integration_tests {
             BackendKind::WebScreen,
         ];
         let mut registry = BackendRegistry::new();
-        for kind in all_kinds.iter().cloned() {
-            registry.register(Box::new(NoopBackend::new(kind)));
+        for kind in &all_kinds {
+            registry.register(Box::new(NoopBackend::new(kind.clone())));
         }
         assert_eq!(
             registry.registered_kinds().len(),
@@ -198,7 +196,7 @@ mod integration_tests {
             "all 16 BackendKinds must be discoverable after registration"
         );
         // Dispatch to each must succeed.
-        for kind in all_kinds.iter().cloned() {
+        for kind in &all_kinds {
             let result = registry.dispatch(kind.clone(), "probe", &|_| {});
             assert!(result.is_ok(), "dispatch to {} must succeed", kind.name());
         }
@@ -237,8 +235,8 @@ mod integration_tests {
         for i in 0..20usize {
             plan.add_step(
                 kinds_cycle[i % kinds_cycle.len()].clone(),
-                &format!("input_{i}"),
-                &format!("output_{i}"),
+                format!("input_{i}"),
+                format!("output_{i}"),
             );
         }
 
@@ -274,7 +272,10 @@ mod integration_tests {
         let hex2 = h2.as_hex();
         assert_eq!(hex1.len(), 64, "hex must be 64 chars");
         assert_eq!(hex2.len(), 64, "hex must be 64 chars");
-        assert_ne!(hex1, hex2, "different payloads must produce different hashes");
+        assert_ne!(
+            hex1, hex2,
+            "different payloads must produce different hashes"
+        );
         assert!(
             hex1.chars().all(|c: char| c.is_ascii_hexdigit()),
             "hex1 must be valid hex: {hex1}"

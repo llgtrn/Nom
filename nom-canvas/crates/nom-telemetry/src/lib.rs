@@ -1818,11 +1818,7 @@ mod tests {
         let a = InMemorySink::new();
         let b = InMemorySink::new();
         let multi = MultiSink::new(Arc::new(a.clone()), Arc::new(b.clone()));
-        multi.record(TelemetryEvent::new(
-            EventKind::RagQuery { top_k: 5 },
-            42,
-            7,
-        ));
+        multi.record(TelemetryEvent::new(EventKind::RagQuery { top_k: 5 }, 42, 7));
         assert_eq!(a.events()[0].kind, EventKind::RagQuery { top_k: 5 });
         assert_eq!(b.events()[0].kind, EventKind::RagQuery { top_k: 5 });
     }
@@ -1897,7 +1893,10 @@ mod tests {
         let clone = span.clone();
         span.end(20);
         assert!(span.is_closed());
-        assert!(!clone.is_closed(), "clone must not see mutation of original");
+        assert!(
+            !clone.is_closed(),
+            "clone must not see mutation of original"
+        );
     }
 
     #[test]
@@ -2021,15 +2020,14 @@ mod tests {
     fn event_kind_debug_contains_variant_name() {
         assert!(format!("{:?}", EventKind::SessionStart).contains("SessionStart"));
         assert!(format!("{:?}", EventKind::SessionEnd).contains("SessionEnd"));
-        assert!(format!(
-            "{:?}",
-            EventKind::CanvasAction {
-                action: "x".into()
-            }
-        )
-        .contains("CanvasAction"));
-        assert!(format!("{:?}", EventKind::CompilerInvoke { duration_ms: 1 })
-            .contains("CompilerInvoke"));
+        assert!(
+            format!("{:?}", EventKind::CanvasAction { action: "x".into() })
+                .contains("CanvasAction")
+        );
+        assert!(
+            format!("{:?}", EventKind::CompilerInvoke { duration_ms: 1 })
+                .contains("CompilerInvoke")
+        );
         assert!(format!("{:?}", EventKind::RagQuery { top_k: 1 }).contains("RagQuery"));
         assert!(format!(
             "{:?}",
@@ -2046,16 +2044,11 @@ mod tests {
             format!("{:?}", EventKind::BlockInserted { kind: "k".into() })
                 .contains("BlockInserted")
         );
+        assert!(format!("{:?}", EventKind::CanvasPan { dx: 0.0, dy: 0.0 }).contains("CanvasPan"));
         assert!(
-            format!("{:?}", EventKind::CanvasPan { dx: 0.0, dy: 0.0 }).contains("CanvasPan")
+            format!("{:?}", EventKind::SelectionChanged { count: 0 }).contains("SelectionChanged")
         );
-        assert!(
-            format!("{:?}", EventKind::SelectionChanged { count: 0 })
-                .contains("SelectionChanged")
-        );
-        assert!(
-            format!("{:?}", EventKind::FileOpened { path: "f".into() }).contains("FileOpened")
-        );
+        assert!(format!("{:?}", EventKind::FileOpened { path: "f".into() }).contains("FileOpened"));
         assert!(format!(
             "{:?}",
             EventKind::SearchQuery {
@@ -2064,9 +2057,7 @@ mod tests {
             }
         )
         .contains("SearchQuery"));
-        assert!(
-            format!("{:?}", EventKind::Hover { entity: "e".into() }).contains("Hover")
-        );
+        assert!(format!("{:?}", EventKind::Hover { entity: "e".into() }).contains("Hover"));
     }
 
     // --- Event ordering ---
@@ -2226,7 +2217,10 @@ mod tests {
 
     #[test]
     fn traceparent_malformed_no_dashes() {
-        assert!(TelemetryEvent::parse_traceparent("004bf92f3b77b34126a84c84354e705a9c00f067aa0ba902b701").is_none());
+        assert!(TelemetryEvent::parse_traceparent(
+            "004bf92f3b77b34126a84c84354e705a9c00f067aa0ba902b701"
+        )
+        .is_none());
     }
 
     #[test]
@@ -2236,12 +2230,10 @@ mod tests {
 
     #[test]
     fn traceparent_three_parts_rejected() {
-        assert!(
-            TelemetryEvent::parse_traceparent(
-                "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7"
-            )
-            .is_none()
-        );
+        assert!(TelemetryEvent::parse_traceparent(
+            "00-4bf92f3b77b34126a84c84354e705a9c-00f067aa0ba902b7"
+        )
+        .is_none());
     }
 
     // --- Additional Span tests ---
@@ -2366,7 +2358,11 @@ mod tests {
         sink_a.record(TelemetryEvent::new(EventKind::SessionStart, 0, 1));
         let drained = sink_b.drain();
         assert_eq!(drained.len(), 1);
-        assert_eq!(sink_a.count(), 0, "drain via clone must empty the shared store");
+        assert_eq!(
+            sink_a.count(),
+            0,
+            "drain via clone must empty the shared store"
+        );
     }
 
     // --- Session boundary tests ---
@@ -2383,8 +2379,12 @@ mod tests {
 
     #[test]
     fn block_inserted_different_kinds_not_equal() {
-        let a = EventKind::BlockInserted { kind: "prose".into() };
-        let b = EventKind::BlockInserted { kind: "code".into() };
+        let a = EventKind::BlockInserted {
+            kind: "prose".into(),
+        };
+        let b = EventKind::BlockInserted {
+            kind: "code".into(),
+        };
         assert_ne!(a, b);
     }
 
@@ -2421,7 +2421,13 @@ mod tests {
         tel.emit(EventKind::CommandPaletteOpened, 1, 1);
         tel.emit(EventKind::DeepThinkStarted, 2, 1);
         tel.emit(EventKind::CanvasZoom { level: 2.0 }, 3, 1);
-        tel.emit(EventKind::BlockInserted { kind: "code".into() }, 4, 1);
+        tel.emit(
+            EventKind::BlockInserted {
+                kind: "code".into(),
+            },
+            4,
+            1,
+        );
         tel.emit(EventKind::CanvasPan { dx: 5.0, dy: 0.0 }, 5, 1);
         tel.emit(EventKind::SelectionChanged { count: 2 }, 6, 1);
         tel.emit(EventKind::FileOpened { path: "x".into() }, 7, 1);

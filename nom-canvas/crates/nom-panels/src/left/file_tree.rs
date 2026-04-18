@@ -1,5 +1,6 @@
 #![deny(unsafe_code)]
 use crate::dock::{fill_quad, focus_ring_quad, DockPosition, Panel};
+use crate::entity_ref::PanelEntityRef;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -19,7 +20,7 @@ pub struct FileNode {
     pub depth: u32,
     pub is_expanded: bool,
     pub children: Vec<FileNode>,
-    pub entity_id: Option<String>, // NomtuRef.id when this is a .nomtu entry
+    pub entity: PanelEntityRef,
 }
 
 impl FileNode {
@@ -32,7 +33,7 @@ impl FileNode {
             depth,
             is_expanded: false,
             children: vec![],
-            entity_id: None,
+            entity: PanelEntityRef::None,
         }
     }
 
@@ -45,8 +46,13 @@ impl FileNode {
             depth,
             is_expanded: false,
             children: vec![],
-            entity_id: None,
+            entity: PanelEntityRef::None,
         }
+    }
+
+    pub fn with_entity(mut self, entity: PanelEntityRef) -> Self {
+        self.entity = entity;
+        self
     }
 
     pub fn toggle_expand(&mut self) {
@@ -223,6 +229,15 @@ mod tests {
     fn file_tree_add_directory() {
         let node = FileNode::dir("src", 0);
         assert_eq!(node.kind, FileNodeKind::Directory);
+    }
+
+    #[test]
+    fn file_node_entity_metadata_is_typed_boundary() {
+        let node = FileNode::file("entry.nomtu", 0, FileNodeKind::NomtuFile).with_entity(
+            PanelEntityRef::nomtu(nom_blocks::NomtuRef::new("e1", "entry", "concept")),
+        );
+        assert_eq!(node.entity.id(), Some("e1"));
+        assert_eq!(node.entity.kind(), Some("concept"));
     }
 
     #[test]

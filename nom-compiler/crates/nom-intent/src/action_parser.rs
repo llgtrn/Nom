@@ -143,11 +143,7 @@ impl std::fmt::Display for ParseError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
             ParseError::Unparseable(s) => {
-                write!(
-                    f,
-                    "could not parse LLM output: {}",
-                    &s[..s.len().min(100)]
-                )
+                write!(f, "could not parse LLM output: {}", &s[..s.len().min(100)])
             }
         }
     }
@@ -165,9 +161,7 @@ mod tests {
             "Thought: I need to search\nAction: Query\nAction Input: {\"query\": \"hash\"}";
         let result = parse_llm_output(output).unwrap();
         assert_eq!(result.thought, "I need to search");
-        assert!(
-            matches!(result.action, ActionKind::ToolCall { ref tool, .. } if tool == "Query")
-        );
+        assert!(matches!(result.action, ActionKind::ToolCall { ref tool, .. } if tool == "Query"));
     }
 
     #[test]
@@ -181,15 +175,12 @@ mod tests {
     fn parse_json_block() {
         let output = "Here is my response:\n```json\n{\"thought\": \"searching\", \"action\": \"Query\", \"action_input\": \"hash\"}\n```";
         let result = parse_llm_output(output).unwrap();
-        assert!(
-            matches!(result.action, ActionKind::ToolCall { ref tool, .. } if tool == "Query")
-        );
+        assert!(matches!(result.action, ActionKind::ToolCall { ref tool, .. } if tool == "Query"));
     }
 
     #[test]
     fn parse_reject() {
-        let output =
-            "Thought: This won't work\nAction: Reject\nAction Input: approach is flawed";
+        let output = "Thought: This won't work\nAction: Reject\nAction Input: approach is flawed";
         let result = parse_llm_output(output).unwrap();
         assert!(matches!(result.action, ActionKind::Reject(ref r) if r.contains("flawed")));
     }

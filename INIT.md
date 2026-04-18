@@ -1,6 +1,6 @@
 # Nom — Session Context
 
-> **Date:** 2026-04-18 | **State:** fresh build — all previous nom-canvas code deleted, rebuilding correctly
+> **Date:** 2026-04-18 | **State:** Wave AC audit active — DB-driven/UI tracker docs corrected against HEAD `7a79e88`; default tests pass, all-features fails in bridge
 > **nom-compiler:** 29 crates UNCHANGED — this is the CORE. Direct workspace deps for everything.
 > **NomCanvas:** starting fresh — GPUI substrate from scratch, correct architecture from day 1
 
@@ -72,6 +72,16 @@ the media intro_video is
 | `INIT.md` | This file — quick orientation |
 
 **Read the spec first every session.** Plan and spec diverge → update plan, not spec.
+
+## Current Reliability Warning
+
+Do not treat the historical wave checkboxes as proof by themselves. Current audit evidence says:
+
+- PASS: core `NomtuRef` is non-optional on `BlockModel` and `GraphNode`.
+- FAIL: `Connector::new()` / `new_stub()` can create connectors without grammar-backed `can_wire()` validation.
+- FAIL: `NodePalette` is not yet a live `grammar.kinds` SELECT; it loads slices/static test rows.
+- DRIFT: UI/UX token math exists, but runtime visual verification is still required for frosted glass, focus, contrast, reduced motion, and complete panel surfaces.
+- DRIFT: `cargo test --workspace --all-features` currently fails 14 `nom-compiler-bridge` tests.
 
 ---
 

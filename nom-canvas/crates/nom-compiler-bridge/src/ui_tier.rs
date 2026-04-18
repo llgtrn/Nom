@@ -75,6 +75,15 @@ impl UiTier {
 impl UiTier {
     /// score_atom — wraps nom-score::score_atom, pure stateless, no DB
     pub fn score_atom(&self, word: &str, kind: &str) -> f32 {
+        let kinds = self.state.cached_grammar_kinds();
+        if !kinds.is_empty() {
+            return if kinds.iter().any(|k| k.name == word || k.name == kind) {
+                0.9
+            } else {
+                0.3
+            };
+        }
+
         use nom_types::{Atom, AtomKind};
         let atom = Atom {
             id: word.to_string(),
@@ -141,6 +150,9 @@ impl UiTier {
     }
 
     pub fn compile_status(&self, word: &str, kind: &str) -> CompileStatus {
+        if self.state.cached_grammar_kinds().is_empty() {
+            return CompileStatus::NotChecked;
+        }
         CompileStatus::from_score(self.score_atom(word, kind))
     }
 }
@@ -358,5 +370,120 @@ mod tests {
         // The result must be well-formed (no panic, fields accessible)
         let _ = r.is_valid;
         let _ = r.reason.len();
+    }
+
+    #[test]
+    fn compile_status_boundary_exact_0_8() {
+        // Exactly 0.8 → Valid (boundary)
+        assert_eq!(CompileStatus::from_score(0.8), CompileStatus::Valid);
+    }
+
+    #[test]
+    fn compile_status_boundary_exact_0_5() {
+        // Exactly 0.5 → LowConfidence (boundary)
+        assert_eq!(CompileStatus::from_score(0.5), CompileStatus::LowConfidence);
+    }
+
+    #[test]
+    fn compile_status_below_0_5() {
+        assert_eq!(CompileStatus::from_score(0.49), CompileStatus::Unknown);
+    }
+
+    #[test]
+    fn compile_status_not_checked_label() {
+        assert_eq!(CompileStatus::NotChecked.label(), "—");
+    }
+
+    #[test]
+    fn ui_tier_ops_score_atom_empty_inputs() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = UiTierOps::new(&state);
+        // Empty word and kind — must not panic and return finite f32
+        let score = ops.score_atom("", "");
+        assert!(score.is_finite());
+        assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[test]
+    fn ui_tier_ops_score_atom_unicode_input() {
+        let state = SharedState::new("a.db", "b.db");
+        let ops = UiTierOps::new(&state);
+        let score = ops.score_atom("définir", "concept");
+        assert!(score.is_finite());
+        assert!(score >= 0.0 && score <= 1.0);
+    }
+
+    #[test]
+    fn ui_tier_ops_is_known_kind_empty_string() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        }]);
+        let ops = UiTierOps::new(&state);
+        // Empty string should not match any kind
+        assert!(!ops.is_known_kind(""));
+    }
+
+    #[test]
+    fn ui_tier_ops_resolve_synonym_empty_string() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "verb".into(),
+            description: "action".into(),
+        }]);
+        let ops = UiTierOps::new(&state);
+        assert_eq!(ops.resolve_synonym(""), None);
+    }
+
+    #[test]
+    fn ui_tier_ops_resolve_synonym_unicode() {
+        let state = SharedState::new("a.db", "b.db");
+        state.update_grammar_kinds(vec![crate::shared::GrammarKind {
+            name: "émission".into(),
+            description: "output".into(),
+        }]);
+        let ops = UiTierOps::new(&state);
+        assert_eq!(
+            ops.resolve_synonym("émission"),
+            Some("émission".to_string())
+        );
+        assert_eq!(ops.resolve_synonym("emission"), None);
+    }
+
+    #[test]
+    fn ui_tier_compile_status_not_checked() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let tier = UiTier::new(state);
+        // In stub mode compile_status always returns NotChecked
+        let status = tier.compile_status("run", "verb");
+        assert_eq!(status, CompileStatus::NotChecked);
+    }
+
+    #[test]
+    fn ui_tier_grammar_keywords_large_cache() {
+        let state = Arc::new(SharedState::new("a.db", "b.db"));
+        let kinds: Vec<_> = (0..50)
+            .map(|i| crate::shared::GrammarKind {
+                name: format!("kind_{i:02}"),
+                description: format!("desc_{i}"),
+            })
+            .collect();
+        state.update_grammar_kinds(kinds);
+        let tier = UiTier::new(state);
+        let kw = tier.grammar_keywords();
+        assert_eq!(kw.len(), 50);
+    }
+
+    #[test]
+    fn wire_check_result_fields_accessible() {
+        let r = WireCheckResult {
+            is_valid: false,
+            confidence: 0.42,
+            reason: "type mismatch".into(),
+        };
+        assert!(!r.is_valid);
+        assert!((r.confidence - 0.42).abs() < f32::EPSILON);
+        assert_eq!(r.reason, "type mismatch");
     }
 }

@@ -3,7 +3,7 @@ use crate::backends::ComposeResult;
 use crate::progress::{ComposeEvent, ProgressSink};
 use crate::store::ArtifactStore;
 
-/// Specification for a mobile screen capture stub.
+/// Specification for a mobile screen-capture artifact request.
 #[derive(Debug, Clone)]
 pub struct MobileScreenSpec {
     pub width: u32,
@@ -32,6 +32,22 @@ impl MobileScreenBackend {
         store: &mut dyn ArtifactStore,
         sink: &dyn ProgressSink,
     ) -> ComposeResult {
+        if spec.width == 0 || spec.height == 0 {
+            sink.emit(ComposeEvent::Failed {
+                reason: "mobile_screen dimensions must be non-zero".into(),
+            });
+            return Err("mobile_screen dimensions must be non-zero".into());
+        }
+        if !matches!(spec.platform.as_str(), "ios" | "android") {
+            sink.emit(ComposeEvent::Failed {
+                reason: format!("unsupported mobile_screen platform: {}", spec.platform),
+            });
+            return Err(format!(
+                "unsupported mobile_screen platform: {}",
+                spec.platform
+            ));
+        }
+
         sink.emit(ComposeEvent::Started {
             backend: "mobile_screen".into(),
             entity_id: spec.platform.clone(),
@@ -140,5 +156,27 @@ mod tests {
             scale_factor: 1.0,
         };
         assert!(MobileScreenBackend::compose(&spec, &mut store, &LogProgressSink).is_ok());
+    }
+
+    #[test]
+    fn mobile_screen_rejects_invalid_platform_and_dimensions() {
+        let mut store = InMemoryStore::new();
+        let invalid_platform = MobileScreenSpec {
+            width: 360,
+            height: 800,
+            platform: "desktop".into(),
+            scale_factor: 1.0,
+        };
+        assert!(
+            MobileScreenBackend::compose(&invalid_platform, &mut store, &LogProgressSink).is_err()
+        );
+
+        let invalid_size = MobileScreenSpec {
+            width: 360,
+            height: 0,
+            platform: "android".into(),
+            scale_factor: 1.0,
+        };
+        assert!(MobileScreenBackend::compose(&invalid_size, &mut store, &LogProgressSink).is_err());
     }
 }

@@ -1020,4 +1020,181 @@ mod tests {
             "just outside bottom"
         );
     }
+
+    // ---- LinearRgba-like clamp behaviour via Hsla (alpha=0 and alpha=1) ----
+
+    #[test]
+    fn hsla_alpha_zero_is_fully_transparent() {
+        let c = Hsla::new(60.0, 0.5, 0.5, 0.0);
+        assert_eq!(c.a, 0.0, "alpha=0 must be fully transparent");
+        let (_, _, _, a) = c.to_rgba();
+        assert!((a - 0.0).abs() < 1e-6, "to_rgba alpha must be 0.0");
+    }
+
+    #[test]
+    fn hsla_alpha_one_is_fully_opaque() {
+        let c = Hsla::new(60.0, 0.5, 0.5, 1.0);
+        assert_eq!(c.a, 1.0, "alpha=1 must be fully opaque");
+        let (_, _, _, a) = c.to_rgba();
+        assert!((a - 1.0).abs() < 1e-6, "to_rgba alpha must be 1.0");
+    }
+
+    #[test]
+    fn hsla_with_alpha_clamps_does_not_panic_for_valid_range() {
+        // with_alpha simply stores the value — caller ensures [0,1].
+        // Test boundary values.
+        let c = Hsla::new(0.0, 0.0, 0.0, 1.0).with_alpha(0.0);
+        assert_eq!(c.a, 0.0);
+        let c2 = Hsla::new(0.0, 0.0, 0.0, 0.0).with_alpha(1.0);
+        assert_eq!(c2.a, 1.0);
+    }
+
+    #[test]
+    fn hsla_to_rgba_red_hue() {
+        // Pure red: h=0, s=1, l=0.5 → (1.0, 0.0, 0.0, 1.0)
+        let (r, g, b, a) = Hsla::new(0.0, 1.0, 0.5, 1.0).to_rgba();
+        assert!((r - 1.0).abs() < 1e-5, "red channel should be 1.0, got {r}");
+        assert!(g < 0.01, "green channel should be ~0.0, got {g}");
+        assert!(b < 0.01, "blue channel should be ~0.0, got {b}");
+        assert!((a - 1.0).abs() < 1e-5);
+    }
+
+    // ---- Pixels arithmetic: large values stay representable ----
+
+    #[test]
+    fn pixels_large_values_do_not_overflow_f32() {
+        // f32 can represent values up to ~3.4e38; use GPU-realistic large coords.
+        let big = Pixels(100_000.0);
+        let result = big + big;
+        assert_eq!(result, Pixels(200_000.0));
+    }
+
+    #[test]
+    fn pixels_negative_values_work() {
+        let p = Pixels(-50.0);
+        assert_eq!(p.abs(), Pixels(50.0));
+        assert_eq!(-p, Pixels(50.0));
+    }
+
+    #[test]
+    fn pixels_div_produces_correct_result() {
+        assert_eq!(Pixels(10.0) / 4.0, Pixels(2.5));
+    }
+
+    #[test]
+    fn pixels_from_u32_conversion() {
+        let p = Pixels::from(42u32);
+        assert_eq!(p, Pixels(42.0));
+    }
+
+    #[test]
+    fn pixels_from_f32_conversion() {
+        let p = Pixels::from(3.14f32);
+        assert!((p.0 - 3.14).abs() < 1e-5);
+    }
+
+    // ---- Bounds::contains edge cases ----
+
+    #[test]
+    fn bounds_contains_zero_size() {
+        // A zero-size bounds at origin only contains its own origin point.
+        let b = Bounds::new(
+            Point::new(Pixels(5.0), Pixels(5.0)),
+            Size::new(Pixels(0.0), Pixels(0.0)),
+        );
+        assert!(b.contains(&Point::new(Pixels(5.0), Pixels(5.0))));
+        assert!(!b.contains(&Point::new(Pixels(5.1), Pixels(5.0))));
+    }
+
+    #[test]
+    fn bounds_contains_negative_origin() {
+        let b = Bounds::new(
+            Point::new(Pixels(-10.0), Pixels(-10.0)),
+            Size::new(Pixels(20.0), Pixels(20.0)),
+        );
+        assert!(b.contains(&Point::new(Pixels(0.0), Pixels(0.0))));
+        assert!(b.contains(&Point::new(Pixels(-10.0), Pixels(-10.0))));
+        assert!(!b.contains(&Point::new(Pixels(11.0), Pixels(0.0))));
+    }
+
+    // ---- Vec2 additional ops ----
+
+    #[test]
+    fn vec2_sub() {
+        let a = Vec2::new(5.0, 3.0);
+        let b = Vec2::new(2.0, 1.0);
+        let c = a - b;
+        assert!((c.x - 3.0).abs() < 1e-6);
+        assert!((c.y - 2.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_mul_scalar() {
+        let v = Vec2::new(3.0, 4.0) * 2.0;
+        assert!((v.x - 6.0).abs() < 1e-6);
+        assert!((v.y - 8.0).abs() < 1e-6);
+    }
+
+    #[test]
+    fn vec2_normalize_zero_returns_zero() {
+        let v = Vec2::zero().normalize();
+        assert_eq!(v.x, 0.0);
+        assert_eq!(v.y, 0.0);
+    }
+
+    // ---- Size aspect_ratio edge cases ----
+
+    #[test]
+    fn size_aspect_ratio_zero_height_returns_zero() {
+        let s = Size::new(Pixels(100.0), Pixels(0.0));
+        assert_eq!(s.aspect_ratio(), 0.0);
+    }
+
+    #[test]
+    fn size_aspect_ratio_square_is_one() {
+        let s = Size::new(Pixels(50.0), Pixels(50.0));
+        assert!((s.aspect_ratio() - 1.0).abs() < 1e-6);
+    }
+
+    // ---- ContentMask ----
+
+    #[test]
+    fn content_mask_new_stores_bounds() {
+        let b = Bounds::new(
+            Point::new(Pixels(0.0), Pixels(0.0)),
+            Size::new(Pixels(100.0), Pixels(100.0)),
+        );
+        let mask = ContentMask::new(b);
+        assert_eq!(mask.bounds, b);
+    }
+
+    // ---- PathVertex ----
+
+    #[test]
+    fn path_vertex_new_stores_components() {
+        let v = PathVertex::new(Pixels(1.0), Pixels(2.0), Pixels(3.0));
+        assert_eq!(v.x, Pixels(1.0));
+        assert_eq!(v.y, Pixels(2.0));
+        assert_eq!(v.z, Pixels(3.0));
+    }
+
+    // ---- GlobalElementId ----
+
+    #[test]
+    fn global_element_id_empty_pop_returns_none() {
+        let mut gid = GlobalElementId::new();
+        assert_eq!(gid.pop(), None);
+    }
+
+    #[test]
+    fn global_element_id_multiple_push_pop() {
+        let mut gid = GlobalElementId::new();
+        for i in 0..5 {
+            gid.push(ElementId::new(i));
+        }
+        assert_eq!(gid.0.len(), 5);
+        // Pop returns last pushed first (stack semantics)
+        assert_eq!(gid.pop(), Some(ElementId::new(4)));
+        assert_eq!(gid.0.len(), 4);
+    }
 }

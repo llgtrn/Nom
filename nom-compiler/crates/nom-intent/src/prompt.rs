@@ -21,7 +21,9 @@ pub struct ToolParameter {
 pub fn format_react_prompt(tools: &[ToolMetadata], task: &str) -> String {
     let mut prompt = String::new();
 
-    prompt.push_str("You are an agent that solves tasks using a thought-action-observation loop.\n\n");
+    prompt.push_str(
+        "You are an agent that solves tasks using a thought-action-observation loop.\n\n",
+    );
     prompt.push_str("## Available Tools\n\n");
 
     for tool in tools {
@@ -30,8 +32,15 @@ pub fn format_react_prompt(tools: &[ToolMetadata], task: &str) -> String {
         if !tool.parameters.is_empty() {
             prompt.push_str("Parameters:\n");
             for param in &tool.parameters {
-                let req = if param.required { "required" } else { "optional" };
-                prompt.push_str(&format!("  - {} ({}, {}): {}\n", param.name, param.param_type, req, param.description));
+                let req = if param.required {
+                    "required"
+                } else {
+                    "optional"
+                };
+                prompt.push_str(&format!(
+                    "  - {} ({}, {}): {}\n",
+                    param.name, param.param_type, req, param.description
+                ));
             }
         }
         prompt.push('\n');

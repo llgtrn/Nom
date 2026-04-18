@@ -246,7 +246,9 @@ mod tests {
     #[test]
     fn task_queue_many_tasks_running_count() {
         let mut q = TaskQueue::new();
-        let ids: Vec<u64> = (0..5).map(|_| q.enqueue(BackendKind::Transform, "t")).collect();
+        let ids: Vec<u64> = (0..5)
+            .map(|_| q.enqueue(BackendKind::Transform, "t"))
+            .collect();
         assert_eq!(q.pending_count(), 5);
         for &id in &ids[..3] {
             q.start(id);

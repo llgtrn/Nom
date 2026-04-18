@@ -224,7 +224,10 @@ mod tests {
             artifact_hashes: vec![[0xFFu8; 32]],
         };
         assert!(ev.is_terminal());
-        if let RunEvent::RunCompleted { artifact_hashes, .. } = &ev {
+        if let RunEvent::RunCompleted {
+            artifact_hashes, ..
+        } = &ev
+        {
             assert_eq!(artifact_hashes.len(), 1);
             assert_eq!(artifact_hashes[0], [0xFFu8; 32]);
         } else {

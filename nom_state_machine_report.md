@@ -1,10 +1,11 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-18 | **HEAD:** `0b0d48e` | **Tests:** 717 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests:** 2396 default pass; `--all-features` fails 14 | **Workspace:** dirty
 **Detailed commit history:** `git log --oneline`. This file keeps only the latest state + open missions.
 
 ## Current State
 
+- [ ] Wave AC audit reopened DB-driven/UI reliability gates: AC1 connector validation, AC2 live palette SELECT, AC3 library SELECT, AC4 runtime UI verification, AC5 panel entity boundary, AC7 all-features bridge failures.
 - [x] nom-compiler (29 crates) UNCHANGED infra with nomdict.db
 - [x] nom-canvas (14 crates) rebuilt fresh, cross-workspace path deps feature-gated
 - [x] 686 tests passing across workspace
@@ -19,7 +20,16 @@
 - [x] Wave S landed (5 panels+10 backends+FrostedRect+hints+renderer — 686 tests, commit c4d6252)
 - [x] Wave T landed (scenario_workflow+renderer+integration+31 new tests — 717 tests, commit 0b0d48e)
 
-## Open Missions (Wave U)
+## Open Missions (Wave AC)
+
+- AC1 CRITICAL: make every connector creation path grammar-backed; remove or quarantine `Connector::new()` / `Connector::new_stub()` production use.
+- AC2 CRITICAL: add live `NodePalette::load_from_dict` / equivalent DB reader over `grammar.kinds`.
+- AC3 HIGH: make `LibraryPanel` use the same live grammar source.
+- AC4 HIGH: add runtime visual verification for nom-theme, nom-panels, nom-gpui, and nom-blocks UI surfaces.
+- AC5 MEDIUM: decide and encode whether panel `Option<String>` entity ids are navigation metadata or canvas object refs.
+- AC7 HIGH: fix 14 `nom-compiler-bridge` failures under `cargo test --workspace --all-features -q`.
+
+## Historical Open Missions (Wave U)
 
 All Wave T missions closed at commit 0b0d48e (717 tests).
 

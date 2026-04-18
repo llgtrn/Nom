@@ -3,7 +3,7 @@ use crate::shared::SharedState;
 #[allow(unused_imports)]
 use nom_blocks::block_model::NomtuRef;
 use nom_editor::highlight::{HighlightSpan, TokenRole};
-use nom_editor::lsp_bridge::{CompletionItem, CompletionKind, HoverResult};
+use nom_editor::lsp_bridge::{CompletionItem, HoverResult};
 use std::sync::Arc;
 
 #[derive(Debug)]
@@ -166,26 +166,7 @@ impl InteractiveWorker {
     }
 
     fn do_complete(&self, prefix: &str, _kind_filter: Option<&str>) -> Vec<CompletionItem> {
-        #[cfg(feature = "compiler")]
-        {
-            crate::adapters::completion::complete_from_dict(prefix, _kind_filter, &self.state)
-        }
-        #[cfg(not(feature = "compiler"))]
-        {
-            self.state
-                .cached_grammar_kinds()
-                .into_iter()
-                .filter(|k| k.name.starts_with(prefix))
-                .map(|k| CompletionItem {
-                    label: k.name.clone(),
-                    kind: CompletionKind::Keyword,
-                    detail: Some(k.description),
-                    insert_text: k.name,
-                    sort_text: None,
-                })
-                .take(20)
-                .collect()
-        }
+        crate::adapters::completion::complete_from_dict(prefix, _kind_filter, &self.state)
     }
 
     fn do_hover(&self, word: &str) -> Option<HoverResult> {
@@ -236,6 +217,7 @@ impl<'a> InteractiveTierOps<'a> {
     }
 }
 
+#[cfg_attr(feature = "compiler", allow(dead_code))]
 fn simple_tokenize_stub(source: &str) -> Vec<TokenSpan> {
     let mut spans = Vec::new();
     let mut offset = 0usize;

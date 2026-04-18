@@ -146,7 +146,7 @@ mod tests {
     #[test]
     fn hash128_zero_as_u64() {
         // ZERO has both halves 0, so as_u64 should also be 0
-        assert_eq!(Hash128::ZERO.as_u64(), 0u64 ^ 0u64.rotate_left(32));
+        assert_eq!(Hash128::ZERO.as_u64(), 0u64);
     }
 
     #[test]
@@ -229,7 +229,11 @@ mod tests {
                 (h.0, h.1)
             })
             .collect();
-        assert_eq!(hashes.len(), 50, "no collisions expected among 50 distinct strings");
+        assert_eq!(
+            hashes.len(),
+            50,
+            "no collisions expected among 50 distinct strings"
+        );
     }
 
     #[test]

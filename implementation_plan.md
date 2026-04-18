@@ -1,7 +1,17 @@
 # Nom — Implementation Plan
 
-**Date:** 2026-04-18 | **HEAD:** `ef5e058` | **Tests:** 733→800+ | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `7a79e88` | **Tests:** 2396 default pass; `--all-features` fails 14 | **Workspace:** dirty
 **Canonical:** spec `docs/superpowers/specs/2026-04-17-nomcanvas-gpui-design.md` · state `nom_state_machine_report.md` · tasks `task.md` · entry `INIT.md`
+
+## Current Audit Correction
+
+The earlier wave plan is historical, not a reliable current completion claim. Wave AC reopened DB-driven and UI/UX gates:
+
+- `NomtuRef` core block/node modeling is still PASS (`nom-blocks/src/block_model.rs:46`, `nom-blocks/src/graph_node.rs:12`).
+- Connector creation is FAIL until every constructor goes through grammar-backed validation; `Connector::new()` and `Connector::new_stub()` still bypass it.
+- Node palette and library are FAIL/DRIFT until production loaders perform live `grammar.kinds` SELECTs instead of taking static slices.
+- UI/UX is DRIFT until runtime/screenshot verification proves frosted glass, focus, contrast, motion, and text/icon surfaces are complete.
+- Cross-workspace compiler integration is DRIFT until `cargo test --workspace --all-features` is green; current failure is 14 `nom-compiler-bridge` tests.
 
 ## Architecture
 
@@ -113,7 +123,7 @@
 
 ## Vendoring
 
-All 20 reference repos read end-to-end 2026-04-18. Patterns catalogued in `task.md` / spec §10.
+Reference-repo claims require a fresh parity audit before being used as pass evidence. Local source paths exist for many references, but Remotion, Open-Higgsfield, and opendataloader were not found under the claimed local patterns during Wave AC; mark those as unverified until paths or evidence are supplied.
 
 ## Non-Negotiable Rules
 

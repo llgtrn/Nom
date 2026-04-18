@@ -83,6 +83,7 @@ pub struct Window {
     pub cursor_position: Vec2,
     // In real impl: winit::window::Window + wgpu swap chain
     frame_pending: bool,
+    close_requested: bool,
 }
 
 impl Window {
@@ -95,6 +96,7 @@ impl Window {
             is_focused: false,
             cursor_position: Vec2::zero(),
             frame_pending: false,
+            close_requested: false,
         }
     }
 
@@ -103,6 +105,12 @@ impl Window {
     }
     pub fn take_frame_pending(&mut self) -> bool {
         std::mem::take(&mut self.frame_pending)
+    }
+    pub fn request_close(&mut self) {
+        self.close_requested = true;
+    }
+    pub fn close_requested(&self) -> bool {
+        self.close_requested
     }
 
     /// Handle device lost — rebuild swapchain + re-upload atlas
@@ -134,13 +142,96 @@ pub enum WindowEvent {
     DeviceLost,
 }
 
-/// Run the application event loop (stub — real impl uses winit EventLoop)
-pub fn run_application<H: ApplicationHandler>(options: WindowOptions, mut handler: H) {
+/// Run the native application event loop.
+pub fn run_application<H: ApplicationHandler + 'static>(options: WindowOptions, handler: H) {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        run_native_application(options, handler);
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        let mut window = Window::new(options);
+        handler.resumed(&mut window);
+        handler.about_to_wait(&mut window);
+    }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn run_native_application<H: ApplicationHandler + 'static>(options: WindowOptions, mut handler: H) {
+    use winit::dpi::LogicalSize;
+    use winit::event::{Event, WindowEvent as WinitWindowEvent};
+    use winit::event_loop::{ControlFlow, EventLoop};
+    use winit::window::WindowBuilder as WinitWindowBuilder;
+
+    let event_loop = EventLoop::new().expect("create winit event loop");
+    let mut builder = WinitWindowBuilder::new()
+        .with_title(options.title.clone())
+        .with_inner_size(LogicalSize::new(
+            options.size.x as f64,
+            options.size.y as f64,
+        ))
+        .with_decorations(options.decorations)
+        .with_transparent(options.transparent)
+        .with_resizable(options.resizable);
+    if let Some(min_size) = options.min_size {
+        builder =
+            builder.with_min_inner_size(LogicalSize::new(min_size.x as f64, min_size.y as f64));
+    }
+
+    let os_window = builder.build(&event_loop).expect("create native window");
     let mut window = Window::new(options);
+    window.scale_factor = os_window.scale_factor() as f32;
+    let size = os_window.inner_size();
+    window.content_size = Vec2::new(size.width as f32, size.height as f32);
     handler.resumed(&mut window);
-    // In real impl: starts winit event loop
-    // Here: single synthetic frame for testing
-    handler.about_to_wait(&mut window);
+
+    let _ = event_loop.run(move |event, elwt| {
+        elwt.set_control_flow(ControlFlow::Wait);
+        match event {
+            Event::WindowEvent { event, .. } => match event {
+                WinitWindowEvent::CloseRequested => {
+                    handler.window_event(&mut window, WindowEvent::CloseRequested);
+                    elwt.exit();
+                }
+                WinitWindowEvent::Focused(focused) => {
+                    window.is_focused = focused;
+                    handler.window_event(&mut window, WindowEvent::Focused(focused));
+                }
+                WinitWindowEvent::Resized(size) => {
+                    let new_size = Vec2::new(size.width as f32, size.height as f32);
+                    window.content_size = new_size;
+                    handler.window_event(&mut window, WindowEvent::Resized { new_size });
+                }
+                WinitWindowEvent::ScaleFactorChanged { scale_factor, .. } => {
+                    let scale = scale_factor as f32;
+                    window.set_scale_factor(scale);
+                    handler.window_event(
+                        &mut window,
+                        WindowEvent::ScaleFactorChanged { new_scale: scale },
+                    );
+                }
+                WinitWindowEvent::CursorMoved { position, .. } => {
+                    window.set_cursor_position(Vec2::new(position.x as f32, position.y as f32));
+                }
+                WinitWindowEvent::RedrawRequested => {
+                    let _ = window.take_frame_pending();
+                }
+                _ => {}
+            },
+            Event::AboutToWait => {
+                handler.about_to_wait(&mut window);
+                if window.close_requested() {
+                    elwt.exit();
+                    return;
+                }
+                if window.take_frame_pending() {
+                    os_window.request_redraw();
+                }
+            }
+            Event::Resumed => handler.resumed(&mut window),
+            _ => {}
+        }
+    });
 }
 
 #[cfg(test)]

@@ -923,7 +923,10 @@ mod tests {
     #[test]
     fn tokens_btn_heights_ordered() {
         // Button height variants must be strictly ascending.
-        assert!(BTN_H < BTN_H_LG, "BTN_H ({BTN_H}) must be < BTN_H_LG ({BTN_H_LG})");
+        assert!(
+            BTN_H < BTN_H_LG,
+            "BTN_H ({BTN_H}) must be < BTN_H_LG ({BTN_H_LG})"
+        );
         assert!(
             BTN_H_LG < BTN_H_XL,
             "BTN_H_LG ({BTN_H_LG}) must be < BTN_H_XL ({BTN_H_XL})"
@@ -1265,6 +1268,297 @@ mod tests {
     fn tokens_n_tokens_constant_value() {
         // N_TOKENS is a documented constant; its exact value must stay stable.
         assert_eq!(N_TOKENS, 73, "N_TOKENS must be 73 per module documentation");
+    }
+
+    // -----------------------------------------------------------------------
+    // WCAG contrast: relative luminance helpers
+    // -----------------------------------------------------------------------
+
+    /// Linearize a sRGB channel component per WCAG 2.1 §1.4.3.
+    fn linearize(c: f32) -> f32 {
+        if c <= 0.04045 {
+            c / 12.92
+        } else {
+            ((c + 0.055) / 1.055_f32).powf(2.4)
+        }
+    }
+
+    /// Compute relative luminance of an sRGB color (r,g,b in [0,1]).
+    fn relative_luminance(r: f32, g: f32, b: f32) -> f32 {
+        0.2126 * linearize(r) + 0.7152 * linearize(g) + 0.0722 * linearize(b)
+    }
+
+    /// WCAG contrast ratio between two luminances.
+    fn contrast_ratio(l1: f32, l2: f32) -> f32 {
+        let lighter = l1.max(l2);
+        let darker = l1.min(l2);
+        (lighter + 0.05) / (darker + 0.05)
+    }
+
+    #[test]
+    fn wcag_relative_luminance_black_is_zero() {
+        let lum = relative_luminance(0.0, 0.0, 0.0);
+        assert!(
+            lum.abs() < 1e-6,
+            "relative luminance of black must be 0, got {lum}"
+        );
+    }
+
+    #[test]
+    fn wcag_relative_luminance_white_is_one() {
+        let lum = relative_luminance(1.0, 1.0, 1.0);
+        assert!(
+            (lum - 1.0).abs() < 1e-4,
+            "relative luminance of white must be ~1.0, got {lum}"
+        );
+    }
+
+    #[test]
+    fn wcag_contrast_black_on_white_exceeds_21() {
+        let lum_white = relative_luminance(1.0, 1.0, 1.0);
+        let lum_black = relative_luminance(0.0, 0.0, 0.0);
+        let ratio = contrast_ratio(lum_white, lum_black);
+        assert!(
+            (ratio - 21.0).abs() < 0.01,
+            "black-on-white contrast must be ~21:1, got {ratio:.2}"
+        );
+    }
+
+    #[test]
+    fn wcag_text_on_bg_contrast_at_least_4_5() {
+        // TEXT is near-white [0.973, 0.980, 0.988]; BG is very dark [0.059, 0.090, 0.165].
+        let lum_text = relative_luminance(TEXT[0], TEXT[1], TEXT[2]);
+        let lum_bg = relative_luminance(BG[0], BG[1], BG[2]);
+        let ratio = contrast_ratio(lum_text, lum_bg);
+        assert!(
+            ratio >= 4.5,
+            "TEXT on BG contrast ratio must be >= 4.5:1 for WCAG AA, got {ratio:.2}"
+        );
+    }
+
+    #[test]
+    fn wcag_base_fg_on_base_bg_contrast_at_least_4_5() {
+        let lum_fg = relative_luminance(BASE_FG[0], BASE_FG[1], BASE_FG[2]);
+        let lum_bg = relative_luminance(BASE_BG[0], BASE_BG[1], BASE_BG[2]);
+        let ratio = contrast_ratio(lum_fg, lum_bg);
+        assert!(
+            ratio >= 4.5,
+            "BASE_FG on BASE_BG contrast ratio must be >= 4.5:1 for WCAG AA, got {ratio:.2}"
+        );
+    }
+
+    // -----------------------------------------------------------------------
+    // Animation: spring physics
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn motion_spring_stiffness_is_400() {
+        assert_eq!(
+            MOTION_SPRING_STIFFNESS, 400.0,
+            "MOTION_SPRING_STIFFNESS must be exactly 400.0"
+        );
+    }
+
+    #[test]
+    fn motion_spring_damping_is_28() {
+        assert_eq!(
+            MOTION_SPRING_DAMPING, 28.0,
+            "MOTION_SPRING_DAMPING must be exactly 28.0"
+        );
+    }
+
+    /// Semi-implicit Euler spring tick: returns (new_position, new_velocity).
+    /// mass = 1.0, stiffness = k, damping = d, dt in seconds.
+    fn spring_tick(pos: f32, vel: f32, target: f32, k: f32, d: f32, dt: f32) -> (f32, f32) {
+        let force = -k * (pos - target) - d * vel;
+        let new_vel = vel + force * dt;
+        let new_pos = pos + new_vel * dt;
+        (new_pos, new_vel)
+    }
+
+    #[test]
+    fn spring_converges_within_1_second() {
+        // With stiffness=400, damping=28 starting at pos=1.0, target=0.0,
+        // the spring must converge to within 0.01 of target in < 1 second.
+        let k = MOTION_SPRING_STIFFNESS;
+        let d = MOTION_SPRING_DAMPING;
+        let dt = 1.0 / 120.0_f32; // 120 fps
+        let max_steps = (1.0 / dt) as u32; // 120 steps = 1 second
+        let target = 0.0_f32;
+        let mut pos = 1.0_f32;
+        let mut vel = 0.0_f32;
+        for _ in 0..max_steps {
+            let (np, nv) = spring_tick(pos, vel, target, k, d, dt);
+            pos = np;
+            vel = nv;
+        }
+        assert!(
+            pos.abs() < 0.01,
+            "spring must converge within 1 second; final pos = {pos:.4}"
+        );
+    }
+
+    #[test]
+    fn spring_update_position_after_one_tick() {
+        // Single tick with known inputs: pos=1.0, vel=0.0, target=0.0, dt=1/60.
+        // force = -400 * (1-0) - 28*0 = -400
+        // new_vel = 0 + (-400) * (1/60) ≈ -6.6667
+        // new_pos = 1 + (-6.6667) * (1/60) ≈ 0.8889
+        let k = MOTION_SPRING_STIFFNESS;
+        let d = MOTION_SPRING_DAMPING;
+        let dt = 1.0 / 60.0_f32;
+        let (new_pos, new_vel) = spring_tick(1.0, 0.0, 0.0, k, d, dt);
+        let expected_vel = -400.0 * dt;
+        let expected_pos = 1.0 + expected_vel * dt;
+        assert!(
+            (new_vel - expected_vel).abs() < 1e-4,
+            "spring velocity after 1 tick: expected {expected_vel:.4}, got {new_vel:.4}"
+        );
+        assert!(
+            (new_pos - expected_pos).abs() < 1e-4,
+            "spring position after 1 tick: expected {expected_pos:.4}, got {new_pos:.4}"
+        );
+    }
+
+    #[test]
+    fn spring_at_rest_stays_at_rest() {
+        // If pos == target and vel == 0, the spring should stay put.
+        let (pos, vel) = spring_tick(
+            0.5,
+            0.0,
+            0.5,
+            MOTION_SPRING_STIFFNESS,
+            MOTION_SPRING_DAMPING,
+            1.0 / 60.0,
+        );
+        assert!((pos - 0.5).abs() < 1e-6, "spring at rest must not move");
+        assert!(vel.abs() < 1e-6, "spring at rest velocity must remain 0");
+    }
+
+    // -----------------------------------------------------------------------
+    // Motion timing: 200ms and 300ms values
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn motion_anim_fast_is_200() {
+        assert_eq!(ANIM_FAST_MS, 200.0, "ANIM_FAST_MS must be 200.0 ms");
+    }
+
+    #[test]
+    fn motion_anim_default_is_300() {
+        assert_eq!(ANIM_DEFAULT_MS, 300.0, "ANIM_DEFAULT_MS must be 300.0 ms");
+    }
+
+    #[test]
+    fn motion_timing_200_and_300_are_distinct() {
+        assert_ne!(
+            ANIM_FAST_MS, ANIM_DEFAULT_MS,
+            "200ms and 300ms timing values must be distinct"
+        );
+    }
+
+    #[test]
+    fn motion_timing_both_positive() {
+        assert!(ANIM_FAST_MS > 0.0, "ANIM_FAST_MS must be positive");
+        assert!(ANIM_DEFAULT_MS > 0.0, "ANIM_DEFAULT_MS must be positive");
+    }
+
+    // -----------------------------------------------------------------------
+    // Token completeness: N_TOKENS constant is exactly 73
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn palette_affine_token_count_is_73() {
+        assert_eq!(N_TOKENS, 73, "AFFiNE palette must define exactly 73 tokens");
+    }
+
+    #[test]
+    fn palette_n_tokens_at_least_73() {
+        assert!(N_TOKENS >= 73, "Token count must be >= 73, got {N_TOKENS}");
+    }
+
+    // -----------------------------------------------------------------------
+    // Color arithmetic: Hsla mix commutativity
+    // -----------------------------------------------------------------------
+
+    /// Mix two Hsla values 50/50 by averaging each component.
+    fn mix_hsla(a: nom_gpui::Hsla, b: nom_gpui::Hsla) -> nom_gpui::Hsla {
+        nom_gpui::Hsla {
+            h: (a.h + b.h) * 0.5,
+            s: (a.s + b.s) * 0.5,
+            l: (a.l + b.l) * 0.5,
+            a: (a.a + b.a) * 0.5,
+        }
+    }
+
+    #[test]
+    fn color_mix_is_commutative() {
+        let a = color_accent_blue();
+        let b = color_accent_green();
+        let ab = mix_hsla(a, b);
+        let ba = mix_hsla(b, a);
+        assert!(
+            (ab.h - ba.h).abs() < 1e-6,
+            "mix(a,b).h must equal mix(b,a).h"
+        );
+        assert!(
+            (ab.s - ba.s).abs() < 1e-6,
+            "mix(a,b).s must equal mix(b,a).s"
+        );
+        assert!(
+            (ab.l - ba.l).abs() < 1e-6,
+            "mix(a,b).l must equal mix(b,a).l"
+        );
+        assert!(
+            (ab.a - ba.a).abs() < 1e-6,
+            "mix(a,b).a must equal mix(b,a).a"
+        );
+    }
+
+    #[test]
+    fn color_mix_result_in_range() {
+        let a = color_bg_primary();
+        let b = color_text_primary();
+        let m = mix_hsla(a, b);
+        assert!((0.0..=1.0).contains(&m.h), "mixed h out of range");
+        assert!((0.0..=1.0).contains(&m.s), "mixed s out of range");
+        assert!((0.0..=1.0).contains(&m.l), "mixed l out of range");
+        assert!((0.0..=1.0).contains(&m.a), "mixed a out of range");
+    }
+
+    // -----------------------------------------------------------------------
+    // Dark theme: dark BG luminance < light BG luminance
+    // -----------------------------------------------------------------------
+
+    #[test]
+    fn dark_theme_bg_luminance_less_than_light_fg_luminance() {
+        // The dark bg (BG constant) must have lower relative luminance than BASE_FG.
+        let lum_bg = relative_luminance(BG[0], BG[1], BG[2]);
+        let lum_fg = relative_luminance(BASE_FG[0], BASE_FG[1], BASE_FG[2]);
+        assert!(
+            lum_bg < lum_fg,
+            "dark BG luminance ({lum_bg:.4}) must be < light FG luminance ({lum_fg:.4})"
+        );
+    }
+
+    #[test]
+    fn dark_theme_bg_luminance_below_0_1() {
+        // A dark background must have relative luminance < 0.1.
+        let lum = relative_luminance(BG[0], BG[1], BG[2]);
+        assert!(
+            lum < 0.1,
+            "dark BG relative luminance ({lum:.4}) must be < 0.1"
+        );
+    }
+
+    #[test]
+    fn dark_theme_base_bg_luminance_below_light_fg() {
+        let lum_bg = relative_luminance(BASE_BG[0], BASE_BG[1], BASE_BG[2]);
+        let lum_fg = relative_luminance(BASE_FG[0], BASE_FG[1], BASE_FG[2]);
+        assert!(
+            lum_bg < lum_fg,
+            "BASE_BG luminance ({lum_bg:.4}) must be < BASE_FG luminance ({lum_fg:.4})"
+        );
     }
 
     #[test]

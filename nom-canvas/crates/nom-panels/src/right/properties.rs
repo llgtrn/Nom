@@ -1,5 +1,7 @@
 #![deny(unsafe_code)]
 use crate::dock::{fill_quad, focus_ring_quad, DockPosition, Panel};
+use crate::entity_ref::PanelEntityRef;
+use nom_blocks::NomtuRef;
 use nom_gpui::scene::Scene;
 use nom_theme::tokens;
 
@@ -11,23 +13,24 @@ pub struct PropertyRow {
 }
 
 pub struct PropertiesPanel {
-    pub entity_id: Option<String>,
-    pub entity_kind: Option<String>,
+    pub entity: PanelEntityRef,
     pub rows: Vec<PropertyRow>,
 }
 
 impl PropertiesPanel {
     pub fn new() -> Self {
         Self {
-            entity_id: None,
-            entity_kind: None,
+            entity: PanelEntityRef::None,
             rows: vec![],
         }
     }
 
     pub fn load_entity(&mut self, id: &str, kind: &str) {
-        self.entity_id = Some(id.to_string());
-        self.entity_kind = Some(kind.to_string());
+        self.load_entity_ref(NomtuRef::new(id, id, kind));
+    }
+
+    pub fn load_entity_ref(&mut self, entity: NomtuRef) {
+        self.entity = PanelEntityRef::nomtu(entity);
         self.rows.clear();
     }
 
@@ -104,11 +107,11 @@ mod tests {
     #[test]
     fn properties_panel_load_entity() {
         let mut panel = PropertiesPanel::new();
-        assert!(panel.entity_id.is_none());
+        assert_eq!(panel.entity.id(), None);
         panel.set_row("name", "old", false);
         panel.load_entity("ent-42", "Function");
-        assert_eq!(panel.entity_id.as_deref(), Some("ent-42"));
-        assert_eq!(panel.entity_kind.as_deref(), Some("Function"));
+        assert_eq!(panel.entity.id(), Some("ent-42"));
+        assert_eq!(panel.entity.kind(), Some("Function"));
         // rows cleared on load
         assert_eq!(panel.row_count(), 0);
     }
@@ -141,8 +144,16 @@ mod tests {
         panel.set_row("name", "my_concept", true);
         panel.set_row("visibility", "public", false);
         assert_eq!(panel.row_count(), 2);
-        assert_eq!(panel.entity_id.as_deref(), Some("ent-99"));
-        assert_eq!(panel.entity_kind.as_deref(), Some("Concept"));
+        assert_eq!(panel.entity.id(), Some("ent-99"));
+        assert_eq!(panel.entity.kind(), Some("Concept"));
+    }
+
+    #[test]
+    fn properties_panel_accepts_full_nomtu_ref() {
+        let mut panel = PropertiesPanel::new();
+        panel.load_entity_ref(NomtuRef::new("id-7", "word", "media"));
+        assert_eq!(panel.entity.id(), Some("id-7"));
+        assert_eq!(panel.entity.kind(), Some("media"));
     }
 
     #[test]
