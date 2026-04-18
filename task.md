@@ -446,13 +446,21 @@
 - ✅ GoToDef — DefinitionKind+Location+Target+GoToDefRequest+GoToDefResolver (9 tests, C4)
 - ✅ FlowStepTable — StepStatus+FlowStepRow+FlowStepTable+FlowStepQuery+StepTimeline (9 tests, A9)
 
-## Open Items — Wave ABAE targets
+## Wave ABAE — COMPLETE (2026-04-19, 9988 tests)
 
-- ❌ **nom-editor rename_preview** — RenamePreviewKind + RenameChange + RenamePreview + RenameApplier (C4 rename-refactor preview)
-- ❌ **nom-compose completion_engine** — CompletionKind + CompletionItem + CompletionList + CompletionEngine (C4 completion popup)
-- ❌ **nom-graph semantic_cache** — SemanticKey + SemanticEntry + SemanticCache + CacheEviction (A-axis cache patterns)
-- ❌ **nom-canvas-core pixel_diff** — already exists? Check. If not: PixelRegion + PixelDiff + DiffReport + DiffThreshold
-- ❌ **nom-telemetry perf_counter** — CounterKind + PerfCounter + CounterSnapshot + CounterRegistry (performance counters)
+- ✅ RenamePreview — RenamePreviewKind+Change+Model+Conflict+Applier (9 tests, C4)
+- ✅ CompletionEngine — CompletionKind+Item+List+Query+Engine (11 tests, C4)
+- ✅ SemanticCache — SemanticKey+Entry+CacheEviction+Cache+CacheStats (9 tests)
+- ✅ PixelDiff — PixelRegion+PixelDiff+DiffThreshold+DiffReport+RegionDiffer (11 tests)
+- ✅ PerfCounter — CounterKind+PerfCounter+CounterSnapshot+Registry+RateCalc (9 tests)
+
+## Open Items — Wave ABAF targets
+
+- ❌ **nom-graph delta_compress** — DeltaFrame + DeltaEncoder + DeltaDecoder + DeltaStream (A-axis delta/compression)
+- ❌ **nom-compose native_screen** — ScreenTarget + ScreenCapture + NativeScreenBackend + CaptureBuffer (C5 native screen)
+- ❌ **nom-canvas-core snap_align** — AlignGuide + SnapTarget + AlignmentEngine + AlignResult (canvas smart alignment)
+- ❌ **nom-editor multi_file_edit** — MultiFileChange + MultiFileSession + MultiFileDiff + SessionApplier (multi-file edits)
+- ❌ **nom-blocks embed_registry** — EmbedKind + EmbedEntry + EmbedRegistry + EmbedResolver (embedded media registry)
 
 ---
 

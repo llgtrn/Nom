@@ -283,10 +283,10 @@
 
 ### C4. Full LSP stream visually verified
 - [x] Hover tooltip renders on canvas — HoverTooltip+TooltipRenderer (Wave ABAC)
-- [ ] Completion popup visible with arrow-key navigation
+- [x] Completion popup visible with arrow-key navigation — CompletionEngine+CompletionList (Wave ABAE)
 - [x] Diagnostic red-squiggle underline renders — DiagnosticSquiggle+DiagnosticOverlay (Wave ABAC)
 - [x] Go-to-definition navigates — GoToDefResolver+GoToDefRequest (Wave ABAD)
-- [ ] Rename-refactor preview works
+- [x] Rename-refactor preview works — RenamePreviewModel+RenameApplier (Wave ABAE)
 
 ### C5. Backend wiring beyond spec-and-stub
 
