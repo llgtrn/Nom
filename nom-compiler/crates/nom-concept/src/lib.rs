@@ -78,6 +78,9 @@ pub use pipeline::{CompileError, CompileInput, CompileOutput, CompilePipeline, C
 pub mod lifecycle;
 pub use lifecycle::{EntryState, LifecycleManager, LifecycleTransition};
 
+pub mod selfhost;
+pub use selfhost::{SelfHostBootstrapProof, SelfHostEntry, SelfHostRegistry, SelfHostStage};
+
 /// Closed kind set per doc 08 §8.1.
 ///
 /// Mirrors the rows in baseline.sql's `kinds` table. Kept in sync by

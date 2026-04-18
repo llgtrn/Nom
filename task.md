@@ -302,13 +302,21 @@
 - ✅ Pipeline+Ingest integration — 10 CompilePipeline + CorpusOrchestrator integration tests
 - ✅ D-axis: 100% COMPLETE
 
-## Open Items — Wave ABM targets (A+B axis advancement)
+## Wave ABM (2026-04-19) — COMMITTED ✅ (HEAD 828bd8e, +48 tests)
 
-- ❌ **A5 EntryKind::Skill routing** — route `EntryKind::Skill` in nom-intent resolve()
-- ❌ **A5 lifecycle transitions** — merge/eliminate/evolve entry state transitions in nom-dict
-- ❌ **B6 MECE validator** — MECE objective validator in nom-concept
-- ❌ **B6 Dream tree** — Pareto front dream tree stubs in nom-compose
-- ❌ **C5 deeper LSP visual** — add LSP position bridging to Buffer::point_at() integration
+- ✅ SkillRouter — SkillEntry + SkillRouter case-insensitive + SkillDispatch (9 tests)
+- ✅ LifecycleManager — EntryState + merge/eliminate/evolve transitions (11 tests)
+- ✅ MeceValidator — MeceObjective + AppScore EPIC_SCORE_THRESHOLD≥95 (10 tests)
+- ✅ DreamTree — DreamNode + DreamTree + ParetoFront (9 tests)
+- ✅ LspPositionBridge — LspPositionBridge + BoundedLspBridge roundtrip (9 tests)
+
+## Open Items — Wave ABN targets (A+B+C deeper)
+
+- ❌ **A5 UX extractor** — Motion/Dioxus/ToolJet/DeerFlow corpus extractors in nom-ux
+- ❌ **A5 intent §5 deeper** — body-only ingestion + Partial→Complete promotion in nom-intent
+- ❌ **B6 dream CLI** — `nom app dream` iterates until score≥95 in nom-cli
+- ❌ **C6 RAG retrieval** — deeper BM25+FAISS hybrid retrieval tests in nom-intent
+- ❌ **A3 self-host stubs** — parser.nom/resolver.nom stub .nomx entries in stdlib/
 
 ---
 

@@ -3,6 +3,7 @@ pub mod serve;
 
 pub mod compose;
 pub mod app;
+pub mod dream;
 pub mod author;
 pub mod bench;
 pub mod convert;

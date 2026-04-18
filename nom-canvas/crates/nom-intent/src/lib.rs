@@ -1,5 +1,7 @@
 #![deny(unsafe_code)]
 
+pub mod ingest_partial;
+
 pub mod skill_router;
 pub use skill_router::{SkillDefinition, SkillRouter};
 
@@ -8,6 +10,9 @@ pub use skill_route::{SkillDispatch, SkillEntry};
 
 pub mod retrievers;
 pub use retrievers::{BM25Document, BM25Retriever, CosineSimilarityRetriever, VectorDocument};
+
+pub mod hybrid_retrieval;
+pub use hybrid_retrieval::{HybridRetriever, RetrievalScore};
 
 pub mod pipeline;
 pub use pipeline::{IngestionEvent, IngestionPipeline, LifecycleManager, LifecycleTransition};
