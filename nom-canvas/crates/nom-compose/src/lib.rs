@@ -105,6 +105,8 @@ pub mod sherlock_native;
 pub mod vision;
 pub mod layout;
 pub mod vision_orchestrator;
+pub mod donut_pipeline;
+pub mod codegen_pipeline;
 
 #[cfg(test)]
 mod integration_tests {

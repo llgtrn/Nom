@@ -41,6 +41,9 @@ pub use stages::{
 pub mod ir;
 pub use ir::{IrFunction, IrInstr, IrModule, IrType, IrValue};
 
+pub mod type_infer;
+pub use type_infer::{InferResult, TypeConstraint, TypeEnv, TypeInferencer};
+
 pub mod codegen;
 pub use codegen::{AstToIr, IrPrinter, NomAst, NomDef};
 
