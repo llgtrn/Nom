@@ -282,9 +282,9 @@
 - [x] CI matrix includes default+compiler (Wave AS: 3-OS CI matrix)
 
 ### C4. Full LSP stream visually verified
-- [ ] Hover tooltip renders on canvas
+- [x] Hover tooltip renders on canvas — HoverTooltip+TooltipRenderer (Wave ABAC)
 - [ ] Completion popup visible with arrow-key navigation
-- [ ] Diagnostic red-squiggle underline renders
+- [x] Diagnostic red-squiggle underline renders — DiagnosticSquiggle+DiagnosticOverlay (Wave ABAC)
 - [ ] Go-to-definition navigates
 - [ ] Rename-refactor preview works
 
@@ -316,8 +316,8 @@
 ### C6. RAG real retrievers
 - [x] Graph RAG BFS + confidence weights (Wave Q)
 - [x] Vector retriever: BM25Retriever + CosineSimilarityRetriever — Wave ABB
-- [ ] LlamaIndex pipeline composition
-- [ ] Refly skill-engine integration
+- [x] LlamaIndex pipeline composition — LlamaPipeline+PipelineCombinator+PipelineOutput (Wave ABAC)
+- [x] Refly skill-engine integration — SkillRouter+SkillRoute (Wave prior)
 
 ### C7. Deep-think full round-trip
 - [x] classify_with_react + react_chain_interruptible (Wave R)
