@@ -406,13 +406,21 @@
 - ✅ TextureAtlas — AtlasRegion+TextureAtlas+AtlasShelf+AtlasAllocator (9 tests)
 - ✅ PdfCompose — PdfElement+PdfPage+PdfDocument+PdfComposer prose→PDF (9 tests)
 
-## Open Items — Wave ABZ targets
+## Wave ABZ — COMPLETE (2026-04-19, 9753 tests)
 
-- ❌ **nom-compose web-compose** — WebComponent + WebAppSpec + WebComposer (web-compose demo)
-- ❌ **nom-intent haystack-pipeline** — HaystackComponent + ComponentPipeline + PipelineRanker
-- ❌ **nom-canvas-core affine-tokens** — AffineTokenSet + TokenResolver + DesignTokenApplier
-- ❌ **nom-panels tab-bar** — TabEntry + TabBar + TabBarState (UI tab navigation)
-- ❌ **nom-compose video-encode** — VideoFrame + VideoEncoder + GpuVideoEncoder stub
+- ✅ WebCompose — ComponentKind+WebAppSpec+WebComposer spec→web app (9 tests)
+- ✅ HaystackPipeline — HaystackComponent+ComponentPipeline+PipelineRanker (9 tests)
+- ✅ AffineTokens — AffineToken×9+TokenResolver+DesignTokenApplier (9 tests)
+- ✅ TabBar — TabEntry+TabBar+TabBarState UI navigation (9 tests)
+- ✅ VideoEncode — VideoCodec+VideoFrame+VideoEncoder+GpuVideoEncoder stub (9 tests)
+
+## Open Items — Wave ABAA targets
+
+- ❌ **nom-compose ad-creative** — AdFormat + AdCreativeSpec + AdComposer (ad-creative demo)
+- ❌ **nom-canvas-core dark-theme** — ThemeMode + ThemeTokenMap + ThemeToggle
+- ❌ **nom-graph reasoning-tree** — ReasoningNode + HypothesisTree + BeliefPropagator
+- ❌ **nom-compose mobile-compose** — MobileScreen + MobileAppSpec + MobileComposer
+- ❌ **nom-telemetry trace-export** — TraceExporter + JaegerFormat + OpenTelemetrySpan
 
 ---
 

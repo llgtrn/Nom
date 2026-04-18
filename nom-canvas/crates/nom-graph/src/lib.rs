@@ -36,3 +36,5 @@ pub use weighted_graph::{WeightedEdge, WeightedGraph};
 pub use ancestry::{AncestorQuery, AncestryChain, DescendantIter, ParentMap};
 pub mod content_address;
 pub use content_address::{ContentAddressStore, ContentHash, CrossAppStore, ShareEntry};
+pub mod hypothesis_tree;
+pub use hypothesis_tree::{BeliefPropagator, HypothesisTree, HypothesisNodeState, ReasoningNode};

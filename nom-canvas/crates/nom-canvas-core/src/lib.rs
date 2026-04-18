@@ -68,6 +68,10 @@ pub use frosted_glass::{BlurLayer, FrostedGlassEffect, LayerBlend, LayerComposit
 pub mod affine_tokens;
 pub use affine_tokens::{AffineToken, AffineTokenSet, DesignTokenApplier, TokenCategory, TokenResolver};
 
+/// Dark and light theme toggle: mode enum, token map, and toggle with history.
+pub mod theme;
+pub use theme::{ThemeEntry, ThemeMode, ThemeToggle, ThemeTokenMap};
+
 #[cfg(test)]
 mod integration_tests {
     use crate::elements::{paint_graph_node, paint_wire};

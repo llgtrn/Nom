@@ -130,6 +130,12 @@ pub mod video_encode;
 pub use video_encode::{GpuVideoEncoder, VideoCodec as VideoEncodeCodec, VideoEncoder, VideoFrame};
 pub mod web_compose;
 pub use web_compose::{ComponentKind, WebAppSpec, WebComponent, WebComposer};
+pub mod ad_creative;
+pub use ad_creative::{AdComposer, AdDimension};
+pub use ad_creative::AdCreativeSpec as AdCreativeSpecComposer;
+pub use ad_creative::AdFormat as AdFormatComposer;
+pub mod mobile_compose;
+pub use mobile_compose::{MobileAppSpec, MobileComponent, MobileComposer, MobilePlatform, MobileScreen};
 
 #[cfg(test)]
 mod integration_tests {

@@ -5,9 +5,11 @@ pub mod metrics;
 pub mod metrics_deep;
 pub mod spans;
 pub mod span_aggregator;
+pub mod trace_export;
 pub use export::{ExportFormat, MetricRecord, MetricsExporter};
 pub use metrics::{Counter, Histogram, MetricsRegistry};
 pub use span_aggregator::{P95Calculator, SpanAggregator, SpanSample, TraceReport};
+pub use trace_export::{JaegerSpan, OpenTelemetrySpan, SpanStatus, TraceExporter};
 
 use std::sync::{Arc, Mutex};
 
