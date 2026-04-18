@@ -1,7 +1,7 @@
 # Nom — Roadmap to 100%
 
 **Date:** 2026-04-18 | **Mandate:** reach 100% on all 4 axes. Every `[ ]` is a completable task.
-**Last updated:** Wave AL complete — HEAD `778b085`, 7241 tests. Wave AM planned: wgpu device init + ComposeContext + DB-driven fixes + ~7750 target.
+**Last updated:** Wave AM complete — HEAD `7086ff2`, 7652 tests. Wave AN planned: CRITICAL audit fixes + test expansion + ~8100 target.
 
 ## Current finalization snapshot
 
@@ -16,25 +16,25 @@
 
 **C-axis revised from 98% → 35%** because: (1) renderer renders zero pixels — AE1 claim was false, (2) DB-driven automation pipeline 35% functional — ComposeContext/UnifiedDispatcher/HybridResolver/GlueCache all missing, (3) BackendKind is a closed 16-variant Rust enum (DB-driven mandate violation), (4) only 7/29 nom-compiler crates called from canvas.
 
-**Per-crate test counts (Wave AL actuals → Wave AM targets):**
-| Crate | Wave AL actual | Wave AM target |
+**Per-crate test counts (Wave AM actuals → Wave AN targets):**
+| Crate | Wave AM actual | Wave AN target |
 |---|---|---|
-| nom-blocks | 480 | 515 |
-| nom-canvas-core | 510 | 545 |
-| nom-cli | 340 | 370 |
-| nom-collab | 480 | 515 |
-| nom-compiler-bridge | 470 | 505 |
+| nom-blocks | 515 | 550 |
+| nom-canvas-core | 530 | 565 |
+| nom-cli | 370 | 400 |
+| nom-collab | 504 | 540 |
+| nom-compiler-bridge | 505 | 540 |
 | nom-compose | 625 | 660 |
-| nom-editor | 550 | 585 |
-| nom-gpui | 701 | 740 |
+| nom-editor | 578 | 615 |
+| nom-gpui | 743 | 780 |
 | nom-graph | 530 | 565 |
-| nom-intent | 380 | 410 |
-| nom-lint | 400 | 430 |
-| nom-memoize | 385 | 415 |
-| nom-panels | 500 | 535 |
-| nom-telemetry | 415 | 445 |
-| nom-theme | 475 | 505 |
-| **TOTAL** | **7241** | **~7750** |
+| nom-intent | 410 | 440 |
+| nom-lint | 430 | 460 |
+| nom-memoize | 415 | 445 |
+| nom-panels | 535 | 570 |
+| nom-telemetry | 445 | 475 |
+| nom-theme | 505 | 535 |
+| **TOTAL** | **7652** | **~8100** |
 
 **Discipline:** tick `[x]` only after BOTH the code change AND a regression test are committed. Never tick from trackers alone. See `feedback_audit_must_also_fix.md`.
 
@@ -402,49 +402,6 @@
 - [ ] Weekly `task.md` compaction ritual
 - [ ] Weekly state-report trim
 
-### D9. Hybrid Composition System (Wave AH — spec 2026-04-18)
-**Spec:** `docs/superpowers/specs/2026-04-18-hybrid-compose-design.md`
-**Architecture:** Three-tier resolver — DB-driven (grammar.kinds Complete) → Provider-driven (registered MediaVendor) → AI-leading (AiGlueOrchestrator generates .nomx glue). Intent classification at front. Grammar promotion lifecycle at back (Transient → Partial → Complete).
-
-**ComposeContext + UnifiedDispatcher:**
-- [ ] `ComposeContext` / `ComposeResult` / `ComposeTier` envelope in `nom-compose/src/context.rs`
-- [ ] `DictWriter::insert_partial_entry()` + `promote_to_complete()` in `nom-compiler-bridge/src/dict_writer.rs`
-- [ ] `GlueCache` in `SharedState` + 60s promotion background ticker
-- [ ] `UnifiedDispatcher` bridging `ProviderRouter` ↔ `BackendRegistry` with credential injection
-- [ ] `ProviderRouter::route_with_context()` + `BackendRegistry::dispatch_with_context()`
-- [ ] `MediaVendor::compose(input, credential, ctx)` signature update
-
-**IntentResolver — kind detection before routing:**
-- [ ] Lexical scan: `SELECT word FROM grammar.kinds` → exact token match → confidence 1.0
-- [ ] BM25 + cosine over `grammar.kinds.description` → semantic ranking when no exact match
-- [ ] `classify_with_react()` fires when top-2 candidates within 0.15 delta
-- [ ] Multi-kind detection: return all candidates above 0.65 threshold
-- [ ] Low-confidence (below 0.6): show disambiguation card, user picks from DB-driven kind list
-- [ ] Training signal: user correction feeds back into BM25 index weights
-
-**AiGlueOrchestrator + HybridResolver:**
-- [ ] `AiGlueOrchestrator::synthesize()`: GraphRagRetriever + clause_shapes query + ReActLlmFn → .nomx GlueBlueprint
-- [ ] `ReActLlmFn` trait + 4 adapters: Stub / NomCli (offline) / Mcp / RealLlm (optional credential)
-- [ ] `HybridResolver`: Tier1 (DB Complete) → Tier2 (vendor) → Tier3 (AI glue)
-- [ ] `ComposeOrchestrator`: multi-kind parallel pipeline via existing `TaskQueue`
-- [ ] `glue_promotion_config` DB table: PROMOTE_AFTER count + confidence threshold as data rows
-- [ ] 14 initial `grammar.kinds` seed rows: video/picture/audio/presentation/web_app/mobile_app/native_app/document/data_extract/data_query/workflow/ad_creative/3d_mesh/storyboard
-
-**Grammar promotion lifecycle:**
-- [ ] `intended to <purpose>` clause required in every AI `.nomx` sentence — orchestrator rejects + retries if absent; purpose text → `grammar.kinds.description`
-- [ ] Explicit path: user Accept or Edit+Save in Review card → `DictWriter::insert_partial_entry()` immediately; no usage count; `NomtuRef` assigned at promotion
-- [ ] Auto path (user never reviews): usage_count >= 3 AND confidence >= 0.7 → Partial (background ticker, 60s poll)
-- [ ] Partial → Complete (used 10+ times AND compiler validation passes): `DictWriter::promote_to_complete()`
-- [ ] `glue_promotion_config` DB table: thresholds as data rows (auto_promote_count, auto_promote_confidence, complete_use_count)
-- [ ] On Complete: entity indistinguishable from human-authored in palette and canvas
-
-**UI surfaces:**
-- [ ] Intent Preview card (right dock): kind confidence bars + Compose/Change/All-3 actions
-- [ ] AI Review card (right dock): Accept/Edit/Skip with inline .nomx editor
-- [ ] Doc mode: `⚡` gutter badge for Partial AI-generated entities; removed on Complete
-- [ ] Graph mode: amber frosted-glass tint + `⚡` badge; removed on Complete
-- [ ] Status bar: `⚡ N AI entities pending review` counter
-
 ### D8. Minimalist UI Design (Wave AF — design confirmed 2026-04-18)
 
 **Aesthetic mandate:** Simple but strong. Every surface earns its space. Theme = Zed-dark by default, swappable.
@@ -578,9 +535,9 @@ All four axes reach 100% when:
 - Axis C: 8 waves (wires + backend depth; C1/C6/C7 partially done)
 - Axis D: 15 waves (UI polish + CI + docs)
 
-**Current velocity:** ~270 tests/wave (Waves V–AA average, accelerating). At this rate:
-- nom-canvas test suite hits 3000 tests in ~3 more waves
-- Wave AB targets ~2600 (+161 from current 2439 listed tests)
-- Axis C functional completeness needs real backend wiring (C5) + golden demos (D3)
+**Current velocity:** ~350 tests/wave (Waves AF–AL average). At 7241 tests (Wave AL):
+- Axis C functional completeness blocked on renderer (render 0 pixels), BackendKind enum, ComposeContext wiring
+- Axis D progress blocked on same renderer blocker + theme system stub + taffy stub
+- Critical path: AL-RENDER-1/2/3 → AL-BACKEND-KIND → AL-COMPOSE-BRIDGE → AH tiers → AI-Composer
 
 **Critical path:** A7 (fixpoint proof) + C5 (real backends) + D3 (golden demos).
