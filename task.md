@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `76ba05d` | **Tests:** 4693 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `59d58c4` | **Tests:** 5196 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -253,22 +253,34 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-lint: 220→250; nom-intent: 200→230; nom-memoize: 205→235
 - [x] nom-telemetry: 235→265; nom-cli: 165→195
 
-## Wave AH (planned) — wgpu renderer depth + table/dataview blocks + missing_docs (~5100 target)
-- [ ] nom-gpui: implement real wgpu device init + pipeline creation + quad draw call (AE1 partial fix)
-- [ ] nom-gpui: 492→530 tests (GPU pipeline unit, shader compilation, atlas allocator)
-- [ ] nom-blocks: add table block (row/col model) and dataview block stub
-- [ ] nom-blocks: 295→330 tests (table/dataview CRUD, column schema)
-- [ ] Add `#![warn(missing_docs)]` to nom-blocks + nom-canvas-core
-- [ ] nom-canvas-core: 340→375 tests (bezier tangent, bulk spatial insert, hit-test precision)
-- [ ] nom-compose: 452→485 tests (scenario_workflow real step exec, data_query SQL store)
-- [ ] nom-graph: 369→405 tests (sandbox checked ops, sanitizer stubs, viewport edge cases)
-- [ ] nom-collab: 305→340 tests (CRDT undo stack, snapshot diff, large concurrent batch)
-- [ ] nom-editor: 355→390 tests (multi-cursor merge, tab_map depth, redo after branch)
-- [ ] nom-compiler-bridge: 295→330 tests (BM25 ranking, SharedState concurrent stress)
-- [ ] nom-panels: 325→360 tests (settings serialization, keybinding list invariants)
-- [ ] nom-theme: 290→325 tests (frosted glass blur curve, shadow depth scale)
-- [ ] nom-lint: 250→280; nom-intent: 230→260; nom-memoize: 235→265
-- [ ] nom-telemetry: 265→295; nom-cli: 195→225
+## Wave AH (2026-04-18) — COMPLETE ✅ (59d58c4, 5196 tests)
+- [x] nom-gpui: 492→530 (PipelineDescriptor, WGSL content tests, atlas allocator, PI clippy fix)
+- [x] nom-blocks: 295→330 (table/dataview new types, CRUD, filter, cell access)
+- [x] nom-canvas-core: 340→375 (bezier hit-test, spatial bulk 100-elem, viewport zoom/pan)
+- [x] nom-compose: 452→485 (scenario_workflow steps, data_query SQL store, dispatch roundtrip)
+- [x] nom-graph: 369→405 (sandbox overflow/depth, graph_mode CRUD, DAG compute_layers)
+- [x] nom-collab: 305→340 (undo/redo sim, snapshot diff, 10-peer concurrent, tombstone)
+- [x] nom-editor: 355→390 (multi-cursor, tab_map, comment toggle, transaction atomic)
+- [x] nom-compiler-bridge: 295→330 (background plan/verify/deep_think, interactive LSP)
+- [x] nom-panels: 325→360 (settings serial, file tree CRUD, chat/deep-think depth)
+- [x] nom-theme: 290→325 (frosted glass curve, shadow depth, HSLA→RGB, font registry)
+- [x] nom-lint: 250→280; nom-intent: 230→260; nom-memoize: 235→265
+- [x] nom-telemetry: 265→295; nom-cli: 195→226
+
+## Wave AI (planned) — wgpu real draw calls + missing_docs + LLVM integration (~5600 target)
+- [ ] nom-gpui: implement wgpu Device/Queue init in Renderer::with_gpu() (AE1 — no real pixels yet)
+- [ ] nom-gpui: 530→570 tests (real GPU init path, shader compile check, swapchain)
+- [ ] nom-blocks: add `#![warn(missing_docs)]` + doc tests → 330→365
+- [ ] nom-canvas-core: add `#![warn(missing_docs)]` + doc tests → 375→410
+- [ ] nom-compose: 485→520 (RAG query pipeline, mobile/native screen depth)
+- [ ] nom-graph: 405→440 (graph_rag scoring, node update/notify, cross-node deps)
+- [ ] nom-collab: 340→375 (rich text bold/italic, YJS-style state vector, offline queue)
+- [ ] nom-editor: 390→425 (LSP diagnostic display, gutter icons, fold/unfold)
+- [ ] nom-compiler-bridge: 330→365 (rename refactor, workspace symbol, format round-trip)
+- [ ] nom-panels: 360→395 (command palette model, quick-open, settings-open keybind)
+- [ ] nom-theme: 325→360 (reduced-motion media query, high-contrast mode, print styles)
+- [ ] nom-lint: 280→310; nom-intent: 260→290; nom-memoize: 265→295
+- [ ] nom-telemetry: 295→325; nom-cli: 226→255
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
