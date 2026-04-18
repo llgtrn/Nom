@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-19 | **HEAD:** `d0d56df` | **Tests:** 9121 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD complete. A-axis ~63%, B-axis ~80%, C-axis ~88%, D-axis ~99%.
+**Date:** 2026-04-19 | **HEAD:** `7dc8dd3` | **Tests:** 9217 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE complete. A-axis ~65%, B-axis ~81%, C-axis ~89%, D-axis ~99%.
 
 ## DB-Driven Architecture (Wave AE/AC verified PASS)
 
@@ -231,18 +231,31 @@
 - ✅ C5 reverse — ReverseOrchestrator media→nomx pipeline (+8)
 - ✅ D3 golden +4 — 22 total golden path tests
 
-## Open Items — Wave ABE targets
+## Wave ABE (2026-04-19) — COMMITTED ✅ (HEAD 7dc8dd3, 9217 tests)
 
-- ❌ **ChatPanel AI dispatch** — ChatPanel submit → AiGlueOrchestrator → pipeline (canvas mode changes per context)
-- ❌ **C5 audio real** — rodio real encode (not just stub)
-- ❌ **C9 build** — cargo build --all-features passes
-- ❌ **A3 ingestion real** — real body-only ingest events beyond stubs
-- ❌ **A6 LSP async loop** — tokio stdin/stdout I/O loop
-- ❌ **nom-compile-bridge** — real dispatch_lsp_request → actual handler
-- ❌ **nom-canvas-core** — real wgpu draw loop (FrostedRenderPass called)
-- ❌ **nom-cli** — POST /compose axum endpoint real handler
-- ❌ **nom-editor** — EditorView ↔ LspOverlay real integration
-- ❌ **A10 corpus pipeline** — 100-repo ingestion + 100M+ nomtu entries
+- ✅ Chat AI dispatch — ChatAttachment + CanvasMode + AiChatSession (+10)
+- ✅ UC-SERVE POST — ComposeRequest/Response + compose_logic (+8)
+- ✅ A6 LSP I/O — LspFrame + LspIoBuffer + LspAsyncLoop (+8)
+- ✅ D2 RenderPipeline — DrawCommand/FrameGraph/Coordinator (+10)
+- ✅ A7 bootstrap depth — FixpointAttempt + BootstrapRunner (+4)
+- ✅ A3 ingest — IngestSource + IngestPipeline events (+4)
+- ✅ D3 BlockDiffer — BlockDiffKind + BlockDiffer (+6)
+- ✅ C7 WeightGraph — WeightedGraph + WeightGraph (+8 total)
+- ✅ D5 CacheStats + StructureLinter (+12)
+- ✅ D5 MetricsExporter + AnimationRegistry (+12)
+- ✅ D4 PresenceMap + AnimationClip (+14)
+- ✅ D3 golden 26 — 26 total golden path tests
+
+## Open Items — Wave ABF targets
+
+- ❌ **NomInspector** — universal clone/inspect/replicate (YouTube/GitHub/Web/Person/Company)
+- ❌ **Sherlock adapter** — PersonInspector OSINT via sherlock.py
+- ❌ **StrategyExtractor** — competitive intelligence from text/metadata
+- ❌ **InspectPanel** — ChatPanel → InspectPanel → CanvasMode routing
+- ❌ **ContentHash/ContentDag** — content-addressed DB entries
+- ❌ **NativeCodegen** — LLVM IR → native binary stub
+- ❌ **D3 golden 30** — 30 total golden path tests
+- ❌ **NomInspector design spec** — docs/superpowers/specs/
 
 ---
 

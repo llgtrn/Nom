@@ -1,8 +1,26 @@
 # Nom State Machine Report
 
-**Date:** 2026-04-19 | **HEAD:** `d0d56df` | **Tests:** 9121 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD complete. 0 clippy warnings. A 63%, B 80%, C 88%, D 99%.
+**Date:** 2026-04-19 | **HEAD:** `7dc8dd3` | **Tests:** 9217 | **Workspace:** clean — Waves AX+AY+AZ+ABA+ABB+ABC+ABD+ABE complete. 0 clippy warnings. A 65%, B 81%, C 89%, D 99%.
 
 ---
+
+## Iteration 76 — Wave ABE COMPLETE (HEAD 7dc8dd3, 9217 tests, 0 warnings)
+
+**10 parallel agents. ChatPanel AI dispatch + CanvasMode + POST /compose + LSP I/O loop + RenderPipeline + AnimationClip + PresenceMap + BlockDiffer + WeightGraph + BootstrapRunner + IngestPipeline.**
+
+| Gap ID | Fix | Crate |
+|--------|-----|-------|
+| Chat AI dispatch | ChatAttachment + CanvasMode + ChatDispatch + AiChatSession | nom-panels |
+| UC-SERVE POST | ComposeRequest/Response + compose_logic + build_router | nom-cli |
+| A6 LSP I/O | LspFrame + LspIoBuffer + LspLoopConfig + LspAsyncLoop | nom-compiler-bridge |
+| D2 render pipeline | DrawCommand + RenderQueue + FrameGraph + RenderPipelineCoordinator | nom-canvas-core |
+| A7 bootstrap depth | FixpointAttempt + BootstrapRunner + IngestPipeline | nom-concept |
+| D3 diff | BlockDiffKind + BlockDiffer | nom-blocks |
+| C7 weighted graph | WeightedGraph + WeightGraph (both added) | nom-graph |
+| C9 cache stats | CacheStats + CacheSnapshot + StructureLinter | nom-memoize/nom-lint |
+| D5 export | MetricsExporter Json/Prometheus/OTel + AnimationRegistry | nom-telemetry/nom-theme |
+| D4 collab depth | PresenceMap + CursorPosition + AnimationClip/Handle | nom-collab/nom-gpui |
+| D3 golden +4 | 26 total golden path tests | nom-canvas-tests |
 
 ## Iteration 75 — Wave ABD COMPLETE (HEAD d0d56df, 9121 tests, 0 warnings)
 
