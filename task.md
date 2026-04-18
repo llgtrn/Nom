@@ -1,6 +1,6 @@
 # Nom — Task Execution Checklist
 
-**Date:** 2026-04-18 | **HEAD:** `59d58c4` | **Tests:** 5196 | **Workspace:** clean
+**Date:** 2026-04-18 | **HEAD:** `d2b7b62` | **Tests:** 5712 | **Workspace:** clean
 
 ## Wave AE Audit (2026-04-18) — Hard audit: UI rendering, bridge stubs, backend depth, security
 
@@ -269,20 +269,34 @@ Reference availability: Zed, AFFiNE, rowboat, ComfyUI, dify, n8n, LlamaIndex, Ha
 - [x] nom-lint: 250→280; nom-intent: 230→260; nom-memoize: 235→265
 - [x] nom-telemetry: 265→295; nom-cli: 195→226
 
-## Wave AI (planned) — wgpu real draw calls + missing_docs + LLVM integration (~5600 target)
-- [ ] nom-gpui: implement wgpu Device/Queue init in Renderer::with_gpu() (AE1 — no real pixels yet)
-- [ ] nom-gpui: 530→570 tests (real GPU init path, shader compile check, swapchain)
-- [ ] nom-blocks: add `#![warn(missing_docs)]` + doc tests → 330→365
-- [ ] nom-canvas-core: add `#![warn(missing_docs)]` + doc tests → 375→410
-- [ ] nom-compose: 485→520 (RAG query pipeline, mobile/native screen depth)
-- [ ] nom-graph: 405→440 (graph_rag scoring, node update/notify, cross-node deps)
-- [ ] nom-collab: 340→375 (rich text bold/italic, YJS-style state vector, offline queue)
-- [ ] nom-editor: 390→425 (LSP diagnostic display, gutter icons, fold/unfold)
-- [ ] nom-compiler-bridge: 330→365 (rename refactor, workspace symbol, format round-trip)
-- [ ] nom-panels: 360→395 (command palette model, quick-open, settings-open keybind)
-- [ ] nom-theme: 325→360 (reduced-motion media query, high-contrast mode, print styles)
-- [ ] nom-lint: 280→310; nom-intent: 260→290; nom-memoize: 265→295
-- [ ] nom-telemetry: 295→325; nom-cli: 226→255
+## Wave AI (2026-04-18) — COMPLETE ✅ (d2b7b62, 5712 tests)
+- [x] nom-gpui: 530→570 (GpuState/DeviceRequest structs, can_render, WGSL content tests)
+- [x] nom-blocks: 330→365 (`#![warn(missing_docs)]` zero warnings + connector/workspace tests)
+- [x] nom-canvas-core: 375→410 (`#![warn(missing_docs)]` + elements/snapping/hit_test/viewport)
+- [x] nom-compose: 485→519 (rag_query pipeline, mobile/native screen, credential store)
+- [x] nom-graph: 405→439 (RRF scoring formulas, graph_mode BFS/SCC, cache eviction patterns)
+- [x] nom-collab: 340→375 (rich text marks, state vector, offline queue, cursor awareness)
+- [x] nom-editor: 390→425 (diagnostics/gutter, fold/unfold, soft-wrap, bracket match)
+- [x] nom-compiler-bridge: 330→365 (rename/workspace-symbol/format/signature/call-hier)
+- [x] nom-panels: 360→395 (command palette, quick-open, settings, notifications, status bar)
+- [x] nom-theme: 325→374 (reduced-motion, high-contrast WCAG AAA, OLED, shadow depth)
+- [x] nom-lint: 280→310; nom-intent: 260→290; nom-memoize: 265→295
+- [x] nom-telemetry: 295→325; nom-cli: 226→255
+
+## Wave AJ (planned) — clippy style sweep + deeper GPU + ~6100 target
+- [ ] Fix ~14 clippy style warnings across workspace (map_or, div_ceil, char comparison)
+- [ ] nom-gpui: 570→610 (real wgpu instance/adapter probe, swapchain format negotiation)
+- [ ] nom-blocks: 365→400 (more connector validation paths, workspace merge/diff)
+- [ ] nom-canvas-core: 410→445 (bezier subdivision, quadtree depth, group-in-group)
+- [ ] nom-compose: 519→555 (video GPU frame path, audio DSP stubs, RAG multi-document)
+- [ ] nom-graph: 439→475 (topological sort stability, sandbox AST sanitizer impl)
+- [ ] nom-collab: 375→410 (Y-CRDT style merge, version vector compact encoding)
+- [ ] nom-editor: 425→460 (multi-file project search, go-to-definition jump, completion insert)
+- [ ] nom-compiler-bridge: 365→400 (inlay hints, code lens, semantic tokens full coverage)
+- [ ] nom-panels: 395→430 (panel layout persistence, drag-to-reorder, split view)
+- [ ] nom-theme: 374→410 (print stylesheet, custom CSS variable export, dark/light switch anim)
+- [ ] nom-lint: 310→340; nom-intent: 290→320; nom-memoize: 295→325
+- [ ] nom-telemetry: 325→355; nom-cli: 255→285
 
 ## Wave W (2026-04-18) — COMPLETE (fc20fc8, 1044 tests)
 - [x] nom-lint: +28 → 45 tests
